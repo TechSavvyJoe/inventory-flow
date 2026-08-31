@@ -214,6 +214,97 @@ describe('Inventory Flow API', () => {
     expect(vehicle.imageUrls).toEqual([good])
   })
 
+  it('exposes normalized public scan audit fields on vehicle detail without bloating bootstrap rows', async () => {
+    const { baseUrl, database } = await harness()
+    const rows = database
+      .prepare('SELECT vin, physical_store_id, payload_json FROM public_vehicle_snapshots ORDER BY vin LIMIT 2')
+      .all()
+    const auditedPayload = JSON.parse(rows[0].payload_json)
+    auditedPayload.actual_location = 'Howell — verified DealerOn location'
+    auditedPayload.location_city = 'Howell'
+    auditedPayload.dealer_location_id = '21521'
+    auditedPayload.dealer_name = 'Bob Maxey Ford of Howell'
+    auditedPayload.vehicle_id = 987654
+    auditedPayload.generic_color = 'Blue'
+    auditedPayload.source_sites = ['Howell public inventory', 'Shared group inventory', '  ']
+    auditedPayload.source_count = 2
+    auditedPayload.first_seen = '2026-07-15'
+    auditedPayload.last_seen = '2026-08-30'
+    auditedPayload.data_status = 'Complete verified public scan'
+    database
+      .prepare('UPDATE public_vehicle_snapshots SET payload_json = ? WHERE vin = ?')
+      .run(JSON.stringify(auditedPayload), rows[0].vin)
+
+    const detailResponse = await fetch(`${baseUrl}/api/vehicles/${rows[0].vin}`, {
+      headers: roleHeaders('sales', rows[0].physical_store_id, 'Public scan audit test'),
+    })
+    const detail = await detailResponse.json()
+    expect(detailResponse.status).toBe(200)
+    expect(detail.dataStatus).toBe('Complete verified public scan')
+    expect(detail.publicScan).toEqual({
+      actualLocation: 'Howell — verified DealerOn location',
+      locationCity: 'Howell',
+      dealerLocationId: 21521,
+      dealerName: 'Bob Maxey Ford of Howell',
+      vehicleId: 987654,
+      genericColor: 'Blue',
+      sourceSites: ['Howell public inventory', 'Shared group inventory'],
+      sourceCount: 2,
+      firstSeen: '2026-07-15',
+      lastSeen: '2026-08-30',
+    })
+
+    const sentinelPayload = JSON.parse(rows[1].payload_json)
+    sentinelPayload.vehicle_id = 0
+    database
+      .prepare('UPDATE public_vehicle_snapshots SET payload_json = ? WHERE vin = ?')
+      .run(JSON.stringify(sentinelPayload), rows[1].vin)
+    const sentinelDetail = await fetch(`${baseUrl}/api/vehicles/${rows[1].vin}`, {
+      headers: roleHeaders('sales', rows[1].physical_store_id, 'Vehicle ID sentinel test'),
+    }).then((response) => response.json())
+    expect(sentinelDetail.publicScan.vehicleId).toBeNull()
+
+    const bootstrap = await fetch(`${baseUrl}/api/bootstrap?homeStore=Howell&role=sales`).then((response) => response.json())
+    expect(bootstrap.vehicles.find((vehicle: { vin: string }) => vehicle.vin === rows[0].vin).publicScan).toBeUndefined()
+  })
+
+  it('reports merged vehicle resource coverage while retaining a numeric resources count', async () => {
+    const { baseUrl, database } = await harness()
+    const row = database
+      .prepare("SELECT vin, physical_store_id, payload_json FROM public_vehicle_snapshots WHERE vin <> 'TESTDATAHWELL0001' ORDER BY vin LIMIT 1")
+      .get()
+    const payload = JSON.parse(row.payload_json)
+    const hosts: Record<string, string> = {
+      Howell: 'www.bobmaxeyfordhowell.com',
+      Fowlerville: 'www.bobmaxeyfordinfowlerville.com',
+      'Ford Detroit': 'www.bobmaxeyford.com',
+      Lincoln: 'www.bobmaxeylincoln.com',
+    }
+    payload.photo_urls = [
+      `https://${hosts[row.physical_store_id]}/inventoryphotos/verified/${row.vin.toLowerCase()}/ip/1.jpg`,
+    ]
+    payload.autoCheckReport = { dataState: 'current', sourceLabel: 'Synthetic AutoCheck report' }
+    payload.windowSticker = { dataState: 'current', sourceLabel: 'Synthetic official window sticker' }
+    database
+      .prepare('UPDATE public_vehicle_snapshots SET payload_json = ? WHERE vin = ?')
+      .run(JSON.stringify(payload), row.vin)
+
+    const response = await fetch(`${baseUrl}/api/health`)
+    const health = await response.json()
+    expect(response.status).toBe(200)
+    expect(health.counts.resources).toBe(2)
+    expect(health.counts.resourceCoverage).toEqual({
+      vehicles: 2,
+      photos: 1,
+      photoUrls: 1,
+      autoCheck: 1,
+      windowStickers: 1,
+      factoryEquipment: 1,
+      enrichmentRows: 1,
+    })
+    expect(health.sources.resources.rows).toBe(1)
+  })
+
   it('exposes and searches VIN-linked factory equipment for public and CRM-only vehicles', async () => {
     const { baseUrl, database } = await harness()
     const vin = 'TESTDATAHWELL0001'

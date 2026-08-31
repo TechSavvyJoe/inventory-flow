@@ -180,6 +180,19 @@ export interface MovementSummary {
   returnDueAt?: string
 }
 
+export interface PublicScanAuditRecord {
+  actualLocation: string | null
+  locationCity: string | null
+  dealerLocationId: number | null
+  dealerName: string | null
+  vehicleId: number | null
+  genericColor: string | null
+  sourceSites: string[]
+  sourceCount: number | null
+  firstSeen: string | null
+  lastSeen: string | null
+}
+
 export interface VehicleRecord {
   vin: string
   stockNumber: string
@@ -225,6 +238,7 @@ export interface VehicleRecord {
   changeSummary?: string
   searchText?: string
   dataStatus?: string
+  publicScan?: PublicScanAuditRecord
   autoCheckReport?: AutoCheckReportRecord
   windowSticker?: WindowStickerRecord
   factoryEquipment?: FactoryEquipmentRecord

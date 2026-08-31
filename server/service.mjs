@@ -44,6 +44,26 @@ function positiveInteger(value) {
   return number !== null && number >= 0 ? Math.trunc(number) : undefined
 }
 
+function publicScanAudit(publicRecord) {
+  if (!publicRecord) return undefined
+  const rawVehicleId = finiteNumber(publicRecord.vehicle_id)
+  const sourceSites = Array.isArray(publicRecord.source_sites)
+    ? publicRecord.source_sites.map(cleanText).filter(Boolean)
+    : [cleanText(publicRecord.source_sites)].filter(Boolean)
+  return {
+    actualLocation: cleanText(publicRecord.actual_location) ?? null,
+    locationCity: cleanText(publicRecord.location_city) ?? null,
+    dealerLocationId: finiteNumber(publicRecord.dealer_location_id),
+    dealerName: cleanText(publicRecord.dealer_name) ?? null,
+    vehicleId: rawVehicleId === 0 ? null : rawVehicleId,
+    genericColor: cleanText(publicRecord.generic_color) ?? null,
+    sourceSites,
+    sourceCount: positiveInteger(publicRecord.source_count) ?? null,
+    firstSeen: cleanText(publicRecord.first_seen) ?? null,
+    lastSeen: cleanText(publicRecord.last_seen) ?? null,
+  }
+}
+
 function dateInTimeZone(date, timeZone) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,
@@ -422,7 +442,7 @@ function publicPhotoUrls(publicRecord) {
   return urls
 }
 
-function vehicleView(source, transferRows, context, meta, { includePrivate = false } = {}) {
+function vehicleView(source, transferRows, context, meta, { includePrivate = false, includePublicScan = false } = {}) {
   const publicRecord = source.publicRecord
   const crmRecord = source.crmRecord
   const publicStore = publicRecord?.store || crmRecord?.storeName
@@ -517,6 +537,7 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     movement: movementSummary(source, active, activeTransferView, meta.publicFreshness),
     changeSummary: cleanText(publicRecord?.change_summary),
     dataStatus: cleanText(publicRecord?.data_status) || (crmRecord ? 'CRM only — no current public listing' : 'Unknown'),
+    ...(includePublicScan && publicRecord ? { publicScan: publicScanAudit(publicRecord) } : {}),
     ...(autoCheckReport ? { autoCheckReport } : {}),
     ...(windowSticker ? { windowSticker } : {}),
     ...(factoryEquipment ? { factoryEquipment } : {}),
@@ -551,8 +572,15 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     publicRecord?.generic_color,
     publicRecord?.dealer_comments,
     publicRecord?.data_status,
+    publicRecord?.actual_location,
+    publicRecord?.location_city,
+    publicRecord?.dealer_location_id,
+    publicRecord?.dealer_name,
+    publicRecord?.vehicle_id,
     publicRecord?.first_seen,
     publicRecord?.last_seen,
+    ...(Array.isArray(publicRecord?.source_sites) ? publicRecord.source_sites : [publicRecord?.source_sites]),
+    publicRecord?.source_count,
     publicStore,
     view.crmStore,
     view.websiteStatus,
@@ -616,6 +644,32 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
   view.searchText = safeSearchParts.filter((value) => value !== undefined && value !== null).join(' ').toLowerCase()
   if (latest && !active) view.lastMovementRequestStatus = latest.status
   return view
+}
+
+function mergedResourceCoverage(sources, enrichmentRows = 0) {
+  const coverage = {
+    vehicles: 0,
+    photos: 0,
+    photoUrls: 0,
+    autoCheck: 0,
+    windowStickers: 0,
+    factoryEquipment: 0,
+    enrichmentRows,
+  }
+  for (const source of sources) {
+    const imageUrls = publicPhotoUrls(source.publicRecord)
+    const hasPhotos = imageUrls.length > 0
+    const hasAutoCheck = Boolean(source.resourceRecord?.autoCheckReport || source.publicRecord?.autoCheckReport)
+    const hasWindowSticker = Boolean(source.publicRecord?.windowSticker)
+    const hasFactoryEquipment = Boolean(source.resourceRecord?.factoryEquipment)
+    if (hasPhotos || hasAutoCheck || hasWindowSticker || hasFactoryEquipment) coverage.vehicles += 1
+    if (hasPhotos) coverage.photos += 1
+    coverage.photoUrls += imageUrls.length
+    if (hasAutoCheck) coverage.autoCheck += 1
+    if (hasWindowSticker) coverage.windowStickers += 1
+    if (hasFactoryEquipment) coverage.factoryEquipment += 1
+  }
+  return coverage
 }
 
 function transferVisible(row, context) {
@@ -1040,6 +1094,7 @@ export function createInventoryService({ database, now = () => new Date(), initi
     health() {
       const state = snapshot({ role: 'sales', store: 'Howell', user: 'health-check' })
       const ready = Boolean(state.meta.reportDate && state.dataset.publicRows.length)
+      const resourceCoverage = mergedResourceCoverage(state.sources, state.dataset.resourceRows?.length ?? 0)
       return {
         ok: ready && state.meta.publicFreshness !== 'incomplete' && state.meta.dealerMailFreshness !== 'incomplete',
         ready,
@@ -1053,7 +1108,8 @@ export function createInventoryService({ database, now = () => new Date(), initi
           public: state.dataset.publicRows.length,
           crm: state.dataset.crmRows.length,
           heldVins: state.dataset.holdRows.length,
-          resources: state.dataset.resourceRows?.length ?? 0,
+          resources: resourceCoverage.vehicles,
+          resourceCoverage,
           transfers: state.allTransferRows.length,
         },
         sources: {
@@ -1236,6 +1292,7 @@ export function createInventoryService({ database, now = () => new Date(), initi
       }
       return vehicleFromSnapshot(state, sourceVehicle(state.indexes, vin), {
         includePrivate: state.context.canViewPrivateEvidence,
+        includePublicScan: true,
       })
     },
 
