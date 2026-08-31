@@ -164,6 +164,24 @@ export function createApiHandler({ service, serveDist = false, distDir } = {}) {
       if (request.method === 'GET' && vehicleMatch) {
         return sendJson(response, 200, service.getVehicle(decodeURIComponent(vehicleMatch[1]), requestContext(request, url)))
       }
+      if (request.method === 'GET' && route === '/attention') {
+        return sendJson(response, 200, service.listAttention(queryObject(url), requestContext(request, url)))
+      }
+      const attentionEventMatch = route.match(/^\/attention\/([^/]+)\/events$/)
+      if (request.method === 'POST' && attentionEventMatch) {
+        const input = await readJson(request)
+        const result = service.appendAttentionEvent(
+          decodeURIComponent(attentionEventMatch[1]),
+          input,
+          requestContext(request, url),
+          String(request.headers['idempotency-key'] ?? '') || undefined,
+        )
+        return sendJson(response, result.created ? 201 : 200, result.record)
+      }
+      const attentionMatch = route.match(/^\/attention\/([^/]+)$/)
+      if (request.method === 'GET' && attentionMatch) {
+        return sendJson(response, 200, service.getAttention(decodeURIComponent(attentionMatch[1]), requestContext(request, url)))
+      }
       if (request.method === 'GET' && route === '/transfers') {
         return sendJson(response, 200, service.listTransfers(queryObject(url), requestContext(request, url)))
       }

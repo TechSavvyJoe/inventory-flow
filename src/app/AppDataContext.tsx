@@ -8,9 +8,11 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { appendTransferEvent, createTransfer, getBootstrap } from '../lib/api'
+import { appendAttentionEvent, appendTransferEvent, createTransfer, getBootstrap } from '../lib/api'
 import {
   STORE_NAMES,
+  type AttentionEventInput,
+  type AttentionItem,
   type BootstrapData,
   type StoreName,
   type TransferEventInput,
@@ -30,6 +32,7 @@ interface AppDataContextValue {
   refresh: () => Promise<void>
   submitTransfer: (input: TransferRequestInput) => Promise<TransferRecord>
   addTransferEvent: (transferId: string, input: TransferEventInput) => Promise<TransferRecord>
+  addAttentionEvent: (attentionId: string, input: AttentionEventInput) => Promise<AttentionItem>
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null)
@@ -129,6 +132,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     [homeStore, refresh, role],
   )
 
+  const addAttentionEvent = useCallback(
+    async (attentionId: string, input: AttentionEventInput) => {
+      const updated = await appendAttentionEvent(attentionId, input, role, homeStore)
+      await refresh()
+      return updated
+    },
+    [homeStore, refresh, role],
+  )
+
   const value = useMemo<AppDataContextValue>(
     () => ({
       data,
@@ -141,8 +153,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       refresh,
       submitTransfer,
       addTransferEvent,
+      addAttentionEvent,
     }),
-    [data, loading, error, homeStore, setHomeStore, role, setRole, refresh, submitTransfer, addTransferEvent],
+    [data, loading, error, homeStore, setHomeStore, role, setRole, refresh, submitTransfer, addTransferEvent, addAttentionEvent],
   )
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>

@@ -1,9 +1,10 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BootstrapData, TransferRecord } from '../../types';
 import { TransferTracker } from './TransferTracker';
 import { TransfersPage } from './TransfersPage';
+import { TransferRequestWorkspace } from './TransferRequestWorkspace';
 import type { TransferDetail } from './types';
 
 const mocks = vi.hoisted(() => ({
@@ -121,6 +122,7 @@ function detail(allowedActions: TransferDetail['allowedActions']): TransferDetai
     destination: 'Howell',
     priority: 'high',
     requestedByLabel: 'Joe Gallant',
+    approvalOwnerLabel: 'Howell used-car manager',
     requestReason: 'Customer appointment',
     customerReference: 'Jane Customer',
     requestedAt: '2026-08-29T14:00:00.000Z',
@@ -154,6 +156,8 @@ function detail(allowedActions: TransferDetail['allowedActions']): TransferDetai
       actorRole: 'driver',
       detail: 'Vehicle, keys, and condition report received.',
       source: 'app',
+      custodianLabel: 'Joe Gallant',
+      transportAssigneeLabel: 'Stacey Driver',
     }],
     allowedActions,
   };
@@ -210,6 +214,7 @@ describe('transfer workspace v3 layout', () => {
     expect(container.querySelectorAll('.transfer-list-mobile-copy')).toHaveLength(4);
     expect(container.querySelectorAll('.transfer-list-mobile-rail')).toHaveLength(4);
     expect(screen.getByRole('combobox', { name: 'Filter vehicle moves' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Sort vehicle moves' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Request a vehicle' })).toHaveTextContent('Request vehicle');
     expect(screen.getByRole('button', { name: /2025 Ford F-150 1/i })).toHaveTextContent('MOVE1');
     expect(screen.getByRole('button', { name: /2025 Ford F-150 1/i })).toHaveTextContent('Next: Manager 1');
@@ -239,6 +244,55 @@ describe('transfer workspace v3 layout', () => {
     expect(screen.getByText('No moves match this view and search.')).toBeInTheDocument();
   });
 
+  it('filters sold-pending separately from delivery and sorts by an operational route', () => {
+    const data = bootstrap(4);
+    data.transfers[1].dealStatus = 'sold pending';
+    data.transfers[1].deliveryStatus = 'not confirmed';
+    const { container } = renderPage(data);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter vehicle moves' }), {
+      target: { value: 'sold-pending' },
+    });
+    expect(container.querySelectorAll('.transfer-list-item')).toHaveLength(1);
+    expect(container.querySelector('.transfer-list-item')).toHaveTextContent('MOVE2');
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter vehicle moves' }), {
+      target: { value: 'all' },
+    });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort vehicle moves' }), {
+      target: { value: 'route' },
+    });
+    expect(container.querySelector('.transfer-list-item')).toHaveTextContent('MOVE2');
+  });
+
+  it('keeps the automatic return rule while carrying an optional preferred return time', async () => {
+    const onSubmit = vi.fn().mockResolvedValue({ requestId: 'new-move' });
+    render(
+      <TransferRequestWorkspace
+        vehicle={detail([]).vehicle}
+        stores={[{ value: 'Ford Detroit', label: 'Ford Detroit' }]}
+        requesters={[{ value: 'joe', label: 'Joe Gallant' }]}
+        managerApprovers={[{ value: 'manager', label: 'Ford Detroit manager' }]}
+        defaultRequestingStore="Ford Detroit"
+        defaultRequesterId="joe"
+        defaultManagerApproverId="manager"
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Needed by'), { target: { value: '2026-09-01T14:00' } });
+    fireEvent.change(screen.getByLabelText('What do you need?'), { target: { value: 'Customer appointment' } });
+    fireEvent.click(screen.getByText('Customer reference and preferred return timing'));
+    fireEvent.change(screen.getByLabelText(/Preferred return by/), { target: { value: '2026-09-02T16:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ask my manager' }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      returnRequired: true,
+      targetReturnAt: '2026-09-02T16:00',
+    }));
+  });
+
   it('keeps issue and return actions authorized, visible, and wired to their exact action kinds', () => {
     const onAction = vi.fn();
     render(
@@ -250,7 +304,11 @@ describe('transfer workspace v3 layout', () => {
     );
 
     expect(screen.getByRole('region', { name: 'Request and vehicle summary' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Location and accountability' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Location and accountability' })).toHaveTextContent('Howell used-car manager');
+    const outcome = screen.getByRole('region', { name: 'Deal, delivery, movement, and return status' });
+    expect(outcome).toHaveTextContent('Shown not sold');
+    expect(outcome).toHaveTextContent('Delivery not confirmed');
+    expect(outcome).toHaveTextContent('Return in transit');
     const actions = screen.getByRole('contentinfo', { name: 'Available move actions' });
     expect(within(actions).getByRole('button', { name: 'Confirm home receipt' })).toBeInTheDocument();
     expect(within(actions).getByRole('button', { name: 'Schedule return' })).toBeInTheDocument();
@@ -261,7 +319,10 @@ describe('transfer workspace v3 layout', () => {
 
     expect(onAction).toHaveBeenNthCalledWith(1, 'report-condition', expect.objectContaining({ id: 'transfer-return' }));
     expect(onAction).toHaveBeenNthCalledWith(2, 'confirm-return', expect.objectContaining({ id: 'transfer-return' }));
-    expect(screen.getByRole('list', { name: 'Custody timeline' })).toHaveTextContent('Return trip started');
+    const timeline = screen.getByRole('list', { name: 'Custody timeline' });
+    expect(timeline).toHaveTextContent('Return trip started');
+    expect(timeline).toHaveTextContent('Custodian: Joe Gallant');
+    expect(timeline).toHaveTextContent('Driver: Stacey Driver');
   });
 
   it('does not invent actions when the server-authorized action list is empty', () => {
@@ -269,6 +330,6 @@ describe('transfer workspace v3 layout', () => {
 
     expect(screen.queryByRole('contentinfo', { name: 'Available move actions' })).not.toBeInTheDocument();
     expect(screen.getByText('Confirm the vehicle returned home')).toBeInTheDocument();
-    expect(screen.getByText('Return in transit')).toBeInTheDocument();
+    expect(screen.getAllByText('Return in transit')).toHaveLength(2);
   });
 });

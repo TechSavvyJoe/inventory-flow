@@ -293,6 +293,24 @@ export interface StoreSummary {
   locationExceptions: number
 }
 
+export type AttentionStatus = 'open' | 'acknowledged' | 'in_progress' | 'waiting' | 'resolved'
+export type AttentionPriority = 'low' | 'normal' | 'high' | 'urgent'
+
+export interface AttentionEvent {
+  id: string
+  type: string
+  label: string
+  actor: string
+  actorRole: string
+  store?: StoreName
+  occurredAt: string
+  assignee?: string
+  followUpAt?: string
+  priority?: AttentionPriority
+  resolutionCode?: string
+  note?: string
+}
+
 export interface AttentionItem {
   id: string
   severity: 'info' | 'warning' | 'critical'
@@ -305,6 +323,22 @@ export interface AttentionItem {
   owner?: string
   dueAt?: string
   href?: string
+  vin?: string
+  relatedStores?: StoreName[]
+  sourceId?: string
+  sourceLabel?: string
+  whyItMatters?: string
+  recommendedAction?: string
+  status: AttentionStatus
+  priority: AttentionPriority
+  assignedTo?: string
+  assignedRole?: string
+  followUpAt?: string
+  resolutionCode?: string
+  resolutionNote?: string
+  lastUpdatedAt?: string
+  allowedActions: string[]
+  events: AttentionEvent[]
 }
 
 export type PublicChangeType =
@@ -378,4 +412,18 @@ export interface TransferEventInput {
   toLocation?: string
   dueAt?: string
   assignee?: string
+}
+
+export interface AttentionEventInput {
+  type: string
+  actor: string
+  actorRole: UserRole
+  store: StoreName
+  occurredAt?: string
+  note?: string
+  assignee?: string
+  assignedRole?: UserRole
+  followUpAt?: string
+  priority?: AttentionPriority
+  resolutionCode?: 'action_completed' | 'source_condition_cleared' | 'duplicate' | 'no_action_required' | 'other'
 }

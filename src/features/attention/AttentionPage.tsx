@@ -4,28 +4,20 @@ import {
   BadgeDollarSign,
   CarFront,
   CheckCircle2,
-  Clock3,
   FileClock,
   MapPinOff,
-  MessageSquareText,
   RefreshCw,
-  ShieldAlert,
   Tag,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { SourceWarning } from '../../components/SourceWarning'
-import { formatCurrency, formatDate, formatDateTime, formatNumber } from '../../lib/format'
-import type { AttentionItem, PublicChangeEvent, PublicChangeType } from '../../types'
+import { formatCurrency, formatDate, formatNumber } from '../../lib/format'
+import type { PublicChangeEvent, PublicChangeType } from '../../types'
 import './attention.css'
 import { scopePublicChanges } from './change-scope'
-
-const ATTENTION_ICONS: Record<AttentionItem['severity'], typeof AlertTriangle> = {
-  info: CheckCircle2,
-  warning: Clock3,
-  critical: MapPinOff,
-}
+import { OperationsQueue } from './OperationsQueue'
 
 const CHANGE_ICONS: Record<PublicChangeType, typeof CarFront> = {
   new_arrival: CarFront,
@@ -70,16 +62,6 @@ function holdChangeNotice(status: string) {
   }
 }
 
-function expectedDateIsPast(expectedDate: string | undefined, reportDate: string) {
-  if (!expectedDate || !reportDate) return false
-  if (/^\d{4}-\d{2}-\d{2}$/.test(expectedDate) && /^\d{4}-\d{2}-\d{2}$/.test(reportDate)) {
-    return expectedDate < reportDate
-  }
-  const expectedTime = Date.parse(expectedDate)
-  const reportTime = Date.parse(`${reportDate}T00:00:00`)
-  return Number.isFinite(expectedTime) && Number.isFinite(reportTime) && expectedTime < reportTime
-}
-
 function eventValue(event: PublicChangeEvent, value: PublicChangeEvent['beforeValue']) {
   if (value === null || value === '') return 'Not published'
   if (event.valueType === 'money') return formatCurrency(typeof value === 'number' ? value : Number(value))
@@ -120,15 +102,12 @@ function changePriority(type: PublicChangeType) {
 }
 
 export function AttentionPage() {
-  const { data, homeStore } = useAppData()
+  const { data, homeStore, role, addAttentionEvent } = useAppData()
   const [tab, setTab] = useState<TodayTab>('attention')
   const [scope, setScope] = useState<ChangeScope>('home')
   const [changeFilter, setChangeFilter] = useState<ChangeFilter>('all')
 
-  const attentionItems = useMemo(
-    () => (data?.attention ?? []).filter((item) => !item.store || item.store === homeStore),
-    [data?.attention, homeStore],
-  )
+  const attentionItems = data?.attention ?? []
   const allChanges = data?.publicChanges ?? []
   const scopeChanges = useMemo(
     () => scopePublicChanges(allChanges, scope, homeStore),
@@ -163,33 +142,11 @@ export function AttentionPage() {
   const displayedChangeTotal = detailedChangesCertified ? scopeChanges.length : certifiedTotal
   const holdNotice = holdChangeNotice(data.meta.holdChangeStatus)
   const currentChanges = data.meta.publicFreshness === 'current'
-  const homeActiveHolds = data.vehicles.filter(
-    (vehicle) =>
-      (vehicle.crmStore || vehicle.publicStore) === homeStore &&
-      ['primary', 'backup', 'multiple'].includes(vehicle.hold.state),
-  )
-  const safeHoldSignals = data.holdSignals?.find((summary) => summary.store === homeStore)
-  const fallbackHoldReviewVins = new Set(
-    homeActiveHolds
-      .filter(
-        (vehicle) =>
-          expectedDateIsPast(vehicle.hold.expectedDate, data.meta.reportDate) || (vehicle.hold.alertsCount ?? 0) > 0,
-      )
-      .map((vehicle) => vehicle.vin),
-  ).size
-  const homeHoldSignals = safeHoldSignals
-    ? {
-        pastExpected: safeHoldSignals.pastExpected,
-        alertPresence: safeHoldSignals.withAlerts,
-        commentPresence: safeHoldSignals.withComments,
-      }
-    : {
-        pastExpected: homeActiveHolds.filter((vehicle) => expectedDateIsPast(vehicle.hold.expectedDate, data.meta.reportDate)).length,
-        alertPresence: homeActiveHolds.filter((vehicle) => (vehicle.hold.alertsCount ?? 0) > 0).length,
-        commentPresence: homeActiveHolds.filter((vehicle) => (vehicle.hold.commentsCount ?? 0) > 0).length,
-      }
-  const holdReviewVins = safeHoldSignals?.reviewVins ?? fallbackHoldReviewVins
-  const attentionCount = attentionItems.reduce((total, item) => total + (item.count ?? 1), 0) + holdReviewVins
+  const attentionCount = attentionItems.filter(
+    (item) =>
+      item.status !== 'resolved' &&
+      (!item.store || item.store === homeStore || item.relatedStores?.includes(homeStore)),
+  ).length
   const summaryCards = [
     { key: 'new', label: 'New arrivals', value: counts.newArrival, detail: 'Added to inventory', tone: 'new' },
     { key: 'price', label: 'Price changes', value: counts.priceChange, detail: 'Exact before / after', tone: 'price' },
@@ -219,60 +176,44 @@ export function AttentionPage() {
 
       <SourceWarning meta={data.meta} />
 
-      <div className="today-summary-context">
-        <span><strong>{displayScope === 'home' ? homeStore : 'All stores'}</strong> change totals</span>
-        <div className="today-scope-control" role="group" aria-label="Inventory change store scope">
-          <button type="button" disabled={!detailedChangesCertified} title={!detailedChangesCertified ? 'Store detail is unavailable for this release' : undefined} className={displayScope === 'home' ? 'is-active' : undefined} onClick={() => setScope('home')}>{homeStore}</button>
-          <button type="button" className={displayScope === 'group' ? 'is-active' : undefined} onClick={() => setScope('group')}>All stores</button>
-        </div>
-      </div>
-
-      <div className="today-summary" aria-label={`${displayScope === 'home' ? homeStore : 'Group'} inventory change totals`}>
-        {summaryCards.map((card) => (
-          <article className={`today-summary-card today-summary-card--${card.tone}`} key={card.key}>
-            <strong>{formatNumber(card.value)}</strong>
-            <span>{card.label}</span>
-            <small>{card.detail}</small>
-          </article>
-        ))}
-      </div>
-
       <div className="today-tabs" role="tablist" aria-label="Today sections">
         <button type="button" role="tab" aria-selected={tab === 'attention'} className={tab === 'attention' ? 'is-active' : undefined} onClick={() => setTab('attention')}>
-          Needs attention <span>{attentionCount}</span>
+          Operations queue <span>{attentionCount}</span>
         </button>
         <button type="button" role="tab" aria-selected={tab === 'changes'} className={tab === 'changes' ? 'is-active' : undefined} onClick={() => setTab('changes')}>
           Inventory changes <span>{displayedChangeTotal}</span>
         </button>
       </div>
 
+      {tab === 'changes' ? <>
+        <div className="today-summary-context">
+          <span><strong>{displayScope === 'home' ? homeStore : 'All stores'}</strong> change totals</span>
+          <div className="today-scope-control" role="group" aria-label="Inventory change store scope">
+            <button type="button" disabled={!detailedChangesCertified} title={!detailedChangesCertified ? 'Store detail is unavailable for this release' : undefined} className={displayScope === 'home' ? 'is-active' : undefined} onClick={() => setScope('home')}>{homeStore}</button>
+            <button type="button" className={displayScope === 'group' ? 'is-active' : undefined} onClick={() => setScope('group')}>All stores</button>
+          </div>
+        </div>
+
+        <div className="today-summary" aria-label={`${displayScope === 'home' ? homeStore : 'Group'} inventory change totals`}>
+          {summaryCards.map((card) => (
+            <article className={`today-summary-card today-summary-card--${card.tone}`} key={card.key}>
+              <strong>{formatNumber(card.value)}</strong>
+              <span>{card.label}</span>
+              <small>{card.detail}</small>
+            </article>
+          ))}
+        </div>
+      </> : null}
+
       {tab === 'attention' ? (
         <div role="tabpanel" className="today-panel" aria-label="Needs attention">
-          <div className="today-panel-heading"><div><h2>{homeStore} work queue</h2><p>Customer names, comments, and alert text stay inside the authorized vehicle record.</p></div></div>
-          <section className="today-hold-signals" aria-label={`${homeStore} current hold signals`}>
-            <article className="today-hold-signal today-hold-signal--past"><FileClock aria-hidden="true" /><div><strong>{homeHoldSignals.pastExpected}</strong><span>Past expected — review</span><small>Not a delivery status</small></div></article>
-            <article className="today-hold-signal"><ShieldAlert aria-hidden="true" /><div><strong>{homeHoldSignals.alertPresence}</strong><span>Holds with alerts</span><small>Current presence, not new</small></div></article>
-            <article className="today-hold-signal"><MessageSquareText aria-hidden="true" /><div><strong>{homeHoldSignals.commentPresence}</strong><span>Holds with comments</span><small>Current presence, not new</small></div></article>
-            <Link to="/inventory?scope=home">Review held inventory <ArrowRight aria-hidden="true" /></Link>
-          </section>
-          {attentionItems.length === 0 ? (
-            <div className="attention-empty"><CheckCircle2 aria-hidden="true" /><div><strong>{holdReviewVins ? 'No additional exceptions beyond the hold signals above' : `No open operational exceptions for ${homeStore}`}</strong><p>{holdReviewVins ? 'Review the past-expected or alerted holds above; neither signal confirms delivery or sale.' : 'Source warnings still appear above whenever a refresh is incomplete.'}</p></div></div>
-          ) : (
-            <div className="attention-list" role="list">
-              {attentionItems.map((item) => {
-                const Icon = ATTENTION_ICONS[item.severity]
-                return (
-                  <article key={item.id} className={`attention-row attention-${item.severity}`} role="listitem">
-                    <span className="attention-icon"><Icon aria-hidden="true" /></span>
-                    <div className="attention-copy"><strong>{item.label}</strong><span>{[item.vehicleName, item.stockNumber, item.store].filter(Boolean).join(' · ') || item.type}</span></div>
-                    <div className="attention-owner"><small>Next owner</small><strong>{item.owner || 'Manager review'}</strong></div>
-                    <div className="attention-due"><small>Due</small><strong>{item.dueAt ? formatDateTime(item.dueAt) : 'Review now'}</strong></div>
-                    <Link to={item.href || '/manager'} aria-label={`Open ${item.label}`}><ArrowRight aria-hidden="true" /></Link>
-                  </article>
-                )
-              })}
-            </div>
-          )}
+          <OperationsQueue
+            items={attentionItems}
+            homeStore={homeStore}
+            role={role}
+            reportDate={data.meta.reportDate}
+            onAction={addAttentionEvent}
+          />
         </div>
       ) : (
           <div role="tabpanel" className="today-panel" aria-label="Inventory changes">

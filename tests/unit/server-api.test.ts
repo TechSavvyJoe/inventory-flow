@@ -65,6 +65,25 @@ async function postEvent(
   return { response, body: await response.json() }
 }
 
+async function postAttentionEvent(
+  baseUrl: string,
+  attentionId: string,
+  context: { role: string; store: string; user: string },
+  event: Record<string, unknown>,
+) {
+  const response = await fetch(`${baseUrl}/api/attention/${encodeURIComponent(attentionId)}/events`, {
+    method: 'POST',
+    headers: roleHeaders(context.role, context.store, context.user),
+    body: JSON.stringify({
+      actor: context.user,
+      actorRole: context.role,
+      store: context.store,
+      ...event,
+    }),
+  })
+  return { response, body: await response.json() }
+}
+
 async function createSalesRequest(baseUrl: string, vehicle: { vin: string }, salesperson = 'Fowlerville Salesperson') {
   const response = await fetch(`${baseUrl}/api/transfers`, {
     method: 'POST',
@@ -598,5 +617,100 @@ describe('Inventory Flow API', () => {
     expect(unchanged.requestStatus).toBe('sale_outcome_pending')
     expect(unchanged.deliveryStatus).toBe('not_confirmed')
     expect(unchanged.events.filter((event: { type: string }) => event.type === 'closed')).toHaveLength(0)
+  })
+
+  it('keeps operational attention actions auditable and separate from source and transfer truth', async () => {
+    const { baseUrl, database } = await harness()
+    const bootstrap = await fetch(`${baseUrl}/api/bootstrap?homeStore=Fowlerville&role=sales`).then((response) => response.json())
+    const howellVehicle = bootstrap.vehicles.find((row: { publicStore: string }) => row.publicStore === 'Howell')
+    const created = await createSalesRequest(baseUrl, howellVehicle, 'Attention Test Salesperson')
+    expect(created.response.status).toBe(201)
+
+    const attentionId = `transfer-${created.body.id}`
+    const beforeTransfer = await fetch(`${baseUrl}/api/transfers/${created.body.id}`, {
+      headers: roleHeaders('manager', 'Fowlerville', 'Attention Test Manager'),
+    }).then((response) => response.json())
+    const sourceCountsBefore = {
+      public: database.prepare('SELECT COUNT(*) AS count FROM public_vehicle_snapshots').get().count,
+      crm: database.prepare('SELECT COUNT(*) AS count FROM crm_vehicle_snapshots').get().count,
+      holds: database.prepare('SELECT COUNT(*) AS count FROM hold_vehicle_snapshots').get().count,
+    }
+
+    const queueResponse = await fetch(`${baseUrl}/api/attention?store=Fowlerville`, {
+      headers: roleHeaders('manager', 'Fowlerville', 'Attention Test Manager'),
+    })
+    const queue = await queueResponse.json()
+    expect(queueResponse.status).toBe(200)
+    const initial = queue.items.find((item: { id: string }) => item.id === attentionId)
+    expect(initial).toMatchObject({
+      status: 'open',
+      priority: 'high',
+      sourceLabel: 'Inventory Flow transfer ledger',
+      events: [],
+    })
+    expect(initial.allowedActions).toEqual(expect.arrayContaining(['acknowledge', 'assign', 'resolve']))
+
+    const forbiddenAssignment = await postAttentionEvent(
+      baseUrl,
+      attentionId,
+      { role: 'sales', store: 'Fowlerville', user: 'Attention Test Salesperson' },
+      { type: 'assign', assignee: 'Someone Else' },
+    )
+    expect(forbiddenAssignment.response.status).toBe(403)
+    expect(forbiddenAssignment.body.code).toBe('FORBIDDEN')
+
+    const acknowledged = await postAttentionEvent(
+      baseUrl,
+      attentionId,
+      { role: 'manager', store: 'Fowlerville', user: 'Attention Test Manager' },
+      { type: 'acknowledge', note: 'Manager accepted responsibility for the operational follow-up.' },
+    )
+    expect(acknowledged.response.status).toBe(201)
+    expect(acknowledged.body.status).toBe('acknowledged')
+
+    const assigned = await postAttentionEvent(
+      baseUrl,
+      attentionId,
+      { role: 'manager', store: 'Fowlerville', user: 'Attention Test Manager' },
+      { type: 'assign', assignee: 'Fowlerville Used Manager' },
+    )
+    expect(assigned.response.status).toBe(201)
+    expect(assigned.body.assignedTo).toBe('Fowlerville Used Manager')
+
+    const followUp = await postAttentionEvent(
+      baseUrl,
+      attentionId,
+      { role: 'manager', store: 'Fowlerville', user: 'Attention Test Manager' },
+      { type: 'set_follow_up', followUpAt: '2026-08-30T19:30:00.000Z' },
+    )
+    expect(followUp.response.status).toBe(201)
+    expect(followUp.body.followUpAt).toBe('2026-08-30T19:30:00.000Z')
+
+    const resolved = await postAttentionEvent(
+      baseUrl,
+      attentionId,
+      { role: 'manager', store: 'Fowlerville', user: 'Attention Test Manager' },
+      { type: 'resolve', resolutionCode: 'action_completed', note: 'Operational follow-up documented.' },
+    )
+    expect(resolved.response.status).toBe(201)
+    expect(resolved.body).toMatchObject({ status: 'resolved', resolutionCode: 'action_completed' })
+    expect(resolved.body.allowedActions).toEqual(expect.arrayContaining(['reopen', 'add_note']))
+    expect(resolved.body.allowedActions).not.toContain('resolve')
+    expect(resolved.body.events.map((event: { type: string }) => event.type)).toEqual([
+      'acknowledge',
+      'assign',
+      'set_follow_up',
+      'resolve',
+    ])
+
+    const afterTransfer = await fetch(`${baseUrl}/api/transfers/${created.body.id}`, {
+      headers: roleHeaders('manager', 'Fowlerville', 'Attention Test Manager'),
+    }).then((response) => response.json())
+    expect(afterTransfer.requestStatus).toBe(beforeTransfer.requestStatus)
+    expect(afterTransfer.movementStatus).toBe(beforeTransfer.movementStatus)
+    expect(afterTransfer.dealerMailHoldState).toBe(beforeTransfer.dealerMailHoldState)
+    expect(database.prepare('SELECT COUNT(*) AS count FROM public_vehicle_snapshots').get().count).toBe(sourceCountsBefore.public)
+    expect(database.prepare('SELECT COUNT(*) AS count FROM crm_vehicle_snapshots').get().count).toBe(sourceCountsBefore.crm)
+    expect(database.prepare('SELECT COUNT(*) AS count FROM hold_vehicle_snapshots').get().count).toBe(sourceCountsBefore.holds)
   })
 })

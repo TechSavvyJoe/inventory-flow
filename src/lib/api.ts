@@ -1,4 +1,6 @@
 import type {
+  AttentionEventInput,
+  AttentionItem,
   BootstrapData,
   StoreName,
   TransferEventInput,
@@ -67,6 +69,19 @@ export function appendTransferEvent(
   store: StoreName,
 ): Promise<TransferRecord> {
   return request<TransferRecord>(`/api/transfers/${encodeURIComponent(transferId)}/events`, {
+    method: 'POST',
+    headers: { 'x-inventory-role': role, 'x-inventory-store': store, 'x-inventory-user': 'Joe Gallant' },
+    body: JSON.stringify(input),
+  })
+}
+
+export function appendAttentionEvent(
+  attentionId: string,
+  input: AttentionEventInput,
+  role: UserRole,
+  store: StoreName,
+): Promise<AttentionItem> {
+  return request<AttentionItem>(`/api/attention/${encodeURIComponent(attentionId)}/events`, {
     method: 'POST',
     headers: { 'x-inventory-role': role, 'x-inventory-store': store, 'x-inventory-user': 'Joe Gallant' },
     body: JSON.stringify(input),

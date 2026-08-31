@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ArrowLeftRight,
@@ -67,6 +67,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const query = searchDraft.accessContext === searchAccessContext ? searchDraft.query : ''
   const utilityDialogRef = useRef<HTMLDivElement>(null)
   const utilityCloseRef = useRef<HTMLButtonElement>(null)
+  const utilityOpenerRef = useRef<HTMLButtonElement>(null)
   const appShellRef = useRef<HTMLDivElement>(null)
   const previousHomeStoreRef = useRef(homeStore)
   const navigate = useNavigate()
@@ -95,6 +96,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     contain: true,
     containerRef: utilityDialogRef,
     initialFocusRef: utilityCloseRef,
+    returnFocusRef: utilityOpenerRef,
     onEscape: () => setUtilityOpen(false),
   })
 
@@ -135,6 +137,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     setSearchDraft({ accessContext: searchAccessContext, query: '' })
   }
 
+  function openUtility(event: MouseEvent<HTMLButtonElement>) {
+    utilityOpenerRef.current = event.currentTarget
+    setUtilityOpen(true)
+  }
+
   function isNavActive(id: (typeof NAV_ITEMS)[number]['id'], to: string) {
     if (id === 'inventory') return location.pathname === '/' || location.pathname.startsWith('/inventory')
     return location.pathname === to || location.pathname.startsWith(`${to}/`)
@@ -169,10 +176,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div
       className={`utility-layer store-theme-${storeBrand.themeKey}`}
       data-ifx-oem={storeBrand.oemKey}
+      id="app-utility-dialog"
       ref={utilityDialogRef}
       role="dialog"
       aria-modal="true"
-      aria-label="Account and app controls"
+      aria-labelledby="app-utility-title"
+      aria-describedby="app-utility-context"
       tabIndex={-1}
     >
       <div className="utility-scrim" onClick={() => setUtilityOpen(false)} aria-hidden="true" />
@@ -180,21 +189,21 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="utility-panel-header">
           <span className="utility-user-mark" aria-hidden="true"><CircleUserRound /></span>
           <span>
-            <strong>Joe Gallant</strong>
-            <small>{ROLE_LABELS[role]} · {homeStore}</small>
+            <h2 id="app-utility-title">Account and app controls</h2>
+            <small id="app-utility-context">Joe Gallant · {ROLE_LABELS[role]} · {homeStore}</small>
           </span>
           <button ref={utilityCloseRef} type="button" onClick={() => setUtilityOpen(false)} aria-label="Close app controls"><X /></button>
         </header>
 
-        <div className="utility-update-card">
+        <div className="utility-update-card" aria-busy={loading}>
           <span className={`freshness-dot freshness-${freshnessState}`} aria-hidden="true" />
-          <span>
+          <span role="status" aria-live="polite" aria-atomic="true" aria-busy={loading}>
             <strong>Inventory and holds · {freshnessLabel}</strong>
             <small>{data ? `Updated ${formatDateTime(data.meta.completedAt)}` : loading ? 'Updating now…' : 'Update unavailable'}</small>
           </span>
-          <button type="button" onClick={() => void refresh()} aria-label="Refresh inventory and holds" disabled={loading}>
+          <button type="button" onClick={() => void refresh()} aria-label={loading ? 'Refreshing inventory and holds' : 'Refresh inventory and holds'} disabled={loading}>
             <RefreshCw className={loading ? 'spin' : ''} aria-hidden="true" />
-            <span>Refresh</span>
+            <span>{loading ? 'Refreshing…' : 'Refresh'}</span>
           </button>
         </div>
 
@@ -235,7 +244,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     >
       <a className="skip-link" href="#main-content">Skip to main content</a>
 
-      <aside className="desktop-nav" aria-label="Application navigation">
+      <aside className="desktop-nav" id="application-navigation" aria-label="Application navigation">
         <div className="brand-block">
           <FlowBrandLockup tenantLabel="Maxey" />
         </div>
@@ -250,6 +259,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             className="nav-collapse-button"
             aria-label={navExpanded ? 'Collapse navigation' : 'Expand navigation'}
             aria-expanded={navExpanded}
+            aria-controls="application-navigation"
             onClick={() => setNavExpanded((current) => !current)}
           >
             {navExpanded ? <ChevronLeft aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
@@ -311,9 +321,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         <button
           type="button"
           className={`freshness-chip freshness-${freshnessState}`}
-          onClick={() => setUtilityOpen(true)}
+          onClick={openUtility}
           title={data?.meta.warnings.join('\n') || 'Latest inventory and hold update is current'}
           aria-label={`${freshnessLabel}. Open update details`}
+          aria-haspopup="dialog"
+          aria-expanded={utilityOpen}
+          aria-controls="app-utility-dialog"
         >
           <span className="freshness-dot" aria-hidden="true" />
           <span>{freshnessLabel}</span>
@@ -326,7 +339,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           aria-label="Open account and app controls"
           aria-haspopup="dialog"
           aria-expanded={utilityOpen}
-          onClick={() => setUtilityOpen(true)}
+          aria-controls="app-utility-dialog"
+          onClick={openUtility}
         >
           <span className="profile-initials" aria-hidden="true">JG</span>
           <span className="profile-copy">
@@ -346,7 +360,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <NavLink key={to} to={to} className={active ? 'is-active' : ''} aria-current={active ? 'page' : undefined}>
               <Icon aria-hidden="true" />
               <span>{shortLabel}</span>
-              {id === 'today' && attentionCount > 0 ? <b>{attentionCount}</b> : null}
+              {id === 'today' && attentionCount > 0 ? <b aria-label={`${attentionCount} items need attention today`}>{attentionCount}</b> : null}
             </NavLink>
           )
         })}
@@ -356,7 +370,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           aria-label="More app controls"
           aria-haspopup="dialog"
           aria-expanded={utilityOpen}
-          onClick={() => setUtilityOpen(true)}
+          aria-controls="app-utility-dialog"
+          onClick={openUtility}
         >
           <Ellipsis aria-hidden="true" />
           <span>More</span>

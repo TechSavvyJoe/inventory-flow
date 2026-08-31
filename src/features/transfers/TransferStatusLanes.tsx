@@ -42,7 +42,13 @@ export function TransferStatusLanes({ status, compact = false, kind = 'operation
         const value = status[key];
         if (!value) return null;
         return (
-          <div className="mif-status-lane" key={key}>
+          <div
+            className="mif-status-lane"
+            data-status-code={value.code}
+            data-status-lane={key}
+            data-status-tone={value.tone ?? 'neutral'}
+            key={key}
+          >
             <dt>
               <Icon aria-hidden="true" size={16} strokeWidth={1.75} />
               {label}

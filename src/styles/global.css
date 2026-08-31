@@ -5,14 +5,13 @@
 html,
 body,
 #root {
-  min-width: 320px;
+  min-width: 0;
   min-height: 100%;
   margin: 0;
 }
 
 body {
   min-height: 100vh;
-  overflow-x: hidden;
   background: var(--surface);
   color: var(--ink-900);
   -webkit-font-smoothing: antialiased;
@@ -301,6 +300,23 @@ time {
   }
 }
 
+@media (forced-colors: active) {
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    outline-color: Highlight;
+  }
+
+  .button,
+  .source-warning {
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+}
+
 .loading-state,
 .error-state {
   min-height: 390px;
@@ -344,6 +360,13 @@ time {
 
 .spin {
   animation: spin 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .loading-mark {
+    animation: none;
+  }
 }
 
 .visually-hidden {

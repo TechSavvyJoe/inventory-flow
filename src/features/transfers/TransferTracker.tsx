@@ -12,9 +12,11 @@ import {
 import type { TransferActionKind, TransferDetail } from './types';
 import {
   formatDateTime,
+  humanizeStatusLabel,
   locationConfidenceLabel,
   primaryTransferActions,
   slaLabel,
+  toneClass,
   transferActionLabels,
 } from './presentation';
 import { TransferEmptyState } from './TransferEmptyState';
@@ -53,6 +55,13 @@ export function TransferTracker({
   const { vehicle } = transfer;
   const action = transfer.nextAction;
   const latestConditionIssue = transfer.timeline.find((event) => event.kind === 'condition_issue');
+  const returnPlan = transfer.returnRequired === true
+    ? transfer.returnDueAt
+      ? formatDateTime(transfer.returnDueAt)
+      : 'Required · date not set'
+    : transfer.returnRequired === false
+      ? 'Not required'
+      : 'Not recorded';
   const handleAction = (kind: TransferActionKind) => onAction?.(kind, transfer);
 
   return (
@@ -96,20 +105,59 @@ export function TransferTracker({
             <small>{locationConfidenceLabel(vehicle.currentLocation.confidence)} · {formatDateTime(vehicle.currentLocation.confirmedAt)}</small>
           </div>
           <div>
+            <span>Requesting store</span>
+            <strong>{transfer.requestingStore ?? 'Not set'}</strong>
+          </div>
+          <div>
+            <span>Approval owner</span>
+            <strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.approvalOwnerLabel ?? 'Not recorded'}</strong>
+          </div>
+          <div>
+            <span>Current action owner</span>
+            <strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {action.ownerLabel ?? 'Not assigned'}</strong>
+            {action.ownerRole ? <small>{action.ownerRole}</small> : null}
+          </div>
+          <div>
             <span>Custodian</span>
             <strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.custodianLabel ?? 'Not assigned'}</strong>
           </div>
           <div>
             <span>Assigned driver</span>
             <strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.transportAssigneeLabel ?? 'Not set up yet'}</strong>
-            <small>{transfer.transportAssigneeLabel ? `Pickup / next target ${formatDateTime(transfer.nextAction.dueAt)}` : 'Stacey or the requesting manager will assign this'}</small>
           </div>
           <div>
-            <span>Requesting store</span>
-            <strong>{transfer.requestingStore ?? 'Not set'}</strong>
+            <span>Pickup / next target</span>
+            <strong>{formatDateTime(action.dueAt)}</strong>
+          </div>
+          <div>
+            <span>Return due</span>
+            <strong>{returnPlan}</strong>
           </div>
         </section>
       </div>
+
+      <section className="mif-outcome-separation" aria-label="Deal, delivery, movement, and return status">
+        <header>
+          <strong>Outcome and return are recorded separately</strong>
+          <span>A pending deal is not a confirmed delivery.</span>
+        </header>
+        <div>
+          <span>Customer / deal</span>
+          <strong className={toneClass(transfer.status.deal.tone)}>{humanizeStatusLabel(transfer.status.deal.label)}</strong>
+        </div>
+        <div>
+          <span>Delivery</span>
+          <strong className={toneClass(transfer.status.delivery.tone)}>{humanizeStatusLabel(transfer.status.delivery.label)}</strong>
+        </div>
+        <div>
+          <span>Movement / custody</span>
+          <strong className={toneClass(transfer.status.movement.tone)}>{humanizeStatusLabel(transfer.status.movement.label)}</strong>
+        </div>
+        <div>
+          <span>Return plan</span>
+          <strong>{returnPlan}</strong>
+        </div>
+      </section>
 
       {transfer.exception ? (
         <div className={`mif-exception-banner is-${transfer.exception.severity}`} role="status">

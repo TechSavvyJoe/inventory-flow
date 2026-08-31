@@ -1,4 +1,4 @@
-import { AlertTriangle, CircleCheck, MapPin, UserRound } from 'lucide-react';
+import { AlertTriangle, CircleCheck, MapPin, Truck, UserRound } from 'lucide-react';
 import type { TransferTimelineEvent } from './types';
 import { formatDateTime } from './presentation';
 
@@ -18,7 +18,11 @@ export function TransferTimeline({
   return (
     <ol className="mif-custody-timeline" aria-label="Custody timeline">
       {events.map((event) => (
-        <li className={event.exception ? 'mif-timeline-event is-exception' : 'mif-timeline-event'} key={event.id}>
+        <li
+          className={event.exception ? 'mif-timeline-event is-exception' : 'mif-timeline-event'}
+          data-event-kind={event.kind}
+          key={event.id}
+        >
           <span className="mif-timeline-marker" aria-hidden="true">
             {event.exception ? (
               <AlertTriangle size={14} strokeWidth={1.75} />
@@ -42,6 +46,18 @@ export function TransferTimeline({
                   <UserRound aria-hidden="true" size={13} strokeWidth={1.75} />
                   {event.actorLabel}
                   {event.actorRole ? ` · ${event.actorRole}` : ''}
+                </span>
+              ) : null}
+              {event.custodianLabel ? (
+                <span>
+                  <UserRound aria-hidden="true" size={13} strokeWidth={1.75} />
+                  Custodian: {event.custodianLabel}
+                </span>
+              ) : null}
+              {event.transportAssigneeLabel ? (
+                <span>
+                  <Truck aria-hidden="true" size={13} strokeWidth={1.75} />
+                  Driver: {event.transportAssigneeLabel}
                 </span>
               ) : null}
               {event.source ? <span className="mif-event-source">Source: {event.source}</span> : null}

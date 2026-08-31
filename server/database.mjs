@@ -200,6 +200,43 @@ export function migrate(database) {
       UNIQUE (transfer_request_id, idempotency_key)
     );
 
+    CREATE TABLE IF NOT EXISTS attention_work_items (
+      attention_key TEXT PRIMARY KEY,
+      source_type TEXT NOT NULL,
+      source_id TEXT,
+      status TEXT NOT NULL CHECK (status IN ('open', 'acknowledged', 'in_progress', 'waiting', 'resolved')),
+      priority TEXT NOT NULL CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+      assigned_to TEXT,
+      assigned_role TEXT,
+      follow_up_at TEXT,
+      resolution_code TEXT,
+      resolution_note TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_actor TEXT NOT NULL,
+      last_actor_role TEXT NOT NULL,
+      last_store_id TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS attention_events (
+      id TEXT PRIMARY KEY,
+      attention_key TEXT NOT NULL REFERENCES attention_work_items(attention_key) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      label TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      actor_role TEXT NOT NULL,
+      store_id TEXT,
+      occurred_at TEXT NOT NULL,
+      assignee TEXT,
+      follow_up_at TEXT,
+      priority TEXT,
+      resolution_code TEXT,
+      note TEXT,
+      created_at TEXT NOT NULL,
+      idempotency_key TEXT,
+      UNIQUE (attention_key, idempotency_key)
+    );
+
     CREATE INDEX IF NOT EXISTS public_snapshot_store_idx
       ON public_vehicle_snapshots(source_run_id, physical_store_id);
     CREATE INDEX IF NOT EXISTS crm_snapshot_store_idx
@@ -214,6 +251,10 @@ export function migrate(database) {
       ON transfer_requests(status, updated_at DESC);
     CREATE INDEX IF NOT EXISTS transfer_events_request_idx
       ON transfer_events(transfer_request_id, occurred_at, created_at);
+    CREATE INDEX IF NOT EXISTS attention_work_items_queue_idx
+      ON attention_work_items(status, priority, follow_up_at, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS attention_events_item_idx
+      ON attention_events(attention_key, occurred_at, created_at, id);
   `)
 }
 
@@ -604,6 +645,101 @@ export function appendTransferEvent(database, transferId, event, requestPatch) {
         .run(...entries.map(([, value]) => value ?? null), transferId)
     }
     return { row: getTransferRow(database, transferId), created: true }
+  })
+}
+
+export function listAttentionWorkflowRows(database) {
+  return database.prepare('SELECT * FROM attention_work_items ORDER BY updated_at DESC, attention_key').all()
+}
+
+export function getAttentionWorkflowRow(database, attentionKey) {
+  return database.prepare('SELECT * FROM attention_work_items WHERE attention_key = ?').get(attentionKey) ?? null
+}
+
+export function getAttentionEvents(database, attentionKey) {
+  return database
+    .prepare('SELECT * FROM attention_events WHERE attention_key = ? ORDER BY occurred_at, created_at, rowid')
+    .all(attentionKey)
+}
+
+export function upsertAttentionWorkflow(database, workflow, event) {
+  return withTransaction(database, () => {
+    if (event.idempotencyKey) {
+      const existing = database
+        .prepare('SELECT * FROM attention_events WHERE attention_key = ? AND idempotency_key = ?')
+        .get(workflow.attentionKey, event.idempotencyKey)
+      if (existing) {
+        return { row: getAttentionWorkflowRow(database, workflow.attentionKey), created: false }
+      }
+    }
+
+    database
+      .prepare(`
+        INSERT INTO attention_work_items (
+          attention_key, source_type, source_id, status, priority, assigned_to,
+          assigned_role, follow_up_at, resolution_code, resolution_note,
+          created_at, updated_at, last_actor, last_actor_role, last_store_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(attention_key) DO UPDATE SET
+          source_type = excluded.source_type,
+          source_id = excluded.source_id,
+          status = excluded.status,
+          priority = excluded.priority,
+          assigned_to = excluded.assigned_to,
+          assigned_role = excluded.assigned_role,
+          follow_up_at = excluded.follow_up_at,
+          resolution_code = excluded.resolution_code,
+          resolution_note = excluded.resolution_note,
+          updated_at = excluded.updated_at,
+          last_actor = excluded.last_actor,
+          last_actor_role = excluded.last_actor_role,
+          last_store_id = excluded.last_store_id
+      `)
+      .run(
+        workflow.attentionKey,
+        workflow.sourceType,
+        workflow.sourceId || null,
+        workflow.status,
+        workflow.priority,
+        workflow.assignedTo || null,
+        workflow.assignedRole || null,
+        workflow.followUpAt || null,
+        workflow.resolutionCode || null,
+        workflow.resolutionNote || null,
+        workflow.createdAt,
+        workflow.updatedAt,
+        workflow.lastActor,
+        workflow.lastActorRole,
+        workflow.lastStoreId || null,
+      )
+
+    database
+      .prepare(`
+        INSERT INTO attention_events (
+          id, attention_key, event_type, label, actor, actor_role, store_id,
+          occurred_at, assignee, follow_up_at, priority, resolution_code,
+          note, created_at, idempotency_key
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        event.id || randomUUID(),
+        workflow.attentionKey,
+        event.eventType,
+        event.label,
+        event.actor,
+        event.actorRole,
+        event.storeId || null,
+        event.occurredAt,
+        event.assignee || null,
+        event.followUpAt || null,
+        event.priority || null,
+        event.resolutionCode || null,
+        event.note || null,
+        event.createdAt,
+        event.idempotencyKey || null,
+      )
+
+    return { row: getAttentionWorkflowRow(database, workflow.attentionKey), created: true }
   })
 }
 

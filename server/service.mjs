@@ -1,11 +1,16 @@
 import {
   appendTransferEvent,
+  getAttentionEvents,
+  getAttentionWorkflowRow,
   getCurrentDataset,
   getTransferEvents,
   getTransferRow,
   insertTransferRequest,
+  listAttentionWorkflowRows,
   listTransferRows,
+  upsertAttentionWorkflow,
 } from './database.mjs'
+import { allowedAttentionActions, buildAttentionMutation } from './attention-workflow.mjs'
 import { STORE_NAMES } from './importer.mjs'
 import { allowedEventTypes, buildTransferEvent, buildTransferRequest, roleContext, WorkflowError } from './workflow.mjs'
 
@@ -749,14 +754,63 @@ function storeSummaries(vehicles, holdRows, transferRows, now) {
   })
 }
 
-function attentionItems(meta, vehicles, stores, transferRows) {
+function attentionEventView(row) {
+  return {
+    id: row.id,
+    type: row.event_type,
+    label: row.label,
+    actor: row.actor,
+    actorRole: row.actor_role,
+    store: cleanText(row.store_id),
+    occurredAt: row.occurred_at,
+    assignee: cleanText(row.assignee),
+    followUpAt: cleanText(row.follow_up_at),
+    priority: cleanText(row.priority),
+    resolutionCode: cleanText(row.resolution_code),
+    note: cleanText(row.note),
+  }
+}
+
+function defaultAttentionPriority(item) {
+  if (item.priority) return item.priority
+  if (item.severity === 'critical') return 'urgent'
+  if (item.severity === 'warning') return 'high'
+  return 'normal'
+}
+
+function mergeAttentionWorkflow(database, items, context) {
+  const workflows = new Map(listAttentionWorkflowRows(database).map((row) => [row.attention_key, row]))
+  return items.map((item) => {
+    const workflow = workflows.get(item.id)
+    const record = {
+      ...item,
+      status: workflow?.status || 'open',
+      priority: workflow?.priority || defaultAttentionPriority(item),
+      assignedTo: cleanText(workflow?.assigned_to) || cleanText(item.owner),
+      assignedRole: cleanText(workflow?.assigned_role),
+      followUpAt: cleanText(workflow?.follow_up_at),
+      resolutionCode: cleanText(workflow?.resolution_code),
+      resolutionNote: cleanText(workflow?.resolution_note),
+      lastUpdatedAt: cleanText(workflow?.updated_at),
+      events: workflow ? getAttentionEvents(database, item.id).map(attentionEventView) : [],
+    }
+    record.allowedActions = allowedAttentionActions(record, context)
+    return record
+  })
+}
+
+function attentionItems(meta, vehicles, stores, transferRows, database, context) {
   const items = []
   if (meta.publicFreshness !== 'current' || meta.dealerMailFreshness !== 'current') {
     items.push({
       id: 'source-freshness',
       severity: 'critical',
+      priority: 'urgent',
       type: 'source_freshness',
       label: 'One or more source feeds are stale or incomplete; verify before acting.',
+      sourceLabel: 'Daily source health',
+      whyItMatters: 'Availability, hold-release, and removal conclusions are unsafe until all required sources are current.',
+      recommendedAction: 'Use the last verified release and restore the incomplete source before making a final conclusion.',
       href: '/attention',
     })
   }
@@ -765,10 +819,15 @@ function attentionItems(meta, vehicles, stores, transferRows) {
       items.push({
         id: `return-overdue-${summary.store}`,
         severity: 'critical',
+        priority: 'urgent',
         type: 'return_overdue',
         label: `${summary.returnOverdue} return${summary.returnOverdue === 1 ? '' : 's'} overdue`,
         count: summary.returnOverdue,
         store: summary.store,
+        relatedStores: [summary.store],
+        sourceLabel: 'Inventory Flow transfer ledger',
+        whyItMatters: 'A vehicle expected back at its Home Store has not been confirmed received.',
+        recommendedAction: 'Open Transfers, confirm current custody, assign the return, or record Home Store receipt.',
         href: '/transfers',
       })
     }
@@ -776,11 +835,16 @@ function attentionItems(meta, vehicles, stores, transferRows) {
       items.push({
         id: `location-exception-${summary.store}`,
         severity: 'warning',
+        priority: 'high',
         type: 'location_exception',
         label: `${summary.locationExceptions} location exception${summary.locationExceptions === 1 ? '' : 's'} need review`,
         count: summary.locationExceptions,
         store: summary.store,
-        href: '/manager',
+        relatedStores: [summary.store],
+        sourceLabel: 'Inventory and transfer reconciliation',
+        whyItMatters: 'The source-reported location and the app-owned movement record do not fully agree.',
+        recommendedAction: 'Confirm physical custody and record a transfer location update without changing source-system evidence.',
+        href: '/transfers',
       })
     }
   }
@@ -792,29 +856,68 @@ function attentionItems(meta, vehicles, stores, transferRows) {
       items.push({
         id: `missing-public-price-${summary.store}`,
         severity: 'info',
+        priority: 'normal',
         type: 'missing_price',
         label: `${missingPrice} public unit${missingPrice === 1 ? '' : 's'} without a published price`,
         count: missingPrice,
         store: summary.store,
+        relatedStores: [summary.store],
+        sourceLabel: 'Verified public inventory release',
+        whyItMatters: 'Salespeople cannot quote a published website price for these units.',
+        recommendedAction: 'Review the affected inventory and confirm pricing through the authorized dealership process.',
         href: '/inventory',
       })
     }
+  }
+  for (const vehicle of vehicles) {
+    const pastExpected = dateIsBeforeReport(vehicle.hold?.expectedDate, meta.reportDate)
+    const hasAlert = Number(vehicle.hold?.alertsCount) > 0
+    if (!['primary', 'multiple'].includes(vehicle.hold?.state) || (!pastExpected && !hasAlert)) continue
+    const store = vehicle.crmStore || vehicle.publicStore
+    items.push({
+      id: `hold-review-${vehicle.vin}`,
+      severity: pastExpected ? 'critical' : 'warning',
+      priority: pastExpected ? 'urgent' : 'high',
+      type: pastExpected ? 'past_expected_hold' : 'hold_alert',
+      label: pastExpected ? 'Past-expected hold needs review' : 'Current hold includes an alert',
+      vehicleName: vehicle.vehicleName,
+      stockNumber: vehicle.stockNumber,
+      vin: vehicle.vin,
+      store,
+      relatedStores: [...new Set([vehicle.publicStore, vehicle.crmStore].filter(Boolean))],
+      owner: cleanText(vehicle.hold.primarySalesperson) || `${store} manager`,
+      dueAt: cleanText(vehicle.hold.expectedDate),
+      sourceLabel: 'Verified DealerMail hold snapshot',
+      whyItMatters: pastExpected
+        ? 'The expected date has passed. This is a review signal, not proof of delivery, sale, or release.'
+        : 'A vehicle-level DealerMail alert is present and should be reviewed in its authorized record.',
+      recommendedAction: 'Open the vehicle, review the exact hold evidence, and confirm the current operational next step.',
+      href: `/inventory?scope=group&q=${encodeURIComponent(vehicle.vin)}`,
+      sourceId: vehicle.vin,
+    })
   }
   for (const row of transferRows.filter(isActiveTransfer).slice(0, 20)) {
     items.push({
       id: `transfer-${row.id}`,
       severity: row.priority === 'urgent' ? 'critical' : row.priority === 'high' ? 'warning' : 'info',
+      priority: row.priority,
       type: 'transfer_next_action',
       label: row.next_action,
       vehicleName: row.vehicle_name_at_request,
       stockNumber: row.stock_at_request,
+      vin: row.vin,
       store: row.requesting_store_id,
+      relatedStores: [...new Set([row.home_store_id, row.requesting_store_id, row.destination_store_id])],
       owner: cleanText(row.next_action_owner),
       dueAt: cleanText(row.due_at),
+      sourceLabel: 'Inventory Flow transfer ledger',
+      whyItMatters: 'This is the current app-owned handoff required to keep the vehicle request, movement, or return moving.',
+      recommendedAction: row.next_action,
       href: `/transfers?id=${encodeURIComponent(row.id)}`,
+      sourceId: row.id,
     })
   }
-  return items
+  return mergeAttentionWorkflow(database, items, context)
 }
 
 function holdSignalSummaries(holdRows, meta) {
@@ -888,6 +991,17 @@ export function createInventoryService({ database, now = () => new Date(), initi
 
   function vehicleFromSnapshot(state, source, options = {}) {
     return vehicleView(source, state.transfersByVin.get(source.vin) ?? [], state.context, state.meta, options)
+  }
+
+  function attentionFromSnapshot(state) {
+    const vehicles = state.sources
+      .filter((source) => source.publicRecord)
+      .map((source) => vehicleFromSnapshot(state, source))
+      .filter(Boolean)
+    sortVehicles(vehicles)
+    const visibleTransferRows = state.allTransferRows.filter((row) => transferVisible(row, state.context))
+    const stores = storeSummaries(vehicles, state.dataset.holdRows, state.allTransferRows, state.currentNow)
+    return attentionItems(state.meta, vehicles, stores, visibleTransferRows, database, state.context)
   }
 
   return {
@@ -975,9 +1089,79 @@ export function createInventoryService({ database, now = () => new Date(), initi
         vehicles,
         transfers,
         holdSignals: holdSignalSummaries(state.dataset.holdRows, state.meta),
-        attention: attentionItems(state.meta, vehicles, stores, visibleTransferRows),
+        attention: attentionItems(state.meta, vehicles, stores, visibleTransferRows, database, state.context),
         publicChanges: state.publicChanges,
       }
+    },
+
+    listAttention(query = {}, contextInput = {}) {
+      const state = snapshot(contextInput)
+      let items = attentionFromSnapshot(state)
+      if (query.store) items = items.filter((item) => item.store === query.store || item.relatedStores?.includes(query.store))
+      if (query.status) items = items.filter((item) => item.status === query.status)
+      if (query.priority) items = items.filter((item) => item.priority === query.priority)
+      if (query.type) items = items.filter((item) => item.type === query.type)
+      if (query.assignedTo) {
+        const assignedTo = String(query.assignedTo).toLowerCase()
+        items = items.filter((item) => String(item.assignedTo ?? '').toLowerCase().includes(assignedTo))
+      }
+      if (query.q) {
+        const search = String(query.q).toLowerCase()
+        items = items.filter((item) =>
+          [item.label, item.vehicleName, item.stockNumber, item.vin, item.store, item.assignedTo, item.sourceLabel]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(search),
+        )
+      }
+      const priorityOrder = { urgent: 0, high: 1, normal: 2, low: 3 }
+      const statusOrder = { open: 0, acknowledged: 1, in_progress: 2, waiting: 3, resolved: 4 }
+      items.sort(
+        (left, right) =>
+          (statusOrder[left.status] ?? 9) - (statusOrder[right.status] ?? 9) ||
+          (priorityOrder[left.priority] ?? 9) - (priorityOrder[right.priority] ?? 9) ||
+          String(left.followUpAt || left.dueAt || '').localeCompare(String(right.followUpAt || right.dueAt || '')) ||
+          left.label.localeCompare(right.label),
+      )
+      return {
+        items,
+        total: items.length,
+        counts: {
+          open: items.filter((item) => item.status === 'open').length,
+          acknowledged: items.filter((item) => item.status === 'acknowledged').length,
+          inProgress: items.filter((item) => item.status === 'in_progress').length,
+          waiting: items.filter((item) => item.status === 'waiting').length,
+          resolved: items.filter((item) => item.status === 'resolved').length,
+          urgent: items.filter((item) => item.priority === 'urgent' && item.status !== 'resolved').length,
+          unassigned: items.filter((item) => !item.assignedTo && item.status !== 'resolved').length,
+        },
+      }
+    },
+
+    getAttention(id, contextInput = {}) {
+      const state = snapshot(contextInput)
+      const item = attentionFromSnapshot(state).find((candidate) => candidate.id === id)
+      if (!item) throw new WorkflowError('Attention item was not found', { status: 404, code: 'ATTENTION_NOT_FOUND' })
+      return item
+    },
+
+    appendAttentionEvent(id, input, contextInput = {}, idempotencyKey) {
+      const state = snapshot(contextInput)
+      const sourceItem = attentionFromSnapshot(state).find((candidate) => candidate.id === id)
+      if (!sourceItem) throw new WorkflowError('Attention item was not found', { status: 404, code: 'ATTENTION_NOT_FOUND' })
+      const current = getAttentionWorkflowRow(database, id)
+      const built = buildAttentionMutation({
+        sourceItem,
+        current,
+        input,
+        context: state.context,
+        idempotencyKey,
+        now: state.currentNow,
+      })
+      const result = upsertAttentionWorkflow(database, built.workflow, built.event)
+      const record = this.getAttention(id, contextInput)
+      return { record, created: result.created }
     },
 
     listVehicles(query = {}, contextInput = {}) {

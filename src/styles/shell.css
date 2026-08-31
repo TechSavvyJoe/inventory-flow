@@ -479,6 +479,7 @@
 
 .store-control {
   min-width: 0;
+  min-height: 44px;
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr);
   align-items: center;
@@ -534,7 +535,9 @@
 }
 
 .store-select-wrap select {
+  height: 44px;
   max-width: 100%;
+  margin-block: -12px;
   appearance: none;
   border: 0;
   padding: 0 22px 0 0;
@@ -579,7 +582,7 @@
 }
 
 .global-search {
-  height: 44px;
+  height: 46px;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -605,6 +608,7 @@
 }
 
 .global-search input {
+  height: 44px;
   min-width: 0;
   flex: 1;
   border: 0;
@@ -620,8 +624,8 @@
 }
 
 .global-search > button {
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border: 0;
@@ -763,7 +767,6 @@
   grid-column: 2;
   grid-row: 2;
   padding: 20px;
-  overflow-x: clip;
 }
 
 .mobile-bottom-nav {
@@ -834,9 +837,11 @@
   gap: 3px;
 }
 
-.utility-panel-header strong {
+.utility-panel-header h2 {
+  margin: 0;
   color: var(--ink-900);
   font-size: 13px;
+  line-height: 1.2;
   font-weight: 760;
 }
 
@@ -1005,7 +1010,7 @@
   }
 
   .profile-button {
-    width: 42px;
+    width: 44px;
     justify-content: center;
     padding: 0;
   }
@@ -1093,7 +1098,7 @@
   }
 
   .store-control {
-    min-height: 42px;
+    min-height: 44px;
     display: flex;
     justify-content: flex-end;
   }
@@ -1121,8 +1126,8 @@
   }
 
   .profile-button {
-    width: 42px;
-    height: 42px;
+    width: 44px;
+    height: 44px;
     display: flex;
     justify-content: center;
     padding: 0;
@@ -1400,7 +1405,9 @@ html[data-interface-transition='oem']::view-transition-new(root) {
   .app-shell.is-store-switching .desktop-nav::after,
   .is-store-switching .store-brand-frame,
   .store-switch-status,
-  .utility-panel {
+  .utility-panel,
+  .spin,
+  .loading-mark {
     animation: none;
   }
 
@@ -1413,5 +1420,61 @@ html[data-interface-transition='oem']::view-transition-new(root) {
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .desktop-nav,
+  .top-bar,
+  .store-brand-frame,
+  .global-search,
+  .freshness-chip,
+  .profile-button,
+  .utility-panel,
+  .utility-update-card,
+  .utility-role-control,
+  .utility-manager-link {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+
+  .store-select-wrap select,
+  .utility-role-control select {
+    appearance: auto;
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .store-select-wrap svg,
+  .utility-role-control > svg:last-child {
+    display: none;
+  }
+
+  .nav-link.is-active {
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+    box-shadow: inset 3px 0 0 HighlightText;
+  }
+
+  .mobile-bottom-nav a.is-active,
+  .mobile-bottom-nav button.is-active {
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .freshness-dot {
+    border: 1px solid CanvasText;
+    background: CanvasText !important;
+    box-shadow: none !important;
+    forced-color-adjust: none;
+  }
+
+  .utility-scrim {
+    background: Canvas;
+    opacity: .72;
   }
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  ArrowDownUp,
   ArrowLeft,
   ArrowLeftRight,
   CarFront,
@@ -20,7 +21,7 @@ import { toTransferDetail, toTransferVehicle } from '../../app/transferAdapters'
 import { SourceWarning } from '../../components/SourceWarning'
 import { getTransfer } from '../../lib/api'
 import type { BootstrapData, StoreName, TransferRecord, UserRole } from '../../types'
-import { formatDateTime, locationConfidenceLabel } from './presentation'
+import { formatDateTime, humanizeStatusLabel, locationConfidenceLabel } from './presentation'
 import { TransferActionDialog } from './TransferActionDialog'
 import { TransferEmptyState } from './TransferEmptyState'
 import { TransferRequestWorkspace } from './TransferRequestWorkspace'
@@ -36,7 +37,16 @@ const REASON_LABELS: Record<TransferRequestDraft['reasonCode'], string> = {
 }
 
 type TransferQueueView = 'needs-action' | 'active' | 'history'
-type TransferQueueFilter = 'all' | 'my-location' | 'driver-needed' | 'issues'
+type TransferQueueFilter =
+  | 'all'
+  | 'my-location'
+  | 'awaiting-approval'
+  | 'driver-needed'
+  | 'moving'
+  | 'return-due'
+  | 'sold-pending'
+  | 'issues'
+type TransferQueueSort = 'urgency' | 'needed-by' | 'recent' | 'stock' | 'route'
 
 const WORKFLOW_STAGES = [
   { label: 'Salesperson request', mobileLabel: 'Request' },
@@ -47,11 +57,15 @@ const WORKFLOW_STAGES = [
   { label: 'Sell or return', mobileLabel: 'Sold / Return' },
 ] as const
 
-const TERMINAL_TRANSFER_STATES = new Set(['closed', 'declined', 'canceled'])
+const TERMINAL_TRANSFER_STATES = new Set(['closed', 'declined', 'canceled', 'expired'])
 const PASSIVE_TRANSFER_ACTIONS = new Set<TransferActionKind>(['open-source', 'report-condition', 'mark-exception', 'escalate'])
 
+function normalizedStatus(value?: string): string {
+  return (value ?? '').toLowerCase().trim().replace(/[_\s/]+/g, '-').replace(/[^a-z0-9-]/g, '')
+}
+
 function isTerminalTransfer(record: TransferRecord): boolean {
-  return TERMINAL_TRANSFER_STATES.has(record.requestStatus)
+  return TERMINAL_TRANSFER_STATES.has(normalizedStatus(record.requestStatus))
 }
 
 function needsTransferAction(detail: TransferDetail): boolean {
@@ -72,12 +86,59 @@ function dueLabel(detail: TransferDetail): string {
 }
 
 function workflowStage(status: string): number {
-  if (['requested'].includes(status)) return 1
-  if (['manager_reviewed'].includes(status)) return 2
-  if (['approved', 'driver_requested'].includes(status)) return 3
-  if (['transport_assigned', 'return_assigned'].includes(status)) return 4
-  if (['picked_up', 'in_transit', 'arrived', 'return_in_transit'].includes(status)) return 5
+  const normalized = normalizedStatus(status)
+  if (['requested', 'submitted'].includes(normalized)) return 1
+  if (['manager-reviewed', 'needs-information'].includes(normalized)) return 2
+  if (['approved', 'driver-requested', 'return-requested'].includes(normalized)) return 3
+  if (['transport-assigned', 'return-assigned', 'pickup-scheduled'].includes(normalized)) return 4
+  if (['picked-up', 'in-transit', 'arrived', 'customer-showing', 'return-in-transit', 'returned-awaiting-receipt'].includes(normalized)) return 5
   return 6
+}
+
+function isAwaitingApproval(record: TransferRecord): boolean {
+  return ['requested', 'submitted', 'manager-reviewed', 'needs-information'].includes(normalizedStatus(record.requestStatus))
+}
+
+function isMoving(record: TransferRecord): boolean {
+  const request = normalizedStatus(record.requestStatus)
+  const movement = normalizedStatus(record.movementStatus)
+  return ['transport-assigned', 'picked-up', 'in-transit', 'return-assigned', 'return-in-transit'].includes(request) ||
+    ['pickup-scheduled', 'released-to-custodian', 'in-transit-outbound', 'in-transit-return'].some((value) => movement.includes(value))
+}
+
+function needsReturnAttention(record: TransferRecord): boolean {
+  if (!record.returnRequired || isTerminalTransfer(record)) return false
+  const request = normalizedStatus(record.requestStatus)
+  const movement = normalizedStatus(record.movementStatus)
+  const deal = normalizedStatus(record.dealStatus)
+  return Boolean(record.returnDueAt) || request.includes('return') || movement.includes('return') || deal.includes('not-sold')
+}
+
+function isSoldPendingNotDelivered(record: TransferRecord): boolean {
+  const soldPending = normalizedStatus(record.dealStatus).includes('sold-pending')
+  const deliveryConfirmed = normalizedStatus(record.deliveryStatus) === 'confirmed'
+  return soldPending && !deliveryConfirmed
+}
+
+function transferPriorityScore(record: TransferRecord): number {
+  return { urgent: 4, high: 3, normal: 2, low: 1 }[record.priority] ?? 0
+}
+
+function dateScore(value?: string, fallback = Number.POSITIVE_INFINITY): number {
+  if (!value) return fallback
+  const parsed = new Date(value).getTime()
+  return Number.isNaN(parsed) ? fallback : parsed
+}
+
+function returnTimingLabel(record: TransferRecord): string {
+  if (!record.returnRequired) return 'Return not required'
+  if (record.returnDueAt) return `Return due ${formatDateTime(record.returnDueAt)}`
+  return 'Return required · date not set'
+}
+
+function outcomeLabel(detail: TransferDetail): string {
+  if (detail.status.delivery.code === 'confirmed') return humanizeStatusLabel(detail.status.delivery.label)
+  return humanizeStatusLabel(detail.status.deal.label)
 }
 
 function TransferWorkflowPath({ record }: { record: TransferRecord }) {
@@ -141,6 +202,7 @@ export function TransfersPage() {
   const [query, setQuery] = useState('')
   const [queueView, setQueueView] = useState<TransferQueueView>('active')
   const [queueFilter, setQueueFilter] = useState<TransferQueueFilter>('all')
+  const [queueSort, setQueueSort] = useState<TransferQueueSort>('urgency')
   const requestMode = location.pathname.endsWith('/new')
 
   const details = useMemo(() => {
@@ -157,31 +219,66 @@ export function TransfersPage() {
   const requestedId = params.get('id')
   const requestedVin = params.get('vin')?.toUpperCase()
   const normalizedQuery = query.trim().toLowerCase()
-  const filteredDetails = details.filter(({ record, detail }) => {
-    const terminal = isTerminalTransfer(record)
-    const needsAction = needsTransferAction(detail)
-    if (queueView === 'history' ? !terminal : queueView === 'active' ? terminal : !needsAction || terminal) return false
-    if (
-      queueFilter === 'my-location' &&
-      ![record.homeStore, record.requestingStore, record.currentLocation, record.destination].includes(homeStore)
-    ) return false
-    if (queueFilter === 'driver-needed' && (terminal || Boolean(record.transportAssignee))) return false
-    if (queueFilter === 'issues' && !transferIssueLabel(detail)) return false
-    if (!normalizedQuery) return true
-    return [
-      record.stockNumber,
-      record.vin,
-      record.vehicleName,
-      record.homeStore,
-      record.requestingStore,
-      record.currentLocation,
-      record.destination,
-      record.requestedBy,
-      record.transportAssignee,
-      record.nextAction,
-      record.nextActionOwner,
-    ].some((value) => value?.toLowerCase().includes(normalizedQuery))
-  })
+  const filteredDetails = details
+    .filter(({ record, detail }) => {
+      const terminal = isTerminalTransfer(record)
+      const needsAction = needsTransferAction(detail)
+      if (queueView === 'history' ? !terminal : queueView === 'active' ? terminal : !needsAction || terminal) return false
+      if (
+        queueFilter === 'my-location' &&
+        ![record.homeStore, record.requestingStore, record.currentLocation, record.destination].includes(homeStore)
+      ) return false
+      if (queueFilter === 'awaiting-approval' && !isAwaitingApproval(record)) return false
+      if (
+        queueFilter === 'driver-needed' &&
+        (terminal || Boolean(record.transportAssignee) || workflowStage(record.requestStatus) < 3 || workflowStage(record.requestStatus) > 4)
+      ) return false
+      if (queueFilter === 'moving' && !isMoving(record)) return false
+      if (queueFilter === 'return-due' && !needsReturnAttention(record)) return false
+      if (queueFilter === 'sold-pending' && !isSoldPendingNotDelivered(record)) return false
+      if (queueFilter === 'issues' && !transferIssueLabel(detail)) return false
+      if (!normalizedQuery) return true
+      return [
+        record.stockNumber,
+        record.vin,
+        record.vehicleName,
+        record.homeStore,
+        record.requestingStore,
+        record.currentLocation,
+        record.destination,
+        record.requestedBy,
+        record.approvedBy,
+        record.custodian,
+        record.transportAssignee,
+        record.nextAction,
+        record.nextActionOwner,
+        record.dealStatus,
+        record.deliveryStatus,
+        record.movementStatus,
+        detail.requestReason,
+      ].some((value) => value?.toLowerCase().includes(normalizedQuery))
+    })
+    .sort((left, right) => {
+      if (queueSort === 'needed-by') {
+        return dateScore(left.detail.nextAction.dueAt) - dateScore(right.detail.nextAction.dueAt)
+      }
+      if (queueSort === 'recent') {
+        return dateScore(right.record.requestedAt, 0) - dateScore(left.record.requestedAt, 0)
+      }
+      if (queueSort === 'stock') return left.record.stockNumber.localeCompare(right.record.stockNumber, undefined, { numeric: true })
+      if (queueSort === 'route') {
+        return `${left.record.homeStore}|${left.record.destination}`.localeCompare(`${right.record.homeStore}|${right.record.destination}`)
+      }
+      const leftIssue = transferIssueLabel(left.detail) ? 1 : 0
+      const rightIssue = transferIssueLabel(right.detail) ? 1 : 0
+      if (leftIssue !== rightIssue) return rightIssue - leftIssue
+      const slaRank = { breached: 4, overdue: 3, 'due-soon': 2, 'on-track': 1, none: 0 }
+      const slaDifference = slaRank[right.detail.nextAction.sla] - slaRank[left.detail.nextAction.sla]
+      if (slaDifference) return slaDifference
+      const priorityDifference = transferPriorityScore(right.record) - transferPriorityScore(left.record)
+      if (priorityDifference) return priorityDifference
+      return dateScore(left.detail.nextAction.dueAt) - dateScore(right.detail.nextAction.dueAt)
+    })
   const selected =
     filteredDetails.find(({ record }) => record.id === requestedId) ||
     filteredDetails.find(({ record }) => record.vin === requestedVin) ||
@@ -193,10 +290,11 @@ export function TransfersPage() {
     history: details.filter(({ record }) => isTerminalTransfer(record)).length,
   }
   const workflowMetrics = {
-    manager: details.filter(({ record }) => record.requestStatus === 'requested').length,
-    home: details.filter(({ record }) => record.requestStatus === 'manager_reviewed').length,
-    driver: details.filter(({ record }) => ['approved', 'driver_requested'].includes(record.requestStatus)).length,
-    moving: details.filter(({ record }) => ['transport_assigned', 'picked_up', 'in_transit', 'return_assigned', 'return_in_transit'].includes(record.requestStatus)).length,
+    manager: details.filter(({ record }) => ['requested', 'submitted'].includes(normalizedStatus(record.requestStatus))).length,
+    home: details.filter(({ record }) => ['manager-reviewed', 'needs-information'].includes(normalizedStatus(record.requestStatus))).length,
+    driver: details.filter(({ record }) => ['approved', 'driver-requested', 'return-requested'].includes(normalizedStatus(record.requestStatus))).length,
+    moving: details.filter(({ record }) => isMoving(record)).length,
+    returns: details.filter(({ record }) => needsReturnAttention(record)).length,
   }
   const shortQueue = filteredDetails.length <= 2
 
@@ -245,7 +343,7 @@ export function TransfersPage() {
               customerReference: draft.customerReference?.trim() || undefined,
               customerAppointment: false,
               returnRequired: draft.returnRequired,
-              returnDueAt: undefined,
+              returnDueAt: draft.targetReturnAt || undefined,
               priority: draft.priority,
               approvalOwner: managerApprovers.find((option) => option.value === draft.managerApproverId)?.label,
             })
@@ -275,15 +373,17 @@ export function TransfersPage() {
         <span><strong>{workflowMetrics.home}</strong> Home approval</span>
         <span><strong>{workflowMetrics.driver}</strong> Driver</span>
         <span><strong>{workflowMetrics.moving}</strong> Moving</span>
+        <span><strong>{workflowMetrics.returns}</strong> Return</span>
       </div>
 
       {details.length > 0 ? (
         <section className="transfer-workflow-overview" aria-label="Movement workflow overview">
           <div className="transfer-workflow-metrics">
-            <span><Clock3 aria-hidden="true" /><strong>{workflowMetrics.manager}</strong><small>Awaiting my manager</small></span>
-            <span><UserRoundCheck aria-hidden="true" /><strong>{workflowMetrics.home}</strong><small>Home-store response</small></span>
-            <span><Truck aria-hidden="true" /><strong>{workflowMetrics.driver}</strong><small>Driver setup</small></span>
-            <span><ArrowLeftRight aria-hidden="true" /><strong>{workflowMetrics.moving}</strong><small>In transit / return</small></span>
+            <span><Clock3 aria-hidden="true" /><strong>{workflowMetrics.manager}</strong><small>Await manager</small></span>
+            <span><UserRoundCheck aria-hidden="true" /><strong>{workflowMetrics.home}</strong><small>Home approval</small></span>
+            <span><Truck aria-hidden="true" /><strong>{workflowMetrics.driver}</strong><small>Need driver</small></span>
+            <span><ArrowLeftRight aria-hidden="true" /><strong>{workflowMetrics.moving}</strong><small>In motion</small></span>
+            <span><CircleAlert aria-hidden="true" /><strong>{workflowMetrics.returns}</strong><small>Return due</small></span>
           </div>
           {selected ? <TransferWorkflowPath record={selected.record} /> : null}
         </section>
@@ -315,6 +415,7 @@ export function TransfersPage() {
               </label>
               <label className="transfer-list-filter" title="Filter vehicle moves">
                 <ListFilter aria-hidden="true" />
+                <span className="transfer-control-label">Filter</span>
                 <span className="sr-only">Filter vehicle moves</span>
                 <select
                   aria-label="Filter vehicle moves"
@@ -323,8 +424,28 @@ export function TransfersPage() {
                 >
                   <option value="all">All moves</option>
                   <option value="my-location">My location</option>
+                  <option value="awaiting-approval">Awaiting approval</option>
                   <option value="driver-needed">Driver needed</option>
+                  <option value="moving">Pickup or in transit</option>
+                  <option value="return-due">Return required / due</option>
+                  <option value="sold-pending">Sold pending · not delivered</option>
                   <option value="issues">Issue or overdue</option>
+                </select>
+              </label>
+              <label className="transfer-list-sort" title="Sort vehicle moves">
+                <ArrowDownUp aria-hidden="true" />
+                <span className="transfer-control-label">Sort</span>
+                <span className="sr-only">Sort vehicle moves</span>
+                <select
+                  aria-label="Sort vehicle moves"
+                  value={queueSort}
+                  onChange={(event) => setQueueSort(event.target.value as TransferQueueSort)}
+                >
+                  <option value="urgency">Urgency</option>
+                  <option value="needed-by">Next due</option>
+                  <option value="recent">Newest request</option>
+                  <option value="stock">Stock number</option>
+                  <option value="route">Route</option>
                 </select>
               </label>
               <div className="transfer-list-views" role="group" aria-label="Movement queue view">
@@ -372,22 +493,34 @@ export function TransfersPage() {
                         <span className="transfer-list-stage">Stage {workflowStage(record.requestStatus)} · {detail.status.request.label}</span>
                       </span>
                       <span className="transfer-next"><strong>Next:</strong> {record.nextAction} · {record.nextActionOwner || 'Unassigned'}</span>
-                      <span className="transfer-due"><span>Due {formatDateTime(record.dueAt)}</span><span>{record.transportAssignee ? `Driver ${record.transportAssignee}` : 'Driver not set'}</span></span>
+                      <span className="transfer-list-accountability">
+                        <span><b>Requested</b> {record.requestedBy || 'Not recorded'}</span>
+                        <span><b>Approval</b> {record.approvedBy || detail.approvalOwnerLabel || 'Not recorded'}</span>
+                        <span><b>Driver</b> {record.transportAssignee || 'Not set'}</span>
+                      </span>
+                      <span className="transfer-list-outcomes">
+                        <span><b>Deal</b> {humanizeStatusLabel(detail.status.deal.label)}</span>
+                        <span><b>Delivery</b> {humanizeStatusLabel(detail.status.delivery.label)}</span>
+                        <span><b>Return</b> {returnTimingLabel(record)}</span>
+                      </span>
+                      <span className="transfer-due"><span>{dueLabel(detail)}</span><span>{record.custodian ? `Custodian ${record.custodian}` : 'Custodian not assigned'}</span></span>
                     </span>
                     <span className="transfer-list-mobile-copy">
                       <strong className="transfer-mobile-stock">{detail.vehicle.stock}</strong>
                       <span className="transfer-mobile-vehicle">{detail.vehicle.vehicleLabel}</span>
                       <span className="transfer-mobile-route">{detail.vehicle.homeStore}<span aria-hidden="true">→</span>{record.destination}</span>
+                      <span className="transfer-mobile-location"><MapPin aria-hidden="true" />Now: {record.currentLocation} · {locationConfidenceLabel(record.locationConfidence)}</span>
                       <span className="transfer-mobile-stage"><b>{stage}</b><span>{detail.status.request.label}</span></span>
                       <span className="transfer-mobile-owner"><UserRoundCheck aria-hidden="true" /><span>Next: {record.nextActionOwner || 'Unassigned'}</span></span>
                     </span>
                     <span className="transfer-list-mobile-rail">
                       <span className={`transfer-mobile-due ${dueTone}`}>{dueLabel(detail)}</span>
                       <span className="transfer-mobile-driver">{record.transportAssignee ? `Driver: ${record.transportAssignee}` : 'Driver not set'}</span>
+                      <span className="transfer-mobile-outcome">{outcomeLabel(detail)}</span>
                       {issueLabel ? (
                         <span className="transfer-mobile-issue"><CircleAlert aria-hidden="true" />{issueLabel}</span>
-                      ) : record.transportAssignee ? (
-                        <span className="transfer-mobile-scheduled">Driver scheduled</span>
+                      ) : record.returnRequired ? (
+                        <span className="transfer-mobile-return">{returnTimingLabel(record)}</span>
                       ) : null}
                     </span>
                     <ChevronRight aria-hidden="true" />

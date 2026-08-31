@@ -317,7 +317,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
             </label>
 
             <details className="mif-more-details mif-field--wide">
-              <summary>More details</summary>
+              <summary>Customer reference and preferred return timing</summary>
               <label className="mif-field">
                 <span>Customer or CRM reference <small>Optional · manager access only</small></span>
                 <input
@@ -326,6 +326,15 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
                   placeholder="CRM number or short reference"
                   type="text"
                   value={draft.customerReference}
+                />
+              </label>
+              <label className="mif-field">
+                <span>Preferred return by <small>Optional · if the vehicle does not sell</small></span>
+                <input
+                  disabled={disabled}
+                  onChange={(event) => updateDraft({ targetReturnAt: event.target.value })}
+                  type="datetime-local"
+                  value={draft.targetReturnAt}
                 />
               </label>
             </details>
