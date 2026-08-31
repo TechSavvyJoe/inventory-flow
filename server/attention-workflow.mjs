@@ -124,7 +124,13 @@ export function buildAttentionMutation({ sourceItem, current, input, context, id
     throw new WorkflowError('actorRole must match the active role context', { status: 403, code: 'ROLE_MISMATCH' })
   }
 
-  const actor = requiredText(input.actor || context.user, 'actor', 160)
+  const actor = requiredText(context.user, 'actor', 160)
+  if (input.actor && input.actor !== actor) {
+    throw new WorkflowError('actor must match the authenticated user context', {
+      status: 403,
+      code: 'ACTOR_MISMATCH',
+    })
+  }
   const occurredAt = isoTimestamp(input.occurredAt, 'occurredAt') || now.toISOString()
   const note = optionalText(input.note, 'note', 1500)
   const workflow = {

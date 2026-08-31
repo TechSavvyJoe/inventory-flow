@@ -248,6 +248,8 @@ describe('transfer workspace v3 layout', () => {
     const data = bootstrap(4);
     data.transfers[1].dealStatus = 'sold pending';
     data.transfers[1].deliveryStatus = 'not confirmed';
+    data.transfers[2].dealStatus = 'sold pending';
+    data.transfers[2].deliveryStatus = 'delivery_confirmed';
     const { container } = renderPage(data);
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Filter vehicle moves' }), {

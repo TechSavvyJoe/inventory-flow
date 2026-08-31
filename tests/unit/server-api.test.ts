@@ -626,7 +626,6 @@ describe('Inventory Flow API', () => {
     const created = await createSalesRequest(baseUrl, howellVehicle, 'Attention Test Salesperson')
     expect(created.response.status).toBe(201)
 
-    const attentionId = `transfer-${created.body.id}`
     const beforeTransfer = await fetch(`${baseUrl}/api/transfers/${created.body.id}`, {
       headers: roleHeaders('manager', 'Fowlerville', 'Attention Test Manager'),
     }).then((response) => response.json())
@@ -641,7 +640,8 @@ describe('Inventory Flow API', () => {
     })
     const queue = await queueResponse.json()
     expect(queueResponse.status).toBe(200)
-    const initial = queue.items.find((item: { id: string }) => item.id === attentionId)
+    const initial = queue.items.find((item: { sourceId: string }) => item.sourceId === created.body.id)
+    const attentionId = initial.id
     expect(initial).toMatchObject({
       status: 'open',
       priority: 'high',
@@ -658,6 +658,15 @@ describe('Inventory Flow API', () => {
     )
     expect(forbiddenAssignment.response.status).toBe(403)
     expect(forbiddenAssignment.body.code).toBe('FORBIDDEN')
+
+    const spoofedActor = await postAttentionEvent(
+      baseUrl,
+      attentionId,
+      { role: 'manager', store: 'Fowlerville', user: 'Attention Test Manager' },
+      { type: 'acknowledge', actor: 'Different Manager' },
+    )
+    expect(spoofedActor.response.status).toBe(403)
+    expect(spoofedActor.body.code).toBe('ACTOR_MISMATCH')
 
     const acknowledged = await postAttentionEvent(
       baseUrl,
@@ -712,5 +721,19 @@ describe('Inventory Flow API', () => {
     expect(database.prepare('SELECT COUNT(*) AS count FROM public_vehicle_snapshots').get().count).toBe(sourceCountsBefore.public)
     expect(database.prepare('SELECT COUNT(*) AS count FROM crm_vehicle_snapshots').get().count).toBe(sourceCountsBefore.crm)
     expect(database.prepare('SELECT COUNT(*) AS count FROM hold_vehicle_snapshots').get().count).toBe(sourceCountsBefore.holds)
+
+    const advanced = await postEvent(
+      baseUrl,
+      created.body.id,
+      { role: 'manager', store: 'Fowlerville', user: 'Attention Test Manager' },
+      { type: 'manager_reviewed', note: 'Request advanced to its next operational condition.' },
+    )
+    expect(advanced.response.status).toBe(201)
+    const refreshedQueue = await fetch(`${baseUrl}/api/attention?store=Fowlerville`, {
+      headers: roleHeaders('manager', 'Fowlerville', 'Attention Test Manager'),
+    }).then((response) => response.json())
+    const recurring = refreshedQueue.items.find((item: { sourceId: string }) => item.sourceId === created.body.id)
+    expect(recurring.id).not.toBe(attentionId)
+    expect(recurring).toMatchObject({ status: 'open', events: [] })
   })
 })

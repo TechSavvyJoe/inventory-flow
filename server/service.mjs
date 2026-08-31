@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import {
   appendTransferEvent,
   getAttentionEvents,
@@ -778,6 +779,11 @@ function defaultAttentionPriority(item) {
   return 'normal'
 }
 
+function versionedAttentionId(baseId, evidence) {
+  const fingerprint = createHash('sha256').update(JSON.stringify(evidence)).digest('hex').slice(0, 12)
+  return `${baseId}-${fingerprint}`
+}
+
 function mergeAttentionWorkflow(database, items, context) {
   const workflows = new Map(listAttentionWorkflowRows(database).map((row) => [row.attention_key, row]))
   return items.map((item) => {
@@ -799,11 +805,11 @@ function mergeAttentionWorkflow(database, items, context) {
   })
 }
 
-function attentionItems(meta, vehicles, stores, transferRows, database, context) {
+function attentionItems(meta, vehicles, stores, transferRows, database, context, conditionDay) {
   const items = []
   if (meta.publicFreshness !== 'current' || meta.dealerMailFreshness !== 'current') {
     items.push({
-      id: 'source-freshness',
+      id: versionedAttentionId('source-freshness', [conditionDay, meta.reportDate, meta.publicFreshness, meta.dealerMailFreshness]),
       severity: 'critical',
       priority: 'urgent',
       type: 'source_freshness',
@@ -817,7 +823,7 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context)
   for (const summary of stores) {
     if (summary.returnOverdue) {
       items.push({
-        id: `return-overdue-${summary.store}`,
+        id: versionedAttentionId(`return-overdue-${summary.store}`, [conditionDay, summary.returnOverdue]),
         severity: 'critical',
         priority: 'urgent',
         type: 'return_overdue',
@@ -833,7 +839,7 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context)
     }
     if (summary.locationExceptions) {
       items.push({
-        id: `location-exception-${summary.store}`,
+        id: versionedAttentionId(`location-exception-${summary.store}`, [conditionDay, summary.locationExceptions]),
         severity: 'warning',
         priority: 'high',
         type: 'location_exception',
@@ -854,7 +860,7 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context)
     ).length
     if (missingPrice) {
       items.push({
-        id: `missing-public-price-${summary.store}`,
+        id: versionedAttentionId(`missing-public-price-${summary.store}`, [conditionDay, meta.reportDate, missingPrice]),
         severity: 'info',
         priority: 'normal',
         type: 'missing_price',
@@ -875,7 +881,13 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context)
     if (!['primary', 'multiple'].includes(vehicle.hold?.state) || (!pastExpected && !hasAlert)) continue
     const store = vehicle.crmStore || vehicle.publicStore
     items.push({
-      id: `hold-review-${vehicle.vin}`,
+      id: versionedAttentionId(`hold-review-${vehicle.vin}`, [
+        conditionDay,
+        meta.reportDate,
+        vehicle.hold.state,
+        vehicle.hold.expectedDate,
+        vehicle.hold.alertsCount,
+      ]),
       severity: pastExpected ? 'critical' : 'warning',
       priority: pastExpected ? 'urgent' : 'high',
       type: pastExpected ? 'past_expected_hold' : 'hold_alert',
@@ -898,7 +910,15 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context)
   }
   for (const row of transferRows.filter(isActiveTransfer).slice(0, 20)) {
     items.push({
-      id: `transfer-${row.id}`,
+      id: versionedAttentionId(`transfer-${row.id}`, [
+        conditionDay,
+        row.status,
+        row.movement_status,
+        row.current_location_id,
+        row.next_action,
+        row.due_at,
+        row.return_due_at,
+      ]),
       severity: row.priority === 'urgent' ? 'critical' : row.priority === 'high' ? 'warning' : 'info',
       priority: row.priority,
       type: 'transfer_next_action',
@@ -1001,7 +1021,15 @@ export function createInventoryService({ database, now = () => new Date(), initi
     sortVehicles(vehicles)
     const visibleTransferRows = state.allTransferRows.filter((row) => transferVisible(row, state.context))
     const stores = storeSummaries(vehicles, state.dataset.holdRows, state.allTransferRows, state.currentNow)
-    return attentionItems(state.meta, vehicles, stores, visibleTransferRows, database, state.context)
+    return attentionItems(
+      state.meta,
+      vehicles,
+      stores,
+      visibleTransferRows,
+      database,
+      state.context,
+      dateInTimeZone(state.currentNow, state.meta.timezone),
+    )
   }
 
   return {
@@ -1089,7 +1117,15 @@ export function createInventoryService({ database, now = () => new Date(), initi
         vehicles,
         transfers,
         holdSignals: holdSignalSummaries(state.dataset.holdRows, state.meta),
-        attention: attentionItems(state.meta, vehicles, stores, visibleTransferRows, database, state.context),
+        attention: attentionItems(
+          state.meta,
+          vehicles,
+          stores,
+          visibleTransferRows,
+          database,
+          state.context,
+          dateInTimeZone(state.currentNow, state.meta.timezone),
+        ),
         publicChanges: state.publicChanges,
       }
     },

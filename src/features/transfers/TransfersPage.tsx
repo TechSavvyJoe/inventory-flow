@@ -116,7 +116,7 @@ function needsReturnAttention(record: TransferRecord): boolean {
 
 function isSoldPendingNotDelivered(record: TransferRecord): boolean {
   const soldPending = normalizedStatus(record.dealStatus).includes('sold-pending')
-  const deliveryConfirmed = normalizedStatus(record.deliveryStatus) === 'confirmed'
+  const deliveryConfirmed = ['confirmed', 'delivery-confirmed'].includes(normalizedStatus(record.deliveryStatus))
   return soldPending && !deliveryConfirmed
 }
 
