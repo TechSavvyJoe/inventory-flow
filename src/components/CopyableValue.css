@@ -1,0 +1,119 @@
+.copyable-value {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  vertical-align: middle;
+}
+
+.copyable-value__content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.copyable-value__button {
+  min-width: 22px;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 4px;
+  color: #33536f;
+  background: transparent;
+  box-shadow: none;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 790;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.copyable-value__button:hover {
+  color: var(--workspace-accent-strong, var(--store-accent-strong, #064884));
+  background: color-mix(in srgb, var(--workspace-accent, var(--store-accent, #0b67d1)) 6%, white);
+  box-shadow: none;
+  transform: none;
+}
+
+.copyable-value__button:active {
+  transform: translateY(1px) scale(.97);
+}
+
+.copyable-value__button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--focus, #4c96ea) 36%, transparent);
+  outline-offset: 2px;
+}
+
+.copyable-value[data-copy-state="copied"] .copyable-value__button {
+  color: #146c3b;
+  background: transparent;
+}
+
+.copyable-value[data-copy-state="failed"] .copyable-value__button {
+  color: #a62f2f;
+  background: transparent;
+}
+
+.copyable-value--compact {
+  gap: 3px;
+}
+
+.copyable-value--compact .copyable-value__button {
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0 4px;
+  border-radius: 5px;
+}
+
+.copyable-value--compact .copyable-value__button-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.inventory-table-copy-value {
+  max-width: 100%;
+}
+
+.inventory-table-copy-value .copyable-value__content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-equipment-copy-value {
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.inventory-workspace-identity__copy-values {
+  display: flex !important;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+@media (max-width: 760px) {
+  .copyable-value__button {
+    min-width: 38px;
+    min-height: 38px;
+  }
+
+  .copyable-value--compact .copyable-value__button {
+    min-width: 34px;
+    min-height: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .copyable-value__button {
+    transition: none;
+  }
+}

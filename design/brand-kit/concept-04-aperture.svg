@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 200" role="img" aria-labelledby="title desc">
+  <title id="title">Inventory Flow identity concept four, Aperture</title>
+  <desc id="desc">A precision gateway frames a moving inventory signal.</desc>
+  <rect width="360" height="200" rx="24" fill="#F6FAFD"/>
+  <rect x="28" y="28" width="124" height="124" rx="36" fill="#0A1D2E"/>
+  <path d="M73 48H54c-6 0-11 5-11 11v62c0 6 5 11 11 11h19M107 48h19c6 0 11 5 11 11v62c0 6-5 11-11 11h-19" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round"/>
+  <path d="M59 91h53" stroke="#2ED3E6" stroke-width="10" stroke-linecap="round"/>
+  <path d="m102 78 13 13-13 13" fill="none" stroke="#4C5EFF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="178" y="84" fill="#071722" font-family="Segoe UI Variable Display, Segoe UI, Arial, sans-serif" font-size="26" font-weight="700" letter-spacing="-0.8">Inventory</text>
+  <text x="178" y="116" fill="#4C5EFF" font-family="Segoe UI Variable Display, Segoe UI, Arial, sans-serif" font-size="26" font-weight="700" letter-spacing="-0.8">Flow</text>
+  <text x="178" y="140" fill="#526778" font-family="Segoe UI Variable Text, Segoe UI, Arial, sans-serif" font-size="10" font-weight="650" letter-spacing="2.2">APERTURE</text>
+</svg>

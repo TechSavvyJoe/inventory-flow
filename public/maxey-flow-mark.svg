@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Maxey Inventory Flow">
+  <defs>
+    <linearGradient id="mark" x1="10" y1="9" x2="38" y2="39" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B67D1"/>
+      <stop offset="1" stop-color="#062A4D"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="46" height="46" rx="13" fill="#FFFFFF" stroke="#CFE3F8" stroke-width="2"/>
+  <path d="M10.5 34V14h5.2L24 24.5 32.3 14h5.2v20h-5.2V22.4L24 32.8l-8.3-10.4V34z" fill="url(#mark)"/>
+  <path d="M12 38h24" stroke="#58A5FF" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

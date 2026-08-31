@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 200" role="img" aria-labelledby="title desc">
+  <title id="title">Inventory Flow identity concept three, Relay</title>
+  <desc id="desc">Two open paths pass a vehicle between stores without becoming an endless loop.</desc>
+  <rect width="360" height="200" rx="24" fill="#F6FAFD"/>
+  <rect x="28" y="28" width="124" height="124" rx="36" fill="#0A1D2E"/>
+  <path d="M51 74c7-17 24-27 43-27 15 0 28 6 37 17" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round"/>
+  <path d="m121 48 12 17-20 7" fill="none" stroke="#2ED3E6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M129 106c-7 17-24 27-43 27-15 0-28-6-37-17" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round"/>
+  <path d="m59 132-12-17 20-7" fill="none" stroke="#4C5EFF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="178" y="84" fill="#071722" font-family="Segoe UI Variable Display, Segoe UI, Arial, sans-serif" font-size="26" font-weight="700" letter-spacing="-0.8">Inventory</text>
+  <text x="178" y="116" fill="#4C5EFF" font-family="Segoe UI Variable Display, Segoe UI, Arial, sans-serif" font-size="26" font-weight="700" letter-spacing="-0.8">Flow</text>
+  <text x="178" y="140" fill="#526778" font-family="Segoe UI Variable Text, Segoe UI, Arial, sans-serif" font-size="10" font-weight="650" letter-spacing="2.2">RELAY</text>
+</svg>

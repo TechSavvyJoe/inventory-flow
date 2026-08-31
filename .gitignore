@@ -1,0 +1,51 @@
+node_modules/
+dist/
+runtime/
+data/
+test-results/
+playwright-report/
+.vite/
+coverage/
+*.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+*.db
+*.har
+*.xlsx
+*.xls
+*.csv
+*.jsonl
+*.zip
+.env
+.env.*
+!.env.example
+
+# Generated source caches can contain current inventory, CRM-derived evidence,
+# comments, alerts, or customer details. Repository-safe examples belong only
+# under fixtures/ and must carry the synthetic-data marker.
+
+# Raster captures can silently contain live VINs, customer/hold details, or
+# authenticated-source pages. Keep reviewed vector brand assets and code-based
+# design guidance; generate PR screenshots from the synthetic fixture instead.
+design/**/*.png
+design/**/*.jpg
+design/**/*.jpeg
+design/**/*.webp
+design/**/*.heic
+
+# Report automation artifacts must never be copied into this app repository.
+work/
+outputs/
+exports/
+
+# Generated language/tool caches.
+**/__pycache__/
+*.py[cod]
+
+# Local IDE and AI-agent state.
+.claude/settings.local.json
+.codex/
+.idea/
+.vscode/

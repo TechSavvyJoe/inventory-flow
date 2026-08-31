@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 200" role="img" aria-labelledby="title desc">
+  <title id="title">Inventory Flow identity concept one, Flowline</title>
+  <desc id="desc">A rounded dark tile containing a forward leaning F formed from two continuous traffic lanes.</desc>
+  <defs>
+    <linearGradient id="tile" x1="30" y1="28" x2="142" y2="144" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#142A45"/>
+      <stop offset="1" stop-color="#071722"/>
+    </linearGradient>
+    <linearGradient id="lane" x1="58" y1="42" x2="120" y2="114" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8CEEFF"/>
+      <stop offset="1" stop-color="#4C5EFF"/>
+    </linearGradient>
+  </defs>
+  <rect width="360" height="200" rx="24" fill="#F6FAFD"/>
+  <rect x="28" y="28" width="124" height="124" rx="36" fill="url(#tile)"/>
+  <path d="M62 118V70c0-15 12-27 27-27h32" fill="none" stroke="#FFFFFF" stroke-width="13" stroke-linecap="round"/>
+  <path d="M62 82h48" fill="none" stroke="url(#lane)" stroke-width="13" stroke-linecap="round"/>
+  <circle cx="62" cy="118" r="6.5" fill="#2ED3E6"/>
+  <text x="178" y="84" fill="#071722" font-family="Segoe UI Variable Display, Segoe UI, Arial, sans-serif" font-size="26" font-weight="700" letter-spacing="-0.8">Inventory</text>
+  <text x="178" y="116" fill="#4C5EFF" font-family="Segoe UI Variable Display, Segoe UI, Arial, sans-serif" font-size="26" font-weight="700" letter-spacing="-0.8">Flow</text>
+  <text x="178" y="140" fill="#526778" font-family="Segoe UI Variable Text, Segoe UI, Arial, sans-serif" font-size="10" font-weight="650" letter-spacing="2.2">FLOWLINE / RECOMMENDED</text>
+</svg>

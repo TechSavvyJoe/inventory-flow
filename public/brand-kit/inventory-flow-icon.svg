@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Inventory Flow</title>
+  <desc id="desc">A forward-flowing F lane inside a precision rounded tile.</desc>
+  <defs>
+    <linearGradient id="ifTile" x1="7" y1="5" x2="57" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#142A45"/>
+      <stop offset="1" stop-color="#071722"/>
+    </linearGradient>
+    <linearGradient id="ifLane" x1="25" y1="20" x2="47" y2="43" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8CEEFF"/>
+      <stop offset="1" stop-color="#4C5EFF"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="18" fill="url(#ifTile)"/>
+  <path d="M23 47V28c0-7.7 6.3-14 14-14h12" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round"/>
+  <path d="M23 33h21" fill="none" stroke="url(#ifLane)" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="23" cy="47" r="3.5" fill="#2ED3E6"/>
+</svg>

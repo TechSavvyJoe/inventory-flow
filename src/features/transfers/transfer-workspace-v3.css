@@ -1,0 +1,1656 @@
+/* Transfer workspace v3
+   This stylesheet is intentionally isolated from the shared page styles. The
+   queue changes shape based on its size: 1-2 moves become a compact selector
+   above a full-width detail; longer queues use a balanced master-detail view. */
+
+.transfers-page.transfer-workspace-v3 {
+  --transfer-v3-border: #cbd7e2;
+  --transfer-v3-divider: #dde5ec;
+  --transfer-v3-soft: #f4f7fa;
+  --transfer-v3-selected: #edf5fe;
+  --transfer-v3-shadow: 0 14px 34px rgb(12 42 69 / 9%);
+  display: block;
+  max-width: 1600px;
+}
+
+.transfer-stage-mobile-label,
+.transfer-mobile-counts,
+.transfer-list-filter,
+.transfer-create-mobile-label,
+.transfer-list-mobile-copy,
+.transfer-list-mobile-rail,
+.transfer-mobile-detail-bar {
+  display: none;
+}
+
+.transfer-workspace-v3 .transfers-page-header {
+  align-items: end;
+  margin-bottom: 10px;
+}
+
+.transfer-workspace-v3 .transfers-page-header h1 {
+  margin-top: 3px;
+}
+
+.transfer-workspace-v3 .transfers-page-header p {
+  max-width: 850px;
+  margin-top: 5px;
+}
+
+.transfer-workspace-v3 .transfer-workflow-overview {
+  display: grid;
+  grid-template-columns: minmax(390px, .7fr) minmax(0, 1.3fr);
+  min-width: 0;
+  margin-bottom: 10px;
+  overflow: hidden;
+  border-color: var(--transfer-v3-border);
+  border-radius: 10px;
+  box-shadow: 0 7px 20px rgb(14 46 75 / 5%);
+}
+
+.transfer-workspace-v3 .transfer-workflow-metrics {
+  grid-column: auto;
+  min-width: 0;
+  margin-bottom: 0;
+  border-right: 1px solid var(--transfer-v3-border);
+  border-bottom: 0;
+}
+
+.transfer-workspace-v3 .transfer-workflow-metrics > span {
+  min-height: 54px;
+  grid-template-columns: 20px auto minmax(0, 1fr);
+  gap: 2px 6px;
+  padding: 8px 10px;
+}
+
+.transfer-workspace-v3 .transfer-workflow-metrics svg {
+  width: 17px;
+}
+
+.transfer-workspace-v3 .transfer-workflow-metrics strong {
+  font-size: 16px;
+}
+
+.transfer-workspace-v3 .transfer-workflow-metrics small {
+  overflow: hidden;
+  font-size: 9px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+}
+
+.transfer-workspace-v3 .transfer-workflow-path {
+  grid-column: auto;
+  min-width: 0;
+  margin-bottom: 0;
+  padding: 0 8px;
+}
+
+.transfer-workspace-v3 .transfer-workflow-path li {
+  min-height: 54px;
+  gap: 6px;
+  padding: 6px 7px;
+}
+
+.transfer-workspace-v3 .transfer-workflow-path li > span {
+  width: 23px;
+  height: 23px;
+  flex-basis: 23px;
+}
+
+.transfer-workspace-v3 .transfer-workflow-path strong {
+  font-size: 9px;
+}
+
+.transfer-workspace-v3 .transfers-layout {
+  min-height: 620px;
+  height: clamp(620px, calc(100dvh - 244px), 820px);
+  overflow: hidden;
+  border-color: var(--transfer-v3-border);
+  border-radius: 11px;
+  box-shadow: var(--transfer-v3-shadow);
+}
+
+.transfer-workspace-v3 .transfers-layout--master-detail {
+  display: grid;
+  grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
+}
+
+.transfer-workspace-v3 .transfers-layout--short-queue {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.transfer-workspace-v3 .transfer-list {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border-right: 1px solid var(--transfer-v3-border);
+  background: linear-gradient(180deg, #f7f9fb 0%, #eef3f7 100%);
+}
+
+.transfer-workspace-v3 .transfer-list-toolbar {
+  flex: 0 0 auto;
+  padding: 10px;
+  border-bottom: 1px solid var(--transfer-v3-divider);
+  background: rgb(248 250 252 / 96%);
+}
+
+.transfer-workspace-v3 .transfer-list-create {
+  min-height: 38px;
+  margin-bottom: 7px;
+  box-shadow: none;
+}
+
+.transfer-workspace-v3 .transfer-list-search {
+  height: 38px;
+  border-color: #c8d4df;
+  border-radius: 7px;
+}
+
+.transfer-workspace-v3 .transfer-list-views {
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.transfer-workspace-v3 .transfer-list-views button {
+  min-height: 32px;
+  border-radius: 7px;
+  font-size: 10px;
+}
+
+.transfer-workspace-v3 .transfer-list-count {
+  padding: 8px 2px 0;
+}
+
+.transfer-workspace-v3 .transfer-list-items {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.transfer-workspace-v3 .transfer-list-item {
+  grid-template-columns: 72px minmax(0, 1fr) 17px;
+  gap: 10px;
+  min-height: 112px;
+  padding: 10px 9px 10px 11px;
+  border-color: var(--transfer-v3-divider);
+  background: rgb(255 255 255 / 88%);
+}
+
+.transfer-workspace-v3 .transfer-list-item:focus-visible {
+  z-index: 1;
+  outline: 3px solid #83b7f4;
+  outline-offset: -3px;
+}
+
+.transfer-workspace-v3 .transfer-list-item.is-selected {
+  background: var(--transfer-v3-selected);
+  box-shadow: inset 4px 0 0 #0759bd;
+}
+
+.transfer-workspace-v3 .transfer-list-photo {
+  width: 72px;
+  height: 52px;
+  border-radius: 7px;
+}
+
+.transfer-workspace-v3 .transfer-list-copy {
+  gap: 3px;
+}
+
+.transfer-workspace-v3 .transfer-list-route,
+.transfer-workspace-v3 .transfer-location,
+.transfer-workspace-v3 .transfer-list-stage,
+.transfer-workspace-v3 .transfer-next,
+.transfer-workspace-v3 .transfer-due {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.transfer-workspace-v3 .transfer-list-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+}
+
+.transfer-workspace-v3 .transfer-list-signals > span {
+  min-width: 0;
+}
+
+.transfer-workspace-v3 .transfer-next {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.transfer-workspace-v3 .transfer-due {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+}
+
+.transfer-workspace-v3 .transfer-due > span + span::before {
+  margin-right: 6px;
+  color: #9aa8b5;
+  content: '·';
+}
+
+.transfer-workspace-v3 .transfer-detail-surface {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #fff;
+  container: transfer-detail / inline-size;
+}
+
+/* With only one or two moves, the queue becomes a compact horizontal selector
+   and the selected transfer gets the full content width. */
+.transfer-workspace-v3 .transfer-list--short {
+  display: grid;
+  grid-template-columns: minmax(500px, .85fr) minmax(0, 1.15fr);
+  gap: 10px;
+  padding: 9px;
+  overflow: hidden;
+  border-right: 0;
+  border-bottom: 1px solid var(--transfer-v3-border);
+  background: #f4f7fa;
+}
+
+.transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
+  display: grid;
+  grid-template-columns: minmax(215px, .9fr) minmax(200px, 1.1fr);
+  grid-template-areas:
+    "create search"
+    "views count";
+  align-content: center;
+  gap: 7px 9px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.transfer-workspace-v3 .transfer-list--short .transfer-list-create {
+  grid-area: create;
+  margin: 0;
+}
+
+.transfer-workspace-v3 .transfer-list--short .transfer-list-search {
+  grid-area: search;
+}
+
+.transfer-workspace-v3 .transfer-list--short .transfer-list-views {
+  grid-area: views;
+  margin: 0;
+}
+
+.transfer-workspace-v3 .transfer-list--short .transfer-list-count {
+  grid-area: count;
+  align-self: center;
+  padding: 0;
+  text-align: right;
+}
+
+.transfer-workspace-v3 .transfer-list--short .transfer-list-items {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  overflow: hidden;
+}
+
+.transfer-workspace-v3 .transfer-list--short .transfer-list-item {
+  min-height: 102px;
+  border: 1px solid var(--transfer-v3-divider);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.transfer-workspace-v3 .transfer-list--short .transfer-list-item.is-selected {
+  border-color: #8bb7e5;
+  background: var(--transfer-v3-selected);
+  box-shadow: inset 4px 0 0 #0759bd;
+}
+
+.transfer-workspace-v3 .transfer-list--short .transfer-list-item:only-child {
+  grid-column: 1 / -1;
+}
+
+/* Dense, two-column selected-transfer workspace. */
+.transfer-tracker-v3.mif-transfer-tracker--page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+}
+
+.transfer-tracker-v3 .mif-tracker-overview-grid {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.04fr) minmax(0, .96fr);
+  border-bottom: 1px solid var(--transfer-v3-divider, #dde5ec);
+  background: linear-gradient(120deg, #fff 0%, #f8fafc 100%);
+}
+
+.transfer-tracker-v3 .mif-tracker-overview-primary {
+  min-width: 0;
+  border-right: 1px solid var(--transfer-v3-divider, #dde5ec);
+}
+
+.transfer-tracker-v3 .mif-tracker-header {
+  min-height: 78px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--mif-border);
+  background: transparent;
+}
+
+.transfer-tracker-v3 .mif-tracker-vehicle {
+  gap: 10px;
+}
+
+.transfer-tracker-v3 .mif-tracker-vehicle > img {
+  width: 88px;
+  height: 58px;
+  flex-basis: 88px;
+}
+
+.transfer-tracker-v3 .mif-tracker-stock {
+  font-size: 16px;
+}
+
+.transfer-tracker-v3 .mif-tracker-header h2 {
+  margin: 1px 0;
+  font-size: 16px;
+}
+
+.transfer-tracker-v3 .mif-tracker-header p {
+  margin: 0 0 2px;
+  font-size: 11px;
+}
+
+.transfer-tracker-v3 .mif-tracker-header small {
+  display: block;
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-tracker-v3 .mif-tracker-request-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0 8px;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.transfer-tracker-v3 .mif-tracker-request-summary > div {
+  gap: 2px;
+  min-height: 44px;
+  padding: 6px 7px;
+}
+
+.transfer-tracker-v3 .mif-tracker-request-summary > div:nth-child(even) {
+  border-right: 1px solid var(--mif-border);
+}
+
+.transfer-tracker-v3 .mif-tracker-request-summary > div:nth-child(4) {
+  border-right: 0;
+}
+
+.transfer-tracker-v3 .mif-tracker-request-summary__reason {
+  grid-column: 1 / -1;
+  min-height: 40px !important;
+  padding-block: 5px !important;
+}
+
+.transfer-tracker-v3 .mif-tracker-accountability {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: stretch;
+  padding: 8px 10px;
+  background: #fbfcfd;
+}
+
+.transfer-tracker-v3 .mif-tracker-accountability > div {
+  min-height: 52px;
+  gap: 2px;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--mif-border);
+}
+
+.transfer-tracker-v3 .mif-tracker-accountability > div:not(:nth-child(3n)) {
+  border-right: 1px solid var(--mif-border);
+}
+
+.transfer-tracker-v3 .mif-tracker-accountability > div:last-child {
+  grid-column: auto;
+  min-height: 42px;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.transfer-tracker-v3 .mif-tracker-accountability span,
+.transfer-tracker-v3 .mif-next-action span {
+  font-size: 9px;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.transfer-tracker-v3 .mif-tracker-accountability strong {
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.transfer-tracker-v3 .mif-tracker-accountability small {
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.transfer-tracker-v3 .mif-exception-banner,
+.transfer-tracker-v3 .mif-condition-banner {
+  flex: 0 0 auto;
+  margin: 7px 10px 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+}
+
+.transfer-tracker-v3 .mif-tracker-control-grid {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(310px, .92fr) minmax(0, 1.08fr);
+  align-items: stretch;
+  margin-top: 7px;
+  border-top: 1px solid var(--transfer-v3-divider, #dde5ec);
+  border-bottom: 1px solid var(--transfer-v3-divider, #dde5ec);
+  background: #f7f9fb;
+}
+
+.transfer-tracker-v3 .mif-tracker-control-grid.is-actionless {
+  grid-template-columns: 1fr;
+}
+
+.transfer-tracker-v3 .mif-next-action {
+  min-width: 0;
+  gap: 14px;
+  margin: 7px 8px;
+  padding: 8px 10px;
+  border: 1px solid #c8daec;
+  border-left: 4px solid var(--mif-blue);
+  border-radius: 7px;
+  background: #edf5ff;
+  box-shadow: none;
+}
+
+.transfer-tracker-v3 .mif-next-action > div:first-child {
+  min-width: 0;
+}
+
+.transfer-tracker-v3 .mif-next-action > div:first-child strong {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.transfer-tracker-v3 .mif-next-action > div:last-child {
+  flex: 0 0 auto;
+}
+
+.transfer-tracker-v3 .mif-next-action small,
+.transfer-tracker-v3 .mif-next-action > div:last-child strong {
+  font-size: 9px;
+}
+
+.transfer-tracker-v3 .mif-tracker-actions--prominent {
+  align-content: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 0;
+  border-left: 1px solid var(--transfer-v3-divider, #dde5ec);
+  background: transparent;
+}
+
+.transfer-tracker-v3 .mif-tracker-actions--prominent .mif-button {
+  min-height: 34px;
+  padding-inline: 11px;
+  border-radius: 7px;
+  font-size: 10px;
+  box-shadow: none;
+}
+
+.transfer-tracker-v3 .mif-tracker-actions--prominent .mif-button--primary {
+  min-width: 0;
+}
+
+.transfer-tracker-v3 .mif-tracker-lower-grid {
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(300px, .92fr) minmax(340px, 1.08fr);
+  overflow: hidden;
+  border-top: 0;
+  background: #fff;
+}
+
+.transfer-tracker-v3 .mif-tracker-section {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  scrollbar-gutter: stable;
+}
+
+.transfer-tracker-v3 .mif-tracker-section h3 {
+  position: sticky;
+  z-index: 2;
+  top: -10px;
+  margin: -2px -2px 6px;
+  padding: 6px 2px 5px;
+  background: rgb(255 255 255 / 96%);
+  font-size: 11px;
+}
+
+.transfer-tracker-v3 .mif-status-lane {
+  grid-template-columns: minmax(106px, .72fr) minmax(0, 1.28fr);
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.transfer-tracker-v3 .mif-status-lane dt {
+  font-size: 9px;
+}
+
+.transfer-tracker-v3 .mif-status-value {
+  font-size: 10px;
+}
+
+.transfer-tracker-v3 .mif-status-detail,
+.transfer-tracker-v3 .mif-source-stale {
+  font-size: 8px;
+}
+
+.transfer-tracker-v3 .mif-timeline-event {
+  min-height: 46px;
+  grid-template-columns: 20px 70px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.transfer-tracker-v3 .mif-timeline-event time {
+  font-size: 8px;
+}
+
+.transfer-tracker-v3 .mif-timeline-copy strong {
+  font-size: 10px;
+}
+
+.transfer-tracker-v3 .mif-timeline-copy > span,
+.transfer-tracker-v3 .mif-timeline-meta span {
+  font-size: 9px;
+}
+
+@container transfer-detail (max-width: 900px) {
+  .transfer-tracker-v3 .mif-tracker-request-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .transfer-tracker-v3 .mif-tracker-request-summary > div:nth-child(even) {
+    border-right: 0;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-accountability {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .transfer-tracker-v3 .mif-tracker-accountability > div,
+  .transfer-tracker-v3 .mif-tracker-accountability > div:not(:nth-child(3n)) {
+    border-right: 0;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-accountability > div:nth-child(odd) {
+    border-right: 1px solid var(--mif-border);
+  }
+
+  .transfer-tracker-v3 .mif-tracker-accountability > div:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@container transfer-detail (max-width: 620px) {
+  .transfer-tracker-v3 .mif-tracker-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-overview-primary {
+    border-right: 0;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-accountability {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-top: 1px solid var(--mif-border);
+  }
+
+  .transfer-tracker-v3 .mif-tracker-accountability > div {
+    border-right: 0;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-accountability > div:nth-child(odd) {
+    border-right: 1px solid var(--mif-border);
+  }
+
+  .transfer-tracker-v3 .mif-tracker-accountability > div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-control-grid {
+    grid-template-columns: minmax(280px, .8fr) minmax(0, 1.2fr);
+  }
+}
+
+@media (max-width: 1180px) {
+  .transfer-workspace-v3 .transfer-workflow-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-metrics {
+    border-right: 0;
+    border-bottom: 1px solid var(--transfer-v3-border);
+  }
+
+  .transfer-workspace-v3 .transfers-layout--master-detail {
+    grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
+  }
+
+  .transfer-workspace-v3 .transfer-list--short {
+    grid-template-columns: 1fr;
+  }
+
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
+    grid-template-columns: 210px minmax(250px, 1fr) minmax(300px, 1fr) auto;
+    grid-template-areas: "create search views count";
+  }
+}
+
+@media (max-width: 980px) {
+  .transfer-workspace-v3 .transfers-page-header {
+    display: block;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-overview {
+    display: block;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-path {
+    grid-template-columns: repeat(6, minmax(135px, 1fr));
+    overflow-x: auto;
+  }
+
+  .transfer-workspace-v3 .transfers-layout,
+  .transfer-workspace-v3 .transfers-layout--master-detail,
+  .transfer-workspace-v3 .transfers-layout--short-queue {
+    height: auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    overflow: visible;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .transfer-workspace-v3 .transfer-list,
+  .transfer-workspace-v3 .transfer-list--short {
+    display: block;
+    padding: 9px;
+    overflow: hidden;
+    border: 1px solid var(--transfer-v3-border);
+    border-radius: 10px;
+    background: #f4f7fa;
+  }
+
+  .transfer-workspace-v3 .transfer-list .transfer-list-toolbar,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
+    display: grid;
+    grid-template-columns: minmax(190px, .8fr) minmax(240px, 1.2fr);
+    grid-template-areas:
+      "create search"
+      "views count";
+    gap: 7px 9px;
+    padding: 0 0 9px;
+    border: 0;
+    background: transparent;
+  }
+
+  .transfer-workspace-v3 .transfer-list-items,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-items {
+    display: grid;
+    grid-auto-columns: minmax(310px, 58vw);
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-gutter: auto;
+  }
+
+  .transfer-workspace-v3 .transfer-list-item,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-item,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-item:only-child {
+    grid-column: auto;
+    min-height: 104px;
+    border: 1px solid var(--transfer-v3-divider);
+    border-radius: 8px;
+    scroll-snap-align: start;
+  }
+
+  .transfer-workspace-v3 .transfer-detail-surface {
+    min-height: 700px;
+    margin-top: 10px;
+    overflow: hidden;
+    border: 1px solid var(--transfer-v3-border);
+    border-radius: 10px;
+  }
+
+  .transfer-tracker-v3.mif-transfer-tracker--page {
+    min-height: 700px;
+  }
+}
+
+@media (max-width: 720px) {
+  .transfer-workspace-v3 .transfers-page-header {
+    margin-bottom: 8px;
+  }
+
+  .transfer-workspace-v3 .transfers-page-header > div > span {
+    font-size: 9px;
+  }
+
+  .transfer-workspace-v3 .transfers-page-header h1 {
+    font-size: 27px;
+  }
+
+  .transfer-workspace-v3 .transfers-page-header p {
+    display: none;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-overview {
+    margin-bottom: 8px;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-metrics {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-metrics::-webkit-scrollbar,
+  .transfer-workspace-v3 .transfer-workflow-path::-webkit-scrollbar,
+  .transfer-workspace-v3 .transfer-list-items::-webkit-scrollbar {
+    display: none;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-metrics > span {
+    min-width: 132px;
+    min-height: 48px;
+    flex: 1 0 132px;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-path {
+    grid-template-columns: repeat(6, 132px);
+    scrollbar-width: none;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-path li {
+    min-height: 46px;
+  }
+
+  .transfer-workspace-v3 .transfer-list,
+  .transfer-workspace-v3 .transfer-list--short {
+    padding: 8px;
+  }
+
+  .transfer-workspace-v3 .transfer-list .transfer-list-toolbar,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "search"
+      "views"
+      "create"
+      "count";
+  }
+
+  .transfer-workspace-v3 .transfer-list-create {
+    display: flex;
+    grid-area: create;
+    min-height: 38px;
+    margin: 0;
+  }
+
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-count,
+  .transfer-workspace-v3 .transfer-list-count {
+    text-align: left;
+  }
+
+  .transfer-workspace-v3 .transfer-list-items,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-items {
+    grid-auto-columns: minmax(286px, 88vw);
+    scrollbar-width: none;
+  }
+
+  .transfer-workspace-v3 .transfer-list-item,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-item {
+    grid-template-columns: minmax(0, 1fr) 16px;
+    min-height: 112px;
+  }
+
+  .transfer-workspace-v3 .transfer-list-photo {
+    display: none;
+  }
+
+  .transfer-workspace-v3 .transfer-detail-surface,
+  .transfer-tracker-v3.mif-transfer-tracker--page {
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .transfer-tracker-v3.mif-transfer-tracker--page {
+    height: auto;
+    display: block;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-overview-grid {
+    display: block;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-overview-primary {
+    border-right: 0;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-header {
+    min-height: 74px;
+    padding: 10px 12px;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-request-summary,
+  .transfer-tracker-v3 .mif-tracker-accountability {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .transfer-tracker-v3 .mif-tracker-accountability {
+    border-top: 1px solid var(--mif-border);
+  }
+
+  .transfer-tracker-v3 .mif-tracker-accountability > div,
+  .transfer-tracker-v3 .mif-tracker-accountability > div:nth-child(odd) {
+    border-right: 1px solid var(--mif-border);
+  }
+
+  .transfer-tracker-v3 .mif-tracker-accountability > div:nth-child(even),
+  .transfer-tracker-v3 .mif-tracker-accountability > div:last-child {
+    border-right: 0;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-accountability > div:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-control-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .transfer-tracker-v3 .mif-next-action {
+    margin: 7px 8px 0;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-actions--prominent {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 7px 8px 9px;
+    border-left: 0;
+    background: transparent;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-actions--prominent .mif-button {
+    min-height: 42px;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-lower-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-section {
+    overflow: visible;
+    padding: 12px;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-section + .mif-tracker-section {
+    border-top: 1px solid var(--mif-border);
+    border-left: 0;
+  }
+
+  .transfer-tracker-v3 .mif-tracker-section h3 {
+    position: static;
+    margin: 0 0 8px;
+    padding: 0;
+  }
+
+  .transfer-tracker-v3 .mif-status-lane {
+    grid-template-columns: minmax(105px, .72fr) minmax(0, 1.28fr);
+  }
+
+  .transfer-tracker-v3 .mif-timeline-event {
+    grid-template-columns: 20px minmax(0, 1fr);
+  }
+
+  .transfer-tracker-v3 .mif-timeline-event time {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .transfer-tracker-v3 .mif-timeline-copy {
+    grid-column: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transfer-workspace-v3 .transfer-list-items {
+    scroll-behavior: auto;
+  }
+}
+
+/* Mobile movement queue v5
+   The phone surface is intentionally queue-first: one compact operating
+   summary, one filterable list, and a separate detail state opened by URL. */
+@media (max-width: 720px) {
+  .transfers-page.transfer-workspace-v3 {
+    width: calc(100% + 24px);
+    max-width: none;
+    margin: 0 -12px;
+    color: #102238;
+    background: #fff;
+  }
+
+  .transfer-workspace-v3 > .source-warning {
+    margin: 0 12px 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+  }
+
+  .transfer-workspace-v3 > .source-warning p {
+    display: none;
+  }
+
+  .transfer-workspace-v3 > .source-warning strong,
+  .transfer-workspace-v3 > .source-warning summary {
+    font-size: 10px;
+  }
+
+  .transfer-workspace-v3 .transfers-page-header {
+    margin: 0;
+    padding: 3px 16px 6px;
+  }
+
+  .transfer-workspace-v3 .transfers-page-header > div > span,
+  .transfer-workspace-v3 .transfers-page-header p {
+    display: none;
+  }
+
+  .transfer-workspace-v3 .transfers-page-header h1 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.2;
+    letter-spacing: -.035em;
+  }
+
+  .transfer-mobile-counts {
+    min-width: 0;
+    display: flex;
+    gap: 0;
+    padding: 6px 16px 10px;
+    overflow-x: auto;
+    color: #5e6f82;
+    font-size: 11px;
+    line-height: 1.2;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+
+  .transfer-mobile-counts::-webkit-scrollbar {
+    display: none;
+  }
+
+  .transfer-mobile-counts span {
+    display: inline-flex;
+    align-items: baseline;
+    flex: 0 0 auto;
+  }
+
+  .transfer-mobile-counts span + span::before {
+    margin: 0 7px;
+    color: #8a98a8;
+    content: '·';
+  }
+
+  .transfer-mobile-counts strong {
+    margin-right: 4px;
+    color: #102238;
+    font-size: 14px;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-overview {
+    margin: 0;
+    overflow: visible;
+    border: 0;
+    border-top: 1px solid #dce4ec;
+    border-bottom: 1px solid #dce4ec;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-metrics {
+    display: none;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-path {
+    position: relative;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    margin: 0;
+    padding: 8px 8px 7px;
+    overflow: hidden;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-path::before {
+    position: absolute;
+    z-index: 0;
+    top: 21px;
+    right: calc(8.333% + 6px);
+    left: calc(8.333% + 6px);
+    height: 1px;
+    background: #bfc9d4;
+    content: '';
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-path li {
+    position: relative;
+    z-index: 1;
+    min-height: 51px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 5px;
+    padding: 0 1px;
+    color: #6c7b8c;
+    text-align: center;
+    box-shadow: none;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-path li + li::before {
+    display: none;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-path li > span {
+    width: 27px;
+    height: 27px;
+    flex: 0 0 27px;
+    border: 1px solid #bfc9d4;
+    background: #fff;
+    color: #5f6e7e;
+    font-size: 10px;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-path li.is-complete > span {
+    border-color: #0759bd;
+    background: #0759bd;
+    color: #fff;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-path li.is-current {
+    color: #0759bd;
+    box-shadow: none;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-path li.is-current > span {
+    border: 2px solid #0759bd;
+    background: #0759bd;
+    color: #fff;
+  }
+
+  .transfer-workspace-v3 .transfer-workflow-path strong {
+    max-width: 58px;
+    color: inherit;
+    font-size: 8px;
+    font-weight: 680;
+    line-height: 1.15;
+  }
+
+  .transfer-stage-desktop-label {
+    display: none;
+  }
+
+  .transfer-stage-mobile-label {
+    display: inline;
+  }
+
+  .transfer-workspace-v3 .transfers-layout,
+  .transfer-workspace-v3 .transfers-layout--master-detail,
+  .transfer-workspace-v3 .transfers-layout--short-queue {
+    min-height: 0;
+    display: block;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .transfer-workspace-v3 .transfer-list,
+  .transfer-workspace-v3 .transfer-list--short {
+    display: block;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+  }
+
+  .transfer-workspace-v3 .transfer-list .transfer-list-toolbar,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 46px minmax(116px, auto);
+    grid-template-areas:
+      'search filter create'
+      'views views views';
+    gap: 9px 8px;
+    padding: 10px 12px 9px;
+    border: 0;
+    border-bottom: 1px solid #dce4ec;
+    background: #fff;
+  }
+
+  .transfer-workspace-v3 .transfer-list-search {
+    grid-area: search;
+    height: 46px;
+    padding: 0 11px;
+    border-color: #c9d5e1;
+    border-radius: 7px;
+  }
+
+  .transfer-workspace-v3 .transfer-list-search input {
+    font-size: 13.5px;
+  }
+
+  .transfer-workspace-v3 .transfer-list-search input::placeholder {
+    color: #68798b;
+  }
+
+  .transfer-list-filter {
+    position: relative;
+    grid-area: filter;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid #c9d5e1;
+    border-radius: 7px;
+    color: #4b6178;
+    background: #fff;
+  }
+
+  .transfer-list-filter:focus-within {
+    border-color: #0759bd;
+    box-shadow: 0 0 0 3px rgb(7 89 189 / 14%);
+  }
+
+  .transfer-list-filter > svg {
+    width: 19px;
+    pointer-events: none;
+  }
+
+  .transfer-list-filter select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .transfer-list-filter .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .transfer-workspace-v3 .transfer-list-create,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-create {
+    grid-area: create;
+    min-height: 46px;
+    display: inline-flex;
+    justify-content: center;
+    gap: 6px;
+    margin: 0;
+    padding: 0 12px;
+    border: 1px solid #0759bd;
+    border-radius: 7px;
+    color: #0759bd;
+    background: #fff;
+    box-shadow: none;
+    font-size: 13px;
+    font-weight: 750;
+    white-space: nowrap;
+  }
+
+  .transfer-workspace-v3 .transfer-list-create svg {
+    width: 15px;
+  }
+
+  .transfer-create-desktop-label {
+    display: none;
+  }
+
+  .transfer-create-mobile-label {
+    display: inline;
+  }
+
+  .transfer-workspace-v3 .transfer-list-views,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-views {
+    grid-area: views;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid #c9d5e1;
+    border-radius: 7px;
+  }
+
+  .transfer-workspace-v3 .transfer-list-views button,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-views button {
+    position: relative;
+    min-height: 44px;
+    gap: 5px;
+    border: 0;
+    border-radius: 0;
+    color: #536579;
+    background: #fff;
+    font-size: 12.5px;
+    font-weight: 680;
+  }
+
+  .transfer-workspace-v3 .transfer-list-views button.is-active {
+    color: #0759bd;
+    background: #fff;
+    box-shadow: inset 0 -3px #0759bd;
+  }
+
+  .transfer-workspace-v3 .transfer-list-views button span {
+    min-width: 19px;
+    padding: 2px 4px;
+    border-radius: 999px;
+    background: #edf3f9;
+    color: #0759bd;
+    font-size: 11px;
+  }
+
+  .transfer-workspace-v3 .transfer-list-count,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-count {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .transfer-workspace-v3 .transfer-list-items,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-items {
+    display: block;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+
+  .transfer-workspace-v3 .transfer-list-item,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-item,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-item:only-child {
+    width: 100%;
+    min-height: 150px;
+    display: grid;
+    grid-template-columns: 66px minmax(96px, 1fr) minmax(90px, 105px) 14px;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 12px;
+    overflow: hidden;
+    border: 0;
+    border-bottom: 1px solid #dde5ed;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+    scroll-snap-align: none;
+  }
+
+  .transfer-workspace-v3 .transfer-list-item:first-child {
+    border-top: 0;
+  }
+
+  .transfer-workspace-v3 .transfer-list-item.is-selected,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-item.is-selected {
+    border-color: #dde5ed;
+    background: linear-gradient(90deg, #edf5fe 0%, #f9fbfd 75%, #fff 100%);
+    box-shadow: inset 4px 0 #0759bd;
+  }
+
+  .transfer-workspace-v3 .transfer-list-item:active {
+    background: #f1f6fb;
+  }
+
+  .transfer-workspace-v3 .transfer-list-item > svg {
+    width: 16px;
+    color: #536579;
+  }
+
+  .transfer-workspace-v3 .transfer-list-photo {
+    width: 66px;
+    height: 62px;
+    display: block;
+    align-self: center;
+    object-fit: contain;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .transfer-list-photo--placeholder {
+    display: grid !important;
+    place-items: center;
+    border: 1px solid #dce4ec !important;
+    border-radius: 6px !important;
+    background: #f5f8fa !important;
+    color: #718296;
+  }
+
+  .transfer-list-photo--placeholder svg {
+    width: 28px;
+  }
+
+  .transfer-workspace-v3 .transfer-list-copy--desktop {
+    display: none;
+  }
+
+  .transfer-list-mobile-copy {
+    min-width: 0;
+    display: grid;
+    align-content: center;
+    gap: 5px;
+  }
+
+  .transfer-mobile-stock {
+    overflow: hidden;
+    color: #102238;
+    font-size: 15.5px;
+    font-weight: 780;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .transfer-mobile-vehicle {
+    display: -webkit-box;
+    overflow: hidden;
+    color: #102238;
+    font-size: 15px !important;
+    font-weight: 720;
+    line-height: 1.16;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .transfer-mobile-route {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    color: #5b6d80;
+    font-size: 12.5px !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .transfer-mobile-route span {
+    color: #7b8a99;
+  }
+
+  .transfer-mobile-stage {
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    color: #164f86;
+    font-size: 12.5px !important;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .transfer-mobile-stage b {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    display: grid;
+    place-items: center;
+    border: 1px solid #0759bd;
+    border-radius: 50%;
+    color: #0759bd;
+    background: #fff;
+    font-size: 8px;
+  }
+
+  .transfer-mobile-stage > span,
+  .transfer-mobile-owner > span {
+    min-width: 0;
+    display: -webkit-box;
+    overflow: hidden;
+    line-height: 1.22;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .transfer-mobile-owner {
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 5px;
+    color: #536579;
+    font-size: 12.5px !important;
+  }
+
+  .transfer-mobile-owner svg {
+    width: 14px;
+    flex: 0 0 14px;
+  }
+
+  .transfer-list-mobile-rail {
+    min-width: 0;
+    align-self: stretch;
+    display: grid;
+    align-content: center;
+    gap: 8px;
+    padding-left: 9px;
+    border-left: 1px solid #e1e7ed;
+    color: #536579;
+  }
+
+  .transfer-list-mobile-rail > span {
+    min-width: 0;
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 12.5px !important;
+    line-height: 1.28;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .transfer-mobile-due.is-overdue,
+  .transfer-mobile-issue {
+    color: #bd2026;
+  }
+
+  .transfer-mobile-due {
+    font-weight: 760;
+  }
+
+  .transfer-mobile-due.is-due-soon {
+    color: #a75b00;
+  }
+
+  .transfer-mobile-due.is-on-track {
+    color: #536579;
+  }
+
+  .transfer-mobile-driver {
+    color: #4f6276;
+    font-weight: 650;
+  }
+
+  .transfer-mobile-issue {
+    align-items: flex-start;
+    gap: 4px;
+    font-weight: 680;
+  }
+
+  .transfer-mobile-issue svg {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 12px;
+  }
+
+  .transfer-mobile-scheduled {
+    color: #246548;
+  }
+
+  .transfer-workspace-v3:not(.is-mobile-detail-open) .transfer-detail-surface {
+    display: none;
+  }
+
+  .transfer-workspace-v3.is-mobile-detail-open > .source-warning,
+  .transfer-workspace-v3.is-mobile-detail-open > .transfers-page-header,
+  .transfer-workspace-v3.is-mobile-detail-open > .transfer-mobile-counts,
+  .transfer-workspace-v3.is-mobile-detail-open > .transfer-workflow-overview,
+  .transfer-workspace-v3.is-mobile-detail-open .transfer-list {
+    display: none;
+  }
+
+  .transfer-workspace-v3.is-mobile-detail-open .transfer-detail-surface {
+    min-height: calc(100dvh - var(--top-height, 60px) - var(--mobile-bottom-height, 66px));
+    display: block;
+    margin: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .transfer-mobile-detail-bar {
+    position: sticky;
+    z-index: 20;
+    top: var(--top-height, 60px);
+    min-height: 54px;
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border-bottom: 1px solid #d6e0e9;
+    background: rgb(255 255 255 / 96%);
+    backdrop-filter: blur(14px);
+  }
+
+  .transfer-mobile-detail-bar button {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 7px;
+    color: #164f86;
+    background: #edf4fb;
+    cursor: pointer;
+  }
+
+  .transfer-mobile-detail-bar button svg {
+    width: 19px;
+  }
+
+  .transfer-mobile-detail-bar > span {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+
+  .transfer-mobile-detail-bar strong,
+  .transfer-mobile-detail-bar small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .transfer-mobile-detail-bar strong {
+    color: #102238;
+    font-size: 12px;
+  }
+
+  .transfer-mobile-detail-bar small {
+    color: #5d6f82;
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 359px) {
+  .transfer-workspace-v3 .transfer-list .transfer-list-toolbar,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
+    grid-template-columns: minmax(0, 1fr) 44px 44px;
+  }
+
+  .transfer-workspace-v3 .transfer-list-create {
+    width: 44px;
+    padding: 0;
+  }
+
+  .transfer-workspace-v3 .transfer-list-create .transfer-create-mobile-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .transfer-workspace-v3 .transfer-list-item,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-item,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-item:only-child {
+    grid-template-columns: 62px minmax(0, 1fr) minmax(76px, .68fr) 12px;
+    gap: 6px;
+    padding-inline: 9px;
+  }
+
+  .transfer-workspace-v3 .transfer-list-photo {
+    width: 62px;
+    height: 56px;
+  }
+}

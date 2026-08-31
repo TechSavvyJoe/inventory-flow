@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 160" role="img" aria-labelledby="title desc">
+  <title id="title">Inventory Flow horizontal logo</title>
+  <desc id="desc">Flowline product mark with the Inventory Flow wordmark and operations descriptor.</desc>
+  <defs>
+    <linearGradient id="ifTile" x1="15" y1="12" x2="137" y2="148" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#142A45"/>
+      <stop offset="1" stop-color="#071722"/>
+    </linearGradient>
+    <linearGradient id="ifLane" x1="54" y1="43" x2="106" y2="102" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8CEEFF"/>
+      <stop offset="1" stop-color="#4C5EFF"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="136" height="136" rx="40" fill="url(#ifTile)"/>
+  <path d="M59 113V68c0-17 14-31 31-31h29" fill="none" stroke="#FFFFFF" stroke-width="15" stroke-linecap="round"/>
+  <path d="M59 80h52" fill="none" stroke="url(#ifLane)" stroke-width="15" stroke-linecap="round"/>
+  <circle cx="59" cy="113" r="7.5" fill="#2ED3E6"/>
+  <text x="180" y="82" fill="#071722" font-family="Segoe UI Variable Display, Segoe UI, Arial, sans-serif" font-size="48" font-weight="730" letter-spacing="-1.7">Inventory Flow</text>
+  <text x="184" y="112" fill="#526778" font-family="Segoe UI Variable Text, Segoe UI, Arial, sans-serif" font-size="13" font-weight="680" letter-spacing="4.4">AUTOMOTIVE OPERATIONS</text>
+</svg>

@@ -1,0 +1,53 @@
+:root {
+  --font-app: "Inter Variable", "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-app);
+  color: #102238;
+  background: #ffffff;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --navy-950: #041e38;
+  --navy-900: #062a4d;
+  --navy-800: #083a69;
+  --blue-700: #064b9f;
+  --blue-600: #0759bd;
+  --blue-500: #0b67d1;
+  --blue-100: #dbeeff;
+  --blue-050: #edf5ff;
+  --ink-900: #102238;
+  --ink-700: #34485e;
+  --ink-600: #536579;
+  --ink-500: #617287;
+  --border: #dce4ed;
+  --border-strong: #c8d4e1;
+  --surface: #ffffff;
+  --surface-soft: #f5f8fb;
+  --surface-muted: #eef3f8;
+  --green: #147a3d;
+  --green-bg: #e9f7ee;
+  --amber: #b85b00;
+  --amber-bg: #fff4e6;
+  --red: #c93434;
+  --red-bg: #fff0f0;
+  --violet: #7655d8;
+  --violet-bg: #f1edff;
+  --neutral: #5f7083;
+  --focus: #4c96ea;
+  --shadow-drawer: 0 16px 42px rgb(26 55 87 / 16%);
+  --shadow-panel: 0 8px 28px rgb(19 48 78 / 7%);
+  --radius-control: 8px;
+  --radius-panel: 10px;
+  --nav-width: 188px;
+  --top-height: 72px;
+  --mobile-bottom-height: 70px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

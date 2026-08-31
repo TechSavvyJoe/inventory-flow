@@ -1,0 +1,274 @@
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BootstrapData, TransferRecord } from '../../types';
+import { TransferTracker } from './TransferTracker';
+import { TransfersPage } from './TransfersPage';
+import type { TransferDetail } from './types';
+
+const mocks = vi.hoisted(() => ({
+  getTransfer: vi.fn(),
+  useAppData: vi.fn(),
+}));
+
+vi.mock('../../app/AppDataContext', () => ({ useAppData: mocks.useAppData }));
+vi.mock('../../lib/api', () => ({ getTransfer: mocks.getTransfer }));
+
+function transfer(index: number): TransferRecord {
+  const stock = `MOVE${index}`;
+  return {
+    id: `transfer-${index}`,
+    vin: `1FTFW1E80RFA${String(index).padStart(5, '0')}`,
+    stockNumber: stock,
+    vehicleName: `2025 Ford F-150 ${index}`,
+    homeStore: index % 2 ? 'Howell' : 'Fowlerville',
+    requestingStore: 'Ford Detroit',
+    currentLocation: index % 2 ? 'Howell' : 'Fowlerville',
+    destination: 'Ford Detroit',
+    requestStatus: index === 1 ? 'return_in_transit' : 'approved',
+    movementStatus: index === 1 ? 'return in transit' : 'release approved',
+    dealStatus: index === 1 ? 'shown not sold' : 'decision pending',
+    deliveryStatus: 'not confirmed',
+    dealerMailHoldState: 'primary',
+    publicListingState: 'listed',
+    cdkStatus: 'processing',
+    priority: index === 1 ? 'high' : 'normal',
+    requestedBy: `Salesperson ${index}`,
+    requestedAt: '2026-08-29T14:00:00.000Z',
+    custodian: `Custodian ${index}`,
+    transportAssignee: `Driver ${index}`,
+    nextAction: index === 1 ? 'Confirm home receipt' : 'Assign a driver',
+    nextActionOwner: `Manager ${index}`,
+    dueAt: '2026-09-01T15:00:00.000Z',
+    returnRequired: true,
+    returnDueAt: '2026-09-02T15:00:00.000Z',
+    lastConfirmedAt: '2026-08-30T12:00:00.000Z',
+    locationConfidence: 'verified',
+    allowedActions: index === 1
+      ? ['confirm-return', 'report-condition', 'mark-exception']
+      : ['assign-transport', 'report-condition', 'mark-exception'],
+    privateEvidence: {
+      requestReason: `Customer appointment ${index}`,
+      customerReference: `Customer ${index}`,
+    },
+    events: [{
+      id: `event-${index}`,
+      type: 'location_confirmed',
+      label: 'Location confirmed',
+      occurredAt: '2026-08-30T12:00:00.000Z',
+      actor: `Manager ${index}`,
+      actorRole: 'manager',
+      toLocation: index % 2 ? 'Howell' : 'Fowlerville',
+      note: 'Vehicle and keys verified.',
+    }],
+  };
+}
+
+function bootstrap(count: number): BootstrapData {
+  return {
+    meta: {
+      reportDate: '2026-08-30',
+      completedAt: '2026-08-30T13:00:00.000Z',
+      timezone: 'America/New_York',
+      publicFreshness: 'current',
+      dealerMailFreshness: 'current',
+      publicCount: 0,
+      crmCount: 0,
+      heldVinCount: 0,
+      publicChangeCounts: {
+        newArrival: 0,
+        removed: 0,
+        priceChange: 0,
+        mileageChange: 0,
+        websiteStatusChange: 0,
+        stockCorrection: 0,
+        storeTransfer: 0,
+      },
+      holdChangeStatus: 'current',
+      warnings: [],
+    },
+    stores: [],
+    vehicles: [],
+    transfers: Array.from({ length: count }, (_, index) => transfer(index + 1)),
+    attention: [],
+    publicChanges: [],
+  };
+}
+
+function detail(allowedActions: TransferDetail['allowedActions']): TransferDetail {
+  return {
+    id: 'transfer-return',
+    vehicle: {
+      vin: '1FTFW1E80RFA00001',
+      stock: 'MOVE1',
+      vehicleLabel: '2025 Ford F-150 Lariat',
+      trimLabel: 'Lariat 4x4',
+      homeStore: 'Howell',
+      currentLocation: {
+        label: 'Ford Detroit',
+        confidence: 'verified',
+        confirmedAt: '2026-08-30T12:00:00.000Z',
+      },
+      listedPriceLabel: '$52,500',
+      mileageLabel: '12,345 mi',
+      status: {
+        dealerMail: { code: 'primary', label: 'Primary hold', tone: 'warning' },
+        publicListing: { code: 'listed', label: 'Listed', tone: 'info' },
+        cdk: { code: 'processing', label: 'Processing', tone: 'neutral' },
+      },
+    },
+    requestingStore: 'Ford Detroit',
+    destination: 'Howell',
+    priority: 'high',
+    requestedByLabel: 'Joe Gallant',
+    requestReason: 'Customer appointment',
+    customerReference: 'Jane Customer',
+    requestedAt: '2026-08-29T14:00:00.000Z',
+    neededBy: '2026-09-01T15:00:00.000Z',
+    custodianLabel: 'Joe Gallant',
+    transportAssigneeLabel: 'Stacey Driver',
+    returnRequired: true,
+    returnDueAt: '2026-09-02T15:00:00.000Z',
+    nextAction: {
+      label: 'Confirm the vehicle returned home',
+      ownerLabel: 'Howell manager',
+      dueAt: '2026-09-01T15:00:00.000Z',
+      sla: 'on-track',
+    },
+    status: {
+      request: { code: 'approved', label: 'Home-store release confirmed', tone: 'success' },
+      movement: { code: 'in-transit-return', label: 'Return in transit', tone: 'info' },
+      deal: { code: 'shown-not-sold', label: 'Shown not sold', tone: 'warning' },
+      delivery: { code: 'not-confirmed', label: 'Delivery not confirmed', tone: 'neutral' },
+      dealerMail: { code: 'primary', label: 'Primary hold', tone: 'warning' },
+      publicListing: { code: 'listed', label: 'Listed', tone: 'info' },
+      cdk: { code: 'processing', label: 'Processing', tone: 'neutral' },
+    },
+    timeline: [{
+      id: 'event-return',
+      kind: 'return_in_transit',
+      title: 'Return trip started',
+      occurredAt: '2026-08-30T12:00:00.000Z',
+      location: 'Ford Detroit',
+      actorLabel: 'Stacey Driver',
+      actorRole: 'driver',
+      detail: 'Vehicle, keys, and condition report received.',
+      source: 'app',
+    }],
+    allowedActions,
+  };
+}
+
+function renderPage(data: BootstrapData, initialEntry = '/transfers') {
+  mocks.useAppData.mockReturnValue({
+    data,
+    homeStore: 'Howell',
+    role: 'manager',
+    submitTransfer: vi.fn(),
+  });
+  mocks.getTransfer.mockImplementation((id: string) =>
+    Promise.resolve(data.transfers.find((item) => item.id === id)),
+  );
+  return render(<MemoryRouter initialEntries={[initialEntry]}><TransfersPage /></MemoryRouter>);
+}
+
+afterEach(() => cleanup());
+
+describe('transfer workspace v3 layout', () => {
+  beforeEach(() => {
+    mocks.getTransfer.mockReset();
+    mocks.useAppData.mockReset();
+  });
+
+  it('uses a compact selector above a full-width detail for one or two moves', () => {
+    const { container } = renderPage(bootstrap(2));
+
+    const layout = container.querySelector('.transfers-layout');
+    expect(layout).toHaveClass('transfers-layout--short-queue');
+    expect(layout).toHaveAttribute('data-queue-size', '2');
+    expect(container.querySelector('.transfer-list')).toHaveClass('transfer-list--short');
+    expect(container.querySelectorAll('.transfer-list-item')).toHaveLength(2);
+    expect(container.querySelector('#transfer-detail-workspace')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '2025 Ford F-150 1' })).toBeInTheDocument();
+  });
+
+  it('uses the independently scrolling master-detail layout for longer queues', () => {
+    const { container } = renderPage(bootstrap(4));
+
+    const layout = container.querySelector('.transfers-layout');
+    expect(layout).toHaveClass('transfers-layout--master-detail');
+    expect(layout).toHaveAttribute('data-queue-size', '4');
+    expect(container.querySelector('.transfer-list')).not.toHaveClass('transfer-list--short');
+    expect(container.querySelectorAll('.transfer-list-item')).toHaveLength(4);
+  });
+
+  it('renders the queue-first mobile contract without placing the selected detail in the queue state', () => {
+    const { container } = renderPage(bootstrap(4));
+
+    const page = container.querySelector('.transfer-workspace-v3');
+    expect(page).toHaveAttribute('data-mobile-detail-open', 'false');
+    expect(container.querySelectorAll('.transfer-list-mobile-copy')).toHaveLength(4);
+    expect(container.querySelectorAll('.transfer-list-mobile-rail')).toHaveLength(4);
+    expect(screen.getByRole('combobox', { name: 'Filter vehicle moves' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Request a vehicle' })).toHaveTextContent('Request vehicle');
+    expect(screen.getByRole('button', { name: /2025 Ford F-150 1/i })).toHaveTextContent('MOVE1');
+    expect(screen.getByRole('button', { name: /2025 Ford F-150 1/i })).toHaveTextContent('Next: Manager 1');
+  });
+
+  it('opens a dedicated mobile detail state and returns to the queue', () => {
+    const { container } = renderPage(bootstrap(4), '/transfers?id=transfer-2');
+
+    const page = container.querySelector('.transfer-workspace-v3');
+    expect(page).toHaveAttribute('data-mobile-detail-open', 'true');
+    const detailBar = container.querySelector('.transfer-mobile-detail-bar');
+    expect(detailBar).toHaveTextContent('2025 Ford F-150 2');
+    expect(detailBar).toHaveTextContent('MOVE2');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to vehicle moves' }));
+
+    expect(page).toHaveAttribute('data-mobile-detail-open', 'false');
+  });
+
+  it('filters the mobile move queue by actionable operating signals', () => {
+    renderPage(bootstrap(4));
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter vehicle moves' }), {
+      target: { value: 'driver-needed' },
+    });
+
+    expect(screen.getByText('No moves match this view and search.')).toBeInTheDocument();
+  });
+
+  it('keeps issue and return actions authorized, visible, and wired to their exact action kinds', () => {
+    const onAction = vi.fn();
+    render(
+      <TransferTracker
+        transfer={detail(['confirm-return', 'schedule-return', 'report-condition', 'mark-exception'])}
+        mode="page"
+        onAction={onAction}
+      />,
+    );
+
+    expect(screen.getByRole('region', { name: 'Request and vehicle summary' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Location and accountability' })).toBeInTheDocument();
+    const actions = screen.getByRole('contentinfo', { name: 'Available move actions' });
+    expect(within(actions).getByRole('button', { name: 'Confirm home receipt' })).toBeInTheDocument();
+    expect(within(actions).getByRole('button', { name: 'Schedule return' })).toBeInTheDocument();
+    expect(within(actions).getByRole('button', { name: 'Report vehicle issue' })).toBeInTheDocument();
+
+    fireEvent.click(within(actions).getByRole('button', { name: 'Report vehicle issue' }));
+    fireEvent.click(within(actions).getByRole('button', { name: 'Confirm home receipt' }));
+
+    expect(onAction).toHaveBeenNthCalledWith(1, 'report-condition', expect.objectContaining({ id: 'transfer-return' }));
+    expect(onAction).toHaveBeenNthCalledWith(2, 'confirm-return', expect.objectContaining({ id: 'transfer-return' }));
+    expect(screen.getByRole('list', { name: 'Custody timeline' })).toHaveTextContent('Return trip started');
+  });
+
+  it('does not invent actions when the server-authorized action list is empty', () => {
+    render(<TransferTracker transfer={detail([])} mode="page" onAction={vi.fn()} />);
+
+    expect(screen.queryByRole('contentinfo', { name: 'Available move actions' })).not.toBeInTheDocument();
+    expect(screen.getByText('Confirm the vehicle returned home')).toBeInTheDocument();
+    expect(screen.getByText('Return in transit')).toBeInTheDocument();
+  });
+});
