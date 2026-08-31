@@ -1,8 +1,8 @@
 // @ts-nocheck -- server modules intentionally use the Node ESM runtime without a frontend declaration bundle.
 // @vitest-environment node
 
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import {
   findLatestCompletedManifest,
   hasCompletedManifestEvidence,
@@ -10,8 +10,6 @@ import {
   mergeVerifiedPhotoCache,
   validateVinDocumentEnrichment,
 } from '../../server/importer.mjs'
-
-const workspaceRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 
 describe('verified daily source importer', () => {
   it('accepts both legacy and authenticated read-only completion contracts without weakening validation', () => {
@@ -305,36 +303,41 @@ describe('verified daily source importer', () => {
   })
 
   it('follows the latest completed manifest and validates both exact snapshots', () => {
-    const { manifest } = findLatestCompletedManifest(workspaceRoot)
-    const release = loadLatestCompletedRelease({
-      workspaceRoot,
-      now: new Date(`${manifest.report_date}T18:00:00-04:00`),
-    })
+    const fixture = createSyntheticWorkspace()
+    try {
+      const { manifest } = findLatestCompletedManifest(fixture.workspaceRoot)
+      const release = loadLatestCompletedRelease({
+        workspaceRoot: fixture.workspaceRoot,
+        now: new Date(`${manifest.report_date}T18:00:00-04:00`),
+      })
 
-    expect(release.reportDate).toBe(manifest.report_date)
-    expect(release.sourceRuns.public.rowCount).toBe(manifest.source_counts.public_unique_vins)
-    expect(release.sourceRuns.dealerMail.rowCount).toBe(manifest.source_counts.dealermail_used_rows)
-    expect(release.sourceRuns.dealerMail.metadata.heldVinCount).toBe(manifest.source_counts.active_held_vins)
-    expect(release.sourceRuns.public.sha256).toMatch(/^[A-F0-9]{64}$/)
-    expect(release.sourceRuns.dealerMail.sha256).toMatch(/^[A-F0-9]{64}$/)
-    expect(release.publicChangeEvents).toHaveLength(
-      Object.values(manifest.public_change_counts).reduce((total: number, count: unknown) => total + Number(count), 0),
-    )
-    expect(release.sourceRuns.public.metadata.changeBaseline?.reportDate < release.reportDate).toBe(true)
-    expect(release.vehicles.filter((vehicle: { publicRecord: unknown }) => vehicle.publicRecord)).toHaveLength(
-      manifest.source_counts.public_unique_vins,
-    )
-    const enriched = release.vehicles.find((vehicle: { vin: string }) => vehicle.vin === '1GCUDEED9RZ144878')
-    expect(enriched?.resourceRecord?.factoryEquipment).toMatchObject({
-      sourceLabel: 'vAuto / CAI informational equipment label',
-      totalMsrp: 66360,
-      isOriginalWindowSticker: false,
-    })
-    expect(enriched?.resourceRecord?.autoCheckReport).toBeUndefined()
-    expect(release.sourceRuns.resources).toMatchObject({
-      type: 'vin_document_enrichment',
-      rowCount: 1,
-      schemaVersion: 'inventory-flow-vin-document-enrichment-v1',
-    })
+      expect(release.reportDate).toBe(manifest.report_date)
+      expect(release.sourceRuns.public.rowCount).toBe(manifest.source_counts.public_unique_vins)
+      expect(release.sourceRuns.dealerMail.rowCount).toBe(manifest.source_counts.dealermail_used_rows)
+      expect(release.sourceRuns.dealerMail.metadata.heldVinCount).toBe(manifest.source_counts.active_held_vins)
+      expect(release.sourceRuns.public.sha256).toMatch(/^[A-F0-9]{64}$/)
+      expect(release.sourceRuns.dealerMail.sha256).toMatch(/^[A-F0-9]{64}$/)
+      expect(release.publicChangeEvents).toHaveLength(
+        Object.values(manifest.public_change_counts).reduce((total: number, count: unknown) => total + Number(count), 0),
+      )
+      expect(release.sourceRuns.public.metadata.changeBaseline?.reportDate < release.reportDate).toBe(true)
+      expect(release.vehicles.filter((vehicle: { publicRecord: unknown }) => vehicle.publicRecord)).toHaveLength(
+        manifest.source_counts.public_unique_vins,
+      )
+      const enriched = release.vehicles.find((vehicle: { vin: string }) => vehicle.vin === 'TESTDATAHWELL0001')
+      expect(enriched?.resourceRecord?.factoryEquipment).toMatchObject({
+        sourceLabel: 'Synthetic factory-equipment fixture',
+        totalMsrp: 68420,
+        isOriginalWindowSticker: false,
+      })
+      expect(enriched?.resourceRecord?.autoCheckReport).toBeUndefined()
+      expect(release.sourceRuns.resources).toMatchObject({
+        type: 'vin_document_enrichment',
+        rowCount: 1,
+        schemaVersion: 'inventory-flow-vin-document-enrichment-v1',
+      })
+    } finally {
+      fixture.cleanup()
+    }
   })
 })

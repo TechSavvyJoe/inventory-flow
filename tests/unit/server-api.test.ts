@@ -1,15 +1,15 @@
 // @ts-nocheck -- server modules intentionally use the Node ESM runtime without a frontend declaration bundle.
 // @vitest-environment node
 
-import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
+import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import { createInventoryServer } from '../../server/api.mjs'
 import { importRelease, openInventoryDatabase } from '../../server/database.mjs'
 import { findLatestCompletedManifest, loadLatestCompletedRelease } from '../../server/importer.mjs'
 import { createInventoryService } from '../../server/service.mjs'
 
-const workspaceRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const openResources: Array<{ server: ReturnType<typeof createInventoryServer>; database: ReturnType<typeof openInventoryDatabase> }> = []
+const openWorkspaces: Array<ReturnType<typeof createSyntheticWorkspace>> = []
 
 afterEach(async () => {
   while (openResources.length) {
@@ -17,12 +17,15 @@ afterEach(async () => {
     await new Promise<void>((resolve) => resource.server.close(() => resolve()))
     resource.database.close()
   }
+  while (openWorkspaces.length) openWorkspaces.pop()?.cleanup()
 })
 
 async function harness() {
-  const { manifest } = findLatestCompletedManifest(workspaceRoot)
+  const fixture = createSyntheticWorkspace()
+  openWorkspaces.push(fixture)
+  const { manifest } = findLatestCompletedManifest(fixture.workspaceRoot)
   const fixedNow = new Date(`${manifest.report_date}T18:00:00-04:00`)
-  const release = loadLatestCompletedRelease({ workspaceRoot, now: fixedNow })
+  const release = loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot, now: fixedNow })
   const database = openInventoryDatabase()
   importRelease(database, release, { loadedAt: fixedNow.toISOString() })
   const service = createInventoryService({ database, now: () => fixedNow })
@@ -194,7 +197,7 @@ describe('Inventory Flow API', () => {
 
   it('exposes and searches VIN-linked factory equipment for public and CRM-only vehicles', async () => {
     const { baseUrl, database } = await harness()
-    const vin = '1GCUDEED9RZ144878'
+    const vin = 'TESTDATAHWELL0001'
     const crm = database.prepare('SELECT crm_store_id FROM crm_vehicle_snapshots WHERE vin = ?').get(vin)
     expect(crm).toBeTruthy()
 
@@ -205,25 +208,25 @@ describe('Inventory Flow API', () => {
     expect(detailResponse.status).toBe(200)
     expect(detail.factoryEquipment).toMatchObject({
       dataState: 'current',
-      url: 'https://assets.cai-media-management.com/window-stickers/15fe2ec7-42e9-4d24-a549-5e749b01102e.jpg',
-      totalMsrp: 66360,
+      url: 'https://assets.cai-media-management.com/window-stickers/00000000-0000-4000-8000-000000000001.jpg',
+      totalMsrp: 68420,
       isOriginalWindowSticker: false,
     })
     expect(detail.factoryEquipment.packages).toEqual(
-      expect.arrayContaining([expect.objectContaining({ name: 'SAFETY PACKAGE', code: 'PQB' })]),
+      expect.arrayContaining([expect.objectContaining({ name: 'Synthetic Premium Technology Package', code: 'DEMO' })]),
     )
-    expect(detail.searchText).toContain('aerial view display system')
+    expect(detail.searchText).toContain('360-degree camera')
     expect(detail.searchText).toContain('not original monroney window sticker')
 
     const publicSearch = await fetch(
-      `${baseUrl}/api/vehicles?q=${encodeURIComponent('RST ALL STAR PREMIUM PACKAGE')}&limit=10`,
+      `${baseUrl}/api/vehicles?q=${encodeURIComponent('Synthetic Premium Technology Package')}&limit=10`,
       { headers: roleHeaders('sales', crm.crm_store_id, 'Factory-equipment search') },
     ).then((response) => response.json())
     expect(publicSearch.items.some((vehicle: { vin: string }) => vehicle.vin === vin)).toBe(true)
 
     database.prepare('DELETE FROM public_vehicle_snapshots WHERE vin = ?').run(vin)
     const crmOnlyResponse = await fetch(
-      `${baseUrl}/api/vehicles?includeCrmOnly=true&q=${encodeURIComponent('Glacier Blue Metallic (GLT)')}&limit=10`,
+      `${baseUrl}/api/vehicles?includeCrmOnly=true&q=${encodeURIComponent('Antimatter Blue Metallic')}&limit=10`,
       { headers: roleHeaders('sales', crm.crm_store_id, 'CRM-only resource search') },
     )
     const crmOnly = await crmOnlyResponse.json()
@@ -233,7 +236,7 @@ describe('Inventory Flow API', () => {
         expect.objectContaining({
           vin,
           publicListingState: 'Not publicly listed in verified release',
-          factoryEquipment: expect.objectContaining({ totalMsrp: 66360 }),
+          factoryEquipment: expect.objectContaining({ totalMsrp: 68420 }),
         }),
       ]),
     )
