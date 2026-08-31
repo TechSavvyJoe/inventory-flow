@@ -72,12 +72,12 @@ describe('modern inventory scope and paging', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Howell inventory' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Howell inventory, 1 of 1 group vehicles' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: /Filters/i }));
     expect(screen.getByLabelText('Home inventory: Howell')).toBeInTheDocument();
     expect(screen.queryByLabelText('Location')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'All locations' }));
+    fireEvent.click(screen.getByRole('button', { name: 'All locations, 1 group vehicles' }));
     expect(screen.getByLabelText('Location')).toBeInTheDocument();
   });
 

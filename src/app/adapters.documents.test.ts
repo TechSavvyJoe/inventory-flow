@@ -195,4 +195,69 @@ describe('official document adapter', () => {
     expect(mapped.factoryEquipment?.url).toBeNull();
     expect(mapped.factoryEquipment?.packages?.[0]?.name).toBe('Active Comfort Package');
   });
+
+  it('preserves last-verified hold evidence when the DealerMail snapshot is stale', () => {
+    const record = sourceVehicle();
+    record.hold = {
+      state: 'stale',
+      label: 'Last verified hold — confirm in DealerMail',
+      backupCount: 1,
+      canViewEvidence: true,
+    };
+    record.privateEvidence = {
+      primary: {
+        salesperson: 'Example Salesperson',
+        customerOrReason: 'Example reason',
+        holdDate: '2026-08-29',
+        expectedDate: '2026-09-02',
+      },
+      backups: [{ order: 2, salesperson: 'Backup Salesperson', customerOrReason: 'Backup reason' }],
+      comments: [{ text: 'Example comment' }],
+      alerts: [{ text: 'Example alert' }],
+      cdk: { status: 'S' },
+    };
+    const data = sourceData();
+    data.meta.dealerMailFreshness = 'stale_unverified';
+
+    const mapped = toInventoryVehicle(record, data);
+
+    expect(mapped.dealerMail.hasActiveHold).toBeNull();
+    expect(mapped.holdEvidence).toHaveLength(2);
+    expect(mapped.holdEvidence?.[0]).toMatchObject({
+      dataState: 'stale',
+      lifecycleStatus: 'last_verified_active',
+      salesperson: 'Example Salesperson',
+      customerOrReason: 'Example reason',
+      commentFlag: true,
+      alertFlag: true,
+      cdkState: 'S',
+    });
+    expect(mapped.holdEvidence?.[1]).toMatchObject({
+      dataState: 'stale',
+      position: 'backup',
+      salesperson: 'Backup Salesperson',
+    });
+  });
+
+  it('preserves detail-only public scan provenance and data status', () => {
+    const record = sourceVehicle();
+    record.dataStatus = 'Current public inventory';
+    record.publicScan = {
+      actualLocation: 'Bob Maxey Ford of Howell',
+      locationCity: 'Howell',
+      dealerLocationId: 21521,
+      dealerName: 'Bob Maxey Ford of Howell',
+      vehicleId: 123456,
+      genericColor: 'Blue',
+      sourceSites: ['Howell', 'Ford Detroit'],
+      sourceCount: 2,
+      firstSeen: '2026-08-27',
+      lastSeen: '2026-08-30',
+    };
+
+    const mapped = toInventoryVehicle(record, sourceData());
+
+    expect(mapped.dataStatus).toBe('Current public inventory');
+    expect(mapped.publicScan).toEqual(record.publicScan);
+  });
 });

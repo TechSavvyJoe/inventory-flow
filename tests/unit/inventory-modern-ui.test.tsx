@@ -61,6 +61,31 @@ afterEach(() => {
 })
 
 describe('manager-friendly inventory UI', () => {
+  it('makes the home count and complete group count unmistakable while staying home-store first', async () => {
+    const user = userEvent.setup()
+    const vehicles = Array.from({ length: 7 }, (_, index) => vehicle(index + 1))
+    for (const otherStoreVehicle of vehicles.slice(4)) {
+      otherStoreVehicle.location.homeStore = { id: 'ford-detroit', name: 'Ford Detroit' }
+    }
+
+    render(
+      <InventoryExperience
+        homeStore={{ id: 'Howell', name: 'Howell' }}
+        vehicles={vehicles}
+        metrics={{ publicUnits: 4, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
+      />,
+    )
+
+    expect(screen.getByText(/Showing 4 of 7 group vehicles in Howell\./)).toBeInTheDocument()
+    expect(screen.getByText('4 shown · 4 of 7 group')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Howell inventory, 4 of 7 group vehicles' })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'All locations, 7 group vehicles' }))
+
+    expect(screen.getByText(/Showing all 7 group vehicles across four locations\./)).toBeInTheDocument()
+    expect(screen.getByText('7 shown · 7 group')).toBeInTheDocument()
+  })
+
   it('offers the requested row-count increments and keeps the table paged', async () => {
     const user = userEvent.setup()
     render(
@@ -250,6 +275,80 @@ describe('manager-friendly inventory UI', () => {
     expect(screen.queryByRole('button', { name: 'Review / Remove Hold in DealerMail' })).not.toBeInTheDocument()
     expect(screen.getByRole('note')).toHaveTextContent('Hold status is not confirmed')
     expect(screen.getByRole('note')).toHaveTextContent('until the DealerMail record is verified')
+  })
+
+  it('shows stale hold evidence as last verified without implying a current hold or availability', () => {
+    const staleVehicle = vehicle(19, true)
+    staleVehicle.dealerMail.dataState = 'stale'
+    staleVehicle.dealerMail.hasActiveHold = null
+    staleVehicle.dealerMail.position = null
+    staleVehicle.holdEvidence = [{
+      id: `${staleVehicle.vin}-last-verified-primary`,
+      dataState: 'stale',
+      position: 'primary',
+      lifecycleStatus: 'last_verified_active',
+      salesperson: 'Example Salesperson',
+      customerOrReason: 'Example reason',
+      holdDate: '2026-08-29',
+      expectedDeliveryDate: '2026-09-02',
+      commentFlag: true,
+      comments: [{ text: 'Example comment' }],
+    }]
+
+    render(
+      <VehicleWorkspace
+        vehicle={staleVehicle}
+        homeStore={{ id: 'Howell', name: 'Howell' }}
+        initialTab="hold"
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Last verified primary hold')).toBeInTheDocument()
+    expect(screen.getAllByText('Current state unverified — confirm in DealerMail').length).toBeGreaterThan(0)
+    expect(screen.getByText('Last verified salesperson')).toBeInTheDocument()
+    expect(screen.getByText('Last verified customer / reason')).toBeInTheDocument()
+    expect(screen.getByText('Last verified comments & alerts')).toBeInTheDocument()
+    expect(document.querySelector('.inventory-hold-evidence__stale-note')).toHaveTextContent('does not confirm a current hold, release, sale, delivery, or availability')
+    expect(screen.queryByText('No current DealerMail hold found')).not.toBeInTheDocument()
+  })
+
+  it('keeps the complete public scan provenance available in the vehicle details without cluttering the table', () => {
+    const scannedVehicle = vehicle(20)
+    scannedVehicle.dataStatus = 'Current public inventory'
+    scannedVehicle.location.sourceReportedStore = { id: 'howell-public', name: 'Howell' }
+    scannedVehicle.publicScan = {
+      actualLocation: 'Bob Maxey Ford of Howell',
+      locationCity: 'Howell',
+      dealerLocationId: 21521,
+      dealerName: 'Bob Maxey Ford of Howell',
+      vehicleId: 123456,
+      genericColor: 'Blue',
+      sourceSites: ['Howell', 'Ford Detroit'],
+      sourceCount: 2,
+      firstSeen: '2026-08-27',
+      lastSeen: '2026-08-30',
+    }
+
+    render(
+      <VehicleWorkspace
+        vehicle={scannedVehicle}
+        homeStore={{ id: 'Howell', name: 'Howell' }}
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Source details' }))
+    const disclosure = screen.getByText('Full public inventory scan').closest('summary')
+    expect(disclosure).not.toBeNull()
+    fireEvent.click(disclosure!)
+    const sourceFields = screen.getByRole('group', { name: 'Full public inventory scan source fields' })
+    expect(within(sourceFields).getByText('Current public inventory')).toBeInTheDocument()
+    expect(within(sourceFields).getAllByText('Bob Maxey Ford of Howell')).toHaveLength(2)
+    expect(within(sourceFields).getByText('21521')).toBeInTheDocument()
+    expect(within(sourceFields).getByText('Howell, Ford Detroit')).toBeInTheDocument()
+    expect(within(sourceFields).getByText('123456')).toBeInTheDocument()
+    expect(within(sourceFields).getByText('Aug 27, 2026')).toBeInTheDocument()
   })
 
   it('reports a blocked DealerMail tab without claiming the requested action opened or ran', () => {

@@ -188,6 +188,7 @@ export interface VehicleTimelineEvent {
 
 export interface DealerMailHoldEvidence {
   id: string;
+  dataState?: SourceDataState;
   position?: HoldPosition;
   lifecycleStatus?: string | null;
   salesperson?: string | null;
@@ -201,6 +202,19 @@ export interface DealerMailHoldEvidence {
   heldBy?: string | null;
   comments?: Array<{ author?: string | null; text?: string | null; timestamp?: string | null }>;
   alerts?: Array<{ author?: string | null; text?: string | null; timestamp?: string | null }>;
+}
+
+export interface PublicScanAudit {
+  actualLocation?: string | null;
+  locationCity?: string | null;
+  dealerLocationId?: string | number | null;
+  dealerName?: string | null;
+  vehicleId?: string | number | null;
+  genericColor?: string | null;
+  sourceSites?: string[];
+  sourceCount?: number | null;
+  firstSeen?: string | null;
+  lastSeen?: string | null;
 }
 
 export interface InventoryVehicle {
@@ -235,6 +249,8 @@ export interface InventoryVehicle {
   imageUrl?: string | null;
   imageUrls?: string[];
   changeSummary?: string | null;
+  dataStatus?: string | null;
+  publicScan?: PublicScanAudit | null;
   /** Matching-only text already reduced by the server for the active role. Never render it. */
   authorizedSearchText?: string | null;
   autoCheckReport?: AutoCheckResource | null;

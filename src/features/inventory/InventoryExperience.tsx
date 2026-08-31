@@ -76,16 +76,28 @@ function uniqueStores(homeStore: InventoryStore, vehicles: InventoryVehicle[], g
   });
 }
 
-function ScopeSwitch({ homeStore, scope, onChange }: { homeStore: InventoryStore; scope: InventoryScope; onChange: (scope: InventoryScope) => void }) {
+function ScopeSwitch({
+  homeStore,
+  scope,
+  homeCount,
+  groupCount,
+  onChange,
+}: {
+  homeStore: InventoryStore;
+  scope: InventoryScope;
+  homeCount: number;
+  groupCount: number;
+  onChange: (scope: InventoryScope) => void;
+}) {
   return (
     <div className="inventory-scope-switch inventory-scope-switch--modern" role="group" aria-label="Inventory location scope">
-      <button type="button" className={scope === "home" ? "is-active" : undefined} aria-label={`${homeStore.name} inventory`} aria-pressed={scope === "home"} onClick={() => onChange("home")}>
-        <span className="inventory-scope-switch__full">{homeStore.name} inventory</span>
-        <span className="inventory-scope-switch__compact" aria-hidden="true">{homeStore.name}</span>
+      <button type="button" className={scope === "home" ? "is-active" : undefined} aria-label={`${homeStore.name} inventory, ${homeCount} of ${groupCount} group vehicles`} aria-pressed={scope === "home"} onClick={() => onChange("home")}>
+        <span className="inventory-scope-switch__full">{homeStore.name} <b>{homeCount}</b></span>
+        <span className="inventory-scope-switch__compact" aria-hidden="true">{homeStore.name} <b>{homeCount}</b></span>
       </button>
-      <button type="button" className={scope === "group" ? "is-active" : undefined} aria-label="All locations" aria-pressed={scope === "group"} onClick={() => onChange("group")}>
-        <span className="inventory-scope-switch__full">All locations</span>
-        <span className="inventory-scope-switch__compact" aria-hidden="true">All stores</span>
+      <button type="button" className={scope === "group" ? "is-active" : undefined} aria-label={`All locations, ${groupCount} group vehicles`} aria-pressed={scope === "group"} onClick={() => onChange("group")}>
+        <span className="inventory-scope-switch__full">All locations <b>{groupCount}</b></span>
+        <span className="inventory-scope-switch__compact" aria-hidden="true">All <b>{groupCount}</b></span>
       </button>
     </div>
   );
@@ -356,6 +368,11 @@ export function InventoryExperience(props: InventoryExperienceProps) {
   const backgroundRef = useRef<HTMLDivElement>(null);
   const workspaceReturnFocusRef = useRef<HTMLElement | null>(null);
   const stores = useMemo(() => uniqueStores(homeStore, vehicles, groupStores), [groupStores, homeStore, vehicles]);
+  const groupVehicleCount = vehicles.length;
+  const homeVehicleCount = useMemo(
+    () => vehicles.filter((vehicle) => vehicle.location.homeStore.id === homeStore.id).length,
+    [homeStore.id, vehicles],
+  );
 
   const setScope = (next: InventoryScope) => {
     if (controlledScope === undefined) setInternalScope(next);
@@ -461,9 +478,20 @@ export function InventoryExperience(props: InventoryExperienceProps) {
         <header className="inventory-page-header inventory-page-header--modern">
           <div>
             <h1>{title}</h1>
-            <p>Showing {homeStore.name} home inventory. Current physical location and active movement stay visible on every vehicle.</p>
+            <p>
+              {scope === "home"
+                ? `Showing ${homeVehicleCount} of ${groupVehicleCount} group vehicles in ${homeStore.name}.`
+                : `Showing all ${groupVehicleCount} group vehicles across four locations.`}{" "}
+              Current physical location and active movement stay visible on every vehicle.
+            </p>
           </div>
-          <ScopeSwitch homeStore={homeStore} scope={scope} onChange={setScope} />
+          <ScopeSwitch
+            homeStore={homeStore}
+            scope={scope}
+            homeCount={homeVehicleCount}
+            groupCount={groupVehicleCount}
+            onChange={setScope}
+          />
         </header>
 
         <InventoryPredictiveSearch
@@ -502,7 +530,9 @@ export function InventoryExperience(props: InventoryExperienceProps) {
               <button type="button" className={`inventory-filter-button${filtersOpen ? " is-active" : ""}`} onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={filterPanelId}>
                 <Filter size={17} strokeWidth={1.8} aria-hidden="true" /> Filters {filterCount > 0 ? <span>{filterCount}</span> : null}
               </button>
-              <strong className="inventory-results-count" aria-live="polite">{scopedVehicles.length} vehicles</strong>
+              <strong className="inventory-results-count" aria-live="polite">
+                {scopedVehicles.length} shown · {scope === "home" ? `${homeVehicleCount} of ` : ""}{groupVehicleCount} group
+              </strong>
             </div>
 
             <div className="inventory-toolbar__right">

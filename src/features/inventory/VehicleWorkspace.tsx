@@ -580,6 +580,8 @@ function HoldEvidenceRecord({
   evidence: DealerMailHoldEvidence;
   backupCount?: number;
 }) {
+  const isLastVerified = evidence.dataState === "stale" || evidence.lifecycleStatus === "last_verified_active";
+  const fieldLabel = (label: string) => isLastVerified ? `Last verified ${label.toLowerCase()}` : label;
   const messages = [
     ...(evidence.alerts?.map((alert) => ({
       kind: "alert" as const,
@@ -596,37 +598,49 @@ function HoldEvidenceRecord({
   ];
 
   return (
-    <article className="inventory-hold-evidence">
+    <article className="inventory-hold-evidence" data-evidence-state={isLastVerified ? "last-verified" : "current"}>
       <header>
         <span>
           <strong>
-            {evidence.position ? `${evidence.position} hold` : "Hold record"}
+            {evidence.position
+              ? `${isLastVerified ? "Last verified " : ""}${evidence.position} hold`
+              : isLastVerified ? "Last verified hold record" : "Hold record"}
           </strong>
-          <small>{evidence.lifecycleStatus || "Status not provided"}</small>
+          <small>
+            {isLastVerified
+              ? "Current state unverified — confirm in DealerMail"
+              : evidence.lifecycleStatus || "Status not provided"}
+          </small>
         </span>
         <span className="inventory-hold-evidence__position">
-          {evidence.position || "unclassified"}
+          {isLastVerified ? "last verified" : evidence.position || "unclassified"}
         </span>
       </header>
+      {isLastVerified ? (
+        <p className="inventory-hold-evidence__stale-note" role="note">
+          <AlertTriangle size={15} strokeWidth={1.8} aria-hidden="true" />
+          <span>Every value below is from the last verified DealerMail scan. It does not confirm a current hold, release, sale, delivery, or availability.</span>
+        </p>
+      ) : null}
       <dl className="inventory-fact-grid inventory-fact-grid--compact inventory-hold-evidence__facts">
-        <Fact label="Salesperson" emphasize>
+        <Fact label={fieldLabel("Salesperson")} emphasize>
           {evidence.salesperson || "Not provided"}
         </Fact>
-        <Fact label="Customer / reason" emphasize>
+        <Fact label={fieldLabel("Customer / reason")} emphasize>
           {evidence.customerOrReason || "Not provided"}
         </Fact>
-        <Fact label="Held by">{evidence.heldBy || "Not provided"}</Fact>
-        <Fact label="Hold date">{formatDate(evidence.holdDate)}</Fact>
-        <Fact label="Expected date">
+        <Fact label={fieldLabel("Held by")}>{evidence.heldBy || "Not provided"}</Fact>
+        <Fact label={fieldLabel("Hold date")}>{formatDate(evidence.holdDate)}</Fact>
+        <Fact label={fieldLabel("Expected date")}>
           {formatDate(evidence.expectedDeliveryDate)}
         </Fact>
-        <Fact label="Days held">
+        <Fact label={fieldLabel("Days held")}>
           {evidence.daysHeld ?? "Not provided"}
         </Fact>
         {evidence.position === "primary" && backupCount != null ? (
-          <Fact label="Backup count">{backupCount}</Fact>
+          <Fact label={fieldLabel("Backup count")}>{backupCount}</Fact>
         ) : null}
-        <Fact label="CDK status">{evidence.cdkState || "Not provided"}</Fact>
+        <Fact label={fieldLabel("CDK status")}>{evidence.cdkState || "Not provided"}</Fact>
       </dl>
       <div
         className="inventory-hold-evidence__flags"
@@ -638,17 +652,17 @@ function HoldEvidenceRecord({
             strokeWidth={1.75}
             aria-hidden="true"
           />
-          {evidence.commentFlag ? "Comments present" : "No comment flag"}
+          {isLastVerified ? "Last verified: " : ""}{evidence.commentFlag ? "Comments present" : "No comment flag"}
         </span>
         <span className={evidence.alertFlag ? "is-present" : undefined}>
           <Bell size={15} strokeWidth={1.75} aria-hidden="true" />
-          {evidence.alertFlag ? "Alerts present" : "No alert flag"}
+          {isLastVerified ? "Last verified: " : ""}{evidence.alertFlag ? "Alerts present" : "No alert flag"}
         </span>
       </div>
       {messages.length ? (
         <details className="inventory-hold-evidence__messages">
           <summary>
-            <span>Comments &amp; alerts</span>
+            <span>{isLastVerified ? "Last verified comments & alerts" : "Comments & alerts"}</span>
             <small>{messages.length} record{messages.length === 1 ? "" : "s"}</small>
             <ChevronDown size={16} strokeWidth={1.8} aria-hidden="true" />
           </summary>
@@ -1691,6 +1705,7 @@ function OverviewDetails({ vehicle }: { vehicle: InventoryVehicle }) {
 
 function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
   const hold = vehicle.dealerMail;
+  const showingLastVerifiedEvidence = hold.dataState === "stale";
   if (!hold.canViewEvidence) {
     return (
       <div className="inventory-workspace-empty inventory-workspace-empty--compact">
@@ -1819,8 +1834,9 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
     <div className="inventory-hold-evidence-list">
       <h3 className="inventory-workspace-mobile-section-title">Hold details</h3>
       <p className="inventory-workspace-section-note">
-        Hold position, operational reason, CDK status, paperwork, and delivery
-        are separate. A hold alone does not mean sold or delivered.
+        {showingLastVerifiedEvidence
+          ? "Last-verified DealerMail evidence is preserved below because the current hold state is unverified. Confirm the exact live record before any availability decision."
+          : "Hold position, operational reason, CDK status, paperwork, and delivery are separate. A hold alone does not mean sold or delivered."}
       </p>
       {vehicle.holdEvidence.map((evidence) => (
         <HoldEvidenceRecord
@@ -2051,6 +2067,8 @@ function DataDetails({
   vehicle,
   onOpenSourceRecord,
 }: Pick<VehicleWorkspaceProps, "vehicle" | "onOpenSourceRecord">) {
+  const publicScan = vehicle.publicScan;
+  const publicScanSites = publicScan?.sourceSites?.filter(Boolean).join(", ") || "Not published";
   return (
     <div className="inventory-workspace-detail-content inventory-workspace-data-details">
       <p className="inventory-workspace-section-note">
@@ -2129,7 +2147,38 @@ function DataDetails({
         <Fact label="Model code">
           {vehicle.modelCode || "Not published"}
         </Fact>
+        <Fact label="Data status">{vehicle.dataStatus || "Not provided"}</Fact>
       </dl>
+      <details className="inventory-public-scan-record">
+        <summary>
+          <span>
+            <strong>Full public inventory scan</strong>
+            <small>Source location, provenance, first/last seen, and technical identifiers</small>
+          </span>
+          <ChevronDown size={17} strokeWidth={1.8} aria-hidden="true" />
+        </summary>
+        <div>
+          <p>
+            The customer-facing and operational fields from the 44-column public scan are shown throughout this vehicle record. These remaining source fields are preserved here for audit and do not prove current availability or physical custody.
+          </p>
+          <dl className="inventory-fact-grid inventory-fact-grid--technical" role="group" aria-label="Full public inventory scan source fields">
+            <Fact label="Authoritative physical store">
+              {vehicle.location.sourceReportedStore?.name || vehicle.location.homeStore.name}
+            </Fact>
+            <Fact label="Feed actual location">{publicScan?.actualLocation || "Not published"}</Fact>
+            <Fact label="Feed location city">{publicScan?.locationCity || "Not published"}</Fact>
+            <Fact label="Dealer location ID">{publicScan?.dealerLocationId ?? "Not published"}</Fact>
+            <Fact label="Source dealer name">{publicScan?.dealerName || "Not published"}</Fact>
+            <Fact label="Generic color">{publicScan?.genericColor || "Not published"}</Fact>
+            <Fact label="Source sites">{publicScanSites}</Fact>
+            <Fact label="Source site count">{publicScan?.sourceCount ?? "Not published"}</Fact>
+            <Fact label="First seen">{formatDate(publicScan?.firstSeen)}</Fact>
+            <Fact label="Last seen">{formatDate(publicScan?.lastSeen)}</Fact>
+            <Fact label="Vehicle ID">{publicScan?.vehicleId ?? "Not published"}</Fact>
+            <Fact label="Data status">{vehicle.dataStatus || "Not provided"}</Fact>
+          </dl>
+        </div>
+      </details>
       {onOpenSourceRecord ? (
         <button
           type="button"
