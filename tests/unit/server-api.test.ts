@@ -120,8 +120,12 @@ async function advanceToArrival(baseUrl: string, vehicle: { vin: string }, suffi
   const release = await postEvent(
     baseUrl,
     transferId,
-    { role: 'manager', store: 'Howell', user: `Howell Used Manager${suffix}` },
-    { type: 'approved', note: 'Vehicle located and explicitly released for the requesting store.' },
+    { role: 'manager', store: 'Fowlerville', user: `Fowlerville Manager${suffix}` },
+    {
+      type: 'approved',
+      homeStoreManager: `Howell Used Manager${suffix}`,
+      note: 'Vehicle located and explicitly released for the requesting store.',
+    },
   )
   expect(release.response.status).toBe(201)
 
@@ -150,7 +154,7 @@ async function advanceToArrival(baseUrl: string, vehicle: { vin: string }, suffi
     baseUrl,
     transferId,
     { role: 'porter', store: 'Fowlerville', user: porter },
-    { type: 'picked_up', store: 'Howell', note: 'Keys and custody received at Home Store.' },
+    { type: 'picked_up', note: 'Keys and custody received at Home Store.' },
   )
   expect(pickup.response.status).toBe(201)
 
@@ -484,10 +488,39 @@ describe('Inventory Flow API', () => {
     const bootstrap = await fetch(`${baseUrl}/api/bootstrap?homeStore=Fowlerville&role=sales`).then((response) => response.json())
     const vehicle = bootstrap.vehicles.find((row: { publicStore: string }) => row.publicStore === 'Howell')
 
+    const spoofedStore = await fetch(`${baseUrl}/api/transfers`, {
+      method: 'POST',
+      headers: roleHeaders('sales', 'Fowlerville', 'Fowlerville Salesperson'),
+      body: JSON.stringify({
+        vin: vehicle.vin,
+        requestingStore: 'Ford Detroit',
+        requestedBy: 'Fowlerville Salesperson',
+        neededBy: '2026-08-30T14:00:00-04:00',
+        reason: 'Attempted cross-store attribution override',
+      }),
+    })
+    expect(spoofedStore.status).toBe(403)
+    expect((await spoofedStore.json()).code).toBe('STORE_MISMATCH')
+
+    const spoofedRequester = await fetch(`${baseUrl}/api/transfers`, {
+      method: 'POST',
+      headers: roleHeaders('sales', 'Fowlerville', 'Fowlerville Salesperson'),
+      body: JSON.stringify({
+        vin: vehicle.vin,
+        requestingStore: 'Fowlerville',
+        requestedBy: 'Another Salesperson',
+        neededBy: '2026-08-30T14:00:00-04:00',
+        reason: 'Attempted requester attribution override',
+      }),
+    })
+    expect(spoofedRequester.status).toBe(403)
+    expect((await spoofedRequester.json()).code).toBe('ACTOR_MISMATCH')
+
     const { response: createdResponse, body: created } = await createSalesRequest(baseUrl, vehicle)
     expect(createdResponse.status).toBe(201)
     expect(created.requestStatus).toBe('requested')
     expect(created.requestedBy).toBe('Fowlerville Salesperson')
+    expect(created.nextAction).toBe('Requesting-store manager reviews and approves the request')
     expect(created.events).toHaveLength(1)
     expect(created.allowedActions).not.toContain('review-request')
 
@@ -501,6 +534,39 @@ describe('Inventory Flow API', () => {
     expect(wrongStoreReview.body.code).toBe('WRONG_STORE_ROLE')
     expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(1)
 
+    const spoofedActor = await postEvent(
+      baseUrl,
+      created.id,
+      { role: 'manager', store: 'Fowlerville', user: 'Fowlerville Manager' },
+      { type: 'manager_reviewed', actor: 'Another Manager' },
+    )
+    expect(spoofedActor.response.status).toBe(403)
+    expect(spoofedActor.body.code).toBe('ACTOR_MISMATCH')
+
+    const spoofedEventStore = await postEvent(
+      baseUrl,
+      created.id,
+      { role: 'manager', store: 'Fowlerville', user: 'Fowlerville Manager' },
+      { type: 'manager_reviewed', store: 'Howell' },
+    )
+    expect(spoofedEventStore.response.status).toBe(403)
+    expect(spoofedEventStore.body.code).toBe('STORE_MISMATCH')
+    expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(1)
+
+    const prematureHomeStoreRelease = await postEvent(
+      baseUrl,
+      created.id,
+      { role: 'manager', store: 'Fowlerville', user: 'Fowlerville Manager' },
+      {
+        type: 'approved',
+        homeStoreManager: 'Howell Used Manager',
+        note: 'Howell manager confirms the unit may be released.',
+      },
+    )
+    expect(prematureHomeStoreRelease.response.status).toBe(409)
+    expect(prematureHomeStoreRelease.body.code).toBe('INVALID_TRANSITION')
+    expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(1)
+
     const review = await postEvent(
       baseUrl,
       created.id,
@@ -509,28 +575,53 @@ describe('Inventory Flow API', () => {
     )
     expect(review.response.status).toBe(201)
     expect(review.body.requestStatus).toBe('manager_reviewed')
+    expect(review.body.nextAction).toBe(
+      'Requesting-store manager calls Howell used-car manager and records the release decision',
+    )
     expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(2)
 
-    const missingReleaseNote = await postEvent(
+    const requestingManagerView = await fetch(`${baseUrl}/api/transfers/${created.id}`, {
+      headers: roleHeaders('manager', 'Fowlerville', 'Fowlerville Manager'),
+    }).then((response) => response.json())
+    const homeStoreManagerView = await fetch(`${baseUrl}/api/transfers/${created.id}`, {
+      headers: roleHeaders('manager', 'Howell', 'Howell Used Manager'),
+    }).then((response) => response.json())
+    expect(requestingManagerView.allowedActions).toContain('approve')
+    expect(homeStoreManagerView.allowedActions).not.toContain('approve')
+
+    const missingHomeStoreManager = await postEvent(
       baseUrl,
       created.id,
       { role: 'manager', store: 'Howell', user: 'Howell Used Manager' },
       { type: 'approved' },
     )
-    expect(missingReleaseNote.response.status).toBe(422)
-    expect(missingReleaseNote.body.code).toBe('VALIDATION_ERROR')
+    expect(missingHomeStoreManager.response.status).toBe(422)
+    expect(missingHomeStoreManager.body.code).toBe('VALIDATION_ERROR')
+    expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(2)
+
+    const directHomeStoreRelease = await postEvent(
+      baseUrl,
+      created.id,
+      { role: 'manager', store: 'Howell', user: 'Howell Used Manager' },
+      { type: 'approved', homeStoreManager: 'Howell Used Manager', note: 'Attempted direct Home Store action.' },
+    )
+    expect(directHomeStoreRelease.response.status).toBe(403)
+    expect(directHomeStoreRelease.body.code).toBe('WRONG_STORE_ROLE')
     expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(2)
 
     const releaseNote = 'Vehicle physically located; Howell used manager confirms it may be released.'
     const release = await postEvent(
       baseUrl,
       created.id,
-      { role: 'manager', store: 'Howell', user: 'Howell Used Manager' },
-      { type: 'approved', note: releaseNote },
+      { role: 'manager', store: 'Fowlerville', user: 'Fowlerville Manager' },
+      { type: 'approved', homeStoreManager: 'Howell Used Manager', note: releaseNote },
     )
     expect(release.response.status).toBe(201)
     expect(release.body.requestStatus).toBe('approved')
-    expect(release.body.events.find((event: { type: string }) => event.type === 'approved').note).toBe(releaseNote)
+    expect(release.body.events.find((event: { type: string }) => event.type === 'approved')).toMatchObject({
+      confirmedBy: 'Howell Used Manager',
+      note: releaseNote,
+    })
 
     const driverRequested = await postEvent(
       baseUrl,
@@ -582,7 +673,7 @@ describe('Inventory Flow API', () => {
       baseUrl,
       created.id,
       { role: 'porter', store: 'Fowlerville', user: 'Porter One' },
-      { type: 'picked_up', store: 'Howell', note: 'Custody and keys received.' },
+      { type: 'picked_up', note: 'Custody and keys received.' },
     )
     expect(pickup.response.status).toBe(201)
     expect(pickup.body.requestStatus).toBe('picked_up')

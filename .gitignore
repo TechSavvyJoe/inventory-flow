@@ -29,6 +29,11 @@ coverage/
 # Raster captures can silently contain live VINs, customer/hold details, or
 # authenticated-source pages. Keep reviewed vector brand assets and code-based
 # design guidance; generate PR screenshots from the synthetic fixture instead.
+design/*.png
+design/*.jpg
+design/*.jpeg
+design/*.webp
+design/*.heic
 design/**/*.png
 design/**/*.jpg
 design/**/*.jpeg

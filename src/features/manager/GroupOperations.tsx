@@ -65,6 +65,7 @@ export interface GroupOperationsProps {
 }
 
 type SystemView = 'my-store' | 'group' | 'needs-me' | 'overdue' | 'exceptions';
+type SummaryQueue = 'needs-approval' | 'pickup-due' | 'in-transit' | 'outcome-due' | 'return-due' | 'location-exception';
 
 const priorityRank: Record<NonNullable<GroupOperationRecord['priority']>, number> = {
   critical: 0,
@@ -99,6 +100,16 @@ function createFilters(initial?: Partial<ManagerFilters>): ManagerFilters {
 
 function uniqueValues(values: Array<string | undefined>): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b));
+}
+
+function displayOperationalLabel(value: string): string {
+  const normalized = value.trim();
+  if (!normalized || !/[_-]/.test(normalized)) return normalized;
+  return normalized
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1).toLocaleLowerCase())
+    .join(' ');
 }
 
 function matchesDueWindow(record: GroupOperationRecord, dueWindow: ManagerDueWindow, nowMs: number): boolean {
@@ -140,7 +151,7 @@ function sortValue(record: GroupOperationRecord, field: ManagerSortField): strin
     case 'requestingStore':
       return record.requestingStore;
     case 'movementStage':
-      return record.status.movement.label;
+      return displayOperationalLabel(record.status.movement.label);
     case 'lastConfirmedAt':
       return record.vehicle.currentLocation.confirmedAt
         ? Date.parse(record.vehicle.currentLocation.confirmedAt)
@@ -164,6 +175,7 @@ function recordMatches(record: GroupOperationRecord, filters: ManagerFilters, no
       record.salespersonLabel,
       record.status.request.label,
       record.status.movement.label,
+      displayOperationalLabel(record.status.movement.label),
       record.status.deal.label,
       record.status.delivery.label,
       record.status.dealerMail.label,
@@ -204,6 +216,23 @@ function metricCount(records: GroupOperationRecord[], predicate: (record: GroupO
     if (record.nextAction.sla === 'overdue' || record.nextAction.sla === 'breached') overdue += 1;
   }
   return { count, overdue };
+}
+
+function matchesSummaryQueue(record: GroupOperationRecord, queue: SummaryQueue): boolean {
+  switch (queue) {
+    case 'needs-approval':
+      return record.status.request.code === 'submitted';
+    case 'pickup-due':
+      return ['release-approved', 'pickup-scheduled'].includes(record.status.movement.code);
+    case 'in-transit':
+      return ['released-to-custodian', 'in-transit-outbound', 'in-transit-return'].includes(record.status.movement.code);
+    case 'outcome-due':
+      return record.status.movement.code === 'at-requesting-store-verified' && record.status.deal.code === 'no-outcome';
+    case 'return-due':
+      return ['return-required', 'return-scheduled', 'returned-awaiting-receipt'].includes(record.status.movement.code);
+    case 'location-exception':
+      return ['location-exception', 'location-unknown'].includes(record.status.movement.code) || Boolean(record.exception);
+  }
 }
 
 interface FilterSelectProps {
@@ -248,8 +277,9 @@ export function GroupOperations({
   const [filters, setFilters] = useState<ManagerFilters>(() => createFilters(initialFilters));
   const [sortRules, setSortRules] = useState<ManagerSortRule[]>(initialSortRules);
   const [systemView, setSystemView] = useState<SystemView>('group');
+  const [summaryQueue, setSummaryQueue] = useState<SummaryQueue | null>(null);
   const [selectedIdInternal, setSelectedIdInternal] = useState<string | null>(selectedTransferId ?? null);
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [savedViewName, setSavedViewName] = useState('');
@@ -259,22 +289,42 @@ export function GroupOperations({
   }, [now]);
   const selectedId = selectedTransferId === undefined ? selectedIdInternal : selectedTransferId;
 
+  const activeFilterCount = useMemo(() => (
+    filters.homeStores.length
+    + filters.currentLocations.length
+    + filters.requestingStores.length
+    + filters.requestStatuses.length
+    + filters.movementStatuses.length
+    + filters.dealerMailStatuses.length
+    + filters.publicStatuses.length
+    + filters.priorities.length
+    + filters.custodians.length
+    + filters.salespeople.length
+    + filters.slaStates.length
+    + filters.nextActionOwnerIds.length
+    + (filters.dueWindow === 'all' ? 0 : 1)
+    + (filters.exceptionOnly ? 1 : 0)
+  ), [filters]);
+
   const options = useMemo(() => ({
     currentLocations: uniqueValues(records.map((record) => record.vehicle.currentLocation.label)),
     requestingStores: uniqueValues(records.map((record) => record.requestingStore)),
     custodians: uniqueValues(records.map((record) => record.custodianLabel)),
     salespeople: uniqueValues(records.map((record) => record.salespersonLabel)),
     requestStatuses: uniqueValues(records.map((record) => record.status.request.label)),
-    movementStatuses: uniqueValues(records.map((record) => record.status.movement.label)),
+    movementStatuses: uniqueValues(records.map((record) => displayOperationalLabel(record.status.movement.label))),
     dealerMailStatuses: uniqueValues(records.map((record) => record.status.dealerMail.label)),
   }), [records]);
 
   const labelToRequestCode = useMemo(() => new Map(records.map((record) => [record.status.request.label, record.status.request.code])), [records]);
-  const labelToMovementCode = useMemo(() => new Map(records.map((record) => [record.status.movement.label, record.status.movement.code])), [records]);
+  const labelToMovementCode = useMemo(() => new Map(records.map((record) => [displayOperationalLabel(record.status.movement.label), record.status.movement.code])), [records]);
   const labelToDealerMailCode = useMemo(() => new Map(records.map((record) => [record.status.dealerMail.label, record.status.dealerMail.code])), [records]);
 
   const visibleRecords = useMemo(() => {
-    const filtered = records.filter((record) => recordMatches(record, filters, nowMs));
+    const filtered = records.filter((record) => (
+      recordMatches(record, filters, nowMs)
+      && (!summaryQueue || matchesSummaryQueue(record, summaryQueue))
+    ));
     return filtered.sort((left, right) => {
       for (const rule of sortRules) {
         const compared = compareNullable(sortValue(left, rule.field), sortValue(right, rule.field));
@@ -282,7 +332,7 @@ export function GroupOperations({
       }
       return left.vehicle.stock.localeCompare(right.vehicle.stock, undefined, { numeric: true });
     });
-  }, [filters, nowMs, records, sortRules]);
+  }, [filters, nowMs, records, sortRules, summaryQueue]);
 
   const selected = useMemo(
     () => records.find((record) => record.id === selectedId) ?? null,
@@ -291,36 +341,42 @@ export function GroupOperations({
 
   const metrics = useMemo(() => [
     {
+      id: 'needs-approval' as const,
       label: 'Needs approval',
       Icon: CheckCircle2,
       tone: 'location',
       ...metricCount(records, (record) => record.status.request.code === 'submitted'),
     },
     {
+      id: 'pickup-due' as const,
       label: 'Pickup due',
       Icon: Truck,
       tone: 'warning',
       ...metricCount(records, (record) => ['release-approved', 'pickup-scheduled'].includes(record.status.movement.code)),
     },
     {
+      id: 'in-transit' as const,
       label: 'In transit',
       Icon: Truck,
       tone: 'info',
       ...metricCount(records, (record) => ['released-to-custodian', 'in-transit-outbound', 'in-transit-return'].includes(record.status.movement.code)),
     },
     {
+      id: 'outcome-due' as const,
       label: 'Outcome due',
       Icon: CircleAlert,
       tone: 'success',
       ...metricCount(records, (record) => record.status.movement.code === 'at-requesting-store-verified' && record.status.deal.code === 'no-outcome'),
     },
     {
+      id: 'return-due' as const,
       label: 'Return due',
       Icon: Clock3,
       tone: 'danger',
       ...metricCount(records, (record) => ['return-required', 'return-scheduled', 'returned-awaiting-receipt'].includes(record.status.movement.code)),
     },
     {
+      id: 'location-exception' as const,
       label: 'Location exception',
       Icon: MapPin,
       tone: 'neutral',
@@ -345,6 +401,7 @@ export function GroupOperations({
 
   function applySystemView(view: SystemView) {
     setSystemView(view);
+    setSummaryQueue(null);
     const base = { ...emptyManagerFilters, query: filters.query };
     if (view === 'my-store') {
       applyFilters({ ...base, homeStores: homeStore ? [homeStore] : [] });
@@ -377,6 +434,8 @@ export function GroupOperations({
       return;
     }
     const nextFilters = createFilters(view.filters);
+    setSummaryQueue(null);
+    setSystemView('group');
     applyFilters(nextFilters);
     if (view.sortRules?.length) applySortRules(view.sortRules);
     onSavedViewSelect?.(view);
@@ -389,12 +448,26 @@ export function GroupOperations({
     if (unused) applySortRules([...sortRules, { field: unused, direction: 'asc' }]);
   }
 
+  function applySummaryQueue(queue: SummaryQueue) {
+    const nextQueue = summaryQueue === queue ? null : queue;
+    setSummaryQueue(nextQueue);
+    setSystemView('group');
+    applyFilters({ ...emptyManagerFilters, query: filters.query });
+  }
+
+  function clearAllFilters() {
+    setSummaryQueue(null);
+    setSystemView('group');
+    applyFilters(createFilters());
+  }
+
   return (
     <section className={`mif-manager-feature mif-group-operations${selected ? ' has-selection' : ''}`}>
       <div className="mif-manager-main">
         <header className="mif-manager-heading">
           <div>
-            <h1>Group Operations</h1>
+            <h1>Group operations</h1>
+            <p>Review approvals, coordinate store-to-store moves, and resolve overdue work.</p>
           </div>
           <div className="mif-system-views" aria-label="Manager quick views">
             {([
@@ -425,13 +498,24 @@ export function GroupOperations({
           </div>
         ) : null}
 
-        <div className="mif-operation-metrics" aria-label="Group movement summary">
-          {metrics.map(({ label, Icon, count, overdue, tone }) => (
-            <button key={label} onClick={() => label.includes('exception') ? applySystemView('exceptions') : undefined} type="button">
+        <div className="mif-operation-metrics" aria-label="Manager work queues">
+          {metrics.map(({ id, label, Icon, count, overdue, tone }) => (
+            <button
+              aria-label={`Show ${label.toLocaleLowerCase()} queue, ${count} ${count === 1 ? 'movement' : 'movements'}${overdue ? `, ${overdue} overdue` : ''}`}
+              aria-pressed={summaryQueue === id}
+              className={`mif-operation-metric${summaryQueue === id ? ' is-active' : ''}`}
+              key={id}
+              onClick={() => applySummaryQueue(id)}
+              type="button"
+            >
               <Icon aria-hidden="true" className={`is-${tone}`} size={24} strokeWidth={1.75} />
-              <span>{label}</span>
+              <span className="mif-operation-metric__label">{label}</span>
               <strong>{count}</strong>
-              <small className={overdue ? 'is-overdue' : ''}>{overdue ? `${overdue} overdue` : 'No overdue'}</small>
+              <small className={overdue ? 'is-overdue' : ''}>{overdue ? `${overdue} overdue` : 'No overdue items'}</small>
+              <span className="mif-operation-metric__action">
+                {summaryQueue === id ? 'Showing queue' : 'View queue'}
+                <ChevronRight aria-hidden="true" size={14} strokeWidth={2} />
+              </span>
             </button>
           ))}
         </div>
@@ -450,6 +534,7 @@ export function GroupOperations({
           <button aria-expanded={filtersOpen} className="mif-manager-toolbutton" onClick={() => setFiltersOpen((open) => !open)} type="button">
             <Filter aria-hidden="true" size={17} strokeWidth={1.75} />
             Filters
+            {activeFilterCount ? <span className="mif-manager-toolbutton__count">{activeFilterCount}</span> : null}
             <ChevronDown aria-hidden="true" size={15} strokeWidth={1.75} />
           </button>
           <label className="mif-saved-view-select">
@@ -542,13 +627,13 @@ export function GroupOperations({
             <FilterSelect
               label="Movement stage"
               onChange={(value) => patchFilters({ movementStatuses: value ? [labelToMovementCode.get(value) as MovementStatusCode] : [] })}
-              value={records.find((record) => filters.movementStatuses.includes(record.status.movement.code))?.status.movement.label ?? ''}
+              value={displayOperationalLabel(records.find((record) => filters.movementStatuses.includes(record.status.movement.code))?.status.movement.label ?? '')}
               values={options.movementStatuses}
             />
             <FilterSelect label="Custodian" onChange={(value) => patchFilters({ custodians: value ? [value] : [] })} value={filters.custodians[0] ?? ''} values={options.custodians} />
             <FilterSelect label="Salesperson" onChange={(value) => patchFilters({ salespeople: value ? [value] : [] })} value={filters.salespeople[0] ?? ''} values={options.salespeople} />
             <FilterSelect
-          label="Hold-list status"
+              label="Hold-list status"
               onChange={(value) => patchFilters({ dealerMailStatuses: value ? [labelToDealerMailCode.get(value)!] : [] })}
               value={records.find((record) => filters.dealerMailStatuses.includes(record.status.dealerMail.code))?.status.dealerMail.label ?? ''}
               values={options.dealerMailStatuses}
@@ -568,14 +653,22 @@ export function GroupOperations({
               <input checked={filters.exceptionOnly} onChange={(event) => patchFilters({ exceptionOnly: event.target.checked })} type="checkbox" />
               <span>Exceptions only</span>
             </label>
-            <button className="mif-clear-filters" onClick={() => applyFilters(createFilters())} type="button">
+            <button className="mif-clear-filters" onClick={clearAllFilters} type="button">
               <RotateCcw aria-hidden="true" size={15} strokeWidth={1.75} /> Clear all
             </button>
           </div>
         ) : null}
 
         <div className="mif-manager-resultbar">
-          <span>{visibleRecords.length} of {records.length} movements</span>
+          <div className="mif-manager-resultbar__scope">
+            <span><strong>{visibleRecords.length}</strong> of {records.length} movements</span>
+            {summaryQueue ? (
+              <button aria-label="Clear summary queue" onClick={() => setSummaryQueue(null)} type="button">
+                {metrics.find((metric) => metric.id === summaryQueue)?.label}
+                <X aria-hidden="true" size={13} />
+              </button>
+            ) : null}
+          </div>
           <span><SlidersHorizontal aria-hidden="true" size={14} strokeWidth={1.75} /> {sortRules.map((rule) => `${sortFieldLabels[rule.field]} ${rule.direction === 'asc' ? '↑' : '↓'}`).join(' · ')}</span>
         </div>
 
@@ -587,7 +680,7 @@ export function GroupOperations({
           <TransferEmptyState
             actionLabel="Clear filters"
             description="No movements match the current quick view, filters, and sort scope."
-            onAction={() => applyFilters(createFilters())}
+            onAction={clearAllFilters}
             title="No matching movements"
             variant="no-records"
           />
@@ -595,19 +688,24 @@ export function GroupOperations({
           <>
             <div className="mif-operations-table-wrap">
               <table className="mif-operations-table">
+                <colgroup>
+                  <col className="mif-operations-table__col--vehicle" />
+                  <col className="mif-operations-table__col--route" />
+                  <col className="mif-operations-table__col--workflow" />
+                  <col className="mif-operations-table__col--ownership" />
+                  <col className="mif-operations-table__col--timing" />
+                  <col className="mif-operations-table__col--exception" />
+                  <col className="mif-operations-table__col--action" />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th>Priority</th>
-                    <th>Vehicle / stock</th>
-                    <th>Home → Current → Destination</th>
-                    <th>Requesting store</th>
-                    <th>Custodian</th>
-                    <th>Movement stage</th>
-                    <th>Next action owner</th>
-                    <th>Due by</th>
-                    <th>Last confirmed</th>
-                    <th>Exception</th>
-                    <th><span className="mif-visually-hidden">Open</span></th>
+                    <th>Vehicle / priority</th>
+                    <th>Where it is going</th>
+                    <th>Current step</th>
+                    <th>Who acts next</th>
+                    <th>When</th>
+                    <th>Issue</th>
+                    <th>Review</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -627,21 +725,35 @@ export function GroupOperations({
                         }}
                         tabIndex={0}
                       >
-                        <td><span className={`mif-priority is-${record.priority ?? 'normal'}`}>{record.priority ?? 'normal'}</span></td>
-                        <td><strong>{record.vehicle.vehicleLabel}</strong><span>{record.vehicle.stock} · {record.vehicle.vin}</span></td>
-                        <td>
+                        <td className="mif-manager-vehicle-cell">
+                          <span className="mif-manager-vehicle-cell__heading">
+                            <strong>{record.vehicle.vehicleLabel}</strong>
+                            <span className={`mif-priority is-${record.priority ?? 'normal'}`}>{record.priority ?? 'normal'}</span>
+                          </span>
+                          <span>{record.vehicle.stock} · {record.vehicle.vin}</span>
+                        </td>
+                        <td className="mif-manager-route-cell">
                           <span className="mif-route-cells">
                             <b>{record.vehicle.homeStore}</b><ArrowRight size={13} /><b>{record.vehicle.currentLocation.label}</b><ArrowRight size={13} /><b>{record.destination ?? record.requestingStore ?? 'Not set'}</b>
                           </span>
+                          <span>Requesting store · {record.requestingStore ?? 'Not set'}</span>
                         </td>
-                        <td>{record.requestingStore ?? 'Not set'}</td>
-                        <td>{record.custodianLabel ?? 'Not assigned'}</td>
-                        <td><strong>{record.status.movement.label}</strong><span>{record.status.request.label}</span></td>
-                        <td><strong>{record.nextAction.ownerLabel ?? 'Not assigned'}</strong><span>{record.nextAction.ownerRole ?? record.nextAction.label}</span></td>
-                        <td><strong>{formatDateTime(record.nextAction.dueAt)}</strong><span className={`mif-sla-label is-${record.nextAction.sla}`}>{slaLabel(record.nextAction.sla)}</span></td>
-                        <td><strong>{formatDateTime(record.vehicle.currentLocation.confirmedAt)}</strong><span>{locationConfidenceLabel(record.vehicle.currentLocation.confidence)}</span></td>
-                        <td>{record.exception ? <span className={`mif-exception-cell is-${record.exception.severity}`}><AlertTriangle size={14} />{record.exception.label}</span> : '—'}</td>
-                        <td><button aria-label={`Open ${record.vehicle.stock}`} onClick={(event) => { event.stopPropagation(); selectRecord(record); }} type="button"><ChevronRight size={17} /></button></td>
+                        <td className="mif-manager-workflow-cell">
+                          <strong>{displayOperationalLabel(record.status.movement.label)}</strong>
+                          <span>{record.status.request.label}</span>
+                        </td>
+                        <td className="mif-manager-ownership-cell">
+                          <strong>{record.nextAction.ownerLabel ?? 'Not assigned'}</strong>
+                          <span>{record.nextAction.ownerRole ?? record.nextAction.label}</span>
+                          <small>Custodian · {record.custodianLabel ?? 'Not assigned'}</small>
+                        </td>
+                        <td className="mif-manager-timing-cell">
+                          <strong>{formatDateTime(record.nextAction.dueAt)}</strong>
+                          <span className={`mif-sla-label is-${record.nextAction.sla}`}>{slaLabel(record.nextAction.sla)}</span>
+                          <small>Last confirmed · {formatDateTime(record.vehicle.currentLocation.confirmedAt)} · {locationConfidenceLabel(record.vehicle.currentLocation.confidence)}</small>
+                        </td>
+                        <td className="mif-manager-exception-cell">{record.exception ? <span className={`mif-exception-cell is-${record.exception.severity}`}><AlertTriangle size={14} />{record.exception.label}</span> : <span className="mif-exception-cell is-clear">No exception</span>}</td>
+                        <td className="mif-manager-review-cell"><button aria-label={`Review ${record.vehicle.stock}`} className="mif-manager-review-button" onClick={(event) => { event.stopPropagation(); selectRecord(record); }} type="button"><span>Review</span><ChevronRight size={16} /></button></td>
                       </tr>
                     );
                   })}
@@ -654,11 +766,11 @@ export function GroupOperations({
                 <button className={record.id === selectedId ? 'is-selected' : ''} key={record.id} onClick={() => selectRecord(record)} type="button">
                   <span className="mif-mobile-row-top"><b>{record.vehicle.vehicleLabel}</b><span className={`mif-priority is-${record.priority ?? 'normal'}`}>{record.priority ?? 'normal'}</span></span>
                   <span>{record.vehicle.stock} · {record.vehicle.homeStore} → {record.vehicle.currentLocation.label}</span>
-                  <span className="mif-mobile-row-stage"><Truck size={15} /> {record.status.movement.label}</span>
+                  <span className="mif-mobile-row-stage"><Truck size={15} /> {displayOperationalLabel(record.status.movement.label)}</span>
                   <span className={`mif-mobile-row-due is-${record.nextAction.sla}`}><Clock3 size={15} /> {record.nextAction.label} · {formatDateTime(record.nextAction.dueAt)}</span>
                   <span><UserRound size={15} /> {record.nextAction.ownerLabel ?? 'Owner not assigned'}</span>
                   {record.exception ? <span className="mif-mobile-row-exception"><AlertTriangle size={15} /> {record.exception.label}</span> : null}
-                  <ChevronRight className="mif-mobile-row-chevron" size={18} />
+                  <span className="mif-mobile-row-action">Review movement <ChevronRight aria-hidden="true" size={16} /></span>
                 </button>
               ))}
             </div>

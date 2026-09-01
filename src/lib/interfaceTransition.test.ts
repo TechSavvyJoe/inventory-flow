@@ -4,7 +4,6 @@ import { runInterfaceTransition } from './interfaceTransition';
 describe('runInterfaceTransition', () => {
   const originalStartViewTransition = Object.getOwnPropertyDescriptor(document, 'startViewTransition');
   const originalMatchMedia = Object.getOwnPropertyDescriptor(window, 'matchMedia');
-  const originalRequestAnimationFrame = Object.getOwnPropertyDescriptor(window, 'requestAnimationFrame');
 
   afterEach(() => {
     if (originalStartViewTransition) {
@@ -16,11 +15,6 @@ describe('runInterfaceTransition', () => {
       Object.defineProperty(window, 'matchMedia', originalMatchMedia);
     } else {
       Reflect.deleteProperty(window, 'matchMedia');
-    }
-    if (originalRequestAnimationFrame) {
-      Object.defineProperty(window, 'requestAnimationFrame', originalRequestAnimationFrame);
-    } else {
-      Reflect.deleteProperty(window, 'requestAnimationFrame');
     }
     delete document.documentElement.dataset.interfaceTransition;
     vi.restoreAllMocks();
@@ -42,13 +36,6 @@ describe('runInterfaceTransition', () => {
       configurable: true,
       value: vi.fn(() => ({ matches: false }) as MediaQueryList),
     });
-    Object.defineProperty(window, 'requestAnimationFrame', {
-      configurable: true,
-      value: vi.fn((callback: FrameRequestCallback) => {
-        callback(0);
-        return 1;
-      }),
-    });
     const update = vi.fn();
 
     runInterfaceTransition(update, 'vehicle');
@@ -57,6 +44,37 @@ describe('runInterfaceTransition', () => {
 
     rejectFinished?.(new DOMException('Transition was skipped', 'AbortError'));
     await finished.catch(() => undefined);
+    await Promise.resolve();
+    expect(document.documentElement.dataset.interfaceTransition).toBeUndefined();
+  });
+
+  it('absorbs native ready and update-callback rejections after applying the update', async () => {
+    let rejectReady: ((reason?: unknown) => void) | undefined;
+    let rejectUpdate: ((reason?: unknown) => void) | undefined;
+    let resolveFinished: (() => void) | undefined;
+    const ready = new Promise<void>((_resolve, reject) => { rejectReady = reject; });
+    const updateCallbackDone = new Promise<void>((_resolve, reject) => { rejectUpdate = reject; });
+    const finished = new Promise<void>((resolve) => { resolveFinished = resolve; });
+    Object.defineProperty(document, 'startViewTransition', {
+      configurable: true,
+      value: vi.fn((update: () => void) => {
+        update();
+        return { ready, updateCallbackDone, finished };
+      }),
+    });
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({ matches: false }) as MediaQueryList),
+    });
+    const update = vi.fn();
+
+    runInterfaceTransition(update, 'scope');
+    expect(update).toHaveBeenCalledOnce();
+
+    rejectReady?.(new DOMException('Transition was skipped', 'AbortError'));
+    rejectUpdate?.(new DOMException('DOM update timed out', 'TimeoutError'));
+    resolveFinished?.();
+    await Promise.allSettled([ready, updateCallbackDone, finished]);
     await Promise.resolve();
     expect(document.documentElement.dataset.interfaceTransition).toBeUndefined();
   });

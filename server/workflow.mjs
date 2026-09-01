@@ -34,7 +34,7 @@ export const TRANSITION_MAP = Object.freeze({
 
 const EVENT_LABELS = Object.freeze({
   requested: 'Vehicle requested',
-  manager_reviewed: 'Requesting manager reviewed; home-store confirmation needed',
+  manager_reviewed: 'Requesting-store manager approved; home-store call required',
   approved: 'Home-store availability and release confirmed',
   declined: 'Request declined',
   canceled: 'Request canceled',
@@ -138,13 +138,34 @@ function isoTimestamp(value, field, { required = false } = {}) {
 }
 
 export function roleContext({ role, store, user } = {}) {
-  const normalizedRole = USER_ROLES.includes(role) ? role : 'sales'
+  if (!USER_ROLES.includes(role)) {
+    throw new WorkflowError('A valid authenticated role is required', {
+      status: 401,
+      code: 'AUTH_CONTEXT_INVALID',
+      details: { field: 'role' },
+    })
+  }
+  if (!STORE_NAMES.includes(store)) {
+    throw new WorkflowError('A valid authenticated store is required', {
+      status: 401,
+      code: 'AUTH_CONTEXT_INVALID',
+      details: { field: 'store' },
+    })
+  }
+  const normalizedUser = String(user ?? '').trim()
+  if (!normalizedUser) {
+    throw new WorkflowError('An authenticated user is required', {
+      status: 401,
+      code: 'AUTH_CONTEXT_INVALID',
+      details: { field: 'user' },
+    })
+  }
   return {
-    role: normalizedRole,
-    store: STORE_NAMES.includes(store) ? store : 'Howell',
-    user: String(user ?? '').trim() || 'Local prototype user',
-    canViewPrivateEvidence: HOLD_EVIDENCE_ROLES.has(normalizedRole),
-    canCreateTransfer: !['coordinator', 'porter', 'driver'].includes(normalizedRole),
+    role,
+    store,
+    user: normalizedUser,
+    canViewPrivateEvidence: HOLD_EVIDENCE_ROLES.has(role),
+    canCreateTransfer: !['coordinator', 'porter', 'driver'].includes(role),
   }
 }
 
@@ -161,7 +182,13 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
     })
   }
 
-  const requestingStoreId = storeName(input.requestingStore, 'requestingStore')
+  const requestingStoreId = context.store
+  if (input.requestingStore && storeName(input.requestingStore, 'requestingStore') !== requestingStoreId) {
+    throw new WorkflowError('requestingStore must match the active store context', {
+      status: 403,
+      code: 'STORE_MISMATCH',
+    })
+  }
   const sourceStore = vehicle.homeAssignment?.home_store_id || vehicle.publicRecord?.store || vehicle.crmRecord?.storeName
   const homeStoreId = storeName(sourceStore, 'homeStore')
   if (requestingStoreId === homeStoreId) {
@@ -170,7 +197,13 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
     })
   }
 
-  const requestedBy = requiredText(input.requestedBy || context.user, 'requestedBy', 160)
+  const requestedBy = requiredText(context.user, 'requestedBy', 160)
+  if (input.requestedBy && input.requestedBy !== requestedBy) {
+    throw new WorkflowError('requestedBy must match the authenticated user context', {
+      status: 403,
+      code: 'ACTOR_MISMATCH',
+    })
+  }
   const neededBy = isoTimestamp(input.neededBy, 'neededBy', { required: true })
   const returnDueAt = isoTimestamp(input.returnDueAt, 'returnDueAt')
   const reason = requiredText(input.reason, 'reason', 1000)
@@ -212,7 +245,7 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
     currentLocationId: homeStoreId,
     currentCustodian: null,
     transportAssignee: null,
-    nextAction: `Requesting manager confirms availability and release with ${homeStoreId} used-car manager`,
+    nextAction: 'Requesting-store manager reviews and approves the request',
     nextActionOwner: approvalOwner,
     dueAt: neededBy,
     returnRequired: input.returnRequired !== false,
@@ -283,7 +316,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt) {
   switch (eventType) {
     case 'manager_reviewed':
       Object.assign(patch, {
-        next_action: `Contact ${home} used-car manager and record the release decision`,
+        next_action: `Requesting-store manager calls ${home} used-car manager and records the release decision`,
         next_action_owner: current.approval_owner || `${destination} manager`,
         last_confirmed_at: occurredAt,
       })
@@ -456,14 +489,22 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
   const eventType = requiredText(input?.type, 'type', 60).toLowerCase()
   requireEventPermission(eventType, context.role)
   const groupOverride = context.role === 'group_manager'
+  const recordsHomeStoreDecision =
+    eventType === 'approved' || (eventType === 'declined' && current.status === 'manager_reviewed')
+  const homeStoreManager = recordsHomeStoreDecision
+    ? requiredText(input?.homeStoreManager, 'homeStoreManager', 160)
+    : null
   if (eventType === 'manager_reviewed' && !groupOverride && context.store !== current.requesting_store_id) {
     throw new WorkflowError('The requesting-store manager must review this request first', { status: 403, code: 'WRONG_STORE_ROLE' })
   }
   if (eventType === 'approved') {
-    requiredText(input?.note, 'homeStoreReleaseConfirmation', 1000)
-    const canRecordRelease = [current.requesting_store_id, current.home_store_id].includes(context.store)
-    if (!groupOverride && !canRecordRelease) {
-      throw new WorkflowError('Only the requesting manager or Home Store manager may record the release confirmation', { status: 403, code: 'WRONG_STORE_ROLE' })
+    if (!groupOverride && context.store !== current.requesting_store_id) {
+      throw new WorkflowError('The requesting-store manager must record the Home Store call and release decision', { status: 403, code: 'WRONG_STORE_ROLE' })
+    }
+  }
+  if (eventType === 'declined' && !groupOverride) {
+    if (context.store !== current.requesting_store_id) {
+      throw new WorkflowError('Only an authorized manager in the request path may decline this request', { status: 403, code: 'WRONG_STORE_ROLE' })
     }
   }
   if (['driver_requested', 'transport_assigned', 'return_assigned'].includes(eventType) && !groupOverride && context.store !== current.requesting_store_id) {
@@ -487,9 +528,21 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
     throw new WorkflowError('actorRole must match the active role context', { status: 403, code: 'ROLE_MISMATCH' })
   }
 
-  const actor = requiredText(input.actor || context.user, 'actor', 160)
+  const actor = requiredText(context.user, 'actor', 160)
+  if (input.actor && input.actor !== actor) {
+    throw new WorkflowError('actor must match the authenticated user context', {
+      status: 403,
+      code: 'ACTOR_MISMATCH',
+    })
+  }
   const occurredAt = isoTimestamp(input.occurredAt, 'occurredAt') || now.toISOString()
-  const storeId = input.store ? storeName(input.store, 'store') : context.store
+  const storeId = storeName(context.store, 'store')
+  if (input.store && storeName(input.store, 'store') !== storeId) {
+    throw new WorkflowError('store must match the active store context', {
+      status: 403,
+      code: 'STORE_MISMATCH',
+    })
+  }
   const event = {
     id: randomUUID(),
     eventType,
@@ -502,7 +555,7 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
     driverOrPorter: optionalText(input.assignee, 'assignee', 160),
     occurredAt,
     expectedArrivalAt: isoTimestamp(input.dueAt, 'dueAt'),
-    confirmedBy: PRIVILEGED_ROLES.has(context.role) ? actor : null,
+    confirmedBy: homeStoreManager || (PRIVILEGED_ROLES.has(context.role) ? actor : null),
     note: optionalText(input.note, 'note', 1000),
     createdAt: now.toISOString(),
     idempotencyKey: optionalText(idempotencyKey, 'Idempotency-Key', 200),

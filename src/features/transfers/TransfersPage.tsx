@@ -4,16 +4,12 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   CarFront,
-  CheckCircle2,
   ChevronRight,
   CircleAlert,
-  Clock3,
   ListFilter,
   MapPin,
   Plus,
   Search,
-  Truck,
-  UserRoundCheck,
 } from 'lucide-react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
@@ -21,7 +17,7 @@ import { toTransferDetail, toTransferVehicle } from '../../app/transferAdapters'
 import { SourceWarning } from '../../components/SourceWarning'
 import { getTransfer } from '../../lib/api'
 import type { BootstrapData, StoreName, TransferRecord, UserRole } from '../../types'
-import { formatDateTime, humanizeStatusLabel, locationConfidenceLabel } from './presentation'
+import { formatDateTime, humanizeStatusLabel } from './presentation'
 import { TransferActionDialog } from './TransferActionDialog'
 import { TransferEmptyState } from './TransferEmptyState'
 import { TransferRequestWorkspace } from './TransferRequestWorkspace'
@@ -29,6 +25,7 @@ import { TransferTracker } from './TransferTracker'
 import type { SelectOption, TransferActionKind, TransferDetail, TransferRequestDraft } from './types'
 import './transfers-page.css'
 import './transfer-workspace-v3.css'
+import './transfer-workspace-v4.css'
 
 const REASON_LABELS: Record<TransferRequestDraft['reasonCode'], string> = {
   'customer-need': 'Customer need',
@@ -47,15 +44,6 @@ type TransferQueueFilter =
   | 'sold-pending'
   | 'issues'
 type TransferQueueSort = 'urgency' | 'needed-by' | 'recent' | 'stock' | 'route'
-
-const WORKFLOW_STAGES = [
-  { label: 'Salesperson request', mobileLabel: 'Request' },
-  { label: 'My manager review', mobileLabel: 'Manager' },
-  { label: 'Home-store availability & release', mobileLabel: 'Home-store' },
-  { label: 'Driver scheduled', mobileLabel: 'Driver' },
-  { label: 'Pickup & custody', mobileLabel: 'Custody' },
-  { label: 'Sell or return', mobileLabel: 'Sold / Return' },
-] as const
 
 const TERMINAL_TRANSFER_STATES = new Set(['closed', 'declined', 'canceled', 'expired'])
 const PASSIVE_TRANSFER_ACTIONS = new Set<TransferActionKind>(['open-source', 'report-condition', 'mark-exception', 'escalate'])
@@ -93,6 +81,15 @@ function workflowStage(status: string): number {
   if (['transport-assigned', 'return-assigned', 'pickup-scheduled'].includes(normalized)) return 4
   if (['picked-up', 'in-transit', 'arrived', 'customer-showing', 'return-in-transit', 'returned-awaiting-receipt'].includes(normalized)) return 5
   return 6
+}
+
+function workflowStep(status: string): number {
+  const normalized = normalizedStatus(status)
+  if (normalized === 'draft') return 1
+  if (['requested', 'submitted'].includes(normalized)) return 2
+  if (['manager-reviewed', 'needs-information', 'declined'].includes(normalized)) return 3
+  if (['approved', 'driver-requested', 'transport-assigned', 'pickup-scheduled', 'picked-up', 'in-transit'].includes(normalized)) return 4
+  return 5
 }
 
 function isAwaitingApproval(record: TransferRecord): boolean {
@@ -136,29 +133,28 @@ function returnTimingLabel(record: TransferRecord): string {
   return 'Return required · date not set'
 }
 
-function outcomeLabel(detail: TransferDetail): string {
-  if (detail.status.delivery.code === 'confirmed') return humanizeStatusLabel(detail.status.delivery.label)
-  return humanizeStatusLabel(detail.status.deal.label)
+function compactNextAction(value?: string): string {
+  const action = value?.trim() || 'No next action recorded'
+  if (/requesting manager confirms availability and release/i.test(action)) return 'Requesting manager: approve, then contact Home Store'
+  if (/contact .*used-car manager.*release decision/i.test(action)) return 'Contact Home Store and record its decision'
+  if (/home-store.*availability.*release/i.test(action)) return 'Record the Home Store’s release decision'
+  if (/confirm.*returned home|confirm home receipt/i.test(action)) return 'Confirm home receipt'
+  if (/record call for a driver|request.*driver/i.test(action)) return 'Request a driver'
+  return action
 }
 
-function TransferWorkflowPath({ record }: { record: TransferRecord }) {
-  const current = workflowStage(record.requestStatus)
-  return (
-    <ol className="transfer-workflow-path" aria-label="Vehicle request and movement workflow">
-      {WORKFLOW_STAGES.map(({ label, mobileLabel }, index) => {
-        const stage = index + 1
-        return (
-          <li key={label} className={stage === current ? 'is-current' : stage < current ? 'is-complete' : undefined}>
-            <span>{stage < current ? <CheckCircle2 aria-hidden="true" /> : stage}</span>
-            <strong>
-              <span className="transfer-stage-desktop-label">{label}</span>
-              <span className="transfer-stage-mobile-label">{mobileLabel}</span>
-            </strong>
-          </li>
-        )
-      })}
-    </ol>
-  )
+function compactRequestStatus(value: string): string {
+  const status = normalizedStatus(value)
+  if (status === 'draft') return 'Request not submitted'
+  if (['requested', 'submitted'].includes(status)) return 'Requesting manager approval'
+  if (['manager-reviewed', 'needs-information'].includes(status)) return 'Contact Home Store · record decision'
+  if (status === 'approved') return 'Released · driver can be assigned'
+  if (status === 'driver-requested') return 'Driver requested'
+  if (/transport-assigned|pickup-scheduled/.test(status)) return 'Driver assigned'
+  if (/picked-up|in-transit/.test(status)) return 'In transit'
+  if (/arrived|customer-showing/.test(status)) return 'At requesting store'
+  if (/return/.test(status)) return 'Return in progress'
+  return humanizeStatusLabel(value)
 }
 
 function TransferDetailLoader({
@@ -289,15 +285,6 @@ export function TransfersPage() {
     active: details.filter(({ record }) => !isTerminalTransfer(record)).length,
     history: details.filter(({ record }) => isTerminalTransfer(record)).length,
   }
-  const workflowMetrics = {
-    manager: details.filter(({ record }) => ['requested', 'submitted'].includes(normalizedStatus(record.requestStatus))).length,
-    home: details.filter(({ record }) => ['manager-reviewed', 'needs-information'].includes(normalizedStatus(record.requestStatus))).length,
-    driver: details.filter(({ record }) => ['approved', 'driver-requested', 'return-requested'].includes(normalizedStatus(record.requestStatus))).length,
-    moving: details.filter(({ record }) => isMoving(record)).length,
-    returns: details.filter(({ record }) => needsReturnAttention(record)).length,
-  }
-  const shortQueue = filteredDetails.length <= 2
-
   const requestVehicle = requestedVin ? data.vehicles.find((vehicle) => vehicle.vin === requestedVin) : undefined
 
   function handleAction(action: TransferActionKind, detail: TransferDetail) {
@@ -317,8 +304,9 @@ export function TransfersPage() {
       .filter((store) => store.store !== requestVehicle?.homeStore)
       .map((store) => ({ value: store.store, label: store.store }))
     const defaultRequestingStore = stores.some((store) => store.value === homeStore) ? homeStore : stores[0]?.value
+    const requestingManagerStore = defaultRequestingStore ?? homeStore
     const managerApprovers: SelectOption[] = requestVehicle
-      ? [{ value: `${homeStore}-manager`, label: `${homeStore} manager`, secondaryLabel: 'Your manager reviews and contacts the home store' }]
+      ? [{ value: `${requestingManagerStore}-manager`, label: `${requestingManagerStore} manager`, secondaryLabel: `Approves first, then contacts the ${requestVehicle.homeStore} manager` }]
       : []
 
     return (
@@ -332,7 +320,7 @@ export function TransfersPage() {
           defaultRequestingStore={defaultRequestingStore}
           defaultRequesterId="joe-gallant"
           defaultManagerApproverId={managerApprovers[0]?.value}
-          onCancel={() => navigate('/transfers')}
+          onCancel={() => navigate(requestVehicle ? '/transfers' : '/inventory')}
           onSubmit={async (draft) => {
             const created = await submitTransfer({
               vin: draft.vin,
@@ -356,38 +344,20 @@ export function TransfersPage() {
 
   return (
     <section
-      className={`transfers-page transfer-workspace-v3${requestedId && selected ? ' is-mobile-detail-open' : ''}`}
+      className={`transfers-page transfer-workspace-v3 transfer-workspace-v4${requestedId && selected ? ' is-mobile-detail-open' : ''}`}
       data-mobile-detail-open={requestedId && selected ? 'true' : 'false'}
     >
       <SourceWarning meta={data.meta} />
       <header className="transfers-page-header">
         <div>
-          <span>Current location, driver, timing, and return</span>
           <h1>Vehicle moves</h1>
-          <p>See who requested each vehicle, where it is now, when the driver is coming, and what must happen next.</p>
+          <p>Requesting manager approves, Home Store releases, then the driver moves the vehicle.</p>
         </div>
+        <button className="mif-button mif-button--primary transfer-header-create" type="button" aria-label="Request a vehicle" onClick={() => navigate('/inventory')}>
+          <Plus aria-hidden="true" />
+          Request vehicle
+        </button>
       </header>
-
-      <div className="transfer-mobile-counts" aria-label="Current movement counts">
-        <span><strong>{workflowMetrics.manager}</strong> Await mgr</span>
-        <span><strong>{workflowMetrics.home}</strong> Home approval</span>
-        <span><strong>{workflowMetrics.driver}</strong> Driver</span>
-        <span><strong>{workflowMetrics.moving}</strong> Moving</span>
-        <span><strong>{workflowMetrics.returns}</strong> Return</span>
-      </div>
-
-      {details.length > 0 ? (
-        <section className="transfer-workflow-overview" aria-label="Movement workflow overview">
-          <div className="transfer-workflow-metrics">
-            <span><Clock3 aria-hidden="true" /><strong>{workflowMetrics.manager}</strong><small>Await manager</small></span>
-            <span><UserRoundCheck aria-hidden="true" /><strong>{workflowMetrics.home}</strong><small>Home approval</small></span>
-            <span><Truck aria-hidden="true" /><strong>{workflowMetrics.driver}</strong><small>Need driver</small></span>
-            <span><ArrowLeftRight aria-hidden="true" /><strong>{workflowMetrics.moving}</strong><small>In motion</small></span>
-            <span><CircleAlert aria-hidden="true" /><strong>{workflowMetrics.returns}</strong><small>Return due</small></span>
-          </div>
-          {selected ? <TransferWorkflowPath record={selected.record} /> : null}
-        </section>
-      ) : null}
 
       {details.length === 0 ? (
         <div className="transfers-empty-surface">
@@ -399,23 +369,29 @@ export function TransfersPage() {
         </div>
       ) : (
         <div
-          className={`transfers-layout ${shortQueue ? 'transfers-layout--short-queue' : 'transfers-layout--master-detail'}`}
+          className="transfers-layout transfers-layout--master-detail"
           data-queue-size={filteredDetails.length}
         >
-          <aside className={`transfer-list${shortQueue ? ' transfer-list--short' : ''}`} aria-label="Movement requests">
+          <aside className="transfer-list" aria-label="Movement requests">
             <div className="transfer-list-toolbar">
-              <button className="mif-button mif-button--primary transfer-list-create" type="button" aria-label="Request a vehicle" onClick={() => navigate('/inventory')}>
-                <Plus aria-hidden="true" />
-                <span className="transfer-create-desktop-label">Find a vehicle to request</span>
-                <span className="transfer-create-mobile-label">Request vehicle</span>
-              </button>
               <label className="transfer-list-search">
                 <Search aria-hidden="true" />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search vehicle, stock, VIN, store, driver…" aria-label="Search vehicle moves" />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search stock, VIN, vehicle, store, or driver" aria-label="Search vehicle moves" />
               </label>
+              <div className="transfer-list-views" role="group" aria-label="Movement queue view">
+                {([
+                  ['needs-action', 'Needs action'],
+                  ['active', 'Active'],
+                  ['history', 'History'],
+                ] as Array<[TransferQueueView, string]>).map(([value, label]) => (
+                  <button type="button" key={value} className={queueView === value ? 'is-active' : undefined} onClick={() => setQueueView(value)} aria-pressed={queueView === value}>
+                    {label}<span>{queueCounts[value]}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="transfer-list-tools">
               <label className="transfer-list-filter" title="Filter vehicle moves">
                 <ListFilter aria-hidden="true" />
-                <span className="transfer-control-label">Filter</span>
                 <span className="sr-only">Filter vehicle moves</span>
                 <select
                   aria-label="Filter vehicle moves"
@@ -434,7 +410,6 @@ export function TransfersPage() {
               </label>
               <label className="transfer-list-sort" title="Sort vehicle moves">
                 <ArrowDownUp aria-hidden="true" />
-                <span className="transfer-control-label">Sort</span>
                 <span className="sr-only">Sort vehicle moves</span>
                 <select
                   aria-label="Sort vehicle moves"
@@ -448,23 +423,13 @@ export function TransfersPage() {
                   <option value="route">Route</option>
                 </select>
               </label>
-              <div className="transfer-list-views" role="group" aria-label="Movement queue view">
-                {([
-                  ['needs-action', 'Needs action'],
-                  ['active', 'Active'],
-                  ['history', 'History'],
-                ] as Array<[TransferQueueView, string]>).map(([value, label]) => (
-                  <button type="button" key={value} className={queueView === value ? 'is-active' : undefined} onClick={() => setQueueView(value)} aria-pressed={queueView === value}>
-                    {label}<span>{queueCounts[value]}</span>
-                  </button>
-                ))}
+                <div className="transfer-list-count" aria-live="polite">{filteredDetails.length} moves shown</div>
               </div>
-              <div className="transfer-list-count" aria-live="polite">{filteredDetails.length} matching move{filteredDetails.length === 1 ? '' : 's'}</div>
             </div>
             <div className="transfer-list-items">
               {filteredDetails.map(({ record, detail }) => {
                 const isSelected = selected?.record.id === record.id
-                const stage = workflowStage(record.requestStatus)
+                const step = workflowStep(record.requestStatus)
                 const issueLabel = transferIssueLabel(detail)
                 const dueTone = detail.nextAction.sla === 'breached' || detail.nextAction.sla === 'overdue'
                   ? 'is-overdue'
@@ -485,42 +450,22 @@ export function TransfersPage() {
                     ) : (
                       <span className="transfer-list-photo transfer-list-photo--placeholder" aria-hidden="true"><CarFront /></span>
                     )}
-                    <span className="transfer-list-copy transfer-list-copy--desktop">
+                    <span className="transfer-list-copy transfer-list-copy--concise">
                       <span className="transfer-list-top"><strong>{detail.vehicle.vehicleLabel}</strong><b className={`priority-${detail.priority ?? 'normal'}`}>{detail.priority ?? 'normal'}</b></span>
-                      <span className="transfer-list-route">{detail.vehicle.stock} · {detail.vehicle.homeStore} → {record.destination}</span>
-                      <span className="transfer-list-signals">
-                        <span className="transfer-location"><MapPin aria-hidden="true" /> {record.currentLocation} · {locationConfidenceLabel(record.locationConfidence)}</span>
-                        <span className="transfer-list-stage">Stage {workflowStage(record.requestStatus)} · {detail.status.request.label}</span>
+                      <span className="transfer-list-route"><strong>{detail.vehicle.stock}</strong><span>{detail.vehicle.homeStore} → {record.destination}</span></span>
+                      <span className="transfer-list-state-row">
+                        <span className="transfer-location"><MapPin aria-hidden="true" />Now {record.currentLocation}</span>
+                        <span className="transfer-list-stage">Step {step} of 5 · {compactRequestStatus(record.requestStatus)}</span>
                       </span>
-                      <span className="transfer-next"><strong>Next:</strong> {record.nextAction} · {record.nextActionOwner || 'Unassigned'}</span>
-                      <span className="transfer-list-accountability">
-                        <span><b>Requested</b> {record.requestedBy || 'Not recorded'}</span>
-                        <span><b>Approval</b> {record.approvedBy || detail.approvalOwnerLabel || 'Not recorded'}</span>
-                        <span><b>Driver</b> {record.transportAssignee || 'Not set'}</span>
+                      <span className="transfer-next"><small>Next</small><strong>{compactNextAction(record.nextAction)}</strong></span>
+                      <span className="transfer-list-owner-row">
+                        <span>{record.nextActionOwner || 'Owner not assigned'}</span>
+                        <span className={dueTone}>{dueLabel(detail)}</span>
                       </span>
-                      <span className="transfer-list-outcomes">
-                        <span><b>Deal</b> {humanizeStatusLabel(detail.status.deal.label)}</span>
-                        <span><b>Delivery</b> {humanizeStatusLabel(detail.status.delivery.label)}</span>
-                        <span><b>Return</b> {returnTimingLabel(record)}</span>
-                      </span>
-                      <span className="transfer-due"><span>{dueLabel(detail)}</span><span>{record.custodian ? `Custodian ${record.custodian}` : 'Custodian not assigned'}</span></span>
-                    </span>
-                    <span className="transfer-list-mobile-copy">
-                      <strong className="transfer-mobile-stock">{detail.vehicle.stock}</strong>
-                      <span className="transfer-mobile-vehicle">{detail.vehicle.vehicleLabel}</span>
-                      <span className="transfer-mobile-route">{detail.vehicle.homeStore}<span aria-hidden="true">→</span>{record.destination}</span>
-                      <span className="transfer-mobile-location"><MapPin aria-hidden="true" />Now: {record.currentLocation} · {locationConfidenceLabel(record.locationConfidence)}</span>
-                      <span className="transfer-mobile-stage"><b>{stage}</b><span>{detail.status.request.label}</span></span>
-                      <span className="transfer-mobile-owner"><UserRoundCheck aria-hidden="true" /><span>Next: {record.nextActionOwner || 'Unassigned'}</span></span>
-                    </span>
-                    <span className="transfer-list-mobile-rail">
-                      <span className={`transfer-mobile-due ${dueTone}`}>{dueLabel(detail)}</span>
-                      <span className="transfer-mobile-driver">{record.transportAssignee ? `Driver: ${record.transportAssignee}` : 'Driver not set'}</span>
-                      <span className="transfer-mobile-outcome">{outcomeLabel(detail)}</span>
                       {issueLabel ? (
-                        <span className="transfer-mobile-issue"><CircleAlert aria-hidden="true" />{issueLabel}</span>
+                        <span className="transfer-list-alert"><CircleAlert aria-hidden="true" />{issueLabel}</span>
                       ) : record.returnRequired ? (
-                        <span className="transfer-mobile-return">{returnTimingLabel(record)}</span>
+                        <span className="transfer-list-return">{returnTimingLabel(record)}</span>
                       ) : null}
                     </span>
                     <ChevronRight aria-hidden="true" />
@@ -537,8 +482,8 @@ export function TransfersPage() {
                   <ArrowLeft aria-hidden="true" />
                 </button>
                 <span>
-                  <strong>{selected.detail.vehicle.vehicleLabel}</strong>
-                  <small>{selected.detail.vehicle.stock} · {selected.detail.vehicle.homeStore} → {selected.record.destination}</small>
+                  <h1>Vehicle move</h1>
+                  <small>{selected.detail.vehicle.stock} · Step {workflowStep(selected.record.requestStatus)} of 5 · {compactRequestStatus(selected.record.requestStatus)}</small>
                 </span>
               </header>
             ) : null}

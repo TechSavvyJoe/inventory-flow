@@ -16,7 +16,7 @@
   --ifx-neutral-200: #d8e3ea;
   --ifx-neutral-300: #bbcad4;
   --ifx-neutral-400: #8ea2b0;
-  --ifx-neutral-500: #687d8c;
+  --ifx-neutral-500: #5b6f82;
   --ifx-neutral-600: #526778;
   --ifx-neutral-700: #354a5a;
   --ifx-neutral-800: #1d3343;
@@ -34,19 +34,33 @@
   --ifx-hold: #6941c6;
   --ifx-hold-surface: #f2edff;
 
-  --ifx-font-display: var(--font-app, "Inter Variable", "Segoe UI Variable", "Segoe UI", Arial, sans-serif);
-  --ifx-font-text: var(--font-app, "Inter Variable", "Segoe UI Variable", "Segoe UI", Arial, sans-serif);
+  --ifx-font-display: var(--font-app, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  --ifx-font-text: var(--font-app, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   --ifx-font-mono: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --ifx-text-xs: 0.6875rem;
-  --ifx-text-sm: 0.75rem;
-  --ifx-text-md: 0.8125rem;
-  --ifx-text-body: 0.875rem;
+  --ifx-text-xs: 0.75rem;
+  --ifx-text-sm: 0.8125rem;
+  --ifx-text-md: 0.875rem;
+  --ifx-text-body: 0.9375rem;
   --ifx-text-lg: 1rem;
-  --ifx-text-xl: 1.125rem;
-  --ifx-text-h4: 1.375rem;
-  --ifx-text-h3: 1.75rem;
+  --ifx-text-xl: 1.1875rem;
+  --ifx-text-h4: 1.4375rem;
+  --ifx-text-h3: 1.875rem;
   --ifx-text-h2: 2.25rem;
   --ifx-text-h1: 3rem;
+
+  /* A deliberately small set of native-font weights prevents the fractional
+     interpolation that can make operational copy look soft on Windows. */
+  --ifx-weight-regular: 400;
+  --ifx-weight-medium: 500;
+  --ifx-weight-semibold: 600;
+  --ifx-weight-bold: 700;
+  --ifx-leading-display: 1.1;
+  --ifx-leading-heading: 1.2;
+  --ifx-leading-compact: 1.4;
+  --ifx-leading-body: 1.55;
+  --ifx-tracking-tight: -0.018em;
+  --ifx-tracking-label: 0.008em;
+  --ifx-tracking-caps: 0.045em;
 
   --ifx-space-0: 0;
   --ifx-space-0-5: 0.125rem;
@@ -62,18 +76,25 @@
   --ifx-space-12: 3rem;
   --ifx-space-16: 4rem;
 
-  --ifx-radius-xs: 6px;
-  --ifx-radius-sm: 10px;
-  --ifx-radius-md: 14px;
-  --ifx-radius-lg: 18px;
-  --ifx-radius-xl: 24px;
+  --ifx-radius-xs: 5px;
+  --ifx-radius-sm: 8px;
+  --ifx-radius-md: 12px;
+  --ifx-radius-lg: 16px;
+  --ifx-radius-xl: 20px;
   --ifx-radius-full: 999px;
 
-  --ifx-elevation-1: 0 1px 2px rgb(7 23 34 / 6%), 0 4px 12px rgb(7 23 34 / 5%);
-  --ifx-elevation-2: 0 8px 24px rgb(7 23 34 / 9%), 0 2px 6px rgb(7 23 34 / 5%);
-  --ifx-elevation-3: 0 18px 52px rgb(7 23 34 / 14%), 0 4px 12px rgb(7 23 34 / 7%);
-  --ifx-elevation-4: 0 28px 90px rgb(7 23 34 / 22%), 0 8px 24px rgb(7 23 34 / 10%);
-  --ifx-elevation-action: 0 9px 22px rgb(76 94 255 / 28%), inset 0 1px rgb(255 255 255 / 28%);
+  --ifx-border-subtle: var(--ifx-neutral-200);
+  --ifx-border-control: var(--ifx-neutral-300);
+  --ifx-control-height-sm: 36px;
+  --ifx-control-height-md: 44px;
+  --ifx-control-height-lg: 48px;
+  --ifx-focus-ring: 0 0 0 3px color-mix(in srgb, var(--ifx-info) 24%, transparent);
+
+  --ifx-elevation-1: 0 1px 2px rgb(7 23 34 / 7%), 0 3px 8px rgb(7 23 34 / 4%);
+  --ifx-elevation-2: 0 7px 20px rgb(7 23 34 / 8%), 0 2px 5px rgb(7 23 34 / 5%);
+  --ifx-elevation-3: 0 16px 42px rgb(7 23 34 / 12%), 0 4px 10px rgb(7 23 34 / 6%);
+  --ifx-elevation-4: 0 24px 72px rgb(7 23 34 / 18%), 0 8px 20px rgb(7 23 34 / 8%);
+  --ifx-elevation-action: 0 6px 16px rgb(53 70 219 / 22%), inset 0 1px rgb(255 255 255 / 20%);
 
   --ifx-motion-instant: 70ms;
   --ifx-motion-fast: 140ms;

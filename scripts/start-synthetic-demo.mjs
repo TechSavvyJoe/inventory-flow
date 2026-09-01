@@ -51,8 +51,12 @@ function seedSyntheticWorkflow() {
     )
     app.service.appendTransferEvent(
       approved.record.id,
-      { type: 'approved', note: 'Synthetic Home Store release confirmation for training only.' },
-      { role: 'manager', store: 'Howell', user: 'Demo Howell Used Manager' },
+      {
+        type: 'approved',
+        homeStoreManager: 'Demo Howell Used Manager',
+        note: 'Synthetic Home Store release confirmation for training only.',
+      },
+      { role: 'manager', store: 'Fowlerville', user: 'Demo Fowlerville Manager' },
       'synthetic-demo-approved',
     )
     app.service.appendTransferEvent(

@@ -5,7 +5,10 @@ const VIN = '1FMUK8DHXTGB76992'
 test('inventory search opens the VIN-specific premium document workspace', async ({ page }, testInfo) => {
   await page.goto('/inventory')
 
-  await expect(page.getByRole('heading', { name: /Howell inventory/i })).toBeVisible()
+  // Dev-mode route compilation can exceed Playwright's 5s assertion default
+  // when desktop and mobile projects start together. Wait for the real page
+  // heading, not an arbitrary timer or the transient loading surface.
+  await expect(page.getByRole('heading', { name: /Howell inventory/i })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByLabel('Rows per page').locator('option')).toHaveText([
     '10',
     '15',
@@ -19,7 +22,7 @@ test('inventory search opens the VIN-specific premium document workspace', async
   await expect(page.getByText('2026 Ford Explorer Active', { exact: true }).first()).toBeVisible()
 
   if (testInfo.project.name === 'mobile') {
-    await page.getByRole('button', { name: /Open 2026 Ford Explorer Active.*AutoCheck report available.*Window sticker available/i }).click()
+    await page.getByRole('button', { name: /Open details for 2026 Ford Explorer Active.*AutoCheck report available.*Window sticker available/i }).click()
   } else {
     const row = page.getByRole('row', { name: new RegExp(VIN) })
     await expect(row.getByRole('link', { name: /Open AutoCheck report/i })).toHaveAttribute(
@@ -30,11 +33,12 @@ test('inventory search opens the VIN-specific premium document workspace', async
       'href',
       /bobmaxeyfordhowell\.com\/api\/vhcliaa\/inventory\/21521\/window-sticker\?/,
     )
-    await row.getByRole('button', { name: /Open 2026 Ford Explorer Active/i }).click()
+    await row.getByRole('button', { name: /Open vehicle details for 2026 Ford Explorer Active/i }).click()
   }
 
-  const dialog = page.getByRole('dialog', { name: '2026 Ford Explorer Active' })
+  const dialog = page.getByRole('dialog', { name: '2026 Ford Explorer Active vehicle workspace' })
   await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: /Full records/i }).click()
   const documents = dialog.getByRole('region', { name: 'Vehicle documents' })
   await expect(documents.getByRole('link', { name: /Open AutoCheck report/i })).toBeVisible()
   await expect(documents.getByRole('link', { name: /Open window sticker/i })).toBeVisible()

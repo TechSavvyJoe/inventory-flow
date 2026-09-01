@@ -18,6 +18,7 @@ import { runInterfaceTransition } from "../../lib/interfaceTransition";
 import { useModalBackgroundIsolation } from "../../lib/useModalBackgroundIsolation";
 import { InventoryMobileList, InventoryTable, inventorySortSummary } from "./InventoryTable";
 import { VehicleWorkspace } from "./VehicleWorkspace";
+import { useInventoryDisclosure } from "./useInventoryDisclosure";
 import {
   activeFilterCount,
   DEFAULT_INVENTORY_FILTERS,
@@ -110,6 +111,7 @@ function SortComposer({
   sorts: InventorySort[];
   onChange: (sorts: InventorySort[]) => void;
 }) {
+  const disclosure = useInventoryDisclosure("inventory-sort-composer-panel");
   const usedKeys = new Set(sorts.map((sort) => sort.key));
   const unusedKeys = (Object.keys(SORT_LABELS) as InventorySortKey[]).filter(
     (key) => !usedKeys.has(key),
@@ -131,8 +133,21 @@ function SortComposer({
   };
 
   return (
-    <details className="inventory-sort-composer">
-      <summary title={inventorySortSummary(sorts)}>
+    <div
+      ref={disclosure.containerRef}
+      className="inventory-sort-composer"
+      data-open={disclosure.open ? "true" : "false"}
+    >
+      <button
+        ref={disclosure.triggerRef}
+        type="button"
+        className="inventory-sort-composer__trigger"
+        title={inventorySortSummary(sorts)}
+        aria-label={`Sort inventory. ${inventorySortSummary(sorts)}`}
+        aria-expanded={disclosure.open}
+        aria-controls={disclosure.panelId}
+        onClick={() => disclosure.setOpen((open) => !open)}
+      >
         <ListFilter size={16} strokeWidth={1.8} aria-hidden="true" />
         <span>
           <small>Sort inventory</small>
@@ -140,8 +155,8 @@ function SortComposer({
         </span>
         <em>{sorts.length} {sorts.length === 1 ? "level" : "levels"}</em>
         <ChevronDown size={16} aria-hidden="true" />
-      </summary>
-      <div className="inventory-sort-composer__panel">
+      </button>
+      <div id={disclosure.panelId} className="inventory-sort-composer__panel" hidden={!disclosure.open}>
         <div className="inventory-sort-composer__heading">
           <div>
             <strong>Sort priority</strong>
@@ -213,7 +228,7 @@ function SortComposer({
           </label>
         ) : null}
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -288,10 +303,10 @@ function FiltersPanel({
         </label>
       </div>
       <details className="inventory-filter-technical">
-        <summary>Website and feed filters</summary>
+        <summary>Record-status filters</summary>
         <div className="inventory-filter-grid">
           <label>
-            <span>Website presence</span>
+            <span>Online status</span>
             <select value={filters.publicListing} onChange={(event) => update("publicListing", event.target.value as InventoryFilters["publicListing"])}>
               <option value="all">Any website status</option>
               <option value="listed">On a dealership website</option>
@@ -300,12 +315,12 @@ function FiltersPanel({
             </select>
           </label>
           <label>
-            <span>Inventory feed</span>
+            <span>Vehicle movement signal</span>
             <select value={filters.dealerOn} onChange={(event) => update("dealerOn", event.target.value as InventoryFilters["dealerOn"])}>
-              <option value="all">Any feed state</option>
-              <option value="in-stock">At dealership flag</option>
-              <option value="in-transit">In transit flag</option>
-              <option value="in-production">In production flag</option>
+              <option value="all">Any movement state</option>
+              <option value="in-stock">Reported at dealership</option>
+              <option value="in-transit">Reported in transit</option>
+              <option value="in-production">Reported in production</option>
               <option value="not-reported">Not reported</option>
             </select>
           </label>
@@ -480,11 +495,26 @@ export function InventoryExperience(props: InventoryExperienceProps) {
             <h1>{title}</h1>
             <p>
               {scope === "home"
-                ? `Showing ${homeVehicleCount} of ${groupVehicleCount} group vehicles in ${homeStore.name}.`
-                : `Showing all ${groupVehicleCount} group vehicles across four locations.`}{" "}
-              Current physical location and active movement stay visible on every vehicle.
+                ? `${homeVehicleCount} vehicles at ${homeStore.name} · ${groupVehicleCount} across the group`
+                : `${groupVehicleCount} vehicles across four locations`}{" "}
+              <span>· Live location, hold, movement, equipment, and record checks stay together.</span>
             </p>
           </div>
+        </header>
+
+        <div className="inventory-command-bar" role="group" aria-label="Inventory search and location scope">
+          <InventoryPredictiveSearch
+            id={`${filterPanelId}-search`}
+            vehicles={vehicles}
+            value={query}
+            onChange={setQuery}
+            onSelectVehicle={(vehicle) => {
+              if (vehicle.location.homeStore.id !== homeStore.id) setScope("group");
+              openVehicleWorkspace(vehicle);
+            }}
+            persistenceKey={`inventory-search:v2:${searchPersistenceKey || homeStore.id}`}
+            placeholder="Search stock, VIN, vehicle, packages, or equipment…"
+          />
           <ScopeSwitch
             homeStore={homeStore}
             scope={scope}
@@ -492,20 +522,7 @@ export function InventoryExperience(props: InventoryExperienceProps) {
             groupCount={groupVehicleCount}
             onChange={setScope}
           />
-        </header>
-
-        <InventoryPredictiveSearch
-          id={`${filterPanelId}-search`}
-          vehicles={vehicles}
-          value={query}
-          onChange={setQuery}
-          onSelectVehicle={(vehicle) => {
-            if (vehicle.location.homeStore.id !== homeStore.id) setScope("group");
-            openVehicleWorkspace(vehicle);
-          }}
-          persistenceKey={`inventory-search:v2:${searchPersistenceKey || homeStore.id}`}
-          placeholder="Search stock, VIN, vehicle, features…"
-        />
+        </div>
 
         <div className="inventory-control-deck">
           <div className="inventory-quick-filters" role="group" aria-label="Inventory quick filters">

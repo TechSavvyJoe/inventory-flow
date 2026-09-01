@@ -1,0 +1,154 @@
+/* Final shared application foundation.
+   Feature-level layout remains in each feature stylesheet; this layer only
+   standardizes typography, controls, focus, and the persistent app shell. */
+
+:root {
+  --app-control-height: 44px;
+  --app-control-radius: 8px;
+  --app-focus-color: #0875d1;
+  --app-focus-shadow: 0 0 0 3px rgb(8 117 209 / 18%);
+  --app-text-primary: #102238;
+  --app-text-secondary: #40566c;
+  --app-text-muted: #5b6f82;
+  --app-control-border: #c8d4e1;
+  --app-control-hover: #f2f6fa;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-app);
+  font-synthesis: none;
+  text-rendering: auto;
+}
+
+button,
+input,
+select,
+textarea,
+summary,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+summary,
+select,
+a[href] {
+  touch-action: manipulation;
+}
+
+:where(.button, .ifx-button, .ifx-icon-button) {
+  min-height: var(--app-control-height);
+  border-radius: var(--app-control-radius);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+:where(.button, .ifx-button, .ifx-icon-button):focus-visible,
+:where(.top-bar, .desktop-nav, .mobile-bottom-nav, .utility-panel) :where(button, a, input, select, summary):focus-visible {
+  outline: 2px solid var(--app-focus-color);
+  outline-offset: 2px;
+  box-shadow: var(--app-focus-shadow);
+}
+
+:where(.top-bar, .desktop-nav, .mobile-bottom-nav, .utility-panel) :where(button, a, input, select, summary) {
+  font-synthesis: none;
+  letter-spacing: 0;
+}
+
+.top-bar {
+  background: #fff;
+}
+
+.desktop-nav,
+.top-bar,
+.mobile-bottom-nav,
+.utility-panel {
+  font-family: var(--font-app);
+  text-rendering: auto;
+}
+
+.desktop-nav :where(.nav-link, .nav-collapse-button),
+.top-bar :where(.freshness-chip, .profile-button),
+.utility-panel :where(button, select, a) {
+  min-height: 44px;
+}
+
+.desktop-nav .nav-link,
+.top-bar .freshness-chip,
+.top-bar .profile-button {
+  line-height: 1.35;
+}
+
+.top-bar :where(.freshness-chip, .profile-button),
+.utility-panel :where(button, a, label) {
+  border-radius: var(--app-control-radius);
+}
+
+.global-search,
+.store-brand-frame,
+.utility-panel {
+  border-color: var(--app-control-border);
+}
+
+.global-search input,
+.store-select-wrap select,
+.utility-role-control select {
+  color: var(--app-text-primary);
+}
+
+.global-search input::placeholder {
+  color: var(--app-text-muted);
+}
+
+.profile-copy small,
+.freshness-chip small,
+.store-control-copy > span:first-child,
+.utility-panel small {
+  color: var(--app-text-secondary);
+}
+
+.button-primary,
+.ifx-button--primary,
+.ifx-button--oem {
+  text-shadow: none;
+}
+
+:where(.button, .ifx-button, .ifx-icon-button, .nav-link, .nav-collapse-button, .freshness-chip, .profile-button):disabled {
+  cursor: not-allowed;
+}
+
+@media (pointer: coarse) {
+  :where(button, [role="button"], summary, select) {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 880px) {
+  .top-bar,
+  .mobile-bottom-nav {
+    background: #fff;
+  }
+
+  .mobile-bottom-nav :where(a, button) {
+    min-height: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.button, .ifx-button, .ifx-icon-button, .nav-link, .nav-collapse-button, .freshness-chip, .profile-button) {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :where(.button, .ifx-button, .ifx-icon-button, .nav-link, .nav-collapse-button, .freshness-chip, .profile-button, .global-search) {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+}

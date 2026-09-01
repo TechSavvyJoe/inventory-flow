@@ -23,7 +23,7 @@ The repository includes a deterministic synthetic release with eight fabricated 
 3. Open `http://127.0.0.1:4173`.
 4. Before handing off a change, run `pnpm check`.
 
-The synthetic API listens on `127.0.0.1:4174`, keeps demo workflow changes in memory, and resets when it stops. Every fixture value is marked `SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS`.
+The synthetic API listens on `127.0.0.1:4174`, keeps demo workflow changes in memory, and resets when it stops. Every fixture value is marked `SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS`. Local development uses an explicitly non-production demo identity mode; role/store preview values are not authentication.
 
 `pnpm dev` is the dealership-host mode. It imports the latest completed local report release and therefore works only on the authorized host that has the protected `work/` snapshots. Remote contributors should use `pnpm dev:demo`.
 
@@ -50,4 +50,4 @@ Open `http://127.0.0.1:4173`; the synthetic API is at `http://127.0.0.1:4174/api
 
 ## Important boundary
 
-This is a local prototype with role-aware response shaping, not production authentication. Before coworker deployment, connect dealership identity/SSO, encrypt role-restricted fields, choose a shared database/host, and complete a security review.
+The API now fails closed when started with `NODE_ENV=production` unless `INVENTORY_OPS_IDENTITY_MODE=trusted_proxy` and a server-side proxy secret are configured. In that mode, browser role/store/user claims are ignored and the server accepts only validated identity injected by the trusted upstream. This is a trust boundary, not a complete SSO integration: before coworker deployment, connect the dealership identity provider to that upstream, strip inbound identity headers at the edge, block direct backend access, map employee groups to authorized roles/stores, encrypt role-restricted fields, choose a shared database/host, and complete a security review. See [ADR-001: Server-owned identity boundary](docs/ADR-001-SERVER-OWNED-IDENTITY.md).

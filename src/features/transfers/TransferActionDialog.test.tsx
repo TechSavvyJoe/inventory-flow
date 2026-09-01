@@ -138,7 +138,7 @@ describe('TransferActionDialog modal accessibility', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open movement action' }))
     const dialog = screen.getByRole('dialog')
     const first = within(dialog).getByRole('button', { name: 'Close movement action' })
-    const last = within(dialog).getByRole('button', { name: 'Record update' })
+    const last = within(dialog).getByRole('button', { name: 'Record release grant' })
 
     await waitFor(() => expect(first).toHaveFocus())
     last.focus()
@@ -147,6 +147,46 @@ describe('TransferActionDialog modal accessibility', () => {
 
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
     expect(last).toHaveFocus()
+  })
+
+  it('labels the requesting-manager review step and confirmation accurately', async () => {
+    render(<DialogHarness action="review-request" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open movement action' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Approve at requesting store' })
+    expect(dialog).toHaveTextContent('Stage 2 · Requesting-store approval')
+    expect(dialog).toHaveTextContent('This does not confirm availability or release')
+    expect(dialog).toHaveTextContent('Ford Detroit manager must contact the Howell used-car manager')
+    expect(within(dialog).getByRole('button', { name: 'Approve request' })).toBeEnabled()
+  })
+
+  it('requires the contacted home-store manager evidence before recording release', async () => {
+    mocks.addTransferEvent.mockResolvedValue(record)
+    render(<DialogHarness />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open movement action' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Record home-store release' })
+    expect(dialog).toHaveTextContent('Stage 3 · Home-store contact & release decision')
+    expect(dialog).toHaveTextContent('A driver can be assigned only after a release grant is recorded')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Record release grant' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Enter the Howell manager who gave the release decision')
+
+    fireEvent.change(within(dialog).getByLabelText(/Home-store manager contacted/i), {
+      target: { value: 'Howell used-car manager' },
+    })
+    fireEvent.change(within(dialog).getByLabelText(/Release conditions or pickup note/i), {
+      target: { value: 'Release confirmed; keys at desk.' },
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Record release grant' }))
+
+    await waitFor(() => expect(mocks.addTransferEvent).toHaveBeenCalledWith(
+      record.id,
+      expect.objectContaining({
+        type: 'approved',
+        homeStoreManager: 'Howell used-car manager',
+        note: 'Release confirmed; keys at desk.',
+      }),
+    ))
   })
 
   it('closes on Escape, restores the background, and returns focus to the opener', async () => {

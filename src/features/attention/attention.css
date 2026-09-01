@@ -679,3 +679,195 @@
   .today-change-filters { margin-bottom: 6px; }
   .today-change-filters button { min-height: 30px; }
 }
+
+/* Action-workspace finish: one readable page rhythm shared by the work queue
+   and daily-change view. Technical source names stay out of the primary UI. */
+.today-page {
+  color: #102b42;
+}
+
+.today-header .page-heading {
+  color: #102b42;
+  font-size: clamp(28px, 3vw, 36px);
+  font-weight: 720;
+  letter-spacing: -.03em;
+  line-height: 1.08;
+}
+
+.today-header .page-subtitle {
+  max-width: 76ch;
+  color: #4b6377;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.today-as-of small,
+.today-as-of strong {
+  font-size: 12.5px;
+}
+
+.today-data-warning {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  margin: 12px 0 4px;
+  padding: 11px 12px;
+  border: 1px solid #dcc493;
+  border-radius: 9px;
+  background: #fff8e9;
+}
+
+.today-data-warning svg {
+  width: 19px;
+  height: 19px;
+  color: #8a621c;
+}
+
+.today-data-warning strong {
+  color: #5e471e;
+  font-size: 13.5px;
+}
+
+.today-data-warning p {
+  margin: 2px 0 0;
+  color: #6d592f;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.today-tabs {
+  gap: 26px;
+  margin-top: 14px;
+  border-color: #c8d5e0;
+}
+
+.today-tabs button {
+  min-height: 46px;
+  color: #4c6478;
+  font-size: 13.5px;
+  font-weight: 680;
+}
+
+.today-tabs button span {
+  min-width: 23px;
+  padding: 3px 7px;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.today-panel {
+  padding-top: 16px;
+}
+
+.today-summary-context,
+.today-summary-context strong,
+.today-scope-control button,
+.today-change-filters button,
+.today-change-toolbar p,
+.today-baseline-notice strong,
+.today-baseline-notice p,
+.today-removal-note p,
+.today-stale-change-warning p,
+.today-change-copy > small,
+.today-change-store > small,
+.today-change-values small,
+.today-change-store > strong,
+.today-change-values strong,
+.today-change-badge,
+.today-change-empty button {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.today-summary-card {
+  min-height: 82px;
+  border-color: #c8d5e0;
+  border-radius: 9px;
+  box-shadow: 0 4px 13px rgb(10 38 62 / 4%);
+}
+
+.today-summary-card > strong {
+  font-size: 25px;
+}
+
+.today-summary-card > span {
+  font-size: 13px;
+}
+
+.today-summary-card > small {
+  color: #50677a;
+  font-size: 12px;
+}
+
+.today-change-toolbar h2 {
+  font-size: 20px;
+}
+
+.today-baseline-notice,
+.today-removal-note,
+.today-stale-change-warning,
+.today-change-list {
+  border-color: #c8d5e0;
+}
+
+.today-change-row {
+  min-height: 88px;
+}
+
+.today-change-copy > strong {
+  color: #102b42;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.today-change-row > a {
+  min-width: 44px;
+  min-height: 40px;
+  border: 1px solid #abc0d0;
+  border-radius: 8px;
+  color: #075da3;
+  font-size: 12.5px;
+  font-weight: 680;
+}
+
+.today-tabs button:focus-visible,
+.today-scope-control button:focus-visible,
+.today-change-filters button:focus-visible,
+.today-change-row > a:focus-visible,
+.today-change-empty button:focus-visible {
+  outline: 3px solid #7cb8e5;
+  outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .today-header .page-heading {
+    font-size: 27px;
+  }
+
+  .today-header .page-subtitle {
+    font-size: 13px;
+  }
+
+  .today-summary-card > small {
+    display: block;
+  }
+
+  .today-tabs {
+    margin-top: 10px;
+  }
+}
+
+@media (max-width: 430px) {
+  .today-change-filters {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    overflow-x: visible;
+    padding-bottom: 0;
+  }
+
+  .today-change-filters button {
+    font-size: 12.5px;
+    line-height: 1.4;
+  }
+}

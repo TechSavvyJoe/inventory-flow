@@ -54,7 +54,7 @@ describe('modern inventory scope and paging', () => {
       />,
     );
 
-    expect(screen.getByPlaceholderText('Search stock, VIN, vehicle, features…')).toHaveAccessibleName('Search inventory');
+    expect(screen.getByPlaceholderText('Search stock, VIN, vehicle, packages, or equipment…')).toHaveAccessibleName('Search inventory');
     expect(screen.getByRole('button', { name: 'No current hold: 1 vehicles' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Being moved: 0 vehicles' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'New today: 0 vehicles' })).toBeInTheDocument();
@@ -91,7 +91,11 @@ describe('modern inventory scope and paging', () => {
       />,
     );
 
-    fireEvent.click(screen.getByText('Sort inventory'));
+    const sortDisclosure = screen.getByRole('button', { name: /Sort inventory/i });
+    expect(sortDisclosure).toHaveAttribute('aria-expanded', 'false');
+    expect(sortDisclosure).toHaveAttribute('aria-controls');
+    fireEvent.click(sortDisclosure);
+    expect(sortDisclosure).toHaveAttribute('aria-expanded', 'true');
     fireEvent.change(screen.getByLabelText('Add another inventory sort'), {
       target: { value: 'holdStatus' },
     });

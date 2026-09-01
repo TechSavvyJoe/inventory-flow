@@ -116,7 +116,7 @@
 }
 
 .inventory-experience--modern .inventory-table--compact-v3 .inventory-sort-header-group__more-trigger:hover,
-.inventory-experience--modern .inventory-table--compact-v3 .inventory-sort-header-group__more[open] > .inventory-sort-header-group__more-trigger {
+.inventory-experience--modern .inventory-table--compact-v3 .inventory-sort-header-group__more[data-open="true"] > .inventory-sort-header-group__more-trigger {
   color: #234c72;
   background: #e6edf4;
 }
@@ -507,7 +507,7 @@
 }
 
 .inventory-experience--modern .inventory-table--compact-v3 .inventory-row-more__trigger:hover,
-.inventory-experience--modern .inventory-table--compact-v3 .inventory-row-more[open] > .inventory-row-more__trigger {
+.inventory-experience--modern .inventory-table--compact-v3 .inventory-row-more[data-open="true"] > .inventory-row-more__trigger {
   border-color: #91abc2;
   color: #1e4d77;
   background: #f4f8fb;

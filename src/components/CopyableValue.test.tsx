@@ -39,9 +39,11 @@ describe("CopyableValue", () => {
     expect(button).toHaveAttribute("title", "Copy stock number: 0012-A ");
     fireEvent.click(button);
 
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("0012-A "));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("0012-A ");
+      expect(screen.getByRole("status")).toHaveTextContent("stock number copied");
+    });
     expect(writeText).toHaveBeenCalledOnce();
-    expect(screen.getByRole("status")).toHaveTextContent("stock number copied");
     expect(screen.getByText("Copied")).toBeInTheDocument();
   });
 
@@ -59,9 +61,11 @@ describe("CopyableValue", () => {
     render(<CopyableValue label="VIN" text="1FTFW1E86HFA48871" />);
     fireEvent.click(screen.getByRole("button", { name: "Copy VIN: 1FTFW1E86HFA48871" }));
 
-    await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"));
+    await waitFor(() => {
+      expect(execCommand).toHaveBeenCalledWith("copy");
+      expect(screen.getByRole("status")).toHaveTextContent("VIN copied");
+    });
     expect(selectedText).toBe("1FTFW1E86HFA48871");
-    expect(screen.getByRole("status")).toHaveTextContent("VIN copied");
   });
 
   it("announces failure without copying surrounding or hidden content", async () => {

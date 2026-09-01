@@ -1,6 +1,7 @@
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import path from 'node:path'
+import { createIdentityResolver, IdentityError } from './identity.mjs'
 import { WorkflowError } from './workflow.mjs'
 
 const BODY_LIMIT = 64 * 1024
@@ -77,18 +78,6 @@ async function readJson(request) {
   }
 }
 
-function requestContext(request, url, { allowQuery = false } = {}) {
-  return {
-    role: String(request.headers['x-inventory-role'] ?? (allowQuery ? url.searchParams.get('role') : '') ?? ''),
-    store: String(
-      request.headers['x-inventory-store'] ??
-        (allowQuery ? url.searchParams.get('homeStore') || url.searchParams.get('store') : '') ??
-        '',
-    ),
-    user: String(request.headers['x-inventory-user'] ?? ''),
-  }
-}
-
 function queryObject(url) {
   return Object.fromEntries(url.searchParams.entries())
 }
@@ -142,8 +131,9 @@ function serveStatic(request, response, distDir, url) {
   else createReadStream(candidate).pipe(response)
 }
 
-export function createApiHandler({ service, serveDist = false, distDir } = {}) {
+export function createApiHandler({ service, serveDist = false, distDir, identityResolver = createIdentityResolver() } = {}) {
   if (!service) throw new Error('service is required')
+  if (!identityResolver?.resolve) throw new Error('identityResolver is required')
   return async function handler(request, response) {
     try {
       const url = new URL(request.url || '/', 'http://127.0.0.1')
@@ -154,18 +144,19 @@ export function createApiHandler({ service, serveDist = false, distDir } = {}) {
       }
 
       if (request.method === 'GET' && route === '/health') return sendJson(response, 200, service.health())
+      const context = identityResolver.resolve(request, url, { allowQuery: route === '/bootstrap' })
       if (request.method === 'GET' && route === '/bootstrap') {
-        return sendJson(response, 200, service.bootstrap(requestContext(request, url, { allowQuery: true })))
+        return sendJson(response, 200, service.bootstrap(context))
       }
       if (request.method === 'GET' && route === '/vehicles') {
-        return sendJson(response, 200, service.listVehicles(queryObject(url), requestContext(request, url)))
+        return sendJson(response, 200, service.listVehicles(queryObject(url), context))
       }
       const vehicleMatch = route.match(/^\/vehicles\/([^/]+)$/)
       if (request.method === 'GET' && vehicleMatch) {
-        return sendJson(response, 200, service.getVehicle(decodeURIComponent(vehicleMatch[1]), requestContext(request, url)))
+        return sendJson(response, 200, service.getVehicle(decodeURIComponent(vehicleMatch[1]), context))
       }
       if (request.method === 'GET' && route === '/attention') {
-        return sendJson(response, 200, service.listAttention(queryObject(url), requestContext(request, url)))
+        return sendJson(response, 200, service.listAttention(queryObject(url), context))
       }
       const attentionEventMatch = route.match(/^\/attention\/([^/]+)\/events$/)
       if (request.method === 'POST' && attentionEventMatch) {
@@ -173,23 +164,23 @@ export function createApiHandler({ service, serveDist = false, distDir } = {}) {
         const result = service.appendAttentionEvent(
           decodeURIComponent(attentionEventMatch[1]),
           input,
-          requestContext(request, url),
+          context,
           String(request.headers['idempotency-key'] ?? '') || undefined,
         )
         return sendJson(response, result.created ? 201 : 200, result.record)
       }
       const attentionMatch = route.match(/^\/attention\/([^/]+)$/)
       if (request.method === 'GET' && attentionMatch) {
-        return sendJson(response, 200, service.getAttention(decodeURIComponent(attentionMatch[1]), requestContext(request, url)))
+        return sendJson(response, 200, service.getAttention(decodeURIComponent(attentionMatch[1]), context))
       }
       if (request.method === 'GET' && route === '/transfers') {
-        return sendJson(response, 200, service.listTransfers(queryObject(url), requestContext(request, url)))
+        return sendJson(response, 200, service.listTransfers(queryObject(url), context))
       }
       if (request.method === 'POST' && route === '/transfers') {
         const input = await readJson(request)
         const result = service.createTransfer(
           input,
-          requestContext(request, url),
+          context,
           String(request.headers['idempotency-key'] ?? '') || undefined,
         )
         return sendJson(response, result.created ? 201 : 200, result.record)
@@ -200,18 +191,18 @@ export function createApiHandler({ service, serveDist = false, distDir } = {}) {
         const result = service.appendTransferEvent(
           decodeURIComponent(eventMatch[1]),
           input,
-          requestContext(request, url),
+          context,
           String(request.headers['idempotency-key'] ?? '') || undefined,
         )
         return sendJson(response, result.created ? 201 : 200, result.record)
       }
       const transferMatch = route.match(/^\/transfers\/([^/]+)$/)
       if (request.method === 'GET' && transferMatch) {
-        return sendJson(response, 200, service.getTransfer(decodeURIComponent(transferMatch[1]), requestContext(request, url)))
+        return sendJson(response, 200, service.getTransfer(decodeURIComponent(transferMatch[1]), context))
       }
       return sendJson(response, 404, { error: 'API route not found', code: 'NOT_FOUND' })
     } catch (error) {
-      const isKnown = error instanceof WorkflowError || error instanceof HttpError
+      const isKnown = error instanceof WorkflowError || error instanceof HttpError || error instanceof IdentityError
       const status = isKnown ? error.status || 400 : 500
       const safeError = isKnown ? error : new HttpError('Unexpected server error', 500, 'INTERNAL_ERROR')
       return sendJson(response, status, errorPayload(safeError))
@@ -226,6 +217,5 @@ export function createInventoryServer(options) {
 export const apiInternals = Object.freeze({
   BODY_LIMIT,
   apiPath,
-  requestContext,
   safeStaticPath,
 })

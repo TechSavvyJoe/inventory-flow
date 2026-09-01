@@ -34,6 +34,7 @@ import {
   vautoFactoryEquipmentUrl,
 } from "./vehicle-document-utils";
 import { publishedEquipment, standoutEquipment } from "./vehicle-feature-utils";
+import { useInventoryDisclosure } from "./useInventoryDisclosure";
 import type {
   InventorySortKey,
   InventoryTableProps,
@@ -41,6 +42,7 @@ import type {
 } from "./types";
 import "./InventoryTable.compact-v3.css";
 import "./InventoryTable.production-v4.css";
+import "./InventoryTable.operational-v9.css";
 
 interface SortOption {
   label: string;
@@ -77,15 +79,19 @@ const AGE_SORT_OPTIONS = [
 
 const EQUIPMENT_SORT_OPTIONS = [
   { label: "Certified", sortKey: "certified" },
+] satisfies SortOption[];
+
+const EVIDENCE_SORT_OPTIONS = [
   { label: "Photos", sortKey: "photoCount" },
   { label: "AutoCheck score", sortKey: "autoCheckScore" },
   { label: "Vehicle documents", sortKey: "documentAvailability" },
+  { label: "Website", sortKey: "websiteStatus" },
+  { label: "Source update", sortKey: "recentActivity" },
 ] satisfies SortOption[];
 
 const STATUS_SORT_OPTIONS = [
   { label: "Hold", sortKey: "holdStatus" },
   { label: "Hold salesperson", sortKey: "salesperson" },
-  { label: "Website", sortKey: "websiteStatus" },
 ] satisfies SortOption[];
 
 const LOCATION_SORT_OPTIONS = [
@@ -95,16 +101,17 @@ const LOCATION_SORT_OPTIONS = [
 ] satisfies SortOption[];
 
 const CHANGE_SORT_OPTIONS = [
-  { label: "Source update", sortKey: "recentActivity" },
   { label: "Last movement", sortKey: "lastMovement" },
 ] satisfies SortOption[];
 
 interface SortControlProps extends SortOption {
+  /** Short visual group label. The exact field label remains in the accessible name. */
+  displayLabel?: string;
   sorts: InventoryTableProps["sorts"];
   onSortChange: InventoryTableProps["onSortChange"];
 }
 
-function SortControl({ label, sortKey, sorts, onSortChange }: SortControlProps) {
+function SortControl({ label, displayLabel, sortKey, sorts, onSortChange }: SortControlProps) {
   const index = sorts.findIndex((sort) => sort.key === sortKey);
   const activeSort = index >= 0 ? sorts[index] : undefined;
   const directionLabel = activeSort?.direction === "asc" ? "ascending" : "descending";
@@ -129,7 +136,7 @@ function SortControl({ label, sortKey, sorts, onSortChange }: SortControlProps) 
           : `Sort by ${label}. Hold Shift to add another sort.`
       }
     >
-      <span>{label}</span>
+      <span>{displayLabel ?? label}</span>
       {activeSort ? (
         <span className="inventory-sort-header__state" aria-hidden="true">
           {activeSort.direction === "asc" ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
@@ -147,13 +154,16 @@ function SortControl({ label, sortKey, sorts, onSortChange }: SortControlProps) 
 
 interface SortHeaderProps {
   label: string;
-  group: "vehicle" | "identity" | "pricing" | "age" | "equipment" | "status" | "location" | "changes";
+  /** Compact visible heading; the full label remains available to assistive technology. */
+  displayLabel?: string;
+  group: "vehicle-identity" | "financial-age" | "equipment" | "availability" | "evidence";
   options: SortOption[];
   sorts: InventoryTableProps["sorts"];
   onSortChange: InventoryTableProps["onSortChange"];
 }
 
-function SortHeader({ label, group, options, sorts, onSortChange }: SortHeaderProps) {
+function SortHeader({ label, displayLabel, group, options, sorts, onSortChange }: SortHeaderProps) {
+  const disclosure = useInventoryDisclosure(`inventory-${group}-sort-options`);
   const primarySort = sorts[0];
   const containsPrimarySort = options.some((option) => option.sortKey === primarySort?.key);
   const activeOption = [...options]
@@ -170,37 +180,51 @@ function SortHeader({ label, group, options, sorts, onSortChange }: SortHeaderPr
 
   return (
     <th scope="col" aria-sort={ariaSort} data-sort-group={group}>
-      <span className="inventory-sort-header-group__label">{label}</span>
       <span className="inventory-sort-header-group__controls">
         <SortControl
           {...displayedOption}
+          displayLabel={displayLabel ?? label}
           sorts={sorts}
           onSortChange={onSortChange}
         />
         {overflowOptions.length ? (
-          <details className="inventory-sort-header-group__more">
-            <summary
+          <div
+            ref={disclosure.containerRef}
+            className="inventory-sort-header-group__more"
+            data-open={disclosure.open ? "true" : "false"}
+          >
+            <button
+              ref={disclosure.triggerRef}
+              type="button"
               className="inventory-sort-header-group__more-trigger"
               aria-label={`More ${label} sort options`}
+              aria-expanded={disclosure.open}
+              aria-controls={disclosure.panelId}
               title={`More ${label.toLocaleLowerCase()} sort options`}
+              onClick={() => disclosure.setOpen((open) => !open)}
             >
               <ListFilter size={13} strokeWidth={2} aria-hidden="true" />
-            </summary>
+            </button>
             <span
+              id={disclosure.panelId}
               className="inventory-sort-header-group__menu"
               role="group"
               aria-label={`${label} sort options`}
+              hidden={!disclosure.open}
             >
               {overflowOptions.map((option) => (
                 <SortControl
                   key={option.sortKey}
                   {...option}
                   sorts={sorts}
-                  onSortChange={onSortChange}
+                  onSortChange={(nextSorts) => {
+                    disclosure.close(true);
+                    onSortChange(nextSorts);
+                  }}
                 />
               ))}
             </span>
-          </details>
+          </div>
         ) : null}
       </span>
     </th>
@@ -209,15 +233,28 @@ function SortHeader({ label, group, options, sorts, onSortChange }: SortHeaderPr
 
 export function VehiclePhoto({ vehicle, className = "" }: { vehicle: InventoryVehicle; className?: string }) {
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const src = vehicle.imageUrl || vehicle.imageUrls?.[0];
   return src && !failed ? (
-    <img
-      className={className}
-      src={src}
-      alt={`${vehicleDisplayName(vehicle)} exterior`}
-      loading="lazy"
-      onError={() => setFailed(true)}
-    />
+    <>
+      {loaded ? null : (
+        <span
+          className="inventory-vehicle-visual__placeholder inventory-vehicle-visual__placeholder--loading"
+          aria-hidden="true"
+        >
+          <CarFront size={24} strokeWidth={1.6} aria-hidden="true" />
+        </span>
+      )}
+      <img
+        className={`${className}${loaded ? " is-loaded" : " is-loading"}`.trim()}
+        src={src}
+        alt={`${vehicleDisplayName(vehicle)} exterior`}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setLoaded(true)}
+        onError={() => setFailed(true)}
+      />
+    </>
   ) : (
     <span className={`inventory-vehicle-visual__placeholder ${className}`} aria-label="Vehicle photo unavailable">
       <CarFront size={26} strokeWidth={1.6} aria-hidden="true" />
@@ -249,7 +286,7 @@ export function vehicleOperationalStatus(vehicle: InventoryVehicle): Operational
   if (vehicle.dealerMail.hasActiveHold === false) {
     return {
       label: "No current hold",
-      detail: "Confirm before committing",
+      detail: "Availability still requires confirmation",
       tone: "clear",
       icon: UserRound,
     };
@@ -391,93 +428,218 @@ function EquipmentCell({ vehicle }: { vehicle: InventoryVehicle }) {
   const equipment = [
     ...published.filter((item) => standoutKeys.has(`${item.source}:${item.label}`)),
     ...published.filter((item) => !standoutKeys.has(`${item.source}:${item.label}`)),
-  ].slice(0, 2);
+  ].slice(0, 4);
   const remaining = Math.max(0, published.length - equipment.length);
   const first = equipment[0];
-  const second = equipment[1];
-  const name = vehicleDisplayName(vehicle);
-  const listingUrl = vehicle.publicListing.listingUrl?.trim() || null;
-  const documentLinks = [
-    {
-      key: "autocheck",
-      label: "AutoCheck",
-      url: officialVehicleDocumentUrl(vehicle.autoCheckReport?.url, "autocheck", listingUrl),
-      icon: ShieldCheck,
-      ariaLabel: `Open AutoCheck report for ${name} in a new tab`,
-    },
-    {
-      key: "window-sticker",
-      label: "Sticker",
-      url: officialVehicleDocumentUrl(vehicle.windowSticker?.url, "window-sticker", listingUrl),
-      icon: FileText,
-      ariaLabel: `Open window sticker for ${name} in a new tab`,
-    },
-  ].filter((item): item is typeof item & { url: string } => Boolean(item.url));
+  const secondary = equipment.slice(1);
   return (
     <span className="inventory-equipment-cell">
       {first ? <strong title={first.label}>{first.label}</strong> : <span className="is-quiet">No published highlights</span>}
-      {second || remaining > 0 ? (
-        <small title={second?.label}>
-          {second?.label ?? "More equipment in details"}{remaining > 0 ? ` · +${remaining}` : ""}
-        </small>
-      ) : null}
-      {documentLinks.length ? (
-        <span className="inventory-equipment-docs" aria-label="Vehicle documents">
-          {documentLinks.map((item) => {
-            const Icon = item.icon;
-            return (
-              <a
-                key={item.key}
-                className={`inventory-equipment-doc inventory-equipment-doc--${item.key}`}
-                data-row-action={item.key}
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={item.ariaLabel}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <Icon size={11} strokeWidth={2} aria-hidden="true" />
-                <span>{item.label}</span>
-              </a>
-            );
-          })}
+      {secondary.length ? (
+        <span className="inventory-equipment-cell__secondary">
+          {secondary.map((item) => <small key={`${item.source}:${item.label}`} title={item.label}>{item.label}</small>)}
         </span>
       ) : null}
+      <span className="inventory-equipment-cell__meta">
+        {vehicle.certified ? <small className="inventory-equipment-cell__certified">Certified</small> : null}
+        {remaining > 0 ? <small className="inventory-equipment-cell__more">+{remaining} more</small> : null}
+      </span>
+    </span>
+  );
+}
+
+function FinancialAgeCell({ vehicle }: { vehicle: InventoryVehicle }) {
+  const inventoryDate = compactInventoryDate(vehicle.inventoryDate);
+  const age = vehicle.daysListed != null
+    ? `${vehicle.daysListed} ${vehicle.daysListed === 1 ? "day" : "days"}`
+    : "Age unavailable";
+  return (
+    <span className="inventory-financial-age-cell">
+      <span className="inventory-financial-age-cell__price">
+        <small>Listed price</small>
+        <strong>{formatMoney(vehicle.price)}</strong>
+        <span>{vehicle.msrp != null && vehicle.msrp > 0 ? `MSRP ${formatMoney(vehicle.msrp)}` : "MSRP not published"}</span>
+      </span>
+      <span className="inventory-financial-age-cell__usage">
+        <small>Mileage</small>
+        <strong>{formatMileage(vehicle.mileage)}</strong>
+        <span title={inventoryDate ? `${age} listed; inventory date ${inventoryDate}` : `${age} listed`}>
+          {inventoryDate ? `${age} · Inv ${inventoryDate}` : `${age} listed`}
+        </span>
+      </span>
+    </span>
+  );
+}
+
+function LocationActivityCell({ vehicle }: { vehicle: InventoryVehicle }) {
+  return (
+    <span className="inventory-location-activity-cell">
+      <LocationCell vehicle={vehicle} />
+      <ActivityCell vehicle={vehicle} />
+    </span>
+  );
+}
+
+function vehiclePhotoCount(vehicle: InventoryVehicle): number {
+  return vehicle.photoCount ?? vehicle.imageUrls?.length ?? (vehicle.imageUrl ? 1 : 0);
+}
+
+function autoCheckResourceDetail(vehicle: InventoryVehicle): string {
+  const facts = [
+    vehicle.autoCheckReport?.score != null ? `Score ${vehicle.autoCheckReport.score}` : null,
+    vehicle.autoCheckReport?.ownerCount != null
+      ? `${vehicle.autoCheckReport.ownerCount} ${vehicle.autoCheckReport.ownerCount === 1 ? "owner" : "owners"}`
+      : null,
+  ].filter(Boolean);
+  return facts.join(" · ") || "Vehicle history report";
+}
+
+function windowStickerResourceDetail(vehicle: InventoryVehicle): string {
+  const optionCount = vehicle.windowSticker?.options?.length ?? 0;
+  const buildFacts = [
+    vehicle.windowSticker?.equipmentGroup?.trim() || null,
+    optionCount ? `${optionCount} ${optionCount === 1 ? "option" : "options"}` : null,
+  ].filter(Boolean);
+  if (buildFacts.length) return buildFacts.join(" · ");
+  return vehicle.windowSticker?.totalMsrp != null && vehicle.windowSticker.totalMsrp > 0
+    ? `Sticker MSRP ${formatMoney(vehicle.windowSticker.totalMsrp)}`
+    : "Original build label";
+}
+
+function factoryEquipmentResourceDetail(vehicle: InventoryVehicle): string {
+  const packageCount = vehicle.factoryEquipment?.packages?.length ?? 0;
+  const sectionCount = vehicle.factoryEquipment?.sections?.length ?? 0;
+  const coverage = [
+    packageCount ? `${packageCount} ${packageCount === 1 ? "package" : "packages"}` : null,
+    sectionCount ? `${sectionCount} ${sectionCount === 1 ? "section" : "sections"}` : null,
+  ].filter(Boolean);
+  return coverage.join(" · ") || "Informational equipment profile";
+}
+
+export function AutoCheckCompactWordmark() {
+  const [logoFailed, setLogoFailed] = useState(false);
+  return (
+    <span
+      className="inventory-document-wordmark inventory-document-wordmark--autocheck inventory-document-wordmark--table"
+      data-brand-asset={logoFailed ? "text-fallback" : "official-image"}
+      aria-hidden="true"
+    >
+      {logoFailed ? (
+        <span className="inventory-document-wordmark__fallback">
+          <strong>AutoCheck</strong>
+          <small>Experian</small>
+        </span>
+      ) : (
+        <img
+          src="https://www.autocheck.com/reportservice/common/img/autocheck-logo.svg"
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setLogoFailed(true)}
+        />
+      )}
+    </span>
+  );
+}
+
+function DocumentsCell({ vehicle }: { vehicle: InventoryVehicle }) {
+  const name = vehicleDisplayName(vehicle);
+  const listingUrl = vehicle.publicListing.listingUrl?.trim() || null;
+  const autoCheckUrl = officialVehicleDocumentUrl(vehicle.autoCheckReport?.url, "autocheck", listingUrl);
+  const windowStickerUrl = officialVehicleDocumentUrl(vehicle.windowSticker?.url, "window-sticker", listingUrl);
+  const equipmentUrl = vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url);
+  const photoCount = vehiclePhotoCount(vehicle);
+  const documents = [
+    autoCheckUrl ? {
+      key: "autocheck",
+      label: "AutoCheck",
+      detail: autoCheckResourceDetail(vehicle),
+      state: vehicle.autoCheckReport?.dataState,
+      url: autoCheckUrl,
+      icon: ShieldCheck,
+      ariaLabel: `Open AutoCheck report for ${name} in a new tab`,
+    } : null,
+    windowStickerUrl ? {
+      key: "window-sticker",
+      label: "Window sticker",
+      detail: windowStickerResourceDetail(vehicle),
+      state: vehicle.windowSticker?.dataState,
+      url: windowStickerUrl,
+      icon: FileText,
+      ariaLabel: `Open window sticker for ${name} in a new tab`,
+    } : null,
+    equipmentUrl ? {
+      key: "vauto-equipment",
+      label: "vAuto equipment",
+      detail: factoryEquipmentResourceDetail(vehicle),
+      state: vehicle.factoryEquipment?.dataState,
+      url: equipmentUrl,
+      icon: ClipboardCheck,
+      ariaLabel: `Open vAuto informational equipment profile for ${name} in a new tab`,
+    } : null,
+  ].filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return (
+    <span className="inventory-documents-cell" aria-label="Vehicle documents">
+      {documents.length ? documents.map((item) => {
+        const Icon = item.icon;
+        return (
+          <a
+            key={item.key}
+            className={`inventory-document-link${item.key === "autocheck" ? " inventory-document-link--autocheck" : ""}`}
+            data-row-action={item.key}
+            data-source-state={item.state ?? "unavailable"}
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={item.ariaLabel}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {item.key === "autocheck"
+              ? <AutoCheckCompactWordmark />
+              : <Icon size={14} strokeWidth={1.9} aria-hidden="true" />}
+            <span>
+              <strong className={item.key === "autocheck" ? "inventory-sr-only" : undefined}>{item.label}</strong>
+              {item.detail ? <small>{item.detail}</small> : null}
+            </span>
+            <ExternalLink size={11} strokeWidth={1.9} aria-hidden="true" />
+          </a>
+        );
+      }) : <span className="inventory-documents-cell__empty">No linked resources</span>}
+      <small className="inventory-documents-cell__photos">{photoCount ? `${photoCount} photos` : "No photos published"}</small>
     </span>
   );
 }
 
 function ActivityCell({ vehicle }: { vehicle: InventoryVehicle }) {
   const change = primaryVehicleChangeSignal(vehicle.changeSummary);
-  const autoCheckFacts = [
-    typeof vehicle.autoCheckReport?.score === "number" ? `AutoCheck ${vehicle.autoCheckReport.score}` : null,
-    typeof vehicle.autoCheckReport?.ownerCount === "number"
-      ? `${vehicle.autoCheckReport.ownerCount} owner${vehicle.autoCheckReport.ownerCount === 1 ? "" : "s"}`
-      : null,
-    vehicle.autoCheckReport?.usage?.trim() || null,
-  ].filter((fact): fact is string => Boolean(fact));
   if (change) {
     return (
       <span className={`inventory-change-summary inventory-change-summary--${change.kind}`}>
         <strong>{change.shortLabel}</strong>
-        <small>{autoCheckFacts.length ? autoCheckFacts.slice(0, 2).join(" · ") : vehicle.changeSummary}</small>
+        <small>{vehicle.changeSummary}</small>
       </span>
     );
   }
-  if (autoCheckFacts.length) {
-    return (
-      <span className="inventory-activity-summary">
-        <ShieldCheck size={14} strokeWidth={1.9} aria-hidden="true" />
-        <strong>{autoCheckFacts[0]}</strong>
-        {autoCheckFacts.length > 1 ? <small>{autoCheckFacts.slice(1).join(" · ")}</small> : null}
-      </span>
-    );
-  }
-  return <span className="inventory-activity-summary is-quiet">No recent source change</span>;
+
+  const sourceState = vehicle.publicListing.dataState;
+  const sourceDetail = sourceState === "current"
+    ? "Public inventory current"
+    : sourceState === "stale"
+      ? "Public inventory stale"
+      : sourceState === "incomplete"
+        ? "Public inventory incomplete"
+        : "Public inventory unavailable";
+  return (
+    <span className={`inventory-activity-summary inventory-activity-summary--${sourceState} is-quiet`}>
+      <strong>No recent change</strong>
+      <small>{sourceDetail}</small>
+    </span>
+  );
 }
 
 function PhotoCount({ vehicle }: { vehicle: InventoryVehicle }) {
-  const count = vehicle.photoCount ?? vehicle.imageUrls?.length ?? (vehicle.imageUrl ? 1 : 0);
+  const count = vehiclePhotoCount(vehicle);
   return count > 0 ? <span className="inventory-photo-count" aria-label={`${count} vehicle photos`}>{count}</span> : null;
 }
 
@@ -502,9 +664,9 @@ function VehicleRowActions({
   onSelectVehicle,
   onOpenSourceRecord,
 }: VehicleRowActionsProps) {
+  const disclosure = useInventoryDisclosure("inventory-row-more-actions");
   const name = vehicleDisplayName(vehicle);
   const listingUrl = vehicle.publicListing.listingUrl?.trim() || null;
-  const factoryEquipmentUrl = vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url);
   const isFordFamily = /^(ford|lincoln)$/i.test(vehicle.make.trim());
   const invoiceUrl = isFordFamily ? fordInvoiceUrl(vehicle.vin) : null;
   const oasisUrl = isFordFamily ? fordOasisUrl(vehicle.vin) : null;
@@ -516,7 +678,6 @@ function VehicleRowActions({
   const canOpenDealerMail = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
   const hasOverflowActions = Boolean(
     listingUrl ||
-      factoryEquipmentUrl ||
       invoiceUrl ||
       oasisUrl ||
       (requestAllowed && onRequestVehicle) ||
@@ -525,7 +686,7 @@ function VehicleRowActions({
 
   return (
     <div
-      className="inventory-row-actions inventory-row-actions--compact-v3"
+      className="inventory-row-actions inventory-row-actions--compact-v3 inventory-row-actions--production-v8"
       data-action-layout={hasOverflowActions ? "overflow" : "row-open"}
       data-has-dealermail={canOpenDealerMail ? "true" : "false"}
       data-has-overflow={hasOverflowActions ? "true" : "false"}
@@ -560,20 +721,32 @@ function VehicleRowActions({
         </button>
       ) : null}
       {hasOverflowActions ? (
-        <details className="inventory-row-more" data-row-action="more">
-          <summary
+        <div
+          ref={disclosure.containerRef}
+          className="inventory-row-more"
+          data-row-action="more"
+          data-open={disclosure.open ? "true" : "false"}
+        >
+          <button
+            ref={disclosure.triggerRef}
+            type="button"
             className="inventory-row-more__trigger"
             aria-label={`More actions for ${name}`}
+            aria-expanded={disclosure.open}
+            aria-controls={disclosure.panelId}
             title="More vehicle actions"
+            onClick={() => disclosure.setOpen((open) => !open)}
           >
             <Ellipsis size={13} strokeWidth={2} aria-hidden="true" />
             <span className="inventory-row-action-label inventory-row-more__label" aria-hidden="true">More</span>
             <span className="inventory-sr-only">More actions</span>
-          </summary>
+          </button>
           <div
+            id={disclosure.panelId}
             className="inventory-row-more__menu"
             role="group"
             aria-label={`More actions for ${name}`}
+            hidden={!disclosure.open}
           >
             {listingUrl ? (
               onOpenListing ? (
@@ -581,10 +754,13 @@ function VehicleRowActions({
                   type="button"
                   className="inventory-row-more__item"
                   data-row-action="listing"
-                  onClick={() => onOpenListing(vehicle)}
+                  onClick={() => {
+                    disclosure.close();
+                    onOpenListing(vehicle);
+                  }}
                 >
                   <Globe2 size={16} strokeWidth={1.85} aria-hidden="true" />
-                  <span>Website listing</span>
+                  <span>Open listing</span>
                 </button>
               ) : (
                 <a
@@ -593,28 +769,14 @@ function VehicleRowActions({
                   href={listingUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label={`Open website listing for ${name} in a new tab`}
+                  aria-label={`Open listing for ${name} in a new tab`}
+                  onClick={() => disclosure.close()}
                 >
                   <Globe2 size={16} strokeWidth={1.85} aria-hidden="true" />
-                  <span>Website listing</span>
+                  <span>Open listing</span>
                   <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
                 </a>
               )
-            ) : null}
-            {factoryEquipmentUrl ? (
-              <a
-                className="inventory-row-more__item inventory-row-more__item--vauto"
-                data-row-action="vauto-equipment"
-                href={factoryEquipmentUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                referrerPolicy="no-referrer"
-                aria-label={`Open vAuto informational equipment profile for ${name} in a new tab`}
-              >
-                <FileText size={16} strokeWidth={1.85} aria-hidden="true" />
-                <span>Equipment profile</span>
-                <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
-              </a>
             ) : null}
             {invoiceUrl ? (
               <a
@@ -624,6 +786,7 @@ function VehicleRowActions({
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={`Open Ford invoice lookup for ${name} in a new tab; authorized Ford sign-in may be required`}
+                onClick={() => disclosure.close()}
               >
                 <FileText size={16} strokeWidth={1.85} aria-hidden="true" />
                 <span>Ford invoice</span>
@@ -638,6 +801,7 @@ function VehicleRowActions({
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={`Open Ford OASIS for ${name} in a new tab; authorized Ford sign-in may be required`}
+                onClick={() => disclosure.close()}
               >
                 <ClipboardCheck size={16} strokeWidth={1.85} aria-hidden="true" />
                 <span>Ford OASIS</span>
@@ -649,7 +813,10 @@ function VehicleRowActions({
                 type="button"
                 className="inventory-row-more__item"
                 data-row-action="request-vehicle"
-                onClick={() => onRequestVehicle(vehicle)}
+                onClick={() => {
+                  disclosure.close();
+                  onRequestVehicle(vehicle);
+                }}
               >
                 <CarFront size={16} strokeWidth={1.85} aria-hidden="true" />
                 <span>Request vehicle</span>
@@ -660,14 +827,17 @@ function VehicleRowActions({
                 type="button"
                 className="inventory-row-more__item"
                 data-row-action="track-movement"
-                onClick={() => onTrackMovement?.(vehicle)}
+                onClick={() => {
+                  disclosure.close();
+                  onTrackMovement?.(vehicle);
+                }}
               >
                 <Truck size={16} strokeWidth={1.85} aria-hidden="true" />
                 <span>Track movement</span>
               </button>
             ) : null}
           </div>
-        </details>
+        </div>
       ) : null}
     </div>
   );
@@ -731,70 +901,63 @@ export function InventoryTable({
   onOpenSourceRecord,
 }: InventoryTableProps) {
   return (
-    <div className="inventory-table-wrap inventory-table-wrap--compact-v3">
-      <table className="inventory-table inventory-table--vehicle-first inventory-table--compact-v3">
+    <section className="inventory-grid-shell inventory-grid-shell--production-v8 inventory-grid-shell--operational-v9" aria-label="Inventory data grid">
+      <div
+        className="inventory-table-wrap inventory-table-wrap--compact-v3"
+        role="region"
+        aria-label="Inventory results table"
+        tabIndex={0}
+      >
+        <table className="inventory-table inventory-table--vehicle-first inventory-table--compact-v3 inventory-table--workbench-v5 inventory-table--production-v8 inventory-table--operational-v9">
         <caption className="inventory-sr-only">
-          Dealership inventory with vehicle photos, stock and VIN, pricing, mileage and age, key equipment, hold state, location, and activity.
+          Dealership inventory workbench with vehicle identity, financial and inventory age, equipment highlights, availability and movement, evidence and resources, and actions.
         </caption>
+        <colgroup>
+          <col className="inventory-table__col inventory-table__col--vehicle-identity" />
+          <col className="inventory-table__col inventory-table__col--financial-age" />
+          <col className="inventory-table__col inventory-table__col--equipment-highlights" />
+          <col className="inventory-table__col inventory-table__col--availability-movement" />
+          <col className="inventory-table__col inventory-table__col--evidence-resources" />
+          <col className="inventory-table__col inventory-table__col--operational-actions" />
+        </colgroup>
         <thead>
           <tr>
             <SortHeader
-              label="Vehicle"
-              group="vehicle"
-              options={VEHICLE_SORT_OPTIONS}
+              label="Vehicle identity"
+              group="vehicle-identity"
+              options={[...VEHICLE_SORT_OPTIONS, ...STOCK_SORT_OPTIONS]}
               sorts={sorts}
               onSortChange={onSortChange}
             />
             <SortHeader
-              label="Stock / VIN"
-              group="identity"
-              options={STOCK_SORT_OPTIONS}
+              label="Financial & age"
+              group="financial-age"
+              options={[...PRICE_SORT_OPTIONS, ...AGE_SORT_OPTIONS]}
               sorts={sorts}
               onSortChange={onSortChange}
             />
             <SortHeader
-              label="Price / MSRP"
-              group="pricing"
-              options={PRICE_SORT_OPTIONS}
-              sorts={sorts}
-              onSortChange={onSortChange}
-            />
-            <SortHeader
-              label="Miles / age"
-              group="age"
-              options={AGE_SORT_OPTIONS}
-              sorts={sorts}
-              onSortChange={onSortChange}
-            />
-            <SortHeader
-              label="Key equipment"
+              label="Equipment highlights"
               group="equipment"
               options={EQUIPMENT_SORT_OPTIONS}
               sorts={sorts}
               onSortChange={onSortChange}
             />
             <SortHeader
-              label="Hold"
-              group="status"
-              options={STATUS_SORT_OPTIONS}
+              label="Availability & movement"
+              group="availability"
+              options={[...STATUS_SORT_OPTIONS, ...LOCATION_SORT_OPTIONS, ...CHANGE_SORT_OPTIONS]}
               sorts={sorts}
               onSortChange={onSortChange}
             />
             <SortHeader
-              label="Location / move"
-              group="location"
-              options={LOCATION_SORT_OPTIONS}
+              label="Evidence & resources"
+              group="evidence"
+              options={EVIDENCE_SORT_OPTIONS}
               sorts={sorts}
               onSortChange={onSortChange}
             />
-            <SortHeader
-              label="Activity"
-              group="changes"
-              options={CHANGE_SORT_OPTIONS}
-              sorts={sorts}
-              onSortChange={onSortChange}
-            />
-            <th scope="col"><span className="inventory-sr-only">Vehicle actions</span></th>
+            <th scope="col"><span className="inventory-table-actions-heading">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -809,18 +972,9 @@ export function InventoryTable({
                 data-inventory-vehicle-trigger={vehicle.id}
                 data-hold-state={vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
                 data-has-movement={vehicleMovementStatus(vehicle) ? "true" : "false"}
-                tabIndex={0}
                 onClick={() => onSelectVehicle(vehicle)}
-                onKeyDown={(event) => {
-                  if (event.target !== event.currentTarget) return;
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    onSelectVehicle(vehicle);
-                  }
-                }}
-                aria-label={vehicleAccessibleSummary(vehicle)}
               >
-                <td>
+                <td data-column="vehicle-identity">
                   <span className="inventory-vehicle-cell">
                     <span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} /><PhotoCount vehicle={vehicle} /></span>
                     <span className="inventory-vehicle-copy">
@@ -828,62 +982,47 @@ export function InventoryTable({
                         <strong>{name}</strong>
                         {vehicle.certified ? <small className="inventory-certified-label">Certified</small> : null}
                       </span>
-                      <small title={[vehicle.bodyType || vehicle.bodyStyle, vehicle.engine].filter(Boolean).join(" · ")}>
-                        {[vehicle.bodyType || vehicle.bodyStyle, vehicle.engine].filter(Boolean).join(" · ") || "Vehicle specifications in details"}
+                      <small className="inventory-vehicle-copy__spec" title={[vehicle.bodyType || vehicle.bodyStyle, vehicle.drivetrain].filter(Boolean).join(" · ")}>
+                        {[vehicle.bodyType || vehicle.bodyStyle, vehicle.drivetrain].filter(Boolean).join(" · ") || "Body and drivetrain in details"}
                       </small>
+                      <small className="inventory-vehicle-copy__detail" title={[vehicle.exteriorColor, vehicle.engine].filter(Boolean).join(" · ")}>
+                        {[vehicle.exteriorColor, vehicle.engine].filter(Boolean).join(" · ") || "Engine and color in details"}
+                      </small>
+                      <span className="inventory-identity-cell">
+                        <strong>
+                          <CopyableValue
+                            compact
+                            label="stock number"
+                            text={vehicle.stockNumber}
+                            className="inventory-table-copy-value inventory-table-copy-value--stock"
+                          />
+                        </strong>
+                        <small className="inventory-vin">
+                          <CopyableValue
+                            compact
+                            label="VIN"
+                            text={vehicle.vin}
+                            className="inventory-table-copy-value inventory-table-copy-value--vin"
+                          />
+                        </small>
+                      </span>
                     </span>
                   </span>
                 </td>
-                <td>
-                  <span className="inventory-identity-cell">
-                    <strong>
-                      <CopyableValue
-                        compact
-                        label="stock number"
-                        text={vehicle.stockNumber}
-                        className="inventory-table-copy-value inventory-table-copy-value--stock"
-                      />
-                    </strong>
-                    <small className="inventory-vin">
-                      <CopyableValue
-                        compact
-                        label="VIN"
-                        text={vehicle.vin}
-                        className="inventory-table-copy-value inventory-table-copy-value--vin"
-                      />
-                    </small>
+                <td data-column="financial-age"><FinancialAgeCell vehicle={vehicle} /></td>
+                <td data-column="equipment-highlights"><EquipmentCell vehicle={vehicle} /></td>
+                <td data-column="availability-movement">
+                  <span className="inventory-availability-movement-cell">
+                    <HoldActionCell
+                      vehicle={vehicle}
+                      onSelectVehicle={onSelectVehicle}
+                      onOpenSourceRecord={onOpenSourceRecord}
+                    />
+                    <LocationActivityCell vehicle={vehicle} />
                   </span>
                 </td>
-                <td>
-                  <span className="inventory-price-mileage inventory-price-mileage--price">
-                    <strong>{formatMoney(vehicle.price)}</strong>
-                    {vehicle.msrp != null && vehicle.msrp > 0 && vehicle.msrp !== vehicle.price ? (
-                      <small className="inventory-price-mileage__msrp">MSRP {formatMoney(vehicle.msrp)}</small>
-                    ) : null}
-                  </span>
-                </td>
-                <td>
-                  <span className="inventory-price-mileage inventory-price-mileage--age">
-                    <strong>{formatMileage(vehicle.mileage)}</strong>
-                    <small>
-                      {[
-                        vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : null,
-                        compactInventoryDate(vehicle.inventoryDate) ? `in ${compactInventoryDate(vehicle.inventoryDate)}` : null,
-                      ].filter(Boolean).join(" · ") || "Age unavailable"}
-                    </small>
-                  </span>
-                </td>
-                <td><EquipmentCell vehicle={vehicle} /></td>
-                <td>
-                  <HoldActionCell
-                    vehicle={vehicle}
-                    onSelectVehicle={onSelectVehicle}
-                    onOpenSourceRecord={onOpenSourceRecord}
-                  />
-                </td>
-                <td><LocationCell vehicle={vehicle} /></td>
-                <td><ActivityCell vehicle={vehicle} /></td>
-                <td className="inventory-row-action">
+                <td data-column="evidence-resources"><DocumentsCell vehicle={vehicle} /></td>
+                <td className="inventory-row-action" data-column="actions">
                   <VehicleRowActions
                     vehicle={vehicle}
                     onSelectVehicle={onSelectVehicle}
@@ -898,8 +1037,9 @@ export function InventoryTable({
             );
           })}
         </tbody>
-      </table>
-    </div>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -910,7 +1050,7 @@ export function InventoryMobileList({
   onOpenSourceRecord,
 }: Pick<InventoryTableProps, "vehicles" | "selectedVehicleId" | "onSelectVehicle" | "onOpenSourceRecord">) {
   return (
-    <div className="inventory-mobile-list inventory-mobile-list--vehicle-first" aria-label="Inventory results">
+    <div className="inventory-mobile-list inventory-mobile-list--vehicle-first inventory-mobile-list--production-v8" aria-label="Inventory results">
       {vehicles.map((vehicle) => {
         const name = vehicleDisplayName(vehicle);
         const recentChange = primaryVehicleChangeSignal(vehicle.changeSummary);
@@ -928,7 +1068,7 @@ export function InventoryMobileList({
         const holdToolsAvailable = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
         return (
           <article
-            className={`inventory-mobile-row inventory-mobile-row--compact-v3${vehicle.id === selectedVehicleId ? " is-selected" : ""}`}
+            className={`inventory-mobile-row inventory-mobile-row--compact-v3 inventory-mobile-row--production-v8${vehicle.id === selectedVehicleId ? " is-selected" : ""}`}
             key={vehicle.id}
             data-hold-state={vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
           >
@@ -957,16 +1097,29 @@ export function InventoryMobileList({
                 <span>{formatMileage(vehicle.mileage)}</span>
               </span>
               <ChevronRight className="inventory-mobile-row__chevron" size={18} strokeWidth={1.8} aria-hidden="true" />
-              <span className="inventory-mobile-row__signals" aria-label="Operational vehicle signals">
-                <span
+            </button>
+            <div className="inventory-mobile-row__signals" aria-label="Operational vehicle signals">
+                <button
+                  type="button"
                   className={`inventory-mobile-hold inventory-mobile-hold--${holdStatus.tone}`}
                   title={holdToolsAvailable ? `${holdStatus.detail}. DealerMail hold actions are available in vehicle details.` : holdStatus.detail}
+                  data-row-action={holdToolsAvailable ? "dealermail" : "hold-details"}
+                  onClick={() => {
+                    if (holdToolsAvailable) {
+                      onOpenSourceRecord?.(vehicle, "dealermail");
+                      return;
+                    }
+                    onSelectVehicle(vehicle);
+                  }}
+                  aria-label={holdToolsAvailable
+                    ? `Open DealerMail hold tools for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}`
+                    : `Open hold details for ${name}`}
                 >
-                  <HoldIcon size={12} strokeWidth={1.9} aria-hidden="true" />
+                  <HoldIcon size={14} strokeWidth={1.9} aria-hidden="true" />
                   <strong>{holdStatus.label}</strong>
-                </span>
+                </button>
                 <span className="inventory-mobile-location" title={currentLocation.detail}>
-                  <MapPin size={12} strokeWidth={1.9} aria-hidden="true" />
+                  <MapPin size={14} strokeWidth={1.9} aria-hidden="true" />
                   <strong>{currentLocation.label}</strong>
                 </span>
                 <MobileDocumentAvailability vehicle={vehicle} />
@@ -978,8 +1131,7 @@ export function InventoryMobileList({
                     {operationalUpdate}
                   </span>
                 ) : null}
-              </span>
-            </button>
+            </div>
           </article>
         );
       })}

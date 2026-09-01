@@ -37,28 +37,37 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>
 }
 
+function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, string> {
+  return {
+    'x-inventory-demo-role': role,
+    'x-inventory-demo-store': store,
+    'x-inventory-demo-user': import.meta.env.VITE_DEMO_USER_NAME || 'Joe Gallant',
+  }
+}
+
 export function getBootstrap(homeStore: StoreName, role: UserRole): Promise<BootstrapData> {
   const params = new URLSearchParams({ homeStore, role })
-  return request<BootstrapData>(`/api/bootstrap?${params}`)
+  return request<BootstrapData>(`/api/bootstrap?${params}`, { headers: demoIdentityHeaders(role, homeStore) })
 }
 
 export function getVehicle(vin: string, role: UserRole, store: StoreName): Promise<VehicleRecord> {
   return request<VehicleRecord>(`/api/vehicles/${encodeURIComponent(vin)}`, {
-    headers: { 'x-inventory-role': role, 'x-inventory-store': store, 'x-inventory-user': 'Joe Gallant' },
+    headers: demoIdentityHeaders(role, store),
   })
 }
 
 export function createTransfer(input: TransferRequestInput, role: UserRole, store: StoreName): Promise<TransferRecord> {
+  const { requestedBy: _requestedBy, requestingStore: _requestingStore, ...requestInput } = input
   return request<TransferRecord>('/api/transfers', {
     method: 'POST',
-    headers: { 'x-inventory-role': role, 'x-inventory-store': store, 'x-inventory-user': 'Joe Gallant' },
-    body: JSON.stringify(input),
+    headers: demoIdentityHeaders(role, store),
+    body: JSON.stringify(requestInput),
   })
 }
 
 export function getTransfer(transferId: string, role: UserRole, store: StoreName): Promise<TransferRecord> {
   return request<TransferRecord>(`/api/transfers/${encodeURIComponent(transferId)}`, {
-    headers: { 'x-inventory-role': role, 'x-inventory-store': store, 'x-inventory-user': 'Joe Gallant' },
+    headers: demoIdentityHeaders(role, store),
   })
 }
 
@@ -68,10 +77,11 @@ export function appendTransferEvent(
   role: UserRole,
   store: StoreName,
 ): Promise<TransferRecord> {
+  const { actor: _actor, actorRole: _actorRole, store: _store, ...eventInput } = input
   return request<TransferRecord>(`/api/transfers/${encodeURIComponent(transferId)}/events`, {
     method: 'POST',
-    headers: { 'x-inventory-role': role, 'x-inventory-store': store, 'x-inventory-user': 'Joe Gallant' },
-    body: JSON.stringify(input),
+    headers: demoIdentityHeaders(role, store),
+    body: JSON.stringify(eventInput),
   })
 }
 
@@ -81,9 +91,10 @@ export function appendAttentionEvent(
   role: UserRole,
   store: StoreName,
 ): Promise<AttentionItem> {
+  const { actor: _actor, actorRole: _actorRole, store: _store, ...eventInput } = input
   return request<AttentionItem>(`/api/attention/${encodeURIComponent(attentionId)}/events`, {
     method: 'POST',
-    headers: { 'x-inventory-role': role, 'x-inventory-store': store, 'x-inventory-user': 'Joe Gallant' },
-    body: JSON.stringify(input),
+    headers: demoIdentityHeaders(role, store),
+    body: JSON.stringify(eventInput),
   })
 }

@@ -255,6 +255,7 @@ function transferEventView(row, { includeNotes = false } = {}) {
     store: cleanText(row.store_id),
     fromLocation: cleanText(row.from_location_id),
     toLocation: cleanText(row.to_location_id),
+    confirmedBy: cleanText(row.confirmed_by),
   }
   if (includeNotes) event.note = cleanText(row.note)
   return event
@@ -272,8 +273,21 @@ function cdkStatus(source) {
   return status ? `Raw CDK status ${status} — not mapped to sale or delivery` : 'Not provided'
 }
 
-function allowedUiActions(status, role) {
-  const events = new Set(allowedEventTypes(status, role))
+function allowedUiActions(row, context) {
+  const events = new Set(allowedEventTypes(row.status, context.role))
+  if (context.role !== 'group_manager') {
+    const requestingStoreAction = context.store === row.requesting_store_id
+    const homeStoreAction = context.store === row.home_store_id
+    if (!requestingStoreAction) {
+      events.delete('manager_reviewed')
+      events.delete('approved')
+      events.delete('declined')
+      events.delete('driver_requested')
+      events.delete('transport_assigned')
+      events.delete('return_assigned')
+    }
+    if (!homeStoreAction) events.delete('returned_home')
+  }
   const actions = []
   const add = (action, condition) => {
     if (condition && !actions.includes(action)) actions.push(action)
@@ -331,7 +345,7 @@ function transferView(row, events, source, context, dealerMailFreshness, { inclu
     returnDueAt: cleanText(row.return_due_at),
     lastConfirmedAt: cleanText(row.last_confirmed_at),
     locationConfidence: row.location_confidence,
-    allowedActions: allowedUiActions(row.status, context.role),
+    allowedActions: allowedUiActions(row, context),
     events: events.map((event) => transferEventView(event, { includeNotes: includePrivate && context.canViewPrivateEvidence })),
   }
   if (includePrivate && context.canViewPrivateEvidence) {
@@ -1168,6 +1182,13 @@ export function createInventoryService({ database, now = () => new Date(), initi
       })
       const stores = storeSummaries(vehicles, state.dataset.holdRows, state.allTransferRows, state.currentNow)
       return {
+        access: {
+          user: state.context.user,
+          role: state.context.role,
+          store: state.context.store,
+          canViewPrivateEvidence: state.context.canViewPrivateEvidence,
+          canCreateTransfer: state.context.canCreateTransfer,
+        },
         meta: publicMeta(state.meta),
         stores,
         vehicles,

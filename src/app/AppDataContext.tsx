@@ -29,6 +29,7 @@ interface AppDataContextValue {
   setHomeStore: (store: StoreName) => void
   role: UserRole
   setRole: (role: UserRole) => void
+  currentUser: string
   refresh: () => Promise<void>
   submitTransfer: (input: TransferRequestInput) => Promise<TransferRecord>
   addTransferEvent: (transferId: string, input: TransferEventInput) => Promise<TransferRecord>
@@ -85,6 +86,18 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       const nextData = await getBootstrap(homeStore, role)
       if (requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return
+      const authenticatedRole = nextData.access?.role ?? role
+      const authenticatedStore = nextData.access?.store ?? homeStore
+      if (authenticatedRole !== role || authenticatedStore !== homeStore) {
+        const authenticatedContext = `${authenticatedRole}:${authenticatedStore}`
+        window.localStorage.setItem('maxey-role', authenticatedRole)
+        window.localStorage.setItem('maxey-home-store', authenticatedStore)
+        latestAccessContextRef.current = authenticatedContext
+        setRoleState(authenticatedRole)
+        setHomeStoreState(authenticatedStore)
+        setBootstrapState({ accessContext: authenticatedContext, data: nextData, loading: false, error: null })
+        return
+      }
       setBootstrapState({ accessContext, data: nextData, loading: false, error: null })
     } catch (caught) {
       if (requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return
@@ -150,6 +163,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setHomeStore,
       role,
       setRole,
+      currentUser: data?.access?.user ?? 'Local prototype user',
       refresh,
       submitTransfer,
       addTransferEvent,

@@ -15,8 +15,8 @@ function openDealerMailTools() {
   return screen.getByRole('region', { name: 'DealerMail vehicle tools' })
 }
 
-function openSourceDetails() {
-  fireEvent.click(screen.getByRole('tab', { name: 'Source details' }))
+function openRecordDetails() {
+  fireEvent.click(screen.getByRole('tab', { name: 'Record details' }))
   return screen.getByRole('region', { name: 'Vehicle documents' })
 }
 
@@ -62,7 +62,6 @@ afterEach(() => {
 
 describe('manager-friendly inventory UI', () => {
   it('makes the home count and complete group count unmistakable while staying home-store first', async () => {
-    const user = userEvent.setup()
     const vehicles = Array.from({ length: 7 }, (_, index) => vehicle(index + 1))
     for (const otherStoreVehicle of vehicles.slice(4)) {
       otherStoreVehicle.location.homeStore = { id: 'ford-detroit', name: 'Ford Detroit' }
@@ -76,13 +75,13 @@ describe('manager-friendly inventory UI', () => {
       />,
     )
 
-    expect(screen.getByText(/Showing 4 of 7 group vehicles in Howell\./)).toBeInTheDocument()
+    expect(screen.getByText(/4 vehicles at Howell · 7 across the group/)).toBeInTheDocument()
     expect(screen.getByText('4 shown · 4 of 7 group')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Howell inventory, 4 of 7 group vehicles' })).toHaveAttribute('aria-pressed', 'true')
 
-    await user.click(screen.getByRole('button', { name: 'All locations, 7 group vehicles' }))
+    fireEvent.click(screen.getByRole('button', { name: 'All locations, 7 group vehicles' }))
 
-    expect(screen.getByText(/Showing all 7 group vehicles across four locations\./)).toBeInTheDocument()
+    expect(screen.getByText(/7 vehicles across four locations/)).toBeInTheDocument()
     expect(screen.getByText('7 shown · 7 group')).toBeInTheDocument()
   })
 
@@ -338,11 +337,11 @@ describe('manager-friendly inventory UI', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Source details' }))
-    const disclosure = screen.getByText('Full public inventory scan').closest('summary')
+    fireEvent.click(screen.getByRole('tab', { name: 'Record details' }))
+    const disclosure = screen.getByText('Additional record details').closest('summary')
     expect(disclosure).not.toBeNull()
     fireEvent.click(disclosure!)
-    const sourceFields = screen.getByRole('group', { name: 'Full public inventory scan source fields' })
+    const sourceFields = screen.getByRole('group', { name: 'Additional vehicle record details' })
     expect(within(sourceFields).getByText('Current public inventory')).toBeInTheDocument()
     expect(within(sourceFields).getAllByText('Bob Maxey Ford of Howell')).toHaveLength(2)
     expect(within(sourceFields).getByText('21521')).toBeInTheDocument()
@@ -530,7 +529,7 @@ describe('manager-friendly inventory UI', () => {
         onClose={vi.fn()}
       />,
     )
-    const documents = openSourceDetails()
+    const documents = openRecordDetails()
     expect(within(documents).getByText('92')).toBeInTheDocument()
     expect(within(documents).getByText('89–94')).toBeInTheDocument()
     expect(within(documents).getByText('200A')).toBeInTheDocument()
@@ -555,7 +554,7 @@ describe('manager-friendly inventory UI', () => {
         onClose={vi.fn()}
       />,
     )
-    const documents = openSourceDetails()
+    const documents = openRecordDetails()
     expect(within(documents).getByRole('link', { name: /open autocheck report/i })).toBeInTheDocument()
     expect(within(documents).getByText(/no summary facts were safely captured/i)).toBeInTheDocument()
     expect(within(documents).queryByText('Not published')).not.toBeInTheDocument()

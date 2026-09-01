@@ -2,6 +2,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createInventoryServer } from './api.mjs'
 import { getCurrentDataset, importRelease, openInventoryDatabase } from './database.mjs'
+import { createIdentityResolver } from './identity.mjs'
 import { loadLatestCompletedRelease } from './importer.mjs'
 import { createInventoryService } from './service.mjs'
 
@@ -24,7 +25,13 @@ export function startInventoryServer({
   refreshIntervalMs = 5 * 60 * 1000,
   now = () => new Date(),
   releaseLoader = loadLatestCompletedRelease,
+  identityMode = process.env.INVENTORY_OPS_IDENTITY_MODE,
+  environment = process.env.NODE_ENV || 'development',
+  trustedProxySecret = process.env.INVENTORY_OPS_TRUSTED_PROXY_SECRET,
 } = {}) {
+  // Resolve the trust boundary before opening data or binding a port so an
+  // unsafe production configuration fails closed during startup.
+  const identityResolver = createIdentityResolver({ mode: identityMode, environment, trustedProxySecret })
   const database = openInventoryDatabase({ databasePath, runtimeDir })
   const initialStatus = { lastAttemptAt: null, lastSuccessAt: null, error: null }
   const service = createInventoryService({ database, now, initialLoadStatus: initialStatus })
@@ -45,7 +52,7 @@ export function startInventoryServer({
   }
 
   const refreshResult = refresh()
-  const server = createInventoryServer({ service, serveDist, distDir })
+  const server = createInventoryServer({ service, serveDist, distDir, identityResolver })
   const timer = refreshIntervalMs > 0 ? setInterval(refresh, refreshIntervalMs) : null
   timer?.unref()
 

@@ -1,5 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VehicleWorkspace } from './VehicleWorkspace';
 import type { InventoryVehicle } from './types';
@@ -63,9 +62,8 @@ function vehicle(withDocuments = true): InventoryVehicle {
   };
 }
 
-async function openVehicleDocuments() {
-  const user = userEvent.setup();
-  await user.click(screen.getByRole('tab', { name: 'Source details' }));
+function openVehicleDocuments() {
+  fireEvent.click(screen.getByRole('tab', { name: 'Record details' }));
   return screen.queryByRole('region', { name: 'Vehicle documents' });
 }
 

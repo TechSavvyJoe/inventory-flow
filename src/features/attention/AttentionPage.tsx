@@ -9,10 +9,9 @@ import {
   RefreshCw,
   Tag,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
-import { SourceWarning } from '../../components/SourceWarning'
 import { formatCurrency, formatDate, formatNumber } from '../../lib/format'
 import type { PublicChangeEvent, PublicChangeType } from '../../types'
 import './attention.css'
@@ -31,12 +30,12 @@ const CHANGE_ICONS: Record<PublicChangeType, typeof CarFront> = {
 
 const CHANGE_LABELS: Record<PublicChangeType, string> = {
   new_arrival: 'New arrival',
-  removed: 'Removed from our websites',
+  removed: 'Listing removed',
   price_change: 'Price changed',
-  website_status_change: 'Website status changed',
+  website_status_change: 'Online status changed',
   mileage_change: 'Mileage changed',
   stock_correction: 'Stock corrected',
-  store_transfer: 'Website location changed',
+  store_transfer: 'Location changed',
 }
 
 type TodayTab = 'attention' | 'changes'
@@ -46,19 +45,19 @@ type ChangeFilter = 'all' | PublicChangeType
 function holdChangeNotice(status: string) {
   if (status === 'structured_baseline_established_no_vin_level_prior_snapshot') {
     return {
-      title: 'Hold history baseline established',
-      detail: 'VIN-level hold history starts with this verified release. No specific hold additions or releases are certified yet.',
+      title: 'Hold history starts with this update',
+      detail: 'No earlier item-by-item hold comparison is available yet.',
     }
   }
   if (!status || status === 'not_provided') {
     return {
-      title: 'Hold change comparison not available',
-      detail: 'Use the current hold status, and confirm on the hold list before treating a unit as released.',
+      title: 'Hold changes are not available',
+      detail: 'Use the current hold status and confirm it before treating a vehicle as released.',
     }
   }
   return {
-    title: 'Hold-list comparison completed',
-    detail: 'Hold changes remain separate from website inventory changes and never confirm a sale or delivery.',
+    title: 'Hold changes checked',
+    detail: 'A hold change does not confirm a sale or delivery.',
   }
 }
 
@@ -104,6 +103,8 @@ function changePriority(type: PublicChangeType) {
 export function AttentionPage() {
   const { data, homeStore, role, addAttentionEvent } = useAppData()
   const [tab, setTab] = useState<TodayTab>('attention')
+  const attentionTabRef = useRef<HTMLButtonElement>(null)
+  const changesTabRef = useRef<HTMLButtonElement>(null)
   const [scope, setScope] = useState<ChangeScope>('home')
   const [changeFilter, setChangeFilter] = useState<ChangeFilter>('all')
 
@@ -150,38 +151,57 @@ export function AttentionPage() {
   const summaryCards = [
     { key: 'new', label: 'New arrivals', value: counts.newArrival, detail: 'Added to inventory', tone: 'new' },
     { key: 'price', label: 'Price changes', value: counts.priceChange, detail: 'Exact before / after', tone: 'price' },
-    { key: 'status', label: 'Website listing', value: counts.websiteStatusChange, detail: 'Listing status changed', tone: 'status' },
-    { key: 'removed', label: 'Removed', value: counts.removed, detail: 'No longer on our websites', tone: 'removed' },
+    { key: 'status', label: 'Online status', value: counts.websiteStatusChange, detail: 'Listing status changed', tone: 'status' },
+    { key: 'removed', label: 'Listing removed', value: counts.removed, detail: 'No longer listed online', tone: 'removed' },
   ] as const
   const filterOptions: Array<[ChangeFilter, string]> = [
     ['all', 'All changes'],
     ['new_arrival', 'New arrivals'],
     ['price_change', 'Price'],
     ['removed', 'Removed'],
-    ['website_status_change', 'Website status'],
+    ['website_status_change', 'Online status'],
   ]
+
+  function moveTabFocus(event: KeyboardEvent<HTMLButtonElement>, current: TodayTab) {
+    const next = event.key === 'Home'
+      ? 'attention'
+      : event.key === 'End'
+        ? 'changes'
+        : event.key === 'ArrowRight' || event.key === 'ArrowLeft'
+          ? current === 'attention' ? 'changes' : 'attention'
+          : null
+    if (!next) return
+    event.preventDefault()
+    setTab(next)
+    ;(next === 'attention' ? attentionTabRef : changesTabRef).current?.focus()
+  }
 
   return (
     <section className="today-page">
       <div className="page-header-row today-header">
         <div>
-          <h1 className="page-heading">Today</h1>
-          <p className="page-subtitle">Actionable work and verified daily inventory changes, starting with {homeStore}.</p>
+          <h1 className="page-heading">Needs attention</h1>
+          <p className="page-subtitle">Work the highest-priority vehicle tasks for {homeStore}, with ownership and the next step in one place.</p>
         </div>
         <div className="today-as-of">
-          <small>Verified report</small>
+          <small>Updated</small>
           <strong>{formatDate(data.meta.reportDate)}</strong>
         </div>
       </div>
 
-      <SourceWarning meta={data.meta} />
+      {data.meta.publicFreshness !== 'current' || data.meta.dealerMailFreshness !== 'current' ? (
+        <div className="today-data-warning" role="status">
+          <AlertTriangle aria-hidden="true" />
+          <div><strong>Some records may be out of date</strong><p>Use the last verified details and confirm the current status before acting.</p></div>
+        </div>
+      ) : null}
 
       <div className="today-tabs" role="tablist" aria-label="Today sections">
-        <button type="button" role="tab" aria-selected={tab === 'attention'} className={tab === 'attention' ? 'is-active' : undefined} onClick={() => setTab('attention')}>
-          Operations queue <span>{attentionCount}</span>
+        <button ref={attentionTabRef} id="today-tab-attention" type="button" role="tab" aria-controls="today-panel-attention" aria-selected={tab === 'attention'} tabIndex={tab === 'attention' ? 0 : -1} className={tab === 'attention' ? 'is-active' : undefined} onKeyDown={(event) => moveTabFocus(event, 'attention')} onClick={() => setTab('attention')}>
+          Work queue <span>{attentionCount}</span>
         </button>
-        <button type="button" role="tab" aria-selected={tab === 'changes'} className={tab === 'changes' ? 'is-active' : undefined} onClick={() => setTab('changes')}>
-          Inventory changes <span>{displayedChangeTotal}</span>
+        <button ref={changesTabRef} id="today-tab-changes" type="button" role="tab" aria-controls="today-panel-changes" aria-selected={tab === 'changes'} tabIndex={tab === 'changes' ? 0 : -1} className={tab === 'changes' ? 'is-active' : undefined} onKeyDown={(event) => moveTabFocus(event, 'changes')} onClick={() => setTab('changes')}>
+          Daily changes <span>{displayedChangeTotal}</span>
         </button>
       </div>
 
@@ -206,7 +226,7 @@ export function AttentionPage() {
       </> : null}
 
       {tab === 'attention' ? (
-        <div role="tabpanel" className="today-panel" aria-label="Needs attention">
+        <div id="today-panel-attention" role="tabpanel" className="today-panel" aria-labelledby="today-tab-attention">
           <OperationsQueue
             items={attentionItems}
             homeStore={homeStore}
@@ -216,7 +236,7 @@ export function AttentionPage() {
           />
         </div>
       ) : (
-          <div role="tabpanel" className="today-panel" aria-label="Inventory changes">
+          <div id="today-panel-changes" role="tabpanel" className="today-panel" aria-labelledby="today-tab-changes">
           <div className="today-baseline-notice"><FileClock aria-hidden="true" /><div><strong>{holdNotice.title}</strong><p>{holdNotice.detail}</p></div></div>
           <div className="today-change-toolbar"><div><h2>{displayScope === 'home' ? `${homeStore} changes` : 'All-store changes'}</h2><p>{detailedChangesCertified ? `${scopeChanges.length} certified event${scopeChanges.length === 1 ? '' : 's'} from ${formatDate(comparisonBaselineDate)} to ${formatDate(data.meta.reportDate)}` : `${certifiedTotal} certified group event${certifiedTotal === 1 ? '' : 's'} for ${formatDate(data.meta.reportDate)}; VIN-level detail is unavailable`}</p></div></div>
 
@@ -226,7 +246,7 @@ export function AttentionPage() {
             ))}
           </div>
 
-          {!currentChanges ? <div className="today-stale-change-warning"><AlertTriangle aria-hidden="true" /><p>These are the last verified changes. Do not treat missing or unchanged website records as a current removal or release.</p></div> : null}
+          {!currentChanges ? <div className="today-stale-change-warning"><AlertTriangle aria-hidden="true" /><p>These are the last verified changes. Do not treat a missing or unchanged listing as a current removal or release.</p></div> : null}
           {!detailedChangesCertified ? <div className="today-stale-change-warning"><AlertTriangle aria-hidden="true" /><p>VIN-level detail is unavailable because it did not reconcile to the certified totals. Use the aggregate counts above.</p></div> : null}
 
           {visibleChanges.length ? (
@@ -251,7 +271,7 @@ export function AttentionPage() {
                     </div>
                     {event.currentVehicle ? (
                       <Link to={`/inventory?scope=group&q=${encodeURIComponent(event.vin)}`} aria-label={`Open ${event.vehicleName}, stock ${event.stockNumber}`}><span>Open</span><ArrowRight aria-hidden="true" /></Link>
-                    ) : <span className="today-change-no-current" aria-label="No current website inventory record">—</span>}
+                    ) : <span className="today-change-no-current" aria-label="No current online inventory record">—</span>}
                   </article>
                 )
               })}
@@ -260,7 +280,7 @@ export function AttentionPage() {
             <div className="today-change-empty"><CheckCircle2 aria-hidden="true" /><strong>{detailedChangesCertified ? 'No matching changes for this view' : 'Use the certified aggregate totals above'}</strong>{detailedChangesCertified ? <button type="button" onClick={() => setChangeFilter('all')}>Clear change filter</button> : null}</div>
           )}
 
-          <div className="today-removal-note"><AlertTriangle aria-hidden="true" /><p><strong>Removal is a website-inventory event only.</strong> It means a VIN was on our websites in the prior verified update and is missing from this update. It does not mean sold, delivered, or physically gone.</p></div>
+          <div className="today-removal-note"><AlertTriangle aria-hidden="true" /><p><strong>A listing removal is not a sales outcome.</strong> It means a VIN was listed online in the prior verified update and is missing from this update. It does not mean sold, delivered, or physically gone.</p></div>
         </div>
       )}
     </section>

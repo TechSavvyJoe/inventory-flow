@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
+import { Link, MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 
 const { useAppDataMock } = vi.hoisted(() => ({ useAppDataMock: vi.fn() }))
@@ -25,6 +25,7 @@ describe('AppShell account and update controls', () => {
       setHomeStore: vi.fn(),
       role: 'sales',
       setRole: vi.fn(),
+      currentUser: 'Joe Gallant',
       refresh: vi.fn().mockResolvedValue(undefined),
       loading: false,
     })
@@ -136,5 +137,42 @@ describe('AppShell account and update controls', () => {
     expect(screen.getByRole('link', { name: 'Vehicle moves' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Needs attention' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-controls', 'application-navigation')
+  })
+
+  it('moves focus to the main content after client-side route changes without moving focus on initial load', async () => {
+    render(
+      <MemoryRouter initialEntries={['/manager']}>
+        <AppShell><Link to="/transfers?id=move-1">Open transfer record</Link></AppShell>
+      </MemoryRouter>,
+    )
+
+    const main = screen.getByRole('main')
+    const routeLink = screen.getByRole('link', { name: 'Open transfer record' })
+    expect(main).not.toHaveFocus()
+
+    routeLink.focus()
+    fireEvent.click(routeLink)
+
+    await waitFor(() => expect(main).toHaveFocus())
+  })
+
+  it('does not take focus from an active modal when the location changes', async () => {
+    render(
+      <MemoryRouter initialEntries={['/manager']}>
+        <AppShell>
+          <div role="dialog" aria-modal="true" aria-label="Active workflow">
+            <Link to="/transfers?id=move-1">Open transfer record</Link>
+          </div>
+        </AppShell>
+      </MemoryRouter>,
+    )
+
+    const main = screen.getByRole('main')
+    const routeLink = screen.getByRole('link', { name: 'Open transfer record' })
+    routeLink.focus()
+    fireEvent.click(routeLink)
+
+    await waitFor(() => expect(routeLink).toHaveFocus())
+    expect(main).not.toHaveFocus()
   })
 })

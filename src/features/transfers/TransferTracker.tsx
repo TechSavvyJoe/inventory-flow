@@ -1,7 +1,8 @@
 import {
   AlertTriangle,
-  ArrowLeftRight,
   CalendarClock,
+  CheckCircle2,
+  ChevronDown,
   ExternalLink,
   MapPin,
   ShieldAlert,
@@ -20,7 +21,6 @@ import {
   transferActionLabels,
 } from './presentation';
 import { TransferEmptyState } from './TransferEmptyState';
-import { TransferStatusLanes } from './TransferStatusLanes';
 import { TransferTimeline } from './TransferTimeline';
 import './transfers.css';
 import './transfer-workspace-v3.css';
@@ -31,6 +31,68 @@ export interface TransferTrackerProps {
   onClose?: () => void;
   onCreateRequest?: () => void;
   mode?: 'drawer' | 'page';
+}
+
+const WORKFLOW_PHASES = [
+  'Request',
+  'Requesting manager',
+  'Home-store contact & release',
+  'Driver & move',
+  'Outcome / return',
+] as const;
+
+function normalizedStatus(status: string): string {
+  return status.toLowerCase().trim().replace(/[_\s/]+/g, '-').replace(/[^a-z0-9-]/g, '');
+}
+
+function workflowStep(transfer: TransferDetail): number {
+  const request = normalizedStatus(transfer.status.request.code);
+  const movement = normalizedStatus(transfer.status.movement.code);
+  const deal = normalizedStatus(transfer.status.deal.code);
+  if (/shown|sold|return|delivery/.test(`${deal} ${movement}`)) return 5;
+  if (!['at-home-verified', 'release-approved', 'location-unknown', 'location-exception'].includes(movement)) return 4;
+  if (request === 'draft') return 1;
+  if (['submitted', 'requested'].includes(request)) return 2;
+  if (['manager-reviewed', 'needs-information', 'declined'].includes(request)) return 3;
+  return 4;
+}
+
+function TransferProgress({ transfer }: { transfer: TransferDetail }) {
+  const current = workflowStep(transfer);
+  return (
+    <ol className="mif-move-progress" aria-label="Inter-store request approval and movement progress">
+      {WORKFLOW_PHASES.map((label, index) => {
+        const stage = index + 1;
+        const complete = stage < current;
+        return (
+          <li key={label} className={stage === current ? 'is-current' : complete ? 'is-complete' : undefined} aria-current={stage === current ? 'step' : undefined}>
+            <span>{complete ? <CheckCircle2 aria-hidden="true" /> : stage}</span>
+            <strong>{label}</strong>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function actionHint(kind: TransferActionKind) {
+  switch (kind) {
+    case 'report-condition': return 'Record condition or damage for Home Store manager review';
+    case 'mark-exception': return 'Record a location, timing, custody, or movement exception';
+    case 'open-source': return 'Open the original dealership record in a new tab';
+    case 'schedule-return': return 'Set the return plan without changing deal or delivery status';
+    case 'confirm-return': return 'Confirm Home Store receipt without changing deal or delivery status';
+    default: return undefined;
+  }
+}
+
+function compactActionLabel(value: string): string {
+  if (/requesting manager confirms availability and release/i.test(value)) return 'Requesting manager: approve, then contact Home Store';
+  if (/contact .*used-car manager.*release decision/i.test(value)) return 'Contact Home Store and record its decision';
+  if (/home-store.*availability.*release/i.test(value)) return 'Record the Home Store’s release decision';
+  if (/confirm.*returned home|confirm home receipt/i.test(value)) return 'Confirm home receipt';
+  if (/record call for a driver|request.*driver/i.test(value)) return 'Request a driver';
+  return value;
 }
 
 export function TransferTracker({
@@ -61,103 +123,46 @@ export function TransferTracker({
       : 'Required · date not set'
     : transfer.returnRequired === false
       ? 'Not required'
-      : 'Not recorded';
+       : 'Not recorded';
   const handleAction = (kind: TransferActionKind) => onAction?.(kind, transfer);
+  const nextActionText = action.label.toLowerCase();
+  const contextualPrimary = ([
+    [/return.*home|home.*receipt/, 'confirm-return'],
+    [/schedule.*return|return plan/, 'schedule-return'],
+    [/request.*driver|call.*driver/, 'request-driver'],
+    [/assign.*driver|assign.*transport/, 'assign-transport'],
+    [/confirm.*pickup/, 'confirm-pickup'],
+    [/confirm.*arrival/, 'confirm-arrival'],
+    [/record.*outcome|sell or return/, 'record-outcome'],
+    [/home-store.*release|confirm.*release/, 'approve'],
+    [/manager.*review|review.*request/, 'review-request'],
+  ] as Array<[RegExp, TransferActionKind]>).find(([pattern, kind]) => pattern.test(nextActionText) && transfer.allowedActions.includes(kind))?.[1];
+  const primaryAction = contextualPrimary ?? transfer.allowedActions.find((kind) => primaryTransferActions.has(kind));
+  const issueAction = transfer.allowedActions.includes('report-condition') && primaryAction !== 'report-condition'
+    ? 'report-condition' as const
+    : undefined;
+  const secondaryActions = transfer.allowedActions.filter((kind) => kind !== primaryAction && kind !== issueAction);
 
   return (
-    <article className={`mif-transfer-feature mif-transfer-tracker mif-transfer-tracker--${mode} transfer-tracker-v3`}>
-      <div className="mif-tracker-overview-grid">
-        <div className="mif-tracker-overview-primary">
-          <header className="mif-tracker-header">
-            <div className="mif-tracker-vehicle">
-              {vehicle.imageUrl ? <img src={vehicle.imageUrl} alt="" /> : null}
-              <div>
-                <span className="mif-tracker-stock">{vehicle.stock}</span>
-                <h2>{vehicle.vehicleLabel}</h2>
-                {vehicle.trimLabel ? <p>{vehicle.trimLabel}</p> : null}
-                <small>{vehicle.vin} · Move {transfer.id}</small>
-              </div>
-            </div>
-            {onClose ? (
-              <button aria-label="Close movement detail" className="mif-icon-button" onClick={onClose} type="button">
-                <X aria-hidden="true" size={20} strokeWidth={1.75} />
-              </button>
-            ) : null}
-          </header>
+    <article className={`mif-transfer-feature mif-transfer-tracker mif-transfer-tracker--${mode} transfer-tracker-v3 transfer-tracker-v4`}>
+      <header className="mif-tracker-header">
+        <div className="mif-tracker-vehicle">
+          {vehicle.imageUrl ? <img src={vehicle.imageUrl} alt="" /> : null}
+          <div>
+            <span className="mif-tracker-stock">Stock {vehicle.stock}</span>
+            <h2>{vehicle.vehicleLabel}</h2>
+            {vehicle.trimLabel ? <p>{vehicle.trimLabel}</p> : null}
+            <small>{vehicle.vin}</small>
+          </div>
+        </div>
+        {onClose ? (
+          <button aria-label="Close movement detail" className="mif-icon-button" onClick={onClose} type="button">
+            <X aria-hidden="true" size={20} strokeWidth={1.75} />
+          </button>
+        ) : null}
+      </header>
 
-          <section className="mif-tracker-request-summary" aria-label="Request and vehicle summary">
-            <div><span>Route</span><strong>{vehicle.homeStore} → {transfer.destination ?? transfer.requestingStore ?? 'Not set'}</strong></div>
-            <div><span>Requested by</span><strong>{transfer.requestedByLabel ?? 'Not provided'}</strong><small>{formatDateTime(transfer.requestedAt)}</small></div>
-            <div><span>Needed by</span><strong>{formatDateTime(transfer.neededBy)}</strong></div>
-            <div><span>Vehicle</span><strong>{vehicle.listedPriceLabel ?? 'Price not published'}</strong><small>{vehicle.mileageLabel ?? 'Mileage not published'}</small></div>
-            <div className="mif-tracker-request-summary__reason"><span>Request reason / customer reference</span><strong>{transfer.requestReason ?? 'Not available in this access view'}</strong>{transfer.customerReference ? <small>{transfer.customerReference}</small> : null}</div>
-          </section>
-        </div>
-
-        <section className="mif-tracker-accountability" aria-label="Location and accountability">
-          <div>
-            <span>Home Store</span>
-            <strong>{vehicle.homeStore}</strong>
-          </div>
-          <div>
-            <span>Current location</span>
-            <strong><MapPin aria-hidden="true" size={15} strokeWidth={1.75} /> {vehicle.currentLocation.label}</strong>
-            <small>{locationConfidenceLabel(vehicle.currentLocation.confidence)} · {formatDateTime(vehicle.currentLocation.confirmedAt)}</small>
-          </div>
-          <div>
-            <span>Requesting store</span>
-            <strong>{transfer.requestingStore ?? 'Not set'}</strong>
-          </div>
-          <div>
-            <span>Approval owner</span>
-            <strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.approvalOwnerLabel ?? 'Not recorded'}</strong>
-          </div>
-          <div>
-            <span>Current action owner</span>
-            <strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {action.ownerLabel ?? 'Not assigned'}</strong>
-            {action.ownerRole ? <small>{action.ownerRole}</small> : null}
-          </div>
-          <div>
-            <span>Custodian</span>
-            <strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.custodianLabel ?? 'Not assigned'}</strong>
-          </div>
-          <div>
-            <span>Assigned driver</span>
-            <strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.transportAssigneeLabel ?? 'Not set up yet'}</strong>
-          </div>
-          <div>
-            <span>Pickup / next target</span>
-            <strong>{formatDateTime(action.dueAt)}</strong>
-          </div>
-          <div>
-            <span>Return due</span>
-            <strong>{returnPlan}</strong>
-          </div>
-        </section>
-      </div>
-
-      <section className="mif-outcome-separation" aria-label="Deal, delivery, movement, and return status">
-        <header>
-          <strong>Outcome and return are recorded separately</strong>
-          <span>A pending deal is not a confirmed delivery.</span>
-        </header>
-        <div>
-          <span>Customer / deal</span>
-          <strong className={toneClass(transfer.status.deal.tone)}>{humanizeStatusLabel(transfer.status.deal.label)}</strong>
-        </div>
-        <div>
-          <span>Delivery</span>
-          <strong className={toneClass(transfer.status.delivery.tone)}>{humanizeStatusLabel(transfer.status.delivery.label)}</strong>
-        </div>
-        <div>
-          <span>Movement / custody</span>
-          <strong className={toneClass(transfer.status.movement.tone)}>{humanizeStatusLabel(transfer.status.movement.label)}</strong>
-        </div>
-        <div>
-          <span>Return plan</span>
-          <strong>{returnPlan}</strong>
-        </div>
-      </section>
+      <TransferProgress transfer={transfer} />
 
       {transfer.exception ? (
         <div className={`mif-exception-banner is-${transfer.exception.severity}`} role="status">
@@ -180,54 +185,90 @@ export function TransferTracker({
         </div>
       ) : null}
 
-      <div className={`mif-tracker-control-grid${transfer.allowedActions.length > 0 ? '' : ' is-actionless'}`}>
-        <section className={`mif-next-action is-${action.sla}`}>
-          <div>
-            <span>Next action</span>
-            <strong>{action.label}</strong>
-            <small>{action.ownerLabel ?? 'Owner not assigned'}{action.ownerRole ? ` · ${action.ownerRole}` : ''}</small>
-          </div>
-          <div>
-            <CalendarClock aria-hidden="true" size={17} strokeWidth={1.75} />
-            <strong>{formatDateTime(action.dueAt)}</strong>
-            <span>{slaLabel(action.sla)}</span>
-          </div>
-        </section>
+      <section className={`mif-action-console is-${action.sla}`} aria-label="Next move action">
+        <div className="mif-action-console__copy">
+          <span>Next action</span>
+          <strong title={action.label}>{compactActionLabel(action.label)}</strong>
+          <small>Owner: {action.ownerLabel ?? 'Not assigned'}{action.ownerRole ? ` · ${action.ownerRole}` : ''}</small>
+        </div>
+        <div className="mif-action-console__due">
+          <CalendarClock aria-hidden="true" size={18} strokeWidth={1.75} />
+          <span><strong>{formatDateTime(action.dueAt)}</strong><small>{slaLabel(action.sla)}</small></span>
+        </div>
 
         {transfer.allowedActions.length > 0 ? (
           <footer className="mif-tracker-actions mif-tracker-actions--prominent" aria-label="Available move actions">
-            {transfer.allowedActions.map((kind) => (
-              <button
-                className={`mif-button ${primaryTransferActions.has(kind) ? 'mif-button--primary' : kind === 'report-condition' ? 'mif-button--condition' : 'mif-button--secondary'}`}
-                key={kind}
-                onClick={() => handleAction(kind)}
-                type="button"
-              >
-                {kind === 'open-source' ? <ExternalLink aria-hidden="true" size={16} strokeWidth={1.75} /> : null}
-                {kind === 'report-condition' ? <Wrench aria-hidden="true" size={16} strokeWidth={1.75} /> : null}
-                {transferActionLabels[kind]}
+            {primaryAction ? (
+              <button className="mif-button mif-button--primary" onClick={() => handleAction(primaryAction)} title={actionHint(primaryAction)} type="button">
+                {transferActionLabels[primaryAction]}
               </button>
-            ))}
+            ) : null}
+            {issueAction ? (
+              <button className="mif-button mif-button--condition" onClick={() => handleAction(issueAction)} title={actionHint(issueAction)} type="button">
+                <Wrench aria-hidden="true" size={16} strokeWidth={1.75} />
+                {transferActionLabels[issueAction]}
+              </button>
+            ) : null}
+            {secondaryActions.length > 0 ? (
+              <details className="mif-more-actions">
+                <summary>More actions <ChevronDown aria-hidden="true" size={16} strokeWidth={1.75} /></summary>
+                <div>
+                  {secondaryActions.map((kind) => (
+                    <button className="mif-more-action" key={kind} onClick={() => handleAction(kind)} title={actionHint(kind)} type="button">
+                      {kind === 'open-source' ? <ExternalLink aria-hidden="true" size={16} strokeWidth={1.75} /> : null}
+                      {kind === 'report-condition' ? <Wrench aria-hidden="true" size={16} strokeWidth={1.75} /> : null}
+                      <span>{transferActionLabels[kind]}</span>
+                    </button>
+                  ))}
+                </div>
+              </details>
+            ) : null}
           </footer>
         ) : null}
-      </div>
+      </section>
 
-      <div className="mif-tracker-lower-grid">
-        <section className="mif-tracker-section">
-          <h3><ArrowLeftRight aria-hidden="true" size={17} strokeWidth={1.75} /> Hold, deal, delivery, and move status</h3>
-          <TransferStatusLanes status={transfer.status} kind="operational" />
-          <details className="mif-technical-status-details">
-            <summary>Website, inventory-feed, and CDK details</summary>
-            <TransferStatusLanes status={transfer.status} kind="technical" compact />
-          </details>
+      <div className="mif-tracker-overview-grid">
+        <section className="mif-detail-block" aria-label="Request and vehicle summary">
+          <h3>Request details</h3>
+          <div className="mif-tracker-request-summary">
+            <div><span>Route</span><strong>{vehicle.homeStore} → {transfer.destination ?? transfer.requestingStore ?? 'Not set'}</strong></div>
+            <div><span>Requested by</span><strong>{transfer.requestedByLabel ?? 'Not provided'}</strong><small>{formatDateTime(transfer.requestedAt)}</small></div>
+            <div><span>Needed by</span><strong>{formatDateTime(transfer.neededBy)}</strong></div>
+            <div><span>Vehicle</span><strong>{vehicle.listedPriceLabel ?? 'Price not published'}</strong><small>{vehicle.mileageLabel ?? 'Mileage not published'}</small></div>
+            <div className="mif-tracker-request-summary__reason"><span>Reason / customer reference</span><strong>{transfer.requestReason ?? 'Not available in this access view'}</strong>{transfer.customerReference ? <small>{transfer.customerReference}</small> : null}</div>
+          </div>
         </section>
 
-        <section className="mif-tracker-section">
-          <h3><ShieldAlert aria-hidden="true" size={17} strokeWidth={1.75} /> Location and handoff history</h3>
-          <TransferTimeline events={transfer.timeline} />
+        <section className="mif-detail-block" aria-label="Location and accountability">
+          <h3>Location & responsibility</h3>
+          <div className="mif-tracker-accountability">
+            <div><span>Home store</span><strong>{vehicle.homeStore}</strong></div>
+            <div><span>Current location</span><strong><MapPin aria-hidden="true" size={15} strokeWidth={1.75} /> {vehicle.currentLocation.label}</strong><small>{locationConfidenceLabel(vehicle.currentLocation.confidence)} · {formatDateTime(vehicle.currentLocation.confirmedAt)}</small></div>
+            <div><span>Requesting store</span><strong>{transfer.requestingStore ?? 'Not set'}</strong></div>
+            <div><span>Requesting-store approval owner</span><strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.approvalOwnerLabel ?? 'Not recorded'}</strong></div>
+            <div><span>Home-store release authority</span><strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {vehicle.homeStore} used-car manager</strong><small>Availability is not inferred.</small></div>
+            <div><span>Current action owner</span><strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {action.ownerLabel ?? 'Not assigned'}</strong>{action.ownerRole ? <small>{action.ownerRole}</small> : null}</div>
+            <div><span>Custodian</span><strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.custodianLabel ?? 'Not assigned'}</strong></div>
+            <div><span>Driver</span><strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.transportAssigneeLabel ?? 'Not set'}</strong></div>
+            <div><span>Pickup / next target</span><strong>{formatDateTime(action.dueAt)}</strong></div>
+            <div><span>Return due</span><strong>{returnPlan}</strong></div>
+          </div>
         </section>
       </div>
 
+      <section className="mif-outcome-separation" aria-label="Deal, delivery, movement, and return status">
+        <header><strong>Current status</strong><span>Deal, delivery, movement, and return stay separate.</span></header>
+        <div><span>Customer / deal</span><strong className={toneClass(transfer.status.deal.tone)}>{humanizeStatusLabel(transfer.status.deal.label)}</strong></div>
+        <div><span>Delivery</span><strong className={toneClass(transfer.status.delivery.tone)}>{humanizeStatusLabel(transfer.status.delivery.label)}</strong></div>
+        <div><span>Movement / custody</span><strong className={toneClass(transfer.status.movement.tone)}>{humanizeStatusLabel(transfer.status.movement.label)}</strong></div>
+        <div><span>Return plan</span><strong>{returnPlan}</strong></div>
+        <div><span>Hold</span><strong className={toneClass(transfer.status.dealerMail.tone)}>{humanizeStatusLabel(transfer.status.dealerMail.label)}</strong></div>
+      </section>
+
+      <section className="mif-tracker-section mif-tracker-history">
+        <h3><ShieldAlert aria-hidden="true" size={17} strokeWidth={1.75} /> Activity & handoff history</h3>
+        <TransferTimeline events={transfer.timeline} />
+      </section>
     </article>
   );
 }

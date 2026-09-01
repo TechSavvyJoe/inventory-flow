@@ -67,13 +67,14 @@ function bootstrap(reportDate: string): BootstrapData {
 }
 
 function ContextProbe() {
-  const { data, loading, error, homeStore, setHomeStore, role, setRole } = useAppData()
+  const { data, loading, error, homeStore, setHomeStore, role, setRole, currentUser } = useAppData()
   return (
     <div>
       <output data-testid="context">{`${role}:${homeStore}`}</output>
       <output data-testid="data">{data?.meta.reportDate || 'none'}</output>
       <output data-testid="loading">{String(loading)}</output>
       <output data-testid="error">{error || 'none'}</output>
+      <output data-testid="user">{currentUser}</output>
       <button type="button" onClick={() => setRole('porter')}>Use porter role</button>
       <button type="button" onClick={() => setHomeStore('Lincoln')}>Use Lincoln store</button>
     </div>
@@ -136,5 +137,27 @@ describe('AppDataProvider access-context isolation', () => {
     expect(screen.getByTestId('context')).toHaveTextContent('porter:Howell')
     expect(screen.getByTestId('data')).toHaveTextContent('2026-08-30')
     expect(screen.getByTestId('error')).toHaveTextContent('none')
+  })
+
+  it('aligns the UI with the canonical identity returned by the server', async () => {
+    const authenticated = {
+      ...bootstrap('2026-08-30'),
+      access: {
+        user: 'Authenticated Employee',
+        role: 'sales' as const,
+        store: 'Fowlerville' as const,
+        canViewPrivateEvidence: true,
+        canCreateTransfer: true,
+      },
+    }
+    apiMocks.getBootstrap.mockResolvedValue(authenticated)
+
+    render(<AppDataProvider><ContextProbe /></AppDataProvider>)
+
+    await waitFor(() => expect(screen.getByTestId('context')).toHaveTextContent('sales:Fowlerville'))
+    expect(screen.getByTestId('user')).toHaveTextContent('Authenticated Employee')
+    expect(window.localStorage.getItem('maxey-role')).toBe('sales')
+    expect(window.localStorage.getItem('maxey-home-store')).toBe('Fowlerville')
+    expect(apiMocks.getBootstrap).toHaveBeenCalledWith('Fowlerville', 'sales')
   })
 })

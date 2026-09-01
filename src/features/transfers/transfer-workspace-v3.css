@@ -1604,16 +1604,18 @@
     gap: 2px;
   }
 
-  .transfer-mobile-detail-bar strong,
+  .transfer-mobile-detail-bar h1,
   .transfer-mobile-detail-bar small {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .transfer-mobile-detail-bar strong {
+  .transfer-mobile-detail-bar h1 {
+    margin: 0;
     color: #102238;
     font-size: 12px;
+    line-height: 1.25;
   }
 
   .transfer-mobile-detail-bar small {
@@ -1653,6 +1655,97 @@
     width: 62px;
     height: 56px;
   }
+}
+
+/* Production finish: a short queue should reveal the full operational record, not
+   compress status and history into nested sixty-pixel scroll panes. */
+@media (min-width: 821px) {
+  .transfer-workspace-v3 .transfers-layout.transfers-layout--short-queue {
+    height: auto;
+    min-height: 0;
+    grid-template-rows: auto auto;
+    overflow: visible;
+  }
+
+  .transfer-workspace-v3 .transfers-layout--short-queue .transfer-list,
+  .transfer-workspace-v3 .transfers-layout--short-queue .transfer-list-items {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .transfer-workspace-v3 .transfers-layout--short-queue .transfer-detail-surface,
+  .transfer-workspace-v3 .transfers-layout--short-queue .mif-transfer-tracker--page {
+    min-height: 690px;
+    overflow: visible;
+  }
+
+  .transfer-workspace-v3 .transfers-layout--short-queue .mif-tracker-lower-grid {
+    min-height: 320px;
+    overflow: visible;
+  }
+
+  .transfer-workspace-v3 .transfers-layout--short-queue .mif-tracker-section {
+    min-height: 300px;
+    overflow: visible;
+  }
+}
+
+.transfer-workspace-v3 .transfer-list-accountability,
+.transfer-workspace-v3 .transfer-list-outcomes {
+  color: #435c72;
+  font-size: 11.5px !important;
+  line-height: 1.35;
+}
+
+.transfer-workspace-v3 .transfer-list-accountability b,
+.transfer-workspace-v3 .transfer-list-outcomes b {
+  color: #193a55;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .015em;
+}
+
+.transfer-tracker-v3 .mif-status-lane dt,
+.transfer-tracker-v3 .mif-timeline-event time {
+  color: #536d82;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.transfer-tracker-v3 .mif-status-value,
+.transfer-tracker-v3 .mif-timeline-copy strong {
+  color: #193a55;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.transfer-tracker-v3 .mif-status-detail,
+.transfer-tracker-v3 .mif-source-stale,
+.transfer-tracker-v3 .mif-timeline-copy > span,
+.transfer-tracker-v3 .mif-timeline-meta span {
+  color: #506a80;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.transfer-workspace-v3 .transfer-workflow-path strong {
+  color: #29465f;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.transfer-tracker-v3 .mif-tracker-actions--prominent {
+  gap: 8px;
+  padding: 9px 12px;
+}
+
+.transfer-tracker-v3 .mif-tracker-actions--prominent .mif-button {
+  min-height: 40px;
+  padding-inline: 13px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
 }
 
 /* Production transfer command center
@@ -2044,12 +2137,6 @@
 }
 
 @media (max-width: 720px) {
-  .transfer-request-page {
-    width: calc(100% + 24px);
-    max-width: none;
-    margin: 0 -12px;
-  }
-
   .transfer-request-page > .source-warning {
     margin: 0 12px 8px;
     padding: 8px 10px;
@@ -2079,7 +2166,7 @@
     height: 50px;
   }
 
-  .transfer-request-page .mif-vehicle-heading h2 {
+  .transfer-request-page .mif-vehicle-heading h1 {
     font-size: 17px;
   }
 
@@ -2218,7 +2305,7 @@
     min-height: 58px;
   }
 
-  .transfer-mobile-detail-bar strong {
+  .transfer-mobile-detail-bar h1 {
     font-size: 14px;
   }
 
@@ -2367,5 +2454,388 @@
 
   .transfer-workspace-v3 .transfer-control-label {
     font-size: 9px;
+  }
+}
+
+/* Operational type floor. Dense movement metadata stays compact without
+   dropping user-facing labels or values below 12px at normal zoom. */
+.transfer-workspace-v3 .transfer-workflow-metrics small,
+.transfer-workspace-v3 .transfer-workflow-path strong,
+.transfer-workspace-v3 .transfer-workflow-path li > span,
+.transfer-workspace-v3 .transfer-list-views button,
+.transfer-workspace-v3 .transfer-list-views button > span,
+.transfer-workspace-v3 .transfer-list-filter select,
+.transfer-workspace-v3 .transfer-list-sort select,
+.transfer-workspace-v3 .transfer-list-accountability,
+.transfer-workspace-v3 .transfer-list-outcomes,
+.transfer-workspace-v3 .transfer-list-accountability b,
+.transfer-workspace-v3 .transfer-list-outcomes b,
+.transfer-workspace-v3 .transfers-page-header > div > span,
+.transfer-workspace-v3 > .source-warning strong,
+.transfer-workspace-v3 > .source-warning summary,
+.transfer-workspace-v3 .transfer-control-label,
+.transfer-mobile-stage > span,
+.transfer-mobile-detail-bar small,
+.transfer-tracker-v3 .mif-tracker-header small,
+.transfer-tracker-v3 .mif-tracker-accountability span,
+.transfer-tracker-v3 .mif-tracker-accountability small,
+.transfer-tracker-v3 .mif-next-action span,
+.transfer-tracker-v3 .mif-next-action small,
+.transfer-tracker-v3 .mif-next-action > div:last-child strong,
+.transfer-tracker-v3 .mif-status-lane dt,
+.transfer-tracker-v3 .mif-status-detail,
+.transfer-tracker-v3 .mif-source-stale,
+.transfer-tracker-v3 .mif-timeline-event time,
+.transfer-tracker-v3 .mif-timeline-copy > span,
+.transfer-tracker-v3 .mif-timeline-meta span,
+.transfer-request-page > .source-warning strong,
+.transfer-request-page > .source-warning summary,
+.transfer-request-page .mif-request-source-strip span,
+.transfer-request-page .mif-request-source-strip small,
+.transfer-tracker-v3 .mif-tracker-request-summary span,
+.transfer-tracker-v3 .mif-tracker-request-summary small {
+  font-size: 12px !important;
+  line-height: 1.35;
+}
+
+.transfer-tracker-v3 .mif-status-value,
+.transfer-tracker-v3 .mif-timeline-copy strong,
+.transfer-tracker-v3 .mif-outcome-separation > div > strong {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.transfer-tracker-v3 .mif-outcome-separation header span,
+.transfer-tracker-v3 .mif-outcome-separation > div > span {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* Group movement commands by intent so managers can distinguish a decision,
+   a return/condition exception, and read-only source evidence at a glance. */
+.transfer-tracker-v3 .mif-tracker-actions--prominent {
+  align-items: flex-start;
+}
+
+.transfer-tracker-v3 .mif-action-group {
+  display: grid;
+  flex: 1 1 190px;
+  gap: 5px;
+  min-width: 0;
+}
+
+.transfer-tracker-v3 .mif-action-group > span {
+  color: #5b6f82;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .055em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.transfer-tracker-v3 .mif-action-group > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.transfer-tracker-v3 .mif-action-group.is-source {
+  flex: 0 1 auto;
+}
+
+.transfer-workspace-v3 :is(
+  .transfer-list-create,
+  .transfer-list-search input,
+  .transfer-list-filter select,
+  .transfer-list-sort select,
+  .transfer-list-views button,
+  .transfer-mobile-detail-bar
+):focus-visible {
+  outline: 3px solid #83b7f4;
+  outline-offset: 2px;
+}
+
+@media (max-width: 980px) {
+  .transfer-tracker-v3 .mif-tracker-actions--prominent {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 9px;
+  }
+
+  .transfer-tracker-v3 .mif-action-group > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .transfer-tracker-v3 .mif-action-group .mif-button {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .transfer-tracker-v3 .mif-action-group > div {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Stable system-font weights avoid fuzzy variable-weight interpolation while
+   keeping operational labels readable at normal desktop and mobile zoom. */
+.transfer-workspace-v3 :is(h1, h2, h3, strong, b),
+.transfer-tracker-v3 :is(h2, h3, strong, b) {
+  font-weight: 700;
+}
+
+.transfer-workspace-v3 :is(button, input, select, textarea, summary),
+.transfer-tracker-v3 :is(button, summary),
+.transfer-tracker-v3 .mif-action-group > span {
+  font-weight: 600;
+}
+
+.transfer-workspace-v3 :is(p, small, time, dt, dd),
+.transfer-tracker-v3 :is(p, small, time, dt, dd) {
+  font-weight: 500;
+}
+
+.transfer-workspace-v3 .transfer-workflow-path li > span,
+.transfer-workspace-v3 .transfer-mobile-stage b,
+.transfer-tracker-v3 .mif-condition-banner small,
+.transfer-tracker-v3 .mif-technical-status-details > summary {
+  font-size: 11px !important;
+  line-height: 1.35;
+}
+
+.transfer-workspace-v3 span,
+.transfer-tracker-v3 span { font-weight: 500 !important; }
+.transfer-workspace-v3 :is(button, input, select, textarea, summary),
+.transfer-tracker-v3 :is(button, summary) { font-weight: 600 !important; }
+.transfer-workspace-v3 :is(h1, h2, h3, strong, b),
+.transfer-tracker-v3 :is(h2, h3, strong, b) { font-weight: 700 !important; }
+.transfer-workspace-v3 :is(.transfer-list-count, .transfer-list-stage) { font-weight: 600 !important; }
+.transfer-workspace-v3 .transfer-workflow-path li > span,
+.transfer-workspace-v3 .transfer-mobile-stage b,
+.transfer-tracker-v3 .mif-tracker-stock { font-weight: 700 !important; }
+.transfer-tracker-v3 :is(.mif-status-lane dt, .mif-timeline-event time) { font-weight: 500 !important; }
+.transfer-tracker-v3 .mif-action-group > span { font-weight: 600 !important; }
+
+/* Production refinement: larger operational type, quieter cards, and clearer
+   action hierarchy without hiding any movement detail. */
+.transfer-workspace-v3 {
+  --transfer-v3-border: #c8d5df;
+  --transfer-v3-divider: #dce5ec;
+  --transfer-v3-soft: #f5f8fa;
+  --transfer-v3-selected: #edf5fb;
+  --transfer-v3-shadow: 0 10px 28px rgb(12 42 69 / 8%);
+}
+
+.transfer-workspace-v3 .transfers-page-header h1 {
+  font-size: clamp(1.55rem, 2vw, 1.95rem);
+  line-height: 1.12;
+}
+
+.transfer-workspace-v3 .transfers-page-header p {
+  color: #496176;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.transfer-workspace-v3 .transfer-workflow-overview,
+.transfer-workspace-v3 .transfers-layout {
+  border-radius: 10px;
+}
+
+.transfer-workspace-v3 .transfer-workflow-metrics > span {
+  min-height: 62px;
+  padding: 10px 12px;
+}
+
+.transfer-workspace-v3 .transfer-workflow-metrics strong {
+  color: #102e47;
+  font-size: 18px;
+}
+
+.transfer-workspace-v3 .transfer-workflow-metrics small,
+.transfer-workspace-v3 .transfer-workflow-path strong {
+  color: #4f6578;
+  font-size: 12px !important;
+  line-height: 1.3;
+}
+
+.transfer-workspace-v3 .transfer-workflow-path li {
+  min-height: 62px;
+  padding: 8px;
+}
+
+.transfer-workspace-v3 .transfer-list-toolbar {
+  padding: 12px;
+  background: #f7f9fb;
+}
+
+.transfer-workspace-v3 .transfer-list-create,
+.transfer-workspace-v3 .transfer-list-search,
+.transfer-workspace-v3 .transfer-list-filter select,
+.transfer-workspace-v3 .transfer-list-sort select {
+  min-height: 42px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+.transfer-workspace-v3 .transfer-list-views button {
+  min-height: 36px;
+  border-radius: 7px;
+  font-size: 12px !important;
+}
+
+.transfer-workspace-v3 .transfer-list-count {
+  color: #526a7d;
+  font-size: 12px;
+}
+
+.transfer-workspace-v3 .transfer-list-item,
+.transfer-workspace-v3 .transfer-list--short .transfer-list-item {
+  min-height: 118px;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.transfer-workspace-v3 .transfer-list-item.is-selected,
+.transfer-workspace-v3 .transfer-list--short .transfer-list-item.is-selected {
+  border-color: #7ca9d0;
+  background: #edf5fb;
+  box-shadow: inset 3px 0 0 #0b5f9f;
+}
+
+.transfer-workspace-v3 .transfer-list-top strong {
+  color: #102e47;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.transfer-workspace-v3 .transfer-list-route,
+.transfer-workspace-v3 .transfer-location,
+.transfer-workspace-v3 .transfer-list-stage,
+.transfer-workspace-v3 .transfer-next,
+.transfer-workspace-v3 .transfer-due,
+.transfer-workspace-v3 .transfer-list-signals,
+.transfer-workspace-v3 .transfer-list-accountability,
+.transfer-workspace-v3 .transfer-list-outcomes {
+  font-size: 12px !important;
+  line-height: 1.4;
+}
+
+.transfer-tracker-v3 .mif-tracker-header {
+  min-height: 88px;
+  padding: 14px 16px;
+}
+
+.transfer-tracker-v3 .mif-tracker-header h2 {
+  color: #102e47;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.transfer-tracker-v3 .mif-tracker-header p,
+.transfer-tracker-v3 .mif-tracker-header small,
+.transfer-tracker-v3 .mif-tracker-request-summary span,
+.transfer-tracker-v3 .mif-tracker-request-summary small,
+.transfer-tracker-v3 .mif-tracker-accountability span,
+.transfer-tracker-v3 .mif-tracker-accountability small,
+.transfer-tracker-v3 .mif-outcome-separation header span,
+.transfer-tracker-v3 .mif-outcome-separation > div > span,
+.transfer-tracker-v3 .mif-next-action span,
+.transfer-tracker-v3 .mif-next-action small,
+.transfer-tracker-v3 .mif-status-lane dt,
+.transfer-tracker-v3 .mif-status-detail,
+.transfer-tracker-v3 .mif-source-stale,
+.transfer-tracker-v3 .mif-timeline-event time,
+.transfer-tracker-v3 .mif-timeline-copy > span,
+.transfer-tracker-v3 .mif-timeline-meta span {
+  font-size: 11.5px !important;
+  line-height: 1.4;
+}
+
+.transfer-tracker-v3 .mif-tracker-request-summary strong,
+.transfer-tracker-v3 .mif-tracker-accountability strong,
+.transfer-tracker-v3 .mif-outcome-separation > div > strong,
+.transfer-tracker-v3 .mif-next-action strong,
+.transfer-tracker-v3 .mif-status-value,
+.transfer-tracker-v3 .mif-timeline-copy strong {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.transfer-tracker-v3 .mif-tracker-actions--prominent {
+  gap: 10px;
+  padding: 12px 16px;
+  border-block: 1px solid var(--transfer-v3-divider);
+  background: #f7f9fb;
+}
+
+.transfer-tracker-v3 .mif-action-group > span {
+  color: #536a7d;
+  font-size: 12px;
+  letter-spacing: .035em;
+  text-transform: none;
+}
+
+.transfer-tracker-v3 .mif-action-group .mif-button {
+  min-height: 40px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+.transfer-workspace-v3 .transfers-page-header > span,
+.transfer-workspace-v3 .transfers-page-header > div > span,
+.transfer-workspace-v3 .transfer-list-top b,
+.transfer-workspace-v3 .transfer-list-accountability b,
+.transfer-workspace-v3 .transfer-list-outcomes b,
+.transfer-tracker-v3 .mif-next-action > div:last-child strong,
+.transfer-tracker-v3 .mif-technical-status-details > summary {
+  font-size: 12px !important;
+}
+
+.transfer-workspace-v3 .transfer-list-filter select,
+.transfer-workspace-v3 .transfer-list-sort select,
+.transfer-workspace-v3 .transfer-mobile-stage > span {
+  font-size: 12px !important;
+}
+
+.transfer-tracker-v3 .mif-outcome-separation header span {
+  color: #526a7d;
+}
+
+.transfer-tracker-v3 .mif-technical-status-details > summary {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.transfer-tracker-v3 .mif-technical-status-details > summary:hover {
+  background: #edf3f7;
+}
+
+@media (max-width: 760px) {
+  .transfer-workspace-v3 .transfers-page-header p {
+    font-size: 13px;
+  }
+
+  .transfer-workspace-v3 .transfer-list-item,
+  .transfer-workspace-v3 .transfer-list--short .transfer-list-item {
+    min-height: 126px;
+  }
+
+  .transfer-workspace-v3 .transfer-list-create,
+  .transfer-workspace-v3 .transfer-list-search,
+  .transfer-workspace-v3 .transfer-list-filter select,
+  .transfer-workspace-v3 .transfer-list-sort select,
+  .transfer-workspace-v3 .transfer-list-views button,
+  .transfer-workspace-v3 .transfer-mobile-detail-bar button,
+  .transfer-tracker-v3 .mif-action-group .mif-button,
+  .transfer-tracker-v3 .mif-technical-status-details > summary,
+  .transfer-workspace-v3 .mif-transfer-empty .mif-button {
+    min-height: 44px;
   }
 }

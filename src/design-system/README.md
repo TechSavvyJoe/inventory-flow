@@ -68,16 +68,19 @@ AutoCheck logo.
 
 ## Typography
 
-The kit has no remote font dependency. The application uses its bundled local
-Inter Variable family through `--font-app`, with platform-safe fallbacks:
+The kit has no remote font dependency. The application uses the native system
+interface family through `--font-app`, so Windows receives Segoe UI and Apple
+platforms receive San Francisco without synthetic interpolation:
 
-- Display and interface: `Inter Variable`, `Segoe UI Variable`, `Segoe UI`,
-  Arial, sans-serif.
+- Display and interface: `system-ui`, `-apple-system`, `BlinkMacSystemFont`,
+  `Segoe UI`, sans-serif.
 - Technical: `Cascadia Code`, `SFMono-Regular`, Consolas, monospace.
 
-Display type uses tight optical spacing only for large titles. Table text stays
-at 12–14 px with compact 1.3–1.5 line height. Use uppercase tracking only for
-short metadata labels, never paragraphs.
+Display type uses tight optical spacing only for large titles. Operational text
+uses a 12 px absolute floor, 13–15 px for supporting and body copy, and only
+the native 400, 500, 600, and 700 weights. Use uppercase tracking only for
+short metadata labels, never paragraphs. Dense views earn space through layout
+and progressive disclosure rather than miniature type.
 
 ## Components and states
 
@@ -93,14 +96,14 @@ short metadata labels, never paragraphs.
 | `danger` | Destructive action with a confirmation step |
 
 Every variant includes default, hover, pressed, keyboard focus, disabled, and
-loading states. The active state moves one pixel toward the surface to feel
-tactile without excessive animation.
+loading states. Controls use solid fills, restrained borders, and short color
+transitions; glossy overlays, scale effects, and decorative gradients do not
+belong in operational action areas.
 
 ### FlowIconButton
 
 `label` is required. It becomes the accessible name and tooltip. An icon-only
-button must be at least 40 px on desktop and 44 px when it is the primary touch
-target on mobile.
+button must expose a 44 px target on touch devices.
 
 ### FlowSignal
 
@@ -120,9 +123,9 @@ a button wall.
 - Product Ink on Paper and white on Flow Iris exceed 4.5:1 for normal text.
 - Arc Cyan is an accent, focus ring, or icon highlight; it is not body text on
   white.
-- Focus uses a visible 3 px ring with 3 px offset.
-- Interactive controls retain a minimum 40 px desktop target; critical mobile
-  actions use 44 px or more.
+- Focus uses a high-contrast 2 px outline plus a soft 3 px outer ring.
+- Primary controls retain a 44 px target; compact 36 px controls expand to
+  44 px on coarse-pointer devices.
 - Icons are decorative by default. Pass `title` to give a standalone icon an
   accessible name; buttons still require visible text or `aria-label`.
 - `prefers-reduced-motion` reduces all tokenized motion to near-zero and removes

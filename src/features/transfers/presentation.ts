@@ -6,11 +6,11 @@ import type {
 } from './types';
 
 export const transferActionLabels: Record<TransferActionKind, string> = {
-  'review-request': 'Send to home-store manager',
+  'review-request': 'Approve request',
   approve: 'Record home-store release',
-  decline: 'Decline movement',
+  decline: 'Decline request',
   'edit-request': 'Edit request',
-  'request-driver': 'Record call for a driver',
+  'request-driver': 'Request driver',
   'assign-transport': 'Assign driver',
   'confirm-pickup': 'Confirm pickup',
   'confirm-arrival': 'Confirm arrival',
@@ -20,7 +20,7 @@ export const transferActionLabels: Record<TransferActionKind, string> = {
   'mark-exception': 'Report exception',
   'report-condition': 'Report vehicle issue',
   escalate: 'Escalate',
-  'open-source': 'Open source record',
+  'open-source': 'Open original record',
   close: 'Close movement',
 };
 

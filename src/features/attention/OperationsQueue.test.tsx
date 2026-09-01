@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
@@ -35,10 +35,10 @@ const resolvedItem: AttentionItem = {
 }
 
 describe('OperationsQueue', () => {
-  it('keeps the queue compact, filterable, and explicit about source-system boundaries', async () => {
+  it('keeps the queue compact, filterable, and focused on the next action', async () => {
     const user = userEvent.setup()
     const onAction = vi.fn().mockResolvedValue({ ...transferItem, status: 'acknowledged' })
-    render(
+    const { container } = render(
       <MemoryRouter>
         <OperationsQueue
           items={[transferItem, resolvedItem]}
@@ -50,12 +50,16 @@ describe('OperationsQueue', () => {
       </MemoryRouter>,
     )
 
-    expect(screen.getByRole('heading', { name: 'Fowlerville operations queue' })).toBeInTheDocument()
-    expect(screen.getByText('Work state is separate from source truth')).toBeInTheDocument()
-    expect(screen.getByText(/does not release a hold/i)).toBeInTheDocument()
-    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    const queue = within(container)
+    expect(queue.getByRole('heading', { name: 'Work queue' })).toBeInTheDocument()
+    expect(queue.getByText(/updates Inventory Flow only/i)).toBeInTheDocument()
+    expect(queue.getByText('Confirm availability and record the decision.')).toBeInTheDocument()
+    expect(queue.getAllByText('Vehicle move').length).toBeGreaterThan(0)
+    expect(queue.getByRole('link', { name: /Open vehicle move/i })).toBeInTheDocument()
+    expect(queue.getByRole('link', { name: /View vehicle/i })).toBeInTheDocument()
+    expect(queue.getAllByRole('listitem')).toHaveLength(1)
 
-    await user.click(screen.getByRole('button', { name: 'Acknowledge' }))
+    await user.click(queue.getByRole('button', { name: 'Acknowledge' }))
     expect(onAction).toHaveBeenCalledWith(
       'transfer-demo',
       expect.objectContaining({
@@ -65,8 +69,64 @@ describe('OperationsQueue', () => {
       }),
     )
 
-    await user.click(screen.getByRole('button', { name: 'Resolved: 1' }))
-    expect(screen.getAllByText('Prior location exception')).toHaveLength(2)
-    expect(screen.getByRole('button', { name: /Reopen/i })).toBeInTheDocument()
+    await user.click(queue.getByRole('button', { name: 'Resolved: 1' }))
+    expect(queue.getAllByText('Prior location exception')).toHaveLength(2)
+    expect(queue.getByRole('button', { name: /Reopen/i })).toBeInTheDocument()
+  })
+
+  it('dismisses mobile detail with Escape and restores focus to the selected queue item', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: true }),
+    })
+    const user = userEvent.setup()
+    const onAction = vi.fn()
+    const { container } = render(
+      <MemoryRouter>
+        <OperationsQueue items={[transferItem]} homeStore="Fowlerville" role="manager" reportDate="2026-08-30" onAction={onAction} />
+      </MemoryRouter>,
+    )
+
+    const queue = within(container)
+    const row = queue.getByRole('button', { name: `Open ${transferItem.label}` })
+    await user.click(row)
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+    expect(queue.getByRole('complementary', { name: `${transferItem.label} details` })).toHaveAttribute('id', 'ops-selected-detail')
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(row).toHaveAttribute('aria-expanded', 'false'))
+    await waitFor(() => expect(row).toHaveFocus())
+  })
+
+  it('keeps empty-filter recovery and the secondary action editor keyboard operable', async () => {
+    const user = userEvent.setup()
+    const { container } = render(
+      <MemoryRouter>
+        <OperationsQueue
+          items={[transferItem]}
+          homeStore="Fowlerville"
+          role="manager"
+          reportDate="2026-08-30"
+          onAction={vi.fn()}
+        />
+      </MemoryRouter>,
+    )
+
+    const queue = within(container)
+    await user.click(queue.getByRole('button', { name: 'Resolved: 0' }))
+    expect(queue.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument()
+    expect(queue.getByText('No work matches this view')).toBeInTheDocument()
+
+    await user.click(queue.getByRole('button', { name: 'Clear filters' }))
+    expect(queue.getByRole('button', { name: `Open ${transferItem.label}` })).toBeInTheDocument()
+
+    const summary = queue.getByText('Update owner, follow-up or resolution')
+    const details = summary.closest('details')
+    expect(details).not.toHaveAttribute('open')
+    await user.click(summary)
+    expect(details).toHaveAttribute('open')
+
+    const evidenceSummary = queue.getByText(/Evidence and activity/)
+    expect(evidenceSummary.closest('details')).not.toHaveAttribute('open')
   })
 })

@@ -254,6 +254,7 @@ export interface TransferEvent {
   store?: string
   fromLocation?: string
   toLocation?: string
+  confirmedBy?: string
   note?: string
 }
 
@@ -392,6 +393,13 @@ export interface HoldSignalSummary {
 }
 
 export interface BootstrapData {
+  access?: {
+    user: string
+    role: UserRole
+    store: StoreName
+    canViewPrivateEvidence: boolean
+    canCreateTransfer: boolean
+  }
   meta: SourceMeta
   stores: StoreSummary[]
   vehicles: VehicleRecord[]
@@ -421,6 +429,7 @@ export interface TransferEventInput {
   actorRole: UserRole
   store: StoreName
   occurredAt?: string
+  homeStoreManager?: string
   note?: string
   fromLocation?: string
   toLocation?: string

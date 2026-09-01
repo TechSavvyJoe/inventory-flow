@@ -12,22 +12,22 @@
 }
 
 .copyable-value__button {
-  min-width: 22px;
-  min-height: 22px;
+  min-width: 28px;
+  min-height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
   gap: 4px;
-  padding: 0 3px;
+  padding: 0 6px;
   border: 0;
   border-radius: 4px;
   color: #33536f;
   background: transparent;
   box-shadow: none;
   font: inherit;
-  font-size: 8px;
-  font-weight: 790;
+  font-size: 11px;
+  font-weight: 700;
   cursor: pointer;
   transition: color 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, transform 140ms ease;
 }
@@ -63,9 +63,9 @@
 }
 
 .copyable-value--compact .copyable-value__button {
-  min-width: 22px;
-  min-height: 22px;
-  padding: 0 4px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 5px;
   border-radius: 5px;
 }
 

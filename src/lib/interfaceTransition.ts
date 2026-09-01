@@ -1,7 +1,11 @@
+import { flushSync } from "react-dom";
+
 type InterfaceTransitionName = "vehicle" | "oem" | "scope";
 
 interface ViewTransitionHandle {
   finished: Promise<void>;
+  ready?: Promise<void>;
+  updateCallbackDone?: Promise<void>;
 }
 
 type TransitionDocument = Document & {
@@ -29,10 +33,28 @@ export function runInterfaceTransition(
   }
 
   document.documentElement.dataset.interfaceTransition = name;
-  const transition = transitionDocument.startViewTransition(async () => {
-    update();
-    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-  });
+  let updateCompleted = false;
+  let transition: ViewTransitionHandle;
+  try {
+    transition = transitionDocument.startViewTransition(() => {
+      flushSync(() => {
+        update();
+        updateCompleted = true;
+      });
+    });
+  } catch {
+    if (!updateCompleted) {
+      update();
+    }
+    delete document.documentElement.dataset.interfaceTransition;
+    return;
+  }
+
+  // Native implementations expose three promises. Any of them may reject
+  // when the browser skips or supersedes a transition; none should surface as
+  // an application error because the synchronous state update already landed.
+  void transition.ready?.catch(() => undefined);
+  void transition.updateCallbackDone?.catch(() => undefined);
   void transition.finished
     .catch(() => {
       // Browsers may reject a transition when a dialog closes before the

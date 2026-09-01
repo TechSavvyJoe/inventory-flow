@@ -33,7 +33,7 @@ import { STORE_BRANDING } from './storeBranding'
 const NAV_ITEMS = [
   { id: 'inventory', to: '/inventory', label: 'Inventory', shortLabel: 'Inventory', icon: CarFront },
   { id: 'moves', to: '/transfers', label: 'Vehicle moves', shortLabel: 'Moves', icon: ArrowLeftRight },
-  { id: 'today', to: '/attention', label: 'Needs attention', shortLabel: 'Today', icon: Bell },
+  { id: 'today', to: '/attention', label: 'Needs attention', shortLabel: 'Alerts', icon: Bell },
 ] as const
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -51,14 +51,21 @@ function readStoredNavigationState() {
   if (typeof window === 'undefined') return false
   try {
     const stored = window.localStorage?.getItem(NAV_STORAGE_KEY)
-    return stored === null ? false : stored === 'true'
+    return stored === null ? Boolean(window.matchMedia?.('(min-width: 1180px)').matches) : stored === 'true'
   } catch {
     return false
   }
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { data, homeStore, setHomeStore, role, setRole, refresh, loading } = useAppData()
+  const { data, homeStore, setHomeStore, role, setRole, currentUser, refresh, loading } = useAppData()
+  const authenticatedUser = currentUser || 'Local prototype user'
+  const userInitials = authenticatedUser
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'IF'
   const [navExpanded, setNavExpanded] = useState(readStoredNavigationState)
   const [utilityOpen, setUtilityOpen] = useState(false)
   const [storeSwitching, setStoreSwitching] = useState(false)
@@ -69,13 +76,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const utilityCloseRef = useRef<HTMLButtonElement>(null)
   const utilityOpenerRef = useRef<HTMLButtonElement>(null)
   const appShellRef = useRef<HTMLDivElement>(null)
+  const mainContentRef = useRef<HTMLElement>(null)
   const previousHomeStoreRef = useRef(homeStore)
   const navigate = useNavigate()
   const location = useLocation()
+  const previousLocationKeyRef = useRef(location.key)
   const isInventoryRoute = location.pathname === '/' || location.pathname.startsWith('/inventory')
   const attentionCount = data?.attention.filter((item) => item.severity !== 'info').length ?? 0
   const storeBrand = STORE_BRANDING[homeStore]
   const canSeeManager = role === 'manager' || role === 'group_manager'
+  const rolePreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
   const freshnessState = !data
     ? 'unknown'
     : data.meta.dealerMailFreshness === 'incomplete' || data.meta.publicFreshness === 'incomplete'
@@ -126,6 +136,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     setSearchDraft({ accessContext: searchAccessContext, query: '' })
   }, [searchAccessContext])
+
+  useEffect(() => {
+    if (previousLocationKeyRef.current === location.key) return
+    previousLocationKeyRef.current = location.key
+
+    // Leave focus ownership with an active modal. Route-level dialogs restore
+    // focus to their own opener when they close.
+    if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+
+    mainContentRef.current?.focus({ preventScroll: true })
+  }, [location.key])
 
   function handleSearch(event: FormEvent) {
     event.preventDefault()
@@ -190,7 +211,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="utility-user-mark" aria-hidden="true"><CircleUserRound /></span>
           <span>
             <h2 id="app-utility-title">Account and app controls</h2>
-            <small id="app-utility-context">Joe Gallant · {ROLE_LABELS[role]} · {homeStore}</small>
+            <small id="app-utility-context">{authenticatedUser} · {ROLE_LABELS[role]} · {homeStore}</small>
           </span>
           <button ref={utilityCloseRef} type="button" onClick={() => setUtilityOpen(false)} aria-label="Close app controls"><X /></button>
         </header>
@@ -207,7 +228,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        <label className="utility-role-control" title="Prototype role preview; production will use dealership sign-in">
+        {rolePreviewEnabled ? <label className="utility-role-control" title="Prototype role preview; production will use dealership sign-in">
           <Settings2 aria-hidden="true" />
           <span>
             <small>Preview role</small>
@@ -216,7 +237,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </select>
           </span>
           <ChevronDown aria-hidden="true" />
-        </label>
+        </label> : null}
 
         {canSeeManager ? (
           <NavLink className="utility-manager-link" to="/manager" onClick={() => setUtilityOpen(false)}>
@@ -342,22 +363,27 @@ export function AppShell({ children }: { children: ReactNode }) {
           aria-controls="app-utility-dialog"
           onClick={openUtility}
         >
-          <span className="profile-initials" aria-hidden="true">JG</span>
+          <span className="profile-initials" aria-hidden="true">{userInitials}</span>
           <span className="profile-copy">
-            <strong>Joe Gallant</strong>
+            <strong>{authenticatedUser}</strong>
             <small>{ROLE_LABELS[role]}</small>
           </span>
           <ChevronDown aria-hidden="true" />
         </button>
       </header>
 
-      <main className="app-main" id="main-content" tabIndex={-1}>{children}</main>
+      <main ref={mainContentRef} className="app-main" id="main-content" tabIndex={-1}>{children}</main>
 
       <nav className="mobile-bottom-nav" aria-label="Mobile primary">
         {NAV_ITEMS.map(({ id, to, label, shortLabel, icon: Icon }) => {
           const active = isNavActive(id, to)
           return (
-            <NavLink key={to} to={to} className={active ? 'is-active' : ''} aria-current={active ? 'page' : undefined}>
+            <NavLink
+              key={to}
+              to={to}
+              className={active ? 'is-active' : ''}
+              aria-current={active ? 'page' : undefined}
+            >
               <Icon aria-hidden="true" />
               <span>{shortLabel}</span>
               {id === 'today' && attentionCount > 0 ? <b aria-label={`${attentionCount} items need attention today`}>{attentionCount}</b> : null}

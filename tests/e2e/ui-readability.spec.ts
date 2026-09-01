@@ -1,0 +1,189 @@
+import { expect, test, type Page } from '@playwright/test'
+
+const coreRoutes = ['/inventory', '/transfers', '/attention', '/manager'] as const
+
+type ReadabilityViolation = {
+  fontSize: number
+  selector: string
+  text: string
+}
+
+type ContrastViolation = {
+  contrast: number
+  selector: string
+  text: string
+}
+
+async function collectReadabilityViolations(page: Page) {
+  return page.evaluate<ReadabilityViolation[]>(() => {
+    const main = document.querySelector('main')
+    if (!main) return [{ fontSize: 0, selector: 'main', text: 'Missing main landmark' }]
+
+    const violations = new Map<string, ReadabilityViolation>()
+    const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT)
+    let node = walker.nextNode()
+
+    while (node) {
+      const text = node.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+      const element = node.parentElement
+
+      if (text && element) {
+        const style = getComputedStyle(element)
+        const rect = element.getBoundingClientRect()
+        const isHiddenUtility = element.closest(
+          '[hidden], [aria-hidden="true"], .sr-only, .visually-hidden, script, style, template',
+        )
+        const fontSize = Number(style.fontSize.replace('px', ''))
+
+        if (
+          !isHiddenUtility &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          Number(style.opacity) > 0 &&
+          rect.width > 1 &&
+          rect.height > 1 &&
+          Number.isFinite(fontSize) &&
+          fontSize < 12
+        ) {
+          const selector = [
+            element.tagName.toLowerCase(),
+            element.id ? `#${element.id}` : '',
+            ...Array.from(element.classList)
+              .slice(0, 3)
+              .map((className) => `.${className}`),
+          ].join('')
+          const key = `${selector}|${text.slice(0, 80)}`
+          violations.set(key, { fontSize, selector, text: text.slice(0, 120) })
+        }
+      }
+
+      node = walker.nextNode()
+    }
+
+    return Array.from(violations.values()).slice(0, 25)
+  })
+}
+
+async function collectContrastViolations(page: Page) {
+  return page.evaluate<ContrastViolation[]>(() => {
+    type Rgba = [number, number, number, number]
+    const main = document.querySelector('main')
+    if (!main) return [{ contrast: 0, selector: 'main', text: 'Missing main landmark' }]
+
+    function parseColor(value: string): Rgba | null {
+      const channels = value.match(/[\d.]+/g)?.map(Number)
+      if (!channels || channels.length < 3) return null
+      return [channels[0], channels[1], channels[2], channels[3] ?? 1]
+    }
+
+    function composite(foreground: Rgba, background: Rgba): Rgba {
+      const alpha = foreground[3] + background[3] * (1 - foreground[3])
+      if (alpha === 0) return [0, 0, 0, 0]
+      return [
+        (foreground[0] * foreground[3] + background[0] * background[3] * (1 - foreground[3])) / alpha,
+        (foreground[1] * foreground[3] + background[1] * background[3] * (1 - foreground[3])) / alpha,
+        (foreground[2] * foreground[3] + background[2] * background[3] * (1 - foreground[3])) / alpha,
+        alpha,
+      ]
+    }
+
+    function luminance(color: Rgba) {
+      const channels = color.slice(0, 3).map((channel) => {
+        const normalized = channel / 255
+        return normalized <= 0.04045
+          ? normalized / 12.92
+          : ((normalized + 0.055) / 1.055) ** 2.4
+      })
+      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+    }
+
+    function backgroundFor(element: Element): Rgba {
+      const ancestry: Element[] = []
+      let current: Element | null = element
+      while (current) {
+        ancestry.unshift(current)
+        current = current.parentElement
+      }
+
+      return ancestry.reduce<Rgba>((background, ancestor) => {
+        const layer = parseColor(getComputedStyle(ancestor).backgroundColor)
+        return layer && layer[3] > 0 ? composite(layer, background) : background
+      }, [255, 255, 255, 1])
+    }
+
+    const violations = new Map<string, ContrastViolation>()
+    const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT)
+    let node = walker.nextNode()
+
+    while (node) {
+      const text = node.textContent?.replace(/\s+/g, ' ').trim() ?? ''
+      const element = node.parentElement
+
+      if (text && element) {
+        const style = getComputedStyle(element)
+        const rect = element.getBoundingClientRect()
+        const isHiddenUtility = element.closest(
+          '[hidden], [aria-hidden="true"], [disabled], .sr-only, .visually-hidden, script, style, template',
+        )
+        const foreground = parseColor(style.color)
+        const background = backgroundFor(element)
+
+        if (
+          !isHiddenUtility &&
+          foreground &&
+          style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          Number(style.opacity) > 0 &&
+          rect.width > 1 &&
+          rect.height > 1
+        ) {
+          const renderedForeground = composite(foreground, background)
+          const light = Math.max(luminance(renderedForeground), luminance(background))
+          const dark = Math.min(luminance(renderedForeground), luminance(background))
+          const contrast = (light + 0.05) / (dark + 0.05)
+          const fontSize = Number(style.fontSize.replace('px', ''))
+          const fontWeight = Number(style.fontWeight) || 400
+          const minimum = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700) ? 3 : 4.5
+
+          if (contrast + 0.01 < minimum) {
+            const selector = [
+              element.tagName.toLowerCase(),
+              element.id ? `#${element.id}` : '',
+              ...Array.from(element.classList)
+                .slice(0, 3)
+                .map((className) => `.${className}`),
+            ].join('')
+            const key = `${selector}|${text.slice(0, 80)}`
+            violations.set(key, {
+              contrast: Number(contrast.toFixed(2)),
+              selector,
+              text: text.slice(0, 120),
+            })
+          }
+        }
+      }
+
+      node = walker.nextNode()
+    }
+
+    return Array.from(violations.values()).slice(0, 25)
+  })
+}
+
+for (const route of coreRoutes) {
+  test(`${route} keeps visible operational text readable and the page contained`, async ({ page }) => {
+    await page.goto(route)
+    await expect(page.locator('main')).toBeVisible()
+
+    const violations = await collectReadabilityViolations(page)
+    expect(violations, `Visible text below the 12px readability floor on ${route}`).toEqual([])
+
+    const contrastViolations = await collectContrastViolations(page)
+    expect(contrastViolations, `Visible text below the WCAG contrast floor on ${route}`).toEqual([])
+
+    const pageOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > window.innerWidth + 1,
+    )
+    expect(pageOverflow, `Document-level horizontal overflow on ${route}`).toBe(false)
+  })
+}

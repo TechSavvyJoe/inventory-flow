@@ -313,7 +313,9 @@ export function toTransferDetail(
       actorLabel: event.actor,
       actorRole: event.actorRole,
       source: 'app',
-      detail: event.note,
+      detail: event.confirmedBy && event.confirmedBy !== event.actor
+        ? `Home Store decision by ${event.confirmedBy}${event.note ? ` · ${event.note}` : ''}`
+        : event.note,
       exception: event.type.includes('exception'),
     })),
     allowedActions: allowedActions(transfer, role),

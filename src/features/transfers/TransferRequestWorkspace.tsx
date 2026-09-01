@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import {
   ArrowRight,
   CalendarClock,
@@ -99,6 +99,8 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
     disabled = false,
   } = props;
   const formId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  const errorSummaryRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<TransferRequestDraft>(() => createInitialDraft(vehicle, props));
   const [errors, setErrors] = useState<Partial<Record<keyof TransferRequestDraft, string>>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -141,7 +143,13 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
     const nextDraft = { ...draft, vin: vehicle.vin };
     const nextErrors = validateDraft(nextDraft);
     setErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
+    if (Object.keys(nextErrors).length > 0) {
+      window.setTimeout(() => {
+        const firstInvalid = formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]');
+        (firstInvalid ?? errorSummaryRef.current)?.focus();
+      }, 0);
+      return;
+    }
 
     setSubmitting(true);
     setSubmitError(undefined);
@@ -160,8 +168,13 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
     return (
       <section className="mif-transfer-feature mif-request-workspace mif-request-workspace--empty">
         <Route aria-hidden="true" size={28} strokeWidth={1.75} />
-        <h2>Select a vehicle to request</h2>
+        <h1>Select a vehicle to request</h1>
         <p>The request will preserve the vehicle’s Home Store and create an internal movement record only.</p>
+        {onCancel ? (
+          <button className="mif-button mif-button--primary" onClick={onCancel} type="button">
+            Choose vehicle in Inventory
+          </button>
+        ) : null}
       </section>
     );
   }
@@ -170,10 +183,10 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
     return (
       <section className="mif-transfer-feature mif-request-confirmation" aria-live="polite">
         <CheckCircle2 aria-hidden="true" size={34} strokeWidth={1.75} />
-        <h2>Movement request submitted</h2>
+        <h1>Movement request submitted</h1>
         <p>
-          The vehicle has not been marked available, sold, delivered, or changed in DealerMail or CDK.
-          Your manager must confirm availability and release with the home-store used-car manager.
+          No availability or release is confirmed. Your requesting-store manager must approve the request,
+          contact the {vehicle.homeStore} manager, and record that manager’s decision before a driver can be assigned.
         </p>
         {submittedRequestId ? <strong>Request {submittedRequestId}</strong> : null}
         {onCancel ? (
@@ -191,7 +204,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
         <div className="mif-vehicle-heading">
           {vehicle.imageUrl ? <img alt="" src={vehicle.imageUrl} /> : null}
           <div>
-            <h2 id={`${formId}-title`}>{vehicle.vehicleLabel}</h2>
+            <h1 id={`${formId}-title`}>{vehicle.vehicleLabel}</h1>
             {vehicle.trimLabel ? <p>{vehicle.trimLabel}</p> : null}
             <span>{vehicle.stock} · {vehicle.vin}</span>
           </div>
@@ -223,61 +236,70 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
         </div>
       </div>
 
-      <form className="mif-request-layout" onSubmit={handleSubmit}>
+      <form ref={formRef} className="mif-request-layout" onSubmit={handleSubmit} noValidate>
         <div className="mif-request-fields">
           <div className="mif-request-fields__heading">
             <div>
               <h3>Request vehicle</h3>
-              <p>Tell your manager what is needed and when. The return rule is automatic.</p>
+              <p>Tell your manager what is needed and when. They approve first, then contact the Home Store.</p>
             </div>
           </div>
 
+          {Object.keys(errors).length ? (
+            <div ref={errorSummaryRef} className="mif-submit-error mif-form-error-summary" role="alert" tabIndex={-1}>
+              <CircleAlert aria-hidden="true" size={17} strokeWidth={1.75} />
+              <span><strong>Complete the highlighted request details.</strong><small>{Object.values(errors).join(' ')}</small></span>
+            </div>
+          ) : null}
+
           <div className="mif-form-grid">
-            <label className="mif-field">
+            <div className="mif-field">
               <span>Your store</span>
               <span className="mif-readonly-field">
                 {selectedStore?.label || draft.requestingStore || 'Not set'}
                 <LockKeyhole aria-hidden="true" size={14} strokeWidth={1.75} />
               </span>
               {errors.requestingStore ? <small className="mif-field-error">{errors.requestingStore}</small> : null}
-            </label>
+            </div>
 
-            <label className="mif-field">
+            <div className="mif-field">
               <span>Home Store</span>
               <span className="mif-readonly-field">
                 {vehicle.homeStore}
                 <LockKeyhole aria-hidden="true" size={14} strokeWidth={1.75} />
               </span>
-            </label>
+            </div>
 
-            <label className="mif-field">
+            <div className="mif-field">
               <span>Submitted by</span>
               <span className="mif-readonly-field">
                 {selectedRequester?.label || 'Signed-in salesperson'}
                 <LockKeyhole aria-hidden="true" size={14} strokeWidth={1.75} />
               </span>
               {errors.requesterId ? <small className="mif-field-error">{errors.requesterId}</small> : null}
-            </label>
+            </div>
 
-            <label className="mif-field">
-              <span>Goes first to</span>
+            <div className="mif-field">
+              <span>Requesting-store manager</span>
               <span className="mif-readonly-field">
                 {selectedManager?.label || `${draft.requestingStore || 'Your store'} manager`}
                 <LockKeyhole aria-hidden="true" size={14} strokeWidth={1.75} />
               </span>
+              <small>Approves the request first, then contacts the {vehicle.homeStore} manager.</small>
               {errors.managerApproverId ? <small className="mif-field-error">{errors.managerApproverId}</small> : null}
-            </label>
+            </div>
 
             <label className="mif-field">
               <span>Needed by</span>
               <input
+                aria-describedby={errors.neededBy ? `${formId}-needed-by-error` : undefined}
                 aria-invalid={Boolean(errors.neededBy)}
                 disabled={disabled}
                 onChange={(event) => updateDraft({ neededBy: event.target.value })}
                 type="datetime-local"
                 value={draft.neededBy}
               />
-              {errors.neededBy ? <small className="mif-field-error">{errors.neededBy}</small> : null}
+              {errors.neededBy ? <small id={`${formId}-needed-by-error`} className="mif-field-error">{errors.neededBy}</small> : null}
             </label>
 
             <label className="mif-field">
@@ -306,6 +328,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
             <label className="mif-field mif-field--wide">
               <span>What do you need?</span>
               <textarea
+                aria-describedby={errors.reasonDetail ? `${formId}-reason-detail-error` : undefined}
                 aria-invalid={Boolean(errors.reasonDetail)}
                 disabled={disabled}
                 onChange={(event) => updateDraft({ reasonDetail: event.target.value })}
@@ -313,7 +336,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
                 rows={3}
                 value={draft.reasonDetail}
               />
-              {errors.reasonDetail ? <small className="mif-field-error">{errors.reasonDetail}</small> : null}
+              {errors.reasonDetail ? <small id={`${formId}-reason-detail-error`} className="mif-field-error">{errors.reasonDetail}</small> : null}
             </label>
 
             <details className="mif-more-details mif-field--wide">
@@ -361,21 +384,21 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
           ) : null}
 
           <section>
-            <h3><ShieldCheck aria-hidden="true" size={17} strokeWidth={1.75} /> Accountability preview</h3>
+            <h3><ShieldCheck aria-hidden="true" size={17} strokeWidth={1.75} /> Approval path</h3>
             <ol className="mif-accountability-list">
-              <li><span>1</span><b>Ask your manager</b><small>{selectedManager?.label || `${draft.requestingStore || 'Your store'} manager`}</small></li>
-              <li><span>2</span><b>Confirm with home store</b><small>{vehicle.homeStore} used-car manager</small></li>
-               <li><span>3</span><b>Call for a driver</b><small>{draft.requestingStore === 'Howell' ? 'Salesperson usually calls Stacey' : `${draft.requestingStore || 'Requesting store'} manager or coordinator`}</small></li>
-              <li><span>4</span><b>Receive and show</b><small>{draft.requestingStore || 'Requesting store'}</small></li>
-              <li><span>5</span><b>Sell or return</b><small>Outcome and return are recorded separately</small></li>
+              <li><span>1</span><b>Salesperson submits the request</b><small>{draft.requestingStore || 'Requesting store'} asks for the vehicle.</small></li>
+              <li><span>2</span><b>Requesting-store manager approves</b><small>{selectedManager?.label || `${draft.requestingStore || 'Your store'} manager`} reviews the request first.</small></li>
+              <li><span>3</span><b>Manager contacts Home Store and records its decision</b><small>The {vehicle.homeStore} manager grants or declines release; availability is not inferred.</small></li>
+              <li><span>4</span><b>Only after release: assign a driver</b><small>Pickup and movement cannot begin before a recorded grant.</small></li>
+              <li><span>5</span><b>Record sale outcome or return</b><small>Custody stays tracked until the vehicle is sold or received back home.</small></li>
             </ol>
           </section>
 
           <div className="mif-safety-note">
             <CircleAlert aria-hidden="true" size={17} strokeWidth={1.75} />
             <p>
-              Submitting creates an internal movement request. It does not change DealerMail or CDK,
-              reserve the vehicle, or prove a sale or delivery.
+              Submitting creates a request only. It does not reserve the vehicle, confirm availability,
+              or authorize pickup.
             </p>
           </div>
         </aside>

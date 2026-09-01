@@ -14,7 +14,7 @@
   --mif-location: #7655d8;
   box-sizing: border-box;
   color: var(--mif-text);
-  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-app);
   font-size: 14px;
 }
 
@@ -106,7 +106,7 @@
 
 .mif-vehicle-heading { align-items: center; display: flex; gap: 14px; min-width: 0; }
 .mif-vehicle-heading img { height: 62px; object-fit: contain; width: 92px; }
-.mif-vehicle-heading h2 { font-size: 20px; line-height: 1.25; margin: 0; }
+.mif-vehicle-heading h1 { font-size: 20px; line-height: 1.25; margin: 0; }
 .mif-vehicle-heading p { color: var(--mif-secondary); margin: 4px 0; }
 .mif-vehicle-heading span { color: var(--mif-secondary); font-size: 12px; overflow-wrap: anywhere; }
 
@@ -256,8 +256,8 @@
 .mif-accountability-list { list-style: none; margin: 0; padding: 0; }
 .mif-accountability-list li { align-items: center; display: grid; gap: 8px; grid-template-columns: 22px 1fr; min-height: 34px; position: relative; }
 .mif-accountability-list li > span { align-items: center; border: 1px solid var(--mif-blue); border-radius: 50%; color: var(--mif-blue); display: flex; font-size: 10px; height: 20px; justify-content: center; width: 20px; }
-.mif-accountability-list b { font-size: 11px; font-weight: 650; }
-.mif-accountability-list small { color: var(--mif-secondary); font-size: 10px; grid-column: 2; }
+.mif-accountability-list b { font-size: 12px; font-weight: 700; line-height: 1.35; }
+.mif-accountability-list small { color: var(--mif-secondary); font-size: 11px; font-weight: 500; grid-column: 2; line-height: 1.4; }
 
 .mif-safety-note, .mif-submit-error {
   align-items: flex-start;
@@ -289,7 +289,7 @@
 }
 
 .mif-request-workspace--empty svg, .mif-request-confirmation > svg { color: var(--mif-blue); }
-.mif-request-workspace--empty h2, .mif-request-confirmation h2 { margin: 14px 0 6px; }
+.mif-request-workspace--empty h1, .mif-request-confirmation h1 { margin: 14px 0 6px; }
 .mif-request-workspace--empty p, .mif-request-confirmation p { color: var(--mif-secondary); line-height: 1.5; max-width: 520px; }
 .mif-request-confirmation strong { margin: 8px 0 18px; }
 
