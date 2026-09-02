@@ -41,6 +41,22 @@ describe('Cloud Worker authentication boundary',()=>{
     expect((await worker.fetch(request('/internal/status',jwt,{headers:{Authorization:`Bearer ${env.RELEASE_PUBLISHER_TOKEN}`}}),env)).status).toBe(200)
   })
   it('denies employee tokens on upload paths',async()=>expect((await worker.fetch(request('/internal/status',await token()),env)).status).toBe(401))
+  it('keeps readiness machine-only and rejects unauthenticated, employee and bearer-only requests',async()=>{
+    const get=vi.fn(()=>{throw new Error('Readiness data must not be touched before authentication')})
+    const guarded={...env,RELEASE_SNAPSHOTS:{get}}
+    expect((await worker.fetch(request('/internal/readiness'),guarded)).status).toBe(401)
+    expect((await worker.fetch(request('/internal/readiness',await token()),guarded)).status).toBe(401)
+    expect((await worker.fetch(request('/internal/readiness','forged',{headers:{Authorization:`Bearer ${env.RELEASE_PUBLISHER_TOKEN}`}}),guarded)).status).toBe(401)
+    const jwt=await token({aud:env.ACCESS_PUBLISHER_AUDIENCE,sub:'',email:undefined,common_name:env.PUBLISHER_CLIENT_ID})
+    expect((await worker.fetch(request('/internal/readiness',jwt),guarded)).status).toBe(403)
+    expect(get).not.toHaveBeenCalled()
+  })
+  it('reaches the readiness pipeline only after both publisher checks and reports no release safely',async()=>{
+    const jwt=await token({aud:env.ACCESS_PUBLISHER_AUDIENCE,sub:'',email:undefined,common_name:env.PUBLISHER_CLIENT_ID})
+    const response=await worker.fetch(request('/internal/readiness?role=group_manager&store=Lincoln',jwt,{headers:{Authorization:`Bearer ${env.RELEASE_PUBLISHER_TOKEN}`}}),env)
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({code:'INVENTORY_NOT_IMPORTED'})
+  })
   it('catches async database failures without reflecting private values',async()=>{
     const failed={...env,INVENTORY_DB:{prepare(){throw new Error('SYNTHETIC-PRIVATE-NOTE')}}}
     const response=await worker.fetch(request('/api/health',await token()),failed)
