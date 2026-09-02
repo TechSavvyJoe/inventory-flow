@@ -78,7 +78,18 @@ export function datasetFromRelease(release, homeAssignments = [], { loadedAt } =
   if (!release) {
     return { state: {}, sourceRuns: {}, publicRows: [], crmRows: [], holdRows: [], resourceRows: [], homeAssignments: clone(homeAssignments) }
   }
-  const evidence = clone(release)
+  // The encrypted archive also retains full raw source snapshots. The service
+  // consumes only this normalized projection; cloning those unused archives
+  // duplicates several megabytes on every request without adding isolation.
+  const evidence = clone({
+    vehicles: release.vehicles,
+    sourceRuns: release.sourceRuns,
+    manifest: release.manifest,
+    warnings: release.warnings,
+    publicChangeEvents: release.publicChangeEvents,
+    completedAt: release.completedAt,
+    reportDate: release.reportDate,
+  })
   if (!Array.isArray(evidence.vehicles) || !evidence.sourceRuns?.public || !evidence.sourceRuns?.dealerMail) {
     throw new Error('The private release is missing normalized source evidence')
   }

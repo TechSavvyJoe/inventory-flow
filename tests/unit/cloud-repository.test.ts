@@ -268,4 +268,33 @@ describe('D1 shared operational repository', () => {
     expect(() => datasetFromRelease(release)).toThrow('duplicate or missing')
     expect(datasetFromRelease(null).publicRows).toEqual([])
   })
+
+  it('never reads or clones unused raw source archives while preserving identical normalized output', () => {
+    const release = buildSyntheticRelease()
+    const expected = datasetFromRelease(release)
+    for (const field of ['publicSnapshot', 'dealerMailSnapshot']) {
+      Object.defineProperty(release, field, {
+        enumerable: true,
+        get() { throw new Error('The request read model must not access raw archives') },
+      })
+    }
+    expect(datasetFromRelease(release)).toEqual(expected)
+  })
+
+  it('defensively isolates every consumed field from release and home-assignment mutations', () => {
+    const release = buildSyntheticRelease()
+    release.publicChangeEvents = [{ type: 'synthetic', details: { value: 'original' } }]
+    const home = [{ vin: release.vehicles[0].vin, home_store_id: 'Howell' }]
+    const dataset = datasetFromRelease(release, home)
+    const expected = structuredClone(dataset)
+    release.vehicles[0].publicRecord.vehicle_name = 'mutated original'
+    release.sourceRuns.public.metadata.storeCounts.Howell = 999
+    release.manifest.public_change_counts.price_change = 999
+    release.warnings.push('mutated original')
+    release.publicChangeEvents[0].details.value = 'mutated original'
+    home[0].home_store_id = 'Lincoln'
+    expect(dataset).toEqual(expected)
+    dataset.publicRows[0].payload.vehicle_name = 'mutated read model'
+    expect(release.vehicles[0].publicRecord.vehicle_name).toBe('mutated original')
+  })
 })

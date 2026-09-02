@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
+import { Buffer } from 'node:buffer'
 import { AccessError, memberContext, verifyAccess } from './access.mjs'
 import { validateReleaseBundle } from './release-validation.mjs'
 import { loadD1Repository, RepositoryConflictError } from './repository.mjs'
@@ -21,7 +22,13 @@ class HttpError extends Error { constructor(code, status = 400) { super(code); t
 function equal(a, b) { const left=encoder.encode(String(a??'')), right=encoder.encode(String(b??'')); return left.length === right.length && timingSafeEqual(left,right) }
 function bytes(value) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9+/_-]+={0,2}$/.test(value)) throw new HttpError('INVALID_ENCRYPTED_CONTENT')
-  return Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')), c=>c.charCodeAt(0))
+  const padding=value.endsWith('==')?2:value.endsWith('=')?1:0, length=value.length-padding, remainder=length%4
+  if(remainder===1 || (padding && (value.length%4!==0 || padding!==4-remainder))) throw new HttpError('INVALID_ENCRYPTED_CONTENT')
+  const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/', last=value[length-1].replace('-','+').replace('_','/'), tail=alphabet.indexOf(last)
+  if((remainder===2 && (tail&15)!==0) || (remainder===3 && (tail&3)!==0)) throw new HttpError('INVALID_ENCRYPTED_CONTENT')
+  // Native decoding avoids a multi-million-element temporary JS array. That
+  // string-iterator allocation can exceed Worker memory and CPU budgets.
+  return Buffer.from(value,'base64url')
 }
 async function digest(data) { return [...new Uint8Array(await crypto.subtle.digest('SHA-256',data))].map(v=>v.toString(16).padStart(2,'0')).join('') }
 export async function readJson(request, limit) {
@@ -84,6 +91,19 @@ async function readRelease(env) {
   const envelope=JSON.parse(await object.text())
   if(envelope.bundleSha256!==row.bundle_sha256) throw new HttpError('RELEASE_ARTIFACT_UNAVAILABLE',503)
   return (await decryptEnvelope(envelope,env)).release
+}
+export async function appReadiness(env) {
+  const release=await readRelease(env)
+  const repo=await loadD1Repository(env.INVENTORY_DB,release)
+  const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
+  // Fixed least-privileged context exercises the real read pipeline without
+  // accepting browser claims or exposing any employee/customer evidence.
+  const bootstrap=service.bootstrap({role:'driver',store:'Howell',user:'Cloud readiness diagnostic'})
+  return {
+    ready:true,reportDate:bootstrap.meta.reportDate,
+    counts:{inventory:bootstrap.vehicles.length,transfers:bootstrap.transfers.length,attention:bootstrap.attention.length},
+    bootstrapBytes:encoder.encode(JSON.stringify(bootstrap)).byteLength,
+  }
 }
 async function publisher(request, env) {
   const claims=await verifyAccess(request,env,env.ACCESS_PUBLISHER_AUDIENCE)
@@ -158,6 +178,7 @@ export default {
         if(request.method==='POST' && url.pathname==='/internal/releases') return await publishRelease(request,env)
         if(request.method==='POST' && url.pathname==='/internal/ledger') return json(200,await importLedger(await decryptEnvelope(await readJson(request,MAX_UPLOAD),env,LEDGER_FORMAT),env))
         if(request.method==='GET' && url.pathname==='/internal/status') {const current=await currentRelease(env);return json(200,{ready:Boolean(current),reportDate:current?.report_date??null,metadata:current?JSON.parse(current.metadata_json):null})}
+        if(request.method==='GET' && url.pathname==='/internal/readiness') return json(200,await appReadiness(env))
         throw new HttpError('NOT_FOUND',404)
       }
       const context=await memberContext(await verifyAccess(request,env),env)

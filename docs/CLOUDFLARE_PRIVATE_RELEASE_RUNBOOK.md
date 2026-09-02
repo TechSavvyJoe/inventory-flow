@@ -48,6 +48,7 @@ The publisher uses a purpose-scoped Access service token on /internal/* and an
 additional Worker publisher secret. It cannot enter the employee app. No
 DealerMail/vAuto cookies are reused or exported as a cloud publishing identity.
 Requests and responses are not logged as payloads. Invocation logging is off.
+Query strings are redacted from platform error telemetry.
 
 ## Deployment
 
@@ -146,6 +147,33 @@ are Windows-user/machine-bound; simply copying the DPAPI file to a Mac is not a
 working recovery plan. Do not put plaintext recovery secrets into Git.
 
 ## Acceptance boundaries
+
+### Full-size loading regression
+
+On September 2, the uploaded release was present but the employee bootstrap
+failed: Cloudflare recorded `Worker exceeded CPU time limit`. Upload/status
+success alone did not exercise the employee loading path. Native Buffer base64
+decoding replaces the multi-million-element string-iterator conversion, and
+the D1 read model clones only the normalized fields it consumes, not duplicate
+raw source archives. Authenticated decryption, content hashing, full source
+validation, and defensive isolation remain required.
+
+After every backend deployment, run the machine-authenticated, read-only check:
+
+```powershell
+pwsh -NoProfile -File scripts/cloud-secret-store.ps1 -Mode Run -Script scripts/verify-cloud-deployment.mjs -ScriptArguments readiness
+```
+
+The readiness route must load/decrypt/validate the current release, read the
+shared ledger, build the bootstrap, and serialize it. It returns only aggregate
+counts and size, never inventory rows or customer evidence, and cannot commit
+workflow changes. It does not replace signed-in employee/browser acceptance.
+
+Test with production-sized synthetic payloads, not only the eight-vehicle
+fixture. Check actual Cloudflare CPU and memory outcomes after deployment:
+local timings do not prove that an account's runtime allowance is sufficient.
+Do not remove source fields or bypass validation to conceal a resource limit.
+Any required paid-plan change needs explicit owner approval.
 
 Implemented and exercised with synthetic tests: identity/audience separation,
 role filtering, complete-source validation, read/write parity, duplicate-action
