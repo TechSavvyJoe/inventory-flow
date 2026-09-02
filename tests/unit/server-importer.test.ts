@@ -37,6 +37,16 @@ describe('verified daily source importer', () => {
     expect(hasCompletedManifestEvidence(currentContract)).toBe(true)
     expect(hasCompletedManifestEvidence({
       ...currentContract,
+      validation_results: {
+        ...currentContract.validation_results,
+        desktop_excel_opened_without_repair: undefined,
+        desktop_excel_opened_without_repair_prompt: true,
+        read_only_validation_hash_unchanged: undefined,
+        published_hash_unchanged_after_read_only_tests: true,
+      },
+    })).toBe(true)
+    expect(hasCompletedManifestEvidence({
+      ...currentContract,
       validation_results: { ...currentContract.validation_results, dealermail_complete: false },
     })).toBe(false)
   })

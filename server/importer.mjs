@@ -106,13 +106,20 @@ export function hasCompletedManifestEvidence(manifest) {
   if (!isPlainObject(validation)) return false
   if (validation.passed === true) return true
 
+  const desktopOpenedWithoutRepair =
+    validation.desktop_excel_opened_without_repair === true ||
+    validation.desktop_excel_opened_without_repair_prompt === true
+  const readOnlyHashUnchanged =
+    validation.read_only_validation_hash_unchanged === true ||
+    validation.published_hash_unchanged_after_read_only_tests === true
+
   return (
     validation.public_sources_complete === true &&
     validation.dealermail_complete === true &&
     validation.workbook_validated === true &&
-    validation.desktop_excel_opened_without_repair === true &&
+    desktopOpenedWithoutRepair &&
     asInteger(validation.formula_errors) === 0 &&
-    validation.read_only_validation_hash_unchanged === true &&
+    readOnlyHashUnchanged &&
     validation.macro_free === true
   )
 }

@@ -27,12 +27,20 @@ def manifest_public_validation_passed(manifest: dict[str, Any]) -> bool:
         return False
     if validation.get("passed") is True:
         return True
+    desktop_opened_without_repair = (
+        validation.get("desktop_excel_opened_without_repair") is True
+        or validation.get("desktop_excel_opened_without_repair_prompt") is True
+    )
+    read_only_hash_unchanged = (
+        validation.get("read_only_validation_hash_unchanged") is True
+        or validation.get("published_hash_unchanged_after_read_only_tests") is True
+    )
     return (
         validation.get("public_sources_complete") is True
         and validation.get("workbook_validated") is True
-        and validation.get("desktop_excel_opened_without_repair") is True
+        and desktop_opened_without_repair
         and validation.get("formula_errors") == 0
-        and validation.get("read_only_validation_hash_unchanged") is True
+        and read_only_hash_unchanged
         and validation.get("macro_free") is True
     )
 

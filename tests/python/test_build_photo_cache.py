@@ -45,6 +45,20 @@ class PhotoCacheBuilderTests(unittest.TestCase):
                 }
             )
         )
+        self.assertTrue(
+            builder.manifest_public_validation_passed(
+                {
+                    "validation_results": {
+                        "public_sources_complete": True,
+                        "workbook_validated": True,
+                        "desktop_excel_opened_without_repair_prompt": True,
+                        "formula_errors": 0,
+                        "published_hash_unchanged_after_read_only_tests": True,
+                        "macro_free": True,
+                    }
+                }
+            )
+        )
 
     def test_builds_separate_hash_bound_cache_without_changing_sources(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
