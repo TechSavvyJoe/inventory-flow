@@ -3,9 +3,18 @@
   "name": "inventory-ops-production",
   "main": "src/worker.mjs",
   "compatibility_date": "2026-09-02",
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "../dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "logs": { "enabled": true, "invocation_logs": false }
   },
   "d1_databases": [
     {
@@ -22,6 +31,9 @@
   ],
   "vars": {
     "APP_ENV": "production",
-    "PRIVATE_HOSTNAME": "inventory-ops.joegallant.me"
+    "PRIVATE_HOSTNAME": "inventory-ops.joegallant.me",
+    "ACCESS_ISSUER": "https://techsavvyjoe.cloudflareaccess.com",
+    "ACCESS_AUDIENCE": "b243147ef0a8b935011b43ed34b5451e44c414c3a7bfe231f9a257039a398040",
+    "ACCESS_PUBLISHER_AUDIENCE": "2c2b4041106efedbcd458337db0d33deab4a08c0dc19f083f9c856dd78e56206"
   }
 }

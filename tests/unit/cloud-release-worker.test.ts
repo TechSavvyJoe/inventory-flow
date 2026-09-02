@@ -1,150 +1,54 @@
-import { describe, expect, it } from 'vitest'
-// @ts-expect-error The Worker is deliberately plain ESM, validated separately
-// by Wrangler rather than through the browser TypeScript project.
-import worker from '../../cloudflare/src/worker.mjs'
+// @ts-nocheck -- exercises plain ESM Worker with real cryptographic signatures.
+// @vitest-environment node
+import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
+import { generateKeyPair, exportJWK, SignJWT } from 'jose'
+import worker, { readJson } from '../../cloudflare/src/worker.mjs'
+import { verifyAccess } from '../../cloudflare/src/access.mjs'
 
-const releaseFormat = 'inventory-flow-private-release-v1'
-
-function bufferSource(bytes: Uint8Array): BufferSource {
-  // TypeScript's newer typed-array generic is stricter than the runtime Web
-  // Crypto contract. Every value here is a fresh Uint8Array, never shared.
-  return bytes as unknown as BufferSource
+const host='inventory-ops.joegallant.me', issuer='https://synthetic-inventory.cloudflareaccess.com'
+let privateKey
+const member={user_id:'SYNTHETIC-user',name:'Synthetic Sales',role:'sales',home_store:'Howell'}
+const env={PRIVATE_HOSTNAME:host,ACCESS_ISSUER:issuer,ACCESS_AUDIENCE:'synthetic-employee-aud',ACCESS_PUBLISHER_AUDIENCE:'synthetic-publisher-aud',PUBLISHER_CLIENT_ID:'synthetic-client.access',RELEASE_PUBLISHER_TOKEN:'synthetic-publisher',INVENTORY_DB:{prepare(sql){return {bind(){return this},async first(){return sql.includes('cloud_memberships')?member:null}}}}}
+beforeAll(async()=>{
+  const pair=await generateKeyPair('RS256'); privateKey=pair.privateKey
+  const jwk=await exportJWK(pair.publicKey);jwk.kid='synthetic-key'
+  vi.stubGlobal('fetch',vi.fn(async url=>{
+    expect(String(url)).toBe(`${issuer}/cdn-cgi/access/certs`)
+    return new Response(JSON.stringify({keys:[jwk]}),{headers:{'content-type':'application/json'}})
+  }))
+})
+afterAll(()=>vi.unstubAllGlobals())
+async function token(overrides={}) {
+  const now=Math.floor(Date.now()/1000)
+  return new SignJWT({iss:issuer,aud:env.ACCESS_AUDIENCE,sub:'synthetic-sub',email:'synthetic@example.invalid',iat:now,exp:now+3600,...overrides}).setProtectedHeader({alg:'RS256',kid:'synthetic-key'}).sign(privateKey)
 }
-
-function base64url(bytes: Uint8Array) {
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
-}
-
-async function sha256(bytes: Uint8Array) {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bufferSource(bytes)))
-  return [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('')
-}
-
-async function encryptedEnvelope(key: CryptoKey) {
-  const bundle = {
-    schemaVersion: releaseFormat,
-    complete: true,
-    reportDate: '2026-09-02',
-    release: {
-      reportDate: '2026-09-02',
-      sourceRuns: {
-        public: { status: 'current', sha256: 'a'.repeat(64), rowCount: 1 },
-        dealerMail: { status: 'current', sha256: 'b'.repeat(64), rowCount: 1 },
-      },
-      warnings: [],
-      vehicles: [],
-    },
-  }
-  const plaintext = new TextEncoder().encode(JSON.stringify(bundle))
-  const bundleSha256 = await sha256(plaintext)
-  const iv = crypto.getRandomValues(new Uint8Array(12))
-  const aad = new TextEncoder().encode(`${releaseFormat}:2026-09-02:${bundleSha256}`)
-  const ciphertext = new Uint8Array(
-    await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: bufferSource(iv), additionalData: bufferSource(aad), tagLength: 128 },
-      key,
-      bufferSource(plaintext),
-    ),
-  )
-  return {
-    version: releaseFormat,
-    reportDate: '2026-09-02',
-    bundleSha256,
-    iv: base64url(iv),
-    ciphertext: base64url(ciphertext),
-  }
-}
-
-async function testEnvironment() {
-  const keyBytes = crypto.getRandomValues(new Uint8Array(32))
-  const key = await crypto.subtle.importKey('raw', bufferSource(keyBytes), { name: 'AES-GCM' }, false, ['encrypt'])
-  const envelope = await encryptedEnvelope(key)
-  let current: Record<string, string> | null = null
-  let stored: { objectKey: string; value: string } | null = null
-  const database = {
-    prepare(sql: string) {
-      const statement = {
-        first: async () => (sql.includes('FROM cloud_release_state') ? current : null),
-      }
-      return { ...statement, bind: () => statement }
-    },
-    batch: async () => {
-      current = {
-        release_id: `release:2026-09-02:${envelope.bundleSha256.slice(0, 20)}`,
-        object_key: `releases/2026-09-02/${envelope.bundleSha256}.json.enc`,
-        report_date: '2026-09-02',
-        status: 'current',
-      }
-    },
-  }
-  return {
-    envelope,
-    environment: {
-      APP_ENV: 'test',
-      PRIVATE_HOSTNAME: 'inventory-ops.joegallant.me',
-      RELEASE_PUBLISHER_TOKEN: 'publisher-test-token',
-      RELEASE_ENCRYPTION_KEY_BASE64: base64url(keyBytes),
-      INVENTORY_DB: database,
-      RELEASE_SNAPSHOTS: {
-        put: async (objectKey: string, value: string) => {
-          stored = { objectKey, value }
-        },
-        get: async (objectKey: string) => {
-          const object = stored
-          return object?.objectKey === objectKey ? { text: async () => object.value } : null
-        },
-      },
-    },
-  }
-}
-
-describe('private Cloudflare release worker', () => {
-  it('refuses protected data from a non-private host', async () => {
-    const { environment } = await testEnvironment()
-    const response = await worker.fetch(new Request('https://worker.example/api/releases/current'), environment)
-    expect(response.status).toBe(403)
-    await expect(response.json()).resolves.toMatchObject({ error: 'PRIVATE_HOST_REQUIRED' })
+function request(path='/api/health',jwt,options={}) {return new Request(`https://${host}${path}`,{...options,headers:{...(jwt?{'cf-access-jwt-assertion':jwt}:{}),...options.headers}})}
+describe('Cloud Worker authentication boundary',()=>{
+  it('rejects alternate hosts before data access',async()=>expect((await worker.fetch(new Request('https://other.example/api/health'),env)).status).toBe(403))
+  it('requires sign in',async()=>expect((await worker.fetch(request(),env)).status).toBe(401))
+  it('rejects a forged header',async()=>expect((await worker.fetch(request('/api/health','forged'),env)).status).toBe(401))
+  it.each([{aud:'wrong'}, {iss:'https://wrong.cloudflareaccess.com'}, {exp:1}, {nbf:9999999999}])('rejects invalid signed claims %j',async claims=>expect((await worker.fetch(request('/api/health',await token(claims)),env)).status).toBe(401))
+  it('accepts valid employee signatures and registered membership',async()=>expect((await worker.fetch(request('/api/health',await token()),env)).status).toBe(200))
+  it('fails closed for unregistered employees',async()=>{
+    const denied={...env,INVENTORY_DB:{prepare(){return {bind(){return this},first:async()=>null}}}}
+    expect((await worker.fetch(request('/api/health',await token()),denied)).status).toBe(403)
   })
-
-  it('requires Access and publisher authentication before accepting a release', async () => {
-    const { environment, envelope } = await testEnvironment()
-    const response = await worker.fetch(
-      new Request('https://inventory-ops.joegallant.me/internal/releases', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(envelope),
-      }),
-      environment,
-    )
-    expect(response.status).toBe(401)
-    await expect(response.json()).resolves.toMatchObject({ error: 'ACCESS_AUTHENTICATION_REQUIRED' })
+  it('does not expose the raw release download',async()=>expect((await worker.fetch(request('/api/releases/current',await token()),env)).status).toBe(404))
+  it('separates the machine uploader from employee access',async()=>{
+    const jwt=await token({aud:env.ACCESS_PUBLISHER_AUDIENCE,sub:'',email:undefined,common_name:env.PUBLISHER_CLIENT_ID})
+    expect((await verifyAccess(request('/internal/status',jwt),env,env.ACCESS_PUBLISHER_AUDIENCE)).common_name).toBe(env.PUBLISHER_CLIENT_ID)
+    expect((await worker.fetch(request('/api/health',jwt),env)).status).toBe(401)
+    expect((await worker.fetch(request('/internal/status',jwt,{headers:{Authorization:`Bearer ${env.RELEASE_PUBLISHER_TOKEN}`}}),env)).status).toBe(200)
   })
-
-  it('round-trips a verified encrypted release only through the protected host', async () => {
-    const { environment, envelope } = await testEnvironment()
-    const publish = await worker.fetch(
-      new Request('https://inventory-ops.joegallant.me/internal/releases', {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer publisher-test-token',
-          'CF-Access-Jwt-Assertion': 'test-access-assertion',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(envelope),
-      }),
-      environment,
-    )
-    expect(publish.status).toBe(201)
-
-    const current = await worker.fetch(
-      new Request('https://inventory-ops.joegallant.me/api/releases/current', {
-        headers: { 'CF-Access-Jwt-Assertion': 'test-access-assertion' },
-      }),
-      environment,
-    )
-    expect(current.status).toBe(200)
-    await expect(current.json()).resolves.toMatchObject({ reportDate: '2026-09-02' })
+  it('denies employee tokens on upload paths',async()=>expect((await worker.fetch(request('/internal/status',await token()),env)).status).toBe(401))
+  it('catches async database failures without reflecting private values',async()=>{
+    const failed={...env,INVENTORY_DB:{prepare(){throw new Error('SYNTHETIC-PRIVATE-NOTE')}}}
+    const response=await worker.fetch(request('/api/health',await token()),failed)
+    expect(response.status).toBe(500);expect(await response.text()).not.toContain('SYNTHETIC-PRIVATE-NOTE')
+  })
+  it('rejects cross-origin writes before body or data access',async()=>expect((await worker.fetch(request('/api/transfers',await token(),{method:'POST',headers:{Origin:'https://wrong.example'}}),env)).status).toBe(403))
+  it('bounds streamed input even without Content-Length',async()=>{
+    const body=new ReadableStream({start(controller){controller.enqueue(new Uint8Array(101));controller.close()}})
+    await expect(readJson(new Request('https://synthetic.invalid',{method:'POST',headers:{'content-type':'application/json'},body,duplex:'half'}),100)).rejects.toMatchObject({status:413})
   })
 })

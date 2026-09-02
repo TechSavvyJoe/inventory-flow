@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { STORE_NAMES } from './importer.mjs'
+import { STORE_NAMES } from './constants.mjs'
 
 export const USER_ROLES = ['sales', 'manager', 'coordinator', 'porter', 'driver', 'group_manager']
 export const PRIVILEGED_ROLES = new Set(['manager', 'group_manager'])

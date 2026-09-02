@@ -2,6 +2,8 @@
 
 ## Outcome
 
+As of September 2, 2026, the private hosted implementation uses Cloudflare Workers + Access, D1 for shared workflow state, and encrypted private R2 releases. The work PC remains the source collector, not the web host. Employee access remains an explicit single-account pilot. See [Deployment and recovery runbook](CLOUDFLARE_PRIVATE_RELEASE_RUNBOOK.md) for implemented controls and uncompleted pilot checks.
+
 GitHub should share the application, not the dealership database. The production system should have one authenticated Inventory Flow service that owns the shared operational ledger and exposes role-filtered API responses to store employees and approved tools.
 
 ```text
@@ -73,4 +75,4 @@ Before centralizing live state, the deployment needs:
 5. Pilot with one store and explicit role tests before group rollout.
 6. Only after the pilot, issue narrowly scoped access for approved automation or AI tools.
 
-The current local SQLite database remains useful for one-host development, but it is not a multi-user or AI synchronization layer.
+The original local SQLite database is retained for recovery after initial migration. A host-local cutover marker prevents accidentally starting a second writable ledger. Synthetic in-memory development is unaffected. Local files must never be copied back over newer cloud state.

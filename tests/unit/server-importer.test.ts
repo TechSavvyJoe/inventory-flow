@@ -2,6 +2,8 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest'
+import { writeFileSync } from 'node:fs'
+import path from 'node:path'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import {
   findLatestCompletedManifest,
@@ -12,6 +14,18 @@ import {
 } from '../../server/importer.mjs'
 
 describe('verified daily source importer', () => {
+  it('retains the current completion_time manifest alias for cloud release ordering', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const { manifest } = findLatestCompletedManifest(fixture.workspaceRoot)
+      const completion = `${manifest.report_date}T10:42:00-04:00`
+      delete manifest.completed_at
+      manifest.completion_time = completion
+      writeFileSync(path.join(fixture.workspaceRoot, 'work', 'run-status', `${manifest.report_date}.json`), JSON.stringify(manifest))
+      const release = loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot, now: new Date(`${manifest.report_date}T18:00:00-04:00`) })
+      expect(release.completedAt).toBe(completion)
+    } finally { fixture.cleanup() }
+  })
   it('accepts both legacy and authenticated read-only completion contracts without weakening validation', () => {
     expect(hasCompletedManifestEvidence({
       complete: true,

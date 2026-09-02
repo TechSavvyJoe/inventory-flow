@@ -20,21 +20,131 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers ?? {}),
-    },
-  })
+type PendingMutation = {
+  key: string
+  inFlight: number
+  confirmed: boolean
+  lastUsed: number
+}
 
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({ error: response.statusText }))
-    throw new ApiError(payload.error ?? 'Request failed', response.status)
+type MutationRegistration = {
+  consumers: number
+  ready: Promise<{ signature: string, pending: PendingMutation }>
+}
+
+// Page-session only: the retry map retains digests, never request bodies,
+// customer details, or identity headers. The short-lived registration map is
+// discarded as soon as concurrent callers finish computing their digest.
+const pendingMutations = new Map<string, PendingMutation>()
+const mutationRegistrations = new Map<string, MutationRegistration>()
+const MAX_PENDING_MUTATIONS = 128
+const RETRY_WINDOW_MS = 30 * 60 * 1000
+const SIGN_IN_MESSAGE = 'Your sign-in session has expired. Reload this page to sign in again.'
+
+function mutationForSignature(signature: string) {
+  const now = Date.now()
+  for (const [id, pending] of pendingMutations) {
+    if (!pending.inFlight && now - pending.lastUsed > RETRY_WINDOW_MS) pendingMutations.delete(id)
   }
+  let pending = pendingMutations.get(signature)
+  if (!pending) {
+    if (pendingMutations.size >= MAX_PENDING_MUTATIONS) {
+      const oldestIdle = [...pendingMutations.entries()]
+        .filter(([, entry]) => !entry.inFlight)
+        .sort((a, b) => a[1].lastUsed - b[1].lastUsed)[0]
+      if (oldestIdle) pendingMutations.delete(oldestIdle[0])
+      else throw new ApiError('Too many actions are still processing. Wait a moment and try again.', 429)
+    }
+    pending = { key: crypto.randomUUID(), inFlight: 0, confirmed: false, lastUsed: now }
+    pendingMutations.set(signature, pending)
+  }
+  return { signature, pending }
+}
 
-  return response.json() as Promise<T>
+async function beginMutation(path: string, body: RequestInit['body'], headers: Headers) {
+  if (body != null && typeof body !== 'string') {
+    throw new ApiError('This action must be sent as JSON.', 400)
+  }
+  const fingerprint = JSON.stringify([
+    path,
+    body ?? '',
+    headers.get('x-inventory-demo-role'),
+    headers.get('x-inventory-demo-store'),
+    headers.get('x-inventory-demo-user'),
+  ])
+  let registration = mutationRegistrations.get(fingerprint)
+  if (!registration) {
+    if (mutationRegistrations.size >= MAX_PENDING_MUTATIONS) {
+      throw new ApiError('Too many actions are still processing. Wait a moment and try again.', 429)
+    }
+    registration = {
+      consumers: 0,
+      ready: crypto.subtle.digest('SHA-256', new TextEncoder().encode(fingerprint)).then((digest) => {
+        const signature = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+        return mutationForSignature(signature)
+      }),
+    }
+    mutationRegistrations.set(fingerprint, registration)
+  }
+  registration.consumers += 1
+  try {
+    const mutation = await registration.ready
+    mutation.pending.inFlight += 1
+    mutation.pending.lastUsed = Date.now()
+    return mutation
+  } finally {
+    registration.consumers -= 1
+    if (!registration.consumers) mutationRegistrations.delete(fingerprint)
+  }
+}
+
+function isSignInResponse(response: Response) {
+  if (!response.url) return false
+  const url = new URL(response.url)
+  return url.hostname.endsWith('.cloudflareaccess.com') || url.pathname.startsWith('/cdn-cgi/access/')
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers)
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  const mutation = options.method?.toUpperCase() === 'POST'
+    ? await beginMutation(path, options.body, headers)
+    : undefined
+  if (mutation) headers.set('Idempotency-Key', mutation.pending.key)
+
+  let confirmed = false
+  try {
+    const response = await fetch(path, { ...options, headers })
+    const isJson = /^application\/(?:[\w.-]+\+)?json(?:\s*;|$)/i.test(response.headers.get('Content-Type') ?? '')
+    const isSignIn = isSignInResponse(response)
+    if (response.status === 401 || isSignIn || (response.ok && !isJson)) {
+      confirmed = response.status === 401 || isSignIn
+      throw new ApiError(SIGN_IN_MESSAGE, 401)
+    }
+    if (!response.ok) {
+      confirmed = response.status >= 400 && response.status < 500 && ![408, 425, 429].includes(response.status)
+      const payload = isJson ? await response.json().catch(() => null) : null
+      const message = typeof payload?.error === 'string' ? payload.error : response.statusText || 'Request failed'
+      throw new ApiError(message, response.status)
+    }
+    let payload: T
+    try {
+      payload = await response.json() as T
+    } catch {
+      // The action may have succeeded even if its response was interrupted.
+      throw new ApiError('The server response could not be read. Please try again.', 502)
+    }
+    confirmed = true
+    return payload
+  } finally {
+    if (mutation) {
+      mutation.pending.inFlight -= 1
+      mutation.pending.confirmed ||= confirmed
+      mutation.pending.lastUsed = Date.now()
+      // Keep the shared key until all concurrent copies of an action finish.
+      if (mutation.pending.confirmed && !mutation.pending.inFlight) pendingMutations.delete(mutation.signature)
+    }
+  }
 }
 
 function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, string> {
