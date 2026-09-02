@@ -21,6 +21,10 @@ coverage/
 .env
 .env.*
 !.env.example
+cloudflare/.dev.vars
+cloudflare/.dev.vars.*
+cloudflare/.wrangler/
+cloudflare/worker-local/
 
 # Generated source caches can contain current inventory, CRM-derived evidence,
 # comments, alerts, or customer details. Repository-safe examples belong only

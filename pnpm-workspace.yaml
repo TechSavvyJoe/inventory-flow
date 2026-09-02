@@ -1,0 +1,6 @@
+allowBuilds:
+  # Vite relies on esbuild for the local frontend build. Wrangler relies on
+  # workerd for its local Worker validation. Keep this approval narrow; adding
+  # a package here requires a separate supply-chain review.
+  esbuild: true
+  workerd: true

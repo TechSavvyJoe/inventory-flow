@@ -21,6 +21,10 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "qa:visual": "node scripts/capture-ui.mjs",
+    "cloud:validate": "node --check cloudflare/src/worker.mjs && node --check scripts/publish-cloud-release.mjs",
+    "cloud:d1:migrate": "wrangler d1 execute inventory-ops-production --remote --file=cloudflare/migrations/0001_initial.sql --config cloudflare/wrangler.jsonc",
+    "cloud:deploy": "wrangler deploy --config cloudflare/wrangler.jsonc",
+    "cloud:publish-release": "node scripts/publish-cloud-release.mjs",
     "check:design-system": "node scripts/check-design-system.mjs",
     "check:repo-safety": "node scripts/check-repo-safety.mjs",
     "check": "pnpm check:repo-safety && pnpm check:design-system && pnpm test && pnpm build"
@@ -45,6 +49,7 @@
     "jsdom": "^30.0.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
+    "wrangler": "^4.97.0",
     "vitest": "^4.1.11"
   }
 }
