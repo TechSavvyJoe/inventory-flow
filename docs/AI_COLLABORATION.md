@@ -11,7 +11,7 @@ GitHub does not share the running application's saved state. It will not copy th
 | Private GitHub repository | Yes | Yes | No | No |
 | Claude Code in a local checkout | Yes | Yes | Only if explicitly run on the authorized host | Only that host's ignored local SQLite file |
 | Claude Desktop with a GitHub connection | Repository context only | Repository context only | No | No |
-| Future authenticated Inventory Flow service | Deployed build | Optional | Role-filtered read-only imports | Shared central ledger |
+| Authenticated Cloudflare Inventory Flow service | Deployed build | Separate local demo | Role-filtered read-only imports | Shared D1 ledger |
 
 ## Recommended Claude workflow
 
@@ -20,8 +20,8 @@ GitHub does not share the running application's saved state. It will not copy th
 Claude Code is the simplest option for implementation because it can work in a repository checkout and run the validation commands. On an Apple Silicon Mac, install the native Node.js 24 build, then use Terminal:
 
 ```bash
-git clone <private-repository-url>
-cd inventory-ops
+git clone https://github.com/TechSavvyJoe/inventory-flow.git
+cd inventory-flow
 node --version
 npm install --global pnpm@11.19.0
 pnpm install --frozen-lockfile
@@ -49,23 +49,24 @@ Claude Desktop needs an explicit supported connection; the existence of a GitHub
 
 The repository-safe command for either tool is `pnpm dev:demo`. On the M1 Mac it opens at `http://127.0.0.1:4173` and serves eight fabricated vehicles plus a small fabricated movement queue without touching live sources. The Mac cannot see the Windows host's current data or saved transfers merely by cloning the repository.
 
-## Saved data: current and future behavior
+## Saved data: hosted and local behavior
 
-The prototype currently has two state families:
+The application has two state families:
 
 1. Daily public-inventory and DealerMail snapshots imported read-only from the protected report workspace.
-2. Inventory Flow's own transfer requests and custody events stored in the host-local `runtime/inventory-ops.sqlite`.
+2. Inventory Flow's requests, alert actions, and custody events stored centrally in Cloudflare D1. The original host-local SQLite ledger is retained for recovery after the one-time migration, not as an active second ledger.
 
 Neither belongs in Git, and SQLite files cannot be safely merged through pull requests. Copying the database between agents would also copy operational and potentially role-restricted information.
 
-For multiple stores, people, and AI tools to see the same saved state, deploy one authenticated Inventory Flow API backed by a central managed database. Browsers and authorized agents should call that API; they should not receive direct database credentials. The service must enforce identity, store/role authorization, row-level redaction, encryption, backups, and an append-only audit history. See [Shared-data architecture](SHARED_DATA_ARCHITECTURE.md).
+Approved people use the same Access-protected hosted app on their PC, Mac, or phone. The Worker enforces identity and server-owned membership, role filtering, same-origin writes, idempotency, and atomic audited D1 changes. Source evidence is separately encrypted in a private R2 bucket. See [Shared-data architecture](SHARED_DATA_ARCHITECTURE.md) and the [Cloudflare runbook](CLOUDFLARE_PRIVATE_RELEASE_RUNBOOK.md).
 
-Until that service exists:
+Collaboration boundaries:
 
-- same-machine authorized sessions may use the existing local app and local ledger;
-- remote humans and AI agents use the synthetic fixture and tests;
+- authorized humans use the hosted app for shared real state;
+- repository agents use the synthetic fixture and tests; cloud access is not granted by GitHub access;
 - branches and pull requests share code changes only;
-- the real daily source release and saved transfer ledger remain on the dealership-controlled host.
+- the work PC still collects and validates daily sources, then publishes them through its separately scoped machine identity;
+- an AI app-data integration would need separately approved scopes and credentials; no general-purpose AI data connector is enabled by this migration.
 
 ## Repository safety gate
 

@@ -5,6 +5,7 @@ import { getCurrentDataset, importRelease, openInventoryDatabase } from './datab
 import { createIdentityResolver } from './identity.mjs'
 import { loadLatestCompletedRelease } from './importer.mjs'
 import { createInventoryService } from './service.mjs'
+import { assertLocalLedgerWritable } from './local-cutover.mjs'
 
 const serverDirectory = path.dirname(fileURLToPath(import.meta.url))
 const appDirectory = path.resolve(serverDirectory, '..')
@@ -29,6 +30,7 @@ export function startInventoryServer({
   environment = process.env.NODE_ENV || 'development',
   trustedProxySecret = process.env.INVENTORY_OPS_TRUSTED_PROXY_SECRET,
 } = {}) {
+  assertLocalLedgerWritable({ databasePath, runtimeDir })
   // Resolve the trust boundary before opening data or binding a port so an
   // unsafe production configuration fails closed during startup.
   const identityResolver = createIdentityResolver({ mode: identityMode, environment, trustedProxySecret })

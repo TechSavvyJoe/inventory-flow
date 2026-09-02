@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
-import { STORE_NAMES } from './importer.mjs'
+import { STORE_NAMES } from './constants.mjs'
 import { USER_ROLES } from './workflow.mjs'
 
 export const IDENTITY_MODES = Object.freeze({

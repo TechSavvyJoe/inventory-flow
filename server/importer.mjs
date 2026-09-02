@@ -3,7 +3,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { buildPublicChangeEvents, summarizePublicChangeEvents } from './public-change-events.mjs'
 
-export const STORE_NAMES = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
+import { STORE_NAMES } from './constants.mjs'
+export { STORE_NAMES } from './constants.mjs'
 
 export const STORE_CONFIG = Object.freeze({
   Howell: {
@@ -1311,7 +1312,7 @@ export function normalizeRelease({
   return {
     reportDate,
     timezone: manifest.timezone || publicValidated.timezone,
-    completedAt: manifest.completed_at || null,
+    completedAt: manifest.completed_at || manifest.completion_time || null,
     manifestPath,
     manifest,
     warnings,
