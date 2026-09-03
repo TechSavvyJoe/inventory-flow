@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { buildPublicChangeEvents, summarizePublicChangeEvents } from './public-change-events.mjs'
+import { canonicalExternalAutoCheckUrl, resourceProvenanceSha256 } from './resource-validation.mjs'
 
 import { STORE_NAMES } from './constants.mjs'
 export { STORE_NAMES } from './constants.mjs'
@@ -49,9 +50,7 @@ const AUTOCHECK_PATH = '/autocheck.aspx'
 const WINDOW_STICKER_PATH_PATTERN = /^\/api\/vhcliaa\/inventory\/[0-9]{1,8}\/window-sticker$/i
 const CAI_FACTORY_EQUIPMENT_PATH_PATTERN =
   /^\/window-stickers\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jpg$/i
-const EXTERNAL_AUTOCHECK_PATH_PATTERN = /^\/(?:report|vehiclehistory)(?:\/|$)/i
 const PHOTO_ALLOWED_HOSTS = new Set(Object.values(STORE_CONFIG).map((store) => store.websiteHost))
-const EXTERNAL_AUTOCHECK_ALLOWED_HOSTS = new Set(['autocheck.com', 'www.autocheck.com'])
 const RESOURCE_DATA_STATES = new Set(['current', 'stale_unverified', 'incomplete'])
 
 export class SnapshotValidationError extends Error {
@@ -389,6 +388,11 @@ function validatedWindowSticker(value, vin, publicRecord) {
     ['interiorColor', 160],
     ['engine', 240],
     ['transmission', 240],
+    ['originalMarket', 80],
+    ['pricingCurrency', 3],
+    ['pricingCurrencyEvidence', 500],
+    ['failureReason', 300],
+    ['sourceMessage', 500],
   ]
   for (const [key, max] of textFields) {
     const text = optionalBoundedText(value[key], `Window sticker ${key}`, { max })
@@ -448,41 +452,6 @@ function canonicalCaiFactoryEquipmentUrl(value) {
     return null
   }
   return `https://assets.cai-media-management.com${pathName}`
-}
-
-function canonicalExternalAutoCheckUrl(value) {
-  if (typeof value !== 'string' || !value.trim()) return null
-  let parsed
-  try {
-    parsed = new URL(value)
-  } catch {
-    return null
-  }
-  const host = parsed.hostname.toLowerCase()
-  const pathName = parsed.pathname.replace(/\/{2,}/g, '/')
-  let decodedPath
-  try {
-    decodedPath = decodeURIComponent(pathName)
-  } catch {
-    return null
-  }
-  if (
-    parsed.protocol !== 'https:' ||
-    !EXTERNAL_AUTOCHECK_ALLOWED_HOSTS.has(host) ||
-    parsed.port ||
-    parsed.username ||
-    parsed.password ||
-    parsed.hash ||
-    !EXTERNAL_AUTOCHECK_PATH_PATTERN.test(pathName) ||
-    decodedPath.split('/').includes('..')
-  ) {
-    return null
-  }
-  parsed.protocol = 'https:'
-  parsed.hostname = host
-  parsed.pathname = pathName
-  parsed.hash = ''
-  return parsed.toString()
 }
 
 function validatedFactoryEquipment(value, vin) {
@@ -634,8 +603,8 @@ function validatedExternalAutoCheck(value, vin) {
     vin,
   })
   assertValid(RESOURCE_DATA_STATES.has(value.dataState), 'External AutoCheck data state is invalid', { vin })
-  const url = canonicalExternalAutoCheckUrl(value.url)
-  assertValid(url, 'External AutoCheck URL is not on an approved official host and route', { vin })
+  const url = canonicalExternalAutoCheckUrl(value.url, vin)
+  assertValid(url, 'External AutoCheck URL is not on an approved official host and exact-VIN route', { vin })
   const result = { url, dataState: value.dataState }
   const sourceLabel = optionalBoundedText(value.sourceLabel, 'External AutoCheck source label', { max: 160 })
   const capturedAt = optionalIsoTimestamp(value.capturedAt, 'External AutoCheck capturedAt')
@@ -719,6 +688,7 @@ export function validateVinDocumentEnrichment(value) {
     if (factoryEquipment) factoryEquipmentCount += 1
     if (autoCheckReport) externalAutoCheckCount += 1
     recordsByVin[vin] = {
+      vin,
       ...(factoryEquipment ? { factoryEquipment } : {}),
       ...(autoCheckReport ? { autoCheckReport } : {}),
     }
@@ -974,7 +944,11 @@ export function validatePublicSnapshot(snapshot, { reportDate, manifest } = {}) 
     } catch {
       throw new SnapshotValidationError('Public listing URL is invalid', { vin })
     }
-    assertValid(['http:', 'https:'].includes(listingUrl.protocol), 'Public listing URL scheme is invalid', { vin })
+    assertValid(
+      listingUrl.protocol === 'https:' && !listingUrl.username && !listingUrl.password && !listingUrl.port,
+      'Public listing URL must use HTTPS without credentials or a custom port',
+      { vin },
+    )
     assertValid(listingUrl.hostname.toLowerCase() === STORE_CONFIG[vehicle.store].websiteHost, 'Public listing URL host does not match physical store', {
       vin,
       store: vehicle.store,
@@ -1020,6 +994,10 @@ export function validateDealerMailSnapshot(snapshot, { reportDate, manifest } = 
   const inventory = snapshot.completeDealerMailUsedInventory
   assertValid(isPlainObject(inventory), 'Complete DealerMail inventory is missing')
   assertValid(inventory.readOnly === true, 'Complete DealerMail inventory was not certified read-only')
+  assertValid(
+    Array.isArray(snapshot.currentComments) && Array.isArray(snapshot.currentAlerts),
+    'DealerMail top-level current comment/alert evidence arrays are missing',
+  )
   const authentication = inventory.authenticationStatus
   assertValid(isPlainObject(authentication), 'DealerMail authentication validation is missing')
   assertValid(authentication.authenticatedSessionStillWorks === true, 'DealerMail session was not current during extraction')
@@ -1039,6 +1017,8 @@ export function validateDealerMailSnapshot(snapshot, { reportDate, manifest } = 
 
   const crmVins = new Set()
   const crmStocks = new Set()
+  const crmByVin = new Map()
+  const crmByStock = new Map()
   for (const row of crmRows) {
     const vin = normalizedVin(row.vin)
     const stock = normalizedStock(row.stockNumber)
@@ -1056,8 +1036,20 @@ export function validateDealerMailSnapshot(snapshot, { reportDate, manifest } = 
       storeName: row.storeName,
     })
     assertValid(asInteger(row.sourceCellCount) === 22, 'DealerMail row does not preserve all 22 source cells', { vin })
+    assertValid(['Y', 'N'].includes(row.commentsFlag), 'DealerMail inventory commentsFlag must be Y or N', { vin })
+    assertValid(['Y', 'N'].includes(row.alertsFlag), 'DealerMail inventory alertsFlag must be Y or N', { vin })
+    assertValid(Array.isArray(row.comments) && Array.isArray(row.alerts), 'DealerMail inventory message evidence is missing', { vin })
+    assertValid(row.comments.every((group) => Array.isArray(group?.rows)), 'DealerMail comment rows are invalid', { vin })
+    if (row.commentsFlag === 'Y') {
+      assertValid(row.comments.some((group) => group.rows.some((comment) => typeof comment.commentTextRaw === 'string' && comment.commentTextRaw.trim())), 'Flagged DealerMail inventory comments are missing', { vin })
+    }
+    if (row.alertsFlag === 'Y') {
+      assertValid(row.alerts.some((alert) => typeof alert?.alertTextRaw === 'string' && alert.alertTextRaw.trim()), 'Flagged DealerMail inventory alert is missing', { vin })
+    }
     crmVins.add(vin)
     crmStocks.add(stock.toUpperCase())
+    crmByVin.set(vin, row)
+    crmByStock.set(stock.toUpperCase(), row)
   }
   assertValid(asInteger(crmSummary.uniqueVinCount) === crmVins.size, 'DealerMail unique VIN summary does not reconcile')
   assertValid(asInteger(crmSummary.uniqueStockCount) === crmStocks.size, 'DealerMail unique stock summary does not reconcile')
@@ -1139,6 +1131,95 @@ export function validateDealerMailSnapshot(snapshot, { reportDate, manifest } = 
       .map((record) => [normalizedVin(record.vin), record]),
   )
 
+  if (snapshot.releasedHoldHistory !== undefined) {
+    assertValid(Array.isArray(snapshot.releasedHoldHistory), 'Released hold history must be an array')
+    const seen = new Set()
+    const seenStocks = new Set()
+    for (const history of snapshot.releasedHoldHistory) {
+      const vin = normalizedVin(history?.vin)
+      const historyStock = normalizedStock(history?.stockNumber).toUpperCase()
+      assertValid(VIN_PATTERN.test(vin) && history?.vin === vin && !seen.has(vin) && !holdVins.has(vin), 'Released hold history VIN is invalid, duplicated, noncanonical, or currently held', { vin })
+      assertValid(historyStock && !seenStocks.has(historyStock), 'Released hold history stock is missing or duplicated', { vin })
+      assertValid(
+        isPlainObject(history.store) &&
+          STORE_NAMES.includes(history.store.name) &&
+          STORE_CONFIG[history.store.name].dealerMailCode === history.store.code,
+        'Released hold history CRM store/code is invalid',
+        { vin },
+      )
+
+      const currentCrm = crmByVin.get(vin)
+      const currentStockOwner = crmByStock.get(historyStock)
+      if (currentCrm) {
+        assertValid(
+          normalizedStock(currentCrm.stockNumber).toUpperCase() === historyStock &&
+            currentCrm.storeName === history.store.name &&
+            currentCrm.storeCode === history.store.code,
+          'Released hold history does not match the current CRM VIN/stock/store record',
+          { vin },
+        )
+      } else {
+        assertValid(
+          !currentStockOwner,
+          'Released hold history stock is currently assigned to a different CRM VIN',
+          { vin, historyStock },
+        )
+      }
+
+      let sourceUrl
+      try {
+        sourceUrl = new URL(String(history.sourceUrl ?? ''))
+      } catch {
+        throw new SnapshotValidationError('Released hold history source URL is invalid', { vin })
+      }
+      const sourceKeys = [...sourceUrl.searchParams.keys()]
+      assertValid(
+        sourceUrl.protocol === 'https:' &&
+          sourceUrl.hostname.toLowerCase() === 'www.dealermail.com' &&
+          !sourceUrl.username &&
+          !sourceUrl.password &&
+          !sourceUrl.port &&
+          !sourceUrl.hash &&
+          sourceUrl.pathname.toLowerCase() === '/prospect_manager/v2_inventory_used_hold_edit.asp' &&
+          sourceKeys.length === 1 &&
+          sourceKeys[0] === 's' &&
+          normalizedStock(sourceUrl.searchParams.get('s')).toUpperCase() === historyStock,
+        'Released hold history source URL does not match its exact DealerMail stock',
+        { vin },
+      )
+      assertValid(history.currentLiveHold === false, 'Released hold history must explicitly remain non-current', { vin })
+      assertValid(
+        typeof history.observedAtUtc === 'string' &&
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(history.observedAtUtc) &&
+          Number.isFinite(Date.parse(history.observedAtUtc)),
+        'Released hold history observation timestamp is invalid',
+        { vin },
+      )
+      assertValid(Array.isArray(history.holdDetailRows) && history.holdDetailRows.length > 0, 'Released hold history detail rows are missing', { vin })
+      for (const detail of history.holdDetailRows) {
+        assertValid(isPlainObject(detail), 'Released hold history detail row is invalid', { vin })
+        assertValid(
+          normalizedStock(detail.stockNumber).toUpperCase() === historyStock &&
+            normalizedStock(detail.sourceStockNumber).toUpperCase() === historyStock,
+          'Released hold history nested detail stock/provenance does not match its wrapper',
+          { vin },
+        )
+        if (detail.vin !== undefined) {
+          assertValid(normalizedVin(detail.vin) === vin, 'Released hold history nested detail VIN does not match its wrapper', { vin })
+        }
+        if (detail.storeName !== undefined || detail.storeCode !== undefined) {
+          assertValid(
+            detail.storeName === history.store.name && detail.storeCode === history.store.code,
+            'Released hold history nested detail store provenance does not match its wrapper',
+            { vin },
+          )
+        }
+      }
+      seen.add(vin)
+      seenStocks.add(historyStock)
+    }
+  }
+
   return {
     reportDate: snapshot.reportDate,
     extractedAt: inventory.extractedAtUtc || snapshot.extractedAtUtc,
@@ -1146,7 +1227,7 @@ export function validateDealerMailSnapshot(snapshot, { reportDate, manifest } = 
     timezone: snapshot.timezone || 'America/New_York',
     rowCount: crmRows.length,
     heldVinCount: holdVins.size,
-    crmByVin: Object.fromEntries(crmRows.map((row) => [normalizedVin(row.vin), row])),
+    crmByVin: Object.fromEntries(crmByVin),
     holdsByVin: Object.fromEntries(holdVehicles.map((vehicle) => [normalizedVin(vehicle.mainRow.vin), vehicle])),
     cdkByVin,
   }
@@ -1225,18 +1306,13 @@ export function normalizeRelease({
   let resourceRecordsByVin = {}
   let documentEnrichmentMetadata = { status: 'not_found', path: matchedDocumentEnrichmentPath }
   if (documentEnrichmentFile?.data) {
-    try {
-      const validated = validateVinDocumentEnrichment(documentEnrichmentFile.data)
-      resourceRecordsByVin = validated.recordsByVin
-      documentEnrichmentMetadata = {
-        ...validated.metadata,
-        path: matchedDocumentEnrichmentPath,
-        sha256: documentEnrichmentFile.sha256,
-        bytes: documentEnrichmentFile.bytes,
-      }
-    } catch (error) {
-      warnings.push(`VIN document enrichment was ignored: ${error.message}`)
-      documentEnrichmentMetadata = { status: 'ignored', path: matchedDocumentEnrichmentPath }
+    const validated = validateVinDocumentEnrichment(documentEnrichmentFile.data)
+    resourceRecordsByVin = validated.recordsByVin
+    documentEnrichmentMetadata = {
+      ...validated.metadata,
+      path: matchedDocumentEnrichmentPath,
+      sha256: documentEnrichmentFile.sha256,
+      bytes: documentEnrichmentFile.bytes,
     }
   }
 
@@ -1292,7 +1368,7 @@ export function normalizeRelease({
       documentEnrichmentMetadata.recordCount - matchedResourceCount
   }
 
-  const resourceSourceRun =
+  const resourceSourceRunBase =
     documentEnrichmentMetadata.status === 'matched'
       ? {
           type: 'vin_document_enrichment',
@@ -1308,6 +1384,12 @@ export function normalizeRelease({
           metadata: documentEnrichmentMetadata,
         }
       : null
+  const resourceSourceRun = resourceSourceRunBase
+    ? {
+        ...resourceSourceRunBase,
+        provenanceSha256: resourceProvenanceSha256(resourceSourceRunBase, vehicles),
+      }
+    : null
 
   return {
     reportDate,
@@ -1360,6 +1442,7 @@ export function normalizeRelease({
     },
     publicSnapshot: publicFile.data,
     dealerMailSnapshot: dealerMailFile.data,
+    releasedHoldHistory: dealerMailFile.data.releasedHoldHistory ?? [],
     publicChangeEvents,
     vehicles,
   }
@@ -1405,11 +1488,7 @@ export function loadLatestCompletedRelease({ workspaceRoot, now = new Date() }) 
   let documentEnrichmentFile = null
   let documentEnrichmentLoadWarning = null
   if (existsSync(matchedDocumentEnrichmentPath)) {
-    try {
-      documentEnrichmentFile = readJsonWithHash(matchedDocumentEnrichmentPath, 'VIN document enrichment')
-    } catch (error) {
-      documentEnrichmentLoadWarning = `VIN document enrichment could not be read and was ignored: ${error.message}`
-    }
+    documentEnrichmentFile = readJsonWithHash(matchedDocumentEnrichmentPath, 'VIN document enrichment')
   }
   const previousPublic = findPreviousCompletedPublicSnapshot(resolvedWorkspace, reportDate)
   return normalizeRelease({

@@ -65,6 +65,7 @@ const ISSUE_LABELS: Record<string, string> = {
   missing_price: 'Price needed',
   past_expected_hold: 'Hold follow-up',
   hold_alert: 'Vehicle alert',
+  vehicle_alert: 'Vehicle alert',
   transfer_next_action: 'Vehicle move',
 }
 

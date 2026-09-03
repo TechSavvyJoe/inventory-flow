@@ -176,6 +176,7 @@ describe('dense vehicle workspace', () => {
       customerOrReason: 'Private Customer Name',
       cdkState: 'PRIVATE RAW CDK',
     }];
+    restricted.dealerMailEvidence = { dataState: 'current', comments: [], alerts: [{ text: 'Private vehicle alert' }], history: [] };
 
     render(
       <VehicleWorkspace
@@ -189,6 +190,27 @@ describe('dense vehicle workspace', () => {
     expect(screen.queryByText('Private Salesperson')).not.toBeInTheDocument();
     expect(screen.queryByText('Private Customer Name')).not.toBeInTheDocument();
     expect(screen.queryByText('PRIVATE RAW CDK')).not.toBeInTheDocument();
+    expect(screen.queryByText('Private vehicle alert')).not.toBeInTheDocument();
+  });
+
+  it('displays an unheld vehicle alert without a fabricated primary hold', async () => {
+    const unheld = vehicle();
+    unheld.dealerMail.hasActiveHold = false;
+    unheld.dealerMail.activeRecordCount = 0;
+    unheld.dealerMail.position = null;
+    unheld.holdEvidence = [];
+    unheld.dealerMailEvidence = {
+      dataState: 'current', comments: [{ text: 'Synthetic inspection note' }], alerts: [{ text: 'Synthetic transport restriction' }],
+      history: [{ orderRaw: '1', customerOrReason: 'Synthetic previous reason', statusLabel: 'Not in current live hold set; detail page retains order 1 — review' }],
+    };
+    render(<VehicleWorkspace vehicle={unheld} homeStore={{ id: 'fowlerville', name: 'Fowlerville' }} onClose={vi.fn()} />);
+    await userEvent.click(screen.getByRole('tab', { name: 'Hold and availability' }));
+    expect(screen.getByText('No current DealerMail hold found')).toBeInTheDocument();
+    expect(screen.getByText('Synthetic transport restriction')).toBeVisible();
+    expect(screen.getByText('Synthetic inspection note')).toBeVisible();
+    expect(screen.queryByText('primary hold')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByText('Previous hold records'));
+    expect(screen.getByText('Synthetic previous reason')).toBeVisible();
   });
 
   it('uses an accessible keyboard tab model and retains compatible detail targets', async () => {
@@ -372,7 +394,7 @@ describe('dense vehicle workspace', () => {
     const snapshot = screen.getByRole('heading', { name: 'Vehicle record snapshot' }).closest('section');
     expect(snapshot).toHaveTextContent(/AutoCheck score.*89.*range 84–90/i);
     expect(snapshot).toHaveTextContent(/AutoCheck owners.*2 reported/i);
-    expect(snapshot).toHaveTextContent(/Sticker MSRP.*\$50,560/i);
+    expect(snapshot).toHaveTextContent(/Sticker MSRP.*50,560 \(original sticker currency; verify\)/i);
     expect(snapshot).toHaveTextContent(/Sticker options.*2 published/i);
 
     await user.click(within(snapshot as HTMLElement).getByRole('button', { name: /Full records/i }));

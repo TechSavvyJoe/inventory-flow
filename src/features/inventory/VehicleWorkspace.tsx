@@ -27,6 +27,7 @@ import {
   FileSearch,
   Gauge,
   Globe2,
+  History,
   ImageOff,
   MapPin,
   Mail,
@@ -51,6 +52,7 @@ import {
   formatDateTime,
   formatMileage,
   formatMoney,
+  formatStickerMoney,
   resolveCurrentLocation,
   sameStore,
   vehicleDisplayName,
@@ -631,12 +633,16 @@ function HoldEvidenceRecord({
       text: alert.text,
       author: alert.author,
       timestamp: alert.timestamp,
+      metadataRaw: alert.metadataRaw,
+      spiffRaw: alert.spiffRaw,
     })) ?? []),
     ...(evidence.comments?.map((comment) => ({
       kind: "comment" as const,
       text: comment.text,
       author: comment.author,
       timestamp: comment.timestamp,
+      metadataRaw: null,
+      spiffRaw: null,
     })) ?? []),
   ];
 
@@ -720,6 +726,8 @@ function HoldEvidenceRecord({
                   {[
                     message.author,
                     message.timestamp ? formatDateTime(message.timestamp) : null,
+                    message.metadataRaw,
+                    message.spiffRaw ? `Spiff: ${message.spiffRaw}` : null,
                   ]
                     .filter(Boolean)
                     .join(" · ")}
@@ -1068,11 +1076,15 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
 
           {sticker.totalMsrp != null || sticker.basePrice != null || sticker.totalOptions != null || sticker.destinationCharge != null ? (
             <dl className="inventory-vehicle-document__metrics inventory-vehicle-document__metrics--sticker" aria-label="Window sticker pricing">
-              {sticker.totalMsrp != null ? <Fact label="Sticker MSRP" emphasize>{formatMoney(sticker.totalMsrp)}</Fact> : null}
-              {sticker.basePrice != null ? <Fact label="Base price">{formatMoney(sticker.basePrice)}</Fact> : null}
-              {sticker.totalOptions != null ? <Fact label="Total options">{formatMoney(sticker.totalOptions)}</Fact> : null}
-              {sticker.destinationCharge != null ? <Fact label="Destination">{formatMoney(sticker.destinationCharge)}</Fact> : null}
+              {sticker.totalMsrp != null ? <Fact label="Sticker MSRP" emphasize>{formatStickerMoney(sticker.totalMsrp, sticker)}</Fact> : null}
+              {sticker.basePrice != null ? <Fact label="Base price">{formatStickerMoney(sticker.basePrice, sticker)}</Fact> : null}
+              {sticker.totalOptions != null ? <Fact label="Total options">{formatStickerMoney(sticker.totalOptions, sticker)}</Fact> : null}
+              {sticker.destinationCharge != null ? <Fact label="Destination">{formatStickerMoney(sticker.destinationCharge, sticker)}</Fact> : null}
             </dl>
+          ) : null}
+
+          {sticker.originalMarket || sticker.pricingCurrencyEvidence ? (
+            <p>{[sticker.originalMarket ? `Original market: ${sticker.originalMarket}.` : null, sticker.pricingCurrencyEvidence].filter(Boolean).join(" ")}</p>
           ) : null}
 
           {stickerFacts.length ? (
@@ -1526,7 +1538,7 @@ function SourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle }) {
     sticker?.exteriorColor || sticker?.interiorColor
       ? { label: "Sticker colors", value: [sticker.exteriorColor, sticker.interiorColor].filter(Boolean).join(" · ") }
       : null,
-    sticker?.totalMsrp != null ? { label: "Original sticker MSRP", value: formatMoney(sticker.totalMsrp) } : null,
+    sticker?.totalMsrp != null ? { label: "Original sticker MSRP", value: formatStickerMoney(sticker.totalMsrp, sticker) } : null,
     factoryEquipment?.vehicleDescription ? { label: "VIN profile vehicle", value: factoryEquipment.vehicleDescription } : null,
     factoryEquipment?.engine || factoryEquipment?.transmission || factoryEquipment?.drivetrain
       ? {
@@ -1915,7 +1927,7 @@ function OverviewDetails({
       label: "AutoCheck odometer",
       value: `${formatMileage(autoCheck.lastReportedOdometer)}${autoCheck.lastReportedOdometerDate ? ` · ${formatDate(autoCheck.lastReportedOdometerDate)}` : ""}`,
     } : null,
-    sticker?.totalMsrp != null ? { label: "Sticker MSRP", value: formatMoney(sticker.totalMsrp) } : null,
+    sticker?.totalMsrp != null ? { label: "Sticker MSRP", value: formatStickerMoney(sticker.totalMsrp, sticker) } : null,
     sticker?.equipmentGroup ? { label: "Sticker equipment group", value: sticker.equipmentGroup } : null,
     sticker?.options?.length ? {
       label: "Sticker options",
@@ -2002,6 +2014,47 @@ function OverviewDetails({
   );
 }
 
+function VehicleRecordEvidence({ vehicle }: { vehicle: InventoryVehicle }) {
+  const evidence = vehicle.dealerMailEvidence;
+  if (!vehicle.dealerMail.canViewEvidence || !evidence) return null;
+  const messages = vehicle.holdEvidence?.length ? [] : [
+    ...evidence.alerts.map((message) => ({ ...message, kind: "Alert" })),
+    ...evidence.comments.map((message) => ({ ...message, kind: "Comment" })),
+  ];
+  if (!messages.length && !evidence.history.length) return null;
+  const stale = evidence.dataState !== "current";
+  return (
+    <section className="inventory-hold-evidence" aria-label="Vehicle notes and previous holds">
+      {messages.length ? <>
+        <header><strong>{stale ? "Last verified vehicle comments & alerts" : "Vehicle comments & alerts"}</strong></header>
+        <div className="inventory-evidence-messages">
+          {messages.map((message, index) => (
+            <article className={message.kind === "Alert" ? "is-alert" : undefined} key={`${message.kind}-${index}`}>
+              <span>{message.kind === "Alert" ? <Bell size={14} aria-hidden="true" /> : <MessageSquare size={14} aria-hidden="true" />}</span>
+              <strong>{message.text}</strong>
+              <small>{[message.kind, message.author, message.timestamp, message.metadataRaw, message.spiffRaw ? `Spiff: ${message.spiffRaw}` : null].filter(Boolean).join(" · ")}</small>
+            </article>
+          ))}
+        </div>
+      </> : null}
+      {evidence.history.length ? (
+        <details className="inventory-hold-evidence__messages">
+          <summary><span>Previous hold records</span><small>{evidence.history.length} records · not current holds</small><ChevronDown size={16} aria-hidden="true" /></summary>
+          <div className="inventory-evidence-messages">
+            {evidence.history.map((record, index) => (
+              <article key={`history-${index}`}>
+                <span><History size={14} aria-hidden="true" /></span>
+                <strong>{record.customerOrReason || "Reason not recorded"}</strong>
+                <small>{[record.statusLabel, record.salesperson, record.holdDate && `Hold ${record.holdDate}`, record.expectedDate && `Expected ${record.expectedDate}`, record.orderRaw && `Raw order: ${record.orderRaw}`].filter(Boolean).join(" · ")}</small>
+              </article>
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
 function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
   const hold = vehicle.dealerMail;
   const showingLastVerifiedEvidence = hold.dataState === "stale";
@@ -2053,6 +2106,7 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
       hold.dataState === "current" && hold.hasActiveHold === false;
 
     return (
+      <>
       <section
         className="inventory-workspace-no-hold"
         aria-labelledby="inventory-no-hold-title"
@@ -2115,6 +2169,8 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
           </span>
         </p>
       </section>
+      <VehicleRecordEvidence vehicle={vehicle} />
+      </>
     );
   }
 
@@ -2150,6 +2206,7 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
           key={evidence.id}
         />
       ))}
+      <VehicleRecordEvidence vehicle={vehicle} />
       <dl
         className="inventory-workspace-hold-context"
         aria-label="Related inventory and movement status"

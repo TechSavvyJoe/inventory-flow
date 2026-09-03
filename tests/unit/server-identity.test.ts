@@ -55,6 +55,7 @@ function trustedHeaders(secret: string, overrides: Record<string, string> = {}) 
     'content-type': 'application/json',
     'x-inventory-proxy-secret': secret,
     'x-inventory-authenticated-user': 'Fowlerville Salesperson',
+    'x-inventory-authenticated-user-id': 'member-fowlerville-sales-1',
     'x-inventory-authenticated-role': 'sales',
     'x-inventory-authenticated-store': 'Fowlerville',
     ...overrides,
@@ -102,6 +103,15 @@ describe('server-owned identity boundary', () => {
       canViewPrivateEvidence: true,
       canCreateTransfer: true,
     })
+  })
+
+  it('requires an immutable user ID from the trusted authentication proxy', async () => {
+    const { baseUrl, secret } = await trustedHarness()
+    const headers = trustedHeaders(secret)
+    delete headers['x-inventory-authenticated-user-id']
+    const response = await fetch(`${baseUrl}/api/bootstrap`, { headers })
+    expect(response.status).toBe(401)
+    expect(await response.json()).toMatchObject({ code: 'IDENTITY_INCOMPLETE' })
   })
 
   it('uses upstream identity for persisted actors and rejects identity fields in a spoofed payload', async () => {

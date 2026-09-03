@@ -123,11 +123,43 @@ def cache_filename(report_date: str, snapshot_sha256: str) -> str:
     return f"{report_date}-{snapshot_sha256}.json"
 
 
+def verified_snapshot_resource_stats(records: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """Reuse audited exact-VIN evidence without a second network extraction."""
+    stats = {}
+    for store in photo_extractor.STORE_ORDER[:4]:
+        store_rows = [row for row in records if row.get("store") == store]
+        for row in store_rows:
+            for key in ("autoCheckReport", "windowSticker"):
+                resource = row.get(key)
+                if resource is None:
+                    continue
+                if (not isinstance(resource, dict)
+                        or str(resource.get("validated_vin") or "").upper() != str(row.get("vin") or "").upper()
+                        or resource.get("dataState") not in ("current", "incomplete")):
+                    raise RuntimeError("Embedded vehicle resource is not exact-VIN validated")
+        stats[store] = {
+            "photo_vdps_requested": 0,
+            "photo_vdps_enriched": 0,
+            "photo_vdps_failed": 0,
+            "photo_urls_observed": sum(len(row.get("photo_urls") or []) for row in store_rows),
+            "resource_vdps_requested": 0,
+            "resource_vdps_failed": 0,
+            "autocheck_links_observed": sum(bool((row.get("autoCheckReport") or {}).get("url")) for row in store_rows),
+            "autocheck_reports_parsed": sum((row.get("autoCheckReport") or {}).get("dataState") == "current" for row in store_rows),
+            "autocheck_reports_failed": sum((row.get("autoCheckReport") or {}).get("dataState") == "incomplete" for row in store_rows),
+            "window_sticker_links_observed": sum(bool((row.get("windowSticker") or {}).get("url")) for row in store_rows),
+            "window_stickers_parsed": sum((row.get("windowSticker") or {}).get("dataState") == "current" for row in store_rows),
+            "window_stickers_failed": sum((row.get("windowSticker") or {}).get("dataState") == "incomplete" for row in store_rows),
+        }
+    return stats
+
+
 def build_photo_cache(
     workspace_root: Path = DEFAULT_WORKSPACE_ROOT,
     report_date: str | None = None,
     cache_dir: Path | None = None,
     generated_at: str | None = None,
+    reuse_snapshot_resources: bool = False,
 ) -> tuple[Path, dict[str, Any]]:
     workspace_root = workspace_root.resolve()
     manifest_path = latest_completed_manifest(workspace_root, report_date)
@@ -139,7 +171,8 @@ def build_photo_cache(
     source_records = snapshot["vehicles"]
     records = [dict(record) for record in source_records.values()]
 
-    resource_stats = photo_extractor.enrich_vehicle_resources_from_vdps(records)
+    resource_stats = (verified_snapshot_resource_stats(records) if reuse_snapshot_resources
+                      else photo_extractor.enrich_vehicle_resources_from_vdps(records))
     cached_vehicles: dict[str, dict[str, Any]] = {}
     for record in records:
         vin = str(record.get("vin") or "").strip().upper()
@@ -197,6 +230,7 @@ def build_photo_cache(
             "Official Bob Maxey vehicle-detail pages, VIN-validated AutoCheck reports, "
             "and VIN-validated factory window-sticker PDFs; allowlisted URLs only"
         ),
+        "resource_mode": "verified_snapshot" if reuse_snapshot_resources else "fresh_resource_extraction",
         "summary": {
             "public_vehicles": len(source_records),
             "vehicles_with_resources": len(cached_vehicles),
@@ -243,12 +277,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--workspace-root", type=Path, default=DEFAULT_WORKSPACE_ROOT)
     parser.add_argument("--report-date", help="Completed release date in YYYY-MM-DD format")
+    parser.add_argument("--reuse-snapshot-resources", action="store_true", help="Preserve audited embedded resources without refetching; requires a completed validated exact-date snapshot")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    output_path, payload = build_photo_cache(args.workspace_root, args.report_date)
+    output_path, payload = build_photo_cache(args.workspace_root, args.report_date, reuse_snapshot_resources=args.reuse_snapshot_resources)
     print(
         "PHOTO_CACHE_SUMMARY="
         + json.dumps(

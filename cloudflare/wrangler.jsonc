@@ -21,7 +21,8 @@
     {
       "binding": "INVENTORY_DB",
       "database_name": "inventory-ops-production",
-      "database_id": "29bfd3dd-ecd9-4c71-9dba-f0c106c690dd"
+      "database_id": "29bfd3dd-ecd9-4c71-9dba-f0c106c690dd",
+      "migrations_dir": "migrations"
     }
   ],
   "r2_buckets": [

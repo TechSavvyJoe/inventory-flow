@@ -68,6 +68,17 @@ function openVehicleDocuments() {
 }
 
 describe('vehicle document workspace', () => {
+  it('labels Canadian original document pricing and preserves its raw market evidence', async () => {
+    const canadian = vehicle();
+    canadian.windowSticker = { ...canadian.windowSticker!, originalMarket: 'Canada', pricingCurrency: 'CAD', pricingCurrencyEvidence: 'Canadian original sticker; amounts retained without conversion' };
+    render(<VehicleWorkspace vehicle={canadian} homeStore={{ id: 'howell', name: 'Howell' }} onClose={vi.fn()} />);
+    const panel = await openVehicleDocuments();
+    expect(panel).not.toBeNull();
+    expect(within(panel!).getByText(/CAD\s49,480/)).toBeInTheDocument();
+    expect(within(panel!).getByText(/Original market: Canada/)).toHaveTextContent('amounts retained without conversion');
+    expect(within(panel!).queryByText('$49,480')).not.toBeInTheDocument();
+  });
+
   it('shows VIN-specific links and truthful parsed facts as a separate source panel', async () => {
     render(
       <VehicleWorkspace

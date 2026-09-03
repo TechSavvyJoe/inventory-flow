@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { createDecipheriv } from 'node:crypto'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import { loadLatestCompletedRelease } from '../../server/importer.mjs'
+import { resourceProvenanceSha256 } from '../../server/resource-validation.mjs'
 import { validateReleaseBundle } from '../../cloudflare/src/release-validation.mjs'
+import { datasetFromRelease } from '../../cloudflare/src/repository.mjs'
 import { accessHeaders, base64Key, cloudReleaseFrom, encryptBundle, portableMetadata, publicationEndpoint, publishEnvelope } from '../../scripts/publish-cloud-release.mjs'
 
 const storeNames = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
@@ -19,6 +21,27 @@ const environment = {
 
 function counts(records) {
   return Object.fromEntries(storeNames.map((store) => [store, records.filter((row) => row.storeName === store).length]))
+}
+
+function releasedHistoryFor(row) {
+  return {
+    vin: row.vin,
+    stockNumber: row.stockNumber,
+    store: { name: row.storeName, code: row.storeCode },
+    sourceUrl: `https://www.dealermail.com/prospect_manager/V2_inventory_USED_hold_edit.asp?s=${encodeURIComponent(row.stockNumber)}`,
+    observedAtUtc: '2026-08-30T14:00:00Z',
+    currentLiveHold: false,
+    interpretation: 'Synthetic former hold; outcome remains unknown.',
+    holdDetailRows: [{
+      stockNumber: row.stockNumber,
+      sourceStockNumber: row.stockNumber,
+      orderRaw: '1',
+      holdOrderNumber: 1,
+      holdPosition: 'primary',
+      lifecycleStatus: 'active',
+      customerOrReasonRaw: 'Synthetic former hold',
+    }],
+  }
 }
 
 function completeBundle() {
@@ -64,7 +87,185 @@ function completeBundle() {
   }
 }
 
+function addExternalAutoCheck(bundle, url) {
+  const vehicle = bundle.release.vehicles.find((record) => record.resourceRecord)
+  vehicle.resourceRecord.autoCheckReport = {
+    dataState: 'current',
+    url,
+    sourceLabel: 'Synthetic AutoCheck evidence',
+  }
+  const run = bundle.release.sourceRuns.resources
+  run.metadata.externalAutoCheckCount = 1
+  run.provenanceSha256 = resourceProvenanceSha256(run, bundle.release.vehicles)
+  return vehicle
+}
+
 describe('portable cloud release validation', () => {
+  it('keeps raw public document evidence in the encrypted snapshot while validating its app projection', () => {
+    const bundle = completeBundle()
+    const vehicle = bundle.release.vehicles.find((record) => record.publicRecord)
+    const source = bundle.release.publicSnapshot.vehicles[vehicle.vin]
+    const resourceUrl = `${source.listing_url.split('/used-')[0]}/api/vhcliaa/inventory/21521/window-sticker?sv=synthetic-token&make=Ford&vehicleType=U`
+    source.windowSticker = {
+      validated_vin: vehicle.vin,
+      url: resourceUrl,
+      dataState: 'incomplete',
+      sourceMessage: 'Synthetic sticker source message',
+      observedAt: '2026-08-30T11:00:00-04:00',
+      extractionMethod: 'Synthetic official PDF text extraction',
+      originalSourceText: 'Synthetic raw document text retained only in publicSnapshot',
+    }
+    vehicle.publicRecord.windowSticker = {
+      url: resourceUrl,
+      dataState: 'incomplete',
+      sourceMessage: 'Synthetic sticker source message',
+    }
+
+    expect(validateReleaseBundle(bundle)).toMatchObject({ publicRowCount: 8 })
+    expect(bundle.release.publicSnapshot.vehicles[vehicle.vin].windowSticker.originalSourceText).toContain('raw document text')
+    expect(vehicle.publicRecord.windowSticker).not.toHaveProperty('originalSourceText')
+
+    vehicle.publicRecord.windowSticker.sourceMessage = 'Changed normalized message'
+    expect(() => validateReleaseBundle(bundle)).toThrow(/publicRecord normalized data differs from its source/)
+  })
+
+  it('preserves unheld CRM messages and released raw order-1 history without adding a current hold', () => {
+    const bundle = completeBundle()
+    const snapshot = bundle.release.dealerMailSnapshot
+    const heldByVin = new Map(snapshot.vehicles.map((vehicle) => [vehicle.mainRow.vin, vehicle]))
+    for (const row of snapshot.completeDealerMailUsedInventory.rows) {
+      row.comments = heldByVin.get(row.vin)?.comments ?? []
+      row.alerts = heldByVin.get(row.vin)?.alerts ?? []
+      bundle.release.vehicles.find((vehicle) => vehicle.vin === row.vin).crmRecord = row
+    }
+    const unheld = snapshot.completeDealerMailUsedInventory.rows.find((row) => !heldByVin.has(row.vin))
+    unheld.commentsFlag = 'Y'
+    unheld.alertsFlag = 'Y'
+    unheld.comments = [{ rows: [{ commentTextRaw: 'Synthetic unheld inspection note' }] }]
+    unheld.alerts = [{ alertTextRaw: 'Synthetic unheld transport restriction' }]
+    snapshot.currentComments = unheld.comments
+    snapshot.currentAlerts = unheld.alerts
+    snapshot.releasedHoldHistory = [releasedHistoryFor(unheld)]
+    bundle.release.releasedHoldHistory = snapshot.releasedHoldHistory
+    expect(validateReleaseBundle(bundle)).toMatchObject({ heldVinCount: 2, activeHoldRecordCount: 3 })
+    const dataset = datasetFromRelease(bundle.release)
+    expect(dataset.crmRows.find((row) => row.vin === unheld.vin).payload.alerts).toHaveLength(1)
+    expect(dataset.holdRows.some((row) => row.vin === unheld.vin)).toBe(false)
+    expect(JSON.parse(dataset.state.current_released_hold_history_json)).toEqual(snapshot.releasedHoldHistory)
+    unheld.alerts = []
+    expect(() => validateReleaseBundle(bundle)).toThrow(/flagged complete CRM alert/)
+    unheld.alerts = [{ alertTextRaw: 'Synthetic unheld transport restriction' }]
+    unheld.comments = []
+    expect(() => validateReleaseBundle(bundle)).toThrow(/flagged complete CRM comments/)
+  })
+
+  it('fails closed when complete-CRM flags or every message evidence array is stripped', () => {
+    const validBundle = completeBundle()
+    const missingFlags = structuredClone(validBundle)
+    for (const row of missingFlags.release.dealerMailSnapshot.completeDealerMailUsedInventory.rows) {
+      delete row.commentsFlag
+      delete row.alertsFlag
+    }
+    expect(() => validateReleaseBundle(missingFlags)).toThrow(/commentsFlag must be Y or N/)
+
+    const bundle = structuredClone(validBundle)
+    const snapshot = bundle.release.dealerMailSnapshot
+    delete snapshot.currentComments
+    delete snapshot.currentAlerts
+    for (const row of snapshot.completeDealerMailUsedInventory.rows) {
+      delete row.comments
+      delete row.alerts
+      delete row.commentsFlag
+      delete row.alertsFlag
+    }
+    expect(() => validateReleaseBundle(bundle)).toThrow(/top-level current comment\/alert evidence arrays are missing/)
+  })
+
+  it.each([
+    ['wrapper stock', (history) => { history.stockNumber = 'WRONG-STOCK' }],
+    ['wrapper CRM store', (history) => { history.store = { name: 'Lincoln', code: 'L' } }],
+    ['nested detail stock', (history) => { history.holdDetailRows[0].stockNumber = 'WRONG-STOCK' }],
+    ['nested source provenance', (history) => { history.holdDetailRows[0].sourceStockNumber = 'WRONG-STOCK' }],
+    ['DealerMail source route', (history) => { history.sourceUrl = `https://www.dealermail.com/prospect_manager/V2_inventory_USED_hold_edit.asp?s=WRONG-STOCK` }],
+  ])('rejects released-hold history with mismatched %s', (_label, mutate) => {
+    const bundle = completeBundle()
+    const snapshot = bundle.release.dealerMailSnapshot
+    const heldVins = new Set(snapshot.vehicles.map((vehicle) => vehicle.mainRow.vin))
+    const unheld = snapshot.completeDealerMailUsedInventory.rows.find((row) => !heldVins.has(row.vin))
+    const history = releasedHistoryFor(unheld)
+    mutate(history)
+    snapshot.releasedHoldHistory = [history]
+    bundle.release.releasedHoldHistory = snapshot.releasedHoldHistory
+    expect(() => validateReleaseBundle(bundle)).toThrow(/released hold history/i)
+  })
+
+  it('strictly binds each cloud resource record to a validated run, exact VIN, shapes, bounds, and approved HTTPS URLs', () => {
+    const original = completeBundle()
+    expect(validateReleaseBundle(original)).toMatchObject({ resourceRecordCount: 1 })
+    expect(original.release.sourceRuns.resources.provenanceSha256).toMatch(/^[a-f0-9]{64}$/)
+    const resourceVehicle = original.release.vehicles.find((vehicle) => vehicle.resourceRecord)
+
+    const noRun = structuredClone(original)
+    noRun.release.sourceRuns.resources = null
+    expect(() => validateReleaseBundle(noRun)).toThrow(/without a validated resources source run/)
+
+    const wrongVin = structuredClone(original)
+    wrongVin.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.vin = 'TESTDATAFOWL00001'
+    expect(() => validateReleaseBundle(wrongVin)).toThrow(/resource record VIN/)
+
+    const malformedPackages = structuredClone(original)
+    malformedPackages.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.factoryEquipment.packages = [{ name: 'Broken package', features: 'not-an-array' }]
+    expect(() => validateReleaseBundle(malformedPackages)).toThrow(/package features.*bounded array/)
+
+    const javascriptUrl = structuredClone(original)
+    javascriptUrl.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.factoryEquipment.url = 'javascript:alert(1)'
+    expect(() => validateReleaseBundle(javascriptUrl)).toThrow(/approved HTTPS/)
+
+    const badRun = structuredClone(original)
+    badRun.release.sourceRuns.resources.rowCount += 1
+    expect(() => validateReleaseBundle(badRun)).toThrow(/resources source row count/)
+
+    const wrongRunShape = structuredClone(original)
+    wrongRunShape.release.sourceRuns.resources.metadata.recordCount = '1'
+    expect(() => validateReleaseBundle(wrongRunShape)).toThrow(/numeric integer/)
+
+    const metadataCountTampering = structuredClone(original)
+    metadataCountTampering.release.sourceRuns.resources.metadata.externalAutoCheckCount = 1
+    expect(() => validateReleaseBundle(metadataCountTampering)).toThrow(/source provenance/)
+
+    const metadataPathTampering = structuredClone(original)
+    metadataPathTampering.release.sourceRuns.resources.metadata.path = 'local-file:forged-resource-source.json'
+    expect(() => validateReleaseBundle(metadataPathTampering)).toThrow(/source provenance/)
+
+    const recordTampering = structuredClone(original)
+    recordTampering.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.factoryEquipment.sourceLabel = 'Schema-valid but unbound replacement evidence'
+    expect(() => validateReleaseBundle(recordTampering)).toThrow(/source provenance/)
+  })
+
+  it.each([
+    ['report path', (vin) => `https://www.autocheck.com/report/${vin}`],
+    ['vehicle-history path', (vin) => `https://autocheck.com/vehiclehistory/${vin.toLowerCase()}/`],
+    ['report VIN query', (vin) => `https://www.autocheck.com/report?vin=${vin}&source=inventory-flow`],
+    ['vehicle-history VIN query', (vin) => `https://www.autocheck.com/vehiclehistory?VIN=${vin}`],
+  ])('accepts the approved exact-VIN AutoCheck %s form', (_label, urlForVin) => {
+    const bundle = completeBundle()
+    const resourceVehicle = bundle.release.vehicles.find((vehicle) => vehicle.resourceRecord)
+    addExternalAutoCheck(bundle, urlForVin(resourceVehicle.vin))
+    expect(validateReleaseBundle(bundle)).toMatchObject({ resourceRecordCount: 1 })
+  })
+
+  it.each([
+    ['unrelated note parameter', (vin) => `https://www.autocheck.com/report?vin=TESTDATAFOWL00001&note=${vin}`],
+    ['conflicting path and VIN parameter', (vin) => `https://www.autocheck.com/report/${vin}?vin=TESTDATAFOWL00001`],
+    ['duplicate VIN parameters', (vin) => `https://www.autocheck.com/report?vin=TESTDATAFOWL00001&VIN=${vin}`],
+    ['ambiguous repeated path separator', (vin) => `https://www.autocheck.com/report//${vin}`],
+  ])('rejects AutoCheck VIN confusion through %s', (_label, urlForVin) => {
+    const bundle = completeBundle()
+    const resourceVehicle = bundle.release.vehicles.find((vehicle) => vehicle.resourceRecord)
+    addExternalAutoCheck(bundle, urlForVin(resourceVehicle.vin))
+    expect(() => validateReleaseBundle(bundle)).toThrow(/approved exact-VIN HTTPS resource/)
+  })
+
   it('independently derives counts while retaining primary, backup, deleted and full evidence records', () => {
     const bundle = completeBundle()
     expect(validateReleaseBundle(bundle)).toMatchObject({ publicRowCount: 8, dealerMailRowCount: 8, heldVinCount: 2, activeHoldRecordCount: 3, backupCount: 1, deletedHoldRecordCount: 1, vehicleCount: 8 })
@@ -79,6 +280,8 @@ describe('portable cloud release validation', () => {
     ['missing exclude-holds set', (b) => { delete b.release.dealerMailSnapshot.excludeActiveHoldsValidationSet }],
     ['false include/exclude equation despite claimed success', (b) => { b.release.dealerMailSnapshot.excludeActiveHoldsValidationSet.rows.pop(); b.release.dealerMailSnapshot.excludeActiveHoldsValidationSet.summary.totalRows -= 1 }],
     ['wrong public listing store', (b) => { const row = Object.values(b.release.publicSnapshot.vehicles)[0]; row.listing_url = row.listing_url.replace('www.bobmaxeyfordhowell.com', 'www.bobmaxeyford.com') }],
+    ['insecure public listing scheme', (b) => { const row = Object.values(b.release.publicSnapshot.vehicles)[0]; row.listing_url = row.listing_url.replace('https://', 'http://') }],
+    ['javascript public listing scheme', (b) => { const row = Object.values(b.release.publicSnapshot.vehicles)[0]; row.listing_url = `javascript:${row.vin}` }],
     ['normalized data changed independently from source', (b) => { b.release.vehicles[0].crmRecord.priceNumber += 1 }],
     ['normalized VIN omitted', (b) => { b.release.vehicles.pop() }],
     ['duplicated active primary order', (b) => { b.release.dealerMailSnapshot.vehicles[0].holdDetailRows[1].holdOrderNumber = 1 }],

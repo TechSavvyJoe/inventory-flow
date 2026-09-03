@@ -52,7 +52,10 @@ function publicSnapshot(release, reportDate) {
 }
 
 function dealerMailSnapshot(release) {
-  const rows = release.vehicles.map((record) => record.crmRecord).filter(Boolean)
+  const rows = release.vehicles
+    .map((record) => record.crmRecord)
+    .filter(Boolean)
+    .map((row) => ({ ...row, commentsFlag: 'N', alertsFlag: 'N', comments: [], alerts: [] }))
   const heldVehicles = release.vehicles.map((record) => record.holdRecord).filter(Boolean)
   const details = heldVehicles.flatMap((vehicle) => vehicle.holdDetailRows ?? [])
   const activeDetails = details.filter((row) => row.lifecycleStatus === 'active')
@@ -75,6 +78,8 @@ function dealerMailSnapshot(release) {
       readOnly: true,
     },
     automationAccessAssessment: { persistentDailyAccess: 'guaranteed' },
+    currentComments: [],
+    currentAlerts: [],
     completeDealerMailUsedInventory: {
       readOnly: true,
       extractedAtUtc: GENERATED_AT,

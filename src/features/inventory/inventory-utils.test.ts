@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_INVENTORY_FILTERS,
+  formatMoney,
+  formatStickerMoney,
   resolveCurrentLocation,
   sortVehicles,
   vehicleMatchesFilters,
@@ -45,6 +47,13 @@ function vehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
 }
 
 describe("inventory source-safe selectors", () => {
+  it("labels original sticker currency without converting or changing public listing prices", () => {
+    expect(formatStickerMoney(56650, { pricingCurrency: "CAD", originalMarket: "Canada" })).toMatch(/CAD\s56,650/);
+    expect(formatStickerMoney(49924, {})).toBe("49,924 (original sticker currency; verify)");
+    expect(formatStickerMoney(49480, { pricingCurrency: "USD" })).toMatch(/USD\s49,480/);
+    expect(formatMoney(21999)).toBe("$21,999");
+  });
+
   it("finds partial VINs and folded model punctuation", () => {
     const record = vehicle();
     expect(vehicleMatchesQuery(record, "RKF123")).toBe(true);

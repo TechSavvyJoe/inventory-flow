@@ -2,7 +2,7 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import {
@@ -11,9 +11,129 @@ import {
   loadLatestCompletedRelease,
   mergeVerifiedPhotoCache,
   validateVinDocumentEnrichment,
+  validateDealerMailSnapshot,
+  validatePublicSnapshot,
 } from '../../server/importer.mjs'
 
+function releasedHistoryFor(row) {
+  return {
+    vin: row.vin,
+    stockNumber: row.stockNumber,
+    store: { name: row.storeName, code: row.storeCode },
+    sourceUrl: `https://www.dealermail.com/prospect_manager/V2_inventory_USED_hold_edit.asp?s=${encodeURIComponent(row.stockNumber)}`,
+    observedAtUtc: '2026-08-30T14:00:00Z',
+    currentLiveHold: false,
+    holdDetailRows: [{
+      stockNumber: row.stockNumber,
+      sourceStockNumber: row.stockNumber,
+      orderRaw: '1',
+      holdOrderNumber: 1,
+      holdPosition: 'primary',
+      lifecycleStatus: 'active',
+    }],
+  }
+}
+
 describe('verified daily source importer', () => {
+  it('requires every flagged CRM message once complete-inventory evidence is supplied', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const release = loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot })
+      const snapshot = structuredClone(release.dealerMailSnapshot)
+      const held = new Map(snapshot.vehicles.map((vehicle) => [vehicle.mainRow.vin, vehicle]))
+      for (const row of snapshot.completeDealerMailUsedInventory.rows) {
+        row.comments = held.get(row.vin)?.comments ?? []
+        row.alerts = held.get(row.vin)?.alerts ?? []
+      }
+      const unheld = snapshot.completeDealerMailUsedInventory.rows.find((row) => !held.has(row.vin))
+      unheld.commentsFlag = 'Y'
+      unheld.alertsFlag = 'Y'
+      unheld.comments = [{ rows: [{ commentTextRaw: 'Synthetic unheld inspection note' }] }]
+      unheld.alerts = [{ alertTextRaw: 'Synthetic unheld alert' }]
+      snapshot.releasedHoldHistory = [releasedHistoryFor(unheld)]
+      expect(validateDealerMailSnapshot(snapshot).heldVinCount).toBe(held.size)
+      unheld.alerts = []
+      expect(() => validateDealerMailSnapshot(snapshot)).toThrow(/inventory alert is missing/)
+      unheld.alerts = [{ alertTextRaw: 'Synthetic unheld alert' }]
+      snapshot.releasedHoldHistory[0].vin = snapshot.vehicles[0].mainRow.vin
+      expect(() => validateDealerMailSnapshot(snapshot)).toThrow(/currently held/)
+    } finally { fixture.cleanup() }
+  })
+
+  it('fails closed when complete-CRM flags or all message evidence arrays are stripped', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const validSnapshot = structuredClone(loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot }).dealerMailSnapshot)
+      const missingFlags = structuredClone(validSnapshot)
+      for (const row of missingFlags.completeDealerMailUsedInventory.rows) {
+        delete row.commentsFlag
+        delete row.alertsFlag
+      }
+      expect(() => validateDealerMailSnapshot(missingFlags)).toThrow(/commentsFlag must be Y or N/)
+
+      const snapshot = structuredClone(validSnapshot)
+      delete snapshot.currentComments
+      delete snapshot.currentAlerts
+      for (const row of snapshot.completeDealerMailUsedInventory.rows) {
+        delete row.comments
+        delete row.alerts
+        delete row.commentsFlag
+        delete row.alertsFlag
+      }
+      expect(() => validateDealerMailSnapshot(snapshot)).toThrow(/top-level current comment\/alert evidence arrays are missing/)
+    } finally { fixture.cleanup() }
+  })
+
+  it.each([
+    ['wrapper stock', (history) => { history.stockNumber = 'WRONG-STOCK' }],
+    ['wrapper store', (history) => { history.store = { name: 'Lincoln', code: 'L' } }],
+    ['nested detail stock', (history) => { history.holdDetailRows[0].stockNumber = 'WRONG-STOCK' }],
+    ['nested source stock', (history) => { history.holdDetailRows[0].sourceStockNumber = 'WRONG-STOCK' }],
+    ['source URL stock', (history) => { history.sourceUrl = 'https://www.dealermail.com/prospect_manager/V2_inventory_USED_hold_edit.asp?s=WRONG-STOCK' }],
+  ])('rejects released history with a mismatched %s', (_label, mutate) => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const snapshot = structuredClone(loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot }).dealerMailSnapshot)
+      const held = new Set(snapshot.vehicles.map((vehicle) => vehicle.mainRow.vin))
+      const unheld = snapshot.completeDealerMailUsedInventory.rows.find((row) => !held.has(row.vin))
+      const history = releasedHistoryFor(unheld)
+      mutate(history)
+      snapshot.releasedHoldHistory = [history]
+      expect(() => validateDealerMailSnapshot(snapshot)).toThrow(/released hold history/i)
+    } finally { fixture.cleanup() }
+  })
+
+  it('requires HTTPS public listing URLs locally', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const release = loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot })
+      const insecure = structuredClone(release.publicSnapshot)
+      const row = Object.values(insecure.vehicles)[0]
+      row.listing_url = row.listing_url.replace('https://', 'http://')
+      expect(() => validatePublicSnapshot(insecure)).toThrow(/must use HTTPS/)
+      row.listing_url = `javascript:${row.vin}`
+      expect(() => validatePublicSnapshot(insecure)).toThrow(/must use HTTPS/)
+    } finally { fixture.cleanup() }
+  })
+
+  it('fails release loading before bootstrap when an existing resource package or URL is malformed', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const enrichmentPath = path.join(fixture.workspaceRoot, 'apps', 'inventory-ops', 'data', 'vin-document-enrichment.json')
+      const original = JSON.parse(readFileSync(enrichmentPath, 'utf8'))
+      const vin = Object.keys(original.recordsByVin)[0]
+      const malformedPackage = structuredClone(original)
+      malformedPackage.recordsByVin[vin].factoryEquipment.packages = [{ name: 'Broken package', features: 'not-an-array' }]
+      writeFileSync(enrichmentPath, JSON.stringify(malformedPackage))
+      expect(() => loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot })).toThrow(/package features.*bounded array/)
+
+      const javascriptUrl = structuredClone(original)
+      javascriptUrl.recordsByVin[vin].factoryEquipment.url = 'javascript:alert(1)'
+      writeFileSync(enrichmentPath, JSON.stringify(javascriptUrl))
+      expect(() => loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot })).toThrow(/approved vAuto\/CAI/)
+    } finally { fixture.cleanup() }
+  })
+
   it('retains the current completion_time manifest alias for cloud release ordering', () => {
     const fixture = createSyntheticWorkspace()
     try {
@@ -172,6 +292,9 @@ describe('verified daily source importer', () => {
             totalOptions: 995,
             destinationCharge: 1495,
             totalMsrp: 35075,
+            originalMarket: 'Canada',
+            pricingCurrency: 'CAD',
+            pricingCurrencyEvidence: 'Canadian original sticker; amounts retained without conversion',
             exteriorColor: 'Carbonized Gray Metallic',
             interiorColor: 'Ebony ActiveX',
             engine: '1.5L EcoBoost',
@@ -200,6 +323,9 @@ describe('verified daily source importer', () => {
     expect(merged.recordsByVin[vin].windowSticker).toMatchObject({
       equipmentGroup: '300A',
       totalMsrp: 35075,
+      originalMarket: 'Canada',
+      pricingCurrency: 'CAD',
+      pricingCurrencyEvidence: 'Canadian original sticker; amounts retained without conversion',
       dataState: 'incomplete',
     })
     expect(merged.metadata).toMatchObject({
@@ -318,9 +444,15 @@ describe('verified daily source importer', () => {
       url: `https://www.autocheck.com/report/${vin}`,
       score: 92,
     })
+    const queryForm = structuredClone(record)
+    queryForm.recordsByVin[vin].autoCheckReport.url = `https://www.autocheck.com/vehiclehistory?VIN=${vin}&source=inventory-flow`
+    expect(validateVinDocumentEnrichment(queryForm).recordsByVin[vin].autoCheckReport.url).toContain(`VIN=${vin}`)
     const unsafe = structuredClone(record)
     unsafe.recordsByVin[vin].autoCheckReport.url = `https://evil.example/report/${vin}`
     expect(() => validateVinDocumentEnrichment(unsafe)).toThrow(/approved official host/i)
+    const confused = structuredClone(record)
+    confused.recordsByVin[vin].autoCheckReport.url = `https://www.autocheck.com/report?vin=2LMPJ8LR3HBL46607&note=${vin}`
+    expect(() => validateVinDocumentEnrichment(confused)).toThrow(/exact-VIN route/i)
     const mismatch = structuredClone(record)
     mismatch.recordsByVin[vin].autoCheckReport.validatedVin = '2LMPJ8LR3HBL46607'
     expect(() => validateVinDocumentEnrichment(mismatch)).toThrow(/exact-VIN/i)
@@ -359,6 +491,7 @@ describe('verified daily source importer', () => {
         type: 'vin_document_enrichment',
         rowCount: 1,
         schemaVersion: 'inventory-flow-vin-document-enrichment-v1',
+        provenanceSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
       })
     } finally {
       fixture.cleanup()

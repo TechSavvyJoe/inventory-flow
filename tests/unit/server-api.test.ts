@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
-import { createInventoryServer } from '../../server/api.mjs'
+import { createInventoryServer, prepareNodeTransferEventInput } from '../../server/api.mjs'
 import { importRelease, openInventoryDatabase } from '../../server/database.mjs'
 import { findLatestCompletedManifest, loadLatestCompletedRelease } from '../../server/importer.mjs'
 import { createInventoryService } from '../../server/service.mjs'
@@ -20,12 +20,13 @@ afterEach(async () => {
   while (openWorkspaces.length) openWorkspaces.pop()?.cleanup()
 })
 
-async function harness() {
+async function harness(mutateRelease?: (release: ReturnType<typeof loadLatestCompletedRelease>) => void) {
   const fixture = createSyntheticWorkspace()
   openWorkspaces.push(fixture)
   const { manifest } = findLatestCompletedManifest(fixture.workspaceRoot)
   const fixedNow = new Date(`${manifest.report_date}T18:00:00-04:00`)
   const release = loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot, now: fixedNow })
+  mutateRelease?.(release)
   const database = openInventoryDatabase()
   importRelease(database, release, { loadedAt: fixedNow.toISOString() })
   const service = createInventoryService({ database, now: () => fixedNow })
@@ -169,6 +170,24 @@ async function advanceToArrival(baseUrl: string, vehicle: { vin: string }, suffi
 }
 
 describe('Inventory Flow API', () => {
+  it('fails closed when the standalone Node API cannot resolve a stable transport assignee identity', () => {
+    const stableContext = {
+      role: 'manager', store: 'Fowlerville', user: 'Fowlerville Manager', userId: 'manager-1',
+    }
+    expect(() => prepareNodeTransferEventInput({
+      type: 'transport_assigned', assignee: 'Alex Driver', assigneeUserId: 'attacker-chosen-id',
+    }, stableContext)).toThrowError(expect.objectContaining({ code: 'ASSIGNEE_IDENTITY_CLIENT_CONTROLLED' }))
+    expect(() => prepareNodeTransferEventInput({
+      type: 'transport_assigned', assignee: 'Alex Driver',
+    }, stableContext)).toThrowError(expect.objectContaining({ code: 'ASSIGNEE_DIRECTORY_UNAVAILABLE' }))
+    expect(prepareNodeTransferEventInput({ type: 'transport_assigned', assignee: 'Demo Porter' }, {
+      role: 'manager', store: 'Fowlerville', user: 'Demo Manager', userId: null,
+    })).toEqual({ type: 'transport_assigned', assignee: 'Demo Porter' })
+    expect(() => prepareNodeTransferEventInput({
+      type: 'note_added', note: 'No assignee identity belongs on this event.', assigneeUserId: 'forged-audit-id',
+    }, stableContext)).toThrowError(expect.objectContaining({ code: 'ASSIGNEE_IDENTITY_CLIENT_CONTROLLED' }))
+  })
+
   it('normalizes an omitted hold change status and passes through explicit source status', async () => {
     const { baseUrl, manifest, database } = await harness()
     expect(manifest.hold_change_status).toBeUndefined()
@@ -483,6 +502,298 @@ describe('Inventory Flow API', () => {
     )
   })
 
+  it('shows unheld vehicle alerts and released history only in authorized evidence and search', async () => {
+    let vin = ''
+    const { baseUrl, database } = await harness((release) => {
+      const vehicle = release.vehicles.find((row) => row.crmRecord && row.publicRecord && !row.holdRecord)
+      vin = vehicle.vin
+      vehicle.crmRecord.comments = [{ rows: [{ commentTextRaw: 'Synthetic unheld inspection note', authorRaw: 'Synthetic reviewer', timestampRaw: '08/30/2026 09:15 AM' }] }]
+      vehicle.crmRecord.alerts = [{ alertTextRaw: 'Synthetic unheld transport restriction', modifiedMetadataRaw: 'Modified by Synthetic manager on 08/30/2026 09:20 AM', spiffRaw: '$150 synthetic' }]
+      release.releasedHoldHistory = [{ vin, stockNumber: vehicle.crmRecord.stockNumber, holdDetailRows: [
+        { orderRaw: '1', lifecycleStatus: 'active', salespersonRaw: 'Historical salesperson', customerOrReasonRaw: 'Synthetic former hold reason', holdDateRaw: '08/20/2026', expectedDeliveryDateRaw: '08/22/2026' },
+        { orderRaw: 'DELETED', lifecycleStatus: 'deleted_history', customerOrReasonRaw: 'Synthetic deleted former reason' },
+      ] }]
+    })
+    const headers = roleHeaders('sales', 'Howell', 'Synthetic sales')
+    const bootstrap = await fetch(`${baseUrl}/api/bootstrap`, { headers }).then((response) => response.json())
+    const row = bootstrap.vehicles.find((vehicle) => vehicle.vin === vin)
+    expect(row.hold).toMatchObject({ state: 'none_observed', backupCount: 0, commentsCount: 1, alertsCount: 1 })
+    expect(row.searchText).toContain('synthetic unheld transport restriction')
+    expect(row.searchText).toContain('synthetic former hold reason')
+    const alert = bootstrap.attention.find((item) => item.vin === vin && item.type === 'vehicle_alert')
+    expect(alert).toMatchObject({ label: 'Vehicle alert needs review' })
+    expect(JSON.stringify(alert)).not.toMatch(/Synthetic unheld|Synthetic former/)
+    const detail = await fetch(`${baseUrl}/api/vehicles/${vin}`, { headers }).then((response) => response.json())
+    expect(detail.privateEvidence.primary).toBeNull()
+    expect(detail.privateEvidence.comments).toHaveLength(1)
+    expect(detail.privateEvidence.alerts).toHaveLength(1)
+    expect(detail.privateEvidence.alerts[0]).toMatchObject({ metadataRaw: 'Modified by Synthetic manager on 08/30/2026 09:20 AM', spiffRaw: '$150 synthetic' })
+    expect(row.searchText).toContain('$150 synthetic')
+    expect(detail.privateEvidence.history).toHaveLength(2)
+    expect(detail.privateEvidence.history[0].statusLabel).toBe('Not in current live hold set; detail page retains order 1 — review')
+    expect(database.prepare('SELECT count(*) AS n FROM hold_vehicle_snapshots WHERE vin = ?').get(vin).n).toBe(0)
+    const search = await fetch(`${baseUrl}/api/vehicles?q=Synthetic%20former%20hold%20reason`, { headers }).then((response) => response.json())
+    expect(search.items.some((vehicle) => vehicle.vin === vin)).toBe(true)
+    const restricted = await fetch(`${baseUrl}/api/vehicles/${vin}`, { headers: roleHeaders('porter', 'Howell', 'Synthetic porter') }).then((response) => response.json())
+    expect(restricted.privateEvidence).toBeUndefined()
+    expect(restricted.searchText).not.toMatch(/synthetic unheld|synthetic former|historical salesperson/)
+    database.prepare('DELETE FROM public_vehicle_snapshots WHERE vin = ?').run(vin)
+    const crmOnly = await fetch(`${baseUrl}/api/bootstrap`, { headers }).then((response) => response.json())
+    expect(crmOnly.attention.some((item) => item.vin === vin && item.type === 'vehicle_alert')).toBe(true)
+  })
+
+  it('scopes transfer reads and writes to related managers, group managers, and the assigned driver', async () => {
+    const { baseUrl, database } = await harness()
+    const seed = await fetch(`${baseUrl}/api/bootstrap`, {
+      headers: roleHeaders('sales', 'Fowlerville', 'Fowlerville Salesperson'),
+    }).then((response) => response.json())
+    const vehicle = seed.vehicles.find((row: { publicStore: string }) => row.publicStore === 'Howell')
+    const requested = await createSalesRequest(baseUrl, vehicle, 'Fowlerville Salesperson')
+    expect(requested.response.status).toBe(201)
+    const transferId = requested.body.id
+
+    const unrelatedManager = roleHeaders('manager', 'Ford Detroit', 'Detroit Manager')
+    const unrelatedList = await fetch(`${baseUrl}/api/transfers`, { headers: unrelatedManager }).then((response) =>
+      response.json(),
+    )
+    expect(unrelatedList.items.some((row: { id: string }) => row.id === transferId)).toBe(false)
+
+    const unrelatedRead = await fetch(`${baseUrl}/api/transfers/${transferId}`, { headers: unrelatedManager })
+    expect(unrelatedRead.status).toBe(404)
+    expect((await unrelatedRead.json()).code).toBe('TRANSFER_NOT_FOUND')
+
+    const unrelatedBootstrap = await fetch(`${baseUrl}/api/bootstrap`, { headers: unrelatedManager }).then((response) =>
+      response.json(),
+    )
+    expect(unrelatedBootstrap.transfers.some((row: { id: string }) => row.id === transferId)).toBe(false)
+    expect(unrelatedBootstrap.attention.some((item: { sourceId?: string }) => item.sourceId === transferId)).toBe(false)
+    expect(unrelatedBootstrap.vehicles.find((row: { vin: string }) => row.vin === vehicle.vin).movement.transferId).toBeUndefined()
+
+    const beforeUnrelatedWrite = database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count
+    const unrelatedWrite = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'manager', store: 'Ford Detroit', user: 'Detroit Manager' },
+      { type: 'note_added', note: 'This unrelated manager must not reach the transfer ledger.' },
+    )
+    expect(unrelatedWrite.response.status).toBe(404)
+    expect(unrelatedWrite.body.code).toBe('TRANSFER_NOT_FOUND')
+    expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(beforeUnrelatedWrite)
+
+    for (const context of [
+      { role: 'manager', store: 'Howell', user: 'Howell Used Manager' },
+      { role: 'manager', store: 'Fowlerville', user: 'Fowlerville Manager' },
+    ]) {
+      const list = await fetch(`${baseUrl}/api/transfers`, {
+        headers: roleHeaders(context.role, context.store, context.user),
+      }).then((response) => response.json())
+      expect(list.items.some((row: { id: string }) => row.id === transferId)).toBe(true)
+      const read = await fetch(`${baseUrl}/api/transfers/${transferId}`, {
+        headers: roleHeaders(context.role, context.store, context.user),
+      })
+      expect(read.status).toBe(200)
+      expect((await read.json()).privateEvidence.customerReference).toBe('Private test reference')
+    }
+
+    const groupManager = roleHeaders('group_manager', 'Lincoln', 'Group Manager')
+    const groupList = await fetch(`${baseUrl}/api/transfers`, { headers: groupManager }).then((response) => response.json())
+    expect(groupList.items.some((row: { id: string }) => row.id === transferId)).toBe(true)
+    const groupRead = await fetch(`${baseUrl}/api/transfers/${transferId}`, { headers: groupManager })
+    expect(groupRead.status).toBe(200)
+    expect((await groupRead.json()).privateEvidence.customerReference).toBe('Private test reference')
+    const groupNote = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'group_manager', store: 'Lincoln', user: 'Group Manager' },
+      { type: 'note_added', note: 'Authorized group-wide operational review.' },
+    )
+    expect(groupNote.response.status).toBe(201)
+
+    const review = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'manager', store: 'Fowlerville', user: 'Fowlerville Manager' },
+      { type: 'manager_reviewed', note: 'Requesting-store manager reviewed the request.' },
+    )
+    expect(review.response.status).toBe(201)
+    const approval = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'manager', store: 'Fowlerville', user: 'Fowlerville Manager' },
+      {
+        type: 'approved',
+        homeStoreManager: 'Howell Used Manager',
+        note: 'Howell manager confirmed the vehicle may be released.',
+      },
+    )
+    expect(approval.response.status).toBe(201)
+    const driverRequest = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'sales', store: 'Fowlerville', user: 'Fowlerville Salesperson' },
+      { type: 'driver_requested' },
+    )
+    expect(driverRequest.response.status).toBe(201)
+    const assignment = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'coordinator', store: 'Fowlerville', user: 'Fowlerville Coordinator' },
+      { type: 'transport_assigned', assignee: 'Assigned Driver', dueAt: '2026-08-30T13:30:00-04:00' },
+    )
+    expect(assignment.response.status).toBe(201)
+
+    for (const role of ['porter', 'driver']) {
+      const context = { role, store: 'Fowlerville', user: `Unassigned ${role}` }
+      const headers = roleHeaders(context.role, context.store, context.user)
+      const list = await fetch(`${baseUrl}/api/transfers`, { headers }).then((response) => response.json())
+      expect(list.items.some((row: { id: string }) => row.id === transferId)).toBe(false)
+      const read = await fetch(`${baseUrl}/api/transfers/${transferId}`, { headers })
+      expect(read.status).toBe(404)
+      const vehicleRead = await fetch(`${baseUrl}/api/vehicles/${vehicle.vin}`, { headers }).then((response) =>
+        response.json(),
+      )
+      expect(vehicleRead.movement.transferId).toBeUndefined()
+      const beforeWrite = database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count
+      const write = await postEvent(baseUrl, transferId, context, {
+        type: 'picked_up',
+        note: 'An unassigned transport user must not record custody.',
+      })
+      expect(write.response.status).toBe(404)
+      expect(write.body.code).toBe('TRANSFER_NOT_FOUND')
+      expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(beforeWrite)
+    }
+
+    const assignedHeaders = roleHeaders('driver', 'Fowlerville', 'Assigned Driver')
+    const assignedList = await fetch(`${baseUrl}/api/transfers`, { headers: assignedHeaders }).then((response) =>
+      response.json(),
+    )
+    expect(assignedList.items.some((row: { id: string }) => row.id === transferId)).toBe(true)
+    const assignedRead = await fetch(`${baseUrl}/api/transfers/${transferId}`, { headers: assignedHeaders })
+    expect(assignedRead.status).toBe(200)
+    const assignedRecord = await assignedRead.json()
+    expect(assignedRecord.privateEvidence).toBeUndefined()
+    expect(assignedRecord.allowedActions).toContain('confirm-pickup')
+    const pickup = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'driver', store: 'Fowlerville', user: 'Assigned Driver' },
+      { type: 'picked_up', note: 'Assigned driver received the keys and custody.' },
+    )
+    expect(pickup.response.status).toBe(201)
+    expect(pickup.body.movementStatus).toBe('picked_up')
+
+    const arrival = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'driver', store: 'Fowlerville', user: 'Assigned Driver' },
+      { type: 'arrived', note: 'Assigned driver delivered the vehicle to the requesting store.' },
+    )
+    expect(arrival.response.status).toBe(201)
+    const formerDriverAfterArrival = roleHeaders('driver', 'Fowlerville', 'Assigned Driver')
+    const postArrivalList = await fetch(`${baseUrl}/api/transfers`, { headers: formerDriverAfterArrival }).then(
+      (response) => response.json(),
+    )
+    expect(postArrivalList.items.some((row: { id: string }) => row.id === transferId)).toBe(false)
+    const postArrivalRead = await fetch(`${baseUrl}/api/transfers/${transferId}`, { headers: formerDriverAfterArrival })
+    expect(postArrivalRead.status).toBe(404)
+    const beforePostArrivalWrite = database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count
+    const postArrivalWrite = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'driver', store: 'Fowlerville', user: 'Assigned Driver' },
+      { type: 'note_added', note: 'A completed outbound assignment no longer authorizes ledger access.' },
+    )
+    expect(postArrivalWrite.response.status).toBe(404)
+    expect(postArrivalWrite.body.code).toBe('TRANSFER_NOT_FOUND')
+    expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(beforePostArrivalWrite)
+
+    const notSold = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'sales', store: 'Fowlerville', user: 'Fowlerville Salesperson' },
+      { type: 'not_sold', note: 'Customer did not purchase; outcome does not imply availability.' },
+    )
+    expect(notSold.response.status).toBe(201)
+    const returnRequest = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'sales', store: 'Fowlerville', user: 'Fowlerville Salesperson' },
+      { type: 'return_requested', dueAt: '2026-08-31T12:00:00-04:00' },
+    )
+    expect(returnRequest.response.status).toBe(201)
+    const unassignedReturnRead = await fetch(`${baseUrl}/api/transfers/${transferId}`, {
+      headers: formerDriverAfterArrival,
+    })
+    expect(unassignedReturnRead.status).toBe(404)
+    const returnAssignment = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'coordinator', store: 'Fowlerville', user: 'Fowlerville Coordinator' },
+      { type: 'return_assigned', assignee: 'Return Driver', dueAt: '2026-08-31T12:00:00-04:00' },
+    )
+    expect(returnAssignment.response.status).toBe(201)
+
+    const beforeFormerDriverWrite = database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count
+    const formerDriverWrite = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'driver', store: 'Fowlerville', user: 'Assigned Driver' },
+      { type: 'return_in_transit', note: 'The former outbound driver is no longer assigned.' },
+    )
+    expect(formerDriverWrite.response.status).toBe(404)
+    expect(formerDriverWrite.body.code).toBe('TRANSFER_NOT_FOUND')
+    expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(beforeFormerDriverWrite)
+
+    const returnDriver = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'driver', store: 'Fowlerville', user: 'Return Driver' },
+      { type: 'return_in_transit', note: 'The currently assigned return driver received custody.' },
+    )
+    expect(returnDriver.response.status).toBe(201)
+    expect(returnDriver.body.movementStatus).toBe('return_in_transit')
+
+    const returnedHome = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'manager', store: 'Howell', user: 'Howell Used Manager' },
+      { type: 'returned_home', note: 'Home Store manager confirmed physical receipt.' },
+    )
+    expect(returnedHome.response.status).toBe(201)
+    const postReturnRead = await fetch(`${baseUrl}/api/transfers/${transferId}`, {
+      headers: roleHeaders('driver', 'Fowlerville', 'Return Driver'),
+    })
+    expect(postReturnRead.status).toBe(404)
+
+    const closed = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'manager', store: 'Howell', user: 'Howell Used Manager' },
+      { type: 'closed', note: 'Related Home Store manager closed the completed movement.' },
+    )
+    expect(closed.response.status).toBe(201)
+    const returnDriverHeaders = roleHeaders('driver', 'Fowlerville', 'Return Driver')
+    const postCloseList = await fetch(`${baseUrl}/api/transfers`, { headers: returnDriverHeaders }).then((response) =>
+      response.json(),
+    )
+    expect(postCloseList.items.some((row: { id: string }) => row.id === transferId)).toBe(false)
+    const postCloseRead = await fetch(`${baseUrl}/api/transfers/${transferId}`, { headers: returnDriverHeaders })
+    expect(postCloseRead.status).toBe(404)
+    const beforePostCloseWrite = database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count
+    const postCloseWrite = await postEvent(
+      baseUrl,
+      transferId,
+      { role: 'driver', store: 'Fowlerville', user: 'Return Driver' },
+      { type: 'note_added', note: 'A completed return assignment cannot modify a closed workflow.' },
+    )
+    expect(postCloseWrite.response.status).toBe(404)
+    expect(postCloseWrite.body.code).toBe('TRANSFER_NOT_FOUND')
+    expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(beforePostCloseWrite)
+
+    const unrelatedAfterMovement = await fetch(`${baseUrl}/api/transfers/${transferId}`, { headers: unrelatedManager })
+    expect(unrelatedAfterMovement.status).toBe(404)
+  })
+
   it('enforces manager review, release evidence, driver coordination, and porter handoffs', async () => {
     const { baseUrl, database } = await harness()
     const bootstrap = await fetch(`${baseUrl}/api/bootstrap?homeStore=Fowlerville&role=sales`).then((response) => response.json())
@@ -530,8 +841,8 @@ describe('Inventory Flow API', () => {
       { role: 'manager', store: 'Ford Detroit', user: 'Detroit Manager' },
       { type: 'manager_reviewed' },
     )
-    expect(wrongStoreReview.response.status).toBe(403)
-    expect(wrongStoreReview.body.code).toBe('WRONG_STORE_ROLE')
+    expect(wrongStoreReview.response.status).toBe(404)
+    expect(wrongStoreReview.body.code).toBe('TRANSFER_NOT_FOUND')
     expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(1)
 
     const spoofedActor = await postEvent(

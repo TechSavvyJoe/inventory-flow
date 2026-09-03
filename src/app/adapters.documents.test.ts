@@ -260,4 +260,24 @@ describe('official document adapter', () => {
     expect(mapped.dataStatus).toBe('Current public inventory');
     expect(mapped.publicScan).toEqual(record.publicScan);
   });
+
+  it('keeps vehicle comments and historical evidence separate from a current hold', () => {
+    const record = sourceVehicle();
+    record.hold.canViewEvidence = true;
+    record.privateEvidence = {
+      primary: null, backups: [],
+      comments: [{ text: 'Synthetic vehicle inspection note' }],
+      alerts: [{ text: 'Synthetic vehicle transport restriction' }],
+      history: [{ orderRaw: '1', customerOrReason: 'Synthetic historical customer reason', statusLabel: 'Not in current live hold set; outcome unknown' }],
+    };
+    const mapped = toInventoryVehicle(record, sourceData());
+    expect(mapped.holdEvidence).toEqual([]);
+    expect(mapped.dealerMail.hasActiveHold).toBe(false);
+    expect(mapped.dealerMailEvidence?.alerts).toHaveLength(1);
+    const index = buildInventorySearchIndex([mapped]);
+    expect(rankInventorySearch(index, 'Synthetic historical customer reason')).toHaveLength(1);
+    expect(rankInventorySearch(index, 'Synthetic vehicle transport restriction')).toHaveLength(1);
+    record.hold.canViewEvidence = false;
+    expect(toInventoryVehicle(record, sourceData()).dealerMailEvidence).toBeUndefined();
+  });
 });

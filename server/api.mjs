@@ -5,6 +5,7 @@ import { createIdentityResolver, IdentityError } from './identity.mjs'
 import { WorkflowError } from './workflow.mjs'
 
 const BODY_LIMIT = 64 * 1024
+const TRANSPORT_ASSIGNMENT_EVENTS = new Set(['transport_assigned', 'return_assigned'])
 const MIME_TYPES = Object.freeze({
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -76,6 +77,24 @@ async function readJson(request) {
   } catch (error) {
     throw new HttpError('Request body must be valid JSON object', 400, 'INVALID_JSON', { cause: error.message })
   }
+}
+
+export function prepareNodeTransferEventInput(input, context) {
+  if (Object.hasOwn(input, 'assigneeUserId')) {
+    throw new HttpError('Transport assignee identity is server-controlled', 422, 'ASSIGNEE_IDENTITY_CLIENT_CONTROLLED')
+  }
+  const eventType = String(input?.type ?? '').trim().toLowerCase()
+  if (TRANSPORT_ASSIGNMENT_EVENTS.has(eventType) && context?.userId) {
+    // The hosted Cloud Worker resolves display labels against the private
+    // membership directory. This standalone Node surface has no such trusted
+    // resolver, so authenticated production assignments fail closed.
+    throw new HttpError(
+      'Transport assignment is unavailable without the server-owned membership directory',
+      503,
+      'ASSIGNEE_DIRECTORY_UNAVAILABLE',
+    )
+  }
+  return input
 }
 
 function queryObject(url) {
@@ -187,7 +206,7 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
       }
       const eventMatch = route.match(/^\/transfers\/([^/]+)\/events$/)
       if (request.method === 'POST' && eventMatch) {
-        const input = await readJson(request)
+        const input = prepareNodeTransferEventInput(await readJson(request), context)
         const result = service.appendTransferEvent(
           decodeURIComponent(eventMatch[1]),
           input,

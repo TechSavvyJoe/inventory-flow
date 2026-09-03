@@ -533,7 +533,7 @@ describe('manager-friendly inventory UI', () => {
     expect(within(documents).getByText('92')).toBeInTheDocument()
     expect(within(documents).getByText('89–94')).toBeInTheDocument()
     expect(within(documents).getByText('200A')).toBeInTheDocument()
-    expect(within(documents).getByText('$49,480')).toBeInTheDocument()
+    expect(within(documents).getByText('49,480 (original sticker currency; verify)')).toBeInTheDocument()
     const fullFactoryDetails = within(documents).getByText('Full factory equipment & warranty').closest('summary')
     expect(fullFactoryDetails).not.toBeNull()
     fireEvent.click(fullFactoryDetails!)

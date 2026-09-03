@@ -49,6 +49,7 @@ function d1Harness() {
   resources.push(() => database.close())
   database.exec(readFileSync(new URL('../../cloudflare/migrations/0001_initial.sql', import.meta.url), 'utf8'))
   database.exec(readFileSync(new URL('../../cloudflare/migrations/0002_app_access.sql', import.meta.url), 'utf8'))
+  database.exec(readFileSync(new URL('../../cloudflare/migrations/0003_transport_assignment_identity.sql', import.meta.url), 'utf8'))
   const d1 = {
     database,
     failTable: null,
@@ -128,6 +129,9 @@ describe('initial encrypted saved-activity migration', () => {
       const rows = d1.database.prepare(`SELECT ${LEDGER_COLUMNS[table].join(', ')} FROM ${table} ORDER BY rowid`).all().map((row) => ({ ...row }))
       expect(rows).toEqual(bundle.tables[table])
     }
+    expect(d1.database.prepare('SELECT transport_assignee_user_id AS id FROM transfer_requests').get().id).toBeNull()
+    expect(d1.database.prepare('SELECT actor_user_id AS id FROM transfer_events ORDER BY rowid LIMIT 1').get().id).toBeNull()
+    expect(d1.database.prepare('SELECT driver_or_porter_user_id AS id FROM transfer_events ORDER BY rowid LIMIT 1').get().id).toBeNull()
     expect(d1.database.prepare('SELECT COUNT(*) AS count FROM source_runs').get().count).toBe(0)
     const replay = await importLedger(bundle, { INVENTORY_DB: d1 })
     expect(replay.status).toBe('already_imported')

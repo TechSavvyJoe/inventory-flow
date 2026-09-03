@@ -167,6 +167,7 @@ export function migrate(database) {
       current_location_id TEXT NOT NULL,
       current_custodian TEXT,
       transport_assignee TEXT,
+      transport_assignee_user_id TEXT,
       next_action TEXT NOT NULL,
       next_action_owner TEXT,
       due_at TEXT,
@@ -186,11 +187,13 @@ export function migrate(database) {
       event_type TEXT NOT NULL,
       label TEXT NOT NULL,
       actor TEXT NOT NULL,
+      actor_user_id TEXT,
       actor_role TEXT NOT NULL,
       store_id TEXT,
       from_location_id TEXT,
       to_location_id TEXT,
       driver_or_porter TEXT,
+      driver_or_porter_user_id TEXT,
       occurred_at TEXT NOT NULL,
       expected_arrival_at TEXT,
       confirmed_by TEXT,
@@ -256,6 +259,21 @@ export function migrate(database) {
     CREATE INDEX IF NOT EXISTS attention_events_item_idx
       ON attention_events(attention_key, occurred_at, created_at, id);
   `)
+
+  // Existing local ledgers predate immutable transport principal IDs. Keep the
+  // display-name columns for UI/history and add nullable identity columns
+  // without rewriting any saved operational records.
+  const requestColumns = new Set(database.prepare('PRAGMA table_info(transfer_requests)').all().map((row) => row.name))
+  if (!requestColumns.has('transport_assignee_user_id')) {
+    database.exec('ALTER TABLE transfer_requests ADD COLUMN transport_assignee_user_id TEXT')
+  }
+  const eventColumns = new Set(database.prepare('PRAGMA table_info(transfer_events)').all().map((row) => row.name))
+  if (!eventColumns.has('actor_user_id')) {
+    database.exec('ALTER TABLE transfer_events ADD COLUMN actor_user_id TEXT')
+  }
+  if (!eventColumns.has('driver_or_porter_user_id')) {
+    database.exec('ALTER TABLE transfer_events ADD COLUMN driver_or_porter_user_id TEXT')
+  }
 }
 
 function setState(database, key, value, updatedAt) {
@@ -398,6 +416,7 @@ export function importRelease(database, release, { loadedAt = new Date().toISOSt
     setState(database, 'current_manifest_json', json(release.manifest), loadedAt)
     setState(database, 'current_release_warnings_json', json(release.warnings), loadedAt)
     setState(database, 'current_public_change_events_json', json(release.publicChangeEvents ?? []), loadedAt)
+    setState(database, 'current_released_hold_history_json', json(release.releasedHoldHistory ?? []), loadedAt)
     setState(
       database,
       'current_public_change_baseline_json',
@@ -530,10 +549,10 @@ export function insertTransferRequest(database, request, initialEvent) {
           requested_by, requested_at, needed_by, reason, customer_reference,
           customer_appointment, approval_owner, approved_by, priority, status,
           movement_status, deal_status, delivery_status, current_location_id,
-          current_custodian, transport_assignee, next_action, next_action_owner,
+          current_custodian, transport_assignee, transport_assignee_user_id, next_action, next_action_owner,
           due_at, return_required, return_due_at, last_confirmed_at,
           location_confidence, closed_at, created_at, updated_at, idempotency_key
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         id,
@@ -560,6 +579,7 @@ export function insertTransferRequest(database, request, initialEvent) {
         request.currentLocationId,
         request.currentCustodian || null,
         request.transportAssignee || null,
+        request.transportAssigneeUserId || null,
         request.nextAction,
         request.nextActionOwner || null,
         request.dueAt || null,
@@ -582,10 +602,10 @@ function insertTransferEventRow(database, transferId, event) {
   database
     .prepare(`
       INSERT INTO transfer_events (
-        id, transfer_request_id, event_type, label, actor, actor_role, store_id,
-        from_location_id, to_location_id, driver_or_porter, occurred_at,
+        id, transfer_request_id, event_type, label, actor, actor_user_id, actor_role, store_id,
+        from_location_id, to_location_id, driver_or_porter, driver_or_porter_user_id, occurred_at,
         expected_arrival_at, confirmed_by, note, created_at, idempotency_key
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     .run(
       event.id || randomUUID(),
@@ -593,11 +613,13 @@ function insertTransferEventRow(database, transferId, event) {
       event.eventType,
       event.label,
       event.actor,
+      event.actorUserId || null,
       event.actorRole,
       event.storeId || null,
       event.fromLocationId || null,
       event.toLocationId || null,
       event.driverOrPorter || null,
+      event.driverOrPorterUserId || null,
       event.occurredAt,
       event.expectedArrivalAt || null,
       event.confirmedBy || null,
@@ -628,6 +650,7 @@ export function appendTransferEvent(database, transferId, event, requestPatch) {
       'current_location_id',
       'current_custodian',
       'transport_assignee',
+      'transport_assignee_user_id',
       'next_action',
       'next_action_owner',
       'due_at',

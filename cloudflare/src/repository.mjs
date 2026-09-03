@@ -17,13 +17,13 @@ const TRANSFER_COLUMNS = [
   'requested_by', 'requested_at', 'needed_by', 'reason', 'customer_reference',
   'customer_appointment', 'approval_owner', 'approved_by', 'priority', 'status',
   'movement_status', 'deal_status', 'delivery_status', 'current_location_id',
-  'current_custodian', 'transport_assignee', 'next_action', 'next_action_owner',
+  'current_custodian', 'transport_assignee', 'transport_assignee_user_id', 'next_action', 'next_action_owner',
   'due_at', 'return_required', 'return_due_at', 'last_confirmed_at',
   'location_confidence', 'closed_at', 'created_at', 'updated_at', 'idempotency_key',
 ]
 const TRANSFER_EVENT_COLUMNS = [
-  'id', 'transfer_request_id', 'event_type', 'label', 'actor', 'actor_role', 'store_id',
-  'from_location_id', 'to_location_id', 'driver_or_porter', 'occurred_at',
+  'id', 'transfer_request_id', 'event_type', 'label', 'actor', 'actor_user_id', 'actor_role', 'store_id',
+  'from_location_id', 'to_location_id', 'driver_or_porter', 'driver_or_porter_user_id', 'occurred_at',
   'expected_arrival_at', 'confirmed_by', 'note', 'created_at', 'idempotency_key',
 ]
 const ATTENTION_COLUMNS = [
@@ -38,7 +38,7 @@ const ATTENTION_EVENT_COLUMNS = [
 ]
 const TRANSFER_PATCH_COLUMNS = new Set([
   'approved_by', 'status', 'movement_status', 'deal_status', 'delivery_status',
-  'current_location_id', 'current_custodian', 'transport_assignee', 'next_action',
+  'current_location_id', 'current_custodian', 'transport_assignee', 'transport_assignee_user_id', 'next_action',
   'next_action_owner', 'due_at', 'return_due_at', 'last_confirmed_at',
   'location_confidence', 'closed_at', 'updated_at',
 ])
@@ -87,6 +87,7 @@ export function datasetFromRelease(release, homeAssignments = [], { loadedAt } =
     manifest: release.manifest,
     warnings: release.warnings,
     publicChangeEvents: release.publicChangeEvents,
+    releasedHoldHistory: release.releasedHoldHistory ?? [],
     completedAt: release.completedAt,
     reportDate: release.reportDate,
   })
@@ -107,6 +108,7 @@ export function datasetFromRelease(release, homeAssignments = [], { loadedAt } =
     current_manifest_json: json(evidence.manifest),
     current_release_warnings_json: json(evidence.warnings),
     current_public_change_events_json: json(evidence.publicChangeEvents ?? []),
+    current_released_hold_history_json: json(evidence.releasedHoldHistory),
     current_public_change_baseline_json: json(evidence.sourceRuns.public.metadata?.changeBaseline ?? null),
   }
   const dataset = { state, sourceRuns, publicRows: [], crmRows: [], holdRows: [], resourceRows: [], homeAssignments: clone(homeAssignments) }
@@ -176,7 +178,8 @@ function transferRequestRow(request) {
     approved_by: nullable(request.approvedBy), priority: request.priority, status: request.status,
     movement_status: request.movementStatus, deal_status: request.dealStatus, delivery_status: request.deliveryStatus,
     current_location_id: request.currentLocationId, current_custodian: nullable(request.currentCustodian),
-    transport_assignee: nullable(request.transportAssignee), next_action: request.nextAction,
+    transport_assignee: nullable(request.transportAssignee),
+    transport_assignee_user_id: nullable(request.transportAssigneeUserId), next_action: request.nextAction,
     next_action_owner: nullable(request.nextActionOwner), due_at: nullable(request.dueAt),
     return_required: request.returnRequired ? 1 : 0, return_due_at: nullable(request.returnDueAt),
     last_confirmed_at: nullable(request.lastConfirmedAt), location_confidence: request.locationConfidence,
@@ -188,9 +191,11 @@ function transferRequestRow(request) {
 function transferEventRow(transferId, event) {
   return {
     id: event.id || crypto.randomUUID(), transfer_request_id: transferId,
-    event_type: event.eventType, label: event.label, actor: event.actor, actor_role: event.actorRole,
+    event_type: event.eventType, label: event.label, actor: event.actor,
+    actor_user_id: nullable(event.actorUserId), actor_role: event.actorRole,
     store_id: nullable(event.storeId), from_location_id: nullable(event.fromLocationId),
     to_location_id: nullable(event.toLocationId), driver_or_porter: nullable(event.driverOrPorter),
+    driver_or_porter_user_id: nullable(event.driverOrPorterUserId),
     occurred_at: event.occurredAt, expected_arrival_at: nullable(event.expectedArrivalAt),
     confirmed_by: nullable(event.confirmedBy), note: nullable(event.note),
     created_at: event.createdAt, idempotency_key: nullable(event.idempotencyKey),

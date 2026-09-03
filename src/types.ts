@@ -59,6 +59,11 @@ export interface AutoCheckReportRecord {
 }
 
 export interface WindowStickerRecord {
+  originalMarket?: string | null
+  pricingCurrency?: string | null
+  pricingCurrencyEvidence?: string | null
+  failureReason?: string | null
+  sourceMessage?: string | null
   /** VIN-specific window-sticker URL published by the dealership vehicle page. */
   url?: string | null
   dataState?: SourceFreshness
@@ -136,6 +141,18 @@ export interface DealerMailEvidenceMessage {
   author?: string
   text?: string
   timestamp?: string
+  metadataRaw?: string
+  spiffRaw?: string
+}
+
+export interface DealerMailHistoryRecord {
+  orderRaw?: string
+  lifecycle?: string
+  salesperson?: string
+  customerOrReason?: string
+  holdDate?: string
+  expectedDate?: string
+  statusLabel: string
 }
 
 export interface DealerMailPrivateEvidence {
@@ -155,6 +172,7 @@ export interface DealerMailPrivateEvidence {
   }>
   comments: DealerMailEvidenceMessage[]
   alerts: DealerMailEvidenceMessage[]
+  history?: DealerMailHistoryRecord[]
   cdk?: {
     result?: string
     status?: string

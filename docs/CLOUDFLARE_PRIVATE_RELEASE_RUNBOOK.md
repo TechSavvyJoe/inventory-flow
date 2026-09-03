@@ -98,6 +98,20 @@ pwsh -NoProfile -File scripts/cloud-secret-store.ps1 -Mode Run -Script scripts/p
 pwsh -NoProfile -File scripts/cloud-secret-store.ps1 -Mode Run -Script scripts/verify-cloud-deployment.mjs
 ```
 
+When the completed public snapshot already contains audited exact-VIN photos,
+AutoCheck and factory-sticker summaries, preserve that enrichment when building
+the hash-bound resource cache. Use the currently bundled Python executable:
+
+```powershell
+python scripts/build_photo_cache.py --report-date YYYY-MM-DD --reuse-snapshot-resources
+```
+
+This explicit reuse mode makes no network requests, retains original sticker
+market/currency and placeholder evidence, and still requires the completed
+validated manifest and matching snapshot hash. Do not use a fresh extraction to
+overwrite manually recovered current-day resources. Without this option the
+legacy resource-refresh mode remains available for snapshots without enrichment.
+
 The wrapper reads current-user DPAPI-protected publisher settings from ignored
 runtime/cloud-secrets, loads them only into the child process, and restores the
 parent environment. That folder has a current-user-only ACL. Never decrypt

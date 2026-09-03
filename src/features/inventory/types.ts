@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import type { DealerMailEvidenceMessage, DealerMailHistoryRecord } from "../../types";
 
 export type InventoryScope = "home" | "group";
 
@@ -67,6 +68,11 @@ export interface AutoCheckResource {
 }
 
 export interface WindowStickerResource {
+  originalMarket?: string | null;
+  pricingCurrency?: string | null;
+  pricingCurrencyEvidence?: string | null;
+  failureReason?: string | null;
+  sourceMessage?: string | null;
   dataState: SourceDataState;
   url?: string | null;
   vehicleDescription?: string | null;
@@ -201,7 +207,14 @@ export interface DealerMailHoldEvidence {
   cdkState?: string | null;
   heldBy?: string | null;
   comments?: Array<{ author?: string | null; text?: string | null; timestamp?: string | null }>;
-  alerts?: Array<{ author?: string | null; text?: string | null; timestamp?: string | null }>;
+  alerts?: Array<{ author?: string | null; text?: string | null; timestamp?: string | null; metadataRaw?: string | null; spiffRaw?: string | null }>;
+}
+
+export interface DealerMailVehicleEvidence {
+  dataState: SourceDataState;
+  comments: DealerMailEvidenceMessage[];
+  alerts: DealerMailEvidenceMessage[];
+  history: DealerMailHistoryRecord[];
 }
 
 export interface PublicScanAudit {
@@ -262,6 +275,7 @@ export interface InventoryVehicle {
   location: VehicleLocationSignal;
   movement?: VehicleMovementSignal | null;
   holdEvidence?: DealerMailHoldEvidence[];
+  dealerMailEvidence?: DealerMailVehicleEvidence;
   timeline?: VehicleTimelineEvent[];
 }
 

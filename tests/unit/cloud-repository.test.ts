@@ -17,7 +17,7 @@ function fakeD1() {
   const sqlite = new DatabaseSync(':memory:')
   openDatabases.push(sqlite)
   sqlite.exec('PRAGMA foreign_keys = ON')
-  for (const name of ['0001_initial.sql', '0002_app_access.sql']) {
+  for (const name of ['0001_initial.sql', '0002_app_access.sql', '0003_transport_assignment_identity.sql']) {
     sqlite.exec(readFileSync(new URL(`../../cloudflare/migrations/${name}`, import.meta.url), 'utf8'))
   }
   return {
@@ -56,14 +56,15 @@ function syntheticRequest(id = 'SYNTHETIC-request-a', overrides = {}) {
     reason: 'SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS test request', customerReference: null, customerAppointment: false,
     approvalOwner: 'Synthetic manager', approvedBy: null, priority: 'normal', status: 'requested', movementStatus: 'at_home',
     dealStatus: 'not_confirmed', deliveryStatus: 'not_confirmed', currentLocationId: 'Howell', currentCustodian: null,
-    transportAssignee: null, nextAction: 'Review request', nextActionOwner: 'Synthetic manager', dueAt: requestAt,
+    transportAssignee: null, transportAssigneeUserId: null, nextAction: 'Review request', nextActionOwner: 'Synthetic manager', dueAt: requestAt,
     returnRequired: true, returnDueAt: null, lastConfirmedAt: requestAt, locationConfidence: 'reported', closedAt: null,
     createdAt: requestAt, updatedAt: requestAt, idempotencyKey: `${id}:key`, ...overrides,
   }
 }
 function syntheticEvent(id = 'SYNTHETIC-event-a', overrides = {}) {
   return {
-    id, eventType: 'requested', label: 'Requested', actor: 'Synthetic salesperson', actorRole: 'sales', storeId: 'Fowlerville',
+    id, eventType: 'requested', label: 'Requested', actor: 'Synthetic salesperson', actorUserId: 'synthetic-sales-1',
+    actorRole: 'sales', storeId: 'Fowlerville',
     fromLocationId: 'Howell', toLocationId: 'Fowlerville', occurredAt: requestAt, note: null, createdAt: requestAt,
     idempotencyKey: `${id}:key`, ...overrides,
   }
@@ -182,13 +183,23 @@ describe('D1 shared operational repository', () => {
     first.repository.insertTransferRequest(first.database, syntheticRequest(), syntheticEvent())
     await first.commit()
     const next = await loadD1Repository(d1, buildSyntheticRelease())
-    const event = syntheticEvent('SYNTHETIC-event-note', { eventType: 'note_added', note: 'Synthetic audit note' })
-    next.repository.appendTransferEvent(next.database, 'SYNTHETIC-request-a', event, { next_action: 'Call home manager', updated_at: requestAt, vin: 'wrong', requested_by: 'wrong' })
+    const event = syntheticEvent('SYNTHETIC-event-note', {
+      eventType: 'note_added', note: 'Synthetic audit note', driverOrPorterUserId: 'runner-a',
+    })
+    next.repository.appendTransferEvent(next.database, 'SYNTHETIC-request-a', event, {
+      next_action: 'Call home manager', transport_assignee_user_id: 'runner-a',
+      updated_at: requestAt, vin: 'wrong', requested_by: 'wrong',
+    })
     await next.commit()
     const restored = await loadD1Repository(d1, buildSyntheticRelease())
     const row = restored.repository.getTransferRow(restored.database, 'SYNTHETIC-request-a')
-    expect(row).toMatchObject({ vin: syntheticRequest().vin, requested_by: 'Synthetic salesperson', next_action: 'Call home manager' })
+    expect(row).toMatchObject({
+      vin: syntheticRequest().vin, requested_by: 'Synthetic salesperson', next_action: 'Call home manager',
+      transport_assignee_user_id: 'runner-a',
+    })
     expect(restored.repository.getTransferEvents(restored.database, row.id)).toHaveLength(2)
+    expect(restored.repository.getTransferEvents(restored.database, row.id)[1].actor_user_id).toBe('synthetic-sales-1')
+    expect(restored.repository.getTransferEvents(restored.database, row.id)[1].driver_or_porter_user_id).toBe('runner-a')
     expect(restored.repository.appendTransferEvent(restored.database, row.id, event, { next_action: 'must not apply twice' }).created).toBe(false)
     await restored.commit()
     expect(() => d1.sqlite.prepare('UPDATE transfer_events SET note = ? WHERE id = ?').run('tampered', event.id)).toThrow('append-only')
@@ -259,6 +270,47 @@ describe('D1 shared operational repository', () => {
     expect(() => d1.sqlite.prepare('UPDATE cloud_memberships SET role = ?').run('owner')).toThrow('CHECK constraint')
     expect(() => d1.sqlite.prepare('UPDATE cloud_memberships SET home_store = ?').run('Unknown')).toThrow('CHECK constraint')
     expect(() => d1.sqlite.prepare('DELETE FROM cloud_app_revision').run()).toThrow('cannot be deleted')
+  })
+
+  it('backfills legacy assignment IDs only for one unambiguous enabled transport member', () => {
+    const sqlite = new DatabaseSync(':memory:')
+    openDatabases.push(sqlite)
+    sqlite.exec(readFileSync(new URL('../../cloudflare/migrations/0001_initial.sql', import.meta.url), 'utf8'))
+    sqlite.exec(readFileSync(new URL('../../cloudflare/migrations/0002_app_access.sql', import.meta.url), 'utf8'))
+    const insertMember = sqlite.prepare('INSERT INTO cloud_memberships (email,user_id,name,role,home_store,enabled) VALUES (?,?,?,?,?,1)')
+    insertMember.run('unique@example.invalid', 'runner-unique', 'Unique Runner', 'driver', 'Howell')
+    insertMember.run('duplicate.one@example.invalid', 'runner-duplicate-1', 'Duplicate Runner', 'driver', 'Howell')
+    insertMember.run('duplicate.two@example.invalid', 'runner-duplicate-2', 'Duplicate Runner', 'porter', 'Fowlerville')
+    const insertRequest = sqlite.prepare(`
+      INSERT INTO transfer_requests (
+        id,vin,stock_at_request,vehicle_name_at_request,home_store_id,home_store_confirmed,
+        requesting_store_id,destination_store_id,requested_by,requested_at,reason,customer_appointment,
+        priority,status,movement_status,deal_status,delivery_status,current_location_id,transport_assignee,
+        next_action,return_required,location_confidence,created_at,updated_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `)
+    const insertLegacy = (id, assignee) => insertRequest.run(
+      id, '1FTEW1EP7PFA00001', 'SYNTHETIC-001', 'Synthetic vehicle', 'Howell', 0,
+      'Fowlerville', 'Fowlerville', 'Synthetic salesperson', requestAt, 'Synthetic reason', 0,
+      'normal', 'transport_assigned', 'transport_assigned', 'not_confirmed', 'not_confirmed', 'Howell',
+      assignee, 'Pickup vehicle', 1, 'reported', requestAt, requestAt,
+    )
+    insertLegacy('unique-transfer', 'unique runner')
+    insertLegacy('duplicate-transfer', 'Duplicate Runner')
+    const insertEvent = sqlite.prepare(`
+      INSERT INTO transfer_events (
+        id,transfer_request_id,event_type,label,actor,actor_role,driver_or_porter,occurred_at,created_at
+      ) VALUES (?,?,?,?,?,?,?,?,?)
+    `)
+    insertEvent.run('unique-event', 'unique-transfer', 'transport_assigned', 'Transport assigned', 'Manager', 'manager', 'UNIQUE RUNNER', requestAt, requestAt)
+    insertEvent.run('duplicate-event', 'duplicate-transfer', 'transport_assigned', 'Transport assigned', 'Manager', 'manager', 'Duplicate Runner', requestAt, requestAt)
+
+    sqlite.exec(readFileSync(new URL('../../cloudflare/migrations/0003_transport_assignment_identity.sql', import.meta.url), 'utf8'))
+    expect(sqlite.prepare('SELECT transport_assignee_user_id AS id FROM transfer_requests WHERE id=?').get('unique-transfer').id).toBe('runner-unique')
+    expect(sqlite.prepare('SELECT actor_user_id AS id FROM transfer_events WHERE id=?').get('unique-event').id).toBeNull()
+    expect(sqlite.prepare('SELECT driver_or_porter_user_id AS id FROM transfer_events WHERE id=?').get('unique-event').id).toBeNull()
+    expect(sqlite.prepare('SELECT transport_assignee_user_id AS id FROM transfer_requests WHERE id=?').get('duplicate-transfer').id).toBeNull()
+    expect(sqlite.prepare('SELECT driver_or_porter_user_id AS id FROM transfer_events WHERE id=?').get('duplicate-event').id).toBeNull()
   })
 
   it('rejects malformed or duplicate normalized identities instead of silently losing records', () => {

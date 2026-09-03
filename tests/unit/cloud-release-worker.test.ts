@@ -2,12 +2,13 @@
 // @vitest-environment node
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 import { generateKeyPair, exportJWK, SignJWT } from 'jose'
-import worker, { readJson } from '../../cloudflare/src/worker.mjs'
-import { verifyAccess } from '../../cloudflare/src/access.mjs'
+import worker, { prepareTransportAssignment, readJson, resolveTransportAssignment } from '../../cloudflare/src/worker.mjs'
+import { memberContext, verifyAccess } from '../../cloudflare/src/access.mjs'
+import { WorkflowError } from '../../server/workflow.mjs'
 
 const host='inventory-ops.joegallant.me', issuer='https://synthetic-inventory.cloudflareaccess.com'
 let privateKey
-const member={user_id:'SYNTHETIC-user',name:'Synthetic Sales',role:'sales',home_store:'Howell'}
+const member={user_id:'SYNTHETIC-user',name:'Synthetic Sales',role:'sales',home_store:'Howell',transport_name_matches:0}
 const env={PRIVATE_HOSTNAME:host,ACCESS_ISSUER:issuer,ACCESS_AUDIENCE:'synthetic-employee-aud',ACCESS_PUBLISHER_AUDIENCE:'synthetic-publisher-aud',PUBLISHER_CLIENT_ID:'synthetic-client.access',RELEASE_PUBLISHER_TOKEN:'synthetic-publisher',INVENTORY_DB:{prepare(sql){return {bind(){return this},async first(){return sql.includes('cloud_memberships')?member:null}}}}}
 beforeAll(async()=>{
   const pair=await generateKeyPair('RS256'); privateKey=pair.privateKey
@@ -66,5 +67,66 @@ describe('Cloud Worker authentication boundary',()=>{
   it('bounds streamed input even without Content-Length',async()=>{
     const body=new ReadableStream({start(controller){controller.enqueue(new Uint8Array(101));controller.close()}})
     await expect(readJson(new Request('https://synthetic.invalid',{method:'POST',headers:{'content-type':'application/json'},body,duplex:'half'}),100)).rejects.toMatchObject({status:413})
+  })
+
+  it('keeps distinct immutable IDs for Access members who share one display name',async()=>{
+    const rows={
+      'alex.one@example.invalid':{user_id:'driver-alex-1',name:'Alex Driver',role:'driver',home_store:'Howell',transport_name_matches:2},
+      'alex.two@example.invalid':{user_id:'driver-alex-2',name:'Alex Driver',role:'driver',home_store:'Fowlerville',transport_name_matches:2},
+    }
+    const directory={INVENTORY_DB:{prepare(){let email;return {bind(value){email=value;return this},async first(){return rows[email]??null}}}}}
+    const one=await memberContext({email:'alex.one@example.invalid'},directory)
+    const two=await memberContext({email:'alex.two@example.invalid'},directory)
+    expect(one).toMatchObject({user:'Alex Driver',userId:'driver-alex-1',allowLegacyTransportAssignmentByName:false})
+    expect(two).toMatchObject({user:'Alex Driver',userId:'driver-alex-2',allowLegacyTransportAssignmentByName:false})
+  })
+
+  it('never enables legacy name authorization for non-ASCII or noncanonical membership labels',async()=>{
+    const contextFor=async(row)=>memberContext({email:'driver@example.invalid'},{
+      INVENTORY_DB:{prepare(){return {bind(){return this},async first(){return row}}}},
+    })
+    await expect(contextFor({
+      user_id:'driver-emile-1',name:'Émile',role:'driver',home_store:'Howell',transport_name_matches:1,
+    })).resolves.toMatchObject({userId:'driver-emile-1',allowLegacyTransportAssignmentByName:false})
+    await expect(contextFor({
+      user_id:'driver-space-1',name:' Alex Driver ',role:'driver',home_store:'Howell',transport_name_matches:1,
+    })).rejects.toMatchObject({code:'EMPLOYEE_NOT_AUTHORIZED'})
+  })
+
+  it('resolves a transport display name to exactly one server-owned membership ID',async()=>{
+    const prepare=vi.fn(()=>({bind(value){expect(value).toBe('alex driver');return this},async all(){return {results:[{user_id:'driver-alex-1',name:'Alex Driver',role:'driver'}]}}}))
+    const result=await resolveTransportAssignment({type:'transport_assigned',assignee:'alex driver',dueAt:'2026-09-03T18:00:00Z'},{INVENTORY_DB:{prepare}})
+    expect(result).toEqual({type:'transport_assigned',assignee:'Alex Driver',assigneeUserId:'driver-alex-1',dueAt:'2026-09-03T18:00:00Z'})
+    expect(prepare).toHaveBeenCalledOnce()
+  })
+
+  it('fails closed for missing, ambiguous, or client-controlled transport identities',async()=>{
+    const directory=(results)=>({INVENTORY_DB:{prepare(){return {bind(){return this},async all(){return {results}}}}}})
+    await expect(resolveTransportAssignment({type:'return_assigned',assignee:'Nobody'},directory([]))).rejects.toMatchObject({code:'ASSIGNEE_NOT_AUTHORIZED'})
+    await expect(resolveTransportAssignment({type:'transport_assigned',assignee:'Alex Driver'},directory([
+      {user_id:'driver-alex-1',name:'Alex Driver',role:'driver'},
+      {user_id:'driver-alex-2',name:'Alex Driver',role:'driver'},
+    ]))).rejects.toMatchObject({code:'ASSIGNEE_NAME_AMBIGUOUS'})
+    await expect(resolveTransportAssignment({type:'transport_assigned',assignee:'Alex Driver',assigneeUserId:'forged'},directory([]))).rejects.toMatchObject({code:'ASSIGNEE_IDENTITY_CLIENT_CONTROLLED'})
+  })
+
+  it('does not query or disclose the employee directory until transfer authorization succeeds',async()=>{
+    const prepare=vi.fn(()=>{throw new Error('The directory must not be queried')})
+    const env={INVENTORY_DB:{prepare}}
+    const denied=new WorkflowError('Transfer request was not found',{status:404,code:'TRANSFER_NOT_FOUND'})
+    await expect(prepareTransportAssignment(
+      {type:'transport_assigned',assignee:'Alex Driver',dueAt:'2026-09-03T18:00:00Z'},env,
+      ()=>{throw denied},
+    )).rejects.toBe(denied)
+    expect(prepare).not.toHaveBeenCalled()
+
+    const replay={created:false,record:{id:'synthetic-replay'}}
+    await expect(prepareTransportAssignment(
+      {type:'transport_assigned',assignee:'Alex Driver',dueAt:'2026-09-03T18:00:00Z'},env,()=>replay,
+    )).resolves.toEqual({
+      input:{type:'transport_assigned',assignee:'Alex Driver',dueAt:'2026-09-03T18:00:00Z'},
+      replay,
+    })
+    expect(prepare).not.toHaveBeenCalled()
   })
 })

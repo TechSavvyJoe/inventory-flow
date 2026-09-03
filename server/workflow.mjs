@@ -9,6 +9,7 @@ const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/
 const PRIORITIES = new Set(['low', 'normal', 'high', 'urgent'])
 const PASSIVE_EVENTS = new Set(['note_added', 'eta_updated', 'driver_requested', 'condition_issue', 'location_exception', 'escalated'])
 const ACTIVE_ONLY_PASSIVE_EVENTS = new Set(['driver_requested', 'condition_issue', 'location_exception', 'escalated'])
+const TRANSPORT_ASSIGNMENT_EVENTS = new Set(['transport_assigned', 'return_assigned'])
 
 export const TRANSITION_MAP = Object.freeze({
   requested: new Set(['manager_reviewed', 'declined', 'canceled']),
@@ -115,6 +116,14 @@ function optionalText(value, field, maxLength = 500) {
   return text || null
 }
 
+function optionalIdentity(value, field) {
+  const text = optionalText(value, field, 160)
+  if (text && /[\u0000-\u001f\u007f]/.test(text)) {
+    throw new WorkflowError(`${field} is invalid`, { details: { field } })
+  }
+  return text
+}
+
 function storeName(value, field) {
   const store = requiredText(value, field, 40)
   if (!STORE_NAMES.includes(store)) {
@@ -137,7 +146,7 @@ function isoTimestamp(value, field, { required = false } = {}) {
   return parsed.toISOString()
 }
 
-export function roleContext({ role, store, user } = {}) {
+export function roleContext({ role, store, user, userId, allowLegacyTransportAssignmentByName = false } = {}) {
   if (!USER_ROLES.includes(role)) {
     throw new WorkflowError('A valid authenticated role is required', {
       status: 401,
@@ -160,10 +169,13 @@ export function roleContext({ role, store, user } = {}) {
       details: { field: 'user' },
     })
   }
+  const normalizedUserId = optionalIdentity(userId, 'userId')
   return {
     role,
     store,
     user: normalizedUser,
+    userId: normalizedUserId,
+    allowLegacyTransportAssignmentByName: allowLegacyTransportAssignmentByName === true,
     canViewPrivateEvidence: HOLD_EVIDENCE_ROLES.has(role),
     canCreateTransfer: !['coordinator', 'porter', 'driver'].includes(role),
   }
@@ -245,6 +257,7 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
     currentLocationId: homeStoreId,
     currentCustodian: null,
     transportAssignee: null,
+    transportAssigneeUserId: null,
     nextAction: 'Requesting-store manager reviews and approves the request',
     nextActionOwner: approvalOwner,
     dueAt: neededBy,
@@ -263,6 +276,7 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
     eventType: 'requested',
     label: EVENT_LABELS.requested,
     actor: requestedBy,
+    actorUserId: context.userId,
     actorRole: context.role,
     storeId: requestingStoreId,
     fromLocationId: homeStoreId,
@@ -303,10 +317,11 @@ export function allowedEventTypes(currentStatus, role) {
   )
 }
 
-function workflowPatch(current, eventType, input, actor, occurredAt) {
+function workflowPatch(current, eventType, input, actor, occurredAt, context) {
   const destination = current.destination_store_id
   const home = current.home_store_id
   const assignee = optionalText(input.assignee, 'assignee', 160)
+  const assigneeUserId = optionalIdentity(input.assigneeUserId, 'assigneeUserId')
   const dueAt = isoTimestamp(input.dueAt, 'dueAt')
   const patch = {
     status: PASSIVE_EVENTS.has(eventType) ? current.status : eventType,
@@ -341,9 +356,15 @@ function workflowPatch(current, eventType, input, actor, occurredAt) {
     case 'transport_assigned':
       if (!assignee) throw new WorkflowError('assignee is required when transport is assigned')
       if (!dueAt) throw new WorkflowError('dueAt is required so the requesting team can see the pickup target')
+      if (context.userId && !assigneeUserId) {
+        throw new WorkflowError('A verified transport assignee identity is required', {
+          code: 'ASSIGNEE_IDENTITY_REQUIRED',
+        })
+      }
       Object.assign(patch, {
         movement_status: 'transport_assigned',
         transport_assignee: assignee,
+        transport_assignee_user_id: assigneeUserId,
         next_action: 'Assigned driver picks up vehicle and confirms custody',
         next_action_owner: assignee,
         due_at: dueAt,
@@ -424,9 +445,15 @@ function workflowPatch(current, eventType, input, actor, occurredAt) {
     case 'return_assigned':
       if (!assignee) throw new WorkflowError('assignee is required when return transport is assigned')
       if (!dueAt) throw new WorkflowError('dueAt is required so the Home Store can see the return target')
+      if (context.userId && !assigneeUserId) {
+        throw new WorkflowError('A verified transport assignee identity is required', {
+          code: 'ASSIGNEE_IDENTITY_REQUIRED',
+        })
+      }
       Object.assign(patch, {
         movement_status: 'return_assigned',
         transport_assignee: assignee,
+        transport_assignee_user_id: assigneeUserId,
         next_action: 'Return vehicle to home store',
         next_action_owner: assignee,
         due_at: dueAt,
@@ -543,16 +570,25 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
       code: 'STORE_MISMATCH',
     })
   }
+  if (!TRANSPORT_ASSIGNMENT_EVENTS.has(eventType) && Object.hasOwn(input, 'assigneeUserId')) {
+    throw new WorkflowError('assigneeUserId is valid only for a verified transport assignment', {
+      code: 'ASSIGNEE_IDENTITY_CLIENT_CONTROLLED',
+    })
+  }
   const event = {
     id: randomUUID(),
     eventType,
     label: EVENT_LABELS[eventType],
     actor,
+    actorUserId: context.userId,
     actorRole: context.role,
     storeId,
     fromLocationId: optionalText(input.fromLocation, 'fromLocation', 120) || current.current_location_id,
     toLocationId: optionalText(input.toLocation, 'toLocation', 120),
     driverOrPorter: optionalText(input.assignee, 'assignee', 160),
+    driverOrPorterUserId: TRANSPORT_ASSIGNMENT_EVENTS.has(eventType)
+      ? optionalIdentity(input.assigneeUserId, 'assigneeUserId')
+      : null,
     occurredAt,
     expectedArrivalAt: isoTimestamp(input.dueAt, 'dueAt'),
     confirmedBy: homeStoreManager || (PRIVILEGED_ROLES.has(context.role) ? actor : null),
@@ -563,7 +599,7 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
 
   return {
     event,
-    requestPatch: workflowPatch(current, eventType, input, actor, occurredAt),
+    requestPatch: workflowPatch(current, eventType, input, actor, occurredAt, context),
   }
 }
 

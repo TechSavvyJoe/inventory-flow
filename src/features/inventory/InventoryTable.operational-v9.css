@@ -8,9 +8,24 @@
  */
 
 @media (min-width: 761px) {
+  .inventory-experience--modern .inventory-control-deck {
+    gap: 6px;
+  }
+
+  .inventory-experience--modern .inventory-control-deck .inventory-quick-filters[class] button {
+    padding-inline: 7px !important;
+  }
+
+  .inventory-experience--modern .inventory-control-deck .inventory-quick-filters {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
   .inventory-experience--modern .inventory-results-surface .inventory-grid-shell.inventory-grid-shell--operational-v9 {
-    --inventory-row-height: 124px;
+    --inventory-row-height: 108px;
+    --inventory-photo-width: 72px;
     display: block !important;
+    overflow: visible !important;
     border: 1px solid #c9d5e2;
     border-radius: 10px;
     background: #fff;
@@ -22,14 +37,20 @@
     outline-offset: -3px;
   }
 
-  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table-wrap {
+  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table-wrap.inventory-table-wrap--compact-v3 {
     max-width: 100%;
-    overflow: auto;
+    height: auto;
+    min-height: 0;
+    max-height: none !important;
+    overflow: visible !important;
+    overscroll-behavior: auto;
+    scrollbar-gutter: auto;
     background: #fff;
     scrollbar-color: #9fb1c4 #edf2f7;
   }
 
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table.inventory-table--operational-v9 {
+    --inventory-row-height: 108px;
     width: 100% !important;
     min-width: 1060px !important;
     table-layout: fixed !important;
@@ -70,7 +91,7 @@
 
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 thead th {
     position: sticky;
-    top: 0;
+    top: var(--top-height, 68px);
     z-index: 5;
     height: 50px !important;
     padding: 6px 10px !important;
@@ -194,7 +215,7 @@
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 tbody td {
     height: var(--inventory-row-height) !important;
     max-height: none !important;
-    padding: 8px 10px !important;
+    padding: 6px 10px !important;
     border-right: 1px solid #e2e8ef;
     border-bottom: 1px solid #d6e0e9 !important;
     background: transparent !important;
@@ -212,17 +233,17 @@
   /* Vehicle identity */
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-vehicle-cell {
     display: grid !important;
-    grid-template-columns: 88px minmax(0, 1fr);
+    grid-template-columns: var(--inventory-photo-width) minmax(0, 1fr) !important;
     align-items: center;
-    gap: 12px;
+    gap: 4px 10px !important;
     min-width: 0;
   }
 
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-vehicle-visual {
     position: relative;
-    width: 88px !important;
-    height: 66px !important;
-    min-width: 88px !important;
+    width: var(--inventory-photo-width) !important;
+    height: 54px !important;
+    min-width: var(--inventory-photo-width) !important;
     overflow: hidden;
     border: 1px solid #c7d3df;
     border-radius: 7px !important;
@@ -240,7 +261,7 @@
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-vehicle-copy {
     display: grid !important;
     align-content: center;
-    gap: 3px !important;
+    gap: 2px !important;
     min-width: 0;
   }
 
@@ -291,10 +312,12 @@
   }
 
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-identity-cell {
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr);
+    grid-column: 1 / -1;
+    display: flex !important;
+    flex-direction: row;
     align-items: center;
-    gap: 2px;
+    justify-content: flex-start;
+    gap: 8px !important;
     min-width: 0;
     padding-top: 1px;
   }
@@ -303,6 +326,14 @@
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-vin {
     min-width: 0;
     margin: 0;
+  }
+
+  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-identity-cell > strong {
+    flex: 0 0 auto;
+  }
+
+  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-vin {
+    flex: 1 1 auto;
   }
 
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-table-copy-value {
@@ -429,6 +460,9 @@
     display: grid !important;
     gap: 2px !important;
     min-width: 0;
+    max-height: none;
+    overflow: visible;
+    grid-auto-rows: minmax(min-content, auto);
   }
 
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-equipment-cell__secondary small {
@@ -613,7 +647,7 @@
     display: grid !important;
     grid-template-columns: 15px minmax(0, 1fr) 11px;
     align-items: center;
-    gap: 3px;
+    gap: 2px 3px !important;
     min-width: 0;
     min-height: 26px !important;
     padding: 1px 2px !important;
@@ -634,12 +668,13 @@
 
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-document-link span {
     display: grid;
+    gap: 2px;
     min-width: 0;
   }
 
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-document-link--autocheck {
     grid-template-columns: minmax(0, 1fr) 11px;
-    gap: 1px 3px;
+    gap: 2px 3px !important;
   }
 
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-document-link--autocheck > span:nth-child(2) {
@@ -650,9 +685,16 @@
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-document-wordmark--table {
     display: flex !important;
     align-items: center;
-    width: min(82px, 100%);
+    flex-direction: row;
+    justify-content: flex-start;
+    width: min(100px, 100%);
     min-width: 0;
-    min-height: 14px;
+    height: 18px;
+    min-height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
 
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-document-wordmark--table img {
@@ -666,17 +708,21 @@
 
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-document-wordmark__fallback {
     display: flex;
+    flex-direction: row;
     align-items: baseline;
     gap: 3px;
     min-width: 0;
   }
 
-  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-document-wordmark__fallback strong,
-  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-document-wordmark__fallback small {
+  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-document-wordmark__fallback strong {
     color: #174f81 !important;
     font-size: 12px !important;
     font-weight: 700 !important;
     line-height: 1 !important;
+  }
+
+  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-document-wordmark__fallback small {
+    display: none;
   }
 
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-document-link strong {
@@ -715,12 +761,13 @@
     overflow: visible !important;
   }
 
-  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-row-actions--production-v8 {
+  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-row-actions.inventory-row-actions--production-v8,
+  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-row-actions.inventory-row-actions--production-v8[data-has-dealermail="true"][data-has-overflow="true"] {
     display: grid !important;
-    grid-template-columns: minmax(0, 1fr) 42px !important;
-    grid-template-rows: 40px 40px;
+    grid-template-columns: minmax(0, 1fr) 36px !important;
+    grid-template-rows: 36px 36px !important;
     align-content: center;
-    gap: 6px !important;
+    gap: 4px !important;
     width: 100% !important;
     min-width: 0 !important;
   }
@@ -728,7 +775,7 @@
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-row-actions--production-v8 .inventory-row-open {
     grid-column: 1 / -1 !important;
     grid-row: 1;
-    min-height: 40px !important;
+    min-height: 36px !important;
     border: 1px solid #00579c !important;
     border-radius: 7px !important;
     background: linear-gradient(180deg, #0872bd 0%, #005da8 100%) !important;
@@ -748,7 +795,7 @@
     grid-column: 1;
     grid-row: 2;
     min-width: 0 !important;
-    min-height: 40px !important;
+    min-height: 36px !important;
     padding: 0 8px !important;
     border: 1px solid #a9bfd4 !important;
     border-radius: 7px !important;
@@ -776,9 +823,9 @@
     display: flex !important;
     align-items: center;
     justify-content: center;
-    width: 42px !important;
-    min-width: 42px !important;
-    min-height: 40px !important;
+    width: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
     padding: 0 !important;
     border: 1px solid #a9bfd4 !important;
     border-radius: 7px !important;
@@ -832,6 +879,20 @@
 
 }
 
+/* Rows follow the page instead of creating a second vertical viewport. On a
+   narrow desktop/tablet only the width scrolls; the full selected page is still
+   exposed vertically. Native sticky headers use page scroll where it fits. */
+@media (min-width: 761px) and (max-width: 1399px) {
+  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table-wrap.inventory-table-wrap--compact-v3 {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+  }
+
+  .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 thead th {
+    top: 0;
+  }
+}
+
 @media (min-width: 761px) and (max-width: 1500px) {
   .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-row-dealermail svg {
     display: none !important;
@@ -859,4 +920,107 @@
   border-color: #6d96bb !important;
   color: #124e80 !important;
   background: #edf5fc !important;
+}
+
+@media (max-width: 760px) {
+  .inventory-experience--modern .inventory-mobile-list .inventory-mobile-row--production-v8 {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  .inventory-experience--modern .inventory-mobile-list .inventory-mobile-row--production-v8 .inventory-mobile-row__open {
+    height: auto !important;
+    min-height: 0 !important;
+    grid-template-columns: 72px minmax(0, 1fr) 18px !important;
+    grid-template-rows: auto auto auto !important;
+    gap: 6px 10px !important;
+    padding: 12px !important;
+  }
+
+  .inventory-experience--modern .inventory-mobile-list .inventory-mobile-row__open > .inventory-vehicle-visual {
+    grid-row: 1 / 3;
+    align-self: start;
+    width: 72px !important;
+    min-width: 72px !important;
+    height: 54px !important;
+  }
+
+  .inventory-experience--modern .inventory-mobile-list .inventory-mobile-row__main {
+    grid-column: 2 / -1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .inventory-experience--modern .inventory-mobile-list .inventory-mobile-row__title,
+  .inventory-experience--modern .inventory-mobile-list .inventory-mobile-row__title > strong {
+    display: block !important;
+    max-height: none !important;
+    overflow: visible !important;
+    line-height: 1.3 !important;
+    white-space: normal !important;
+    -webkit-line-clamp: unset;
+  }
+
+  .inventory-experience--modern .inventory-mobile-list .inventory-mobile-row__valuation {
+    display: flex;
+    grid-column: 2;
+    grid-row: 2;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: 5px 10px;
+  }
+
+  .inventory-experience--modern .inventory-mobile-list .inventory-mobile-row__chevron {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .inventory-experience--modern .inventory-mobile-list .inventory-mobile-row__identity {
+    display: flex;
+    grid-column: 1 / -1;
+    grid-row: 3;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 5px;
+    min-width: 0;
+    max-width: 100%;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .inventory-experience--modern .inventory-control-deck .inventory-toolbar__right {
+    grid-template-columns: minmax(0, 1fr) 64px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .inventory-experience--modern .inventory-control-deck .inventory-page-size {
+    display: block;
+    width: 64px;
+    min-width: 0;
+    padding: 0 4px;
+    box-sizing: border-box;
+  }
+
+  .inventory-experience--modern .inventory-control-deck .inventory-page-size::before {
+    display: none;
+  }
+
+  .inventory-experience--modern .inventory-control-deck .inventory-page-size select {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 4px;
+    box-sizing: border-box;
+  }
+
+  .inventory-experience--modern .inventory-control-deck .inventory-quick-filters {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) var(--surface-muted);
+  }
+
+  .inventory-experience--modern .inventory-control-deck .inventory-quick-filters::-webkit-scrollbar {
+    display: block;
+    height: 5px;
+  }
 }

@@ -16,6 +16,38 @@ SPEC.loader.exec_module(builder)
 
 
 class PhotoCacheBuilderTests(unittest.TestCase):
+    def test_reuses_exact_vin_snapshot_resources_without_refetch_or_currency_loss(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            status_dir = root / "work" / "run-status"
+            status_dir.mkdir(parents=True)
+            vin = "1FMCU0GD6JUC18203"
+            snapshot_path = root / "2026-09-03-public-enriched.json"
+            sticker = {"validated_vin": vin, "url": "https://www.bobmaxeyfordhowell.com/sticker.pdf", "dataState": "current", "totalMsrp": 56650, "originalMarket": "Canada", "pricingCurrency": "CAD", "pricingCurrencyEvidence": "Canadian original; no conversion"}
+            snapshot = {"completed": True, "report_date": "2026-09-03", "vehicles": {vin: {"vin": vin, "store": "Howell", "listing_url": f"https://www.bobmaxeyfordhowell.com/used-test-{vin}", "photo_urls": [], "windowSticker": sticker}}}
+            snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+            manifest_path = status_dir / "2026-09-03.json"
+            manifest = {"report_date": "2026-09-03", "complete": True, "public_inventory_status": "complete", "public_snapshot_path": str(snapshot_path), "source_counts": {"public_unique_vins": 1}, "validation_results": {"passed": True}}
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            source_bytes = snapshot_path.read_bytes()
+            with patch.object(builder.photo_extractor, "enrich_vehicle_resources_from_vdps", side_effect=AssertionError("Network extraction must not run")):
+                output, payload = builder.build_photo_cache(root, "2026-09-03", reuse_snapshot_resources=True)
+            self.assertEqual(payload["vehicles"][vin]["windowSticker"], sticker)
+            self.assertEqual(payload["resource_mode"], "verified_snapshot")
+            self.assertEqual(payload["summary"]["per_store"]["Howell"]["resource_vdps_requested"], 0)
+            self.assertEqual(snapshot_path.read_bytes(), source_bytes)
+            self.assertEqual(output.name, builder.cache_filename("2026-09-03", builder.file_sha256(snapshot_path)))
+            manifest["complete"] = False
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "No completed dated run manifest"):
+                builder.build_photo_cache(root, "2026-09-03", reuse_snapshot_resources=True)
+
+    def test_reuse_rejects_unvalidated_or_wrong_vin_documents(self) -> None:
+        stats = builder.verified_snapshot_resource_stats([{"vin": "1FMCU0GD6JUC18203", "store": "Howell", "windowSticker": None}])
+        self.assertEqual(stats["Howell"]["window_stickers_parsed"], 0)
+        with self.assertRaisesRegex(RuntimeError, "not exact-VIN validated"):
+            builder.verified_snapshot_resource_stats([{"vin": "1FMCU0GD6JUC18203", "store": "Howell", "windowSticker": {"validated_vin": "1FMCU0GD6JUC18204", "dataState": "current"}}])
+
     def test_accepts_current_granular_public_validation_evidence(self) -> None:
         self.assertTrue(
             builder.manifest_public_validation_passed(

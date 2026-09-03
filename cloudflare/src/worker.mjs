@@ -47,6 +47,56 @@ export async function readJson(request, limit) {
   } catch(error) { if(error instanceof HttpError) throw error; throw new HttpError('INVALID_JSON') }
   finally {reader.releaseLock()}
 }
+
+const TRANSPORT_ASSIGNMENT_EVENTS = new Set(['transport_assigned', 'return_assigned'])
+
+/** Resolve the existing display-name control to one server-owned membership. */
+export async function resolveTransportAssignment(input, env) {
+  const eventType = String(input?.type ?? '').trim().toLowerCase()
+  if (!TRANSPORT_ASSIGNMENT_EVENTS.has(eventType)) return input
+  if (Object.hasOwn(input, 'assigneeUserId')) {
+    throw new HttpError('ASSIGNEE_IDENTITY_CLIENT_CONTROLLED', 422)
+  }
+  const assignee = String(input?.assignee ?? '').trim()
+  if (!assignee || assignee.length > 160 || /[\u0000-\u001f\u007f]/.test(assignee)) {
+    throw new HttpError('ASSIGNEE_REQUIRED', 422)
+  }
+  let result
+  try {
+    result = await env.INVENTORY_DB.prepare(`
+      SELECT user_id, name, role
+      FROM cloud_memberships
+      WHERE enabled = 1
+        AND role IN ('porter', 'driver')
+        AND name = ? COLLATE NOCASE
+      ORDER BY user_id
+      LIMIT 2
+    `).bind(assignee).all()
+  } catch {
+    throw new HttpError('ASSIGNEE_DIRECTORY_UNAVAILABLE', 503)
+  }
+  const rows = Array.isArray(result?.results) ? result.results : []
+  if (rows.length === 0) throw new HttpError('ASSIGNEE_NOT_AUTHORIZED', 422)
+  if (rows.length !== 1) throw new HttpError('ASSIGNEE_NAME_AMBIGUOUS', 422)
+  const member = rows[0]
+  const valid = (value) => typeof value === 'string' && value.trim() && value.length <= 160 && !/[\u0000-\u001f\u007f]/.test(value)
+  if (!valid(member.user_id) || !valid(member.name) || !['porter', 'driver'].includes(member.role)) {
+    throw new HttpError('ASSIGNEE_NOT_AUTHORIZED', 422)
+  }
+  return { ...input, assignee: member.name, assigneeUserId: member.user_id }
+}
+
+export async function prepareTransportAssignment(input, env, preflight) {
+  const preflightInput = { ...input }
+  delete preflightInput.assigneeUserId
+  try {
+    return { input: preflightInput, replay: preflight(preflightInput) }
+  } catch (error) {
+    if (!(error instanceof WorkflowError) || error.code !== 'ASSIGNEE_IDENTITY_REQUIRED') throw error
+    if (Object.hasOwn(input, 'assigneeUserId')) throw new HttpError('ASSIGNEE_IDENTITY_CLIENT_CONTROLLED', 422)
+    return { input: await resolveTransportAssignment(preflightInput, env), replay: null }
+  }
+}
 export async function decryptEnvelope(envelope, env, format=FORMAT) {
   if(envelope?.version!==format || !/^\d{4}-\d{2}-\d{2}$/.test(envelope.reportDate??'') || !/^[a-f0-9]{64}$/.test(envelope.bundleSha256??'')) throw new HttpError('INVALID_ENVELOPE')
   if(typeof envelope.ciphertext!=='string' || envelope.ciphertext.length>MAX_UPLOAD) throw new HttpError('BODY_TOO_LARGE',413)
@@ -145,6 +195,7 @@ async function appApi(request,url,env,context) {
   if(write && (!idempotency || idempotency.length>160 || /[\x00-\x1f]/.test(idempotency))) throw new HttpError('IDEMPOTENCY_KEY_REQUIRED')
   const input=write?await readJson(request,64*1024):null
   const release=await readRelease(env)
+  let resolvedAssignmentInput=null
   for(let attempt=0;attempt<3;attempt++) {
     const repo=await loadD1Repository(env.INVENTORY_DB,release)
     const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
@@ -159,7 +210,20 @@ async function appApi(request,url,env,context) {
     else if(read && /^\/attention\/[^/]+$/.test(route)) result=service.getAttention(decodeURIComponent(route.split('/')[2]),context)
     else if(write && route==='/transfers') {result=service.createTransfer(input,context,idempotency);mutation=true}
     else if(write && /^\/(transfers|attention)\/[^/]+\/events$/.test(route)) {
-      const [,type,id]=route.split('/'); result=type==='transfers'?service.appendTransferEvent(decodeURIComponent(id),input,context,idempotency):service.appendAttentionEvent(decodeURIComponent(id),input,context,idempotency);mutation=true
+      const [,type,id]=route.split('/')
+      if(type==='attention') result=service.appendAttentionEvent(decodeURIComponent(id),input,context,idempotency)
+      else if(!TRANSPORT_ASSIGNMENT_EVENTS.has(String(input?.type??'').trim().toLowerCase()) || resolvedAssignmentInput) {
+        result=service.appendTransferEvent(decodeURIComponent(id),resolvedAssignmentInput??input,context,idempotency)
+      } else {
+        // Authorize the transfer, role, store, lifecycle and payload before
+        // querying the employee directory. This prevents unrelated users from
+        // probing valid or duplicate staff names through assignment errors.
+        const prepared=await prepareTransportAssignment(input,env,(candidate)=>
+          service.appendTransferEvent(decodeURIComponent(id),candidate,context,idempotency))
+        resolvedAssignmentInput=prepared.input
+        result=prepared.replay??service.appendTransferEvent(decodeURIComponent(id),resolvedAssignmentInput,context,idempotency)
+      }
+      mutation=true
     } else throw new HttpError('NOT_FOUND',404)
     if(!mutation) return json(200,result)
     try {await repo.commit();return json(result.created?201:200,result.record)}

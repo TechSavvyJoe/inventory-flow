@@ -9,6 +9,7 @@ export const IDENTITY_MODES = Object.freeze({
 
 const TRUSTED_PROXY_SECRET_HEADER = 'x-inventory-proxy-secret'
 const TRUSTED_USER_HEADER = 'x-inventory-authenticated-user'
+const TRUSTED_USER_ID_HEADER = 'x-inventory-authenticated-user-id'
 const TRUSTED_ROLE_HEADER = 'x-inventory-authenticated-role'
 const TRUSTED_STORE_HEADER = 'x-inventory-authenticated-store'
 const MINIMUM_PROXY_SECRET_LENGTH = 32
@@ -55,8 +56,9 @@ function requiredIdentityValue(value, field, maxLength = 160) {
   return text
 }
 
-function validatedContext({ user, role, store }) {
+function validatedContext({ user, userId, role, store, allowLegacyTransportAssignmentByName = false }) {
   const normalizedUser = requiredIdentityValue(user, 'user')
+  const normalizedUserId = userId === null ? null : requiredIdentityValue(userId, 'user ID')
   const normalizedRole = requiredIdentityValue(role, 'role', 40)
   const normalizedStore = requiredIdentityValue(store, 'store', 40)
   if (!USER_ROLES.includes(normalizedRole)) {
@@ -71,7 +73,13 @@ function validatedContext({ user, role, store }) {
       code: 'STORE_NOT_AUTHORIZED',
     })
   }
-  return { user: normalizedUser, role: normalizedRole, store: normalizedStore }
+  return {
+    user: normalizedUser,
+    userId: normalizedUserId,
+    role: normalizedRole,
+    store: normalizedStore,
+    allowLegacyTransportAssignmentByName: allowLegacyTransportAssignmentByName === true,
+  }
 }
 
 function secretsMatch(provided, expected) {
@@ -84,6 +92,7 @@ function secretsMatch(provided, expected) {
 function demoContext(request, url, { allowQuery = false } = {}) {
   return validatedContext({
     user: headerValue(request, 'x-inventory-demo-user') || headerValue(request, 'x-inventory-user') || 'Local prototype user',
+    userId: null,
     role:
       headerValue(request, 'x-inventory-demo-role') ||
       headerValue(request, 'x-inventory-role') ||
@@ -92,6 +101,7 @@ function demoContext(request, url, { allowQuery = false } = {}) {
       headerValue(request, 'x-inventory-demo-store') ||
       headerValue(request, 'x-inventory-store') ||
       (allowQuery ? url.searchParams.get('homeStore') || url.searchParams.get('store') : ''),
+    allowLegacyTransportAssignmentByName: true,
   })
 }
 
@@ -103,6 +113,7 @@ function trustedProxyContext(request, trustedProxySecret) {
   }
   return validatedContext({
     user: headerValue(request, TRUSTED_USER_HEADER),
+    userId: headerValue(request, TRUSTED_USER_ID_HEADER),
     role: headerValue(request, TRUSTED_ROLE_HEADER),
     store: headerValue(request, TRUSTED_STORE_HEADER),
   })
@@ -159,6 +170,7 @@ export const identityInternals = Object.freeze({
   TRUSTED_ROLE_HEADER,
   TRUSTED_STORE_HEADER,
   TRUSTED_USER_HEADER,
+  TRUSTED_USER_ID_HEADER,
   secretsMatch,
   validatedContext,
 })

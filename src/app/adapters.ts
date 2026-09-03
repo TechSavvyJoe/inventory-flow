@@ -115,6 +115,9 @@ function officialDocumentSearchText(
     ...(autoCheck?.checks ?? []).flatMap((check) => [check.label, check.status, check.detail]),
     sticker?.vehicleDescription,
     sticker?.equipmentGroup,
+    sticker?.originalMarket,
+    sticker?.pricingCurrency,
+    sticker?.pricingCurrencyEvidence,
     sticker?.basePrice,
     sticker?.totalOptions,
     sticker?.destinationCharge,
@@ -404,6 +407,14 @@ export function toInventoryVehicle(
         }
       : null,
     holdEvidence: holdEvidence(vehicle, dealerMailState),
+    dealerMailEvidence: vehicle.hold.canViewEvidence === true && vehicle.privateEvidence
+      ? {
+          dataState: dealerMailState,
+          comments: vehicle.privateEvidence.comments ?? [],
+          alerts: vehicle.privateEvidence.alerts ?? [],
+          history: vehicle.privateEvidence.history ?? [],
+        }
+      : undefined,
     timeline: [
       ...timelineFromPublicChanges(data, vehicle.vin),
       ...(hasAppCustodyRecord ? timelineFromTransfer(movement) : []),

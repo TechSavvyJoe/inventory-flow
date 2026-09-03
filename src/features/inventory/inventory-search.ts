@@ -206,8 +206,32 @@ export function buildInventorySearchEntry(vehicle: InventoryVehicle): InventoryS
         { label: "Alert", value: alert.text, priority: 18 },
         { label: "Alert author", value: alert.author, priority: 12 },
         { label: "Alert date", value: alert.timestamp, priority: 8 },
+        { label: "Alert modification", value: alert.metadataRaw, priority: 8 },
+        { label: "Spiff", value: alert.spiffRaw, priority: 8 },
       ]);
     }
+  }
+
+  if (vehicle.dealerMail.canViewEvidence && vehicle.dealerMailEvidence) {
+    const evidence = vehicle.dealerMailEvidence;
+    for (const [label, messages] of [["Comment", evidence.comments], ["Alert", evidence.alerts]] as const) {
+      for (const message of messages) addFields(fields, [
+        { label, value: message.text, priority: 14 },
+        { label: `${label} author`, value: message.author, priority: 12 },
+        { label: `${label} date`, value: message.timestamp, priority: 8 },
+        { label: `${label} modification`, value: message.metadataRaw, priority: 8 },
+        { label: "Spiff", value: message.spiffRaw, priority: 8 },
+      ]);
+    }
+    for (const row of evidence.history) addFields(fields, [
+      { label: "Previous hold", value: row.statusLabel, priority: 10 },
+      { label: "Previous hold salesperson", value: row.salesperson, priority: 12 },
+      { label: "Previous customer / reason", value: row.customerOrReason, priority: 12 },
+      { label: "Previous hold date", value: row.holdDate, priority: 8 },
+      { label: "Previous expected date", value: row.expectedDate, priority: 8 },
+      { label: "Previous raw hold order", value: row.orderRaw, priority: 8 },
+      { label: "Previous raw lifecycle", value: row.lifecycle, priority: 8 },
+    ]);
   }
 
   return {

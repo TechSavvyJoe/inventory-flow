@@ -26,6 +26,7 @@ function heldMovingVehicle(): InventoryVehicle {
     exteriorColor: 'Oxford White',
     interiorColor: 'Black',
     fuelType: 'Gasoline',
+    certified: true,
     changeSummary: 'Price changed today',
     publicListing: {
       dataState: 'current',
@@ -104,6 +105,11 @@ describe('modern inventory result access', () => {
     expect(document.querySelector('.inventory-grid-shell--production-v8')).toBeInTheDocument();
     expect(document.querySelector('.inventory-table--production-v8')).toBeInTheDocument();
     expect(document.querySelector('.inventory-equipment-cell')?.children).toHaveLength(3);
+    expect(document.querySelectorAll('.inventory-equipment-cell__secondary small')).toHaveLength(2);
+    expect(row?.querySelector('.inventory-vehicle-copy .inventory-identity-cell')).not.toBeInTheDocument();
+    expect(row?.querySelector(':scope > td:first-child .inventory-identity-cell')).toBeInTheDocument();
+    expect(row?.querySelector('.inventory-vehicle-copy .inventory-certified-label')).not.toBeInTheDocument();
+    expect(row?.querySelectorAll('.inventory-equipment-cell__certified')).toHaveLength(1);
     const documents = screen.getByLabelText('Vehicle documents');
     expect(documents).toHaveTextContent('AutoCheckScore 92 · 1 owner');
     expect(documents.querySelector('.inventory-document-wordmark--autocheck img')).toHaveAttribute(
@@ -175,6 +181,10 @@ describe('modern inventory result access', () => {
     expect(card).toHaveTextContent('AutoCheck');
     expect(card).toHaveTextContent('Sticker');
     expect(card).toHaveTextContent('In transit outbound');
+    expect(detailTarget.querySelector('.inventory-mobile-row__title .inventory-certified-label')).not.toBeInTheDocument();
+    expect(detailTarget.querySelector('.inventory-mobile-row__valuation .inventory-certified-label')).toBeInTheDocument();
+    expect(detailTarget.querySelector(':scope > .inventory-mobile-row__identity')).toHaveTextContent('H240512');
+    expect(detailTarget.querySelector(':scope > .inventory-mobile-row__identity')).toHaveTextContent('1FTFW1E84RKF12345');
 
     fireEvent.click(detailTarget);
     expect(onSelectVehicle).toHaveBeenCalledWith(expect.objectContaining({ vin: '1FTFW1E84RKF12345' }));

@@ -6,6 +6,7 @@ import type {
   InventoryStore,
   InventoryVehicle,
   SourceDataState,
+  WindowStickerResource,
 } from "./types";
 import {
   buildInventorySearchEntry,
@@ -52,6 +53,16 @@ export function formatMoney(value?: number | null): string {
   return typeof value === "number" && Number.isFinite(value)
     ? moneyFormatter.format(value)
     : "Not published";
+}
+
+/** Original document prices retain their currency; they are never converted to the listing currency. */
+export function formatStickerMoney(value: number | null | undefined, sticker: Pick<WindowStickerResource, "pricingCurrency" | "originalMarket">): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "Not published";
+  const currency = sticker.pricingCurrency?.trim().toUpperCase();
+  if (currency && /^[A-Z]{3}$/.test(currency)) {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 0 }).format(value);
+  }
+  return `${integerFormatter.format(value)} (original sticker currency; verify)`;
 }
 
 export function formatMileage(value?: number | null): string {

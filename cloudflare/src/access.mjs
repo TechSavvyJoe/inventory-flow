@@ -29,9 +29,33 @@ export async function verifyAccess(request, env, audience = env.ACCESS_AUDIENCE)
 
 export async function memberContext(claims, env) {
   if (typeof claims.email !== 'string' || !claims.email || claims.common_name) throw new AccessError('EMPLOYEE_ACCESS_REQUIRED',403)
-  const row = await env.INVENTORY_DB.prepare('SELECT user_id, name, role, home_store FROM cloud_memberships WHERE email = ? AND enabled = 1').bind(claims.email.toLowerCase()).first()
+  const row = await env.INVENTORY_DB.prepare(`
+    SELECT member.user_id, member.name, member.role, member.home_store,
+      (SELECT COUNT(*) FROM cloud_memberships AS candidate
+         WHERE candidate.enabled = 1
+         AND candidate.role IN ('porter', 'driver')
+         AND candidate.name = member.name COLLATE BINARY) AS transport_name_matches
+    FROM cloud_memberships AS member
+    WHERE member.email = ? AND member.enabled = 1
+  `).bind(claims.email.toLowerCase()).first()
   const roles = ['sales','manager','group_manager','coordinator','porter','driver']
   const stores = ['Howell','Fowlerville','Ford Detroit','Lincoln']
-  if (!row || !roles.includes(row.role) || !stores.includes(row.home_store)) throw new AccessError('EMPLOYEE_NOT_AUTHORIZED',403)
-  return { role: row.role, store: row.home_store, user: row.name, userId: row.user_id, identityMode: 'trusted_proxy', authenticated: true, canPreviewRoles: false }
+  const validIdentity = (value) => typeof value === 'string' && value.trim() && value === value.trim() && value.length <= 160 && !/[\u0000-\u001f\u007f]/.test(value)
+  const legacyTransportName = (value) => /^[\x20-\x7e]+$/.test(value)
+  if (!row || !roles.includes(row.role) || !stores.includes(row.home_store) || !validIdentity(row.name) || !validIdentity(row.user_id)) {
+    throw new AccessError('EMPLOYEE_NOT_AUTHORIZED',403)
+  }
+  return {
+    role: row.role,
+    store: row.home_store,
+    user: row.name,
+    userId: row.user_id,
+    allowLegacyTransportAssignmentByName:
+      ['porter', 'driver'].includes(row.role) &&
+      legacyTransportName(row.name) &&
+      Number(row.transport_name_matches) === 1,
+    identityMode: 'trusted_proxy',
+    authenticated: true,
+    canPreviewRoles: false,
+  }
 }

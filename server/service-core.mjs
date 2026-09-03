@@ -19,6 +19,13 @@ import { allowedEventTypes, buildTransferEvent, buildTransferRequest, roleContex
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/
 const TERMINAL_TRANSFER_STATES = new Set(['declined', 'canceled', 'closed'])
 const RETURN_COMPLETE_STATES = new Set(['returned_home', 'closed'])
+const ACTIVE_TRANSPORT_ASSIGNMENT_STATES = new Set([
+  'transport_assigned',
+  'picked_up',
+  'in_transit',
+  'return_assigned',
+  'return_in_transit',
+])
 
 function parseJson(value, fallback = null) {
   if (typeof value !== 'string' || value.length === 0) return fallback
@@ -111,8 +118,10 @@ function buildIndexes(dataset) {
   const holdByVin = new Map(dataset.holdRows.map((row) => [row.vin, row]))
   const resourceByVin = new Map((dataset.resourceRows ?? []).map((row) => [row.vin, row]))
   const homeByVin = new Map(dataset.homeAssignments.map((row) => [row.vin, row]))
+  const releasedHistoryByVin = new Map((parseJson(dataset.state.current_released_hold_history_json, []) ?? [])
+    .map((row) => [String(row.vin ?? '').trim().toUpperCase(), row]))
   const vins = new Set([...publicByVin.keys(), ...crmByVin.keys()])
-  return { publicByVin, crmByVin, holdByVin, resourceByVin, homeByVin, vins }
+  return { publicByVin, crmByVin, holdByVin, resourceByVin, homeByVin, releasedHistoryByVin, vins }
 }
 
 function sourceVehicle(indexes, vin) {
@@ -126,6 +135,7 @@ function sourceVehicle(indexes, vin) {
     holdRecord: holdRow?.payload ?? null,
     cdkRecord: holdRow?.cdk ?? null,
     resourceRecord: indexes.resourceByVin.get(vin)?.payload ?? null,
+    releasedHistoryRecord: indexes.releasedHistoryByVin.get(vin) ?? null,
     homeAssignment: indexes.homeByVin.get(vin) ?? null,
   }
 }
@@ -140,15 +150,21 @@ function primaryAndBackups(holdRecord) {
 function holdSummary(source, context, freshness, { includePrivate = false } = {}) {
   const holdRecord = source.holdRecord
   const crmRecord = source.crmRecord
+  const messages = dealerMailMessages(source)
+  const messageCounts = {
+    commentsCount: messages.comments.reduce((count, group) => count + (Array.isArray(group?.rows) ? group.rows.length : 0), 0),
+    alertsCount: messages.alerts.length,
+  }
   if (freshness !== 'current') {
     return {
       state: holdRecord ? 'stale' : crmRecord ? 'stale' : 'unknown',
       label: holdRecord ? 'Last verified hold — confirm in DealerMail' : 'Hold status stale — confirm in DealerMail',
       backupCount: holdRecord ? primaryAndBackups(holdRecord).backups.length : 0,
+      ...messageCounts,
     }
   }
   if (!crmRecord) return { state: 'unknown', label: 'Not found in current CRM inventory', backupCount: 0 }
-  if (!holdRecord) return { state: 'none_observed', label: 'No hold observed in verified CRM snapshot', backupCount: 0 }
+  if (!holdRecord) return { state: 'none_observed', label: 'No hold observed in verified CRM snapshot', backupCount: 0, ...messageCounts }
 
   const { primary, backups } = primaryAndBackups(holdRecord)
   const summary = {
@@ -156,19 +172,24 @@ function holdSummary(source, context, freshness, { includePrivate = false } = {}
     label: backups.length ? `Primary hold + ${backups.length} backup${backups.length === 1 ? '' : 's'}` : 'Primary hold',
     backupCount: backups.length,
     expectedDate: cleanText(primary?.expectedDeliveryDateRaw),
-    commentsCount: (holdRecord.comments ?? []).reduce(
-      (count, group) => count + (Array.isArray(group?.rows) ? group.rows.length : 0),
-      0,
-    ),
-    alertsCount: Array.isArray(holdRecord.alerts) ? holdRecord.alerts.length : 0,
+    ...messageCounts,
   }
   if (!['driver', 'porter', 'coordinator'].includes(context.role)) summary.primarySalesperson = cleanText(primary?.salespersonRaw)
   if (includePrivate && context.canViewPrivateEvidence) summary.reason = cleanText(primary?.customerOrReasonRaw)
   return summary
 }
 
-function simplifyComments(holdRecord) {
-  return (holdRecord?.comments ?? []).flatMap((group) =>
+function dealerMailMessages(source) {
+  // Current complete-inventory evidence covers every CRM VIN. Keep the held
+  // record fallback for older releases without duplicating the same messages.
+  return {
+    comments: source.crmRecord?.comments ?? source.holdRecord?.comments ?? [],
+    alerts: source.crmRecord?.alerts ?? source.holdRecord?.alerts ?? [],
+  }
+}
+
+function simplifyComments(evidence) {
+  return (evidence?.comments ?? []).flatMap((group) =>
     (group?.rows ?? []).map((row) => ({
       author: cleanText(row?.authorRaw),
       text: cleanText(row?.commentTextRaw),
@@ -177,16 +198,35 @@ function simplifyComments(holdRecord) {
   )
 }
 
-function simplifyAlerts(holdRecord) {
-  return (holdRecord?.alerts ?? []).map((alert) => ({
+function simplifyAlerts(evidence) {
+  return (evidence?.alerts ?? []).map((alert) => ({
     text: cleanText(alert?.alertTextRaw ?? alert?.textRaw ?? alert?.bodyTextRaw),
     author: cleanText(alert?.authorRaw),
     timestamp: cleanText(alert?.timestampRaw),
+    metadataRaw: cleanText(alert?.modifiedMetadataRaw),
+    spiffRaw: cleanText(alert?.spiffRaw),
   }))
 }
 
 function dealerMailPrivateEvidence(source) {
-  if (!source.holdRecord) return undefined
+  const messages = dealerMailMessages(source)
+  const history = [
+    ...(source.holdRecord?.holdDetailRows ?? []).filter((row) => row.lifecycleStatus !== 'active').map((row) => ({ row, released: false })),
+    ...(source.releasedHistoryRecord?.holdDetailRows ?? []).map((row) => ({ row, released: true })),
+  ].map(({ row, released }) => ({
+    orderRaw: cleanText(row.orderRaw ?? row.holdOrderNumber),
+    lifecycle: cleanText(row.lifecycleStatus),
+    salesperson: cleanText(row.salespersonRaw),
+    customerOrReason: cleanText(row.customerOrReasonRaw),
+    holdDate: cleanText(row.holdDateRaw),
+    expectedDate: cleanText(row.expectedDeliveryDateRaw),
+    statusLabel: released
+      ? (Number(row.orderRaw ?? row.holdOrderNumber) === 1
+        ? 'Not in current live hold set; detail page retains order 1 — review'
+        : 'Not in current live hold set; outcome unknown')
+      : 'Deleted history — not active',
+  }))
+  if (!source.holdRecord && !messages.comments.length && !messages.alerts.length && !history.length) return undefined
   const { primary, backups } = primaryAndBackups(source.holdRecord)
   return {
     primary: primary
@@ -205,8 +245,9 @@ function dealerMailPrivateEvidence(source) {
       holdDate: cleanText(row.holdDateRaw),
       expectedDate: cleanText(row.expectedDeliveryDateRaw),
     })),
-    comments: simplifyComments(source.holdRecord),
-    alerts: simplifyAlerts(source.holdRecord),
+    comments: simplifyComments(messages),
+    alerts: simplifyAlerts(messages),
+    history,
     cdk: source.cdkRecord
       ? {
           result: cleanText(source.cdkRecord.result),
@@ -231,10 +272,14 @@ function privateSearchText(source) {
     ...(evidence?.backups ?? []).map((backup) => backup.customerOrReason),
     ...(evidence?.comments ?? []).map((comment) => comment.text),
     ...(evidence?.comments ?? []).map((comment) => comment.author),
+    ...(evidence?.comments ?? []).map((comment) => comment.timestamp),
     ...(evidence?.alerts ?? []).map((alert) => alert.text),
     ...(evidence?.alerts ?? []).map((alert) => alert.author),
+    ...(evidence?.alerts ?? []).map((alert) => alert.timestamp),
+    ...(evidence?.alerts ?? []).flatMap((alert) => [alert.metadataRaw, alert.spiffRaw]),
     evidence?.cdk?.status,
     evidence?.cdk?.result,
+    ...(evidence?.history ?? []).flatMap((row) => [row.orderRaw, row.lifecycle, row.salesperson, row.customerOrReason, row.holdDate, row.expectedDate, row.statusLabel]),
   ]
     .filter(Boolean)
     .join(' ')
@@ -275,6 +320,7 @@ function cdkStatus(source) {
 }
 
 function allowedUiActions(row, context) {
+  if (!transferMutationAuthorized(row, context)) return []
   const events = new Set(allowedEventTypes(row.status, context.role))
   if (context.role !== 'group_manager') {
     const requestingStoreAction = context.store === row.requesting_store_id
@@ -463,8 +509,9 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
   const publicStore = publicRecord?.store || crmRecord?.storeName
   if (!STORE_NAMES.includes(publicStore)) return null
   const homeStore = source.homeAssignment?.home_store_id || publicStore
-  const latest = transferRows[0] ?? null
-  const active = transferRows.find(isActiveTransfer) ?? null
+  const visibleTransferRows = transferRows.filter((row) => transferVisible(row, context))
+  const latest = visibleTransferRows[0] ?? null
+  const active = visibleTransferRows.find(isActiveTransfer) ?? null
   const activeEvents = active ? getTransferEvents(meta.database, active.id) : []
   const activeTransferView = active
     ? transferView(active, activeEvents, source, context, meta.dealerMailFreshness, { includePrivate: false })
@@ -614,6 +661,9 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ...(autoCheckReport?.checks ?? []).flatMap((check) => [check.label, check.status, check.detail]),
     windowSticker?.vehicleDescription,
     windowSticker?.equipmentGroup,
+    windowSticker?.originalMarket,
+    windowSticker?.pricingCurrency,
+    windowSticker?.pricingCurrencyEvidence,
     windowSticker?.basePrice,
     windowSticker?.totalOptions,
     windowSticker?.destinationCharge,
@@ -687,18 +737,38 @@ function mergedResourceCoverage(sources, enrichmentRows = 0) {
   return coverage
 }
 
+function transferRelatedToStore(row, store) {
+  return [row.home_store_id, row.requesting_store_id, row.destination_store_id].includes(store)
+}
+
+function transportAssignedToUser(row, context) {
+  if (TERMINAL_TRANSFER_STATES.has(row.status)) return false
+  if (!ACTIVE_TRANSPORT_ASSIGNMENT_STATES.has(row.movement_status)) return false
+  const assignedUserId = cleanText(row.transport_assignee_user_id)
+  if (assignedUserId) return Boolean(context.userId) && assignedUserId === context.userId
+  const legacyAssignee = row.transport_assignee
+  return context.allowLegacyTransportAssignmentByName === true &&
+    typeof legacyAssignee === 'string' &&
+    /^[\x20-\x7e]+$/.test(legacyAssignee) &&
+    legacyAssignee === context.user
+}
+
 function transferVisible(row, context) {
-  if (context.role === 'manager' || context.role === 'group_manager') return true
-  if (context.role === 'coordinator') {
-    return [row.home_store_id, row.requesting_store_id, row.destination_store_id].includes(context.store)
+  if (context.role === 'group_manager') return true
+  if (['manager', 'coordinator', 'sales'].includes(context.role)) {
+    return transferRelatedToStore(row, context.store)
   }
-  if (context.role === 'sales') {
-    return [row.home_store_id, row.requesting_store_id, row.destination_store_id].includes(context.store)
+  if (['porter', 'driver'].includes(context.role)) return transportAssignedToUser(row, context)
+  return false
+}
+
+function transferMutationAuthorized(row, context) {
+  if (context.role === 'group_manager') return true
+  if (['manager', 'coordinator', 'sales'].includes(context.role)) {
+    return transferRelatedToStore(row, context.store)
   }
-  return (
-    row.transport_assignee === context.user ||
-    ['transport_assigned', 'picked_up', 'in_transit', 'return_assigned', 'return_in_transit'].includes(row.movement_status)
-  )
+  if (['porter', 'driver'].includes(context.role)) return transportAssignedToUser(row, context)
+  return false
 }
 
 function metaView(dataset, database, now, loadStatus) {
@@ -945,12 +1015,14 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
     }
   }
   for (const vehicle of vehicles) {
-    const pastExpected = dateIsBeforeReport(vehicle.hold?.expectedDate, meta.reportDate)
+    const activeHold = ['primary', 'multiple'].includes(vehicle.hold?.state)
+    const currentCrm = activeHold || vehicle.hold?.state === 'none_observed'
+    const pastExpected = activeHold && dateIsBeforeReport(vehicle.hold?.expectedDate, meta.reportDate)
     const hasAlert = Number(vehicle.hold?.alertsCount) > 0
-    if (!['primary', 'multiple'].includes(vehicle.hold?.state) || (!pastExpected && !hasAlert)) continue
+    if (!currentCrm || (!pastExpected && !hasAlert)) continue
     const store = vehicle.crmStore || vehicle.publicStore
     items.push({
-      id: versionedAttentionId(`hold-review-${vehicle.vin}`, [
+      id: versionedAttentionId(`${activeHold ? 'hold' : 'vehicle'}-review-${vehicle.vin}`, [
         conditionDay,
         meta.reportDate,
         vehicle.hold.state,
@@ -959,8 +1031,8 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
       ]),
       severity: pastExpected ? 'critical' : 'warning',
       priority: pastExpected ? 'urgent' : 'high',
-      type: pastExpected ? 'past_expected_hold' : 'hold_alert',
-      label: pastExpected ? 'Past-expected hold needs review' : 'Current hold includes an alert',
+      type: pastExpected ? 'past_expected_hold' : activeHold ? 'hold_alert' : 'vehicle_alert',
+      label: pastExpected ? 'Past-expected hold needs review' : activeHold ? 'Current hold includes an alert' : 'Vehicle alert needs review',
       vehicleName: vehicle.vehicleName,
       stockNumber: vehicle.stockNumber,
       vin: vehicle.vin,
@@ -968,11 +1040,11 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
       relatedStores: [...new Set([vehicle.publicStore, vehicle.crmStore].filter(Boolean))],
       owner: cleanText(vehicle.hold.primarySalesperson) || `${store} manager`,
       dueAt: cleanText(vehicle.hold.expectedDate),
-      sourceLabel: 'Verified DealerMail hold snapshot',
+      sourceLabel: activeHold ? 'Verified DealerMail hold snapshot' : 'Verified DealerMail vehicle record',
       whyItMatters: pastExpected
         ? 'The expected date has passed. This is a review signal, not proof of delivery, sale, or release.'
         : 'A vehicle-level DealerMail alert is present and should be reviewed in its authorized record.',
-      recommendedAction: 'Open the vehicle, review the exact hold evidence, and confirm the current operational next step.',
+      recommendedAction: 'Open the vehicle, review the exact alert or hold evidence, and confirm the current operational next step.',
       href: `/inventory?scope=group&q=${encodeURIComponent(vehicle.vin)}`,
       sourceId: vehicle.vin,
     })
@@ -1090,10 +1162,12 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       .filter(Boolean)
     sortVehicles(vehicles)
     const visibleTransferRows = state.allTransferRows.filter((row) => transferVisible(row, state.context))
-    const stores = storeSummaries(vehicles, state.dataset.holdRows, state.allTransferRows, state.currentNow)
+    const stores = storeSummaries(vehicles, state.dataset.holdRows, visibleTransferRows, state.currentNow)
+    const crmOnlyVehicles = state.sources.filter((source) => !source.publicRecord)
+      .map((source) => vehicleFromSnapshot(state, source)).filter(Boolean)
     return attentionItems(
       state.meta,
-      vehicles,
+      [...vehicles, ...crmOnlyVehicles],
       stores,
       visibleTransferRows,
       database,
@@ -1182,7 +1256,9 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
           { includePrivate: false },
         )
       })
-      const stores = storeSummaries(vehicles, state.dataset.holdRows, state.allTransferRows, state.currentNow)
+      const stores = storeSummaries(vehicles, state.dataset.holdRows, visibleTransferRows, state.currentNow)
+      const crmOnlyVehicles = state.sources.filter((source) => !source.publicRecord)
+        .map((source) => vehicleFromSnapshot(state, source)).filter(Boolean)
       return {
         access: {
           user: state.context.user,
@@ -1198,7 +1274,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         holdSignals: holdSignalSummaries(state.dataset.holdRows, state.meta),
         attention: attentionItems(
           state.meta,
-          vehicles,
+          [...vehicles, ...crmOnlyVehicles],
           stores,
           visibleTransferRows,
           database,
@@ -1383,15 +1459,65 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
     appendTransferEvent(id, input, contextInput = {}, idempotencyKey) {
       const state = snapshot(contextInput)
       const current = getTransferRow(database, id)
-      if (!current || !transferVisible(current, state.context)) {
+      if (!current) {
         throw new WorkflowError('Transfer request was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
       }
-      const replay = idempotencyKey && getTransferEvents(database, id).find((event) => event.idempotency_key === idempotencyKey)
+      const events = getTransferEvents(database, id)
+      const replay = idempotencyKey && events.find((event) => event.idempotency_key === idempotencyKey)
+      const recordView = (row) =>
+        transferView(
+          row,
+          getTransferEvents(database, id),
+          sourceVehicle(state.indexes, row.vin),
+          state.context,
+          state.meta.dealerMailFreshness,
+          { includePrivate: state.context.canViewPrivateEvidence },
+        )
+      const replayType = String(input?.type ?? '').trim().toLowerCase()
+      const stableReplayActor = replay && cleanText(replay.actor_user_id)
+      const stableReplayAuthorized = Boolean(
+        stableReplayActor &&
+        state.context.userId &&
+        stableReplayActor === state.context.userId &&
+        replay.actor_role === state.context.role &&
+        replay.event_type === replayType,
+      )
+      const mutationAuthorized = transferMutationAuthorized(current, state.context)
+      if (stableReplayAuthorized && mutationAuthorized) return { record: recordView(current), created: false }
+      // Arrival is the one transport mutation that intentionally ends the
+      // assignee's scope. Permit only that exact stable-ID replay and return an
+      // immutable receipt, never the evolving current transfer record.
+      if (
+        stableReplayAuthorized &&
+        !mutationAuthorized &&
+        replay.event_type === 'arrived' &&
+        ['porter', 'driver'].includes(state.context.role)
+      ) {
+        return {
+          record: {
+            id: current.id,
+            vin: current.vin,
+            stockNumber: current.stock_at_request,
+            requestStatus: 'arrived',
+            movementStatus: 'at_requesting_store',
+            replayed: true,
+          },
+          created: false,
+        }
+      }
+      if (!mutationAuthorized) {
+        throw new WorkflowError('Transfer request was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
+      }
       if (replay) {
-        if (replay.actor !== state.context.user || replay.actor_role !== state.context.role || replay.event_type !== input?.type) {
+        const legacyReplayAuthorized = !cleanText(replay.actor_user_id) &&
+          !state.context.userId &&
+          replay.actor === state.context.user &&
+          replay.actor_role === state.context.role &&
+          replay.event_type === replayType
+        if (!legacyReplayAuthorized) {
           throw new WorkflowError('This action key belongs to another action', { status: 409, code: 'IDEMPOTENCY_CONFLICT' })
         }
-        return { record: this.getTransfer(id, contextInput), created: false }
+        return { record: recordView(current), created: false }
       }
       const built = buildTransferEvent({
         current,
@@ -1401,7 +1527,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         now: state.currentNow,
       })
       const result = appendTransferEvent(database, id, built.event, built.requestPatch)
-      const record = this.getTransfer(id, contextInput)
+      const record = recordView(result.row)
       return { record, created: result.created }
     },
   }
@@ -1415,5 +1541,6 @@ export const serviceInternals = Object.freeze({
   holdSummary,
   isActiveTransfer,
   transferVisible,
+  transferMutationAuthorized,
   allowedUiActions,
 })

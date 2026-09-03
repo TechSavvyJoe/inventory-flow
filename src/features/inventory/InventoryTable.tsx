@@ -21,6 +21,7 @@ import { CopyableValue } from "../../components/CopyableValue";
 import {
   formatMileage,
   formatMoney,
+  formatStickerMoney,
   resolveCurrentLocation,
   SORT_LABELS,
   updateMultiSort,
@@ -428,7 +429,7 @@ function EquipmentCell({ vehicle }: { vehicle: InventoryVehicle }) {
   const equipment = [
     ...published.filter((item) => standoutKeys.has(`${item.source}:${item.label}`)),
     ...published.filter((item) => !standoutKeys.has(`${item.source}:${item.label}`)),
-  ].slice(0, 4);
+  ].slice(0, 3);
   const remaining = Math.max(0, published.length - equipment.length);
   const first = equipment[0];
   const secondary = equipment.slice(1);
@@ -502,7 +503,7 @@ function windowStickerResourceDetail(vehicle: InventoryVehicle): string {
   ].filter(Boolean);
   if (buildFacts.length) return buildFacts.join(" · ");
   return vehicle.windowSticker?.totalMsrp != null && vehicle.windowSticker.totalMsrp > 0
-    ? `Sticker MSRP ${formatMoney(vehicle.windowSticker.totalMsrp)}`
+    ? `Sticker MSRP ${formatStickerMoney(vehicle.windowSticker.totalMsrp, vehicle.windowSticker)}`
     : "Original build label";
 }
 
@@ -980,7 +981,6 @@ export function InventoryTable({
                     <span className="inventory-vehicle-copy">
                       <span className="inventory-vehicle-copy__title">
                         <strong>{name}</strong>
-                        {vehicle.certified ? <small className="inventory-certified-label">Certified</small> : null}
                       </span>
                       <small className="inventory-vehicle-copy__spec" title={[vehicle.bodyType || vehicle.bodyStyle, vehicle.drivetrain].filter(Boolean).join(" · ")}>
                         {[vehicle.bodyType || vehicle.bodyStyle, vehicle.drivetrain].filter(Boolean).join(" · ") || "Body and drivetrain in details"}
@@ -988,24 +988,24 @@ export function InventoryTable({
                       <small className="inventory-vehicle-copy__detail" title={[vehicle.exteriorColor, vehicle.engine].filter(Boolean).join(" · ")}>
                         {[vehicle.exteriorColor, vehicle.engine].filter(Boolean).join(" · ") || "Engine and color in details"}
                       </small>
-                      <span className="inventory-identity-cell">
-                        <strong>
-                          <CopyableValue
-                            compact
-                            label="stock number"
-                            text={vehicle.stockNumber}
-                            className="inventory-table-copy-value inventory-table-copy-value--stock"
-                          />
-                        </strong>
-                        <small className="inventory-vin">
-                          <CopyableValue
-                            compact
-                            label="VIN"
-                            text={vehicle.vin}
-                            className="inventory-table-copy-value inventory-table-copy-value--vin"
-                          />
-                        </small>
-                      </span>
+                    </span>
+                    <span className="inventory-identity-cell">
+                      <strong>
+                        <CopyableValue
+                          compact
+                          label="stock number"
+                          text={vehicle.stockNumber}
+                          className="inventory-table-copy-value inventory-table-copy-value--stock"
+                        />
+                      </strong>
+                      <small className="inventory-vin">
+                        <CopyableValue
+                          compact
+                          label="VIN"
+                          text={vehicle.vin}
+                          className="inventory-table-copy-value inventory-table-copy-value--vin"
+                        />
+                      </small>
                     </span>
                   </span>
                 </td>
@@ -1083,18 +1083,18 @@ export function InventoryMobileList({
               <span className="inventory-mobile-row__main">
                 <span className="inventory-mobile-row__title">
                   <strong>{name}</strong>
-                  {vehicle.certified ? <small className="inventory-certified-label">Certified</small> : null}
                 </span>
                 <small className="inventory-mobile-row__specification" title={specification}>{specification}</small>
-                <span className="inventory-mobile-row__identity">
-                  <span>{vehicle.stockNumber}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{vehicle.vin}</span>
-                </span>
               </span>
               <span className="inventory-mobile-row__valuation">
                 <b>{formatMoney(vehicle.price)}</b>
                 <span>{formatMileage(vehicle.mileage)}</span>
+                {vehicle.certified ? <small className="inventory-certified-label">Certified</small> : null}
+              </span>
+              <span className="inventory-mobile-row__identity">
+                <span>{vehicle.stockNumber}</span>
+                <span aria-hidden="true">·</span>
+                <span>{vehicle.vin}</span>
               </span>
               <ChevronRight className="inventory-mobile-row__chevron" size={18} strokeWidth={1.8} aria-hidden="true" />
             </button>

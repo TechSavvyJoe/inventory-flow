@@ -1,5 +1,7 @@
+import { canonicalExternalAutoCheckUrl, resourceProvenanceSha256 } from '../../server/resource-validation.mjs'
+
 // Portable validation for the encrypted daily evidence import. This module has
-// no filesystem, Node runtime, credentials, or source-fetching dependencies.
+// no filesystem, credentials, or source-fetching dependencies.
 export const RELEASE_FORMAT = 'inventory-flow-private-release-v1'
 const STORES = Object.freeze({
   Howell: { code: 'H', host: 'www.bobmaxeyfordhowell.com' },
@@ -12,6 +14,15 @@ const VIN = /^[A-HJ-NPR-Z0-9]{17}$/
 const HASH = /^[a-f0-9]{64}$/i
 const MAX_ROWS = 20000
 const CHECKS = ['differenceVinEqualsFlaggedHolds', 'differenceStockEqualsFlaggedHolds', 'allSourceCellCounts22', 'allVinFormatValid', 'allStockNonblank', 'allStoreCodesExpected', 'setEquationValid']
+const RESOURCE_SCHEMA = 'inventory-flow-vin-document-enrichment-v1'
+const RESOURCE_DATA_STATES = new Set(['current', 'stale_unverified', 'incomplete'])
+const CAI_FACTORY_EQUIPMENT_PATH = /^\/window-stickers\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jpg$/i
+const PUBLIC_RESOURCE_ARCHIVE_ONLY_FIELDS = new Set([
+  'validated_vin',
+  'observedAt',
+  'extractionMethod',
+  'originalSourceText',
+])
 
 function ensure(condition, message) {
   if (!condition) throw new Error(`Invalid cloud release: ${message}`)
@@ -24,6 +35,11 @@ function object(value) {
 function integer(value, label, minimum = 0) {
   ensure((typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value))) && Number.isSafeInteger(Number(value)) && Number(value) >= minimum, `${label} must be an integer`)
   return Number(value)
+}
+
+function strictInteger(value, label, minimum = 0) {
+  ensure(typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum, `${label} must be a numeric integer`)
+  return value
 }
 
 function rows(value, label, minimum = 0) {
@@ -44,6 +60,200 @@ function stock(value) {
 
 function validDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
+}
+
+function onlyKeys(value, allowed, label) {
+  ensure(object(value), `${label} must be an object`)
+  ensure(Object.keys(value).every((key) => allowed.has(key)), `${label} contains unsupported fields`)
+}
+
+function optionalText(value, label, max = 500) {
+  if (value === undefined || value === null || value === '') return undefined
+  ensure(typeof value === 'string' && value.trim().length > 0 && value.trim().length <= max, `${label} is outside the safe text limit`)
+  return value.trim()
+}
+
+function optionalNumber(value, label, minimum = 0, maximum = 1_000_000) {
+  if (value === undefined || value === null || value === '') return undefined
+  ensure(typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum, `${label} is outside the safe numeric range`)
+  return value
+}
+
+function validTimestamp(value) {
+  return typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+    Number.isFinite(Date.parse(value))
+}
+
+function optionalTimestamp(value, label) {
+  if (value === undefined || value === null || value === '') return undefined
+  ensure(validTimestamp(value), `${label} must be an ISO timestamp with an explicit timezone`)
+  return value
+}
+
+function boundedStrings(value, label, limit = 120, itemMax = 500) {
+  if (value === undefined || value === null) return []
+  ensure(Array.isArray(value) && value.length <= limit, `${label} must be a bounded array`)
+  const seen = new Set()
+  return value.map((item) => {
+    const text = optionalText(item, `${label} item`, itemMax)
+    ensure(text, `${label} item is required`)
+    const identity = text.toLowerCase()
+    ensure(!seen.has(identity), `${label} contains a duplicate item`)
+    seen.add(identity)
+    return text
+  })
+}
+
+function approvedFactoryEquipmentUrl(value) {
+  if (value === undefined || value === null || value === '') return true
+  if (typeof value !== 'string') return false
+  let url
+  try { url = new URL(value) } catch { return false }
+  let decodedPath
+  try { decodedPath = decodeURIComponent(url.pathname) } catch { return false }
+  return url.protocol === 'https:' &&
+    url.hostname.toLowerCase() === 'assets.cai-media-management.com' &&
+    !url.username && !url.password && !url.port && !url.search && !url.hash &&
+    CAI_FACTORY_EQUIPMENT_PATH.test(url.pathname) &&
+    !decodedPath.split('/').includes('..')
+}
+
+function validateFactoryEquipment(value, vin) {
+  onlyKeys(value, new Set([
+    'dataState', 'url', 'sourceLabel', 'capturedAt', 'vehicleDescription', 'basePrice', 'totalOptions',
+    'destinationCharge', 'totalMsrp', 'exteriorColor', 'interiorColor', 'engine', 'transmission',
+    'drivetrain', 'packages', 'sections', 'disclaimer', 'isOriginalWindowSticker',
+  ]), 'factory-equipment record')
+  ensure(RESOURCE_DATA_STATES.has(value.dataState), 'factory-equipment data state is invalid')
+  ensure(value.isOriginalWindowSticker === false, 'factory-equipment record must be labeled as informational, not an original sticker')
+  ensure(approvedFactoryEquipmentUrl(value.url), 'factory-equipment URL is not an approved HTTPS vAuto/CAI resource')
+  for (const [field, max] of [
+    ['sourceLabel', 160], ['vehicleDescription', 320], ['exteriorColor', 200], ['interiorColor', 200],
+    ['engine', 240], ['transmission', 240], ['drivetrain', 160],
+  ]) optionalText(value[field], `factory-equipment ${field}`, max)
+  optionalTimestamp(value.capturedAt, 'factory-equipment capturedAt')
+  for (const field of ['basePrice', 'totalOptions', 'destinationCharge', 'totalMsrp']) optionalNumber(value[field], `factory-equipment ${field}`, 0, 2_000_000)
+
+  ensure(Array.isArray(value.packages) && value.packages.length <= 80, 'factory-equipment packages must be a bounded array')
+  const packageNames = new Set()
+  for (const entry of value.packages) {
+    onlyKeys(entry, new Set(['name', 'code', 'price', 'features']), 'factory-equipment package')
+    const name = optionalText(entry.name, 'factory-equipment package name', 240)
+    ensure(name, 'factory-equipment package name is required')
+    ensure(!packageNames.has(name.toLowerCase()), 'factory-equipment packages contain a duplicate name')
+    packageNames.add(name.toLowerCase())
+    optionalText(entry.code, 'factory-equipment package code', 80)
+    optionalNumber(entry.price, 'factory-equipment package price', 0, 2_000_000)
+    boundedStrings(entry.features, 'factory-equipment package features', 120, 300)
+  }
+
+  ensure(Array.isArray(value.sections) && value.sections.length <= 40, 'factory-equipment sections must be a bounded array')
+  const sectionNames = new Set()
+  let itemCount = 0
+  for (const section of value.sections) {
+    onlyKeys(section, new Set(['name', 'items']), 'factory-equipment section')
+    const name = optionalText(section.name, 'factory-equipment section name', 200)
+    ensure(name, 'factory-equipment section name is required')
+    ensure(!sectionNames.has(name.toLowerCase()), 'factory-equipment sections contain a duplicate name')
+    sectionNames.add(name.toLowerCase())
+    ensure(Array.isArray(section.items) && section.items.length > 0 && section.items.length <= 150, 'factory-equipment section items must be a non-empty bounded array')
+    itemCount += section.items.length
+    ensure(itemCount <= 800, 'factory-equipment record contains too many section items')
+    for (const item of section.items) {
+      onlyKeys(item, new Set(['label', 'price']), 'factory-equipment section item')
+      ensure(optionalText(item.label, 'factory-equipment section item label', 700), 'factory-equipment section item label is required')
+      optionalNumber(item.price, 'factory-equipment section item price', 0, 2_000_000)
+    }
+  }
+  ensure(optionalText(value.disclaimer, 'factory-equipment disclaimer', 5_000), 'factory-equipment disclaimer is required')
+  return { factoryEquipment: 1, externalAutoCheck: 0 }
+}
+
+function validateExternalAutoCheck(value, vin) {
+  onlyKeys(value, new Set([
+    'dataState', 'url', 'sourceLabel', 'capturedAt', 'reportRunAt', 'score', 'scoreRangeLow',
+    'scoreRangeHigh', 'usage', 'ownerCount', 'lastReportedOdometer', 'lastReportedOdometerDate',
+    'vehicleClass', 'assemblyCountry', 'estimatedInServiceDate', 'checks',
+  ]), 'external AutoCheck record')
+  ensure(RESOURCE_DATA_STATES.has(value.dataState), 'external AutoCheck data state is invalid')
+  ensure(canonicalExternalAutoCheckUrl(value.url, vin), 'external AutoCheck URL is not an approved exact-VIN HTTPS resource')
+  optionalText(value.sourceLabel, 'external AutoCheck sourceLabel', 160)
+  optionalTimestamp(value.capturedAt, 'external AutoCheck capturedAt')
+  for (const [field, max] of [
+    ['reportRunAt', 80], ['usage', 80], ['lastReportedOdometerDate', 20], ['vehicleClass', 160],
+    ['assemblyCountry', 120], ['estimatedInServiceDate', 20],
+  ]) optionalText(value[field], `external AutoCheck ${field}`, max)
+  for (const [field, minimum, maximum] of [
+    ['score', 0, 100], ['scoreRangeLow', 0, 100], ['scoreRangeHigh', 0, 100], ['ownerCount', 0, 99],
+    ['lastReportedOdometer', 0, 20_000_000],
+  ]) optionalNumber(value[field], `external AutoCheck ${field}`, minimum, maximum)
+  const checks = value.checks ?? []
+  ensure(Array.isArray(checks) && checks.length <= 40, 'external AutoCheck checks must be a bounded array')
+  for (const check of checks) {
+    onlyKeys(check, new Set(['label', 'status', 'detail']), 'external AutoCheck check')
+    ensure(optionalText(check.label, 'external AutoCheck check label', 160), 'external AutoCheck check label is required')
+    optionalText(check.status, 'external AutoCheck check status', 200)
+    optionalText(check.detail, 'external AutoCheck check detail', 500)
+  }
+  return { factoryEquipment: 0, externalAutoCheck: 1 }
+}
+
+function validateResourceRecord(value, vin) {
+  onlyKeys(value, new Set(['vin', 'factoryEquipment', 'autoCheckReport']), 'resource record')
+  ensure(value.vin === vin && normalizedVin(value.vin) === vin, 'resource record VIN does not match its normalized vehicle')
+  let counts = { factoryEquipment: 0, externalAutoCheck: 0 }
+  if (value.factoryEquipment !== undefined && value.factoryEquipment !== null) {
+    const next = validateFactoryEquipment(value.factoryEquipment, vin)
+    counts = { factoryEquipment: counts.factoryEquipment + next.factoryEquipment, externalAutoCheck: counts.externalAutoCheck }
+  }
+  if (value.autoCheckReport !== undefined && value.autoCheckReport !== null) {
+    const next = validateExternalAutoCheck(value.autoCheckReport, vin)
+    counts = { factoryEquipment: counts.factoryEquipment, externalAutoCheck: counts.externalAutoCheck + next.externalAutoCheck }
+  }
+  ensure(counts.factoryEquipment + counts.externalAutoCheck > 0, 'resource record contains no usable resource')
+  return counts
+}
+
+function validateResourceRun(run, resourceRows, reportDate) {
+  if (run === undefined || run === null) {
+    ensure(resourceRows.length === 0, 'resource record exists without a validated resources source run')
+    return
+  }
+  onlyKeys(run, new Set(['type', 'reportDate', 'extractedAt', 'sha256', 'bytes', 'schemaVersion', 'status', 'staleReason', 'rowCount', 'provenanceSha256', 'metadata']), 'resources source run')
+  ensure(run.type === 'vin_document_enrichment' && run.schemaVersion === RESOURCE_SCHEMA, 'resources source run type/schema is invalid')
+  ensure(run.reportDate === reportDate && run.status === 'current' && (run.staleReason === null || run.staleReason === undefined), 'resources source run is stale or date-mismatched')
+  ensure(HASH.test(String(run.sha256)) && strictInteger(run.bytes, 'resources source bytes', 1) > 0, 'resources source run checksum/size is invalid')
+  ensure(strictInteger(run.rowCount, 'resources source row count') === resourceRows.length, 'resources source row count does not reconcile')
+  if (run.extractedAt !== null && run.extractedAt !== undefined) optionalTimestamp(run.extractedAt, 'resources source extractedAt')
+
+  const metadata = run.metadata
+  onlyKeys(metadata, new Set([
+    'status', 'generatedAt', 'recordCount', 'factoryEquipmentCount', 'externalAutoCheckCount', 'path',
+    'sha256', 'bytes', 'matchedVehicleCount', 'unmatchedRecordCount',
+  ]), 'resources source metadata')
+  ensure(metadata.status === 'matched', 'resources source metadata is not matched')
+  if (metadata.generatedAt !== null && metadata.generatedAt !== undefined) optionalTimestamp(metadata.generatedAt, 'resources source generatedAt')
+  ensure(sameValue(metadata.generatedAt ?? null, run.extractedAt ?? null), 'resources source timestamps do not reconcile')
+  ensure(typeof metadata.path === 'string' && /^local-file:[^/\\:]{1,255}$/.test(metadata.path), 'resources source path is not portable')
+  ensure(HASH.test(String(metadata.sha256)) && String(metadata.sha256).toLowerCase() === String(run.sha256).toLowerCase(), 'resources source metadata checksum does not reconcile')
+  ensure(strictInteger(metadata.bytes, 'resources metadata bytes', 1) === strictInteger(run.bytes, 'resources source bytes', 1), 'resources source metadata size does not reconcile')
+  const recordCount = strictInteger(metadata.recordCount, 'resources record count')
+  ensure(recordCount <= 2_000, 'resources record count is out of bounds')
+  const matched = strictInteger(metadata.matchedVehicleCount, 'matched resources count')
+  const unmatched = strictInteger(metadata.unmatchedRecordCount, 'unmatched resources count')
+  ensure(matched === resourceRows.length && unmatched === recordCount - matched, 'resources matched/unmatched counts do not reconcile')
+  const factoryCount = strictInteger(metadata.factoryEquipmentCount, 'factory-equipment source count')
+  const autoCheckCount = strictInteger(metadata.externalAutoCheckCount, 'external AutoCheck source count')
+  ensure(factoryCount <= recordCount && autoCheckCount <= recordCount, 'resources type counts exceed the source record count')
+  const attachedFactory = resourceRows.reduce((total, row) => total + row.counts.factoryEquipment, 0)
+  const attachedAutoCheck = resourceRows.reduce((total, row) => total + row.counts.externalAutoCheck, 0)
+  ensure(attachedFactory <= factoryCount && attachedAutoCheck <= autoCheckCount, 'attached resource type counts exceed validated source evidence')
+  ensure(HASH.test(String(run.provenanceSha256)), 'resources source provenance checksum is invalid')
+  ensure(
+    String(run.provenanceSha256).toLowerCase() === resourceProvenanceSha256(run, resourceRows),
+    'resources source provenance does not match its claims and attached records',
+  )
 }
 
 function sameSet(left, right) {
@@ -77,10 +287,14 @@ function sourceMatches(actual, source, label, allowEnrichment = false) {
   const matches = allowEnrichment ? Object.keys(source).every((key) => {
     if (key === 'photo_url_source' && actual[key] === 'Verified app photo cache — official VDP') return true
     if (['autoCheckReport', 'windowSticker'].includes(key) && object(source[key]) && object(actual[key])) {
-      // The importer removes its validation-only VIN marker from presentation
-      // documents. The original exact-VIN evidence remains in publicSnapshot.
+      // The app-facing projection omits validation/provenance fields and large
+      // raw document text. Their exact values remain in the encrypted
+      // publicSnapshot archive, while every presentation field must still
+      // match that source evidence byte-for-byte at the value level.
       if (source[key].validated_vin !== undefined && normalizedVin(source[key].validated_vin) !== normalizedVin(source.vin)) return false
-      return Object.keys(source[key]).filter((field) => field !== 'validated_vin').every((field) => sameValue(source[key][field], actual[key][field]))
+      return Object.keys(source[key])
+        .filter((field) => !PUBLIC_RESOURCE_ARCHIVE_ONLY_FIELDS.has(field))
+        .every((field) => sameValue(source[key][field], actual[key][field]))
     }
     return sameValue(source[key], actual[key])
   }) : sameValue(source, actual)
@@ -120,7 +334,7 @@ function validatePublic(snapshot, run, manifest, reportDate) {
     ensure(typeof record.actual_location === 'string' && record.actual_location.trim() && typeof record.vehicle_name === 'string' && record.vehicle_name.trim(), 'public vehicle/location evidence is missing')
     ensure(['in_stock', 'in_transit', 'in_production'].every((key) => typeof record[key] === 'boolean') && Array.isArray(record.source_sites), 'public source flags are missing')
     const url = new URL(record.listing_url)
-    ensure(['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.port && url.hostname === STORES[record.store].host && url.href.toUpperCase().includes(vin), 'public listing link does not match VIN and physical store')
+    ensure(url.protocol === 'https:' && !url.username && !url.password && !url.port && url.hostname === STORES[record.store].host && url.href.toUpperCase().includes(vin), 'public listing link must use HTTPS and match the VIN and physical store')
     byVin.set(vin, record)
     stocks.add(stockNumber)
   }
@@ -157,7 +371,16 @@ function validateDealerMail(snapshot, run, manifest, reportDate) {
   ensure(object(status) && /^complete(?:\b|_)/i.test(status.overall ?? '') && status.readOnly === true && status.loginRedirectEncountered !== true && status.credentialsCaptured !== true, 'DealerMail source is incomplete or unsafe')
   const inventory = snapshot.completeDealerMailUsedInventory
   ensure(object(inventory) && inventory.readOnly === true && inventory.authenticationStatus?.authenticatedSessionStillWorks === true && inventory.authenticationStatus?.loginFormDetected === false, 'DealerMail authentication/read-only evidence is missing')
+  ensure(Array.isArray(snapshot.currentComments) && Array.isArray(snapshot.currentAlerts), 'DealerMail top-level current comment/alert evidence arrays are missing')
   const included = crmRows(inventory.rows, 'complete CRM')
+  for (const record of included.records) {
+    ensure(['Y', 'N'].includes(record.commentsFlag), 'complete CRM commentsFlag must be Y or N')
+    ensure(['Y', 'N'].includes(record.alertsFlag), 'complete CRM alertsFlag must be Y or N')
+    ensure(Array.isArray(record.comments) && Array.isArray(record.alerts), 'complete CRM message evidence is missing')
+    ensure(record.comments.every((group) => Array.isArray(group?.rows)), 'complete CRM comment rows are invalid')
+    if (record.commentsFlag === 'Y') ensure(record.comments.some((group) => group.rows.some((comment) => typeof comment.commentTextRaw === 'string' && comment.commentTextRaw.trim())), 'flagged complete CRM comments are missing')
+    if (record.alertsFlag === 'Y') ensure(record.alerts.some((alert) => typeof alert?.alertTextRaw === 'string' && alert.alertTextRaw.trim()), 'flagged complete CRM alert is missing')
+  }
   ensure(included.records.length > 0 && integer(run.rowCount, 'CRM run count') === included.records.length && integer(manifest.source_counts.dealermail_used_rows, 'manifest CRM count') === included.records.length, 'CRM count does not reconcile')
   validateCrmSummary(inventory.summary, included, 'complete CRM')
   const excludeSource = snapshot.excludeActiveHoldsValidationSet
@@ -202,6 +425,37 @@ function validateDealerMail(snapshot, run, manifest, reportDate) {
     held.set(vin, vehicle)
   }
   const difference = new Set([...included.byVin.keys()].filter((vin) => !excluded.byVin.has(vin)))
+  if (snapshot.releasedHoldHistory !== undefined) {
+    const seenHistory = new Set()
+    const seenStocks = new Set()
+    for (const history of rows(snapshot.releasedHoldHistory, 'released hold history')) {
+      const vin = normalizedVin(history?.vin)
+      const historyStock = stock(history?.stockNumber)
+      ensure(history.vin === vin && !seenHistory.has(vin) && !held.has(vin), 'released hold history is duplicated, noncanonical, or currently held')
+      ensure(!seenStocks.has(historyStock), 'released hold history stock is duplicated')
+      ensure(object(history.store) && Object.hasOwn(STORES, history.store.name) && STORES[history.store.name].code === history.store.code, 'released hold history CRM store/code is invalid')
+      const currentCrm = included.byVin.get(vin)
+      const currentStockOwner = included.records.find((record) => stock(record.stockNumber) === historyStock)
+      if (currentCrm) {
+        ensure(stock(currentCrm.stockNumber) === historyStock && currentCrm.storeName === history.store.name && currentCrm.storeCode === history.store.code, 'released hold history does not match the current CRM VIN/stock/store record')
+      } else {
+        ensure(!currentStockOwner, 'released hold history stock is currently assigned to a different CRM VIN')
+      }
+      let sourceUrl
+      try { sourceUrl = new URL(history.sourceUrl) } catch { ensure(false, 'released hold history source URL is invalid') }
+      const sourceKeys = [...sourceUrl.searchParams.keys()]
+      ensure(sourceUrl.protocol === 'https:' && sourceUrl.hostname.toLowerCase() === 'www.dealermail.com' && !sourceUrl.username && !sourceUrl.password && !sourceUrl.port && !sourceUrl.hash && sourceUrl.pathname.toLowerCase() === '/prospect_manager/v2_inventory_used_hold_edit.asp' && sourceKeys.length === 1 && sourceKeys[0] === 's' && stock(sourceUrl.searchParams.get('s')) === historyStock, 'released hold history source URL does not match its exact DealerMail stock')
+      ensure(history.currentLiveHold === false && validTimestamp(history.observedAtUtc), 'released hold history must be explicitly non-current with a valid observation time')
+      for (const detail of rows(history.holdDetailRows, 'released hold detail', 1)) {
+        ensure(object(detail), 'released hold history detail is invalid')
+        ensure(stock(detail.stockNumber) === historyStock && stock(detail.sourceStockNumber) === historyStock, 'released hold history nested detail stock/provenance does not match its wrapper')
+        if (detail.vin !== undefined) ensure(normalizedVin(detail.vin) === vin, 'released hold history nested detail VIN does not match its wrapper')
+        if (detail.storeName !== undefined || detail.storeCode !== undefined) ensure(detail.storeName === history.store.name && detail.storeCode === history.store.code, 'released hold history nested detail store provenance does not match its wrapper')
+      }
+      seenHistory.add(vin)
+      seenStocks.add(historyStock)
+    }
+  }
   ensure(sameSet(difference, new Set(held.keys())), 'complete inventory must equal exclude-holds plus exact held VIN set')
   const flagged = new Set(included.records.filter((row) => row.holdStateFromRowClass === 'active_hold').map((row) => normalizedVin(row.vin)))
   ensure(sameSet(flagged, new Set(held.keys())), 'CRM active-hold rows differ from live held VIN set')
@@ -244,9 +498,11 @@ export function validateReleaseBundle(bundle) {
   }
   const publicData = validatePublic(release.publicSnapshot, release.sourceRuns.public, release.manifest, bundle.reportDate)
   const crm = validateDealerMail(release.dealerMailSnapshot, release.sourceRuns.dealerMail, release.manifest, bundle.reportDate)
+  ensure(sameValue(release.releasedHoldHistory ?? [], release.dealerMailSnapshot.releasedHoldHistory ?? []), 'normalized released hold history differs from its source evidence')
   const expectedVins = new Set([...publicData.byVin.keys(), ...crm.byVin.keys()])
   const normalized = rows(release.vehicles, 'normalized inventory', 1)
   const seen = new Set()
+  const resourceRows = []
   for (const record of normalized) {
     ensure(object(record), 'normalized record is invalid')
     const vin = normalizedVin(record.vin)
@@ -255,9 +511,13 @@ export function validateReleaseBundle(bundle) {
       if (source) sourceMatches(record[field], source, field, enrich)
       else ensure(record[field] === null || record[field] === undefined, `${field} has no matching source evidence`)
     }
+    if (record.resourceRecord !== null && record.resourceRecord !== undefined) {
+      resourceRows.push({ vin, resourceRecord: record.resourceRecord, counts: validateResourceRecord(record.resourceRecord, vin) })
+    }
     seen.add(vin)
   }
   ensure(sameSet(seen, expectedVins), 'normalized inventory omits source VINs')
+  validateResourceRun(release.sourceRuns?.resources, resourceRows, bundle.reportDate)
   return {
     reportDate: bundle.reportDate,
     publicRowCount: publicData.byVin.size,
@@ -268,6 +528,7 @@ export function validateReleaseBundle(bundle) {
     deletedHoldRecordCount: crm.counters.deletedHistoricalHoldRows,
     publicStoreCounts: publicData.counts,
     crmStoreCounts: crm.counts,
+    resourceRecordCount: resourceRows.length,
     vehicleCount: seen.size,
   }
 }

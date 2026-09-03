@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildSyntheticRelease, SYNTHETIC_NOW } from '../../fixtures/synthetic-release.mjs'
 import * as sqliteRepository from '../../server/database.mjs'
 import { createInventoryService } from '../../server/service.mjs'
-import { createInventoryServiceCore } from '../../server/service-core.mjs'
+import { createInventoryServiceCore, serviceInternals } from '../../server/service-core.mjs'
 import { STORE_NAMES } from '../../server/constants.mjs'
 import { STORE_NAMES as importedStoreNames } from '../../server/importer.mjs'
 
@@ -48,6 +48,177 @@ describe('portable inventory service core', () => {
       }
     },
   )
+
+  it.each([
+    ['group manager outside the route', { role: 'group_manager', store: 'Lincoln', user: 'Group Manager' }, true],
+    ['home-store manager', { role: 'manager', store: 'Howell', user: 'Howell Manager' }, true],
+    ['requesting-store manager', { role: 'manager', store: 'Fowlerville', user: 'Fowlerville Manager' }, true],
+    ['unrelated manager', { role: 'manager', store: 'Ford Detroit', user: 'Detroit Manager' }, false],
+    ['related salesperson', { role: 'sales', store: 'Fowlerville', user: 'Fowlerville Salesperson' }, true],
+    ['unrelated salesperson', { role: 'sales', store: 'Lincoln', user: 'Lincoln Salesperson' }, false],
+    ['related coordinator', { role: 'coordinator', store: 'Fowlerville', user: 'Fowlerville Coordinator' }, true],
+    ['unrelated coordinator', { role: 'coordinator', store: 'Ford Detroit', user: 'Detroit Coordinator' }, false],
+    ['assigned porter', { role: 'porter', store: 'Howell', user: 'Assigned Runner', userId: 'runner-1' }, true],
+    ['assigned driver after a display-name change', { role: 'driver', store: 'Fowlerville', user: 'Renamed Runner', userId: 'runner-1' }, true],
+    ['same display name with a different ID', { role: 'driver', store: 'Fowlerville', user: 'Assigned Runner', userId: 'runner-2' }, false],
+    ['unassigned porter at a related store', { role: 'porter', store: 'Howell', user: 'Other Runner', userId: 'runner-3' }, false],
+    ['unassigned driver during active movement', { role: 'driver', store: 'Fowlerville', user: 'Other Runner', userId: 'runner-3' }, false],
+    ['former custodian after reassignment', { role: 'driver', store: 'Fowlerville', user: 'Former Runner', userId: 'runner-4' }, false],
+  ])('applies transfer object authorization for %s', (_label, context, expected) => {
+    const row = {
+      home_store_id: 'Howell',
+      requesting_store_id: 'Fowlerville',
+      destination_store_id: 'Fowlerville',
+      transport_assignee: 'Assigned Runner',
+      transport_assignee_user_id: 'runner-1',
+      current_custodian: 'Former Runner',
+      status: 'transport_assigned',
+      movement_status: 'transport_assigned',
+    }
+    expect(serviceInternals.transferVisible(row, context)).toBe(expected)
+    expect(serviceInternals.transferMutationAuthorized(row, context)).toBe(expected)
+  })
+
+  it.each(['at_requesting_store', 'return_requested', 'returned_home', 'closed'])(
+    'revokes transport-role authorization when the persisted assignment is no longer active in %s',
+    (movementStatus) => {
+      const row = {
+        home_store_id: 'Howell',
+        requesting_store_id: 'Fowlerville',
+        destination_store_id: 'Fowlerville',
+        transport_assignee: 'Assigned Runner',
+        transport_assignee_user_id: 'runner-1',
+        status: movementStatus === 'closed' ? 'closed' : movementStatus,
+        movement_status: movementStatus,
+      }
+      const context = { role: 'driver', store: 'Fowlerville', user: 'Assigned Runner', userId: 'runner-1' }
+      expect(serviceInternals.transferVisible(row, context)).toBe(false)
+      expect(serviceInternals.transferMutationAuthorized(row, context)).toBe(false)
+    },
+  )
+
+  it('permits a legacy name-only assignment only when its authenticated identity boundary marked the name unique', () => {
+    const row = {
+      home_store_id: 'Howell', requesting_store_id: 'Fowlerville', destination_store_id: 'Fowlerville',
+      transport_assignee: 'Legacy Runner', transport_assignee_user_id: null,
+      status: 'transport_assigned', movement_status: 'transport_assigned',
+    }
+    const uniqueLegacy = {
+      role: 'driver', store: 'Fowlerville', user: 'Legacy Runner', userId: 'legacy-1',
+      allowLegacyTransportAssignmentByName: true,
+    }
+    const duplicateName = { ...uniqueLegacy, userId: 'legacy-2', allowLegacyTransportAssignmentByName: false }
+    expect(serviceInternals.transferVisible(row, uniqueLegacy)).toBe(true)
+    expect(serviceInternals.transferMutationAuthorized(row, uniqueLegacy)).toBe(true)
+    expect(serviceInternals.transferVisible(row, duplicateName)).toBe(false)
+    expect(serviceInternals.transferMutationAuthorized(row, duplicateName)).toBe(false)
+    expect(serviceInternals.transferVisible(row, { ...uniqueLegacy, user: 'legacy runner' })).toBe(false)
+    expect(serviceInternals.transferVisible({ ...row, transport_assignee: 'Émile' }, {
+      ...uniqueLegacy, user: 'Émile', allowLegacyTransportAssignmentByName: true,
+    })).toBe(false)
+  })
+
+  it('binds outbound and return transport reads and mutations to the immutable assigned user ID', () => {
+    const { database, portable } = harness()
+    const salesperson = { role: 'sales', store: 'Fowlerville', user: 'Synthetic Sales', userId: 'sales-1' }
+    const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic Manager', userId: 'manager-1' }
+    const coordinator = { role: 'coordinator', store: 'Fowlerville', user: 'Synthetic Coordinator', userId: 'coord-1' }
+    const assigned = { role: 'driver', store: 'Fowlerville', user: 'Alex Driver', userId: 'driver-1' }
+    const sameNameAttacker = { ...assigned, userId: 'driver-2' }
+    const returning = { role: 'porter', store: 'Fowlerville', user: 'Alex Driver', userId: 'porter-9' }
+    const input = {
+      vin: 'TESTDATAHWELL0002', neededBy: '2026-08-31T14:00:00-04:00', reason: 'Stable identity test',
+    }
+    const created = portable.createTransfer(input, salesperson, 'stable-create')
+    const id = created.record.id
+    portable.appendTransferEvent(id, { type: 'manager_reviewed' }, manager, 'stable-review')
+    portable.appendTransferEvent(id, { type: 'approved', homeStoreManager: 'Howell Manager' }, manager, 'stable-approve')
+    portable.appendTransferEvent(id, {
+      type: 'transport_assigned', assignee: 'Alex Driver', assigneeUserId: 'driver-1',
+      dueAt: '2026-08-31T15:00:00-04:00',
+    }, coordinator, 'stable-outbound-assignment')
+
+    expect(database.prepare('SELECT transport_assignee_user_id AS id FROM transfer_requests WHERE id=?').get(id).id).toBe('driver-1')
+    expect(database.prepare("SELECT driver_or_porter_user_id AS id FROM transfer_events WHERE transfer_request_id=? AND event_type='transport_assigned'").get(id).id).toBe('driver-1')
+    expect(portable.listTransfers({}, sameNameAttacker).items).toHaveLength(0)
+    expect(() => portable.getTransfer(id, sameNameAttacker)).toThrowError(expect.objectContaining({ code: 'TRANSFER_NOT_FOUND' }))
+    const eventCount = database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count
+    expect(() => portable.appendTransferEvent(id, { type: 'picked_up' }, sameNameAttacker, 'stable-attacker')).toThrowError(
+      expect.objectContaining({ code: 'TRANSFER_NOT_FOUND' }),
+    )
+    expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(eventCount)
+    const assignedView = portable.getTransfer(id, assigned)
+    expect(assignedView.transportAssignee).toBe('Alex Driver')
+    expect(JSON.stringify(assignedView)).not.toContain('driver-1')
+    const beforeForgedAudit = database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count
+    expect(() => portable.appendTransferEvent(
+      id,
+      { type: 'picked_up', assigneeUserId: 'forged-audit-id' },
+      assigned,
+      'stable-forged-non-assignment',
+    )).toThrowError(expect.objectContaining({ code: 'ASSIGNEE_IDENTITY_CLIENT_CONTROLLED' }))
+    expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(beforeForgedAudit)
+    expect(portable.appendTransferEvent(id, { type: 'picked_up' }, assigned, 'stable-pickup').record.movementStatus).toBe('picked_up')
+    expect(portable.appendTransferEvent(id, { type: 'in_transit' }, assigned, 'stable-transit').record.movementStatus).toBe('in_transit')
+    const arrival = portable.appendTransferEvent(id, { type: 'arrived' }, assigned, 'stable-arrival')
+    expect(arrival.created).toBe(true)
+    const arrivalReplay = portable.appendTransferEvent(id, { type: 'arrived' }, assigned, 'stable-arrival')
+    expect(arrivalReplay.created).toBe(false)
+    expect(arrivalReplay.record).toMatchObject({
+      id, requestStatus: 'arrived', movementStatus: 'at_requesting_store', replayed: true,
+    })
+    expect(arrivalReplay.record.nextAction).toBeUndefined()
+    expect(database.prepare("SELECT actor_user_id AS id FROM transfer_events WHERE transfer_request_id=? AND event_type='arrived'").get(id).id).toBe('driver-1')
+    expect(() => portable.appendTransferEvent(id, { type: 'picked_up' }, assigned, 'stable-pickup')).toThrowError(
+      expect.objectContaining({ code: 'TRANSFER_NOT_FOUND' }),
+    )
+    expect(() => portable.appendTransferEvent(id, { type: 'arrived' }, sameNameAttacker, 'stable-arrival')).toThrowError(
+      expect.objectContaining({ code: 'TRANSFER_NOT_FOUND' }),
+    )
+    portable.appendTransferEvent(id, { type: 'not_sold' }, salesperson, 'stable-not-sold')
+    portable.appendTransferEvent(id, { type: 'return_requested' }, salesperson, 'stable-return-request')
+    portable.appendTransferEvent(id, {
+      type: 'return_assigned', assignee: 'Alex Driver', assigneeUserId: 'porter-9',
+      dueAt: '2026-09-01T14:00:00-04:00',
+    }, coordinator, 'stable-return-assignment')
+
+    expect(portable.listTransfers({}, sameNameAttacker).items).toHaveLength(0)
+    expect(portable.getTransfer(id, returning).movementStatus).toBe('return_assigned')
+    expect(portable.appendTransferEvent(id, { type: 'return_in_transit' }, returning, 'stable-return-transit').record.movementStatus).toBe('return_in_transit')
+    expect(database.prepare("SELECT driver_or_porter_user_id AS id FROM transfer_events WHERE transfer_request_id=? AND event_type='return_assigned'").get(id).id).toBe('porter-9')
+  })
+
+  it('revokes a stable transport assignment immediately when the transfer is canceled', () => {
+    const { database, portable } = harness()
+    const salesperson = { role: 'sales', store: 'Fowlerville', user: 'Synthetic Sales', userId: 'sales-cancel' }
+    const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic Manager', userId: 'manager-cancel' }
+    const coordinator = { role: 'coordinator', store: 'Fowlerville', user: 'Synthetic Coordinator', userId: 'coord-cancel' }
+    const assigned = { role: 'driver', store: 'Fowlerville', user: 'Assigned Driver', userId: 'driver-cancel' }
+    const created = portable.createTransfer({
+      vin: 'TESTDATAHWELL0002',
+      neededBy: '2026-08-31T14:00:00-04:00',
+      reason: 'Cancellation authorization test',
+    }, salesperson, 'cancel-create')
+    const id = created.record.id
+    portable.appendTransferEvent(id, { type: 'manager_reviewed' }, manager, 'cancel-review')
+    portable.appendTransferEvent(id, { type: 'approved', homeStoreManager: 'Howell Manager' }, manager, 'cancel-approve')
+    portable.appendTransferEvent(id, {
+      type: 'transport_assigned',
+      assignee: 'Assigned Driver',
+      assigneeUserId: 'driver-cancel',
+      dueAt: '2026-08-31T15:00:00-04:00',
+    }, coordinator, 'cancel-assignment')
+    expect(portable.getTransfer(id, assigned).movementStatus).toBe('transport_assigned')
+
+    portable.appendTransferEvent(id, { type: 'canceled', note: 'Request withdrawn before pickup.' }, manager, 'cancel-event')
+    expect(portable.listTransfers({}, assigned).items).toHaveLength(0)
+    expect(() => portable.getTransfer(id, assigned)).toThrowError(expect.objectContaining({ code: 'TRANSFER_NOT_FOUND' }))
+    const count = database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count
+    expect(() => portable.appendTransferEvent(id, { type: 'note_added' }, assigned, 'cancel-driver-note')).toThrowError(
+      expect.objectContaining({ code: 'TRANSFER_NOT_FOUND' }),
+    )
+    expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(count)
+  })
 
   it('routes mutations through the adapter with unchanged workflow and idempotency behavior', () => {
     const { database, local } = harness()

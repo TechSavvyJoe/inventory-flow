@@ -57,6 +57,7 @@ function sourceRunForCloud(source) {
     status: source.status,
     staleReason: source.staleReason ?? null,
     rowCount: source.rowCount,
+    ...(source.provenanceSha256 ? { provenanceSha256: String(source.provenanceSha256).toLowerCase() } : {}),
     metadata: portableMetadata(source.metadata ?? {}),
   }
 }
@@ -85,6 +86,7 @@ export function cloudReleaseFrom(release) {
       },
       publicSnapshot: release.publicSnapshot,
       dealerMailSnapshot: release.dealerMailSnapshot,
+      releasedHoldHistory: release.releasedHoldHistory ?? [],
       publicChangeEvents: release.publicChangeEvents ?? [],
       vehicles: release.vehicles ?? [],
     },
@@ -138,7 +140,10 @@ export async function publishEnvelope(envelope, { environment = process.env, fet
     body,
   })
   const payload = await response.json().catch(() => null)
-  if (!response.ok) throw new Error(`Cloud release publish failed (${response.status})`)
+  if (!response.ok) {
+    const code = typeof payload?.code === 'string' && /^[A-Z0-9_]+$/.test(payload.code) ? `: ${payload.code}` : ''
+    throw new Error(`Cloud release publish failed (${response.status}${code})`)
+  }
   if (!payload || !['published', 'already_published'].includes(payload.status) || payload.reportDate !== envelope.reportDate) throw new Error('Cloud release response did not confirm the expected report date and publication status')
   return { status: payload.status, reportDate: payload.reportDate }
 }
