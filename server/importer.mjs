@@ -92,6 +92,103 @@ function normalizedStock(value) {
   return String(value ?? '').trim()
 }
 
+export function normalizeDealerMailSnapshotForImport(snapshot) {
+  assertValid(isPlainObject(snapshot), 'DealerMail snapshot must be an object')
+  const releasedHistory = snapshot.releasedHoldHistory
+  if (!Array.isArray(releasedHistory) || !releasedHistory.some((history) => typeof history?.store === 'string')) {
+    return snapshot
+  }
+
+  // The compatibility path must never share mutable nested evidence with the
+  // parsed source object. The original file hash and bytes remain authoritative.
+  const normalizedSnapshot = structuredClone(snapshot)
+  const normalizedReleasedHistory = normalizedSnapshot.releasedHoldHistory
+  const crmRows = normalizedSnapshot.completeDealerMailUsedInventory?.rows
+  const storeMap = normalizedSnapshot.storeMap
+  assertValid(Array.isArray(crmRows), 'Legacy released hold history requires complete CRM rows')
+  assertValid(isPlainObject(storeMap), 'Legacy released hold history requires the snapshot store map')
+
+  const crmRowsByVin = new Map()
+  const crmRowsByStock = new Map()
+  const heldVins = new Set(
+    (Array.isArray(normalizedSnapshot.vehicles) ? normalizedSnapshot.vehicles : [])
+      .map((vehicle) => normalizedVin(vehicle?.mainRow?.vin))
+      .filter(Boolean),
+  )
+  for (const row of crmRows) {
+    const vin = normalizedVin(row?.vin)
+    const matches = crmRowsByVin.get(vin) ?? []
+    matches.push(row)
+    crmRowsByVin.set(vin, matches)
+    const stock = normalizedStock(row?.stockNumber).toUpperCase()
+    const stockMatches = crmRowsByStock.get(stock) ?? []
+    stockMatches.push(row)
+    crmRowsByStock.set(stock, stockMatches)
+  }
+
+  const normalizedHistory = normalizedReleasedHistory.map((history) => {
+    if (typeof history?.store !== 'string') return history
+
+    const legacyCode = history.store
+    const vin = normalizedVin(history.vin)
+    const historyStock = normalizedStock(history.stockNumber).toUpperCase()
+    assertValid(
+      !heldVins.has(vin),
+      'Legacy released hold history VIN is still in the live held set',
+      { vin },
+    )
+    const currentMatches = crmRowsByVin.get(vin) ?? []
+    assertValid(
+      currentMatches.length <= 1,
+      'Legacy released hold history matches more than one current CRM VIN row',
+      { vin },
+    )
+    const mappedStore = Object.hasOwn(storeMap, legacyCode) ? storeMap[legacyCode] : null
+    assertValid(
+      historyStock.length > 0,
+      'Legacy released hold history stock is missing',
+      { vin },
+    )
+    const currentCrm = currentMatches[0]
+    const canonicalStoreName = currentCrm?.storeName ?? mappedStore?.storeName
+    const canonicalStoreCode = currentCrm?.storeCode ?? legacyCode
+    const storeConfig = STORE_CONFIG[canonicalStoreName]
+    assertValid(
+      isPlainObject(mappedStore) &&
+        storeConfig &&
+        canonicalStoreCode === legacyCode &&
+        storeConfig.dealerMailCode === legacyCode &&
+        mappedStore.storeName === canonicalStoreName &&
+        String(mappedStore.storeId ?? '') === storeConfig.dealerMailId,
+      'Legacy released hold history store code does not match current CRM and snapshot store-map evidence',
+      { vin, legacyCode },
+    )
+    if (currentCrm) {
+      assertValid(
+        normalizedStock(currentCrm.stockNumber).toUpperCase() === historyStock,
+        'Legacy released hold history VIN/stock does not match the current CRM row',
+        { vin, historyStock },
+      )
+    } else {
+      assertValid(
+        (crmRowsByStock.get(historyStock) ?? []).length === 0,
+        'Legacy released hold history stock is currently assigned to a different CRM VIN',
+        { vin, historyStock },
+      )
+    }
+
+    return {
+      ...history,
+      store: { name: canonicalStoreName, code: canonicalStoreCode },
+    }
+  })
+
+  return {
+    ...normalizedSnapshot,
+    releasedHoldHistory: normalizedHistory,
+  }
+}
+
 const COMPLETE_DEALERMAIL_STATUSES = new Set([
   'complete',
   'complete_authenticated_read_only',
@@ -1263,7 +1360,11 @@ export function normalizeRelease({
     reportDate: manifest.report_date,
     manifest,
   })
-  const dealerMailValidated = validateDealerMailSnapshot(dealerMailFile.data, {
+  const dealerMailCompatibilityNormalizationApplied =
+    Array.isArray(dealerMailFile.data?.releasedHoldHistory) &&
+    dealerMailFile.data.releasedHoldHistory.some((history) => typeof history?.store === 'string')
+  const dealerMailSnapshot = normalizeDealerMailSnapshotForImport(dealerMailFile.data)
+  const dealerMailValidated = validateDealerMailSnapshot(dealerMailSnapshot, {
     reportDate: manifest.report_date,
     manifest,
   })
@@ -1275,8 +1376,11 @@ export function normalizeRelease({
   if (!isSameDay) {
     warnings.push(`Latest completed source release is dated ${reportDate}; current local date is ${today}.`)
   }
-  if (dealerMailFile.data.automationAccessAssessment?.persistentDailyAccess !== 'guaranteed') {
+  if (dealerMailSnapshot.automationAccessAssessment?.persistentDailyAccess !== 'guaranteed') {
     warnings.push('DealerMail unattended authentication is not guaranteed; preserve this as-of date if a later extraction fails.')
+  }
+  if (dealerMailCompatibilityNormalizationApplied) {
+    warnings.push('Legacy released-hold store codes were normalized in memory; the certified source file, checksum, and byte count were not changed.')
   }
   if (photoCacheLoadWarning) warnings.push(photoCacheLoadWarning)
   if (documentEnrichmentLoadWarning) warnings.push(documentEnrichmentLoadWarning)
@@ -1425,24 +1529,33 @@ export function normalizeRelease({
         snapshotPath: dealerMailPath,
         sha256: dealerMailFile.sha256,
         bytes: dealerMailFile.bytes,
-        schemaVersion: dealerMailFile.data.schemaVersion,
+        schemaVersion: dealerMailSnapshot.schemaVersion,
         status: isSameDay ? 'current' : 'stale_unverified',
         staleReason: isSameDay ? null : `Source release is dated ${reportDate}`,
         rowCount: dealerMailValidated.rowCount,
         metadata: {
           heldVinCount: dealerMailValidated.heldVinCount,
-          summary: dealerMailFile.data.summary,
+          summary: dealerMailSnapshot.summary,
+          compatibilityNormalization: dealerMailCompatibilityNormalizationApplied
+            ? {
+                applied: true,
+                field: 'releasedHoldHistory.store',
+                mode: 'in_memory_non_mutating',
+                originalSourceSha256: dealerMailFile.sha256,
+                originalSourceBytes: dealerMailFile.bytes,
+              }
+            : { applied: false },
           authentication: {
-            persistentDailyAccess: dealerMailFile.data.automationAccessAssessment?.persistentDailyAccess,
-            readOnly: dealerMailFile.data.sourceStatus?.readOnly === true,
+            persistentDailyAccess: dealerMailSnapshot.automationAccessAssessment?.persistentDailyAccess,
+            readOnly: dealerMailSnapshot.sourceStatus?.readOnly === true,
           },
         },
       },
       resources: resourceSourceRun,
     },
     publicSnapshot: publicFile.data,
-    dealerMailSnapshot: dealerMailFile.data,
-    releasedHoldHistory: dealerMailFile.data.releasedHoldHistory ?? [],
+    dealerMailSnapshot,
+    releasedHoldHistory: dealerMailSnapshot.releasedHoldHistory ?? [],
     publicChangeEvents,
     vehicles,
   }

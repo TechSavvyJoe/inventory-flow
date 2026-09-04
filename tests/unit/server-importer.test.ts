@@ -5,11 +5,15 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
+import { validateReleaseBundle } from '../../cloudflare/src/release-validation.mjs'
+import { cloudReleaseFrom } from '../../scripts/publish-cloud-release.mjs'
 import {
   findLatestCompletedManifest,
   hasCompletedManifestEvidence,
   loadLatestCompletedRelease,
   mergeVerifiedPhotoCache,
+  normalizeDealerMailSnapshotForImport,
+  sha256Buffer,
   validateVinDocumentEnrichment,
   validateDealerMailSnapshot,
   validatePublicSnapshot,
@@ -34,7 +38,297 @@ function releasedHistoryFor(row) {
   }
 }
 
+const dealerMailStoreMap = {
+  D: { storeId: '25', storeName: 'Ford Detroit' },
+  H: { storeId: '26', storeName: 'Howell' },
+  L: { storeId: '27', storeName: 'Lincoln' },
+  F: { storeId: '95', storeName: 'Fowlerville' },
+}
+
+function crmStoreCounts(records) {
+  return Object.fromEntries(
+    Object.values(dealerMailStoreMap).map(({ storeName }) => [
+      storeName,
+      records.filter((row) => row.storeName === storeName).length,
+    ]),
+  )
+}
+
+function makeDealerMailSnapshotCloudReady(snapshot) {
+  const included = snapshot.completeDealerMailUsedInventory.rows
+  const heldVins = new Set(snapshot.vehicles.map((vehicle) => vehicle.mainRow.vin))
+  for (const row of included) {
+    row.rawCellInnerText = Array(22).fill('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS')
+    row.rawCellControlValues = Array.from({ length: 22 }, () => [])
+    row.holdStateFromRowClass = heldVins.has(row.vin) ? 'active_hold' : 'no_current_hold_found'
+  }
+  const excluded = included.filter((row) => !heldVins.has(row.vin))
+  snapshot.excludeActiveHoldsValidationSet = {
+    readOnly: true,
+    rows: excluded,
+    summary: {
+      totalRows: excluded.length,
+      uniqueVinCount: excluded.length,
+      uniqueStockCount: excluded.length,
+      byStore: crmStoreCounts(excluded),
+    },
+  }
+  snapshot.completeInventorySetValidation.activeHoldDifferenceRows = included
+    .filter((row) => heldVins.has(row.vin))
+    .map(({ vin, stockNumber, storeName, storeCode }) => ({ vin, stockNumber, storeName, storeCode }))
+  snapshot.crmInventoryControlValidation = {
+    completeInventoryRowsIncludingHolds: included.length,
+    inventoryRowsExcludingHolds: excluded.length,
+    activeHoldVINsRemovedByExcludeFilter: heldVins.size,
+    excludeFilterRemovedExactlyTheActiveHoldSet: true,
+    includingHoldsByStore: crmStoreCounts(included),
+    excludingHoldsByStore: crmStoreCounts(excluded),
+    lotReadyOnlyRowsIncludingHolds: included.length,
+    lotReadyOnlyVINSetEqualsAllVehiclesVINSet: true,
+  }
+  for (const held of snapshot.vehicles) {
+    for (const detail of held.holdDetailRows) detail.orderRaw = String(detail.holdOrderNumber)
+  }
+  return snapshot
+}
+
 describe('verified daily source importer', () => {
+  it('normalizes an exact legacy released-history store code without mutating its source file', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const dealerMailPath = path.join(
+        fixture.workspaceRoot,
+        'work',
+        'dealermail',
+        `${fixture.reportDate}.json`,
+      )
+      const snapshot = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
+      makeDealerMailSnapshotCloudReady(snapshot)
+      const heldVins = new Set(snapshot.vehicles.map((vehicle) => vehicle.mainRow.vin))
+      const unheld = snapshot.completeDealerMailUsedInventory.rows.find((row) => !heldVins.has(row.vin))
+      const history = releasedHistoryFor(unheld)
+      history.store = unheld.storeCode
+      snapshot.storeMap = dealerMailStoreMap
+      snapshot.releasedHoldHistory = [history]
+      writeFileSync(dealerMailPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8')
+      const sourceBeforeImport = readFileSync(dealerMailPath)
+
+      const release = loadLatestCompletedRelease({
+        workspaceRoot: fixture.workspaceRoot,
+        now: new Date(`${fixture.reportDate}T15:00:00-04:00`),
+      })
+
+      expect(release.dealerMailSnapshot.releasedHoldHistory[0].store).toEqual({
+        name: unheld.storeName,
+        code: unheld.storeCode,
+      })
+      expect(release.releasedHoldHistory).toEqual(release.dealerMailSnapshot.releasedHoldHistory)
+      expect(release.warnings).toContain(
+        'Legacy released-hold store codes were normalized in memory; the certified source file, checksum, and byte count were not changed.',
+      )
+      expect(release.sourceRuns.dealerMail.metadata.compatibilityNormalization).toEqual({
+        applied: true,
+        field: 'releasedHoldHistory.store',
+        mode: 'in_memory_non_mutating',
+        originalSourceSha256: sha256Buffer(sourceBeforeImport),
+        originalSourceBytes: sourceBeforeImport.byteLength,
+      })
+      const cloudBundle = cloudReleaseFrom(release)
+      expect(cloudBundle.release.releasedHoldHistory).toEqual(
+        cloudBundle.release.dealerMailSnapshot.releasedHoldHistory,
+      )
+      expect(validateReleaseBundle(cloudBundle)).toMatchObject({ reportDate: fixture.reportDate })
+      expect(JSON.parse(readFileSync(dealerMailPath, 'utf8')).releasedHoldHistory[0].store).toBe(unheld.storeCode)
+      expect(readFileSync(dealerMailPath).equals(sourceBeforeImport)).toBe(true)
+    } finally { fixture.cleanup() }
+  })
+
+  it('normalizes a known legacy store code when the released VIN and stock are absent from current CRM', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const dealerMailPath = path.join(
+        fixture.workspaceRoot,
+        'work',
+        'dealermail',
+        `${fixture.reportDate}.json`,
+      )
+      const snapshot = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
+      const history = releasedHistoryFor({
+        vin: '2C4RC1BG3SR504341',
+        stockNumber: 'LEGACY1',
+        storeName: 'Howell',
+        storeCode: 'H',
+      })
+      history.store = 'H'
+      snapshot.storeMap = dealerMailStoreMap
+      snapshot.releasedHoldHistory = [history]
+      writeFileSync(dealerMailPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8')
+
+      const release = loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot })
+
+      expect(release.dealerMailSnapshot.releasedHoldHistory[0].store).toEqual({ name: 'Howell', code: 'H' })
+    } finally { fixture.cleanup() }
+  })
+
+  it('rejects absent released VIN history when its stock belongs to another current CRM VIN', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const dealerMailPath = path.join(
+        fixture.workspaceRoot,
+        'work',
+        'dealermail',
+        `${fixture.reportDate}.json`,
+      )
+      const snapshot = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
+      const current = snapshot.completeDealerMailUsedInventory.rows[0]
+      const history = releasedHistoryFor({
+        vin: '2C4RC1BG3SR504341',
+        stockNumber: current.stockNumber,
+        storeName: current.storeName,
+        storeCode: current.storeCode,
+      })
+      history.store = current.storeCode
+      snapshot.storeMap = dealerMailStoreMap
+      snapshot.releasedHoldHistory = [history]
+      writeFileSync(dealerMailPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8')
+
+      expect(() => loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot })).toThrow(
+        /Legacy released hold history stock is currently assigned to a different CRM VIN/,
+      )
+    } finally { fixture.cleanup() }
+  })
+
+  it('rejects a legacy released-history wrapper for a VIN still in the live held set', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const dealerMailPath = path.join(
+        fixture.workspaceRoot,
+        'work',
+        'dealermail',
+        `${fixture.reportDate}.json`,
+      )
+      const snapshot = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
+      const held = snapshot.vehicles[0]
+      const current = snapshot.completeDealerMailUsedInventory.rows.find((row) => row.vin === held.mainRow.vin)
+      const history = releasedHistoryFor(current)
+      history.store = current.storeCode
+      snapshot.storeMap = dealerMailStoreMap
+      snapshot.releasedHoldHistory = [history]
+      writeFileSync(dealerMailPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8')
+
+      expect(() => loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot })).toThrow(
+        /Legacy released hold history VIN is still in the live held set/,
+      )
+    } finally { fixture.cleanup() }
+  })
+
+  it.each([
+    ['unknown code', () => 'X'],
+    ['lowercase code', (row) => row.storeCode.toLowerCase()],
+    ['whitespace-padded code', (row) => ` ${row.storeCode} `],
+    ['code mismatched to the current CRM row', (row) => row.storeCode === 'D' ? 'H' : 'D'],
+  ])('fails closed for a legacy released-history %s', (_label, legacyCode) => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const dealerMailPath = path.join(
+        fixture.workspaceRoot,
+        'work',
+        'dealermail',
+        `${fixture.reportDate}.json`,
+      )
+      const snapshot = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
+      const heldVins = new Set(snapshot.vehicles.map((vehicle) => vehicle.mainRow.vin))
+      const unheld = snapshot.completeDealerMailUsedInventory.rows.find((row) => !heldVins.has(row.vin))
+      const history = releasedHistoryFor(unheld)
+      history.store = legacyCode(unheld)
+      snapshot.storeMap = dealerMailStoreMap
+      snapshot.releasedHoldHistory = [history]
+      writeFileSync(dealerMailPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8')
+
+      expect(() => loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot })).toThrow(
+        /Legacy released hold history store code does not match current CRM and snapshot store-map evidence/,
+      )
+    } finally { fixture.cleanup() }
+  })
+
+  it('rejects a tampered snapshot store map and does not repair an invalid canonical store object', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const dealerMailPath = path.join(
+        fixture.workspaceRoot,
+        'work',
+        'dealermail',
+        `${fixture.reportDate}.json`,
+      )
+      const base = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
+      const heldVins = new Set(base.vehicles.map((vehicle) => vehicle.mainRow.vin))
+      const unheld = base.completeDealerMailUsedInventory.rows.find((row) => !heldVins.has(row.vin))
+
+      const tamperedMap = structuredClone(base)
+      const legacyHistory = releasedHistoryFor(unheld)
+      legacyHistory.store = unheld.storeCode
+      tamperedMap.storeMap = structuredClone(dealerMailStoreMap)
+      tamperedMap.storeMap[unheld.storeCode].storeName = 'Lincoln'
+      tamperedMap.releasedHoldHistory = [legacyHistory]
+      writeFileSync(dealerMailPath, `${JSON.stringify(tamperedMap, null, 2)}\n`, 'utf8')
+      expect(() => loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot })).toThrow(
+        /Legacy released hold history store code does not match current CRM and snapshot store-map evidence/,
+      )
+
+      const invalidCanonical = structuredClone(base)
+      const canonicalHistory = releasedHistoryFor(unheld)
+      canonicalHistory.store = { name: unheld.storeName, code: unheld.storeCode === 'D' ? 'H' : 'D' }
+      invalidCanonical.storeMap = dealerMailStoreMap
+      invalidCanonical.releasedHoldHistory = [canonicalHistory]
+      writeFileSync(dealerMailPath, `${JSON.stringify(invalidCanonical, null, 2)}\n`, 'utf8')
+      expect(() => loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot })).toThrow(
+        /Released hold history CRM store\/code is invalid/,
+      )
+    } finally { fixture.cleanup() }
+  })
+
+  it('normalizes a mixed legacy snapshot atomically with no nested aliases to source evidence', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const dealerMailPath = path.join(
+        fixture.workspaceRoot,
+        'work',
+        'dealermail',
+        `${fixture.reportDate}.json`,
+      )
+      const source = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
+      const heldVins = new Set(source.vehicles.map((vehicle) => vehicle.mainRow.vin))
+      const unheld = source.completeDealerMailUsedInventory.rows.find((row) => !heldVins.has(row.vin))
+      const canonical = releasedHistoryFor(unheld)
+      const legacy = releasedHistoryFor({
+        vin: '2C4RC1BG3SR504341',
+        stockNumber: 'LEGACY1',
+        storeName: 'Howell',
+        storeCode: 'H',
+      })
+      legacy.store = 'H'
+      source.storeMap = dealerMailStoreMap
+      source.releasedHoldHistory = [canonical, legacy]
+      const sourceBefore = structuredClone(source)
+
+      const normalized = normalizeDealerMailSnapshotForImport(source)
+
+      expect(source).toEqual(sourceBefore)
+      expect(normalized).not.toBe(source)
+      expect(normalized.completeDealerMailUsedInventory).not.toBe(source.completeDealerMailUsedInventory)
+      expect(normalized.completeDealerMailUsedInventory.rows[0]).not.toBe(source.completeDealerMailUsedInventory.rows[0])
+      expect(normalized.releasedHoldHistory[0]).not.toBe(source.releasedHoldHistory[0])
+      expect(normalized.releasedHoldHistory[1].holdDetailRows).not.toBe(source.releasedHoldHistory[1].holdDetailRows)
+      expect(normalized.releasedHoldHistory[1].store).toEqual({ name: 'Howell', code: 'H' })
+
+      const invalidMixed = structuredClone(source)
+      invalidMixed.releasedHoldHistory[1].store = ' H '
+      const invalidBefore = structuredClone(invalidMixed)
+      expect(() => normalizeDealerMailSnapshotForImport(invalidMixed)).toThrow(/store code does not match/)
+      expect(invalidMixed).toEqual(invalidBefore)
+    } finally { fixture.cleanup() }
+  })
+
   it('requires every flagged CRM message once complete-inventory evidence is supplied', () => {
     const fixture = createSyntheticWorkspace()
     try {
