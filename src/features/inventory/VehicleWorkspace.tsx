@@ -5,7 +5,6 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
-  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -34,18 +33,16 @@ import {
   MessageSquare,
   Ellipsis,
   Navigation,
-  PencilLine,
   ShieldCheck,
   Store,
   Tag,
   Truck,
-  Trash2,
-  UserPlus,
   UserRound,
   X,
   XCircle,
 } from "lucide-react";
-import { CopyableValue, copyExactText } from "../../components/CopyableValue";
+import { CopyableValue } from "../../components/CopyableValue";
+import { CapturedDealerMailMessages, DealerMailHandoff } from "./DealerMailHandoff";
 import { FactoryStickerIcon } from "../../design-system/icons";
 import {
   formatDate,
@@ -60,7 +57,6 @@ import {
 import { primaryVehicleChangeSignal } from "./change-utils";
 import {
   autoCheckResultTone,
-  dealerMailInteractiveVehicleUrl,
   fordInvoiceUrl,
   fordOasisUrl,
   officialVehicleDocumentUrl,
@@ -125,29 +121,6 @@ function workspaceScrollBehavior(): ScrollBehavior {
     : "smooth";
 }
 
-interface DealerMailLaunchFeedback {
-  kind: "opened" | "blocked";
-  message: string;
-}
-
-type DealerMailIntent =
-  | "view-inventory"
-  | "place-hold"
-  | "add-backup"
-  | "comments"
-  | "alerts"
-  | "review-change"
-  | "review-remove";
-
-interface DealerMailActionDefinition {
-  intent: DealerMailIntent;
-  label: string;
-  displayLabel?: string;
-  description: string;
-  shortDescription: string;
-  tone: "primary" | "hold" | "message" | "danger";
-}
-
 function oemThemeToken(make: string): "ford" | "lincoln" | "generic" {
   const normalized = make.trim().toLowerCase();
   if (normalized === "ford") return "ford";
@@ -157,102 +130,6 @@ function oemThemeToken(make: string): "ford" | "lincoln" | "generic" {
 
 function countLabel(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
-}
-
-const DEALERMAIL_ACTIONS: Record<DealerMailIntent, DealerMailActionDefinition> = {
-  "view-inventory": {
-    intent: "view-inventory",
-    label: "Find Vehicle in DealerMail",
-    displayLabel: "Find vehicle",
-    description: "Search DealerMail by this exact stock, then verify the VIN and use its native vehicle tools.",
-    shortDescription: "Open the exact stock record",
-    tone: "primary",
-  },
-  "place-hold": {
-    intent: "place-hold",
-    label: "Place Hold in DealerMail",
-    displayLabel: "Place primary hold",
-    description: "Confirm the vehicle and availability before placing a hold.",
-    shortDescription: "Start a verified primary hold",
-    tone: "hold",
-  },
-  "add-backup": {
-    intent: "add-backup",
-    label: "Add Backup in DealerMail",
-    displayLabel: "Add backup hold",
-    description: "Review the primary hold before adding a separate backup.",
-    shortDescription: "Add a separate backup position",
-    tone: "hold",
-  },
-  comments: {
-    intent: "comments",
-    label: "Comments in DealerMail",
-    displayLabel: "Vehicle comments",
-    description: "Review the vehicle record before reading or adding comments.",
-    shortDescription: "Review or add vehicle notes",
-    tone: "message",
-  },
-  alerts: {
-    intent: "alerts",
-    label: "Alerts in DealerMail",
-    displayLabel: "Vehicle alerts",
-    description: "Review the vehicle record before reading or adding alerts.",
-    shortDescription: "Review or add an inventory alert",
-    tone: "message",
-  },
-  "review-change": {
-    intent: "review-change",
-    label: "Review / Change Hold in DealerMail",
-    displayLabel: "Review or change hold",
-    description: "Inspect the live hold record before making an authorized change.",
-    shortDescription: "Verify the live record before editing",
-    tone: "hold",
-  },
-  "review-remove": {
-    intent: "review-remove",
-    label: "Review / Remove Hold in DealerMail",
-    displayLabel: "Review or remove hold",
-    description: "Inspect the live record; nothing is removed from this app.",
-    shortDescription: "Verify authorization before removal",
-    tone: "danger",
-  },
-};
-
-function dealerMailIntentInstruction(intent: DealerMailIntent): string {
-  switch (intent) {
-    case "view-inventory":
-      return "review the complete vehicle record";
-    case "place-hold":
-      return "confirm availability and place the hold only if appropriate";
-    case "add-backup":
-      return "review the primary hold and add a backup only if appropriate";
-    case "comments":
-      return "review or add comments inside DealerMail";
-    case "alerts":
-      return "review or add alerts inside DealerMail";
-    case "review-change":
-      return "review the current hold before making any authorized change";
-    case "review-remove":
-      return "review the current hold and remove it only if authorized and appropriate";
-  }
-}
-
-function DealerMailActionIcon({ intent }: { intent: DealerMailIntent }) {
-  switch (intent) {
-    case "view-inventory":
-      return <FileSearch size={21} strokeWidth={1.8} aria-hidden="true" />;
-    case "place-hold":
-    case "add-backup":
-      return <UserPlus size={21} strokeWidth={1.8} aria-hidden="true" />;
-    case "review-change":
-      return <PencilLine size={21} strokeWidth={1.8} aria-hidden="true" />;
-    case "comments":
-      return <MessageSquare size={21} strokeWidth={1.8} aria-hidden="true" />;
-    case "alerts":
-      return <Bell size={21} strokeWidth={1.8} aria-hidden="true" />;
-    case "review-remove":
-      return <Trash2 size={21} strokeWidth={1.8} aria-hidden="true" />;
-  }
 }
 
 function dataStateLabel(state: SourceDataState): string {
@@ -750,147 +627,6 @@ function HoldEvidenceRecord({
         </details>
       ) : null}
     </article>
-  );
-}
-
-function DealerMailHoldGuide({
-  vehicle,
-  onOpen,
-  panelRef,
-}: {
-  vehicle: InventoryVehicle;
-  onOpen: (intent: DealerMailIntent) => void;
-  panelRef: RefObject<HTMLElement | null>;
-}) {
-  const holdCurrent = vehicle.dealerMail.dataState === "current";
-  const confirmedHeld =
-    holdCurrent && vehicle.dealerMail.hasActiveHold === true;
-  const confirmedNoHold =
-    holdCurrent && vehicle.dealerMail.hasActiveHold === false;
-  const verificationOnly = !confirmedHeld && !confirmedNoHold;
-  const actions: DealerMailActionDefinition[] = [
-    DEALERMAIL_ACTIONS["view-inventory"],
-    ...(confirmedNoHold ? [DEALERMAIL_ACTIONS["place-hold"]] : []),
-    ...(confirmedHeld ? [DEALERMAIL_ACTIONS["add-backup"]] : []),
-    DEALERMAIL_ACTIONS.comments,
-    DEALERMAIL_ACTIONS.alerts,
-    ...(confirmedHeld
-      ? [
-          DEALERMAIL_ACTIONS["review-change"],
-          DEALERMAIL_ACTIONS["review-remove"],
-        ]
-      : []),
-  ];
-  const primaryActions = actions.filter((action) =>
-    ["view-inventory", "place-hold", "add-backup", "comments", "alerts"].includes(action.intent),
-  );
-  const secondaryActions = actions.filter((action) =>
-    ["review-change", "review-remove"].includes(action.intent),
-  );
-  const actionButton = (action: DealerMailActionDefinition) => {
-    const descriptionId = `inventory-dealermail-action-${action.intent}-description`;
-    return (
-      <button
-        type="button"
-        className={`inventory-dealermail-action inventory-dealermail-action--compact inventory-dealermail-action--${action.tone}`}
-        key={action.intent}
-        onClick={() => onOpen(action.intent)}
-        aria-label={action.label}
-        aria-describedby={`inventory-dealermail-preflight${vehicle.dealerMail.canViewEvidence ? " inventory-hold-availability-caveat" : ""} ${descriptionId}`}
-        data-dealermail-intent={action.intent}
-        data-action-tone={action.tone}
-      >
-        <span className="inventory-dealermail-action__icon">
-          <DealerMailActionIcon intent={action.intent} />
-        </span>
-        <span className="inventory-dealermail-action__copy">
-          <strong>{action.displayLabel ?? action.label}</strong>
-          <small aria-hidden="true">{action.shortDescription}</small>
-          <span className="inventory-sr-only" id={descriptionId}>{action.description}</span>
-        </span>
-        <ExternalLink
-          className="inventory-dealermail-action__external"
-          size={17}
-          strokeWidth={1.8}
-          aria-hidden="true"
-        />
-      </button>
-    );
-  };
-
-  return (
-    <section
-      id="inventory-dealermail-actions"
-      className="inventory-dealermail-actions inventory-dealermail-actions--full-width inventory-dealermail-actions--dense inventory-workspace-dealermail-rail"
-      aria-labelledby="inventory-dealermail-actions-title"
-      aria-describedby={vehicle.dealerMail.canViewEvidence ? "inventory-hold-availability-caveat" : undefined}
-      ref={panelRef}
-      tabIndex={-1}
-      data-action-group="dealermail"
-      data-action-count={actions.length}
-      data-hold-verification={verificationOnly ? "required" : "current"}
-    >
-      <header className="inventory-dealermail-actions__header">
-        <span className="inventory-dealermail-actions__mark">
-          <UserRound size={20} strokeWidth={1.8} aria-hidden="true" />
-        </span>
-        <span>
-          <strong id="inventory-dealermail-actions-title">
-            DealerMail vehicle tools
-          </strong>
-          <small>
-            Opens DealerMail’s complete interactive inventory screen. Verify
-            stock and VIN before any change.
-          </small>
-        </span>
-      </header>
-      <p
-        className="inventory-dealermail-actions__preflight"
-        id="inventory-dealermail-preflight"
-      >
-        <strong>Verify first</strong>
-        <span>LAST8 / STOCK</span>
-        <CopyableValue compact label="DealerMail stock number" text={vehicle.stockNumber}>
-          <b>{vehicle.stockNumber}</b>
-        </CopyableValue>
-        <span>Full VIN</span>
-        <CopyableValue compact label="DealerMail VIN" text={vehicle.vin}>
-          <b>{vehicle.vin}</b>
-        </CopyableValue>
-      </p>
-      {verificationOnly ? (
-        <div
-          className="inventory-dealermail-actions__warning"
-          role="note"
-        >
-          <AlertTriangle size={17} strokeWidth={1.8} aria-hidden="true" />
-          <span>
-            <strong>Hold status is not confirmed.</strong> Only inventory,
-            comments, and alerts are available here until the DealerMail record
-            is verified.
-          </span>
-        </div>
-      ) : null}
-      <div className="inventory-dealermail-actions__grid">
-        {primaryActions.map(actionButton)}
-      </div>
-      {secondaryActions.length ? (
-        <details className="inventory-dealermail-actions__more">
-          <summary>
-            More hold actions
-            <small>{secondaryActions.length}</small>
-            <ChevronDown size={15} strokeWidth={1.8} aria-hidden="true" />
-          </summary>
-          <div className="inventory-dealermail-actions__grid inventory-dealermail-actions__grid--secondary">
-            {secondaryActions.map(actionButton)}
-          </div>
-        </details>
-      ) : null}
-      <p className="inventory-dealermail-actions__safety">
-        <ShieldCheck size={14} strokeWidth={1.8} aria-hidden="true" />
-        <span>No CRM action happens here. Complete authorized work only in the verified live DealerMail record.</span>
-      </p>
-    </section>
   );
 }
 
@@ -2911,6 +2647,7 @@ export function VehicleWorkspace({
   const [activeSection, setActiveSection] = useState<WorkspaceSectionId>(() =>
     initialSection(initialTab),
   );
+  const [holdView, setHoldView] = useState<"holds" | "comments" | "alerts">("holds");
   const [compactMobileWorkspace, setCompactMobileWorkspace] = useState(
     usesCompactMobileWorkspace,
   );
@@ -2923,7 +2660,6 @@ export function VehicleWorkspace({
   const displayName = vehicleDisplayName(vehicle);
   const oemTheme = oemThemeToken(vehicle.make);
   const listingUrl = vehicle.publicListing.listingUrl;
-  const dealerMailUrl = dealerMailInteractiveVehicleUrl(vehicle.stockNumber);
   const autoCheckUrl = officialVehicleDocumentUrl(
     vehicle.autoCheckReport?.url,
     "autocheck",
@@ -2960,14 +2696,9 @@ export function VehicleWorkspace({
         vehicle.movement.requestId),
   );
   const recentChange = primaryVehicleChangeSignal(vehicle.changeSummary);
-  const [dealerMailFeedback, setDealerMailFeedback] = useState<DealerMailLaunchFeedback | null>(null);
-  const vehicleLaunchKey = `${vehicle.id}|${vehicle.vin}|${vehicle.stockNumber}`;
-  const currentVehicleLaunchKeyRef = useRef(vehicleLaunchKey);
-  currentVehicleLaunchKeyRef.current = vehicleLaunchKey;
-
   useEffect(() => {
     setActiveSection(initialSection(initialTab));
-    setDealerMailFeedback(null);
+    setHoldView("holds");
   }, [initialTab, vehicle.id]);
 
   useEffect(() => {
@@ -2992,69 +2723,6 @@ export function VehicleWorkspace({
     return () => window.clearTimeout(timer);
   }, [activeSection, vehicle.id]);
 
-  const openDealerMailIntent = (intent: DealerMailIntent) => {
-    const action = DEALERMAIL_ACTIONS[intent];
-    const nextStep = dealerMailIntentInstruction(intent);
-    const noActionPerformed =
-      intent === "review-remove"
-        ? " Nothing was removed here."
-        : " No hold, backup, comment, alert, change, or removal was performed here.";
-    if (!dealerMailUrl) {
-      setDealerMailFeedback({
-        kind: "blocked",
-        message: `DealerMail did not open because this record has no usable stock number. “${action.label}” was not performed.${noActionPerformed}`,
-      });
-      return;
-    }
-
-    const dealerMailTab = window.open(
-      dealerMailUrl,
-      "_blank",
-      "noopener,noreferrer",
-    );
-    if (!dealerMailTab) {
-      setDealerMailFeedback({
-        kind: "blocked",
-        message: `DealerMail search did not open, so “${action.label}” was not performed. Use the manual search link for stock ${vehicle.stockNumber}, verify the full VIN ${vehicle.vin}, then ${nextStep}.${noActionPerformed}`,
-      });
-      return;
-    }
-
-    try {
-      dealerMailTab.opener = null;
-    } catch {
-      // The authenticated DealerMail tab can still be used if the browser prevents changing opener.
-    }
-
-    const dealerMailStock = vehicle.stockNumber.trim().replace(/\W/g, "");
-    const launchedVehicleKey = vehicleLaunchKey;
-    const baseMessage = `DealerMail opened its complete four-store inventory page and this app is attempting to copy stock ${dealerMailStock}. If the browser blocks copying, enter it manually in LAST8 / STOCK. Verify the displayed full VIN is ${vehicle.vin}, then ${nextStep}. The requested action was not performed automatically in this app.${noActionPerformed}`;
-    setDealerMailFeedback({
-      kind: "opened",
-      message: baseMessage,
-    });
-    void copyExactText(dealerMailStock).then((copied) => {
-        if (currentVehicleLaunchKeyRef.current !== launchedVehicleKey) return;
-        if (copied) {
-        setDealerMailFeedback({
-          kind: "opened",
-          message: `DealerMail opened its complete four-store inventory page and stock ${dealerMailStock} was copied. To complete “${action.label}”, paste it into LAST8 / STOCK, verify the displayed full VIN is ${vehicle.vin}, open DealerMail’s own vehicle tools, then ${nextStep}. The requested action was not performed automatically in this app.${noActionPerformed}`,
-        });
-          return;
-        }
-        setDealerMailFeedback({
-          kind: "opened",
-          message: `DealerMail opened its complete four-store inventory page, but the browser could not copy stock ${dealerMailStock}. To complete “${action.label}”, enter stock ${dealerMailStock} manually in LAST8 / STOCK, verify the displayed full VIN is ${vehicle.vin}, then ${nextStep}. The requested action was not performed automatically in this app.${noActionPerformed}`,
-        });
-      }).catch(() => {
-        if (currentVehicleLaunchKeyRef.current !== launchedVehicleKey) return;
-        setDealerMailFeedback({
-          kind: "opened",
-          message: `DealerMail opened its complete four-store inventory page, but the stock copy attempt failed. To complete “${action.label}”, enter stock ${dealerMailStock} manually in LAST8 / STOCK, verify the displayed full VIN is ${vehicle.vin}, then ${nextStep}. The requested action was not performed automatically in this app.${noActionPerformed}`,
-        });
-      });
-  };
-
   const focusDealerMailActions = () => {
     setActiveSection("hold");
     window.setTimeout(() => {
@@ -3062,7 +2730,7 @@ export function VehicleWorkspace({
       if (!panel) return;
       panel.scrollIntoView?.({ behavior: workspaceScrollBehavior(), block: "nearest" });
       panel
-        .querySelector<HTMLButtonElement>(".inventory-dealermail-action")
+        .querySelector<HTMLButtonElement>(".inventory-dealermail-handoff__launch")
         ?.focus({ preventScroll: true });
     }, 0);
   };
@@ -3221,7 +2889,6 @@ export function VehicleWorkspace({
         data-oem={oemTheme}
         data-vehicle-make={vehicle.make}
         data-active-section={activeSection}
-        data-feedback-state={dealerMailFeedback?.kind ?? "idle"}
       >
         <header className="inventory-workspace-topbar">
           <span>Vehicle workspace <b>· Stock {vehicle.stockNumber}</b></span>
@@ -3256,18 +2923,7 @@ export function VehicleWorkspace({
               <div className="inventory-workspace-mobile-context__metrics">
                 <strong>{formatMoney(vehicle.price)}</strong>
                 <span aria-hidden="true" />
-                {vehicle.mileage != null ? (
-                  <CopyableValue
-                    compact
-                    className="inventory-workspace-mileage-copy"
-                    label="mileage"
-                    text={String(vehicle.mileage)}
-                  >
-                    <strong>{formatMileage(vehicle.mileage)}</strong>
-                  </CopyableValue>
-                ) : (
-                  <strong>{formatMileage(vehicle.mileage)}</strong>
-                )}
+                <strong>{formatMileage(vehicle.mileage)}</strong>
               </div>
               <div className="inventory-workspace-mobile-context__identifiers">
                 <span>
@@ -3775,11 +3431,16 @@ export function VehicleWorkspace({
                 className="inventory-workspace-hold-center"
                 data-hold-state={vehicle.holdEvidence?.length ? "held" : "no-evidence"}
               >
-                <HoldDetails vehicle={vehicle} />
+                {canViewHoldEvidence ? <div className="inventory-hold-evidence-views" role="group" aria-label="Saved DealerMail information">
+                  <button type="button" aria-pressed={holdView === "holds"} onClick={() => setHoldView("holds")}>Hold records</button>
+                  <button type="button" aria-pressed={holdView === "comments"} onClick={() => setHoldView("comments")}>Saved comments</button>
+                  <button type="button" aria-pressed={holdView === "alerts"} onClick={() => setHoldView("alerts")}>Saved alerts</button>
+                </div> : null}
+                {holdView === "holds" ? <HoldDetails vehicle={vehicle} /> : <CapturedDealerMailMessages vehicle={vehicle} kind={holdView} />}
                 {canManageDealerMail ? (
-                  <DealerMailHoldGuide
+                  <DealerMailHandoff
+                    key={`${vehicle.id}|${vehicle.stockNumber}|${vehicle.vin}`}
                     vehicle={vehicle}
-                    onOpen={openDealerMailIntent}
                     panelRef={dealerMailActionsRef}
                   />
                 ) : null}
@@ -3806,27 +3467,6 @@ export function VehicleWorkspace({
           </div>
         </div>
 
-        {dealerMailFeedback ? (
-          <div
-            className={`inventory-workspace-toast inventory-workspace-toast--${dealerMailFeedback.kind}`}
-            role={dealerMailFeedback.kind === "blocked" ? "alert" : "status"}
-            aria-live={dealerMailFeedback.kind === "blocked" ? "assertive" : "polite"}
-            data-action-feedback={dealerMailFeedback.kind}
-          >
-            {dealerMailFeedback.kind === "blocked" ? (
-              <AlertTriangle size={16} strokeWidth={1.8} aria-hidden="true" />
-            ) : (
-              <CheckCircle2 size={16} strokeWidth={1.8} aria-hidden="true" />
-            )}
-            <span>
-              {dealerMailFeedback.message}
-              {dealerMailFeedback.kind === "blocked" && dealerMailUrl ? (
-                <> <a href={dealerMailUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" data-read-only="true">Open DealerMail inventory</a>.</>
-              ) : null}
-            </span>
-            <button type="button" onClick={() => setDealerMailFeedback(null)} aria-label="Dismiss DealerMail instruction"><X size={15} aria-hidden="true" /></button>
-          </div>
-        ) : null}
 
       </aside>
     </>,

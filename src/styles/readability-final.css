@@ -122,8 +122,17 @@ html {
   font-weight: 600;
 }
 
-#root .app-shell :where(.profile-copy small, .freshness-chip small, .store-control-copy > span:first-child, .nav-footer-copy small) {
+#root .app-shell :where(.profile-copy small, .freshness-chip small, .store-control-copy > span:first-child) {
   color: var(--app-readable-support);
+  font-size: var(--app-readable-meta-size);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Sidebar secondary copy sits on navy, not on the light top-bar surface. */
+#root .app-shell .desktop-nav .nav-footer-copy small {
+  color: var(--ifx-neutral-200);
+  -webkit-text-fill-color: currentColor;
   font-size: var(--app-readable-meta-size);
   font-weight: 500;
   line-height: 1.4;

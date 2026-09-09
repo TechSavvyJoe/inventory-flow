@@ -333,7 +333,7 @@ describe('modern inventory result access', () => {
     fireEvent.click(row);
     expect(onSelectVehicle).toHaveBeenCalledWith(vehicle);
 
-    fireEvent.click(screen.getByRole('button', { name: /Open interactive DealerMail and copy stock H240512; verify VIN/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Review DealerMail handoff for stock H240512; verify VIN/i }));
     expect(onOpenSourceRecord).toHaveBeenCalledWith(vehicle, 'dealermail');
     const moreActions = screen.getByRole('button', { name: 'More actions for 2024 Ford F-150 XLT' });
     expect(moreActions).toHaveAttribute('aria-label', 'More actions for 2024 Ford F-150 XLT');
@@ -453,7 +453,7 @@ describe('modern inventory result access', () => {
     fireEvent.click(details);
     expect(onSelectVehicle).toHaveBeenCalledTimes(2);
 
-    fireEvent.click(screen.getByRole('button', { name: /Open interactive DealerMail and copy stock H240512/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Review DealerMail handoff for stock H240512/i }));
     expect(onOpenSourceRecord).toHaveBeenCalledWith(vehicle, 'dealermail');
     expect(onSelectVehicle).toHaveBeenCalledTimes(2);
 

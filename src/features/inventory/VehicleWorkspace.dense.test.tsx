@@ -91,7 +91,7 @@ describe('dense vehicle workspace', () => {
     expect(document.querySelectorAll('main')).toHaveLength(1);
     expect(document.querySelector('.inventory-workspace-v3-overview__main')?.tagName).toBe('DIV');
     expect(screen.getAllByRole('button', { name: 'Close vehicle details' })).toHaveLength(1);
-    expect(screen.getAllByRole('button', { name: 'Copy mileage: 123328' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Copy mileage: 123328' })).toHaveLength(1);
     expect(document.querySelector('.inventory-workspace-backdrop')).toHaveAttribute('aria-hidden', 'true');
     expect(document.querySelector('.inventory-workspace-backdrop')?.tagName).toBe('DIV');
   });
@@ -460,7 +460,7 @@ describe('dense vehicle workspace', () => {
     expect(screen.getByText('Equipment not published for this VIN')).toBeInTheDocument();
   });
 
-  it('keeps hold evidence and every DealerMail action in one compact operational surface', () => {
+  it('keeps hold evidence and one truthful DealerMail handoff in one operational surface', () => {
     render(
       <VehicleWorkspace
         vehicle={vehicle()}
@@ -478,20 +478,15 @@ describe('dense vehicle workspace', () => {
     expect(panel.querySelector('.inventory-hold-evidence__facts')).toBeInTheDocument();
     expect(evidence?.compareDocumentPosition(dealerMailRail as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(caveat.compareDocumentPosition(dealerMailRail as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(dealerMailRail).toHaveAccessibleDescription(/A hold alone does not mean sold or delivered/i);
+    expect(dealerMailRail).toHaveTextContent('the vehicle is not selected automatically');
     expect(panel.querySelector('.inventory-workspace-hold-context')).toHaveTextContent(
       /Home store.*Fowlerville.*Current location.*Fowlerville.*Online listing.*Not listed online.*Movement.*No movement record/i,
     );
-    expect(panel.querySelectorAll('[data-dealermail-intent]')).toHaveLength(6);
-    expect(within(panel).getByText('Verify first')).toBeInTheDocument();
+    expect(within(dealerMailRail as HTMLElement).getAllByRole('button')).toHaveLength(1);
+    expect(within(panel).getByText('Verify full VIN')).toBeInTheDocument();
     expect(within(panel).getAllByText('W5863Q').length).toBeGreaterThan(0);
     expect(within(panel).getAllByText('1FTFW1E86HFA48871').length).toBeGreaterThan(0);
-    expect(within(panel).getByRole('button', { name: 'Find Vehicle in DealerMail' })).toHaveAccessibleDescription(
-      /Search DealerMail by this exact stock, then verify the VIN and use its native vehicle tools/i,
-    );
-    expect(within(panel).getByRole('button', { name: 'Add Backup in DealerMail' })).toHaveAccessibleDescription(
-      /Review the primary hold before adding a separate backup/i,
-    );
+    expect(within(panel).getByRole('button', { name: 'Open DealerMail & copy stock' })).toBeVisible();
   });
 
   it('turns a missing hold into a compact evidence summary without calling the vehicle available', () => {
@@ -525,10 +520,9 @@ describe('dense vehicle workspace', () => {
     expect(within(panel).getByText('No transport workflow is attached')).toBeInTheDocument();
     expect(within(panel).getByText(/means only that no active DealerMail hold row was found/i)).toBeInTheDocument();
     expect(caveat.compareDocumentPosition(dealerMailRail as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(dealerMailRail).toHaveAccessibleDescription(/Confirm customer availability and physical custody with the home store/i);
-    expect(panel.querySelectorAll('[data-dealermail-intent]')).toHaveLength(4);
-    expect(panel.querySelectorAll('[data-action-tone="primary"]')).toHaveLength(1);
-    expect(panel.querySelector('[data-dealermail-intent="view-inventory"]')).toHaveAttribute('data-action-tone', 'primary');
+    expect(dealerMailRail).toHaveTextContent('the vehicle is not selected automatically');
+    expect(within(dealerMailRail as HTMLElement).getAllByRole('button')).toHaveLength(1);
+    expect(within(dealerMailRail as HTMLElement).getByRole('button', { name: 'Open DealerMail & copy stock' })).toBeEnabled();
   });
 
   it('keeps a readable equipment preview and reveals every item without per-feature copy controls', async () => {
@@ -640,7 +634,8 @@ describe('dense vehicle workspace', () => {
 
     const mobileContext = screen.getByRole('region', { name: /2017 Ford F-150 Lariat vehicle summary/i });
     expect(mobileContext).toBeInTheDocument();
-    expect(within(mobileContext).getByRole('button', { name: 'Copy mileage: 123328' })).toBeInTheDocument();
+    expect(mobileContext).toHaveTextContent('123,328 mi');
+    expect(within(mobileContext).queryByRole('button', { name: 'Copy mileage: 123328' })).not.toBeInTheDocument();
     expect(within(mobileContext).getByRole('button', { name: 'Copy stock number: W5863Q' })).toBeInTheDocument();
     expect(within(mobileContext).getByRole('button', { name: 'Copy VIN: 1FTFW1E86HFA48871' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Current hold and location summary' })).toBeInTheDocument();
@@ -739,7 +734,7 @@ describe('dense vehicle workspace', () => {
       expect(holdTab).toHaveAttribute('aria-selected', 'true');
       expect(holdTab).toHaveFocus();
     });
-    expect(screen.getByRole('button', { name: 'Find Vehicle in DealerMail' })).not.toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Open DealerMail & copy stock' })).not.toHaveFocus();
     expect(screen.getByRole('tabpanel', { name: 'Hold and availability' }).querySelector('.inventory-hold-evidence-list')).toBeInTheDocument();
   });
 
@@ -761,13 +756,13 @@ describe('dense vehicle workspace', () => {
           onClose={vi.fn()}
         />,
       );
-      await user.click(screen.getByRole('button', { name: 'Find Vehicle in DealerMail' }));
+      await user.click(screen.getByRole('button', { name: 'Open DealerMail & copy stock' }));
       expect(openSpy).toHaveBeenCalledWith(
         expect.stringContaining('dealermail.com'),
         '_blank',
         'noopener,noreferrer',
       );
-      expect(await screen.findByText(/browser could not copy stock W5863Q/i)).toHaveTextContent(/enter stock W5863Q manually in LAST8 \/ STOCK/i);
+      expect(await screen.findByText(/Stock could not be copied/i)).toHaveTextContent(/Select stock W5863Q above and copy it manually/i);
     } finally {
       if (clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
       else Reflect.deleteProperty(navigator, 'clipboard');
@@ -802,7 +797,7 @@ describe('dense vehicle workspace', () => {
           onClose={vi.fn()}
         />,
       );
-      await user.click(screen.getByRole('button', { name: 'Find Vehicle in DealerMail' }));
+      await user.click(screen.getByRole('button', { name: 'Open DealerMail & copy stock' }));
       rerender(
         <VehicleWorkspace
           vehicle={second}
@@ -812,7 +807,7 @@ describe('dense vehicle workspace', () => {
         />,
       );
       finishCopy?.();
-      await waitFor(() => expect(screen.queryByText(/stock W5863Q was copied/i)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText(/Stock W5863Q copied/i)).not.toBeInTheDocument());
     } finally {
       if (clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
       else Reflect.deleteProperty(navigator, 'clipboard');

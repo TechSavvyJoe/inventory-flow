@@ -2,6 +2,8 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // The cross-browser suite owns isolated synthetic servers and its own config.
+  testIgnore: '**/cross-browser/**',
   fullyParallel: false,
   retries: 0,
   reporter: [['list']],

@@ -133,24 +133,25 @@ export function assertReleaseOrdering(current, reportDate, completedAt) {
   try {currentTime=releaseCompletionTime(metadata.completedAt)} catch {throw new HttpError('CURRENT_RELEASE_METADATA_INVALID',503)}
   if(currentTime>incomingTime) throw new HttpError('OLDER_RELEASE_REJECTED',409)
 }
-async function readRelease(env) {
+async function readReleaseWithIdentity(env) {
   const row=await currentRelease(env)
   if(!row) throw new HttpError('INVENTORY_NOT_IMPORTED',503)
   const object=await env.RELEASE_SNAPSHOTS.get(row.object_key)
   if(!object || object.size>MAX_UPLOAD) throw new HttpError('RELEASE_ARTIFACT_UNAVAILABLE',503)
   const envelope=JSON.parse(await object.text())
   if(envelope.bundleSha256!==row.bundle_sha256) throw new HttpError('RELEASE_ARTIFACT_UNAVAILABLE',503)
-  return (await decryptEnvelope(envelope,env)).release
+  return {release:(await decryptEnvelope(envelope,env)).release,bundleSha256:envelope.bundleSha256}
 }
+async function readRelease(env) {return (await readReleaseWithIdentity(env)).release}
 export async function appReadiness(env) {
-  const release=await readRelease(env)
+  const {release,bundleSha256}=await readReleaseWithIdentity(env)
   const repo=await loadD1Repository(env.INVENTORY_DB,release)
   const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
   // Fixed least-privileged context exercises the real read pipeline without
   // accepting browser claims or exposing any employee/customer evidence.
   const bootstrap=service.bootstrap({role:'driver',store:'Howell',user:'Cloud readiness diagnostic'})
   return {
-    ready:true,reportDate:bootstrap.meta.reportDate,
+    ready:true,reportDate:bootstrap.meta.reportDate,bundleSha256,
     counts:{inventory:bootstrap.vehicles.length,transfers:bootstrap.transfers.length,attention:bootstrap.attention.length},
     bootstrapBytes:encoder.encode(JSON.stringify(bootstrap)).byteLength,
   }
@@ -241,7 +242,7 @@ export default {
         await publisher(request,env)
         if(request.method==='POST' && url.pathname==='/internal/releases') return await publishRelease(request,env)
         if(request.method==='POST' && url.pathname==='/internal/ledger') return json(200,await importLedger(await decryptEnvelope(await readJson(request,MAX_UPLOAD),env,LEDGER_FORMAT),env))
-        if(request.method==='GET' && url.pathname==='/internal/status') {const current=await currentRelease(env);return json(200,{ready:Boolean(current),reportDate:current?.report_date??null,metadata:current?JSON.parse(current.metadata_json):null})}
+        if(request.method==='GET' && url.pathname==='/internal/status') {const current=await currentRelease(env);return json(200,{ready:Boolean(current),reportDate:current?.report_date??null,bundleSha256:current?.bundle_sha256??null,metadata:current?JSON.parse(current.metadata_json):null})}
         if(request.method==='GET' && url.pathname==='/internal/readiness') return json(200,await appReadiness(env))
         throw new HttpError('NOT_FOUND',404)
       }

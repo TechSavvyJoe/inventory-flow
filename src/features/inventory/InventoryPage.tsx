@@ -3,12 +3,10 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { groupStores, inventoryMetrics, inventoryStore, toInventoryVehicle } from '../../app/adapters'
 import { SourceWarning } from '../../components/SourceWarning'
-import { copyExactText } from '../../components/CopyableValue'
 import { getVehicle } from '../../lib/api'
 import type { VehicleRecord } from '../../types'
 import type { InventoryScope, InventoryVehicle } from './types'
 import { InventoryExperience } from './InventoryExperience'
-import { dealerMailInteractiveVehicleUrl } from './vehicle-document-utils'
 import {
   hasInventorySearchRequest,
   inventorySearchAccessContext,
@@ -114,17 +112,6 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
     }
   }
 
-  function openDealerMailVehicle(vehicle: InventoryVehicle) {
-    const dealerMailUrl = dealerMailInteractiveVehicleUrl(vehicle.stockNumber)
-    if (dealerMailUrl) {
-      window.open(dealerMailUrl, '_blank', 'noopener,noreferrer')
-      // DealerMail does not expose a working top-level exact-stock deep link.
-      // Copying the stock preserves its fully interactive page while reducing
-      // the handoff to paste + search + verify VIN.
-      void copyExactText(vehicle.stockNumber)
-    }
-  }
-
   return (
     <section className={`inventory-page${homeMode ? ' inventory-home-mode' : ''}`}>
       <SourceWarning meta={data.meta} />
@@ -154,7 +141,6 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         onOpenListing={openListing}
         onOpenSourceRecord={(vehicle, source) => {
           if (source === 'public') openListing(vehicle)
-          if (source === 'dealermail') openDealerMailVehicle(vehicle)
         }}
       />
     </section>

@@ -128,160 +128,72 @@ describe('manager-friendly inventory UI', () => {
     expect(onSelectVehicle).toHaveBeenCalledWith(heldVehicle)
   })
 
-  it('opens the complete interactive DealerMail inventory and copies the exact stock for a confirmed unheld vehicle', async () => {
-    const popup = { opener: window } as unknown as Window
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(popup)
+  it('opens an in-app handoff from a table hold action before any external navigation', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
+    const external = vi.fn()
+    const current = vehicle(7)
+    render(<InventoryExperience homeStore={{ id: 'Howell', name: 'Howell' }} vehicles={[current]} metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }} onOpenSourceRecord={external} />)
+    const row = document.querySelector('.inventory-table--production-v10 tbody tr') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: /Review DealerMail handoff for stock/ }))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Hold and availability' })).toHaveAttribute('aria-selected', 'true'))
+    expect(screen.getByRole('region', { name: 'DealerMail vehicle tools' })).toHaveTextContent(current.stockNumber)
+    expect(screen.getByRole('button', { name: 'Open DealerMail & copy stock' })).toBeVisible()
+    expect(openSpy).not.toHaveBeenCalled()
+    expect(external).not.toHaveBeenCalled()
+  })
+
+  it('offers one honest handoff and copies stock even when noopener returns null', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    })
-    const availableVehicle = vehicle(7)
-
-    render(
-      <VehicleWorkspace
-        vehicle={availableVehicle}
-        homeStore={{ id: 'Howell', name: 'Howell' }}
-        onClose={vi.fn()}
-      />,
-    )
-
-    const actionPanel = openDealerMailTools()
-    const expectedActions = [
-      'Find Vehicle in DealerMail',
-      'Place Hold in DealerMail',
-      'Comments in DealerMail',
-      'Alerts in DealerMail',
-    ]
-    for (const action of expectedActions) {
-      expect(screen.getByRole('button', { name: action })).toBeInTheDocument()
-    }
-    expect(screen.queryByRole('button', { name: 'Add Backup in DealerMail' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Review / Change Hold in DealerMail' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Review / Remove Hold in DealerMail' })).not.toBeInTheDocument()
-    const preflight = document.querySelector('.inventory-dealermail-actions__preflight') as HTMLElement
-    expect(preflight).toHaveTextContent(availableVehicle.stockNumber)
-    expect(preflight).toHaveTextContent(availableVehicle.vin)
-    expect(preflight).toHaveTextContent('LAST8 / STOCK')
-    expect(screen.getByText(/Opens DealerMail/i)).toHaveTextContent('complete interactive inventory screen')
-    expect(actionPanel).toHaveClass('inventory-dealermail-actions--full-width')
-    expect(actionPanel.closest('details')).toHaveAttribute('open')
-    expect(screen.getByRole('button', { name: 'Find Vehicle in DealerMail' })).toBeVisible()
-    expect(document.querySelector('.inventory-workspace-actions')).toBeNull()
-
-    for (const action of expectedActions) {
-      fireEvent.click(screen.getByRole('button', { name: action }))
-    }
-    expect(openSpy).toHaveBeenCalledTimes(expectedActions.length)
-    for (const call of openSpy.mock.calls) {
-      expect(call).toEqual([
-        dealerMailVehicleUrl(availableVehicle.stockNumber),
-        '_blank',
-        'noopener,noreferrer',
-      ])
-    }
-    expect(openSpy.mock.calls.flat().join(' ')).toContain('selectedStore=26,25,27,95')
-    expect(openSpy.mock.calls.flat().join(' ')).not.toContain('byItem=')
-    expect(openSpy.mock.calls.flat().join(' ')).not.toContain('V2_inventory_USED_hold_edit.asp')
-    expect(openSpy.mock.calls.flat().join(' ')).not.toContain('print_hold')
-    expect(writeText).toHaveBeenCalledTimes(expectedActions.length)
-    expect(writeText).toHaveBeenLastCalledWith(availableVehicle.stockNumber)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const current = vehicle(7)
+    render(<VehicleWorkspace vehicle={current} homeStore={{ id: 'Howell', name: 'Howell' }} onClose={vi.fn()} />)
+    const panel = openDealerMailTools()
+    const action = within(panel).getByRole('button', { name: 'Open DealerMail & copy stock' })
+    expect(within(panel).getAllByRole('button')).toHaveLength(1)
+    expect(panel).toHaveTextContent('the vehicle is not selected automatically')
+    expect(panel.querySelector('dl')).toHaveTextContent(current.stockNumber)
+    expect(panel.querySelector('dl')).toHaveTextContent(current.vin)
+    fireEvent.click(action)
+    expect(openSpy).toHaveBeenCalledWith(dealerMailVehicleUrl(current.stockNumber), '_blank', 'noopener,noreferrer')
+    expect(writeText).toHaveBeenCalledWith(current.stockNumber)
+    expect(writeText.mock.invocationCallOrder[0]).toBeLessThan(openSpy.mock.invocationCallOrder[0])
     expect(fetchSpy).not.toHaveBeenCalled()
-    expect(popup.opener).toBeNull()
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent('complete four-store inventory page')
-      expect(screen.getByRole('status')).toHaveTextContent('was copied')
-      expect(screen.getByRole('status')).toHaveTextContent('Alerts in DealerMail')
-      expect(screen.getByRole('status')).toHaveTextContent('was not performed automatically')
-      expect(screen.getByRole('status')).toHaveTextContent(availableVehicle.vin)
-      expect(screen.getByRole('status')).toHaveTextContent('No hold, backup, comment, alert, change, or removal was performed here')
+      expect(screen.getByRole('status')).toHaveTextContent('DealerMail tab requested')
+      expect(screen.getByRole('status')).toHaveTextContent(`Stock ${current.stockNumber} copied`)
+      expect(screen.getByRole('status')).not.toHaveTextContent('did not open')
+      expect(screen.getByRole('status')).toHaveTextContent('No DealerMail record was changed')
     })
   })
 
-  it('shows held-unit backup and review intents in the compact hold workspace', async () => {
-    const popup = { opener: window } as unknown as Window
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(popup)
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: vi.fn().mockResolvedValue(undefined) },
-    })
-    const heldVehicle = vehicle(8, true)
-    heldVehicle.publicListing.listingUrl = 'https://www.bobmaxeyfordhowell.com/used/example'
-
-    render(
-      <VehicleWorkspace
-        vehicle={heldVehicle}
-        homeStore={{ id: 'Howell', name: 'Howell' }}
-        canRequestVehicle
-        onClose={vi.fn()}
-        onRequestVehicle={vi.fn()}
-        onViewVehicle={vi.fn()}
-        onOpenListing={vi.fn()}
-      />,
-    )
-
-    openDealerMailTools()
-    const expectedActions = [
-      'Find Vehicle in DealerMail',
-      'Add Backup in DealerMail',
-      'Comments in DealerMail',
-      'Alerts in DealerMail',
-      'Review / Change Hold in DealerMail',
-      'Review / Remove Hold in DealerMail',
-    ]
-    for (const action of expectedActions) {
-      expect(screen.getByRole('button', { name: action })).toBeInTheDocument()
-    }
-    expect(screen.queryByRole('button', { name: 'Place Hold in DealerMail' })).not.toBeInTheDocument()
-    expect(document.querySelector('.inventory-workspace-actions')).toBeNull()
-    const moreMenu = screen.getByText('More').closest('summary')
-    expect(moreMenu).not.toBeNull()
-    fireEvent.click(moreMenu!)
-    expect(screen.getByRole('button', { name: 'Request vehicle' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Full record' })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Review / Remove Hold in DealerMail' }))
-    expect(openSpy).toHaveBeenCalledWith(
-      dealerMailVehicleUrl(heldVehicle.stockNumber),
-      '_blank',
-      'noopener,noreferrer',
-    )
-    expect(openSpy.mock.calls.flat().join(' ')).toContain('selectedStore=26,25,27,95')
-    expect(openSpy.mock.calls.flat().join(' ')).not.toContain('byItem=')
-    expect(openSpy.mock.calls.flat().join(' ')).not.toContain('V2_inventory_USED_hold_edit.asp')
-    expect(fetchSpy).not.toHaveBeenCalled()
-    await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent('Review / Remove Hold in DealerMail')
-      expect(screen.getByRole('status')).toHaveTextContent('was not performed automatically')
-      expect(screen.getByRole('status')).toHaveTextContent('Nothing was removed here')
-    })
+  it('uses separate saved comment and alert views without launching DealerMail', () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
+    const current = vehicle(8, true)
+    current.dealerMailEvidence = { dataState: 'current', history: [], comments: [{ text: 'Synthetic comment only', author: 'Synthetic reviewer', timestamp: '2026-09-09T10:00:00Z' }], alerts: [{ text: 'Synthetic alert only', author: 'Synthetic manager', timestamp: '2026-09-09T11:00:00Z' }] }
+    render(<VehicleWorkspace vehicle={current} homeStore={{ id: 'Howell', name: 'Howell' }} initialTab="hold" onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Saved comments' }))
+    expect(screen.getByRole('region', { name: 'Saved comments' })).toHaveTextContent('Synthetic comment only')
+    expect(screen.queryByText('Synthetic alert only')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Saved alerts' }))
+    expect(screen.getByRole('region', { name: 'Saved alerts' })).toHaveTextContent('Synthetic alert only')
+    expect(screen.queryByText('Synthetic comment only')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Hold records' }))
+    expect(document.querySelector('.inventory-hold-evidence-list')).toBeInTheDocument()
+    expect(openSpy).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /Place Hold in DealerMail|Add Backup in DealerMail|Review.*Hold in DealerMail/ })).not.toBeInTheDocument()
   })
 
-  it('limits stale or unknown hold data to verification-safe DealerMail intents', () => {
-    const staleVehicle = vehicle(9)
-    staleVehicle.dealerMail.dataState = 'stale'
-    staleVehicle.dealerMail.hasActiveHold = null
-
-    render(
-      <VehicleWorkspace
-        vehicle={staleVehicle}
-        homeStore={{ id: 'Howell', name: 'Howell' }}
-        onClose={vi.fn()}
-      />,
-    )
-
-    openDealerMailTools()
-    expect(screen.getByRole('button', { name: 'Find Vehicle in DealerMail' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Comments in DealerMail' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Alerts in DealerMail' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Place Hold in DealerMail' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Add Backup in DealerMail' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Review / Change Hold in DealerMail' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Review / Remove Hold in DealerMail' })).not.toBeInTheDocument()
-    expect(screen.getByRole('note')).toHaveTextContent('Hold status is not confirmed')
-    expect(screen.getByRole('note')).toHaveTextContent('until the DealerMail record is verified')
+  it('keeps stale data read-only and requires verification for its one handoff', () => {
+    const current = vehicle(9)
+    current.dealerMail.dataState = 'stale'
+    current.dealerMail.hasActiveHold = null
+    render(<VehicleWorkspace vehicle={current} homeStore={{ id: 'Howell', name: 'Howell' }} onClose={vi.fn()} />)
+    const panel = openDealerMailTools()
+    expect(within(panel).getAllByRole('button')).toHaveLength(1)
+    expect(within(panel).getByRole('note')).toHaveTextContent('Hold status is not confirmed')
+    expect(panel).toHaveTextContent('Verify the live DealerMail record before acting')
   })
 
   it('shows stale hold evidence as last verified without implying a current hold or availability', () => {
@@ -358,69 +270,23 @@ describe('manager-friendly inventory UI', () => {
     expect(within(sourceFields).getByText('Aug 27, 2026')).toBeInTheDocument()
   })
 
-  it('reports a blocked DealerMail tab without claiming the requested action opened or ran', () => {
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: vi.fn().mockResolvedValue(undefined) },
-    })
-    const availableVehicle = vehicle(9)
-
-    render(
-      <VehicleWorkspace
-        vehicle={availableVehicle}
-        homeStore={{ id: 'Howell', name: 'Howell' }}
-        onClose={vi.fn()}
-      />,
-    )
-
-    openDealerMailTools()
-    fireEvent.click(screen.getByRole('button', { name: 'Place Hold in DealerMail' }))
-    const alert = screen.getByRole('alert')
-    expect(alert).toHaveTextContent('did not open')
-    expect(alert).toHaveTextContent('Place Hold in DealerMail')
-    expect(alert).toHaveTextContent('was not performed')
-    expect(alert).toHaveTextContent(availableVehicle.stockNumber)
-    expect(alert).toHaveTextContent(availableVehicle.vin)
-    expect(alert).toHaveTextContent('No hold, backup, comment, alert, change, or removal was performed here')
-    expect(alert).not.toHaveTextContent(/opened to|were preselected/i)
-    const manualLink = within(alert).getByRole('link', { name: /open dealermail inventory/i })
-    expect(manualLink).toHaveAttribute('href', dealerMailVehicleUrl(availableVehicle.stockNumber))
-    expect(manualLink.getAttribute('href')).toContain('selectedStore=26,25,27,95')
-    expect(manualLink.getAttribute('href')).not.toContain('byItem=')
-    expect(openSpy.mock.calls.flat().join(' ')).toContain('selectedStore=26,25,27,95')
-    expect(openSpy.mock.calls.flat().join(' ')).not.toContain('byItem=')
-  })
-
-  it('keeps the full DealerMail search workflow usable when clipboard access is denied', async () => {
-    const popup = { opener: window } as unknown as Window
-    vi.spyOn(window, 'open').mockReturnValue(popup)
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: vi.fn().mockRejectedValue(new Error('clipboard denied')) },
-    })
-    const heldVehicle = vehicle(10, true)
-
-    render(
-      <VehicleWorkspace
-        vehicle={heldVehicle}
-        homeStore={{ id: 'Howell', name: 'Howell' }}
-        onClose={vi.fn()}
-      />,
-    )
-
-    openDealerMailTools()
-    fireEvent.click(screen.getByRole('button', { name: 'Comments in DealerMail' }))
+  it('shows a safe link and manual guidance when navigation throws and clipboard is denied', async () => {
+    vi.spyOn(window, 'open').mockImplementation(() => { throw new Error('blocked') })
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } })
+    const current = vehicle(9)
+    render(<VehicleWorkspace vehicle={current} homeStore={{ id: 'Howell', name: 'Howell' }} onClose={vi.fn()} />)
+    const panel = openDealerMailTools()
+    fireEvent.click(within(panel).getByRole('button', { name: 'Open DealerMail & copy stock' }))
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent('complete four-store inventory page')
-      expect(screen.getByRole('status')).toHaveTextContent(heldVehicle.stockNumber)
-      expect(screen.getByRole('status')).toHaveTextContent(heldVehicle.vin)
-      expect(screen.getByRole('status')).toHaveTextContent('Comments in DealerMail')
-      expect(screen.getByRole('status')).toHaveTextContent('was not performed automatically')
-      expect(screen.getByRole('status')).toHaveTextContent('enter stock')
-      expect(screen.getByRole('status')).toHaveTextContent('LAST8 / STOCK')
-      expect(screen.getByRole('status')).not.toHaveTextContent('was copied')
+      const status = screen.getByRole('status')
+      expect(status).toHaveTextContent('could not request a new tab')
+      expect(status).toHaveTextContent('Stock could not be copied')
+      expect(status).toHaveTextContent(current.stockNumber)
+      expect(status).toHaveTextContent('copy it manually')
+      expect(status).not.toHaveTextContent('was copied')
+      expect(within(status).getByRole('link', { name: 'Open DealerMail inventory' })).toHaveAttribute('href', dealerMailVehicleUrl(current.stockNumber))
     })
+    expect(panel.querySelector('dd')).toHaveTextContent(current.stockNumber)
   })
 
   it('does not expose DealerMail hold tools to a role without management access', () => {
@@ -440,7 +306,8 @@ describe('manager-friendly inventory UI', () => {
 
     expect(screen.getByText('Hold details are restricted')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /in DealerMail$|Find Vehicle in DealerMail/i })).not.toBeInTheDocument()
-    expect(document.querySelector('.inventory-dealermail-actions')).not.toBeInTheDocument()
+    expect(document.querySelector('.inventory-dealermail-handoff')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open DealerMail & copy stock' })).not.toBeInTheDocument()
   })
 
   it('keeps photo thumbnails as tactile buttons rather than overriding their semantics', () => {

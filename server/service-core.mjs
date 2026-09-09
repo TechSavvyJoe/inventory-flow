@@ -14,6 +14,7 @@ import {
 } from './repository-dispatch.mjs'
 import { allowedAttentionActions, buildAttentionMutation } from './attention-workflow.mjs'
 import { STORE_NAMES } from './constants.mjs'
+import { normalizePublicChangeCounts } from './public-change-counts.mjs'
 import { allowedEventTypes, buildTransferEvent, buildTransferRequest, roleContext, WorkflowError } from './workflow.mjs'
 
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/
@@ -782,8 +783,9 @@ function metaView(dataset, database, now, loadStatus) {
   if (dealerMailFreshness !== 'current') {
     warnings.push('DealerMail hold absence or release cannot be concluded from stale or incomplete data.')
   }
-  const rawChangeCounts = manifest.public_change_counts ?? {}
-  const safeChangeCount = (key) => positiveInteger(rawChangeCounts[key]) ?? 0
+  const normalizedChangeCounts = normalizePublicChangeCounts(manifest.public_change_counts)
+  warnings.push(...normalizedChangeCounts.issues)
+  const safeChangeCount = (key) => normalizedChangeCounts.counts[key] ?? 0
   const publicChangeBaseline = parseJson(dataset.state.current_public_change_baseline_json, null)
   const crmSourceCount = positiveInteger(dataset.sourceRuns.dealerMail?.row_count) ?? dataset.crmRows.length
   return {

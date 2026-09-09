@@ -362,11 +362,11 @@ function HoldActionCell({
         }}
         aria-label={
           canOpenDealerMail
-            ? `Open interactive DealerMail and copy stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}`
+            ? `Review DealerMail handoff for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}`
             : `Open hold details for ${vehicleDisplayName(vehicle)}`
         }
         title={canOpenDealerMail
-          ? `Open interactive DealerMail and copy stock ${vehicle.stockNumber}. ${holdStatus.label}. ${holdDetail}`
+          ? `Review hold information and DealerMail instructions for stock ${vehicle.stockNumber}. ${holdStatus.label}. ${holdDetail}`
           : `${holdStatus.label}. ${holdDetail}`}
       >
         <span className="inventory-hold-action__copy">

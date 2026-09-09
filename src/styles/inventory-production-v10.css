@@ -121,7 +121,20 @@
 
 #root .inventory-experience--modern .inventory-command-bar .inventory-scope-switch--modern button.is-active {
   background: var(--v10-blue) !important;
+  color: var(--v10-surface) !important;
+  -webkit-text-fill-color: var(--v10-surface);
   box-shadow: none !important;
+}
+
+#root .inventory-experience--modern .inventory-command-bar .inventory-scope-switch--modern button.is-active > span {
+  color: inherit !important;
+  -webkit-text-fill-color: inherit;
+}
+
+#root .inventory-experience--modern .inventory-command-bar .inventory-scope-switch--modern button.is-active b {
+  color: var(--v10-blue) !important;
+  -webkit-text-fill-color: currentColor;
+  background: var(--v10-surface) !important;
 }
 
 #root .inventory-experience--modern .inventory-control-deck {

@@ -37,6 +37,7 @@ import type {
   InventorySortKey,
   InventoryStore,
   InventoryVehicle,
+  VehicleWorkspaceTab,
 } from "./types";
 import "./inventory.css";
 import "./inventory-modern.css";
@@ -379,6 +380,7 @@ export function InventoryExperience(props: InventoryExperienceProps) {
   const [rowsPerPage, setRowsPerPage] = useState(() => initialRowsPerPage(pageSize));
   const [page, setPage] = useState(1);
   const [internalSelectedVehicleId, setInternalSelectedVehicleId] = useState<string | null>(defaultSelectedVehicleId);
+  const [workspaceInitialTab, setWorkspaceInitialTab] = useState<VehicleWorkspaceTab>("overview");
   const selectedVehicleId = controlledSelectedVehicleId !== undefined ? controlledSelectedVehicleId : internalSelectedVehicleId;
   const filterPanelId = useId();
   const backgroundRef = useRef<HTMLDivElement>(null);
@@ -408,18 +410,32 @@ export function InventoryExperience(props: InventoryExperienceProps) {
   };
 
   const visibleVehicleTrigger = (vehicleId: string) => Array.from(
-    backgroundRef.current?.querySelectorAll<HTMLElement>("[data-inventory-vehicle-trigger]") ?? [],
+    backgroundRef.current?.querySelectorAll<HTMLElement>("button[data-inventory-vehicle-trigger]") ?? [],
   ).find((element) =>
     element.dataset.inventoryVehicleTrigger === vehicleId &&
     element.getClientRects().length > 0,
   ) ?? null;
 
   const openVehicleWorkspace = (vehicle: InventoryVehicle) => {
-    const active = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+    setWorkspaceInitialTab("overview");
+    // Pointer clicks in Safari can leave focus on the prior search/control.
+    // A table row is not focusable: fall back to this vehicle's visible button.
+    const active = document.activeElement instanceof HTMLElement &&
+      document.activeElement.dataset.inventoryVehicleTrigger === vehicle.id
       ? document.activeElement
       : null;
     workspaceReturnFocusRef.current = active ?? visibleVehicleTrigger(vehicle.id);
     setSelectedVehicleId(vehicle.id);
+  };
+
+  const openSourceRecord: NonNullable<InventoryExperienceProps["onOpenSourceRecord"]> = (vehicle, source) => {
+    if (source === "dealermail") {
+      if (vehicle.dealerMail.canManageHold !== true) return;
+      openVehicleWorkspace(vehicle);
+      setWorkspaceInitialTab("hold");
+      return;
+    }
+    onOpenSourceRecord?.(vehicle, source);
   };
 
   const baseMatches = useMemo(
@@ -580,13 +596,13 @@ export function InventoryExperience(props: InventoryExperienceProps) {
                 onRequestVehicle={onRequestVehicle}
                 onTrackMovement={onTrackMovement}
                 onOpenListing={onOpenListing}
-                onOpenSourceRecord={onOpenSourceRecord}
+                onOpenSourceRecord={openSourceRecord}
               />
               <InventoryMobileList
                 vehicles={pageVehicles}
                 selectedVehicleId={selectedVehicleId}
                 onSelectVehicle={openVehicleWorkspace}
-                onOpenSourceRecord={onOpenSourceRecord}
+                onOpenSourceRecord={openSourceRecord}
               />
             </>
           ) : (
@@ -627,6 +643,7 @@ export function InventoryExperience(props: InventoryExperienceProps) {
       {selectedVehicle ? (
         <VehicleWorkspace
           vehicle={selectedVehicle}
+          initialTab={workspaceInitialTab}
           homeStore={homeStore}
           canRequestVehicle={canRequestSelected}
           returnFocusRef={workspaceReturnFocusRef}

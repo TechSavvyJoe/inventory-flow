@@ -150,6 +150,19 @@
   background: var(--ifx-oem-scene-deep);
 }
 
+/* The empty state shares the dark photo stage, so it needs light ink too. */
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-gallery__placeholder,
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-gallery__placeholder strong,
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-gallery__placeholder span {
+  color: var(--ifx-neutral-0);
+  -webkit-text-fill-color: currentColor;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-gallery__placeholder span {
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-gallery--cinematic .inventory-workspace-gallery__stage {
   height: 184px;
   min-height: 184px;

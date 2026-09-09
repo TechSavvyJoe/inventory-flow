@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { buildPublicChangeEvents, summarizePublicChangeEvents } from './public-change-events.mjs'
+import { normalizePublicChangeCounts } from './public-change-counts.mjs'
 import { canonicalExternalAutoCheckUrl, resourceProvenanceSha256 } from './resource-validation.mjs'
 
 import { STORE_NAMES } from './constants.mjs'
@@ -945,7 +946,105 @@ export function findLatestCompletedManifest(workspaceRoot) {
   })
 }
 
-function findPreviousCompletedPublicSnapshot(workspaceRoot, reportDate) {
+function findAuditedPublicBaseline(workspaceRoot, reportDate, { publicPath, publicFile, manifest } = {}) {
+  if (!publicPath || !publicFile) return null
+  let auditPath
+  try {
+    auditPath = ensureWithin(
+      workspaceRoot,
+      manifest?.public_audit_path
+        ? path.resolve(workspaceRoot, manifest.public_audit_path)
+        : path.join(workspaceRoot, 'work', 'inventory-history', 'snapshots', `${reportDate}-public-audit.json`),
+      'Public change audit',
+    )
+  } catch {
+    return { warning: 'The public change audit path is outside this workspace; VIN-level daily changes were withheld.' }
+  }
+  if (!existsSync(auditPath)) {
+    return manifest?.public_audit_path
+      ? { warning: 'The manifest-referenced public change audit is unavailable; VIN-level daily changes were withheld.' }
+      : null
+  }
+  try {
+    const auditFile = readJsonWithHash(auditPath, 'Public change audit')
+    const audit = auditFile.data
+    if (manifest?.public_snapshot_sha256) {
+      assertValid(String(manifest.public_snapshot_sha256).toLowerCase() === publicFile.sha256.toLowerCase(), 'Current public snapshot checksum differs from its manifest')
+    }
+    assertValid(audit.passed === true && audit.report_date === reportDate, 'Public change audit is not passed for this report')
+    assertValid(audit.checks?.independent_change_reconciliation === true, 'Public change audit lacks independent reconciliation')
+    assertValid(String(audit.snapshot_sha256 ?? '').toLowerCase() === publicFile.sha256.toLowerCase(), 'Public change audit does not match the current snapshot checksum')
+    assertValid(/^[A-Fa-f0-9]{64}$/.test(String(audit.prior_sha256 ?? '')), 'Public change audit has no valid prior checksum')
+    if (manifest?.public_audit_sha256) {
+      assertValid(auditFile.sha256.toLowerCase() === String(manifest.public_audit_sha256).toLowerCase(), 'Public change audit checksum differs from the manifest')
+    }
+    const snapshotsDirectory = path.join(workspaceRoot, 'work', 'inventory-history', 'snapshots')
+    const candidates = new Set()
+    if (typeof audit.prior_snapshot === 'string') {
+      try { candidates.add(ensureWithin(workspaceRoot, path.resolve(workspaceRoot, audit.prior_snapshot), 'Audited prior snapshot')) } catch { /* Never read outside the workspace. */ }
+    }
+    for (const entry of readdirSync(snapshotsDirectory, { withFileTypes: true })) {
+      if (entry.isFile() && /^\d{4}-\d{2}-\d{2}(?:[^/\\]*)\.json$/.test(entry.name) && entry.name.slice(0, 10) < reportDate) {
+        candidates.add(path.join(snapshotsDirectory, entry.name))
+      }
+    }
+    for (const snapshotPath of candidates) {
+      try {
+        const file = readJsonWithHash(snapshotPath, 'Audited prior public snapshot')
+        if (file.sha256.toLowerCase() !== audit.prior_sha256.toLowerCase()) continue
+        const validated = validatePublicSnapshot(file.data)
+        assertValid(validated.reportDate < reportDate, 'Audited prior snapshot must precede this report')
+        return { snapshotPath, file, evidence: { auditPath, auditSha256: auditFile.sha256, expectedPriorSha256: audit.prior_sha256 } }
+      } catch {
+        // Keep searching only for the exact audited bytes, never a similar set.
+      }
+    }
+    return { warning: 'The exact prior public snapshot certified by this report\'s audit is unavailable; VIN-level daily changes were withheld.' }
+  } catch {
+    return { warning: 'The public change audit does not validate against this release; VIN-level daily changes were withheld.' }
+  }
+}
+
+function findPreviousCompletedPublicSnapshot(workspaceRoot, reportDate, current = {}) {
+  const audited = findAuditedPublicBaseline(workspaceRoot, reportDate, current)
+  if (audited) return audited
+  const manifestsDirectory = path.join(workspaceRoot, 'work', 'run-status')
+  let priorManifestNames = []
+  try {
+    priorManifestNames = readdirSync(manifestsDirectory, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && MANIFEST_PATTERN.test(entry.name) && entry.name.slice(0, 10) < reportDate)
+      .map((entry) => entry.name)
+      .sort((left, right) => right.localeCompare(left))
+  } catch {
+    // Older fixture/archive formats can have snapshots without dated manifests.
+  }
+  for (const name of priorManifestNames) {
+    try {
+      const { data: manifest } = readJsonWithHash(path.join(manifestsDirectory, name), 'Prior run manifest')
+      if (manifest.complete !== true || manifest.public_inventory_status !== 'complete' || !hasCompletedManifestEvidence(manifest)) continue
+      assertValid(manifest.report_date === name.slice(0, 10), 'Prior manifest date differs from its filename')
+      assertValid(typeof manifest.public_snapshot_path === 'string' && manifest.public_snapshot_path.length > 0, 'Prior public snapshot path is missing')
+      assertValid(/^[A-Fa-f0-9]{64}$/.test(String(manifest.public_snapshot_sha256 ?? '')), 'Prior public snapshot checksum is missing')
+      const snapshotPath = ensureWithin(
+        workspaceRoot,
+        path.isAbsolute(manifest.public_snapshot_path)
+          ? manifest.public_snapshot_path
+          : path.resolve(workspaceRoot, manifest.public_snapshot_path),
+        'Prior public snapshot',
+      )
+      assertValid(path.basename(snapshotPath).startsWith(manifest.report_date), 'Prior snapshot filename differs from its report date')
+      const file = readJsonWithHash(snapshotPath, 'Prior public snapshot')
+      assertValid(file.sha256.toLowerCase() === manifest.public_snapshot_sha256.toLowerCase(), 'Prior public snapshot checksum differs from its manifest')
+      validatePublicSnapshot(file.data, { reportDate: manifest.report_date, manifest })
+      return { snapshotPath, file }
+    } catch {
+      // Never substitute an incomplete or altered release for certified history.
+    }
+  }
+  if (priorManifestNames.length > 0) return null
+
+  // Compatibility for pre-manifest archives only. Once dated history manifests
+  // exist, their explicit paths and checksums are the exclusive authority.
   const snapshotsDirectory = path.join(workspaceRoot, 'work', 'inventory-history', 'snapshots')
   let candidates = []
   try {
@@ -1353,6 +1452,8 @@ export function normalizeRelease({
   dealerMailFile,
   previousPublicPath = null,
   previousPublicFile = null,
+  previousPublicEvidence = null,
+  previousPublicWarning = null,
   photoCachePath: matchedPhotoCachePath = null,
   photoCacheFile = null,
   photoCacheLoadWarning = null,
@@ -1403,6 +1504,7 @@ export function normalizeRelease({
   }
   if (photoCacheLoadWarning) warnings.push(photoCacheLoadWarning)
   if (documentEnrichmentLoadWarning) warnings.push(documentEnrichmentLoadWarning)
+  if (previousPublicWarning) warnings.push(previousPublicWarning)
 
   let publicRecordsByVin = publicValidated.vehiclesByVin
   let photoCacheMetadata = { status: 'not_found' }
@@ -1448,10 +1550,11 @@ export function normalizeRelease({
       currentSnapshot: publicFile.data,
     })
     const candidateCounts = summarizePublicChangeEvents(candidateEvents)
-    const manifestCounts = manifest.public_change_counts ?? {}
+    const { counts: manifestCounts, issues: countIssues } = normalizePublicChangeCounts(manifest.public_change_counts)
+    warnings.push(...countIssues)
     const countKeys = Object.keys(candidateCounts)
-    const countsReconcile = countKeys.every(
-      (key) => asInteger(manifestCounts[key] ?? 0) === candidateCounts[key],
+    const countsReconcile = countIssues.length === 0 && countKeys.every(
+      (key) => manifestCounts[key] === candidateCounts[key],
     )
     if (countsReconcile) {
       publicChangeEvents = candidateEvents
@@ -1459,6 +1562,7 @@ export function normalizeRelease({
         reportDate: previousValidated.reportDate,
         snapshotPath: previousPublicPath,
         sha256: previousPublicFile.sha256,
+        ...(previousPublicEvidence ? { audit: previousPublicEvidence } : {}),
       }
     } else {
       warnings.push(
@@ -1629,7 +1733,7 @@ export function loadLatestCompletedRelease({ workspaceRoot, now = new Date() }) 
   if (existsSync(matchedDocumentEnrichmentPath)) {
     documentEnrichmentFile = readJsonWithHash(matchedDocumentEnrichmentPath, 'VIN document enrichment')
   }
-  const previousPublic = findPreviousCompletedPublicSnapshot(resolvedWorkspace, reportDate)
+  const previousPublic = findPreviousCompletedPublicSnapshot(resolvedWorkspace, reportDate, { publicPath, publicFile, manifest })
   return normalizeRelease({
     manifestPath,
     manifest,
@@ -1639,6 +1743,8 @@ export function loadLatestCompletedRelease({ workspaceRoot, now = new Date() }) 
     dealerMailFile,
     previousPublicPath: previousPublic?.snapshotPath ?? null,
     previousPublicFile: previousPublic?.file ?? null,
+    previousPublicEvidence: previousPublic?.evidence ?? null,
+    previousPublicWarning: previousPublic?.warning ?? null,
     photoCachePath: matchedPhotoCachePath,
     photoCacheFile,
     photoCacheLoadWarning,

@@ -42,6 +42,21 @@ describe('Cloud Worker authentication boundary',()=>{
     expect((await worker.fetch(request('/internal/status',jwt,{headers:{Authorization:`Bearer ${env.RELEASE_PUBLISHER_TOKEN}`}}),env)).status).toBe(200)
   })
   it('denies employee tokens on upload paths',async()=>expect((await worker.fetch(request('/internal/status',await token()),env)).status).toBe(401))
+  it('returns the active release hash only through the authenticated publisher status route',async()=>{
+    const hash='e'.repeat(64)
+    const active={...env,INVENTORY_DB:{prepare(){return {async first(){return {report_date:'2026-08-30',bundle_sha256:hash,metadata_json:'{}'}}}}}}
+    const jwt=await token({aud:env.ACCESS_PUBLISHER_AUDIENCE,sub:'',email:undefined,common_name:env.PUBLISHER_CLIENT_ID})
+    const result=await worker.fetch(request('/internal/status',jwt,{headers:{Authorization:`Bearer ${env.RELEASE_PUBLISHER_TOKEN}`}}),active)
+    expect(await result.json()).toMatchObject({ready:true,reportDate:'2026-08-30',bundleSha256:hash})
+  })
+  it('reports the exact current bundle identity only to the authenticated publisher',async()=>{
+    const current={report_date:'2026-09-09',bundle_sha256:'b'.repeat(64),metadata_json:JSON.stringify({publicRowCount:8})}
+    const configured={...env,INVENTORY_DB:{prepare(){return {bind(){return this},first:async()=>current}}}}
+    const jwt=await token({aud:env.ACCESS_PUBLISHER_AUDIENCE,sub:'',email:undefined,common_name:env.PUBLISHER_CLIENT_ID})
+    const response=await worker.fetch(request('/internal/status',jwt,{headers:{Authorization:`Bearer ${env.RELEASE_PUBLISHER_TOKEN}`}}),configured)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ready:true,reportDate:'2026-09-09',bundleSha256:current.bundle_sha256,metadata:{publicRowCount:8}})
+  })
   it('keeps readiness machine-only and rejects unauthenticated, employee and bearer-only requests',async()=>{
     const get=vi.fn(()=>{throw new Error('Readiness data must not be touched before authentication')})
     const guarded={...env,RELEASE_SNAPSHOTS:{get}}

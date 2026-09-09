@@ -1231,6 +1231,12 @@
     font-size: 13px !important;
     line-height: 1.35 !important;
   }
+
+  /* Keep price, mileage, and certification distinct without shrinking copy. */
+  #root .inventory-experience--modern .inventory-mobile-list--production-v8
+    .inventory-mobile-row--compact-v3 .inventory-mobile-row__valuation {
+    gap: 4px 10px !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
