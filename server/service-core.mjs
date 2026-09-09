@@ -785,6 +785,7 @@ function metaView(dataset, database, now, loadStatus) {
   const rawChangeCounts = manifest.public_change_counts ?? {}
   const safeChangeCount = (key) => positiveInteger(rawChangeCounts[key]) ?? 0
   const publicChangeBaseline = parseJson(dataset.state.current_public_change_baseline_json, null)
+  const crmSourceCount = positiveInteger(dataset.sourceRuns.dealerMail?.row_count) ?? dataset.crmRows.length
   return {
     reportDate: dataset.state.current_report_date || dataset.sourceRuns.public?.report_date || '',
     completedAt: manifest.completed_at || dataset.sourceRuns.public?.loaded_at || '',
@@ -793,7 +794,7 @@ function metaView(dataset, database, now, loadStatus) {
     dealerMailFreshness,
     resourceFreshness,
     publicCount: dataset.publicRows.length,
-    crmCount: dataset.crmRows.length,
+    crmCount: crmSourceCount,
     heldVinCount: dataset.holdRows.length,
     publicChangeBaselineDate:
       cleanText(publicChangeBaseline?.reportDate) || cleanText(dataset.sourceRuns.public?.metadata?.changeBaseline?.reportDate),
@@ -1196,7 +1197,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         },
         counts: {
           public: state.dataset.publicRows.length,
-          crm: state.dataset.crmRows.length,
+          crm: state.meta.crmCount,
           heldVins: state.dataset.holdRows.length,
           resources: resourceCoverage.vehicles,
           resourceCoverage,

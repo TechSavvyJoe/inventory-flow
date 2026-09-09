@@ -39,6 +39,7 @@ export const STORE_CONFIG = Object.freeze({
 })
 
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/
+const SOURCE_VIN_TOKEN_PATTERN = /^[A-Z0-9]{17}$/
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const MANIFEST_PATTERN = /^(\d{4}-\d{2}-\d{2})\.json$/
 const LEGACY_PHOTO_CACHE_SCHEMA = 'inventory-ops-photo-cache-v1'
@@ -1112,43 +1113,47 @@ export function validateDealerMailSnapshot(snapshot, { reportDate, manifest } = 
     })
   }
 
-  const crmVins = new Set()
+  const crmSourceVins = new Set()
   const crmStocks = new Set()
   const crmByVin = new Map()
   const crmByStock = new Map()
+  const quarantinedByStock = new Map()
   for (const row of crmRows) {
-    const vin = normalizedVin(row.vin)
+    const sourceVin = String(row.vin ?? '')
     const stock = normalizedStock(row.stockNumber)
-    assertValid(VIN_PATTERN.test(vin), 'DealerMail inventory row has an invalid VIN')
-    assertValid(stock.length > 0, 'DealerMail inventory row is missing a stock number', { vin })
-    assertValid(!crmVins.has(vin), 'DealerMail inventory contains a duplicate VIN', { vin })
+    assertValid(SOURCE_VIN_TOKEN_PATTERN.test(sourceVin), 'DealerMail inventory row has an invalid source VIN token', {
+      stock,
+    })
+    assertValid(stock.length > 0, 'DealerMail inventory row is missing a stock number', { sourceVin })
+    assertValid(!crmSourceVins.has(sourceVin), 'DealerMail inventory contains a duplicate source VIN', { sourceVin })
     assertValid(!crmStocks.has(stock.toUpperCase()), 'DealerMail inventory contains a duplicate stock number', { stock })
     assertValid(STORE_NAMES.includes(row.storeName), 'DealerMail inventory row has an unknown CRM store', {
-      vin,
+      sourceVin,
       store: row.storeName,
     })
     assertValid(STORE_CONFIG[row.storeName].dealerMailCode === row.storeCode, 'DealerMail store code/name mapping is inconsistent', {
-      vin,
+      sourceVin,
       storeCode: row.storeCode,
       storeName: row.storeName,
     })
-    assertValid(asInteger(row.sourceCellCount) === 22, 'DealerMail row does not preserve all 22 source cells', { vin })
-    assertValid(['Y', 'N'].includes(row.commentsFlag), 'DealerMail inventory commentsFlag must be Y or N', { vin })
-    assertValid(['Y', 'N'].includes(row.alertsFlag), 'DealerMail inventory alertsFlag must be Y or N', { vin })
-    assertValid(Array.isArray(row.comments) && Array.isArray(row.alerts), 'DealerMail inventory message evidence is missing', { vin })
-    assertValid(row.comments.every((group) => Array.isArray(group?.rows)), 'DealerMail comment rows are invalid', { vin })
+    assertValid(asInteger(row.sourceCellCount) === 22, 'DealerMail row does not preserve all 22 source cells', { sourceVin })
+    assertValid(['Y', 'N'].includes(row.commentsFlag), 'DealerMail inventory commentsFlag must be Y or N', { sourceVin })
+    assertValid(['Y', 'N'].includes(row.alertsFlag), 'DealerMail inventory alertsFlag must be Y or N', { sourceVin })
+    assertValid(Array.isArray(row.comments) && Array.isArray(row.alerts), 'DealerMail inventory message evidence is missing', { sourceVin })
+    assertValid(row.comments.every((group) => Array.isArray(group?.rows)), 'DealerMail comment rows are invalid', { sourceVin })
     if (row.commentsFlag === 'Y') {
-      assertValid(row.comments.some((group) => group.rows.some((comment) => typeof comment.commentTextRaw === 'string' && comment.commentTextRaw.trim())), 'Flagged DealerMail inventory comments are missing', { vin })
+      assertValid(row.comments.some((group) => group.rows.some((comment) => typeof comment.commentTextRaw === 'string' && comment.commentTextRaw.trim())), 'Flagged DealerMail inventory comments are missing', { sourceVin })
     }
     if (row.alertsFlag === 'Y') {
-      assertValid(row.alerts.some((alert) => typeof alert?.alertTextRaw === 'string' && alert.alertTextRaw.trim()), 'Flagged DealerMail inventory alert is missing', { vin })
+      assertValid(row.alerts.some((alert) => typeof alert?.alertTextRaw === 'string' && alert.alertTextRaw.trim()), 'Flagged DealerMail inventory alert is missing', { sourceVin })
     }
-    crmVins.add(vin)
+    crmSourceVins.add(sourceVin)
     crmStocks.add(stock.toUpperCase())
-    crmByVin.set(vin, row)
     crmByStock.set(stock.toUpperCase(), row)
+    if (VIN_PATTERN.test(sourceVin)) crmByVin.set(sourceVin, row)
+    else quarantinedByStock.set(stock.toUpperCase(), row)
   }
-  assertValid(asInteger(crmSummary.uniqueVinCount) === crmVins.size, 'DealerMail unique VIN summary does not reconcile')
+  assertValid(asInteger(crmSummary.uniqueVinCount) === crmSourceVins.size, 'DealerMail unique source-VIN summary does not reconcile')
   assertValid(asInteger(crmSummary.uniqueStockCount) === crmStocks.size, 'DealerMail unique stock summary does not reconcile')
 
   const validation = snapshot.completeInventorySetValidation?.validation
@@ -1157,13 +1162,17 @@ export function validateDealerMailSnapshot(snapshot, { reportDate, manifest } = 
     'differenceVinEqualsFlaggedHolds',
     'differenceStockEqualsFlaggedHolds',
     'allSourceCellCounts22',
-    'allVinFormatValid',
     'allStockNonblank',
     'allStoreCodesExpected',
     'setEquationValid',
   ]) {
     assertValid(validation[flag] === true, `DealerMail validation failed: ${flag}`)
   }
+  assertValid(
+    validation.allVinFormatValid === (quarantinedByStock.size === 0),
+    'DealerMail VIN-format validation does not reconcile with quarantined source rows',
+    { quarantinedCount: quarantinedByStock.size },
+  )
 
   assertValid(Array.isArray(snapshot.vehicles), 'DealerMail held vehicles are missing')
   const holdVehicles = snapshot.vehicles
@@ -1178,7 +1187,7 @@ export function validateDealerMailSnapshot(snapshot, { reportDate, manifest } = 
     const vin = normalizedVin(vehicle?.mainRow?.vin)
     assertValid(VIN_PATTERN.test(vin), 'DealerMail held vehicle has an invalid VIN')
     assertValid(!holdVins.has(vin), 'DealerMail held vehicles contain a duplicate VIN', { vin })
-    assertValid(crmVins.has(vin), 'DealerMail held vehicle is absent from the complete CRM inventory', { vin })
+    assertValid(crmByVin.has(vin), 'DealerMail held vehicle is absent from the valid-VIN CRM inventory', { vin })
     assertValid(STORE_NAMES.includes(vehicle?.store?.name), 'DealerMail held vehicle has an unknown CRM store', { vin })
     const details = Array.isArray(vehicle.holdDetailRows) ? vehicle.holdDetailRows : []
     const active = details.filter((row) => row?.lifecycleStatus === 'active')
@@ -1323,8 +1332,13 @@ export function validateDealerMailSnapshot(snapshot, { reportDate, manifest } = 
     holdExtractedAt: snapshot.extractedAtUtc,
     timezone: snapshot.timezone || 'America/New_York',
     rowCount: crmRows.length,
+    vinReconciledRowCount: crmByVin.size,
     heldVinCount: holdVins.size,
     crmByVin: Object.fromEntries(crmByVin),
+    vinQuarantine: {
+      count: quarantinedByStock.size,
+      stocks: [...quarantinedByStock.keys()].sort(),
+    },
     holdsByVin: Object.fromEntries(holdVehicles.map((vehicle) => [normalizedVin(vehicle.mainRow.vin), vehicle])),
     cdkByVin,
   }
@@ -1381,6 +1395,11 @@ export function normalizeRelease({
   }
   if (dealerMailCompatibilityNormalizationApplied) {
     warnings.push('Legacy released-hold store codes were normalized in memory; the certified source file, checksum, and byte count were not changed.')
+  }
+  if (dealerMailValidated.vinQuarantine.count > 0) {
+    warnings.push(
+      `DealerMail VIN-format review: ${dealerMailValidated.vinQuarantine.count} source row(s) were preserved in encrypted evidence and excluded from VIN-based inventory and actions. Review stock ${dealerMailValidated.vinQuarantine.stocks.join(', ')}.`,
+    )
   }
   if (photoCacheLoadWarning) warnings.push(photoCacheLoadWarning)
   if (documentEnrichmentLoadWarning) warnings.push(documentEnrichmentLoadWarning)
@@ -1535,6 +1554,13 @@ export function normalizeRelease({
         rowCount: dealerMailValidated.rowCount,
         metadata: {
           heldVinCount: dealerMailValidated.heldVinCount,
+          vinQuarantine: {
+            count: dealerMailValidated.vinQuarantine.count,
+            stocks: dealerMailValidated.vinQuarantine.stocks,
+            sourceRowCount: dealerMailValidated.rowCount,
+            vinReconciledRowCount: dealerMailValidated.vinReconciledRowCount,
+            excludedFromVinWorkflows: true,
+          },
           summary: dealerMailSnapshot.summary,
           compatibilityNormalization: dealerMailCompatibilityNormalizationApplied
             ? {
@@ -1625,6 +1651,7 @@ export function loadLatestCompletedRelease({ workspaceRoot, now = new Date() }) 
 
 export const importerInternals = Object.freeze({
   VIN_PATTERN,
+  SOURCE_VIN_TOKEN_PATTERN,
   dateInTimeZone,
   normalizedStock,
   normalizedVin,

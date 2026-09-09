@@ -87,6 +87,40 @@ function completeBundle() {
   }
 }
 
+function quarantineUnheldCrmSourceRow(bundle, sourceVin = 'TESTDATAQWELL0002') {
+  const snapshot = bundle.release.dealerMailSnapshot
+  const heldVins = new Set(snapshot.vehicles.map((vehicle) => vehicle.mainRow.vin))
+  const cdkVins = new Set((snapshot.cdkReadOnlyLookup?.records ?? []).map((record) => record.vin))
+  const row = snapshot.completeDealerMailUsedInventory.rows.find(
+    (candidate) => !heldVins.has(candidate.vin) && !cdkVins.has(candidate.vin),
+  )
+  if (!row) throw new Error('Synthetic fixture has no unheld CRM row available for VIN quarantine')
+  const originalVin = row.vin
+  const stockNumber = row.stockNumber
+  row.vin = sourceVin
+  const excluded = snapshot.excludeActiveHoldsValidationSet.rows.find(
+    (candidate) => candidate.stockNumber === stockNumber,
+  )
+  if (!excluded) throw new Error('Synthetic source exception row is absent from the exclude-holds control')
+  excluded.vin = sourceVin
+  snapshot.completeInventorySetValidation.validation.allVinFormatValid = false
+
+  const normalized = bundle.release.vehicles.find((vehicle) => vehicle.vin === originalVin)
+  if (!normalized) throw new Error('Synthetic source exception row has no normalized vehicle')
+  normalized.crmRecord = null
+  bundle.release.sourceRuns.dealerMail.metadata.vinQuarantine = {
+    count: 1,
+    stocks: [stockNumber],
+    sourceRowCount: snapshot.completeDealerMailUsedInventory.rows.length,
+    vinReconciledRowCount: snapshot.completeDealerMailUsedInventory.rows.length - 1,
+    excludedFromVinWorkflows: true,
+  }
+  bundle.release.warnings.push(
+    `DealerMail VIN-format review: 1 source row was excluded from VIN workflows. Review stock ${stockNumber}.`,
+  )
+  return { originalVin, sourceVin, stockNumber }
+}
+
 function addExternalAutoCheck(bundle, url) {
   const vehicle = bundle.release.vehicles.find((record) => record.resourceRecord)
   vehicle.resourceRecord.autoCheckReport = {
@@ -101,6 +135,53 @@ function addExternalAutoCheck(bundle, url) {
 }
 
 describe('portable cloud release validation', () => {
+  it('retains quarantined CRM source evidence but excludes it from normalized vehicles and action data', () => {
+    const bundle = completeBundle()
+    const exception = quarantineUnheldCrmSourceRow(bundle)
+
+    expect(validateReleaseBundle(bundle)).toMatchObject({
+      dealerMailRowCount: 8,
+      dealerMailVinReconciledCount: 7,
+      dealerMailVinReviewCount: 1,
+      dealerMailVinReviewStocks: [exception.stockNumber],
+      vehicleCount: 8,
+    })
+    expect(bundle.release.dealerMailSnapshot.completeDealerMailUsedInventory.rows).toContainEqual(
+      expect.objectContaining({ vin: exception.sourceVin, stockNumber: exception.stockNumber }),
+    )
+    expect(bundle.release.vehicles.some((vehicle) => vehicle.vin === exception.sourceVin)).toBe(false)
+    expect(bundle.release.vehicles.find((vehicle) => vehicle.vin === exception.originalVin)?.crmRecord).toBeNull()
+
+    const dataset = datasetFromRelease(bundle.release)
+    expect(dataset.sourceRuns.dealerMail.row_count).toBe(8)
+    expect(dataset.crmRows).toHaveLength(7)
+    expect(dataset.crmRows.some((row) => row.vin === exception.sourceVin)).toBe(false)
+  })
+
+  it('rejects quarantine metadata tampering', () => {
+    const bundle = completeBundle()
+    quarantineUnheldCrmSourceRow(bundle)
+    bundle.release.sourceRuns.dealerMail.metadata.vinQuarantine.stocks = ['WRONG-STOCK']
+    expect(() => validateReleaseBundle(bundle)).toThrow(/VIN-quarantine metadata does not reconcile/)
+  })
+
+  it('rejects an invalid source VIN reintroduced into normalized actions', () => {
+    const injected = completeBundle()
+    const injectedException = quarantineUnheldCrmSourceRow(injected)
+    const source = injected.release.dealerMailSnapshot.completeDealerMailUsedInventory.rows.find(
+      (row) => row.stockNumber === injectedException.stockNumber,
+    )
+    injected.release.vehicles.push({
+      vin: injectedException.sourceVin,
+      publicRecord: null,
+      crmRecord: source,
+      holdRecord: null,
+      cdkRecord: null,
+      resourceRecord: null,
+    })
+    expect(() => validateReleaseBundle(injected)).toThrow(/invalid VIN/)
+  })
+
   it('keeps raw public document evidence in the encrypted snapshot while validating its app projection', () => {
     const bundle = completeBundle()
     const vehicle = bundle.release.vehicles.find((record) => record.publicRecord)

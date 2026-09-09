@@ -7,6 +7,8 @@ import path from 'node:path'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import { validateReleaseBundle } from '../../cloudflare/src/release-validation.mjs'
 import { cloudReleaseFrom } from '../../scripts/publish-cloud-release.mjs'
+import { importRelease, openInventoryDatabase } from '../../server/database.mjs'
+import { createInventoryService } from '../../server/service.mjs'
 import {
   findLatestCompletedManifest,
   hasCompletedManifestEvidence,
@@ -92,7 +94,129 @@ function makeDealerMailSnapshotCloudReady(snapshot) {
   return snapshot
 }
 
+function quarantineUnheldCrmSourceRow(snapshot, sourceVin = 'TESTDATAQWELL0002') {
+  const heldVins = new Set(snapshot.vehicles.map((vehicle) => vehicle.mainRow.vin))
+  const cdkVins = new Set((snapshot.cdkReadOnlyLookup?.records ?? []).map((record) => record.vin))
+  const row = snapshot.completeDealerMailUsedInventory.rows.find(
+    (candidate) => !heldVins.has(candidate.vin) && !cdkVins.has(candidate.vin),
+  )
+  if (!row) throw new Error('Synthetic fixture has no unheld CRM row available for VIN quarantine')
+  const originalVin = row.vin
+  const stockNumber = row.stockNumber
+  row.vin = sourceVin
+  const excluded = snapshot.excludeActiveHoldsValidationSet?.rows?.find(
+    (candidate) => candidate.stockNumber === stockNumber,
+  )
+  if (excluded) excluded.vin = sourceVin
+  snapshot.completeInventorySetValidation.validation.allVinFormatValid = false
+  return { originalVin, sourceVin, stockNumber }
+}
+
 describe('verified daily source importer', () => {
+  it('preserves a bounded source-VIN exception while excluding it from normalized VIN workflows', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const dealerMailPath = path.join(
+        fixture.workspaceRoot,
+        'work',
+        'dealermail',
+        `${fixture.reportDate}.json`,
+      )
+      const snapshot = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
+      makeDealerMailSnapshotCloudReady(snapshot)
+      const exception = quarantineUnheldCrmSourceRow(snapshot)
+      writeFileSync(dealerMailPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8')
+
+      const release = loadLatestCompletedRelease({
+        workspaceRoot: fixture.workspaceRoot,
+        now: new Date(`${fixture.reportDate}T15:00:00-04:00`),
+      })
+
+      expect(release.dealerMailSnapshot.completeDealerMailUsedInventory.rows).toHaveLength(8)
+      expect(release.dealerMailSnapshot.completeDealerMailUsedInventory.rows).toContainEqual(
+        expect.objectContaining({ vin: exception.sourceVin, stockNumber: exception.stockNumber }),
+      )
+      expect(release.sourceRuns.dealerMail).toMatchObject({
+        rowCount: 8,
+        metadata: {
+          vinQuarantine: {
+            count: 1,
+            stocks: [exception.stockNumber],
+            sourceRowCount: 8,
+            vinReconciledRowCount: 7,
+            excludedFromVinWorkflows: true,
+          },
+        },
+      })
+      expect(release.warnings.join(' ')).toContain(exception.stockNumber)
+      expect(release.vehicles.some((vehicle) => vehicle.vin === exception.sourceVin)).toBe(false)
+      expect(release.vehicles.find((vehicle) => vehicle.vin === exception.originalVin)?.crmRecord).toBeNull()
+      expect(release.vehicles.every((vehicle) => /^[A-HJ-NPR-Z0-9]{17}$/.test(vehicle.vin))).toBe(true)
+
+      const cloudCounts = validateReleaseBundle(cloudReleaseFrom(release))
+      expect(cloudCounts).toMatchObject({
+        dealerMailRowCount: 8,
+        dealerMailVinReconciledCount: 7,
+        dealerMailVinReviewCount: 1,
+        dealerMailVinReviewStocks: [exception.stockNumber],
+      })
+
+      const database = openInventoryDatabase()
+      try {
+        importRelease(database, release, { loadedAt: `${fixture.reportDate}T19:00:00.000Z` })
+        const service = createInventoryService({
+          database,
+          now: () => new Date(`${fixture.reportDate}T15:00:00-04:00`),
+        })
+        expect(service.health().counts.crm).toBe(8)
+        expect(service.bootstrap({ role: 'sales', store: 'Howell', user: 'Synthetic Salesperson' }).meta.crmCount).toBe(8)
+      } finally {
+        database.close()
+      }
+    } finally { fixture.cleanup() }
+  })
+
+  it.each(['testdataqwell0002', 'SHORT', 'TEST-DATA-QWELL02'])('rejects a noncanonical CRM source VIN token: %s', (sourceVin) => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const dealerMailPath = path.join(
+        fixture.workspaceRoot,
+        'work',
+        'dealermail',
+        `${fixture.reportDate}.json`,
+      )
+      const snapshot = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
+      makeDealerMailSnapshotCloudReady(snapshot)
+      quarantineUnheldCrmSourceRow(snapshot, sourceVin)
+      writeFileSync(dealerMailPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8')
+
+      expect(() => loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot })).toThrow(
+        /invalid source VIN token/,
+      )
+    } finally { fixture.cleanup() }
+  })
+
+  it('requires the source allVinFormatValid flag to match the quarantine result', () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const dealerMailPath = path.join(
+        fixture.workspaceRoot,
+        'work',
+        'dealermail',
+        `${fixture.reportDate}.json`,
+      )
+      const snapshot = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
+      makeDealerMailSnapshotCloudReady(snapshot)
+      quarantineUnheldCrmSourceRow(snapshot)
+      snapshot.completeInventorySetValidation.validation.allVinFormatValid = true
+      writeFileSync(dealerMailPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8')
+
+      expect(() => loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot })).toThrow(
+        /VIN-format validation does not reconcile/,
+      )
+    } finally { fixture.cleanup() }
+  })
+
   it('normalizes an exact legacy released-history store code without mutating its source file', () => {
     const fixture = createSyntheticWorkspace()
     try {

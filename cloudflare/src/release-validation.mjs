@@ -11,9 +11,10 @@ const STORES = Object.freeze({
 })
 const STORE_NAMES = Object.keys(STORES)
 const VIN = /^[A-HJ-NPR-Z0-9]{17}$/
+const SOURCE_VIN_TOKEN = /^[A-Z0-9]{17}$/
 const HASH = /^[a-f0-9]{64}$/i
 const MAX_ROWS = 20000
-const CHECKS = ['differenceVinEqualsFlaggedHolds', 'differenceStockEqualsFlaggedHolds', 'allSourceCellCounts22', 'allVinFormatValid', 'allStockNonblank', 'allStoreCodesExpected', 'setEquationValid']
+const CHECKS = ['differenceVinEqualsFlaggedHolds', 'differenceStockEqualsFlaggedHolds', 'allSourceCellCounts22', 'allStockNonblank', 'allStoreCodesExpected', 'setEquationValid']
 const RESOURCE_SCHEMA = 'inventory-flow-vin-document-enrichment-v1'
 const RESOURCE_DATA_STATES = new Set(['current', 'stale_unverified', 'incomplete'])
 const CAI_FACTORY_EQUIPMENT_PATH = /^\/window-stickers\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jpg$/i
@@ -51,6 +52,11 @@ function normalizedVin(value) {
   const vin = String(value ?? '').trim().toUpperCase()
   ensure(VIN.test(vin), 'invalid VIN')
   return vin
+}
+
+function sourceVinToken(value) {
+  ensure(typeof value === 'string' && SOURCE_VIN_TOKEN.test(value), 'invalid source VIN token')
+  return value
 }
 
 function stock(value) {
@@ -345,23 +351,27 @@ function validatePublic(snapshot, run, manifest, reportDate) {
 
 function crmRows(value, label) {
   const records = rows(value, label)
+  const bySourceVin = new Map()
   const byVin = new Map()
   const stocks = new Set()
+  const quarantinedByStock = new Map()
   for (const record of records) {
     ensure(object(record), `${label} record is invalid`)
-    const vin = normalizedVin(record.vin)
+    const sourceVin = sourceVinToken(record.vin)
     const stockNumber = stock(record.stockNumber)
-    ensure(!byVin.has(vin) && !stocks.has(stockNumber), `${label} contains duplicate VIN/stock`)
+    ensure(!bySourceVin.has(sourceVin) && !stocks.has(stockNumber), `${label} contains duplicate source VIN/stock`)
     ensure(Object.hasOwn(STORES, record.storeName) && STORES[record.storeName].code === record.storeCode, `${label} store/code mismatch`)
     ensure(integer(record.sourceCellCount, 'CRM cell count') === 22 && Array.isArray(record.rawCellInnerText) && record.rawCellInnerText.length === 22 && Array.isArray(record.rawCellControlValues) && record.rawCellControlValues.length === 22, `${label} must preserve both 22-cell arrays`)
-    byVin.set(vin, record)
+    bySourceVin.set(sourceVin, record)
     stocks.add(stockNumber)
+    if (VIN.test(sourceVin)) byVin.set(sourceVin, record)
+    else quarantinedByStock.set(stockNumber, record)
   }
-  return { records, byVin, stocks, counts: storeCounts(records, 'storeName') }
+  return { records, bySourceVin, byVin, stocks, quarantinedByStock, counts: storeCounts(records, 'storeName') }
 }
 
 function validateCrmSummary(summary, parsed, label) {
-  ensure(object(summary) && integer(summary.totalRows, `${label} count`) === parsed.records.length && integer(summary.uniqueVinCount, `${label} VIN count`) === parsed.byVin.size && integer(summary.uniqueStockCount, `${label} stock count`) === parsed.stocks.size, `${label} summary does not reconcile`)
+  ensure(object(summary) && integer(summary.totalRows, `${label} count`) === parsed.records.length && integer(summary.uniqueVinCount, `${label} source-VIN count`) === parsed.bySourceVin.size && integer(summary.uniqueStockCount, `${label} stock count`) === parsed.stocks.size, `${label} summary does not reconcile`)
   matchOptionalCounts(summary.byStore, parsed.counts, `${label} store totals`)
 }
 
@@ -383,12 +393,26 @@ function validateDealerMail(snapshot, run, manifest, reportDate) {
   }
   ensure(included.records.length > 0 && integer(run.rowCount, 'CRM run count') === included.records.length && integer(manifest.source_counts.dealermail_used_rows, 'manifest CRM count') === included.records.length, 'CRM count does not reconcile')
   validateCrmSummary(inventory.summary, included, 'complete CRM')
+  const quarantine = run.metadata?.vinQuarantine
+  if (quarantine !== undefined || included.quarantinedByStock.size > 0) {
+    ensure(object(quarantine), 'CRM VIN-quarantine metadata is missing')
+    const quarantineStocks = [...included.quarantinedByStock.keys()].sort()
+    ensure(
+      strictInteger(quarantine.count, 'CRM VIN-quarantine count') === quarantineStocks.length &&
+        strictInteger(quarantine.sourceRowCount, 'CRM source row count') === included.records.length &&
+        strictInteger(quarantine.vinReconciledRowCount, 'CRM VIN-reconciled count') === included.byVin.size &&
+        quarantine.excludedFromVinWorkflows === true &&
+        Array.isArray(quarantine.stocks) &&
+        sameValue(quarantine.stocks, quarantineStocks),
+      'CRM VIN-quarantine metadata does not reconcile',
+    )
+  }
   const excludeSource = snapshot.excludeActiveHoldsValidationSet
   ensure(object(excludeSource) && excludeSource.readOnly === true, 'exclude-holds control evidence is missing')
   const excluded = crmRows(excludeSource.rows, 'exclude-holds CRM')
   validateCrmSummary(excludeSource.summary, excluded, 'exclude-holds CRM')
-  for (const [vin, record] of excluded.byVin) {
-    const original = included.byVin.get(vin)
+  for (const [sourceVin, record] of excluded.bySourceVin) {
+    const original = included.bySourceVin.get(sourceVin)
     ensure(original && stock(original.stockNumber) === stock(record.stockNumber) && original.storeName === record.storeName && original.storeCode === record.storeCode, 'exclude-holds VIN/stock/store does not match complete inventory')
   }
 
@@ -424,7 +448,7 @@ function validateDealerMail(snapshot, run, manifest, reportDate) {
     if (String(vehicle.mainRow.alertsFlag).toUpperCase() === 'Y') ensure(vehicle.alerts.some((alert) => typeof alert.alertTextRaw === 'string' && alert.alertTextRaw.trim()), 'flagged hold alert is missing')
     held.set(vin, vehicle)
   }
-  const difference = new Set([...included.byVin.keys()].filter((vin) => !excluded.byVin.has(vin)))
+  const difference = new Set([...included.bySourceVin.keys()].filter((vin) => !excluded.bySourceVin.has(vin)))
   if (snapshot.releasedHoldHistory !== undefined) {
     const seenHistory = new Set()
     const seenStocks = new Set()
@@ -465,6 +489,10 @@ function validateDealerMail(snapshot, run, manifest, reportDate) {
   ensure(integer(manifest.source_counts.active_held_vins, 'manifest held count') === held.size, 'manifest held count differs')
   const validation = snapshot.completeInventorySetValidation?.validation
   ensure(object(validation) && CHECKS.every((key) => validation[key] === true), 'CRM set validation did not pass')
+  ensure(
+    validation.allVinFormatValid === (included.quarantinedByStock.size === 0),
+    'CRM VIN-format validation does not reconcile with quarantined source rows',
+  )
   const differenceRows = rows(snapshot.completeInventorySetValidation.activeHoldDifferenceRows, 'held difference')
   ensure(differenceRows.length === held.size && sameSet(new Set(differenceRows.map((row) => normalizedVin(row.vin))), new Set(held.keys())), 'recorded hold difference set differs')
   for (const row of differenceRows) {
@@ -521,7 +549,10 @@ export function validateReleaseBundle(bundle) {
   return {
     reportDate: bundle.reportDate,
     publicRowCount: publicData.byVin.size,
-    dealerMailRowCount: crm.byVin.size,
+    dealerMailRowCount: crm.records.length,
+    dealerMailVinReconciledCount: crm.byVin.size,
+    dealerMailVinReviewCount: crm.quarantinedByStock.size,
+    dealerMailVinReviewStocks: [...crm.quarantinedByStock.keys()].sort(),
     heldVinCount: crm.held.size,
     activeHoldRecordCount: crm.counters.activeHoldDetailRows,
     backupCount: crm.counters.activeBackupHolds,
