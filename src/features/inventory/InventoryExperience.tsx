@@ -149,6 +149,7 @@ function SortComposer({
         onClick={() => disclosure.setOpen((open) => !open)}
       >
         <ListFilter size={16} strokeWidth={1.8} aria-hidden="true" />
+        <span className="inventory-sort-composer__mobile-label" aria-hidden="true">Sort</span>
         <span>
           <small>Sort inventory</small>
           <strong>{SORT_LABELS[sorts[0]?.key ?? DEFAULT_INVENTORY_SORTS[0].key]}</strong>

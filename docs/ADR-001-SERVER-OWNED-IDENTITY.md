@@ -1,25 +1,31 @@
 # ADR-001: Server-owned identity boundary
 
-**Status:** Accepted for prototype hardening; real dealership SSO integration remains required  
-**Date:** 2026-09-01  
-**Deciders:** Inventory Flow product owner and deployment/security owner
+- **Status:** Amended for the deployed Cloudflare Access architecture
+- **Date:** 2026-09-01
+- **Amended:** 2026-09-09
+- **Deciders:** Inventory Flow product owner and deployment/security owner
+- **Operational authority:** [Private Cloudflare application runbook](CLOUDFLARE_PRIVATE_RELEASE_RUNBOOK.md)
 
 ## Context
 
 Inventory Flow authorizes access to customer-sensitive hold evidence and operational actions by employee, role, and Home Store. The prototype previously accepted those values from ordinary browser headers and bootstrap query parameters. That was useful for role previews, but a browser could claim a manager role or a different store. Payload checks prevented some actor spoofing, yet the context used by those checks was itself untrusted.
 
-The local synthetic demo must stay easy to run on Windows and macOS. The repository must not embed dealership credentials, select an identity provider prematurely, or expose service secrets to browser JavaScript. A production process must not start in an unsafe fallback mode.
+The local synthetic demo must stay easy to run on Windows and macOS. The repository must not embed dealership credentials or expose service secrets to browser JavaScript. Production must fail closed and must not trust browser-selected identities, roles, stores, or ordinary request headers.
+
+The deployed application now runs directly on Cloudflare Workers behind Cloudflare Access. This amendment supersedes the prototype-only trusted-proxy and shared-secret production design below. It does not assert that any particular Access identity provider or broader employee policy is enabled; those settings are external deployment state and must be verified in Cloudflare Zero Trust.
 
 ## Decision
 
-Use two explicit server identity modes:
+Use separate, explicit identity boundaries for local demonstration and deployed production:
 
-1. `demo` is the non-production default. It accepts clearly named `x-inventory-demo-*` headers (plus the legacy local aliases during migration) and bootstrap preview parameters. `NODE_ENV=production` rejects this mode during startup.
-2. `trusted_proxy` is the only production mode. It requires a server-side secret of at least 32 characters and accepts only `x-inventory-authenticated-user`, `x-inventory-authenticated-role`, and `x-inventory-authenticated-store` when the upstream also supplies the matching secret. Query parameters and browser demo/legacy headers do not affect authorization.
+1. `demo` remains non-production only. It uses synthetic or explicitly authorized local data and clearly identified preview identity controls. Production must never fall back to demo identity.
+2. Cloudflare Access is the deployed employee authentication boundary. Access performs the interactive identity-provider flow. For every protected request, the Worker independently verifies the `cf-access-jwt-assertion` signature, issuer, employee-application audience, algorithm, expiry, issued-at time, and required claims against the Access public key set.
+3. A valid Access token is necessary but not sufficient. The Worker accepts an employee only when the token has an email claim and that normalized email exactly matches one enabled `cloud_memberships` row in D1. The D1 row—not browser input or identity-provider role claims—supplies the application user ID, display name, role, and Home Store.
+4. Service-token identities are rejected from employee routes. The release publisher uses a separate Access audience plus an additional purpose-scoped Worker secret and cannot use the employee application route.
 
-The API resolves identity for every protected request. The workflow service rejects missing or invalid context rather than silently defaulting to Sales/Howell. Bootstrap returns the canonical server access context so the UI can align its display with the authenticated identity. The browser API client removes actor, actor-role, store, requester, and requesting-store fields from write payloads; the server continues rejecting conflicting fields sent by another client.
+User-supplied role/store headers and write-payload actor fields do not grant authority. The API resolves canonical identity for every protected request, and the workflow service rejects missing, invalid, disabled, or unmapped identities rather than defaulting to Sales/Howell.
 
-`GET /api/health` remains unauthenticated for process health checks and returns no protected data.
+Google or another approved sign-in option belongs in the existing Cloudflare Access application. Enabling an Access identity provider does not require a second OAuth implementation in the React client, but every permitted employee still requires both an approved Access policy decision and a matching enabled D1 membership. Recreating the Access application changes its audience and therefore requires a coordinated Worker configuration change; adding a provider to the existing application avoids that unnecessary break.
 
 ## Options Considered
 
@@ -35,17 +41,18 @@ The API resolves identity for every protected request. The workflow service reje
 **Pros:** Simple and already implemented.  
 **Cons:** Any caller can impersonate a manager or another store; audit actors are not trustworthy.
 
-### Option B: Trusted authenticated upstream with a server-to-server secret (chosen)
+### Option B: Trusted authenticated upstream with a shared secret (superseded prototype design)
 
 | Dimension | Assessment |
 |---|---|
 | Complexity | Medium |
-| Security | Strong boundary when the backend is private and the gateway strips/replaces headers |
+| Security | Depended on private routing, correct header stripping, and shared-secret handling |
 | Demo usability | Preserved through isolated demo mode |
 | Operations | Requires gateway configuration and secret rotation |
 
-**Pros:** Provider-neutral, no browser secret, fail-closed startup, canonical server identity, compatible with Entra ID/Okta/another dealership-approved provider.  
-**Cons:** The shared secret authenticates the gateway—not the employee. Correct edge isolation, header stripping, group mapping, and identity-provider configuration are still mandatory.
+**Pros:** Provider-neutral and removed direct trust from browser-selected roles.
+
+**Cons:** The shared secret authenticated a gateway rather than the employee and required a private origin plus perfect header replacement. The deployed Worker no longer uses this as its production trust boundary.
 
 ### Option C: Implement OIDC sessions directly in Inventory Flow now
 
@@ -57,41 +64,55 @@ The API resolves identity for every protected request. The workflow service reje
 | Operations | Requires provider registration, redirects, cookies, keys, and session lifecycle |
 
 **Pros:** End-to-end identity can be owned by the application.  
-**Cons:** No dealership provider, tenant, claims, group rules, or deployment host has been approved; inventing those details would create false assurance.
+**Cons:** Duplicates session, redirect, cookie, key-rotation, and logout responsibilities already supplied by Cloudflare Access.
+
+### Option D: Cloudflare Access assertion plus exact D1 membership (chosen for the deployed app)
+
+| Dimension | Assessment |
+|---|---|
+| Complexity | Medium |
+| Security | Signed edge identity plus an independent application authorization lookup |
+| Demo usability | Preserved through isolated local demo mode |
+| Operations | Requires stable Access audiences, explicit Access policy, and managed D1 membership |
+
+**Pros:** No browser-owned authorization, no application OAuth secret, independent JWT verification in the Worker, application roles remain server-owned, and employee revocation can be enforced in both Access and D1.
+
+**Cons:** Access policy and identity-provider settings live outside the repository and therefore require separate operational verification. A token for the wrong Access application or an employee without an enabled D1 row is correctly denied.
 
 ## Trade-off Analysis
 
-The chosen boundary removes trust from browser-controlled values without pretending a full SSO system exists. Its security depends on deployment topology: the application backend must not be directly reachable, the gateway must delete incoming identity/secret headers before adding its own, TLS must terminate within the trusted boundary, and both services must receive the secret from managed secret storage. The secret should be rotated and never compiled into Vite assets.
+The chosen boundary removes trust from browser-controlled identity and authorization values without adding a second application-managed login system. Security depends on retaining the existing Access protection, stable and separate employee/publisher audiences, strict Worker JWT verification, explicit Access policy, least-privilege D1 membership, and managed Worker secrets. None of these values may be compiled into Vite assets.
 
 The demo remains intentionally insecure and visibly separate. It is appropriate only on loopback/local contributor machines with synthetic or authorized local data.
 
 ## Consequences
 
-- Production startup fails instead of falling back to a prototype identity.
-- Roles, stores, and audit actors come from the server-resolved context.
+- Production requests fail closed instead of falling back to a prototype identity.
+- Access supplies authenticated employee identity; enabled D1 membership supplies application user, role, and Home Store.
 - Client role previews cannot elevate production authorization.
-- Deployment needs a trusted gateway and managed secret before it can run.
+- Adding Google or another identity provider is an Access configuration change, not a React authentication feature.
+- An Access allow decision without a matching enabled membership remains unauthorized.
+- Employee and release-publisher audiences remain separate.
 - Independent Home Store approval still requires an authenticated Home Store manager action in the workflow if the business elects to add that stronger two-party control.
-- Existing UI code may continue to construct legacy identity fields temporarily because the API client strips them and the server rejects conflicts, but removing those component-level placeholders remains cleanup work.
 
-## Remaining SSO Integration Step
+## Remaining Access rollout checks
 
-Before production use, the deployment owner must connect the approved dealership identity provider to the trusted upstream and document/test:
+Before expanding beyond the current pilot, the deployment owner must verify and document:
 
-1. employee sign-in, logout, session expiry, and disabled-account behavior;
-2. authoritative mapping from provider subject/group claims to Inventory Flow user, role, and Home Store;
-3. rejection of employees without an allowed role/store;
-4. edge removal of all inbound `x-inventory-*` headers before trusted values are injected;
-5. private network access from the gateway to Inventory Flow, with no direct public backend route;
-6. secret generation, storage, rotation, and incident revocation;
-7. audit-log retention for identity, action, store, timestamp, and request correlation;
-8. tests for cross-store access, manager-only actions, transport roles, and terminated users.
+1. sign-in, logout, session expiry, and identity-provider recovery behavior on desktop and mobile;
+2. the intended Google or other approved Access identity provider is enabled on the existing employee Access application;
+3. Access policy allows only approved employee identities and denies identities outside the pilot;
+4. every employee has exactly one enabled D1 membership with the correct least-privilege role and Home Store;
+5. disabled, removed, unmapped, wrong-audience, expired, malformed, and service-token identities are rejected;
+6. cross-store access, manager-only actions, transport restrictions, and terminated-user revocation work as documented;
+7. employee and publisher audience/key rotation, incident revocation, and recovery procedures are exercised;
+8. audit retention and alerting cover identity, action, store, timestamp, and request correlation without logging sensitive payloads.
 
 ## Action Items
 
-1. [x] Add fail-closed production configuration and trusted-proxy identity resolution.
-2. [x] Return canonical access context and strip client identity fields from normal writes.
-3. [x] Add focused configuration, spoofing, and persistence tests.
-4. [ ] Select and configure the approved dealership identity provider and gateway.
-5. [ ] Put the backend on a private route and verify header stripping with an external penetration test.
-6. [ ] Add provider-specific integration tests and production audit monitoring.
+1. [x] Protect the employee hostname with Cloudflare Access and disable alternate Workers.dev/preview entry points.
+2. [x] Independently verify Access JWT issuer, audience, signature, algorithm, time, and required claims in the Worker.
+3. [x] Resolve canonical employee authorization through enabled exact-email D1 membership and reject service-token identities.
+4. [x] Separate employee and release-publisher audiences and privileges.
+5. [ ] Verify the chosen Access identity provider and policy in live Cloudflare state; repository files cannot prove this configuration.
+6. [ ] Complete the broader employee, role/store, revocation, accessibility, and recovery acceptance checks in the operational runbook.

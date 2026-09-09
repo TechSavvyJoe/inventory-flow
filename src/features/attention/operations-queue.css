@@ -61,6 +61,14 @@
   cursor: pointer;
 }
 
+.ops-scope-switch button > span {
+  position: relative;
+  z-index: 1;
+  display: block;
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
+
 .ops-scope-switch button.is-active {
   color: var(--ops-blue-dark);
   background: var(--ops-surface);
@@ -1069,6 +1077,14 @@
 
   .ops-scope-switch button {
     flex: 1 1 50%;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .ops-scope-switch button.is-active {
+    color: var(--ops-surface);
+    background: var(--ops-blue-dark);
+    box-shadow: none;
   }
 
   .ops-queue-tabs {
@@ -1176,5 +1192,25 @@
 @media (prefers-reduced-motion: reduce) {
   .ops-row {
     transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .ops-scope-switch {
+    border-color: ButtonText;
+    background: Canvas;
+  }
+
+  .ops-scope-switch button {
+    color: ButtonText;
+    background: Canvas;
+    box-shadow: none;
+  }
+
+  .ops-scope-switch button.is-active {
+    color: HighlightText;
+    background: Highlight;
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
   }
 }

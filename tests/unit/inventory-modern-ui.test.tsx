@@ -175,7 +175,11 @@ describe('manager-friendly inventory UI', () => {
     }
     expect(openSpy).toHaveBeenCalledTimes(expectedActions.length)
     for (const call of openSpy.mock.calls) {
-      expect(call).toEqual([dealerMailVehicleUrl(availableVehicle.stockNumber), '_blank'])
+      expect(call).toEqual([
+        dealerMailVehicleUrl(availableVehicle.stockNumber),
+        '_blank',
+        'noopener,noreferrer',
+      ])
     }
     expect(openSpy.mock.calls.flat().join(' ')).toContain('selectedStore=26,25,27,95')
     expect(openSpy.mock.calls.flat().join(' ')).not.toContain('byItem=')
@@ -239,7 +243,11 @@ describe('manager-friendly inventory UI', () => {
     expect(screen.getByRole('button', { name: 'Full record' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Review / Remove Hold in DealerMail' }))
-    expect(openSpy).toHaveBeenCalledWith(dealerMailVehicleUrl(heldVehicle.stockNumber), '_blank')
+    expect(openSpy).toHaveBeenCalledWith(
+      dealerMailVehicleUrl(heldVehicle.stockNumber),
+      '_blank',
+      'noopener,noreferrer',
+    )
     expect(openSpy.mock.calls.flat().join(' ')).toContain('selectedStore=26,25,27,95')
     expect(openSpy.mock.calls.flat().join(' ')).not.toContain('byItem=')
     expect(openSpy.mock.calls.flat().join(' ')).not.toContain('V2_inventory_USED_hold_edit.asp')

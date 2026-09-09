@@ -1,0 +1,1820 @@
+/* Vehicle workspace V10 ----------------------------------------------------
+   The workspace is portaled to document.body, outside #root. Keep this layer
+   feature-local and deliberately more specific than legacy/global VDP rules. */
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 {
+  --v10-ink: var(--ifx-neutral-900);
+  --v10-ink-strong: var(--ifx-neutral-950);
+  --v10-support: var(--ifx-neutral-700);
+  --v10-muted: var(--ifx-neutral-600);
+  --v10-blue: var(--store-accent, var(--ifx-info));
+  --v10-blue-strong: var(--store-accent-strong, var(--ifx-oem-accent-strong));
+  --v10-border: var(--ifx-neutral-300);
+  --v10-border-soft: var(--ifx-neutral-200);
+  --v10-surface: var(--ifx-neutral-0);
+  --v10-surface-subtle: var(--ifx-neutral-50);
+  --v10-warning: var(--ifx-warning);
+  color: var(--v10-ink);
+  background: var(--ifx-neutral-100);
+  font-family: var(--font-app, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 :is(button, a, summary) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 :is(button, a, summary):focus-visible {
+  outline: 3px solid var(--ifx-info);
+  outline-offset: 2px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-topbar {
+  min-height: 48px;
+  padding: 4px 8px 4px 16px;
+  border-bottom: 1px solid var(--v10-border);
+  color: var(--v10-support);
+  background: var(--v10-surface);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-topbar > span {
+  color: var(--v10-support);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 17px;
+  letter-spacing: .025em;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-topbar > span b {
+  color: var(--v10-ink);
+  font-weight: 700;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-close {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-scroll--dense {
+  min-height: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  background: var(--ifx-neutral-100);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-scroll--dense > * {
+  flex: 0 0 auto;
+}
+
+/* Navigation is a stable frame, not a floating set of pills. */
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-navigation {
+  position: sticky;
+  z-index: 35;
+  top: 0;
+  order: 0;
+  min-width: 0;
+  min-height: 47px;
+  border-bottom: 1px solid var(--v10-border);
+  background: color-mix(in srgb, var(--ifx-neutral-0) 98%, transparent);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tabs--dense {
+  min-height: 47px;
+  gap: 0;
+  padding: 0 14px;
+  overflow-x: auto;
+  border: 0;
+  background: transparent;
+  scrollbar-width: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tabs--dense::-webkit-scrollbar {
+  display: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tabs--dense button {
+  min-width: max-content;
+  min-height: 47px;
+  padding: 0 15px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  color: var(--v10-support);
+  background: transparent;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 18px;
+  letter-spacing: 0;
+  box-shadow: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tabs--dense button:hover {
+  color: var(--v10-ink-strong);
+  background: var(--v10-surface-subtle);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tabs--dense button[aria-selected="true"] {
+  border-bottom-color: var(--v10-blue);
+  color: var(--v10-blue-strong);
+  background: var(--ifx-neutral-0);
+  font-weight: 700 !important;
+  box-shadow: none;
+}
+
+/* Hero: content sets the height. No fixed row can crop operational state. */
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero {
+  order: 1;
+  min-height: 0;
+  max-height: none;
+  height: auto;
+  grid-template-columns: 286px minmax(0, 1fr);
+  overflow: visible !important;
+  border-bottom: 1px solid var(--v10-border);
+  background: var(--v10-surface);
+  box-shadow: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-gallery--cinematic {
+  min-height: 0;
+  padding: 10px;
+  border-right: 1px solid var(--v10-border);
+  background: var(--ifx-oem-scene-deep);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-gallery--cinematic .inventory-workspace-gallery__stage {
+  height: 184px;
+  min-height: 184px;
+  border: 1px solid color-mix(in srgb, var(--ifx-neutral-0) 20%, transparent);
+  border-radius: 7px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-gallery--cinematic .inventory-workspace-gallery__thumbnails button {
+  width: 46px;
+  height: 34px;
+  flex-basis: 46px;
+  border-radius: 5px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary {
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  grid-template-rows: auto auto;
+  overflow: visible;
+  background: var(--v10-surface);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary .inventory-workspace-identity {
+  min-height: 122px;
+  padding: 13px 16px 11px;
+  overflow: visible;
+  border-bottom: 1px solid var(--v10-border-soft);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-identity__title {
+  padding-right: 92px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-identity__title p,
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-identity__copy-values,
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-identity__listed-date {
+  color: var(--v10-support);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 17px;
+  letter-spacing: 0;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary .inventory-workspace-identity__title h2 {
+  max-width: 100%;
+  margin-top: 1px;
+  color: var(--v10-ink-strong);
+  font-size: clamp(23px, 2.2vw, 28px);
+  font-weight: 700;
+  line-height: 1.13;
+  letter-spacing: -.027em;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-certified {
+  top: 13px;
+  right: 16px;
+  min-height: 27px;
+  padding-inline: 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary .inventory-workspace-identity__numbers {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin-top: 9px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary .inventory-workspace-identity__numbers .inventory-workspace-fact {
+  min-width: 0;
+  min-height: 44px;
+  justify-content: center;
+  padding: 4px 12px;
+  border: 0;
+  border-left: 1px solid var(--v10-border-soft);
+  background: transparent;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary .inventory-workspace-identity__numbers .inventory-workspace-fact:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-identity__numbers dt {
+  color: var(--v10-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 15px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-identity__numbers dd,
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-identity__numbers .inventory-workspace-fact--emphasized dd {
+  overflow: visible;
+  color: var(--v10-ink-strong);
+  font-size: 14px !important;
+  font-weight: 700;
+  line-height: 19px;
+  white-space: normal;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__operations {
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto !important;
+  gap: 0;
+  overflow: visible;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__operations .inventory-workspace-signal-grid--primary {
+  min-width: 0;
+  min-height: 80px;
+  height: auto;
+  grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, 1fr));
+  gap: 0;
+  padding: 7px 12px;
+  overflow: visible;
+  border: 0;
+  background: var(--v10-surface-subtle);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__operations .inventory-workspace-signal {
+  min-width: 0;
+  min-height: 66px;
+  height: auto;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-content: start;
+  gap: 7px;
+  padding: 7px 11px;
+  overflow: visible;
+  border: 0;
+  border-left: 1px solid var(--v10-border);
+  border-radius: 0;
+  color: var(--v10-ink);
+  background: transparent;
+  box-shadow: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__operations .inventory-workspace-signal:first-child {
+  border-left: 0;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__operations .inventory-workspace-signal:hover {
+  background: var(--ifx-neutral-100);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__operations .inventory-workspace-signal__icon {
+  width: 22px;
+  height: 22px;
+  color: var(--ifx-neutral-600);
+  background: transparent;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__operations .inventory-workspace-signal small {
+  color: var(--v10-support);
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 15px !important;
+  letter-spacing: .01em;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__operations .inventory-workspace-signal strong {
+  display: block;
+  overflow: visible;
+  color: var(--v10-ink-strong);
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  line-height: 18px !important;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__operations .inventory-workspace-signal em {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 1px;
+  color: var(--v10-support);
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  font-style: normal;
+  line-height: 16px !important;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2 !important;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-v3-toolbar {
+  min-width: 0;
+  min-height: 50px;
+  height: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  overflow: visible;
+  border-top: 1px solid var(--v10-border);
+  background: var(--v10-surface);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-v3-toolbar :is(.inventory-button, .inventory-workspace-v3-more > summary) {
+  min-width: max-content;
+  min-height: 38px !important;
+  padding: 0 12px;
+  border: 1px solid var(--ifx-neutral-300);
+  border-radius: 7px;
+  color: var(--ifx-neutral-800);
+  background: var(--ifx-neutral-0);
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  line-height: 18px;
+  box-shadow: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-v3-toolbar .inventory-button--primary {
+  border-color: var(--v10-blue) !important;
+  color: var(--ifx-neutral-0) !important;
+  background: var(--v10-blue) !important;
+  box-shadow: var(--ifx-elevation-action) !important;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-v3-toolbar :is(.inventory-button, .inventory-workspace-v3-more > summary):hover {
+  border-color: var(--ifx-neutral-400);
+  color: var(--ifx-info);
+  background: var(--ifx-neutral-50);
+}
+
+/* Panel rhythm and readable working copy. */
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tab-panels {
+  order: 4;
+  min-width: 0;
+  margin: 12px 14px 18px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-panel {
+  overflow: visible;
+  border: 1px solid var(--v10-border);
+  border-radius: 9px;
+  background: var(--v10-surface);
+  box-shadow: var(--ifx-elevation-1);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-panel__body {
+  min-width: 0;
+  padding: 14px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-panel--overview > .inventory-workspace-panel__body {
+  padding: 0;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-section-heading h3,
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-panel h3 {
+  color: var(--v10-ink-strong);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 20px;
+  letter-spacing: -.01em;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 :is(
+  .inventory-workspace-section-note,
+  .inventory-overview-description,
+  .inventory-overview-description p,
+  .inventory-availability-note,
+  .inventory-source-card p,
+  .inventory-workspace-empty p
+) {
+  color: var(--v10-support);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-v3-overview {
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 14px;
+}
+
+/* Equipment: a calm source-backed ledger, not a rainbow masonry wall. */
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-layout {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 170px;
+  gap: 16px;
+  align-items: start;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence,
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-specs {
+  min-width: 0;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-specs {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__header {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 0 11px;
+  border-bottom: 1px solid var(--v10-border);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__header > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__header > span > svg {
+  flex: 0 0 auto;
+  color: var(--v10-blue);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__header > span > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__header strong {
+  color: var(--v10-ink-strong);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 22px;
+  letter-spacing: -.012em;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__header small {
+  color: var(--v10-support);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 17px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-source-summary {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  margin: 12px 0;
+  padding: 9px 12px;
+  border: 1px solid var(--ifx-neutral-300);
+  border-left: 3px solid var(--v10-blue);
+  border-radius: 6px;
+  background: var(--ifx-info-surface);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-source-summary > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-source-summary strong {
+  color: var(--ifx-neutral-800);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-source-summary small {
+  color: var(--v10-support);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 17px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-factory-configuration--v10 {
+  margin: 0 0 14px;
+  overflow: hidden;
+  border: 1px solid var(--v10-border);
+  border-radius: 8px;
+  background: var(--v10-surface);
+  box-shadow: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-factory-configuration--v10 > header {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--v10-border-soft);
+  background: var(--v10-surface-subtle);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-factory-configuration--v10 > header h4 {
+  margin: 0;
+  color: var(--v10-ink-strong);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 19px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-factory-configuration--v10 > header small {
+  display: block;
+  margin-top: 1px;
+  color: var(--v10-support);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-factory-configuration--v10 > dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 0 12px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-configuration-fact {
+  min-width: 0;
+  min-height: 62px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 9px 12px 9px 0;
+  border-bottom: 1px solid var(--v10-border-soft);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-configuration-fact:nth-child(even) {
+  padding-right: 0;
+  padding-left: 12px;
+  border-left: 1px solid var(--v10-border-soft);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-configuration-fact dt {
+  color: var(--v10-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 15px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-configuration-fact dt small {
+  display: block;
+  color: var(--ifx-neutral-500);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 14px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-configuration-fact dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--v10-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+  columns: auto;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  break-inside: auto;
+  border: 1px solid var(--v10-border);
+  border-left: 1px solid var(--v10-border);
+  border-radius: 8px;
+  background: var(--v10-surface);
+  box-shadow: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > header {
+  min-height: 51px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--v10-border-soft);
+  background: var(--v10-surface-subtle);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > header .inventory-workspace-equipment-group__title {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--v10-blue-strong);
+  background: transparent;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group__title > svg {
+  flex: 0 0 auto;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group__title > span {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > header h4 {
+  margin: 0;
+  color: var(--v10-ink-strong);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+  letter-spacing: 0;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group__title small {
+  color: var(--v10-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 15px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > header > b {
+  min-width: 25px;
+  min-height: 25px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--ifx-neutral-300);
+  border-radius: 5px;
+  color: var(--ifx-neutral-700);
+  background: var(--ifx-neutral-0);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > ul {
+  display: block;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > ul > li {
+  min-width: 0;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  border: 0;
+  border-bottom: 1px solid var(--v10-border-soft);
+  border-radius: 0;
+  color: var(--v10-ink);
+  background: var(--v10-surface);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > ul > li[hidden] {
+  display: none !important;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-item__copy {
+  min-width: 0;
+  display: grid;
+  grid-column: auto;
+  gap: 2px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group li strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--v10-ink-strong);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: 0;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-item-source {
+  display: block;
+  max-width: none;
+  overflow: visible;
+  color: var(--v10-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-item__value {
+  align-self: start;
+  padding-top: 1px;
+  color: var(--ifx-neutral-700);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 17px;
+  white-space: nowrap;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group__toggle {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 0;
+  color: var(--v10-blue-strong);
+  background: var(--ifx-neutral-25);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 17px;
+  cursor: pointer;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group__toggle:hover {
+  background: var(--ifx-info-surface);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group__toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__method {
+  margin: 14px 0 0;
+  border-top: 1px solid var(--v10-border);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__method > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 2px;
+  color: var(--v10-support);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 17px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__method > summary::-webkit-details-marker {
+  display: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__method > summary svg:last-child {
+  margin-left: auto;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__method[open] > summary svg:last-child {
+  transform: rotate(180deg);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__note {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--v10-support);
+  background: var(--v10-surface-subtle);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 14px;
+  margin: 0;
+  padding: 9px 12px 11px;
+  border-top: 1px solid var(--v10-border-soft);
+  color: var(--v10-support);
+  background: var(--v10-surface-subtle);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__sources > span {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--v10-support);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: normal;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 {
+  position: sticky;
+  top: 60px;
+  overflow: hidden;
+  border: 1px solid var(--v10-border);
+  border-radius: 8px;
+  background: var(--ifx-neutral-0);
+  box-shadow: none;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 > header {
+  min-height: 53px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--v10-border-soft);
+  background: var(--v10-surface-subtle);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 > header strong {
+  color: var(--v10-ink-strong);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 > header small {
+  color: var(--v10-muted);
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 > div {
+  display: grid;
+  padding: 4px;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 button {
+  min-width: 0;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 7px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--ifx-neutral-700);
+  background: var(--ifx-neutral-0);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 button:hover {
+  color: var(--v10-blue-strong);
+  background: var(--ifx-info-surface);
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 button b {
+  min-width: 22px;
+  color: var(--v10-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 > p {
+  margin: 0;
+  padding: 9px 10px;
+  border-top: 1px solid var(--v10-border-soft);
+  color: var(--v10-muted);
+  font-size: 12px;
+  line-height: 15px;
+}
+
+@media (min-width: 1181px) {
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 {
+    width: min(1240px, calc(100vw - 184px)) !important;
+    max-width: min(1240px, calc(100vw - 184px)) !important;
+  }
+}
+
+@media (min-width: 881px) and (max-width: 1180px) {
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 {
+    width: calc(100vw - 64px) !important;
+    max-width: none !important;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero {
+    grid-template-columns: 250px minmax(0, 1fr);
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-layout {
+    grid-template-columns: minmax(0, 1fr) 154px;
+    gap: 12px;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 980px) {
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__groups {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-v3-overview {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+}
+
+@media (max-width: 880px) {
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 {
+    width: 100vw !important;
+    max-width: none !important;
+    border-radius: 0;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-scroll--dense {
+    scrollbar-gutter: auto;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence,
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-specs {
+    width: 100%;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-specs {
+    order: -1;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 {
+    position: static;
+    overflow: visible;
+    border-radius: 7px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 > header {
+    min-height: 46px;
+    padding: 7px 10px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 > div {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 5px;
+    scrollbar-width: thin;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 button {
+    min-width: max-content;
+    min-height: 42px;
+    grid-template-columns: auto auto;
+    flex: 0 0 auto;
+    padding: 7px 9px;
+    border: 1px solid var(--v10-border-soft);
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 > p {
+    display: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 {
+    --mobile-edge: 14px;
+    color: var(--v10-ink);
+    background: var(--ifx-neutral-0);
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-topbar {
+    min-height: 46px;
+    padding: 0 4px 0 var(--mobile-edge);
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-topbar > span {
+    overflow: hidden;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-close {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-navigation {
+    min-height: 47px;
+    grid-template-columns: minmax(0, 1fr) 72px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tabs--dense {
+    min-height: 47px;
+    padding: 0;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tabs--dense button {
+    min-width: 0;
+    min-height: 47px;
+    padding: 0 5px;
+    font-size: 12px !important;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10:not([data-active-section="overview"]) .inventory-workspace-mobile-context {
+    min-height: 98px;
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 11px;
+    padding: 9px var(--mobile-edge);
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context__media {
+    width: 82px;
+    height: 66px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context__copy h2 {
+    color: var(--v10-ink-strong);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 22px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context__identifiers {
+    color: var(--v10-support);
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-status {
+    min-height: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(44px, auto);
+    font-size: 12px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-status > :is(span, button) {
+    min-height: 44px;
+    padding: 7px 10px;
+    overflow: visible;
+    border-right: 1px solid var(--v10-border-soft);
+    border-bottom: 1px solid var(--v10-border-soft);
+    line-height: 17px;
+    white-space: normal;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-status strong {
+    overflow: visible;
+    color: var(--v10-ink);
+    font-weight: 700;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-actions :is(button, a, summary) {
+    min-height: 46px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tab-panels {
+    margin: 8px 8px 16px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-panel__body {
+    padding: 12px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__header {
+    min-height: 0;
+    padding: 2px 0 10px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__header > span > svg {
+    display: block;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__header strong {
+    font-size: 18px;
+    line-height: 23px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-source-summary {
+    margin: 10px 0 12px;
+    padding: 9px 10px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-factory-configuration--v10 > dl {
+    grid-template-columns: 1fr;
+    padding: 0 10px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-configuration-fact,
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-configuration-fact:nth-child(even) {
+    min-height: 58px;
+    padding: 8px 0;
+    border-left: 0;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__groups {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    columns: auto;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group {
+    overflow: hidden;
+    border: 1px solid var(--v10-border);
+    border-radius: 8px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > header {
+    min-height: 54px;
+    padding: 9px 10px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > header h4 {
+    font-size: 14px;
+    line-height: 19px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > ul {
+    padding: 0;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > ul > li {
+    min-height: 58px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--v10-border-soft);
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group li strong {
+    color: var(--v10-ink-strong);
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 18px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-item-source {
+    color: var(--v10-muted);
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group__toggle {
+    min-height: 44px;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 > header {
+    display: none;
+  }
+
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-index--v10 button {
+    min-height: 44px;
+    font-size: 12px;
+  }
+}
+
+/* Phone and compact-tablet workspace ---------------------------------------
+   This layer intentionally comes after the desktop V10 rules. The workspace
+   is portaled directly under body, so it must own the full mobile cascade
+   instead of depending on earlier compact-v3 selectors with equal weight. */
+@media (max-width: 768px) {
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 {
+    --mobile-edge: 14px;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: var(--v10-surface) !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-scroll--dense {
+    width: 100%;
+    min-width: 0;
+    height: calc(100dvh - 46px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    scrollbar-gutter: auto !important;
+    background: var(--v10-surface) !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context {
+    order: 1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10[data-active-section="overview"] .inventory-workspace-mobile-context {
+    display: none !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10:not([data-active-section="overview"]) .inventory-workspace-mobile-context {
+    min-height: 0;
+    display: grid !important;
+    grid-template-columns: 82px minmax(0, 1fr) !important;
+    align-items: center;
+    gap: 10px;
+    padding: 8px var(--mobile-edge) !important;
+    overflow: hidden;
+    border-bottom: 1px solid var(--v10-border-soft);
+    background: var(--v10-surface);
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context__media {
+    width: 82px !important;
+    height: 64px !important;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--v10-border);
+    border-radius: 7px;
+    background: var(--v10-surface-subtle);
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context__copy,
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context__copy h2 {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context__copy h2 {
+    overflow: hidden;
+    color: var(--v10-ink-strong) !important;
+    font-size: 18px !important;
+    font-weight: 700 !important;
+    line-height: 22px !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context__identifiers {
+    min-width: 0;
+    max-width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    overflow: visible;
+    color: var(--v10-support) !important;
+    font-size: 12px !important;
+    line-height: 16px !important;
+    white-space: nowrap;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context__identifiers > span {
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context__identifiers > span,
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context__identifiers :is(.copyable-value, .copyable-value__content) {
+    min-width: 0;
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context .copyable-value {
+    gap: 3px;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-context .copyable-value__button {
+    flex: 0 0 28px;
+    width: 28px !important;
+    min-width: 28px !important;
+    min-inline-size: 28px !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    min-block-size: 28px !important;
+    padding: 0 !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero {
+    order: 1 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    height: auto !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    overflow: visible !important;
+    border-bottom: 1px solid var(--v10-border) !important;
+    background: var(--v10-surface) !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10:not([data-active-section="overview"]) .inventory-workspace-hero {
+    display: none !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10[data-active-section="overview"] .inventory-workspace-hero {
+    display: grid !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10[data-active-section="overview"] .inventory-workspace-gallery--cinematic {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: 0 !important;
+    overflow: hidden;
+    border: 0 !important;
+    border-bottom: 1px solid var(--v10-border-soft) !important;
+    background: var(--ifx-oem-scene-deep) !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10[data-active-section="overview"] .inventory-workspace-gallery--cinematic .inventory-workspace-gallery__stage {
+    width: 100%;
+    height: clamp(188px, 55vw, 222px) !important;
+    min-height: 188px !important;
+    overflow: hidden;
+    border: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10[data-active-section="overview"] .inventory-workspace-gallery--cinematic .inventory-workspace-gallery__thumbnails {
+    width: 100%;
+    display: flex;
+    gap: 6px;
+    padding: 7px 10px 8px;
+    overflow-x: auto;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    height: auto !important;
+    display: block;
+    overflow: visible !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary .inventory-workspace-identity {
+    width: 100%;
+    min-width: 0;
+    min-height: 0 !important;
+    height: auto;
+    padding: 13px var(--mobile-edge) 12px !important;
+    overflow: visible !important;
+    border-bottom: 0;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-identity__title {
+    min-width: 0;
+    padding-right: 0 !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary .inventory-workspace-identity__title h2 {
+    width: auto;
+    max-width: 100%;
+    overflow-wrap: break-word;
+    color: var(--v10-ink-strong);
+    font-size: clamp(22px, 6.2vw, 26px) !important;
+    font-weight: 700 !important;
+    line-height: 1.14 !important;
+    letter-spacing: -.024em;
+    word-break: normal;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-identity__copy-values {
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 14px;
+    margin-top: 7px;
+    overflow: visible;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-identity__copy-token {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-certified {
+    position: static;
+    width: max-content;
+    max-width: 100%;
+    min-height: 28px;
+    margin: 8px 0 0;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary .inventory-workspace-identity__numbers {
+    width: 100%;
+    min-width: 0;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0 !important;
+    margin-top: 10px;
+    border-top: 1px solid var(--v10-border-soft);
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary .inventory-workspace-identity__numbers .inventory-workspace-fact,
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary .inventory-workspace-identity__numbers .inventory-workspace-fact:nth-child(odd) {
+    min-width: 0;
+    min-height: 58px !important;
+    justify-content: center;
+    padding: 8px 10px !important;
+    overflow: hidden;
+    border: 0;
+    border-bottom: 1px solid var(--v10-border-soft);
+    border-left: 1px solid var(--v10-border-soft);
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__summary .inventory-workspace-identity__numbers .inventory-workspace-fact:nth-child(odd) {
+    border-left: 0;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-identity__numbers :is(dt, dd, .copyable-value, .copyable-value__content) {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-hero__operations {
+    display: none !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-status {
+    order: 2;
+    width: 100%;
+    min-width: 0;
+    min-height: 0 !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-auto-rows: minmax(48px, auto) !important;
+    align-items: stretch;
+    overflow: hidden;
+    border-bottom: 1px solid var(--v10-border);
+    color: var(--v10-support) !important;
+    background: var(--v10-surface);
+    font-size: 12px !important;
+    line-height: 17px !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-status > :is(span, button) {
+    min-width: 0;
+    min-height: 48px !important;
+    display: flex !important;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px !important;
+    overflow: hidden;
+    border: 0;
+    border-right: 1px solid var(--v10-border-soft) !important;
+    border-bottom: 1px solid var(--v10-border-soft) !important;
+    color: inherit;
+    background: var(--v10-surface);
+    font: inherit;
+    text-align: left;
+    white-space: normal !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-status__copy {
+    min-width: 0;
+    display: grid;
+    align-content: center;
+    gap: 1px;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-status__label {
+    display: block !important;
+    overflow: hidden;
+    color: var(--v10-muted);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 14px;
+    letter-spacing: 0 !important;
+    text-overflow: ellipsis;
+    text-transform: none !important;
+    white-space: nowrap;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-status__location::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-status strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--v10-ink);
+    font-weight: 700;
+    font-size: 13px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: normal;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-actions {
+    order: 3;
+    width: 100%;
+    min-width: 0;
+    min-height: 56px;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    overflow: visible;
+    border-bottom: 1px solid var(--v10-border);
+    background: var(--v10-surface);
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-actions > :is(a, button, details) {
+    min-width: 0;
+    border-left: 1px solid var(--v10-border-soft);
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-actions > :first-child {
+    border-left: 0;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-actions > :is(a, button),
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-actions__more > summary {
+    min-width: 0;
+    min-height: 56px !important;
+    padding: 5px 6px;
+    overflow: hidden;
+    color: var(--v10-blue-strong);
+    background: var(--v10-surface);
+    font-size: 12.5px !important;
+    font-weight: 600 !important;
+    line-height: 16px !important;
+    text-align: center;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-navigation {
+    position: sticky !important;
+    z-index: 35;
+    top: 0;
+    order: 4 !important;
+    width: 100%;
+    min-width: 0;
+    min-height: 47px;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 72px !important;
+    overflow: visible;
+    border-bottom: 1px solid var(--v10-border);
+    background: var(--v10-surface);
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tabs--dense {
+    position: static;
+    min-width: 0;
+    min-height: 47px;
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 0 !important;
+    overflow: hidden;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tabs--dense button {
+    min-width: 0 !important;
+    min-height: 47px !important;
+    padding: 0 4px !important;
+    overflow: hidden;
+    font-size: 12px !important;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tabs--dense button[data-mobile-overflow="true"] {
+    display: none !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tab-label--desktop {
+    display: none !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tab-label--mobile,
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-section-more {
+    display: block !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-section-more {
+    position: relative;
+    min-width: 0;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-section-more > summary {
+    min-height: 47px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 5px;
+    border-bottom: 2px solid transparent;
+    color: var(--v10-support);
+    background: var(--v10-surface);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    list-style: none;
+    cursor: pointer;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-section-more[data-active-overflow="true"] > summary {
+    border-bottom-color: var(--v10-blue);
+    color: var(--v10-blue-strong);
+    font-weight: 700;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-section-more > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-section-more[open] > summary svg {
+    transform: rotate(180deg);
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-section-more > ul {
+    position: absolute;
+    z-index: 90;
+    top: calc(100% + 4px);
+    right: 6px;
+    width: 168px;
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 6px;
+    border: 1px solid var(--v10-border);
+    border-radius: 8px;
+    background: var(--v10-surface);
+    box-shadow: var(--ifx-elevation-3);
+    list-style: none;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-section-more > ul button {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 11px;
+    border: 0;
+    border-radius: 6px;
+    color: var(--v10-ink);
+    background: var(--v10-surface);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 18px;
+    text-align: left;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-section-more > ul button:hover,
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-mobile-section-more > ul button[aria-current="page"] {
+    color: var(--v10-blue-strong);
+    background: color-mix(in srgb, var(--v10-blue) 8%, var(--v10-surface));
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-tab-panels {
+    order: 5 !important;
+    width: auto;
+    min-width: 0;
+    margin: 8px !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-panel,
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-panel__body {
+    min-width: 0;
+    max-width: 100%;
+    overflow: visible;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-v3-overview,
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-layout,
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-evidence__groups {
+    width: 100%;
+    min-width: 0;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px;
+    columns: auto !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-specs {
+    display: none !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    break-inside: auto;
+    border: 1px solid var(--v10-border) !important;
+    border-left: 1px solid var(--v10-border) !important;
+    border-radius: 8px !important;
+    background: var(--v10-surface) !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > header {
+    min-height: 48px;
+    padding: 9px 11px !important;
+    border: 0 !important;
+    border-bottom: 1px solid var(--v10-border-soft) !important;
+    background: var(--v10-surface-subtle) !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > ul {
+    display: block;
+    padding: 0 !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > ul > li {
+    min-width: 0;
+    min-height: 0 !important;
+    display: block !important;
+    padding: 10px 11px !important;
+    border: 0 !important;
+    border-bottom: 1px solid var(--v10-border-soft) !important;
+    border-radius: 0;
+    background: var(--v10-surface) !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group > ul > li > svg {
+    display: none !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group li strong {
+    overflow-wrap: anywhere;
+    color: var(--v10-ink-strong) !important;
+    font-size: 13.5px !important;
+    font-weight: 600 !important;
+    line-height: 19px !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-item-source {
+    margin-top: 2px;
+    color: var(--v10-muted) !important;
+    font-size: 12px !important;
+    line-height: 17px !important;
+  }
+
+  body > .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 .inventory-workspace-equipment-group__toggle {
+    width: 100%;
+    min-height: 46px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 *,
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 *::before,
+  .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10 *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+  }
+}

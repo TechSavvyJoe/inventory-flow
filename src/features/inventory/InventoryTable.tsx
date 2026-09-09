@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowDown,
   ArrowUp,
@@ -44,6 +46,7 @@ import type {
 import "./InventoryTable.compact-v3.css";
 import "./InventoryTable.production-v4.css";
 import "./InventoryTable.operational-v9.css";
+import "./InventoryTable.production-v10.css";
 
 interface SortOption {
   label: string;
@@ -180,7 +183,7 @@ function SortHeader({ label, displayLabel, group, options, sorts, onSortChange }
     : "none";
 
   return (
-    <th scope="col" aria-sort={ariaSort} data-sort-group={group}>
+    <th scope="col" aria-label={label} aria-sort={ariaSort} data-sort-group={group}>
       <span className="inventory-sort-header-group__controls">
         <SortControl
           {...displayedOption}
@@ -433,12 +436,26 @@ function EquipmentCell({ vehicle }: { vehicle: InventoryVehicle }) {
   const remaining = Math.max(0, published.length - equipment.length);
   const first = equipment[0];
   const secondary = equipment.slice(1);
+  const secondaryIcons = [ShieldCheck, CarFront];
   return (
     <span className="inventory-equipment-cell">
-      {first ? <strong title={first.label}>{first.label}</strong> : <span className="is-quiet">No published highlights</span>}
+      {first ? (
+        <span className="inventory-equipment-cell__primary">
+          <ClipboardCheck size={14} strokeWidth={1.9} aria-hidden="true" />
+          <strong title={first.label}>{first.label}</strong>
+        </span>
+      ) : <span className="is-quiet">No published highlights</span>}
       {secondary.length ? (
         <span className="inventory-equipment-cell__secondary">
-          {secondary.map((item) => <small key={`${item.source}:${item.label}`} title={item.label}>{item.label}</small>)}
+          {secondary.map((item, index) => {
+            const Icon = secondaryIcons[index] ?? ShieldCheck;
+            return (
+              <span className="inventory-equipment-cell__item" key={`${item.source}:${item.label}`}>
+                <Icon size={14} strokeWidth={1.85} aria-hidden="true" />
+                <small title={item.label}>{item.label}</small>
+              </span>
+            );
+          })}
         </span>
       ) : null}
       <span className="inventory-equipment-cell__meta">
@@ -454,19 +471,18 @@ function FinancialAgeCell({ vehicle }: { vehicle: InventoryVehicle }) {
   const age = vehicle.daysListed != null
     ? `${vehicle.daysListed} ${vehicle.daysListed === 1 ? "day" : "days"}`
     : "Age unavailable";
+  const listedAge = vehicle.daysListed != null ? `${age} listed` : age;
   return (
     <span className="inventory-financial-age-cell">
       <span className="inventory-financial-age-cell__price">
-        <small>Listed price</small>
         <strong>{formatMoney(vehicle.price)}</strong>
-        <span>{vehicle.msrp != null && vehicle.msrp > 0 ? `MSRP ${formatMoney(vehicle.msrp)}` : "MSRP not published"}</span>
+        <small>{vehicle.msrp != null && vehicle.msrp > 0 ? `MSRP ${formatMoney(vehicle.msrp)}` : "MSRP not published"}</small>
       </span>
       <span className="inventory-financial-age-cell__usage">
-        <small>Mileage</small>
         <strong>{formatMileage(vehicle.mileage)}</strong>
-        <span title={inventoryDate ? `${age} listed; inventory date ${inventoryDate}` : `${age} listed`}>
-          {inventoryDate ? `${age} · Inv ${inventoryDate}` : `${age} listed`}
-        </span>
+        <small title={inventoryDate ? `${listedAge}; inventory date ${inventoryDate}` : listedAge}>
+          {listedAge}
+        </small>
       </span>
     </span>
   );
@@ -550,34 +566,36 @@ function DocumentsCell({ vehicle }: { vehicle: InventoryVehicle }) {
   const windowStickerUrl = officialVehicleDocumentUrl(vehicle.windowSticker?.url, "window-sticker", listingUrl);
   const equipmentUrl = vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url);
   const photoCount = vehiclePhotoCount(vehicle);
+  const autoCheckDocument = autoCheckUrl ? {
+    key: "autocheck",
+    label: "AutoCheck",
+    detail: autoCheckResourceDetail(vehicle),
+    state: vehicle.autoCheckReport?.dataState,
+    url: autoCheckUrl,
+    icon: ShieldCheck,
+    ariaLabel: `Open AutoCheck report for ${name} in a new tab`,
+  } : null;
+  const windowStickerDocument = windowStickerUrl ? {
+    key: "window-sticker",
+    label: "Window sticker",
+    detail: windowStickerResourceDetail(vehicle),
+    state: vehicle.windowSticker?.dataState,
+    url: windowStickerUrl,
+    icon: FileText,
+    ariaLabel: `Open window sticker for ${name} in a new tab`,
+  } : null;
+  const factoryEquipmentDocument = equipmentUrl ? {
+    key: "factory-equipment",
+    label: "Factory equipment",
+    detail: factoryEquipmentResourceDetail(vehicle),
+    state: vehicle.factoryEquipment?.dataState,
+    url: equipmentUrl,
+    icon: ClipboardCheck,
+    ariaLabel: `Open factory equipment profile for ${name} in a new tab`,
+  } : null;
   const documents = [
-    autoCheckUrl ? {
-      key: "autocheck",
-      label: "AutoCheck",
-      detail: autoCheckResourceDetail(vehicle),
-      state: vehicle.autoCheckReport?.dataState,
-      url: autoCheckUrl,
-      icon: ShieldCheck,
-      ariaLabel: `Open AutoCheck report for ${name} in a new tab`,
-    } : null,
-    windowStickerUrl ? {
-      key: "window-sticker",
-      label: "Window sticker",
-      detail: windowStickerResourceDetail(vehicle),
-      state: vehicle.windowSticker?.dataState,
-      url: windowStickerUrl,
-      icon: FileText,
-      ariaLabel: `Open window sticker for ${name} in a new tab`,
-    } : null,
-    equipmentUrl ? {
-      key: "vauto-equipment",
-      label: "vAuto equipment",
-      detail: factoryEquipmentResourceDetail(vehicle),
-      state: vehicle.factoryEquipment?.dataState,
-      url: equipmentUrl,
-      icon: ClipboardCheck,
-      ariaLabel: `Open vAuto informational equipment profile for ${name} in a new tab`,
-    } : null,
+    autoCheckDocument,
+    windowStickerDocument ?? factoryEquipmentDocument,
   ].filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   return (
@@ -601,13 +619,20 @@ function DocumentsCell({ vehicle }: { vehicle: InventoryVehicle }) {
               : <Icon size={14} strokeWidth={1.9} aria-hidden="true" />}
             <span>
               <strong className={item.key === "autocheck" ? "inventory-sr-only" : undefined}>{item.label}</strong>
-              {item.detail ? <small>{item.detail}</small> : null}
+              {item.detail ? (
+                <small>
+                  {item.detail}
+                  {item.key !== "autocheck" && photoCount ? ` · ${photoCount} photos` : ""}
+                </small>
+              ) : null}
             </span>
             <ExternalLink size={11} strokeWidth={1.9} aria-hidden="true" />
           </a>
         );
       }) : <span className="inventory-documents-cell__empty">No linked resources</span>}
-      <small className="inventory-documents-cell__photos">{photoCount ? `${photoCount} photos` : "No photos published"}</small>
+      {documents.some((item) => item.key !== "autocheck") && photoCount
+        ? null
+        : <small className="inventory-documents-cell__photos">{photoCount ? `${photoCount} photos` : "No photos published"}</small>}
     </span>
   );
 }
@@ -623,18 +648,18 @@ function ActivityCell({ vehicle }: { vehicle: InventoryVehicle }) {
     );
   }
 
-  const sourceState = vehicle.publicListing.dataState;
-  const sourceDetail = sourceState === "current"
-    ? "Public inventory current"
-    : sourceState === "stale"
-      ? "Public inventory stale"
-      : sourceState === "incomplete"
-        ? "Public inventory incomplete"
-        : "Public inventory unavailable";
+  const lastMovement = compactInventoryDate(vehicle.movement?.lastEventAt);
+  if (lastMovement) {
+    return (
+      <span className="inventory-activity-summary inventory-activity-summary--movement">
+        <strong>Last movement {lastMovement}</strong>
+      </span>
+    );
+  }
+
   return (
-    <span className={`inventory-activity-summary inventory-activity-summary--${sourceState} is-quiet`}>
+    <span className="inventory-activity-summary is-quiet">
       <strong>No recent change</strong>
-      <small>{sourceDetail}</small>
     </span>
   );
 }
@@ -666,11 +691,21 @@ function VehicleRowActions({
   onOpenSourceRecord,
 }: VehicleRowActionsProps) {
   const disclosure = useInventoryDisclosure("inventory-row-more-actions");
+  const floatingMenuRef = useRef<HTMLDivElement>(null);
+  const [floatingMenuPosition, setFloatingMenuPosition] = useState<{
+    left: number;
+    placement: "above" | "below";
+    storeAccent: string;
+    storeAccentSoft: string;
+    storeAccentStrong: string;
+    top: number;
+  } | null>(null);
   const name = vehicleDisplayName(vehicle);
   const listingUrl = vehicle.publicListing.listingUrl?.trim() || null;
   const isFordFamily = /^(ford|lincoln)$/i.test(vehicle.make.trim());
   const invoiceUrl = isFordFamily ? fordInvoiceUrl(vehicle.vin) : null;
   const oasisUrl = isFordFamily ? fordOasisUrl(vehicle.vin) : null;
+  const equipmentUrl = vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url);
   const requestAllowed =
     typeof canRequestVehicle === "function"
       ? canRequestVehicle(vehicle)
@@ -678,16 +713,79 @@ function VehicleRowActions({
   const canTrackMovement = Boolean(onTrackMovement && vehicleMovementStatus(vehicle));
   const canOpenDealerMail = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
   const hasOverflowActions = Boolean(
-    listingUrl ||
+    canOpenDealerMail ||
+      listingUrl ||
+      equipmentUrl ||
       invoiceUrl ||
       oasisUrl ||
       (requestAllowed && onRequestVehicle) ||
       canTrackMovement,
   );
 
+  useLayoutEffect(() => {
+    if (!disclosure.open) return;
+
+    let animationFrame = 0;
+    const positionMenu = () => {
+      const trigger = disclosure.triggerRef.current;
+      const menu = floatingMenuRef.current;
+      if (!trigger || !menu) return;
+
+      const viewportInset = 8;
+      const triggerGap = 7;
+      const triggerBounds = trigger.getBoundingClientRect();
+      const triggerStyles = getComputedStyle(trigger);
+      const storeAccent = triggerStyles.getPropertyValue("--store-accent").trim();
+      const storeAccentSoft = triggerStyles.getPropertyValue("--store-accent-soft").trim();
+      const storeAccentStrong = triggerStyles.getPropertyValue("--store-accent-strong").trim();
+      const menuWidth = menu.offsetWidth || 236;
+      const menuHeight = Math.min(
+        menu.scrollHeight || menu.offsetHeight,
+        window.innerHeight - viewportInset * 2,
+      );
+      const availableBelow = window.innerHeight - triggerBounds.bottom - triggerGap - viewportInset;
+      const availableAbove = triggerBounds.top - triggerGap - viewportInset;
+      const placement = availableBelow >= Math.min(menuHeight, 240) || availableBelow >= availableAbove
+        ? "below"
+        : "above";
+      const idealTop = placement === "below"
+        ? triggerBounds.bottom + triggerGap
+        : triggerBounds.top - triggerGap - menuHeight;
+      const top = Math.max(
+        viewportInset,
+        Math.min(idealTop, window.innerHeight - menuHeight - viewportInset),
+      );
+      const left = Math.max(
+        viewportInset,
+        Math.min(triggerBounds.right - menuWidth, window.innerWidth - menuWidth - viewportInset),
+      );
+
+      setFloatingMenuPosition((current) => (
+        current?.left === left && current.top === top && current.placement === placement &&
+          current.storeAccent === storeAccent && current.storeAccentSoft === storeAccentSoft &&
+          current.storeAccentStrong === storeAccentStrong
+          ? current
+          : { left, placement, storeAccent, storeAccentSoft, storeAccentStrong, top }
+      ));
+    };
+    const schedulePosition = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(positionMenu);
+    };
+
+    positionMenu();
+    window.addEventListener("resize", schedulePosition);
+    window.addEventListener("scroll", schedulePosition, true);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", schedulePosition);
+      window.removeEventListener("scroll", schedulePosition, true);
+    };
+  }, [disclosure.open, disclosure.triggerRef]);
+
   return (
     <div
-      className="inventory-row-actions inventory-row-actions--compact-v3 inventory-row-actions--production-v8"
+      className="inventory-row-actions inventory-row-actions--compact-v3 inventory-row-actions--production-v10"
       data-action-layout={hasOverflowActions ? "overflow" : "row-open"}
       data-has-dealermail={canOpenDealerMail ? "true" : "false"}
       data-has-overflow={hasOverflowActions ? "true" : "false"}
@@ -705,22 +803,9 @@ function VehicleRowActions({
         aria-label={`Open vehicle details for ${name}`}
         title={`Open ${name}`}
       >
-        <span className="inventory-row-action-label">Details</span>
+        <span className="inventory-row-action-label">View details</span>
         <ChevronRight size={14} strokeWidth={2} aria-hidden="true" />
       </button>
-      {canOpenDealerMail ? (
-        <button
-          type="button"
-          className="inventory-row-dealermail"
-          data-row-action="dealermail"
-          onClick={() => onOpenSourceRecord?.(vehicle, "dealermail")}
-          aria-label={`Open DealerMail for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}`}
-          title="Open DealerMail vehicle tools"
-        >
-          <UserRound size={11} strokeWidth={1.9} aria-hidden="true" />
-          <span className="inventory-row-action-label">DealerMail</span>
-        </button>
-      ) : null}
       {hasOverflowActions ? (
         <div
           ref={disclosure.containerRef}
@@ -736,19 +821,48 @@ function VehicleRowActions({
             aria-expanded={disclosure.open}
             aria-controls={disclosure.panelId}
             title="More vehicle actions"
-            onClick={() => disclosure.setOpen((open) => !open)}
+            onClick={() => {
+              if (!disclosure.open) setFloatingMenuPosition(null);
+              disclosure.setOpen((open) => !open);
+            }}
           >
             <Ellipsis size={13} strokeWidth={2} aria-hidden="true" />
             <span className="inventory-row-action-label inventory-row-more__label" aria-hidden="true">More</span>
             <span className="inventory-sr-only">More actions</span>
           </button>
-          <div
-            id={disclosure.panelId}
-            className="inventory-row-more__menu"
-            role="group"
-            aria-label={`More actions for ${name}`}
-            hidden={!disclosure.open}
-          >
+          {disclosure.open && typeof document !== "undefined" ? createPortal((
+            <div
+              ref={floatingMenuRef}
+              id={disclosure.panelId}
+              className="inventory-row-more__menu inventory-row-more__menu--floating-v10"
+              role="group"
+              aria-label={`More actions for ${name}`}
+              data-placement={floatingMenuPosition?.placement ?? "pending"}
+              data-positioned={floatingMenuPosition ? "true" : "false"}
+              style={floatingMenuPosition ? {
+                left: floatingMenuPosition.left,
+                top: floatingMenuPosition.top,
+                "--store-accent": floatingMenuPosition.storeAccent,
+                "--store-accent-soft": floatingMenuPosition.storeAccentSoft,
+                "--store-accent-strong": floatingMenuPosition.storeAccentStrong,
+              } as CSSProperties : undefined}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+            {canOpenDealerMail ? (
+              <button
+                type="button"
+                className="inventory-row-more__item"
+                data-row-action="dealermail"
+                onClick={() => {
+                  disclosure.close();
+                  onOpenSourceRecord?.(vehicle, "dealermail");
+                }}
+                aria-label={`Open DealerMail for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}`}
+              >
+                <UserRound size={16} strokeWidth={1.85} aria-hidden="true" />
+                <span>DealerMail tools</span>
+              </button>
+            ) : null}
             {listingUrl ? (
               onOpenListing ? (
                 <button
@@ -778,6 +892,21 @@ function VehicleRowActions({
                   <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
                 </a>
               )
+            ) : null}
+            {equipmentUrl ? (
+              <a
+                className="inventory-row-more__item"
+                data-row-action="factory-equipment"
+                href={equipmentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Open factory equipment profile for ${name} in a new tab`}
+                onClick={() => disclosure.close()}
+              >
+                <ClipboardCheck size={16} strokeWidth={1.85} aria-hidden="true" />
+                <span>Factory equipment</span>
+                <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
+              </a>
             ) : null}
             {invoiceUrl ? (
               <a
@@ -837,7 +966,8 @@ function VehicleRowActions({
                 <span>Track movement</span>
               </button>
             ) : null}
-          </div>
+            </div>
+          ), document.body) : null}
         </div>
       ) : null}
     </div>
@@ -902,16 +1032,16 @@ export function InventoryTable({
   onOpenSourceRecord,
 }: InventoryTableProps) {
   return (
-    <section className="inventory-grid-shell inventory-grid-shell--production-v8 inventory-grid-shell--operational-v9" aria-label="Inventory data grid">
+    <section className="inventory-grid-shell inventory-grid-shell--production-v10" aria-label="Inventory data grid">
       <div
         className="inventory-table-wrap inventory-table-wrap--compact-v3"
         role="region"
         aria-label="Inventory results table"
         tabIndex={0}
       >
-        <table className="inventory-table inventory-table--vehicle-first inventory-table--compact-v3 inventory-table--workbench-v5 inventory-table--production-v8 inventory-table--operational-v9">
+        <table className="inventory-table inventory-table--vehicle-first inventory-table--compact-v3 inventory-table--production-v10">
         <caption className="inventory-sr-only">
-          Dealership inventory workbench with vehicle identity, financial and inventory age, equipment highlights, availability and movement, evidence and resources, and actions.
+          Dealership inventory table with vehicle identity, price and inventory age, equipment highlights, availability and movement, vehicle records, and actions.
         </caption>
         <colgroup>
           <col className="inventory-table__col inventory-table__col--vehicle-identity" />
@@ -924,14 +1054,14 @@ export function InventoryTable({
         <thead>
           <tr>
             <SortHeader
-              label="Vehicle identity"
+              label="Vehicle"
               group="vehicle-identity"
               options={[...VEHICLE_SORT_OPTIONS, ...STOCK_SORT_OPTIONS]}
               sorts={sorts}
               onSortChange={onSortChange}
             />
             <SortHeader
-              label="Financial & age"
+              label="Price & age"
               group="financial-age"
               options={[...PRICE_SORT_OPTIONS, ...AGE_SORT_OPTIONS]}
               sorts={sorts}
@@ -939,6 +1069,7 @@ export function InventoryTable({
             />
             <SortHeader
               label="Equipment highlights"
+              displayLabel="Equipment"
               group="equipment"
               options={EQUIPMENT_SORT_OPTIONS}
               sorts={sorts}
@@ -946,13 +1077,14 @@ export function InventoryTable({
             />
             <SortHeader
               label="Availability & movement"
+              displayLabel="Hold & location"
               group="availability"
               options={[...STATUS_SORT_OPTIONS, ...LOCATION_SORT_OPTIONS, ...CHANGE_SORT_OPTIONS]}
               sorts={sorts}
               onSortChange={onSortChange}
             />
             <SortHeader
-              label="Evidence & resources"
+              label="Records"
               group="evidence"
               options={EVIDENCE_SORT_OPTIONS}
               sorts={sorts}

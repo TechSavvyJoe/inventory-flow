@@ -87,6 +87,18 @@ describe('AttentionPage section tabs', () => {
     expect(workQueueTab).toHaveAttribute('tabindex', '-1')
     expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'today-tab-changes')
 
+    const scopeGroup = screen.getByRole('group', { name: 'Inventory change store scope' })
+    const homeScope = within(scopeGroup).getByRole('button', { name: 'Howell' })
+    const allStoresScope = within(scopeGroup).getByRole('button', { name: 'All stores' })
+    expect(homeScope).toHaveAttribute('aria-pressed', 'true')
+    expect(allStoresScope).toHaveAttribute('aria-pressed', 'false')
+    expect(within(homeScope).getByText('Howell')).toBeVisible()
+
+    await user.click(allStoresScope)
+    expect(homeScope).toHaveAttribute('aria-pressed', 'false')
+    expect(allStoresScope).toHaveAttribute('aria-pressed', 'true')
+
+    dailyChangesTab.focus()
     await user.keyboard('{ArrowLeft}')
 
     expect(workQueueTab).toHaveFocus()

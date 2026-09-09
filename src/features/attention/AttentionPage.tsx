@@ -209,8 +209,8 @@ export function AttentionPage() {
         <div className="today-summary-context">
           <span><strong>{displayScope === 'home' ? homeStore : 'All stores'}</strong> change totals</span>
           <div className="today-scope-control" role="group" aria-label="Inventory change store scope">
-            <button type="button" disabled={!detailedChangesCertified} title={!detailedChangesCertified ? 'Store detail is unavailable for this release' : undefined} className={displayScope === 'home' ? 'is-active' : undefined} onClick={() => setScope('home')}>{homeStore}</button>
-            <button type="button" className={displayScope === 'group' ? 'is-active' : undefined} onClick={() => setScope('group')}>All stores</button>
+            <button type="button" aria-pressed={displayScope === 'home'} disabled={!detailedChangesCertified} title={!detailedChangesCertified ? 'Store detail is unavailable for this release' : undefined} className={displayScope === 'home' ? 'is-active' : undefined} onClick={() => setScope('home')}><span>{homeStore}</span></button>
+            <button type="button" aria-pressed={displayScope === 'group'} className={displayScope === 'group' ? 'is-active' : undefined} onClick={() => setScope('group')}><span>All stores</span></button>
           </div>
         </div>
 

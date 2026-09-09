@@ -78,6 +78,7 @@ import type {
   VehicleWorkspaceTab,
 } from "./types";
 import "./VehicleWorkspace.compact-v3.css";
+import "./VehicleWorkspace.v10.css";
 
 type WorkspaceSectionId =
   | "overview"
@@ -105,12 +106,23 @@ const MOBILE_PRIMARY_SECTIONS = WORKSPACE_SECTIONS.filter(
   (section) => !section.mobileOverflow,
 );
 
+const COMPACT_WORKSPACE_MEDIA_QUERY = "(max-width: 768px)";
+const REDUCED_MOTION_MEDIA_QUERY = "(prefers-reduced-motion: reduce)";
+
 function usesCompactMobileWorkspace(): boolean {
   return (
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
-    window.matchMedia("(max-width: 620px)").matches
+    window.matchMedia(COMPACT_WORKSPACE_MEDIA_QUERY).matches
   );
+}
+
+function workspaceScrollBehavior(): ScrollBehavior {
+  return typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(REDUCED_MOTION_MEDIA_QUERY).matches
+    ? "auto"
+    : "smooth";
 }
 
 interface DealerMailLaunchFeedback {
@@ -1348,42 +1360,6 @@ function VehicleDetails({ vehicle }: { vehicle: InventoryVehicle }) {
   );
 }
 
-function EquipmentSpecifications({ vehicle }: { vehicle: InventoryVehicle }) {
-  const [expanded, setExpanded] = useState(() => !usesCompactMobileWorkspace());
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const query = window.matchMedia("(max-width: 620px)");
-    const syncToViewport = () => setExpanded(!query.matches);
-    syncToViewport();
-    query.addEventListener?.("change", syncToViewport);
-    return () => query.removeEventListener?.("change", syncToViewport);
-  }, [vehicle.id]);
-
-  return (
-    <details
-      className="inventory-workspace-equipment-specifications"
-      open={expanded}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
-    >
-      <summary className="inventory-workspace-equipment-specs__header">
-        <span className="inventory-workspace-equipment-specs__identity">
-          <Gauge size={17} strokeWidth={1.8} aria-hidden="true" />
-          <span>
-            <h3>Vehicle specifications</h3>
-            <small>12 current published inventory fields</small>
-          </span>
-        </span>
-        <span className="inventory-workspace-equipment-specs__toggle" aria-hidden="true">
-          {expanded ? "Hide" : "Show"}
-          <ChevronDown size={16} strokeWidth={1.9} />
-        </span>
-      </summary>
-      <VehicleDetails vehicle={vehicle} />
-    </details>
-  );
-}
-
 type EquipmentCategoryId =
   | "safety"
   | "towing"
@@ -1405,6 +1381,8 @@ interface SourceEquipmentItem {
   text: string;
   category: EquipmentCategoryId;
   sources: EquipmentEvidenceSource[];
+  sourceSections: string[];
+  price?: number | null;
 }
 
 interface EquipmentDisplayParts {
@@ -1415,20 +1393,20 @@ interface EquipmentDisplayParts {
 const EQUIPMENT_CATEGORIES: Array<{ id: EquipmentCategoryId; label: string }> = [
   { id: "packages", label: "Packages & special series" },
   { id: "safety", label: "Safety & driver assist" },
-  { id: "technology", label: "Technology" },
   { id: "comfort", label: "Comfort" },
+  { id: "technology", label: "Technology" },
   { id: "towing", label: "Towing & utility" },
   { id: "upgrades", label: "Standout upgrades" },
   { id: "other", label: "Other published equipment" },
 ];
 
 const EQUIPMENT_SOURCE_LABELS: Record<EquipmentEvidenceSource, string> = {
-  "inventory-feature": "Inventory listing",
-  "factory-option": "Factory option",
-  "factory-standard": "Factory standard",
-  "equipment-group": "Factory equipment group",
-  "vauto-package": "vAuto equipment package",
-  "vauto-informational": "vAuto informational equipment",
+  "inventory-feature": "Published vehicle listing",
+  "factory-option": "Original window sticker · Option",
+  "factory-standard": "Original window sticker · Standard",
+  "equipment-group": "Original window sticker · Equipment group",
+  "vauto-package": "VIN equipment profile · Package",
+  "vauto-informational": "VIN equipment profile",
 };
 
 const EQUIPMENT_SOURCE_SECTIONS = new Map<string, string>([
@@ -1456,14 +1434,14 @@ function equipmentDisplayParts(text: string): EquipmentDisplayParts {
 
 function equipmentCategory(text: string): EquipmentCategoryId {
   const value = text.toLowerCase();
+  if (/package|equipment group|edition|special series|appearance|fx4|tremor|raptor|king ranch|platinum|lariat|off[- ]road/.test(value)) {
+    return "packages";
+  }
   if (/tow|trailer|hitch|payload|truck bed|bedliner|bed liner|tailgate|tonneau|cargo|boxlink|pro power|utility/.test(value)) {
     return "towing";
   }
   if (/blind|lane|collision|cruise|camera|park|brak|airbag|safety|co-pilot|copilot|pro\s*pilot|propilot|bluecruise|super\s+cruise|cross[- ](?:traffic|path)|surround\s+(?:view|vision)|driver\s+(?:alert|attention|monitoring)|drowsy|traffic\s+sign|intelli\s*beam|high[- ]beam|pedestrian|assist|pre-collision|honda sensing|toyota safety sense/.test(value)) {
     return "safety";
-  }
-  if (/package|equipment group|edition|special series|appearance|fx4|tremor|raptor|king ranch|platinum|lariat|off[- ]road/.test(value)) {
-    return "packages";
   }
   if (/heated|cooled|ventilated|leather|seat|climate|moonroof|sunroof|steering wheel|massage|memory|lumbar/.test(value)) {
     return "comfort";
@@ -1479,28 +1457,54 @@ function equipmentCategory(text: string): EquipmentCategoryId {
 
 function sourceConfirmedEquipment(vehicle: InventoryVehicle): SourceEquipmentItem[] {
   const byText = new Map<string, SourceEquipmentItem>();
-  const add = (text: string | null | undefined, source: EquipmentEvidenceSource) => {
+  const add = (
+    text: string | null | undefined,
+    source: EquipmentEvidenceSource,
+    metadata: {
+      category?: EquipmentCategoryId;
+      price?: number | null;
+      sourceSection?: string | null;
+    } = {},
+  ) => {
     const clean = text?.trim();
     if (!clean) return;
     const key = clean.toLocaleLowerCase();
+    const display = equipmentDisplayParts(clean);
+    const sourceSection = metadata.sourceSection?.trim() || display.sourceSection;
     const existing = byText.get(key);
     if (existing) {
       if (!existing.sources.includes(source)) existing.sources.push(source);
+      if (sourceSection && !existing.sourceSections.includes(sourceSection)) existing.sourceSections.push(sourceSection);
+      if (existing.price == null && metadata.price != null) existing.price = metadata.price;
+      if (metadata.category) existing.category = metadata.category;
       return;
     }
-    byText.set(key, { text: clean, category: equipmentCategory(clean), sources: [source] });
+    byText.set(key, {
+      text: clean,
+      category: metadata.category ?? equipmentCategory(clean),
+      sources: [source],
+      sourceSections: sourceSection ? [sourceSection] : [],
+      price: metadata.price,
+    });
   };
 
   vehicle.features?.forEach((item) => add(item, "inventory-feature"));
-  add(vehicle.windowSticker?.equipmentGroup, "equipment-group");
+  add(vehicle.windowSticker?.equipmentGroup, "equipment-group", { category: "packages" });
   vehicle.windowSticker?.options?.forEach((item) => add(item, "factory-option"));
   vehicle.windowSticker?.standardEquipment?.forEach((item) => add(item, "factory-standard"));
   vehicle.factoryEquipment?.packages?.forEach((item) => {
-    add([item.name, item.code ? `(${item.code})` : null].filter(Boolean).join(" "), "vauto-package");
-    item.features?.forEach((feature) => add(feature, "vauto-informational"));
+    add(
+      [item.name, item.code ? `(${item.code})` : null].filter(Boolean).join(" "),
+      "vauto-package",
+      { category: "packages", price: item.price, sourceSection: "Packages" },
+    );
+    item.features?.forEach((feature) => add(feature, "vauto-informational", { sourceSection: item.name }));
   });
   vehicle.factoryEquipment?.sections?.forEach((section) => {
-    section.items.forEach((item) => add(item.label, "vauto-informational"));
+    section.items.forEach((item) => add(item.label, "vauto-informational", {
+      price: item.price,
+      sourceSection: section.name,
+    }));
   });
   const sourcePriority = (item: SourceEquipmentItem) => {
     if (item.sources.some((source) => ["factory-option", "factory-standard", "equipment-group"].includes(source))) return 0;
@@ -1512,7 +1516,7 @@ function sourceConfirmedEquipment(vehicle: InventoryVehicle): SourceEquipmentIte
   );
 }
 
-function SourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle }) {
+function LegacySourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle }) {
   const items = sourceConfirmedEquipment(vehicle);
   const sticker = vehicle.windowSticker;
   const factoryEquipment = vehicle.factoryEquipment;
@@ -1753,7 +1757,7 @@ function SourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle }) {
   );
 }
 
-function EquipmentCategoryIndex({ vehicle }: { vehicle: InventoryVehicle }) {
+function LegacyEquipmentCategoryIndex({ vehicle }: { vehicle: InventoryVehicle }) {
   const items = sourceConfirmedEquipment(vehicle);
   const hasStructuredVauto = Boolean(
     vehicle.factoryEquipment?.packages?.length || vehicle.factoryEquipment?.sections?.length,
@@ -1794,7 +1798,7 @@ function EquipmentCategoryIndex({ vehicle }: { vehicle: InventoryVehicle }) {
               const target = document.getElementById(entry.id);
               if (!target) return;
               target.focus({ preventScroll: true });
-              target.scrollIntoView?.({ behavior: "smooth", block: "start" });
+              target.scrollIntoView?.({ behavior: workspaceScrollBehavior(), block: "start" });
             }}
             key={entry.id}
           >
@@ -1803,6 +1807,322 @@ function EquipmentCategoryIndex({ vehicle }: { vehicle: InventoryVehicle }) {
           </button>
         ))}
       </div>
+    </nav>
+  );
+}
+
+function equipmentEvidenceLabel(item: SourceEquipmentItem): string {
+  return [...new Set(item.sources.map((source) => EQUIPMENT_SOURCE_LABELS[source]))].join(" + ");
+}
+
+function equipmentCategoryIcon(category: EquipmentCategoryId): ReactNode {
+  switch (category) {
+    case "packages":
+      return <BadgeCheck size={17} strokeWidth={1.8} aria-hidden="true" />;
+    case "safety":
+      return <ShieldCheck size={17} strokeWidth={1.8} aria-hidden="true" />;
+    case "technology":
+      return <Gauge size={17} strokeWidth={1.8} aria-hidden="true" />;
+    case "comfort":
+      return <CarFront size={17} strokeWidth={1.8} aria-hidden="true" />;
+    case "towing":
+      return <Truck size={17} strokeWidth={1.8} aria-hidden="true" />;
+    case "upgrades":
+      return <Tag size={17} strokeWidth={1.8} aria-hidden="true" />;
+    default:
+      return <FileText size={17} strokeWidth={1.8} aria-hidden="true" />;
+  }
+}
+
+function EquipmentLedgerGroup({
+  category,
+  items,
+  vehicleId,
+}: {
+  category: (typeof EQUIPMENT_CATEGORIES)[number];
+  items: SourceEquipmentItem[];
+  vehicleId: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const previewCount = 5;
+  const hasMore = items.length > previewCount;
+
+  useEffect(() => setExpanded(false), [vehicleId, category.id]);
+
+  return (
+    <section
+      className={`inventory-workspace-equipment-group inventory-workspace-equipment-group--${category.id}`}
+      id={`inventory-equipment-section-${category.id}`}
+      aria-labelledby={`inventory-equipment-group-${category.id}`}
+      data-equipment-category={category.id}
+      tabIndex={-1}
+    >
+      <header>
+        <span className="inventory-workspace-equipment-group__title">
+          {equipmentCategoryIcon(category.id)}
+          <span>
+            <h4 id={`inventory-equipment-group-${category.id}`}>{category.label}</h4>
+            <small>{countLabel(items.length, "documented item", "documented items")}</small>
+          </span>
+        </span>
+        <b aria-hidden="true">{items.length}</b>
+      </header>
+      <ul id={`inventory-equipment-list-${category.id}`}>
+        {items.map((item, index) => {
+          const display = equipmentDisplayParts(item.text);
+          const sourceLabel = equipmentEvidenceLabel(item);
+          const sourceSections = [...new Set([
+            ...(display.sourceSection ? [display.sourceSection] : []),
+            ...item.sourceSections,
+          ])];
+          const factoryDocumented = item.sources.some((source) =>
+            ["factory-option", "factory-standard", "equipment-group"].includes(source),
+          );
+          const profileDocumented = item.sources.some((source) => source.startsWith("vauto-"));
+
+          return (
+            <li
+              key={`${category.id}-${item.text}`}
+              title={`Source: ${sourceLabel}${sourceSections.length ? ` · Section: ${sourceSections.join(" / ")}` : ""}${display.sourceSection ? ` · Exact published label: ${item.text}` : ""}`}
+              data-evidence-strength={factoryDocumented ? "factory-document" : profileDocumented ? "vin-profile" : "published-listing"}
+              hidden={!expanded && index >= previewCount}
+            >
+              <span className="inventory-workspace-equipment-item__copy">
+                <strong aria-hidden={display.sourceSection ? "true" : undefined}>{display.label}</strong>
+                {display.sourceSection ? <span className="inventory-sr-only">{item.text}</span> : null}
+                <small className="inventory-workspace-equipment-item-source">
+                  {sourceLabel}{sourceSections.length ? ` · ${sourceSections.join(" / ")}` : ""}
+                </small>
+              </span>
+              <span className="inventory-workspace-equipment-item__value">
+                {item.price != null ? formatMoney(item.price) : factoryDocumented ? "Included" : "Published"}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {hasMore ? (
+        <button
+          type="button"
+          className="inventory-workspace-equipment-group__toggle"
+          aria-expanded={expanded}
+          aria-controls={`inventory-equipment-list-${category.id}`}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? "Show fewer" : `Show all ${items.length} items`}
+          <ChevronDown size={15} strokeWidth={1.9} aria-hidden="true" />
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
+function SourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle }) {
+  const items = sourceConfirmedEquipment(vehicle);
+  const sticker = vehicle.windowSticker;
+  const profile = vehicle.factoryEquipment;
+  const factoryDocumentedCount = items.filter((item) =>
+    item.sources.some((source) => ["factory-option", "factory-standard", "equipment-group"].includes(source)),
+  ).length;
+  const profileDocumentedCount = items.filter((item) =>
+    item.sources.some((source) => source.startsWith("vauto-")),
+  ).length;
+  const listingCoverageCount = items.filter((item) => item.sources.includes("inventory-feature")).length;
+  const exactSourceCount = factoryDocumentedCount + profileDocumentedCount;
+  const configurationHeading = sticker && profile
+    ? "VIN-linked configuration sources"
+    : sticker
+      ? "Original-sticker configuration"
+      : "VIN equipment profile";
+  const configurationFacts = [
+    sticker?.vehicleDescription
+      ? { label: "Sticker vehicle", value: sticker.vehicleDescription, source: "Original window sticker" }
+      : null,
+    sticker?.equipmentGroup
+      ? { label: "Equipment group", value: sticker.equipmentGroup, source: "Original window sticker" }
+      : null,
+    sticker?.engine || sticker?.transmission
+      ? { label: "Sticker powertrain", value: [sticker.engine, sticker.transmission].filter(Boolean).join(" · "), source: "Original window sticker" }
+      : null,
+    sticker?.exteriorColor
+      ? { label: "Exterior", value: sticker.exteriorColor, source: "Original window sticker" }
+      : null,
+    sticker?.interiorColor
+      ? { label: "Interior", value: sticker.interiorColor, source: "Original window sticker" }
+      : null,
+    sticker?.totalMsrp != null
+      ? { label: "Original MSRP", value: formatStickerMoney(sticker.totalMsrp, sticker), source: "Original window sticker" }
+      : null,
+    profile?.vehicleDescription
+      ? { label: "Profile vehicle", value: profile.vehicleDescription, source: "VIN equipment profile" }
+      : null,
+    profile?.engine || profile?.transmission || profile?.drivetrain
+      ? { label: "Profile powertrain", value: [profile.engine, profile.transmission, profile.drivetrain].filter(Boolean).join(" · "), source: "VIN equipment profile" }
+      : null,
+    profile?.exteriorColor
+      ? { label: "Profile exterior", value: profile.exteriorColor, source: "VIN equipment profile" }
+      : null,
+    profile?.interiorColor
+      ? { label: "Profile interior", value: profile.interiorColor, source: "VIN equipment profile" }
+      : null,
+    profile?.totalMsrp != null
+      ? { label: "Reference MSRP", value: formatMoney(profile.totalMsrp), source: "VIN equipment profile" }
+      : null,
+  ].filter(Boolean) as Array<{ label: string; value: string; source: string }>;
+
+  return (
+    <section
+      className="inventory-workspace-equipment-evidence inventory-workspace-equipment-evidence--v10"
+      id="inventory-equipment-all"
+      aria-labelledby="inventory-workspace-equipment-evidence-title"
+      data-content-state={items.length ? "available" : "not-published"}
+      data-evidence-scope="vin-linked-published-only"
+    >
+      <header className="inventory-workspace-equipment-evidence__header">
+        <span>
+          <ShieldCheck size={20} strokeWidth={1.8} aria-hidden="true" />
+          <span>
+            <strong id="inventory-workspace-equipment-evidence-title">Equipment &amp; packages</strong>
+            <small>{items.length ? `${items.length} VIN-linked items, organized for quick customer questions` : "No VIN-linked equipment captured"}</small>
+          </span>
+        </span>
+      </header>
+
+      <div className="inventory-workspace-equipment-source-summary" data-source-depth={exactSourceCount ? "detailed" : "listing-only"}>
+        <span>
+          <strong>{exactSourceCount ? "VIN-specific equipment detail is available" : "Factory itemization has not been captured"}</strong>
+          <small>
+            {exactSourceCount
+              ? `${factoryDocumentedCount} original-sticker item${factoryDocumentedCount === 1 ? "" : "s"} · ${profileDocumentedCount} VIN-profile item${profileDocumentedCount === 1 ? "" : "s"} · ${listingCoverageCount} published-listing item${listingCoverageCount === 1 ? "" : "s"}`
+              : `${listingCoverageCount} published-listing item${listingCoverageCount === 1 ? "" : "s"}; verify installed equipment on the vehicle.`}
+          </small>
+        </span>
+      </div>
+
+      {configurationFacts.length ? (
+        <section
+          className="inventory-workspace-factory-configuration inventory-workspace-factory-configuration--v10"
+          id="inventory-equipment-configuration"
+          aria-labelledby="inventory-factory-configuration-title"
+          tabIndex={-1}
+        >
+          <header>
+            <span>
+              <h4 id="inventory-factory-configuration-title">{configurationHeading}</h4>
+              <small>Original source values are kept separate from the current vehicle listing.</small>
+            </span>
+          </header>
+          <dl>
+            {configurationFacts.map((fact, index) => (
+              <div className="inventory-workspace-configuration-fact" key={`${fact.label}-${fact.value}-${index}`}>
+                <dt>{fact.label}<small>{fact.source}</small></dt>
+                <dd>{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
+
+      {items.length ? (
+        <div className="inventory-workspace-equipment-evidence__groups" aria-label="Equipment organized by category">
+          {EQUIPMENT_CATEGORIES.map((category) => {
+            const grouped = items.filter((item) => item.category === category.id);
+            if (!grouped.length) return null;
+            return (
+              <EquipmentLedgerGroup
+                category={category}
+                items={grouped}
+                vehicleId={vehicle.id}
+                key={`${vehicle.id}-${category.id}`}
+              />
+            );
+          })}
+        </div>
+      ) : (
+        <div className="inventory-workspace-equipment-evidence__empty" role="status">
+          <CircleHelp size={20} strokeWidth={1.75} aria-hidden="true" />
+          <span>
+            <strong>Equipment not published for this VIN</strong>
+            <small>No inventory feature list, original sticker item, or VIN equipment profile item was captured.</small>
+          </span>
+        </div>
+      )}
+
+      <details className="inventory-workspace-equipment-evidence__method">
+        <summary>
+          <CircleHelp size={15} strokeWidth={1.8} aria-hidden="true" />
+          How this equipment was sourced
+          <ChevronDown size={15} strokeWidth={1.8} aria-hidden="true" />
+        </summary>
+        <p className="inventory-workspace-equipment-evidence__note">
+          Only VIN-linked items from the published vehicle listing, an original factory window sticker, or a captured informational VIN equipment profile are shown. Nothing is inferred from year or trim. Published-listing and VIN-profile items must be physically verified; original-sticker items document original equipment, not current condition.
+        </p>
+        <div className="inventory-workspace-equipment-evidence__sources" aria-label="Equipment source status">
+          <span>Published listing · {dataStateLabel(vehicle.publicListing.dataState)}</span>
+          <span>Original sticker · {sticker ? dataStateLabel(sticker.dataState) : "Not published"}</span>
+          {profile ? <span>VIN profile · {dataStateLabel(profile.dataState)}</span> : null}
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function EquipmentCategoryIndex({ vehicle }: { vehicle: InventoryVehicle }) {
+  const items = sourceConfirmedEquipment(vehicle);
+  const hasConfiguration = Boolean(
+    vehicle.windowSticker?.vehicleDescription ||
+    vehicle.windowSticker?.equipmentGroup ||
+    vehicle.windowSticker?.engine ||
+    vehicle.windowSticker?.transmission ||
+    vehicle.windowSticker?.exteriorColor ||
+    vehicle.windowSticker?.interiorColor ||
+    vehicle.windowSticker?.totalMsrp != null ||
+    vehicle.factoryEquipment?.vehicleDescription ||
+    vehicle.factoryEquipment?.engine ||
+    vehicle.factoryEquipment?.transmission ||
+    vehicle.factoryEquipment?.drivetrain ||
+    vehicle.factoryEquipment?.exteriorColor ||
+    vehicle.factoryEquipment?.interiorColor ||
+    vehicle.factoryEquipment?.totalMsrp != null
+  );
+  const entries = [
+    ...(hasConfiguration
+      ? [{ id: "inventory-equipment-configuration", label: "Configuration", count: null }]
+      : []),
+    ...EQUIPMENT_CATEGORIES.map((category) => ({
+      id: `inventory-equipment-section-${category.id}`,
+      label: category.label,
+      count: items.filter((item) => item.category === category.id).length,
+    })).filter((entry) => entry.count > 0),
+  ];
+
+  if (!entries.length) return null;
+
+  return (
+    <nav className="inventory-workspace-equipment-index inventory-workspace-equipment-index--v10" aria-label="Equipment sections on this vehicle">
+      <header>
+        <strong>Browse equipment</strong>
+        <small>{countLabel(items.length, "VIN-linked item", "VIN-linked items")}</small>
+      </header>
+      <div>
+        {entries.map((entry) => (
+          <button
+            type="button"
+            aria-label={`Jump to ${entry.label}${entry.count == null ? "" : `, ${entry.count} item${entry.count === 1 ? "" : "s"}`}`}
+            onClick={() => {
+              const target = document.getElementById(entry.id);
+              if (!target) return;
+              target.focus({ preventScroll: true });
+              target.scrollIntoView?.({ behavior: workspaceScrollBehavior(), block: "start" });
+            }}
+            key={entry.id}
+          >
+            <span>{entry.label}</span>
+            {entry.count != null ? <b>{entry.count}</b> : null}
+          </button>
+        ))}
+      </div>
+      <p>Original names are preserved. Verify installed equipment and current condition with the vehicle.</p>
     </nav>
   );
 }
@@ -2591,6 +2911,9 @@ export function VehicleWorkspace({
   const [activeSection, setActiveSection] = useState<WorkspaceSectionId>(() =>
     initialSection(initialTab),
   );
+  const [compactMobileWorkspace, setCompactMobileWorkspace] = useState(
+    usesCompactMobileWorkspace,
+  );
   const workspaceRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dealerMailActionsRef = useRef<HTMLElement>(null);
@@ -2648,7 +2971,15 @@ export function VehicleWorkspace({
   }, [initialTab, vehicle.id]);
 
   useEffect(() => {
-    if (!usesCompactMobileWorkspace()) return;
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const compactWorkspaceQuery = window.matchMedia(COMPACT_WORKSPACE_MEDIA_QUERY);
+    const syncCompactWorkspace = () => setCompactMobileWorkspace(compactWorkspaceQuery.matches);
+    syncCompactWorkspace();
+    compactWorkspaceQuery.addEventListener?.("change", syncCompactWorkspace);
+    return () => compactWorkspaceQuery.removeEventListener?.("change", syncCompactWorkspace);
+  }, []);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       const scroller = scrollRef.current;
       if (!scroller) return;
@@ -2676,7 +3007,11 @@ export function VehicleWorkspace({
       return;
     }
 
-    const dealerMailTab = window.open(dealerMailUrl, "_blank");
+    const dealerMailTab = window.open(
+      dealerMailUrl,
+      "_blank",
+      "noopener,noreferrer",
+    );
     if (!dealerMailTab) {
       setDealerMailFeedback({
         kind: "blocked",
@@ -2725,7 +3060,7 @@ export function VehicleWorkspace({
     window.setTimeout(() => {
       const panel = dealerMailActionsRef.current;
       if (!panel) return;
-      panel.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+      panel.scrollIntoView?.({ behavior: workspaceScrollBehavior(), block: "nearest" });
       panel
         .querySelector<HTMLButtonElement>(".inventory-dealermail-action")
         ?.focus({ preventScroll: true });
@@ -2745,7 +3080,7 @@ export function VehicleWorkspace({
     setActiveSection(id);
     window.setTimeout(() => {
       const mobileOverflow =
-        usesCompactMobileWorkspace() &&
+        compactMobileWorkspace &&
         WORKSPACE_SECTIONS.some(
           (section) => section.id === id && section.mobileOverflow,
         );
@@ -2759,7 +3094,11 @@ export function VehicleWorkspace({
       const tab = tabListRef.current?.querySelector<HTMLButtonElement>(
         `#inventory-tab-${id}`,
       );
-      tab?.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "nearest" });
+      tab?.scrollIntoView?.({
+        behavior: workspaceScrollBehavior(),
+        block: "nearest",
+        inline: "nearest",
+      });
       tab?.focus({ preventScroll: true });
     }, 0);
   };
@@ -2767,7 +3106,7 @@ export function VehicleWorkspace({
   const handleTabKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    const navigableSections = usesCompactMobileWorkspace()
+    const navigableSections = compactMobileWorkspace
       ? MOBILE_PRIMARY_SECTIONS
       : WORKSPACE_SECTIONS;
     const currentIndex = navigableSections.findIndex(
@@ -2856,11 +3195,15 @@ export function VehicleWorkspace({
     ...(vehicle.imageUrls ?? []),
     vehicle.imageUrl,
   ].find((value): value is string => Boolean(value?.trim()));
-  const mobileOverflowLabel = activeSection === "timeline"
-    ? "History"
-    : activeSection === "data"
-      ? "Sources"
-      : "More";
+  const activeMobileOverflowSection = compactMobileWorkspace
+    ? WORKSPACE_SECTIONS.find(
+        (section) => section.id === activeSection && section.mobileOverflow,
+      )
+    : undefined;
+  const mobileOverflowLabel = activeMobileOverflowSection?.mobileLabel ?? "More";
+  const visibleWorkspaceSections = compactMobileWorkspace
+    ? MOBILE_PRIMARY_SECTIONS
+    : WORKSPACE_SECTIONS;
   return createPortal(
     <>
       <div
@@ -2869,7 +3212,7 @@ export function VehicleWorkspace({
         aria-hidden="true"
       />
       <aside
-        className={`inventory-workspace inventory-workspace--gallery-first inventory-workspace--dense inventory-workspace--compact-v3 inventory-workspace--oem-${oemTheme}`}
+        className={`inventory-workspace inventory-workspace--gallery-first inventory-workspace--dense inventory-workspace--compact-v3 inventory-workspace--v10 inventory-workspace--oem-${oemTheme}`}
         ref={workspaceRef}
         role="dialog"
         aria-modal="true"
@@ -3153,23 +3496,35 @@ export function VehicleWorkspace({
               onClick={() => openAndFocusSection("hold")}
             >
               <UserRound size={18} strokeWidth={1.8} aria-hidden="true" />
-              <strong>{holdLabel}</strong>
+              <span className="inventory-workspace-mobile-status__copy">
+                <span className="inventory-workspace-mobile-status__label">Hold status</span>
+                <strong>{holdLabel}</strong>
+              </span>
             </button>
             {canViewHoldEvidence && vehicle.dealerMail.hasActiveHold === true ? (
               <span
                 title={primaryHold?.salesperson || "Not provided"}
                 aria-label={`Salesperson ${primaryHold?.salesperson || "not provided"}`}
               >
-                <span className="inventory-workspace-mobile-status__label">Salesperson:</span>
-                <strong>{primaryHold?.salesperson || "—"}</strong>
+                <span className="inventory-workspace-mobile-status__copy">
+                  <span className="inventory-workspace-mobile-status__label">Salesperson</span>
+                  <strong>{primaryHold?.salesperson || "—"}</strong>
+                </span>
               </span>
             ) : vehicle.dealerMail.hasActiveHold === true ? (
-              <span><strong>Hold details restricted</strong></span>
+              <span>
+                <span className="inventory-workspace-mobile-status__copy">
+                  <span className="inventory-workspace-mobile-status__label">Hold details</span>
+                  <strong>Restricted</strong>
+                </span>
+              </span>
             ) : null}
             {vehicle.dealerMail.hasActiveHold === true ? (
               <span aria-label={`Expected date ${formatDate(primaryHold?.expectedDeliveryDate)}`}>
-                <span className="inventory-workspace-mobile-status__label">Expected:</span>
-                <strong>{formatDate(primaryHold?.expectedDeliveryDate)}</strong>
+                <span className="inventory-workspace-mobile-status__copy">
+                  <span className="inventory-workspace-mobile-status__label">Expected date</span>
+                  <strong>{formatDate(primaryHold?.expectedDeliveryDate)}</strong>
+                </span>
               </span>
             ) : null}
             <button
@@ -3177,7 +3532,10 @@ export function VehicleWorkspace({
               className="inventory-workspace-mobile-status__location"
               onClick={() => openAndFocusSection("movement")}
             >
-              {currentLocation.label}
+              <span className="inventory-workspace-mobile-status__copy">
+                <span className="inventory-workspace-mobile-status__label">Location</span>
+                <strong>{currentLocation.label}</strong>
+              </span>
             </button>
           </section>
 
@@ -3273,7 +3631,7 @@ export function VehicleWorkspace({
               ref={tabListRef}
               onKeyDown={handleTabKeyDown}
             >
-              {WORKSPACE_SECTIONS.map((section) => (
+              {visibleWorkspaceSections.map((section) => (
                 <button
                   type="button"
                   role="tab"
@@ -3295,9 +3653,15 @@ export function VehicleWorkspace({
             <details
               className="inventory-workspace-mobile-section-more"
               ref={mobileSectionMoreRef}
-              data-active-overflow={activeSection === "timeline" || activeSection === "data" ? "true" : "false"}
+              data-active-overflow={activeMobileOverflowSection ? "true" : "false"}
             >
-              <summary aria-label="More vehicle sections">
+              <summary
+                id={activeMobileOverflowSection ? `inventory-tab-${activeMobileOverflowSection.id}` : undefined}
+                aria-label={activeMobileOverflowSection
+                  ? `${activeMobileOverflowSection.label} section selected; show more vehicle sections`
+                  : "More vehicle sections"}
+                aria-current={activeMobileOverflowSection ? "page" : undefined}
+              >
                 <span className="inventory-workspace-mobile-more-label" aria-hidden="true">
                   {mobileOverflowLabel === "More" ? (
                     <><span>Mo</span><span>re</span></>
@@ -3305,22 +3669,23 @@ export function VehicleWorkspace({
                 </span>
                 <ChevronDown size={15} strokeWidth={1.8} aria-hidden="true" />
               </summary>
-              <div role="menu" aria-label="More vehicle sections">
+              <ul aria-label="Additional vehicle sections">
                 {WORKSPACE_SECTIONS.filter((section) => section.mobileOverflow).map((section) => (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    aria-current={activeSection === section.id ? "page" : undefined}
-                    onClick={() => {
-                      if (mobileSectionMoreRef.current) mobileSectionMoreRef.current.open = false;
-                      openAndFocusSection(section.id);
-                    }}
-                    key={section.id}
-                  >
-                    {section.mobileLabel}
-                  </button>
+                  <li key={section.id}>
+                    <button
+                      type="button"
+                      aria-current={activeSection === section.id ? "page" : undefined}
+                      aria-controls={`inventory-panel-${section.id}`}
+                      onClick={() => {
+                        if (mobileSectionMoreRef.current) mobileSectionMoreRef.current.open = false;
+                        openAndFocusSection(section.id);
+                      }}
+                    >
+                      {section.mobileLabel}
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </details>
           </div>
 
@@ -3426,8 +3791,7 @@ export function VehicleWorkspace({
             <WorkspacePanel id="equipment" label="Equipment" active={activeSection === "equipment"}>
               <div className="inventory-workspace-equipment-layout">
                 <SourceConfirmedEquipment vehicle={vehicle} />
-                <aside className="inventory-workspace-equipment-specs" aria-label="Vehicle specifications">
-                  <EquipmentSpecifications vehicle={vehicle} />
+                <aside className="inventory-workspace-equipment-specs" aria-label="Equipment section index">
                   <EquipmentCategoryIndex vehicle={vehicle} />
                 </aside>
               </div>

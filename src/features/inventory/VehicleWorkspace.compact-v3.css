@@ -2609,21 +2609,24 @@
     transform: rotate(180deg);
   }
 
-  .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-mobile-section-more > div {
+  .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-mobile-section-more > ul {
     position: absolute;
     z-index: 90;
     top: calc(100% + 3px);
     right: 5px;
     width: 150px;
     display: grid;
+    margin: 0;
     padding: 5px;
     border: 1px solid #cbd6df;
     border-radius: 8px;
     background: #fff;
     box-shadow: 0 12px 28px rgb(18 45 70 / 18%);
+    list-style: none;
   }
 
-  .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-mobile-section-more > div button {
+  .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-mobile-section-more > ul button {
+    width: 100%;
     min-height: 44px;
     padding: 0 11px;
     border: 0;

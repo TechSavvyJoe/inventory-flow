@@ -246,8 +246,8 @@ export function OperationsQueue({ items, homeStore, role, reportDate, onAction }
           <p>Open the item, take the next authorized step, and leave a clear owner and follow-up.</p>
         </div>
         <div className="ops-scope-switch" role="group" aria-label="Queue location scope">
-          <button type="button" className={scope === 'home' ? 'is-active' : undefined} onClick={() => setScope('home')}>{homeStore}</button>
-          <button type="button" className={scope === 'group' ? 'is-active' : undefined} onClick={() => setScope('group')}>All stores</button>
+          <button type="button" aria-pressed={scope === 'home'} className={scope === 'home' ? 'is-active' : undefined} onClick={() => setScope('home')}><span>{homeStore}</span></button>
+          <button type="button" aria-pressed={scope === 'group'} className={scope === 'group' ? 'is-active' : undefined} onClick={() => setScope('group')}><span>All stores</span></button>
         </div>
       </div>
 

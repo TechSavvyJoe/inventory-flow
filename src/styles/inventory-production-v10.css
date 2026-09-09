@@ -1,0 +1,175 @@
+/*
+ * Inventory Flow production polish v10
+ *
+ * Shared typography, page-shell, and control polish for the inventory
+ * experience. Component layout authority stays with the feature-local
+ * InventoryTable.production-v10.css and VehicleWorkspace.v10.css files.
+ */
+
+:is(#root .inventory-page, #root .inventory-experience--modern, body > .inventory-workspace--compact-v3) {
+  --v10-ink: var(--ifx-neutral-900);
+  --v10-ink-strong: var(--navy-900);
+  --v10-support: var(--ifx-neutral-700);
+  --v10-muted: var(--ifx-neutral-600);
+  --v10-border: var(--ifx-neutral-300);
+  --v10-border-soft: var(--ifx-neutral-200);
+  --v10-surface: var(--ifx-neutral-0);
+  --v10-surface-subtle: var(--ifx-neutral-50);
+  --v10-surface-header: var(--ifx-neutral-100);
+  --v10-blue: var(--store-accent, var(--ifx-oem-accent));
+  --v10-blue-strong: var(--store-accent-strong, var(--ifx-oem-accent-strong));
+  color: var(--v10-ink);
+  font-family: var(--font-app);
+  font-synthesis: none;
+  font-kerning: normal;
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+}
+
+:is(#root .inventory-experience--modern, body > .inventory-workspace--compact-v3)
+  :where(button, input, select, textarea) {
+  font-family: inherit;
+  font-synthesis: none;
+  font-kerning: normal;
+  font-optical-sizing: auto;
+}
+
+#root .inventory-page,
+#root .inventory-experience--modern {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  margin-inline: 0;
+}
+
+@supports selector(:has(*)) {
+  #root .app-main:has(> .inventory-page) {
+    padding-inline: clamp(14px, 1.35vw, 24px);
+  }
+}
+
+#root .inventory-experience--modern .inventory-experience__content {
+  width: 100%;
+  max-width: none !important;
+  margin-inline: 0;
+  padding: 22px 0 32px;
+}
+
+#root .inventory-experience--modern .inventory-page-header--modern h1 {
+  color: var(--v10-ink-strong) !important;
+  font-size: clamp(28px, 2vw, 34px) !important;
+  font-weight: var(--ifx-weight-bold) !important;
+  line-height: 38px !important;
+  letter-spacing: var(--ifx-tracking-tight) !important;
+}
+
+#root .inventory-experience--modern .inventory-page-header--modern p,
+#root .inventory-experience--modern .inventory-page-header--modern p > span {
+  color: var(--v10-support) !important;
+  font-size: 14px !important;
+  font-weight: var(--ifx-weight-medium) !important;
+  line-height: 20px !important;
+}
+
+/* A single restrained control language. */
+#root .inventory-experience--modern :where(
+  .inventory-primary-search,
+  .inventory-command-bar .inventory-scope-switch--modern,
+  .inventory-control-deck,
+  .inventory-filter-button,
+  .inventory-sort-composer > summary,
+  .inventory-page-size,
+  .inventory-filter-panel--modern
+) {
+  border-color: var(--v10-border) !important;
+  border-radius: var(--ifx-radius-sm) !important;
+  box-shadow: var(--ifx-elevation-1) !important;
+}
+
+#root .inventory-experience--modern .inventory-primary-search {
+  min-height: var(--ifx-control-height-lg) !important;
+  background: var(--v10-surface) !important;
+}
+
+#root .inventory-experience--modern .inventory-primary-search input {
+  min-height: 46px !important;
+  color: var(--v10-ink) !important;
+  font-size: 15px !important;
+  font-weight: var(--ifx-weight-medium) !important;
+  line-height: 20px !important;
+}
+
+#root .inventory-experience--modern .inventory-primary-search input::placeholder {
+  color: var(--v10-muted) !important;
+  opacity: 1;
+}
+
+#root .inventory-experience--modern :where(
+  .inventory-command-bar .inventory-scope-switch--modern button,
+  .inventory-quick-filters[class] button,
+  .inventory-filter-button,
+  .inventory-sort-composer > summary,
+  .inventory-page-size,
+  .inventory-page-size select
+) {
+  color: var(--v10-ink);
+  font-size: 13px !important;
+  font-weight: var(--ifx-weight-semibold) !important;
+  line-height: 18px !important;
+  letter-spacing: 0 !important;
+}
+
+#root .inventory-experience--modern .inventory-command-bar .inventory-scope-switch--modern button.is-active {
+  background: var(--v10-blue) !important;
+  box-shadow: none !important;
+}
+
+#root .inventory-experience--modern .inventory-control-deck {
+  min-height: 56px;
+  padding: 7px;
+  background: var(--v10-surface-subtle);
+}
+
+#root .inventory-experience--modern .inventory-quick-filters[class] button {
+  min-height: var(--ifx-control-height-sm);
+  padding-inline: 10px !important;
+  border-radius: 6px !important;
+}
+
+#root .inventory-experience--modern .inventory-toolbar--modern {
+  min-height: 42px;
+}
+
+:is(#root .inventory-experience--modern, body > .inventory-workspace--compact-v3)
+  :where(button, summary, a[href]):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--v10-blue) 30%, transparent) !important;
+  outline-offset: 2px !important;
+}
+
+@media (max-width: 880px) {
+  #root .inventory-experience--modern .inventory-experience__content {
+    padding: 16px 0 88px;
+  }
+
+  #root .inventory-experience--modern .inventory-page-header--modern h1 {
+    font-size: 26px !important;
+    line-height: 32px !important;
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(#root .inventory-experience--modern, body > .inventory-workspace.inventory-workspace--compact-v3) * {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :is(#root .inventory-experience--modern, body > .inventory-workspace.inventory-workspace--compact-v3)
+    :where(button, input, select, textarea, summary) {
+    forced-color-adjust: auto;
+  }
+}

@@ -339,12 +339,12 @@ describe('dense vehicle workspace', () => {
     }
     expect(screen.queryByRole('button', { name: /Copy factory option/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Copy factory standard equipment/i })).not.toBeInTheDocument();
-    expect(within(panel).getAllByText('Factory option').length).toBeGreaterThan(0);
-    expect(within(panel).getAllByText('Inventory listing').length).toBeGreaterThan(0);
-    expect(within(panel).getByText('10 unique VIN-linked labels')).toBeInTheDocument();
-    expect(within(panel).getByText(/4 factory source-backed labels.*7 online-listing labels/i)).toBeInTheDocument();
+    expect(within(panel).getAllByText(/Original window sticker · Option/).length).toBeGreaterThan(0);
+    expect(within(panel).getAllByText(/Published vehicle listing/).length).toBeGreaterThan(0);
+    expect(within(panel).getByText('10 VIN-linked items, organized for quick customer questions')).toBeInTheDocument();
+    expect(within(panel).getByText(/4 original-sticker items.*7 published-listing items/i)).toBeInTheDocument();
     expect(within(panel).getByRole('heading', { name: 'Original-sticker configuration' })).toBeInTheDocument();
-    expect(within(panel).getByRole('heading', { name: 'Vehicle specifications' })).toBeInTheDocument();
+    expect(within(panel).queryByRole('heading', { name: 'Vehicle specifications' })).not.toBeInTheDocument();
     const prefixedFactoryRow = panel.querySelector(
       'li[title*="Exact published label: Functional: Rear view camera"]',
     );
@@ -353,7 +353,7 @@ describe('dense vehicle workspace', () => {
     expect(within(prefixedFactoryRow as HTMLElement).getByText('Functional: Rear view camera')).toHaveClass(
       'inventory-sr-only',
     );
-    expect(within(prefixedFactoryRow as HTMLElement).getByText(/Factory standard.*Functional/i)).toBeInTheDocument();
+    expect(within(prefixedFactoryRow as HTMLElement).getByText(/Original window sticker · Standard.*Functional/i)).toBeInTheDocument();
 
     const safetySection = panel.querySelector('#inventory-equipment-section-safety');
     expect(safetySection).toHaveAttribute('tabindex', '-1');
@@ -531,7 +531,7 @@ describe('dense vehicle workspace', () => {
     expect(panel.querySelector('[data-dealermail-intent="view-inventory"]')).toHaveAttribute('data-action-tone', 'primary');
   });
 
-  it('shows every equipment item immediately without per-feature copy controls', async () => {
+  it('keeps a readable equipment preview and reveals every item without per-feature copy controls', async () => {
     const user = userEvent.setup();
     const equipped = vehicle();
     equipped.features = [
@@ -558,22 +558,32 @@ describe('dense vehicle workspace', () => {
     for (const item of equipped.features) {
       expect(within(panel).getAllByText(item).some((element) => element.closest('.inventory-workspace-equipment-group'))).toBe(true);
     }
-    expect(within(panel).queryByText('2 more')).not.toBeInTheDocument();
+    const finalItem = within(panel)
+      .getAllByText('Traffic Sign Recognition')
+      .map((element) => element.closest('li'))
+      .find(Boolean) as HTMLElement;
+    expect(finalItem).not.toBeVisible();
+    const showAll = within(panel).getByRole('button', { name: 'Show all 7 items' });
+    expect(showAll).toHaveAttribute('aria-expanded', 'false');
+    await user.click(showAll);
+    expect(finalItem).toBeVisible();
+    expect(within(panel).getByRole('button', { name: 'Show fewer' })).toHaveAttribute('aria-expanded', 'true');
     expect(within(panel).queryAllByRole('button', { name: /copy/i })).toHaveLength(0);
     expect(within(panel).queryByRole('button', { name: 'Copy all published equipment' })).not.toBeInTheDocument();
     expect(panel.querySelector('.inventory-equipment-group-copy')).not.toBeInTheDocument();
     expect(panel.querySelector('.inventory-equipment-copy-value')).not.toBeInTheDocument();
+    expect(panel.querySelector('.inventory-workspace-equipment-group > ul > li > svg')).not.toBeInTheDocument();
     const sourcedTrafficSign = within(panel)
       .getAllByText('Traffic Sign Recognition')
       .map((element) => element.closest('li'))
       .find((element) => element?.hasAttribute('title'));
     expect(sourcedTrafficSign).toHaveAttribute(
       'title',
-      'Source: Inventory listing',
+      'Source: Published vehicle listing',
     );
   });
 
-  it('keeps mobile equipment categories immediate while specifications stay one tap away', async () => {
+  it('keeps mobile equipment categories and source context immediate without a duplicate specifications wall', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
       matches: query === '(max-width: 620px)',
@@ -598,21 +608,24 @@ describe('dense vehicle workspace', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Equipment' }));
     const panel = screen.getByRole('tabpanel', { name: 'Equipment' });
-    const specifications = panel.querySelector('.inventory-workspace-equipment-specifications');
-    expect(specifications).toBeInTheDocument();
-    expect(specifications).not.toHaveAttribute('open');
+    expect(panel.querySelector('.inventory-workspace-equipment-specifications')).not.toBeInTheDocument();
+    expect(within(panel).getByRole('navigation', { name: 'Equipment sections on this vehicle' })).toBeInTheDocument();
     expect(within(panel).getByRole('button', { name: /Jump to Safety & driver assist/i })).toBeVisible();
-
-    const summary = within(specifications as HTMLElement)
-      .getByRole('heading', { name: 'Vehicle specifications' })
-      .closest('summary');
-    expect(summary).toBeInTheDocument();
-    await user.click(summary as HTMLElement);
-    await waitFor(() => expect(specifications).toHaveAttribute('open'));
-    expect(within(specifications as HTMLElement).getByText('3.5L V6 EcoBoost')).toBeVisible();
+    expect(within(panel).getByText(/organized for quick customer questions/i)).toBeVisible();
   });
 
-  it('exposes the mobile context, combined status, three actions, and four-tab overflow architecture', () => {
+  it('uses a native mobile disclosure whose visible trigger owns overflow-section selection and focus', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(max-width: 768px)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
     const mobileVehicle = vehicle();
     mobileVehicle.publicListing.listingUrl = 'https://www.bobmaxeyfordinfowlerville.com/vehicle-details?stock=W5863Q';
 
@@ -635,9 +648,66 @@ describe('dense vehicle workspace', () => {
     expect(within(mobileActions).getByText('Open listing')).toBeInTheDocument();
     expect(within(mobileActions).getByText('DealerMail')).toBeInTheDocument();
     expect(mobileActions.querySelector('.inventory-workspace-mobile-actions__more > summary')).toHaveAttribute('aria-label', 'More actions');
-    expect(document.querySelectorAll('.inventory-workspace-tabs [data-mobile-overflow="true"]')).toHaveLength(2);
-    expect(document.querySelector('.inventory-workspace-mobile-section-more > summary')).toHaveAttribute('aria-label', 'More vehicle sections');
-    expect(document.querySelector('.inventory-workspace-mobile-section-more')).toHaveTextContent(/History.*Record/i);
+    expect(document.querySelectorAll('.inventory-workspace-tabs [data-mobile-overflow="true"]')).toHaveLength(0);
+    expect(screen.queryByRole('tab', { name: 'History' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menu', { name: 'More vehicle sections' })).not.toBeInTheDocument();
+
+    const moreSections = document.querySelector<HTMLElement>(
+      '.inventory-workspace-mobile-section-more > summary',
+    );
+    expect(moreSections).toHaveAttribute('aria-label', 'More vehicle sections');
+    await user.click(moreSections!);
+    const additionalSections = screen.getByRole('list', { name: 'Additional vehicle sections' });
+    await user.click(within(additionalSections).getByRole('button', { name: 'History' }));
+
+    await waitFor(() => {
+      expect(moreSections).toHaveAttribute(
+        'aria-label',
+        'History section selected; show more vehicle sections',
+      );
+      expect(moreSections).toHaveAttribute('aria-current', 'page');
+      expect(moreSections).toHaveAttribute('id', 'inventory-tab-timeline');
+      expect(moreSections).toHaveFocus();
+    });
+    expect(screen.getByRole('tabpanel', { name: /History section selected/i })).toHaveAttribute(
+      'aria-labelledby',
+      'inventory-tab-timeline',
+    );
+  });
+
+  it('uses instant programmatic scrolling when reduced motion is requested', async () => {
+    const user = userEvent.setup();
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })));
+    const equipped = vehicle();
+    equipped.features = ['Blind Spot Information System', 'Max Trailer Tow Package'];
+
+    try {
+      render(
+        <VehicleWorkspace
+          vehicle={equipped}
+          homeStore={{ id: 'fowlerville', name: 'Fowlerville' }}
+          onClose={vi.fn()}
+        />,
+      );
+
+      await user.click(screen.getByRole('tab', { name: 'Equipment' }));
+      await user.click(screen.getByRole('button', { name: /Jump to Safety & driver assist/i }));
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
   });
 
   it('routes the mobile DealerMail shortcut through hold evidence instead of skipping to an external action', async () => {
@@ -680,7 +750,7 @@ describe('dense vehicle workspace', () => {
       configurable: true,
       value: { writeText: vi.fn().mockRejectedValue(new Error('blocked')) },
     });
-    vi.spyOn(window, 'open').mockReturnValue({ opener: window } as unknown as Window);
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue({ opener: window } as unknown as Window);
 
     try {
       render(
@@ -692,6 +762,11 @@ describe('dense vehicle workspace', () => {
         />,
       );
       await user.click(screen.getByRole('button', { name: 'Find Vehicle in DealerMail' }));
+      expect(openSpy).toHaveBeenCalledWith(
+        expect.stringContaining('dealermail.com'),
+        '_blank',
+        'noopener,noreferrer',
+      );
       expect(await screen.findByText(/browser could not copy stock W5863Q/i)).toHaveTextContent(/enter stock W5863Q manually in LAST8 \/ STOCK/i);
     } finally {
       if (clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);

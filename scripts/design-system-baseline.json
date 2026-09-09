@@ -10,7 +10,8 @@
     "./styles/typography-hardening.css",
     "./styles/app-system-polish.css",
     "./styles/inventory-experience-final.css",
-    "./styles/readability-final.css"
+    "./styles/readability-final.css",
+    "./styles/inventory-production-v10.css"
   ],
   "files": {
     "src/components/CopyableValue.css": { "smallText": 1, "rawColors": 6 },

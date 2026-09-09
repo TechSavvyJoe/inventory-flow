@@ -52,12 +52,22 @@ describe('OperationsQueue', () => {
 
     const queue = within(container)
     expect(queue.getByRole('heading', { name: 'Work queue' })).toBeInTheDocument()
+    const homeScope = queue.getByRole('button', { name: 'Fowlerville' })
+    const groupScope = queue.getByRole('button', { name: 'All stores' })
+    expect(homeScope).toHaveAttribute('aria-pressed', 'true')
+    expect(groupScope).toHaveAttribute('aria-pressed', 'false')
+    expect(within(homeScope).getByText('Fowlerville')).toBeVisible()
     expect(queue.getByText(/updates Inventory Flow only/i)).toBeInTheDocument()
     expect(queue.getByText('Confirm availability and record the decision.')).toBeInTheDocument()
     expect(queue.getAllByText('Vehicle move').length).toBeGreaterThan(0)
     expect(queue.getByRole('link', { name: /Open vehicle move/i })).toBeInTheDocument()
     expect(queue.getByRole('link', { name: /View vehicle/i })).toBeInTheDocument()
     expect(queue.getAllByRole('listitem')).toHaveLength(1)
+
+    await user.click(groupScope)
+    expect(homeScope).toHaveAttribute('aria-pressed', 'false')
+    expect(groupScope).toHaveAttribute('aria-pressed', 'true')
+    await user.click(homeScope)
 
     await user.click(queue.getByRole('button', { name: 'Acknowledge' }))
     expect(onAction).toHaveBeenCalledWith(

@@ -362,6 +362,14 @@
   cursor: pointer;
 }
 
+.today-scope-control button > span {
+  position: relative;
+  z-index: 1;
+  display: block;
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
+
 .today-scope-control button.is-active {
   background: white;
   color: var(--blue-700);
@@ -603,6 +611,8 @@
   .today-as-of { max-width: 98px; }
   .today-as-of strong { font-size: 11px; }
   .today-summary-context { min-height: 30px; }
+  .today-scope-control button { font-size: 13px; font-weight: 700; }
+  .today-scope-control button.is-active { color: var(--surface); background: var(--blue-700); box-shadow: none; }
   .today-summary {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -855,6 +865,26 @@
 
   .today-tabs {
     margin-top: 10px;
+  }
+}
+
+@media (forced-colors: active) {
+  .today-scope-control {
+    border-color: ButtonText;
+    background: Canvas;
+  }
+
+  .today-scope-control button {
+    color: ButtonText;
+    background: Canvas;
+    box-shadow: none;
+  }
+
+  .today-scope-control button.is-active {
+    color: HighlightText;
+    background: Highlight;
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
   }
 }
 
