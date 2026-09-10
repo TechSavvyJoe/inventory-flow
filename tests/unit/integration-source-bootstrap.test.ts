@@ -30,8 +30,9 @@ function fixture() {
   }
   return {
     bootstrap: {
-      meta: { reportDate: '2026-09-09', completedAt: '2026-09-09T13:00:00Z', timezone: 'America/New_York', publicFreshness: 'current', dealerMailFreshness: 'current', warnings: [PRIVATE], manifestPath: PRIVATE },
+      meta: { reportDate: '2026-09-09', completedAt: '2026-09-09T13:00:00Z', timezone: 'America/New_York', publicFreshness: 'current', dealerMailFreshness: 'current', managerDispositionFreshness: 'current', managerDispositionCoverageStatus: 'provided', managerDispositionCoveredSourceStores: ['Howell', PRIVATE], warnings: [PRIVATE], manifestPath: PRIVATE },
       vehicles: [view], publicChanges: [{ id: 'change1', type: 'price_change', field: 'Listed price', valueType: 'money', reportDate: '2026-09-09', vin: VIN, store: 'Howell', beforeValue: 43000, afterValue: 42000, raw: PRIVATE }],
+      managerDispositions: [{ stockNumber: '0001PUBLIC', vin: VIN, vehicleName: '2024 Ford F-150 XLT', soldManagerLog: true, deliveredManagerLog: true, deliveryDate: '2026-09-09', confidence: 'high', sourceStore: 'Howell', sourcePeriod: '2026-09', matchMethod: 'vin', matchStatus: 'matched', physicalStore: 'Howell', reviewRequired: false, soldLabel: PRIVATE, deliveryLabel: PRIVATE, dataState: PRIVATE, customerName: PRIVATE, source_store_note: PRIVATE }],
       attention: [{ notes: PRIVATE }], transfers: [{ reason: PRIVATE }],
     },
     release: { vehicles: [{ vin: VIN, publicRecord: record, crmRecord: { customer: PRIVATE }, holdRecord: { reason: PRIVATE } }] },
@@ -72,7 +73,9 @@ describe('integration public-source bootstrap', () => {
     const { bootstrap, release } = fixture(), before = structuredClone({ bootstrap, release })
     const result = integrationBootstrapFromSource(bootstrap, release)
     expect(JSON.stringify(result)).not.toContain(PRIVATE)
-    expect(Object.keys(result)).toEqual(['meta', 'vehicles', 'publicChanges'])
+    expect(Object.keys(result)).toEqual(['meta', 'vehicles', 'publicChanges', 'managerDispositions'])
+    expect(result.managerDispositions).toEqual([{ stockNumber: '0001PUBLIC', vin: VIN, vehicleName: '2024 Ford F-150 XLT', soldManagerLog: true, deliveredManagerLog: true, deliveryDate: '2026-09-09', confidence: 'high', sourceStore: 'Howell', sourcePeriod: '2026-09', matchMethod: 'vin', matchStatus: 'matched', physicalStore: 'Howell', reviewRequired: false }])
+    expect(result.meta.managerDispositionCoveredSourceStores).toEqual(['Howell'])
     expect(result.vehicles[0].windowSticker.options).toEqual(['TRAILER TOW PACKAGE'])
     expect(result.vehicles[0].factoryEquipment.sections[0].items).toEqual([{ label: 'Lane keeping', price: 0 }])
     expect(result.vehicles[0].hold).toEqual({ state: 'multiple', backupCount: 1 })

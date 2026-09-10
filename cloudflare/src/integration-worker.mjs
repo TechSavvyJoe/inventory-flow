@@ -13,7 +13,7 @@ const SAFE_HEADERS = {
   'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
 }
-const TOOL_OPERATIONS = { inventory: 'inventory_list', vehicle: 'inventory_get', changes: 'changes_list', health: 'health', holdSummary: 'holds_summary' }
+const TOOL_OPERATIONS = { inventory: 'inventory_list', vehicle: 'inventory_get', changes: 'changes_list', health: 'health', holdSummary: 'holds_summary', managerDispositions: 'manager_dispositions_list' }
 const MCP_METHODS = new Set(['server/discover', 'initialize', 'notifications/initialized', 'ping', 'tools/list', 'tools/call'])
 
 function response(status, body, extra = {}) {
@@ -34,6 +34,7 @@ function routeFor(url) {
   if (url.pathname === '/api/v1/changes') return { operation: 'changes_list', method: 'changes', query: true }
   if (url.pathname === '/api/v1/data-health') return { operation: 'health', method: 'health' }
   if (url.pathname === '/api/v1/holds/summary') return { operation: 'holds_summary', method: 'holdSummary', query: true }
+  if (url.pathname === '/api/v1/manager-dispositions') return { operation: 'manager_dispositions_list', method: 'managerDispositions', query: true }
   if (url.pathname === '/api/v1/capabilities') return { operation: 'other', method: 'capabilities' }
   const match = /^\/api\/v1\/vehicles\/([A-HJ-NPR-Z0-9]{17})$/.exec(url.pathname)
   if (match) return { operation: 'inventory_get', method: 'vehicle', vin: match[1] }

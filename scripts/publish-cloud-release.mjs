@@ -83,11 +83,13 @@ export function cloudReleaseFrom(release) {
         public: sourceRunForCloud(release.sourceRuns?.public),
         dealerMail: sourceRunForCloud(release.sourceRuns?.dealerMail),
         resources: sourceRunForCloud(release.sourceRuns?.resources),
+        managerDisposition: sourceRunForCloud(release.sourceRuns?.managerDisposition),
       },
       publicSnapshot: release.publicSnapshot,
       dealerMailSnapshot: release.dealerMailSnapshot,
       releasedHoldHistory: release.releasedHoldHistory ?? [],
       publicChangeEvents: release.publicChangeEvents ?? [],
+      managerDispositionOverlay: release.managerDispositionOverlay,
       vehicles: release.vehicles ?? [],
     },
   }

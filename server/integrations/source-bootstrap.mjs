@@ -36,6 +36,15 @@ function parsedFactoryEquipment(value) {
   }
 }
 
+function managerDisposition(value) {
+  if (!isObject(value)) return null
+  return pick(value, [
+    'stockNumber', 'vin', 'vehicleName', 'soldManagerLog', 'deliveredManagerLog',
+    'deliveryDate', 'confidence', 'sourceStore', 'sourcePeriod', 'matchMethod',
+    'matchStatus', 'physicalStore', 'reviewRequired',
+  ])
+}
+
 function date(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
   const time = Date.parse(`${value}T00:00:00Z`)
@@ -78,6 +87,7 @@ function vehicle(view, record, meta) {
     websiteStatus: text(record.availability)?.trim() || 'Not provided',
     publicListingState: meta.publicFreshness === 'current' ? 'Listed publicly; availability not confirmed' : 'Last verified public listing — availability not confirmed',
     dealerOn: { inStock: boolean(record.in_stock), inTransit: boolean(record.in_transit), inProduction: boolean(record.in_production) },
+    managerDisposition: managerDisposition(view.managerDisposition),
     hold: pick(view.hold, ['state', 'backupCount']),
     movement: pick(view.movement, ['currentLocation', 'destination', 'locationConfidence', 'lastConfirmedAt', 'departedAt', 'state']),
     publicScan: publicScan(record),
@@ -94,7 +104,10 @@ export function integrationBootstrapFromSource(bootstrap, release) {
   if (!isObject(bootstrap) || !Array.isArray(bootstrap.vehicles) || !isObject(bootstrap.meta) || !Array.isArray(release?.vehicles)) {
     throw new IntegrationReadError('Verified source inventory is unavailable', { status: 503, code: 'SOURCE_DATA_UNAVAILABLE' })
   }
-  const meta = pick(bootstrap.meta, ['reportDate', 'completedAt', 'timezone', 'publicFreshness', 'dealerMailFreshness'])
+  const meta = {
+    ...pick(bootstrap.meta, ['reportDate', 'completedAt', 'timezone', 'publicFreshness', 'dealerMailFreshness', 'managerDispositionFreshness', 'managerDispositionCoverageStatus']),
+    managerDispositionCoveredSourceStores: STORE_NAMES.filter(store => list(bootstrap.meta.managerDispositionCoveredSourceStores).includes(store)),
+  }
   const byVin = new Map(), duplicateVins = new Set()
   for (const item of release.vehicles) {
     if (!isObject(item) || !VIN.test(item.vin ?? '')) continue
@@ -113,5 +126,7 @@ export function integrationBootstrapFromSource(bootstrap, release) {
     'id', 'type', 'field', 'valueType', 'reportDate', 'previousReportDate', 'vin', 'stockNumber', 'vehicleName', 'store',
     'beforeValue', 'afterValue', 'currentVehicle', 'listingUrl',
   ]))
-  return { meta, vehicles, publicChanges }
+  const managerDispositions = list(bootstrap.managerDispositions).filter(isObject)
+    .map(managerDisposition).filter(Boolean)
+  return { meta, vehicles, publicChanges, managerDispositions }
 }

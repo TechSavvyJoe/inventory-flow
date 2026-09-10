@@ -13,11 +13,11 @@ const vin = '1FTFW1E50NFA00001'
 const canary = 'PRIVATE_CUSTOMER_AND_RAW_CREDENTIAL_CANARY'
 function readService(who = principal) {
   return createIntegrationReadService({ principal: who, bundleSha256: 'c'.repeat(64), cursorSecret: 'Synthetic-not-live-cursor-key-with-32-chars', bootstrap: {
-    meta: { reportDate: '2026-09-09', completedAt: '2026-09-09T13:00:00Z', publicFreshness: 'current', dealerMailFreshness: 'current', warnings: [canary] },
+    meta: { reportDate: '2026-09-09', completedAt: '2026-09-09T13:00:00Z', publicFreshness: 'current', dealerMailFreshness: 'current', managerDispositionFreshness: 'current', managerDispositionCoverageStatus: 'provided', managerDispositionCoveredSourceStores: ['Howell'], warnings: [canary] },
     vehicles: [
       { vin, stockNumber: '0001TEST', vehicleName: '2024 Ford F-150 XLT', make: 'Ford', model: 'F-150', year: 2024, publicStore: 'Howell', homeStore: 'Howell', listedPrice: 40000, hold: { state: 'none_observed', primarySalesperson: canary }, privateEvidence: { customer: canary }, searchText: canary },
       { vin: '1FTFW1E50NFA00002', stockNumber: '0002TEST', publicStore: 'Lincoln', vehicleName: 'Out of scope' },
-    ], publicChanges: [],
+    ], publicChanges: [], managerDispositions: [{ stockNumber: '0001TEST', vin, vehicleName: '2024 Ford F-150 XLT', soldManagerLog: true, deliveredManagerLog: true, deliveryDate: '2026-09-09', confidence: 'high', sourceStore: 'Howell', sourcePeriod: '2026-09', matchMethod: 'vin', matchStatus: 'matched', physicalStore: 'Howell', reviewRequired: false, customerName: canary }],
   } })
 }
 function setup(overrides = {}) {
@@ -41,9 +41,20 @@ describe('isolated shared data gateway', () => {
     expect(result.headers.get('ratelimit-remaining')).toBe('59')
     expect(test.audit).toHaveBeenCalledWith(env, principal, { operation: 'inventory_list', status: 200, resultCount: 1 })
   })
-  it.each(['/api/v1/inventory', `/api/v1/vehicles/${vin}`, '/api/v1/changes', '/api/v1/data-health', '/api/v1/holds/summary', '/api/v1/capabilities'])('serves %s', async path => {
+  it.each(['/api/v1/inventory', `/api/v1/vehicles/${vin}`, '/api/v1/changes', '/api/v1/data-health', '/api/v1/holds/summary', '/api/v1/manager-dispositions', '/api/v1/capabilities'])('serves %s', async path => {
     const test = setup()
     expect((await test.worker.fetch(request(path), env)).status).toBe(200)
+  })
+  it('serves only redacted manager dispositions and audits the dedicated operation', async () => {
+    const test = setup()
+    const result = await test.worker.fetch(request('/api/v1/manager-dispositions?store=Howell&delivered=true&review=false&limit=1'), env)
+    const json = await result.json()
+    expect(result.status).toBe(200)
+    expect(json.pagination).toMatchObject({ total: 1, returned: 1 })
+    expect(json.data[0]).toMatchObject({ soldManagerLog: true, deliveredManagerLog: true, sourceStore: 'Howell', physicalStore: 'Howell' })
+    expect(json.meta.managerDispositionCoverage).toMatchObject({ status: 'provided', coveredSourceStores: ['Howell'] })
+    expect(JSON.stringify(json)).not.toContain(canary)
+    expect(test.audit).toHaveBeenCalledWith(env, principal, { operation: 'manager_dispositions_list', status: 200, resultCount: 1 })
   })
   it.each(['/api/bootstrap', '/internal/readiness', '/internal/publish', '/api/v1/transfers', '/api/v1/attention', '/api/v1/sql', '/api/v1/snapshots'])('never exposes app/private/write surface %s', async path => {
     const test = setup()
@@ -57,6 +68,12 @@ describe('isolated shared data gateway', () => {
     expect(result.headers.get('allow')).toBe('GET')
     expect(test.authenticate).not.toHaveBeenCalled()
     expect(test.loadReadService).not.toHaveBeenCalled()
+  })
+  it('rejects writes, duplicate filters and principals without inventory scope on manager dispositions', async () => {
+    expect((await setup().worker.fetch(request('/api/v1/manager-dispositions', { method: 'POST' }), env)).status).toBe(405)
+    expect((await setup().worker.fetch(request('/api/v1/manager-dispositions?review=true&review=false'), env)).status).toBe(400)
+    const denied = setup({ authenticate: async () => ({ ...principal, scopes: ['health.read'] }) })
+    expect((await denied.worker.fetch(request('/api/v1/manager-dispositions'), env)).status).toBe(403)
   })
   it('fails closed on disabled, incorrect host, plain HTTP, and cross-origin requests', async () => {
     const test = setup()

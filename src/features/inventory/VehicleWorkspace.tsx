@@ -20,6 +20,7 @@ import {
   ChevronRight,
   CircleHelp,
   Clock3,
+  ClipboardCheck,
   Database,
   ExternalLink,
   FileText,
@@ -2859,6 +2860,20 @@ export function VehicleWorkspace({
                       icon={<Truck size={19} aria-hidden="true" />} tone={vehicle.movement?.overdue ? "danger" : "default"}
                       section="movement" active={false} onActivate={openAndFocusSection} />
                   </section>
+                  {vehicle.managerDisposition ? (
+                    <section className="vdp-flow-manager-disposition" data-state={vehicle.managerDisposition.dataState} aria-label="Manager disposition record">
+                      <ClipboardCheck size={19} strokeWidth={1.9} aria-hidden="true" />
+                      <div>
+                        <small>Manager log</small>
+                        <strong>{vehicle.managerDisposition.soldLabel}</strong>
+                        <span>
+                          {vehicle.managerDisposition.deliveryLabel}
+                          {vehicle.managerDisposition.deliveryDate ? ` · ${formatDate(vehicle.managerDisposition.deliveryDate)}` : ""}
+                        </span>
+                      </div>
+                      <em>Independent of listing, hold, CDK, and location</em>
+                    </section>
+                  ) : null}
                   {recordsNeedReview ? <button type="button" className="vdp-flow-warning vdp-flow-record-warning" onClick={() => openAndFocusSection("data")}>
                     <AlertTriangle size={17} aria-hidden="true" /><span>Some vehicle information needs a fresh check. Review records.</span><ChevronRight size={16} aria-hidden="true" />
                   </button> : null}

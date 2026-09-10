@@ -231,6 +231,32 @@
   .vdp-flow-warning { padding: 10px 14px; margin-bottom: 20px; border-left: 3px solid var(--ifx-warning); background: var(--ifx-warning-surface); color: var(--v10-ink); font-size: 14px; }
 }
 
+.inventory-workspace.inventory-workspace--flow .vdp-flow-manager-disposition {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--ifx-info) 24%, var(--v10-border));
+  border-left: 3px solid var(--ifx-info);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ifx-info) 5%, white);
+  color: var(--v10-ink);
+}
+.inventory-workspace.inventory-workspace--flow .vdp-flow-manager-disposition > svg { color: var(--ifx-info); }
+.inventory-workspace.inventory-workspace--flow .vdp-flow-manager-disposition > div { display: grid; gap: 2px; }
+.inventory-workspace.inventory-workspace--flow .vdp-flow-manager-disposition small { color: var(--v10-support); font-size: 12px; font-weight: 650; letter-spacing: .025em; text-transform: uppercase; }
+.inventory-workspace.inventory-workspace--flow .vdp-flow-manager-disposition strong { color: var(--v10-ink-strong); font-size: 14px; line-height: 1.35; }
+.inventory-workspace.inventory-workspace--flow .vdp-flow-manager-disposition span { color: var(--v10-support); font-size: 13px; line-height: 1.4; }
+.inventory-workspace.inventory-workspace--flow .vdp-flow-manager-disposition em { color: var(--v10-support); font-size: 12px; font-style: normal; line-height: 1.4; text-align: right; }
+.inventory-workspace.inventory-workspace--flow .vdp-flow-manager-disposition[data-state="stale"],
+.inventory-workspace.inventory-workspace--flow .vdp-flow-manager-disposition[data-state="unavailable"] { opacity: .78; }
+
+@media (max-width: 620px) {
+  .inventory-workspace.inventory-workspace--flow .vdp-flow-manager-disposition { grid-template-columns: 20px minmax(0, 1fr); }
+  .inventory-workspace.inventory-workspace--flow .vdp-flow-manager-disposition em { grid-column: 2; text-align: left; }
+}
+
 @media (max-width: 900px) {
   .inventory-workspace.inventory-workspace--compact-v3.inventory-workspace--v10.inventory-workspace--flow {
     .vdp-flow-header { align-items: flex-start; flex-direction: column; gap: 12px; }

@@ -4,7 +4,7 @@ export const INTEGRATION_SCOPES = Object.freeze(['inventory.read', 'changes.read
 export const INTEGRATION_STORES = Object.freeze(['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln'])
 const READER_ROLES = ['sales', 'manager', 'group_manager']
 const TOKEN_PATTERN = /^iflow_([a-f0-9]{32})_([A-Za-z0-9_-]{43})$/
-const AUDIT_OPERATIONS = new Set(['health', 'inventory_list', 'inventory_get', 'changes_list', 'holds_summary', 'mcp_initialize', 'mcp_tools_list', 'mcp_tools_call', 'mcp_notification', 'other'])
+const AUDIT_OPERATIONS = new Set(['health', 'inventory_list', 'inventory_get', 'changes_list', 'holds_summary', 'manager_dispositions_list', 'mcp_initialize', 'mcp_tools_list', 'mcp_tools_call', 'mcp_notification', 'other'])
 const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 const AUDIT_ROW_LIMIT = 10000
 

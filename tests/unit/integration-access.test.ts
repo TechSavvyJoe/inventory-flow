@@ -245,6 +245,8 @@ describe('integration quota and privacy-preserving audit', () => {
     expect(rows[0]).toMatchObject({ operation: 'inventory_list', status: 200, result_count: 25 })
     expect(Object.keys(rows[0]).sort()).toEqual(['client_id', 'id', 'occurred_at', 'operation', 'result_count', 'status'])
     expect(JSON.stringify(rows)).not.toMatch(/customer secret|never logged|iflow_/)
+    await auditIntegrationAccess(env, principal, { operation: 'manager_dispositions_list', status: 200, resultCount: 7, customerName: 'never logged' }, now + 1)
+    expect(db.prepare('SELECT operation,result_count FROM integration_access_audit ORDER BY id DESC LIMIT 1').get()).toMatchObject({ operation: 'manager_dispositions_list', result_count: 7 })
     await auditIntegrationAccess(env, principal, { operation: 'user submitted secret', status: 400, resultCount: 100000 }, now + 1)
     expect(db.prepare('SELECT operation,result_count FROM integration_access_audit ORDER BY id DESC LIMIT 1').get()).toMatchObject({ operation: 'other', result_count: 1000 })
   })

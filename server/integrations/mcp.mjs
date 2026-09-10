@@ -24,6 +24,10 @@ const changesSchema = z.strictObject({
   type: z.enum(['new_arrival', 'removed', 'price_change', 'mileage_change', 'website_status_change', 'stock_correction', 'store_transfer']).optional(),
   from: z.iso.date().optional(), to: z.iso.date().optional(), limit: limit.optional(), cursor: cursor.optional(),
 })
+const managerDispositionSchema = z.strictObject({
+  q: shortText.optional(), store: store.optional(), delivered: z.boolean().optional(),
+  review: z.boolean().optional(), limit: limit.optional(), cursor: cursor.optional(),
+})
 const TOOLS = [
   { name: 'search_inventory', operation: 'inventory', scope: 'inventory.read', schema: inventorySchema,
     description: 'Search permitted vehicles in the selected verified release. Returns exact equipment, non-sensitive hold and location facts, freshness, and an opaque pagination cursor. Availability still requires store confirmation.' },
@@ -35,6 +39,8 @@ const TOOLS = [
     description: 'Read selected-release completion, source freshness, and permitted inventory counts without raw source or customer data.' },
   { name: 'get_hold_summary', operation: 'holdSummary', scope: 'holds.aggregate.read', schema: z.strictObject({ store: store.optional() }),
     description: 'Read non-sensitive hold totals for permitted publicly listed vehicles by physical store. These are not complete CRM inventory totals or availability determinations.' },
+  { name: 'list_manager_dispositions', operation: 'managerDispositions', scope: 'inventory.read', schema: managerDispositionSchema,
+    description: 'Read redacted manager-supplied sold and delivered operational signals. Customer names, salesperson names, notes, contacts, holds, CDK state, public listing state, and physical location remain separate and are not exported.' },
 ]
 const SAFE_ERRORS = {
   INVALID_QUERY: [400, 'The query is invalid. Check the supported filters and limits.'],

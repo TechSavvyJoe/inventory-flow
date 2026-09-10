@@ -291,9 +291,11 @@ export function importRelease(database, release, { loadedAt = new Date().toISOSt
   const publicRun = release.sourceRuns.public
   const dealerRun = release.sourceRuns.dealerMail
   const resourceRun = release.sourceRuns.resources ?? null
+  const managerDispositionRun = release.sourceRuns.managerDisposition ?? null
   const publicId = sourceRunId(publicRun)
   const dealerId = sourceRunId(dealerRun)
   const resourceId = resourceRun ? sourceRunId(resourceRun) : null
+  const managerDispositionId = managerDispositionRun ? sourceRunId(managerDispositionRun) : null
 
   return withTransaction(database, () => {
     const insertRun = database.prepare(`
@@ -307,6 +309,7 @@ export function importRelease(database, release, { loadedAt = new Date().toISOSt
       [publicId, publicRun],
       [dealerId, dealerRun],
       ...(resourceId && resourceRun ? [[resourceId, resourceRun]] : []),
+      ...(managerDispositionId && managerDispositionRun ? [[managerDispositionId, managerDispositionRun]] : []),
     ]) {
       insertRun.run(
         id,
@@ -412,12 +415,14 @@ export function importRelease(database, release, { loadedAt = new Date().toISOSt
     setState(database, 'current_public_source_run_id', publicId, loadedAt)
     setState(database, 'current_dealermail_source_run_id', dealerId, loadedAt)
     setState(database, 'current_resource_source_run_id', resourceId || '', loadedAt)
+    setState(database, 'current_manager_disposition_source_run_id', managerDispositionId || '', loadedAt)
     setState(database, 'current_report_date', release.reportDate, loadedAt)
     setState(database, 'current_manifest_path', release.manifestPath, loadedAt)
     setState(database, 'current_manifest_json', json(release.manifest), loadedAt)
     setState(database, 'current_release_warnings_json', json(release.warnings), loadedAt)
     setState(database, 'current_public_change_events_json', json(release.publicChangeEvents ?? []), loadedAt)
     setState(database, 'current_released_hold_history_json', json(release.releasedHoldHistory ?? []), loadedAt)
+    setState(database, 'current_manager_disposition_overlay_json', json(release.managerDispositionOverlay ?? null), loadedAt)
     setState(
       database,
       'current_public_change_baseline_json',
@@ -429,6 +434,7 @@ export function importRelease(database, release, { loadedAt = new Date().toISOSt
       publicSourceRunId: publicId,
       dealerMailSourceRunId: dealerId,
       resourceSourceRunId: resourceId,
+      managerDispositionSourceRunId: managerDispositionId,
     }
   })
 }
@@ -442,6 +448,7 @@ export function getCurrentDataset(database) {
   const publicId = state.current_public_source_run_id
   const dealerId = state.current_dealermail_source_run_id
   const resourceId = state.current_resource_source_run_id
+  const managerDispositionId = state.current_manager_disposition_source_run_id
   if (!publicId && !dealerId) {
     return {
       state,
@@ -459,6 +466,7 @@ export function getCurrentDataset(database) {
     public: publicId ? hydrateSourceRun(getRun.get(publicId)) : null,
     dealerMail: dealerId ? hydrateSourceRun(getRun.get(dealerId)) : null,
     resources: resourceId ? hydrateSourceRun(getRun.get(resourceId)) : null,
+    managerDisposition: managerDispositionId ? hydrateSourceRun(getRun.get(managerDispositionId)) : null,
   }
   const publicRows = publicId
     ? database.prepare('SELECT * FROM public_vehicle_snapshots WHERE source_run_id = ?').all(publicId).map(hydrateSnapshotRow)

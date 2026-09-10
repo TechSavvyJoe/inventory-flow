@@ -396,6 +396,15 @@ function HoldActionCell({
         </span>
         <ChevronRight size={11} strokeWidth={2} aria-hidden="true" />
       </button>
+      {vehicle.managerDisposition ? (
+        <span className="inventory-manager-disposition" data-state={vehicle.managerDisposition.dataState}>
+          <ClipboardCheck size={13} strokeWidth={1.9} aria-hidden="true" />
+          <span>
+            <strong>{vehicle.managerDisposition.soldLabel}</strong>
+            <small>{vehicle.managerDisposition.deliveryLabel}</small>
+          </span>
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -1267,6 +1276,12 @@ export function InventoryMobileList({
                   <HoldIcon size={14} strokeWidth={1.9} aria-hidden="true" />
                   <strong>{holdStatus.label}</strong>
                 </button>
+                {vehicle.managerDisposition ? (
+                  <span className="inventory-mobile-manager-disposition" data-state={vehicle.managerDisposition.dataState}>
+                    <ClipboardCheck size={14} strokeWidth={1.9} aria-hidden="true" />
+                    <span><strong>{vehicle.managerDisposition.soldLabel}</strong><small>{vehicle.managerDisposition.deliveryLabel}</small></span>
+                  </span>
+                ) : null}
                 <button
                   type="button"
                   className={`inventory-mobile-location inventory-mobile-update${movementStatus ? " inventory-mobile-update--movement" : ""}`}

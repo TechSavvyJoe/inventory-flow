@@ -2,6 +2,7 @@
 const DEFAULT_BASE_URL = 'https://inventory-data.joegallant.me/api/v1/'
 const INVENTORY_FIELDS = ['q', 'store', 'make', 'model', 'year', 'minPrice', 'maxPrice', 'minMileage', 'maxMileage', 'holdState', 'sort', 'direction', 'limit', 'cursor']
 const CHANGE_FIELDS = ['q', 'store', 'type', 'from', 'to', 'limit', 'cursor']
+const MANAGER_DISPOSITION_FIELDS = ['q', 'store', 'delivered', 'review', 'limit', 'cursor']
 const SAFE_ERROR_CODES = new Set(['INVALID_QUERY', 'INVALID_CURSOR', 'NOT_FOUND', 'INSUFFICIENT_SCOPE', 'FORBIDDEN', 'SOURCE_DATA_UNAVAILABLE', 'INTEGRATION_UNAVAILABLE', 'INTEGRATION_DATA_UNAVAILABLE', 'INTEGRATION_AUDIT_UNAVAILABLE', 'INTEGRATION_RATE_LIMITED', 'INTEGRATION_TOKEN_INVALID', 'INTEGRATION_GRANT_INACTIVE', 'INTEGRATIONS_NOT_CONFIGURED', 'INTEGRATION_RESPONSE_TOO_LARGE', 'RESPONSE_TOO_LARGE'])
 
 export class InventoryFlowError extends Error {
@@ -71,7 +72,9 @@ function queryParameters(query, allowed) {
   for (const [key, value] of Object.entries(query)) {
     if (!allowed.includes(key)) failure('INVALID_QUERY')
     if (value === undefined) continue
-    if (!['string', 'number'].includes(typeof value) || (typeof value === 'number' && !Number.isFinite(value)) || String(value).length > (key === 'cursor' ? 8192 : 256)) failure('INVALID_QUERY')
+    const type = typeof value
+    const booleanField = ['delivered', 'review'].includes(key)
+    if ((booleanField ? type !== 'boolean' : !['string', 'number'].includes(type)) || (type === 'number' && !Number.isFinite(value)) || String(value).length > (key === 'cursor' ? 8192 : 256)) failure('INVALID_QUERY')
     result.set(key, String(value))
   }
   return result
@@ -142,6 +145,7 @@ export function createInventoryFlowClient({ token, baseUrl = DEFAULT_BASE_URL, f
     changes(query = {}, options) { return request('changes', query, CHANGE_FIELDS, options) },
     dataHealth(options) { return request('data-health', {}, [], options) },
     holdSummary(query = {}, options) { return request('holds/summary', query, ['store'], options) },
+    managerDispositions(query = {}, options) { return request('manager-dispositions', query, MANAGER_DISPOSITION_FIELDS, options) },
     capabilities(options) { return request('capabilities', {}, [], options) },
     async *iterateInventory(query = {}, options) {
       queryParameters(query, INVENTORY_FIELDS)
@@ -157,6 +161,21 @@ export function createInventoryFlowClient({ token, baseUrl = DEFAULT_BASE_URL, f
         if (cursor === null) return
         seen.add(cursor)
         // Never restart silently: it could mix snapshots or duplicate consumed rows.
+      }
+    },
+    async *iterateManagerDispositions(query = {}, options) {
+      queryParameters(query, MANAGER_DISPOSITION_FIELDS)
+      let cursor = query.cursor
+      const seen = new Set(cursor ? [cursor] : [])
+      while (true) {
+        const page = await client.managerDispositions({ ...query, ...(cursor ? { cursor } : {}) }, options)
+        if (!Array.isArray(page.data) || !page.pagination || !Number.isSafeInteger(page.pagination.total) || page.pagination.total < 0 || !Number.isSafeInteger(page.pagination.returned) || page.pagination.returned !== page.data.length || page.data.length > 100) failure('INVALID_RESPONSE')
+        const next = page.pagination.nextCursor
+        if (next !== null && (typeof next !== 'string' || next.length === 0 || next.length > 8192 || seen.has(next) || !page.data.length)) failure('INVALID_RESPONSE')
+        for (const disposition of page.data) yield disposition
+        cursor = next
+        if (cursor === null) return
+        seen.add(cursor)
       }
     },
   }

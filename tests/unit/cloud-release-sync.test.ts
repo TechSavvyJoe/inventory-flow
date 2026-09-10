@@ -14,7 +14,7 @@ function fixture() {
   const bundle = buildSyntheticCloudBundle()
   const expected = validateReleaseBundle(bundle)
   const envelope = {reportDate:bundle.reportDate,bundleSha256:'a'.repeat(64)}
-  return {bundle,expected,envelope,status:{ready:true,reportDate:bundle.reportDate,bundleSha256:envelope.bundleSha256,metadata:expected},readiness:{ready:true,reportDate:bundle.reportDate,bundleSha256:envelope.bundleSha256,counts:{inventory:expected.publicRowCount},bootstrapBytes:100}}
+  return {bundle,expected,envelope,status:{ready:true,reportDate:bundle.reportDate,bundleSha256:envelope.bundleSha256,metadata:expected},readiness:{ready:true,reportDate:bundle.reportDate,bundleSha256:envelope.bundleSha256,counts:{inventory:expected.publicRowCount,managerDispositions:expected.managerDispositionRecordCount},bootstrapBytes:100}}
 }
 describe('verified daily cloud publication',()=>{
   it('uses the New York date across UTC midnight',()=>expect(reportDate(new Date('2026-09-10T02:00:00Z'))).toBe('2026-09-09'))
@@ -45,11 +45,11 @@ describe('verified daily cloud publication',()=>{
       expect(options.redirect).toBe('error')
       if(route==='/internal/releases') {hash=JSON.parse(options.body).bundleSha256;return Response.json({status:'already_published',reportDate:bundle.reportDate})}
       if(route==='/internal/status') return Response.json({ready:true,reportDate:bundle.reportDate,bundleSha256:hash,metadata:expected})
-      return Response.json({ready:true,reportDate:bundle.reportDate,bundleSha256:hash,counts:{inventory:expected.publicRowCount},bootstrapBytes:123})
+      return Response.json({ready:true,reportDate:bundle.reportDate,bundleSha256:hash,counts:{inventory:expected.publicRowCount,managerDispositions:expected.managerDispositionRecordCount},bootstrapBytes:123})
     }
     const receipt=await syncCloudRelease({release:bundle.release,environment,fetchImpl,now})
     expect(routes.sort()).toEqual(['/internal/readiness','/internal/releases','/internal/status'])
-    expect(receipt).toMatchObject({complete:true,status:'published_and_verified',bundleSha256:hash})
+    expect(receipt).toMatchObject({complete:true,status:'published_and_verified',bundleSha256:hash,counts:{managerDispositionRecordCount:expected.managerDispositionRecordCount},validation:{managerDispositionBound:true},sourceHashes:{managerDisposition:bundle.release.sourceRuns.managerDisposition?.sha256??null}})
     expect(JSON.stringify(receipt)).not.toMatch(/customer|reasonRaw|synthetic@example|CF-Access/)
     const dir=mkdtempSync(path.join(os.tmpdir(),'inventory-sync-'))
     try {

@@ -2,6 +2,14 @@ import { canonicalExternalAutoCheckUrl, resourceProvenanceSha256 } from '../../s
 
 // Portable validation for the encrypted daily evidence import. This module has
 // no filesystem, credentials, or source-fetching dependencies.
+import {
+  MANAGER_DISPOSITION_SCHEMA,
+  canonicalManagerDispositionJson,
+  managerDispositionSha256,
+  sanitizeManagerDispositionDocuments,
+  validateSanitizedManagerDispositionOverlay,
+} from '../../server/manager-disposition-schema.mjs'
+
 export const RELEASE_FORMAT = 'inventory-flow-private-release-v1'
 const STORES = Object.freeze({
   Howell: { code: 'H', host: 'www.bobmaxeyfordhowell.com' },
@@ -10,6 +18,14 @@ const STORES = Object.freeze({
   Lincoln: { code: 'L', host: 'www.bobmaxeylincoln.com' },
 })
 const STORE_NAMES = Object.keys(STORES)
+const MANAGER_STORE_SLUGS = Object.freeze({ Howell: 'howell', Fowlerville: 'fowlerville', 'Ford Detroit': 'ford-detroit', Lincoln: 'lincoln' })
+const MANAGER_BINDING_KEYS = new Set([
+  'status', 'classification', 'source_type', 'path', 'sha256', 'source_store',
+  'source_period', 'sold_records', 'delivered_records',
+  'sold_not_marked_delivered', 'matched_current_public_vins',
+  'unmatched_records', 'conflicting_records', 'review_records',
+  'cloud_upload_allowed',
+])
 const VIN = /^[A-HJ-NPR-Z0-9]{17}$/
 const SOURCE_VIN_TOKEN = /^[A-Z0-9]{17}$/
 const HASH = /^[a-f0-9]{64}$/i
@@ -370,6 +386,64 @@ function crmRows(value, label) {
   return { records, bySourceVin, byVin, stocks, quarantinedByStock, counts: storeCounts(records, 'storeName') }
 }
 
+function validateManagerDisposition(release, normalizedVehicles, reportDate) {
+  // Existing encrypted releases predate this optional overlay. Treat absence
+  // only as not provided; never infer an unsold or undelivered state.
+  const overlay = release.managerDispositionOverlay ?? sanitizeManagerDispositionDocuments({
+    documents: [], reportDate, vehicles: normalizedVehicles,
+  })
+  const summary = validateSanitizedManagerDispositionOverlay(overlay, {
+    reportDate,
+    vehicles: normalizedVehicles,
+  })
+  const run = release.sourceRuns?.managerDisposition
+  const binding = release.manifest?.manager_disposition_overlay
+  if (overlay.coverageStatus === 'not_provided') {
+    ensure(run === null || run === undefined, 'manager disposition source run exists without bound source data')
+    ensure(binding === null || binding === undefined, 'manager disposition manifest binding exists without source data')
+    return summary
+  }
+
+  ensure(object(run), 'manager disposition source run is missing')
+  onlyKeys(run, new Set([
+    'type', 'reportDate', 'extractedAt', 'sha256', 'bytes', 'schemaVersion',
+    'status', 'staleReason', 'rowCount', 'metadata',
+  ]), 'manager disposition source run')
+  ensure(run.type === 'manager_disposition_overlay' && run.schemaVersion === MANAGER_DISPOSITION_SCHEMA, 'manager disposition source schema is unsupported')
+  ensure(run.reportDate === reportDate && run.status === 'current' && run.staleReason === null, 'manager disposition source is not current')
+  ensure(run.extractedAt === null, 'manager disposition source must not claim an extraction timestamp')
+  const canonical = canonicalManagerDispositionJson(overlay)
+  ensure(String(run.sha256).toLowerCase() === managerDispositionSha256(overlay), 'manager disposition source checksum does not match its sanitized overlay')
+  ensure(strictInteger(run.bytes, 'manager disposition source bytes', 1) === new TextEncoder().encode(canonical).byteLength, 'manager disposition source byte count does not match its sanitized overlay')
+  ensure(strictInteger(run.rowCount, 'manager disposition source row count') === summary.recordCount, 'manager disposition source row count does not reconcile')
+
+  onlyKeys(run.metadata, new Set([
+    'classification', 'cloudUploadAllowed', 'sourceCount', 'sourceStores',
+    'soldRecordCount', 'deliveredRecordCount', 'reviewRecordCount',
+    'strippedFieldCount', 'sanitizer', 'boundSourceSha256',
+  ]), 'manager disposition source metadata')
+  ensure(run.metadata.classification === 'operational-redacted' && run.metadata.cloudUploadAllowed === true, 'manager disposition source is not approved for cloud use')
+  ensure(run.metadata.sanitizer === 'strict_allowlist_v1', 'manager disposition source was not processed by the approved sanitizer')
+  ensure(strictInteger(run.metadata.sourceCount, 'manager disposition source count', 1) === overlay.sources.length, 'manager disposition source count does not reconcile')
+  ensure(Array.isArray(run.metadata.sourceStores) && sameValue(run.metadata.sourceStores, overlay.sources.map((source) => source.sourceStore)), 'manager disposition source stores do not reconcile')
+  ensure(strictInteger(run.metadata.soldRecordCount, 'manager disposition sold count') === summary.soldRecordCount, 'manager disposition sold count does not reconcile')
+  ensure(strictInteger(run.metadata.deliveredRecordCount, 'manager disposition delivered count') === summary.deliveredRecordCount, 'manager disposition delivered count does not reconcile')
+  ensure(strictInteger(run.metadata.reviewRecordCount, 'manager disposition review count') === summary.reviewRecordCount, 'manager disposition review count does not reconcile')
+  ensure(strictInteger(run.metadata.strippedFieldCount, 'manager disposition stripped-field count') === overlay.sources.reduce((total, source) => total + source.strippedFieldCount, 0), 'manager disposition stripped-field count does not reconcile')
+  ensure(typeof run.metadata.boundSourceSha256 === 'string' && HASH.test(run.metadata.boundSourceSha256), 'manager disposition bound-source checksum is invalid')
+
+  ensure(object(binding), 'manager disposition manifest binding is missing')
+  onlyKeys(binding, MANAGER_BINDING_KEYS, 'manager disposition manifest binding')
+  ensure(binding.status === 'complete' && binding.classification === 'operational-redacted' && binding.source_type === 'manager-log' && binding.cloud_upload_allowed === true, 'manager disposition manifest binding is not approved')
+  ensure(String(binding.sha256).toLowerCase() === String(run.metadata.boundSourceSha256).toLowerCase(), 'manager disposition source does not match its manifest binding')
+  ensure(binding.source_period === reportDate.slice(0, 7), 'manager disposition manifest period does not match the release')
+  ensure(overlay.sources.length === 1 && binding.source_store === overlay.sources[0].sourceStore && run.metadata.sourceStores.length === 1 && run.metadata.sourceStores[0] === binding.source_store, 'manager disposition manifest store does not match its sanitized source')
+  ensure(binding.path === `local-file:${binding.source_period}-${MANAGER_STORE_SLUGS[binding.source_store]}-operational.json`, 'manager disposition manifest path does not match its approved source filename')
+  ensure(binding.sold_records === summary.soldRecordCount && binding.delivered_records === summary.deliveredRecordCount && binding.sold_not_marked_delivered === summary.soldNotMarkedDeliveredCount, 'manager disposition manifest status counts do not reconcile')
+  ensure(binding.matched_current_public_vins === summary.matchedRecordCount && binding.unmatched_records === summary.unmatchedRecordCount && binding.conflicting_records === summary.conflictingRecordCount && binding.review_records === summary.reviewRecordCount, 'manager disposition manifest match counts do not reconcile')
+  return summary
+}
+
 function validateCrmSummary(summary, parsed, label) {
   ensure(object(summary) && integer(summary.totalRows, `${label} count`) === parsed.records.length && integer(summary.uniqueVinCount, `${label} source-VIN count`) === parsed.bySourceVin.size && integer(summary.uniqueStockCount, `${label} stock count`) === parsed.stocks.size, `${label} summary does not reconcile`)
   matchOptionalCounts(summary.byStore, parsed.counts, `${label} store totals`)
@@ -546,6 +620,7 @@ export function validateReleaseBundle(bundle) {
   }
   ensure(sameSet(seen, expectedVins), 'normalized inventory omits source VINs')
   validateResourceRun(release.sourceRuns?.resources, resourceRows, bundle.reportDate)
+  const managerDisposition = validateManagerDisposition(release, normalized, bundle.reportDate)
   return {
     reportDate: bundle.reportDate,
     publicRowCount: publicData.byVin.size,
@@ -560,6 +635,10 @@ export function validateReleaseBundle(bundle) {
     publicStoreCounts: publicData.counts,
     crmStoreCounts: crm.counts,
     resourceRecordCount: resourceRows.length,
+    managerDispositionRecordCount: managerDisposition.recordCount,
+    managerSoldRecordCount: managerDisposition.soldRecordCount,
+    managerDeliveredRecordCount: managerDisposition.deliveredRecordCount,
+    managerDispositionReviewCount: managerDisposition.reviewRecordCount,
     vehicleCount: seen.size,
   }
 }

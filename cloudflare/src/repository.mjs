@@ -88,6 +88,7 @@ export function datasetFromRelease(release, homeAssignments = [], { loadedAt } =
     warnings: release.warnings,
     publicChangeEvents: release.publicChangeEvents,
     releasedHoldHistory: release.releasedHoldHistory ?? [],
+    managerDispositionOverlay: release.managerDispositionOverlay,
     completedAt: release.completedAt,
     reportDate: release.reportDate,
   })
@@ -98,11 +99,13 @@ export function datasetFromRelease(release, homeAssignments = [], { loadedAt } =
     public: sourceRow(evidence.sourceRuns.public, loadedAt || evidence.completedAt || ''),
     dealerMail: sourceRow(evidence.sourceRuns.dealerMail, loadedAt || evidence.completedAt || ''),
     resources: sourceRow(evidence.sourceRuns.resources, loadedAt || evidence.completedAt || ''),
+    managerDisposition: sourceRow(evidence.sourceRuns.managerDisposition, loadedAt || evidence.completedAt || ''),
   }
   const state = {
     current_public_source_run_id: sourceRuns.public.id,
     current_dealermail_source_run_id: sourceRuns.dealerMail.id,
     current_resource_source_run_id: sourceRuns.resources?.id || '',
+    current_manager_disposition_source_run_id: sourceRuns.managerDisposition?.id || '',
     current_report_date: evidence.reportDate,
     current_manifest_path: '',
     current_manifest_json: json(evidence.manifest),
@@ -110,6 +113,7 @@ export function datasetFromRelease(release, homeAssignments = [], { loadedAt } =
     current_public_change_events_json: json(evidence.publicChangeEvents ?? []),
     current_released_hold_history_json: json(evidence.releasedHoldHistory),
     current_public_change_baseline_json: json(evidence.sourceRuns.public.metadata?.changeBaseline ?? null),
+    current_manager_disposition_overlay_json: json(evidence.managerDispositionOverlay ?? null),
   }
   const dataset = { state, sourceRuns, publicRows: [], crmRows: [], holdRows: [], resourceRows: [], homeAssignments: clone(homeAssignments) }
   const seen = new Set()

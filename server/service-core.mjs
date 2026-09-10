@@ -15,6 +15,7 @@ import {
 import { allowedAttentionActions, buildAttentionMutation } from './attention-workflow.mjs'
 import { STORE_NAMES } from './constants.mjs'
 import { normalizePublicChangeCounts } from './public-change-counts.mjs'
+import { MANAGER_DISPOSITION_COVERAGE_CAVEAT } from './manager-disposition-schema.mjs'
 import { allowedEventTypes, buildTransferEvent, buildTransferRequest, roleContext, WorkflowError } from './workflow.mjs'
 
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/
@@ -121,8 +122,22 @@ function buildIndexes(dataset) {
   const homeByVin = new Map(dataset.homeAssignments.map((row) => [row.vin, row]))
   const releasedHistoryByVin = new Map((parseJson(dataset.state.current_released_hold_history_json, []) ?? [])
     .map((row) => [String(row.vin ?? '').trim().toUpperCase(), row]))
+  const managerDispositionOverlay = parseJson(dataset.state.current_manager_disposition_overlay_json, null)
+  const managerDispositionCoveredSourceStores = STORE_NAMES.filter((store) =>
+    Array.isArray(managerDispositionOverlay?.sources) && managerDispositionOverlay.sources.some((source) => source?.sourceStore === store),
+  )
+  const managerDispositionRecords = Array.isArray(managerDispositionOverlay?.records)
+    ? managerDispositionOverlay.records
+    : []
+  const managerDispositionByVin = new Map(managerDispositionRecords
+    .filter((row) => row?.matchStatus === 'matched' && typeof row?.vin === 'string')
+    .map((row) => [row.vin, row]))
   const vins = new Set([...publicByVin.keys(), ...crmByVin.keys()])
-  return { publicByVin, crmByVin, holdByVin, resourceByVin, homeByVin, releasedHistoryByVin, vins }
+  return {
+    publicByVin, crmByVin, holdByVin, resourceByVin, homeByVin,
+    releasedHistoryByVin, managerDispositionOverlay, managerDispositionRecords,
+    managerDispositionByVin, vins,
+  }
 }
 
 function sourceVehicle(indexes, vin) {
@@ -137,6 +152,7 @@ function sourceVehicle(indexes, vin) {
     cdkRecord: holdRow?.cdk ?? null,
     resourceRecord: indexes.resourceByVin.get(vin)?.payload ?? null,
     releasedHistoryRecord: indexes.releasedHistoryByVin.get(vin) ?? null,
+    managerDispositionRecord: indexes.managerDispositionByVin.get(vin) ?? null,
     homeAssignment: indexes.homeByVin.get(vin) ?? null,
   }
 }
@@ -719,6 +735,12 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
       inTransit: typeof publicRecord?.in_transit === 'boolean' ? publicRecord.in_transit : null,
       inProduction: typeof publicRecord?.in_production === 'boolean' ? publicRecord.in_production : null,
     },
+    managerDisposition: source.managerDispositionRecord
+      ? {
+          ...source.managerDispositionRecord,
+          dataState: meta.managerDispositionFreshness,
+        }
+      : null,
     hold,
     movement,
     changeSummary: cleanText(publicRecord?.change_summary),
@@ -770,6 +792,11 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     publicStore,
     view.crmStore,
     view.websiteStatus,
+    view.managerDisposition?.soldLabel,
+    view.managerDisposition?.deliveryLabel,
+    view.managerDisposition?.deliveryDate,
+    view.managerDisposition?.sourceStore,
+    view.managerDisposition?.sourcePeriod,
     hold.primarySalesperson,
     autoCheckReport?.reportRunAt,
     autoCheckReport?.score,
@@ -901,6 +928,11 @@ function metaView(dataset, database, now, loadStatus) {
   const publicFreshness = currentFreshness(dataset.sourceRuns.public, { now, timeZone, loadStatus })
   const dealerMailFreshness = currentFreshness(dataset.sourceRuns.dealerMail, { now, timeZone, loadStatus })
   const resourceFreshness = currentFreshness(dataset.sourceRuns.resources, { now, timeZone, loadStatus })
+  const managerDispositionFreshness = currentFreshness(dataset.sourceRuns.managerDisposition, { now, timeZone, loadStatus })
+  const managerDispositionOverlay = parseJson(dataset.state.current_manager_disposition_overlay_json, null)
+  const managerDispositionCoveredSourceStores = STORE_NAMES.filter((store) =>
+    Array.isArray(managerDispositionOverlay?.sources) && managerDispositionOverlay.sources.some((source) => source?.sourceStore === store),
+  )
   const warnings = parseJson(dataset.state.current_release_warnings_json, [])
   if (loadStatus?.error) warnings.push(`Latest source refresh failed; retained prior verified data as stale/unverified: ${loadStatus.error}`)
   if (dealerMailFreshness !== 'current') {
@@ -918,9 +950,16 @@ function metaView(dataset, database, now, loadStatus) {
     publicFreshness,
     dealerMailFreshness,
     resourceFreshness,
+    managerDispositionFreshness,
+    managerDispositionCoverageStatus: managerDispositionOverlay?.coverageStatus === 'provided' ? 'provided' : 'not_provided',
+    managerDispositionCoveredSourceStores,
+    managerDispositionCoverageCaveat: MANAGER_DISPOSITION_COVERAGE_CAVEAT,
     publicCount: dataset.publicRows.length,
     crmCount: crmSourceCount,
     heldVinCount: dataset.holdRows.length,
+    managerDispositionCount: managerDispositionOverlay?.summary?.recordCount ?? 0,
+    managerDeliveredCount: managerDispositionOverlay?.summary?.deliveredRecordCount ?? 0,
+    managerDispositionReviewCount: managerDispositionOverlay?.summary?.reviewRecordCount ?? 0,
     publicChangeBaselineDate:
       cleanText(publicChangeBaseline?.reportDate) || cleanText(dataset.sourceRuns.public?.metadata?.changeBaseline?.reportDate),
     publicChangeCounts: {
@@ -1323,6 +1362,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
           public: state.meta.publicFreshness,
           dealerMail: state.meta.dealerMailFreshness,
           resources: state.meta.resourceFreshness,
+          managerDisposition: state.meta.managerDispositionFreshness,
         },
         counts: {
           public: state.dataset.publicRows.length,
@@ -1330,6 +1370,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
           heldVins: state.dataset.holdRows.length,
           resources: resourceCoverage.vehicles,
           resourceCoverage,
+          managerDispositions: state.indexes.managerDispositionRecords.length,
           transfers: state.allTransferRows.length,
         },
         sources: {
@@ -1352,6 +1393,13 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
                 sha256: state.dataset.sourceRuns.resources.content_sha256,
                 rows: state.dataset.sourceRuns.resources.row_count,
                 extractedAt: state.dataset.sourceRuns.resources.extracted_at,
+              }
+            : null,
+          managerDisposition: state.dataset.sourceRuns.managerDisposition
+            ? {
+                sha256: state.dataset.sourceRuns.managerDisposition.content_sha256,
+                rows: state.dataset.sourceRuns.managerDisposition.row_count,
+                extractedAt: state.dataset.sourceRuns.managerDisposition.extracted_at,
               }
             : null,
         },
@@ -1402,6 +1450,10 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         vehicles,
         transfers,
         holdSignals: holdSignalSummaries(state.dataset.holdRows, state.meta),
+        managerDispositions: state.indexes.managerDispositionRecords.map((record) => ({
+          ...record,
+          dataState: state.meta.managerDispositionFreshness,
+        })),
         attention: attentionItems(
           state.meta,
           [...vehicles, ...crmOnlyVehicles],

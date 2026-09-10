@@ -46,6 +46,18 @@ export interface DealerOnSignal {
   updatedAt?: string | null;
 }
 
+export interface ManagerDispositionSignal {
+  dataState: SourceDataState;
+  sold: true;
+  delivered: boolean;
+  deliveryDate?: string | null;
+  sourceStore: InventoryStore;
+  sourcePeriod: string;
+  confidence: "high" | "medium-high" | "medium" | "low";
+  soldLabel: "Sold — manager log";
+  deliveryLabel: "Delivered — manager log" | "Not marked delivered — manager log";
+}
+
 export interface AutoCheckResource {
   dataState: SourceDataState;
   url?: string | null;
@@ -271,6 +283,7 @@ export interface InventoryVehicle {
   factoryEquipment?: FactoryEquipmentResource | null;
   publicListing: PublicListingSignal;
   dealerOn: DealerOnSignal;
+  managerDisposition?: ManagerDispositionSignal | null;
   dealerMail: DealerMailHoldSignal;
   location: VehicleLocationSignal;
   movement?: VehicleMovementSignal | null;

@@ -152,7 +152,7 @@ export async function appReadiness(env) {
   const bootstrap=service.bootstrap({role:'driver',store:'Howell',user:'Cloud readiness diagnostic'})
   return {
     ready:true,reportDate:bootstrap.meta.reportDate,bundleSha256,
-    counts:{inventory:bootstrap.vehicles.length,transfers:bootstrap.transfers.length,attention:bootstrap.attention.length},
+    counts:{inventory:bootstrap.vehicles.length,managerDispositions:bootstrap.managerDispositions?.length??0,transfers:bootstrap.transfers.length,attention:bootstrap.attention.length},
     bootstrapBytes:encoder.encode(JSON.stringify(bootstrap)).byteLength,
   }
 }

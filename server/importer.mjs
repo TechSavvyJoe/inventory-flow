@@ -4,6 +4,8 @@ import path from 'node:path'
 import { buildPublicChangeEvents, summarizePublicChangeEvents } from './public-change-events.mjs'
 import { normalizePublicChangeCounts } from './public-change-counts.mjs'
 import { canonicalExternalAutoCheckUrl, resourceProvenanceSha256 } from './resource-validation.mjs'
+import { sanitizeManagerDispositionDocuments } from './manager-disposition-schema.mjs'
+import { loadManagerDispositionOverlay } from './manager-disposition-overlay.mjs'
 
 import { STORE_NAMES } from './constants.mjs'
 export { STORE_NAMES } from './constants.mjs'
@@ -1682,11 +1684,13 @@ export function normalizeRelease({
         },
       },
       resources: resourceSourceRun,
+      managerDisposition: null,
     },
     publicSnapshot: publicFile.data,
     dealerMailSnapshot,
     releasedHoldHistory: dealerMailSnapshot.releasedHoldHistory ?? [],
     publicChangeEvents,
+    managerDispositionOverlay: sanitizeManagerDispositionDocuments({ documents: [], reportDate, vehicles }),
     vehicles,
   }
 }
@@ -1734,7 +1738,7 @@ export function loadLatestCompletedRelease({ workspaceRoot, now = new Date() }) 
     documentEnrichmentFile = readJsonWithHash(matchedDocumentEnrichmentPath, 'VIN document enrichment')
   }
   const previousPublic = findPreviousCompletedPublicSnapshot(resolvedWorkspace, reportDate, { publicPath, publicFile, manifest })
-  return normalizeRelease({
+  const release = normalizeRelease({
     manifestPath,
     manifest,
     publicPath,
@@ -1753,6 +1757,21 @@ export function loadLatestCompletedRelease({ workspaceRoot, now = new Date() }) 
     documentEnrichmentLoadWarning,
     now,
   })
+  const managerDisposition = loadManagerDispositionOverlay({
+    workspaceRoot: resolvedWorkspace,
+    reportDate,
+    vehicles: release.vehicles,
+    current: release.sourceRuns.public.status === 'current',
+    manifestBinding: manifest.manager_disposition_overlay ?? null,
+  })
+  release.managerDispositionOverlay = managerDisposition.overlay
+  release.sourceRuns.managerDisposition = managerDisposition.sourceRun
+  if (managerDisposition.overlay.summary.reviewRecordCount > 0) {
+    release.warnings.push(
+      `${managerDisposition.overlay.summary.reviewRecordCount} manager disposition record(s) require identity review; they remain separate from current inventory status.`,
+    )
+  }
+  return release
 }
 
 export const importerInternals = Object.freeze({

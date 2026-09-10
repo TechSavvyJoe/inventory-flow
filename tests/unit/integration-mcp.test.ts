@@ -10,7 +10,7 @@ const PRIVATE = 'SYNTHETIC_PRIVATE_CANARY_DO_NOT_EXPORT'
 const principal = { userId: 'synthetic-user', clientId: 'synthetic-ai', role: 'sales', stores: ['Howell'], scopes: ['inventory.read', 'changes.read', 'health.read', 'holds.aggregate.read'] }
 const vinFor = index => `1FTFW1E50NFA${String(index).padStart(5, '0')}`
 const bootstrap = {
-  meta: { reportDate: '2026-09-09', completedAt: '2026-09-09T13:00:00Z', timezone: 'America/New_York', publicFreshness: 'current', dealerMailFreshness: 'current' },
+  meta: { reportDate: '2026-09-09', completedAt: '2026-09-09T13:00:00Z', timezone: 'America/New_York', publicFreshness: 'current', dealerMailFreshness: 'current', managerDispositionFreshness: 'current', managerDispositionCoverageStatus: 'provided', managerDispositionCoveredSourceStores: ['Howell'] },
   vehicles: Array.from({ length: 4 }, (_, i) => ({
     vin: vinFor(i + 1), stockNumber: `000${i}TEST`, year: 2024, make: 'Ford', model: 'F-150', trim: 'XLT', vehicleName: `2024 Ford F-150 XLT ${i}`,
     publicStore: i === 3 ? 'Lincoln' : 'Howell', homeStore: 'Howell', listedPrice: 40000 + i, mileage: 2000 + i, features: 'TRAILER TOW PACKAGE; SYNC 4',
@@ -18,6 +18,7 @@ const bootstrap = {
     privateEvidence: { comments: [{ text: PRIVATE }] }, dealerComments: PRIVATE, raw: { secret: PRIVATE },
   })),
   publicChanges: [{ id: 'synthetic-change', type: 'price_change', field: 'Listed price', reportDate: '2026-09-09', previousReportDate: '2026-09-08', vin: vinFor(1), stockNumber: '0000TEST', vehicleName: '2024 Ford F-150', store: 'Howell', beforeValue: 42000, afterValue: 40000 }],
+  managerDispositions: [{ stockNumber: '0000TEST', vin: vinFor(1), vehicleName: '2024 Ford F-150 XLT 0', soldManagerLog: true, deliveredManagerLog: true, deliveryDate: '2026-09-09', confidence: 'high', sourceStore: 'Howell', sourcePeriod: '2026-09', matchMethod: 'vin', matchStatus: 'matched', physicalStore: 'Howell', reviewRequired: false, privateNote: PRIVATE }],
 }
 function readService(who = principal) {
   return createIntegrationReadService({ bootstrap, principal: who, bundleSha256: 'a'.repeat(64), cursorSecret: 'synthetic-cursor-signing-secret-only-0123456789', now: () => new Date('2026-09-09T14:00:00Z') })
@@ -44,12 +45,12 @@ const dataOf = result => {
 }
 
 describe('official SDK2 read-only inventory MCP adapter', () => {
-  it.each(['auto', 'legacy'])('supports a real %s discovery/handshake, tool listing and all five tools', async mode => {
+  it.each(['auto', 'legacy'])('supports a real %s discovery/handshake, tool listing and all six tools', async mode => {
     const getReadService = vi.fn(() => readService()), audit = vi.fn()
     const connection = await connect({ mode, getReadService, onToolResult: audit })
     try {
       const { tools } = await connection.client.listTools()
-      expect(tools.map(tool => tool.name)).toEqual(['search_inventory', 'get_vehicle', 'get_inventory_changes', 'get_data_health', 'get_hold_summary'])
+      expect(tools.map(tool => tool.name)).toEqual(['search_inventory', 'get_vehicle', 'get_inventory_changes', 'get_data_health', 'get_hold_summary', 'list_manager_dispositions'])
       expect(getReadService).not.toHaveBeenCalled()
       for (const tool of tools) expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false })
       const inventory = dataOf(await connection.client.callTool({ name: 'search_inventory', arguments: { q: 'tow', limit: 2, sort: 'mileage', direction: 'desc' } }))
@@ -66,16 +67,20 @@ describe('official SDK2 read-only inventory MCP adapter', () => {
       expect(health.data.visibleVehicleCount).toBe(3)
       const holds = dataOf(await connection.client.callTool({ name: 'get_hold_summary', arguments: { store: 'Howell' } }))
       expect(holds.data[0].currentHeldVins).toBe(1)
-      expect(JSON.stringify([inventory, second, vehicle, changes, health, holds])).not.toContain(PRIVATE)
-      expect(audit).toHaveBeenCalledTimes(6)
+      const dispositions = dataOf(await connection.client.callTool({ name: 'list_manager_dispositions', arguments: { store: 'Howell', delivered: true, review: false } }))
+      expect(dispositions.pagination).toMatchObject({ total: 1, returned: 1 })
+      expect(dispositions.data[0]).toMatchObject({ soldManagerLog: true, deliveredManagerLog: true, sourceStore: 'Howell', physicalStore: 'Howell' })
+      expect(JSON.stringify([inventory, second, vehicle, changes, health, holds, dispositions])).not.toContain(PRIVATE)
+      expect(audit).toHaveBeenCalledTimes(7)
       expect(audit.mock.calls.every(([record]) => record.status === 200 && !JSON.stringify(record).includes('vin'))).toBe(true)
+      expect(audit).toHaveBeenCalledWith({ operation: 'managerDispositions', status: 200, resultCount: 1 })
       expect(connection.responses.every(response => response.session === null)).toBe(true)
       if (mode === 'auto') expect(connection.responses.filter(response => response.status === 200).every(response => response.contentType?.includes('application/json'))).toBe(true)
     } finally { await connection.close() }
   })
 
   it.each([
-    ['inventory.read', ['search_inventory', 'get_vehicle']], ['changes.read', ['get_inventory_changes']],
+    ['inventory.read', ['search_inventory', 'get_vehicle', 'list_manager_dispositions']], ['changes.read', ['get_inventory_changes']],
     ['health.read', ['get_data_health']], ['holds.aggregate.read', ['get_hold_summary']],
   ])('registers only tools granted by %s and denies an unlisted tool', async (scope, names) => {
     const who = { ...principal, scopes: [scope] }, getter = vi.fn(() => readService(who))
@@ -95,7 +100,7 @@ describe('official SDK2 read-only inventory MCP adapter', () => {
       for (const tool of tools) {
         expect(tool.inputSchema.type).toBe('object')
         expect(tool.inputSchema.additionalProperties).toBe(false)
-        for (const schema of Object.values(tool.inputSchema.properties)) expect(['string', 'number', 'integer']).toContain(schema.type)
+        for (const schema of Object.values(tool.inputSchema.properties)) expect(['string', 'number', 'integer', 'boolean']).toContain(schema.type)
       }
       expect(tools.find(tool => tool.name === 'search_inventory').inputSchema.properties.limit.maximum).toBe(100)
       for (const args of [{ sql: 'SELECT * FROM raw' }, { limit: 101 }, { limit: '2' }, { sort: 'customer' }, { store: 'Unknown' }, { q: 'a'.repeat(257) }, { cursor: 'a'.repeat(8193) }, { minPrice: -1 }, { year: 2024.5 }, { holdState: true }]) {
@@ -191,19 +196,21 @@ describe('official SDK2 read-only inventory MCP adapter', () => {
     })
     try {
       await client.connect(transport)
-      expect((await client.listTools()).tools).toHaveLength(5)
+      expect((await client.listTools()).tools).toHaveLength(6)
       const inventory = dataOf(await client.callTool({ name: 'search_inventory', arguments: { limit: 1 } }))
       expect(inventory.pagination).toMatchObject({ total: 3, returned: 1 })
       expect(dataOf(await client.callTool({ name: 'get_data_health', arguments: {} })).data.visibleVehicleCount).toBe(3)
-      expect(authenticate.mock.calls.length).toBeGreaterThanOrEqual(4)
+      expect(dataOf(await client.callTool({ name: 'list_manager_dispositions', arguments: { limit: 1 } })).pagination.total).toBe(1)
+      expect(authenticate.mock.calls.length).toBeGreaterThanOrEqual(5)
       expect(quota).toHaveBeenCalledTimes(authenticate.mock.calls.length)
-      expect(loadReadService).toHaveBeenCalledTimes(2)
+      expect(loadReadService).toHaveBeenCalledTimes(3)
       for (const reply of replies) {
         expect(reply.cache?.split(/,\s*/)).toEqual(expect.arrayContaining(['private', 'no-store']))
         expect(reply.cache).not.toMatch(/public|(?:s-maxage|max-age)\s*=/)
       }
       expect(JSON.stringify(replies)).not.toContain(PRIVATE)
       expect(audit).toHaveBeenCalledWith(env, principal, { operation: 'inventory_list', status: 200, resultCount: 1 })
+      expect(audit).toHaveBeenCalledWith(env, principal, { operation: 'manager_dispositions_list', status: 200, resultCount: 1 })
       if (mode === 'auto') {
         expect(requests.some(request => request.method === 'server/discover')).toBe(true)
         expect(replies.some(reply => reply.body.includes('MCP_METHOD_NOT_ALLOWED'))).toBe(false)

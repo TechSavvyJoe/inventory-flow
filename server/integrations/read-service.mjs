@@ -1,10 +1,12 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { Buffer } from 'node:buffer'
 import { STORE_NAMES } from '../constants.mjs'
+import { MANAGER_DISPOSITION_AUTHORITY, MANAGER_DISPOSITION_COVERAGE_CAVEAT, MANAGER_DISPOSITION_INDEPENDENCE } from '../manager-disposition-schema.mjs'
 
 const SCOPES = ['inventory.read', 'changes.read', 'health.read', 'holds.aggregate.read']
 const STATES = ['current', 'stale_unverified', 'incomplete', 'unknown']
 const HOLD_STATES = ['primary', 'backup', 'multiple', 'none_observed', 'stale', 'unknown']
+const MANAGER_MATCH_STATES = ['matched', 'matched_vin_stock_review', 'not_in_current_release', 'stock_not_in_current_release', 'stock_ambiguous']
 const CHANGE_TYPES = ['new_arrival', 'removed', 'price_change', 'mileage_change', 'website_status_change', 'stock_correction', 'store_transfer']
 const CHANGE_FIELDS = {
   new_arrival: { field: 'Public listing', valueType: 'state', aliases: ['Public listing'] },
@@ -112,6 +114,30 @@ function publicHold(value, dealerMailFreshness) {
   }
 }
 
+function managerDispositionView(value, dataState) {
+  if (!value || typeof value !== 'object' || value.soldManagerLog !== true) return null
+  const delivered = bool(value.deliveredManagerLog)
+  const matchStatus = MANAGER_MATCH_STATES.includes(value.matchStatus) ? value.matchStatus : null
+  if (delivered === null || !matchStatus) return null
+  return {
+    stockNumber: text(value.stockNumber, 80),
+    vin: typeof value.vin === 'string' && VIN.test(value.vin) ? value.vin : null,
+    vehicleName: text(value.vehicleName),
+    soldManagerLog: true,
+    deliveredManagerLog: delivered,
+    deliveryDate: delivered ? text(value.deliveryDate, 10) : null,
+    confidence: ['high', 'medium-high', 'medium', 'low'].includes(value.confidence) ? value.confidence : null,
+    sourceStore: store(value.sourceStore), sourcePeriod: text(value.sourcePeriod, 7),
+    matchMethod: ['vin', 'unique_stock', 'not_matched'].includes(value.matchMethod) ? value.matchMethod : null,
+    matchStatus, physicalStore: store(value.physicalStore), reviewRequired: bool(value.reviewRequired),
+    soldLabel: 'Sold — manager log',
+    deliveryLabel: delivered ? 'Delivered — manager log' : 'Not marked delivered — manager log',
+    dataState: freshness(dataState ?? value.dataState),
+    statusAuthority: MANAGER_DISPOSITION_AUTHORITY,
+    statusIndependence: MANAGER_DISPOSITION_INDEPENDENCE,
+  }
+}
+
 function projectVehicle(value, meta) {
   const movement = value.movement ?? {}
   const confidence = ['verified', 'reported', 'stale', 'conflicting', 'unknown'].includes(movement.locationConfidence) ? movement.locationConfidence : 'unknown'
@@ -128,13 +154,14 @@ function projectVehicle(value, meta) {
     publicStore: store(value.publicStore), homeStore: store(value.homeStore), homeStoreConfirmed: bool(value.homeStoreConfirmed), crmStore: store(value.crmStore), sourceReportedLocation: store(value.sourceReportedLocation),
     websiteStatus: text(value.websiteStatus) || 'Not provided', publicListingState: text(value.publicListingState),
     dealerOn: { inStock: bool(value.dealerOn?.inStock), inTransit: bool(value.dealerOn?.inTransit), inProduction: bool(value.dealerOn?.inProduction) },
+    managerDisposition: managerDispositionView(value.managerDisposition, meta.managerDispositionFreshness),
     hold: publicHold(value.hold, meta.dealerMailFreshness),
     location: {
       currentStore: store(movement.currentLocation), destinationStore: store(movement.destination), confidence,
       lastConfirmedAt: text(movement.lastConfirmedAt), departedAt: text(movement.departedAt),
       state: /^[a-z_]{1,48}$/.test(movement.state ?? '') ? movement.state : 'unknown',
     },
-    sourceFreshness: { public: meta.publicFreshness, dealerMail: meta.dealerMailFreshness },
+    sourceFreshness: { public: meta.publicFreshness, dealerMail: meta.dealerMailFreshness, managerDisposition: meta.managerDispositionFreshness },
     publicScan: value.publicScan ? {
       locationCity: text(value.publicScan.locationCity), genericColor: text(value.publicScan.genericColor),
       firstSeen: text(value.publicScan.firstSeen), lastSeen: text(value.publicScan.lastSeen),
@@ -176,7 +203,7 @@ function queryObject(query, allowed) {
   if (!query || typeof query !== 'object' || Array.isArray(query) || ![Object.prototype, null].includes(Object.getPrototypeOf(query))) fail('Query must be an object')
   for (const [key, value] of Object.entries(query)) {
     if (!allowed.includes(key)) fail(`Unsupported query field: ${key}`)
-    if (!['string', 'number'].includes(typeof value) || (typeof value === 'string' && value.length > (key === 'cursor' ? 8192 : 256))) fail(`Invalid query field: ${key}`)
+    if (!['string', 'number', 'boolean'].includes(typeof value) || (typeof value === 'string' && value.length > (key === 'cursor' ? 8192 : 256))) fail(`Invalid query field: ${key}`)
   }
   return query
 }
@@ -205,12 +232,23 @@ export function createIntegrationReadService({ bootstrap, principal, bundleSha25
   const allowedStores = STORE_NAMES.filter(item => principal.stores.includes(item))
   const scopes = SCOPES.filter(item => principal.scopes.includes(item))
   const requireScope = scope => { if (!scopes.includes(scope)) fail('This integration does not have the required scope', 403, 'INSUFFICIENT_SCOPE') }
-  const sourceMeta = { publicFreshness: freshness(bootstrap.meta.publicFreshness), dealerMailFreshness: freshness(bootstrap.meta.dealerMailFreshness) }
+  const sourceMeta = {
+    publicFreshness: freshness(bootstrap.meta.publicFreshness),
+    dealerMailFreshness: freshness(bootstrap.meta.dealerMailFreshness),
+    managerDispositionFreshness: freshness(bootstrap.meta.managerDispositionFreshness),
+  }
+  const managerDispositionCoverage = {
+    status: bootstrap.meta.managerDispositionCoverageStatus === 'provided' ? 'provided' : 'not_provided',
+    coveredSourceStores: STORE_NAMES.filter(item => array(bootstrap.meta.managerDispositionCoveredSourceStores).includes(item)),
+    caveat: MANAGER_DISPOSITION_COVERAGE_CAVEAT,
+  }
+  if (managerDispositionCoverage.status === 'not_provided') managerDispositionCoverage.coveredSourceStores = []
   const meta = {
     schemaVersion: 'inventory-read.v1', reportDate: text(bootstrap.meta.reportDate), completedAt: text(bootstrap.meta.completedAt), bundleSha256,
     timezone: text(bootstrap.meta.timezone) || 'America/New_York', allowedStores, sourceFreshness: sourceMeta,
+    managerDispositionCoverage,
     availabilityCaveat: DISCLAIMER, historyCoverage: 'Selected release only; date filters do not fetch earlier snapshots.',
-    excludedFields: ['customer identity', 'salesperson identity', 'hold reasons', 'CRM comments and alerts', 'raw CDK', 'free-form operational notes', 'raw source objects', 'authenticated document URLs'],
+    excludedFields: ['customer identity', 'salesperson identity', 'hold reasons', 'CRM comments and alerts', 'raw CDK', 'manager-log free text', 'free-form operational notes', 'raw source objects', 'authenticated document URLs'],
   }
   // Authorization is applied before projection, searching, counting, or lookups.
   const vehicles = bootstrap.vehicles.filter(value => allowedStores.includes(value.publicStore) && VIN.test(value.vin ?? '')).map(value => projectVehicle(value, sourceMeta))
@@ -222,7 +260,10 @@ export function createIntegrationReadService({ bootstrap, principal, bundleSha25
     afterValue: changeValue(value.afterValue, CHANGE_FIELDS[value.type].valueType),
     currentVehicle: bool(value.currentVehicle), listingUrl: listingUrl(value.listingUrl, value.vin, value.store),
   }))
-  const binding = digest({ bundleSha256, clientId: text(principal.clientId), userId: text(principal.userId), role: text(principal.role), allowedStores, scopes, data: digest([vehicles, publicChanges]) })
+  const managerDispositions = array(bootstrap.managerDispositions)
+    .map(value => managerDispositionView(value, sourceMeta.managerDispositionFreshness))
+    .filter(value => value && allowedStores.includes(value.physicalStore ?? value.sourceStore))
+  const binding = digest({ bundleSha256, clientId: text(principal.clientId), userId: text(principal.userId), role: text(principal.role), allowedStores, scopes, data: digest([vehicles, publicChanges, managerDispositions]) })
 
   function selectedStore(value) {
     const selected = scalarQuery(value)
@@ -255,7 +296,7 @@ export function createIntegrationReadService({ bootstrap, principal, bundleSha25
   }
 
   return {
-    capabilities: Object.freeze({ schemaVersion: 'inventory-read.v1', readOnly: true, scopes: Object.freeze(scopes), stores: Object.freeze(allowedStores), maxPageSize: 100, defaultPageSize: 20, historicalSnapshots: false, licensedReports: 'Parsed facts only; authenticated document URLs and original reports excluded', inventorySortFields: Object.freeze(SORT_FIELDS.slice()) }),
+    capabilities: Object.freeze({ schemaVersion: 'inventory-read.v1', readOnly: true, scopes: Object.freeze(scopes), stores: Object.freeze(allowedStores), maxPageSize: 100, defaultPageSize: 20, historicalSnapshots: false, licensedReports: 'Parsed facts only; authenticated document URLs and original reports excluded', inventorySortFields: Object.freeze(SORT_FIELDS.slice()), managerDispositions: true }),
     inventory(query = {}) {
       requireScope('inventory.read')
       queryObject(query, ['q', 'store', 'make', 'model', 'year', 'minPrice', 'maxPrice', 'minMileage', 'maxMileage', 'holdState', 'sort', 'direction', 'limit', 'cursor'])
@@ -309,6 +350,25 @@ export function createIntegrationReadService({ bootstrap, principal, bundleSha25
         }
       })
       return { data, meta: clone(meta) }
+    },
+    managerDispositions(query = {}) {
+      requireScope('inventory.read')
+      queryObject(query, ['q', 'store', 'delivered', 'review', 'limit', 'cursor'])
+      const normalized = {
+        q: scalarQuery(query.q), store: selectedStore(query.store),
+        delivered: scalarQuery(query.delivered), review: scalarQuery(query.review),
+        limit: numericQuery(query.limit ?? 20, 'limit', { integer: true, min: 1, max: 100 }),
+      }
+      if (normalized.delivered && !['true', 'false'].includes(normalized.delivered)) fail('Invalid delivered filter')
+      if (normalized.review && !['true', 'false'].includes(normalized.review)) fail('Invalid review filter')
+      const rows = managerDispositions.filter(value => {
+        const authorityStore = value.physicalStore ?? value.sourceStore
+        return (!normalized.store || authorityStore === normalized.store) &&
+          (!normalized.delivered || value.deliveredManagerLog === (normalized.delivered === 'true')) &&
+          (!normalized.review || value.reviewRequired === (normalized.review === 'true')) &&
+          matches(value, normalized.q)
+      }).sort((left, right) => String(right.deliveryDate ?? '').localeCompare(String(left.deliveryDate ?? '')) || String(left.stockNumber).localeCompare(String(right.stockNumber)))
+      return paginate(rows, normalized, 'manager-dispositions', query.cursor)
     },
     health() {
       requireScope('health.read')

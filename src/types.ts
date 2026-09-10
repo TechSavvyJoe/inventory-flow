@@ -21,9 +21,16 @@ export interface SourceMeta {
   manifestPath?: string
   publicFreshness: SourceFreshness
   dealerMailFreshness: SourceFreshness
+  managerDispositionFreshness?: SourceFreshness
+  managerDispositionCoverageStatus?: 'provided' | 'not_provided'
+  managerDispositionCoveredSourceStores?: StoreName[]
+  managerDispositionCoverageCaveat?: string
   publicCount: number
   crmCount: number
   heldVinCount: number
+  managerDispositionCount?: number
+  managerDeliveredCount?: number
+  managerDispositionReviewCount?: number
   publicChangeBaselineDate?: string
   publicChangeCounts: PublicChangeCounts
   holdChangeStatus: string
@@ -34,6 +41,25 @@ export interface DealerOnFlags {
   inStock: boolean | null
   inTransit: boolean | null
   inProduction: boolean | null
+}
+
+export interface ManagerDispositionRecord {
+  stockNumber: string
+  vin: string | null
+  vehicleName: string | null
+  soldManagerLog: true
+  deliveredManagerLog: boolean
+  deliveryDate: string | null
+  confidence: 'high' | 'medium-high' | 'medium' | 'low'
+  sourceStore: StoreName
+  sourcePeriod: string
+  matchMethod: 'vin' | 'unique_stock' | 'not_matched'
+  matchStatus: 'matched' | 'matched_vin_stock_review' | 'not_in_current_release' | 'stock_not_in_current_release' | 'stock_ambiguous'
+  physicalStore: StoreName | null
+  reviewRequired: boolean
+  soldLabel: 'Sold — manager log'
+  deliveryLabel: 'Delivered — manager log' | 'Not marked delivered — manager log'
+  dataState: SourceFreshness
 }
 
 export interface AutoCheckReportRecord {
@@ -252,6 +278,7 @@ export interface VehicleRecord {
   websiteStatus: string
   publicListingState: string
   dealerOn: DealerOnFlags
+  managerDisposition?: ManagerDispositionRecord | null
   hold: HoldSummary
   privateEvidence?: DealerMailPrivateEvidence
   movement: MovementSummary
@@ -427,6 +454,7 @@ export interface BootstrapData {
   transfers: TransferRecord[]
   attention: AttentionItem[]
   holdSignals?: HoldSignalSummary[]
+  managerDispositions?: ManagerDispositionRecord[]
   publicChanges?: PublicChangeEvent[]
 }
 

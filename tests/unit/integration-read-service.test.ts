@@ -16,6 +16,7 @@ function row(index = 1, physicalStore = 'Howell') {
     certified: true, inventoryDate: '2026-09-09', dealerComments: PRIVATE, modelCode: 'W1E', features: 'Trailer Tow Package | Heated Seats; SYNC® 4; literal * ? ~',
     listingUrl: `https://www.bobmaxeyfordhowell.com/used-${vinFor(index)}`, photoCount: 22, imageUrl: 'https://images.dealeron.com/car.jpg', imageUrls: ['https://images.dealeron.com/car.jpg'],
     publicStore: physicalStore, homeStore: 'Howell', homeStoreConfirmed: true, crmStore: physicalStore, sourceReportedLocation: physicalStore,
+    managerDisposition: index === 1 ? { stockNumber: '0001TEST', vin: vinFor(1), vehicleName: '2024 Ford F-150 XLT 1', soldManagerLog: true, deliveredManagerLog: true, deliveryDate: '2026-09-09', confidence: 'high', sourceStore: 'Howell', sourcePeriod: '2026-09', matchMethod: 'vin', matchStatus: 'matched', physicalStore: 'Howell', reviewRequired: false, privateNote: PRIVATE } : null,
     websiteStatus: 'Not provided', publicListingState: 'Listed publicly; availability not confirmed', dealerOn: { inStock: true, inTransit: false, inProduction: false, secret: PRIVATE },
     hold: { state: index === 1 ? 'multiple' : 'none_observed', label: PRIVATE, backupCount: index === 1 ? 2 : 0, primarySalesperson: PRIVATE, expectedDate: PRIVATE, reason: PRIVATE, commentsCount: 1, alertsCount: 1 },
     movement: { state: 'arrived', label: PRIVATE, currentLocation: 'Lincoln', destination: 'Lincoln', departedAt: '2026-09-08T12:00:00Z', lastConfirmedAt: '2026-09-09T12:00:00Z', locationConfidence: 'verified', transferId: PRIVATE, currentCustodian: PRIVATE, transportAssignee: PRIVATE, nextAction: PRIVATE },
@@ -31,8 +32,13 @@ function fixture(count = 4) {
   const vehicles = Array.from({ length: count }, (_, index) => row(index + 1))
   vehicles.push(row(999, 'Lincoln'))
   return {
-    access: { user: PRIVATE }, meta: { reportDate: '2026-09-09', completedAt: '2026-09-09T13:00:00Z', timezone: 'America/New_York', publicFreshness: 'current', dealerMailFreshness: 'current', warnings: [PRIVATE], manifestPath: PRIVATE, publicCount: 999999, heldVinCount: 999999 }, vehicles,
+    access: { user: PRIVATE }, meta: { reportDate: '2026-09-09', completedAt: '2026-09-09T13:00:00Z', timezone: 'America/New_York', publicFreshness: 'current', dealerMailFreshness: 'current', managerDispositionFreshness: 'current', managerDispositionCoverageStatus: 'provided', managerDispositionCoveredSourceStores: ['Howell'], warnings: [PRIVATE], manifestPath: PRIVATE, publicCount: 999999, heldVinCount: 999999 }, vehicles,
     transfers: [{ requestedBy: PRIVATE }], attention: [{ label: PRIVATE }], holdSignals: [{ store: 'Lincoln', activeHoldVins: 999999 }],
+    managerDispositions: [
+      { stockNumber: '0001TEST', vin: vinFor(1), vehicleName: '2024 Ford F-150 XLT 1', soldManagerLog: true, deliveredManagerLog: true, deliveryDate: '2026-09-09', confidence: 'high', sourceStore: 'Howell', sourcePeriod: '2026-09', matchMethod: 'vin', matchStatus: 'matched', physicalStore: 'Howell', reviewRequired: false, customerName: PRIVATE },
+      { stockNumber: 'MISSING', vin: null, vehicleName: null, soldManagerLog: true, deliveredManagerLog: false, deliveryDate: null, confidence: 'medium', sourceStore: 'Howell', sourcePeriod: '2026-09', matchMethod: 'not_matched', matchStatus: 'stock_not_in_current_release', physicalStore: null, reviewRequired: true, source_store_note: PRIVATE },
+      { stockNumber: 'LINCOLN', vin: vinFor(999), vehicleName: 'Out of scope', soldManagerLog: true, deliveredManagerLog: false, deliveryDate: null, confidence: 'high', sourceStore: 'Lincoln', sourcePeriod: '2026-09', matchMethod: 'vin', matchStatus: 'matched', physicalStore: 'Lincoln', reviewRequired: false, note: PRIVATE },
+    ],
     publicChanges: [
       { id: 'change-1', type: 'price_change', field: 'Listed price', valueType: 'money', reportDate: '2026-09-09', previousReportDate: '2026-09-08', vin: vinFor(1), stockNumber: '0001TEST', vehicleName: '2024 Ford F-150', store: 'Howell', beforeValue: 44000, afterValue: 42810, currentVehicle: true, raw: PRIVATE },
       { id: 'private-field', type: 'website_status_change', field: 'customer', valueType: 'text', reportDate: '2026-09-09', vin: vinFor(1), store: 'Howell', beforeValue: PRIVATE, afterValue: PRIVATE },
@@ -65,7 +71,7 @@ describe('shared integration read service', () => {
     expect(data.windowSticker.isOriginalWindowSticker).toBe(true)
     expect(data.autoCheckReport.score).toBe(95)
     expect(data.autoCheckReport.checks[0].detail).toBe('No accident reported by source')
-    const serialized = JSON.stringify([api.inventory(), api.vehicle(vinFor(1)), api.changes(), api.holdSummary(), api.health(), api.capabilities])
+    const serialized = JSON.stringify([api.inventory(), api.vehicle(vinFor(1)), api.changes(), api.holdSummary(), api.managerDispositions(), api.health(), api.capabilities])
     expect(serialized).not.toContain(PRIVATE)
     expect(serialized).not.toContain('999999')
     expect(data).not.toHaveProperty('dealerComments')
@@ -81,13 +87,15 @@ describe('shared integration read service', () => {
     expect(api.changes().pagination.total).toBe(1)
     expect(api.changes({ store: 'Lincoln' }).data).toEqual([])
     expect(api.holdSummary({ store: 'Lincoln' }).data).toEqual([])
+    expect(api.managerDispositions({ store: 'Lincoln' }).data).toEqual([])
+    expect(api.managerDispositions().pagination.total).toBe(2)
     expect(api.health().data.visibleVehicleCount).toBe(4)
     expect(errorOf(() => api.vehicle(vinFor(999)))).toEqual(errorOf(() => api.vehicle(vinFor(888))))
     expect(errorOf(() => api.vehicle('bad'))).toEqual(errorOf(() => api.vehicle(vinFor(888))))
   })
 
   it.each([
-    ['inventory', 'inventory.read', {}], ['vehicle', 'inventory.read', vinFor(1)], ['changes', 'changes.read', {}], ['health', 'health.read', undefined], ['holdSummary', 'holds.aggregate.read', {}],
+    ['inventory', 'inventory.read', {}], ['vehicle', 'inventory.read', vinFor(1)], ['managerDispositions', 'inventory.read', {}], ['changes', 'changes.read', {}], ['health', 'health.read', undefined], ['holdSummary', 'holds.aggregate.read', {}],
   ])('requires the exact %s scope', (method, scope, query) => {
     const api = service(fixture(), { ...principal, scopes: principal.scopes.filter(value => value !== scope) })
     expect(errorOf(() => api[method](query))).toMatchObject({ status: 403, code: 'INSUFFICIENT_SCOPE' })
@@ -164,6 +172,21 @@ describe('shared integration read service', () => {
     expect(api.vehicle(vinFor(2)).data.hold).toMatchObject({ label: 'No current DealerMail hold found', state: 'none_observed', hasCurrentHold: false })
     expect(api.holdSummary().data[0]).toMatchObject({ currentHeldVins: 1, noCurrentHoldFound: 3, currentBackupRecords: 2, storeAuthority: 'Public physical store' })
     expect(api.inventory().meta.availabilityCaveat).toContain('do not confirm availability')
+  })
+
+  it('keeps redacted manager sold/delivered signals separate, scoped, searchable and private-field free', () => {
+    const api = service()
+    expect(api.vehicle(vinFor(1)).data.managerDisposition).toMatchObject({ soldManagerLog: true, deliveredManagerLog: true, deliveryDate: '2026-09-09', soldLabel: 'Sold — manager log', deliveryLabel: 'Delivered — manager log', statusAuthority: 'manager-supplied sold log' })
+    expect(api.managerDispositions({ delivered: true, review: false }).data).toHaveLength(1)
+    expect(api.managerDispositions({ delivered: 'false', review: 'true' }).data).toEqual([expect.objectContaining({ stockNumber: 'MISSING', vin: null, vehicleName: null, reviewRequired: true, deliveryLabel: 'Not marked delivered — manager log' })])
+    expect(api.managerDispositions({ q: 'manager log' }).pagination.total).toBe(2)
+    expect(api.managerDispositions({ q: PRIVATE }).data).toEqual([])
+    expect(JSON.stringify(api.managerDispositions())).not.toContain(PRIVATE)
+    expect(api.health().data.freshness.managerDispositionFreshness).toBe('current')
+    expect(api.managerDispositions().meta.managerDispositionCoverage).toEqual({ status: 'provided', coveredSourceStores: ['Howell'], caveat: expect.stringContaining('not unsold') })
+    for (const query of [{ delivered: 'yes' }, { review: 1 }, { private: true }, { limit: 101 }, { q: 'a'.repeat(257) }]) {
+      expect(errorOf(() => api.managerDispositions(query))).toMatchObject({ status: 400, code: 'INVALID_QUERY' })
+    }
   })
 
   it('requires source-safe typed change fields and preserves current selected-release date semantics', () => {

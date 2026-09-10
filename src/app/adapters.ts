@@ -271,6 +271,7 @@ export function toInventoryVehicle(
 ): InventoryVehicle {
   const publicState = dataState(data.meta.publicFreshness)
   const dealerMailState = dataState(data.meta.dealerMailFreshness)
+  const managerDispositionState = dataState(data.meta.managerDispositionFreshness ?? 'unknown')
   const home = inventoryStore(vehicle.homeStore)
   const sourceStore = inventoryStore(vehicle.sourceReportedLocation || vehicle.publicStore)
   const crmStore = vehicle.crmStore ? inventoryStore(vehicle.crmStore) : null
@@ -350,6 +351,19 @@ export function toInventoryVehicle(
       inProduction: vehicle.dealerOn.inProduction,
       updatedAt: data.meta.completedAt,
     },
+    managerDisposition: vehicle.managerDisposition
+      ? {
+          dataState: managerDispositionState,
+          sold: true,
+          delivered: vehicle.managerDisposition.deliveredManagerLog,
+          deliveryDate: vehicle.managerDisposition.deliveryDate,
+          sourceStore: inventoryStore(vehicle.managerDisposition.sourceStore),
+          sourcePeriod: vehicle.managerDisposition.sourcePeriod,
+          confidence: vehicle.managerDisposition.confidence,
+          soldLabel: vehicle.managerDisposition.soldLabel,
+          deliveryLabel: vehicle.managerDisposition.deliveryLabel,
+        }
+      : null,
     dealerMail: {
       dataState: dealerMailState,
       hasActiveHold: holdActive(vehicle.hold.state, dealerMailState),

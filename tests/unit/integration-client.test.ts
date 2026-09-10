@@ -31,8 +31,10 @@ describe('Inventory Flow backend JavaScript client', () => {
   it('matches all six REST paths with no extra query parameters', async () => {
     const fetch = vi.fn(async () => json({ data: {} }))
     const client = createInventoryFlowClient({ token: TOKEN, fetch, baseUrl: 'https://approved.example/api/v1' })
-    await client.vehicle(VIN.toLowerCase()); await client.changes({ type: 'price_change', from: '2026-09-09' }); await client.dataHealth(); await client.holdSummary({ store: 'Howell' }); await client.capabilities()
-    expect(fetch.mock.calls.map(([url]) => new URL(url).pathname)).toEqual([`/api/v1/vehicles/${VIN}`, '/api/v1/changes', '/api/v1/data-health', '/api/v1/holds/summary', '/api/v1/capabilities'])
+    await client.vehicle(VIN.toLowerCase()); await client.changes({ type: 'price_change', from: '2026-09-09' }); await client.dataHealth(); await client.holdSummary({ store: 'Howell' }); await client.managerDispositions({ delivered: true, review: false }); await client.capabilities()
+    expect(fetch.mock.calls.map(([url]) => new URL(url).pathname)).toEqual([`/api/v1/vehicles/${VIN}`, '/api/v1/changes', '/api/v1/data-health', '/api/v1/holds/summary', '/api/v1/manager-dispositions', '/api/v1/capabilities'])
+    const managerUrl = new URL(fetch.mock.calls[4][0])
+    expect(Object.fromEntries(managerUrl.searchParams)).toEqual({ delivered: 'true', review: 'false' })
   })
 
   it('iterates page cursors without mutating caller query', async () => {
@@ -43,6 +45,19 @@ describe('Inventory Flow backend JavaScript client', () => {
     expect(results).toEqual([1, 2])
     expect(new URL(fetch.mock.calls[1][0]).searchParams.get('cursor')).toBe('page2.signed')
     expect(query).toEqual({ q: 'Ford', limit: 1 })
+  })
+
+  it('iterates redacted manager-disposition pages without restarting or accepting a cursor loop', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(json(page(1, 'manager.page2'))).mockResolvedValueOnce(json(page(2)))
+    const client = createInventoryFlowClient({ token: TOKEN, fetch })
+    const values = []
+    for await (const value of client.iterateManagerDispositions({ delivered: true, limit: 1 })) values.push(value.id)
+    expect(values).toEqual([1, 2])
+    expect(new URL(fetch.mock.calls[1][0]).pathname).toBe('/api/v1/manager-dispositions')
+    expect(new URL(fetch.mock.calls[1][0]).searchParams.get('cursor')).toBe('manager.page2')
+    const loop = createInventoryFlowClient({ token: TOKEN, fetch: async () => json(page(1, 'repeat.manager')) }).iterateManagerDispositions({ limit: 1 })
+    await loop.next()
+    await expect(loop.next()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
   })
 
   it('stops rather than silently restarting when a snapshot cursor becomes invalid', async () => {
@@ -65,9 +80,15 @@ describe('Inventory Flow backend JavaScript client', () => {
     expect(() => createInventoryFlowClient({ token: TOKEN, baseUrl })).toThrow(InventoryFlowError)
   })
 
-  it.each([{ token: 'oops' }, { q: ['bad'] }, { cursor: 'a'.repeat(8193) }, { q: null }, { unknown: 'bad' }])('rejects unknown query fields and complex values %#', async query => {
+  it.each([{ token: 'oops' }, { q: ['bad'] }, { cursor: 'a'.repeat(8193) }, { q: null }, { q: true }, { unknown: 'bad' }])('rejects unknown query fields and complex values %#', async query => {
     const fetch = vi.fn(), client = createInventoryFlowClient({ token: TOKEN, fetch })
     await expect(client.inventory(query)).rejects.toMatchObject({ code: 'INVALID_QUERY' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each([{ delivered: 'yes' }, { review: 1 }, { customerName: 'private' }, { cursor: 'a'.repeat(8193) }, { q: false }])('rejects invalid manager-disposition query values %#', async query => {
+    const fetch = vi.fn(), client = createInventoryFlowClient({ token: TOKEN, fetch })
+    await expect(client.managerDispositions(query)).rejects.toMatchObject({ code: 'INVALID_QUERY' })
     expect(fetch).not.toHaveBeenCalled()
   })
 
