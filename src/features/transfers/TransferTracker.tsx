@@ -22,6 +22,7 @@ import {
 } from './presentation';
 import { TransferEmptyState } from './TransferEmptyState';
 import { TransferTimeline } from './TransferTimeline';
+import { SimpleTransferTracker } from './SimpleTransferTracker';
 import './transfers.css';
 import './transfer-workspace-v3.css';
 
@@ -113,6 +114,8 @@ export function TransferTracker({
       </div>
     );
   }
+
+  if (transfer.workflowMode === 'simple') return <SimpleTransferTracker transfer={transfer} onAction={onAction} onClose={onClose} mode={mode} />;
 
   const { vehicle } = transfer;
   const action = transfer.nextAction;

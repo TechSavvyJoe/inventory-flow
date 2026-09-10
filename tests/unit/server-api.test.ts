@@ -29,7 +29,9 @@ async function harness(mutateRelease?: (release: ReturnType<typeof loadLatestCom
   mutateRelease?.(release)
   const database = openInventoryDatabase()
   importRelease(database, release, { loadedAt: fixedNow.toISOString() })
-  const service = createInventoryService({ database, now: () => fixedNow })
+  // Keep the detailed legacy workflow's security and audit regression suite.
+  // The simple default has dedicated coverage in simple-moves-workflow.test.ts.
+  const service = createInventoryService({ database, now: () => fixedNow, workflowMode: 'advanced' })
   const server = createInventoryServer({ service })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   openResources.push({ server, database })

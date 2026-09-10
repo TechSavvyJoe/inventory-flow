@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { InventoryMobileList, InventoryTable } from './InventoryTable';
+import { InventoryMobileList, InventoryTable, vehicleOperationalStatus } from './InventoryTable';
 import type { InventoryVehicle } from './types';
 import { dealerMailInteractiveVehicleUrl } from './vehicle-document-utils';
 
@@ -205,7 +205,7 @@ describe('modern inventory result access', () => {
     expect(screen.queryByRole('button', { name: /Review DealerMail handoff for stock H240513/i })).not.toBeInTheDocument();
   });
 
-  it('keeps mobile vehicle details and hold tools as two clear sibling targets', () => {
+  it('keeps mobile details, hold, equipment, records and movement as clear sibling targets', () => {
     const onSelectVehicle = vi.fn();
     const onOpenSourceRecord = vi.fn();
     render(
@@ -219,7 +219,8 @@ describe('modern inventory result access', () => {
     const card = screen.getByRole('article');
     const detailTarget = within(card).getByRole('button', { name: /Open details for 2024 Ford F-150 XLT.*stock H240512.*Hold: Held · Alex Morgan.*Movement: In transit outbound.*AutoCheck report available.*Window sticker available/i });
     const holdTarget = within(card).getByRole('button', { name: /Open DealerMail hold tools for stock H240512/i });
-    expect(within(card).getAllByRole('button')).toHaveLength(2);
+    expect(within(card).getAllByRole('button')).toHaveLength(5);
+    expect(card.parentElement).toHaveClass('inventory-mobile-list--flow');
     expect(detailTarget).toHaveTextContent('2024 Ford F-150 XLT');
     expect(detailTarget).toHaveTextContent('SuperCrew pickup · 4x4 · 2.7L EcoBoost V6');
     expect(detailTarget).toHaveTextContent('H240512');
@@ -244,6 +245,118 @@ describe('modern inventory result access', () => {
     fireEvent.click(holdTarget);
     expect(onOpenSourceRecord).toHaveBeenCalledWith(expect.objectContaining({ vin: '1FTFW1E84RKF12345' }), 'dealermail');
     expect(onSelectVehicle).toHaveBeenCalledTimes(1);
+    expect(holdTarget).toHaveFocus();
+
+    const equipmentTarget = within(card).getByRole('button', { name: /View all \d+ equipment items for 2024 Ford F-150 XLT/i });
+    expect(equipmentTarget).toHaveTextContent('Equipment Group 302A');
+    expect(equipmentTarget).toHaveTextContent('XLT Sport Appearance Package');
+    expect(equipmentTarget).toHaveTextContent('Trailer Tow Package (53A)');
+    expect(equipmentTarget).not.toHaveTextContent('View all');
+    fireEvent.click(equipmentTarget);
+    expect(onSelectVehicle).toHaveBeenLastCalledWith(expect.objectContaining({ vin: '1FTFW1E84RKF12345' }), 'equipment');
+    expect(equipmentTarget).toHaveFocus();
+
+    const recordsTarget = within(card).getByRole('button', { name: /Open vehicle records for 2024 Ford F-150 XLT: AutoCheck, Sticker, Factory equipment/i });
+    expect(recordsTarget).toHaveTextContent('AutoCheck · Score 92 · 1 owner');
+    expect(recordsTarget).toHaveTextContent('Sticker · Equipment Group 302A · 1 option');
+    fireEvent.click(recordsTarget);
+    expect(onSelectVehicle).toHaveBeenLastCalledWith(expect.objectContaining({ vin: '1FTFW1E84RKF12345' }), 'data');
+    expect(recordsTarget).toHaveFocus();
+
+    const movementTarget = within(card).getByRole('button', { name: /View movement for 2024 Ford F-150 XLT/i });
+    expect(movementTarget).toHaveTextContent('Fowlerville');
+    expect(movementTarget).toHaveTextContent('In transit outbound');
+    fireEvent.click(movementTarget);
+    expect(onSelectVehicle).toHaveBeenLastCalledWith(expect.objectContaining({ vin: '1FTFW1E84RKF12345' }), 'movement');
+    expect(movementTarget).toHaveFocus();
+    expect(detailTarget.querySelector('button')).not.toBeInTheDocument();
+  });
+
+  it('shows three exact phone equipment highlights with a remaining count and currency-aware sticker MSRP fallback', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.features = ['Floor mats', 'Rear defrost'];
+    render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} />);
+    const equipment = screen.getByRole('button', { name: 'View all 5 equipment items for 2024 Ford F-150 XLT' });
+    expect(equipment).toHaveTextContent('Equipment Group 302A · XLT Sport Appearance Package · Trailer Tow Package (53A) · +2 more');
+    expect(equipment).not.toHaveTextContent('Floor mats');
+    cleanup();
+
+    vehicle.windowSticker = { ...vehicle.windowSticker!, equipmentGroup: null, options: [], pricingCurrency: 'CAD' };
+    vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, dataState: 'stale', ownerCount: 2 };
+    render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} />);
+    const records = screen.getByRole('button', { name: /Open vehicle records for 2024 Ford F-150 XLT/ });
+    expect(records).toHaveTextContent('Earlier AutoCheck · Score 92 · 2 owners');
+    expect(records).toHaveTextContent(/Sticker · Sticker MSRP CAD\s+52,995/);
+    expect(records).not.toHaveTextContent('USD');
+  });
+
+  it('keeps informational equipment distinct from a sticker and makes location actionable without an invented change', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.windowSticker = undefined;
+    vehicle.autoCheckReport = undefined;
+    vehicle.movement = undefined;
+    vehicle.changeSummary = undefined;
+    const onSelectVehicle = vi.fn();
+    render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={onSelectVehicle} />);
+    const records = screen.getByRole('button', { name: /Open vehicle records for 2024 Ford F-150 XLT: Factory equipment/ });
+    expect(records).toHaveTextContent('Equipment profile · 1 package');
+    expect(records).not.toHaveTextContent(/Sticker|AutoCheck|MSRP/);
+    const location = screen.getByRole('button', { name: /View location and movement for 2024 Ford F-150 XLT: Fowlerville/ });
+    fireEvent.click(location);
+    expect(onSelectVehicle).toHaveBeenCalledExactlyOnceWith(vehicle, 'movement');
+    expect(location).toHaveFocus();
+    expect(location).not.toHaveTextContent('No recent change');
+  });
+
+  it('keeps ordinary published phone equipment and change history actionable without claiming missing documents', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.windowSticker = undefined;
+    vehicle.factoryEquipment = undefined;
+    vehicle.autoCheckReport = undefined;
+    vehicle.features = ['Floor mats'];
+    vehicle.movement = undefined;
+    vehicle.dealerMail = { ...vehicle.dealerMail, canManageHold: false, dataState: 'stale', hasActiveHold: null };
+    const onSelectVehicle = vi.fn();
+    render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={onSelectVehicle} />);
+
+    const card = screen.getByRole('article');
+    const equipmentTarget = within(card).getByRole('button', { name: 'View all 1 equipment items for 2024 Ford F-150 XLT' });
+    expect(equipmentTarget).toHaveTextContent('Floor mats');
+    const recordTarget = within(card).getByRole('button', { name: 'Open vehicle records for 2024 Ford F-150 XLT' });
+    expect(recordTarget).toHaveTextContent('Records');
+    expect(recordTarget).not.toHaveTextContent(/AutoCheck|Sticker|Factory equipment/);
+    const changeTarget = within(card).getByRole('button', { name: /View change history for 2024 Ford F-150 XLT: Price changed/ });
+    fireEvent.click(changeTarget);
+    expect(onSelectVehicle).toHaveBeenCalledExactlyOnceWith(vehicle, 'timeline');
+    expect(changeTarget).toHaveFocus();
+    expect(card).toHaveTextContent('Hold status unverified');
+    expect(card).not.toHaveTextContent('No current hold');
+  });
+
+  it.each([true, false])('marks a retained hold signal of %s as unverified when its source is stale', (previousHold) => {
+    const vehicle = heldMovingVehicle();
+    vehicle.dealerMail = { ...vehicle.dealerMail, dataState: 'stale', hasActiveHold: previousHold };
+    const status = vehicleOperationalStatus(vehicle);
+    expect(status.label).toBe('Hold status unverified');
+    expect(status.tone).toBe('unknown');
+    expect(status.detail).toContain('confirm current status with the store');
+    if (previousHold) expect(status.detail).toContain('Previous hold · Alex Morgan retained');
+    else expect(status.detail).toContain('Latest hold data unavailable');
+
+    render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} />);
+    const card = screen.getByRole('article');
+    expect(card).toHaveTextContent('Hold status unverified');
+    expect(card).not.toHaveTextContent('Held · Alex Morgan');
+    expect(card).not.toHaveTextContent('No current hold');
+  });
+
+  it('does not disclose a previous hold owner when evidence access is restricted', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.dealerMail = { ...vehicle.dealerMail, dataState: 'incomplete', canViewEvidence: false };
+    const status = vehicleOperationalStatus(vehicle);
+    expect(status.label).toBe('Hold status unverified');
+    expect(status.detail).toBe('Previous hold retained; confirm current status with the store');
+    expect(status.detail).not.toContain('Alex Morgan');
   });
 
   it('opens VIN-specific documents without selecting the inventory row', () => {

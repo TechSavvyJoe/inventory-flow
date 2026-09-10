@@ -48,6 +48,7 @@ import "./InventoryTable.production-v4.css";
 import "./InventoryTable.operational-v9.css";
 import "./InventoryTable.production-v10.css";
 import "./InventoryTable.flow.css";
+import "./InventoryMobile.flow.css";
 
 interface SortOption {
   label: string;
@@ -275,6 +276,20 @@ type OperationalStatus = {
 };
 
 export function vehicleOperationalStatus(vehicle: InventoryVehicle): OperationalStatus {
+  if (vehicle.dealerMail.dataState !== "current") {
+    const evidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
+    const previousPrimary = evidence?.find((record) => record.position === "primary") ?? evidence?.[0];
+    const previousOwner = previousPrimary?.salesperson?.trim();
+    return {
+      label: "Hold status unverified",
+      detail: vehicle.dealerMail.hasActiveHold === true
+        ? `Previous hold${previousOwner ? ` · ${previousOwner}` : ""} retained; confirm current status with the store`
+        : "Latest hold data unavailable; confirm current status with the store",
+      tone: "unknown",
+      icon: CircleHelp,
+    };
+  }
+
   if (vehicle.dealerMail.hasActiveHold === true) {
     const visibleEvidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
     const primary = visibleEvidence?.find((record) => record.position === "primary") ?? visibleEvidence?.[0];
@@ -969,15 +984,45 @@ function VehicleRowActions({
   );
 }
 
-function MobileDocumentAvailability({ vehicle }: { vehicle: InventoryVehicle }) {
+function MobileDocumentAvailability({ vehicle, onSelectVehicle }: {
+  vehicle: InventoryVehicle;
+  onSelectVehicle: InventoryTableProps["onSelectVehicle"];
+}) {
   const autoCheck = Boolean(officialVehicleDocumentUrl(vehicle.autoCheckReport?.url, "autocheck", vehicle.publicListing.listingUrl));
   const sticker = Boolean(officialVehicleDocumentUrl(vehicle.windowSticker?.url, "window-sticker", vehicle.publicListing.listingUrl));
-  if (!autoCheck && !sticker) return null;
+  const factoryEquipment = Boolean(vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url));
+  const documents = [autoCheck && "AutoCheck", sticker && "Sticker", factoryEquipment && "Factory equipment"].filter(Boolean);
+  const evidence = [
+    autoCheck ? {
+      label: vehicle.autoCheckReport?.dataState === "current" ? "AutoCheck" : "Earlier AutoCheck",
+      detail: autoCheckResourceDetail(vehicle),
+    } : null,
+    sticker ? {
+      label: vehicle.windowSticker?.dataState === "current" ? "Sticker" : "Earlier sticker",
+      detail: windowStickerResourceDetail(vehicle),
+    } : factoryEquipment ? {
+      label: vehicle.factoryEquipment?.dataState === "current" ? "Equipment profile" : "Earlier equipment profile",
+      detail: factoryEquipmentResourceDetail(vehicle),
+    } : null,
+  ].filter((item): item is NonNullable<typeof item> => Boolean(item));
   return (
-    <span className="inventory-mobile-document-availability" aria-label="Documents available in vehicle details">
-      {autoCheck ? <small data-document="autocheck"><ShieldCheck size={12} aria-hidden="true" /> AutoCheck</small> : null}
-      {sticker ? <small data-document="sticker"><FileText size={12} aria-hidden="true" /> Sticker</small> : null}
-    </span>
+    <button
+      type="button"
+      className="inventory-mobile-records"
+      data-inventory-vehicle-trigger={vehicle.id}
+      aria-label={`Open vehicle records for ${vehicleDisplayName(vehicle)}${documents.length ? `: ${documents.join(", ")}` : ""}`}
+      onClick={(event) => {
+        event.currentTarget.focus({ preventScroll: true });
+        onSelectVehicle(vehicle, "data");
+      }}
+    >
+      <span className="inventory-mobile-records__facts">
+        {evidence.length ? evidence.map((item) => (
+          <span key={item.label}><strong>{item.label}</strong><span> · {item.detail}</span></span>
+        )) : <strong>Records</strong>}
+      </span>
+      <ChevronRight size={15} aria-hidden="true" />
+    </button>
   );
 }
 
@@ -1148,12 +1193,13 @@ export function InventoryMobileList({
   onOpenSourceRecord,
 }: Pick<InventoryTableProps, "vehicles" | "selectedVehicleId" | "onSelectVehicle" | "onOpenSourceRecord">) {
   return (
-    <div className="inventory-mobile-list inventory-mobile-list--vehicle-first inventory-mobile-list--production-v8" aria-label="Inventory results">
+    <div className="inventory-mobile-list inventory-mobile-list--vehicle-first inventory-mobile-list--production-v8 inventory-mobile-list--flow" aria-label="Inventory results">
       {vehicles.map((vehicle) => {
         const name = vehicleDisplayName(vehicle);
         const recentChange = primaryVehicleChangeSignal(vehicle.changeSummary);
         const movementStatus = vehicleMovementStatus(vehicle);
-        const primaryEquipment = standoutEquipment(vehicle, 1)[0]?.label;
+        const equipment = publishedEquipment(vehicle);
+        const equipmentHighlights = equipment.slice(0, 3);
         const holdStatus = vehicleOperationalStatus(vehicle);
         const currentLocation = resolveCurrentLocation(vehicle);
         const specification = [
@@ -1168,13 +1214,16 @@ export function InventoryMobileList({
           <article
             className={`inventory-mobile-row inventory-mobile-row--compact-v3 inventory-mobile-row--production-v8${vehicle.id === selectedVehicleId ? " is-selected" : ""}`}
             key={vehicle.id}
-            data-hold-state={vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
+            data-hold-state={vehicle.dealerMail.dataState !== "current" ? "unknown" : vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
           >
             <button
               type="button"
               className="inventory-mobile-row__open"
               data-inventory-vehicle-trigger={vehicle.id}
-              onClick={() => onSelectVehicle(vehicle)}
+              onClick={(event) => {
+                event.currentTarget.focus({ preventScroll: true });
+                onSelectVehicle(vehicle);
+              }}
               aria-label={vehicleAccessibleSummary(vehicle)}
             >
               <span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} /><PhotoCount vehicle={vehicle} /></span>
@@ -1202,7 +1251,9 @@ export function InventoryMobileList({
                   className={`inventory-mobile-hold inventory-mobile-hold--${holdStatus.tone}`}
                   title={holdToolsAvailable ? `${holdStatus.detail}. DealerMail hold actions are available in vehicle details.` : holdStatus.detail}
                   data-row-action={holdToolsAvailable ? "dealermail" : "hold-details"}
-                  onClick={() => {
+                  data-inventory-vehicle-trigger={vehicle.id}
+                  onClick={(event) => {
+                    event.currentTarget.focus({ preventScroll: true });
                     if (holdToolsAvailable) {
                       onOpenSourceRecord?.(vehicle, "dealermail");
                       return;
@@ -1216,19 +1267,46 @@ export function InventoryMobileList({
                   <HoldIcon size={14} strokeWidth={1.9} aria-hidden="true" />
                   <strong>{holdStatus.label}</strong>
                 </button>
-                <span className="inventory-mobile-location" title={currentLocation.detail}>
+                <button
+                  type="button"
+                  className={`inventory-mobile-location inventory-mobile-update${movementStatus ? " inventory-mobile-update--movement" : ""}`}
+                  title={[currentLocation.detail, movementStatus?.detail || vehicle.changeSummary].filter(Boolean).join(" · ")}
+                  data-inventory-vehicle-trigger={vehicle.id}
+                  aria-label={operationalUpdate
+                    ? `View ${movementStatus ? "movement" : "change history"} for ${name}: ${operationalUpdate}`
+                    : `View location and movement for ${name}: ${currentLocation.label}`}
+                  onClick={(event) => {
+                    event.currentTarget.focus({ preventScroll: true });
+                    onSelectVehicle(vehicle, !movementStatus && recentChange ? "timeline" : "movement");
+                  }}
+                >
                   <MapPin size={14} strokeWidth={1.9} aria-hidden="true" />
-                  <strong>{currentLocation.label}</strong>
-                </span>
-                <MobileDocumentAvailability vehicle={vehicle} />
-                {primaryEquipment ? (
-                  <span className="inventory-mobile-feature" title={primaryEquipment}>{primaryEquipment}</span>
+                  <span><strong>{currentLocation.label}</strong>{operationalUpdate ? <small>{operationalUpdate}</small> : null}</span>
+                  <ChevronRight size={15} aria-hidden="true" />
+                </button>
+                {equipmentHighlights.length ? (
+                  <button
+                    type="button"
+                    className="inventory-mobile-feature"
+                    data-inventory-vehicle-trigger={vehicle.id}
+                    aria-label={`View all ${equipment.length} equipment items for ${name}`}
+                    onClick={(event) => {
+                      event.currentTarget.focus({ preventScroll: true });
+                      onSelectVehicle(vehicle, "equipment");
+                    }}
+                  >
+                    <span className="inventory-mobile-feature__items">
+                      {equipmentHighlights.map((item, index) => (
+                        <span key={item.label}>{index ? <span aria-hidden="true"> · </span> : null}{item.label}</span>
+                      ))}
+                      {equipment.length > equipmentHighlights.length
+                        ? <span className="inventory-mobile-feature__remaining"> · +{equipment.length - equipmentHighlights.length} more</span>
+                        : null}
+                    </span>
+                    <ChevronRight size={15} aria-hidden="true" />
+                  </button>
                 ) : null}
-                {operationalUpdate ? (
-                  <span className={`inventory-mobile-update${movementStatus ? " inventory-mobile-update--movement" : ""}`} title={movementStatus?.detail || vehicle.changeSummary || undefined}>
-                    {operationalUpdate}
-                  </span>
-                ) : null}
+                <MobileDocumentAvailability vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
             </div>
           </article>
         );

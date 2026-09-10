@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { WorkflowError } from './workflow.mjs'
 
 function assertDatabasePath(databasePath, runtimeDir) {
   if (databasePath === ':memory:') return databasePath
@@ -538,6 +539,18 @@ export function insertTransferRequest(database, request, initialEvent) {
     if (request.idempotencyKey) {
       const existing = database.prepare('SELECT * FROM transfer_requests WHERE idempotency_key = ?').get(request.idempotencyKey)
       if (existing) return { row: existing, created: false }
+    }
+
+    // The service performs this check for a clear error; repeat it under the
+    // write transaction so a second local process cannot create an overlap.
+    if (request.enforceSingleActive && database.prepare(`
+      SELECT id FROM transfer_requests WHERE vin = ? AND status NOT IN ('declined', 'canceled', 'closed')
+      AND NOT (status = 'returned_home' AND movement_status = 'returned_home' AND current_location_id = home_store_id)
+      LIMIT 1
+    `).get(request.vin)) {
+      throw new WorkflowError('This vehicle already has an open move request. Review its location and ask your manager before starting another.', {
+        status: 409, code: 'ACTIVE_TRANSFER_EXISTS',
+      })
     }
 
     const id = request.id || randomUUID()

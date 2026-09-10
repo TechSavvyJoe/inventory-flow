@@ -4,14 +4,17 @@ Inventory Flow is being introduced with an adoption-first interface: salespeople
 
 ## Phase 1 — current operating experience
 
-- Five visible vehicle-move stages: salesperson request, requesting-store manager approval, requesting manager's call to the Home Store manager and recorded release decision, movement after release, and sell-or-return outcome.
+- Current direction (September 9, 2026): salesperson request, one requesting-store manager approval after manually checking availability with the Home Store, then actual collection/arrival/return/home-receipt updates. No second in-app store approval or driver/dispatch assignment is required. Home receipt completes the move without a separate Close step.
 - One next action, one assigned owner, and one due time shown prominently.
 - Salesperson and manager assignments are the primary operating model.
+- Searchable home inventory, home inventory away, visiting inventory, and all-store location views. Time away starts only from actual departure evidence; notes and approvals cannot reset it. Conflicting location evidence is flagged, never guessed.
 - Needs Attention is a real work queue, not a dashboard of decorative totals.
 - Technical source names stay out of primary screens; their data informs plain-language status and exceptions.
 - Complete vehicle, hold, equipment, movement, issue, return, and history data remains available through progressive disclosure.
 
 ## Advanced foundations retained now
+
+The shared service defaults to server-owned `workflowMode: 'simple'`. The earlier transitions and tracker remain available behind the trusted service's `workflowMode: 'advanced'` constructor option and regression tests. This is not a client-controlled permission switch or a production employee setting. Older dated design/audit documents describe the earlier rollout and do not override this current direction.
 
 - Detailed request, manager review, home-store release, driver, pickup, arrival, outcome, return, and home-receipt states.
 - Requesting-manager approval plus the named Home Store manager's verbal grant or decline recorded as separate evidence.
@@ -60,6 +63,7 @@ Inventory Flow is being introduced with an adoption-first interface: salespeople
 ## Product guardrails
 
 - Default screens stay action-first and use dealership language, not source-system jargon.
+- Design for less computer-confident dealership staff: obvious boundaries, one main action area, consistent controls, and useful facts in compact phone space. Preserve legibility rather than shrinking text to fit more cards.
 - Advanced controls appear only when a role needs them or a user deliberately opens them.
 - No hold, customer-contact, DealerMail, or external-system write is added without an approved API, verified authorization, and an audit trail.
 - A hold, listing, expected date, or internal status code never proves availability, sale, delivery, funding, or physical custody.

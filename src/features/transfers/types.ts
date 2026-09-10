@@ -205,6 +205,7 @@ export interface TransferVehicleSummary {
 
 export interface TransferDetail {
   id: string;
+  workflowMode?: 'simple' | 'advanced';
   vehicle: TransferVehicleSummary;
   requestingStore?: StoreName;
   destination?: string;

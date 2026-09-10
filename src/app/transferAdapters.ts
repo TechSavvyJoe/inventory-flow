@@ -181,9 +181,13 @@ export function toTransferVehicle(vehicle: VehicleRecord, meta: SourceMeta): Tra
 }
 
 export function transferStatusLanes(transfer: TransferRecord, meta: SourceMeta): TransferStatusLanes {
+  const request = requestStatus(transfer.requestStatus)
+  if (transfer.workflowMode === 'simple' && request.code === 'approved') request.label = 'Approved for this move'
   return {
-    request: requestStatus(transfer.requestStatus),
-    movement: movementStatus(transfer.movementStatus),
+    request,
+    movement: transfer.workflowMode === 'simple' && code(transfer.movementStatus) === 'returned-home'
+      ? explicit('returned-home-confirmed', 'Back at home store', 'location')
+      : movementStatus(transfer.movementStatus),
     deal: dealStatus(transfer.dealStatus),
     delivery: deliveryStatus(transfer.deliveryStatus),
     dealerMail: dealerMailStatus(transfer.dealerMailHoldState),
@@ -266,6 +270,7 @@ export function toTransferDetail(
 
   return {
     id: transfer.id,
+    workflowMode: transfer.workflowMode,
     vehicle: {
       ...fallbackVehicle,
       currentLocation: {

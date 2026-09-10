@@ -23,6 +23,8 @@ import { TransferEmptyState } from './TransferEmptyState'
 import { TransferRequestWorkspace } from './TransferRequestWorkspace'
 import { TransferTracker } from './TransferTracker'
 import type { SelectOption, TransferActionKind, TransferDetail, TransferRequestDraft } from './types'
+import { awayFromHomeSummary } from './moveSummary'
+import { VehicleLocationOverview } from './VehicleLocationOverview'
 import './transfers-page.css'
 import './transfer-workspace-v3.css'
 import './transfer-workspace-v4.css'
@@ -37,6 +39,9 @@ type TransferQueueView = 'needs-action' | 'active' | 'history'
 type TransferQueueFilter =
   | 'all'
   | 'my-location'
+  | 'my-home-inventory'
+  | 'requested-by-my-store'
+  | 'away-from-home'
   | 'awaiting-approval'
   | 'driver-needed'
   | 'moving'
@@ -53,7 +58,7 @@ function normalizedStatus(value?: string): string {
 }
 
 function isTerminalTransfer(record: TransferRecord): boolean {
-  return TERMINAL_TRANSFER_STATES.has(normalizedStatus(record.requestStatus))
+  return TERMINAL_TRANSFER_STATES.has(normalizedStatus(record.requestStatus)) || (record.workflowMode === 'simple' && normalizedStatus(record.requestStatus) === 'returned-home')
 }
 
 function needsTransferAction(detail: TransferDetail): boolean {
@@ -143,8 +148,18 @@ function compactNextAction(value?: string): string {
   return action
 }
 
-function compactRequestStatus(value: string): string {
+function compactRequestStatus(value: string, simple = false): string {
   const status = normalizedStatus(value)
+  if (simple) {
+    if (['requested', 'submitted', 'manager-reviewed', 'needs-information'].includes(status)) return 'Manager checking availability'
+    if (status === 'approved') return 'Approved for collection'
+    if (['transport-assigned', 'pickup-scheduled'].includes(status)) return 'Ready to collect'
+    if (['picked-up', 'in-transit'].includes(status)) return 'In transit'
+    if (['arrived', 'customer-showing', 'sale-outcome-pending'].includes(status)) return 'At requesting store'
+    if (status === 'returned-home') return 'Back home'
+    if (status.includes('return')) return 'Returning home'
+    return humanizeStatusLabel(value)
+  }
   if (status === 'draft') return 'Request not submitted'
   if (['requested', 'submitted'].includes(status)) return 'Requesting manager approval'
   if (['manager-reviewed', 'needs-information'].includes(status)) return 'Contact Home Store · record decision'
@@ -170,27 +185,31 @@ function TransferDetailLoader({
   homeStore: StoreName;
   onAction: (action: TransferActionKind, detail: TransferDetail) => void;
 }) {
-  const [recordDetail, setRecordDetail] = useState<TransferRecord | null>(null)
+  // A same-ID bootstrap refresh can change both actions and private-data access.
+  // Never reuse a detail response unless it belongs to this exact selection/context.
+  const selectedRecord = selected?.record
+  const requestContext = useMemo(() => ({ selectedRecord, role, homeStore }), [selectedRecord, role, homeStore])
+  const [recordDetail, setRecordDetail] = useState<{ context: typeof requestContext; record: TransferRecord } | null>(null)
   useEffect(() => {
     let active = true
-    const id = selected?.record.id
+    const id = requestContext.selectedRecord?.id
     if (!id) {
       setRecordDetail(null)
       return () => { active = false }
     }
-    getTransfer(id, role, homeStore)
-      .then((record) => { if (active) setRecordDetail(record) })
+    getTransfer(id, requestContext.role, requestContext.homeStore)
+      .then((record) => { if (active && record?.id === id) setRecordDetail({ context: requestContext, record }) })
       .catch(() => { if (active) setRecordDetail(null) })
     return () => { active = false }
-  }, [selected?.record.id, role, homeStore])
-  const detail = recordDetail && selected && recordDetail.id === selected.record.id
-    ? toTransferDetail(recordDetail, data.vehicles.find((vehicle) => vehicle.vin === recordDetail.vin), data.meta, role)
+  }, [requestContext])
+  const detail = recordDetail?.context === requestContext
+    ? toTransferDetail(recordDetail.record, data.vehicles.find((vehicle) => vehicle.vin === recordDetail.record.vin), data.meta, role)
     : selected?.detail ?? null
   return <TransferTracker transfer={detail} mode="page" onAction={onAction} />
 }
 
 export function TransfersPage() {
-  const { data, homeStore, role, submitTransfer } = useAppData()
+  const { data, homeStore, role, currentUser, submitTransfer } = useAppData()
   const navigate = useNavigate()
   const location = useLocation()
   const [params] = useSearchParams()
@@ -211,6 +230,7 @@ export function TransfersPage() {
   }, [data, role])
 
   if (!data) return null
+  const simple = !details.length || details.some(({ record }) => record.workflowMode === 'simple')
 
   const requestedId = params.get('id')
   const requestedVin = params.get('vin')?.toUpperCase()
@@ -224,6 +244,9 @@ export function TransfersPage() {
         queueFilter === 'my-location' &&
         ![record.homeStore, record.requestingStore, record.currentLocation, record.destination].includes(homeStore)
       ) return false
+      if (queueFilter === 'my-home-inventory' && record.homeStore !== homeStore) return false
+      if (queueFilter === 'requested-by-my-store' && record.requestingStore !== homeStore) return false
+      if (queueFilter === 'away-from-home' && !awayFromHomeSummary(record.homeStore, record.currentLocation, record.events).isAway) return false
       if (queueFilter === 'awaiting-approval' && !isAwaitingApproval(record)) return false
       if (
         queueFilter === 'driver-needed' &&
@@ -306,26 +329,27 @@ export function TransfersPage() {
     const defaultRequestingStore = stores.some((store) => store.value === homeStore) ? homeStore : stores[0]?.value
     const requestingManagerStore = defaultRequestingStore ?? homeStore
     const managerApprovers: SelectOption[] = requestVehicle
-      ? [{ value: `${requestingManagerStore}-manager`, label: `${requestingManagerStore} manager`, secondaryLabel: `Approves first, then contacts the ${requestVehicle.homeStore} manager` }]
+      ? [{ value: `${requestingManagerStore}-manager`, label: `${requestingManagerStore} manager`, secondaryLabel: `Checks with ${requestVehicle.homeStore}, then approves the request` }]
       : []
 
     return (
       <section className="transfer-request-page">
         <SourceWarning meta={data.meta} />
         <TransferRequestWorkspace
+          workflowMode="simple"
           vehicle={vehicleSummary}
           stores={stores}
-          requesters={[{ value: 'joe-gallant', label: 'Joe Gallant', secondaryLabel: `${homeStore} · active prototype user` }]}
+          requesters={[{ value: 'signed-in-user', label: currentUser || 'Signed-in salesperson', secondaryLabel: homeStore }]}
           managerApprovers={managerApprovers}
           defaultRequestingStore={defaultRequestingStore}
-          defaultRequesterId="joe-gallant"
+          defaultRequesterId="signed-in-user"
           defaultManagerApproverId={managerApprovers[0]?.value}
           onCancel={() => navigate(requestVehicle ? '/transfers' : '/inventory')}
           onSubmit={async (draft) => {
             const created = await submitTransfer({
               vin: draft.vin,
               requestingStore: draft.requestingStore as typeof homeStore,
-              requestedBy: 'Joe Gallant',
+              requestedBy: currentUser || 'Signed-in salesperson',
               neededBy: draft.neededBy,
               reason: `${REASON_LABELS[draft.reasonCode]}${draft.reasonDetail?.trim() ? `: ${draft.reasonDetail.trim()}` : ''}`,
               customerReference: draft.customerReference?.trim() || undefined,
@@ -344,14 +368,14 @@ export function TransfersPage() {
 
   return (
     <section
-      className={`transfers-page transfer-workspace-v3 transfer-workspace-v4${requestedId && selected ? ' is-mobile-detail-open' : ''}`}
+      className={`transfers-page transfer-workspace-v3 transfer-workspace-v4${simple ? ' is-simple' : ''}${requestedId && selected ? ' is-mobile-detail-open' : ''}`}
       data-mobile-detail-open={requestedId && selected ? 'true' : 'false'}
     >
       <SourceWarning meta={data.meta} />
       <header className="transfers-page-header">
         <div>
           <h1>Vehicle moves</h1>
-          <p>Requesting manager approves, Home Store releases, then the driver moves the vehicle.</p>
+          <p>{simple ? 'Request a vehicle. Your manager checks availability. Track its location and return.' : 'Requesting manager approves, Home Store releases, then the driver moves the vehicle.'}</p>
         </div>
         <button className="mif-button mif-button--primary transfer-header-create" type="button" aria-label="Request a vehicle" onClick={() => navigate('/inventory')}>
           <Plus aria-hidden="true" />
@@ -359,12 +383,14 @@ export function TransfersPage() {
         </button>
       </header>
 
+      {simple ? <VehicleLocationOverview vehicles={data.vehicles} transfers={data.transfers} homeStore={homeStore} /> : null}
+
       {details.length === 0 ? (
         <div className="transfers-empty-surface">
           <TransferEmptyState onAction={() => navigate('/inventory')} actionLabel="Find a vehicle" />
           <div className="movement-operating-rule">
             <ArrowLeftRight aria-hidden="true" />
-            <div><strong>Home Store owns the release. Requesting Store owns the custody.</strong><span>Accountability continues until the Home Store confirms return or an authorized final disposition is recorded.</span></div>
+            <div><strong>{simple ? 'One manager review, then simple location updates.' : 'Home Store owns the release. Requesting Store owns the custody.'}</strong><span>{simple ? 'Your manager checks with the vehicle’s home store and approves. Record collection, arrival, and return so everyone knows where it is.' : 'Accountability continues until the Home Store confirms return or an authorized final disposition is recorded.'}</span></div>
           </div>
         </div>
       ) : (
@@ -376,7 +402,7 @@ export function TransfersPage() {
             <div className="transfer-list-toolbar">
               <label className="transfer-list-search">
                 <Search aria-hidden="true" />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search stock, VIN, vehicle, store, or driver" aria-label="Search vehicle moves" />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={simple ? 'Search stock, vehicle, salesperson, or store' : 'Search stock, VIN, vehicle, store, or driver'} aria-label="Search vehicle moves" />
               </label>
               <div className="transfer-list-views" role="group" aria-label="Movement queue view">
                 {([
@@ -400,8 +426,9 @@ export function TransfersPage() {
                 >
                   <option value="all">All moves</option>
                   <option value="my-location">My location</option>
+                  {simple ? <><option value="my-home-inventory">My home inventory</option><option value="requested-by-my-store">Requested by my store</option><option value="away-from-home">Away from home</option></> : null}
                   <option value="awaiting-approval">Awaiting approval</option>
-                  <option value="driver-needed">Driver needed</option>
+                  {!simple ? <option value="driver-needed">Driver needed</option> : null}
                   <option value="moving">Pickup or in transit</option>
                   <option value="return-due">Return required / due</option>
                   <option value="sold-pending">Sold pending · not delivered</option>
@@ -430,6 +457,8 @@ export function TransfersPage() {
               {filteredDetails.map(({ record, detail }) => {
                 const isSelected = selected?.record.id === record.id
                 const step = workflowStep(record.requestStatus)
+                const simpleRecord = record.workflowMode === 'simple'
+                const away = awayFromHomeSummary(record.homeStore, record.currentLocation, record.events)
                 const issueLabel = transferIssueLabel(detail)
                 const dueTone = detail.nextAction.sla === 'breached' || detail.nextAction.sla === 'overdue'
                   ? 'is-overdue'
@@ -455,9 +484,9 @@ export function TransfersPage() {
                       <span className="transfer-list-route"><strong>{detail.vehicle.stock}</strong><span>{detail.vehicle.homeStore} → {record.destination}</span></span>
                       <span className="transfer-list-state-row">
                         <span className="transfer-location"><MapPin aria-hidden="true" />Now {record.currentLocation}</span>
-                        <span className="transfer-list-stage">Step {step} of 5 · {compactRequestStatus(record.requestStatus)}</span>
+                        <span className="transfer-list-stage">{simpleRecord ? compactRequestStatus(record.requestStatus, true) : `Step ${step} of 5 · ${compactRequestStatus(record.requestStatus)}`}</span>
                       </span>
-                      <span className="transfer-next"><small>Next</small><strong>{compactNextAction(record.nextAction)}</strong></span>
+                      <span className="transfer-next"><small>{simpleRecord && away.isAway ? 'Away' : 'Next'}</small><strong>{simpleRecord && away.isAway ? away.label : compactNextAction(record.nextAction)}</strong></span>
                       <span className="transfer-list-owner-row">
                         <span>{record.nextActionOwner || 'Owner not assigned'}</span>
                         <span className={dueTone}>{dueLabel(detail)}</span>
@@ -483,7 +512,7 @@ export function TransfersPage() {
                 </button>
                 <span>
                   <h1>Vehicle move</h1>
-                  <small>{selected.detail.vehicle.stock} · Step {workflowStep(selected.record.requestStatus)} of 5 · {compactRequestStatus(selected.record.requestStatus)}</small>
+                  <small>{selected.detail.vehicle.stock} · {selected.record.workflowMode === 'simple' ? compactRequestStatus(selected.record.requestStatus, true) : `Step ${workflowStep(selected.record.requestStatus)} of 5 · ${compactRequestStatus(selected.record.requestStatus)}`}</small>
                 </span>
               </header>
             ) : null}
@@ -496,7 +525,10 @@ export function TransfersPage() {
         <TransferActionDialog
           {...pendingAction}
           onClose={() => setPendingAction(null)}
-          onComplete={(updated) => navigate(`/transfers?id=${encodeURIComponent(updated.id)}`)}
+          onComplete={(updated) => {
+            if (isTerminalTransfer(updated)) setQueueView('history')
+            navigate(`/transfers?id=${encodeURIComponent(updated.id)}`)
+          }}
         />
       ) : null}
     </section>

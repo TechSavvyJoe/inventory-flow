@@ -190,6 +190,8 @@ export interface MovementSummary {
   transportAssignee?: string
   destination?: string
   lastConfirmedAt?: string
+  /** Actual departure evidence for the current trip; excludes approvals and later notes. */
+  departedAt?: string
   locationConfidence: 'verified' | 'reported' | 'stale' | 'conflicting' | 'unknown'
   nextAction?: string
   nextActionOwner?: string
@@ -278,6 +280,7 @@ export interface TransferEvent {
 
 export interface TransferRecord {
   id: string
+  workflowMode?: 'simple' | 'advanced'
   vin: string
   stockNumber: string
   vehicleName: string
@@ -443,6 +446,7 @@ export interface TransferRequestInput {
 
 export interface TransferEventInput {
   type: string
+  availabilityConfirmed?: boolean
   actor: string
   actorRole: UserRole
   store: StoreName

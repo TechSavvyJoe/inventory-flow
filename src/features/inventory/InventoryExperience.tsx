@@ -42,6 +42,7 @@ import type {
 import "./inventory.css";
 import "./inventory-modern.css";
 import "./InventoryExperience.production-v4.css";
+import "./InventoryControls.flow.css";
 
 const PAGE_SIZE_OPTIONS = [10, 15, 20, 25, 50, 100] as const;
 const MAX_SORT_LEVELS = 5;
@@ -150,12 +151,8 @@ function SortComposer({
         onClick={() => disclosure.setOpen((open) => !open)}
       >
         <ListFilter size={16} strokeWidth={1.8} aria-hidden="true" />
-        <span className="inventory-sort-composer__mobile-label" aria-hidden="true">Sort</span>
-        <span>
-          <small>Sort inventory</small>
-          <strong>{SORT_LABELS[sorts[0]?.key ?? DEFAULT_INVENTORY_SORTS[0].key]}</strong>
-        </span>
-        <em>{sorts.length} {sorts.length === 1 ? "level" : "levels"}</em>
+        <span>Sort</span>
+        <em aria-hidden="true">{sorts.length}</em>
         <ChevronDown size={16} aria-hidden="true" />
       </button>
       <div id={disclosure.panelId} className="inventory-sort-composer__panel" hidden={!disclosure.open}>
@@ -169,6 +166,7 @@ function SortComposer({
               Reset
             </button>
           ) : null}
+          <button type="button" aria-label="Close sort options" onClick={() => disclosure.close(true)}><X size={18} aria-hidden="true" /></button>
         </div>
         <ol className="inventory-sort-levels">
           {sorts.map((sort, index) => (
@@ -333,8 +331,8 @@ function FiltersPanel({
 }
 
 function matchesQuickView(vehicle: InventoryVehicle, quickView: QuickView): boolean {
-  if (quickView === "no-hold") return vehicle.dealerMail.hasActiveHold === false;
-  if (quickView === "held") return vehicle.dealerMail.hasActiveHold === true;
+  if (quickView === "no-hold") return vehicle.dealerMail.dataState === "current" && vehicle.dealerMail.hasActiveHold === false;
+  if (quickView === "held") return vehicle.dealerMail.dataState === "current" && vehicle.dealerMail.hasActiveHold === true;
   if (quickView === "moving") return Boolean(vehicle.movement && (vehicle.movement.state || vehicle.movement.requestId));
   const change = (vehicle.changeSummary || "").toLowerCase();
   if (quickView === "new") return change.includes("new arrival") || change.includes("new today");
@@ -505,7 +503,7 @@ export function InventoryExperience(props: InventoryExperienceProps) {
   };
 
   return (
-    <section className={`inventory-experience inventory-experience--modern${selectedVehicle ? " has-workspace" : ""}${className ? ` ${className}` : ""}`} aria-label={props["aria-label"] || "Inventory"}>
+    <section id="inventory-results-workspace" className={`inventory-experience inventory-experience--modern inventory-experience--responsive${selectedVehicle ? " has-workspace" : ""}${className ? ` ${className}` : ""}`} aria-label={props["aria-label"] || "Inventory"}>
       <div className="inventory-experience__content" ref={backgroundRef}>
         <header className="inventory-page-header inventory-page-header--modern">
           <div>
@@ -513,10 +511,10 @@ export function InventoryExperience(props: InventoryExperienceProps) {
             <p>
               {scope === "home"
                 ? `${homeVehicleCount} vehicles at ${homeStore.name} · ${groupVehicleCount} across the group`
-                : `${groupVehicleCount} vehicles across four locations`}{" "}
-              <span>· Live location, hold, movement, equipment, and record checks stay together.</span>
+                : `${groupVehicleCount} vehicles across four locations`}
             </p>
           </div>
+          <ScopeSwitch homeStore={homeStore} scope={scope} homeCount={homeVehicleCount} groupCount={groupVehicleCount} onChange={setScope} />
         </header>
 
         <div className="inventory-command-bar" role="group" aria-label="Inventory search and location scope">
@@ -532,16 +530,20 @@ export function InventoryExperience(props: InventoryExperienceProps) {
             persistenceKey={`inventory-search:v2:${searchPersistenceKey || homeStore.id}`}
             placeholder="Search stock, VIN, vehicle, packages, or equipment…"
           />
-          <ScopeSwitch
-            homeStore={homeStore}
-            scope={scope}
-            homeCount={homeVehicleCount}
-            groupCount={groupVehicleCount}
-            onChange={setScope}
-          />
         </div>
 
         <div className="inventory-control-deck">
+          <label className="inventory-status-select">
+            <span className="inventory-visually-hidden">Quick view</span>
+            <select aria-label="Inventory quick view" value={quickView} onChange={(event) => setQuickView(event.target.value as QuickView)}>
+              <option value="all">All vehicles ({quickViewCounts.all})</option>
+              <option value="no-hold">No current hold ({quickViewCounts["no-hold"]})</option>
+              <option value="held">Held ({quickViewCounts.held})</option>
+              <option value="moving">Being moved ({quickViewCounts.moving})</option>
+              <option value="new">New today ({quickViewCounts.new})</option>
+              <option value="price">Price changed ({quickViewCounts.price})</option>
+            </select>
+          </label>
           <div className="inventory-quick-filters" role="group" aria-label="Inventory quick filters">
             {([
               ["all", "All", "All"],
@@ -571,12 +573,6 @@ export function InventoryExperience(props: InventoryExperienceProps) {
 
             <div className="inventory-toolbar__right">
               <SortComposer sorts={sorts} onChange={setSorts} />
-              <label className="inventory-page-size">
-                <span>Rows</span>
-                <select value={rowsPerPage} onChange={(event) => setRowsPerPage(normalizedPageSize(Number(event.target.value)))} aria-label="Rows per page">
-                  {PAGE_SIZE_OPTIONS.map((size) => <option value={size} key={size}>{size}</option>)}
-                </select>
-              </label>
             </div>
           </div>
         </div>
@@ -631,6 +627,12 @@ export function InventoryExperience(props: InventoryExperienceProps) {
         {scopedVehicles.length > 0 ? (
           <nav className="inventory-pagination inventory-pagination--modern" aria-label="Inventory pages">
             <span>Showing {pageStart + 1}–{Math.min(pageStart + pageVehicles.length, scopedVehicles.length)} of {scopedVehicles.length}</span>
+            <label className="inventory-page-size">
+              <span>Rows</span>
+              <select value={rowsPerPage} onChange={(event) => setRowsPerPage(normalizedPageSize(Number(event.target.value)))} aria-label="Rows per page">
+                {PAGE_SIZE_OPTIONS.map((size) => <option value={size} key={size}>{size}</option>)}
+              </select>
+            </label>
             <div>
               <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={safePage <= 1} aria-label="Previous inventory page"><ChevronLeft size={18} aria-hidden="true" /></button>
               <span>Page {safePage} of {totalPages}</span>

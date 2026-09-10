@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BootstrapData, TransferRecord } from '../../types';
@@ -254,6 +254,104 @@ describe('transfer workspace v3 layout', () => {
     });
 
     expect(screen.getByText('No moves match this view and search.')).toBeInTheDocument();
+  });
+
+  it('shows the simple location workflow without dispatch stages or driver filters', () => {
+    const data = bootstrap(2);
+    data.transfers.forEach(record => {
+      record.workflowMode = 'simple';
+      record.allowedActions = ['confirm-pickup', 'report-condition'];
+      record.nextAction = 'Record collection when the vehicle leaves';
+    });
+    const { container } = renderPage(data);
+    expect(container.querySelector('.simple-transfer-tracker')).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Inter-store request approval and movement progress' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Driver needed' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark vehicle collected' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Vehicle location and time away' })).toHaveTextContent('At home store');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter vehicle moves' }), { target: { value: 'my-home-inventory' } });
+    expect(container.querySelectorAll('.transfer-list-item')).toHaveLength(1);
+    expect(container.querySelector('.transfer-list-item')).toHaveTextContent('MOVE1');
+  });
+
+  it('refreshes same-ID move details after an event and immediately uses current bootstrap actions', async () => {
+    const data = bootstrap(1);
+    data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', requestStatus: 'requested', allowedActions: ['approve'], privateEvidence: undefined, nextAction: 'Check availability and approve' };
+    const initialPrivate = { ...data.transfers[0], privateEvidence: { requestReason: 'Previous private detail' } };
+    let resolveCurrent!: (record: TransferRecord) => void;
+    mocks.getTransfer.mockResolvedValueOnce(initialPrivate).mockImplementationOnce(() => new Promise<TransferRecord>(resolve => { resolveCurrent = resolve; }));
+    mocks.useAppData.mockReturnValue({ data, homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
+    const { rerender } = render(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+    expect(await screen.findByText('Previous private detail')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve & mark available' })).toBeInTheDocument();
+
+    const updated = { ...data.transfers[0], requestStatus: 'approved', allowedActions: ['confirm-pickup'], nextAction: 'Record collection when the vehicle leaves' };
+    const currentData = { ...data, transfers: [updated] };
+    mocks.useAppData.mockReturnValue({ data: currentData, homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
+    rerender(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+    expect(screen.queryByText('Previous private detail')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve & mark available' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark vehicle collected' })).toBeInTheDocument();
+    expect(mocks.getTransfer).toHaveBeenCalledTimes(2);
+    await act(async () => { resolveCurrent({ ...updated, privateEvidence: { requestReason: 'Current private detail' } }); });
+    expect(screen.getByText('Current private detail')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark vehicle collected' })).toBeInTheDocument();
+  });
+
+  it('does not let a previous role/store detail response overwrite the current access view', async () => {
+    const data = bootstrap(1);
+    data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', requestStatus: 'requested', allowedActions: ['approve'], privateEvidence: undefined };
+    let resolvePrevious!: (record: TransferRecord) => void;
+    const restricted = { ...data.transfers[0], allowedActions: [], nextAction: 'Waiting for requesting-store manager', privateEvidence: undefined };
+    mocks.getTransfer.mockImplementationOnce(() => new Promise<TransferRecord>(resolve => { resolvePrevious = resolve; })).mockResolvedValueOnce(restricted);
+    mocks.useAppData.mockReturnValue({ data, homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
+    const { rerender } = render(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+    mocks.useAppData.mockReturnValue({ data: { ...data, transfers: [restricted] }, homeStore: 'Ford Detroit', role: 'sales', submitTransfer: vi.fn() });
+    rerender(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+    await waitFor(() => expect(mocks.getTransfer).toHaveBeenLastCalledWith('transfer-1', 'sales', 'Ford Detroit'));
+    expect(screen.queryByRole('button', { name: 'Approve & mark available' })).not.toBeInTheDocument();
+    await act(async () => { resolvePrevious({ ...data.transfers[0], privateEvidence: { requestReason: 'Other access private reason' } }); });
+    expect(screen.queryByText('Other access private reason')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve & mark available' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Waiting for requesting-store manager' })).toBeInTheDocument();
+  });
+
+  it('hides cached private data immediately when the access context changes with the same bootstrap record', async () => {
+    const data = bootstrap(1);
+    data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', requestStatus: 'requested', allowedActions: [], privateEvidence: undefined };
+    mocks.getTransfer.mockResolvedValueOnce({ ...data.transfers[0], allowedActions: ['approve'], privateEvidence: { requestReason: 'Manager-only private reason' } }).mockImplementationOnce(() => new Promise(() => {}));
+    mocks.useAppData.mockReturnValue({ data, homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
+    const { rerender } = render(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+    expect(await screen.findByText('Manager-only private reason')).toBeInTheDocument();
+    mocks.useAppData.mockReturnValue({ data, homeStore: 'Ford Detroit', role: 'sales', submitTransfer: vi.fn() });
+    rerender(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+    expect(screen.queryByText('Manager-only private reason')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve & mark available' })).not.toBeInTheDocument();
+    expect(mocks.getTransfer).toHaveBeenLastCalledWith('transfer-1', 'sales', 'Ford Detroit');
+  });
+
+  it('moves received simple vehicles into history without another close step', () => {
+    const data = bootstrap(2);
+    data.transfers[0].workflowMode = 'simple';
+    data.transfers[0].requestStatus = 'closed';
+    data.transfers[0].movementStatus = 'returned_home';
+    data.transfers[0].allowedActions = ['open-source'];
+    data.transfers[1].workflowMode = 'simple';
+    renderPage(data);
+    expect(screen.queryByRole('button', { name: /2025 Ford F-150 1/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /History\s*1/ }));
+    expect(screen.getByRole('button', { name: /2025 Ford F-150 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Back home · move complete' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close movement' })).not.toBeInTheDocument();
+  });
+
+  it('shows one requesting-manager check and no second-store approval in a simple request', () => {
+    render(<TransferRequestWorkspace workflowMode="simple" vehicle={detail([]).vehicle} stores={[{ value: 'Ford Detroit', label: 'Ford Detroit' }]} requesters={[{ value: 'sales', label: 'Demo Sales' }]} managerApprovers={[{ value: 'manager', label: 'Ford Detroit manager' }]} defaultRequestingStore="Ford Detroit" defaultRequesterId="sales" defaultManagerApproverId="manager" onSubmit={vi.fn()} />);
+    const preview = screen.getByRole('complementary', { name: 'Request accountability preview' });
+    expect(within(preview).getAllByRole('listitem')).toHaveLength(3);
+    expect(preview).toHaveTextContent('Your manager checks and approves');
+    expect(preview).toHaveTextContent('No second approval in the app');
+    expect(preview).not.toHaveTextContent('assign a driver');
   });
 
   it('filters sold-pending separately from delivery and sorts by an operational route', () => {

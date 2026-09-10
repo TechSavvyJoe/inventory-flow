@@ -87,6 +87,70 @@ function normalizeDataset(dataset) {
 }
 
 describe('D1 shared operational repository', () => {
+  it('does not allow two concurrent simple requests for one VIN after the losing writer reloads', async () => {
+    const d1 = fakeD1()
+    const release = buildSyntheticRelease()
+    const sales = { role: 'sales', store: 'Fowlerville', user: 'Synthetic salesperson', userId: 'sales-1' }
+    const input = { vin: 'TESTDATAHWELL0001', neededBy: requestAt, reason: 'Synthetic concurrent request' }
+    const cold = async () => {
+      const store = await loadD1Repository(d1, release)
+      return { ...store, service: createInventoryServiceCore({ database: store.database, repository: store.repository, now: () => SYNTHETIC_NOW }) }
+    }
+    const first = await cold()
+    const second = await cold()
+    const winner = first.service.createTransfer(input, sales, 'simple-concurrent-a')
+    second.service.createTransfer(input, sales, 'simple-concurrent-b')
+    await first.commit()
+    await expect(second.commit()).rejects.toBeInstanceOf(RepositoryConflictError)
+    const retry = await cold()
+    expect(() => retry.service.createTransfer(input, sales, 'simple-concurrent-b')).toThrow('already has an open move')
+    expect(retry.service.createTransfer(input, sales, 'simple-concurrent-a')).toMatchObject({ created: false, record: { id: winner.record.id } })
+    expect((await retry.commit()).committed).toBe(false)
+    expect(d1.sqlite.prepare('SELECT COUNT(*) AS n FROM transfer_requests').get().n).toBe(1)
+    expect(d1.sqlite.prepare('SELECT COUNT(*) AS n FROM transfer_events').get().n).toBe(1)
+  })
+
+  it('persists the simple manager approval and assignment-free move across cold cloud requests', async () => {
+    const d1 = fakeD1()
+    const release = buildSyntheticRelease()
+    const sales = { role: 'sales', store: 'Fowlerville', user: 'Synthetic salesperson', userId: 'sales-1' }
+    const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic manager', userId: 'manager-1' }
+    const home = { role: 'manager', store: 'Howell', user: 'Synthetic home manager', userId: 'manager-2' }
+    const cold = async () => {
+      const store = await loadD1Repository(d1, release)
+      return { ...store, service: createInventoryServiceCore({ database: store.database, repository: store.repository, now: () => SYNTHETIC_NOW }) }
+    }
+    const first = await cold()
+    const created = first.service.createTransfer({ vin: 'TESTDATAHWELL0001', neededBy: requestAt, reason: 'Synthetic request', returnRequired: true }, sales, 'simple-cloud-request')
+    await first.commit()
+    const id = created.record.id
+    for (const [event, context, status] of [
+      [{ type: 'request_approved', availabilityConfirmed: true }, manager, 'approved'],
+      [{ type: 'vehicle_departed' }, sales, 'picked_up'],
+      [{ type: 'arrived' }, sales, 'arrived'],
+      [{ type: 'return_started' }, sales, 'return_in_transit'],
+      [{ type: 'returned_home' }, home, 'closed'],
+    ]) {
+      const current = await cold()
+      expect(current.service.getTransfer(id, context).workflowMode).toBe('simple')
+      const mutation = current.service.appendTransferEvent(id, event, context, `simple-cloud-${event.type}`)
+      expect(mutation.record.requestStatus).toBe(status)
+      expect(mutation.record.deliveryStatus).toBe('not_confirmed')
+      expect(mutation.record.dealStatus).toBe('not_confirmed')
+      await current.commit()
+      const restored = await cold()
+      expect(restored.service.getTransfer(id, context).requestStatus).toBe(status)
+      expect(restored.service.appendTransferEvent(id, event, context, `simple-cloud-${event.type}`).created).toBe(false)
+      expect((await restored.commit()).committed).toBe(false)
+    }
+    const final = await cold()
+    const complete = final.service.getTransfer(id, home)
+    expect(complete.currentLocation).toBe('Howell')
+    expect(complete.events).toHaveLength(6)
+    expect(d1.sqlite.prepare('SELECT COUNT(*) AS n FROM transfer_events WHERE event_type IN (?, ?, ?)').get('manager_reviewed', 'transport_assigned', 'return_assigned').n).toBe(0)
+    expect(d1.sqlite.prepare('SELECT COUNT(*) AS n FROM public_vehicle_snapshots').get().n).toBe(0)
+  })
+
   it('preserves complete source, hold, backup, CDK and resource row shapes without copying source evidence to D1', async () => {
     const release = buildSyntheticRelease()
     const local = openInventoryDatabase()

@@ -36,7 +36,13 @@ function outcomeChoices(status: string, manager: boolean): EventChoice[] {
   return values
 }
 
-function eventForAction(action: TransferActionKind, status: string, outcome: string): string {
+function eventForAction(action: TransferActionKind, status: string, outcome: string, simple: boolean): string {
+  if (simple) {
+    if (action === 'approve') return 'request_approved'
+    if (action === 'decline') return 'request_declined'
+    if (action === 'confirm-pickup') return 'vehicle_departed'
+    if (action === 'schedule-return') return 'return_started'
+  }
   switch (action) {
     case 'review-request': return 'manager_reviewed'
     case 'approve': return 'approved'
@@ -75,33 +81,46 @@ function topLevelAppBackground(): HTMLElement | null {
 }
 
 export function TransferActionDialog({ action, record, detail, onClose, onComplete }: TransferActionDialogProps) {
-  const { addTransferEvent, homeStore, role } = useAppData()
+  const { addTransferEvent, homeStore, role, currentUser } = useAppData()
+  const simple = record.workflowMode === 'simple'
   const isManager = role === 'manager' || role === 'group_manager'
   const outcomes = useMemo(() => outcomeChoices(record.requestStatus, isManager), [isManager, record.requestStatus])
   const [outcome, setOutcome] = useState(outcomes[0]?.value ?? '')
   const [assignee, setAssignee] = useState('')
   const [dueAt, setDueAt] = useState('')
   const [homeStoreManager, setHomeStoreManager] = useState('')
+  const [availabilityConfirmed, setAvailabilityConfirmed] = useState(false)
   const [note, setNote] = useState('')
   const [conditionSeverity, setConditionSeverity] = useState<'minor' | 'needs-review' | 'do-not-drive'>('needs-review')
   const [safeToDrive, setSafeToDrive] = useState<'yes' | 'no' | 'unknown'>('unknown')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const eventType = eventForAction(action, record.requestStatus, outcome)
+  const eventType = eventForAction(action, record.requestStatus, outcome, simple)
+  const needsAvailabilityConfirmation = eventType === 'request_approved'
   const needsAssignee = eventType === 'transport_assigned' || eventType === 'return_assigned'
-  const needsDue = needsAssignee || eventType === 'return_requested'
+  const needsDue = needsAssignee || eventType === 'return_requested' || eventType === 'return_started'
   const needsHomeReleaseConfirmation = eventType === 'approved'
-  const needsDecisionReason = eventType === 'declined'
-  const recordsHomeStoreDecision = needsHomeReleaseConfirmation || (needsDecisionReason && normalizedStatus(record.requestStatus) === 'manager-reviewed')
+  const needsDecisionReason = eventType === 'declined' || eventType === 'request_declined'
+  const recordsHomeStoreDecision = !simple && (needsHomeReleaseConfirmation || (needsDecisionReason && normalizedStatus(record.requestStatus) === 'manager-reviewed'))
   const isConditionIssue = eventType === 'condition_issue'
-  const actionTitle = eventType === 'manager_reviewed'
+  const actionTitle = needsAvailabilityConfirmation ? 'Approve & mark available'
+    : eventType === 'vehicle_departed' ? 'Mark vehicle collected'
+    : simple && eventType === 'arrived' ? `Mark arrived at ${record.destination}`
+    : simple && eventType === 'returned_home' ? 'Confirm back home'
+    : eventType === 'return_started' ? 'Start return to home store'
+    : eventType === 'manager_reviewed'
     ? 'Approve at requesting store'
     : eventType === 'approved'
       ? 'Record home-store release'
       : recordsHomeStoreDecision
         ? 'Record home-store decline'
         : transferActionLabels[action]
-  const submitLabel = isConditionIssue
+  const submitLabel = needsAvailabilityConfirmation ? 'Approve & mark available'
+    : eventType === 'vehicle_departed' ? 'Mark collected'
+    : simple && eventType === 'arrived' ? 'Mark arrived'
+    : simple && eventType === 'returned_home' ? 'Confirm back home'
+    : eventType === 'return_started' ? 'Start return'
+    : isConditionIssue
     ? 'Record issue'
     : eventType === 'manager_reviewed'
       ? 'Approve request'
@@ -109,7 +128,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
         ? 'Record release grant'
         : recordsHomeStoreDecision
           ? 'Record home-store decline'
-          : eventType === 'declined'
+          : eventType === 'declined' || eventType === 'request_declined'
             ? 'Decline request'
         : eventType === 'returned_home'
           ? 'Confirm home receipt'
@@ -144,6 +163,10 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (!eventType) return
+    if (needsAvailabilityConfirmation && !availabilityConfirmed) {
+      setError('Confirm you checked with the vehicle’s home store and it is available for this move.')
+      return
+    }
     if (needsAssignee && !assignee.trim()) {
       setError('Enter the assigned driver. If the porter or a salesperson is driving, record that manager-assigned person by name.')
       return
@@ -172,10 +195,11 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
     try {
       const updated = await addTransferEvent(record.id, {
         type: eventType,
-        actor: 'Joe Gallant',
+        actor: currentUser || 'Signed-in user',
         actorRole: role,
         store: homeStore,
         homeStoreManager: recordsHomeStoreDecision ? homeStoreManager.trim() : undefined,
+        availabilityConfirmed: needsAvailabilityConfirmation ? availabilityConfirmed : undefined,
         note: recordedNote,
         fromLocation: record.currentLocation,
         toLocation:
@@ -225,7 +249,25 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
           </fieldset>
         ) : null}
 
-        {eventType === 'manager_reviewed' ? (
+        {needsAvailabilityConfirmation ? (
+          <label className="action-availability-confirmation">
+            <input type="checkbox" checked={availabilityConfirmed} onChange={(event) => setAvailabilityConfirmed(event.target.checked)} />
+            <span>
+              <strong>I checked with {record.homeStore}; this vehicle is available for this move.</strong>
+              <small>Approve as the {record.requestingStore} manager. No separate approval is sent to the other store.</small>
+            </span>
+          </label>
+        ) : eventType === 'vehicle_departed' ? (
+          <div className="action-approval-sequence" role="note">
+            <strong>Record the actual collection</strong>
+            <span>This starts the time-away clock and shows the vehicle as in transit to {record.destination}. No driver assignment is required.</span>
+          </div>
+        ) : eventType === 'return_started' ? (
+          <div className="action-approval-sequence" role="note">
+            <strong>Returning to {record.homeStore}</strong>
+            <span>Use this when the vehicle has actually started back. It stays away until its home store confirms receipt.</span>
+          </div>
+        ) : eventType === 'manager_reviewed' ? (
           <div className="action-approval-sequence" role="note">
             <strong>Stage 2 · Requesting-store approval</strong>
             <span>
@@ -253,7 +295,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
 
         {needsDue ? (
           <label className="action-field">
-            <span>{eventType === 'return_requested' ? 'Return due' : 'Target time'}</span>
+            <span>{eventType === 'return_requested' || eventType === 'return_started' ? 'Return due' : 'Target time'}{eventType === 'return_started' ? ' (optional)' : ''}</span>
             <input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
           </label>
         ) : null}
@@ -309,7 +351,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
 
         <div className="action-separation-note">
           <CheckCircle2 aria-hidden="true" />
-        <p>This records one internal move event. It does not by itself confirm availability, sale, delivery, or funding.</p>
+        <p>{simple ? 'This updates the internal vehicle move. It does not confirm a sale, customer delivery, or funding.' : 'This records one internal move event. It does not by itself confirm availability, sale, delivery, or funding.'}</p>
         </div>
         {error ? <div className="action-error" role="alert"><AlertTriangle aria-hidden="true" />{error}</div> : null}
         <footer>

@@ -11,7 +11,10 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url))
 const appDirectory = path.resolve(scriptDirectory, '..')
 const port = Number.parseInt(process.env.INVENTORY_OPS_PORT || '4174', 10)
 
-const fixedNow = () => new Date(SYNTHETIC_NOW)
+// Keep the training date fixed, but preserve event order across repeated trips.
+// A completely frozen clock makes every departure and receipt simultaneous.
+let syntheticTick = 0
+const fixedNow = () => new Date(SYNTHETIC_NOW.getTime() + syntheticTick++)
 
 const app = startInventoryServer({
   workspaceRoot: appDirectory,

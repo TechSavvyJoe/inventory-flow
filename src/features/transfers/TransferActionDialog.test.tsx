@@ -71,7 +71,7 @@ const detail = {
   allowedActions: ['approve'],
 } as unknown as TransferDetail
 
-function DialogHarness({ action = 'approve' }: { action?: TransferActionKind }) {
+function DialogHarness({ action = 'approve', workflowMode }: { action?: TransferActionKind; workflowMode?: TransferRecord['workflowMode'] }) {
   const [open, setOpen] = useState(false)
   return (
     <div data-testid="app-background">
@@ -79,7 +79,7 @@ function DialogHarness({ action = 'approve' }: { action?: TransferActionKind }) 
       {open ? (
         <TransferActionDialog
           action={action}
-          record={record}
+          record={{ ...record, workflowMode }}
           detail={detail}
           onClose={() => setOpen(false)}
         />
@@ -207,5 +207,47 @@ describe('TransferActionDialog modal accessibility', () => {
     expect(document.body.style.getPropertyPriority('overflow')).toBe('important')
     expect(document.body.style.overscrollBehavior).toBe('contain')
     await waitFor(() => expect(opener).toHaveFocus())
+  })
+
+  it('requires a direct availability check for the single simple manager approval', async () => {
+    mocks.addTransferEvent.mockResolvedValue(record)
+    mocks.useAppData.mockReturnValue({ addTransferEvent: mocks.addTransferEvent, homeStore: 'Ford Detroit', role: 'manager', currentUser: 'Demo Manager' })
+    render(<DialogHarness workflowMode="simple" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open movement action' }))
+    const dialog = screen.getByRole('dialog', { name: 'Approve & mark available' })
+    expect(within(dialog).queryByLabelText(/Home-store manager contacted/)).not.toBeInTheDocument()
+    expect(dialog).not.toHaveTextContent('Stage 3')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve & mark available' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Confirm you checked')
+    expect(mocks.addTransferEvent).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('checkbox'))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve & mark available' }))
+    await waitFor(() => expect(mocks.addTransferEvent).toHaveBeenCalledWith(record.id, expect.objectContaining({ type: 'request_approved', availabilityConfirmed: true, actor: 'Demo Manager', store: 'Ford Detroit' })))
+  })
+
+  it.each([
+    ['confirm-pickup', 'Mark collected', 'vehicle_departed'],
+    ['schedule-return', 'Start return', 'return_started'],
+  ] as const)('records simple %s without a driver assignment', async (action, button, eventType) => {
+    mocks.addTransferEvent.mockResolvedValue(record)
+    render(<DialogHarness action={action} workflowMode="simple" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open movement action' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).queryByLabelText('Assigned driver')).not.toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: button }))
+    await waitFor(() => expect(mocks.addTransferEvent).toHaveBeenCalledWith(record.id, expect.objectContaining({ type: eventType })))
+  })
+
+  it('requires a reason for a simple decline without introducing another-store approval', async () => {
+    mocks.addTransferEvent.mockResolvedValue(record)
+    render(<DialogHarness action="decline" workflowMode="simple" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open movement action' }))
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Decline request' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Briefly record why')
+    expect(mocks.addTransferEvent).not.toHaveBeenCalled()
+    fireEvent.change(within(dialog).getByLabelText(/Decision reason/), { target: { value: 'Vehicle needed at its home store.' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Decline request' }))
+    await waitFor(() => expect(mocks.addTransferEvent).toHaveBeenCalledWith(record.id, expect.objectContaining({ type: 'request_declined', note: 'Vehicle needed at its home store.' })))
   })
 })

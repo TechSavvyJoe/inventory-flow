@@ -31,6 +31,7 @@ export interface RouteSummary {
 }
 
 export interface TransferRequestWorkspaceProps {
+  workflowMode?: 'simple' | 'advanced';
   vehicle: TransferVehicleSummary | null;
   stores: SelectOption[];
   requesters: SelectOption[];
@@ -97,7 +98,9 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
     onDraftChange,
     onCancel,
     disabled = false,
+    workflowMode = 'advanced',
   } = props;
+  const simple = workflowMode === 'simple';
   const formId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const errorSummaryRef = useRef<HTMLDivElement>(null);
@@ -185,8 +188,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
         <CheckCircle2 aria-hidden="true" size={34} strokeWidth={1.75} />
         <h1>Movement request submitted</h1>
         <p>
-          No availability or release is confirmed. Your requesting-store manager must approve the request,
-          contact the {vehicle.homeStore} manager, and record that manager’s decision before a driver can be assigned.
+          {simple ? `Your request is with the ${draft.requestingStore} manager. They will check with ${vehicle.homeStore} and approve it when available. Nothing is reserved or ready for collection until that confirmation.` : `No availability or release is confirmed. Your requesting-store manager must approve the request, contact the ${vehicle.homeStore} manager, and record that manager’s decision before a driver can be assigned.`}
         </p>
         {submittedRequestId ? <strong>Request {submittedRequestId}</strong> : null}
         {onCancel ? (
@@ -241,7 +243,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
           <div className="mif-request-fields__heading">
             <div>
               <h3>Request vehicle</h3>
-              <p>Tell your manager what is needed and when. They approve first, then contact the Home Store.</p>
+              <p>{simple ? 'Tell your manager what you need and when. They check with the vehicle’s home store, then approve.' : 'Tell your manager what is needed and when. They approve first, then contact the Home Store.'}</p>
             </div>
           </div>
 
@@ -285,7 +287,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
                 {selectedManager?.label || `${draft.requestingStore || 'Your store'} manager`}
                 <LockKeyhole aria-hidden="true" size={14} strokeWidth={1.75} />
               </span>
-              <small>Approves the request first, then contacts the {vehicle.homeStore} manager.</small>
+              <small>{simple ? `Checks with ${vehicle.homeStore}, then approves this request.` : `Approves the request first, then contacts the ${vehicle.homeStore} manager.`}</small>
               {errors.managerApproverId ? <small className="mif-field-error">{errors.managerApproverId}</small> : null}
             </div>
 
@@ -364,7 +366,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
 
             <div className="mif-auto-return-rule mif-field--wide">
               <strong>If the vehicle does not sell, it returns to its Home Store.</strong>
-              <span>The app creates and tracks the return; the salesperson does not need to configure this.</span>
+              <span>{simple ? 'Record when it starts back and when the home store receives it.' : 'The app creates and tracks the return; the salesperson does not need to configure this.'}</span>
             </div>
           </div>
         </div>
@@ -384,13 +386,19 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
           ) : null}
 
           <section>
-            <h3><ShieldCheck aria-hidden="true" size={17} strokeWidth={1.75} /> Approval path</h3>
+            <h3><ShieldCheck aria-hidden="true" size={17} strokeWidth={1.75} /> {simple ? 'What happens next' : 'Approval path'}</h3>
             <ol className="mif-accountability-list">
+              {simple ? <>
+                <li><span>1</span><b>Send the request</b><small>Your {draft.requestingStore || 'store'} manager gets the vehicle and timing.</small></li>
+                <li><span>2</span><b>Your manager checks and approves</b><small>They contact {vehicle.homeStore} manually and mark it available for this move. No second approval in the app.</small></li>
+                <li><span>3</span><b>Keep the location up to date</b><small>Record collection, arrival and return. The app shows where it is and how long it has been away.</small></li>
+              </> : <>
               <li><span>1</span><b>Salesperson submits the request</b><small>{draft.requestingStore || 'Requesting store'} asks for the vehicle.</small></li>
               <li><span>2</span><b>Requesting-store manager approves</b><small>{selectedManager?.label || `${draft.requestingStore || 'Your store'} manager`} reviews the request first.</small></li>
               <li><span>3</span><b>Manager contacts Home Store and records its decision</b><small>The {vehicle.homeStore} manager grants or declines release; availability is not inferred.</small></li>
               <li><span>4</span><b>Only after release: assign a driver</b><small>Pickup and movement cannot begin before a recorded grant.</small></li>
               <li><span>5</span><b>Record sale outcome or return</b><small>Custody stays tracked until the vehicle is sold or received back home.</small></li>
+              </>}
             </ol>
           </section>
 
