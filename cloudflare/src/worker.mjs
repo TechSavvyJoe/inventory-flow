@@ -133,7 +133,7 @@ export function assertReleaseOrdering(current, reportDate, completedAt) {
   try {currentTime=releaseCompletionTime(metadata.completedAt)} catch {throw new HttpError('CURRENT_RELEASE_METADATA_INVALID',503)}
   if(currentTime>incomingTime) throw new HttpError('OLDER_RELEASE_REJECTED',409)
 }
-async function readReleaseWithIdentity(env) {
+export async function readReleaseWithIdentity(env) {
   const row=await currentRelease(env)
   if(!row) throw new HttpError('INVENTORY_NOT_IMPORTED',503)
   const object=await env.RELEASE_SNAPSHOTS.get(row.object_key)

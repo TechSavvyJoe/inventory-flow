@@ -1,0 +1,22 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "inventory-flow-integrations",
+  "main": "src/integration-worker.mjs",
+  "compatibility_date": "2026-09-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "inventory-data.joegallant.me", "custom_domain": true }],
+  "observability": { "enabled": true, "redact_query_string": true, "logs": { "enabled": true, "invocation_logs": false } },
+  "d1_databases": [{ "binding": "INVENTORY_DB", "database_name": "inventory-ops-production", "database_id": "29bfd3dd-ecd9-4c71-9dba-f0c106c690dd", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "RELEASE_SNAPSHOTS", "bucket_name": "inventory-ops-private-snapshots" }],
+  "vars": {
+    "INTEGRATIONS_ENABLED": "false",
+    "INTEGRATION_HOSTNAME": "inventory-data.joegallant.me",
+    "INTEGRATION_MANAGED_OAUTH_ENABLED": "false",
+    "INTEGRATION_ACCESS_AUDIENCE": "aceb8f475a28bc13bc622f6378cd88f212d43f7d8a1e8eaf83c91cedd0a5023a",
+    "ACCESS_ISSUER": "https://techsavvyjoe.cloudflareaccess.com",
+    "ACCESS_AUDIENCE": "b243147ef0a8b935011b43ed34b5451e44c414c3a7bfe231f9a257039a398040",
+    "ACCESS_PUBLISHER_AUDIENCE": "2c2b4041106efedbcd458337db0d33deab4a08c0dc19f083f9c856dd78e56206"
+  }
+}

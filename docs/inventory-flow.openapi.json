@@ -1,0 +1,2297 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Inventory Flow Shared Read API",
+    "version": "1.0.0",
+    "description": "Deployment pending live verification. Provisional hostname. Backend-only authenticated REST API for authorized selected-release public inventory, typed changes, non-private vehicle facts and hold aggregates. No writes, customer/private CRM fields, archived snapshot query or complete CRM-only inventory API. MCP is separately exposed at /mcp using its configured managed OAuth identity flow, not this Bearer app-key contract."
+  },
+  "servers": [
+    {
+      "url": "https://inventory-data.joegallant.me/api/v1",
+      "description": "Provisional production endpoint — deployment/credentials must be confirmed by the operator."
+    }
+  ],
+  "paths": {
+    "/inventory": {
+      "get": {
+        "operationId": "listInventory",
+        "summary": "Search and page through the selected verified inventory release",
+        "description": "Read only. Requires inventory.read. Unknown query parameters are rejected. Responses are private and must not be publicly cached.",
+        "security": [
+          {
+            "BearerAppKey": []
+          }
+        ],
+        "x-required-scope": "inventory.read",
+        "x-reject-unknown-query-parameters": true,
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "Literal partial search of safe projected values. Model punctuation, formatted numbers and readable dates are folded; *, ?, ~ and | remain literal."
+          },
+          {
+            "name": "store",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Store"
+            },
+            "description": "Public physical-store filter. Unassigned stores yield no rows, never expand access."
+          },
+          {
+            "name": "make",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "Exact case-insensitive, punctuation-folded make."
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "Exact case-insensitive, punctuation-folded model."
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1886,
+              "maximum": 2200
+            },
+            "description": "Exact model year."
+          },
+          {
+            "name": "minPrice",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            },
+            "description": "Published asking-price bound; unpriced records do not match."
+          },
+          {
+            "name": "maxPrice",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            },
+            "description": "Published asking-price bound; unpriced records do not match."
+          },
+          {
+            "name": "minMileage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            },
+            "description": "Published mileage bound; missing mileage does not match."
+          },
+          {
+            "name": "maxMileage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0
+            },
+            "description": "Published mileage bound; missing mileage does not match."
+          },
+          {
+            "name": "holdState",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "primary",
+                "backup",
+                "multiple",
+                "none_observed",
+                "stale",
+                "unknown"
+              ]
+            },
+            "description": "Conservative hold state, not availability."
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "vehicleName",
+                "stockNumber",
+                "year",
+                "listedPrice",
+                "mileage",
+                "daysListed",
+                "make",
+                "model",
+                "publicStore",
+                "homeStore"
+              ],
+              "default": "vehicleName"
+            },
+            "description": "Sort field; missing values remain last."
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "asc"
+            },
+            "description": "Sort direction; VIN is a deterministic tiebreaker."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "description": "Maximum rows for this page; reduce if response exceeds 1 MiB."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "description": "Opaque signed cursor from previous identical query. Restart from the first page on INVALID_CURSOR; never combine snapshots."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized scoped data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/vehicles/{vin}": {
+      "get": {
+        "operationId": "getVehicle",
+        "summary": "Get one authorized VIN with the same rich facts as inventory",
+        "description": "Read only. Requires inventory.read. Unknown query parameters are rejected. Responses are private and must not be publicly cached.",
+        "security": [
+          {
+            "BearerAppKey": []
+          }
+        ],
+        "x-required-scope": "inventory.read",
+        "x-reject-unknown-query-parameters": true,
+        "parameters": [
+          {
+            "name": "vin",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Vin"
+            },
+            "description": "Full VIN. Missing, invalid and unauthorized VINs produce the same not-found behavior."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized scoped data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VehicleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/changes": {
+      "get": {
+        "operationId": "listChanges",
+        "summary": "Read public change events stored with the selected release",
+        "description": "Read only. Requires changes.read. Unknown query parameters are rejected. Responses are private and must not be publicly cached.",
+        "security": [
+          {
+            "BearerAppKey": []
+          }
+        ],
+        "x-required-scope": "changes.read",
+        "x-reject-unknown-query-parameters": true,
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "Literal partial search of safe projected values. Model punctuation, formatted numbers and readable dates are folded; *, ?, ~ and | remain literal."
+          },
+          {
+            "name": "store",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Store"
+            },
+            "description": "Public physical-store filter. Unassigned stores yield no rows, never expand access."
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "new_arrival",
+                "removed",
+                "price_change",
+                "mileage_change",
+                "website_status_change",
+                "stock_correction",
+                "store_transfer"
+              ]
+            },
+            "description": "One public change category."
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "description": "Inclusive event report-date lower bound; does not retrieve archived snapshots."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "description": "Inclusive event report-date upper bound; must be on or after from."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "description": "Maximum rows for this page; reduce if response exceeds 1 MiB."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "description": "Opaque signed cursor from previous identical query. Restart from the first page on INVALID_CURSOR; never combine snapshots."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized scoped data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangesPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/data-health": {
+      "get": {
+        "operationId": "getDataHealth",
+        "summary": "Read selected release freshness and authorized visible-row count",
+        "description": "Read only. Requires health.read. Unknown query parameters are rejected. Responses are private and must not be publicly cached.",
+        "security": [
+          {
+            "BearerAppKey": []
+          }
+        ],
+        "x-required-scope": "health.read",
+        "x-reject-unknown-query-parameters": true,
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Authorized scoped data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/holds/summary": {
+      "get": {
+        "operationId": "getHoldSummary",
+        "summary": "Aggregate conservative hold signals for authorized public inventory",
+        "description": "Read only. Requires holds.aggregate.read. Unknown query parameters are rejected. Responses are private and must not be publicly cached.",
+        "security": [
+          {
+            "BearerAppKey": []
+          }
+        ],
+        "x-required-scope": "holds.aggregate.read",
+        "x-reject-unknown-query-parameters": true,
+        "parameters": [
+          {
+            "name": "store",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Store"
+            },
+            "description": "Public physical-store filter. Unassigned stores yield no rows, never expand access."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized scoped data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldSummaryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/capabilities": {
+      "get": {
+        "operationId": "getCapabilities",
+        "summary": "Discover granted scopes, stores and supported capabilities",
+        "description": "Read only. Requires an active authenticated integration grant. Unknown query parameters are rejected. Responses are private and must not be publicly cached.",
+        "security": [
+          {
+            "BearerAppKey": []
+          }
+        ],
+        "x-reject-unknown-query-parameters": true,
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Authorized scoped data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAppKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A per-application server-side integration key. Send only in Authorization. Never use in query parameters, browser bundles, AI prompts or public storage. Scopes and stores are enforced by the server grant."
+      }
+    },
+    "schemas": {
+      "Scope": {
+        "type": "string",
+        "enum": [
+          "inventory.read",
+          "changes.read",
+          "health.read",
+          "holds.aggregate.read"
+        ]
+      },
+      "Store": {
+        "type": "string",
+        "enum": [
+          "Howell",
+          "Fowlerville",
+          "Ford Detroit",
+          "Lincoln"
+        ]
+      },
+      "Freshness": {
+        "type": "string",
+        "enum": [
+          "current",
+          "stale_unverified",
+          "incomplete",
+          "unknown"
+        ]
+      },
+      "Vin": {
+        "type": "string",
+        "pattern": "^[A-HJ-NPR-Z0-9]{17}$",
+        "minLength": 17,
+        "maxLength": 17
+      },
+      "SourceFreshness": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "publicFreshness",
+          "dealerMailFreshness"
+        ],
+        "properties": {
+          "publicFreshness": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "dealerMailFreshness": {
+            "$ref": "#/components/schemas/Freshness"
+          }
+        }
+      },
+      "Meta": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "reportDate",
+          "completedAt",
+          "bundleSha256",
+          "timezone",
+          "allowedStores",
+          "sourceFreshness",
+          "availabilityCaveat",
+          "historyCoverage",
+          "excludedFields"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": "inventory-read.v1"
+          },
+          "reportDate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "bundleSha256": {
+            "type": "string",
+            "pattern": "^[A-Fa-f0-9]{64}$"
+          },
+          "timezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "allowedStores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Store"
+            },
+            "maxItems": 4
+          },
+          "sourceFreshness": {
+            "$ref": "#/components/schemas/SourceFreshness"
+          },
+          "availabilityCaveat": {
+            "type": "string"
+          },
+          "historyCoverage": {
+            "type": "string"
+          },
+          "excludedFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2000
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "total",
+          "limit",
+          "returned",
+          "nextCursor"
+        ],
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "returned": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 8192
+          }
+        }
+      },
+      "Hold": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "state",
+          "label",
+          "dataState",
+          "hasCurrentHold",
+          "backupCount"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "backup",
+              "multiple",
+              "none_observed",
+              "stale",
+              "unknown"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "dataState": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "hasCurrentHold": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "backupCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        },
+        "description": "No current hold found is not an availability determination. Stale/incomplete source states return null current-hold and backup metrics."
+      },
+      "Location": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "currentStore",
+          "destinationStore",
+          "confidence",
+          "lastConfirmedAt",
+          "departedAt",
+          "state"
+        ],
+        "properties": {
+          "currentStore": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Store"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "destinationStore": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Store"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "reported",
+              "stale",
+              "conflicting",
+              "unknown"
+            ]
+          },
+          "lastConfirmedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "departedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "state": {
+            "type": "string",
+            "pattern": "^[a-z_]{1,48}$"
+          }
+        },
+        "description": "Store-level location only; no custodian, driver, transfer ID, notes, or customer outcomes."
+      },
+      "PublicScan": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "locationCity",
+          "genericColor",
+          "firstSeen",
+          "lastSeen",
+          "dealerLocationId",
+          "vehicleId",
+          "sourceCount"
+        ],
+        "properties": {
+          "locationCity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "genericColor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "firstSeen": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "lastSeen": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "dealerLocationId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "vehicleId": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "sourceCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      },
+      "AutoCheck": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dataState",
+          "reportRunAt",
+          "score",
+          "scoreRangeLow",
+          "scoreRangeHigh",
+          "usage",
+          "ownerCount",
+          "lastReportedOdometer",
+          "lastReportedOdometerDate",
+          "vehicleClass",
+          "assemblyCountry",
+          "estimatedInServiceDate",
+          "checks"
+        ],
+        "properties": {
+          "dataState": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "reportRunAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "score": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "scoreRangeLow": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "scoreRangeHigh": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "usage": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "ownerCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "lastReportedOdometer": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "lastReportedOdometerDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "vehicleClass": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "assemblyCountry": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "estimatedInServiceDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "label",
+                "status",
+                "detail"
+              ],
+              "properties": {
+                "label": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 2000
+                },
+                "status": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 2000
+                },
+                "detail": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 2000
+                }
+              }
+            },
+            "maxItems": 2000
+          }
+        },
+        "description": "Parsed VIN-specific facts only; original report content and authenticated report URLs are not returned."
+      },
+      "WindowSticker": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dataState",
+          "originalMarket",
+          "pricingCurrency",
+          "pricingCurrencyEvidence",
+          "vehicleDescription",
+          "equipmentGroup",
+          "basePrice",
+          "totalOptions",
+          "destinationCharge",
+          "totalMsrp",
+          "exteriorColor",
+          "interiorColor",
+          "engine",
+          "transmission",
+          "options",
+          "standardEquipment",
+          "warranty",
+          "isOriginalWindowSticker"
+        ],
+        "properties": {
+          "dataState": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "originalMarket": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "pricingCurrency": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "pricingCurrencyEvidence": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "vehicleDescription": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "equipmentGroup": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "basePrice": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "totalOptions": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "destinationCharge": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "totalMsrp": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "exteriorColor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "interiorColor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "engine": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "transmission": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 2000
+            },
+            "maxItems": 2000
+          },
+          "standardEquipment": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 2000
+            },
+            "maxItems": 2000
+          },
+          "warranty": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 2000
+            },
+            "maxItems": 2000
+          },
+          "isOriginalWindowSticker": {
+            "const": true
+          }
+        }
+      },
+      "FactoryEquipment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dataState",
+          "capturedAt",
+          "vehicleDescription",
+          "basePrice",
+          "totalOptions",
+          "destinationCharge",
+          "totalMsrp",
+          "exteriorColor",
+          "interiorColor",
+          "engine",
+          "transmission",
+          "drivetrain",
+          "packages",
+          "sections",
+          "isOriginalWindowSticker",
+          "description"
+        ],
+        "properties": {
+          "dataState": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "capturedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "vehicleDescription": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "basePrice": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "totalOptions": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "destinationCharge": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "totalMsrp": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "exteriorColor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "interiorColor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "engine": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "transmission": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "drivetrain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "code",
+                "price",
+                "features"
+              ],
+              "properties": {
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 2000
+                },
+                "code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 2000
+                },
+                "price": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "features": {
+                  "type": "array",
+                  "items": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "maxItems": 2000
+                }
+              }
+            },
+            "maxItems": 2000
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "items"
+              ],
+              "properties": {
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 2000
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "label",
+                      "price"
+                    ],
+                    "properties": {
+                      "label": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 2000
+                      },
+                      "price": {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "minimum": 0
+                      }
+                    }
+                  },
+                  "maxItems": 2000
+                }
+              }
+            },
+            "maxItems": 2000
+          },
+          "isOriginalWindowSticker": {
+            "const": false
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "description": "Informational VIN-specific equipment labels remain distinct from original Monroney window stickers."
+      },
+      "Vehicle": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "vin",
+          "stockNumber",
+          "year",
+          "make",
+          "model",
+          "trim",
+          "vehicleName",
+          "listedPrice",
+          "msrp",
+          "mileage",
+          "daysListed",
+          "exteriorColor",
+          "interiorColor",
+          "bodyStyle",
+          "bodyType",
+          "drivetrain",
+          "engine",
+          "transmission",
+          "fuelType",
+          "mpgCity",
+          "mpgHighway",
+          "certified",
+          "inventoryDate",
+          "modelCode",
+          "features",
+          "listingUrl",
+          "photoCount",
+          "imageUrl",
+          "imageUrls",
+          "publicStore",
+          "homeStore",
+          "homeStoreConfirmed",
+          "crmStore",
+          "sourceReportedLocation",
+          "websiteStatus",
+          "publicListingState",
+          "dealerOn",
+          "hold",
+          "location",
+          "sourceFreshness",
+          "publicScan",
+          "autoCheckReport",
+          "windowSticker",
+          "factoryEquipment"
+        ],
+        "properties": {
+          "vin": {
+            "$ref": "#/components/schemas/Vin"
+          },
+          "stockNumber": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 80
+          },
+          "year": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "make": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "trim": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "vehicleName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "listedPrice": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "msrp": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "mileage": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "daysListed": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "exteriorColor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "interiorColor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "bodyStyle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "bodyType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "drivetrain": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "engine": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "transmission": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "fuelType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "mpgCity": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "mpgHighway": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "certified": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "inventoryDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "modelCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "features": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 65536
+          },
+          "listingUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "photoCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "imageUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "imageUrls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "maxItems": 500
+          },
+          "publicStore": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Store"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "homeStore": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Store"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "homeStoreConfirmed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "crmStore": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Store"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sourceReportedLocation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Store"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "websiteStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "publicListingState": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "dealerOn": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "inStock",
+              "inTransit",
+              "inProduction"
+            ],
+            "properties": {
+              "inStock": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "inTransit": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "inProduction": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          },
+          "hold": {
+            "$ref": "#/components/schemas/Hold"
+          },
+          "location": {
+            "$ref": "#/components/schemas/Location"
+          },
+          "sourceFreshness": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "public",
+              "dealerMail"
+            ],
+            "properties": {
+              "public": {
+                "$ref": "#/components/schemas/Freshness"
+              },
+              "dealerMail": {
+                "$ref": "#/components/schemas/Freshness"
+              }
+            }
+          },
+          "publicScan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicScan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "autoCheckReport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutoCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "windowSticker": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WindowSticker"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "factoryEquipment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FactoryEquipment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "description": "Explicit bounded read model for authorized public VINs. Missing values are null, not inferred zero/false. Original MSRP currency must be read from its associated sticker facts."
+      },
+      "Change": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "type",
+          "field",
+          "valueType",
+          "reportDate",
+          "previousReportDate",
+          "vin",
+          "stockNumber",
+          "vehicleName",
+          "store",
+          "beforeValue",
+          "afterValue",
+          "currentVehicle",
+          "listingUrl"
+        ],
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "new_arrival",
+              "removed",
+              "price_change",
+              "mileage_change",
+              "website_status_change",
+              "stock_correction",
+              "store_transfer"
+            ]
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "Public listing",
+              "Listed price",
+              "Mileage",
+              "Website Status",
+              "Stock number",
+              "Source physical store"
+            ]
+          },
+          "valueType": {
+            "type": "string",
+            "enum": [
+              "money",
+              "mileage",
+              "text",
+              "store",
+              "state"
+            ]
+          },
+          "reportDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 10
+          },
+          "previousReportDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 10
+          },
+          "vin": {
+            "$ref": "#/components/schemas/Vin"
+          },
+          "stockNumber": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 80
+          },
+          "vehicleName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "store": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Store"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "beforeValue": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ]
+          },
+          "afterValue": {
+            "type": [
+              "string",
+              "number",
+              "null"
+            ]
+          },
+          "currentVehicle": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "listingUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          }
+        }
+      },
+      "HoldStoreSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "store",
+          "storeAuthority",
+          "coverage",
+          "vehicles",
+          "freshness",
+          "currentHeldVins",
+          "noCurrentHoldFound",
+          "unverifiedVins",
+          "currentBackupRecords"
+        ],
+        "properties": {
+          "store": {
+            "$ref": "#/components/schemas/Store"
+          },
+          "storeAuthority": {
+            "const": "Public physical store"
+          },
+          "coverage": {
+            "const": "Publicly listed vehicles only; not all CRM inventory"
+          },
+          "vehicles": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "currentHeldVins": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "noCurrentHoldFound": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "unverifiedVins": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "currentBackupRecords": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      },
+      "DataHealth": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ready",
+          "freshness",
+          "visibleVehicleCount",
+          "checkedAt"
+        ],
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/SourceFreshness"
+          },
+          "visibleVehicleCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Capabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "readOnly",
+          "scopes",
+          "stores",
+          "maxPageSize",
+          "defaultPageSize",
+          "historicalSnapshots",
+          "licensedReports",
+          "inventorySortFields"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "const": "inventory-read.v1"
+          },
+          "readOnly": {
+            "const": true
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            },
+            "maxItems": 4
+          },
+          "stores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Store"
+            },
+            "maxItems": 4
+          },
+          "maxPageSize": {
+            "const": 100
+          },
+          "defaultPageSize": {
+            "const": 20
+          },
+          "historicalSnapshots": {
+            "const": false
+          },
+          "licensedReports": {
+            "type": "string"
+          },
+          "inventorySortFields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "vehicleName",
+                "stockNumber",
+                "year",
+                "listedPrice",
+                "mileage",
+                "daysListed",
+                "make",
+                "model",
+                "publicStore",
+                "homeStore"
+              ]
+            },
+            "maxItems": 10
+          }
+        }
+      },
+      "InventoryPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta",
+          "pagination"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Vehicle"
+            },
+            "maxItems": 100
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "VehicleResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Vehicle"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "ChangesPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta",
+          "pagination"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            },
+            "maxItems": 100
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "HoldSummaryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HoldStoreSummary"
+            },
+            "maxItems": 4
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DataHealth"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid/unknown query or cursor; INVALID_CURSOR requires a fresh listing.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid Bearer credential.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Inactive grant, unapproved host, missing scope or denied permission.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "No authorized matching vehicle or endpoint.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "TooLarge": {
+        "description": "Response exceeds the server byte limit; request a smaller page.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Per-integration quota exceeded. Honor Retry-After; do not retry immediately.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds before retrying.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "Verified data, authentication, audit, quota or required configuration unavailable. Fail closed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Read-only integrations"
+    }
+  ]
+}

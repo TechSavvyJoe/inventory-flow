@@ -66,7 +66,7 @@ Collaboration boundaries:
 - repository agents use the synthetic fixture and tests; cloud access is not granted by GitHub access;
 - branches and pull requests share code changes only;
 - the work PC still collects and validates daily sources, then publishes them through its separately scoped machine identity;
-- an AI app-data integration would need separately approved scopes and credentials; no general-purpose AI data connector is enabled by this migration.
+- the separate read-only API/MCP service has its own scopes and credentials; Git access does not grant data access. Its live activation is currently blocked by Cloudflare CPU limits, and customer/private fields remain excluded. See [Shared data API](SHARED_DATA_API.md) for exact coverage and activation status.
 
 ## Repository safety gate
 

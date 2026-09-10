@@ -25,12 +25,16 @@
     "cloud:d1:migrate": "wrangler d1 migrations apply inventory-ops-production --remote --config cloudflare/wrangler.jsonc",
     "cloud:deploy": "wrangler deploy --config cloudflare/wrangler.jsonc",
     "cloud:publish-release": "node scripts/publish-cloud-release.mjs",
+    "integrations:client": "node scripts/manage-integration-client.mjs",
+    "integrations:verify": "node scripts/verify-integration-deployment.mjs",
+    "integrations:deploy": "wrangler deploy --config cloudflare/integrations.wrangler.jsonc",
     "check:design-system": "node scripts/check-design-system.mjs",
     "check:repo-safety": "node scripts/check-repo-safety.mjs",
     "check": "pnpm check:repo-safety && pnpm check:design-system && pnpm test && pnpm build"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "jose": "^6.2.10",
     "lucide-react": "^1.35.0",
     "react": "^19.2.8",
@@ -39,6 +43,7 @@
     "zod": "^4.5.1"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
     "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
