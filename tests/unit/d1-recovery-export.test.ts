@@ -4,10 +4,13 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { inspectD1RecoveryBackup, verifyD1RecoveryExport } from '../../scripts/verify-d1-recovery-export.mjs'
+import { databaseEvidence } from '../../scripts/run-recovery-drill.mjs'
 
 const directories = []
+const MEMBERSHIP_TIMESTAMP = '2026-08-30 12:00:00'
 afterEach(() => {
   for (const directory of directories.splice(0)) {
     for (const file of readdirSync(directory)) unlinkSync(path.join(directory, file))
@@ -20,10 +23,29 @@ function fixture(extra = '') {
   const migrationDir = new URL('../../cloudflare/migrations/', import.meta.url)
   const schema = readdirSync(migrationDir).filter((name) => name.endsWith('.sql')).sort().map((name) => readFileSync(new URL(name, migrationDir), 'utf8')).join('\n')
   const inputPath = path.join(directory, 'export.sql'), outputPath = path.join(directory, 'backup.encrypted.json')
-  writeFileSync(inputPath, `${schema}\nINSERT INTO cloud_memberships (email,user_id,name,role,home_store,enabled) VALUES ('synthetic@example.invalid','synthetic-1','Synthetic manager','manager','Howell',1);\nINSERT INTO home_assignments VALUES ('synthetic-home','TESTDATAHWELL0001','Howell','2026-08-30',NULL,'synthetic','Synthetic manager','Please attach an invoice after the vacuum service','2026-08-30');\nUPDATE cloud_app_revision SET revision=13 WHERE id=1;\n${extra}`)
+  // A real row export includes stored timestamps. Replaying DEFAULT CURRENT_TIMESTAMP
+  // here made two otherwise identical restores diverge across a second boundary.
+  writeFileSync(inputPath, `${schema}\nINSERT INTO cloud_memberships (email,user_id,name,role,home_store,enabled,created_at,updated_at) VALUES ('synthetic@example.invalid','synthetic-1','Synthetic manager','manager','Howell',1,'${MEMBERSHIP_TIMESTAMP}','${MEMBERSHIP_TIMESTAMP}');\nINSERT INTO home_assignments VALUES ('synthetic-home','TESTDATAHWELL0001','Howell','2026-08-30',NULL,'synthetic','Synthetic manager','Please attach an invoice after the vacuum service','2026-08-30');\nUPDATE cloud_app_revision SET revision=13 WHERE id=1;\n${extra}`)
   return { inputPath, outputPath, keyBase64: randomBytes(32).toString('base64') }
 }
 describe('actual D1 export recovery verifier', () => {
+  it('restores the exported timestamps identically regardless of the SQLite restore clock', () => {
+    const { inputPath } = fixture()
+    const sql = readFileSync(inputPath, 'utf8')
+    const evidence = ['2026-09-09 23:59:59', '2026-09-10 00:00:01'].map((restoreTime) => {
+      const database = new DatabaseSync(':memory:')
+      try {
+        database.function('current_timestamp', () => restoreTime)
+        expect(database.prepare('SELECT CURRENT_TIMESTAMP AS current_time').get().current_time).toBe(restoreTime)
+        database.exec(sql)
+        expect(database.prepare('SELECT created_at, updated_at FROM cloud_memberships').get()).toMatchObject({
+          created_at: MEMBERSHIP_TIMESTAMP, updated_at: MEMBERSHIP_TIMESTAMP,
+        })
+        return databaseEvidence(database)
+      } finally { database.close() }
+    })
+    expect(evidence[1]).toEqual(evidence[0])
+  })
   it('preserves the input by default and verifies a persisted encrypted backup without leaking SQL', () => {
     const options = fixture()
     const result = verifyD1RecoveryExport(options)
