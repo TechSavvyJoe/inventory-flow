@@ -416,8 +416,8 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     element.getClientRects().length > 0,
   ) ?? null;
 
-  const openVehicleWorkspace = (vehicle: InventoryVehicle) => {
-    setWorkspaceInitialTab("overview");
+  const openVehicleWorkspace = (vehicle: InventoryVehicle, section: VehicleWorkspaceTab = "overview") => {
+    setWorkspaceInitialTab(section);
     // Pointer clicks in Safari can leave focus on the prior search/control.
     // A table row is not focusable: fall back to this vehicle's visible button.
     const active = document.activeElement instanceof HTMLElement &&

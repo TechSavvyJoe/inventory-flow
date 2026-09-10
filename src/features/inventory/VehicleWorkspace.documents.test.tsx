@@ -63,7 +63,7 @@ function vehicle(withDocuments = true): InventoryVehicle {
 }
 
 function openVehicleDocuments() {
-  fireEvent.click(screen.getByRole('tab', { name: 'Record details' }));
+  fireEvent.click(screen.getByRole('tab', { name: 'Records' }));
   return screen.queryByRole('region', { name: 'Vehicle documents' });
 }
 

@@ -16,7 +16,7 @@ function openDealerMailTools() {
 }
 
 function openRecordDetails() {
-  fireEvent.click(screen.getByRole('tab', { name: 'Record details' }))
+  fireEvent.click(screen.getByRole('tab', { name: 'Records' }))
   return screen.getByRole('region', { name: 'Vehicle documents' })
 }
 
@@ -99,11 +99,17 @@ describe('manager-friendly inventory UI', () => {
     expect(within(rowsSelect).getAllByRole('option').map((option) => option.textContent)).toEqual([
       '10', '15', '20', '25', '50', '100',
     ])
-    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr')).toHaveLength(10)
+    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr.inventory-main-row')).toHaveLength(10)
+    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr.inventory-record-row')).toHaveLength(10)
 
     await user.selectOptions(rowsSelect, '20')
-    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr')).toHaveLength(20)
+    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr.inventory-main-row')).toHaveLength(20)
+    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr.inventory-record-row')).toHaveLength(20)
     expect(screen.getByText('Showing 1–20 of 28')).toBeInTheDocument()
+    await user.selectOptions(rowsSelect, '100')
+    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr.inventory-main-row')).toHaveLength(28)
+    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr.inventory-record-row')).toHaveLength(28)
+    expect(screen.getByText('Showing 1–28 of 28')).toBeInTheDocument()
   })
 
   it('makes the full vehicle row tactile and emphasizes plain-language hold status', () => {
@@ -123,7 +129,7 @@ describe('manager-friendly inventory UI', () => {
     expect(screen.queryByText(/DealerOn/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Public listing/i)).not.toBeInTheDocument()
 
-    const firstRow = document.querySelector('.inventory-table--vehicle-first tbody tr') as HTMLTableRowElement
+    const firstRow = document.querySelector('.inventory-table--vehicle-first tbody tr.inventory-main-row') as HTMLTableRowElement
     fireEvent.click(firstRow)
     expect(onSelectVehicle).toHaveBeenCalledWith(heldVehicle)
   })
@@ -133,9 +139,9 @@ describe('manager-friendly inventory UI', () => {
     const external = vi.fn()
     const current = vehicle(7)
     render(<InventoryExperience homeStore={{ id: 'Howell', name: 'Howell' }} vehicles={[current]} metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }} onOpenSourceRecord={external} />)
-    const row = document.querySelector('.inventory-table--production-v10 tbody tr') as HTMLElement
+    const row = document.querySelector('.inventory-table--production-v10 tbody tr.inventory-main-row') as HTMLElement
     fireEvent.click(within(row).getByRole('button', { name: /Review DealerMail handoff for stock/ }))
-    await waitFor(() => expect(screen.getByRole('tab', { name: 'Hold and availability' })).toHaveAttribute('aria-selected', 'true'))
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Holds & moves' })).toHaveAttribute('aria-selected', 'true'))
     expect(screen.getByRole('region', { name: 'DealerMail vehicle tools' })).toHaveTextContent(current.stockNumber)
     expect(screen.getByRole('button', { name: 'Open DealerMail & copy stock' })).toBeVisible()
     expect(openSpy).not.toHaveBeenCalled()
@@ -257,7 +263,11 @@ describe('manager-friendly inventory UI', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Record details' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Records' }))
+    const technicalDetails = screen.getByText('Technical & source details').closest('details')!
+    expect(technicalDetails).not.toHaveAttribute('open')
+    fireEvent.click(within(technicalDetails).getByText('Technical & source details'))
+    expect(technicalDetails).toHaveAttribute('open')
     const disclosure = screen.getByText('Additional record details').closest('summary')
     expect(disclosure).not.toBeNull()
     fireEvent.click(disclosure!)
@@ -350,13 +360,17 @@ describe('manager-friendly inventory UI', () => {
     fireEvent.click(holdSignal)
     await waitFor(() => {
       expect(document.querySelector('#inventory-section-hold')).toHaveAttribute('open')
-      expect(holdSignal).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByRole('tab', { name: 'Holds & moves' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('tabpanel', { name: 'Holds & moves' })).toBeVisible()
     })
 
+    fireEvent.click(screen.getByRole('tab', { name: 'Overview' }))
+    expect(locationSignal).toBeVisible()
     fireEvent.click(locationSignal)
     await waitFor(() => {
-      expect(document.querySelector('#inventory-section-movement')).toHaveAttribute('open')
-      expect(locationSignal).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByRole('tab', { name: 'Holds & moves' })).toHaveAttribute('aria-selected', 'true')
+      expect(document.querySelector('#inventory-section-movement')).toBeVisible()
+      expect(document.querySelector('#inventory-section-movement')).toHaveFocus()
     })
   })
 

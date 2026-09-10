@@ -77,7 +77,7 @@ function vehicle(): InventoryVehicle {
 }
 
 describe('dense vehicle workspace', () => {
-  it('keeps one app main landmark and exposes only the intentional close control', () => {
+  it('keeps one app main landmark and one vehicle identity with explicit return controls', () => {
     render(
       <main>
         <VehicleWorkspace
@@ -89,14 +89,17 @@ describe('dense vehicle workspace', () => {
     );
 
     expect(document.querySelectorAll('main')).toHaveLength(1);
-    expect(document.querySelector('.inventory-workspace-v3-overview__main')?.tagName).toBe('DIV');
+    expect(screen.getAllByRole('heading', { name: '2017 Ford F-150 Lariat' })).toHaveLength(1);
     expect(screen.getAllByRole('button', { name: 'Close vehicle details' })).toHaveLength(1);
-    expect(screen.getAllByRole('button', { name: 'Copy mileage: 123328' })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Back to inventory' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Copy stock number: W5863Q' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Copy VIN: 1FTFW1E86HFA48871' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Copy mileage: 123328' })).not.toBeInTheDocument();
     expect(document.querySelector('.inventory-workspace-backdrop')).toHaveAttribute('aria-hidden', 'true');
     expect(document.querySelector('.inventory-workspace-backdrop')?.tagName).toBe('DIV');
   });
 
-  it('keeps one compact priority toolbar and puts secondary work behind More', () => {
+  it('keeps one priority toolbar and puts VIN-specific secondary links behind More resources', async () => {
     const documented = vehicle();
     documented.publicListing.listingUrl = 'https://www.bobmaxeyfordhowell.com/vehicle-details?stock=W5863Q';
     documented.autoCheckReport = {
@@ -119,7 +122,10 @@ describe('dense vehicle workspace', () => {
     );
 
     const toolbar = screen.getByRole('toolbar', { name: 'Vehicle actions' });
+    expect(screen.getAllByRole('toolbar')).toHaveLength(1);
     expect(within(toolbar).getByRole('button', { name: 'DealerMail tools' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('link', { name: /Open AutoCheck report/i })).not.toBeVisible();
+    await userEvent.click(within(toolbar).getByText('More resources'));
     const autoCheckAction = within(toolbar).getByRole('link', {
       name: /Open AutoCheck report for 2017 Ford F-150 Lariat in a new tab/i,
     });
@@ -132,16 +138,19 @@ describe('dense vehicle workspace', () => {
       name: /Open factory window sticker for 2017 Ford F-150 Lariat in a new tab/i,
     });
     expect(stickerAction).toHaveTextContent('Window sticker');
-    expect(stickerAction.querySelector('.inventory-resource-action-mark svg')).toBeInTheDocument();
+    expect(stickerAction.querySelector('svg')).toBeInTheDocument();
+    expect(stickerAction).toHaveAttribute('data-read-only', 'true');
+    expect(autoCheckAction).toHaveAttribute('data-read-only', 'true');
     expect(within(toolbar).getByRole('link', { name: 'Invoice' })).toBeInTheDocument();
     expect(within(toolbar).getByRole('link', { name: 'OASIS' })).toBeInTheDocument();
     expect(document.querySelectorAll('[data-action="dealermail-tools"]')).toHaveLength(1);
-    expect(document.querySelector('.inventory-workspace-v3-more')).toHaveTextContent(/More.*Records.*Full record/i);
+    expect(within(toolbar).getByRole('button', { name: 'Vehicle records' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'Full record' })).toBeInTheDocument();
     expect(document.querySelector('.inventory-workspace-actions')).not.toBeInTheDocument();
 
-    const hero = document.querySelector('.inventory-workspace-hero');
+    const header = document.querySelector('.vdp-flow-header');
     const tabs = document.querySelector('.inventory-workspace-tabs');
-    expect(hero?.nextElementSibling).toHaveClass('inventory-workspace-mobile-status');
+    expect(header?.nextElementSibling).toContainElement(tabs as HTMLElement);
     expect(tabs?.parentElement).toHaveClass('inventory-workspace-navigation');
   });
 
@@ -154,15 +163,65 @@ describe('dense vehicle workspace', () => {
       />,
     );
 
-    const primary = screen.getByRole('region', { name: 'Primary operational status' });
+    const primary = screen.getByRole('region', { name: 'Vehicle operational summary' });
     expect(within(primary).getByText('On hold')).toBeInTheDocument();
     expect(within(primary).getByText('Fowlerville')).toBeInTheDocument();
 
-    const sourceStatus = screen.getByRole('region', { name: 'Vehicle record status' });
-    const publicSignal = sourceStatus.querySelector('.inventory-workspace-signal--public-listing');
-    expect(publicSignal).toHaveTextContent('Not shown online');
-    expect(sourceStatus).not.toHaveTextContent(/inventory feed|CDK/i);
+    expect(screen.getAllByRole('region', { name: 'Vehicle operational summary' })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Some vehicle information needs a fresh check. Review records/i })).toBeInTheDocument();
+    expect(primary).not.toHaveTextContent(/inventory feed|CDK/i);
     expect(primary).not.toHaveTextContent(/sold|delivered/i);
+  });
+
+  it('shows the gallery and operational summary only in Overview while identity stays available', async () => {
+    const user = userEvent.setup();
+    render(<VehicleWorkspace vehicle={vehicle()} homeStore={{ id: 'fowlerville', name: 'Fowlerville' }} onClose={vi.fn()} />);
+    const gallery = screen.getByRole('region', { name: 'Vehicle photos' });
+    const operationalSummary = screen.getByRole('region', { name: 'Vehicle operational summary' });
+    expect(gallery).toBeVisible();
+    expect(operationalSummary).toBeVisible();
+
+    for (const name of ['Equipment', 'Holds & moves', 'Records']) {
+      await user.click(screen.getByRole('tab', { name }));
+      expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
+      expect(screen.getByRole('tabpanel', { name })).toBeVisible();
+      expect(gallery).not.toBeVisible();
+      expect(operationalSummary).not.toBeVisible();
+      expect(screen.getAllByRole('heading', { name: '2017 Ford F-150 Lariat' })).toHaveLength(1);
+      expect(screen.getByRole('button', { name: 'Copy stock number: W5863Q' })).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Copy VIN: 1FTFW1E86HFA48871' })).toBeVisible();
+    }
+
+    await user.click(screen.getByRole('tab', { name: 'Overview' }));
+    expect(gallery).toBeVisible();
+    expect(operationalSummary).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'View all equipment' }));
+    expect(screen.getByRole('tab', { name: 'Equipment' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps request and track actions in movement context and respects request eligibility', async () => {
+    const user = userEvent.setup();
+    const onRequestVehicle = vi.fn();
+    const onTrackMovement = vi.fn();
+    const unit = vehicle();
+    const { rerender } = render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}
+      canRequestVehicle onRequestVehicle={onRequestVehicle} onTrackMovement={onTrackMovement} />);
+    expect(screen.queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Holds & moves' }));
+    const movement = screen.getByRole('region', { name: 'Location & movement' });
+    await user.click(within(movement).getByRole('button', { name: 'Request vehicle' }));
+    expect(onRequestVehicle).toHaveBeenCalledExactlyOnceWith(unit);
+    expect(onTrackMovement).not.toHaveBeenCalled();
+
+    rerender(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} canRequestVehicle={false}
+      onRequestVehicle={onRequestVehicle} onTrackMovement={onTrackMovement} />);
+    expect(screen.queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
+    const moving = { ...unit, movement: { state: 'requested', requestId: 'test-move-1' } };
+    rerender(<VehicleWorkspace vehicle={moving} homeStore={unit.location.homeStore} onClose={vi.fn()} canRequestVehicle
+      onRequestVehicle={onRequestVehicle} onTrackMovement={onTrackMovement} />);
+    expect(screen.queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
+    await user.click(within(movement).getByRole('button', { name: 'Track movement' }));
+    expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(moving);
   });
 
   it('never leaks private hold or raw CDK evidence when evidence access is restricted', () => {
@@ -204,7 +263,7 @@ describe('dense vehicle workspace', () => {
       history: [{ orderRaw: '1', customerOrReason: 'Synthetic previous reason', statusLabel: 'Not in current live hold set; detail page retains order 1 — review' }],
     };
     render(<VehicleWorkspace vehicle={unheld} homeStore={{ id: 'fowlerville', name: 'Fowlerville' }} onClose={vi.fn()} />);
-    await userEvent.click(screen.getByRole('tab', { name: 'Hold and availability' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Holds & moves' }));
     expect(screen.getByText('No current DealerMail hold found')).toBeInTheDocument();
     expect(screen.getByText('Synthetic transport restriction')).toBeVisible();
     expect(screen.getByText('Synthetic inspection note')).toBeVisible();
@@ -223,7 +282,10 @@ describe('dense vehicle workspace', () => {
     );
 
     const overview = screen.getByRole('tab', { name: 'Overview' });
-    const hold = screen.getByRole('tab', { name: 'Hold and availability' });
+    const equipment = screen.getByRole('tab', { name: 'Equipment' });
+    const hold = screen.getByRole('tab', { name: 'Holds & moves' });
+    const records = screen.getByRole('tab', { name: 'Records' });
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Overview', 'Equipment', 'Holds & moves', 'Records']);
     expect(overview).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => {
       expect(document.querySelector('.inventory-workspace-close')).toHaveFocus();
@@ -231,13 +293,27 @@ describe('dense vehicle workspace', () => {
     overview.focus();
     fireEvent.keyDown(overview, { key: 'ArrowRight' });
     await waitFor(() => {
+      expect(equipment).toHaveAttribute('aria-selected', 'true');
+      expect(equipment).toHaveFocus();
+    });
+    fireEvent.keyDown(equipment, { key: 'ArrowRight' });
+    await waitFor(() => {
       expect(hold).toHaveAttribute('aria-selected', 'true');
       expect(hold).toHaveFocus();
       expect(document.querySelector('#inventory-section-hold')).toHaveAttribute('open');
     });
+    fireEvent.keyDown(hold, { key: 'End' });
+    await waitFor(() => expect(records).toHaveFocus());
+    expect(records).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
+    expect(screen.getByRole('tabpanel', { name: 'Records' })).toHaveAttribute('aria-labelledby', records.id);
+    fireEvent.keyDown(records, { key: 'Home' });
+    await waitFor(() => expect(overview).toHaveFocus());
+    fireEvent.keyDown(overview, { key: 'ArrowLeft' });
+    await waitFor(() => expect(records).toHaveFocus());
   });
 
-  it('presents movement workflow values as readable labels and gives long mobile facts full width', () => {
+  it('opens a legacy movement target in Holds & moves, focusing readable movement details', async () => {
     const moving = vehicle();
     moving.movement = {
       state: 'requested',
@@ -259,7 +335,9 @@ describe('dense vehicle workspace', () => {
       />,
     );
 
-    const panel = screen.getByRole('tabpanel', { name: 'Location and movement' });
+    const panel = screen.getByRole('tabpanel', { name: 'Holds & moves' });
+    expect(screen.getByRole('tab', { name: 'Holds & moves' })).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(document.querySelector('#inventory-section-movement')).toHaveFocus());
     expect(panel).toHaveTextContent(/Movement state\s*Requested/i);
     expect(panel).toHaveTextContent(/Request status\s*Manager review/i);
     expect(panel).toHaveTextContent(/Customer outcome\s*Not confirmed/i);
@@ -270,7 +348,7 @@ describe('dense vehicle workspace', () => {
       .toHaveClass('inventory-workspace-fact--wide-mobile');
   });
 
-  it('makes a sparse history feel intentional and keeps source-labelled activity readable', () => {
+  it('opens a legacy timeline target in Records and focuses source-labelled activity', async () => {
     render(
       <VehicleWorkspace
         vehicle={vehicle()}
@@ -280,7 +358,9 @@ describe('dense vehicle workspace', () => {
       />,
     );
 
-    const panel = screen.getByRole('tabpanel', { name: 'History' });
+    const panel = screen.getByRole('tabpanel', { name: 'Records' });
+    expect(screen.getByRole('tab', { name: 'Records' })).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(document.querySelector('#inventory-section-timeline')).toHaveFocus());
     expect(within(panel).getByRole('heading', { name: 'Recorded activity' })).toBeInTheDocument();
     expect(within(panel).getByText('1 recorded event')).toBeInTheDocument();
     expect(within(panel).getByText('Price changed').closest('.inventory-timeline__copy')).toBeInTheDocument();
@@ -343,7 +423,12 @@ describe('dense vehicle workspace', () => {
     expect(within(panel).getAllByText(/Published vehicle listing/).length).toBeGreaterThan(0);
     expect(within(panel).getByText('10 VIN-linked items, organized for quick customer questions')).toBeInTheDocument();
     expect(within(panel).getByText(/4 original-sticker items.*7 published-listing items/i)).toBeInTheDocument();
-    expect(within(panel).getByRole('heading', { name: 'Original-sticker configuration' })).toBeInTheDocument();
+    const originalBuild = panel.querySelector('#inventory-equipment-configuration')!;
+    expect(originalBuild).not.toHaveAttribute('open');
+    await user.click(within(panel).getByRole('button', { name: 'Jump to Original build details' }));
+    expect(originalBuild).toHaveAttribute('open');
+    expect(originalBuild).toHaveFocus();
+    expect(within(panel).getByRole('heading', { name: 'Original-sticker configuration' })).toBeVisible();
     expect(within(panel).queryByRole('heading', { name: 'Vehicle specifications' })).not.toBeInTheDocument();
     const prefixedFactoryRow = panel.querySelector(
       'li[title*="Exact published label: Functional: Rear view camera"]',
@@ -399,8 +484,8 @@ describe('dense vehicle workspace', () => {
 
     await user.click(within(snapshot as HTMLElement).getByRole('button', { name: /Full records/i }));
     await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'Record details' })).toHaveAttribute('aria-selected', 'true');
-      expect(screen.getByRole('tabpanel', { name: 'Record details' }).closest('details')).toHaveAttribute('open');
+      expect(screen.getByRole('tab', { name: 'Records' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByRole('tabpanel', { name: 'Records' }).closest('details')).toHaveAttribute('open');
     });
   });
 
@@ -423,7 +508,8 @@ describe('dense vehicle workspace', () => {
       />,
     );
     await user.click(screen.getByRole('tab', { name: 'Equipment' }));
-    expect(screen.getByRole('heading', { name: 'VIN equipment profile' })).toBeInTheDocument();
+    await user.click(screen.getByText('Original build details', { selector: 'summary span' }));
+    expect(screen.getByRole('heading', { name: 'VIN equipment profile' })).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Factory configuration' })).not.toBeInTheDocument();
 
     const combined = {
@@ -470,7 +556,7 @@ describe('dense vehicle workspace', () => {
       />,
     );
 
-    const panel = screen.getByRole('tabpanel', { name: 'Hold and availability' });
+    const panel = screen.getByRole('tabpanel', { name: 'Holds & moves' });
     const evidence = panel.querySelector('.inventory-hold-evidence-list');
     const caveat = panel.querySelector('#inventory-hold-availability-caveat') as HTMLElement;
     const dealerMailRail = panel.querySelector('.inventory-workspace-dealermail-rail');
@@ -506,14 +592,15 @@ describe('dense vehicle workspace', () => {
       />,
     );
 
-    const panel = screen.getByRole('tabpanel', { name: 'Hold and availability' });
+    const panel = screen.getByRole('tabpanel', { name: 'Holds & moves' });
     const holdCenter = panel.querySelector('.inventory-workspace-hold-center');
     const caveat = panel.querySelector('#inventory-hold-availability-caveat') as HTMLElement;
     const dealerMailRail = panel.querySelector('.inventory-workspace-dealermail-rail');
     expect(holdCenter).toHaveAttribute('data-hold-state', 'no-evidence');
     expect(within(panel).getByRole('heading', { name: 'No current DealerMail hold found' })).toBeInTheDocument();
     expect(within(panel).getByText('No active hold row found')).toBeInTheDocument();
-    expect(within(panel).getAllByText('Fowlerville')).toHaveLength(2);
+    const holdSummary = within(panel).getByRole('region', { name: 'No current DealerMail hold found' });
+    expect(within(holdSummary).getAllByText('Fowlerville')).toHaveLength(2);
     expect(within(panel).getByText('Not listed online')).toBeInTheDocument();
     expect(within(panel).getByText('Website status: Not live on website · Current')).toBeInTheDocument();
     expect(within(panel).getByText('No movement record')).toBeInTheDocument();
@@ -608,7 +695,7 @@ describe('dense vehicle workspace', () => {
     expect(within(panel).getByText(/organized for quick customer questions/i)).toBeVisible();
   });
 
-  it('uses a native mobile disclosure whose visible trigger owns overflow-section selection and focus', async () => {
+  it('uses the same four direct sections and one identity on mobile without a secondary section menu', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
       matches: query === '(max-width: 768px)',
@@ -632,42 +719,24 @@ describe('dense vehicle workspace', () => {
       />,
     );
 
-    const mobileContext = screen.getByRole('region', { name: /2017 Ford F-150 Lariat vehicle summary/i });
-    expect(mobileContext).toBeInTheDocument();
-    expect(mobileContext).toHaveTextContent('123,328 mi');
-    expect(within(mobileContext).queryByRole('button', { name: 'Copy mileage: 123328' })).not.toBeInTheDocument();
-    expect(within(mobileContext).getByRole('button', { name: 'Copy stock number: W5863Q' })).toBeInTheDocument();
-    expect(within(mobileContext).getByRole('button', { name: 'Copy VIN: 1FTFW1E86HFA48871' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Current hold and location summary' })).toBeInTheDocument();
-    const mobileActions = screen.getByRole('toolbar', { name: 'Mobile vehicle actions' });
-    expect(within(mobileActions).getByText('Open listing')).toBeInTheDocument();
-    expect(within(mobileActions).getByText('DealerMail')).toBeInTheDocument();
-    expect(mobileActions.querySelector('.inventory-workspace-mobile-actions__more > summary')).toHaveAttribute('aria-label', 'More actions');
-    expect(document.querySelectorAll('.inventory-workspace-tabs [data-mobile-overflow="true"]')).toHaveLength(0);
-    expect(screen.queryByRole('tab', { name: 'History' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: '2017 Ford F-150 Lariat' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Copy stock number: W5863Q' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Copy VIN: 1FTFW1E86HFA48871' })).toHaveLength(1);
+    expect(screen.getAllByRole('toolbar')).toHaveLength(1);
+    expect(screen.getByRole('toolbar', { name: 'Vehicle actions' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Overview', 'Equipment', 'Holds & moves', 'Records']);
     expect(screen.queryByRole('menu', { name: 'More vehicle sections' })).not.toBeInTheDocument();
-
-    const moreSections = document.querySelector<HTMLElement>(
-      '.inventory-workspace-mobile-section-more > summary',
-    );
-    expect(moreSections).toHaveAttribute('aria-label', 'More vehicle sections');
-    await user.click(moreSections!);
-    const additionalSections = screen.getByRole('list', { name: 'Additional vehicle sections' });
-    await user.click(within(additionalSections).getByRole('button', { name: 'History' }));
-
+    expect(screen.queryByRole('list', { name: 'Additional vehicle sections' })).not.toBeInTheDocument();
+    const records = screen.getByRole('tab', { name: 'Records' });
+    await user.click(records);
     await waitFor(() => {
-      expect(moreSections).toHaveAttribute(
-        'aria-label',
-        'History section selected; show more vehicle sections',
-      );
-      expect(moreSections).toHaveAttribute('aria-current', 'page');
-      expect(moreSections).toHaveAttribute('id', 'inventory-tab-timeline');
-      expect(moreSections).toHaveFocus();
+      expect(records).toHaveAttribute('aria-selected', 'true');
+      expect(records).toHaveFocus();
     });
-    expect(screen.getByRole('tabpanel', { name: /History section selected/i })).toHaveAttribute(
-      'aria-labelledby',
-      'inventory-tab-timeline',
-    );
+    expect(screen.getByRole('tabpanel', { name: 'Records' })).toHaveAttribute('aria-labelledby', 'inventory-tab-data');
+    expect(screen.getByRole('heading', { name: 'Vehicle history' })).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Vehicle operational summary' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Vehicle photos' })).not.toBeInTheDocument();
   });
 
   it('uses instant programmatic scrolling when reduced motion is requested', async () => {
@@ -705,7 +774,7 @@ describe('dense vehicle workspace', () => {
     }
   });
 
-  it('routes the mobile DealerMail shortcut through hold evidence instead of skipping to an external action', async () => {
+  it('routes the mobile DealerMail shortcut to the local handoff without opening or changing a CRM record', async () => {
     const user = userEvent.setup();
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
       matches: query === '(max-width: 620px)',
@@ -726,16 +795,17 @@ describe('dense vehicle workspace', () => {
       />,
     );
 
-    const mobileActions = screen.getByRole('toolbar', { name: 'Mobile vehicle actions' });
-    await user.click(within(mobileActions).getByRole('button', { name: 'Review hold evidence before DealerMail tools' }));
+    const openSpy = vi.spyOn(window, 'open');
+    const actions = screen.getByRole('toolbar', { name: 'Vehicle actions' });
+    await user.click(within(actions).getByRole('button', { name: 'DealerMail tools' }));
 
-    const holdTab = screen.getByRole('tab', { name: 'Hold and availability' });
+    const holdTab = screen.getByRole('tab', { name: 'Holds & moves' });
     await waitFor(() => {
       expect(holdTab).toHaveAttribute('aria-selected', 'true');
-      expect(holdTab).toHaveFocus();
+      expect(screen.getByRole('button', { name: 'Open DealerMail & copy stock' })).toHaveFocus();
     });
-    expect(screen.getByRole('button', { name: 'Open DealerMail & copy stock' })).not.toHaveFocus();
-    expect(screen.getByRole('tabpanel', { name: 'Hold and availability' }).querySelector('.inventory-hold-evidence-list')).toBeInTheDocument();
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(screen.getByRole('tabpanel', { name: 'Holds & moves' }).querySelector('.inventory-hold-evidence-list')).toBeInTheDocument();
   });
 
   it('gives manual stock guidance when clipboard copying is blocked', async () => {

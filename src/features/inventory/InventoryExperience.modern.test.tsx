@@ -125,6 +125,28 @@ describe('vehicle workspace background isolation', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close vehicle details' }));
   }
 
+  it('opens the matching workspace section from each inventory table data control', async () => {
+    const unit = vehicle(4);
+    unit.features = ['Heated Steering Wheel'];
+    unit.changeSummary = 'Price changed today';
+    render(<InventoryExperience homeStore={homeStore} vehicles={[unit]}
+      metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }} />);
+
+    for (const [control, section] of [
+      [/View all 1 equipment items for/i, 'Equipment'],
+      [/View change history for/i, 'Records'],
+      [/Open hold details for/i, 'Holds & moves'],
+    ] as const) {
+      const table = screen.getByRole('region', { name: 'Inventory results table' });
+      fireEvent.click(within(table).getByRole('button', { name: control }));
+      const dialog = screen.getByRole('dialog');
+      await waitFor(() => expect(within(dialog).getByRole('tab', { name: section })).toHaveAttribute('aria-selected', 'true'));
+      expect(within(dialog).getByRole('tabpanel', { name: section })).toBeVisible();
+      expect(within(dialog).getByRole('heading', { name: '2024 Ford F-150 XLT 4' })).toBeVisible();
+      closeWorkspace();
+    }
+  });
+
   it('returns focus to the vehicle trigger after Escape closes the workspace', async () => {
     render(
       <InventoryExperience

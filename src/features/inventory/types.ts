@@ -342,7 +342,7 @@ export interface InventoryViewState {
   sorts: InventorySort[];
 }
 
-export type VehicleWorkspaceTab = "overview" | "movement" | "hold" | "timeline";
+export type VehicleWorkspaceTab = "overview" | "equipment" | "movement" | "hold" | "timeline" | "data";
 
 export type InventorySourceRecord = "public" | "dealeron" | "dealermail" | "movement";
 
@@ -390,7 +390,7 @@ export interface InventoryTableProps {
   selectedVehicleId?: string | null;
   sorts: InventorySort[];
   onSortChange: (sorts: InventorySort[]) => void;
-  onSelectVehicle: (vehicle: InventoryVehicle) => void;
+  onSelectVehicle: (vehicle: InventoryVehicle, section?: VehicleWorkspaceTab) => void;
   canRequestVehicle?: boolean | ((vehicle: InventoryVehicle) => boolean);
   onRequestVehicle?: (vehicle: InventoryVehicle) => void;
   onTrackMovement?: (vehicle: InventoryVehicle) => void;
