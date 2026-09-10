@@ -7,41 +7,89 @@ import { createInventoryFlowClient } from '../clients/inventory-flow.mjs'
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const HOST = 'https://inventory-data.joegallant.me'
 const ALLOWED = new Set(['inventory-data.joegallant.me', 'techsavvyjoe.cloudflareaccess.com'])
+const STORES = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
 function assert(ok) { if (!ok) throw new Error('INTEGRATION_VERIFICATION_FAILED') }
+function safeUrl(value) {
+  try { const url = new URL(value); return url.protocol === 'https:' && ALLOWED.has(url.hostname) && !url.port && !url.username && !url.password && !url.search && !url.hash } catch { return false }
+}
 async function fetchSafe(url, options = {}) {
   const target = new URL(url)
   assert(target.protocol === 'https:' && ALLOWED.has(target.hostname) && !target.port && !target.username && !target.password)
   return fetch(target, { ...options, redirect: 'manual', signal: AbortSignal.timeout(20000) })
 }
-async function oauthDiscovery() {
-  const unauthenticated = await fetchSafe(`${HOST}/mcp`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', clientInfo: { name: 'inventory-owner-verification', version: '1.0.0' }, capabilities: {} } }) })
+export function oauthReady(result) {
+  return ['protected', 'discoveryReady', 'pkce', 'dynamicRegistration'].every(key => result?.[key] === true)
+}
+// A small, independently produced metadata file only; never a source snapshot or credential file.
+// CLI: node scripts/verify-integration-deployment.mjs PRIVATE_KEY_PATH --expected SAFE_METADATA_PATH
+export function parseExpectedMetadata(value) {
+  assert(value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).every(key => ['bundleSha256', 'total', 'byStore'].includes(key)))
+  assert(typeof value.bundleSha256 === 'string' && /^[a-f0-9]{64}$/.test(value.bundleSha256))
+  assert(Number.isSafeInteger(value.total) && value.total > 0)
+  assert(value.byStore && typeof value.byStore === 'object' && !Array.isArray(value.byStore) && Object.keys(value.byStore).length === STORES.length)
+  assert(STORES.every(store => Object.hasOwn(value.byStore, store) && Number.isSafeInteger(value.byStore[store]) && value.byStore[store] >= 0))
+  assert(STORES.reduce((sum, store) => sum + value.byStore[store], 0) === value.total)
+  return { bundleSha256: value.bundleSha256, total: value.total, byStore: Object.fromEntries(STORES.map(store => [store, value.byStore[store]])) }
+}
+export function reconcileExpectedMetadata(actual, expected) {
+  if (!expected) return { provided: false, verified: false }
+  const releaseHashMatches = actual.bundleSha256 === expected.bundleSha256
+  const totalMatches = actual.total === expected.total
+  const storeCountsMatch = Object.keys(actual.byStore).every(store => STORES.includes(store)) && STORES.every(store => (actual.byStore[store] || 0) === expected.byStore[store])
+  return { provided: true, verified: releaseHashMatches && totalMatches && storeCountsMatch, releaseHashMatches, totalMatches, storeCountsMatch }
+}
+export function verificationPassed(output) {
+  return output.unauthenticatedApiDenied === true && output.api?.verified === true && oauthReady(output.oauth) && (!output.api.independentReconciliation?.provided || output.api.independentReconciliation.verified === true)
+}
+export async function oauthDiscovery(fetchImpl = fetchSafe) {
+  const unauthenticated = await fetchImpl(`${HOST}/mcp`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', clientInfo: { name: 'inventory-owner-verification', version: '1.0.0' }, capabilities: {} } }) })
   const challenge = unauthenticated.headers.get('www-authenticate') || ''
   const pointer = /resource_metadata="([^"]+)"/.exec(challenge)?.[1]
   if (unauthenticated.status !== 401 || !pointer) return { protected: unauthenticated.status === 401 || unauthenticated.status === 302, discoveryReady: false, status: unauthenticated.status }
-  const metadataResponse = await fetchSafe(pointer)
+  assert(safeUrl(pointer))
+  const metadataResponse = await fetchImpl(pointer)
   const metadata = await metadataResponse.json()
   assert(metadataResponse.status === 200 && Array.isArray(metadata.authorization_servers))
   const issuer = metadata.authorization_servers[0]
+  assert(safeUrl(issuer))
   const parsed = new URL(issuer)
   const wellKnown = `${parsed.origin}/.well-known/oauth-authorization-server${parsed.pathname === '/' ? '' : parsed.pathname}`
-  const authorizationResponse = await fetchSafe(wellKnown)
+  const authorizationResponse = await fetchImpl(wellKnown)
   const authorization = await authorizationResponse.json()
-  return { protected: true, discoveryReady: metadata.resource === `${HOST}/mcp` && authorizationResponse.status === 200, resource: metadata.resource, issuer: authorization.issuer, issuerIdentificationAdvertised: authorization.authorization_response_iss_parameter_supported === true, pkce: authorization.code_challenge_methods_supported?.includes('S256') === true, dynamicRegistration: Boolean(authorization.registration_endpoint), liveClientSignInVerified: false }
+  return { protected: true, discoveryReady: metadata.resource === `${HOST}/mcp` && authorizationResponse.status === 200 && authorization.issuer === issuer, issuerIdentificationAdvertised: authorization.authorization_response_iss_parameter_supported === true, pkce: Array.isArray(authorization.code_challenge_methods_supported) && authorization.code_challenge_methods_supported.includes('S256'), dynamicRegistration: safeUrl(authorization.registration_endpoint), liveClientSignInVerified: false }
 }
+async function main() {
 let stage = 'anonymous-access'
+const output = { checkedAt: new Date().toISOString(), host: HOST, verified: false, unauthenticatedApiDenied: false, api: { verified: false, performed: false }, oauth: { verified: false, liveClientSignInVerified: false } }
 try {
-  const output = { checkedAt: new Date().toISOString(), host: HOST }
+  const [requested, expectedFlag, expectedPath, ...extra] = process.argv.slice(2)
+  assert(!extra.length && (expectedFlag === undefined ? expectedPath === undefined : expectedFlag === '--expected' && Boolean(expectedPath)))
+  let expected
+  if (expectedPath) {
+    stage = 'expected-metadata'
+    const file = realpathSync(path.resolve(ROOT, expectedPath))
+    const privateRoot = path.resolve(ROOT, 'runtime', 'integration-credentials')
+    const relative = path.relative(privateRoot, file)
+    assert(relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+    assert(path.extname(file) === '.json')
+    const bytes = readFileSync(file)
+    assert(bytes.length <= 4096)
+    expected = parseExpectedMetadata(JSON.parse(bytes.toString('utf8')))
+  }
+  stage = 'anonymous-access'
   const noCredential = await fetchSafe(`${HOST}/api/v1/inventory`)
   assert(noCredential.status === 401)
   output.unauthenticatedApiDenied = true
   stage = 'oauth-discovery'
-  output.oauth = await oauthDiscovery()
-  const requested = process.argv[2]
+  try { output.oauth = await oauthDiscovery(); output.oauth.verified = oauthReady(output.oauth) } catch {
+    output.oauth = { verified: false, discoveryReady: false, diagnostic: 'OAuth discovery verification failed; no source responses logged.', liveClientSignInVerified: false }
+  }
   if (requested) {
     const privateRoot = realpathSync(path.join(ROOT, 'runtime', 'integration-credentials'))
     const file = realpathSync(path.resolve(ROOT, requested))
     assert(path.dirname(file) === privateRoot && path.extname(file) === '.json')
     stage = 'local-key-read'
+    output.api.performed = true
     const stored = JSON.parse(readFileSync(file, 'utf8'))
     const token = stored.token
     assert(typeof token === 'string' && /^iflow_[a-f0-9]{32}_[A-Za-z0-9_-]{43}$/.test(token))
@@ -79,6 +127,11 @@ try {
     const changes = await client.changes({ limit: 1 })
     const holds = await client.holdSummary()
     output.api = { verified: true, reportDate: health.meta.reportDate, bundleSha256: health.meta.bundleSha256, total: seen.size, byStore, vehiclesWithEquipment: withEquipment, vehiclesWithHistory: withHistory, vehiclesWithScanDates: withScanDates, changeCount: changes.pagination.total, holdSummaryStores: holds.data.length }
+    output.api.independentReconciliation = reconcileExpectedMetadata(output.api, expected)
   }
+  output.verified = verificationPassed(output)
+  if (!output.verified) process.exitCode = 1
   console.log(JSON.stringify(output, null, 2))
-} catch (error) { console.error(JSON.stringify({ verified: false, stage, httpStatus: Number.isInteger(error.status) ? error.status : null, code: /^[A-Z_]{3,80}$/.test(error.code ?? '') ? error.code : 'VERIFICATION_FAILED', diagnostic: 'No credentials or source responses logged.' })); process.exitCode = 1 }
+} catch (error) { console.error(JSON.stringify({ ...output, verified: false, stage, httpStatus: Number.isInteger(error.status) ? error.status : null, code: /^[A-Z_]{3,80}$/.test(error.code ?? '') ? error.code : 'VERIFICATION_FAILED', diagnostic: 'No credentials or source responses logged.' })); process.exitCode = 1 }
+}
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main()
