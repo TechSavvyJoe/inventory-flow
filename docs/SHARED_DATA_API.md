@@ -1,6 +1,6 @@
 # Inventory Flow shared data API and AI connections
 
-**Release status (September 10, 2026): implemented and provisioned; Workers Paid purchase approved, checkout agreement acceptance pending.** The separate Worker is deployed at the hostname below, with encrypted-source bindings, access-control tables and owner grants. Live tests reached authorized reads but Cloudflare terminated requests with error 1102 (`exceededCpu`, measured 29 ms). The owner approved a one-second processing cap, but Cloudflare rejected its deployment with code `100328` because this account is on Workers Free. The owner then approved the paid upgrade; its required checkout agreements have not yet been accepted, and no charge, CPU-limit change or billing upgrade has occurred. The API remains disabled until checkout and complete live verification succeed. Neither a completed Claude connection nor a completed ChatGPT connection is claimed. See [deployment evidence and next steps](SHARED_DATA_DEPLOYMENT.md).
+**Release status (September 10, 2026): live read API, access restrictions and OAuth discovery verified; hosted AI connections pending.** Workers Paid purchase is complete after explicit owner approval and checkout agreement acceptance; its account-wide minimum is $5/month plus applicable usage. Only the separate integration Worker was deployed, version `54c9b37a-58e6-432f-b71b-9b21aacf2383`, with the approved 1,000 ms CPU cap and both integration flags enabled. All 760 tests across 62 files passed with two test workers, along with TypeScript and the production build. Live REST checks at `2026-09-10T12:15:15.932Z` reconciled all 226 September 9 vehicles and four store totals to independent source metadata, with unauthorized API access denied. Live store/scope isolation and temporary-key revocation checks passed, and the existing app's readiness and selected data hash remained unchanged. OAuth protection, discovery, S256 PKCE and registration checks passed; actual hosted-client sign-in did not run, and issuer-identification support is not advertised. Neither a completed Claude connection nor a completed ChatGPT connection is claimed. See [deployment evidence, diagnostic history and remaining gates](SHARED_DATA_DEPLOYMENT.md).
 
 The shared service reads the same selected, validated data release used by Inventory Flow. Other applications and approved AI tools receive an explicit read-only projection; they do not receive a database password or access to raw snapshots.
 
@@ -89,7 +89,7 @@ import { createInventoryFlowClient } from './inventory-flow.mjs'
 
 const inventory = createInventoryFlowClient({
   token: () => process.env.INVENTORY_FLOW_API_KEY,
-  // Provisional until the release operator confirms deployment:
+  // Live read API; use a separately approved server-side application grant:
   baseUrl: 'https://inventory-data.joegallant.me/api/v1',
 })
 
