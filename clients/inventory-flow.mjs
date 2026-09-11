@@ -12,6 +12,7 @@ export class InventoryFlowError extends Error {
       RESPONSE_TOO_LARGE: 'The response exceeds the client limit. Request a smaller page.',
       INTEGRATION_RESPONSE_TOO_LARGE: 'The response exceeds the server limit. Request a smaller page.',
       TIMEOUT: 'The inventory request timed out.', ABORTED: 'The inventory request was canceled.',
+      REDIRECT_REJECTED: 'The inventory API answered with a redirect, which this client refuses to follow.',
       SERVER_ONLY: 'Use the inventory API client in a trusted server, not in browser code.',
     }
     super(messages[code] || 'The inventory request could not be completed.')
@@ -115,7 +116,18 @@ export function createInventoryFlowClient({ token, baseUrl = DEFAULT_BASE_URL, f
         failure('TOKEN_UNAVAILABLE')
       }
       if (typeof credential !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(credential)) failure('TOKEN_UNAVAILABLE')
-      const response = await abortable(fetchImpl(url.href, { method: 'GET', headers: { Accept: 'application/json', Authorization: `Bearer ${credential}` }, credentials: 'omit', redirect: 'error', cache: 'no-store', signal: controller.signal }), controller.signal)
+      // `redirect: 'error'` said exactly what we want — never follow a redirect,
+      // so the Bearer credential can never be forwarded to another origin — but
+      // Cloudflare Workers (Workerd) does not support that mode and throws at
+      // fetch time, which turned every call from a Worker-hosted consumer into
+      // NETWORK_ERROR. `manual` is supported everywhere; the refusal moves here,
+      // before the body is touched. Runtimes surface a manual redirect either as
+      // the 3xx response itself or as an opaque redirect with status 0.
+      const response = await abortable(fetchImpl(url.href, { method: 'GET', headers: { Accept: 'application/json', Authorization: `Bearer ${credential}` }, credentials: 'omit', redirect: 'manual', cache: 'no-store', signal: controller.signal }), controller.signal)
+      if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+        void response.body?.cancel().catch(() => {})
+        failure('REDIRECT_REJECTED', { status: response.status })
+      }
       const payload = await boundedJson(response, maxResponseBytes, controller.signal)
       if (!response.ok) {
         const code = SAFE_ERROR_CODES.has(payload?.error?.code) ? payload.error.code : 'HTTP_ERROR'
