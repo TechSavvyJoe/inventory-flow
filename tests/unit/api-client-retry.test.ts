@@ -45,6 +45,19 @@ describe('page-session mutation retries', () => {
     expect(keyAt(2)).not.toBe(keyAt(0))
   })
 
+  it('classifies a stalled connection as a retryable timeout instead of hanging forever', async () => {
+    // A dealership network can stall a connection without ever failing it,
+    // which previously left `fetch` pending with no recovery path. This
+    // rejection is what `AbortController` produces once the request's own
+    // timeout fires; it must not be confused with a real network failure
+    // (whose raw message the case above still expects to see unchanged).
+    fetchMock.mockRejectedValueOnce(new DOMException('The operation was aborted.', 'AbortError'))
+      .mockImplementation(async () => json())
+    await expect(create()).rejects.toMatchObject({ status: 408, message: expect.stringMatching(/timed out/i) })
+    await create()
+    expect(keyAt(1)).toBe(keyAt(0))
+  })
+
   it.each([408, 425, 429, 500, 502, 503])('retains the action key for an uncertain or retryable HTTP %i response', async (status) => {
     fetchMock.mockResolvedValueOnce(json({ error: 'Try again' }, status)).mockImplementation(async () => json())
     await expect(create()).rejects.toMatchObject({ status })

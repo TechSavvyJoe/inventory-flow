@@ -58,6 +58,28 @@ export function startInventoryServer({
   const timer = refreshIntervalMs > 0 ? setInterval(refresh, refreshIntervalMs) : null
   timer?.unref()
 
+  // A busy port is the most common local start failure. Left unhandled, the
+  // server's 'error' event prints a bare stack trace and exits; this states
+  // the cause and the fix instead.
+  server.on('error', (error) => {
+    if (error?.code === 'EADDRINUSE') {
+      console.error(
+        `Port ${port} on ${host} is already in use. Stop the other Inventory Flow server, ` +
+          `or start this one with INVENTORY_OPS_PORT=<free port>.`,
+      )
+    } else if (error?.code === 'EACCES') {
+      console.error(`Permission denied binding ${host}:${port}. Choose a port above 1024.`)
+    } else {
+      console.error(`Inventory Flow server failed to start: ${safeErrorMessage(error)}`)
+    }
+    process.exitCode = 1
+    try {
+      database.close()
+    } catch {
+      // Shutdown path: the database may already be closed.
+    }
+  })
+
   server.listen(port, host, () => {
     const address = server.address()
     const activePort = typeof address === 'object' && address ? address.port : port
