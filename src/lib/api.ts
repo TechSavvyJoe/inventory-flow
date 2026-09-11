@@ -104,6 +104,13 @@ function isSignInResponse(response: Response) {
   return url.hostname.endsWith('.cloudflareaccess.com') || url.pathname.startsWith('/cdn-cgi/access/')
 }
 
+// A dealership network can stall a connection without ever failing it, which
+// leaves `fetch` pending forever and the UI stuck loading with no recovery
+// path. Nothing here calls `fetch` with its own AbortSignal today, but the
+// composition below keeps that possible without this timeout silently
+// overriding a caller's own signal in the future.
+const REQUEST_TIMEOUT_MS = 20_000
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
@@ -112,9 +119,29 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     : undefined
   if (mutation) headers.set('Idempotency-Key', mutation.pending.key)
 
+  const timeoutController = new AbortController()
+  const timeout = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT_MS)
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, timeoutController.signal])
+    : timeoutController.signal
+
   let confirmed = false
   try {
-    const response = await fetch(path, { ...options, headers })
+    let response: Response
+    try {
+      response = await fetch(path, { ...options, headers, signal })
+    } catch (cause) {
+      // A genuine network failure (offline, DNS, connection reset) propagates
+      // unchanged, exactly as it did before this timeout existed — callers
+      // and tests rely on seeing the browser's own rejection here. A timeout
+      // is the one new case, and status 408 already flows through this
+      // module's existing retry classification below, so it is treated as
+      // retryable exactly like a server-reported request timeout.
+      if (cause instanceof DOMException && cause.name === 'AbortError') {
+        throw new ApiError('The request timed out before the server responded. Try again.', 408)
+      }
+      throw cause
+    }
     const isJson = /^application\/(?:[\w.-]+\+)?json(?:\s*;|$)/i.test(response.headers.get('Content-Type') ?? '')
     const isSignIn = isSignInResponse(response)
     if (response.status === 401 || isSignIn || (response.ok && !isJson)) {
@@ -137,6 +164,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     confirmed = true
     return payload
   } finally {
+    clearTimeout(timeout)
     if (mutation) {
       mutation.pending.inFlight -= 1
       mutation.pending.confirmed ||= confirmed

@@ -160,4 +160,37 @@ describe('AppDataProvider access-context isolation', () => {
     expect(window.localStorage.getItem('maxey-home-store')).toBe('Fowlerville')
     expect(apiMocks.getBootstrap).toHaveBeenCalledWith('Fowlerville', 'sales')
   })
+
+  it('still boots and switches store/role when storage access throws on every call', async () => {
+    // `readHomeStore`/`readRole` run inside AppDataProvider's own `useState`
+    // initializers — above where any error boundary in the tree sits — so a
+    // thrown SecurityError here (Safari private browsing, storage blocked by
+    // policy) must never propagate, or the whole app fails to render with
+    // nothing able to catch it.
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: vi.fn(() => {
+          throw new DOMException('The operation is insecure.', 'SecurityError')
+        }),
+        setItem: vi.fn(() => {
+          throw new DOMException('The operation is insecure.', 'SecurityError')
+        }),
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+        key: vi.fn(),
+        length: 0,
+      },
+    })
+    apiMocks.getBootstrap.mockResolvedValue(bootstrap('2026-08-30'))
+
+    render(<AppDataProvider><ContextProbe /></AppDataProvider>)
+
+    await waitFor(() => expect(screen.getByTestId('context')).toHaveTextContent('manager:Howell'))
+    await waitFor(() => expect(screen.getByTestId('data')).toHaveTextContent('2026-08-30'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use Lincoln store' }))
+    await waitFor(() => expect(apiMocks.getBootstrap).toHaveBeenCalledWith('Lincoln', 'manager'))
+    expect(screen.getByTestId('context')).toHaveTextContent('manager:Lincoln')
+  })
 })

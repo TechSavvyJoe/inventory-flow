@@ -40,7 +40,13 @@ export default function App() {
 
   return (
     <AppDataProvider>
-      <AppShell><AppRoutes /></AppShell>
+      {/* AppRoutes already has its own RouteLoadBoundary; this outer one is
+          the one thing standing between a render error in AppShell itself —
+          the nav rail, store switcher, or an open dialog — and a fully blank
+          screen, since nothing wraps AppShell from outside this component. */}
+      <RouteLoadBoundary>
+        <AppShell><AppRoutes /></AppShell>
+      </RouteLoadBoundary>
     </AppDataProvider>
   )
 }

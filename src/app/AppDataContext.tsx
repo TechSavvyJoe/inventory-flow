@@ -45,13 +45,35 @@ interface BootstrapState {
   error: string | null
 }
 
+// `readHomeStore`/`readRole` run inside `useState` initializers, i.e. during
+// AppDataProvider's own render — above where any error boundary in the tree
+// sits (App.tsx only wraps AppShell, not the provider around it). A thrown
+// SecurityError here (Safari private browsing, storage blocked by policy)
+// would take down the whole app to a blank page with nothing able to catch
+// it, so these reads must never throw.
+function readStorage(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function writeStorage(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value)
+  } catch {
+    // Best-effort only; the app must keep working with the in-memory value.
+  }
+}
+
 function readHomeStore(): StoreName {
-  const stored = window.localStorage.getItem('maxey-home-store')
+  const stored = readStorage('maxey-home-store')
   return STORE_NAMES.includes(stored as StoreName) ? (stored as StoreName) : 'Howell'
 }
 
 function readRole(): UserRole {
-  const stored = window.localStorage.getItem('maxey-role')
+  const stored = readStorage('maxey-role')
   return stored === 'sales' || stored === 'coordinator' || stored === 'porter' || stored === 'driver' || stored === 'group_manager' || stored === 'manager'
     ? stored
     : 'manager'
@@ -90,8 +112,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const authenticatedStore = nextData.access?.store ?? homeStore
       if (authenticatedRole !== role || authenticatedStore !== homeStore) {
         const authenticatedContext = `${authenticatedRole}:${authenticatedStore}`
-        window.localStorage.setItem('maxey-role', authenticatedRole)
-        window.localStorage.setItem('maxey-home-store', authenticatedStore)
+        writeStorage('maxey-role', authenticatedRole)
+        writeStorage('maxey-home-store', authenticatedStore)
         latestAccessContextRef.current = authenticatedContext
         setRoleState(authenticatedRole)
         setHomeStoreState(authenticatedStore)
@@ -118,12 +140,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [refresh])
 
   const setHomeStore = useCallback((store: StoreName) => {
-    window.localStorage.setItem('maxey-home-store', store)
+    writeStorage('maxey-home-store', store)
     setHomeStoreState(store)
   }, [])
 
   const setRole = useCallback((nextRole: UserRole) => {
-    window.localStorage.setItem('maxey-role', nextRole)
+    writeStorage('maxey-role', nextRole)
     setRoleState(nextRole)
   }, [])
 
