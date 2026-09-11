@@ -18,7 +18,25 @@ describe('Inventory Flow backend JavaScript client', () => {
     expect(new URL(url).pathname).toBe('/api/v1/inventory')
     expect(new URL(url).searchParams.get('q')).toBe('F-150 | *?~ $42,810')
     expect(url).not.toContain(TOKEN)
-    expect(init).toMatchObject({ method: 'GET', credentials: 'omit', redirect: 'error', cache: 'no-store', headers: { Authorization: `Bearer ${TOKEN}`, Accept: 'application/json' } })
+    expect(init).toMatchObject({ method: 'GET', credentials: 'omit', redirect: 'manual', cache: 'no-store', headers: { Authorization: `Bearer ${TOKEN}`, Accept: 'application/json' } })
+  })
+
+  it('refuses a redirect before reading the body so the credential is never forwarded', async () => {
+    // Cloudflare Workers (Workerd) rejects redirect: 'error' at fetch time, so the
+    // client asks for 'manual' and must refuse the redirect itself. Node/undici
+    // hand back the 3xx response; browser-style runtimes hand back an opaque
+    // redirect with status 0. Both must be refused without a second fetch.
+    for (const response of [
+      new Response(null, { status: 302, headers: { location: 'https://evil.example/steal' } }),
+      Object.defineProperty(new Response(null, { status: 200 }), 'type', { value: 'opaqueredirect' }),
+    ]) {
+      const fetch = vi.fn(async () => response)
+      const client = createInventoryFlowClient({ token: TOKEN, fetch })
+      await expect(client.inventory()).rejects.toMatchObject({ name: 'InventoryFlowError', code: 'REDIRECT_REJECTED' })
+      expect(fetch).toHaveBeenCalledTimes(1)
+      const [, init] = fetch.mock.calls[0]
+      expect(init.redirect).toBe('manual')
+    }
   })
 
   it('supports an async secret provider without caching the credential', async () => {
