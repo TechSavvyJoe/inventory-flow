@@ -26,6 +26,8 @@ const LISTING_DOMAINS = {
   'Ford Detroit': 'www.bobmaxeyford.com',
   Lincoln: 'www.bobmaxeylincoln.com',
 }
+const PHOTO_CDN_DOMAINS = ['dealeron.com', 'homenetinc.com', 'cai-media-management.com', 'vauto.com']
+const PHOTO_DEALER_DOMAINS = new Set(Object.values(LISTING_DOMAINS))
 
 export class IntegrationReadError extends Error {
   constructor(message, { status = 400, code = 'INVALID_QUERY' } = {}) {
@@ -63,6 +65,24 @@ function safeUrl(value, allowedHosts) {
 function listingUrl(value, vin, physicalStore) {
   const url = safeUrl(value, LISTING_DOMAINS[physicalStore] ? [LISTING_DOMAINS[physicalStore].replace(/^www\./, '')] : [])
   return url && url.toUpperCase().includes(vin) ? url : null
+}
+
+function photoUrl(value, vin) {
+  const candidate = safeUrl(value)
+  if (!candidate) return null
+  const url = new URL(candidate)
+  // Keep the existing CDN boundary. The app's public-photo reader also emits
+  // VIN-specific dealer URLs; its approved galleries must survive projection.
+  if (PHOTO_CDN_DOMAINS.some(host => url.hostname === host || url.hostname.endsWith(`.${host}`))) return candidate
+  if (!PHOTO_DEALER_DOMAINS.has(url.hostname) || !VIN.test(vin ?? '')) return null
+  const pathname = url.pathname.replace(/\/{2,}/g, '/')
+  let decodedPath
+  try { decodedPath = decodeURIComponent(pathname) } catch { return null }
+  if (!pathname.toLowerCase().startsWith('/inventoryphotos/') ||
+      !pathname.toLowerCase().includes(`/${vin.toLowerCase()}/`) ||
+      !/\.(?:jpe?g|png|webp)$/i.test(pathname) || decodedPath.includes('\\') || decodedPath.split('/').includes('..')) return null
+  // Match the source reader's canonical form; do not pass tracking or fragments.
+  return `${url.origin}${pathname}`
 }
 
 function autoCheck(value) {
@@ -149,8 +169,8 @@ function projectVehicle(value, meta) {
     drivetrain: text(value.drivetrain), engine: text(value.engine), transmission: text(value.transmission), fuelType: text(value.fuelType), mpgCity: number(value.mpgCity, { positive: true }), mpgHighway: number(value.mpgHighway, { positive: true }),
     certified: bool(value.certified), inventoryDate: text(value.inventoryDate), modelCode: text(value.modelCode), features: text(value.features, 65536),
     listingUrl: listingUrl(value.listingUrl, value.vin, value.publicStore), photoCount: number(value.photoCount, { integer: true }),
-    imageUrl: safeUrl(value.imageUrl, ['dealeron.com', 'homenetinc.com', 'cai-media-management.com', 'vauto.com']),
-    imageUrls: array(value.imageUrls).slice(0, 500).map(url => safeUrl(url, ['dealeron.com', 'homenetinc.com', 'cai-media-management.com', 'vauto.com'])).filter(Boolean),
+    imageUrl: photoUrl(value.imageUrl, value.vin),
+    imageUrls: array(value.imageUrls).slice(0, 500).map(url => photoUrl(url, value.vin)).filter(Boolean),
     publicStore: store(value.publicStore), homeStore: store(value.homeStore), homeStoreConfirmed: bool(value.homeStoreConfirmed), crmStore: store(value.crmStore), sourceReportedLocation: store(value.sourceReportedLocation),
     websiteStatus: text(value.websiteStatus) || 'Not provided', publicListingState: text(value.publicListingState),
     dealerOn: { inStock: bool(value.dealerOn?.inStock), inTransit: bool(value.dealerOn?.inTransit), inProduction: bool(value.dealerOn?.inProduction) },
