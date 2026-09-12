@@ -3,9 +3,25 @@ import { writeFile } from 'node:fs/promises'
 
 // The browser engine is real WebKit. Device descriptors emulate viewport/input;
 // physical Safari/iPhone acceptance is still a separate release check.
+// In-flight API requests per page. A `page.goto()` while one is pending makes
+// WebKit log the cancelled fetch as an "access control checks" console error,
+// which the runtime-health guard below would count as real. `settleApi` lets a
+// step that triggers a refetch finish before the test navigates away.
+const inFlight = new WeakMap<Page, Set<string>>()
+async function settleApi(page: Page) {
+  await expect.poll(() => inFlight.get(page)?.size ?? 0, { timeout: 10_000 }).toBe(0)
+}
+
 const test = base.extend<{ runtimeHealth: void }>({
   runtimeHealth: [async ({ page }, use, testInfo) => {
     const errors: string[] = []
+    const pending = new Set<string>()
+    inFlight.set(page, pending)
+    const key = (request: { url(): string, method(): string }) => `${request.method()} ${request.url()}#${Math.random()}`
+    const keys = new WeakMap<object, string>()
+    page.on('request', request => { if (request.url().includes('/api/')) { const id = key(request); keys.set(request, id); pending.add(id) } })
+    page.on('requestfinished', request => { const id = keys.get(request); if (id) pending.delete(id) })
+    page.on('requestfailed', request => { const id = keys.get(request); if (id) pending.delete(id) })
     page.on('pageerror', error => errors.push(error.message))
     page.on('console', message => {
       if (['error', 'warning'].includes(message.type())) errors.push(message.text())
@@ -734,6 +750,7 @@ test('simple moves use one manager decision and physical location updates throug
 
   // Staff at the owning store can find their away inventory without opening a private move.
   await page.getByLabel('Working location', { exact: true }).selectOption('Fowlerville')
+  await settleApi(page)
   await page.goto('/transfers')
   await page.getByRole('button', { name: /^Home inventory away / }).click()
   const locations = page.getByRole('region', { name: 'Home inventory away', exact: true })
@@ -744,6 +761,7 @@ test('simple moves use one manager decision and physical location updates throug
   await capture(page, testInfo, 'home-inventory-away')
   await locations.getByRole('button', { name: 'Close locations' }).click()
   await page.getByLabel('Working location', { exact: true }).selectOption('Howell')
+  await settleApi(page)
   await page.goto(`/transfers?id=${created.id}`)
   await tracker.getByRole('button', { name: 'Start return', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Start return', exact: true }).click()
