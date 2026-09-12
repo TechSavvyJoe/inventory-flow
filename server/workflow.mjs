@@ -286,8 +286,15 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
     dueAt: neededBy,
     returnRequired: input.returnRequired !== false,
     returnDueAt,
-    lastConfirmedAt: requestedAt,
-    locationConfidence: vehicle.homeAssignment ? 'verified' : 'reported',
+    // A request is an operational intent, not a sighting. A home assignment
+    // says which store is accountable for the vehicle (recorded above as
+    // homeStoreConfirmed); it does not confirm where the vehicle physically
+    // is, and the requester is at another store and has not seen it. The
+    // confirmation clock and 'verified' confidence begin only with the first
+    // physical event — departed, picked up, arrived, returned — which the
+    // event handlers below stamp themselves.
+    lastConfirmedAt: null,
+    locationConfidence: 'reported',
     closedAt: null,
     createdAt: requestedAt,
     updatedAt: requestedAt,

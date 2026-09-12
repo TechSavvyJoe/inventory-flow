@@ -336,4 +336,48 @@ describe('simple manager-led vehicle moves', () => {
     service.appendTransferEvent(later.id, { type: 'return_started' }, sales)
     expect(service.getVehicle(request.vin, unrelated).movement).toMatchObject({ currentLocation: 'In transit', locationConfidence: 'verified', departedAt: firstArrival })
   })
+
+  it('does not treat a home assignment plus a bare request as a physical sighting', () => {
+    // A home assignment records which store is accountable for the vehicle.
+    // A request records that a salesperson at another store wants it. Neither
+    // is a sighting, yet together they used to produce locationConfidence
+    // 'verified' with lastConfirmedAt set to the request time — broadcast
+    // group-wide and projected to the integration API as a confirmed location
+    // that nobody had confirmed. Physical location must only be inferred from
+    // physical events.
+    const database = openInventoryDatabase()
+    databases.push(database)
+    importRelease(database, buildSyntheticRelease(), { loadedAt: SYNTHETIC_NOW.toISOString() })
+    database.prepare(`
+      INSERT INTO home_assignments (id, vin, home_store_id, effective_from, effective_to, assignment_source, assigned_by, note, created_at)
+      VALUES (?, ?, ?, ?, NULL, ?, ?, NULL, ?)
+    `).run('synthetic-home-assignment', request.vin, 'Howell', SYNTHETIC_NOW.toISOString(), 'synthetic_test', homeManager.user, SYNTHETIC_NOW.toISOString())
+    let clock = new Date(SYNTHETIC_NOW)
+    const service = createInventoryService({ database, now: () => clock })
+    const tick = () => { clock = new Date(clock.getTime() + 60_000) }
+
+    const vehicleBefore = service.getVehicle(request.vin, unrelated)
+    // The assignment is recognized as an accountability fact...
+    expect(vehicleBefore.homeStoreConfirmed).toBe(true)
+    // ...but not as a sighting.
+    expect(vehicleBefore.movement).toMatchObject({ state: 'source_reported', locationConfidence: 'reported' })
+    expect(vehicleBefore.movement.lastConfirmedAt).toBeUndefined()
+
+    const created = service.createTransfer(request, sales, 'synthetic-request').record
+    expect(created.locationConfidence).toBe('reported')
+    expect(created.lastConfirmedAt).toBeFalsy()
+
+    // Group-wide location summary for a store that is party to nothing.
+    const after = service.getVehicle(request.vin, unrelated).movement
+    expect(after.locationConfidence).not.toBe('verified')
+    expect(after.lastConfirmedAt).toBeUndefined()
+
+    // The first physical event is what earns 'verified' and starts the clock.
+    tick()
+    approve(service, created.id)
+    tick()
+    const departed = service.appendTransferEvent(created.id, { type: 'vehicle_departed' }, sales, 'synthetic-departure').record
+    expect(departed.locationConfidence).toBe('verified')
+    expect(departed.lastConfirmedAt).toBe(clock.toISOString())
+  })
 })
