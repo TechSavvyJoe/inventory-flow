@@ -134,6 +134,34 @@ function addExternalAutoCheck(bundle, url) {
   return vehicle
 }
 
+function fordOasisFixture() {
+  return {
+    dataState: 'current',
+    capturedAt: '2026-09-12T14:52:37.597Z',
+    sourceLabel: 'Ford OASIS vehicle report (FMCDealer read-only capture)',
+    vehicleDescription: '2023 Escape',
+    versionSeries: 'SERIES 10',
+    buildDate: '11-May-2023',
+    warrantyStartDate: '09-June-2023',
+    releaseDate: '12-May-2023',
+    monthsInService: 38,
+    saleMileage: 3,
+    openFieldServiceActions: [{ code: '24N08', description: 'DRIVERS SIDE SEAT BUCKLE REPLACEMENT' }],
+    warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain' }],
+    extendedCoverageExpirations: ['01/16/2029'],
+  }
+}
+
+function addFordOasis(bundle, { replaceFactoryEquipment = false } = {}) {
+  const vehicle = bundle.release.vehicles.find((record) => record.resourceRecord)
+  if (replaceFactoryEquipment) delete vehicle.resourceRecord.factoryEquipment
+  vehicle.resourceRecord.fordOasis = fordOasisFixture()
+  const run = bundle.release.sourceRuns.resources
+  run.metadata.fordOasisCount = 1
+  run.provenanceSha256 = resourceProvenanceSha256(run, bundle.release.vehicles)
+  return vehicle
+}
+
 describe('portable cloud release validation', () => {
   it('retains quarantined CRM source evidence but excludes it from normalized vehicles and action data', () => {
     const bundle = completeBundle()
@@ -321,6 +349,57 @@ describe('portable cloud release validation', () => {
     const recordTampering = structuredClone(original)
     recordTampering.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.factoryEquipment.sourceLabel = 'Schema-valid but unbound replacement evidence'
     expect(() => validateReleaseBundle(recordTampering)).toThrow(/source provenance/)
+  })
+
+  it('binds read-only Ford OASIS recall and warranty facts to the validated resource run', () => {
+    const bundle = completeBundle()
+    const resourceVehicle = addFordOasis(bundle)
+    expect(validateReleaseBundle(bundle)).toMatchObject({ resourceRecordCount: 1, fordOasisRecordCount: 1 })
+
+    const unsupported = structuredClone(bundle)
+    unsupported.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.engineCalibration = 'PCTCCRNA'
+    expect(() => validateReleaseBundle(unsupported)).toThrow(/Ford OASIS record contains unsupported fields/)
+
+    const ownerName = structuredClone(bundle)
+    ownerName.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.ownerName = 'Jane Example'
+    expect(() => validateReleaseBundle(ownerName)).toThrow(/Ford OASIS record contains unsupported fields/)
+
+    const badCode = structuredClone(bundle)
+    badCode.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.openFieldServiceActions = [{ code: 'RECALL-1' }]
+    expect(() => validateReleaseBundle(badCode)).toThrow(/not a valid FSA code/)
+
+    const stringMonths = structuredClone(bundle)
+    stringMonths.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.monthsInService = '38'
+    expect(() => validateReleaseBundle(stringMonths)).toThrow(/monthsInService must be an integer/)
+
+    const unclaimed = structuredClone(bundle)
+    unclaimed.release.sourceRuns.resources.metadata.fordOasisCount = 0
+    expect(() => validateReleaseBundle(unclaimed)).toThrow(/attached resource type counts exceed validated source evidence/)
+
+    const recordTampering = structuredClone(bundle)
+    recordTampering.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.openFieldServiceActions = []
+    expect(() => validateReleaseBundle(recordTampering)).toThrow(/source provenance/)
+  })
+
+  it('accepts a resource record that carries only Ford OASIS facts and still accepts releases without an OASIS count', () => {
+    const oasisOnly = completeBundle()
+    addFordOasis(oasisOnly, { replaceFactoryEquipment: true })
+    const resourceVehicle = oasisOnly.release.vehicles.find((vehicle) => vehicle.resourceRecord)
+    expect(Object.keys(resourceVehicle.resourceRecord).sort()).toEqual(['fordOasis', 'vin'])
+    expect(validateReleaseBundle(oasisOnly)).toMatchObject({ resourceRecordCount: 1, fordOasisRecordCount: 1 })
+
+    // A release with no OASIS records omits fordOasisCount entirely, keeping the
+    // bundle byte-compatible with a Worker whose metadata allow-list predates the
+    // field (the deployed Worker before the OASIS channel is turned on).
+    const legacy = completeBundle()
+    expect(legacy.release.sourceRuns.resources.metadata).not.toHaveProperty('fordOasisCount')
+    expect(validateReleaseBundle(legacy)).toMatchObject({ resourceRecordCount: 1, fordOasisRecordCount: 0 })
+
+    // An OASIS-aware release may still carry an explicit zero; the validator accepts either form.
+    const explicitZero = completeBundle()
+    explicitZero.release.sourceRuns.resources.metadata.fordOasisCount = 0
+    explicitZero.release.sourceRuns.resources.provenanceSha256 = resourceProvenanceSha256(explicitZero.release.sourceRuns.resources, explicitZero.release.vehicles)
+    expect(validateReleaseBundle(explicitZero)).toMatchObject({ resourceRecordCount: 1, fordOasisRecordCount: 0 })
   })
 
   it.each([

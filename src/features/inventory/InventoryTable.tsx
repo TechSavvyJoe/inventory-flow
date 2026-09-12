@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowRightLeft,
   ArrowUp,
@@ -513,6 +514,40 @@ function DeskVehicleCell({ vehicle, onSelectVehicle }: {
   );
 }
 
+function openRecallCount(vehicle: InventoryVehicle): number {
+  return vehicle.fordOasis?.openFieldServiceActions.length ?? 0;
+}
+
+function openRecallSummary(vehicle: InventoryVehicle): string | null {
+  const count = openRecallCount(vehicle);
+  return count ? `${count} open Ford recall${count === 1 ? "" : "s"} or field service action${count === 1 ? "" : "s"}` : null;
+}
+
+/** Ford OASIS open field service actions. Reference evidence only; never an availability signal. */
+function RecallChip({ vehicle, onSelectVehicle }: { vehicle: InventoryVehicle; onSelectVehicle: InventoryTableProps["onSelectVehicle"] }) {
+  const count = openRecallCount(vehicle);
+  if (!count) return null;
+  const actions = vehicle.fordOasis?.openFieldServiceActions ?? [];
+  return (
+    <button type="button"
+      className="inventory-recall-chip"
+      data-row-action="recalls"
+      data-inventory-vehicle-trigger={vehicle.id}
+      data-open-recall-count={count}
+      aria-label={`${openRecallSummary(vehicle)} for ${vehicleDisplayName(vehicle)}; open vehicle records`}
+      title={actions.map((action) => [action.code, action.description].filter(Boolean).join(" — ")).join("; ")}
+      onClick={(event) => {
+        event.stopPropagation();
+        event.currentTarget.focus({ preventScroll: true });
+        onSelectVehicle(vehicle, "data");
+      }}
+    >
+      <AlertTriangle size={13} strokeWidth={2} aria-hidden="true" />
+      <strong>Recalls: {count}</strong>
+    </button>
+  );
+}
+
 function DeskPriceCell({ vehicle }: { vehicle: InventoryVehicle }) {
   const hasPrice = typeof vehicle.price === "number" && Number.isFinite(vehicle.price);
   const hasMsrp = typeof vehicle.msrp === "number" && Number.isFinite(vehicle.msrp) && vehicle.msrp > 0;
@@ -641,6 +676,7 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord }: {
             <span className="inv-desk-pill__label">{humanizeStatusLabel(movementStatus.label)}</span>
           </span>
         ) : null}
+        <RecallChip vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
       </span>
     </div>
   );
@@ -1076,8 +1112,10 @@ function MobileDocumentAvailability({ vehicle, onSelectVehicle }: {
   const autoCheck = Boolean(officialVehicleDocumentUrl(vehicle.autoCheckReport?.url, "autocheck", vehicle.publicListing.listingUrl));
   const sticker = Boolean(officialVehicleDocumentUrl(vehicle.windowSticker?.url, "window-sticker", vehicle.publicListing.listingUrl));
   const factoryEquipment = Boolean(vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url));
-  const documents = [autoCheck && "AutoCheck", sticker && "Sticker", factoryEquipment && "Factory equipment"].filter(Boolean);
+  const recalls = openRecallCount(vehicle);
+  const documents = [autoCheck && "AutoCheck", sticker && "Sticker", factoryEquipment && "Factory equipment", recalls ? `Recalls: ${recalls}` : null].filter(Boolean);
   const evidence = [
+    recalls ? { label: "Recalls", detail: `${recalls} open` } : null,
     autoCheck ? {
       label: vehicle.autoCheckReport?.dataState === "current" ? "AutoCheck" : "Earlier AutoCheck",
       detail: autoCheckResourceDetail(vehicle),
@@ -1134,6 +1172,7 @@ export function vehicleAccessibleSummary(vehicle: InventoryVehicle): string {
     officialVehicleDocumentUrl(vehicle.autoCheckReport?.url, "autocheck", vehicle.publicListing.listingUrl) ? "AutoCheck report available" : null,
     officialVehicleDocumentUrl(vehicle.windowSticker?.url, "window-sticker", vehicle.publicListing.listingUrl) ? "Window sticker available" : null,
     vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url) ? "vAuto informational equipment profile available" : null,
+    openRecallSummary(vehicle),
   ].filter(Boolean).join(", ");
 }
 

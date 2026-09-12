@@ -144,6 +144,38 @@ export interface FactoryEquipmentResource {
   isOriginalWindowSticker: false;
 }
 
+export interface FordOasisFieldServiceAction {
+  /** Ford field service action / recall code, e.g. 24N08. */
+  code: string;
+  description?: string | null;
+}
+
+export interface FordOasisWarrantyCoverage {
+  type: string;
+  description?: string | null;
+}
+
+/**
+ * Read-only Ford OASIS vehicle report facts. Dates are shown exactly as OASIS
+ * printed them. Open field service actions are reference evidence and never a
+ * condition, hold, or availability signal.
+ */
+export interface FordOasisResource {
+  dataState: SourceDataState;
+  capturedAt?: string | null;
+  sourceLabel?: string | null;
+  vehicleDescription?: string | null;
+  versionSeries?: string | null;
+  buildDate?: string | null;
+  warrantyStartDate?: string | null;
+  releaseDate?: string | null;
+  monthsInService?: number | null;
+  saleMileage?: number | null;
+  openFieldServiceActions: FordOasisFieldServiceAction[];
+  warrantyCoverages: FordOasisWarrantyCoverage[];
+  extendedCoverageExpirations: string[];
+}
+
 export interface DealerMailHoldSignal {
   dataState: SourceDataState;
   hasActiveHold: boolean | null;
@@ -287,6 +319,7 @@ export interface InventoryVehicle {
   autoCheckReport?: AutoCheckResource | null;
   windowSticker?: WindowStickerResource | null;
   factoryEquipment?: FactoryEquipmentResource | null;
+  fordOasis?: FordOasisResource | null;
   publicListing: PublicListingSignal;
   dealerOn: DealerOnSignal;
   managerDisposition?: ManagerDispositionSignal | null;

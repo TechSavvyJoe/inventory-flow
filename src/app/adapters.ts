@@ -1,6 +1,7 @@
 import type {
   DealerMailHoldEvidence,
   FactoryEquipmentResource,
+  FordOasisResource,
   InventoryDecisionMetrics,
   InventoryGroupStore,
   InventoryStore,
@@ -94,9 +95,43 @@ function factoryEquipmentResource(
   }
 }
 
+function fordOasisResource(
+  fordOasis: VehicleRecord['fordOasis'],
+  fallbackState: SourceDataState,
+): FordOasisResource | null {
+  if (!fordOasis) return null
+
+  const openFieldServiceActions = (fordOasis.openFieldServiceActions ?? []).flatMap((action) => {
+    const code = cleanOptionalText(action?.code)
+    return code ? [{ code, description: cleanOptionalText(action.description) }] : []
+  })
+  const warrantyCoverages = (fordOasis.warrantyCoverages ?? []).flatMap((coverage) => {
+    const type = cleanOptionalText(coverage?.type)
+    return type ? [{ type, description: cleanOptionalText(coverage.description) }] : []
+  })
+
+  return {
+    dataState: resourceDataState(fordOasis.dataState, fallbackState),
+    capturedAt: cleanOptionalText(fordOasis.capturedAt),
+    sourceLabel: cleanOptionalText(fordOasis.sourceLabel),
+    vehicleDescription: cleanOptionalText(fordOasis.vehicleDescription),
+    versionSeries: cleanOptionalText(fordOasis.versionSeries),
+    // Dates stay exactly as OASIS printed them; they are not reformatted.
+    buildDate: cleanOptionalText(fordOasis.buildDate),
+    warrantyStartDate: cleanOptionalText(fordOasis.warrantyStartDate),
+    releaseDate: cleanOptionalText(fordOasis.releaseDate),
+    monthsInService: cleanOptionalNumber(fordOasis.monthsInService),
+    saleMileage: cleanOptionalNumber(fordOasis.saleMileage),
+    openFieldServiceActions,
+    warrantyCoverages,
+    extendedCoverageExpirations: cleanTextList(fordOasis.extendedCoverageExpirations),
+  }
+}
+
 function officialDocumentSearchText(
   vehicle: VehicleRecord,
   factoryEquipment: FactoryEquipmentResource | null,
+  fordOasis: FordOasisResource | null,
 ): string {
   const autoCheck = vehicle.autoCheckReport
   const sticker = vehicle.windowSticker
@@ -155,6 +190,18 @@ function officialDocumentSearchText(
     ]),
     factoryEquipment?.disclaimer,
     factoryEquipment ? 'vAuto informational equipment label not original window sticker' : null,
+    fordOasis?.vehicleDescription,
+    fordOasis?.versionSeries,
+    fordOasis?.buildDate,
+    fordOasis?.warrantyStartDate,
+    fordOasis?.releaseDate,
+    fordOasis?.monthsInService != null ? `${fordOasis.monthsInService} months in service` : null,
+    fordOasis?.saleMileage,
+    ...(fordOasis?.openFieldServiceActions ?? []).flatMap((action) => [action.code, action.description]),
+    ...(fordOasis?.warrantyCoverages ?? []).flatMap((coverage) => [coverage.type, coverage.description]),
+    ...(fordOasis?.extendedCoverageExpirations ?? []),
+    fordOasis ? 'Ford OASIS' : null,
+    fordOasis?.openFieldServiceActions.length ? `${fordOasis.openFieldServiceActions.length} open recalls field service actions` : null,
   ].filter((value) => value !== null && value !== undefined && String(value).trim() !== '').join(' | ')
 }
 
@@ -326,7 +373,9 @@ export function toInventoryVehicle(
   // freshness remains independent from public-listing freshness, including
   // for CRM-only vehicles that have no current public listing.
   const factoryEquipment = factoryEquipmentResource(vehicle.factoryEquipment, dealerMailState)
-  const documentSearchText = officialDocumentSearchText(vehicle, factoryEquipment)
+  // Ford OASIS arrives through the same independent resources channel.
+  const fordOasis = fordOasisResource(vehicle.fordOasis, dealerMailState)
+  const documentSearchText = officialDocumentSearchText(vehicle, factoryEquipment, fordOasis)
 
   return {
     id: vehicle.vin,
@@ -382,6 +431,7 @@ export function toInventoryVehicle(
         }
       : null,
     factoryEquipment,
+    fordOasis,
     publicListing: {
       dataState: publicState,
       isListed: isListed(vehicle),

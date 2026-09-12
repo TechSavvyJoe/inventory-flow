@@ -7,6 +7,7 @@
 // does the request with its own session. Survives Comet restarts because it
 // does not depend on any in-page timer.
 import { writeFileSync, mkdirSync, appendFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 
 const PORT = 9222
@@ -56,8 +57,18 @@ try {
   status.status = 'ERROR'
   status.error = String(e && e.message || e).slice(0, 200)
 }
+// vAuto session in the same browser: one cheap authenticated API call made from inside
+// the vAuto tab (see vauto-factory-equipment.mjs ping). Keeps that session warm and
+// surfaces an expired login here instead of in tomorrow's capture. Never touches the UI.
+try {
+  const out = execFileSync(process.execPath, [path.join(import.meta.dirname, 'vauto-factory-equipment.mjs'), 'ping'], { encoding: 'utf8', timeout: 120000, windowsHide: true })
+  status.vauto = JSON.parse(out.trim().split('\n').pop())
+} catch (e) {
+  const last = e && e.stdout ? String(e.stdout).trim().split('\n').pop() : ''
+  try { status.vauto = JSON.parse(last) } catch { status.vauto = { status: 'ERROR', error: String(e && e.message || e).slice(0, 200) } }
+}
 mkdirSync(DIR, { recursive: true })
 writeFileSync(OUT, JSON.stringify(status, null, 2))
-appendFileSync(LOG, `${status.checkedAt} ${status.status}${status.error ? ' ' + status.error : ''}${status.httpStatus ? ' http=' + status.httpStatus : ''}\n`)
+appendFileSync(LOG, `${status.checkedAt} dealermail=${status.status}${status.error ? ' ' + status.error : ''}${status.httpStatus ? ' http=' + status.httpStatus : ''} vauto=${status.vauto.status}${status.vauto.error ? ' ' + status.vauto.error : ''}\n`)
 console.log(JSON.stringify(status))
-process.exitCode = status.status === 'OK' ? 0 : 1
+process.exitCode = (status.status === 'OK' && status.vauto.status === 'OK') ? 0 : 1

@@ -115,6 +115,35 @@ try {
       Write-Log 'photo cache: skipped by flag'
     }
 
+    # Step 1.4 - vAuto Factory Equipment (CAI label) capture, API path.
+    # Silent and headless: an authenticated fetch inside the automation browser's own
+    # vAuto tab (127.0.0.1:9222), ~0.2 s per VIN, no form, no popup, nothing on screen.
+    # Resumable: VINs already OK in any work\vauto-history file are never re-fetched.
+    # NON-FATAL: the enrichment step below merges every prior capture, so a day without
+    # the browser (or with an expired vAuto login) still publishes with yesterday's labels.
+    $vautoUp = $false
+    try { $null = Invoke-WebRequest -Uri 'http://127.0.0.1:9222/json/version' -UseBasicParsing -TimeoutSec 5; $vautoUp = $true } catch {}
+    if ($vautoUp) {
+      try {
+        $wlOut = & python '..\..\work\build_vauto_worklist.py' '--report-date' $date 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { throw "worklist: $($wlOut.Trim())" }
+        Write-Log "vauto: $($wlOut.Trim())"
+        $wlPath = "..\..\work\vauto-history\worklist-$date.json"
+        $feOut = "..\..\work\vauto-history\$date-factory-equipment.json"
+        $vautoOut = & node 'scripts\vauto-factory-equipment.mjs' 'run' $wlPath $feOut '--budget-ms' '600000' 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+          Write-Log "vauto: capture incomplete (exit $LASTEXITCODE) - continuing with prior captures: $($vautoOut.Trim())" 'WARN'
+          if ($vautoOut -match 'SESSION_EXPIRED') { Write-Log 'vauto: SESSION EXPIRED - sign in to vAuto again in the Work PC Automation Browser (Comet)' 'WARN' }
+        } else {
+          Write-Log "vauto: $($vautoOut.Trim())"
+        }
+      } catch {
+        Write-Log "vauto: skipped - $($_.Exception.Message)" 'WARN'
+      }
+    } else {
+      Write-Log 'vauto: automation browser not listening on 127.0.0.1:9222 - skipping capture, prior labels still merge' 'WARN'
+    }
+
     # Step 1.5 - per-VIN resource enrichment (window sticker / invoice / vAuto CAI label)
     # Rebuilds data\vin-document-enrichment.json from whatever the morning captured,
     # values copied as printed, then proves it against the REAL validators before

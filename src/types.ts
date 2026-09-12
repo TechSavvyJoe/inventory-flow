@@ -150,6 +150,37 @@ export interface FactoryEquipmentRecord {
   isOriginalWindowSticker: false
 }
 
+export interface FordOasisFieldServiceActionRecord {
+  /** Ford field service action / recall code, e.g. 24N08. */
+  code: string
+  description?: string | null
+}
+
+export interface FordOasisWarrantyCoverageRecord {
+  type: string
+  description?: string | null
+}
+
+/**
+ * Read-only Ford OASIS vehicle report facts for the exact VIN. Dates are the
+ * strings OASIS printed and are never re-parsed. No owner data is carried.
+ */
+export interface FordOasisRecord {
+  dataState?: SourceFreshness
+  capturedAt?: string | null
+  sourceLabel?: string | null
+  vehicleDescription?: string | null
+  versionSeries?: string | null
+  buildDate?: string | null
+  warrantyStartDate?: string | null
+  releaseDate?: string | null
+  monthsInService?: number | null
+  saleMileage?: number | null
+  openFieldServiceActions?: FordOasisFieldServiceActionRecord[]
+  warrantyCoverages?: FordOasisWarrantyCoverageRecord[]
+  extendedCoverageExpirations?: string[]
+}
+
 export interface HoldSummary {
   state: 'primary' | 'backup' | 'multiple' | 'none_observed' | 'stale' | 'unknown'
   label: string
@@ -308,6 +339,7 @@ export interface VehicleRecord {
   autoCheckReport?: AutoCheckReportRecord
   windowSticker?: WindowStickerRecord
   factoryEquipment?: FactoryEquipmentRecord
+  fordOasis?: FordOasisRecord
 }
 
 export interface TransferEvent {

@@ -5068,6 +5068,131 @@ button.inventory-workspace-signal:focus-visible {
   line-height: 1.4;
 }
 
+/* Ford OASIS read-only vehicle report. Open recalls / field service actions
+   lead the card and switch to the danger tone only while at least one is open. */
+.inventory-vehicle-document--oasis {
+  border-top: 4px solid var(--ifx-oem-accent, var(--ifx-info));
+}
+
+.inventory-vehicle-document--oasis:not([data-open-recall-count="0"]) {
+  border-top-color: var(--ifx-danger);
+}
+
+.inventory-document-wordmark--oasis {
+  align-items: flex-start;
+  color: var(--ifx-neutral-900);
+  background: var(--ifx-oem-surface, var(--ifx-info-surface));
+  box-shadow: inset 3px 0 0 var(--ifx-oem-accent-strong, var(--ifx-info));
+}
+
+.inventory-document-wordmark--oasis .inventory-document-wordmark__line {
+  color: var(--ifx-oem-accent-strong, var(--ifx-info));
+  font-size: var(--ifx-text-md);
+  font-weight: 800;
+  letter-spacing: .08em;
+  line-height: 1;
+}
+
+.inventory-document-wordmark--oasis small {
+  margin-top: 2px;
+  color: var(--ifx-neutral-600);
+  font-size: var(--ifx-text-xs);
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.inventory-vehicle-document__recalls {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--ifx-success);
+  border-left-width: 3px;
+  border-radius: 8px;
+  color: var(--ifx-neutral-800);
+  background: var(--ifx-success-surface);
+}
+
+.inventory-vehicle-document__recalls > svg {
+  margin-top: 1px;
+  color: var(--ifx-success);
+}
+
+.inventory-vehicle-document__recalls--open {
+  border-color: var(--ifx-danger);
+  background: var(--ifx-danger-surface);
+}
+
+.inventory-vehicle-document__recalls--open > svg {
+  color: var(--ifx-danger);
+}
+
+.inventory-vehicle-document__recalls > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inventory-vehicle-document__recalls strong {
+  color: var(--ifx-neutral-900);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.inventory-vehicle-document__recalls--open strong {
+  color: var(--ifx-danger);
+}
+
+.inventory-vehicle-document__recalls small {
+  color: var(--ifx-neutral-700);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.inventory-vehicle-document__recall-list {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inventory-vehicle-document__recall-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--ifx-neutral-200);
+  border-left: 3px solid var(--ifx-danger);
+  border-radius: 8px;
+  background: var(--ifx-neutral-0);
+}
+
+.inventory-vehicle-document__recall-list b {
+  color: var(--ifx-danger);
+  font-family: var(--ifx-font-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  line-height: 1.35;
+}
+
+.inventory-vehicle-document__recall-list span {
+  color: var(--ifx-neutral-800);
+  font-size: 12.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.inventory-vehicle-document__oasis-coverages > ul {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
 .inventory-vehicle-document__vauto-packages > ul {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
