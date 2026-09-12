@@ -520,6 +520,121 @@
         }
       }
     },
+    "/manager-dispositions": {
+      "get": {
+        "operationId": "listManagerDispositions",
+        "summary": "List manager-log sold and delivered evidence for authorized inventory",
+        "description": "Read only. Requires inventory.read. Unknown query parameters are rejected. Manager-log evidence is independent of public listing status, DealerMail hold state, CDK evidence and physical location; absence of a row is not evidence that a vehicle is unsold, available or undelivered. Responses are private and must not be publicly cached.",
+        "security": [
+          {
+            "BearerAppKey": []
+          }
+        ],
+        "x-required-scope": "inventory.read",
+        "x-reject-unknown-query-parameters": true,
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "Free-text filter over published identity fields only."
+          },
+          {
+            "name": "store",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/Store"
+            },
+            "description": "Filters on physical store when known, otherwise the reporting source store. Unassigned stores yield no rows, never expand access."
+          },
+          {
+            "name": "delivered",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "description": "Sent as the string \"true\" or \"false\"; any other value is rejected."
+          },
+          {
+            "name": "review",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "description": "Limits to rows whose match needs human review. Sent as the string \"true\" or \"false\"."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "description": "Opaque signed cursor from a prior page. Invalid or stale cursors are rejected with INVALID_CURSOR."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorized scoped data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagerDispositionsPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
     "/capabilities": {
       "get": {
         "operationId": "getCapabilities",
@@ -615,13 +730,17 @@
         "additionalProperties": false,
         "required": [
           "publicFreshness",
-          "dealerMailFreshness"
+          "dealerMailFreshness",
+          "managerDispositionFreshness"
         ],
         "properties": {
           "publicFreshness": {
             "$ref": "#/components/schemas/Freshness"
           },
           "dealerMailFreshness": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "managerDispositionFreshness": {
             "$ref": "#/components/schemas/Freshness"
           }
         }
@@ -637,6 +756,7 @@
           "timezone",
           "allowedStores",
           "sourceFreshness",
+          "managerDispositionCoverage",
           "availabilityCaveat",
           "historyCoverage",
           "excludedFields"
@@ -678,6 +798,9 @@
           },
           "sourceFreshness": {
             "$ref": "#/components/schemas/SourceFreshness"
+          },
+          "managerDispositionCoverage": {
+            "$ref": "#/components/schemas/ManagerDispositionCoverage"
           },
           "availabilityCaveat": {
             "type": "string"
@@ -1447,7 +1570,8 @@
           "publicScan",
           "autoCheckReport",
           "windowSticker",
-          "factoryEquipment"
+          "factoryEquipment",
+          "managerDisposition"
         ],
         "properties": {
           "vin": {
@@ -1741,6 +1865,17 @@
           "hold": {
             "$ref": "#/components/schemas/Hold"
           },
+          "managerDisposition": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ManagerDisposition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when no manager log covers this vehicle, which is not evidence that it is unsold or undelivered."
+          },
           "location": {
             "$ref": "#/components/schemas/Location"
           },
@@ -1749,13 +1884,17 @@
             "additionalProperties": false,
             "required": [
               "public",
-              "dealerMail"
+              "dealerMail",
+              "managerDisposition"
             ],
             "properties": {
               "public": {
                 "$ref": "#/components/schemas/Freshness"
               },
               "dealerMail": {
+                "$ref": "#/components/schemas/Freshness"
+              },
+              "managerDisposition": {
                 "$ref": "#/components/schemas/Freshness"
               }
             }
@@ -2029,7 +2168,8 @@
           "defaultPageSize",
           "historicalSnapshots",
           "licensedReports",
-          "inventorySortFields"
+          "inventorySortFields",
+          "managerDispositions"
         ],
         "properties": {
           "schemaVersion": {
@@ -2082,6 +2222,9 @@
               ]
             },
             "maxItems": 10
+          },
+          "managerDispositions": {
+            "const": true
           }
         }
       },
@@ -2203,6 +2346,211 @@
                 "type": "string"
               }
             }
+          }
+        }
+      },
+      "ManagerDispositionCoverage": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Which source stores supplied a manager log for this release. Absence of a row is not evidence of anything.",
+        "required": [
+          "status",
+          "coveredSourceStores",
+          "caveat"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "provided",
+              "not_provided"
+            ]
+          },
+          "coveredSourceStores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Store"
+            },
+            "maxItems": 4
+          },
+          "caveat": {
+            "const": "No row means no manager-log signal in a covered source, not unsold, available, or not delivered. Stores outside the covered source list have no manager-log coverage."
+          }
+        }
+      },
+      "ManagerDisposition": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Sold/delivered evidence re-derived from a manager-supplied log. Independent of public listing status, DealerMail hold state, CDK evidence and physical location; never infer one from another. Manager-log free text is excluded at the source.",
+        "required": [
+          "stockNumber",
+          "vin",
+          "vehicleName",
+          "soldManagerLog",
+          "deliveredManagerLog",
+          "deliveryDate",
+          "confidence",
+          "sourceStore",
+          "sourcePeriod",
+          "matchMethod",
+          "matchStatus",
+          "physicalStore",
+          "reviewRequired",
+          "soldLabel",
+          "deliveryLabel",
+          "dataState",
+          "statusAuthority",
+          "statusIndependence"
+        ],
+        "properties": {
+          "stockNumber": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 80
+          },
+          "vin": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Vin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "vehicleName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "soldManagerLog": {
+            "const": true
+          },
+          "deliveredManagerLog": {
+            "type": "boolean"
+          },
+          "deliveryDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 10,
+            "description": "Null whenever the manager log does not mark the vehicle delivered."
+          },
+          "confidence": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "high",
+              "medium-high",
+              "medium",
+              "low",
+              null
+            ]
+          },
+          "sourceStore": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Store"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Store whose manager log reported the row, which is not a physical-location claim."
+          },
+          "sourcePeriod": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 7
+          },
+          "matchMethod": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "vin",
+              "unique_stock",
+              "not_matched",
+              null
+            ]
+          },
+          "matchStatus": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "matched_vin_stock_review",
+              "not_in_current_release",
+              "stock_not_in_current_release",
+              "stock_ambiguous"
+            ]
+          },
+          "physicalStore": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Store"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewRequired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "soldLabel": {
+            "const": "Sold — manager log"
+          },
+          "deliveryLabel": {
+            "type": "string",
+            "enum": [
+              "Delivered — manager log",
+              "Not marked delivered — manager log"
+            ]
+          },
+          "dataState": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "statusAuthority": {
+            "const": "manager-supplied sold log"
+          },
+          "statusIndependence": {
+            "const": "Sold and delivered manager-log evidence is shown separately from public listing, DealerMail hold, CDK, and physical-store fields."
+          }
+        }
+      },
+      "ManagerDispositionsPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "meta",
+          "pagination"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagerDisposition"
+            },
+            "maxItems": 100
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Meta"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
           }
         }
       }

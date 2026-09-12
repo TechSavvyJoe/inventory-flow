@@ -21,11 +21,12 @@ API keys have per-application grants, expiry/revocation controls, store lists, r
 - Parsed VIN-specific **AutoCheck facts**, original-window-sticker options, standard equipment/warranty, package codes and prices, and informational factory-equipment packages/sections. Exact source terminology is retained. Informational equipment labels are explicitly not original Monroney stickers. Original report files and authenticated document links are not exposed.
 - Conservative **hold state** and non-private backup counts; confirmed/reported store-level location and departure/confirmation timestamps. Source listing status, source stock flags, hold state, and app location remain distinct.
 - Typed **public change events** recorded with the selected release, their before/after values, and the comparison report dates.
+- Re-derived **manager-log sold and delivered evidence**: stock/VIN identity, sold and delivered flags, delivery date, match method/status, review flag, and the reporting source store and period. This is manager-supplied evidence only; manager-log free text is discarded at the source. It is independent of public listing status, DealerMail hold state, CDK evidence and physical location, and the absence of a row is not evidence that a vehicle is unsold, available or undelivered.
 - Selected-release **freshness and provenance**: report date, completion timestamp, content hash, allowed stores and source freshness. Counts always reflect authorized rows, not group-wide totals hidden from that integration.
 
 This version is **not** a full historical database query API or a complete CRM-only inventory endpoint. `/changes?from=...&to=...` filters events already stored with the selected release; it does not fetch past daily snapshots. Hold summaries cover publicly listed vehicles and use public physical store, not a claim of complete CRM hold totals. Historical source files can remain stored securely without being made accessible through this first API contract.
 
-Deliberately excluded: customer and salesperson identities, hold/customer reasons, private comments/alerts, free-form operating notes, raw CDK data, customer outcomes, browser credentials/cookies, raw source objects, source-local file paths, full licensed reports, and authenticated report URLs. There are no API methods to create, approve, release or change holds, transfers, alerts, or source records.
+Deliberately excluded: customer and salesperson identities, hold/customer reasons, private comments/alerts, free-form operating notes, manager-log free text, raw CDK data, browser credentials/cookies, raw source objects, source-local file paths, full licensed reports, and authenticated report URLs. Every response repeats this list in `meta.excludedFields`. Sold and delivered manager-log flags are published as manager-supplied evidence; the customer, the reason, the deal and any free text behind them are not. There are no API methods to create, approve, release or change holds, transfers, alerts, or source records.
 
 Use parsed licensed-source facts only within your organization's permitted purpose and applicable provider terms; deployment is not a legal/compliance certification.
 
@@ -40,6 +41,7 @@ All endpoints below use `GET`, `Accept: application/json`, and `Authorization: B
 | `/changes` | `changes.read` | Typed public change events and cursor pagination |
 | `/data-health` | `health.read` | Freshness and authorized visible vehicle count |
 | `/holds/summary` | `holds.aggregate.read` | Non-private counts for authorized public inventory by physical store |
+| `/manager-dispositions` | `inventory.read` | Manager-log sold/delivered evidence rows and cursor pagination |
 | `/capabilities` | Active authenticated integration grant | Plain JSON listing granted stores/scopes, limits and supported features |
 
 The four exact store values are `Howell`, `Fowlerville`, `Ford Detroit`, and `Lincoln`. A store filter never expands the key's grant. An inaccessible VIN returns the same not-found response as a missing VIN.
@@ -62,19 +64,19 @@ The four exact store values are `Howell`, `Fowlerville`, `Ford Detroit`, and `Li
 
 `F150` and `F-150`, `42810` and `$42,810`, `2052` and `2,052`, and readable/ISO date forms use forgiving matching. `*`, `?`, `~`, and `|` remain literal characters, not wildcard or regular-expression instructions. Search does not use the application's private cached search index.
 
-`/changes` accepts only `q`, `store`, `type`, `from`, `to`, `limit`, and `cursor`. Date bounds are inclusive valid `YYYY-MM-DD` dates, with `from <= to`. Types are `new_arrival`, `removed`, `price_change`, `mileage_change`, `website_status_change`, `stock_correction`, and `store_transfer`. `/holds/summary` accepts only `store`; health and capabilities have no query fields.
+`/changes` accepts only `q`, `store`, `type`, `from`, `to`, `limit`, and `cursor`. Date bounds are inclusive valid `YYYY-MM-DD` dates, with `from <= to`. Types are `new_arrival`, `removed`, `price_change`, `mileage_change`, `website_status_change`, `stock_correction`, and `store_transfer`. `/holds/summary` accepts only `store`; health and capabilities have no query fields. `/manager-dispositions` accepts only `q`, `store`, `delivered`, `review`, `limit`, and `cursor`; `delivered` and `review` are sent as the strings `true` or `false` and any other value is rejected, and `store` matches the physical store when it is known and otherwise the reporting source store.
 
 ### Response and cursor handling
 
-Inventory and changes return `{ data: [...], meta: {...}, pagination: { total, limit, returned, nextCursor } }`. Vehicle, health, and hold-summary methods return `{ data, meta }`. Capabilities returns its object directly without a `data` envelope. The complete machine-readable contract is [inventory-flow.openapi.json](inventory-flow.openapi.json).
+Inventory, changes and manager dispositions return `{ data: [...], meta: {...}, pagination: { total, limit, returned, nextCursor } }`. Vehicle, health, and hold-summary methods return `{ data, meta }`. Capabilities returns its object directly without a `data` envelope. The complete machine-readable contract is [inventory-flow.openapi.json](inventory-flow.openapi.json).
 
-`meta` includes `schemaVersion`, `reportDate`, `completedAt`, `bundleSha256`, `timezone`, `allowedStores`, `sourceFreshness`, `availabilityCaveat`, `historyCoverage`, and `excludedFields`. Treat freshness and caveats as part of the result, not optional decoration.
+`meta` includes `schemaVersion`, `reportDate`, `completedAt`, `bundleSha256`, `timezone`, `allowedStores`, `sourceFreshness`, `managerDispositionCoverage`, `availabilityCaveat`, `historyCoverage`, and `excludedFields`. `managerDispositionCoverage` names the source stores that supplied a manager log for this release; a store outside that list has no manager-log coverage at all, which is not the same as having no sales. Treat freshness and caveats as part of the result, not optional decoration.
 
 Use the **same query and limit** with each `nextCursor`. Cursors bind the query, identity, grants, release and scoped operational data. A new release, relevant move/hold change, changed filters, changed grant, or modified cursor can produce `400 INVALID_CURSOR`. Start a fresh listing and discard/reconcile the earlier partial result; never silently join pages from different snapshots. The JavaScript iterator intentionally throws rather than silently restarting.
 
 Responses are bounded at **1 MiB**. Reduce `limit` if an unusually rich page is too large. String facts are capped at 2,000 characters (features at 65,536); parsed arrays at 2,000 items and photos at 500. This bounded integration projection is not an archival raw-data export.
 
-Handle `401` by fixing credentials, `403` by obtaining the needed approved scope/grant, `404` as not found, `429` by honoring `Retry-After`, and `503` as unavailable—never as zero inventory or released holds. Error bodies contain safe `error` and `code` fields and may include `requestId`. Do not log request Authorization headers, returned private source data from other services, or secret-provider errors.
+Handle `401` by fixing credentials, `403` by obtaining the needed approved scope/grant, `404` as not found, `429` by honoring `Retry-After`, and `503` as unavailable—never as zero inventory or released holds. Error bodies are exactly `{ "error": { "code": "..." } }` — the code is nested inside `error`, there is no sibling `code`, `message` or `requestId`, and the code is drawn from a fixed safe vocabulary that never reflects source text back to you. Treat the HTTP status and `Retry-After` as the primary signal: an edge-generated error or a proxy timeout can arrive as HTML or an empty body with no JSON at all. Do not log request Authorization headers, returned private source data from other services, or secret-provider errors.
 
 ### Safe interpretation
 
@@ -113,7 +115,7 @@ for await (const vehicle of inventory.iterateInventory(
 // This reads data; it never changes Inventory Flow source records.
 ```
 
-Other methods are `vehicle(vin, { signal })`, `changes(query, { signal })`, `dataHealth({ signal })`, `holdSummary(query, { signal })`, and `capabilities({ signal })`. `token` can be a secret string or an asynchronous provider. Providers are resolved per request. Options include `timeoutMs` (default 15,000; maximum 120,000), `maxResponseBytes` (maximum/default 1,048,576), and a server-side `fetch` implementation. The client refuses browser execution, non-HTTPS base URLs, URL credentials, query/hash-bearing base URLs and network redirects; errors deliberately omit raw URLs/provider messages.
+Other methods are `vehicle(vin, { signal })`, `changes(query, { signal })`, `dataHealth({ signal })`, `holdSummary(query, { signal })`, `managerDispositions(query, { signal })`, `capabilities({ signal })`, and the `iterateInventory`/`iterateManagerDispositions` async iterators. Pass `delivered` and `review` to the client as real booleans; it encodes them as the `true`/`false` strings the REST contract expects. `token` can be a secret string or an asynchronous provider. Providers are resolved per request. Options include `timeoutMs` (default 15,000; maximum 120,000), `maxResponseBytes` (maximum/default 1,048,576), and a server-side `fetch` implementation. The client refuses browser execution, non-HTTPS base URLs, URL credentials, query/hash-bearing base URLs and network redirects; errors deliberately omit raw URLs/provider messages.
 
 Keep each app's key only in its backend environment/secret manager. Do not put it in frontend `VITE_*` variables, localStorage, browser source, screenshots, source control, or an AI conversation. A browser-only basic app needs your own small authenticated backend to call this API safely. Revoking one app should not require rotating every other app's key.
 
