@@ -1,4 +1,4 @@
-# Daily Inventory Flow photo sync + Cloudflare publish.
+﻿# Daily Inventory Flow photo sync + Cloudflare publish.
 #
 # Runs unattended under Windows Task Scheduler as JoeGallant on dt-4094, so the
 # DPAPI (current-user scoped) secret bundle decrypts without a prompt and without
@@ -144,6 +144,24 @@ try {
       Write-Log 'vauto: automation browser not listening on 127.0.0.1:9222 - skipping capture, prior labels still merge' 'WARN'
     }
 
+    # Step 1.45 - remaining factory warranty per VIN, figured at that vehicle's listed odometer.
+    # Ford/Lincoln coverage comes from Ford OASIS through the authenticated FMCDealer tab in the
+    # automation browser; every other make falls back to the Experian AutoCheck estimate, which is
+    # fetched straight from the dealer report page (no login, no clicking - the "enter mileage"
+    # calculator is client-side arithmetic the script reproduces exactly).
+    # NON-FATAL: warranty figures are reference data; a failure here must never block the publish.
+    try {
+      $warrOut = & node 'scripts\capture-warranty.mjs' 'run' $date '--budget-ms' '1200000' 2>&1 | Out-String
+      if ($LASTEXITCODE -ne 0) {
+        Write-Log "warranty: capture incomplete (exit $LASTEXITCODE) - continuing: $($warrOut.Trim())" 'WARN'
+      } else {
+        Write-Log "warranty: $($warrOut.Trim())"
+        if ($warrOut -match 'session_expired') { Write-Log 'warranty: FMCDealer session expired - sign in again in the Work PC Automation Browser (Ford/Lincoln units fall back to the AutoCheck estimate)' 'WARN' }
+      }
+    } catch {
+      Write-Log "warranty: skipped - $($_.Exception.Message)" 'WARN'
+    }
+
     # Step 1.5 - per-VIN resource enrichment (window sticker / invoice / vAuto CAI label)
     # Rebuilds data\vin-document-enrichment.json from whatever the morning captured,
     # values copied as printed, then proves it against the REAL validators before
@@ -185,3 +203,4 @@ try {
 }
 
 exit $exitCode
+

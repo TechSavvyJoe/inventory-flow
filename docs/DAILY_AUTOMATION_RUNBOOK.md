@@ -326,6 +326,46 @@ The old UI path (`--ui`) still exists as an emergency fallback only: if it is
 ever needed, the rules stand - **Ignore** on the duplicate modal, never "Copy
 Information", never save, never "Temporary Save".
 
+## Remaining factory warranty (STEP 1.45 of the publish; `capture-warranty.mjs`)
+
+Answers the question a salesperson actually asks: *how much factory warranty is left
+on this car right now?* One row per coverage, figured at that vehicle's own listed
+odometer.
+
+Two sources, in priority order:
+
+1. **Ford OASIS** (Ford/Lincoln only, authoritative). Fetched through the already
+   authenticated FMCDealer tab in the automation browser and parsed server-side.
+   Supplies the real **WARRANTY START DATE** (the in-service date), **MONTHS IN
+   SERVICE**, and each coverage's printed term ("3 years / 36,000 Miles (whichever
+   occurs first)").
+2. **Experian AutoCheck** (every make, estimate). The dealer report page carries the
+   whole Warranty Check table in its HTML - `data-warranty-age` (months in service),
+   `data-default-mileage`, and per row `data-warranty-miles` / `data-warranty-months`.
+   The "Enter Mileage -> Show My Coverage" button is **pure client-side arithmetic**
+   (`recalculateWarrantyTable()` in `autocheck.com/reportservice/report/fullReport/js/main.js`),
+   so the script reproduces that function exactly against the real odometer. No
+   browser, no clicking, no login - the report URL is already in the public snapshot.
+
+**Why OASIS wins for Ford/Lincoln:** AutoCheck's term table is generic. On
+3FMCR9BN0SRE88025 it lists Basic as *60 months*, so it reports 45 months left; Ford's
+actual bumper-to-bumper is 3yr/36k, so the true figure is **22 months**. Miles agree
+(both cap at 36,000) but time does not. Quoting the AutoCheck number on a Ford would
+overstate coverage by two years. Ford and Lincoln factory coverage transfers to the
+next owner at no cost, which is what makes the remaining figure worth quoting at all.
+
+Remaining time/miles are necessarily **computed** (term minus age, term minus
+odometer); every term, date and months-in-service is carried through verbatim. Status
+is ACTIVE / EXPIRED / N/A using AutoCheck's own expiry rules for both sources.
+
+Output `work\warranty-history\{date}-warranty.json` ->
+`build_vin_document_enrichment.py` attaches it as the `warrantyCheck` resource ->
+"Remaining factory warranty" card in the vehicle workspace, and the **Warranty** sheet
+in the workbook (`python work\add_warranty_sheet.py --report-date {date}`, run before
+the workbook is hashed). Non-fatal everywhere: warranty figures never block a publish.
+`oasisSession: session_expired` means the FMCDealer login lapsed - Ford/Lincoln units
+silently fall back to the AutoCheck estimate until Joe signs in again.
+
 ## Ford OASIS in the app - deploy gate
 
 `build_vin_document_enrichment.py` only emits `fordOasis` blocks when
@@ -337,6 +377,11 @@ operations, once: `npx wrangler login --browser=false` (Joe authorizes in any
 browser) -> `pnpm build` -> `pnpm cloud:validate` -> `pnpm cloud:deploy` ->
 `New-Item apps\inventory-ops\runtime\oasis-enabled.flag` -> `daily-cloud-publish.ps1 -Force`.
 Until then OASIS lives in the workbook sheet and `work\oasis-history\` only.
+
+**Done 09/12/2026 (PM).** The OASIS-aware Worker is deployed (version
+`0ebf1f83-54e9-4835-a733-e0e96dd16949`), the marker exists, and the release published
+and verified with 179 OASIS records / 99 units carrying open recalls. The same deploy
+carries `validateWarrantyCheck()`, so the warranty channel above needs no further gate.
 
 ## Standing rules from Joe
 

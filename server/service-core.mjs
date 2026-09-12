@@ -719,6 +719,14 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
         dataState: independentResourceState(source.resourceRecord.fordOasis),
       }
     : undefined
+  // Warranty coverage check is read-only reference evidence from the same
+  // channel. Remaining coverage never implies condition or availability.
+  const warrantyCheck = source.resourceRecord?.warrantyCheck
+    ? {
+        ...source.resourceRecord.warrantyCheck,
+        dataState: independentResourceState(source.resourceRecord.warrantyCheck),
+      }
+    : undefined
   const view = {
     vin: source.vin,
     stockNumber,
@@ -781,6 +789,7 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ...(windowSticker ? { windowSticker } : {}),
     ...(factoryEquipment ? { factoryEquipment } : {}),
     ...(fordOasis ? { fordOasis } : {}),
+    ...(warrantyCheck ? { warrantyCheck } : {}),
   }
   const safeSearchParts = [
     source.vin,
@@ -897,6 +906,25 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ...(fordOasis?.extendedCoverageExpirations ?? []),
     fordOasis ? 'Ford OASIS' : null,
     fordOasis?.openFieldServiceActions?.length ? 'open recall field service action' : null,
+    warrantyCheck?.dataState,
+    warrantyCheck?.sourceLabel,
+    warrantyCheck?.mileageEntered,
+    warrantyCheck?.mileageSource,
+    warrantyCheck?.autoCheck?.inServiceDate,
+    warrantyCheck?.autoCheck?.inServiceAgeMonths,
+    warrantyCheck?.fordOasis?.warrantyStartDate,
+    warrantyCheck?.fordOasis?.monthsInService,
+    ...[...(warrantyCheck?.autoCheck?.coverages ?? []), ...(warrantyCheck?.fordOasis?.coverages ?? [])].flatMap(
+      (coverage) => [
+        coverage.type,
+        coverage.termText,
+        coverage.remainingMilesText,
+        coverage.remainingTimeText,
+        coverage.status,
+        coverage.note,
+      ],
+    ),
+    warrantyCheck ? 'warranty check coverage' : null,
   ]
   if (context.canViewPrivateEvidence) safeSearchParts.push(privateSearchText(source))
   if (context.canViewPrivateEvidence && includePrivate) {
@@ -917,6 +945,7 @@ function mergedResourceCoverage(sources, enrichmentRows = 0) {
     windowStickers: 0,
     factoryEquipment: 0,
     fordOasis: 0,
+    warrantyCheck: 0,
     enrichmentRows,
   }
   for (const source of sources) {
@@ -926,13 +955,17 @@ function mergedResourceCoverage(sources, enrichmentRows = 0) {
     const hasWindowSticker = Boolean(source.publicRecord?.windowSticker)
     const hasFactoryEquipment = Boolean(source.resourceRecord?.factoryEquipment)
     const hasFordOasis = Boolean(source.resourceRecord?.fordOasis)
-    if (hasPhotos || hasAutoCheck || hasWindowSticker || hasFactoryEquipment || hasFordOasis) coverage.vehicles += 1
+    const hasWarrantyCheck = Boolean(source.resourceRecord?.warrantyCheck)
+    if (hasPhotos || hasAutoCheck || hasWindowSticker || hasFactoryEquipment || hasFordOasis || hasWarrantyCheck) {
+      coverage.vehicles += 1
+    }
     if (hasPhotos) coverage.photos += 1
     coverage.photoUrls += imageUrls.length
     if (hasAutoCheck) coverage.autoCheck += 1
     if (hasWindowSticker) coverage.windowStickers += 1
     if (hasFactoryEquipment) coverage.factoryEquipment += 1
     if (hasFordOasis) coverage.fordOasis += 1
+    if (hasWarrantyCheck) coverage.warrantyCheck += 1
   }
   return coverage
 }

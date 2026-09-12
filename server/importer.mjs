@@ -57,6 +57,7 @@ const CAI_FACTORY_EQUIPMENT_PATH_PATTERN =
 const PHOTO_ALLOWED_HOSTS = new Set(Object.values(STORE_CONFIG).map((store) => store.websiteHost))
 const RESOURCE_DATA_STATES = new Set(['current', 'stale_unverified', 'incomplete'])
 const FORD_OASIS_FIELD_SERVICE_ACTION_CODE_PATTERN = /^[0-9]{2}[A-Z][0-9]{2,3}$/
+const WARRANTY_CHECK_COVERAGE_STATUSES = new Set(['ACTIVE', 'EXPIRED', 'N/A'])
 
 export class SnapshotValidationError extends Error {
   constructor(message, details = undefined) {
@@ -414,6 +415,12 @@ function optionalBoundedNumber(value, label, { min = 0, max = 1_000_000 } = {}) 
 function optionalBoundedInteger(value, label, { min = 0, max = 1_000_000 } = {}) {
   if (value === undefined || value === null || value === '') return undefined
   assertValid(Number.isInteger(value) && value >= min && value <= max, `${label} must be an integer within the safe range`)
+  return value
+}
+
+function optionalBoolean(value, label) {
+  if (value === undefined || value === null) return undefined
+  assertValid(typeof value === 'boolean', `${label} must be a boolean`)
   return value
 }
 
@@ -868,6 +875,157 @@ function validatedFordOasis(value, vin) {
   return result
 }
 
+const WARRANTY_STATUSES = new Set(['ACTIVE', 'EXPIRED', 'N/A'])
+
+/**
+ * One warranty coverage row. Term text is carried through exactly as the source
+ * prints it; the remaining figures are computed against the vehicle's own
+ * odometer and age, and the computed numbers travel with the text that states them.
+ */
+function validatedWarrantyCoverage(value, vin, label, seen) {
+  assertOnlyKeys(
+    value,
+    new Set([
+      'type',
+      'termText',
+      'termMonths',
+      'termMiles',
+      'unlimitedMiles',
+      'unlimitedMonths',
+      'remainingMiles',
+      'remainingMonths',
+      'remainingMilesText',
+      'remainingTimeText',
+      'status',
+      'note',
+    ]),
+    `${label} coverage`,
+    { vin },
+  )
+  const type = optionalBoundedText(value.type, `${label} coverage type`, { max: 60 })
+  assertValid(type, `${label} coverage type is required`, { vin })
+  const identity = type.toLowerCase()
+  assertValid(!seen.has(identity), `${label} coverages contain a duplicate type`, { vin, type })
+  seen.add(identity)
+
+  const termText = optionalBoundedText(value.termText, `${label} coverage term`, { max: 120 })
+  assertValid(termText, `${label} coverage term is required`, { vin, type })
+  const remainingMilesText = optionalBoundedText(value.remainingMilesText, `${label} remaining miles text`, { max: 40 })
+  assertValid(remainingMilesText, `${label} remaining miles text is required`, { vin, type })
+  const remainingTimeText = optionalBoundedText(value.remainingTimeText, `${label} remaining time text`, { max: 40 })
+  assertValid(remainingTimeText, `${label} remaining time text is required`, { vin, type })
+  assertValid(WARRANTY_STATUSES.has(value.status), `${label} coverage status is invalid`, { vin, type })
+
+  const row = { type, termText, remainingMilesText, remainingTimeText, status: value.status }
+  for (const [key, min, max] of [
+    ['termMonths', 0, 600],
+    ['termMiles', 0, 999_999],
+    ['remainingMonths', 0, 600],
+    ['remainingMiles', 0, 999_999],
+  ]) {
+    const number = optionalBoundedInteger(value[key], `${label} coverage ${key}`, { min, max })
+    if (number !== undefined) row[key] = number
+  }
+  for (const key of ['unlimitedMiles', 'unlimitedMonths']) {
+    if (value[key] === undefined || value[key] === null) continue
+    assertValid(typeof value[key] === 'boolean', `${label} coverage ${key} must be a boolean`, { vin, type })
+    if (value[key]) row[key] = true
+  }
+  const note = optionalBoundedText(value.note, `${label} coverage note`, { max: 160 })
+  if (note) row.note = note
+  return row
+}
+
+/**
+ * Remaining factory warranty for one VIN, figured at that vehicle's own listed
+ * odometer. Two independent read-only sources may be present:
+ *   fordOasis  - Ford/Lincoln only, the manufacturer's own record (authoritative)
+ *   autoCheck  - Experian's estimate, available for every make
+ * At least one must be present. No owner or customer field exists in either
+ * block and none is accepted here.
+ */
+function validatedWarrantyCheck(value, vin) {
+  assertOnlyKeys(
+    value,
+    new Set(['dataState', 'capturedAt', 'sourceLabel', 'mileageEntered', 'mileageSource', 'autoCheck', 'fordOasis']),
+    'Warranty check record',
+    { vin },
+  )
+  assertValid(RESOURCE_DATA_STATES.has(value.dataState), 'Warranty check data state is invalid', { vin })
+  const capturedAt = optionalIsoTimestamp(value.capturedAt, 'Warranty check capturedAt')
+  assertValid(capturedAt, 'Warranty check capturedAt is required', { vin })
+  const sourceLabel = optionalBoundedText(value.sourceLabel, 'Warranty check sourceLabel', { max: 160 })
+  assertValid(sourceLabel, 'Warranty check sourceLabel is required', { vin })
+  const mileageEntered = optionalBoundedInteger(value.mileageEntered, 'Warranty check mileageEntered', {
+    min: 0,
+    max: 999_999,
+  })
+  assertValid(mileageEntered !== undefined, 'Warranty check mileageEntered is required', { vin })
+
+  const result = { dataState: value.dataState, capturedAt, sourceLabel, mileageEntered }
+  const mileageSource = optionalBoundedText(value.mileageSource, 'Warranty check mileageSource', { max: 80 })
+  if (mileageSource) result.mileageSource = mileageSource
+
+  if (value.autoCheck !== undefined && value.autoCheck !== null) {
+    const block = value.autoCheck
+    assertOnlyKeys(
+      block,
+      new Set(['inServiceDate', 'inServiceAgeMonths', 'defaultMileage', 'coverages']),
+      'Warranty check AutoCheck block',
+      { vin },
+    )
+    const rows = block.coverages ?? []
+    assertValid(
+      Array.isArray(rows) && rows.length > 0 && rows.length <= 12,
+      'Warranty check AutoCheck coverages must be a non-empty bounded array',
+      { vin },
+    )
+    const seen = new Set()
+    const out = { coverages: rows.map((row) => validatedWarrantyCoverage(row, vin, 'Warranty check AutoCheck', seen)) }
+    const inServiceDate = optionalBoundedText(block.inServiceDate, 'Warranty check AutoCheck inServiceDate', { max: 40 })
+    if (inServiceDate) out.inServiceDate = inServiceDate
+    for (const [key, min, max] of [
+      ['inServiceAgeMonths', 0, 600],
+      ['defaultMileage', 0, 999_999],
+    ]) {
+      const number = optionalBoundedInteger(block[key], `Warranty check AutoCheck ${key}`, { min, max })
+      if (number !== undefined) out[key] = number
+    }
+    result.autoCheck = out
+  }
+
+  if (value.fordOasis !== undefined && value.fordOasis !== null) {
+    const block = value.fordOasis
+    assertOnlyKeys(block, new Set(['warrantyStartDate', 'monthsInService', 'coverages']), 'Warranty check OASIS block', {
+      vin,
+    })
+    const warrantyStartDate = optionalBoundedText(block.warrantyStartDate, 'Warranty check OASIS warrantyStartDate', {
+      max: 40,
+    })
+    assertValid(warrantyStartDate, 'Warranty check OASIS warrantyStartDate is required', { vin })
+    const monthsInService = optionalBoundedInteger(block.monthsInService, 'Warranty check OASIS monthsInService', {
+      min: 0,
+      max: 600,
+    })
+    assertValid(monthsInService !== undefined, 'Warranty check OASIS monthsInService is required', { vin })
+    const rows = block.coverages ?? []
+    assertValid(
+      Array.isArray(rows) && rows.length > 0 && rows.length <= 12,
+      'Warranty check OASIS coverages must be a non-empty bounded array',
+      { vin },
+    )
+    const seen = new Set()
+    result.fordOasis = {
+      warrantyStartDate,
+      monthsInService,
+      coverages: rows.map((row) => validatedWarrantyCoverage(row, vin, 'Warranty check OASIS', seen)),
+    }
+  }
+
+  assertValid(result.autoCheck || result.fordOasis, 'Warranty check record carries no warranty source', { vin })
+  return result
+}
+
 export function validateVinDocumentEnrichment(value) {
   assertOnlyKeys(
     value,
@@ -883,6 +1041,7 @@ export function validateVinDocumentEnrichment(value) {
   let factoryEquipmentCount = 0
   let externalAutoCheckCount = 0
   let fordOasisCount = 0
+  let warrantyCheckCount = 0
   for (const [rawVin, record] of entries) {
     const vin = normalizedVin(rawVin)
     assertValid(VIN_PATTERN.test(vin) && rawVin === vin, 'VIN document enrichment key is not a canonical VIN', {
@@ -890,7 +1049,7 @@ export function validateVinDocumentEnrichment(value) {
     })
     assertOnlyKeys(
       record,
-      new Set(['vin', 'factoryEquipment', 'autoCheckReport', 'fordOasis']),
+      new Set(['vin', 'factoryEquipment', 'autoCheckReport', 'fordOasis', 'warrantyCheck']),
       'VIN document enrichment record',
       { vin },
     )
@@ -909,19 +1068,25 @@ export function validateVinDocumentEnrichment(value) {
       record.fordOasis === undefined || record.fordOasis === null
         ? undefined
         : validatedFordOasis(record.fordOasis, vin)
+    const warrantyCheck =
+      record.warrantyCheck === undefined || record.warrantyCheck === null
+        ? undefined
+        : validatedWarrantyCheck(record.warrantyCheck, vin)
     assertValid(
-      factoryEquipment || autoCheckReport || fordOasis,
+      factoryEquipment || autoCheckReport || fordOasis || warrantyCheck,
       'VIN document enrichment record contains no usable resource',
       { vin },
     )
     if (factoryEquipment) factoryEquipmentCount += 1
     if (autoCheckReport) externalAutoCheckCount += 1
     if (fordOasis) fordOasisCount += 1
+    if (warrantyCheck) warrantyCheckCount += 1
     recordsByVin[vin] = {
       vin,
       ...(factoryEquipment ? { factoryEquipment } : {}),
       ...(autoCheckReport ? { autoCheckReport } : {}),
       ...(fordOasis ? { fordOasis } : {}),
+      ...(warrantyCheck ? { warrantyCheck } : {}),
     }
   }
   return {
@@ -937,6 +1102,8 @@ export function validateVinDocumentEnrichment(value) {
       // predates the channel (its metadata allow-list has no fordOasisCount key),
       // so the daily publish keeps working before the OASIS-aware Worker is deployed.
       ...(fordOasisCount > 0 ? { fordOasisCount } : {}),
+      // Same backward-compatibility rule for the warranty check channel.
+      ...(warrantyCheckCount > 0 ? { warrantyCheckCount } : {}),
     },
   }
 }
