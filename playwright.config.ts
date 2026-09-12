@@ -14,7 +14,9 @@ export default defineConfig({
     channel: 'chrome',
   },
   webServer: {
-    command: 'pnpm dev',
+    // The synthetic demo, never the live-source server: `pnpm dev` reads the
+    // developer's runtime/ sources and is reserved for the authorized host.
+    command: 'pnpm dev:demo',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: true,
     timeout: 120_000,
