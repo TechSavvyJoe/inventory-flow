@@ -89,12 +89,12 @@ html {
   min-height: 42px !important;
   border-color: #075ca8 !important;
   color: #fff !important;
-  background: linear-gradient(135deg, #0a67b8, #074d8c) !important;
+  background: #075ca8 !important;
   font-size: 12px !important;
   font-weight: 700 !important;
   line-height: 1.25 !important;
   text-decoration: none !important;
-  box-shadow: 0 5px 14px rgb(7 77 140 / 18%) !important;
+  box-shadow: none !important;
 }
 
 .inventory-workspace .inventory-vehicle-document__link:hover {
@@ -327,8 +327,8 @@ html {
 #root .ops-queue .ops-resolve > button {
   border-color: #0759bd !important;
   color: #fff !important;
-  background: linear-gradient(180deg, #0a66c7, #0759bd) !important;
-  box-shadow: 0 5px 14px rgb(7 89 189 / 18%) !important;
+  background: #0759bd !important;
+  box-shadow: none !important;
 }
 
 #root .ops-queue :is(.ops-secondary-actions button, .ops-action-grid label button) {
@@ -404,8 +404,8 @@ html {
 #root .transfer-workspace-v3 .mif-button--primary {
   border-color: #0759bd !important;
   color: #fff !important;
-  background: linear-gradient(180deg, #0a66c7, #0759bd) !important;
-  box-shadow: 0 5px 14px rgb(7 89 189 / 18%) !important;
+  background: #0759bd !important;
+  box-shadow: none !important;
 }
 
 #root .transfer-tracker-v3 .mif-button--secondary,

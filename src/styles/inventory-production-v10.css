@@ -106,6 +106,7 @@
 
 #root .inventory-experience--modern :where(
   .inventory-command-bar .inventory-scope-switch--modern button,
+  .inventory-page-header--modern .inventory-scope-switch--modern button,
   .inventory-quick-filters[class] button,
   .inventory-filter-button,
   .inventory-sort-composer > summary,
@@ -119,19 +120,25 @@
   letter-spacing: 0 !important;
 }
 
-#root .inventory-experience--modern .inventory-command-bar .inventory-scope-switch--modern button.is-active {
+/* The switch renders in the page header (InventoryExperience.tsx), so the
+   command-bar-only selectors below never reached it and the prototype
+   gradient from inventory-modern.css was what actually painted. */
+#root .inventory-experience--modern .inventory-command-bar .inventory-scope-switch--modern button.is-active,
+#root .inventory-experience--modern .inventory-page-header--modern .inventory-scope-switch--modern button.is-active {
   background: var(--v10-blue) !important;
   color: var(--v10-surface) !important;
   -webkit-text-fill-color: var(--v10-surface);
   box-shadow: none !important;
 }
 
-#root .inventory-experience--modern .inventory-command-bar .inventory-scope-switch--modern button.is-active > span {
+#root .inventory-experience--modern .inventory-command-bar .inventory-scope-switch--modern button.is-active > span,
+#root .inventory-experience--modern .inventory-page-header--modern .inventory-scope-switch--modern button.is-active > span {
   color: inherit !important;
   -webkit-text-fill-color: inherit;
 }
 
-#root .inventory-experience--modern .inventory-command-bar .inventory-scope-switch--modern button.is-active b {
+#root .inventory-experience--modern .inventory-command-bar .inventory-scope-switch--modern button.is-active b,
+#root .inventory-experience--modern .inventory-page-header--modern .inventory-scope-switch--modern button.is-active b {
   color: var(--v10-blue) !important;
   -webkit-text-fill-color: currentColor;
   background: var(--v10-surface) !important;

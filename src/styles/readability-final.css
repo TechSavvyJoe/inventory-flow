@@ -184,6 +184,7 @@ html {
 #root .inventory-experience--modern :where(
   .inventory-quick-filter-count,
   .inventory-command-bar .inventory-scope-switch--modern button b,
+  .inventory-page-header--modern .inventory-scope-switch--modern button b,
   .inventory-sort-header__direction,
   .inventory-sort-header__priority,
   .inventory-photo-count,
@@ -413,6 +414,91 @@ html {
 #root .transfer-tracker-v3 .mif-move-progress span {
   font-size: var(--app-readable-meta-size) !important;
   line-height: 1.35 !important;
+}
+
+/* Queue counts and the card "Next" label sat at 4.2-4.4:1 on the list's
+   light-gray surfaces; the shared neutral roles clear 4.5:1 with margin. */
+#root .transfer-workspace-v3 .transfer-list-views button:not(.is-active) > span {
+  color: var(--app-readable-support) !important;
+}
+
+/* The selected pill's badge was white text on a 20% white wash over the blue,
+   which lightens the blue to 4.35:1. Invert it like the inventory scope
+   switch: blue count on a white badge, well above the floor. */
+#root .transfer-workspace-v3 .transfer-list-views button.is-active > span {
+  color: var(--move-blue) !important;
+  background: var(--surface) !important;
+}
+
+#root .transfer-workspace-v3 .transfer-next small {
+  color: var(--app-readable-muted) !important;
+}
+
+/* Transfer tracker and request workspace: the feature stylesheet still owns
+   the layout, but its prototype-era dense-desktop block set event times to
+   8 px, status labels to 9 px, and most metadata to 10-11 px, and its muted
+   text token sits at 3.97:1 on white. Every visible text role here joins the
+   shared 12/13 px floor and the same neutral text roles the manager feature
+   already uses. */
+#root .mif-transfer-feature {
+  --mif-secondary: var(--app-readable-support);
+  --mif-muted: var(--app-readable-muted);
+}
+
+#root .mif-transfer-feature :where(
+  .mif-timeline-event time,
+  .mif-timeline-meta span,
+  .mif-event-source,
+  .mif-status-lane dt,
+  .mif-status-detail,
+  .mif-source-stale,
+  .mif-tracker-header small,
+  .mif-next-action span,
+  .mif-tracker-accountability span,
+  .mif-tracker-accountability small,
+  .mif-tracker-request-summary span,
+  .mif-tracker-request-summary small,
+  .mif-condition-banner small,
+  .mif-tracker-section h3,
+  .mif-technical-status-details > summary,
+  .mif-accountability-list li > span,
+  .mif-accountability-list small,
+  .mif-request-source-strip small,
+  .mif-field-error,
+  .mif-auto-return-rule span,
+  .mif-check-field small,
+  .mif-request-review section > span
+) {
+  font-size: var(--app-readable-meta-size) !important;
+  line-height: 1.4 !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}
+
+#root .mif-transfer-feature :where(
+  .mif-timeline-copy > span,
+  .mif-status-value,
+  .mif-tracker-request-summary strong,
+  .mif-tracker-accountability strong,
+  .mif-condition-banner span
+) {
+  font-size: var(--app-readable-support-size) !important;
+  line-height: 1.45 !important;
+}
+
+/* The 20 px accountability step circle and the 72 px time column were sized
+   for the old 8-10 px type; give the larger glyphs room instead of clipping. */
+#root .mif-transfer-feature .mif-accountability-list li > span {
+  height: 22px !important;
+  width: 22px !important;
+}
+
+@media (min-width: 721px) {
+  /* Below 720px the feature stacks the time above the copy in two columns;
+     this three-column widening applies only where that layout is in use. */
+  #root .mif-transfer-feature .mif-timeline-event {
+    grid-template-columns: 22px minmax(96px, auto) minmax(0, 1fr) !important;
+  }
 }
 
 @media (max-width: 760px) {
