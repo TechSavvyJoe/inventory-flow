@@ -3,7 +3,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { randomBytes } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { bindWranglerQuery, cloudflareIntegrationDatabase, createIntegrationClient, listIntegrationClients, parseManagementArguments, revokeIntegrationClient, secureCredentialPath, validateCreateOptions, wranglerIntegrationDatabase, writePrivateIntegrationCredential } from '../../scripts/manage-integration-client.mjs'
@@ -172,7 +172,9 @@ describe('explicit integration provisioning', () => {
 describe('private credential file handling', () => {
   it('restricts output to one explicitly named ignored private JSON file', () => {
     const root = fileFixture()
-    expect(secureCredentialPath(options.secretOutput, root).target).toBe(path.join(root, options.secretOutput))
+    // The target is anchored to the app root's real location (macOS resolves
+    // its temp directory through /var -> /private/var), so compare to that.
+    expect(secureCredentialPath(options.secretOutput, root).target).toBe(path.join(realpathSync(root), options.secretOutput))
     for (const output of ['credential.json', '../secret.json', 'runtime/secret.json', 'runtime/integration-credentials/../secret.json', 'runtime/integration-credentials/nested/secret.json', 'runtime/integration-credentials/CON.json']) {
       expect(() => secureCredentialPath(output, root)).toThrow('SECRET_OUTPUT_OUTSIDE_PRIVATE_DIRECTORY')
     }

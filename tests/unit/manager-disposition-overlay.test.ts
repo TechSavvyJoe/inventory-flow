@@ -1,7 +1,7 @@
 // @vitest-environment node
 // @ts-nocheck -- production modules are plain ESM; every fixture is synthetic.
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -90,6 +90,44 @@ describe('strict manager disposition overlay', () => {
     expect(loaded.sourceRun.sha256).toBe(managerDispositionSha256(loaded.overlay).toUpperCase())
     expect(loaded.sourceRun.bytes).toBe(new TextEncoder().encode(canonicalManagerDispositionJson(loaded.overlay)).byteLength)
     expect(() => loadManagerDispositionOverlay({ workspaceRoot: root, reportDate: bundle.reportDate, vehicles: bundle.release.vehicles, manifestBinding: { ...binding, sha256: '0'.repeat(64) } })).toThrow(/checksum differs/)
+  })
+
+  it('accepts a workspace reached through a symlinked ancestor but rejects any symlink inside it', () => {
+    // macOS resolves its default temp directory through /var -> /private/var,
+    // and a deployment can mount the workspace behind a symlink too. Neither
+    // is a redirect *within* the workspace, which is what the guard exists to
+    // catch: a symlinked source directory or file that escapes the workspace.
+    const { bundle, source } = fixtures()
+    const real = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'manager-overlay-real-'))); directories.push(real)
+    const alias = path.join(realpathSync(mkdtempSync(path.join(os.tmpdir(), 'manager-overlay-alias-'))), 'workspace'); directories.push(path.dirname(alias))
+    symlinkSync(real, alias, 'dir')
+    const period = bundle.reportDate.slice(0, 7)
+    const write = (root) => {
+      const directory = path.join(root, 'work', 'manager-supplied', 'sold-logs'); mkdirSync(directory, { recursive: true })
+      const filePath = path.join(directory, `${period}-howell-operational.json`)
+      const raw = Buffer.from(JSON.stringify(source)); writeFileSync(filePath, raw)
+      return { filePath, sha256: createHash('sha256').update(raw).digest('hex').toUpperCase() }
+    }
+    const binding = (filePath, sha256) => ({ status: 'complete', classification: 'operational-redacted', source_type: 'manager-log', path: filePath, sha256, source_store: 'Howell', source_period: period, sold_records: 3, delivered_records: 1, sold_not_marked_delivered: 2, matched_current_public_vins: 2, unmatched_records: 1, conflicting_records: 0, review_records: 1, cloud_upload_allowed: true })
+    const load = (workspaceRoot, filePath, sha256) => loadManagerDispositionOverlay({ workspaceRoot, reportDate: bundle.reportDate, vehicles: bundle.release.vehicles, manifestBinding: binding(filePath, sha256) })
+
+    // The workspace addressed through the symlinked ancestor loads.
+    const viaAlias = write(alias)
+    expect(load(alias, viaAlias.filePath, viaAlias.sha256).sourceRun.metadata.boundSourceSha256).toBe(viaAlias.sha256)
+
+    // A source directory that is itself a symlink out of the workspace does not.
+    const outside = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'manager-overlay-outside-'))); directories.push(outside)
+    const escaped = write(outside)
+    const trapped = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'manager-overlay-trap-'))); directories.push(trapped)
+    mkdirSync(path.join(trapped, 'work', 'manager-supplied'), { recursive: true })
+    symlinkSync(path.join(outside, 'work', 'manager-supplied', 'sold-logs'), path.join(trapped, 'work', 'manager-supplied', 'sold-logs'), 'dir')
+    expect(() => load(trapped, path.join(trapped, 'work', 'manager-supplied', 'sold-logs', `${period}-howell-operational.json`), escaped.sha256)).toThrow(/must not redirect/)
+
+    // And a symlinked file is refused before its content is read.
+    const linked = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'manager-overlay-link-'))); directories.push(linked)
+    const linkedDirectory = path.join(linked, 'work', 'manager-supplied', 'sold-logs'); mkdirSync(linkedDirectory, { recursive: true })
+    symlinkSync(escaped.filePath, path.join(linkedDirectory, `${period}-howell-operational.json`), 'file')
+    expect(() => load(linked, path.join(linkedDirectory, `${period}-howell-operational.json`), escaped.sha256)).toThrow(/regular file/)
   })
 
   it('binds the sanitized projection and all four counts into cloud validation', () => {
