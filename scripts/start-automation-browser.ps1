@@ -76,6 +76,7 @@ $browserArgs = @(
   '--restore-last-session'
   '--disable-session-crashed-bubble'
   '--window-size=1400,900'
+  '--remote-debugging-port=9222'      # bound to 127.0.0.1 only; used by keep-dealermail-alive.mjs
 ) + $OpenUrls
 
 Write-Log "launching automation comet (minimized) with $($OpenUrls.Count) tab(s)"
