@@ -8,7 +8,7 @@ import { buildSyntheticRelease, SYNTHETIC_NOW } from '../../fixtures/synthetic-r
 import { getCurrentDataset, importRelease, openInventoryDatabase } from '../../server/database.mjs'
 import { createInventoryService } from '../../server/service.mjs'
 import { createInventoryServiceCore } from '../../server/service-core.mjs'
-import { datasetFromRelease, loadD1Repository, RepositoryConflictError } from '../../cloudflare/src/repository.mjs'
+import { d1SnapshotRepository, datasetFromRelease, loadD1Repository, RepositoryConflictError } from '../../cloudflare/src/repository.mjs'
 
 const openDatabases = []
 afterEach(() => { while (openDatabases.length) openDatabases.pop().close() })
@@ -395,6 +395,37 @@ describe('D1 shared operational repository', () => {
       })
     }
     expect(datasetFromRelease(release)).toEqual(expected)
+  })
+
+  it('reads one transfer\'s events without walking the whole ledger', () => {
+    // Bootstrap builds a view for every visible transfer, and each view needs
+    // that transfer's events. Scanning the entire event ledger once per
+    // transfer is quadratic, and this Worker runs under a 1,000 ms CPU cap
+    // that a busy dealership's accumulated ledger would eventually exceed.
+    let reads = 0
+    const database = { transfers: [], transferEvents: [], pending: [], closed: false }
+    for (let transfer = 0; transfer < 60; transfer += 1) {
+      const id = `synthetic-transfer-${transfer}`
+      database.transfers.push({ id, vin: '1FTFW1E50NFA00001', status: 'requested' })
+      for (let index = 0; index < 10; index += 1) {
+        const row = { id: `${id}-event-${index}`, occurred_at: `2026-09-${String(index + 1).padStart(2, '0')}T12:00:00Z`, created_at: '2026-09-09T12:00:00Z', event_type: 'note_added' }
+        Object.defineProperty(row, 'transfer_request_id', { enumerable: true, get() { reads += 1; return id } })
+        database.transferEvents.push(row)
+      }
+    }
+    const total = database.transferEvents.length
+    for (const row of database.transfers) expect(d1SnapshotRepository.getTransferEvents(database, row.id)).toHaveLength(10)
+
+    // One grouping pass over the ledger plus one read per returned row as
+    // it is cloned — linear in the ledger, not one full pass per transfer
+    // (which was 36,600 reads for this fixture).
+    expect(reads).toBeLessThanOrEqual(total * 3)
+
+    // An event appended during the same request must still be visible.
+    const appended = d1SnapshotRepository.appendTransferEvent(database, 'synthetic-transfer-0', { type: 'note_added', actor: 'Synthetic porter', actorRole: 'porter', store: 'Howell', note: 'Synthetic note', occurredAt: '2026-09-30T12:00:00Z', createdAt: '2026-09-30T12:00:00Z' }, {})
+    expect(appended.created).toBe(true)
+    expect(d1SnapshotRepository.getTransferEvents(database, 'synthetic-transfer-0')).toHaveLength(11)
+    expect(d1SnapshotRepository.getTransferEvents(database, 'synthetic-transfer-1')).toHaveLength(10)
   })
 
   it('defensively isolates every consumed field from release and home-assignment mutations', () => {
