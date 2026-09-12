@@ -36,10 +36,16 @@ function canonicalJson(value) {
 // Keep provenance labels and filenames while removing machine-specific path
 // prefixes. Restrict this transformation to metadata: exact vehicle/customer
 // text and complete raw snapshots are preserved without rewriting their values.
+//
+// The key name is the signal, not the prefix. A prefix allowlist missed every
+// path outside /Users, /home, /tmp and /var — macOS realpaths under /private,
+// external volumes, /opt, /srv, /mnt, and relative or home-relative paths all
+// went into the published metadata verbatim. Any value under a *path key that
+// contains a separator is reduced to its filename; URLs are left alone.
 export function portableMetadata(value, parentKey = '') {
   if (Array.isArray(value)) return value.map((item) => portableMetadata(item, parentKey))
   if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, portableMetadata(item, key)]))
-  if (typeof value === 'string' && /(?:path|paths)$/i.test(parentKey) && /^(?:[a-z]:[\\/]|\\\\|\/(?:Users|home|tmp|var)\/)/i.test(value)) {
+  if (typeof value === 'string' && /(?:path|paths)$/i.test(parentKey) && /[\\/]/.test(value) && !/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
     return `local-file:${value.replace(/\\/g, '/').split('/').filter(Boolean).at(-1)}`
   }
   return value
