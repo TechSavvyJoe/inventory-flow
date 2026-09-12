@@ -1231,4 +1231,58 @@ describe('Inventory Flow API', () => {
     expect(recurring.id).not.toBe(attentionId)
     expect(recurring).toMatchObject({ status: 'open', events: [] })
   })
+
+  it('never hands the DealerMail salesperson to transport roles through a manager-touched hold-review item', async () => {
+    // A hold-review item's `owner` is the DealerMail salesperson only in a
+    // privileged caller's snapshot; the attention workflow row it writes to is
+    // shared by every role. Recording any action must not launder that name
+    // into the row where drivers, porters and coordinators can read it back —
+    // their own vehicle view deliberately omits it.
+    // The fixture's holds expect delivery after the report date, so no
+    // hold-review item exists by default; back-date one to make it past-expected.
+    const { baseUrl } = await harness((release) => {
+      const held = release.vehicles.find((vehicle) =>
+        vehicle.holdRecord?.holdDetailRows?.some((row) => row.lifecycleStatus === 'active' && row.holdPosition === 'primary'),
+      )
+      for (const row of held?.holdRecord?.holdDetailRows ?? []) row.expectedDeliveryDateRaw = '2026-08-28'
+    })
+    let holdReview: { id: string; vin: string; owner: string; store: string } | undefined
+    for (const store of ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']) {
+      const queue = await fetch(`${baseUrl}/api/attention`, { headers: roleHeaders('manager', store, 'Redaction Test Manager') }).then((response) => response.json())
+      holdReview = queue.items.find(
+        (item: { type: string; owner?: string }) => ['past_expected_hold', 'hold_alert'].includes(item.type) && item.owner && !/manager$/i.test(item.owner),
+      )
+      if (holdReview) break
+    }
+    expect(holdReview, 'fixture should expose a manager-visible hold-review item owned by the salesperson').toBeTruthy()
+    const { store } = holdReview!
+    const salesperson = holdReview!.owner
+    const managerHeaders = roleHeaders('manager', store, 'Redaction Test Manager')
+
+    const driverBefore = await fetch(`${baseUrl}/api/vehicles/${encodeURIComponent(holdReview!.vin)}`, {
+      headers: roleHeaders('driver', store, 'Redaction Test Driver'),
+    }).then((response) => response.json())
+    expect(driverBefore.hold.primarySalesperson).toBeUndefined()
+
+    const acknowledged = await postAttentionEvent(baseUrl, holdReview!.id, { role: 'manager', store, user: 'Redaction Test Manager' }, { type: 'acknowledge' })
+    expect(acknowledged.response.status).toBe(201)
+
+    for (const role of ['driver', 'porter', 'coordinator']) {
+      const headers = roleHeaders(role, store, `Redaction Test ${role}`)
+      const [bootstrap, list, single] = await Promise.all([
+        fetch(`${baseUrl}/api/bootstrap?homeStore=${encodeURIComponent(store)}&role=${role}`, { headers }).then((response) => response.json()),
+        fetch(`${baseUrl}/api/attention`, { headers }).then((response) => response.json()),
+        fetch(`${baseUrl}/api/attention/${encodeURIComponent(holdReview!.id)}`, { headers }).then((response) => response.json()),
+      ])
+      const surfaces = JSON.stringify({ bootstrap: bootstrap.attention, list: list.items, single })
+      expect(surfaces, `${role} must not receive the salesperson name`).not.toContain(salesperson)
+      // The filter is an oracle too: a probe must not confirm the name exists.
+      const probe = await fetch(`${baseUrl}/api/attention?assignedTo=${encodeURIComponent(salesperson)}`, { headers }).then((response) => response.json())
+      expect(probe.items.some((item: { id: string }) => item.id === holdReview!.id)).toBe(false)
+    }
+
+    // The manager who can see the salesperson still sees the item attributed correctly.
+    const managerAfter = await fetch(`${baseUrl}/api/attention/${encodeURIComponent(holdReview!.id)}`, { headers: managerHeaders }).then((response) => response.json())
+    expect(managerAfter.assignedTo).toBe(salesperson)
+  })
 })

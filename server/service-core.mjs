@@ -12,7 +12,7 @@ import {
   upsertAttentionWorkflow,
   createRepositoryContext,
 } from './repository-dispatch.mjs'
-import { allowedAttentionActions, buildAttentionMutation } from './attention-workflow.mjs'
+import { allowedAttentionActions, buildAttentionMutation, canSeePersistedAssignee } from './attention-workflow.mjs'
 import { STORE_NAMES } from './constants.mjs'
 import { normalizePublicChangeCounts } from './public-change-counts.mjs'
 import { MANAGER_DISPOSITION_COVERAGE_CAVEAT } from './manager-disposition-schema.mjs'
@@ -1096,7 +1096,7 @@ function mergeAttentionWorkflow(database, items, context) {
       ...item,
       status: workflow?.status || 'open',
       priority: workflow?.priority || defaultAttentionPriority(item),
-      assignedTo: cleanText(workflow?.assigned_to) || cleanText(item.owner),
+      assignedTo: (canSeePersistedAssignee(item, context) ? cleanText(workflow?.assigned_to) : null) || cleanText(item.owner),
       assignedRole: cleanText(workflow?.assigned_role),
       followUpAt: cleanText(workflow?.follow_up_at),
       resolutionCode: cleanText(workflow?.resolution_code),
