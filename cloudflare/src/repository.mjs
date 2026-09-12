@@ -227,6 +227,31 @@ function attentionEventRow(key, event) {
   }
 }
 
+// Bootstrap builds a view for every visible transfer and each view needs that
+// transfer's events, so filtering the whole ledger per transfer is quadratic —
+// and this Worker runs under a 1,000 ms CPU cap. The snapshot is per request,
+// so one grouping pass is built on first use and kept in step with appends.
+function transferEventsById(database) {
+  if (!database.transferEventsById) {
+    const index = new Map()
+    for (const row of database.transferEvents) {
+      const existing = index.get(row.transfer_request_id)
+      if (existing) existing.push(row)
+      else index.set(row.transfer_request_id, [row])
+    }
+    database.transferEventsById = index
+  }
+  return database.transferEventsById
+}
+function recordTransferEvent(database, row) {
+  database.transferEvents.push(row)
+  const index = database.transferEventsById
+  if (!index) return
+  const existing = index.get(row.transfer_request_id)
+  if (existing) existing.push(row)
+  else index.set(row.transfer_request_id, [row])
+}
+
 export const d1SnapshotRepository = Object.freeze({
   getCurrentDataset(database) { return database.dataset },
   listTransferRows(database, { vin, status, store } = {}) {
@@ -236,7 +261,7 @@ export const d1SnapshotRepository = Object.freeze({
   },
   getTransferRow(database, id) { return clone(database.transfers.find((row) => row.id === id) ?? null) },
   getTransferEvents(database, id) {
-    return database.transferEvents.filter((row) => row.transfer_request_id === id)
+    return [...(transferEventsById(database).get(id) ?? [])]
       .sort((a, b) => compare(a.occurred_at, b.occurred_at) || compare(a.created_at, b.created_at) || compare(a.id, b.id)).map(clone)
   },
   insertTransferRequest(database, request, initialEvent) {
@@ -247,13 +272,13 @@ export const d1SnapshotRepository = Object.freeze({
     insert(database, 'transfer_requests', TRANSFER_COLUMNS, row)
     insert(database, 'transfer_events', TRANSFER_EVENT_COLUMNS, event)
     database.transfers.push(row)
-    database.transferEvents.push(event)
+    recordTransferEvent(database, event)
     return { row: clone(row), created: true }
   },
   appendTransferEvent(database, id, event, requestPatch) {
     const current = database.transfers.find((row) => row.id === id)
     if (!current) return { row: null, created: false }
-    if (event.idempotencyKey && database.transferEvents.some((row) => row.transfer_request_id === id && row.idempotency_key === event.idempotencyKey)) {
+    if (event.idempotencyKey && (transferEventsById(database).get(id) ?? []).some((row) => row.idempotency_key === event.idempotencyKey)) {
       return { row: clone(current), created: false }
     }
     const row = transferEventRow(id, event)
@@ -261,7 +286,7 @@ export const d1SnapshotRepository = Object.freeze({
     const entries = Object.entries(requestPatch).filter(([key]) => TRANSFER_PATCH_COLUMNS.has(key)).map(([key, value]) => [key, value ?? null])
     if (entries.length) stage(database, `UPDATE transfer_requests SET ${entries.map(([key]) => `${key} = ?`).join(', ')} WHERE id = ?`, [...entries.map(([, value]) => value), id])
     Object.assign(current, Object.fromEntries(entries))
-    database.transferEvents.push(row)
+    recordTransferEvent(database, row)
     return { row: clone(current), created: true }
   },
   listAttentionWorkflowRows(database) {
