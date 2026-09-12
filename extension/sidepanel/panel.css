@@ -318,6 +318,10 @@ img { max-width: 100%; display: block; }
 .d-line b { font-weight: 600; }
 .d-line span { color: var(--ink-2); }
 .d-caption { margin: 6px 0 0; font-size: 11.5px; color: var(--ink-3); line-height: 1.45; }
+.d-caption-warn { color: var(--moving); }
+.d-caption-live { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.55; } }
+.d-inline { padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
 .d-kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 12px; row-gap: 4px; margin: 0; font-size: 12.5px; }
 .d-kv dt { color: var(--ink-3); }
 .d-kv dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }

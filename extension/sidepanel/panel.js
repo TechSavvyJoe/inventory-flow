@@ -1,7 +1,7 @@
 import { ROLES, STALE_AFTER_MS, STORES, WORKSPACES, workspaceFor } from './lib/config.mjs'
-import { PanelApiError, fetchBootstrap } from './lib/api.mjs'
-import { buildPanelData, canRequestVehicle, requestBlockedReason, roleLabel } from './lib/model.mjs'
-import { buildIndex, rank } from './lib/search.mjs'
+import { PanelApiError, fetchBootstrap, fetchVehicle } from './lib/api.mjs'
+import { buildPanelData, canRequestVehicle, mergeDetail, requestBlockedReason, roleLabel, toPanelVehicle } from './lib/model.mjs'
+import { buildEntry, buildIndex, rank } from './lib/search.mjs'
 import * as links from './lib/links.mjs'
 import * as fmt from './lib/format.mjs'
 import { clear, el, icon } from './lib/dom.mjs'
@@ -19,7 +19,7 @@ const ui = {
 
 const PAGE = 60
 const state = {
-  settings: null, workspace: null, data: null, index: [], results: [], shown: PAGE,
+  settings: null, workspace: null, data: null, bootstrap: null, index: [], results: [], shown: PAGE, details: new Map(), detailStatus: null,
   query: '', scope: 'home', activeIndex: -1, selectedVin: null, view: 'list',
   loading: false, error: null, fetchedAt: null, controller: null, toastTimer: null, sheetReturnFocus: null,
 }
@@ -78,8 +78,10 @@ function cacheKey() {
 }
 
 function hydrate(bootstrap, fetchedAt) {
+  state.bootstrap = bootstrap
   state.data = buildPanelData(bootstrap)
   state.index = buildIndex(state.data.vehicles)
+  state.details.clear()
   state.fetchedAt = fetchedAt
   state.error = null
   renderWho()
@@ -109,6 +111,9 @@ async function load({ silent = false } = {}) {
   } catch (error) {
     if (error?.name === 'AbortError') return
     state.error = error instanceof PanelApiError ? error : new PanelApiError('invalid')
+    // A sign-in or membership failure means the identity behind any cached
+    // document can no longer be trusted.
+    if (['signin', 'forbidden'].includes(state.error.kind)) storage.clearCache().catch(() => {})
     if (!state.data) { hideSkeleton(); renderStatus() }
     else toast(errorTitle(state.error), { iconName: 'alert' })
     renderFreshness()
@@ -411,6 +416,16 @@ function renderDetail(vehicle) {
       evidence.customerOrReason ? el('div', {}, el('span', { text: evidence.customerOrReason })) : null,
     ))
   }
+  if (hold.canViewEvidence && hold.tone === 'held') {
+    if (state.detailStatus === 'loading' && !hold.detailLoaded) holdChildren.push(el('p', { class: 'd-caption d-caption-live', text: 'Loading the full DealerMail record…' }))
+    if (state.detailStatus === 'failed' && !hold.detailLoaded) holdChildren.push(el('p', { class: 'd-caption' }, 'The full record could not be loaded. ', el('button', { type: 'button', class: 'd-inline', onclick: () => { state.details.delete(vehicle.vin); loadDetail(vehicle.vin) } }, 'Retry')))
+    if (hold.cdkStatus) holdChildren.push(line('file', 'CDK', hold.cdkStatus))
+    for (const [label, items] of [['Comment', hold.comments], ['Alert', hold.alerts]]) {
+      for (const item of items.slice(0, 4)) {
+        holdChildren.push(el('div', { class: 'd-evidence' }, el('b', { text: label }), item.author ? el('span', { text: ` · ${item.author}` }) : null, item.timestamp ? el('span', { text: ` · ${fmt.formatDateTime(item.timestamp)}` }) : null, el('div', {}, el('span', { text: item.text }))))
+      }
+    }
+  }
   if (hold.tone === 'held' && !hold.canViewEvidence) holdChildren.push(el('p', { class: 'd-caption', text: 'Hold details are restricted for your role.' }))
   if (hold.commentsCount || hold.alertsCount) holdChildren.push(el('p', { class: 'd-caption', text: fmt.joinFacts([hold.commentsCount ? `${hold.commentsCount} comment${hold.commentsCount === 1 ? '' : 's'}` : null, hold.alertsCount ? `${hold.alertsCount} alert${hold.alertsCount === 1 ? '' : 's'}` : null]) + ' in DealerMail' }))
   holdChildren.push(el('p', { class: 'd-caption', text: hold.tone === 'clear' ? 'A clean snapshot is not an availability promise. Confirm with the store before committing to a customer.' : hold.tone === 'held' ? 'A hold is a DealerMail signal, separate from the public listing and from where the vehicle physically is.' : 'The DealerMail snapshot is not current, so hold state cannot be verified from here.' }))
@@ -429,6 +444,7 @@ function renderDetail(vehicle) {
   const moveChildren = move
     ? [
       line('truck', humanize(move.label ?? move.state) ?? 'Move in progress', humanize(move.requestStatus)),
+      move.withheld ? el('p', { class: 'd-caption', text: 'Move details are limited to the stores involved; the location and status above are still the app\'s own record.' }) : null,
       move.nextAction ? el('dl', { class: 'd-kv' }, el('dt', { text: 'Next' }), el('dd', { text: fmt.joinFacts([move.nextAction, move.nextActionOwner]) }), move.destination ? el('dt', { text: 'To' }) : null, move.destination ? el('dd', { text: move.destination }) : null, move.dueAt ? el('dt', { text: move.overdue ? 'Overdue' : 'Due' }) : null, move.dueAt ? el('dd', { text: fmt.formatDateTime(move.dueAt) }) : null, move.transportAssignee ? el('dt', { text: 'Transport' }) : null, move.transportAssignee ? el('dd', { text: move.transportAssignee }) : null) : null,
     ]
     : [el('p', { class: 'd-caption', text: 'No move request in Inventory Flow for this vehicle.' })]
@@ -447,14 +463,15 @@ function renderDetail(vehicle) {
   const managerSection = vehicle.managerLog ? section('Manager log', [
     line('file', vehicle.managerLog.soldLabel, vehicle.managerLog.deliveryLabel),
     vehicle.managerLog.deliveryDate ? line('check', null, `Delivered ${fmt.formatDate(vehicle.managerLog.deliveryDate)}`) : null,
+    vehicle.managerLog.dataState !== 'current' ? el('p', { class: 'd-caption d-caption-warn', text: `The manager-log source is ${vehicle.managerLog.dataState}. Treat this as last known, not current.` }) : null,
     el('p', { class: 'd-caption', text: `Manager-supplied evidence from ${vehicle.managerLog.sourceStore}, shown separately from listing, hold and location.` }),
-  ]) : null
+  ], { pill: vehicle.managerLog.dataState !== 'current' ? el('span', { class: 'pill pill-moving', text: 'Not current' }) : null }) : null
 
   const featureSection = vehicle.features.length ? section(`Equipment · ${vehicle.features.length}`, [featureChips(vehicle.features)]) : null
   const docs = vehicle.documents
   const docLines = [
     docs.autoCheck ? line('shield', docs.autoCheck.score !== null ? `AutoCheck ${docs.autoCheck.score}` : 'AutoCheck report', fmt.joinFacts([docs.autoCheck.rangeLow !== null && docs.autoCheck.rangeHigh !== null ? `range ${docs.autoCheck.rangeLow}–${docs.autoCheck.rangeHigh}` : null, docs.autoCheck.ownerCount !== null ? `${docs.autoCheck.ownerCount} owner${docs.autoCheck.ownerCount === 1 ? '' : 's'}` : null])) : null,
-    docs.windowSticker ? line('file', 'Window sticker', docs.windowSticker.totalMsrp !== null ? `total ${fmt.formatMoney(docs.windowSticker.totalMsrp)}` : null) : null,
+    docs.windowSticker ? line('file', 'Window sticker', fmt.joinFacts([docs.windowSticker.totalMsrp !== null ? `total ${fmt.formatStickerMoney(docs.windowSticker.totalMsrp, docs.windowSticker)}` : null, docs.windowSticker.originalMarket ? `${docs.windowSticker.originalMarket} market` : null])) : null,
     docs.factoryEquipment ? line('file', 'Equipment label', fmt.joinFacts([docs.factoryEquipment.totalMsrp !== null ? `reference ${fmt.formatMoney(docs.factoryEquipment.totalMsrp)}` : null, docs.factoryEquipment.packages.length ? `${docs.factoryEquipment.packages.length} package${docs.factoryEquipment.packages.length === 1 ? '' : 's'}` : null])) : null,
   ].filter(Boolean)
   const docSection = docLines.length ? section('Documents', [...docLines, el('p', { class: 'd-caption', text: 'Reference documents only. They do not confirm condition, availability, sale or delivery.' })]) : null
@@ -490,10 +507,40 @@ function featureChips(features) {
   return wrap
 }
 
+async function loadDetail(vin) {
+  if (state.details.has(vin)) return
+  state.detailStatus = 'loading'
+  let detail = null
+  try {
+    detail = await fetchVehicle(state.workspace, state.settings, vin)
+    state.detailStatus = null
+  } catch (error) {
+    if (error?.name === 'AbortError') return
+    state.detailStatus = error instanceof PanelApiError && error.kind === 'notfound' ? 'gone' : 'failed'
+  }
+  if (!state.bootstrap || !state.data) return
+  if (detail) {
+    state.details.set(vin, detail)
+    const position = state.data.vehicles.findIndex((item) => item.vin === vin)
+    const raw = state.bootstrap.vehicles.find((item) => item.vin === vin)
+    if (position >= 0 && raw) {
+      const merged = toPanelVehicle(mergeDetail(raw, detail), state.bootstrap)
+      state.data.vehicles[position] = merged
+      state.index[position] = buildEntry(merged)
+    }
+  }
+  if (state.view === 'detail' && state.selectedVin === vin) {
+    const vehicle = state.data.vehicles.find((item) => item.vin === vin)
+    if (vehicle) { const top = ui.detail.scrollTop; renderDetail(vehicle); ui.detail.scrollTop = top }
+  }
+}
+
 function openDetail(vehicle) {
   state.selectedVin = vehicle.vin
   state.view = 'detail'
+  state.detailStatus = state.details.has(vehicle.vin) ? null : 'loading'
   renderDetail(vehicle)
+  loadDetail(vehicle.vin)
   ui.panel.dataset.view = 'detail'
   ui.viewList?.setAttribute?.('aria-hidden', 'true')
   $('view-detail').setAttribute('aria-hidden', 'false')
@@ -655,9 +702,13 @@ async function boot() {
   const pending = await storage.takePendingQuery()
   if (pending) setQuery(pending)
   storage.onPendingQuery((text) => { closeSheet(); closeDetail(); setQuery(text, { focus: true }) })
+  // The session cache is only ever shown for the synthetic demo. In production
+  // the panel always revalidates first: a shared Chrome profile can change
+  // Access users, and a cached document is one user's role-and-store
+  // projection that the next user may not be entitled to see.
   const cache = await storage.getCache()
-  if (cache?.bootstrap && cache.key === cacheKey()) hydrate(cache.bootstrap, cache.fetchedAt)
-  if (!state.data || isStale()) await load({ silent: Boolean(state.data) })
+  if (state.workspace.demo && cache?.bootstrap && cache.key === cacheKey()) hydrate(cache.bootstrap, cache.fetchedAt)
+  await load({ silent: Boolean(state.data) })
   requestAnimationFrame(() => { ui.panel.classList.remove('no-motion'); positionScopeIndicator() })
   if (!pending) ui.q.focus()
 }

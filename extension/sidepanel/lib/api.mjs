@@ -12,8 +12,8 @@ export class PanelApiError extends Error {
   }
 }
 
-export function bootstrapRequest(workspace, settings) {
-  const url = new URL('/api/bootstrap', workspace.origin)
+function requestFor(workspace, settings, path) {
+  const url = new URL(path, workspace.origin)
   const headers = { Accept: 'application/json' }
   if (workspace.demo) {
     // The synthetic demo server reads its identity from these headers and
@@ -27,8 +27,10 @@ export function bootstrapRequest(workspace, settings) {
   return { url: url.href, init: { method: 'GET', headers, credentials: 'include', redirect: 'manual', cache: 'no-store' } }
 }
 
-export async function fetchBootstrap(workspace, settings, { fetchImpl = globalThis.fetch, signal } = {}) {
-  const { url, init } = bootstrapRequest(workspace, settings)
+export function bootstrapRequest(workspace, settings) { return requestFor(workspace, settings, '/api/bootstrap') }
+export function vehicleRequest(workspace, settings, vin) { return requestFor(workspace, settings, `/api/vehicles/${encodeURIComponent(String(vin).toUpperCase())}`) }
+
+async function fetchJson({ url, init }, { fetchImpl, signal }) {
   let response
   try {
     response = await fetchImpl(url, { ...init, signal })
@@ -47,9 +49,27 @@ export async function fetchBootstrap(workspace, settings, { fetchImpl = globalTh
     const body = isJson ? await response.json().catch(() => null) : null
     throw new PanelApiError('forbidden', { status: 403, code: body?.code ?? null })
   }
+  if (response.status === 404) throw new PanelApiError('notfound', { status: 404 })
   if (!response.ok) throw new PanelApiError('server', { status: response.status })
   if (!isJson) throw new PanelApiError('signin', { status: response.status })
   const payload = await response.json().catch(() => null)
-  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.vehicles) || !payload.meta) throw new PanelApiError('invalid', { status: response.status })
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new PanelApiError('invalid', { status: response.status })
+  return payload
+}
+
+export async function fetchBootstrap(workspace, settings, { fetchImpl = globalThis.fetch, signal } = {}) {
+  const payload = await fetchJson(bootstrapRequest(workspace, settings), { fetchImpl, signal })
+  if (!Array.isArray(payload.vehicles) || !payload.meta) throw new PanelApiError('invalid')
+  return payload
+}
+
+/**
+ * The bootstrap list is a summary. The per-vehicle record adds the role-
+ * filtered DealerMail evidence (backups, comments, alerts, CDK) and the
+ * official documents, so the detail view fetches it after opening.
+ */
+export async function fetchVehicle(workspace, settings, vin, { fetchImpl = globalThis.fetch, signal } = {}) {
+  const payload = await fetchJson(vehicleRequest(workspace, settings, vin), { fetchImpl, signal })
+  if (typeof payload.vin !== 'string' || payload.vin.toUpperCase() !== String(vin).toUpperCase()) throw new PanelApiError('invalid')
   return payload
 }

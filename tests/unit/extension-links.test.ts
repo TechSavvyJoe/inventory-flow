@@ -2,7 +2,7 @@
 // @ts-nocheck -- dependency-free ESM link builders.
 import { describe, expect, it } from 'vitest'
 import { DEALERMAIL_INVENTORY_URL, autoCheckUrl, factoryEquipmentUrl, inventorySearchUrl, listingUrl, requestVehicleUrl, trackMovementUrl, windowStickerUrl } from '../../extension/sidepanel/lib/links.mjs'
-import { bootstrapRequest, fetchBootstrap, PanelApiError } from '../../extension/sidepanel/lib/api.mjs'
+import { bootstrapRequest, fetchBootstrap, fetchVehicle, PanelApiError, vehicleRequest } from '../../extension/sidepanel/lib/api.mjs'
 import { WORKSPACES } from '../../extension/sidepanel/lib/config.mjs'
 
 const origin = 'https://inventory-ops.joegallant.me'
@@ -58,6 +58,17 @@ describe('deal desk bootstrap fetch', () => {
     const offline = await fetchBootstrap(WORKSPACES.production, settings, { fetchImpl: async () => { throw new TypeError('Failed to fetch') } }).catch((error) => error)
     expect(offline).toBeInstanceOf(PanelApiError)
     expect(offline.kind).toBe('offline')
+  })
+
+  it('fetches the per-vehicle record the same way and reports a missing VIN distinctly', async () => {
+    expect(vehicleRequest(WORKSPACES.production, settings, 'testdatahwell0001').url).toBe(`${origin}/api/vehicles/TESTDATAHWELL0001`)
+    const record = { vin: 'TESTDATAHWELL0001', stockNumber: 'DEMO-H01', privateEvidence: { comments: [] } }
+    const ok = await fetchVehicle(WORKSPACES.production, settings, 'TESTDATAHWELL0001', { fetchImpl: async () => new Response(JSON.stringify(record), { headers: { 'content-type': 'application/json' } }) })
+    expect(ok.privateEvidence).toEqual({ comments: [] })
+    const missing = await fetchVehicle(WORKSPACES.production, settings, 'TESTDATAHWELL0009', { fetchImpl: async () => new Response(JSON.stringify({ error: 'x', code: 'VEHICLE_NOT_FOUND' }), { status: 404, headers: { 'content-type': 'application/json' } }) }).catch((error) => error)
+    expect(missing).toMatchObject({ kind: 'notfound', status: 404 })
+    const wrongVin = await fetchVehicle(WORKSPACES.production, settings, 'TESTDATAHWELL0001', { fetchImpl: async () => new Response(JSON.stringify({ ...record, vin: 'OTHER' }), { headers: { 'content-type': 'application/json' } }) }).catch((error) => error)
+    expect(wrongVin.kind).toBe('invalid')
   })
 
   it('accepts a real bootstrap document', async () => {

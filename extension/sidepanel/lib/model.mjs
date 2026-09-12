@@ -72,6 +72,8 @@ function holdSignal(record, dealerMailState) {
     }
   }
   const tone = hasActiveHold === true ? 'held' : hasActiveHold === false ? 'clear' : 'unverified'
+  const message = (item) => ({ author: text(item?.author), text: text(item?.text), timestamp: text(item?.timestamp) })
+  const detailLoaded = canViewEvidence && record.privateEvidence !== undefined
   return {
     state: hold.state,
     dataState: dealerMailState,
@@ -86,23 +88,43 @@ function holdSignal(record, dealerMailState) {
     commentsCount: number(hold.commentsCount) ?? 0,
     alertsCount: number(hold.alertsCount) ?? 0,
     evidence,
+    // Present only once the per-vehicle record has been merged in.
+    detailLoaded,
+    comments: canViewEvidence ? (record.privateEvidence?.comments ?? []).map(message).filter((item) => item.text) : [],
+    alerts: canViewEvidence ? (record.privateEvidence?.alerts ?? []).map(message).filter((item) => item.text) : [],
+    cdkStatus: canViewEvidence ? text(record.privateEvidence?.cdk?.status) || text(record.privateEvidence?.cdk?.result) : null,
   }
+}
+
+/**
+ * The server's movement summary is app custody evidence whenever it came from
+ * the ledger — even when the transfer itself is withheld from this role or
+ * store. service-core.mjs deliberately publishes location, state and
+ * confidence without the transfer link so other stores can find a group
+ * vehicle; only a plain source report carries state 'source_reported'.
+ */
+function ledgerBacked(record, transfer) {
+  const movement = record.movement ?? {}
+  return Boolean(transfer || movement.transferId || (text(movement.state) && movement.state !== 'source_reported'))
 }
 
 /** Mirrors resolveCurrentLocation: app custody evidence outranks source reports. */
 export function resolveLocation(record, transfer) {
   const movement = record.movement ?? {}
-  const hasAppCustody = Boolean(transfer || movement.transferId)
-  const confirmed = hasAppCustody ? text(movement.currentLocation) || text(transfer?.currentLocation) : null
-  if (confirmed) {
+  const confirmedAt = text(movement.lastConfirmedAt) || text(transfer?.lastConfirmedAt)
+  if (movement.locationConfidence === 'conflicting') {
+    return { label: 'Location needs checking', store: null, provenance: 'app-confirmed', confidence: 'conflicting', confirmedAt, custodian: null, conflict: true }
+  }
+  const confirmed = ledgerBacked(record, transfer) ? text(movement.currentLocation) || text(transfer?.currentLocation) : null
+  if (confirmed && confirmed !== 'Unknown') {
     return {
       label: confirmed,
       store: STORES.includes(confirmed) ? confirmed : null,
       provenance: 'app-confirmed',
       confidence: movement.locationConfidence ?? 'unknown',
-      confirmedAt: text(movement.lastConfirmedAt) || text(transfer?.lastConfirmedAt),
+      confirmedAt,
       custodian: text(movement.currentCustodian) || text(transfer?.custodian),
-      conflict: movement.locationConfidence === 'conflicting',
+      conflict: false,
     }
   }
   const reported = text(record.sourceReportedLocation) || text(record.publicStore)
@@ -112,10 +134,14 @@ export function resolveLocation(record, transfer) {
 
 function movementSignal(record, transfer, now) {
   const movement = record.movement ?? {}
-  if (!transfer && !movement.transferId) return null
+  if (!ledgerBacked(record, transfer)) return null
   const dueAt = text(movement.dueAt) || text(transfer?.dueAt)
+  const transferId = text(transfer?.id) || text(movement.transferId)
   return {
-    transferId: text(transfer?.id) || text(movement.transferId),
+    transferId,
+    // Without a transfer link the server has withheld actor, owner and
+    // customer detail on purpose; what remains is still real custody state.
+    withheld: !transferId,
     state: text(transfer?.movementStatus) || text(movement.state),
     label: text(movement.label) || text(transfer?.movementStatus),
     requestStatus: text(movement.requestStatus) || text(transfer?.requestStatus),
@@ -190,14 +216,23 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
     location: resolveLocation(record, transfer),
     movement: movementSignal(record, transfer, now),
     managerLog: disposition
-      ? { soldLabel: disposition.soldLabel, deliveryLabel: disposition.deliveryLabel, deliveryDate: text(disposition.deliveryDate), sourceStore: disposition.sourceStore, confidence: disposition.confidence }
+      ? {
+        soldLabel: disposition.soldLabel, deliveryLabel: disposition.deliveryLabel, deliveryDate: text(disposition.deliveryDate), sourceStore: disposition.sourceStore, confidence: disposition.confidence,
+        dataState: dataState(meta.managerDispositionFreshness ?? disposition.dataState ?? 'unknown'),
+      }
       : null,
     documents: {
       autoCheck: record.autoCheckReport ? { url: autoCheckUrl(record.autoCheckReport.url), score: number(record.autoCheckReport.score), rangeLow: number(record.autoCheckReport.scoreRangeLow), rangeHigh: number(record.autoCheckReport.scoreRangeHigh), ownerCount: number(record.autoCheckReport.ownerCount) } : null,
-      windowSticker: record.windowSticker ? { url: windowStickerUrl(record.windowSticker.url), totalMsrp: number(record.windowSticker.totalMsrp) } : null,
+      windowSticker: record.windowSticker ? { url: windowStickerUrl(record.windowSticker.url), totalMsrp: number(record.windowSticker.totalMsrp), pricingCurrency: text(record.windowSticker.pricingCurrency), originalMarket: text(record.windowSticker.originalMarket) } : null,
       factoryEquipment: record.factoryEquipment ? { url: factoryEquipmentUrl(record.factoryEquipment.url), totalMsrp: number(record.factoryEquipment.totalMsrp), packages: (record.factoryEquipment.packages ?? []).map((item) => text(item?.name)).filter(Boolean) } : null,
     },
   }
+}
+
+/** The per-vehicle record is the bootstrap record plus role-filtered evidence; it wins field by field. */
+export function mergeDetail(record, detail) {
+  if (!detail || typeof detail !== 'object' || detail.vin !== record.vin) return record
+  return { ...record, ...detail }
 }
 
 function isTerminal(transfer) {
