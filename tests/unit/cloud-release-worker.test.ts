@@ -125,6 +125,35 @@ describe('Cloud Worker authentication boundary',()=>{
     await expect(resolveTransportAssignment({type:'transport_assigned',assignee:'Alex Driver',assigneeUserId:'forged'},directory([]))).rejects.toMatchObject({code:'ASSIGNEE_IDENTITY_CLIENT_CONTROLLED'})
   })
 
+  it('answers a malformed percent escape in a path as a bad request, not an internal error',async()=>{
+    // A crawler, a copy-pasted link, or a probe can produce '%E0%A4%A'.
+    // decodeURIComponent throws URIError on it, which is not one of the known
+    // error classes, so the whole request was reported as a 500 INTERNAL_ERROR:
+    // it looks like a server fault on the dashboard, drags the Worker's error
+    // rate up, and tells the caller to retry something that can never succeed.
+    const jwt=await token()
+    for(const path of ['/api/vehicles/%E0%A4%A','/api/transfers/%','/api/attention/%zz']) {
+      const result=await worker.fetch(request(path,jwt),env)
+      expect({path,status:result.status}).toEqual({path,status:400})
+      expect(await result.json()).toMatchObject({code:'INVALID_PATH'})
+    }
+  })
+
+  it('reports a missing release encryption key as configuration, not as invalid upload content',async()=>{
+    // The key is read through the same decoder as the payload, so an unset
+    // binding failed as INVALID_ENCRYPTED_CONTENT with status 400 — blaming a
+    // correct upload for the operator's missing secret and sending whoever is
+    // on call to re-generate a bundle that was never the problem.
+    const jwt=await token({aud:env.ACCESS_PUBLISHER_AUDIENCE,sub:'',email:undefined,common_name:env.PUBLISHER_CLIENT_ID})
+    const {RELEASE_ENCRYPTION_KEY_BASE64:_omitted,...unconfigured}=({...env,RELEASE_ENCRYPTION_KEY_BASE64:'x'.repeat(43)+'='})
+    const envelope={version:'inventory-flow-private-release-v1',reportDate:'2026-09-09',bundleSha256:'a'.repeat(64),iv:'A'.repeat(16),ciphertext:'B'.repeat(64)}
+    const result=await worker.fetch(request('/internal/releases',jwt,{
+      method:'POST',headers:{Authorization:`Bearer ${env.RELEASE_PUBLISHER_TOKEN}`,'content-type':'application/json'},body:JSON.stringify(envelope),
+    }),unconfigured)
+    expect(result.status).toBe(503)
+    expect(await result.json()).toMatchObject({code:'RELEASE_KEY_NOT_CONFIGURED'})
+  })
+
   it('does not query or disclose the employee directory until transfer authorization succeeds',async()=>{
     const prepare=vi.fn(()=>{throw new Error('The directory must not be queried')})
     const env={INVENTORY_DB:{prepare}}

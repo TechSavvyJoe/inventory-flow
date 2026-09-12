@@ -20,6 +20,12 @@ const headers = {
 function json(status, data) { return new Response(JSON.stringify(data), {status,headers:{...headers,'Content-Type':'application/json; charset=utf-8'}}) }
 class HttpError extends Error { constructor(code, status = 400) { super(code); this.code = code; this.status = status } }
 function equal(a, b) { const left=encoder.encode(String(a??'')), right=encoder.encode(String(b??'')); return left.length === right.length && timingSafeEqual(left,right) }
+// decodeURIComponent throws URIError on a malformed escape such as '%E0%A4%A'.
+// That is a caller mistake, so it must answer 400 rather than falling through
+// to the unknown-error branch and being reported as a 500 INTERNAL_ERROR.
+function pathSegment(value) {
+  try { return decodeURIComponent(value) } catch { throw new HttpError('INVALID_PATH') }
+}
 function bytes(value) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9+/_-]+={0,2}$/.test(value)) throw new HttpError('INVALID_ENCRYPTED_CONTENT')
   const padding=value.endsWith('==')?2:value.endsWith('=')?1:0, length=value.length-padding, remainder=length%4
@@ -100,6 +106,10 @@ export async function prepareTransportAssignment(input, env, preflight) {
 export async function decryptEnvelope(envelope, env, format=FORMAT) {
   if(envelope?.version!==format || !/^\d{4}-\d{2}-\d{2}$/.test(envelope.reportDate??'') || !/^[a-f0-9]{64}$/.test(envelope.bundleSha256??'')) throw new HttpError('INVALID_ENVELOPE')
   if(typeof envelope.ciphertext!=='string' || envelope.ciphertext.length>MAX_UPLOAD) throw new HttpError('BODY_TOO_LARGE',413)
+  // Checked before the payload so an unset binding cannot be misreported as
+  // invalid upload content, which sends the operator to re-generate a bundle
+  // that was never at fault. 503 also says "retry after fixing", not "rejected".
+  if(typeof env.RELEASE_ENCRYPTION_KEY_BASE64!=='string' || !env.RELEASE_ENCRYPTION_KEY_BASE64) throw new HttpError('RELEASE_KEY_NOT_CONFIGURED',503)
   const iv=bytes(envelope.iv), encrypted=bytes(envelope.ciphertext), keyBytes=bytes(env.RELEASE_ENCRYPTION_KEY_BASE64)
   if(iv.length!==12 || encrypted.length<17 || keyBytes.length!==32) throw new HttpError('INVALID_ENCRYPTED_CONTENT')
   try {
@@ -191,6 +201,10 @@ async function appApi(request,url,env,context) {
   const read=request.method==='GET', write=request.method==='POST'
   if(!read && !write) throw new HttpError('METHOD_NOT_ALLOWED',405)
   if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route))) throw new HttpError('NOT_FOUND',404)
+  // Decoded once here, before the release and repository are loaded: a path
+  // that cannot be decoded can never address a record, so it should cost the
+  // Worker nothing and answer 400 rather than a 500 from deeper in the stack.
+  const identifier=route.includes('/',1)?pathSegment(route.split('/')[2]):null
   if(write && request.headers.get('origin')!==url.origin) throw new AccessError('SAME_ORIGIN_REQUIRED',403)
   const idempotency=request.headers.get('idempotency-key')
   if(write && (!idempotency || idempotency.length>160 || /[\x00-\x1f]/.test(idempotency))) throw new HttpError('IDEMPOTENCY_KEY_REQUIRED')
@@ -204,25 +218,25 @@ async function appApi(request,url,env,context) {
     let result, mutation=false
     if(read && route==='/bootstrap') result=service.bootstrap(context)
     else if(read && route==='/vehicles') result=service.listVehicles(query,context)
-    else if(read && /^\/vehicles\/[^/]+$/.test(route)) result=service.getVehicle(decodeURIComponent(route.split('/')[2]),context)
+    else if(read && /^\/vehicles\/[^/]+$/.test(route)) result=service.getVehicle(identifier,context)
     else if(read && route==='/transfers') result=service.listTransfers(query,context)
-    else if(read && /^\/transfers\/[^/]+$/.test(route)) result=service.getTransfer(decodeURIComponent(route.split('/')[2]),context)
+    else if(read && /^\/transfers\/[^/]+$/.test(route)) result=service.getTransfer(identifier,context)
     else if(read && route==='/attention') result=service.listAttention(query,context)
-    else if(read && /^\/attention\/[^/]+$/.test(route)) result=service.getAttention(decodeURIComponent(route.split('/')[2]),context)
+    else if(read && /^\/attention\/[^/]+$/.test(route)) result=service.getAttention(identifier,context)
     else if(write && route==='/transfers') {result=service.createTransfer(input,context,idempotency);mutation=true}
     else if(write && /^\/(transfers|attention)\/[^/]+\/events$/.test(route)) {
-      const [,type,id]=route.split('/')
-      if(type==='attention') result=service.appendAttentionEvent(decodeURIComponent(id),input,context,idempotency)
+      const [,type]=route.split('/')
+      if(type==='attention') result=service.appendAttentionEvent(identifier,input,context,idempotency)
       else if(!TRANSPORT_ASSIGNMENT_EVENTS.has(String(input?.type??'').trim().toLowerCase()) || resolvedAssignmentInput) {
-        result=service.appendTransferEvent(decodeURIComponent(id),resolvedAssignmentInput??input,context,idempotency)
+        result=service.appendTransferEvent(identifier,resolvedAssignmentInput??input,context,idempotency)
       } else {
         // Authorize the transfer, role, store, lifecycle and payload before
         // querying the employee directory. This prevents unrelated users from
         // probing valid or duplicate staff names through assignment errors.
         const prepared=await prepareTransportAssignment(input,env,(candidate)=>
-          service.appendTransferEvent(decodeURIComponent(id),candidate,context,idempotency))
+          service.appendTransferEvent(identifier,candidate,context,idempotency))
         resolvedAssignmentInput=prepared.input
-        result=prepared.replay??service.appendTransferEvent(decodeURIComponent(id),resolvedAssignmentInput,context,idempotency)
+        result=prepared.replay??service.appendTransferEvent(identifier,resolvedAssignmentInput,context,idempotency)
       }
       mutation=true
     } else throw new HttpError('NOT_FOUND',404)
