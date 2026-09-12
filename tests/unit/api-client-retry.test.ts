@@ -45,17 +45,36 @@ describe('page-session mutation retries', () => {
     expect(keyAt(2)).not.toBe(keyAt(0))
   })
 
-  it('classifies a stalled connection as a retryable timeout instead of hanging forever', async () => {
+  it('aborts a stalled connection itself and classifies it as a retryable timeout', async () => {
     // A dealership network can stall a connection without ever failing it,
-    // which previously left `fetch` pending with no recovery path. This
-    // rejection is what `AbortController` produces once the request's own
-    // timeout fires; it must not be confused with a real network failure
-    // (whose raw message the case above still expects to see unchanged).
-    fetchMock.mockRejectedValueOnce(new DOMException('The operation was aborted.', 'AbortError'))
-      .mockImplementation(async () => json())
-    await expect(create()).rejects.toMatchObject({ status: 408, message: expect.stringMatching(/timed out/i) })
-    await create()
-    expect(keyAt(1)).toBe(keyAt(0))
+    // which previously left `fetch` pending with no recovery path. The mock
+    // below hangs exactly like that — it only settles when the signal the
+    // client passed is aborted — so this proves the client's own timer fires
+    // and aborts it, not merely that an AbortError is mapped to 408. The
+    // timeout must not be confused with a real network failure (whose raw
+    // message the case above still expects to see unchanged).
+    // Only the timer functions are faked: the idempotency key is derived with
+    // a real `crypto.subtle.digest`, which needs the real event loop to settle.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      let signal: AbortSignal | undefined
+      fetchMock.mockImplementationOnce((_input, init) => new Promise<Response>((_resolve, reject) => {
+        signal = init?.signal ?? undefined
+        signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')), { once: true })
+      })).mockImplementation(async () => json())
+      const pending = create()
+      const outcome = expect(pending).rejects.toMatchObject({ status: 408, message: expect.stringMatching(/timed out/i) })
+      while (!signal) await new Promise((resolve) => setImmediate(resolve))
+      await vi.advanceTimersByTimeAsync(19_999)
+      expect(signal.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(signal.aborted).toBe(true)
+      await outcome
+      await create()
+      expect(keyAt(1)).toBe(keyAt(0))
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it.each([408, 425, 429, 500, 502, 503])('retains the action key for an uncertain or retryable HTTP %i response', async (status) => {
