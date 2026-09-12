@@ -1013,7 +1013,11 @@ function compareNullable(left, right) {
 }
 
 function sortVehicles(vehicles, sort = 'vehicleName', order = 'asc') {
-  const selector = VEHICLE_SORTS[sort] ?? VEHICLE_SORTS.vehicleName
+  // The query string reaches here unvalidated. A `??` fallback treats only
+  // nullish lookups as unknown, so inherited keys such as `__proto__` or
+  // `hasOwnProperty` resolved to non-functions and threw a 500. Own-property
+  // membership keeps the lenient default for every unknown value.
+  const selector = Object.hasOwn(VEHICLE_SORTS, sort) ? VEHICLE_SORTS[sort] : VEHICLE_SORTS.vehicleName
   const direction = order === 'desc' ? -1 : 1
   return vehicles.sort((left, right) => direction * compareNullable(selector(left), selector(right)) || left.vin.localeCompare(right.vin))
 }

@@ -1285,4 +1285,23 @@ describe('Inventory Flow API', () => {
     const managerAfter = await fetch(`${baseUrl}/api/attention/${encodeURIComponent(holdReview!.id)}`, { headers: managerHeaders }).then((response) => response.json())
     expect(managerAfter.assignedTo).toBe(salesperson)
   })
+
+  it('treats prototype-inherited sort keys as unknown instead of failing the request', async () => {
+    // `sort` reaches sortVehicles unvalidated. Unknown values deliberately fall
+    // back to the default order rather than 400; inherited object keys must
+    // take that same path rather than resolving to a non-function and 500ing.
+    const { baseUrl } = await harness()
+    const headers = roleHeaders('sales', 'Howell', 'Sort probe')
+    const control = await fetch(`${baseUrl}/api/vehicles?sort=vehicleName&limit=50`, { headers })
+    expect(control.status).toBe(200)
+    const expected = (await control.json()).items.map((vehicle: { vin: string }) => vehicle.vin)
+    expect(expected.length).toBeGreaterThan(1)
+
+    for (const key of ['__proto__', 'hasOwnProperty', 'valueOf', 'constructor', 'toString', 'bogus_key']) {
+      const response = await fetch(`${baseUrl}/api/vehicles?sort=${encodeURIComponent(key)}&limit=50`, { headers })
+      expect(response.status, `sort=${key}`).toBe(200)
+      const items = (await response.json()).items.map((vehicle: { vin: string }) => vehicle.vin)
+      expect(items, `sort=${key} should use the default order`).toEqual(expected)
+    }
+  })
 })
