@@ -1,7 +1,7 @@
 // @vitest-environment node
 // @ts-nocheck -- dependency-free ESM view model; synthetic fixtures only.
 import { describe, expect, it } from 'vitest'
-import { buildPanelData, canRequestVehicle, holdLabel, requestBlockedReason, resolveLocation, toPanelVehicle } from '../../extension/sidepanel/lib/model.mjs'
+import { buildPanelData, canRequestVehicle, holdLabel, mergeDetail, requestBlockedReason, resolveLocation, toPanelVehicle } from '../../extension/sidepanel/lib/model.mjs'
 
 const meta = (overrides = {}) => ({ reportDate: '2026-08-30', completedAt: '2026-08-30T10:00:00-04:00', publicFreshness: 'current', dealerMailFreshness: 'current', ...overrides })
 const base = (overrides = {}) => ({
@@ -52,6 +52,46 @@ describe('deal desk view model', () => {
     const vehicle = toPanelVehicle(moving, data(moving, { transfers: [{ id: 'transfer-1', vin: moving.vin, movementStatus: 'in_transit', requestStatus: 'approved', currentLocation: 'Fowlerville', destination: 'Fowlerville' }] }))
     expect(vehicle.location).toMatchObject({ label: 'Fowlerville', provenance: 'app-confirmed', custodian: 'Demo Driver' })
     expect(vehicle.movement).toMatchObject({ transferId: 'transfer-1', nextAction: 'Mark arrived', destination: 'Fowlerville' })
+  })
+
+  it('treats a ledger-backed location as app custody even when the transfer is withheld', () => {
+    // service-core publishes state/location/confidence without the transfer
+    // link so other stores can find a group vehicle; that is still custody.
+    const withheld = base({ homeStore: 'Fowlerville', publicStore: 'Fowlerville', sourceReportedLocation: 'Fowlerville', movement: { state: 'in_transit', label: 'in transit', currentLocation: 'Howell', locationConfidence: 'verified', lastConfirmedAt: '2026-08-30T12:00:00Z' } })
+    const vehicle = toPanelVehicle(withheld, data(withheld))
+    expect(vehicle.location).toMatchObject({ label: 'Howell', provenance: 'app-confirmed', confidence: 'verified' })
+    expect(vehicle.movement).toMatchObject({ transferId: null, withheld: true, state: 'in_transit' })
+    expect(vehicle.movement.nextAction).toBeNull()
+    // A conflicting location is surfaced as such, never as a store.
+    const conflicting = base({ movement: { state: 'location_exception', label: 'Location needs checking', currentLocation: 'Unknown', locationConfidence: 'conflicting' } })
+    expect(resolveLocation(conflicting)).toMatchObject({ label: 'Location needs checking', conflict: true, store: null })
+  })
+
+  it('merges the per-vehicle record so permitted roles see comments, alerts and CDK', () => {
+    const summary = base({ hold: { state: 'primary', label: 'Held', backupCount: 1, canViewEvidence: true, primarySalesperson: 'Demo Salesperson' } })
+    const before = toPanelVehicle(summary, data(summary))
+    expect(before.hold.detailLoaded).toBe(false)
+    expect(before.hold.comments).toEqual([])
+    const detail = { ...summary, privateEvidence: { primary: { salesperson: 'Demo Salesperson', customerOrReason: 'Appointment' }, backups: [{ salesperson: 'Backup Person' }], comments: [{ author: 'Demo Manager', text: 'Customer confirmed', timestamp: '2026-08-30T12:00:00Z' }], alerts: [{ author: 'Demo Manager', text: 'Do not move' }], cdk: { status: 'DEMO' } } }
+    const after = toPanelVehicle(mergeDetail(summary, detail), data(summary))
+    expect(after.hold.detailLoaded).toBe(true)
+    expect(after.hold.evidence.map((item) => item.salesperson)).toEqual(['Demo Salesperson', 'Backup Person'])
+    expect(after.hold.comments).toEqual([{ author: 'Demo Manager', text: 'Customer confirmed', timestamp: '2026-08-30T12:00:00Z' }])
+    expect(after.hold.alerts[0].text).toBe('Do not move')
+    expect(after.hold.cdkStatus).toBe('DEMO')
+    // A detail for a different VIN never merges.
+    expect(mergeDetail(summary, { ...detail, vin: 'OTHER' })).toBe(summary)
+    // And a redacted role gets nothing even if evidence is somehow present.
+    const redacted = { ...detail, hold: { ...detail.hold, canViewEvidence: false } }
+    expect(toPanelVehicle(redacted, data(redacted)).hold.comments).toEqual([])
+  })
+
+  it('carries manager-log freshness and sticker currency through', () => {
+    const record = base({ managerDisposition: { soldLabel: 'Sold — manager log', deliveryLabel: 'Delivered — manager log', deliveryDate: '2026-08-30', sourceStore: 'Howell', confidence: 'high', dataState: 'stale_unverified' }, windowSticker: { url: 'https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker', totalMsrp: 54000, pricingCurrency: 'CAD', originalMarket: 'Canada' } })
+    const stale = toPanelVehicle(record, data(record, { meta: { managerDispositionFreshness: 'stale_unverified' } }))
+    expect(stale.managerLog.dataState).toBe('stale')
+    expect(toPanelVehicle(record, data(record, { meta: { managerDispositionFreshness: 'current' } })).managerLog.dataState).toBe('current')
+    expect(stale.documents.windowSticker).toMatchObject({ totalMsrp: 54000, pricingCurrency: 'CAD', originalMarket: 'Canada' })
   })
 
   it('applies the app\'s own rule for who may request a vehicle', () => {

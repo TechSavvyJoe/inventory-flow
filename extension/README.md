@@ -18,7 +18,7 @@ No build step. Chrome 116 or newer.
 - **Search as you type** across stock, VIN, vehicle, trim, color, equipment, price ("$51,800" or "51800"), mileage, store, hold state and — only when your role is allowed to see it — the salesperson and reason on a hold. The ranking is a port of the app's own search, so "F150" finds "F-150" and a one-letter slip still lands.
 - **Scope** between your working store, all four stores, and vehicles with a current DealerMail hold, with live counts.
 - **Each row** shows the stock plate, vehicle, price · mileage · age, the hold pill, any active move, and the current location with its provenance (a filled pin is app-confirmed custody; a hollow pin is a source report).
-- **Vehicle view** keeps the four facts the app keeps separate — DealerMail hold, physical location, app movement, and public listing — as separate labeled sections, plus manager-log evidence, equipment, official documents and photos.
+- **Vehicle view** keeps the four facts the app keeps separate — DealerMail hold, physical location, app movement, and public listing — as separate labeled sections, plus manager-log evidence (flagged when its source is not current), equipment, official documents (original-sticker totals keep their own currency) and photos. Location and movement come from the app's own ledger even when the transfer itself is withheld from your store, which is how the server lets other stores locate a group vehicle.
 - **Actions:** Request vehicle (opens `/transfers/new` in the app with the VIN filled in, only when your role may request and the vehicle is not already at your store or in motion), Open in app, Track move, copy stock or VIN, open the dealer listing, open DealerMail inventory (copies the stock number first, the same way the app does), AutoCheck, window sticker and the vAuto equipment label.
 - **Right-click any selected text** on any page → "Search Inventory Flow for …" opens the panel with that text as the query.
 - **Keyboard:** `/` focuses search, `↑`/`↓` move through results, `Enter` opens, `Esc` goes back or clears, `S`/`V` copy stock or VIN from a vehicle.
@@ -28,7 +28,9 @@ The footer always shows which release the panel is reading and when it last chec
 
 ## How authentication works
 
-The panel calls `GET /api/bootstrap` on the app with `credentials: 'include'`. Chrome treats requests from an extension that holds `host_permissions` for an origin as same-site, so the Cloudflare Access session cookie you already have for Inventory Flow is sent and the app answers exactly as it would for a browser tab. Nothing is stored except a session-scoped copy of the last inventory document (cleared when Chrome closes) and your display preferences.
+The panel calls `GET /api/bootstrap` on the app with `credentials: 'include'`. Chrome treats requests from an extension that holds `host_permissions` for an origin as same-site, so the Cloudflare Access session cookie you already have for Inventory Flow is sent and the app answers exactly as it would for a browser tab. Opening a vehicle fetches `GET /api/vehicles/{vin}` the same way, which is where the role-filtered DealerMail evidence (backups, comments, alerts, CDK) and official documents come from.
+
+In production the panel always fetches before it shows anything: a shared Chrome profile can change Access users, and a cached document is one user's role-and-store projection. The session cache is only ever displayed for the synthetic demo. Nothing else is stored except your display preferences.
 
 The panel never sends a `POST`. Chrome stamps extension-originated writes with `Origin: chrome-extension://…`, which the app rejects by design; the panel does not try to work around that. If a future version needs an in-panel write, the app's Worker would have to allowlist a pinned extension ID explicitly — a deliberate product decision, not a switch to flip here.
 
@@ -49,7 +51,7 @@ No `tabs`, no `activeTab`, no `<all_urls>`, no content scripts. The panel does n
 ```sh
 pnpm dev:demo              # synthetic API on 4174, app on 4173
 pnpm extension:preview     # serves the panel at http://127.0.0.1:4177/sidepanel/index.html
-pnpm extension:icons       # re-render icons from public/brand-kit/inventory-flow-icon.svg
+pnpm extension:icons       # re-render icons from public/brand-kit/inventory-flow-icon.svg (via Playwright's Chromium)
 pnpm test                  # includes tests/unit/extension-*.test.ts
 ```
 
