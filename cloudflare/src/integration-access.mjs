@@ -6,6 +6,10 @@ const READER_ROLES = ['sales', 'manager', 'group_manager']
 const TOKEN_PATTERN = /^iflow_([a-f0-9]{32})_([A-Za-z0-9_-]{43})$/
 const AUDIT_OPERATIONS = new Set(['health', 'inventory_list', 'inventory_get', 'changes_list', 'holds_summary', 'manager_dispositions_list', 'mcp_initialize', 'mcp_tools_list', 'mcp_tools_call', 'mcp_notification', 'other'])
 const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+// Per client, not global. Every rejection is audited too, including the 429 a
+// client gets for exceeding its own quota — the one outcome a misbehaving
+// integration can produce without limit — so a global recency cap let that
+// flood evict the genuine read history of every other integration.
 const AUDIT_ROW_LIMIT = 10000
 
 export class IntegrationAccessError extends Error {
@@ -183,7 +187,7 @@ export async function auditIntegrationAccess(env, principal, details = {}, now =
     const result = await env.INVENTORY_DB.batch([
       env.INVENTORY_DB.prepare('INSERT INTO integration_access_audit (client_id, operation, status, result_count, occurred_at) VALUES (?, ?, ?, ?, ?)').bind(principal.clientId, operation, details.status, count, instant),
       env.INVENTORY_DB.prepare('DELETE FROM integration_access_audit WHERE occurred_at < ?').bind(instant - AUDIT_RETENTION_MS),
-      env.INVENTORY_DB.prepare('DELETE FROM integration_access_audit WHERE id IN (SELECT id FROM integration_access_audit ORDER BY occurred_at DESC, id DESC LIMIT -1 OFFSET ?)').bind(AUDIT_ROW_LIMIT),
+      env.INVENTORY_DB.prepare('DELETE FROM integration_access_audit WHERE client_id = ? AND id IN (SELECT id FROM integration_access_audit WHERE client_id = ? ORDER BY occurred_at DESC, id DESC LIMIT -1 OFFSET ?)').bind(principal.clientId, principal.clientId, AUDIT_ROW_LIMIT),
     ])
     if (!Array.isArray(result) || result.length !== 3 || result.some((item) => item.success !== true)) throw new Error('Audit unavailable')
   } catch { throw new IntegrationAccessError('INTEGRATION_AUDIT_UNAVAILABLE', 503) }

@@ -49,6 +49,7 @@ async function harness() {
     CREATE TABLE cloud_memberships (email TEXT PRIMARY KEY COLLATE NOCASE, user_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL, role TEXT NOT NULL, home_store TEXT NOT NULL, enabled INTEGER NOT NULL);
     INSERT INTO cloud_memberships VALUES ('synthetic@example.invalid', 'synthetic-user', 'Synthetic manager', 'manager', 'Howell', 1);`)
   db.exec(readFileSync(new URL('../../cloudflare/migrations/0004_integrations.sql', import.meta.url), 'utf8'))
+  db.exec(readFileSync(new URL('../../cloudflare/migrations/0006_integration_audit_per_client.sql', import.meta.url), 'utf8'))
   const now = new Date().toISOString(), expires = new Date(Date.now() + 86400000).toISOString()
   const addGrant = async (type = 'api_token', id = clientId) => {
     db.prepare('INSERT INTO integration_clients (client_id,label,auth_type,owner_user_id,token_sha256,scopes_json,stores_json,rate_limit_per_minute,enabled,expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(
@@ -249,6 +250,30 @@ describe('integration quota and privacy-preserving audit', () => {
     expect(db.prepare('SELECT operation,result_count FROM integration_access_audit ORDER BY id DESC LIMIT 1').get()).toMatchObject({ operation: 'manager_dispositions_list', result_count: 7 })
     await auditIntegrationAccess(env, principal, { operation: 'user submitted secret', status: 400, resultCount: 100000 }, now + 1)
     expect(db.prepare('SELECT operation,result_count FROM integration_access_audit ORDER BY id DESC LIMIT 1').get()).toMatchObject({ operation: 'other', result_count: 1000 })
+  })
+
+  it('does not let one integration\'s rejected requests evict another\'s access history', async () => {
+    // Every rejection is audited too, including the 429 a client gets for
+    // exceeding its own quota — the one outcome a misbehaving client can
+    // produce without limit. Evicting purely by global recency meant that
+    // flood pushed out the real read history of every other integration,
+    // which is exactly the record an access question needs to answer.
+    const { db, env } = await harness()
+    const noisyId = '3'.repeat(32), stamp = new Date().toISOString()
+    db.prepare('INSERT INTO integration_clients (client_id,label,auth_type,owner_user_id,token_sha256,scopes_json,stores_json,rate_limit_per_minute,enabled,expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(noisyId, 'Noisy integration', 'api_token', 'synthetic-user', await hashIntegrationToken(`iflow_${noisyId}_${'b'.repeat(43)}`), '["inventory.read"]', '["Howell"]', 3, 1, new Date(Date.now() + 86400000).toISOString(), stamp, stamp)
+    const principal = await authenticateIntegration(request(), env)
+    const now = Date.now()
+    const insert = db.prepare('INSERT INTO integration_access_audit (client_id,operation,status,result_count,occurred_at) VALUES (?, ?, ?, ?, ?)')
+    db.exec('BEGIN')
+    for (let index = 0; index < 40; index++) insert.run(clientId, 'inventory_list', 200, 25, now - 900000 - index)
+    for (let index = 0; index < 10000; index++) insert.run(noisyId, 'other', 429, 0, now - index)
+    db.exec('COMMIT')
+
+    await auditIntegrationAccess(env, principal, { operation: 'inventory_list', status: 200, resultCount: 25 }, now + 1)
+
+    const remaining = db.prepare('SELECT COUNT(*) AS total FROM integration_access_audit WHERE client_id = ?').get(clientId)
+    expect(remaining.total).toBe(41)
   })
 
   it('fails closed on failed or non-success audit batches', async () => {
