@@ -46,11 +46,16 @@ function ensureWithin(root, candidate) {
   return resolvedCandidate
 }
 
-function readOperationalSource(filePath) {
+function readOperationalSource(filePath, root) {
   const link = lstatSync(filePath)
   if (!link.isFile() || link.isSymbolicLink()) throw new Error('Manager disposition source must be a regular file')
-  const resolved = realpathSync(filePath)
-  if (resolved !== path.resolve(filePath)) throw new Error('Manager disposition source path must not redirect')
+  // A redirect is a symlink *inside* the workspace — a source directory or
+  // file resolving somewhere else. Ancestors of the workspace may legitimately
+  // be symlinks (macOS resolves /var to /private/var; a deployment can mount
+  // the workspace behind a link), so the comparison starts from the root's
+  // own real location rather than demanding the whole path be link-free.
+  const expected = path.join(realpathSync(root), path.relative(path.resolve(root), path.resolve(filePath)))
+  if (realpathSync(filePath) !== expected) throw new Error('Manager disposition source path must not redirect')
   let bytes
   let data
   try {
@@ -91,7 +96,7 @@ export function loadManagerDispositionOverlay({ workspaceRoot, reportDate, vehic
   const boundCandidate = path.isAbsolute(manifestBinding.path) ? manifestBinding.path : path.join(root, manifestBinding.path)
   const sourcePath = ensureWithin(root, boundCandidate)
   ensure(path.dirname(sourcePath) === sourceDirectory && path.basename(sourcePath) === expectedName, 'Manager disposition manifest path is not an approved operational source')
-  const source = readOperationalSource(sourcePath)
+  const source = readOperationalSource(sourcePath, root)
   ensure(source.sha256 === manifestBinding.sha256.toUpperCase(), 'Manager disposition source checksum differs from the completed manifest')
   const documents = [{ expectedStore: manifestBinding.source_store, data: source.data }]
   const overlay = sanitizeManagerDispositionDocuments({ documents, reportDate, vehicles })
