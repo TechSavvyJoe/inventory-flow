@@ -326,6 +326,7 @@ describe('Inventory Flow API', () => {
       windowStickers: 1,
       factoryEquipment: 1,
       fordOasis: 0,
+      warrantyCheck: 0,
       enrichmentRows: 1,
     })
     expect(health.sources.resources.rows).toBe(1)

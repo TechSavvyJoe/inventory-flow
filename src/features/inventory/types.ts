@@ -176,6 +176,53 @@ export interface FordOasisResource {
   extendedCoverageExpirations: string[];
 }
 
+export type WarrantyCheckCoverageStatus = "ACTIVE" | "EXPIRED" | "N/A";
+
+/** One warranty coverage line. Term and remaining text are shown exactly as the source printed them. */
+export interface WarrantyCheckCoverage {
+  type: string;
+  termText: string;
+  termMonths?: number | null;
+  termMiles?: number | null;
+  unlimitedMiles?: boolean | null;
+  unlimitedMonths?: boolean | null;
+  remainingMiles?: number | null;
+  remainingMonths?: number | null;
+  remainingMilesText: string;
+  remainingTimeText: string;
+  status: WarrantyCheckCoverageStatus;
+  note?: string | null;
+}
+
+/** AutoCheck (Experian) warranty estimate figured from the mileage entered. */
+export interface WarrantyCheckAutoCheckBlock {
+  inServiceDate?: string | null;
+  inServiceAgeMonths?: number | null;
+  defaultMileage?: number | null;
+  coverages: WarrantyCheckCoverage[];
+}
+
+/** Ford OASIS factory coverage for Ford/Lincoln VINs. Authoritative when present. */
+export interface WarrantyCheckFordOasisBlock {
+  warrantyStartDate: string;
+  monthsInService: number;
+  coverages: WarrantyCheckCoverage[];
+}
+
+/**
+ * Read-only per-VIN warranty coverage check. Remaining coverage is reference
+ * evidence and never a condition, hold, or availability signal.
+ */
+export interface WarrantyCheckResource {
+  dataState: SourceDataState;
+  capturedAt?: string | null;
+  sourceLabel?: string | null;
+  mileageEntered: number;
+  mileageSource?: string | null;
+  autoCheck: WarrantyCheckAutoCheckBlock | null;
+  fordOasis: WarrantyCheckFordOasisBlock | null;
+}
+
 export interface DealerMailHoldSignal {
   dataState: SourceDataState;
   hasActiveHold: boolean | null;
@@ -314,6 +361,7 @@ export interface InventoryVehicle {
   windowSticker?: WindowStickerResource | null;
   factoryEquipment?: FactoryEquipmentResource | null;
   fordOasis?: FordOasisResource | null;
+  warrantyCheck?: WarrantyCheckResource | null;
   publicListing: PublicListingSignal;
   dealerOn: DealerOnSignal;
   managerDisposition?: ManagerDispositionSignal | null;

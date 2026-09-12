@@ -181,6 +181,53 @@ export interface FordOasisRecord {
   extendedCoverageExpirations?: string[]
 }
 
+export type WarrantyCheckCoverageStatus = 'ACTIVE' | 'EXPIRED' | 'N/A'
+
+/** One warranty coverage line. Term and remaining text stay exactly as the source printed them. */
+export interface WarrantyCheckCoverageRecord {
+  type: string
+  termText: string
+  termMonths?: number | null
+  termMiles?: number | null
+  unlimitedMiles?: boolean | null
+  unlimitedMonths?: boolean | null
+  remainingMiles?: number | null
+  remainingMonths?: number | null
+  remainingMilesText: string
+  remainingTimeText: string
+  status: WarrantyCheckCoverageStatus
+  note?: string | null
+}
+
+/** AutoCheck (Experian) warranty estimate figured from the mileage entered. */
+export interface WarrantyCheckAutoCheckRecord {
+  inServiceDate?: string | null
+  inServiceAgeMonths?: number | null
+  defaultMileage?: number | null
+  coverages?: WarrantyCheckCoverageRecord[]
+}
+
+/** Ford OASIS factory coverage for Ford/Lincoln VINs. Authoritative when present. */
+export interface WarrantyCheckFordOasisRecord {
+  warrantyStartDate: string
+  monthsInService: number
+  coverages?: WarrantyCheckCoverageRecord[]
+}
+
+/**
+ * Read-only per-VIN warranty coverage check. At least one of autoCheck or
+ * fordOasis is present. No owner data is carried.
+ */
+export interface WarrantyCheckRecord {
+  dataState?: SourceFreshness
+  capturedAt?: string | null
+  sourceLabel?: string | null
+  mileageEntered: number
+  mileageSource?: string | null
+  autoCheck?: WarrantyCheckAutoCheckRecord | null
+  fordOasis?: WarrantyCheckFordOasisRecord | null
+}
+
 export interface HoldSummary {
   state: 'primary' | 'backup' | 'multiple' | 'none_observed' | 'stale' | 'unknown'
   label: string
@@ -321,6 +368,7 @@ export interface VehicleRecord {
   windowSticker?: WindowStickerRecord
   factoryEquipment?: FactoryEquipmentRecord
   fordOasis?: FordOasisRecord
+  warrantyCheck?: WarrantyCheckRecord
 }
 
 export interface TransferEvent {
