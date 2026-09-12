@@ -84,8 +84,19 @@ function itemIsLocal(item, context) {
   return ['manager'].includes(context.role)
 }
 
-function isTransportItem(item) {
+export function isTransportItem(item) {
   return ['transfer_next_action', 'return_overdue', 'location_exception'].includes(item.type)
+}
+
+/**
+ * Whether a caller may see a persisted assignee on a non-transport (hold-review)
+ * item. Mirrors the role rule `holdSummary` applies to the DealerMail
+ * salesperson: transport-only roles never receive it. This is the read-side
+ * guard for rows written before `buildAttentionMutation` stopped seeding the
+ * assignee from the privileged snapshot's `owner`.
+ */
+export function canSeePersistedAssignee(item, context) {
+  return isTransportItem(item) || !['driver', 'porter', 'coordinator'].includes(context.role)
 }
 
 export function allowedAttentionActions(item, context) {
@@ -139,7 +150,13 @@ export function buildAttentionMutation({ sourceItem, current, input, context, id
     sourceId: sourceItem.sourceId || sourceItem.vin || sourceItem.id,
     status: current?.status || 'open',
     priority: current?.priority || defaultPriority(sourceItem),
-    assignedTo: current?.assigned_to || sourceItem.owner || null,
+    // Never seed the persisted assignee from the item's `owner`. For hold-review
+    // items that field is the DealerMail salesperson, present only in the
+    // privileged caller's snapshot; the workflow row is shared across roles, so
+    // persisting it here would hand that identity to drivers, porters and
+    // coordinators whose own snapshots deliberately omit it. The read path
+    // still falls back to each role's own `owner` for display.
+    assignedTo: current?.assigned_to || null,
     assignedRole: current?.assigned_role || null,
     followUpAt: current?.follow_up_at || null,
     resolutionCode: current?.resolution_code || null,
