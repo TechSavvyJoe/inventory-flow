@@ -173,7 +173,8 @@ manifest warnings. In order:
 | 5 Validate | 13-sheet: `final_check12.py <xlsx> work\run-status\{date}.json`; 10-sheet: `final_check.py <xlsx>`. Always `excel_open_test2.ps1 -Path <xlsx>`. | Run, do not edit. Fix the DATA, not the validator. |
 | 5.5 Complete the manifest | Real counts, `dealermail_snapshot_path` = cloud-ready file, `final_workbook_sha256/bytes/sheets`, evidence, `"complete": true`. | The publish gate refuses an incomplete manifest - the single most common cause of a failed morning. |
 | 6 Publish: verify only | Read `app-feed-status\{date}.json` and `auto-publish-{date}.log`; report the code. May `Start-ScheduledTask BobMaxey-InventoryFlow-DailyPublish` once if the manifest completed after the last slot. | Never runs the publish, never touches secrets, never removes the lock. |
-| 7 vAuto backup | Only for vehicles still without sticker data after 3.8, capped at 15 per run: Provision -> new appraisal -> VIN -> Go -> *Factory Equipment* popup `factory-equipment-details` -> read as printed -> navigate away and discard. | **New 09/12.** Never save, never "Temporary Save", never "Copy Information" on the duplicate modal. Euro/import makes: "Build data not available" is expected. |
+| 3.95 vAuto Factory Equipment (API) | `python work\build_vauto_worklist.py --report-date {date}` then `node apps\inventory-ops\scripts\vauto-factory-equipment.mjs run work\vauto-history\worklist-{date}.json work\vauto-history\{date}-factory-equipment.json`. Every feed VIN not already OK, any make; ~0.2 s per VIN; resumable. | **Rewritten 09/12 (PM).** No form, no clicks, no popup, nothing on screen: the script calls vAuto's own `factoryequipment/WindowStickers/{VIN}` endpoint from inside the authenticated tab. `[]` = `NO_BUILD_DATA` (Euro/import makes), re-checked after 7 days. `SESSION_EXPIRED` = sign in to vAuto again in the automation Comet. The daily publish task runs this same pair as its Step 1.4, so the Cowork run is a second, harmless pass. |
+| 7 (retired) | The manual vAuto UI procedure. `--ui` on the driver keeps the old form-driving path as an emergency fallback only. | Never save, never "Temporary Save", never "Copy Information" on the duplicate modal. |
 | 8 Finish | Message Joe: public / DealerMail / held counts, publish status, failures and why, vehicles needing manual review; attach the workbook. Dates MM/DD/YYYY. | A VIN that dropped off the public feed is a Removed change, not active inventory. |
 
 Two things happen alongside the prompt rather than inside it:
@@ -278,9 +279,9 @@ there - commit them when convenient so a `git checkout .` cannot wipe them.
   captured, stored, published or messaged - coverage category and expiration
   only. `add_oasis_sheet.py` reads an allow-list of vehicle fields for the same
   reason.
-- vAuto/Provision *Factory Equipment* works for Fords (the label opens in a
-  popup window titled `factory-equipment-details`); most European and some
-  import makes return "Build data not available". Never save an appraisal.
+- vAuto/Provision *Factory Equipment* is captured through vAuto's own
+  WindowStickers API (see below), no UI involved; most European and some
+  import makes have no build data (`NO_BUILD_DATA`). Never save an appraisal.
 - AutoCheck is already fully captured through the dealer VDPs (226 of 226 on
   09/12) via `publicRecord`. No further AutoCheck work is needed. DealerMail's
   own AUTOCHECK button opens whatever report is loaded in the dealership's
@@ -299,17 +300,43 @@ there - commit them when convenient so a `git checkout .` cannot wipe them.
   `827257C6...`); the Ford OASIS and Ford Invoice sheets were written after
   that publish and first ship with the next run.
 
-## vAuto / Provision factory options (now STEP 7 of the daily task)
+## vAuto / Provision factory equipment (STEP 3.95 of the daily task, and Step 1.4 of the publish)
 
-For each VIN still without sticker data after the invoice step, capped at 15
-per run so it never blocks the publish, in the automation Comet: Provision ->
-New Appraisal (`Default.aspx?new=true`, ~45 s to render) -> enter VIN -> Go ->
-if "Duplicate Appraisal" appears click **Ignore**, never "Copy Information" ->
-**Factory Equipment** -> read the popup `factory-equipment-details` *as
-printed* -> navigate away and discard the unsaved-changes dialog. **Never save
-the appraisal, never "Temporary Save".** Each VIN starts a fresh appraisal. If
-a draft appears to persist, stop and tell Joe. Output feeds the plate-fee
-column and, via a CAI URL, a renderable `factoryEquipment` record.
+What the *Factory Equipment* button actually does is one authenticated GET to
+`https://slot1.bff.megazord.vauto.app.coxautoinc.com/api/factoryequipment/WindowStickers/{VIN}`
+carrying three identity headers whose values are the tab's own cookies
+(`caPlatformUserId` -> `platformuserid`, `CurrentEntity` -> `currententityid` and
+`appraisalentityid`). The response is `[{type:"JPG",resourceUrl:<CAI jpg>},{type:"PDF",
+resourceUrl:<CAI pdf>}]`, or `[]` when vAuto has no build data. So
+`scripts\vauto-factory-equipment.mjs run` makes that call from inside the
+automation Comet's vAuto tab for every feed VIN not already captured - no
+appraisal form, no VIN entry, no Go, no popup, nothing on screen, ~0.2 s per
+VIN (216 of 226 on 09/12; the 9 misses are VW/Honda/Audi/Land Rover/BMW-type
+units with no build data). It never creates, opens, saves or finalizes an
+appraisal. `SESSION_EXPIRED` (HTTP 401 "Entity and/or User is Null.") means
+sign in to vAuto again in the Work PC Automation Browser; the 10-minute keeper
+task also pings this endpoint and logs `vauto=SESSION_EXPIRED` in
+`work\app-feed-status\dealermail-keeper.log` the moment it happens.
+
+`work\build_vauto_worklist.py --report-date {date}` builds the worklist from the
+day's public snapshot: every VIN, any make, minus VINs OK in any prior capture
+(CAI URLs are stable) and minus `NO_BUILD_DATA` VINs checked in the last 7 days.
+
+The old UI path (`--ui`) still exists as an emergency fallback only: if it is
+ever needed, the rules stand - **Ignore** on the duplicate modal, never "Copy
+Information", never save, never "Temporary Save".
+
+## Ford OASIS in the app - deploy gate
+
+`build_vin_document_enrichment.py` only emits `fordOasis` blocks when
+`apps\inventory-ops\runtime\oasis-enabled.flag` exists (or `--include-oasis` is
+passed). The deployed Cloudflare Worker must carry `validateFordOasis()`
+(`cloudflare/src/release-validation.mjs`) before that marker is created, or the
+9:15 publish is rejected server-side with an unknown-key error. Order of
+operations, once: `npx wrangler login --browser=false` (Joe authorizes in any
+browser) -> `pnpm build` -> `pnpm cloud:validate` -> `pnpm cloud:deploy` ->
+`New-Item apps\inventory-ops\runtime\oasis-enabled.flag` -> `daily-cloud-publish.ps1 -Force`.
+Until then OASIS lives in the workbook sheet and `work\oasis-history\` only.
 
 ## Standing rules from Joe
 

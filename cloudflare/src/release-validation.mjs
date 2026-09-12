@@ -33,6 +33,7 @@ const MAX_ROWS = 20000
 const CHECKS = ['differenceVinEqualsFlaggedHolds', 'differenceStockEqualsFlaggedHolds', 'allSourceCellCounts22', 'allStockNonblank', 'allStoreCodesExpected', 'setEquationValid']
 const RESOURCE_SCHEMA = 'inventory-flow-vin-document-enrichment-v1'
 const RESOURCE_DATA_STATES = new Set(['current', 'stale_unverified', 'incomplete'])
+const FORD_OASIS_FIELD_SERVICE_ACTION_CODE = /^[0-9]{2}[A-Z][0-9]{2,3}$/
 const CAI_FACTORY_EQUIPMENT_PATH = /^\/window-stickers\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jpg$/i
 const PUBLIC_RESOURCE_ARCHIVE_ONLY_FIELDS = new Set([
   'validated_vin',
@@ -98,6 +99,12 @@ function optionalText(value, label, max = 500) {
 function optionalNumber(value, label, minimum = 0, maximum = 1_000_000) {
   if (value === undefined || value === null || value === '') return undefined
   ensure(typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum, `${label} is outside the safe numeric range`)
+  return value
+}
+
+function optionalInteger(value, label, minimum = 0, maximum = 1_000_000) {
+  if (value === undefined || value === null || value === '') return undefined
+  ensure(Number.isInteger(value) && value >= minimum && value <= maximum, `${label} must be an integer within the safe range`)
   return value
 }
 
@@ -221,19 +228,70 @@ function validateExternalAutoCheck(value, vin) {
   return { factoryEquipment: 0, externalAutoCheck: 1 }
 }
 
+// Ford OASIS vehicle report facts captured read-only from FMCDealer for an
+// exact VIN. Dates are validated as bounded printed text, never re-parsed. The
+// allow-list mirrors validatedFordOasis() in server/importer.mjs; prior-owner
+// names are never part of the capture and no such field is accepted here.
+function validateFordOasis(value, vin) {
+  onlyKeys(value, new Set([
+    'dataState', 'capturedAt', 'sourceLabel', 'vehicleDescription', 'versionSeries', 'buildDate',
+    'warrantyStartDate', 'releaseDate', 'monthsInService', 'saleMileage', 'openFieldServiceActions',
+    'warrantyCoverages', 'extendedCoverageExpirations',
+  ]), 'Ford OASIS record')
+  ensure(RESOURCE_DATA_STATES.has(value.dataState), 'Ford OASIS data state is invalid')
+  ensure(optionalTimestamp(value.capturedAt, 'Ford OASIS capturedAt'), 'Ford OASIS capturedAt is required')
+  for (const [field, max] of [
+    ['sourceLabel', 160], ['vehicleDescription', 160], ['versionSeries', 120], ['buildDate', 40],
+    ['warrantyStartDate', 40], ['releaseDate', 40],
+  ]) optionalText(value[field], `Ford OASIS ${field}`, max)
+  optionalInteger(value.monthsInService, 'Ford OASIS monthsInService', 0, 600)
+  optionalInteger(value.saleMileage, 'Ford OASIS saleMileage', 0, 999_999)
+
+  const actions = value.openFieldServiceActions ?? []
+  ensure(Array.isArray(actions) && actions.length <= 60, 'Ford OASIS open field service actions must be a bounded array')
+  const actionCodes = new Set()
+  for (const action of actions) {
+    onlyKeys(action, new Set(['code', 'description']), 'Ford OASIS field service action')
+    const code = optionalText(action.code, 'Ford OASIS field service action code', 20)
+    ensure(code && FORD_OASIS_FIELD_SERVICE_ACTION_CODE.test(code), 'Ford OASIS field service action code is not a valid FSA code')
+    ensure(!actionCodes.has(code), 'Ford OASIS field service actions contain a duplicate code')
+    actionCodes.add(code)
+    optionalText(action.description, 'Ford OASIS field service action description', 300)
+  }
+
+  const coverages = value.warrantyCoverages ?? []
+  ensure(Array.isArray(coverages) && coverages.length <= 20, 'Ford OASIS warranty coverages must be a bounded array')
+  for (const coverage of coverages) {
+    onlyKeys(coverage, new Set(['type', 'description']), 'Ford OASIS warranty coverage')
+    ensure(optionalText(coverage.type, 'Ford OASIS warranty coverage type', 120), 'Ford OASIS warranty coverage type is required')
+    optionalText(coverage.description, 'Ford OASIS warranty coverage description', 300)
+  }
+
+  const expirations = value.extendedCoverageExpirations ?? []
+  ensure(Array.isArray(expirations) && expirations.length <= 10, 'Ford OASIS extended coverage expirations must be a bounded array')
+  for (const item of expirations) {
+    ensure(optionalText(item, 'Ford OASIS extended coverage expiration', 40), 'Ford OASIS extended coverage expiration is required')
+  }
+  return { factoryEquipment: 0, externalAutoCheck: 0, fordOasis: 1 }
+}
+
 function validateResourceRecord(value, vin) {
-  onlyKeys(value, new Set(['vin', 'factoryEquipment', 'autoCheckReport']), 'resource record')
+  onlyKeys(value, new Set(['vin', 'factoryEquipment', 'autoCheckReport', 'fordOasis']), 'resource record')
   ensure(value.vin === vin && normalizedVin(value.vin) === vin, 'resource record VIN does not match its normalized vehicle')
-  let counts = { factoryEquipment: 0, externalAutoCheck: 0 }
+  let counts = { factoryEquipment: 0, externalAutoCheck: 0, fordOasis: 0 }
   if (value.factoryEquipment !== undefined && value.factoryEquipment !== null) {
     const next = validateFactoryEquipment(value.factoryEquipment, vin)
-    counts = { factoryEquipment: counts.factoryEquipment + next.factoryEquipment, externalAutoCheck: counts.externalAutoCheck }
+    counts = { ...counts, factoryEquipment: counts.factoryEquipment + next.factoryEquipment }
   }
   if (value.autoCheckReport !== undefined && value.autoCheckReport !== null) {
     const next = validateExternalAutoCheck(value.autoCheckReport, vin)
-    counts = { factoryEquipment: counts.factoryEquipment, externalAutoCheck: counts.externalAutoCheck + next.externalAutoCheck }
+    counts = { ...counts, externalAutoCheck: counts.externalAutoCheck + next.externalAutoCheck }
   }
-  ensure(counts.factoryEquipment + counts.externalAutoCheck > 0, 'resource record contains no usable resource')
+  if (value.fordOasis !== undefined && value.fordOasis !== null) {
+    const next = validateFordOasis(value.fordOasis, vin)
+    counts = { ...counts, fordOasis: counts.fordOasis + next.fordOasis }
+  }
+  ensure(counts.factoryEquipment + counts.externalAutoCheck + counts.fordOasis > 0, 'resource record contains no usable resource')
   return counts
 }
 
@@ -251,7 +309,7 @@ function validateResourceRun(run, resourceRows, reportDate) {
 
   const metadata = run.metadata
   onlyKeys(metadata, new Set([
-    'status', 'generatedAt', 'recordCount', 'factoryEquipmentCount', 'externalAutoCheckCount', 'path',
+    'status', 'generatedAt', 'recordCount', 'factoryEquipmentCount', 'externalAutoCheckCount', 'fordOasisCount', 'path',
     'sha256', 'bytes', 'matchedVehicleCount', 'unmatchedRecordCount',
   ]), 'resources source metadata')
   ensure(metadata.status === 'matched', 'resources source metadata is not matched')
@@ -267,10 +325,13 @@ function validateResourceRun(run, resourceRows, reportDate) {
   ensure(matched === resourceRows.length && unmatched === recordCount - matched, 'resources matched/unmatched counts do not reconcile')
   const factoryCount = strictInteger(metadata.factoryEquipmentCount, 'factory-equipment source count')
   const autoCheckCount = strictInteger(metadata.externalAutoCheckCount, 'external AutoCheck source count')
-  ensure(factoryCount <= recordCount && autoCheckCount <= recordCount, 'resources type counts exceed the source record count')
+  // Releases published before the Ford OASIS channel existed carry no OASIS count.
+  const oasisCount = metadata.fordOasisCount === undefined ? 0 : strictInteger(metadata.fordOasisCount, 'Ford OASIS source count')
+  ensure(factoryCount <= recordCount && autoCheckCount <= recordCount && oasisCount <= recordCount, 'resources type counts exceed the source record count')
   const attachedFactory = resourceRows.reduce((total, row) => total + row.counts.factoryEquipment, 0)
   const attachedAutoCheck = resourceRows.reduce((total, row) => total + row.counts.externalAutoCheck, 0)
-  ensure(attachedFactory <= factoryCount && attachedAutoCheck <= autoCheckCount, 'attached resource type counts exceed validated source evidence')
+  const attachedOasis = resourceRows.reduce((total, row) => total + row.counts.fordOasis, 0)
+  ensure(attachedFactory <= factoryCount && attachedAutoCheck <= autoCheckCount && attachedOasis <= oasisCount, 'attached resource type counts exceed validated source evidence')
   ensure(HASH.test(String(run.provenanceSha256)), 'resources source provenance checksum is invalid')
   ensure(
     String(run.provenanceSha256).toLowerCase() === resourceProvenanceSha256(run, resourceRows),
@@ -635,6 +696,7 @@ export function validateReleaseBundle(bundle) {
     publicStoreCounts: publicData.counts,
     crmStoreCounts: crm.counts,
     resourceRecordCount: resourceRows.length,
+    fordOasisRecordCount: resourceRows.reduce((total, row) => total + row.counts.fordOasis, 0),
     managerDispositionRecordCount: managerDisposition.recordCount,
     managerSoldRecordCount: managerDisposition.soldRecordCount,
     managerDeliveredRecordCount: managerDisposition.deliveredRecordCount,

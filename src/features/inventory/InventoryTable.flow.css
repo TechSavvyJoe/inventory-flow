@@ -148,6 +148,25 @@
   .inventory-mobile-manager-disposition[data-state="stale"],
   .inventory-mobile-manager-disposition[data-state="unavailable"] { opacity: .78; }
   .inventory-mobile-manager-disposition { grid-column: 1 / -1; padding: 8px 0 0; }
+
+  /* Ford OASIS open recall / field service action count. Reference only. */
+  .inventory-recall-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 28px;
+    padding: 2px 8px;
+    border: 1px solid color-mix(in srgb, var(--ifx-danger) 38%, var(--ifx-neutral-200));
+    border-radius: var(--ifx-radius-full);
+    color: var(--ifx-danger);
+    background: var(--ifx-danger-surface);
+    font: 600 12px/1.35 var(--font-app);
+    cursor: pointer;
+  }
+  .inventory-recall-chip > svg { flex: 0 0 auto; }
+  .inventory-recall-chip strong { font: inherit; white-space: nowrap; }
+  .inventory-recall-chip:hover { border-color: var(--ifx-danger); }
+  .inventory-recall-chip:focus-visible { outline: 0; box-shadow: var(--ifx-focus-ring); }
 }
 
 @media (min-width: 761px) {

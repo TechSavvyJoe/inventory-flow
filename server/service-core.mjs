@@ -688,6 +688,14 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
         isOriginalWindowSticker: false,
       }
     : undefined
+  // Ford OASIS facts are read-only reference evidence from the resources
+  // channel. Open field service actions never imply availability or condition.
+  const fordOasis = source.resourceRecord?.fordOasis
+    ? {
+        ...source.resourceRecord.fordOasis,
+        dataState: independentResourceState(source.resourceRecord.fordOasis),
+      }
+    : undefined
   const view = {
     vin: source.vin,
     stockNumber,
@@ -749,6 +757,7 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ...(autoCheckReport ? { autoCheckReport } : {}),
     ...(windowSticker ? { windowSticker } : {}),
     ...(factoryEquipment ? { factoryEquipment } : {}),
+    ...(fordOasis ? { fordOasis } : {}),
   }
   const safeSearchParts = [
     source.vin,
@@ -851,6 +860,20 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ]),
     factoryEquipment?.disclaimer,
     factoryEquipment ? 'vAuto CAI informational equipment label not original Monroney window sticker' : null,
+    fordOasis?.dataState,
+    fordOasis?.sourceLabel,
+    fordOasis?.vehicleDescription,
+    fordOasis?.versionSeries,
+    fordOasis?.buildDate,
+    fordOasis?.warrantyStartDate,
+    fordOasis?.releaseDate,
+    fordOasis?.monthsInService,
+    fordOasis?.saleMileage,
+    ...(fordOasis?.openFieldServiceActions ?? []).flatMap((action) => [action.code, action.description]),
+    ...(fordOasis?.warrantyCoverages ?? []).flatMap((coverage) => [coverage.type, coverage.description]),
+    ...(fordOasis?.extendedCoverageExpirations ?? []),
+    fordOasis ? 'Ford OASIS' : null,
+    fordOasis?.openFieldServiceActions?.length ? 'open recall field service action' : null,
   ]
   if (context.canViewPrivateEvidence) safeSearchParts.push(privateSearchText(source))
   if (context.canViewPrivateEvidence && includePrivate) {
@@ -870,6 +893,7 @@ function mergedResourceCoverage(sources, enrichmentRows = 0) {
     autoCheck: 0,
     windowStickers: 0,
     factoryEquipment: 0,
+    fordOasis: 0,
     enrichmentRows,
   }
   for (const source of sources) {
@@ -878,12 +902,14 @@ function mergedResourceCoverage(sources, enrichmentRows = 0) {
     const hasAutoCheck = Boolean(source.resourceRecord?.autoCheckReport || source.publicRecord?.autoCheckReport)
     const hasWindowSticker = Boolean(source.publicRecord?.windowSticker)
     const hasFactoryEquipment = Boolean(source.resourceRecord?.factoryEquipment)
-    if (hasPhotos || hasAutoCheck || hasWindowSticker || hasFactoryEquipment) coverage.vehicles += 1
+    const hasFordOasis = Boolean(source.resourceRecord?.fordOasis)
+    if (hasPhotos || hasAutoCheck || hasWindowSticker || hasFactoryEquipment || hasFordOasis) coverage.vehicles += 1
     if (hasPhotos) coverage.photos += 1
     coverage.photoUrls += imageUrls.length
     if (hasAutoCheck) coverage.autoCheck += 1
     if (hasWindowSticker) coverage.windowStickers += 1
     if (hasFactoryEquipment) coverage.factoryEquipment += 1
+    if (hasFordOasis) coverage.fordOasis += 1
   }
   return coverage
 }

@@ -41,6 +41,9 @@ async function main() {
       withCaiUrl: records.filter((record) => typeof record.factoryEquipment?.url === 'string').length,
       withPricing: records.filter((record) => record.factoryEquipment && ['basePrice', 'totalMsrp', 'totalOptions', 'destinationCharge'].some((key) => record.factoryEquipment[key] !== undefined)).length,
       withPackagesOrSections: records.filter((record) => (record.factoryEquipment?.packages?.length ?? 0) + (record.factoryEquipment?.sections?.length ?? 0) > 0).length,
+      withFordOasis: records.filter((record) => Boolean(record.fordOasis)).length,
+      withOpenFieldServiceActions: records.filter((record) => (record.fordOasis?.openFieldServiceActions?.length ?? 0) > 0).length,
+      fordOasisOnly: records.filter((record) => record.fordOasis && !record.factoryEquipment && !record.autoCheckReport).length,
     }
   } catch (error) {
     failed = true
@@ -67,6 +70,7 @@ async function main() {
           recordCount: resources.metadata?.recordCount,
           factoryEquipmentCount: resources.metadata?.factoryEquipmentCount,
           externalAutoCheckCount: resources.metadata?.externalAutoCheckCount,
+          fordOasisCount: resources.metadata?.fordOasisCount,
           matchedVehicleCount: resources.metadata?.matchedVehicleCount,
           unmatchedRecordCount: resources.metadata?.unmatchedRecordCount,
         }
@@ -79,6 +83,8 @@ async function main() {
     out.validateReleaseBundle_ok = true
     out.validateReleaseBundle_summary = result
     out.resourceRecordCount = result.resourceRecordCount
+    out.fordOasisRecordCount = result.fordOasisRecordCount
+    out.attachedFordOasisRecordCount = (release.vehicles ?? []).filter((vehicle) => vehicle.resourceRecord?.fordOasis).length
   } catch (error) {
     failed = true
     out.validateReleaseBundle_ok = false

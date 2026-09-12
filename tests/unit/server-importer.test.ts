@@ -839,6 +839,106 @@ describe('verified daily source importer', () => {
     expect(() => validateVinDocumentEnrichment(unsupportedField)).toThrow(/unsupported fields/i)
   })
 
+  it('validates read-only Ford OASIS recall and warranty facts as an independent VIN resource', () => {
+    const vin = '1FMCU9GN3PUA06249'
+    const enrichment = {
+      schemaVersion: 'inventory-flow-vin-document-enrichment-v1',
+      generatedAt: '2026-09-12T15:00:00Z',
+      recordsByVin: {
+        [vin]: {
+          vin,
+          fordOasis: {
+            dataState: 'current',
+            capturedAt: '2026-09-12T14:52:37.597Z',
+            sourceLabel: 'Ford OASIS vehicle report (FMCDealer read-only capture)',
+            vehicleDescription: '2023 Escape',
+            versionSeries: 'SERIES 10',
+            buildDate: '11-May-2023',
+            warrantyStartDate: '09-June-2023',
+            releaseDate: '12-May-2023',
+            monthsInService: 38,
+            saleMileage: 3,
+            openFieldServiceActions: [{ code: '24N08', description: 'DRIVERS SIDE SEAT BUCKLE REPLACEMENT' }],
+            warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain', description: '' }],
+            extendedCoverageExpirations: ['01/16/2029'],
+          },
+        },
+      },
+    }
+
+    // A record carrying only OASIS facts is a usable resource on its own.
+    const validated = validateVinDocumentEnrichment(enrichment)
+    expect(validated.recordsByVin[vin]).toEqual({
+      vin,
+      fordOasis: {
+        dataState: 'current',
+        capturedAt: '2026-09-12T14:52:37.597Z',
+        sourceLabel: 'Ford OASIS vehicle report (FMCDealer read-only capture)',
+        vehicleDescription: '2023 Escape',
+        versionSeries: 'SERIES 10',
+        buildDate: '11-May-2023',
+        warrantyStartDate: '09-June-2023',
+        releaseDate: '12-May-2023',
+        monthsInService: 38,
+        saleMileage: 3,
+        openFieldServiceActions: [{ code: '24N08', description: 'DRIVERS SIDE SEAT BUCKLE REPLACEMENT' }],
+        warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain' }],
+        extendedCoverageExpirations: ['01/16/2029'],
+      },
+    })
+    expect(validated.metadata).toMatchObject({
+      recordCount: 1,
+      factoryEquipmentCount: 0,
+      externalAutoCheckCount: 0,
+      fordOasisCount: 1,
+    })
+
+    const nullNumbers = structuredClone(enrichment)
+    nullNumbers.recordsByVin[vin].fordOasis.monthsInService = null
+    nullNumbers.recordsByVin[vin].fordOasis.saleMileage = null
+    const withoutNumbers = validateVinDocumentEnrichment(nullNumbers).recordsByVin[vin].fordOasis
+    expect(withoutNumbers).not.toHaveProperty('monthsInService')
+    expect(withoutNumbers).not.toHaveProperty('saleMileage')
+
+    const unsupportedField = structuredClone(enrichment)
+    unsupportedField.recordsByVin[vin].fordOasis.engineCalibration = 'PCTCCRNA'
+    expect(() => validateVinDocumentEnrichment(unsupportedField)).toThrow(/unsupported fields/i)
+
+    // Owner identity never enters the release, even when a capture leaks it.
+    const ownerName = structuredClone(enrichment)
+    ownerName.recordsByVin[vin].fordOasis.ownerName = 'Jane Example'
+    expect(() => validateVinDocumentEnrichment(ownerName)).toThrow(/unsupported fields/i)
+    const coverageOwner = structuredClone(enrichment)
+    coverageOwner.recordsByVin[vin].fordOasis.warrantyCoverages[0].customerName = 'Jane Example'
+    expect(() => validateVinDocumentEnrichment(coverageOwner)).toThrow(/unsupported fields/i)
+
+    const badCode = structuredClone(enrichment)
+    badCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: 'RECALL-1', description: 'Not an FSA code' }]
+    expect(() => validateVinDocumentEnrichment(badCode)).toThrow(/not a valid FSA code/i)
+    const lowercaseCode = structuredClone(enrichment)
+    lowercaseCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: '24n08' }]
+    expect(() => validateVinDocumentEnrichment(lowercaseCode)).toThrow(/not a valid FSA code/i)
+    const duplicateCode = structuredClone(enrichment)
+    duplicateCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: '24N08' }, { code: '24N08' }]
+    expect(() => validateVinDocumentEnrichment(duplicateCode)).toThrow(/duplicate code/i)
+
+    const missingCapture = structuredClone(enrichment)
+    delete missingCapture.recordsByVin[vin].fordOasis.capturedAt
+    expect(() => validateVinDocumentEnrichment(missingCapture)).toThrow(/capturedAt is required/i)
+    const badState = structuredClone(enrichment)
+    badState.recordsByVin[vin].fordOasis.dataState = 'verified'
+    expect(() => validateVinDocumentEnrichment(badState)).toThrow(/data state is invalid/i)
+    const fractionalMonths = structuredClone(enrichment)
+    fractionalMonths.recordsByVin[vin].fordOasis.monthsInService = 38.5
+    expect(() => validateVinDocumentEnrichment(fractionalMonths)).toThrow(/monthsInService must be an integer/i)
+    const stringMileage = structuredClone(enrichment)
+    stringMileage.recordsByVin[vin].fordOasis.saleMileage = '00003'
+    expect(() => validateVinDocumentEnrichment(stringMileage)).toThrow(/saleMileage must be an integer/i)
+    const longDate = structuredClone(enrichment)
+    longDate.recordsByVin[vin].fordOasis.warrantyStartDate = 'x'.repeat(41)
+    expect(() => validateVinDocumentEnrichment(longDate)).toThrow(/safe text limit/i)
+  })
+
   it('permits a separately VIN-validated official AutoCheck record but creates no default link', () => {
     const vin = '1GCUDEED9RZ144878'
     const record = {

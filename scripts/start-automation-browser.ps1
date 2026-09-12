@@ -77,6 +77,10 @@ $browserArgs = @(
   '--disable-session-crashed-bubble'
   '--window-size=1400,900'
   '--remote-debugging-port=9222'      # bound to 127.0.0.1 only; used by keep-dealermail-alive.mjs
+  '--disable-backgrounding-occluded-windows'   # keep pages running while minimized / covered
+  '--disable-renderer-backgrounding'
+  '--disable-background-timer-throttling'
+  '--window-position=2000,2000'                # parks the window off the working area; stays minimized anyway
 ) + $OpenUrls
 
 Write-Log "launching automation comet (minimized) with $($OpenUrls.Count) tab(s)"
