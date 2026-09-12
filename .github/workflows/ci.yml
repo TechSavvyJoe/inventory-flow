@@ -33,6 +33,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Enforce the design-system ratchet
+        # `pnpm check` runs this locally; CI must too, or a PR can regress the
+        # sub-12px and raw-color counts without anything failing.
+        run: pnpm check:design-system
+
       - name: Run unit and component tests
         run: pnpm test
 
