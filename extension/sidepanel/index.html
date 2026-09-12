@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-density="comfortable">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Inventory Flow Deal Desk</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <div class="panel" id="panel" data-view="list">
+    <header class="mast">
+      <button type="button" class="brand" id="brand" title="Open Inventory Flow">
+        <img src="../icons/icon-32.png" alt="" width="20" height="20">
+        <span class="brand-type"><strong>Inventory Flow</strong><small>Deal desk</small></span>
+      </button>
+      <div class="mast-right">
+        <span class="who" id="who" aria-live="polite"></span>
+        <button type="button" class="icon-btn" id="settings-btn" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false"></button>
+      </div>
+    </header>
+
+    <div class="views">
+      <section class="view view-list" id="view-list" data-view-id="list" aria-label="Search inventory">
+        <div class="sticky" id="sticky">
+          <label class="search" id="search">
+            <span class="search-icon" id="search-icon"></span>
+            <input id="q" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Stock, VIN, vehicle, or salesperson" aria-label="Search inventory" aria-controls="rows" aria-autocomplete="list">
+            <kbd class="search-kbd" id="search-kbd" aria-hidden="true">/</kbd>
+            <button type="button" class="search-clear" id="clear" aria-label="Clear search" hidden></button>
+          </label>
+          <div class="scope" id="scope" role="tablist" aria-label="Inventory scope">
+            <span class="scope-ind" id="scope-ind" aria-hidden="true"></span>
+          </div>
+        </div>
+        <div class="status" id="status" hidden></div>
+        <ol class="rows" id="rows" role="listbox" aria-label="Vehicles" tabindex="-1"></ol>
+        <div class="more" id="more" hidden></div>
+        <div class="skeleton" id="skeleton" aria-hidden="true" hidden></div>
+      </section>
+
+      <section class="view view-detail" id="view-detail" data-view-id="detail" aria-hidden="true" aria-label="Vehicle">
+        <div class="detail-bar">
+          <button type="button" class="back" id="back" aria-label="Back to results"></button>
+          <span class="detail-bar-title" id="detail-bar-title"></span>
+          <div class="detail-bar-tools" id="detail-tools"></div>
+        </div>
+        <div class="detail-scroll" id="detail" tabindex="-1"></div>
+      </section>
+    </div>
+
+    <footer class="fresh" id="fresh">
+      <span class="fresh-text" id="fresh-text"></span>
+      <button type="button" class="icon-btn icon-btn-sm" id="refresh" aria-label="Refresh inventory"></button>
+    </footer>
+
+    <div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
+    <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+      <div class="sheet-head">
+        <h2 id="sheet-title">Settings</h2>
+        <button type="button" class="icon-btn" id="sheet-close" aria-label="Close settings"></button>
+      </div>
+      <div class="sheet-body" id="sheet-body"></div>
+    </section>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </div>
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

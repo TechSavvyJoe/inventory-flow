@@ -30,6 +30,8 @@
     "integrations:deploy": "wrangler deploy --config cloudflare/integrations.wrangler.jsonc",
     "check:design-system": "node scripts/check-design-system.mjs",
     "check:repo-safety": "node scripts/check-repo-safety.mjs",
+    "extension:icons": "node scripts/build-extension-icons.mjs",
+    "extension:preview": "node scripts/preview-extension.mjs",
     "check": "pnpm check:repo-safety && pnpm check:design-system && pnpm test && pnpm build"
   },
   "dependencies": {
