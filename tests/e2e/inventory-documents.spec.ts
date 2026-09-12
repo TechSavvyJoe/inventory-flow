@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test'
 
-const VIN = '1FMUK8DHXTGB76992'
+// The synthetic demo vehicle that carries factory-equipment and AutoCheck
+// facts (fixtures/synthetic-release.mjs). Playwright boots `pnpm dev:demo`,
+// so this spec never depends on — or commits — a real dealership VIN.
+const VIN = 'TESTDATAHWELL0001'
+const NAME = '2024 Ford F-150 Lariat'
 
 test('inventory search opens the VIN-specific premium document workspace', async ({ page }, testInfo) => {
   await page.goto('/inventory')
@@ -19,36 +23,31 @@ test('inventory search opens the VIN-specific premium document workspace', async
   ])
 
   await page.getByRole('combobox', { name: 'Search inventory' }).fill(VIN)
-  await expect(page.getByText('2026 Ford Explorer Active', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText(NAME, { exact: true }).first()).toBeVisible()
 
   if (testInfo.project.name === 'mobile') {
-    await page.getByRole('button', { name: /Open details for 2026 Ford Explorer Active.*AutoCheck report available.*Window sticker available/i }).click()
+    await page.getByRole('button', { name: new RegExp(`Open details for ${NAME}`, 'i') }).click()
   } else {
     const row = page.getByRole('row', { name: new RegExp(VIN) })
-    await expect(row.getByRole('link', { name: /Open AutoCheck report/i })).toHaveAttribute(
-      'href',
-      /bobmaxeyfordhowell\.com\/autocheck\.aspx\?/,
-    )
-    await expect(row.getByRole('link', { name: /Open window sticker/i })).toHaveAttribute(
-      'href',
-      /bobmaxeyfordhowell\.com\/api\/vhcliaa\/inventory\/21521\/window-sticker\?/,
-    )
-    await row.getByRole('button', { name: /Open vehicle details for 2026 Ford Explorer Active/i }).click()
+    await row.getByRole('button', { name: new RegExp(`Open vehicle details for ${NAME}`, 'i') }).click()
   }
 
-  const dialog = page.getByRole('dialog', { name: '2026 Ford Explorer Active vehicle workspace' })
+  const dialog = page.getByRole('dialog', { name: `${NAME} vehicle workspace` })
   await expect(dialog).toBeVisible()
   await dialog.getByRole('button', { name: /Full records/i }).click()
   const documents = dialog.getByRole('region', { name: 'Vehicle documents' })
-  await expect(documents.getByRole('link', { name: /Open AutoCheck report/i })).toBeVisible()
-  await expect(documents.getByRole('link', { name: /Open window sticker/i })).toBeVisible()
-  await expect(documents.getByText('92', { exact: true })).toBeVisible()
-  await expect(documents.getByText('89–94', { exact: true })).toBeVisible()
-  await expect(documents.getByText('200A', { exact: true })).toBeVisible()
-  await expect(documents.getByText('$49,480', { exact: true })).toBeVisible()
-  await expect(documents.getByText('History checks', { exact: true })).toBeVisible()
-  await expect(documents.getByText('Factory options', { exact: true })).toBeVisible()
-  await expect(documents.getByText('Full factory equipment & warranty', { exact: true })).toBeVisible()
+  // Synthetic AutoCheck score and range, then the informational factory
+  // equipment profile with its reference MSRP and priced package.
+  await expect(documents.getByText('91', { exact: true })).toBeVisible()
+  await expect(documents.getByText('86–93', { exact: true })).toBeVisible()
+  await expect(documents.getByText('History checks')).toBeVisible()
+  await expect(documents.getByText('Informational equipment label—not an original window sticker.', { exact: true })).toBeVisible()
+  await expect(documents.getByText('$68,420', { exact: true })).toBeVisible()
+  const packages = documents.locator('details', { hasText: 'Packages & priced equipment' })
+  await expect(packages).toBeVisible()
+  await packages.locator('summary').click()
+  await expect(packages.getByText('Synthetic Premium Technology Package')).toBeVisible()
+  await expect(packages.getByText('$3,005', { exact: true })).toBeVisible()
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
   expect(overflow).toBe(false)
