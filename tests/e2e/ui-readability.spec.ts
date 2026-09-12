@@ -170,10 +170,34 @@ async function collectContrastViolations(page: Page) {
   })
 }
 
+// A route with nothing to render passes these checks vacuously. Seed the one
+// record that makes /transfers show its tracker, timeline and status lanes,
+// so the check measures the text a dealership user actually sees.
+test.beforeAll(async ({ request }) => {
+  const response = await request.post('/api/transfers', {
+    headers: { 'x-inventory-demo-role': 'manager', 'x-inventory-demo-store': 'Howell', 'x-inventory-demo-user': 'Synthetic readability manager', origin: 'http://127.0.0.1:4173', 'idempotency-key': 'synthetic-readability-seed' },
+    data: { vin: 'TESTDATAFWELL0002', neededBy: '2026-08-31T16:00:00Z', returnDueAt: '2026-09-01T16:00:00Z', reason: 'Synthetic readability seed', returnRequired: true },
+  })
+  // With `reuseExistingServer`, an earlier run (or a developer's own demo
+  // session) may already hold an open move for this vehicle; that is the
+  // state this seed exists to guarantee, so it counts as success.
+  const body = await response.text()
+  expect(response.ok() || body.includes('ACTIVE_TRANSFER_EXISTS'), body).toBe(true)
+})
+
 for (const route of coreRoutes) {
   test(`${route} keeps visible operational text readable and the page contained`, async ({ page }) => {
+    // Measure the settled state. The selected scope button cross-fades text
+    // and background over 160ms once bootstrap lands; sampled mid-transition
+    // under a parallel run, white-on-pale-blue read as a 1.1:1 contrast
+    // failure that the finished interface does not have.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto(route)
     await expect(page.locator('main')).toBeVisible()
+    // Measure the loaded page, not the loading one. Primary actions are
+    // disabled (and so skipped) until bootstrap lands, which let a fast load
+    // pass while a slow one measured the real controls.
+    await page.waitForLoadState('networkidle')
 
     const violations = await collectReadabilityViolations(page)
     expect(violations, `Visible text below the 12px readability floor on ${route}`).toEqual([])

@@ -443,6 +443,18 @@ time {
   .loading-mark {
     animation: none;
   }
+
+  /* Transfers, attention and manager already honor this per feature; the
+     inventory controls did not, so a reduced-motion user still saw the
+     160ms selection cross-fades. One global rule covers every feature. */
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
 
 .visually-hidden {

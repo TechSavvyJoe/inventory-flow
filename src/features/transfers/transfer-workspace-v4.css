@@ -77,6 +77,10 @@
 .transfer-workspace-v4 .transfers-layout--short-queue {
   display: grid;
   grid-template-columns: minmax(340px, 380px) minmax(0, 1fr);
+  /* The single row must be capped to the fixed height, or a tall tracker
+     sizes the row to its content and the detail surface never scrolls —
+     everything below the clip (the records timeline) was unreachable. */
+  grid-template-rows: minmax(0, 1fr);
   min-height: 650px;
   height: clamp(650px, calc(100dvh - 188px), 860px);
   overflow: hidden;
