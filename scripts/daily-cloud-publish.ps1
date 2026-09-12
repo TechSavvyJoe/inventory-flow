@@ -115,6 +115,19 @@ try {
       Write-Log 'photo cache: skipped by flag'
     }
 
+    # Step 1.5 - per-VIN resource enrichment (window sticker / invoice / vAuto CAI label)
+    # Rebuilds data\vin-document-enrichment.json from whatever the morning captured,
+    # values copied as printed, then proves it against the REAL validators before
+    # anything is published. A failure here stops the publish - never ships a bad file.
+    Write-Log 'resources: building vin-document-enrichment.json'
+    $enrichOut = & python '..\..\work\build_vin_document_enrichment.py' '--report-date' $date 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) { Write-Log "resources: build FAILED: $($enrichOut.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_BUILD_FAILED' }
+    Write-Log "resources: $($enrichOut.Trim())"
+    Write-Log 'resources: validating against release validators'
+    $enrichCheck = & node 'scripts\dryrun_resource_enrichment_check.mjs' $date 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) { Write-Log "resources: validation FAILED: $($enrichCheck.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_INVALID' }
+    Write-Log "resources: $($enrichCheck.Trim())"
+
     # Step 2 - build, validate, encrypt, publish, and independently re-verify
     # against /internal/status and /internal/readiness. Emits an uppercase error
     # CODE on failure, never raw detail.
