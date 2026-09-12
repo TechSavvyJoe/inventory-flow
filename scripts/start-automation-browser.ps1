@@ -1,13 +1,19 @@
-# Launches the dedicated Bob Maxey automation Chrome instance.
+﻿# Launches the dedicated Bob Maxey automation browser instance.
 #
-# This is a SEPARATE Chrome instance with its own --user-data-dir, so it has its
+# Uses COMET (Perplexity's Chromium browser), NOT Chrome. This machine's IT
+# policy (HKLM\SOFTWARE\Policies\Google\Chrome) sets ExtensionInstallBlocklist=*
+# with a 3-ID allowlist, so the Claude in Chrome extension cannot be installed
+# in ANY Chrome profile on this PC. Microsoft Edge is locked down identically.
+# Comet has no policy key at all, so extensions install normally there.
+#
+# This is a SEPARATE Comet instance with its own --user-data-dir, so it has its
 # own cookies, saved logins, sessions and extensions, completely isolated from
-# the Chrome Joe works in all day. He can browse, close tabs, restart his normal
-# Chrome, log out of things - none of it touches this one.
+# the Comet Joe works in all day. He can browse, close tabs, restart his normal
+# Comet, log out of things - none of it touches this one.
 #
-# Joe signs in to DealerMail / vAuto inside THIS window once. Chrome stores those
-# credentials in this profile's own password store (his, on his machine). Nothing
-# here ever handles, reads, or transmits a credential.
+# Joe signs in to Claude / DealerMail / vAuto inside THIS window once. Comet
+# stores those credentials in this profile's own password store (his, on his
+# machine). Nothing here ever handles, reads, or transmits a credential.
 #
 # Idempotent: if the instance is already running, it does nothing.
 
@@ -21,7 +27,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$ProfileDir = Join-Path $env:LOCALAPPDATA 'BobMaxeyAutomation\ChromeProfile'
+$ProfileDir = Join-Path $env:LOCALAPPDATA 'BobMaxeyAutomation\CometProfile'
 $LogDir     = Join-Path $env:LOCALAPPDATA 'BobMaxeyAutomation'
 $LogPath    = Join-Path $LogDir 'automation-browser.log'
 
@@ -33,21 +39,21 @@ function Write-Log {
   Write-Output $line
 }
 
-function Get-AutomationChrome {
-  Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue |
+function Get-AutomationBrowser {
+  Get-CimInstance Win32_Process -Filter "Name='comet.exe'" -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -and $_.CommandLine -like "*$ProfileDir*" }
 }
 
-$chromeExe = @(
-  "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
-  "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
-  "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+$browserExe = @(
+  "$env:LOCALAPPDATA\Perplexity\Comet\Application\comet.exe",
+  "$env:ProgramFiles\Perplexity\Comet\Application\comet.exe",
+  "${env:ProgramFiles(x86)}\Perplexity\Comet\Application\comet.exe"
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $chromeExe) { Write-Log 'ERROR chrome.exe not found'; exit 1 }
+if (-not $browserExe) { Write-Log 'ERROR comet.exe not found'; exit 1 }
 
-$existing = Get-AutomationChrome
+$existing = Get-AutomationBrowser
 if ($existing -and $Restart) {
-  Write-Log "restarting: stopping $($existing.Count) existing automation chrome process(es)"
+  Write-Log "restarting: stopping $($existing.Count) existing automation comet process(es)"
   $existing | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
   Start-Sleep -Seconds 3
   $existing = $null
@@ -63,7 +69,7 @@ if (-not (Test-Path $ProfileDir)) {
   Write-Log "created isolated profile dir: $ProfileDir"
 }
 
-$chromeArgs = @(
+$browserArgs = @(
   "--user-data-dir=`"$ProfileDir`""
   '--no-first-run'
   '--no-default-browser-check'
@@ -72,11 +78,11 @@ $chromeArgs = @(
   '--window-size=1400,900'
 ) + $OpenUrls
 
-Write-Log "launching automation chrome (minimized) with $($OpenUrls.Count) tab(s)"
-Start-Process -FilePath $chromeExe -ArgumentList $chromeArgs -WindowStyle Minimized
+Write-Log "launching automation comet (minimized) with $($OpenUrls.Count) tab(s)"
+Start-Process -FilePath $browserExe -ArgumentList $browserArgs -WindowStyle Minimized
 
-Start-Sleep -Seconds 4
-$now = Get-AutomationChrome
+Start-Sleep -Seconds 5
+$now = Get-AutomationBrowser
 if ($now) { Write-Log "running (pid $($now.ProcessId -join ','))"; exit 0 }
-Write-Log 'ERROR launch did not produce a running automation chrome process'
+Write-Log 'ERROR launch did not produce a running automation comet process'
 exit 1
