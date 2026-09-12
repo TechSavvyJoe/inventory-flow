@@ -402,6 +402,27 @@ describe('private release publisher', () => {
     expect(metadata.changeBaseline.snapshotPath).toContain('Synthetic')
   })
 
+  it.each([
+    ['a macOS realpath under /private', '/private/var/folders/x1/synthetic-tmp/report.json'],
+    ['a macOS temporary realpath', '/private/tmp/synthetic-scan/report.json'],
+    ['an external volume', '/Volumes/DealerScans/synthetic/report.json'],
+    ['an /opt install', '/opt/inventory-flow/synthetic/report.json'],
+    ['a Linux mount', '/mnt/dealer-share/synthetic/report.json'],
+    ['a Linux service directory', '/srv/inventory/synthetic/report.json'],
+    ['a relative path under the working tree', './runtime/synthetic/report.json'],
+    ['a home-relative path', '~/work/synthetic/report.json'],
+  ])('does not publish %s from source metadata', (_label, value) => {
+    // Node resolves macOS temp paths to /private/..., external drives mount
+    // under /Volumes, and services run from /opt, /srv or /mnt — none of
+    // which the allowlist covered, so those source-local file paths went
+    // into the published release metadata verbatim. The API guide lists
+    // source-local file paths as deliberately excluded.
+    const metadata = { changeBaseline: { snapshotPath: value }, photoCache: { paths: [value] }, listing: { sourcePath: 'https://example.test/inventory/report.json' } }
+    expect(portableMetadata(metadata)).toEqual({ changeBaseline: { snapshotPath: 'local-file:report.json' }, photoCache: { paths: ['local-file:report.json'] }, listing: { sourcePath: 'https://example.test/inventory/report.json' } })
+    // Idempotent: a value that was already made portable stays as it is.
+    expect(portableMetadata(portableMetadata(metadata))).toEqual(portableMetadata(metadata))
+  })
+
   it('accepts only canonical 32-byte encryption keys', () => {
     expect(base64Key(encryptionKey.toString('base64'))).toEqual(encryptionKey)
     expect(base64Key(encryptionKey.toString('base64url'))).toEqual(encryptionKey)
