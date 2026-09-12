@@ -3,7 +3,7 @@ const DEFAULT_BASE_URL = 'https://inventory-data.joegallant.me/api/v1/'
 const INVENTORY_FIELDS = ['q', 'store', 'make', 'model', 'year', 'minPrice', 'maxPrice', 'minMileage', 'maxMileage', 'holdState', 'sort', 'direction', 'limit', 'cursor']
 const CHANGE_FIELDS = ['q', 'store', 'type', 'from', 'to', 'limit', 'cursor']
 const MANAGER_DISPOSITION_FIELDS = ['q', 'store', 'delivered', 'review', 'limit', 'cursor']
-const SAFE_ERROR_CODES = new Set(['INVALID_QUERY', 'INVALID_CURSOR', 'NOT_FOUND', 'INSUFFICIENT_SCOPE', 'FORBIDDEN', 'SOURCE_DATA_UNAVAILABLE', 'INTEGRATION_UNAVAILABLE', 'INTEGRATION_DATA_UNAVAILABLE', 'INTEGRATION_AUDIT_UNAVAILABLE', 'INTEGRATION_RATE_LIMITED', 'INTEGRATION_TOKEN_INVALID', 'INTEGRATION_GRANT_INACTIVE', 'INTEGRATIONS_NOT_CONFIGURED', 'INTEGRATION_RESPONSE_TOO_LARGE', 'RESPONSE_TOO_LARGE'])
+const SAFE_ERROR_CODES = new Set(['INVALID_QUERY', 'INVALID_CURSOR', 'NOT_FOUND', 'INSUFFICIENT_SCOPE', 'FORBIDDEN', 'SOURCE_DATA_UNAVAILABLE', 'INTEGRATION_UNAVAILABLE', 'INTEGRATION_DATA_UNAVAILABLE', 'INTEGRATION_AUDIT_UNAVAILABLE', 'INTEGRATION_RATE_LIMITED', 'INTEGRATION_TOKEN_INVALID', 'INTEGRATION_GRANT_INACTIVE', 'INTEGRATIONS_NOT_CONFIGURED', 'INTEGRATION_RESPONSE_TOO_LARGE'])
 
 export class InventoryFlowError extends Error {
   constructor(code, { status = 0, retryAfter = null } = {}) {
@@ -28,7 +28,11 @@ const failure = (code, options) => { throw new InventoryFlowError(code, options)
 function abortable(promise, signal) {
   return new Promise((resolve, reject) => {
     const onAbort = () => reject(new InventoryFlowError('ABORTED'))
-    if (signal.aborted) return onAbort()
+    // An already-aborted signal short-circuits, but the promise still exists and
+    // may reject later (a secret provider that fails after the caller cancels).
+    // Nothing else observes it, so settle it here or the runtime reports an
+    // unhandled rejection and Node/Workers may treat that as fatal.
+    if (signal.aborted) { Promise.resolve(promise).catch(() => {}); return onAbort() }
     signal.addEventListener('abort', onAbort, { once: true })
     Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
   })
@@ -123,18 +127,34 @@ export function createInventoryFlowClient({ token, baseUrl = DEFAULT_BASE_URL, f
       // NETWORK_ERROR. `manual` is supported everywhere; the refusal moves here,
       // before the body is touched. Runtimes surface a manual redirect either as
       // the 3xx response itself or as an opaque redirect with status 0.
-      const response = await abortable(fetchImpl(url.href, { method: 'GET', headers: { Accept: 'application/json', Authorization: `Bearer ${credential}` }, credentials: 'omit', redirect: 'manual', cache: 'no-store', signal: controller.signal }), controller.signal)
+      // No `cache` option for the same reason: Workerd throws on it below
+      // compatibility date 2024-11-11, and nothing needs it — an Authorization
+      // request is never stored by a shared cache and the API answers no-store.
+      if (controller.signal.aborted) failure(timedOut ? 'TIMEOUT' : 'ABORTED')
+      const response = await abortable(fetchImpl(url.href, { method: 'GET', headers: { Accept: 'application/json', Authorization: `Bearer ${credential}` }, credentials: 'omit', redirect: 'manual', signal: controller.signal }), controller.signal)
       if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
         void response.body?.cancel().catch(() => {})
         failure('REDIRECT_REJECTED', { status: response.status })
       }
-      const payload = await boundedJson(response, maxResponseBytes, controller.signal)
       if (!response.ok) {
-        const code = SAFE_ERROR_CODES.has(payload?.error?.code) ? payload.error.code : 'HTTP_ERROR'
+        // The status and Retry-After are the usable signal on an error; the body
+        // is only consulted for a safe code. An edge-generated HTML 502, a
+        // plain-text 429 from a rate limiter, or an oversized error body must
+        // still surface as that status with its retry delay, not INVALID_RESPONSE.
         const rawRetry = response.headers.get('retry-after')
         const retryAfter = rawRetry && /^\d{1,6}$/.test(rawRetry) ? Number(rawRetry) : null
+        let payload = null
+        try { payload = await boundedJson(response, maxResponseBytes, controller.signal) } catch (error) {
+          if (!(error instanceof InventoryFlowError) || !['INVALID_RESPONSE', 'RESPONSE_TOO_LARGE'].includes(error.code)) throw error
+        }
+        const reported = payload?.error?.code
+        // The API reports its own size cap as RESPONSE_TOO_LARGE (413). This client
+        // uses that code for its `maxResponseBytes` cap, so the server's is renamed
+        // to keep "raise the client limit" and "ask for a smaller page" distinct.
+        const code = reported === 'RESPONSE_TOO_LARGE' ? 'INTEGRATION_RESPONSE_TOO_LARGE' : SAFE_ERROR_CODES.has(reported) ? reported : 'HTTP_ERROR'
         failure(code, { status: response.status, retryAfter })
       }
+      const payload = await boundedJson(response, maxResponseBytes, controller.signal)
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) failure('INVALID_RESPONSE', { status: response.status })
       return payload
     } catch (error) {
