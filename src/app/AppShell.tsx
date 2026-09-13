@@ -29,6 +29,7 @@ import {
 } from '../features/inventory/inventory-navigation'
 import { useAppData } from './AppDataContext'
 import { STORE_BRANDING } from './storeBranding'
+import '../styles/mobile-density.css'
 
 const NAV_ITEMS = [
   { id: 'inventory', to: '/inventory', label: 'Inventory', shortLabel: 'Inventory', icon: CarFront },

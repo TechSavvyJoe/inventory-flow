@@ -93,7 +93,7 @@ function ScopeSwitch({
   onChange: (scope: InventoryScope) => void;
 }) {
   return (
-    <div className="inventory-scope-switch inventory-scope-switch--modern" role="group" aria-label="Inventory location scope">
+    <div className="inventory-scope-switch inventory-scope-switch--modern inv-desk-segment" role="group" aria-label="Inventory location scope">
       <button type="button" className={scope === "home" ? "is-active" : undefined} aria-label={`${homeStore.name} inventory, ${homeCount} of ${groupCount} group vehicles`} aria-pressed={scope === "home"} onClick={() => onChange("home")}>
         <span className="inventory-scope-switch__full">{homeStore.name} <b>{homeCount}</b></span>
         <span className="inventory-scope-switch__compact" aria-hidden="true">{homeStore.name} <b>{homeCount}</b></span>
@@ -143,7 +143,7 @@ function SortComposer({
       <button
         ref={disclosure.triggerRef}
         type="button"
-        className="inventory-sort-composer__trigger"
+        className="inventory-sort-composer__trigger inv-btn inv-btn--secondary"
         title={inventorySortSummary(sorts)}
         aria-label={`Sort inventory. ${inventorySortSummary(sorts)}`}
         aria-expanded={disclosure.open}
@@ -152,8 +152,8 @@ function SortComposer({
       >
         <ListFilter size={16} strokeWidth={1.8} aria-hidden="true" />
         <span>Sort</span>
-        <em aria-hidden="true">{sorts.length}</em>
-        <ChevronDown size={16} aria-hidden="true" />
+        <em className="inv-btn__count" aria-hidden="true">{sorts.length}</em>
+        <ChevronDown className="inv-btn__chevron" size={16} strokeWidth={1.8} aria-hidden="true" />
       </button>
       <div id={disclosure.panelId} className="inventory-sort-composer__panel" hidden={!disclosure.open}>
         <div className="inventory-sort-composer__heading">
@@ -505,7 +505,7 @@ export function InventoryExperience(props: InventoryExperienceProps) {
   return (
     <section id="inventory-results-workspace" className={`inventory-experience inventory-experience--modern inventory-experience--responsive${selectedVehicle ? " has-workspace" : ""}${className ? ` ${className}` : ""}`} aria-label={props["aria-label"] || "Inventory"}>
       <div className="inventory-experience__content" ref={backgroundRef}>
-        <header className="inventory-page-header inventory-page-header--modern">
+        <header className="inventory-page-header inventory-page-header--modern inv-desk-page-header">
           <div>
             <h1>{title}</h1>
             <p>
@@ -532,7 +532,7 @@ export function InventoryExperience(props: InventoryExperienceProps) {
           />
         </div>
 
-        <div className="inventory-control-deck">
+        <div className="inventory-control-deck inv-desk-deck">
           <label className="inventory-status-select">
             <span className="inventory-visually-hidden">Quick view</span>
             <select aria-label="Inventory quick view" value={quickView} onChange={(event) => setQuickView(event.target.value as QuickView)}>
@@ -544,7 +544,7 @@ export function InventoryExperience(props: InventoryExperienceProps) {
               <option value="price">Price changed ({quickViewCounts.price})</option>
             </select>
           </label>
-          <div className="inventory-quick-filters" role="group" aria-label="Inventory quick filters">
+          <div className="inventory-quick-filters inv-desk-segment" role="group" aria-label="Inventory quick filters">
             {([
               ["all", "All", "All"],
               ["no-hold", "No current hold", "No hold"],
@@ -563,8 +563,8 @@ export function InventoryExperience(props: InventoryExperienceProps) {
 
           <div className="inventory-toolbar inventory-toolbar--modern">
             <div className="inventory-toolbar__left">
-              <button type="button" className={`inventory-filter-button${filtersOpen ? " is-active" : ""}`} onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={filterPanelId}>
-                <Filter size={17} strokeWidth={1.8} aria-hidden="true" /> Filters {filterCount > 0 ? <span>{filterCount}</span> : null}
+              <button type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen ? " is-active" : ""}`} onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={filterPanelId}>
+                <Filter size={16} strokeWidth={1.8} aria-hidden="true" /> Filters {filterCount > 0 ? <span className="inv-btn__count">{filterCount}</span> : null}
               </button>
               <strong className="inventory-results-count" aria-live="polite">
                 {scopedVehicles.length} shown · {scope === "home" ? `${homeVehicleCount} of ` : ""}{groupVehicleCount} group
@@ -607,8 +607,8 @@ export function InventoryExperience(props: InventoryExperienceProps) {
               <h2>No matching vehicles</h2>
               <p>Clear a filter or look across all locations.</p>
               <div>
-                <button type="button" className="inventory-button" onClick={clearFilters}>Clear filters</button>
-                {scope === "home" ? <button type="button" className="inventory-button inventory-button--primary" onClick={() => setScope("group")}>View all locations</button> : null}
+                <button type="button" className="inventory-button inv-btn inv-btn--secondary" onClick={clearFilters}>Clear filters</button>
+                {scope === "home" ? <button type="button" className="inventory-button inventory-button--primary inv-btn inv-btn--primary" onClick={() => setScope("group")}>View all locations</button> : null}
               </div>
             </div>
           )}

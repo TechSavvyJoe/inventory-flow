@@ -382,6 +382,7 @@ function autoCheckReport() {
     ownerCount: 1,
     lastReportedOdometer: 12450,
     lastReportedOdometerDate: '2026-08-29',
+    estimatedInServiceDate: '2024-03-14',
     vehicleClass: 'Synthetic light-duty vehicle',
     assemblyCountry: 'Synthetic fixture',
     checks: [

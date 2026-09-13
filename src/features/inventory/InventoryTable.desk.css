@@ -1,0 +1,1167 @@
+/*
+ * Inventory desk layer — desktop (>= 761px) inventory table, the control
+ * system around it, and the vehicle-workspace header/facts strip.
+ *
+ * Design rules: flat white surfaces, navy text, hairline separators, one
+ * restrained Ford-blue accent for selection and primary actions. Every colour
+ * is an existing token (styles/tokens.css, design-system/tokens.css); no
+ * font-size below 12px.
+ *
+ * The desktop table uses a fresh `inv-desk-*` namespace so the seven legacy
+ * table layers stop matching. The controls and the workspace header keep their
+ * legacy class names (the phone layer depends on them), so those rules are
+ * written at (2,2,0)+ specificity and only carry `!important` on the exact
+ * properties the legacy layers already force with `!important`
+ * (InventoryControls.flow.css, styles/inventory-production-v10.css,
+ * VehicleWorkspace.flow.css `dd { font-size … !important }`).
+ */
+
+/* ------------------------------------------------------------------ */
+/* 0. Shared tokens for both surfaces (page + portaled workspace)      */
+/* ------------------------------------------------------------------ */
+#root #inventory-results-workspace,
+body > .inventory-workspace.inventory-workspace--flow,
+body > .inventory-row-more__menu--floating-v10.inv-desk-menu {
+  --desk-accent: var(--blue-600);
+  --desk-accent-strong: var(--blue-700);
+  --desk-accent-soft: var(--blue-050);
+  --desk-accent-line: var(--blue-100);
+  --desk-ink: var(--ink-900);
+  --desk-ink-2: var(--ink-700);
+  --desk-ink-3: var(--ink-600);
+  --desk-muted: var(--ink-500);
+  --desk-line: var(--border);
+  --desk-line-strong: var(--border-strong);
+  --desk-surface: var(--surface);
+  --desk-surface-soft: var(--surface-soft);
+  --desk-surface-muted: var(--surface-muted);
+  --desk-radius: var(--radius-control);
+  --desk-control: 36px;
+  --desk-icon: 16px;
+  --desk-shadow: var(--shadow-panel);
+  --desk-shadow-menu: var(--shadow-drawer);
+}
+
+/* ------------------------------------------------------------------ */
+/* 1. Button hierarchy: .inv-btn (+ --primary | --secondary | --tertiary | --icon) */
+/*    36px tall, 8px radius, 13px/600 label, 16px icons.                 */
+/*    `.inv-btn.inv-btn` = (2,2,0): beats the (2,1,0) legacy control rules */
+/*    that carry !important, independent of stylesheet order.            */
+/*    Desktop only: phones keep their own control layer.                 */
+/* ------------------------------------------------------------------ */
+@media (min-width: 761px) {
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn {
+  position: relative;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: center;
+  gap: 6px !important;
+  box-sizing: border-box;
+  width: auto !important;
+  min-width: 0 !important;
+  height: var(--desk-control) !important;
+  min-height: var(--desk-control) !important;
+  margin: 0;
+  padding: 0 12px !important;
+  border: 1px solid var(--desk-line) !important;
+  border-radius: var(--desk-radius) !important;
+  background: var(--desk-surface) !important;
+  color: var(--desk-ink) !important;
+  -webkit-text-fill-color: currentColor;
+  font: 600 13px/1 var(--font-app) !important;
+  letter-spacing: 0 !important;
+  white-space: nowrap;
+  text-decoration: none;
+  list-style: none;
+  cursor: pointer;
+  box-shadow: none !important;
+  transition:
+    background-color var(--ifx-motion-fast) var(--ifx-ease-standard),
+    border-color var(--ifx-motion-fast) var(--ifx-ease-standard),
+    color var(--ifx-motion-fast) var(--ifx-ease-standard);
+}
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn > svg {
+  display: block !important;
+  flex: 0 0 auto;
+  width: var(--desk-icon);
+  height: var(--desk-icon);
+  margin: 0 !important;
+  color: var(--desk-ink-3);
+}
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn > .inv-btn__chevron {
+  margin-right: -2px !important;
+  color: var(--desk-muted);
+}
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn > span {
+  display: inline !important;
+  font: inherit !important;
+  color: inherit !important;
+}
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn:hover {
+  border-color: var(--desk-line-strong) !important;
+  background: var(--desk-surface-soft) !important;
+  color: var(--desk-ink) !important;
+}
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn:hover > svg {
+  color: var(--desk-ink);
+}
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn:active {
+  background: var(--desk-surface-muted) !important;
+}
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn[aria-expanded="true"],
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn.is-active,
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) details[open] > .inv-btn.inv-btn {
+  border-color: var(--desk-accent-line) !important;
+  background: var(--desk-accent-soft) !important;
+  color: var(--desk-accent-strong) !important;
+}
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn[aria-expanded="true"] > svg,
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn.is-active > svg,
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) details[open] > .inv-btn.inv-btn > svg {
+  color: var(--desk-accent-strong);
+}
+
+/* Primary: Ford blue fill, white label. */
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn--primary {
+  border-color: var(--desk-accent) !important;
+  background: var(--desk-accent) !important;
+  color: var(--desk-surface) !important;
+}
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn--primary > svg,
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn--primary:hover > svg {
+  color: inherit;
+}
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn--primary:hover,
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn--primary:active {
+  border-color: var(--desk-accent-strong) !important;
+  background: var(--desk-accent-strong) !important;
+  color: var(--desk-surface) !important;
+}
+
+/* Tertiary: text + icon, no border. */
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn--tertiary {
+  padding: 0 8px !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--desk-accent-strong) !important;
+}
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn--tertiary > svg {
+  color: inherit;
+}
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn--tertiary:hover {
+  border-color: transparent !important;
+  background: var(--desk-accent-soft) !important;
+  color: var(--desk-accent-strong) !important;
+}
+
+/* Icon-only: 36px square, same border/radius as secondary. */
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn--icon {
+  width: var(--desk-control) !important;
+  min-width: var(--desk-control) !important;
+  padding: 0 !important;
+}
+
+/* Count badge inside a button (Filters 2, Sort 2). */
+:is(#root #inventory-results-workspace, body > .inventory-workspace.inventory-workspace--flow) .inv-btn.inv-btn .inv-btn__count {
+  position: static !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  margin: 0 !important;
+  padding: 0 5px !important;
+  border-radius: 5px !important;
+  background: var(--desk-accent-soft) !important;
+  color: var(--desk-accent-strong) !important;
+  font: 600 12px/1 var(--font-app) !important;
+  font-variant-numeric: tabular-nums;
+  font-style: normal !important;
+  transform: none;
+}
+}
+
+/* ------------------------------------------------------------------ */
+/* 2. Page controls (desktop only; phones keep their own layer)         */
+/* ------------------------------------------------------------------ */
+@media (min-width: 761px) {
+  #root #inventory-results-workspace .inventory-page-header.inv-desk-page-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 0 12px !important;
+    padding: 0 !important;
+  }
+  #root #inventory-results-workspace .inventory-page-header.inv-desk-page-header h1 {
+    margin: 0;
+    color: var(--desk-ink) !important;
+    font-size: 23px !important;
+    font-weight: 700 !important;
+    line-height: 28px !important;
+    letter-spacing: -0.015em !important;
+  }
+  #root #inventory-results-workspace .inventory-page-header.inv-desk-page-header p {
+    margin: 2px 0 0 !important;
+    color: var(--desk-muted) !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    line-height: 18px !important;
+  }
+
+  #root #inventory-results-workspace .inventory-command-bar {
+    margin: 0 0 10px !important;
+  }
+
+  /* Segmented strips: the store scope switch and the quick-filter row share
+     one anatomy — 36px track, 28px segments, tabular counts. */
+  #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment {
+    display: inline-flex !important;
+    flex: 0 1 auto !important;
+    flex-wrap: nowrap !important;
+    align-items: center;
+    gap: 2px !important;
+    box-sizing: border-box;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: var(--desk-control) !important;
+    margin: 0 !important;
+    padding: 3px !important;
+    border: 1px solid var(--desk-line) !important;
+    border-radius: var(--desk-radius) !important;
+    background: var(--desk-surface-soft) !important;
+    box-shadow: none !important;
+  }
+  #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment > button {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 6px !important;
+    box-sizing: border-box;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    margin: 0;
+    padding: 0 10px !important;
+    border: 0 !important;
+    border-radius: 6px !important;
+    background: transparent !important;
+    color: var(--desk-ink-2) !important;
+    -webkit-text-fill-color: currentColor;
+    font: 600 13px/1 var(--font-app) !important;
+    letter-spacing: 0 !important;
+    white-space: nowrap;
+    box-shadow: none !important;
+    cursor: pointer;
+    transition:
+      background-color var(--ifx-motion-fast) var(--ifx-ease-standard),
+      color var(--ifx-motion-fast) var(--ifx-ease-standard);
+  }
+  #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment > button > span {
+    min-width: 0 !important;
+    height: auto !important;
+    padding: 0 !important;
+    background: transparent !important;
+    color: inherit !important;
+    -webkit-text-fill-color: inherit;
+    font: inherit !important;
+  }
+  #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment > button:hover {
+    background: color-mix(in srgb, var(--desk-surface) 60%, transparent) !important;
+    color: var(--desk-ink) !important;
+  }
+  #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment > button.is-active {
+    background: var(--desk-surface) !important;
+    color: var(--desk-accent-strong) !important;
+    box-shadow: 0 0 0 1px var(--desk-line) !important;
+  }
+  /* Counts: the scope switch uses <b>, the quick filters use a span. */
+  #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment > button :is(b, .inventory-quick-filter-count) {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px !important;
+    height: 18px !important;
+    margin: 0 !important;
+    padding: 0 5px !important;
+    border-radius: 5px !important;
+    background: var(--desk-surface-muted) !important;
+    color: var(--desk-ink-3) !important;
+    -webkit-text-fill-color: currentColor;
+    font: 600 12px/1 var(--font-app) !important;
+    font-variant-numeric: tabular-nums;
+  }
+  #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment > button.is-active :is(b, .inventory-quick-filter-count) {
+    background: var(--desk-accent-soft) !important;
+    color: var(--desk-accent-strong) !important;
+  }
+  #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment > button > b {
+    display: inline-flex !important;
+  }
+  #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment .inventory-scope-switch__compact { display: none !important; }
+  #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment .inventory-scope-switch__full { display: inline-flex !important; align-items: center; gap: 6px; }
+  #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment .inventory-quick-filter-label--full { display: inline !important; }
+  #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment .inventory-quick-filter-label--compact { display: none !important; }
+
+  /* The control deck is one row: quick filters left, Filters / Sort right. */
+  #root #inventory-results-workspace .inventory-control-deck.inv-desk-deck {
+    position: relative;
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px !important;
+    min-height: 0 !important;
+    margin: 0 0 12px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  #root #inventory-results-workspace .inventory-control-deck.inv-desk-deck .inventory-toolbar {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center;
+    gap: 8px !important;
+    width: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+  #root #inventory-results-workspace .inventory-control-deck.inv-desk-deck :is(.inventory-toolbar__left, .inventory-toolbar__right) {
+    gap: 8px !important;
+  }
+  #root #inventory-results-workspace .inventory-control-deck.inv-desk-deck .inventory-sort-composer__trigger > span::before { content: none !important; }
+  #root #inventory-results-workspace .inventory-control-deck.inv-desk-deck .inventory-status-select select {
+    box-sizing: border-box;
+    height: var(--desk-control);
+    min-height: var(--desk-control);
+    padding: 0 30px 0 12px;
+    border: 1px solid var(--desk-line);
+    border-radius: var(--desk-radius);
+    background-color: var(--desk-surface);
+    color: var(--desk-ink);
+    font: 600 13px/1 var(--font-app);
+  }
+
+  /* Quick filters: full labels when the surface is wide, compact labels on a
+     narrower surface, the <select> fallback only below that. */
+  @container inventory-surface (min-width: 700px) {
+    #root #inventory-results-workspace .inventory-control-deck.inv-desk-deck .inventory-quick-filters { display: inline-flex !important; }
+    #root #inventory-results-workspace .inventory-control-deck.inv-desk-deck .inventory-status-select { display: none !important; }
+  }
+  @container inventory-surface (min-width: 700px) and (max-width: 1019px) {
+    #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment .inventory-quick-filter-label--full { display: none !important; }
+    #root #inventory-results-workspace .inv-desk-segment.inv-desk-segment .inventory-quick-filter-label--compact { display: inline !important; }
+  }
+
+  /* Filter panel and pagination pick up the same hairline language. */
+  #root #inventory-results-workspace .inventory-filter-panel {
+    border: 1px solid var(--desk-line) !important;
+    border-radius: var(--desk-radius) !important;
+    box-shadow: none !important;
+  }
+  #root #inventory-results-workspace .inventory-pagination.inventory-pagination--modern {
+    padding: 12px 0 0;
+    color: var(--desk-ink-3);
+    font-size: 13px !important;
+  }
+  #root #inventory-results-workspace .inventory-pagination.inventory-pagination--modern > div > button {
+    box-sizing: border-box;
+    width: var(--desk-control);
+    height: var(--desk-control);
+    min-height: var(--desk-control);
+    border: 1px solid var(--desk-line);
+    border-radius: var(--desk-radius);
+    background: var(--desk-surface);
+    color: var(--desk-ink-3);
+  }
+  #root #inventory-results-workspace .inventory-pagination.inventory-pagination--modern .inventory-page-size select {
+    height: var(--desk-control) !important;
+    min-height: var(--desk-control) !important;
+    border: 1px solid var(--desk-line);
+    border-radius: var(--desk-radius);
+    font-size: 13px !important;
+    font-weight: 600;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 3. Desktop comparison table                                          */
+/* ------------------------------------------------------------------ */
+@media (min-width: 761px) {
+  #root #inventory-results-workspace .inventory-grid-shell.inventory-grid-shell--desk {
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--desk-line);
+    border-radius: var(--desk-radius);
+    background: var(--desk-surface);
+    box-shadow: none;
+    overflow: visible;
+  }
+  #root #inventory-results-workspace .inventory-table-wrap.inventory-table-wrap--desk {
+    display: block !important;
+    width: 100%;
+    height: auto !important;
+    max-height: none !important;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    overflow: visible !important;
+  }
+  #root #inventory-results-workspace .inventory-table-wrap.inventory-table-wrap--desk:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--desk-accent) 32%, transparent);
+    outline-offset: 2px;
+  }
+
+  #root #inventory-results-workspace .inv-desk-table {
+    display: table;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+    color: var(--desk-ink);
+    font: 400 13px/1.35 var(--font-app);
+    font-synthesis: none;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Column model (fixed layout — widths live on the header cells; the Vehicle
+     column takes the remainder). Measured at 1440×900: the longest demo model
+     name needs ~250px and the widest hold pill ~190px, so both get room. */
+  #root #inventory-results-workspace .inv-desk-th--price { width: 112px; }
+  #root #inventory-results-workspace .inv-desk-th--mileage { width: 94px; }
+  #root #inventory-results-workspace .inv-desk-th--days { width: 96px; }
+  #root #inventory-results-workspace .inv-desk-th--status { width: 200px; }
+  #root #inventory-results-workspace .inv-desk-th--equipment { width: 156px; }
+  #root #inventory-results-workspace .inv-desk-th--actions { width: 140px; }
+
+  /* Sticky header row: sits directly beneath the sticky app top bar. */
+  #root #inventory-results-workspace .inv-desk-th {
+    position: sticky;
+    top: var(--top-height, 68px);
+    z-index: 3;
+    box-sizing: border-box;
+    height: 40px;
+    padding: 0 12px;
+    border: 0;
+    border-bottom: 1px solid var(--desk-line-strong);
+    background: var(--desk-surface);
+    color: var(--desk-ink-3);
+    font: 600 12px/1.2 var(--font-app);
+    letter-spacing: 0.01em;
+    text-align: left;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  #root #inventory-results-workspace .inv-desk-th:first-child { padding-left: 12px; border-top-left-radius: var(--desk-radius); }
+  #root #inventory-results-workspace .inv-desk-th:last-child { padding-right: 12px; border-top-right-radius: var(--desk-radius); }
+  #root #inventory-results-workspace .inv-desk-th--num { padding-right: 10px; text-align: right; }
+  #root #inventory-results-workspace .inv-desk-th--actions .inv-desk-th__label {
+    display: inline-block;
+    padding: 0 4px;
+  }
+
+  /* Sort controls inside a header cell. */
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header-group__controls {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    max-width: 100%;
+    min-width: 0;
+  }
+  #root #inventory-results-workspace .inv-desk-th--num .inventory-sort-header-group__controls {
+    flex-direction: row-reverse;
+  }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    height: 28px;
+    margin: 0;
+    padding: 0 3px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+    transform: none;
+    transition:
+      background-color var(--ifx-motion-fast) var(--ifx-ease-standard),
+      color var(--ifx-motion-fast) var(--ifx-ease-standard);
+  }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header:hover {
+    background: var(--desk-surface-soft);
+    color: var(--desk-ink);
+    transform: none;
+  }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header:active { transform: none; }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header.is-active {
+    color: var(--desk-ink);
+  }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header__state {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin: 0;
+    color: var(--desk-accent-strong);
+  }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header__state > svg {
+    width: 13px;
+    height: 13px;
+  }
+  /* Direction stays in the accessible name; the arrow already says it. */
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header__direction { display: none; }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header__priority {
+    display: inline-flex;
+    align-items: center;
+    height: 16px;
+    margin: 0;
+    padding: 0 4px;
+    border: 0;
+    border-radius: 4px;
+    background: var(--desk-accent-soft);
+    color: var(--desk-accent-strong);
+    font: 600 12px/1 var(--font-app);
+  }
+  /* Extra sort fields: an unobtrusive trigger that appears on hover/focus.
+     It overlays the empty space beside the label instead of reserving width. */
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header-group__more {
+    position: relative;
+    display: block;
+    flex: 0 0 auto;
+    width: 0;
+    height: 24px;
+    overflow: visible;
+  }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header-group__more-trigger {
+    position: absolute;
+    top: 0;
+    left: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--desk-muted);
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity var(--ifx-motion-fast) var(--ifx-ease-standard), background-color var(--ifx-motion-fast) var(--ifx-ease-standard);
+  }
+  #root #inventory-results-workspace .inv-desk-th:hover .inventory-sort-header-group__more-trigger,
+  #root #inventory-results-workspace .inv-desk-th:focus-within .inventory-sort-header-group__more-trigger,
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header-group__more[data-open="true"] .inventory-sort-header-group__more-trigger {
+    opacity: 1;
+  }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header-group__more-trigger:hover,
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header-group__more[data-open="true"] .inventory-sort-header-group__more-trigger {
+    background: var(--desk-surface-soft);
+    color: var(--desk-ink);
+  }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header-group__menu {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 6px);
+    left: 0;
+    right: auto;
+    display: grid;
+    gap: 2px;
+    min-width: 208px;
+    margin: 0;
+    padding: 6px;
+    border: 1px solid var(--desk-line);
+    border-radius: var(--desk-radius);
+    background: var(--desk-surface);
+    box-shadow: var(--desk-shadow-menu);
+    text-align: left;
+  }
+  #root #inventory-results-workspace .inv-desk-th--num .inventory-sort-header-group__more-trigger { left: auto; right: 2px; }
+  #root #inventory-results-workspace .inv-desk-th--num .inventory-sort-header-group__menu { left: auto; right: 0; }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header-group__menu[hidden] { display: none; }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header-group__menu .inventory-sort-header {
+    width: 100%;
+    justify-content: space-between;
+    height: 32px;
+    padding: 0 8px;
+    color: var(--desk-ink-2);
+    font: 500 13px/1 var(--font-app);
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  #root #inventory-results-workspace .inv-desk-th .inventory-sort-header-group__menu .inventory-sort-header.is-active {
+    color: var(--desk-accent-strong);
+    background: var(--desk-accent-soft);
+  }
+
+  /* Rows: one compact row per vehicle, hairline separators, calm hover. */
+  #root #inventory-results-workspace .inv-desk-row { cursor: pointer; }
+  #root #inventory-results-workspace .inv-desk-td {
+    box-sizing: border-box;
+    height: 72px;
+    padding: 6px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--desk-line);
+    background: var(--desk-surface);
+    vertical-align: middle;
+    transition: background-color var(--ifx-motion-fast) var(--ifx-ease-standard);
+  }
+  #root #inventory-results-workspace .inv-desk-td:first-child { padding-left: 12px; }
+  #root #inventory-results-workspace .inv-desk-td:last-child { padding-right: 12px; }
+  #root #inventory-results-workspace .inv-desk-row:last-child .inv-desk-td { border-bottom: 0; }
+  #root #inventory-results-workspace .inv-desk-row:last-child .inv-desk-td:first-child { border-bottom-left-radius: var(--desk-radius); }
+  #root #inventory-results-workspace .inv-desk-row:last-child .inv-desk-td:last-child { border-bottom-right-radius: var(--desk-radius); }
+  #root #inventory-results-workspace .inv-desk-row:hover .inv-desk-td { background: var(--desk-surface-soft); }
+  #root #inventory-results-workspace .inv-desk-row.is-selected .inv-desk-td { background: var(--desk-accent-soft); }
+  #root #inventory-results-workspace .inv-desk-row.is-selected .inv-desk-td:first-child { box-shadow: inset 3px 0 0 var(--desk-accent); }
+  #root #inventory-results-workspace .inv-desk-td--num { text-align: right; }
+  #root #inventory-results-workspace .inv-desk-td--actions { padding-left: 8px; }
+
+  /* Vehicle cell: 56×40 photo, model line, specification line, identifiers. */
+  #root #inventory-results-workspace .inv-desk-vehicle {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 0 10px;
+    align-items: center;
+    min-width: 0;
+  }
+  #root #inventory-results-workspace .inv-desk-vehicle__photo {
+    position: relative;
+    display: block;
+    box-sizing: border-box;
+    width: 56px;
+    height: 40px;
+    border: 1px solid var(--desk-line);
+    border-radius: 6px;
+    background: var(--desk-surface-muted);
+    overflow: hidden;
+  }
+  #root #inventory-results-workspace .inv-desk-vehicle__photo img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  #root #inventory-results-workspace .inv-desk-vehicle__photo img.is-loading { opacity: 0; }
+  #root #inventory-results-workspace .inv-desk-vehicle__photo .inventory-vehicle-visual__placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--desk-muted);
+  }
+  #root #inventory-results-workspace .inv-desk-vehicle__photo .inventory-vehicle-visual__placeholder > svg {
+    width: 20px;
+    height: 20px;
+  }
+  #root #inventory-results-workspace .inv-desk-vehicle__body {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+  }
+  #root #inventory-results-workspace .inv-desk-vehicle__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  #root #inventory-results-workspace .inv-desk-vehicle__title > strong {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--desk-ink);
+    font: 600 14.5px/20px var(--font-app);
+    letter-spacing: -0.01em;
+  }
+  #root #inventory-results-workspace .inv-desk-certified {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 3px;
+    color: var(--desk-ink-2);
+    font: 600 12px/17px var(--font-app);
+  }
+  #root #inventory-results-workspace .inv-desk-certified > svg { width: 12px; height: 12px; color: var(--green); }
+  #root #inventory-results-workspace .inv-desk-change {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    height: 18px;
+    margin: 0;
+    padding: 0 6px 0 5px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--desk-accent-strong);
+    font: 600 12px/1 var(--font-app);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  #root #inventory-results-workspace .inv-desk-change:hover { background: var(--desk-accent-soft); }
+  #root #inventory-results-workspace .inv-desk-change__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--desk-accent);
+  }
+  #root #inventory-results-workspace .inv-desk-change--price_change .inv-desk-change__dot { background: var(--amber); }
+  #root #inventory-results-workspace .inv-desk-change--new_arrival .inv-desk-change__dot { background: var(--green); }
+  #root #inventory-results-workspace .inv-desk-change--store_transfer .inv-desk-change__dot { background: var(--violet); }
+  #root #inventory-results-workspace .inv-desk-vehicle__spec {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--desk-ink-3);
+    font: 400 12.5px/17px var(--font-app);
+  }
+  #root #inventory-results-workspace .inv-desk-vehicle__spec > span:last-child {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #root #inventory-results-workspace .inv-desk-vehicle__ids {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    height: 20px;
+  }
+  #root #inventory-results-workspace .inv-desk-id {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  #root #inventory-results-workspace .inv-desk-id__label {
+    color: var(--desk-muted);
+    font: 500 12px/1 var(--font-app);
+  }
+  #root #inventory-results-workspace .inv-desk-id .copyable-value {
+    gap: 1px;
+    vertical-align: baseline;
+  }
+  #root #inventory-results-workspace .inv-desk-id .copyable-value__content {
+    color: var(--desk-ink-2);
+    font: 500 12px/1 var(--ifx-font-mono);
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+  #root #inventory-results-workspace .inv-desk-id .copyable-value__button {
+    width: 20px;
+    min-width: 20px;
+    height: 20px;
+    min-height: 20px;
+    padding: 0;
+    border-radius: 4px;
+    color: var(--desk-muted);
+  }
+  #root #inventory-results-workspace .inv-desk-id .copyable-value__button:hover {
+    background: var(--desk-accent-soft);
+    color: var(--desk-accent-strong);
+  }
+  #root #inventory-results-workspace .inv-desk-id .copyable-value[data-copy-state="copied"] .copyable-value__button { color: var(--green); }
+
+  /* Price / mileage / days: right-aligned tabular figures. */
+  #root #inventory-results-workspace :is(.inv-desk-price, .inv-desk-metric) {
+    display: grid;
+    gap: 1px;
+    justify-items: end;
+    min-width: 0;
+    text-align: right;
+  }
+  #root #inventory-results-workspace .inv-desk-price > strong {
+    color: var(--desk-ink);
+    font: 700 15px/20px var(--font-app);
+    letter-spacing: -0.005em;
+    white-space: nowrap;
+  }
+  #root #inventory-results-workspace .inv-desk-metric > strong {
+    color: var(--desk-ink);
+    font: 600 14px/20px var(--font-app);
+    white-space: nowrap;
+  }
+  #root #inventory-results-workspace :is(.inv-desk-price, .inv-desk-metric) > small {
+    color: var(--desk-ink-3);
+    font: 400 12px/16px var(--font-app);
+    white-space: nowrap;
+  }
+  #root #inventory-results-workspace .inv-desk-price__under {
+    color: var(--green);
+    font-weight: 500;
+  }
+  #root #inventory-results-workspace :is(.inv-desk-price, .inv-desk-metric).is-unavailable > strong {
+    color: var(--desk-muted);
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+
+  /* Status: one pill vocabulary — hold / sold on line one, location /
+     movement on line two. Same height, radius and type everywhere. */
+  #root #inventory-results-workspace .inv-desk-status {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+  /* Each status line stays on one line; pills ellipsize (tooltips carry the
+     full text) rather than pushing the row to a third line. */
+  #root #inventory-results-workspace .inv-desk-status__row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  #root #inventory-results-workspace .inv-desk-status__row > .inv-desk-pill { flex: 0 1 auto; min-width: 0; }
+  /* The leading pill (hold, or location) keeps its full label; a trailing
+     movement pill is the one that ellipsizes. */
+  #root #inventory-results-workspace .inv-desk-status__row > .inv-desk-pill:first-child { flex-shrink: 0; max-width: 100%; }
+  #root #inventory-results-workspace .inv-desk-status__row > .inv-desk-pill:first-child:not(:last-child) { max-width: 62%; }
+  #root #inventory-results-workspace .inv-desk-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    box-sizing: border-box;
+    max-width: 100%;
+    height: 22px;
+    margin: 0;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: var(--desk-surface-muted);
+    box-shadow: none;
+    color: var(--desk-ink-2);
+    font: 600 12px/1 var(--font-app);
+    letter-spacing: 0;
+    white-space: nowrap;
+    text-align: left;
+  }
+  #root #inventory-results-workspace .inv-desk-pill > svg {
+    flex: 0 0 auto;
+    width: 13px;
+    height: 13px;
+  }
+  #root #inventory-results-workspace .inv-desk-pill__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #root #inventory-results-workspace .inv-desk-pill--hold { background: var(--amber-bg); color: var(--amber); }
+  #root #inventory-results-workspace .inv-desk-pill--clear { background: var(--desk-surface-muted); color: var(--desk-ink-2); }
+  #root #inventory-results-workspace .inv-desk-pill--unknown {
+    border-color: var(--desk-line-strong);
+    border-style: dashed;
+    background: var(--desk-surface);
+    color: var(--desk-ink-3);
+  }
+  #root #inventory-results-workspace .inv-desk-pill--home { background: var(--desk-surface-muted); color: var(--desk-ink-2); }
+  #root #inventory-results-workspace .inv-desk-pill--away { background: var(--violet-bg); color: var(--violet); }
+  #root #inventory-results-workspace .inv-desk-pill--conflict { background: var(--red-bg); color: var(--red); }
+  #root #inventory-results-workspace .inv-desk-pill--move { background: var(--desk-accent-soft); color: var(--desk-accent-strong); }
+  #root #inventory-results-workspace .inv-desk-pill--warning { background: var(--red-bg); color: var(--red); }
+  #root #inventory-results-workspace .inv-desk-pill--sold { background: var(--green-bg); color: var(--green); }
+  #root #inventory-results-workspace .inv-desk-pill--sold[data-state="stale"],
+  #root #inventory-results-workspace .inv-desk-pill--sold[data-state="unavailable"] { opacity: 0.75; }
+  #root #inventory-results-workspace button.inv-desk-pill--action { cursor: pointer; }
+  #root #inventory-results-workspace button.inv-desk-pill--action:hover {
+    border-color: color-mix(in srgb, currentColor 40%, transparent);
+  }
+
+  /* Equipment: two standout chips + "+N" on exactly two lines; the whole
+     cell opens the Equipment tab. */
+  #root #inventory-results-workspace .inv-desk-equipment {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-auto-rows: 22px;
+    align-items: center;
+    justify-items: start;
+    gap: 4px;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  #root #inventory-results-workspace .inv-desk-chip {
+    display: inline-block;
+    box-sizing: border-box;
+    max-width: 100%;
+    height: 22px;
+    padding: 0 7px;
+    border: 1px solid var(--desk-line);
+    border-radius: 6px;
+    background: var(--desk-surface);
+    color: var(--desk-ink-2);
+    font: 500 12px/20px var(--font-app);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #root #inventory-results-workspace .inv-desk-chip:first-child { grid-column: 1 / -1; }
+  #root #inventory-results-workspace .inv-desk-chip:nth-child(2) { grid-column: 1; grid-row: 2; }
+  #root #inventory-results-workspace .inv-desk-chip:nth-child(2):last-child { grid-column: 1 / -1; }
+  #root #inventory-results-workspace .inv-desk-chip--more {
+    grid-column: 2;
+    grid-row: 2;
+    border-color: transparent;
+    background: var(--desk-accent-soft);
+    color: var(--desk-accent-strong);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  #root #inventory-results-workspace .inv-desk-equipment:hover .inv-desk-chip {
+    border-color: var(--desk-line-strong);
+    color: var(--desk-ink);
+  }
+  #root #inventory-results-workspace .inv-desk-equipment:hover .inv-desk-chip--more {
+    border-color: transparent;
+    background: var(--desk-accent-line);
+    color: var(--desk-accent-strong);
+  }
+  #root #inventory-results-workspace .inv-desk-quiet {
+    color: var(--desk-muted);
+    font: 400 12.5px/17px var(--font-app);
+  }
+
+  /* Actions: a consistent cluster of 36px icon buttons. */
+  #root #inventory-results-workspace .inv-desk-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  #root #inventory-results-workspace .inv-desk-more {
+    position: relative;
+    display: inline-flex;
+  }
+
+  /* The cluster is Open · Move · More by default; "Open listing" joins it as a
+     fourth button on wide surfaces and otherwise stays one click away in More. */
+  #root #inventory-results-workspace .inv-desk-actions [data-slot="listing"] { display: none !important; }
+  @container inventory-comparison (min-width: 1240px) {
+    #root #inventory-results-workspace .inv-desk-th--actions { width: 178px; }
+    #root #inventory-results-workspace .inv-desk-actions [data-slot="listing"] { display: inline-flex !important; }
+  }
+  /* Narrower surfaces: secondary fields move into the workspace
+     (equipment first, then days on lot). */
+  @container inventory-comparison (max-width: 1099px) {
+    #root #inventory-results-workspace .inv-desk-table [data-column="equipment"] { display: none; }
+  }
+  @container inventory-comparison (max-width: 899px) {
+    #root #inventory-results-workspace .inv-desk-table [data-column="days"] { display: none; }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 4. Row overflow menu (portaled to <body>)                            */
+/* ------------------------------------------------------------------ */
+body > .inventory-row-more__menu.inventory-row-more__menu--floating-v10.inv-desk-menu {
+  width: 232px !important;
+  padding: 6px !important;
+  border: 1px solid var(--desk-line) !important;
+  border-radius: var(--desk-radius) !important;
+  background: var(--desk-surface) !important;
+  box-shadow: var(--desk-shadow-menu) !important;
+}
+body > .inventory-row-more__menu--floating-v10.inv-desk-menu .inventory-row-more__item {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 36px !important;
+  padding: 0 8px !important;
+  border-radius: 6px !important;
+  color: var(--desk-ink) !important;
+  font: 500 13px/1.3 var(--font-app) !important;
+}
+body > .inventory-row-more__menu--floating-v10.inv-desk-menu .inventory-row-more__item:hover {
+  background: var(--desk-surface-soft) !important;
+  color: var(--desk-ink) !important;
+}
+body > .inventory-row-more__menu--floating-v10.inv-desk-menu .inventory-row-more__item > svg:first-child {
+  width: 16px;
+  height: 16px;
+  color: var(--desk-ink-3);
+}
+body > .inventory-row-more__menu--floating-v10.inv-desk-menu .inventory-row-more__item > svg:last-child:not(:first-child) {
+  width: 12px;
+  height: 12px;
+  color: var(--desk-muted);
+}
+body > .inventory-row-more__menu--floating-v10.inv-desk-menu .inv-desk-menu__label {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 8px 2px;
+  border-top: 1px solid var(--desk-line);
+  color: var(--desk-muted);
+  font: 600 12px/1 var(--font-app);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+body > .inventory-row-more__menu--floating-v10.inv-desk-menu > .inventory-row-more__item:first-child + .inv-desk-menu__label,
+body > .inventory-row-more__menu--floating-v10.inv-desk-menu > .inv-desk-menu__label:first-child {
+  margin-top: 0;
+  border-top: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* 5. Vehicle workspace: header block + 4-up facts strip                */
+/* ------------------------------------------------------------------ */
+@media (min-width: 761px) {
+  body > .inventory-workspace.inventory-workspace--dense.inventory-workspace--compact-v3.inventory-workspace--v10.inventory-workspace--flow {
+    .vdp-flow-header {
+      align-items: center;
+      gap: 16px;
+      padding: 14px 24px 12px;
+    }
+    .vdp-flow-identity {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .vdp-flow-store {
+      margin: 0;
+      color: var(--desk-muted);
+      font: 600 12px/16px var(--font-app);
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .vdp-flow-identity h2 {
+      margin: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--desk-ink);
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 28px;
+      letter-spacing: -0.015em;
+    }
+    .vdp-flow-identifiers {
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 16px;
+      min-width: 0;
+      height: 22px;
+      font-size: 12px;
+    }
+    .vdp-flow-identifiers > div {
+      align-items: center;
+      gap: 5px;
+    }
+    .vdp-flow-identifiers dt {
+      color: var(--desk-muted);
+      font: 500 12px/1 var(--font-app);
+    }
+    .vdp-flow-identifiers dd {
+      color: var(--desk-ink-2);
+      font: 500 12px/1 var(--ifx-font-mono);
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+    .vdp-flow-identifiers .copyable-value { gap: 1px; }
+    .vdp-flow-identifiers .copyable-value__button {
+      width: 22px;
+      min-width: 22px;
+      height: 22px;
+      min-height: 22px;
+      padding: 0;
+      border-radius: 4px;
+      color: var(--desk-muted);
+    }
+    .vdp-flow-actions {
+      align-items: center;
+      gap: 8px;
+    }
+    .vdp-flow-resources > div {
+      top: calc(100% + 6px);
+      padding: 6px;
+      border: 1px solid var(--desk-line);
+      border-radius: var(--desk-radius);
+      box-shadow: var(--desk-shadow-menu);
+    }
+    .vdp-flow-resources > div :is(a, button) {
+      min-height: 36px;
+      gap: 10px;
+      padding: 0 8px;
+      border-radius: 6px;
+      color: var(--desk-ink);
+      font: 500 13px/1.3 var(--font-app);
+    }
+    .vdp-flow-resources > div :is(a, button) > svg { width: 16px; height: 16px; color: var(--desk-ink-3); }
+    .vdp-flow-resources > div :is(a, button):hover { background: var(--desk-surface-soft); }
+
+    /* 4-up facts strip: 12px labels, 18px values. */
+    .vdp-flow-overview-facts > dl.vdp-flow-metrics {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0;
+      margin: 0;
+    }
+    .vdp-flow-overview-facts > dl.vdp-flow-metrics > div {
+      padding: 4px 16px;
+      border-left: 1px solid var(--desk-line);
+    }
+    .vdp-flow-overview-facts > dl.vdp-flow-metrics > div:first-child { padding-left: 0; border-left: 0; }
+    .vdp-flow-overview-facts > dl.vdp-flow-metrics dt {
+      color: var(--desk-muted);
+      font-size: 12px !important;
+      font-weight: 500;
+      line-height: 16px;
+    }
+    .vdp-flow-overview-facts > dl.vdp-flow-metrics dd {
+      margin: 2px 0 0;
+      color: var(--desk-ink);
+      font-size: 18px !important;
+      font-weight: 700;
+      line-height: 24px;
+      letter-spacing: -0.01em;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+}
