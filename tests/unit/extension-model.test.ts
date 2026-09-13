@@ -1,7 +1,7 @@
 // @vitest-environment node
 // @ts-nocheck -- dependency-free ESM view model; synthetic fixtures only.
 import { describe, expect, it } from 'vitest'
-import { buildPanelData, canRequestVehicle, holdLabel, mergeDetail, requestBlockedReason, resolveLocation, toPanelVehicle } from '../../extension/sidepanel/lib/model.mjs'
+import { buildPanelData, canRequestVehicle, certifiedProgram, copyFields, dealSheetText, holdLabel, mergeDetail, requestBlockedReason, resolveLocation, toPanelVehicle } from '../../extension/sidepanel/lib/model.mjs'
 
 const meta = (overrides = {}) => ({ reportDate: '2026-08-30', completedAt: '2026-08-30T10:00:00-04:00', publicFreshness: 'current', dealerMailFreshness: 'current', ...overrides })
 const base = (overrides = {}) => ({
@@ -105,6 +105,36 @@ describe('deal desk view model', () => {
     expect(canRequestVehicle(away, null)).toBe(false)
     const moving = { ...away, movement: { transferId: 'transfer-2' } }
     expect(requestBlockedReason(moving, sales)).toMatch(/already in progress/)
+    // A withheld move (no transfer link) is still an open move the server would reject a request for.
+    const withheldRecord = base({ homeStore: 'Fowlerville', publicStore: 'Fowlerville', sourceReportedLocation: 'Fowlerville', movement: { state: 'in_transit', label: 'in transit', currentLocation: 'Howell', locationConfidence: 'verified' } })
+    const withheld = toPanelVehicle(withheldRecord, data(withheldRecord))
+    expect(withheld.movement).toMatchObject({ withheld: true, transferId: null })
+    expect(canRequestVehicle(withheld, sales)).toBe(false)
+    expect(requestBlockedReason(withheld, sales)).toMatch(/already in progress/)
+  })
+
+  it('keeps a completed home receipt as location evidence but not as an open move', () => {
+    // After a round trip the server keeps publishing state 'returned_home' as
+    // the location authority and allows the vehicle to be requested again.
+    const record = base({ homeStore: 'Fowlerville', publicStore: 'Fowlerville', sourceReportedLocation: 'Fowlerville', movement: { state: 'returned_home', label: 'returned home', currentLocation: 'Fowlerville', locationConfidence: 'verified', lastConfirmedAt: '2026-08-30T12:00:00Z' } })
+    const vehicle = toPanelVehicle(record, data(record))
+    expect(vehicle.location).toMatchObject({ label: 'Fowlerville', provenance: 'app-confirmed', confirmedAt: '2026-08-30T12:00:00Z' })
+    expect(vehicle.movement).toBeNull()
+    expect(canRequestVehicle(vehicle, { role: 'sales', store: 'Howell', canCreateTransfer: true })).toBe(true)
+    // A new request on that vehicle arrives merged with the receipt's state;
+    // the link outranks the physical state, so it is an open move again.
+    const reopened = base({ homeStore: 'Fowlerville', movement: { transferId: 'transfer-9', requestStatus: 'requested', state: 'returned_home', currentLocation: 'Fowlerville', locationConfidence: 'verified' } })
+    const open = toPanelVehicle(reopened, data(reopened, { transfers: [{ id: 'transfer-9', vin: reopened.vin, requestStatus: 'requested', movementStatus: 'at_home', currentLocation: 'Fowlerville' }] }))
+    expect(open.movement).toMatchObject({ transferId: 'transfer-9', withheld: false })
+    expect(canRequestVehicle(open, { role: 'sales', store: 'Howell', canCreateTransfer: true })).toBe(false)
+    // The requester may not see the receipt row; its own open request is joined from the transfers list instead.
+    const joinedOnly = toPanelVehicle(record, data(record, { transfers: [{ id: 'transfer-9', vin: record.vin, requestStatus: 'requested', movementStatus: 'at_home' }] }))
+    expect(joinedOnly.movement).toMatchObject({ transferId: 'transfer-9' })
+    // A location conflict is custody evidence to check, not an open move.
+    const conflict = base({ movement: { state: 'location_exception', label: 'Location needs checking', currentLocation: 'Unknown', locationConfidence: 'conflicting' } })
+    const checked = toPanelVehicle(conflict, data(conflict))
+    expect(checked.location).toMatchObject({ label: 'Location needs checking', conflict: true })
+    expect(checked.movement).toBeNull()
   })
 
   it('drops unofficial document and photo urls and splits features', () => {
@@ -122,5 +152,48 @@ describe('deal desk view model', () => {
     expect(summary.meta).toMatchObject({ reportDate: '2026-08-30', publicFreshness: 'current', dealerMailFreshness: 'current', heldVinCount: 1 })
     expect(summary.access.store).toBe('Howell')
     expect(summary.vehicles).toHaveLength(1)
+  })
+})
+
+describe('deal desk v2 projections', () => {
+  it('names the store certification, not a make program', () => {
+    expect(certifiedProgram('Howell')).toMatchObject({ name: 'Ford Blue Advantage', brand: 'ford' })
+    expect(certifiedProgram('Lincoln')).toMatchObject({ name: 'Lincoln Certified Pre-Owned', brand: 'lincoln' })
+    const chevyAtLincoln = base({ make: 'Chevrolet', homeStore: 'Lincoln', certified: true })
+    expect(toPanelVehicle(chevyAtLincoln, data(chevyAtLincoln)).certifiedProgram.name).toBe('Lincoln Certified Pre-Owned')
+    expect(toPanelVehicle(base(), data(base())).certifiedProgram).toBeNull()
+  })
+
+  it('exposes copyable pricing with the sticker winning over the vAuto label', () => {
+    const record = base({ msrp: 68420, mileage: 12450, exteriorColor: 'Blue', modelCode: 'W1E', engine: '3.5L V6',
+      windowSticker: { basePrice: 63420, totalOptions: 3005, destinationCharge: 1995, totalMsrp: 68420, pricingCurrency: 'USD', options: ['Twin Panel Moonroof'], warranty: ['3 yr / 36,000 mi'] },
+      factoryEquipment: { basePrice: 60000, totalOptions: 1, destinationCharge: 1, totalMsrp: 60002, packages: [{ name: 'Sport', price: 3005, features: [] }] } })
+    const vehicle = toPanelVehicle(record, data(record), { now: Date.UTC(2026, 8, 12) })
+    const fields = Object.fromEntries(copyFields(vehicle).map((field) => [field.key, field]))
+    expect(fields.base).toMatchObject({ value: 63420, from: 'sticker', kind: 'money' })
+    expect(fields.destination).toMatchObject({ value: 1995, from: 'sticker' })
+    expect(fields.options).toMatchObject({ value: 3005 })
+    expect(fields.mileage).toMatchObject({ value: 12450, kind: 'mileage' })
+    expect(fields.modelCode.value).toBe('W1E')
+    expect(vehicle.savings).toBe(68420 - 51800)
+    expect(vehicle.documents.windowSticker.warranty).toEqual(['3 yr / 36,000 mi'])
+    expect(vehicle.documents.factoryEquipment.packages[0]).toMatchObject({ name: 'Sport', price: 3005 })
+    expect(vehicle.equipment.byCategory.find((group) => group.category === 'comfort').items[0].label).toBe('Twin Panel Moonroof')
+    const sheet = dealSheetText(vehicle, (field) => String(field.value))
+    expect(sheet).toContain('Base MSRP: 63420')
+    expect(sheet).toContain('DealerMail: No current DealerMail hold found')
+    expect(sheet).not.toContain('Salesperson')
+  })
+
+  it('attaches the warranty outlook and Ford dealer-tool links only for Ford and Lincoln', () => {
+    const ford = base({ autoCheckReport: { estimatedInServiceDate: '2024-03-14', checks: [{ label: 'Accident check', status: 'No accidents reported' }] } })
+    const vehicle = toPanelVehicle(ford, data(ford), { now: Date.UTC(2026, 8, 12) })
+    expect(vehicle.links.oasis).toContain('oasis/Index?vin=TESTDATAHWELL0001')
+    expect(vehicle.links.invoice).toContain('GetInvoice.aspx?v=TESTDATAHWELL0001')
+    expect(vehicle.warranty.inService.date).toBe('2024-03-14')
+    expect(vehicle.warranty.coverages[0]).toMatchObject({ key: 'basic', status: 'partial' })
+    expect(vehicle.documents.autoCheck.checks[0].tone).toBe('clear')
+    const chevy = base({ make: 'Chevrolet' })
+    expect(toPanelVehicle(chevy, data(chevy)).links).toEqual({ oasis: null, invoice: null })
   })
 })

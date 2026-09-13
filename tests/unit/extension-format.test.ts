@@ -27,3 +27,12 @@ describe('deal desk formatting', () => {
     expect(formatStickerMoney(null, { pricingCurrency: 'CAD' })).toBe('—')
   })
 })
+
+describe('dates outside the current year', () => {
+  it('carries the year so in-service and warranty dates are unambiguous', () => {
+    const now = Date.UTC(2026, 8, 12)
+    expect(formatDate('2024-03-14', now)).toBe('Mar 14, 2024')
+    expect(formatDate('2027-03-14', now)).toBe('Mar 14, 2027')
+    expect(formatDate('2026-08-30', now)).toBe('Aug 30')
+  })
+})

@@ -25,10 +25,13 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? null : { date, dateOnly: false }
 }
 
-export function formatDate(value) {
+/** "Aug 30" within the current year; "Mar 14, 2024" for any other year, so warranty and in-service dates are never ambiguous. */
+export function formatDate(value, now = Date.now()) {
   const parsed = parseDate(value)
   if (!parsed) return '—'
-  return parsed.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(parsed.dateOnly ? { timeZone: 'UTC' } : {}) })
+  const year = parsed.dateOnly ? parsed.date.getUTCFullYear() : parsed.date.getFullYear()
+  const sameYear = year === new Date(now).getFullYear()
+  return parsed.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }), ...(parsed.dateOnly ? { timeZone: 'UTC' } : {}) })
 }
 
 export function formatDateTime(value) {

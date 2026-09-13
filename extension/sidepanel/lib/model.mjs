@@ -5,7 +5,9 @@
 // kept as separate facts and none is inferred from another.
 
 import { STORES } from './config.mjs'
-import { autoCheckUrl, factoryEquipmentUrl, listingUrl, photoUrl, windowStickerUrl } from './links.mjs'
+import { autoCheckUrl, factoryEquipmentUrl, fordInvoiceUrl, fordOasisUrl, listingUrl, photoUrl, windowStickerUrl } from './links.mjs'
+import { autoCheckTone, equipmentByCategory, standoutEquipment } from './equipment.mjs'
+import { warrantyOutlook } from './warranty.mjs'
 
 const ROLE_LABELS = Object.freeze({
   sales: 'Sales', manager: 'Manager', coordinator: 'Coordinator', porter: 'Porter', driver: 'Driver', group_manager: 'Group manager',
@@ -25,6 +27,7 @@ const text = (value) => {
   return cleaned || null
 }
 const number = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null)
+const list = (value) => (Array.isArray(value) ? value.map(text).filter(Boolean) : [])
 
 export function vehicleName(record) {
   return text(record.vehicleName) || [record.year, record.make, record.model, record.trim].map((part) => text(String(part ?? ''))).filter(Boolean).join(' ')
@@ -132,9 +135,31 @@ export function resolveLocation(record, transfer) {
   return { label: 'Location not confirmed', store: null, provenance: 'unknown', confidence: 'unknown', confirmedAt: null, custodian: null, conflict: false }
 }
 
+/**
+ * Custody evidence is not the same as an open move, and the app's adapter
+ * (src/app/adapters.ts) uses the same precedence:
+ * 1. a transfer link or request status the server let this caller see
+ *    (vehicleView spreads the physical-location row over the active transfer
+ *    summary, so a new request on a received-home vehicle arrives as
+ *    { transferId, requestStatus, state: 'returned_home' } — the link wins);
+ * 2. a joined transfer that has not closed (the join above already skips
+ *    terminal rows);
+ * 3. otherwise the ledger state alone — except a completed home receipt
+ *    ('returned_home', still published as location evidence after the request
+ *    closed; the server lets the vehicle be requested again) and a location
+ *    conflict ('location_exception', emitted without any transfer link).
+ */
+function openMove(record, transfer) {
+  const movement = record.movement ?? {}
+  if (text(movement.transferId) || text(movement.requestStatus) || transfer) return true
+  const state = text(movement.state)
+  const conflicting = movement.locationConfidence === 'conflicting' || state === 'location_exception'
+  return !conflicting && state !== 'returned_home'
+}
+
 function movementSignal(record, transfer, now) {
   const movement = record.movement ?? {}
-  if (!ledgerBacked(record, transfer)) return null
+  if (!ledgerBacked(record, transfer) || !openMove(record, transfer)) return null
   const dueAt = text(movement.dueAt) || text(transfer?.dueAt)
   const transferId = text(transfer?.id) || text(movement.transferId)
   return {
@@ -165,6 +190,54 @@ function isListed(record) {
   return record.listingUrl ? true : null
 }
 
+/**
+ * Certification follows the store, not the make: Bob Maxey's Ford stores
+ * certify under Ford Blue Advantage (Fords and non-Fords; Blue or Gold tier)
+ * and the Lincoln store under Lincoln Certified Pre-Owned (Select or
+ * Signature). The feed only says certified; certifiedTerms() in warranty.mjs
+ * lists the tiers. Any factory warranty still running is separate.
+ */
+export function certifiedProgram(homeStore) {
+  const store = String(homeStore ?? '').trim()
+  if (store === 'Lincoln') return { name: 'Lincoln Certified Pre-Owned', short: 'Lincoln Certified', brand: 'lincoln', store }
+  return { name: 'Ford Blue Advantage', short: 'Blue Advantage', brand: 'ford', store }
+}
+
+function documentsFor(record, publicState, dealerMailState) {
+  const autoCheck = record.autoCheckReport
+  const sticker = record.windowSticker
+  const factory = record.factoryEquipment
+  return {
+    autoCheck: autoCheck
+      ? {
+        url: autoCheckUrl(autoCheck.url), dataState: autoCheck.dataState ? dataState(autoCheck.dataState) : publicState,
+        score: number(autoCheck.score), rangeLow: number(autoCheck.scoreRangeLow), rangeHigh: number(autoCheck.scoreRangeHigh), ownerCount: number(autoCheck.ownerCount),
+        usage: text(autoCheck.usage), lastReportedOdometer: number(autoCheck.lastReportedOdometer), lastReportedOdometerDate: text(autoCheck.lastReportedOdometerDate),
+        vehicleClass: text(autoCheck.vehicleClass), assemblyCountry: text(autoCheck.assemblyCountry), inServiceDate: text(autoCheck.estimatedInServiceDate), reportRunAt: text(autoCheck.reportRunAt),
+        checks: (autoCheck.checks ?? []).filter((check) => text(check?.label)).map((check) => ({ label: text(check.label), status: text(check.status), detail: text(check.detail), tone: autoCheckTone(check.status) })),
+      }
+      : null,
+    windowSticker: sticker
+      ? {
+        url: windowStickerUrl(sticker.url), dataState: sticker.dataState ? dataState(sticker.dataState) : publicState,
+        basePrice: number(sticker.basePrice), totalOptions: number(sticker.totalOptions), destinationCharge: number(sticker.destinationCharge), totalMsrp: number(sticker.totalMsrp),
+        pricingCurrency: text(sticker.pricingCurrency), originalMarket: text(sticker.originalMarket), currencyEvidence: text(sticker.pricingCurrencyEvidence),
+        vehicleDescription: text(sticker.vehicleDescription), equipmentGroup: text(sticker.equipmentGroup),
+        options: list(sticker.options), standardEquipment: list(sticker.standardEquipment), warranty: list(sticker.warranty),
+      }
+      : null,
+    factoryEquipment: factory
+      ? {
+        url: factoryEquipmentUrl(factory.url), dataState: factory.dataState ? dataState(factory.dataState) : dealerMailState,
+        basePrice: number(factory.basePrice), totalOptions: number(factory.totalOptions), destinationCharge: number(factory.destinationCharge), totalMsrp: number(factory.totalMsrp),
+        capturedAt: text(factory.capturedAt), sourceLabel: text(factory.sourceLabel), disclaimer: text(factory.disclaimer),
+        packages: (factory.packages ?? []).filter((item) => text(item?.name)).map((item) => ({ name: text(item.name), code: text(item.code), price: number(item.price), features: list(item.features) })),
+        sections: (factory.sections ?? []).filter((section) => text(section?.name)).map((section) => ({ name: text(section.name), items: (section.items ?? []).filter((item) => text(item?.label)).map((item) => ({ label: text(item.label), price: number(item.price) })) })),
+      }
+      : null,
+  }
+}
+
 export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
   const meta = bootstrap.meta ?? {}
   const publicState = dataState(meta.publicFreshness)
@@ -176,17 +249,24 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
     : []
   const photos = [...new Set((record.imageUrls ?? (record.imageUrl ? [record.imageUrl] : [])).map(photoUrl).filter(Boolean))]
   const disposition = record.managerDisposition
-  return {
+  const documents = documentsFor(record, publicState, dealerMailState)
+  const make = text(record.make) || ''
+  // The app enables Ford dealer tools for Ford and Lincoln VINs only.
+  const fordFamily = /^(ford|lincoln)$/i.test(make)
+  const price = number(record.listedPrice)
+  const msrp = number(record.msrp)
+  const vehicle = {
     id: record.vin,
     vin: record.vin,
     stockNumber: text(record.stockNumber) || '—',
     name: vehicleName(record),
     year: record.year ?? '',
-    make: text(record.make) || '',
+    make,
     model: text(record.model) || '',
     trim: text(record.trim),
-    price: number(record.listedPrice),
-    msrp: number(record.msrp),
+    price,
+    msrp,
+    savings: price !== null && msrp !== null && msrp > price ? msrp - price : null,
     mileage: number(record.mileage),
     daysListed: number(record.daysListed),
     exteriorColor: text(record.exteriorColor),
@@ -197,9 +277,15 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
     transmission: text(record.transmission),
     fuelType: text(record.fuelType),
     certified: record.certified === true,
+    certifiedProgram: record.certified === true ? certifiedProgram(record.homeStore) : null,
+    specs: {
+      bodyType: text(record.bodyType), mpgCity: number(record.mpgCity), mpgHighway: number(record.mpgHighway),
+      modelCode: text(record.modelCode), inventoryDate: text(record.inventoryDate), photoCount: number(record.photoCount),
+    },
     features,
     photos,
     changeSummary: text(record.changeSummary),
+    dealerComments: text(record.dealerComments),
     authorizedSearchText: text(record.searchText),
     homeStore: text(record.homeStore) || '',
     sourceReportedStore: text(record.sourceReportedLocation) || text(record.publicStore),
@@ -212,6 +298,10 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
       url: listingUrl(record.listingUrl),
       dealerOn: { inStock: record.dealerOn?.inStock ?? null, inTransit: record.dealerOn?.inTransit ?? null, inProduction: record.dealerOn?.inProduction ?? null },
     },
+    links: {
+      oasis: fordFamily ? fordOasisUrl(record.vin) : null,
+      invoice: fordFamily ? fordInvoiceUrl(record.vin) : null,
+    },
     hold: holdSignal(record, dealerMailState),
     location: resolveLocation(record, transfer),
     movement: movementSignal(record, transfer, now),
@@ -221,12 +311,22 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
         dataState: dataState(meta.managerDispositionFreshness ?? disposition.dataState ?? 'unknown'),
       }
       : null,
-    documents: {
-      autoCheck: record.autoCheckReport ? { url: autoCheckUrl(record.autoCheckReport.url), score: number(record.autoCheckReport.score), rangeLow: number(record.autoCheckReport.scoreRangeLow), rangeHigh: number(record.autoCheckReport.scoreRangeHigh), ownerCount: number(record.autoCheckReport.ownerCount) } : null,
-      windowSticker: record.windowSticker ? { url: windowStickerUrl(record.windowSticker.url), totalMsrp: number(record.windowSticker.totalMsrp), pricingCurrency: text(record.windowSticker.pricingCurrency), originalMarket: text(record.windowSticker.originalMarket) } : null,
-      factoryEquipment: record.factoryEquipment ? { url: factoryEquipmentUrl(record.factoryEquipment.url), totalMsrp: number(record.factoryEquipment.totalMsrp), packages: (record.factoryEquipment.packages ?? []).map((item) => text(item?.name)).filter(Boolean) } : null,
-    },
+    documents,
+    publicScan: record.publicScan
+      ? {
+        firstSeen: text(record.publicScan.firstSeen), lastSeen: text(record.publicScan.lastSeen),
+        sourceCount: number(record.publicScan.sourceCount) ?? (Array.isArray(record.publicScan.sourceSites) ? record.publicScan.sourceSites.length : null),
+        locationCity: text(record.publicScan.locationCity), genericColor: text(record.publicScan.genericColor),
+      }
+      : null,
+    // Records that only the per-vehicle endpoint carries.
+    detailLoaded: record.privateEvidence !== undefined || record.autoCheckReport !== undefined || record.publicScan !== undefined,
+    equipment: null,
+    warranty: null,
   }
+  vehicle.equipment = { standout: standoutEquipment(vehicle, 6), byCategory: equipmentByCategory(vehicle) }
+  vehicle.warranty = warrantyOutlook(vehicle, { now })
+  return vehicle
 }
 
 /** The per-vehicle record is the bootstrap record plus role-filtered evidence; it wins field by field. */
@@ -245,15 +345,60 @@ export function canRequestVehicle(vehicle, access) {
   if (!access || access.canCreateTransfer === false) return false
   if (!['sales', 'manager', 'group_manager'].includes(access.role)) return false
   if (vehicle.homeStore === access.store) return false
-  return !vehicle.movement?.transferId
+  // Any open move blocks a new request — the server rejects one with
+  // "already has an open move" even when the transfer link is withheld.
+  return !vehicle.movement
 }
 
 export function requestBlockedReason(vehicle, access) {
   if (!access) return 'Sign in to request vehicles.'
   if (!['sales', 'manager', 'group_manager'].includes(access.role) || access.canCreateTransfer === false) return 'Your role cannot request vehicles.'
   if (vehicle.homeStore === access.store) return `Already at ${access.store}, your working store.`
-  if (vehicle.movement?.transferId) return 'A move is already in progress.'
+  if (vehicle.movement) return 'A move is already in progress.'
   return null
+}
+
+/**
+ * The identifying and pricing facts a deal needs pasted somewhere else, in a
+ * stable order. Sticker pricing wins over the vAuto label because it is the
+ * original Monroney; the label is informational.
+ */
+export function copyFields(vehicle) {
+  const sticker = vehicle.documents.windowSticker
+  const label = vehicle.documents.factoryEquipment
+  const pick = (key) => (sticker && sticker[key] !== null ? { value: sticker[key], from: 'sticker' } : label && label[key] !== null ? { value: label[key], from: 'label' } : { value: null, from: null })
+  const base = pick('basePrice'), options = pick('totalOptions'), destination = pick('destinationCharge'), total = pick('totalMsrp')
+  return [
+    { key: 'stock', label: 'Stock', value: vehicle.stockNumber, kind: 'text' },
+    { key: 'vin', label: 'VIN', value: vehicle.vin, kind: 'text' },
+    { key: 'vehicle', label: 'Vehicle', value: vehicle.name, kind: 'text' },
+    { key: 'year', label: 'Year', value: vehicle.year || null, kind: 'text' },
+    { key: 'price', label: 'Listed price', value: vehicle.price, kind: 'money' },
+    { key: 'msrp', label: 'MSRP', value: vehicle.msrp, kind: 'money' },
+    { key: 'base', label: 'Base MSRP', value: base.value, kind: 'money', from: base.from },
+    { key: 'options', label: 'Options total', value: options.value, kind: 'money', from: options.from },
+    { key: 'destination', label: 'Destination & delivery', value: destination.value, kind: 'money', from: destination.from },
+    { key: 'stickerTotal', label: 'Sticker total MSRP', value: total.value, kind: 'money', from: total.from },
+    { key: 'mileage', label: 'Miles', value: vehicle.mileage, kind: 'mileage' },
+    { key: 'inService', label: 'In service (est.)', value: vehicle.warranty?.inService.date ?? null, kind: 'date' },
+    { key: 'exterior', label: 'Exterior', value: vehicle.exteriorColor, kind: 'text' },
+    { key: 'interior', label: 'Interior', value: vehicle.interiorColor, kind: 'text' },
+    { key: 'engine', label: 'Engine', value: vehicle.engine, kind: 'text' },
+    { key: 'transmission', label: 'Transmission', value: vehicle.transmission, kind: 'text' },
+    { key: 'drivetrain', label: 'Drivetrain', value: vehicle.drivetrain, kind: 'text' },
+    { key: 'modelCode', label: 'Model code', value: vehicle.specs.modelCode, kind: 'text' },
+    { key: 'homeStore', label: 'Home store', value: vehicle.homeStore, kind: 'text' },
+  ]
+}
+
+/** Plain-text deal sheet for a single copy-all action. */
+export function dealSheetText(vehicle, formatValue) {
+  const lines = copyFields(vehicle)
+    .filter((field) => field.value !== null && field.value !== undefined && field.value !== '')
+    .map((field) => `${field.label}: ${formatValue(field)}`)
+  if (vehicle.certifiedProgram) lines.push(`Certified: ${vehicle.certifiedProgram.name}`)
+  lines.push(`DealerMail: ${vehicle.hold.label}`, `Location: ${vehicle.location.label} (${vehicle.location.provenance === 'app-confirmed' ? 'app-confirmed' : vehicle.location.provenance === 'source-reported' ? 'source-reported' : 'unconfirmed'})`)
+  return lines.join('\n')
 }
 
 export function buildPanelData(bootstrap, { now = Date.now() } = {}) {

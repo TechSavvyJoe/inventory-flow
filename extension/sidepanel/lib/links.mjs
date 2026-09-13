@@ -32,6 +32,31 @@ export function trackMovementUrl(origin, { transferId, vin }) {
   return transferId ? appUrl(origin, '/transfers', { id: transferId }) : appUrl(origin, '/transfers', { vin })
 }
 
+const FORD_INVOICE_BASE_URL = 'https://fordvisions.dealerconnection.com/vinv/GetInvoice.aspx'
+const FORD_OASIS_BASE_URL = 'https://www.fordtechservice.dealerconnection.com/oasis/Index'
+
+function normalizedVin(value) {
+  const vin = String(value ?? '').trim().toUpperCase()
+  return /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) ? vin : null
+}
+
+/** Ford/Lincoln dealer tools for an exact VIN, mirroring the app; DealerConnection may require its own sign-in. */
+export function fordInvoiceUrl(value) {
+  const vin = normalizedVin(value)
+  if (!vin) return null
+  const url = new URL(FORD_INVOICE_BASE_URL)
+  url.searchParams.set('v', vin); url.searchParams.set('n', ','); url.searchParams.set('pa', '00000'); url.searchParams.set('p', ''); url.searchParams.set('ct', 'USA')
+  return url.href
+}
+
+export function fordOasisUrl(value) {
+  const vin = normalizedVin(value)
+  if (!vin) return null
+  const url = new URL(FORD_OASIS_BASE_URL)
+  url.searchParams.set('vin', vin)
+  return url.href
+}
+
 function parseHttps(value) {
   if (typeof value !== 'string' || !value) return null
   try {
