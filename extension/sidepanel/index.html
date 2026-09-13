@@ -29,14 +29,19 @@
             <kbd class="search-kbd" id="search-kbd" aria-hidden="true">/</kbd>
             <button type="button" class="search-clear" id="clear" aria-label="Clear search" hidden></button>
           </label>
-          <div class="scope" id="scope" role="tablist" aria-label="Inventory scope">
-            <span class="scope-ind" id="scope-ind" aria-hidden="true"></span>
+          <div class="scope-row">
+            <div class="scope" id="scope" role="tablist" aria-label="Inventory scope">
+              <span class="scope-ind" id="scope-ind" aria-hidden="true"></span>
+            </div>
+            <button type="button" class="filter-btn" id="filters-btn" aria-label="Filters and sort" aria-haspopup="dialog" aria-expanded="false"><span class="filter-count" id="filter-count" hidden></span></button>
           </div>
+          <div class="filter-summary" id="filter-summary" hidden></div>
         </div>
         <div class="status" id="status" hidden></div>
         <ol class="rows" id="rows" role="listbox" aria-label="Vehicles" tabindex="-1"></ol>
         <div class="more" id="more" hidden></div>
         <div class="skeleton" id="skeleton" aria-hidden="true" hidden></div>
+        <div class="tray" id="tray" hidden></div>
       </section>
 
       <section class="view view-detail" id="view-detail" data-view-id="detail" aria-hidden="true" aria-label="Vehicle">
@@ -46,6 +51,15 @@
           <div class="detail-bar-tools" id="detail-tools"></div>
         </div>
         <div class="detail-scroll" id="detail" tabindex="-1"></div>
+      </section>
+
+      <section class="view view-compare" id="view-compare" data-view-id="compare" aria-hidden="true" aria-label="Compare vehicles">
+        <div class="detail-bar">
+          <button type="button" class="back" id="compare-back" aria-label="Back"></button>
+          <span class="detail-bar-title" id="compare-title">Compare</span>
+          <div class="detail-bar-tools" id="compare-tools"></div>
+        </div>
+        <div class="detail-scroll" id="compare" tabindex="-1"></div>
       </section>
     </div>
 
