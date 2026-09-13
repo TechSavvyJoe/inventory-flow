@@ -7,6 +7,7 @@ import { getVehicle } from '../../lib/api'
 import type { VehicleRecord } from '../../types'
 import type { InventoryScope, InventoryVehicle } from './types'
 import { InventoryExperience } from './InventoryExperience'
+import { canRequestVehicleMove, movementTrackingPath } from './inventory-utils'
 import {
   hasInventorySearchRequest,
   inventorySearchAccessContext,
@@ -102,8 +103,15 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   }
 
   function trackMovement(vehicle: InventoryVehicle) {
-    const requestId = vehicle.movement?.requestId
-    navigate(requestId ? `/transfers?id=${encodeURIComponent(requestId)}` : `/transfers?vin=${encodeURIComponent(vehicle.vin)}`)
+    const path = movementTrackingPath(vehicle)
+    if (path) {
+      navigate(path)
+      return
+    }
+    // The transfer is withheld from this role or store. Keep the user on the
+    // vehicle: its Location & movement section shows the custody facts the
+    // server did publish, whereas the moves page has no record to select.
+    setSelectedVehicleId(vehicle.id)
   }
 
   function openListing(vehicle: InventoryVehicle) {
@@ -129,11 +137,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         selectedVehicleId={selectedVehicleId}
         onSelectedVehicleChange={setSelectedVehicleId}
         pageSize={25}
-        canRequestVehicle={(vehicle) =>
-          ['sales', 'manager', 'group_manager'].includes(role) &&
-          vehicle.location.homeStore.id !== store.id &&
-          !vehicle.movement?.requestId
-        }
+        canRequestVehicle={(vehicle) => canRequestVehicleMove(vehicle, role, store.id)}
         onScopeChange={setScope}
         onGroupStoreSelect={() => setScope('group')}
         onRequestVehicle={requestVehicle}

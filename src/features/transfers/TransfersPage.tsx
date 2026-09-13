@@ -24,6 +24,7 @@ import { TransferRequestWorkspace } from './TransferRequestWorkspace'
 import { TransferTracker } from './TransferTracker'
 import type { SelectOption, TransferActionKind, TransferDetail, TransferRequestDraft } from './types'
 import { awayFromHomeSummary } from './moveSummary'
+import { selectRequestedTransfer } from './transfer-selection'
 import { VehicleLocationOverview } from './VehicleLocationOverview'
 import './transfers-page.css'
 import './transfer-workspace-v3.css'
@@ -298,11 +299,7 @@ export function TransfersPage() {
       if (priorityDifference) return priorityDifference
       return dateScore(left.detail.nextAction.dueAt) - dateScore(right.detail.nextAction.dueAt)
     })
-  const selected =
-    filteredDetails.find(({ record }) => record.id === requestedId) ||
-    filteredDetails.find(({ record }) => record.vin === requestedVin) ||
-    filteredDetails[0] ||
-    null
+  const selected = selectRequestedTransfer(filteredDetails, requestedId, requestedVin)
   const queueCounts = {
     'needs-action': details.filter(({ record, detail }) => !isTerminalTransfer(record) && needsTransferAction(detail)).length,
     active: details.filter(({ record }) => !isTerminalTransfer(record)).length,

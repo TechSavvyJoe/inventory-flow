@@ -264,6 +264,9 @@ function holdEvidence(vehicle: VehicleRecord, dataState: SourceDataState): Deale
   return records
 }
 
+/** Request statuses under which a joined transfer no longer represents an open move. */
+const CLOSED_REQUEST_STATES = new Set(['declined', 'canceled', 'closed', 'returned_home'])
+
 export function toInventoryVehicle(
   vehicle: VehicleRecord,
   data: BootstrapData,
@@ -276,7 +279,35 @@ export function toInventoryVehicle(
   const sourceStore = inventoryStore(vehicle.sourceReportedLocation || vehicle.publicStore)
   const crmStore = vehicle.crmStore ? inventoryStore(vehicle.crmStore) : null
   const movement = transfer ?? (vehicle.movement.transferId ? data.transfers.find((item) => item.id === vehicle.movement.transferId) : undefined)
-  const hasAppCustodyRecord = Boolean(movement || vehicle.movement.transferId)
+  // service-core publishes the ledger's state, location and confidence without
+  // the transfer link when this role or store may not see the transfer itself
+  // (sharedLocationSummary). Only a plain source report carries the state
+  // 'source_reported', so any other state is the app's own custody record even
+  // when transferId is withheld. Mirrors ledgerBacked() in the extension.
+  const ledgerState = vehicle.movement.state?.trim()
+  const hasAppCustodyRecord = Boolean(
+    movement || vehicle.movement.transferId || (ledgerState && ledgerState !== 'source_reported'),
+  )
+  // Custody evidence is not the same as an open move. Consumers read
+  // `movement` as "being moved" (row pill, quick view, hiding Request vehicle),
+  // so it is set only when a move is actually open, in this precedence:
+  // 1. A transfer link or request status the server let this caller see.
+  //    vehicleView spreads the physical-location row over the active transfer
+  //    summary, so a new request on a received-home vehicle arrives as
+  //    { transferId, requestStatus: 'requested', state: 'returned_home' } —
+  //    the link outranks the physical state it is merged with.
+  // 2. A joined transfer that has not closed.
+  // 3. Otherwise the ledger state alone — except a completed home receipt
+  //    ('returned_home'), which physicalLocationAuthority keeps publishing as
+  //    location evidence after the request closed and blocksNewSimpleRequest
+  //    lets be requested again, and a location conflict ('location_exception'),
+  //    which the server emits without any transfer link even to the owning
+  //    store. Both stay custody evidence; neither is an open move.
+  const openTransfer =
+    Boolean(vehicle.movement.transferId || vehicle.movement.requestStatus) ||
+    Boolean(movement && !CLOSED_REQUEST_STATES.has(movement.requestStatus))
+  const conflicting = vehicle.movement.locationConfidence === 'conflicting' || ledgerState === 'location_exception'
+  const hasOpenMove = openTransfer || (hasAppCustodyRecord && !conflicting && ledgerState !== 'returned_home')
   // vAuto/CAI equipment is sourced from the CRM-side inventory record. Its
   // freshness remains independent from public-listing freshness, including
   // for CRM-only vehicles that have no current public listing.
@@ -401,7 +432,7 @@ export function toInventoryVehicle(
       custodian: hasAppCustodyRecord ? vehicle.movement.currentCustodian || movement?.custodian || null : null,
       conflict: vehicle.movement.locationConfidence === 'conflicting',
     },
-    movement: hasAppCustodyRecord
+    movement: hasOpenMove
       ? {
           state: movement?.movementStatus || vehicle.movement.state,
           requestStatus: vehicle.movement.requestStatus || movement?.requestStatus || null,
@@ -409,6 +440,7 @@ export function toInventoryVehicle(
           customerOutcome: movement?.dealStatus || null,
           deliveryConfirmation: movement?.deliveryStatus || null,
           requestId: movement?.id || vehicle.movement.transferId || null,
+          withheld: !(movement?.id || vehicle.movement.transferId),
           lastEventAt: vehicle.movement.lastConfirmedAt || movement?.lastConfirmedAt || null,
           lastEventLabel: movement?.events.at(-1)?.label || null,
           nextAction: vehicle.movement.nextAction || movement?.nextAction || null,
