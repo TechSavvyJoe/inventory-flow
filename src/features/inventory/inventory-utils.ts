@@ -117,6 +117,16 @@ export interface ResolvedLocation {
 
 export function resolveCurrentLocation(vehicle: InventoryVehicle): ResolvedLocation {
   const location = vehicle.location;
+  if (location.conflict) {
+    // The app's own records disagree about where the vehicle is. Never fall
+    // back to a store name here: the server reports 'Unknown' with
+    // 'conflicting' confidence and labels it "Location needs checking".
+    return {
+      label: "Location needs checking",
+      provenance: "app-confirmed",
+      detail: "Conflicting location records",
+    };
+  }
   if (location.appConfirmedLocation?.trim() || location.appConfirmedStore) {
     const label =
       location.appConfirmedLocation?.trim() || location.appConfirmedStore?.name || "Confirmed location";
@@ -144,6 +154,35 @@ export function resolveCurrentLocation(vehicle: InventoryVehicle): ResolvedLocat
     provenance: "unknown",
     detail: "No current location evidence",
   };
+}
+
+/**
+ * Where "Track movement" may navigate. The adapter leaves `requestId` null when
+ * the server withheld the transfer link: custody is real, but the moves page
+ * never received that record for this role or store, so there is nowhere to go.
+ */
+export function movementTrackingPath(vehicle: InventoryVehicle): string | null {
+  const requestId = vehicle.movement?.requestId?.trim();
+  return requestId ? `/transfers?id=${encodeURIComponent(requestId)}` : null;
+}
+
+/**
+ * A vehicle on an open move cannot be requested again, whether or not this
+ * role may see the transfer; the server rejects the duplicate request. The
+ * adapter sets `movement` only for an open move: a completed home receipt is
+ * kept as app-confirmed location evidence with `movement` null, because the
+ * server (blocksNewSimpleRequest) accepts a new request for it.
+ */
+export function canRequestVehicleMove(
+  vehicle: InventoryVehicle,
+  role: string,
+  homeStoreId: string,
+): boolean {
+  return (
+    ["sales", "manager", "group_manager"].includes(role) &&
+    vehicle.location.homeStore.id !== homeStoreId &&
+    !vehicle.movement
+  );
 }
 
 export function sourceStateLabel(state: SourceDataState): string {

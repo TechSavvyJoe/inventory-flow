@@ -20,11 +20,13 @@ function sourceVehicle(): VehicleRecord {
     publicListingState: 'Listed',
     dealerOn: { inStock: true, inTransit: false, inProduction: false },
     hold: { state: 'none_observed', label: 'No current hold', backupCount: 0 },
+    // The server's shape for a vehicle with no transfer: a plain source report,
+    // never app custody (see movementSummary in server/service-core.mjs).
     movement: {
-      state: 'At home location',
-      label: 'At home location',
+      state: 'source_reported',
+      label: 'Source-reported location',
       currentLocation: 'Howell',
-      locationConfidence: 'verified',
+      locationConfidence: 'reported',
     },
     autoCheckReport: {
       url: 'https://www.autocheck.com/report/1FMUK8DHXTGB76992',
