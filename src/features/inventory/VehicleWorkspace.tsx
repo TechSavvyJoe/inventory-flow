@@ -32,6 +32,7 @@ import {
   MapPin,
   MessageSquare,
   Navigation,
+  Printer,
   ShieldCheck,
   Store,
   Tag,
@@ -62,6 +63,9 @@ import {
   vautoFactoryEquipmentUrl,
 } from "./vehicle-document-utils";
 import { standoutEquipment } from "./vehicle-feature-utils";
+import { warrantySummary, warrantyOutlook } from "./vehicle-warranty-utils";
+import { WarrantyOutlook } from "./WarrantyOutlook";
+import { TakeHomeSheet } from "./TakeHomeSheet";
 import { useContainedFocus } from "../../lib/useContainedFocus";
 import type {
   DealerMailHoldEvidence,
@@ -621,7 +625,10 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const autoCheck = vehicle.autoCheckReport;
   const sticker = vehicle.windowSticker;
   const factoryEquipment = vehicle.factoryEquipment;
-  if (!autoCheck && !sticker && !factoryEquipment) return null;
+  const warranty = warrantyOutlook({ make: vehicle.make, year: vehicle.year, fuelType: vehicle.fuelType, engine: vehicle.engine, mileage: vehicle.mileage, inServiceDate: autoCheck?.estimatedInServiceDate ?? null, stickerWarranty: sticker?.warranty ?? [] });
+  // The outlook only joins the records grid when a VIN-specific record exists; without one there is nothing to date it from.
+  const showWarranty = Boolean(autoCheck || sticker || factoryEquipment) && (warranty.termsKnown || Boolean(warranty.inService.date));
+  if (!autoCheck && !sticker && !factoryEquipment && !showWarranty) return null;
   const autoCheckUrl = officialVehicleDocumentUrl(autoCheck?.url, "autocheck", vehicle.publicListing.listingUrl);
   const stickerUrl = officialVehicleDocumentUrl(sticker?.url, "window-sticker", vehicle.publicListing.listingUrl);
   const factoryEquipmentUrl = vautoFactoryEquipmentUrl(factoryEquipment?.url);
@@ -684,7 +691,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
     <section
       className="inventory-vehicle-documents inventory-workspace-records"
       aria-label="Vehicle documents"
-      data-record-count={Number(Boolean(autoCheck)) + Number(Boolean(sticker)) + Number(Boolean(factoryEquipment))}
+      data-record-count={Number(Boolean(autoCheck)) + Number(Boolean(sticker)) + Number(Boolean(factoryEquipment)) + Number(showWarranty)}
     >
       <header className="inventory-vehicle-documents__header">
         <span className="inventory-vehicle-documents__mark">
@@ -793,6 +800,8 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             </span>
           )}
         </article> : null}
+
+        {showWarranty ? <WarrantyOutlook vehicle={vehicle} /> : null}
 
         {sticker ? <article
           className="inventory-vehicle-document inventory-vehicle-document--sticker"
@@ -1918,6 +1927,7 @@ function OverviewDetails({
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const autoCheck = vehicle.autoCheckReport;
   const sticker = vehicle.windowSticker;
+  const warrantyLine = warrantySummary(warrantyOutlook({ make: vehicle.make, year: vehicle.year, fuelType: vehicle.fuelType, engine: vehicle.engine, mileage: vehicle.mileage, inServiceDate: autoCheck?.estimatedInServiceDate ?? null }));
   const autoCheckScoreRange =
     autoCheck?.scoreRangeLow != null && autoCheck.scoreRangeHigh != null
       ? `${autoCheck.scoreRangeLow}–${autoCheck.scoreRangeHigh}`
@@ -1947,9 +1957,10 @@ function OverviewDetails({
       value: `${sticker.standardEquipment.length} published`,
     } : null,
     autoCheck?.estimatedInServiceDate ? {
-      label: "AutoCheck in service",
+      label: "In service (AutoCheck est.)",
       value: formatDate(autoCheck.estimatedInServiceDate),
     } : null,
+    warrantyLine ? { label: "Factory warranty left", value: warrantyLine } : null,
     autoCheck?.assemblyCountry ? { label: "AutoCheck assembly", value: autoCheck.assemblyCountry } : null,
   ].filter(Boolean).slice(0, 8) as Array<{ label: string; value: string }>;
   const standoutItems = standoutEquipment(vehicle, 8);
@@ -2236,8 +2247,19 @@ function MovementDetails({ vehicle }: { vehicle: InventoryVehicle }) {
   const movement = vehicle.movement;
   const location = vehicle.location;
   const current = resolveCurrentLocation(vehicle);
+  const withheld = movement?.withheld === true;
+  const withheldText = "Withheld for your role or store";
   return (
     <div className="inventory-workspace-detail-content">
+      {withheld ? (
+        <div className="inventory-availability-note inventory-availability-note--compact">
+          <Navigation size={17} strokeWidth={1.75} aria-hidden="true" />
+          <span>
+            <strong>Move details are limited to the stores involved.</strong>{" "}
+            The location and status shown are still the app&apos;s own record.
+          </span>
+        </div>
+      ) : null}
       {location.conflict ? (
         <div className="inventory-availability-note inventory-availability-note--danger">
           <AlertTriangle size={17} strokeWidth={1.75} aria-hidden="true" />
@@ -2272,15 +2294,15 @@ function MovementDetails({ vehicle }: { vehicle: InventoryVehicle }) {
           {formatDateTime(location.appConfirmedAt)}
         </Fact>
         <Fact label="Confirmed by">
-          {location.appConfirmedBy || "Not recorded"}
+          {location.appConfirmedBy || (withheld ? withheldText : "Not recorded")}
         </Fact>
         <Fact label="Custodian">
-          {movement?.custodian || location.custodian || "Not assigned"}
+          {movement?.custodian || location.custodian || (withheld ? withheldText : "Not assigned")}
         </Fact>
         <Fact label="Driver">
           {movement?.transportAssignee ||
             location.transportAssignee ||
-            "Not set up"}
+            (withheld ? withheldText : "Not set up")}
         </Fact>
       </dl>
       {movement ? (
@@ -2318,7 +2340,7 @@ function MovementDetails({ vehicle }: { vehicle: InventoryVehicle }) {
               {humanizeWorkflowValue(movement.deliveryConfirmation) || "Not confirmed"}
             </Fact>
             <Fact label="Movement ID" className="inventory-workspace-fact--wide-mobile">
-              {movement.requestId || "Not assigned"}
+              {movement.requestId || (withheld ? withheldText : "Not assigned")}
             </Fact>
           </dl>
           {movement.overdue ? (
@@ -2599,6 +2621,8 @@ export function VehicleWorkspace({
   const [activeTarget, setActiveTarget] = useState<WorkspaceSectionId>(initialTab);
   const activeSection = workspacePage(activeTarget);
   const [holdView, setHoldView] = useState<"holds" | "comments" | "alerts">("holds");
+  const [takeHomeOpen, setTakeHomeOpen] = useState(false);
+  const takeHomeButtonRef = useRef<HTMLButtonElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const movementSectionRef = useRef<HTMLElement>(null);
@@ -2766,11 +2790,11 @@ export function VehicleWorkspace({
             </dl>
           </div>
           <div className="vdp-flow-actions" role="toolbar" aria-label="Vehicle actions">
-            <button type="button" className="vdp-flow-primary-action"
+            <button type="button" className="vdp-flow-primary-action inv-btn inv-btn--primary"
               onClick={canManageDealerMail ? focusDealerMailActions : () => openAndFocusSection("hold")}
               aria-controls={canManageDealerMail ? "inventory-dealermail-actions" : "inventory-panel-hold"}
               data-action={canManageDealerMail ? "dealermail-tools" : "hold-details"}>
-              <UserRound size={17} strokeWidth={1.8} aria-hidden="true" />
+              <UserRound size={16} strokeWidth={1.8} aria-hidden="true" />
               {canManageDealerMail ? "DealerMail tools" : "View hold status"}
             </button>
             <details className="vdp-flow-resources" ref={resourcesRef} onKeyDown={(event) => {
@@ -2780,7 +2804,7 @@ export function VehicleWorkspace({
               resourcesRef.current.open = false;
               resourcesRef.current.querySelector<HTMLElement>("summary")?.focus();
             }}>
-              <summary>More resources <ChevronDown size={15} strokeWidth={1.8} aria-hidden="true" /></summary>
+              <summary className="inv-btn inv-btn--secondary">More resources <ChevronDown className="inv-btn__chevron" size={16} strokeWidth={1.8} aria-hidden="true" /></summary>
               <div className="vdp-flow-resource-menu" role="group" aria-label="Vehicle resources">
                 {listingUrl ? onOpenListing ? (
                   <button type="button" onClick={() => onOpenListing(vehicle)} data-action="open-listing">
@@ -2811,6 +2835,7 @@ export function VehicleWorkspace({
                 ) : null}
                 {invoiceUrl ? <a href={invoiceUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" data-action="invoice" data-read-only="true"><FileSearch size={17} aria-hidden="true" /> Invoice</a> : null}
                 {oasisUrl ? <a href={oasisUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" data-action="oasis" data-read-only="true"><BadgeCheck size={17} aria-hidden="true" /> OASIS</a> : null}
+                <button type="button" onClick={() => setTakeHomeOpen(true)} data-action="take-home" ref={takeHomeButtonRef}><Printer size={17} aria-hidden="true" /> Take-home page</button>
                 <button type="button" onClick={() => openAndFocusSection("data")} data-action="records"><FileSearch size={17} aria-hidden="true" /> Vehicle records</button>
                 {onViewVehicle ? <button type="button" onClick={() => onViewVehicle(vehicle)} data-action="open-record"><CarFront size={17} aria-hidden="true" /> Full record</button> : null}
               </div>
@@ -2909,11 +2934,11 @@ export function VehicleWorkspace({
                 <section className="vdp-flow-movement" id="inventory-section-movement" ref={movementSectionRef} tabIndex={-1} aria-labelledby="inventory-movement-heading">
                   <header className="vdp-flow-section-heading">
                     <div><h3 id="inventory-movement-heading">Location &amp; movement</h3><p>See where the vehicle is reported and the next step for a move.</p></div>
-                    {vehicle.movement && onTrackMovement ? (
+                    {vehicle.movement?.requestId && onTrackMovement ? (
                       <button type="button" className="vdp-flow-primary-action" onClick={() => onTrackMovement(vehicle)} data-action="track-movement">
                         <Truck size={17} aria-hidden="true" /> Track movement
                       </button>
-                    ) : canRequestVehicle && onRequestVehicle ? (
+                    ) : !vehicle.movement && canRequestVehicle && onRequestVehicle ? (
                       <button type="button" className="vdp-flow-primary-action" onClick={() => onRequestVehicle(vehicle)} data-action="request-vehicle">
                         <ArrowLeftRight size={17} aria-hidden="true" /> Request vehicle
                       </button>
@@ -2939,6 +2964,7 @@ export function VehicleWorkspace({
           </div>
         </div>
       </aside>
+      {takeHomeOpen ? <TakeHomeSheet vehicle={vehicle} onClose={() => setTakeHomeOpen(false)} returnFocusRef={takeHomeButtonRef} /> : null}
     </>,
     document.body,
   );

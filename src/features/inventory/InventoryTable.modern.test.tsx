@@ -91,55 +91,59 @@ describe('modern inventory result access', () => {
     expect(screen.getByText('Held · Alex Morgan')).toBeInTheDocument();
     expect(screen.getByText('In transit outbound')).toBeInTheDocument();
     expect(screen.getByText('MSRP $52,995')).toBeInTheDocument();
-    expect(screen.getByText('21 days listed')).toBeInTheDocument();
+    expect(screen.getByText('$6,000 under')).toBeInTheDocument();
     expect(screen.getByText('Equipment Group 302A')).toBeInTheDocument();
     expect(screen.getByText(/XLT Sport Appearance Package/)).toBeInTheDocument();
     expect(screen.getAllByText(/SuperCrew pickup · 4x4/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Oxford White · 2.7L EcoBoost V6/i).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Open hold details for 2024 Ford F-150 XLT/i })).toBeInTheDocument();
-    const row = screen.getByRole('button', { name: /Open vehicle details for 2024 Ford F-150 XLT/i }).closest('tr');
+    const row = screen.getByRole('button', { name: /Open vehicle details for 2024 Ford F-150 XLT/i }).closest('tr') as HTMLTableRowElement;
+    expect(row).toHaveClass('inv-desk-row');
     expect(row).toHaveTextContent('Held · Alex Morgan');
     expect(row).toHaveTextContent('Fowlerville');
     expect(row).toHaveTextContent('In transit outbound');
-    expect(document.querySelector('.inventory-table--compact-v3')).toBeInTheDocument();
-    expect(document.querySelector('.inventory-grid-shell--production-v10')).toBeInTheDocument();
-    expect(document.querySelector('.inventory-table--production-v10')).toBeInTheDocument();
-    const equipmentCell = row?.querySelector('td[data-column="equipment-highlights"]') as HTMLElement;
+    expect(document.querySelector('.inventory-grid-shell--desk')).toBeInTheDocument();
+    expect(document.querySelector('.inv-desk-table')).toBeInTheDocument();
+    // One compact row per vehicle: identifiers live in the vehicle cell, not a record strip.
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(row.nextElementSibling).toBeNull();
+    expect(row).toHaveTextContent('H240512');
+    expect(row).toHaveTextContent('1FTFW1E84RKF12345');
+    expect(within(row).getByRole('button', { name: 'Copy stock number: H240512' })).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Copy VIN: 1FTFW1E84RKF12345' })).toBeInTheDocument();
+    const vehicleCell = row.querySelector('td[data-column="vehicle"]') as HTMLElement;
+    expect(vehicleCell.querySelector('.inv-desk-vehicle__title strong')).toHaveTextContent('2024 Ford F-150');
+    expect(vehicleCell.querySelector('.inv-desk-vehicle__title strong')).toHaveAttribute('title', '2024 Ford F-150 XLT');
+    expect(vehicleCell.querySelectorAll('.inv-desk-certified')).toHaveLength(1);
+    expect(row.querySelector('td[data-column="price"]')).toHaveTextContent('$46,995');
+    expect(row.querySelector('td[data-column="mileage"]')).toHaveTextContent('8,642 mi');
+    const daysCell = row.querySelector('td[data-column="days"]') as HTMLElement;
+    expect(daysCell).toHaveTextContent('21');
+    expect(daysCell).toHaveTextContent('days listed');
+    const equipmentCell = row.querySelector('td[data-column="equipment"]') as HTMLElement;
     expect(equipmentCell).toHaveTextContent('Equipment Group 302A');
     expect(equipmentCell).toHaveTextContent('XLT Sport Appearance Package');
-    expect(row?.querySelector('.inventory-vehicle-copy .inventory-identity-cell')).not.toBeInTheDocument();
-    expect(row?.querySelector('.inventory-identity-cell')).not.toBeInTheDocument();
-    const recordRow = row?.nextElementSibling as HTMLElement;
-    expect(recordRow).toHaveClass('inventory-record-row');
-    expect(recordRow.querySelector('td')).toHaveAttribute('colspan', '4');
-    expect(recordRow).toHaveTextContent('H240512');
-    expect(recordRow).toHaveTextContent('1FTFW1E84RKF12345');
-    expect(row?.querySelector(':scope > td:first-child .inventory-row-actions')).toBeInTheDocument();
-    expect(row?.querySelector('.inventory-vehicle-copy .inventory-certified-label')).not.toBeInTheDocument();
-    expect(row?.querySelectorAll('.inventory-equipment-cell__certified')).toHaveLength(1);
-    const documents = screen.getByLabelText('Vehicle documents');
-    expect(documents).toHaveTextContent('AutoCheckScore 92 · 1 owner');
-    expect(documents.querySelector('.inventory-document-wordmark--autocheck img')).toHaveAttribute(
-      'src',
-      'https://www.autocheck.com/reportservice/common/img/autocheck-logo.svg',
-    );
-    expect(documents).toHaveTextContent('Window stickerEquipment Group 302A · 1 option');
-    expect(documents).toHaveTextContent('No photos published');
-    const activity = document.querySelector('.inventory-change-summary') as HTMLElement;
+    expect(equipmentCell).toHaveTextContent('+1');
+    expect(row.querySelector(':scope > td[data-column="actions"] .inv-desk-actions')).toBeInTheDocument();
+    const activity = within(row).getByRole('button', { name: /View change history for 2024 Ford F-150 XLT: Price changed/i });
     expect(activity).toHaveTextContent('Price changed');
-    expect(activity).toHaveTextContent('Price changed today');
+    expect(activity).toHaveAttribute('title', 'Price changed today');
     expect(activity).not.toHaveTextContent(/AutoCheck|owner|Personal/i);
     expect(Array.from(document.querySelectorAll('thead th')).map((header) =>
       header.querySelector('.inventory-sort-header > span:first-child')?.textContent?.trim() ?? header.textContent?.trim(),
     )).toEqual([
-      'Vehicle', 'Price & mileage', 'Equipment', 'Hold & location',
+      'Vehicle', 'Price', 'Mileage', 'Days on lot', 'Status', 'Equipment', 'Actions',
     ]);
-    expect(Array.from(row?.querySelectorAll<HTMLElement>('td[data-column]') ?? []).map((cell) => cell.dataset.column)).toEqual([
-      'vehicle-identity', 'financial-age', 'equipment-highlights',
-      'availability-movement',
+    expect(Array.from(row.querySelectorAll<HTMLElement>('td[data-column]')).map((cell) => cell.dataset.column)).toEqual([
+      'vehicle', 'price', 'mileage', 'days', 'status', 'equipment', 'actions',
     ]);
-    expect(row?.querySelectorAll('td')).toHaveLength(4);
-    expect(recordRow.querySelectorAll('td')).toHaveLength(1);
+    expect(row.querySelectorAll('td')).toHaveLength(7);
+    // VIN-specific documents stay one click away in the row's More menu.
+    fireEvent.click(within(row).getByRole('button', { name: 'More actions for 2024 Ford F-150 XLT' }));
+    const menu = screen.getByRole('group', { name: 'More actions for 2024 Ford F-150 XLT' });
+    expect(within(menu).getByRole('link', { name: /Open AutoCheck report for 2024 Ford F-150 XLT/i })).toHaveAttribute('title', 'Score 92 · 1 owner');
+    expect(within(menu).getByRole('link', { name: /Open window sticker for 2024 Ford F-150 XLT/i })).toHaveAttribute('title', 'Equipment Group 302A · 1 option');
+    expect(menu).not.toHaveTextContent(/photos/);
   });
 
   it('keeps vehicle-history facts out of activity and omits an empty change control', () => {
@@ -155,11 +159,32 @@ describe('modern inventory result access', () => {
       />,
     );
 
-    expect(document.querySelector('.inventory-record-band__change')).not.toBeInTheDocument();
+    expect(document.querySelector('.inv-desk-change')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /View change history/i })).not.toBeInTheDocument();
-    const documents = screen.getByLabelText('Vehicle documents');
-    expect(documents).toHaveTextContent('AutoCheck');
-    expect(documents).toHaveTextContent('Score 92 · 1 owner');
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for 2024 Ford F-150 XLT' }));
+    const autoCheck = screen.getByRole('link', { name: /Open AutoCheck report for 2024 Ford F-150 XLT/i });
+    expect(autoCheck).toHaveTextContent('AutoCheck');
+    expect(autoCheck).toHaveAttribute('title', 'Score 92 · 1 owner');
+  });
+
+  it('reads a snake_case ledger movement state as words in the status pill', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.movement = { state: 'at_home', requestId: 'move-2', nextAction: 'No action needed' };
+    render(<InventoryTable vehicles={[vehicle]} sorts={[{ key: 'vehicle', direction: 'asc' }]}
+      onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+    const statusCell = document.querySelector('td[data-column="status"]') as HTMLElement;
+    expect(statusCell).toHaveTextContent('At home');
+    expect(statusCell).not.toHaveTextContent('at_home');
+    expect(statusCell.querySelector('.inv-desk-pill--move')).toHaveAttribute('title', 'No action needed');
+  });
+
+  it('marks only a specific change in the row and leaves a generic update to the timeline', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.changeSummary = 'Inventory updated';
+    render(<InventoryTable vehicles={[vehicle]} sorts={[{ key: 'vehicle', direction: 'asc' }]}
+      onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /View change history/i })).not.toBeInTheDocument();
+    expect(document.querySelector('.inv-desk-change')).not.toBeInTheDocument();
   });
 
   it('routes equipment, changes and hold controls to their matching details without also opening Overview', () => {
@@ -180,7 +205,7 @@ describe('modern inventory result access', () => {
     expect(onSelectVehicle).toHaveBeenCalledExactlyOnceWith(vehicle, 'hold');
   });
 
-  it('keeps each record strip aligned to its vehicle and mirrors selected state without leaking private evidence', () => {
+  it('keeps each row bound to its vehicle and mirrors selected state without leaking private evidence', () => {
     const first = heldMovingVehicle();
     const second = { ...heldMovingVehicle(), id: '1FTFW1E84RKF12346', vin: '1FTFW1E84RKF12346', stockNumber: 'H240513' };
     second.dealerMail = { ...second.dealerMail, canViewEvidence: false, canManageHold: false };
@@ -188,17 +213,17 @@ describe('modern inventory result access', () => {
     render(<InventoryTable vehicles={[first, second]} selectedVehicleId={second.id}
       sorts={[{ key: 'vehicle', direction: 'asc' }]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
 
-    const rows = document.querySelectorAll<HTMLTableRowElement>('tbody tr.inventory-main-row');
+    const rows = document.querySelectorAll<HTMLTableRowElement>('tbody tr.inv-desk-row');
     expect(rows).toHaveLength(2);
+    expect(document.querySelectorAll('tbody tr')).toHaveLength(2);
     for (const [index, row] of Array.from(rows).entries()) {
       const vehicle = [first, second][index];
-      const recordRow = row.nextElementSibling as HTMLElement;
       expect(row).toHaveAttribute('data-stock-number', vehicle.stockNumber);
-      expect(recordRow).toHaveAttribute('data-record-stock', vehicle.stockNumber);
-      expect(recordRow).toHaveTextContent(vehicle.vin);
-      expect(recordRow.querySelector('td')).toHaveAttribute('colspan', '4');
+      expect(row).toHaveTextContent(vehicle.stockNumber);
+      expect(row).toHaveTextContent(vehicle.vin);
+      expect(within(row).getByRole('button', { name: `Copy VIN: ${vehicle.vin}` })).toBeInTheDocument();
+      expect(row.querySelectorAll('td')).toHaveLength(7);
       expect(row.classList.contains('is-selected')).toBe(index === 1);
-      expect(recordRow.classList.contains('is-selected')).toBe(index === 1);
     }
     expect(screen.queryByText('Private Salesperson')).not.toBeInTheDocument();
     expect(screen.queryByText('Private Reason')).not.toBeInTheDocument();
@@ -370,11 +395,15 @@ describe('modern inventory result access', () => {
       />,
     );
 
-    const autoCheck = screen.getByRole('link', { name: /Open AutoCheck report for 2024 Ford F-150 XLT/i });
-    const sticker = screen.getByRole('link', { name: /Open window sticker for 2024 Ford F-150 XLT/i });
+    const rowListing = screen.getByRole('link', { name: /Open listing for 2024 Ford F-150 XLT in a new tab/i });
+    expect(rowListing).toHaveAttribute('href', 'https://www.bobmaxeyfordhowell.com/used/Ford/2024-Ford-F-150-vehicle-token.htm');
+    expect(rowListing).toHaveAttribute('title', 'Open listing');
     fireEvent.click(screen.getByRole('button', { name: /More actions for 2024 Ford F-150 XLT/i }));
-    const equipmentProfile = screen.getByRole('link', { name: /Open factory equipment profile for 2024 Ford F-150 XLT/i });
-    const listing = screen.getByRole('link', { name: /Open listing for 2024 Ford F-150 XLT/i });
+    const menu = screen.getByRole('group', { name: 'More actions for 2024 Ford F-150 XLT' });
+    const autoCheck = within(menu).getByRole('link', { name: /Open AutoCheck report for 2024 Ford F-150 XLT/i });
+    const sticker = within(menu).getByRole('link', { name: /Open window sticker for 2024 Ford F-150 XLT/i });
+    const equipmentProfile = within(menu).getByRole('link', { name: /Open factory equipment profile for 2024 Ford F-150 XLT/i });
+    const listing = within(menu).getByRole('link', { name: /Open listing for 2024 Ford F-150 XLT/i });
     expect(autoCheck).toHaveAttribute('href', 'https://www.bobmaxeyfordhowell.com/autocheck.aspx?sv=vehicle-token&ac=report-token');
     expect(sticker).toHaveAttribute('href', 'https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker?sv=vehicle-token&make=Ford&vehicleType=U');
     expect(equipmentProfile).toHaveAttribute('href', 'https://assets.cai-media-management.com/window-stickers/15fe2ec7-42e9-4d24-a549-5e749b01102e.jpg');
@@ -385,6 +414,7 @@ describe('modern inventory result access', () => {
     fireEvent.click(autoCheck);
     fireEvent.click(sticker);
     fireEvent.click(equipmentProfile);
+    fireEvent.click(rowListing);
     expect(onSelectVehicle).not.toHaveBeenCalled();
   });
 
@@ -405,7 +435,6 @@ describe('modern inventory result access', () => {
     const priceSort = screen.getByRole('button', {
       name: /Price, ascending, primary sort\. Activate to sort descending/i,
     });
-    fireEvent.click(screen.getByRole('button', { name: /More Price & mileage sort options/i }));
     const mileageSort = screen.getByRole('button', {
       name: /Mileage, descending, sort priority 2\. Activate to sort ascending/i,
     });
@@ -413,9 +442,12 @@ describe('modern inventory result access', () => {
     expect(priceSort).toHaveTextContent('Asc');
     expect(mileageSort).toHaveTextContent('Desc');
     expect(mileageSort).toHaveTextContent('#2');
-    for (const header of ['Vehicle', 'Price & mileage', 'Equipment', 'Hold & location']) {
-      expect(screen.getByRole('columnheader', { name: new RegExp(header, 'i') })).toBeInTheDocument();
+    for (const header of ['Vehicle', 'Price', 'Mileage', 'Days on lot', 'Status', 'Equipment', 'Actions']) {
+      expect(screen.getByRole('columnheader', { name: header })).toBeInTheDocument();
     }
+    expect(screen.getByRole('columnheader', { name: 'Price' })).toHaveAttribute('aria-sort', 'ascending');
+    expect(screen.getByRole('columnheader', { name: 'Mileage' })).toHaveAttribute('aria-sort', 'none');
+    expect(screen.getByRole('columnheader', { name: 'Actions' })).not.toHaveAttribute('aria-sort');
 
     fireEvent.click(priceSort);
     expect(onSortChange).toHaveBeenLastCalledWith([{ key: 'price', direction: 'desc' }]);
@@ -433,8 +465,9 @@ describe('modern inventory result access', () => {
 
     for (const [menu, categories] of [
       ['More Vehicle sort options', ['Make / model', 'Year', 'Source update', 'AutoCheck score', 'Vehicle documents']],
-      ['More Price & mileage sort options', ['Days']],
-      ['More Hold & location sort options', ['Home store']],
+      ['More Price sort options', ['MSRP']],
+      ['More Days on lot sort options', ['Inventory date']],
+      ['More Status sort options', ['Home store', 'Movement', 'Last movement']],
     ] as const) {
       const trigger = screen.getByRole('button', { name: menu });
       if (trigger.getAttribute('aria-expanded') !== 'true') fireEvent.click(trigger);
@@ -478,23 +511,34 @@ describe('modern inventory result access', () => {
     );
 
     const openDetails = screen.getByRole('button', { name: /Open vehicle details for 2024 Ford F-150 XLT/i });
-    const actionGroup = document.querySelector('.inventory-row-actions--compact-v3') as HTMLElement;
+    const actionGroup = screen.getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' });
+    expect(actionGroup).toHaveClass('inv-desk-actions');
     expect(actionGroup).toHaveAttribute('data-has-dealermail', 'true');
     expect(actionGroup).toHaveAttribute('data-has-overflow', 'true');
-    expect(actionGroup).toHaveAttribute('data-responsive-labels', 'persistent');
-    expect(within(actionGroup).getByText('View details')).toBeInTheDocument();
+    // One icon-button family: every control is named and carries a tooltip.
+    const clusterButtons = within(actionGroup).getAllByRole('button');
+    expect(clusterButtons.map((button) => button.getAttribute('title'))).toEqual([
+      'Open vehicle', 'Track movement', 'Open listing', 'More actions',
+    ]);
+    for (const button of clusterButtons) {
+      expect(button).toHaveClass('inv-btn', 'inv-btn--icon');
+      expect(button).toHaveAccessibleName();
+    }
+    expect(within(actionGroup).getByRole('button', { name: 'Track movement for 2024 Ford F-150 XLT' })).toBeInTheDocument();
+    expect(within(actionGroup).getByRole('button', { name: 'Open listing for 2024 Ford F-150 XLT' })).toBeInTheDocument();
     expect(within(actionGroup).queryByRole('button', { name: /Open DealerMail for stock H240512/i })).not.toBeInTheDocument();
-    expect(within(actionGroup).getByText('More')).toBeInTheDocument();
-    expect(actionGroup.querySelectorAll('.inventory-row-action-label')).toHaveLength(2);
-    expect(
-      Array.from(actionGroup.querySelectorAll('.inventory-row-action-label'))
-        .map((element) => element.textContent),
-    ).toEqual(['View details', 'More']);
     fireEvent.click(openDetails);
     expect(onSelectVehicle).toHaveBeenCalledWith(vehicle);
     const row = openDetails.closest('tr')!;
     fireEvent.click(row);
     expect(onSelectVehicle).toHaveBeenCalledWith(vehicle);
+    fireEvent.click(within(actionGroup).getByRole('button', { name: 'Track movement for 2024 Ford F-150 XLT' }));
+    expect(onTrackMovement).toHaveBeenCalledWith(vehicle);
+    fireEvent.click(within(actionGroup).getByRole('button', { name: 'Open listing for 2024 Ford F-150 XLT' }));
+    expect(onOpenListing).toHaveBeenCalledWith(vehicle);
+    expect(onSelectVehicle).toHaveBeenCalledTimes(2);
+    onTrackMovement.mockClear();
+    onOpenListing.mockClear();
 
     fireEvent.click(screen.getByRole('button', { name: /Review DealerMail handoff for stock H240512; verify VIN/i }));
     expect(onOpenSourceRecord).toHaveBeenCalledWith(vehicle, 'dealermail');
@@ -526,10 +570,13 @@ describe('modern inventory result access', () => {
       onSortChange={onSortChange} onSelectVehicle={vi.fn()} />);
 
     const vehicleHeader = screen.getByRole('columnheader', { name: 'Vehicle' });
-    const priceHeader = screen.getByRole('columnheader', { name: 'Price & mileage' });
+    const priceHeader = screen.getByRole('columnheader', { name: 'Price' });
+    const mileageHeader = screen.getByRole('columnheader', { name: 'Mileage' });
     expect(vehicleHeader).toHaveAttribute('aria-sort', 'descending');
     expect(vehicleHeader).toHaveAttribute('aria-description', 'Sorted by Stock, descending');
     expect(priceHeader).toHaveAttribute('aria-sort', 'none');
+    expect(mileageHeader).toHaveAttribute('aria-sort', 'none');
+    expect(mileageHeader).not.toHaveAttribute('aria-description');
     fireEvent.click(within(vehicleHeader).getByRole('button', { name: /^Sort by Vehicle ascending/i }));
     expect(onSortChange).toHaveBeenLastCalledWith([{ key: 'vehicle', direction: 'asc' }]);
     fireEvent.click(within(priceHeader).getByRole('button', { name: /^Sort by Price ascending/i }));
@@ -570,7 +617,7 @@ describe('modern inventory result access', () => {
       />,
     );
 
-    const sortTrigger = screen.getByRole('button', { name: 'More Price & mileage sort options' });
+    const sortTrigger = screen.getByRole('button', { name: 'More Price sort options' });
     const sortPanelId = sortTrigger.getAttribute('aria-controls')!;
     expect(sortTrigger).toHaveAttribute('aria-expanded', 'false');
     expect(document.getElementById(sortPanelId)).toHaveAttribute('hidden');

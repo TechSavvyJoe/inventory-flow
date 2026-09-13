@@ -1,8 +1,9 @@
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowDown,
+  ArrowRightLeft,
   ArrowUp,
   CarFront,
   ChevronRight,
@@ -15,6 +16,7 @@ import {
   ListFilter,
   MapPin,
   Navigation,
+  PanelRightOpen,
   ShieldCheck,
   Truck,
   UserRound,
@@ -49,6 +51,7 @@ import "./InventoryTable.operational-v9.css";
 import "./InventoryTable.production-v10.css";
 import "./InventoryTable.flow.css";
 import "./InventoryMobile.flow.css";
+import "./InventoryTable.desk.css";
 
 interface SortOption {
   label: string;
@@ -77,8 +80,11 @@ const PRICE_SORT_OPTIONS = [
   { label: "MSRP", sortKey: "msrp" },
 ] satisfies SortOption[];
 
-const AGE_SORT_OPTIONS = [
+const MILEAGE_SORT_OPTIONS = [
   { label: "Mileage", sortKey: "mileage" },
+] satisfies SortOption[];
+
+const AGE_SORT_OPTIONS = [
   { label: "Days", sortKey: "daysListed" },
   { label: "Inventory date", sortKey: "inventoryDate" },
 ] satisfies SortOption[];
@@ -158,18 +164,21 @@ function SortControl({ label, displayLabel, sortKey, sorts, onSortChange }: Sort
   );
 }
 
+type DeskColumn = "vehicle" | "price" | "mileage" | "days" | "status" | "equipment" | "actions";
+
 interface SortHeaderProps {
   label: string;
   /** Compact visible heading; the full label remains available to assistive technology. */
   displayLabel?: string;
-  group: "vehicle-identity" | "financial-age" | "equipment" | "availability" | "evidence";
+  column: Exclude<DeskColumn, "actions">;
+  numeric?: boolean;
   options: SortOption[];
   sorts: InventoryTableProps["sorts"];
   onSortChange: InventoryTableProps["onSortChange"];
 }
 
-function SortHeader({ label, displayLabel, group, options, sorts, onSortChange }: SortHeaderProps) {
-  const disclosure = useInventoryDisclosure(`inventory-${group}-sort-options`);
+function SortHeader({ label, displayLabel, column, numeric = false, options, sorts, onSortChange }: SortHeaderProps) {
+  const disclosure = useInventoryDisclosure(`inventory-${column}-sort-options`);
   const primarySort = sorts[0];
   // The visible column never changes its click target when another field is sorted.
   const displayedOption = options[0];
@@ -182,9 +191,15 @@ function SortHeader({ label, displayLabel, group, options, sorts, onSortChange }
     : "none";
 
   return (
-    <th scope="col" aria-label={label} aria-sort={ariaSort}
+    <th
+      scope="col"
+      className={`inv-desk-th inv-desk-th--${column}${numeric ? " inv-desk-th--num" : ""}`}
+      aria-label={label}
+      aria-sort={ariaSort}
       aria-description={primaryOption ? `Sorted by ${primaryOption.label}, ${ariaSort}` : undefined}
-      data-sort-group={group}>
+      data-sort-group={column}
+      data-column={column}
+    >
       <span className="inventory-sort-header-group__controls">
         <SortControl
           {...displayedOption}
@@ -192,7 +207,6 @@ function SortHeader({ label, displayLabel, group, options, sorts, onSortChange }
           sorts={sorts}
           onSortChange={onSortChange}
         />
-        {group === "equipment" ? <small className="inventory-sort-field-label">Sort by {displayedOption.label.toLocaleLowerCase()}</small> : null}
         {overflowOptions.length ? (
           <div
             ref={disclosure.containerRef}
@@ -209,7 +223,7 @@ function SortHeader({ label, displayLabel, group, options, sorts, onSortChange }
               title={`More ${label.toLocaleLowerCase()} sort options`}
               onClick={() => disclosure.setOpen((open) => !open)}
             >
-              <ListFilter size={13} strokeWidth={2} aria-hidden="true" />
+              <ListFilter size={14} strokeWidth={2} aria-hidden="true" />
             </button>
             <span
               id={disclosure.panelId}
@@ -331,114 +345,6 @@ export function vehicleMovementStatus(vehicle: InventoryVehicle): OperationalSta
   };
 }
 
-interface HoldActionCellProps {
-  vehicle: InventoryVehicle;
-  compact?: boolean;
-  onSelectVehicle: InventoryTableProps["onSelectVehicle"];
-  onOpenSourceRecord?: InventoryTableProps["onOpenSourceRecord"];
-}
-
-function HoldActionCell({
-  vehicle,
-  compact = false,
-  onSelectVehicle,
-  onOpenSourceRecord,
-}: HoldActionCellProps) {
-  const holdStatus = vehicleOperationalStatus(vehicle);
-  const canOpenDealerMail = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
-  const visibleEvidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
-  const primaryEvidence = visibleEvidence?.find((record) => record.position === "primary") ?? visibleEvidence?.[0];
-  const backupCount = Math.max(0, (vehicle.dealerMail.activeRecordCount ?? 0) - 1);
-  const holdDetail = vehicle.dealerMail.hasActiveHold === true
-    ? [
-        primaryEvidence?.expectedDeliveryDate
-          ? `Expected ${compactInventoryDate(primaryEvidence.expectedDeliveryDate) ?? primaryEvidence.expectedDeliveryDate}`
-          : null,
-        backupCount ? `${backupCount} backup${backupCount === 1 ? "" : "s"}` : null,
-      ].filter(Boolean).join(" · ") || holdStatus.detail
-    : holdStatus.detail;
-  const HoldIcon = holdStatus.icon;
-  const openHold = () => {
-    if (canOpenDealerMail) {
-      onOpenSourceRecord?.(vehicle, "dealermail");
-      return;
-    }
-    onSelectVehicle(vehicle, "hold");
-  };
-
-  return (
-    <span className="inventory-status-stack inventory-status-stack--compact-v3">
-      <button
-        type="button"
-        className={`inventory-hold-action inventory-hold-action--${holdStatus.tone}`}
-        data-inventory-vehicle-trigger={vehicle.id}
-        data-row-action={canOpenDealerMail ? "dealermail" : "hold-details"}
-        onClick={(event) => {
-          event.stopPropagation();
-          event.currentTarget.focus({ preventScroll: true });
-          openHold();
-        }}
-        aria-label={
-          canOpenDealerMail
-            ? `Review DealerMail handoff for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}`
-            : `Open hold details for ${vehicleDisplayName(vehicle)}`
-        }
-        title={canOpenDealerMail
-          ? `Review hold information and DealerMail instructions for stock ${vehicle.stockNumber}. ${holdStatus.label}. ${holdDetail}`
-          : `${holdStatus.label}. ${holdDetail}`}
-      >
-        <span className="inventory-hold-action__copy">
-          <span className="inventory-hold-action__label">
-            <HoldIcon size={compact ? 13 : 14} strokeWidth={1.9} aria-hidden="true" />
-            <strong>{holdStatus.label}</strong>
-          </span>
-          {compact ? null : <small>{holdDetail}</small>}
-        </span>
-        <ChevronRight size={11} strokeWidth={2} aria-hidden="true" />
-      </button>
-      {vehicle.managerDisposition ? (
-        <span className="inventory-manager-disposition" data-state={vehicle.managerDisposition.dataState}>
-          <ClipboardCheck size={13} strokeWidth={1.9} aria-hidden="true" />
-          <span>
-            <strong>{vehicle.managerDisposition.soldLabel}</strong>
-            <small>{vehicle.managerDisposition.deliveryLabel}</small>
-          </span>
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
-function LocationCell({ vehicle, compact = false }: { vehicle: InventoryVehicle; compact?: boolean }) {
-  const current = resolveCurrentLocation(vehicle);
-  const movementStatus = vehicleMovementStatus(vehicle);
-  const atHome = current.store
-    ? current.store.id === vehicle.location.homeStore.id
-    : current.label.toLowerCase() === vehicle.location.homeStore.name.toLowerCase();
-  const Icon = current.provenance === "app-confirmed" ? Navigation : MapPin;
-  const secondary = movementStatus
-    ? movementStatus.label
-    : vehicle.location.conflict
-      ? "Location conflict"
-      : atHome
-        ? "Home store"
-        : `Home ${vehicle.location.homeStore.name}`;
-  return (
-    <span
-      className={`inventory-location-summary${vehicle.location.conflict ? " has-conflict" : ""}`}
-      title={movementStatus?.detail ?? current.detail}
-    >
-      <span><Icon size={compact ? 14 : 16} strokeWidth={1.8} aria-hidden="true" /> <strong>{current.label}</strong></span>
-      {compact ? null : (
-        <small className={movementStatus ? `inventory-location-summary__movement inventory-location-summary__movement--${movementStatus.tone}` : undefined}>
-          {movementStatus ? <Truck size={12} strokeWidth={1.9} aria-hidden="true" /> : null}
-          {secondary}
-        </small>
-      )}
-    </span>
-  );
-}
-
 function compactInventoryDate(value: string | null | undefined): string | null {
   if (!value) return null;
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
@@ -451,72 +357,6 @@ function compactInventoryDate(value: string | null | undefined): string | null {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(parsed);
-}
-
-function EquipmentCell({ vehicle, onSelectVehicle }: { vehicle: InventoryVehicle; onSelectVehicle: InventoryTableProps["onSelectVehicle"] }) {
-  const published = publishedEquipment(vehicle);
-  const standoutKeys = new Set(standoutEquipment(vehicle, 2).map((item) => `${item.source}:${item.label}`));
-  const equipment = [
-    ...published.filter((item) => standoutKeys.has(`${item.source}:${item.label}`)),
-    ...published.filter((item) => !standoutKeys.has(`${item.source}:${item.label}`)),
-  ].slice(0, 3);
-  const first = equipment[0];
-  const secondary = equipment.slice(1);
-  return (
-    <span className="inventory-equipment-cell">
-      {first ? (
-        <span className="inventory-equipment-cell__primary">
-          <strong title={first.label}>{first.label}</strong>
-        </span>
-      ) : <span className="is-quiet">No published highlights</span>}
-      {secondary.length ? (
-        <span className="inventory-equipment-cell__secondary">
-          {secondary.map((item) => (
-              <span className="inventory-equipment-cell__item" key={`${item.source}:${item.label}`}>
-                <small title={item.label}>{item.label}</small>
-              </span>
-          ))}
-        </span>
-      ) : null}
-      <span className="inventory-equipment-cell__meta">
-        {vehicle.certified ? <small className="inventory-equipment-cell__certified">Certified</small> : null}
-        {published.length ? <button
-          type="button"
-          className="inventory-equipment-cell__more"
-          data-row-action="equipment"
-          data-inventory-vehicle-trigger={vehicle.id}
-          aria-label={`View all ${published.length} equipment items for ${vehicleDisplayName(vehicle)}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            event.currentTarget.focus({ preventScroll: true });
-            onSelectVehicle(vehicle, "equipment");
-          }}
-        >View all {published.length} features<ChevronRight size={13} aria-hidden="true" /></button> : null}
-      </span>
-    </span>
-  );
-}
-
-function FinancialAgeCell({ vehicle }: { vehicle: InventoryVehicle }) {
-  const inventoryDate = compactInventoryDate(vehicle.inventoryDate);
-  const age = vehicle.daysListed != null
-    ? `${vehicle.daysListed} ${vehicle.daysListed === 1 ? "day" : "days"}`
-    : "Age unavailable";
-  const listedAge = vehicle.daysListed != null ? `${age} listed` : age;
-  return (
-    <span className="inventory-financial-age-cell">
-      <span className="inventory-financial-age-cell__price">
-        <strong>{formatMoney(vehicle.price)}</strong>
-        <small>{vehicle.msrp != null && vehicle.msrp > 0 ? `MSRP ${formatMoney(vehicle.msrp)}` : "MSRP not published"}</small>
-      </span>
-      <span className="inventory-financial-age-cell__usage">
-        <strong>{formatMileage(vehicle.mileage)}</strong>
-        <small title={inventoryDate ? `${listedAge}; inventory date ${inventoryDate}` : listedAge}>
-          {listedAge}{inventoryDate ? ` · ${inventoryDate}` : ""}
-        </small>
-      </span>
-    </span>
-  );
 }
 
 function vehiclePhotoCount(vehicle: InventoryVehicle): number {
@@ -581,114 +421,267 @@ export function AutoCheckCompactWordmark() {
   );
 }
 
-function DocumentsCell({ vehicle }: { vehicle: InventoryVehicle }) {
+/* ------------------------------------------------------------------ */
+/* Desktop comparison row (one compact <tr> per vehicle)               */
+/* ------------------------------------------------------------------ */
+
+function stopRowSelection(event: { stopPropagation(): void }) {
+  event.stopPropagation();
+}
+
+/** Ledger states can arrive as snake_case tokens; a pill reads them as words. */
+function humanizeStatusLabel(label: string): string {
+  if (!/_/.test(label)) return label;
+  const words = label.replace(/_+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function DeskVehicleCell({ vehicle, onSelectVehicle }: {
+  vehicle: InventoryVehicle;
+  onSelectVehicle: InventoryTableProps["onSelectVehicle"];
+}) {
   const name = vehicleDisplayName(vehicle);
-  const listingUrl = vehicle.publicListing.listingUrl?.trim() || null;
-  const autoCheckUrl = officialVehicleDocumentUrl(vehicle.autoCheckReport?.url, "autocheck", listingUrl);
-  const windowStickerUrl = officialVehicleDocumentUrl(vehicle.windowSticker?.url, "window-sticker", listingUrl);
-  const equipmentUrl = vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url);
-  const photoCount = vehiclePhotoCount(vehicle);
-  const autoCheckDocument = autoCheckUrl ? {
-    key: "autocheck",
-    label: "AutoCheck",
-    detail: autoCheckResourceDetail(vehicle),
-    state: vehicle.autoCheckReport?.dataState,
-    url: autoCheckUrl,
-    icon: ShieldCheck,
-    ariaLabel: `Open AutoCheck report for ${name} in a new tab`,
-  } : null;
-  const windowStickerDocument = windowStickerUrl ? {
-    key: "window-sticker",
-    label: "Window sticker",
-    detail: windowStickerResourceDetail(vehicle),
-    state: vehicle.windowSticker?.dataState,
-    url: windowStickerUrl,
-    icon: FileText,
-    ariaLabel: `Open window sticker for ${name} in a new tab`,
-  } : null;
-  const factoryEquipmentDocument = equipmentUrl ? {
-    key: "factory-equipment",
-    label: "Factory equipment",
-    detail: factoryEquipmentResourceDetail(vehicle),
-    state: vehicle.factoryEquipment?.dataState,
-    url: equipmentUrl,
-    icon: ClipboardCheck,
-    ariaLabel: `Open factory equipment profile for ${name} in a new tab`,
-  } : null;
-  const documents = [
-    autoCheckDocument,
-    windowStickerDocument ?? factoryEquipmentDocument,
-  ].filter((item): item is NonNullable<typeof item> => Boolean(item));
+  const suppliedName = vehicle.vehicleName?.trim();
+  // Year / make / model stays on one line; trim leads the specification line.
+  const title = suppliedName || [vehicle.year, vehicle.make, vehicle.model]
+    .filter((part) => part !== null && part !== undefined && `${part}`.trim())
+    .join(" ");
+  const specification = [
+    suppliedName ? null : vehicle.trim,
+    vehicle.bodyType || vehicle.bodyStyle,
+    vehicle.drivetrain,
+    vehicle.exteriorColor,
+    vehicle.engine,
+  ].filter(Boolean).join(" · ");
+  // A generic "updated" note is not a decision signal; only a specific change
+  // (price, arrival, mileage, status, stock, store) earns a marker in the row.
+  const signal = primaryVehicleChangeSignal(vehicle.changeSummary);
+  const change = signal && signal.kind !== "other" ? signal : null;
+  const vinTail = vehicle.vin.slice(-4);
 
   return (
-    <span className="inventory-documents-cell" aria-label="Vehicle documents">
-      {documents.length ? documents.map((item) => {
-        const Icon = item.icon;
-        return (
-          <a
-            key={item.key}
-            className={`inventory-document-link${item.key === "autocheck" ? " inventory-document-link--autocheck" : ""}`}
-            data-row-action={item.key}
-            data-source-state={item.state ?? "unavailable"}
-            href={item.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={item.ariaLabel}
-            onClick={(event) => event.stopPropagation()}
-          >
-            {item.key === "autocheck"
-              ? <AutoCheckCompactWordmark />
-              : <Icon size={14} strokeWidth={1.9} aria-hidden="true" />}
-            <span>
-              <strong className={item.key === "autocheck" ? "inventory-sr-only" : undefined}>{item.label}</strong>
-              {item.detail ? (
-                <small>
-                  {item.detail}
-                  {item.key !== "autocheck" && photoCount ? ` · ${photoCount} photos` : ""}
-                </small>
-              ) : null}
+    <div className="inv-desk-vehicle">
+      <span className="inv-desk-vehicle__photo">
+        <VehiclePhoto vehicle={vehicle} className="inv-desk-vehicle__img" />
+      </span>
+      <span className="inv-desk-vehicle__body">
+        <span className="inv-desk-vehicle__title">
+          <strong title={name}>{title}</strong>
+          {change ? (
+            <button
+              type="button"
+              className={`inv-desk-change inv-desk-change--${change.kind}`}
+              data-row-action="history"
+              data-inventory-vehicle-trigger={vehicle.id}
+              aria-label={`View change history for ${name}: ${change.shortLabel}`}
+              title={vehicle.changeSummary || change.label}
+              onClick={(event) => {
+                stopRowSelection(event);
+                event.currentTarget.focus({ preventScroll: true });
+                onSelectVehicle(vehicle, "timeline");
+              }}
+            >
+              <span className="inv-desk-change__dot" aria-hidden="true" />
+              <span>{change.shortLabel}</span>
+            </button>
+          ) : null}
+        </span>
+        <small className="inv-desk-vehicle__spec" title={specification}>
+          {vehicle.certified ? (
+            <span className="inv-desk-certified" title="Certified pre-owned">
+              <ShieldCheck size={12} strokeWidth={2} aria-hidden="true" />
+              Certified
             </span>
-            <ExternalLink size={11} strokeWidth={1.9} aria-hidden="true" />
-          </a>
-        );
-      }) : <span className="inventory-documents-cell__empty">No linked resources</span>}
-      {documents.some((item) => item.key !== "autocheck") && photoCount
-        ? null
-        : <small className="inventory-documents-cell__photos">{photoCount ? `${photoCount} photos` : "No photos published"}</small>}
-    </span>
+          ) : null}
+          <span>{specification || "Specifications in details"}</span>
+        </small>
+        <span className="inv-desk-vehicle__ids">
+          <span className="inv-desk-id">
+            <span className="inv-desk-id__label">Stock</span>
+            <CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy" />
+          </span>
+          <span className="inv-desk-id">
+            <span className="inv-desk-id__label">VIN</span>
+            <CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy">
+              <span className="inventory-sr-only">{vehicle.vin}</span>
+              <span aria-hidden="true" title={vehicle.vin}>…{vinTail}</span>
+            </CopyableValue>
+          </span>
+        </span>
+      </span>
+    </div>
   );
 }
 
-function ActivityCell({ vehicle, onSelectVehicle }: { vehicle: InventoryVehicle; onSelectVehicle: InventoryTableProps["onSelectVehicle"] }) {
-  const change = primaryVehicleChangeSignal(vehicle.changeSummary);
-  const lastMovement = compactInventoryDate(vehicle.movement?.lastEventAt);
-  if (!change && !lastMovement) return null;
-  const label = change?.shortLabel || `Last movement ${lastMovement}`;
+function DeskPriceCell({ vehicle }: { vehicle: InventoryVehicle }) {
+  const hasPrice = typeof vehicle.price === "number" && Number.isFinite(vehicle.price);
+  const hasMsrp = typeof vehicle.msrp === "number" && Number.isFinite(vehicle.msrp) && vehicle.msrp > 0;
+  const under = hasPrice && hasMsrp && vehicle.msrp! > vehicle.price! ? vehicle.msrp! - vehicle.price! : null;
   return (
-    <button type="button"
-      className={`inventory-record-band__change inventory-change-summary${change ? ` inventory-change-summary--${change.kind}` : " inventory-activity-summary--movement"}`}
-      data-row-action="history"
+    <div className={`inv-desk-price${hasPrice ? "" : " is-unavailable"}`}>
+      <strong>{formatMoney(vehicle.price)}</strong>
+      <small>{hasMsrp ? `MSRP ${formatMoney(vehicle.msrp)}` : "MSRP not published"}</small>
+      {under ? <small className="inv-desk-price__under">{formatMoney(under)} under</small> : null}
+    </div>
+  );
+}
+
+function DeskMileageCell({ vehicle }: { vehicle: InventoryVehicle }) {
+  const hasMileage = typeof vehicle.mileage === "number" && Number.isFinite(vehicle.mileage);
+  return (
+    <div className={`inv-desk-metric${hasMileage ? "" : " is-unavailable"}`}>
+      <strong>{formatMileage(vehicle.mileage)}</strong>
+    </div>
+  );
+}
+
+function DeskDaysCell({ vehicle }: { vehicle: InventoryVehicle }) {
+  const inventoryDate = compactInventoryDate(vehicle.inventoryDate);
+  const hasDays = vehicle.daysListed != null;
+  const daysLabel = hasDays ? `${vehicle.daysListed} ${vehicle.daysListed === 1 ? "day" : "days"} listed` : "Age unavailable";
+  return (
+    <div
+      className={`inv-desk-metric${hasDays ? "" : " is-unavailable"}`}
+      title={inventoryDate ? `${daysLabel} · inventory date ${inventoryDate}` : daysLabel}
+    >
+      <strong>
+        {hasDays ? vehicle.daysListed : "—"}
+        <span className="inventory-sr-only"> {hasDays ? "days listed" : "days listed unavailable"}</span>
+      </strong>
+      <small>{inventoryDate ? `Since ${inventoryDate}` : "Date not published"}</small>
+    </div>
+  );
+}
+
+function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord }: {
+  vehicle: InventoryVehicle;
+  onSelectVehicle: InventoryTableProps["onSelectVehicle"];
+  onOpenSourceRecord?: InventoryTableProps["onOpenSourceRecord"];
+}) {
+  const name = vehicleDisplayName(vehicle);
+  const holdStatus = vehicleOperationalStatus(vehicle);
+  const HoldIcon = holdStatus.icon;
+  const canOpenDealerMail = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
+  const visibleEvidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
+  const primaryEvidence = visibleEvidence?.find((record) => record.position === "primary") ?? visibleEvidence?.[0];
+  const backupCount = Math.max(0, (vehicle.dealerMail.activeRecordCount ?? 0) - 1);
+  const holdDetail = vehicle.dealerMail.hasActiveHold === true
+    ? [
+        primaryEvidence?.expectedDeliveryDate
+          ? `Expected ${compactInventoryDate(primaryEvidence.expectedDeliveryDate) ?? primaryEvidence.expectedDeliveryDate}`
+          : null,
+        backupCount ? `${backupCount} backup${backupCount === 1 ? "" : "s"}` : null,
+      ].filter(Boolean).join(" · ") || holdStatus.detail
+    : holdStatus.detail;
+
+  const movementStatus = vehicleMovementStatus(vehicle);
+  const current = resolveCurrentLocation(vehicle);
+  const atHome = current.store
+    ? current.store.id === vehicle.location.homeStore.id
+    : current.label.toLowerCase() === vehicle.location.homeStore.name.toLowerCase();
+  const LocationIcon = current.provenance === "app-confirmed" ? Navigation : MapPin;
+  const locationTone = vehicle.location.conflict ? "conflict" : atHome ? "home" : "away";
+  const locationTitle = [
+    current.detail,
+    vehicle.location.conflict
+      ? "Location conflict — review needed"
+      : atHome
+        ? "At its home store"
+        : `Home store ${vehicle.location.homeStore.name}`,
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <div className="inv-desk-status">
+      <span className="inv-desk-status__row">
+        <button
+          type="button"
+          className={`inv-desk-pill inv-desk-pill--${holdStatus.tone} inv-desk-pill--action`}
+          data-inventory-vehicle-trigger={vehicle.id}
+          data-row-action={canOpenDealerMail ? "dealermail" : "hold-details"}
+          onClick={(event) => {
+            stopRowSelection(event);
+            event.currentTarget.focus({ preventScroll: true });
+            if (canOpenDealerMail) {
+              onOpenSourceRecord?.(vehicle, "dealermail");
+              return;
+            }
+            onSelectVehicle(vehicle, "hold");
+          }}
+          aria-label={
+            canOpenDealerMail
+              ? `Review DealerMail handoff for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}`
+              : `Open hold details for ${name}`
+          }
+          title={canOpenDealerMail
+            ? `${holdStatus.label}. ${holdDetail}. Review hold information and DealerMail instructions for stock ${vehicle.stockNumber}.`
+            : `${holdStatus.label}. ${holdDetail}`}
+        >
+          <HoldIcon size={13} strokeWidth={2} aria-hidden="true" />
+          <span className="inv-desk-pill__label">{holdStatus.label}</span>
+        </button>
+        {vehicle.managerDisposition ? (
+          <span
+            className="inv-desk-pill inv-desk-pill--sold"
+            data-state={vehicle.managerDisposition.dataState}
+            title={`${vehicle.managerDisposition.soldLabel} · ${vehicle.managerDisposition.deliveryLabel}`}
+          >
+            <ClipboardCheck size={13} strokeWidth={2} aria-hidden="true" />
+            <span className="inv-desk-pill__label">{vehicle.managerDisposition.soldLabel}</span>
+          </span>
+        ) : null}
+      </span>
+      <span className="inv-desk-status__row">
+        <span className={`inv-desk-pill inv-desk-pill--${locationTone}`} title={locationTitle}>
+          <LocationIcon size={13} strokeWidth={2} aria-hidden="true" />
+          <span className="inv-desk-pill__label">{current.label}</span>
+        </span>
+        {movementStatus ? (
+          <span className={`inv-desk-pill inv-desk-pill--${movementStatus.tone}`} title={movementStatus.detail}>
+            <Truck size={13} strokeWidth={2} aria-hidden="true" />
+            <span className="inv-desk-pill__label">{humanizeStatusLabel(movementStatus.label)}</span>
+          </span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+function DeskEquipmentCell({ vehicle, onSelectVehicle }: {
+  vehicle: InventoryVehicle;
+  onSelectVehicle: InventoryTableProps["onSelectVehicle"];
+}) {
+  const published = publishedEquipment(vehicle);
+  if (!published.length) return <span className="inv-desk-quiet">No published highlights</span>;
+  const standoutKeys = new Set(standoutEquipment(vehicle, 2).map((item) => `${item.source}:${item.label}`));
+  const chips = [
+    ...published.filter((item) => standoutKeys.has(`${item.source}:${item.label}`)),
+    ...published.filter((item) => !standoutKeys.has(`${item.source}:${item.label}`)),
+  ].slice(0, 2);
+  const remaining = published.length - chips.length;
+  const preview = published.slice(0, 6).map((item) => item.label).join(" · ");
+  return (
+    <button
+      type="button"
+      className="inv-desk-equipment"
+      data-row-action="equipment"
       data-inventory-vehicle-trigger={vehicle.id}
-      aria-label={`View change history for ${vehicleDisplayName(vehicle)}: ${label}`}
-      title={vehicle.changeSummary || label}
+      aria-label={`View all ${published.length} equipment items for ${vehicleDisplayName(vehicle)}`}
+      title={published.length > 6 ? `${preview} · +${published.length - 6} more` : preview}
       onClick={(event) => {
-        event.stopPropagation();
+        stopRowSelection(event);
         event.currentTarget.focus({ preventScroll: true });
-        onSelectVehicle(vehicle, "timeline");
+        onSelectVehicle(vehicle, "equipment");
       }}
     >
-      <span><strong>{label}</strong>{change && vehicle.changeSummary && vehicle.changeSummary !== label ? <small>{vehicle.changeSummary}</small> : null}</span>
-      <ChevronRight size={14} aria-hidden="true" />
+      {chips.map((item) => (
+        <span className="inv-desk-chip" key={`${item.source}:${item.label}`}>{item.label}</span>
+      ))}
+      {remaining > 0 ? <span className="inv-desk-chip inv-desk-chip--more">+{remaining}</span> : null}
     </button>
   );
 }
 
-function PhotoCount({ vehicle }: { vehicle: InventoryVehicle }) {
-  const count = vehiclePhotoCount(vehicle);
-  return count > 0 ? <span className="inventory-photo-count" aria-label={`${count} vehicle photos`}>{count}</span> : null;
-}
-
-interface VehicleRowActionsProps extends Pick<
+interface DeskRowActionsProps extends Pick<
   InventoryTableProps,
   | "canRequestVehicle"
   | "onRequestVehicle"
@@ -700,7 +693,7 @@ interface VehicleRowActionsProps extends Pick<
   vehicle: InventoryVehicle;
 }
 
-function VehicleRowActions({
+function DeskRowActions({
   vehicle,
   canRequestVehicle,
   onRequestVehicle,
@@ -708,15 +701,12 @@ function VehicleRowActions({
   onOpenListing,
   onSelectVehicle,
   onOpenSourceRecord,
-}: VehicleRowActionsProps) {
+}: DeskRowActionsProps) {
   const disclosure = useInventoryDisclosure("inventory-row-more-actions");
   const floatingMenuRef = useRef<HTMLDivElement>(null);
   const [floatingMenuPosition, setFloatingMenuPosition] = useState<{
     left: number;
     placement: "above" | "below";
-    storeAccent: string;
-    storeAccentSoft: string;
-    storeAccentStrong: string;
     top: number;
   } | null>(null);
   const name = vehicleDisplayName(vehicle);
@@ -724,21 +714,22 @@ function VehicleRowActions({
   const isFordFamily = /^(ford|lincoln)$/i.test(vehicle.make.trim());
   const invoiceUrl = isFordFamily ? fordInvoiceUrl(vehicle.vin) : null;
   const oasisUrl = isFordFamily ? fordOasisUrl(vehicle.vin) : null;
+  const autoCheckUrl = officialVehicleDocumentUrl(vehicle.autoCheckReport?.url, "autocheck", listingUrl);
+  const windowStickerUrl = officialVehicleDocumentUrl(vehicle.windowSticker?.url, "window-sticker", listingUrl);
   const equipmentUrl = vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url);
+  const photoCount = vehiclePhotoCount(vehicle);
   const requestAllowed =
     typeof canRequestVehicle === "function"
       ? canRequestVehicle(vehicle)
       : canRequestVehicle === true;
-  const canTrackMovement = Boolean(onTrackMovement && vehicleMovementStatus(vehicle));
+  const canRequest = requestAllowed && Boolean(onRequestVehicle);
+  // A withheld move has custody facts but no transfer this caller may open;
+  // the row still shows the move pill, it just offers nothing to track.
+  const canTrackMovement = Boolean(onTrackMovement && vehicle.movement?.requestId && vehicleMovementStatus(vehicle));
   const canOpenDealerMail = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
   const hasOverflowActions = Boolean(
-    canOpenDealerMail ||
-      listingUrl ||
-      equipmentUrl ||
-      invoiceUrl ||
-      oasisUrl ||
-      (requestAllowed && onRequestVehicle) ||
-      canTrackMovement,
+    canOpenDealerMail || listingUrl || autoCheckUrl || windowStickerUrl || equipmentUrl ||
+      invoiceUrl || oasisUrl || canRequest || canTrackMovement,
   );
 
   useLayoutEffect(() => {
@@ -751,13 +742,9 @@ function VehicleRowActions({
       if (!trigger || !menu) return;
 
       const viewportInset = 8;
-      const triggerGap = 7;
+      const triggerGap = 6;
       const triggerBounds = trigger.getBoundingClientRect();
-      const triggerStyles = getComputedStyle(trigger);
-      const storeAccent = triggerStyles.getPropertyValue("--store-accent").trim();
-      const storeAccentSoft = triggerStyles.getPropertyValue("--store-accent-soft").trim();
-      const storeAccentStrong = triggerStyles.getPropertyValue("--store-accent-strong").trim();
-      const menuWidth = menu.offsetWidth || 236;
+      const menuWidth = menu.offsetWidth || 232;
       const menuHeight = Math.min(
         menu.scrollHeight || menu.offsetHeight,
         window.innerHeight - viewportInset * 2,
@@ -780,11 +767,9 @@ function VehicleRowActions({
       );
 
       setFloatingMenuPosition((current) => (
-        current?.left === left && current.top === top && current.placement === placement &&
-          current.storeAccent === storeAccent && current.storeAccentSoft === storeAccentSoft &&
-          current.storeAccentStrong === storeAccentStrong
+        current?.left === left && current.top === top && current.placement === placement
           ? current
-          : { left, placement, storeAccent, storeAccentSoft, storeAccentStrong, top }
+          : { left, placement, top }
       ));
     };
     const schedulePosition = () => {
@@ -802,58 +787,111 @@ function VehicleRowActions({
     };
   }, [disclosure.open, disclosure.triggerRef]);
 
+  const moveAction = canTrackMovement
+    ? {
+        key: "track-movement",
+        icon: Truck,
+        title: "Track movement",
+        ariaLabel: `Track movement for ${name}`,
+        run: () => onTrackMovement?.(vehicle),
+      }
+    : canRequest
+      ? {
+          key: "request-vehicle",
+          icon: ArrowRightLeft,
+          title: "Request vehicle",
+          ariaLabel: `Request vehicle ${name}`,
+          run: () => onRequestVehicle?.(vehicle),
+        }
+      : null;
+
   return (
     <div
-      className="inventory-row-actions inventory-row-actions--compact-v3 inventory-row-actions--production-v10"
-      data-action-layout={hasOverflowActions ? "overflow" : "row-open"}
+      className="inv-desk-actions"
       data-has-dealermail={canOpenDealerMail ? "true" : "false"}
       data-has-overflow={hasOverflowActions ? "true" : "false"}
-      data-responsive-labels="persistent"
       role="group"
       aria-label={`Actions for ${name}`}
-      onClick={(event) => event.stopPropagation()}
+      onClick={stopRowSelection}
     >
       <button
         type="button"
-        className="inventory-row-open"
+        className="inv-btn inv-btn--icon"
         data-row-action="open-details"
         data-inventory-vehicle-trigger={vehicle.id}
         onClick={() => onSelectVehicle(vehicle)}
         aria-label={`Open vehicle details for ${name}`}
-        title={`Open ${name}`}
+        title="Open vehicle"
       >
-        <span className="inventory-row-action-label">View details</span>
-        <ChevronRight size={14} strokeWidth={2} aria-hidden="true" />
+        <PanelRightOpen size={16} strokeWidth={1.8} aria-hidden="true" />
       </button>
+      {moveAction ? (
+        <button
+          type="button"
+          className="inv-btn inv-btn--icon"
+          data-row-action={moveAction.key}
+          onClick={moveAction.run}
+          aria-label={moveAction.ariaLabel}
+          title={moveAction.title}
+        >
+          <moveAction.icon size={16} strokeWidth={1.8} aria-hidden="true" />
+        </button>
+      ) : null}
+      {listingUrl ? (
+        onOpenListing ? (
+          <button
+            type="button"
+            className="inv-btn inv-btn--icon"
+            data-row-action="listing"
+            data-slot="listing"
+            onClick={() => onOpenListing(vehicle)}
+            aria-label={`Open listing for ${name}`}
+            title="Open listing"
+          >
+            <Globe2 size={16} strokeWidth={1.8} aria-hidden="true" />
+          </button>
+        ) : (
+          <a
+            className="inv-btn inv-btn--icon"
+            data-row-action="listing"
+            data-slot="listing"
+            href={listingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Open listing for ${name} in a new tab`}
+            title="Open listing"
+          >
+            <Globe2 size={16} strokeWidth={1.8} aria-hidden="true" />
+          </a>
+        )
+      ) : null}
       {hasOverflowActions ? (
         <div
           ref={disclosure.containerRef}
-          className="inventory-row-more"
+          className="inv-desk-more"
           data-row-action="more"
           data-open={disclosure.open ? "true" : "false"}
         >
           <button
             ref={disclosure.triggerRef}
             type="button"
-            className="inventory-row-more__trigger"
+            className="inv-btn inv-btn--icon"
             aria-label={`More actions for ${name}`}
             aria-expanded={disclosure.open}
             aria-controls={disclosure.panelId}
-            title="More vehicle actions"
+            title="More actions"
             onClick={() => {
               if (!disclosure.open) setFloatingMenuPosition(null);
               disclosure.setOpen((open) => !open);
             }}
           >
-            <Ellipsis size={13} strokeWidth={2} aria-hidden="true" />
-            <span className="inventory-row-action-label inventory-row-more__label" aria-hidden="true">More</span>
-            <span className="inventory-sr-only">More actions</span>
+            <Ellipsis size={16} strokeWidth={2} aria-hidden="true" />
           </button>
           {disclosure.open && typeof document !== "undefined" ? createPortal((
             <div
               ref={floatingMenuRef}
               id={disclosure.panelId}
-              className="inventory-row-more__menu inventory-row-more__menu--floating-v10"
+              className="inventory-row-more__menu inventory-row-more__menu--floating-v10 inv-desk-menu"
               role="group"
               aria-label={`More actions for ${name}`}
               data-placement={floatingMenuPosition?.placement ?? "pending"}
@@ -861,130 +899,168 @@ function VehicleRowActions({
               style={floatingMenuPosition ? {
                 left: floatingMenuPosition.left,
                 top: floatingMenuPosition.top,
-                "--store-accent": floatingMenuPosition.storeAccent,
-                "--store-accent-soft": floatingMenuPosition.storeAccentSoft,
-                "--store-accent-strong": floatingMenuPosition.storeAccentStrong,
               } as CSSProperties : undefined}
               onPointerDown={(event) => event.stopPropagation()}
             >
-            {canOpenDealerMail ? (
-              <button
-                type="button"
-                className="inventory-row-more__item"
-                data-row-action="dealermail"
-                onClick={() => {
-                  disclosure.close();
-                  onOpenSourceRecord?.(vehicle, "dealermail");
-                }}
-                aria-label={`Open DealerMail for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}`}
-              >
-                <UserRound size={16} strokeWidth={1.85} aria-hidden="true" />
-                <span>DealerMail tools</span>
-              </button>
-            ) : null}
-            {listingUrl ? (
-              onOpenListing ? (
+              {canOpenDealerMail ? (
                 <button
                   type="button"
                   className="inventory-row-more__item"
-                  data-row-action="listing"
+                  data-row-action="dealermail"
                   onClick={() => {
                     disclosure.close();
-                    onOpenListing(vehicle);
+                    onOpenSourceRecord?.(vehicle, "dealermail");
+                  }}
+                  aria-label={`Open DealerMail for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}`}
+                >
+                  <UserRound size={16} strokeWidth={1.85} aria-hidden="true" />
+                  <span>DealerMail tools</span>
+                </button>
+              ) : null}
+              {canTrackMovement ? (
+                <button
+                  type="button"
+                  className="inventory-row-more__item"
+                  data-row-action="track-movement"
+                  onClick={() => {
+                    disclosure.close();
+                    onTrackMovement?.(vehicle);
                   }}
                 >
-                  <Globe2 size={16} strokeWidth={1.85} aria-hidden="true" />
-                  <span>Open listing</span>
+                  <Truck size={16} strokeWidth={1.85} aria-hidden="true" />
+                  <span>Track movement</span>
                 </button>
-              ) : (
+              ) : null}
+              {canRequest ? (
+                <button
+                  type="button"
+                  className="inventory-row-more__item"
+                  data-row-action="request-vehicle"
+                  onClick={() => {
+                    disclosure.close();
+                    onRequestVehicle?.(vehicle);
+                  }}
+                >
+                  <ArrowRightLeft size={16} strokeWidth={1.85} aria-hidden="true" />
+                  <span>Request vehicle</span>
+                </button>
+              ) : null}
+              {listingUrl ? (
+                onOpenListing ? (
+                  <button
+                    type="button"
+                    className="inventory-row-more__item"
+                    data-row-action="listing"
+                    onClick={() => {
+                      disclosure.close();
+                      onOpenListing(vehicle);
+                    }}
+                  >
+                    <Globe2 size={16} strokeWidth={1.85} aria-hidden="true" />
+                    <span>Open listing</span>
+                  </button>
+                ) : (
+                  <a
+                    className="inventory-row-more__item"
+                    data-row-action="listing"
+                    href={listingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Open listing for ${name} in a new tab`}
+                    onClick={() => disclosure.close()}
+                  >
+                    <Globe2 size={16} strokeWidth={1.85} aria-hidden="true" />
+                    <span>Open listing</span>
+                    <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
+                  </a>
+                )
+              ) : null}
+              {(autoCheckUrl || windowStickerUrl || equipmentUrl || invoiceUrl || oasisUrl) ? (
+                <span className="inv-desk-menu__label" aria-hidden="true">
+                  Records{photoCount ? ` · ${photoCount} photos` : ""}
+                </span>
+              ) : null}
+              {autoCheckUrl ? (
                 <a
                   className="inventory-row-more__item"
-                  data-row-action="listing"
-                  href={listingUrl}
+                  data-row-action="autocheck"
+                  data-source-state={vehicle.autoCheckReport?.dataState ?? "unavailable"}
+                  href={autoCheckUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label={`Open listing for ${name} in a new tab`}
+                  aria-label={`Open AutoCheck report for ${name} in a new tab`}
+                  title={autoCheckResourceDetail(vehicle)}
                   onClick={() => disclosure.close()}
                 >
-                  <Globe2 size={16} strokeWidth={1.85} aria-hidden="true" />
-                  <span>Open listing</span>
+                  <ShieldCheck size={16} strokeWidth={1.85} aria-hidden="true" />
+                  <span>AutoCheck report</span>
                   <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
                 </a>
-              )
-            ) : null}
-            {equipmentUrl ? (
-              <a
-                className="inventory-row-more__item"
-                data-row-action="factory-equipment"
-                href={equipmentUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Open factory equipment profile for ${name} in a new tab`}
-                onClick={() => disclosure.close()}
-              >
-                <ClipboardCheck size={16} strokeWidth={1.85} aria-hidden="true" />
-                <span>Factory equipment</span>
-                <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
-              </a>
-            ) : null}
-            {invoiceUrl ? (
-              <a
-                className="inventory-row-more__item"
-                data-row-action="ford-invoice"
-                href={invoiceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Open Ford invoice lookup for ${name} in a new tab; authorized Ford sign-in may be required`}
-                onClick={() => disclosure.close()}
-              >
-                <FileText size={16} strokeWidth={1.85} aria-hidden="true" />
-                <span>Ford invoice</span>
-                <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
-              </a>
-            ) : null}
-            {oasisUrl ? (
-              <a
-                className="inventory-row-more__item"
-                data-row-action="ford-oasis"
-                href={oasisUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Open Ford OASIS for ${name} in a new tab; authorized Ford sign-in may be required`}
-                onClick={() => disclosure.close()}
-              >
-                <ClipboardCheck size={16} strokeWidth={1.85} aria-hidden="true" />
-                <span>Ford OASIS</span>
-                <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
-              </a>
-            ) : null}
-            {requestAllowed && onRequestVehicle ? (
-              <button
-                type="button"
-                className="inventory-row-more__item"
-                data-row-action="request-vehicle"
-                onClick={() => {
-                  disclosure.close();
-                  onRequestVehicle(vehicle);
-                }}
-              >
-                <CarFront size={16} strokeWidth={1.85} aria-hidden="true" />
-                <span>Request vehicle</span>
-              </button>
-            ) : null}
-            {canTrackMovement ? (
-              <button
-                type="button"
-                className="inventory-row-more__item"
-                data-row-action="track-movement"
-                onClick={() => {
-                  disclosure.close();
-                  onTrackMovement?.(vehicle);
-                }}
-              >
-                <Truck size={16} strokeWidth={1.85} aria-hidden="true" />
-                <span>Track movement</span>
-              </button>
-            ) : null}
+              ) : null}
+              {windowStickerUrl ? (
+                <a
+                  className="inventory-row-more__item"
+                  data-row-action="window-sticker"
+                  data-source-state={vehicle.windowSticker?.dataState ?? "unavailable"}
+                  href={windowStickerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Open window sticker for ${name} in a new tab`}
+                  title={windowStickerResourceDetail(vehicle)}
+                  onClick={() => disclosure.close()}
+                >
+                  <FileText size={16} strokeWidth={1.85} aria-hidden="true" />
+                  <span>Window sticker</span>
+                  <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
+                </a>
+              ) : null}
+              {equipmentUrl ? (
+                <a
+                  className="inventory-row-more__item"
+                  data-row-action="factory-equipment"
+                  data-source-state={vehicle.factoryEquipment?.dataState ?? "unavailable"}
+                  href={equipmentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Open factory equipment profile for ${name} in a new tab`}
+                  title={factoryEquipmentResourceDetail(vehicle)}
+                  onClick={() => disclosure.close()}
+                >
+                  <ClipboardCheck size={16} strokeWidth={1.85} aria-hidden="true" />
+                  <span>Factory equipment</span>
+                  <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
+                </a>
+              ) : null}
+              {invoiceUrl ? (
+                <a
+                  className="inventory-row-more__item"
+                  data-row-action="ford-invoice"
+                  href={invoiceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Open Ford invoice lookup for ${name} in a new tab; authorized Ford sign-in may be required`}
+                  onClick={() => disclosure.close()}
+                >
+                  <FileText size={16} strokeWidth={1.85} aria-hidden="true" />
+                  <span>Ford invoice</span>
+                  <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
+                </a>
+              ) : null}
+              {oasisUrl ? (
+                <a
+                  className="inventory-row-more__item"
+                  data-row-action="ford-oasis"
+                  href={oasisUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Open Ford OASIS for ${name} in a new tab; authorized Ford sign-in may be required`}
+                  onClick={() => disclosure.close()}
+                >
+                  <ClipboardCheck size={16} strokeWidth={1.85} aria-hidden="true" />
+                  <span>Ford OASIS</span>
+                  <ExternalLink size={12} strokeWidth={1.85} aria-hidden="true" />
+                </a>
+              ) : null}
             </div>
           ), document.body) : null}
         </div>
@@ -1035,16 +1111,9 @@ function MobileDocumentAvailability({ vehicle, onSelectVehicle }: {
   );
 }
 
-function ChangeCell({ vehicle, compact = false }: { vehicle: InventoryVehicle; compact?: boolean }) {
-  const change = primaryVehicleChangeSignal(vehicle.changeSummary);
-  return change ? (
-    <span className={`inventory-change-summary inventory-change-summary--${change.kind}`}>
-      <strong>{change.shortLabel}</strong>
-      {compact ? null : <small>{vehicle.changeSummary}</small>}
-    </span>
-  ) : (
-    <span className="inventory-change-summary is-quiet">No recent change</span>
-  );
+function PhotoCount({ vehicle }: { vehicle: InventoryVehicle }) {
+  const count = vehiclePhotoCount(vehicle);
+  return count > 0 ? <span className="inventory-photo-count" aria-label={`${count} vehicle photos`}>{count}</span> : null;
 }
 
 export function vehicleAccessibleSummary(vehicle: InventoryVehicle): string {
@@ -1081,111 +1150,89 @@ export function InventoryTable({
   onOpenSourceRecord,
 }: InventoryTableProps) {
   return (
-    <section className="inventory-grid-shell inventory-grid-shell--production-v10 inventory-grid-shell--flow" aria-label="Inventory data grid">
+    <section
+      className="inventory-grid-shell inventory-grid-shell--production-v10 inventory-grid-shell--flow inventory-grid-shell--desk"
+      aria-label="Inventory data grid"
+    >
       <div
-        className="inventory-table-wrap inventory-table-wrap--compact-v3"
+        className="inventory-table-wrap inventory-table-wrap--compact-v3 inventory-table-wrap--desk"
         role="region"
         aria-label="Inventory results table"
         tabIndex={0}
       >
-        <table className="inventory-table inventory-table--vehicle-first inventory-table--compact-v3 inventory-table--production-v10 inventory-table--flow">
+        <table className="inv-desk-table">
           <caption className="inventory-sr-only">
-            Compare vehicles, pricing and mileage, equipment, and hold and location information.
-            Each vehicle has a record strip underneath with stock, VIN, documents, and any recent changes.
+            Compare vehicles, price, mileage, days on lot, hold and location status, and equipment.
+            Each row has stock and VIN copy controls and an actions group.
           </caption>
-          <colgroup>
-            <col className="inventory-table__col inventory-table__col--vehicle-identity" />
-            <col className="inventory-table__col inventory-table__col--financial-age" />
-            <col className="inventory-table__col inventory-table__col--equipment-highlights" />
-            <col className="inventory-table__col inventory-table__col--availability-movement" />
-          </colgroup>
           <thead>
             <tr>
-              <SortHeader label="Vehicle" group="vehicle-identity"
+              <SortHeader label="Vehicle" column="vehicle"
                 options={[...VEHICLE_SORT_OPTIONS, ...STOCK_SORT_OPTIONS, ...EVIDENCE_SORT_OPTIONS]}
                 sorts={sorts} onSortChange={onSortChange} />
-              <SortHeader label="Price & mileage" group="financial-age"
-                options={[...PRICE_SORT_OPTIONS, ...AGE_SORT_OPTIONS]}
+              <SortHeader label="Price" column="price" numeric
+                options={PRICE_SORT_OPTIONS}
                 sorts={sorts} onSortChange={onSortChange} />
-              <SortHeader label="Equipment" group="equipment"
-                options={EQUIPMENT_SORT_OPTIONS}
+              <SortHeader label="Mileage" column="mileage" numeric
+                options={MILEAGE_SORT_OPTIONS}
                 sorts={sorts} onSortChange={onSortChange} />
-              <SortHeader label="Hold & location" group="availability"
+              <SortHeader label="Days on lot" column="days" numeric
+                options={AGE_SORT_OPTIONS}
+                sorts={sorts} onSortChange={onSortChange} />
+              <SortHeader label="Status" column="status"
                 options={[...STATUS_SORT_OPTIONS, ...LOCATION_SORT_OPTIONS, ...CHANGE_SORT_OPTIONS]}
                 sorts={sorts} onSortChange={onSortChange} />
+              <SortHeader label="Equipment" column="equipment"
+                options={EQUIPMENT_SORT_OPTIONS}
+                sorts={sorts} onSortChange={onSortChange} />
+              <th scope="col" className="inv-desk-th inv-desk-th--actions" data-column="actions">
+                <span className="inv-desk-th__label">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {vehicles.map((vehicle) => {
               const selected = vehicle.id === selectedVehicleId;
-              const name = vehicleDisplayName(vehicle);
               return (
-                <Fragment key={vehicle.id}>
-                  <tr
-                    className={"inventory-row inventory-main-row" + (selected ? " is-selected" : "")}
-                    data-stock-number={vehicle.stockNumber}
-                    data-inventory-vehicle-trigger={vehicle.id}
-                    data-hold-state={vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
-                    data-has-movement={vehicleMovementStatus(vehicle) ? "true" : "false"}
-                    onClick={() => onSelectVehicle(vehicle)}
-                  >
-                    <td data-column="vehicle-identity">
-                      <div className="inventory-vehicle-cell">
-                        <span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} /><PhotoCount vehicle={vehicle} /></span>
-                        <span className="inventory-vehicle-copy">
-                          <span className="inventory-vehicle-copy__title"><strong>{name}</strong></span>
-                          <small className="inventory-vehicle-copy__spec" title={[vehicle.bodyType || vehicle.bodyStyle, vehicle.drivetrain].filter(Boolean).join(" · ")}>
-                            {[vehicle.bodyType || vehicle.bodyStyle, vehicle.drivetrain].filter(Boolean).join(" · ") || "Body and drivetrain in details"}
-                          </small>
-                          <small className="inventory-vehicle-copy__detail" title={[vehicle.exteriorColor, vehicle.engine].filter(Boolean).join(" · ")}>
-                            {[vehicle.exteriorColor, vehicle.engine].filter(Boolean).join(" · ") || "Engine and color in details"}
-                          </small>
-                        </span>
-                      </div>
-                      <div className="inventory-vehicle-actions">
-                        <VehicleRowActions
-                          vehicle={vehicle}
-                          onSelectVehicle={onSelectVehicle}
-                          canRequestVehicle={canRequestVehicle}
-                          onRequestVehicle={onRequestVehicle}
-                          onTrackMovement={onTrackMovement}
-                          onOpenListing={onOpenListing}
-                          onOpenSourceRecord={onOpenSourceRecord}
-                        />
-                      </div>
-                    </td>
-                    <td data-column="financial-age"><FinancialAgeCell vehicle={vehicle} /></td>
-                    <td data-column="equipment-highlights"><EquipmentCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} /></td>
-                    <td data-column="availability-movement">
-                      <span className="inventory-availability-movement-cell">
-                        <HoldActionCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} onOpenSourceRecord={onOpenSourceRecord} />
-                        <LocationCell vehicle={vehicle} />
-                      </span>
-                    </td>
-                  </tr>
-                  <tr className={"inventory-record-row" + (selected ? " is-selected" : "")}
-                    data-record-stock={vehicle.stockNumber}
-                    onClick={() => onSelectVehicle(vehicle)}>
-                    <td colSpan={4}>
-                      <div className="inventory-record-band" role="group" aria-label={"Identifiers and records for " + name}>
-                        <div className="inventory-record-band__identity inventory-identity-cell">
-                          <span className="inventory-record-identifier">
-                            <span className="inventory-record-label">Stock</span>
-                            <CopyableValue compact label="stock number" text={vehicle.stockNumber}
-                              className="inventory-table-copy-value inventory-table-copy-value--stock" />
-                          </span>
-                          <span className="inventory-record-identifier inventory-vin">
-                            <span className="inventory-record-label">VIN</span>
-                            <CopyableValue compact label="VIN" text={vehicle.vin}
-                              className="inventory-table-copy-value inventory-table-copy-value--vin" />
-                          </span>
-                        </div>
-                        <DocumentsCell vehicle={vehicle} />
-                        <ActivityCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
-                      </div>
-                    </td>
-                  </tr>
-                </Fragment>
+                <tr
+                  key={vehicle.id}
+                  className={`inv-desk-row${selected ? " is-selected" : ""}`}
+                  data-stock-number={vehicle.stockNumber}
+                  data-inventory-vehicle-trigger={vehicle.id}
+                  data-hold-state={vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
+                  data-has-movement={vehicleMovementStatus(vehicle) ? "true" : "false"}
+                  onClick={() => onSelectVehicle(vehicle)}
+                >
+                  <td className="inv-desk-td inv-desk-td--vehicle" data-column="vehicle">
+                    <DeskVehicleCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
+                  </td>
+                  <td className="inv-desk-td inv-desk-td--num" data-column="price">
+                    <DeskPriceCell vehicle={vehicle} />
+                  </td>
+                  <td className="inv-desk-td inv-desk-td--num" data-column="mileage">
+                    <DeskMileageCell vehicle={vehicle} />
+                  </td>
+                  <td className="inv-desk-td inv-desk-td--num" data-column="days">
+                    <DeskDaysCell vehicle={vehicle} />
+                  </td>
+                  <td className="inv-desk-td" data-column="status">
+                    <DeskStatusCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} onOpenSourceRecord={onOpenSourceRecord} />
+                  </td>
+                  <td className="inv-desk-td" data-column="equipment">
+                    <DeskEquipmentCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
+                  </td>
+                  <td className="inv-desk-td inv-desk-td--actions" data-column="actions">
+                    <DeskRowActions
+                      vehicle={vehicle}
+                      onSelectVehicle={onSelectVehicle}
+                      canRequestVehicle={canRequestVehicle}
+                      onRequestVehicle={onRequestVehicle}
+                      onTrackMovement={onTrackMovement}
+                      onOpenListing={onOpenListing}
+                      onOpenSourceRecord={onOpenSourceRecord}
+                    />
+                  </td>
+                </tr>
               );
             })}
           </tbody>

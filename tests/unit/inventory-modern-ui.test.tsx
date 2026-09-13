@@ -99,16 +99,17 @@ describe('manager-friendly inventory UI', () => {
     expect(within(rowsSelect).getAllByRole('option').map((option) => option.textContent)).toEqual([
       '10', '15', '20', '25', '50', '100',
     ])
-    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr.inventory-main-row')).toHaveLength(10)
-    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr.inventory-record-row')).toHaveLength(10)
+    // One compact row per vehicle: no record strip doubles the row count.
+    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(10)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr')).toHaveLength(10)
 
     await user.selectOptions(rowsSelect, '20')
-    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr.inventory-main-row')).toHaveLength(20)
-    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr.inventory-record-row')).toHaveLength(20)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(20)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr')).toHaveLength(20)
     expect(screen.getByText('Showing 1–20 of 28')).toBeInTheDocument()
     await user.selectOptions(rowsSelect, '100')
-    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr.inventory-main-row')).toHaveLength(28)
-    expect(document.querySelectorAll('.inventory-table--vehicle-first tbody tr.inventory-record-row')).toHaveLength(28)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(28)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr')).toHaveLength(28)
     expect(screen.getByText('Showing 1–28 of 28')).toBeInTheDocument()
   })
 
@@ -129,7 +130,7 @@ describe('manager-friendly inventory UI', () => {
     expect(screen.queryByText(/DealerOn/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Public listing/i)).not.toBeInTheDocument()
 
-    const firstRow = document.querySelector('.inventory-table--vehicle-first tbody tr.inventory-main-row') as HTMLTableRowElement
+    const firstRow = document.querySelector('.inv-desk-table tbody tr.inv-desk-row') as HTMLTableRowElement
     fireEvent.click(firstRow)
     expect(onSelectVehicle).toHaveBeenCalledWith(heldVehicle)
   })
@@ -139,7 +140,7 @@ describe('manager-friendly inventory UI', () => {
     const external = vi.fn()
     const current = vehicle(7)
     render(<InventoryExperience homeStore={{ id: 'Howell', name: 'Howell' }} vehicles={[current]} metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }} onOpenSourceRecord={external} />)
-    const row = document.querySelector('.inventory-table--production-v10 tbody tr.inventory-main-row') as HTMLElement
+    const row = document.querySelector('.inv-desk-table tbody tr.inv-desk-row') as HTMLElement
     fireEvent.click(within(row).getByRole('button', { name: /Review DealerMail handoff for stock/ }))
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Holds & moves' })).toHaveAttribute('aria-selected', 'true'))
     expect(screen.getByRole('region', { name: 'DealerMail vehicle tools' })).toHaveTextContent(current.stockNumber)
@@ -403,8 +404,11 @@ describe('manager-friendly inventory UI', () => {
         onSelectVehicle={onSelectVehicle}
       />,
     )
-    const autoCheckRowLink = screen.getByRole('link', { name: /open autocheck report/i })
-    const stickerRowLink = screen.getByRole('link', { name: /open window sticker/i })
+    // Row documents live in the row's More menu; opening them never selects the vehicle.
+    fireEvent.click(screen.getByRole('button', { name: /More actions for/ }))
+    const rowMenu = screen.getByRole('group', { name: /More actions for/ })
+    const autoCheckRowLink = within(rowMenu).getByRole('link', { name: /open autocheck report/i })
+    const stickerRowLink = within(rowMenu).getByRole('link', { name: /open window sticker/i })
     expect(autoCheckRowLink).toHaveAttribute('href', documentedVehicle.autoCheckReport.url)
     expect(stickerRowLink).toHaveAttribute('href', documentedVehicle.windowSticker.url)
     fireEvent.click(autoCheckRowLink)

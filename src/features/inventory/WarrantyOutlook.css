@@ -1,0 +1,89 @@
+/* Factory warranty outlook card inside the vehicle records grid. */
+
+.inventory-vehicle-document--warranty {
+  border-top: 4px solid var(--navy-900);
+}
+
+.inventory-vehicle-document--warranty .inventory-vehicle-document__icon {
+  color: var(--navy-900);
+  background: var(--blue-050);
+}
+
+.inventory-warranty__metrics dd small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-500);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.inventory-warranty__odometer {
+  width: 100%;
+  max-width: 132px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink-900);
+  font: inherit;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.inventory-warranty__odometer:focus-visible {
+  outline: 2px solid var(--blue-600);
+  outline-offset: 1px;
+}
+
+.inventory-warranty__coverages {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inventory-warranty__coverage {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.inventory-warranty__coverage > svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.inventory-warranty__coverage > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.inventory-warranty__coverage strong {
+  font-size: 12px;
+}
+
+.inventory-warranty__coverage small {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.inventory-warranty__note {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 10px 0 0;
+  color: var(--ink-600);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.inventory-warranty__note svg {
+  flex: none;
+  margin-top: 2px;
+}

@@ -173,6 +173,12 @@ export interface VehicleLocationSignal {
 export interface VehicleMovementSignal {
   state?: string | null;
   requestStatus?: string | null;
+  /**
+   * True when the server published the ledger's custody state without the
+   * transfer link, actor, custodian or owner detail for this role or store.
+   * The facts that are present are still the app's own record.
+   */
+  withheld?: boolean;
   custodyStatus?: string | null;
   customerOutcome?: string | null;
   deliveryConfirmation?: string | null;
