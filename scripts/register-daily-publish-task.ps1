@@ -17,7 +17,7 @@ if (-not (Test-Path $ScriptPath)) { throw "publish script not found: $ScriptPath
 
 $action = New-ScheduledTaskAction `
   -Execute 'powershell.exe' `
-  -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"' -f $ScriptPath) `
+  -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}"' -f $ScriptPath) `
   -WorkingDirectory $AppRoot
 
 # First attempt at 09:15 local, then every 30 minutes through 15:15. This

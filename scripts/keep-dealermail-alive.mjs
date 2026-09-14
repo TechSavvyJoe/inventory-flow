@@ -4,7 +4,9 @@
 //
 // Runs from the Windows Scheduled Task BobMaxey-DealerMailKeeper every 10 minutes.
 // Talks to the automation Comet over CDP on 127.0.0.1:9222 (localhost only) and makes one
-// cheap credentialed request INSIDE each existing authenticated tab. No cookie or credential
+// cheap credentialed request INSIDE each authenticated tab. Missing service tabs are opened in
+// this isolated browser so a restart does not require Joe to rebuild the workspace by hand.
+// No cookie or credential
 // is ever read, stored or transmitted by this script - the browser makes the request with its
 // own session. Survives Comet restarts because it depends on no in-page timer.
 //
@@ -54,14 +56,27 @@ const cdp = (sock, id, method, params) => new Promise((res, rej) => {
 const targets = async () => (await (await fetch(`http://127.0.0.1:${PORT}/json`)).json())
 const findTab = (list, re) => list.find(t => t.type === 'page' && re.test(t.url || ''))
 
-// Runs `expression` inside a tab already on that origin. Returns null when there is no tab.
-async function inTab(re, expression) {
-  const tab = findTab(await targets(), re)
+async function ensureTab(re, url) {
+  let tab = findTab(await targets(), re)
+  if (tab) return { tab, opened: false }
+
+  const response = await fetch(`http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })
+  if (!response.ok) throw new Error(`could not open service tab: HTTP ${response.status}`)
+  tab = await response.json()
+  // Give Chromium enough time to establish the page origin. The service-specific
+  // probe below remains the authority; opening a tab is never treated as healthy.
+  await new Promise(resolve => setTimeout(resolve, 2500))
+  return { tab, opened: true }
+}
+
+// Runs `expression` inside a tab on that origin, opening the read-only probe URL if needed.
+async function inTab(re, expression, openUrl) {
+  const { tab, opened } = openUrl ? await ensureTab(re, openUrl) : { tab: findTab(await targets(), re), opened: false }
   if (!tab) return { noTab: true }
   const sock = await openSocket(tab.webSocketDebuggerUrl)
   try {
     const r = await cdp(sock, 1, 'Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-    return { value: JSON.parse(r.result.value), tab: (tab.url || '').slice(0, 100) }
+    return { value: JSON.parse(r.result.value), tab: (tab.url || '').slice(0, 100), opened }
   } finally { try { sock.close() } catch {} }
 }
 
@@ -87,7 +102,7 @@ try {
       return JSON.stringify({ httpStatus: r.status, bytes: t.length,
         sessionEnded: /Session Ended/i.test(t), hasGrid: /showModels/.test(t) });
     } catch (e) { return JSON.stringify({ httpStatus: 0, error: String(e).slice(0,120) }); }
-  })()`)
+  })()`, GRID)
   if (r.noTab) status.dealermail = { status: 'NO_TAB' }
   else {
     const v = r.value
@@ -108,7 +123,7 @@ else {
         return JSON.stringify({ httpStatus: r.status, oasis: /OASIS RESULT/i.test(t),
           login: /login\\.microsoftonline\\.com/i.test(t) || /type=["']?password/i.test(t) });
       } catch (e) { return JSON.stringify({ httpStatus: 0, threw: String(e).slice(0,120) }); }
-    })()`)
+    })()`, OASIS(fordVin))
     if (r.noTab) status.fmcdealer = { status: 'NO_TAB' }
     else {
       const v = r.value
@@ -139,7 +154,7 @@ else {
           fordRefusal: /not retail/i.test(t) || /not found in our system/i.test(t) });
       } catch (e) { return JSON.stringify({ httpStatus: 0, threw: String(e).slice(0,120) }); }
     })()`
-    const r = await inTab(/fordvisions\.dealerconnection\.com/i, probeInvoice)
+    const r = await inTab(/fordvisions\.dealerconnection\.com/i, probeInvoice, INVOICE(fordVin))
     if (r.noTab) status.fordvisions = { status: 'NO_TAB' }
     else {
       let v = r.value

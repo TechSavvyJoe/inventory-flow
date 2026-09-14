@@ -21,6 +21,8 @@ $AppRoot       = Split-Path -Parent $PSScriptRoot
 $WorkspaceRoot = Split-Path -Parent (Split-Path -Parent $AppRoot)
 $LogDir        = Join-Path $WorkspaceRoot 'work\app-feed-status'
 $SecretPath    = Join-Path $AppRoot 'runtime\cloud-secrets\publisher.dpapi'
+$IntegrationExpectedPath = Join-Path $AppRoot 'runtime\integration-expected-release.json'
+$IntegrationCredentialPath = Join-Path $AppRoot 'runtime\integration-credentials\joe-app-development.json'
 
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
 $LogPath = Join-Path $LogDir ("auto-publish-{0}.log" -f (Get-Date -Format 'yyyy-MM-dd'))
@@ -30,6 +32,83 @@ function Write-Log {
   $line = "{0} [{1}] {2}" -f (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssK'), $Level, $Message
   Add-Content -Path $LogPath -Value $line -Encoding UTF8
   Write-Output $line
+}
+
+# Windows PowerShell 5.1 can promote a native program's stderr stream to a
+# terminating NativeCommandError while $ErrorActionPreference is Stop. That
+# used to cut the useful traceback out of the log. Run native helpers with a
+# local Continue policy, preserve their complete combined output, and let each
+# call site decide whether its exit code is fatal.
+function Invoke-NativeCapture {
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [string[]]$Arguments = @()
+  )
+
+  $previousPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = 'Continue'
+    $output = & $FilePath @Arguments 2>&1 | Out-String
+    $nativeExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+
+  [pscustomobject]@{
+    Output   = [string]$output
+    ExitCode = [int]$nativeExitCode
+  }
+}
+
+function Update-IntegrationExpectedMetadata {
+  param([Parameter(Mandatory = $true)]$Receipt)
+
+  if ($Receipt.status -ne 'published_and_verified' -or
+      $Receipt.bundleSha256 -notmatch '^[a-fA-F0-9]{64}$' -or
+      -not $Receipt.counts -or
+      -not $Receipt.counts.publicStoreCounts) {
+    throw 'VERIFIED_RECEIPT_METADATA_INVALID'
+  }
+
+  $stores = [ordered]@{}
+  foreach ($store in @('Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln')) {
+    $value = $Receipt.counts.publicStoreCounts.$store
+    if ($null -eq $value -or [int64]$value -lt 0) { throw 'VERIFIED_RECEIPT_STORE_COUNTS_INVALID' }
+    $stores[$store] = [int64]$value
+  }
+  $total = [int64]$Receipt.counts.publicRowCount
+  if (($stores.Values | Measure-Object -Sum).Sum -ne $total -or $total -le 0) {
+    throw 'VERIFIED_RECEIPT_STORE_COUNTS_INVALID'
+  }
+
+  $metadata = [ordered]@{
+    bundleSha256 = ([string]$Receipt.bundleSha256).ToLowerInvariant()
+    total = $total
+    byStore = $stores
+  }
+  $parent = Split-Path -Parent $IntegrationExpectedPath
+  if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+  $temporary = "$IntegrationExpectedPath.tmp"
+  # Windows PowerShell 5.1's -Encoding UTF8 adds a BOM. JSON.parse() in the
+  # Node verifier is intentionally strict, so write explicit BOM-free UTF-8.
+  $json = $metadata | ConvertTo-Json -Depth 4
+  [System.IO.File]::WriteAllText($temporary, $json + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
+  Move-Item -LiteralPath $temporary -Destination $IntegrationExpectedPath -Force
+}
+
+function Assert-IntegrationDeployment {
+  if (-not (Test-Path $IntegrationCredentialPath)) { throw 'INTEGRATION_CREDENTIAL_MISSING' }
+  $verification = Invoke-NativeCapture -FilePath 'node' -Arguments @(
+    'scripts\verify-integration-deployment.mjs',
+    'runtime\integration-credentials\joe-app-development.json',
+    '--expected',
+    'runtime\integration-expected-release.json'
+  )
+  if ($verification.ExitCode -ne 0 -or $verification.Output -notmatch '"verified"\s*:\s*true') {
+    Write-Log "integration verification FAILED: $($verification.Output.Trim())" 'ERROR'
+    throw 'INTEGRATION_VERIFICATION_FAILED'
+  }
+  Write-Log "integration verification: $($verification.Output.Trim())"
 }
 
 function Resolve-ReportDate {
@@ -58,15 +137,19 @@ try {
   # the day's snapshot is actually ready, without hammering the dealer sites.
   $receiptPath = Join-Path $LogDir ("{0}.json" -f $date)
   if (-not $Force -and (Test-Path $receiptPath)) {
+    $receipt = $null
     try {
       $receipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
-      if ($receipt.status -eq 'published_and_verified' -and $receipt.reportDate -eq $date) {
-        Write-Log "already published and verified for $date - nothing to do (use -Force to republish)"
-        Write-Log '=== daily-cloud-publish SKIPPED (already current) ==='
-        exit 0
-      }
     } catch {
       Write-Log "existing receipt unreadable, continuing with publish" 'WARN'
+    }
+    if ($receipt -and $receipt.status -eq 'published_and_verified' -and $receipt.reportDate -eq $date) {
+      Update-IntegrationExpectedMetadata -Receipt $receipt
+      Push-Location $AppRoot
+      try { Assert-IntegrationDeployment } finally { Pop-Location }
+      Write-Log "already published and verified for $date - nothing to do (use -Force to republish)"
+      Write-Log '=== daily-cloud-publish SKIPPED (already current) ==='
+      exit 0
     }
   }
 
@@ -94,8 +177,9 @@ try {
       # Prefer reusing resources already embedded in the hash-bound snapshot;
       # fall back to a fresh VDP extraction when that yields nothing.
       Write-Log 'photo cache: building (--reuse-snapshot-resources)'
-      $cacheOut = & python 'scripts\build_photo_cache.py' '--report-date' $date '--reuse-snapshot-resources' 2>&1 | Out-String
-      $reuseExit = $LASTEXITCODE
+      $cacheRun = Invoke-NativeCapture -FilePath 'python' -Arguments @('scripts\build_photo_cache.py', '--report-date', $date, '--reuse-snapshot-resources')
+      $cacheOut = $cacheRun.Output
+      $reuseExit = $cacheRun.ExitCode
       $reuseEmpty = ($cacheOut -match '"vehicles_with_resources"\s*:\s*0')
       if ($reuseExit -ne 0) {
         # Runbook: never let a fresh extraction overwrite manually recovered
@@ -107,8 +191,9 @@ try {
       if ($reuseEmpty) {
         # Clean run, zero embedded resources -> nothing to preserve, safe to extract fresh.
         Write-Log 'photo cache: snapshot has no embedded resources (clean zero) - falling back to fresh VDP extraction' 'WARN'
-        $cacheOut = & python 'scripts\build_photo_cache.py' '--report-date' $date 2>&1 | Out-String
-        if ($LASTEXITCODE -ne 0) { Write-Log "photo cache FAILED: $($cacheOut.Trim())" 'ERROR'; throw 'PHOTO_CACHE_FAILED' }
+        $cacheRun = Invoke-NativeCapture -FilePath 'python' -Arguments @('scripts\build_photo_cache.py', '--report-date', $date)
+        $cacheOut = $cacheRun.Output
+        if ($cacheRun.ExitCode -ne 0) { Write-Log "photo cache FAILED: $($cacheOut.Trim())" 'ERROR'; throw 'PHOTO_CACHE_FAILED' }
       }
       Write-Log "photo cache: $($cacheOut.Trim())"
     } else {
@@ -125,14 +210,16 @@ try {
     try { $null = Invoke-WebRequest -Uri 'http://127.0.0.1:9222/json/version' -UseBasicParsing -TimeoutSec 5; $vautoUp = $true } catch {}
     if ($vautoUp) {
       try {
-        $wlOut = & python '..\..\work\build_vauto_worklist.py' '--report-date' $date 2>&1 | Out-String
-        if ($LASTEXITCODE -ne 0) { throw "worklist: $($wlOut.Trim())" }
+        $worklistRun = Invoke-NativeCapture -FilePath 'python' -Arguments @('..\..\work\build_vauto_worklist.py', '--report-date', $date)
+        $wlOut = $worklistRun.Output
+        if ($worklistRun.ExitCode -ne 0) { throw "worklist: $($wlOut.Trim())" }
         Write-Log "vauto: $($wlOut.Trim())"
         $wlPath = "..\..\work\vauto-history\worklist-$date.json"
         $feOut = "..\..\work\vauto-history\$date-factory-equipment.json"
-        $vautoOut = & node 'scripts\vauto-factory-equipment.mjs' 'run' $wlPath $feOut '--budget-ms' '600000' 2>&1 | Out-String
-        if ($LASTEXITCODE -ne 0) {
-          Write-Log "vauto: capture incomplete (exit $LASTEXITCODE) - continuing with prior captures: $($vautoOut.Trim())" 'WARN'
+        $vautoRun = Invoke-NativeCapture -FilePath 'node' -Arguments @('scripts\vauto-factory-equipment.mjs', 'run', $wlPath, $feOut, '--budget-ms', '600000')
+        $vautoOut = $vautoRun.Output
+        if ($vautoRun.ExitCode -ne 0) {
+          Write-Log "vauto: capture incomplete (exit $($vautoRun.ExitCode)) - continuing with prior captures: $($vautoOut.Trim())" 'WARN'
           if ($vautoOut -match 'SESSION_EXPIRED') { Write-Log 'vauto: SESSION EXPIRED - sign in to vAuto again in the Work PC Automation Browser (Comet)' 'WARN' }
         } else {
           Write-Log "vauto: $($vautoOut.Trim())"
@@ -151,9 +238,10 @@ try {
     # calculator is client-side arithmetic the script reproduces exactly).
     # NON-FATAL: warranty figures are reference data; a failure here must never block the publish.
     try {
-      $warrOut = & node 'scripts\capture-warranty.mjs' 'run' $date '--budget-ms' '1200000' 2>&1 | Out-String
-      if ($LASTEXITCODE -ne 0) {
-        Write-Log "warranty: capture incomplete (exit $LASTEXITCODE) - continuing: $($warrOut.Trim())" 'WARN'
+      $warrantyRun = Invoke-NativeCapture -FilePath 'node' -Arguments @('scripts\capture-warranty.mjs', 'run', $date, '--budget-ms', '1200000')
+      $warrOut = $warrantyRun.Output
+      if ($warrantyRun.ExitCode -ne 0) {
+        Write-Log "warranty: capture incomplete (exit $($warrantyRun.ExitCode)) - continuing: $($warrOut.Trim())" 'WARN'
       } else {
         Write-Log "warranty: $($warrOut.Trim())"
         if ($warrOut -match 'session_expired') { Write-Log 'warranty: FMCDealer session expired - sign in again in the Work PC Automation Browser (Ford/Lincoln units fall back to the AutoCheck estimate)' 'WARN' }
@@ -167,26 +255,32 @@ try {
     # values copied as printed, then proves it against the REAL validators before
     # anything is published. A failure here stops the publish - never ships a bad file.
     Write-Log 'resources: building vin-document-enrichment.json'
-    $enrichOut = & python '..\..\work\build_vin_document_enrichment.py' '--report-date' $date 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) { Write-Log "resources: build FAILED: $($enrichOut.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_BUILD_FAILED' }
+    $enrichRun = Invoke-NativeCapture -FilePath 'python' -Arguments @('..\..\work\build_vin_document_enrichment.py', '--report-date', $date)
+    $enrichOut = $enrichRun.Output
+    if ($enrichRun.ExitCode -ne 0) { Write-Log "resources: build FAILED: $($enrichOut.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_BUILD_FAILED' }
     Write-Log "resources: $($enrichOut.Trim())"
     Write-Log 'resources: validating against release validators'
-    $enrichCheck = & node 'scripts\dryrun_resource_enrichment_check.mjs' $date 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) { Write-Log "resources: validation FAILED: $($enrichCheck.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_INVALID' }
+    $enrichCheckRun = Invoke-NativeCapture -FilePath 'node' -Arguments @('scripts\dryrun_resource_enrichment_check.mjs', $date)
+    $enrichCheck = $enrichCheckRun.Output
+    if ($enrichCheckRun.ExitCode -ne 0) { Write-Log "resources: validation FAILED: $($enrichCheck.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_INVALID' }
     Write-Log "resources: $($enrichCheck.Trim())"
 
     # Step 2 - build, validate, encrypt, publish, and independently re-verify
     # against /internal/status and /internal/readiness. Emits an uppercase error
     # CODE on failure, never raw detail.
     Write-Log 'cloud publish: running sync-cloud-release.mjs'
-    $syncOut = & node 'scripts\sync-cloud-release.mjs' 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) { Write-Log "cloud publish FAILED: $($syncOut.Trim())" 'ERROR'; throw 'CLOUD_PUBLISH_FAILED' }
+    $syncRun = Invoke-NativeCapture -FilePath 'node' -Arguments @('scripts\sync-cloud-release.mjs')
+    $syncOut = $syncRun.Output
+    if ($syncRun.ExitCode -ne 0) { Write-Log "cloud publish FAILED: $($syncOut.Trim())" 'ERROR'; throw 'CLOUD_PUBLISH_FAILED' }
     Write-Log "cloud publish: $($syncOut.Trim())"
 
     if ($syncOut -notmatch '"status"\s*:\s*"published_and_verified"') {
       Write-Log 'cloud publish did not report published_and_verified' 'ERROR'
       throw 'PUBLISH_NOT_VERIFIED'
     }
+    $verifiedReceipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
+    Update-IntegrationExpectedMetadata -Receipt $verifiedReceipt
+    Assert-IntegrationDeployment
     Write-Log '=== daily-cloud-publish SUCCESS ==='
   } finally {
     Pop-Location

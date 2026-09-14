@@ -1,7 +1,7 @@
 # Daily automation runbook (dt-4094)
 
-Set up 09/11/2026, rewritten 09/12/2026 after the browser moved to Comet and
-the DealerMail keeper became a Windows task. Companion to
+Set up 09/11/2026, rewritten 09/14/2026 after the browser moved to Comet, the
+capture steps became scripted, and the multi-service keeper became a Windows task. Companion to
 CLOUDFLARE_PRIVATE_RELEASE_RUNBOOK.md, which covers the publish mechanics; this
 file covers *what runs, when, on which machine, and how to fix or undo each
 piece*. Dates in this file are MM/DD/YYYY; internal file names and JSON keys
@@ -11,12 +11,13 @@ stay ISO on purpose (the pipeline matches on them).
 
 | Local time | What | Runs where | Owned by |
 |---|---|---|---|
-| 07:30 | Public inventory + resource enrichment, Vehicle Resources sheet, DealerMail deep capture + snapshot build/finalize, Ford OASIS, Ford invoices, workbook merge/tidy/validate, complete the manifest, verify (never run) the publish, vAuto backup, message Joe | Claude scheduled task `Bob Maxey Used Inventory - Daily Report`, prompt `outputs\bob_maxey_task_prompt_2026-09-12.txt` | Claude Cowork |
+| 07:30 | Public inventory + resource enrichment, Vehicle Resources sheet, scripted DealerMail deep capture + snapshot build/finalize, scripted Ford OASIS and invoice capture, workbook merge/tidy/validate, complete the manifest, verify (never run) the publish, vAuto backup, message Joe | Claude scheduled task `Bob Maxey Used Inventory - Daily Report`, prompt `outputs\bob_maxey_task_prompt_2026-09-14.txt` | Claude Cowork |
+| 08:45, 09:45, 10:45 | Idempotent recovery: follow the same 09/14 prompt only when today's verified receipt is absent; defer to an active writer | Codex heartbeat `Daily Bob Maxey Used Inventory Report` | Codex recovery |
 | 09:15, then every 30 min to 15:15 | Build/reuse resource cache, publish to Cloudflare, verify live | Windows task `BobMaxey-InventoryFlow-DailyPublish` | Task Scheduler |
 | every 15 min, all day | Relaunch the isolated automation **Comet** if it is not running | Windows task `BobMaxey-AutomationBrowser` | Task Scheduler |
-| every 10 min, all day | Ping the DealerMail grid inside the authenticated tab so the session never idles out | Windows task `BobMaxey-DealerMailKeeper` | Task Scheduler |
+| every 10 min, all day | Keep DealerMail, FMCDealer/OASIS, Ford invoices and vAuto sessions warm; recreate missing read-only service tabs and report each service's real failure signature | Windows task `BobMaxey-DealerMailKeeper` | Task Scheduler |
 
-The Claude task never publishes. The publish is a production deploy and is
+The Claude and Codex tasks never publish. The publish is a production deploy and is
 refused inside unattended AI sessions, so it lives in a Windows task that has no
 such gate and runs as JoeGallant (which is what lets the DPAPI secret bundle
 decrypt). The Claude task only *verifies* the publish by reading the receipt and
@@ -38,16 +39,20 @@ keeps working in that mode. Only Joe can do that step.
   the 9:15/9:45/10:15/10:45 cadence in the Cloudflare runbook and keeps going
   as insurance.
 - Report date: `-ReportDate`, else the newest `work\inventory-history\snapshots\*-public.json`.
-- Idempotent: exits `SKIPPED (already current)` in under a second once
-  `work\app-feed-status\{date}.json` shows `published_and_verified` for that
-  date, so the extra slots cost nothing. `-Force` republishes.
+- Idempotent: once `work\app-feed-status\{date}.json` shows
+  `published_and_verified`, it does not scrape or republish. It refreshes the
+  safe hash/count-only integration expectation from that verified receipt and
+  runs the authenticated read-only REST plus OAuth/MCP discovery smoke test;
+  then it exits `SKIPPED (already current)`. `-Force` republishes.
 - Photo cache: tries `build_photo_cache.py --reuse-snapshot-resources` first.
   Falls back to a fresh VDP extraction ONLY on a clean zero (snapshot has no
   embedded resources). A non-zero exit from the reuse path aborts with
   `PHOTO_CACHE_REUSE_FAILED` rather than overwriting anything, per the
   runbook's "never overwrite manually recovered resources" rule.
 - Then `sync-cloud-release.mjs`: build, validate, encrypt, publish, re-verify
-  against `/internal/status` and `/internal/readiness`.
+  against `/internal/status` and `/internal/readiness`. Finally it verifies the
+  same report date, bundle hash, total and all four store counts through the
+  private integration API and verifies protected OAuth discovery/PKCE for MCP.
 - Log: `work\app-feed-status\auto-publish-{date}.log`. Secret VALUES are never
   written; only key names and counts.
 - Re-register or change the schedule: edit and run
@@ -64,6 +69,8 @@ Error codes the log can end with, and what they mean:
 | `PHOTO_CACHE_REUSE_FAILED` | Embedded resources exist but failed validation; refused to overwrite | **No** - needs a person |
 | `CLOUD_PUBLISH_FAILED` | `sync-cloud-release.mjs` exited non-zero; the real code is in the log line above it (`WRITER_LOCKED`, `PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW`, `CLOUD_*_MISMATCH`, `CLOUD_NOT_READY`) | Depends on the inner code |
 | `PUBLICATION_NOT_VERIFIED` | The bundle did not pass the stricter Cloudflare validator, so nothing verified. Real causes seen: (1) the manifest is not `complete: true`, or (2) `dealermail_snapshot_path` points at the `-deep.json` instead of the `-deep-cloud-ready.json` - i.e. `finalize_cloud_snapshot.mjs` was skipped, so every row is missing the dual 22-cell arrays (`rawCellInnerText` / `rawCellControlValues`) and the `excludeActiveHoldsValidationSet`. 09/12/2026: 10:43 and 10:45 failed this way; 10:47 succeeded two minutes after finalize ran | Yes, once finalize has run and the manifest names the cloud-ready file |
+| `INTEGRATION_VERIFICATION_FAILED` | The main release is published, but the private REST API or protected OAuth/MCP discovery did not return the same hash, total and four store counts. The publisher preserves the verified release and retries this read-only check later. | Often; deploy the current integration Worker if a new validated release schema was added |
+| `INTEGRATION_CREDENTIAL_MISSING` | The owner-only local development verification key is missing, so the task cannot prove an authenticated API read. The release and cloud access controls are not weakened. | No - restore or replace the scoped key through the owner provisioning workflow |
 | `SECRET_STORE_MISSING` | `runtime\cloud-secrets\publisher.dpapi` missing | No |
 
 Never delete `work\app-feed-status\.publication.lock` to force a run. See the
@@ -79,8 +86,10 @@ Cloudflare runbook's lock rules.
   `--user-data-dir=%LOCALAPPDATA%\BobMaxeyAutomation\CometProfile`,
   `--remote-debugging-port=9222` (bound to 127.0.0.1 only - that is what the
   keeper talks to), `--restore-last-session`, minimized, with the DealerMail
-  inventory grid open. Idempotent: exits immediately if a `comet.exe` with that
-  profile dir is already running. `-Restart` kills and relaunches it.
+  inventory grid open. Idempotent only when both the isolated profile processes
+  and the localhost CDP endpoint are healthy. Leftover renderer processes with
+  a dead CDP endpoint are stopped and relaunched automatically. `-Restart` forces
+  the same profile-only relaunch.
 - Log: `%LOCALAPPDATA%\BobMaxeyAutomation\automation-browser.log`
 - Why Comet and not Chrome: this PC's IT policy sets
   `HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallBlocklist = *` with a
@@ -118,21 +127,22 @@ device.
 - Trigger: registered 09/12/2026 11:50 as a one-shot that repeats every 10 min
   for 3650 days, i.e. indefinitely.
 - What it does: connects to the automation Comet over the Chrome DevTools
-  Protocol on `127.0.0.1:9222`, finds the tab whose URL is
-  `dealermail.com/prospect_manager` (opens one to the grid if none exists),
-  and runs ONE `fetch()` of the inventory grid with `credentials: 'include'`
-  **inside that tab**. The browser makes the request with its own session; the
-  script reads no cookies and no credentials, stores nothing, and never logs in.
-  Because it does not rely on an in-page timer it survives Comet restarts.
-- Output: `work\app-feed-status\dealermail-keeper.json`
-  (`checkedAt, status, httpStatus, authed, bytes, tab`, plus `openedNewTab` or
-  `error` when relevant) and one line per run appended to
+  Protocol on `127.0.0.1:9222`, ensures read-only tabs exist for DealerMail,
+  FMCDealer/OASIS and Ford invoices, and runs one service-specific authenticated
+  probe inside each tab. It also uses vAuto's own read-only session ping. The
+  browser makes requests with its own session; the script reads no cookies and
+  no credentials, stores no protected data, and never logs in. Because it does
+  not rely on an in-page timer it survives Comet restarts.
+- Output: `work\app-feed-status\dealermail-keeper.json` with a separate status
+  for `dealermail`, `fmcdealer`, `fordvisions`, and `vauto`, plus one line per run appended to
   `work\app-feed-status\dealermail-keeper.log`.
-- Exit codes: 0 = `OK` (HTTP 200 and no password field in the response).
-  1 = `SESSION_EXPIRED` (grid came back as a login form - Joe must sign in to
-  DealerMail in the automation Comet again) or `ERROR` (usually port 9222 not
-  answering because the automation Comet is not running; the browser watchdog
-  fixes that within 15 min).
+- Exit codes: 0 = every required service is `OK` (or deliberately `SKIPPED`
+  because there is no Ford worklist). 1 = `ATTENTION`; read the per-service
+  status. Each service is checked by its real signature: DealerMail's
+  `Session Ended` body and grid function, FMCDealer's OASIS result and SSO
+  bounce, Ford invoice PDF/legitimate refusal after MSAL renewal, and vAuto's
+  authenticated endpoint. `SESSION_EXPIRED` means Joe signs into only the named
+  service in the Work PC Automation Browser.
 - Remove: `Unregister-ScheduledTask -TaskName BobMaxey-DealerMailKeeper`
 
 ## DealerMail session keeper
@@ -154,7 +164,7 @@ turns `OK` by itself.
 
 ## The daily Cowork task, step by step
 
-The prompt is `outputs\bob_maxey_task_prompt_2026-09-12.txt`. It runs
+The authoritative prompt is `outputs\bob_maxey_task_prompt_2026-09-14.txt`. It runs
 unattended, never asks a question, and records anything undecidable in the
 manifest warnings. In order:
 
@@ -164,11 +174,11 @@ manifest warnings. In order:
 | 1 Browser | `list_connected_browsers`, then `select_browser` deviceId `daa0cb94-...` ("Work PC Automation Browser"). If absent, run `start-automation-browser.ps1`, wait 60 s, retry once; if still absent, skip every browser step (3, 3.7, 3.8, 7) and still finish 2/4/5. | Never picks another browser, never uses Chrome. |
 | 2 Public inventory + resource enrichment | Produces `snapshots\{date}-public.json` and the base workbook. AutoCheck, photos and window stickers come from the dealer VDP/API feeds. | Ford placeholder PDFs ("not yet been released") are labelled `not_released_by_ford`, not failures. |
 | 2.5 Vehicle Resources | `python work\add_resources_sheet.py --report-date {date}` | Run, do not edit. |
-| 3 DealerMail capture | Read-only, in the automation Comet: `showModels('ALL')`, one `javascript_tool` capture of ~226 rows (22 cells each), the exclude-active-holds view, CDK lookup + hold-edit for on-hold rows, comments/alerts for flagged rows. Written as five raw files: `-deep-capture-raw`, `-exclude-view-raw`, `-hold-details-raw`, `-complete-list-raw-cells`, `-complete-inventory-raw`. | Never submits, holds, releases or comments. If the grid shows a password field: skip to 4, never log in. |
+| 3 DealerMail capture | `node apps\inventory-ops\scripts\capture-dealermail.mjs run {date} --budget-ms 900000` performs the complete read-only grid, exclude-holds, live-holds, detail, comment/alert and CDK capture over localhost CDP and writes the five raw files the existing builder consumes. | Never submits, holds, releases or comments. `SESSION_EXPIRED` is detected from DealerMail's actual `Session Ended` signature, not a password field. |
 | 3.2 Build + finalize snapshot | `node build_v2_snapshot.mjs {date}` **from `work\`** (its paths are cwd-relative) -> `-complete-used-inventory-deep.json`, must print `VALIDATION PASSED`. Then `node work\finalize_cloud_snapshot.mjs {date}` **from the workspace root** -> `-deep-cloud-ready.json`. | **New 09/12.** Finalize is REQUIRED: it adds the dual 22-cell arrays and the exclude-holds validation set the Cloudflare validator demands. Skipping it = `PUBLICATION_NOT_VERIFIED`. The manifest must name the CLOUD-READY file. |
 | 3.5 Session keeper | Arms the in-page `window.__bmKeeper` (see above). | Belt and braces; the Windows task is the real keeper. |
-| 3.7 Ford OASIS | Read-only, for every Ford/Lincoln VIN (179 of 226 on 09/12): `fordtechservice.dealerconnection.com/oasis/Index?vin=` from a tab already on that host, 6 workers. Parses build/warranty/field-service-action fields into `work\oasis-history\{date}-oasis.json`. Probes one page first; a login page = skip 3.7 and 3.8 with `fmcdealer_session_expired`. | **New 09/12.** Prior-owner names on extended-coverage blocks are NEVER captured - category and expiration only. |
-| 3.8 Ford invoice | Read-only, same VINs: `fordvisions.dealerconnection.com/vinv/GetInvoice.aspx?v=` -> PDF bytes to `work\invoice-history\{date}\{VIN}.pdf` + `index.json`, text via pypdf, `parse_ford_invoice.py` -> `parsed.json`. | **New 09/12.** Entitlement-gated per VIN; "Document Type is not retail" and "VIN not found" are normal outcomes (131 PDFs / 48 unavailable on 09/12). Primary backup when Ford's sticker is not released. |
+| 3.7 Ford OASIS | `node apps\inventory-ops\scripts\capture-oasis.mjs run {date} --budget-ms 1800000` captures read-only Ford/Lincoln build, warranty and field-service-action data over localhost CDP. | Prior-owner names on extended-coverage blocks are NEVER captured - category and expiration only. |
+| 3.8 Ford invoice | `node apps\inventory-ops\scripts\capture-invoices.mjs run {date} --budget-ms 1800000`, then `extract_invoice_text.py` and `parse_ford_invoice.py`, captures entitled invoice PDFs and printed fields. | "Document Type is not retail" and "VIN not found" are normal per-VIN outcomes. The script performs the required Entra/MSAL navigation handshake without entering credentials. |
 | 4 Workbook | If DealerMail was captured: `python work\merge_dealermail.py {date}` -> `work\staging\{date}-with-dealermail.xlsx`, copied over `outputs\Bob_Maxey_Used_Inventory_{date}.xlsx`. Either way: `python work\tidy_workbook.py --workbook ...`. | If DealerMail was skipped the workbook stays 10-sheet and the manifest says so. `add_oasis_sheet.py` / `add_invoice_sheet.py` add the optional trailing Ford OASIS / Ford Invoice sheets - run them here, before the file is hashed. |
 | 5 Validate | 13-sheet: `final_check12.py <xlsx> work\run-status\{date}.json`; 10-sheet: `final_check.py <xlsx>`. Always `excel_open_test2.ps1 -Path <xlsx>`. | Run, do not edit. Fix the DATA, not the validator. |
 | 5.5 Complete the manifest | Real counts, `dealermail_snapshot_path` = cloud-ready file, `final_workbook_sha256/bytes/sheets`, evidence, `"complete": true`. | The publish gate refuses an incomplete manifest - the single most common cause of a failed morning. |
