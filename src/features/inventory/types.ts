@@ -144,6 +144,85 @@ export interface FactoryEquipmentResource {
   isOriginalWindowSticker: false;
 }
 
+export interface FordOasisFieldServiceAction {
+  /** Ford field service action / recall code, e.g. 24N08. */
+  code: string;
+  description?: string | null;
+}
+
+export interface FordOasisWarrantyCoverage {
+  type: string;
+  description?: string | null;
+}
+
+/**
+ * Read-only Ford OASIS vehicle report facts. Dates are shown exactly as OASIS
+ * printed them. Open field service actions are reference evidence and never a
+ * condition, hold, or availability signal.
+ */
+export interface FordOasisResource {
+  dataState: SourceDataState;
+  capturedAt?: string | null;
+  sourceLabel?: string | null;
+  vehicleDescription?: string | null;
+  versionSeries?: string | null;
+  buildDate?: string | null;
+  warrantyStartDate?: string | null;
+  releaseDate?: string | null;
+  monthsInService?: number | null;
+  saleMileage?: number | null;
+  openFieldServiceActions: FordOasisFieldServiceAction[];
+  warrantyCoverages: FordOasisWarrantyCoverage[];
+  extendedCoverageExpirations: string[];
+}
+
+export type WarrantyCheckCoverageStatus = "ACTIVE" | "EXPIRED" | "N/A";
+
+/** One warranty coverage line. Term and remaining text are shown exactly as the source printed them. */
+export interface WarrantyCheckCoverage {
+  type: string;
+  termText: string;
+  termMonths?: number | null;
+  termMiles?: number | null;
+  unlimitedMiles?: boolean | null;
+  unlimitedMonths?: boolean | null;
+  remainingMiles?: number | null;
+  remainingMonths?: number | null;
+  remainingMilesText: string;
+  remainingTimeText: string;
+  status: WarrantyCheckCoverageStatus;
+  note?: string | null;
+}
+
+/** AutoCheck (Experian) warranty estimate figured from the mileage entered. */
+export interface WarrantyCheckAutoCheckBlock {
+  inServiceDate?: string | null;
+  inServiceAgeMonths?: number | null;
+  defaultMileage?: number | null;
+  coverages: WarrantyCheckCoverage[];
+}
+
+/** Ford OASIS factory coverage for Ford/Lincoln VINs. Authoritative when present. */
+export interface WarrantyCheckFordOasisBlock {
+  warrantyStartDate: string;
+  monthsInService: number;
+  coverages: WarrantyCheckCoverage[];
+}
+
+/**
+ * Read-only per-VIN warranty coverage check. Remaining coverage is reference
+ * evidence and never a condition, hold, or availability signal.
+ */
+export interface WarrantyCheckResource {
+  dataState: SourceDataState;
+  capturedAt?: string | null;
+  sourceLabel?: string | null;
+  mileageEntered: number;
+  mileageSource?: string | null;
+  autoCheck: WarrantyCheckAutoCheckBlock | null;
+  fordOasis: WarrantyCheckFordOasisBlock | null;
+}
+
 export interface DealerMailHoldSignal {
   dataState: SourceDataState;
   hasActiveHold: boolean | null;
@@ -287,6 +366,8 @@ export interface InventoryVehicle {
   autoCheckReport?: AutoCheckResource | null;
   windowSticker?: WindowStickerResource | null;
   factoryEquipment?: FactoryEquipmentResource | null;
+  fordOasis?: FordOasisResource | null;
+  warrantyCheck?: WarrantyCheckResource | null;
   publicListing: PublicListingSignal;
   dealerOn: DealerOnSignal;
   managerDisposition?: ManagerDispositionSignal | null;

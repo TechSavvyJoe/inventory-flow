@@ -196,4 +196,89 @@ describe('vehicle document workspace', () => {
     );
     expect(within(panel).queryByText('Factory window sticker')).not.toBeInTheDocument();
   });
+
+  it('shows Ford OASIS open recalls first with dates exactly as printed', async () => {
+    const oasisVehicle = vehicle(false);
+    oasisVehicle.fordOasis = {
+      dataState: 'current',
+      capturedAt: '2026-09-12T14:52:37.597Z',
+      vehicleDescription: '2026 Explorer',
+      versionSeries: 'SERIES 10',
+      buildDate: '11-May-2026',
+      warrantyStartDate: '09-June-2026',
+      releaseDate: '12-May-2026',
+      monthsInService: 3,
+      saleMileage: 12,
+      openFieldServiceActions: [
+        { code: '24N08', description: 'DRIVERS SIDE SEAT BUCKLE REPLACEMENT' },
+        { code: '25S66', description: null },
+      ],
+      warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain' }],
+      extendedCoverageExpirations: ['01/16/2029'],
+    };
+
+    render(
+      <VehicleWorkspace
+        vehicle={oasisVehicle}
+        homeStore={{ id: 'howell', name: 'Howell' }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const flag = screen.getByRole('button', { name: /2 open Ford recalls or field service actions; review vehicle records/i });
+    expect(flag).toHaveTextContent('2 open recalls');
+
+    const panel = await openVehicleDocuments();
+    expect(panel).not.toBeNull();
+    if (!panel) return;
+    const card = panel.querySelector('[data-document-kind="ford-oasis"]');
+    expect(card).not.toBeNull();
+    expect(card).toHaveAttribute('data-open-recall-count', '2');
+    expect(within(panel).getByText('Ford OASIS vehicle report')).toBeInTheDocument();
+    expect(within(panel).getByRole('status', { name: 'Open recalls and field service actions' })).toHaveTextContent(
+      '2 open recalls / field service actions',
+    );
+    const recallList = within(panel).getByRole('list', { name: 'Open field service action details' });
+    expect(within(recallList).getByText('24N08')).toBeInTheDocument();
+    expect(within(recallList).getByText('DRIVERS SIDE SEAT BUCKLE REPLACEMENT')).toBeInTheDocument();
+    expect(within(recallList).getByText('25S66')).toBeInTheDocument();
+    expect(within(panel).getByText('09-June-2026')).toBeInTheDocument();
+    expect(within(panel).getByText('11-May-2026')).toBeInTheDocument();
+    expect(within(panel).getByText('3 months')).toBeInTheDocument();
+    expect(within(panel).getByText('12 mi')).toBeInTheDocument();
+    expect(within(panel).getByText('01/16/2029')).toBeInTheDocument();
+    const oasisLink = within(panel).getByRole('link', { name: /Open Ford OASIS report for 2026 Ford Explorer Active/i });
+    expect(oasisLink).toHaveAttribute('href', 'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=1FMUK8DHXTGB76992');
+    expect(oasisLink).toHaveAttribute('data-read-only', 'true');
+  });
+
+  it('states plainly when OASIS lists no open recalls and never flags the overview', async () => {
+    const clearVehicle = vehicle(false);
+    clearVehicle.fordOasis = {
+      dataState: 'stale',
+      capturedAt: '2026-09-11T14:52:37.597Z',
+      warrantyStartDate: '09-June-2026',
+      openFieldServiceActions: [],
+      warrantyCoverages: [],
+      extendedCoverageExpirations: [],
+    };
+
+    render(
+      <VehicleWorkspace
+        vehicle={clearVehicle}
+        homeStore={{ id: 'howell', name: 'Howell' }}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: /review vehicle records/i })).not.toBeInTheDocument();
+    const panel = await openVehicleDocuments();
+    expect(panel).not.toBeNull();
+    if (!panel) return;
+    expect(within(panel).getByRole('status', { name: 'Open recalls and field service actions' })).toHaveTextContent(
+      'No open recalls or field service actions listed',
+    );
+    expect(within(panel).queryByRole('list', { name: 'Open field service action details' })).not.toBeInTheDocument();
+    expect(within(panel).getByText('Update delayed')).toBeInTheDocument();
+  });
 });

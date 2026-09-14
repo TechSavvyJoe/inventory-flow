@@ -150,6 +150,84 @@ export interface FactoryEquipmentRecord {
   isOriginalWindowSticker: false
 }
 
+export interface FordOasisFieldServiceActionRecord {
+  /** Ford field service action / recall code, e.g. 24N08. */
+  code: string
+  description?: string | null
+}
+
+export interface FordOasisWarrantyCoverageRecord {
+  type: string
+  description?: string | null
+}
+
+/**
+ * Read-only Ford OASIS vehicle report facts for the exact VIN. Dates are the
+ * strings OASIS printed and are never re-parsed. No owner data is carried.
+ */
+export interface FordOasisRecord {
+  dataState?: SourceFreshness
+  capturedAt?: string | null
+  sourceLabel?: string | null
+  vehicleDescription?: string | null
+  versionSeries?: string | null
+  buildDate?: string | null
+  warrantyStartDate?: string | null
+  releaseDate?: string | null
+  monthsInService?: number | null
+  saleMileage?: number | null
+  openFieldServiceActions?: FordOasisFieldServiceActionRecord[]
+  warrantyCoverages?: FordOasisWarrantyCoverageRecord[]
+  extendedCoverageExpirations?: string[]
+}
+
+export type WarrantyCheckCoverageStatus = 'ACTIVE' | 'EXPIRED' | 'N/A'
+
+/** One warranty coverage line. Term and remaining text stay exactly as the source printed them. */
+export interface WarrantyCheckCoverageRecord {
+  type: string
+  termText: string
+  termMonths?: number | null
+  termMiles?: number | null
+  unlimitedMiles?: boolean | null
+  unlimitedMonths?: boolean | null
+  remainingMiles?: number | null
+  remainingMonths?: number | null
+  remainingMilesText: string
+  remainingTimeText: string
+  status: WarrantyCheckCoverageStatus
+  note?: string | null
+}
+
+/** AutoCheck (Experian) warranty estimate figured from the mileage entered. */
+export interface WarrantyCheckAutoCheckRecord {
+  inServiceDate?: string | null
+  inServiceAgeMonths?: number | null
+  defaultMileage?: number | null
+  coverages?: WarrantyCheckCoverageRecord[]
+}
+
+/** Ford OASIS factory coverage for Ford/Lincoln VINs. Authoritative when present. */
+export interface WarrantyCheckFordOasisRecord {
+  warrantyStartDate: string
+  monthsInService: number
+  coverages?: WarrantyCheckCoverageRecord[]
+}
+
+/**
+ * Read-only per-VIN warranty coverage check. At least one of autoCheck or
+ * fordOasis is present. No owner data is carried.
+ */
+export interface WarrantyCheckRecord {
+  dataState?: SourceFreshness
+  capturedAt?: string | null
+  sourceLabel?: string | null
+  mileageEntered: number
+  mileageSource?: string | null
+  autoCheck?: WarrantyCheckAutoCheckRecord | null
+  fordOasis?: WarrantyCheckFordOasisRecord | null
+}
+
 export interface HoldSummary {
   state: 'primary' | 'backup' | 'multiple' | 'none_observed' | 'stale' | 'unknown'
   label: string
@@ -308,6 +386,8 @@ export interface VehicleRecord {
   autoCheckReport?: AutoCheckReportRecord
   windowSticker?: WindowStickerRecord
   factoryEquipment?: FactoryEquipmentRecord
+  fordOasis?: FordOasisRecord
+  warrantyCheck?: WarrantyCheckRecord
 }
 
 export interface TransferEvent {

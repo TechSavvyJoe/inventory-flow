@@ -173,6 +173,9 @@
   .vdp-flow-overview-facts > dl dd { margin: 4px 0 0; font-size: 21px !important; color: var(--v10-ink-strong); line-height: 1.35; font-weight: 700; }
   .vdp-flow-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; color: var(--v10-support); font-size: 13px; }
   .vdp-flow-certified { display: inline-flex; align-items: center; gap: 6px; }
+  .vdp-flow-recall-flag { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 2px 10px; border: 1px solid color-mix(in srgb, var(--ifx-danger) 38%, var(--v10-border-soft)); border-radius: 999px; color: var(--ifx-danger); background: var(--ifx-danger-surface); font: 600 13px/1.35 var(--font-app); cursor: pointer; }
+  .vdp-flow-recall-flag:hover { border-color: var(--ifx-danger); }
+  .vdp-flow-recall-flag:focus-visible { outline: 0; box-shadow: var(--ifx-focus-ring); }
   .inventory-workspace-gallery--cinematic { display: grid !important; min-width: 0; padding: 0; border: 0; border-radius: 6px; background: var(--v10-surface); }
   .inventory-workspace-gallery--cinematic .inventory-workspace-gallery__stage { height: 210px; min-height: 210px; border-radius: 6px; background: var(--ifx-oem-scene-deep); }
   .inventory-workspace-gallery--empty { min-height: 210px; background: var(--ifx-oem-scene-deep); padding: 16px; border: 0; }
@@ -309,4 +312,93 @@
     .inventory-hold-evidence-views { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 4px; }
     .inventory-hold-evidence-views button { min-width: 0; padding: 8px 6px; font-size: 13px; }
   }
+}
+
+/* Remaining factory warranty — the coverage grid a salesperson reads on the lot.
+   Status is carried by both the word and the colour, never colour alone. */
+.inventory-vehicle-document__warranty-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.35rem;
+  font-size: 0.86rem;
+}
+
+.inventory-vehicle-document__warranty-table th,
+.inventory-vehicle-document__warranty-table td {
+  text-align: left;
+  padding: 0.42rem 0.55rem;
+  border-bottom: 1px solid var(--inventory-border-soft, rgba(148, 163, 184, 0.25));
+  vertical-align: top;
+}
+
+.inventory-vehicle-document__warranty-table thead th {
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--inventory-text-muted, var(--ifx-neutral-500));
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.inventory-vehicle-document__warranty-table tbody th[scope="row"] {
+  font-weight: 650;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.inventory-vehicle-document__warranty-table tbody th[scope="row"] small {
+  font-weight: 500;
+  font-size: 0.74rem;
+  color: var(--inventory-text-muted, var(--ifx-neutral-500));
+}
+
+.inventory-vehicle-document__warranty-table tbody tr:last-child th,
+.inventory-vehicle-document__warranty-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.inventory-vehicle-document__warranty-table tbody tr[data-status="EXPIRED"] td,
+.inventory-vehicle-document__warranty-table tbody tr[data-status="N/A"] td {
+  color: var(--inventory-text-muted, var(--ifx-neutral-500));
+}
+
+.inventory-warranty-pill {
+  display: inline-block;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 650;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.inventory-warranty-pill--active {
+  background: rgba(16, 185, 129, 0.13);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: var(--ifx-success);
+}
+
+.inventory-warranty-pill--expired {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.38);
+  color: var(--ifx-danger);
+}
+
+.inventory-warranty-pill--unknown {
+  background: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.38);
+  color: var(--ifx-neutral-600);
+}
+
+@media (prefers-color-scheme: dark) {
+  .inventory-warranty-pill--active { color: var(--ifx-success-surface); }
+  .inventory-warranty-pill--expired { color: var(--ifx-danger-surface); }
+  .inventory-warranty-pill--unknown { color: var(--ifx-neutral-300); }
+}
+
+@media (max-width: 640px) {
+  .inventory-vehicle-document__warranty-table { font-size: 0.8rem; }
+  .inventory-vehicle-document__warranty-table th,
+  .inventory-vehicle-document__warranty-table td { padding: 0.35rem 0.3rem; }
 }

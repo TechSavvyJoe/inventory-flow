@@ -358,6 +358,21 @@ function VautoFactoryEquipmentWordmark() {
   );
 }
 
+function FordOasisWordmark() {
+  return (
+    <span
+      className="inventory-document-wordmark inventory-document-wordmark--oasis"
+      role="img"
+      aria-label="Ford OASIS vehicle report"
+    >
+      <span aria-hidden="true" className="inventory-document-wordmark__line">
+        OASIS
+      </span>
+      <small aria-hidden="true">Ford vehicle report</small>
+    </span>
+  );
+}
+
 function VehicleGallery({ vehicle }: { vehicle: InventoryVehicle }) {
   const suppliedImages = useMemo(() => {
     const candidates = [...(vehicle.imageUrls ?? []), vehicle.imageUrl]
@@ -626,13 +641,36 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const autoCheck = vehicle.autoCheckReport;
   const sticker = vehicle.windowSticker;
   const factoryEquipment = vehicle.factoryEquipment;
+  const fordOasis = vehicle.fordOasis;
+  const warrantyCheck = vehicle.warrantyCheck ?? null;
+  // Ford/Lincoln coverage comes from Ford's own OASIS record; AutoCheck is Experian's
+  // estimate and is the only source for off-brand trades. When both exist the OASIS
+  // table leads and the AutoCheck figures stay visible underneath for comparison.
+  const warrantyPrimary = warrantyCheck?.fordOasis ?? warrantyCheck?.autoCheck ?? null;
+  const warrantyPrimaryIsOasis = Boolean(warrantyCheck?.fordOasis);
+  const warrantySecondary = warrantyPrimaryIsOasis ? warrantyCheck?.autoCheck ?? null : null;
   const warranty = warrantyOutlook({ make: vehicle.make, year: vehicle.year, fuelType: vehicle.fuelType, engine: vehicle.engine, mileage: vehicle.mileage, inServiceDate: autoCheck?.estimatedInServiceDate ?? null, stickerWarranty: sticker?.warranty ?? [] });
-  // The outlook only joins the records grid when a VIN-specific record exists; without one there is nothing to date it from.
-  const showWarranty = Boolean(autoCheck || sticker || factoryEquipment) && (warranty.termsKnown || Boolean(warranty.inService.date));
-  if (!autoCheck && !sticker && !factoryEquipment && !showWarranty) return null;
+  // The generic outlook is a fallback for records that predate the captured warranty channel.
+  // Never show both versions of the same estimate on one vehicle.
+  const showWarranty = !warrantyCheck && Boolean(autoCheck || sticker || factoryEquipment) && (warranty.termsKnown || Boolean(warranty.inService.date));
+  if (!autoCheck && !sticker && !factoryEquipment && !fordOasis && !warrantyCheck && !showWarranty) return null;
   const autoCheckUrl = officialVehicleDocumentUrl(autoCheck?.url, "autocheck", vehicle.publicListing.listingUrl);
   const stickerUrl = officialVehicleDocumentUrl(sticker?.url, "window-sticker", vehicle.publicListing.listingUrl);
   const factoryEquipmentUrl = vautoFactoryEquipmentUrl(factoryEquipment?.url);
+  const oasisUrl = /^(ford|lincoln)$/i.test(vehicle.make.trim()) ? fordOasisUrl(vehicle.vin) : null;
+  const openRecallCount = fordOasis?.openFieldServiceActions.length ?? 0;
+  // OASIS dates are Ford's printed strings; they are shown exactly as captured.
+  const fordOasisFacts = fordOasis
+    ? [
+        fordOasis.warrantyStartDate ? { label: "Warranty start", value: fordOasis.warrantyStartDate } : null,
+        fordOasis.buildDate ? { label: "Build date", value: fordOasis.buildDate } : null,
+        fordOasis.releaseDate ? { label: "Release date", value: fordOasis.releaseDate } : null,
+        fordOasis.monthsInService != null
+          ? { label: "Months in service", value: countLabel(fordOasis.monthsInService, "month") }
+          : null,
+        fordOasis.saleMileage != null ? { label: "Sale mileage", value: formatMileage(fordOasis.saleMileage) } : null,
+      ].filter(Boolean) as Array<{ label: string; value: string }>
+    : [];
   const autoCheckScoreRange =
     autoCheck?.scoreRangeLow != null && autoCheck.scoreRangeHigh != null
       ? `${autoCheck.scoreRangeLow}–${autoCheck.scoreRangeHigh}`
@@ -692,7 +730,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
     <section
       className="inventory-vehicle-documents inventory-workspace-records"
       aria-label="Vehicle documents"
-      data-record-count={Number(Boolean(autoCheck)) + Number(Boolean(sticker)) + Number(Boolean(factoryEquipment)) + Number(showWarranty)}
+      data-record-count={Number(Boolean(autoCheck)) + Number(Boolean(sticker)) + Number(Boolean(factoryEquipment)) + Number(Boolean(warrantyCheck)) + Number(Boolean(fordOasis)) + Number(showWarranty)}
     >
       <header className="inventory-vehicle-documents__header">
         <span className="inventory-vehicle-documents__mark">
@@ -1034,12 +1072,236 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             </span>
           )}
         </article> : null}
+
+        {fordOasis ? <article
+          className="inventory-vehicle-document inventory-vehicle-document--oasis"
+          data-document-kind="ford-oasis"
+          data-source-state={fordOasis.dataState}
+          data-link-state={oasisUrl ? "available" : "unavailable"}
+          data-open-recall-count={openRecallCount}
+        >
+          <header className="inventory-vehicle-document__heading">
+            <FordOasisWordmark />
+            <span className="inventory-vehicle-document__title">
+              <strong>Ford OASIS vehicle report</strong>
+              <small>
+                {[fordOasis.vehicleDescription, fordOasis.versionSeries].filter(Boolean).join(" · ") ||
+                  "VIN-specific OASIS facts"}
+              </small>
+            </span>
+            <DataState state={fordOasis.dataState} />
+          </header>
+
+          <div
+            className={`inventory-vehicle-document__recalls inventory-vehicle-document__recalls--${openRecallCount ? "open" : "clear"}`}
+            role="status"
+            aria-label="Open recalls and field service actions"
+            data-open-recall-count={openRecallCount}
+          >
+            {openRecallCount ? (
+              <AlertTriangle size={18} strokeWidth={1.9} aria-hidden="true" />
+            ) : (
+              <CheckCircle2 size={18} strokeWidth={1.9} aria-hidden="true" />
+            )}
+            <span>
+              <strong>
+                {openRecallCount
+                  ? countLabel(openRecallCount, "open recall / field service action", "open recalls / field service actions")
+                  : "No open recalls or field service actions listed"}
+              </strong>
+              <small>
+                {fordOasis.capturedAt
+                  ? `As listed by Ford OASIS ${formatDateTime(fordOasis.capturedAt)}.`
+                  : "As listed by Ford OASIS."}
+                {" "}Confirm in OASIS before scheduling or promising repairs.
+              </small>
+            </span>
+          </div>
+
+          {openRecallCount ? (
+            <ul className="inventory-vehicle-document__recall-list" aria-label="Open field service action details">
+              {fordOasis.openFieldServiceActions.map((action) => (
+                <li key={action.code}>
+                  <b>{action.code}</b>
+                  <span>{action.description || "Description not captured"}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {fordOasisFacts.length ? (
+            <dl className="inventory-vehicle-document__facts">
+              {fordOasisFacts.map((fact) => (
+                <Fact label={fact.label} key={fact.label}>{fact.value}</Fact>
+              ))}
+            </dl>
+          ) : null}
+
+          {fordOasis.warrantyCoverages.length ? (
+            <details className="inventory-vehicle-document__disclosure inventory-vehicle-document__vauto-packages inventory-vehicle-document__oasis-coverages">
+              <summary>
+                <span>Warranty coverages</span>
+                <small>{countLabel(fordOasis.warrantyCoverages.length, "coverage type")}</small>
+                <ChevronDown size={17} strokeWidth={1.8} aria-hidden="true" />
+              </summary>
+              <ul aria-label="Ford warranty coverages">
+                {fordOasis.warrantyCoverages.map((coverage, index) => (
+                  <li key={`${coverage.type}-${index}`}>
+                    <span>
+                      <strong>{coverage.type}</strong>
+                    </span>
+                    {coverage.description ? <small>{coverage.description}</small> : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+
+          {fordOasis.extendedCoverageExpirations.length ? (
+            <details className="inventory-vehicle-document__disclosure inventory-vehicle-document__vauto-packages inventory-vehicle-document__oasis-coverages">
+              <summary>
+                <span>Extended service plan expirations</span>
+                <small>{countLabel(fordOasis.extendedCoverageExpirations.length, "expiration date")}</small>
+                <ChevronDown size={17} strokeWidth={1.8} aria-hidden="true" />
+              </summary>
+              <ul aria-label="Extended service plan expirations">
+                {fordOasis.extendedCoverageExpirations.map((expiration, index) => (
+                  <li key={`${expiration}-${index}`}>
+                    <span>
+                      <strong>{expiration}</strong>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+
+          {!fordOasisFacts.length && !openRecallCount && !fordOasis.warrantyCoverages.length && !fordOasis.extendedCoverageExpirations.length ? (
+            <p className="inventory-vehicle-document__empty">OASIS was captured for this VIN, but no warranty or build facts were safely captured. Open OASIS for the current report.</p>
+          ) : null}
+
+          {oasisUrl ? (
+            <a
+              className="inventory-button inventory-button--primary inventory-vehicle-document__link"
+              href={oasisUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              referrerPolicy="no-referrer"
+              aria-label={`Open Ford OASIS report for ${vehicleDisplayName(vehicle)} in a new tab`}
+              aria-describedby={readOnlyNoteId}
+              data-read-only="true"
+            >
+              <BadgeCheck size={18} strokeWidth={1.85} aria-hidden="true" />
+              Open OASIS
+              <ExternalLink size={16} strokeWidth={1.85} aria-hidden="true" />
+            </a>
+          ) : (
+            <span className="inventory-vehicle-document__unavailable" role="status" aria-label="Ford OASIS link unavailable">
+              <XCircle size={17} strokeWidth={1.8} aria-hidden="true" />
+              OASIS link unavailable
+            </span>
+          )}
+        </article> : null}
+
+        {warrantyCheck && warrantyPrimary ? <article
+          className="inventory-vehicle-document inventory-vehicle-document--warranty"
+          data-document-kind="warranty-check"
+          data-source-state={warrantyCheck.dataState}
+          data-warranty-source={warrantyPrimaryIsOasis ? "ford-oasis" : "autocheck"}
+        >
+          <header className="inventory-vehicle-document__heading">
+            <span className="inventory-vehicle-document__title">
+              <strong>Remaining factory warranty</strong>
+              <small>
+                {warrantyPrimaryIsOasis
+                  ? "Ford OASIS factory record"
+                  : "Experian AutoCheck estimate"}
+              </small>
+            </span>
+            <DataState state={warrantyCheck.dataState} />
+          </header>
+
+          <dl className="inventory-vehicle-document__facts">
+            {warrantyPrimaryIsOasis && warrantyCheck.fordOasis ? (
+              <Fact label="In service">{warrantyCheck.fordOasis.warrantyStartDate}</Fact>
+            ) : warrantyCheck.autoCheck?.inServiceDate ? (
+              <Fact label="In service (est.)">{warrantyCheck.autoCheck.inServiceDate}</Fact>
+            ) : null}
+            {warrantyPrimaryIsOasis && warrantyCheck.fordOasis ? (
+              <Fact label="Months in service">{countLabel(warrantyCheck.fordOasis.monthsInService, "month")}</Fact>
+            ) : warrantyCheck.autoCheck?.inServiceAgeMonths != null ? (
+              <Fact label="Months in service">{countLabel(warrantyCheck.autoCheck.inServiceAgeMonths, "month")}</Fact>
+            ) : null}
+            <Fact label="Figured at">{formatMileage(warrantyCheck.mileageEntered)}</Fact>
+          </dl>
+
+          <table className="inventory-vehicle-document__warranty-table" aria-label="Remaining factory warranty by coverage">
+            <thead>
+              <tr>
+                <th scope="col">Coverage</th>
+                <th scope="col">Term</th>
+                <th scope="col">Miles left</th>
+                <th scope="col">Time left</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {warrantyPrimary.coverages.map((coverage, index) => (
+                <tr key={`${coverage.type}-${index}`} data-status={coverage.status}>
+                  <th scope="row">
+                    {coverage.type}
+                    {coverage.note ? <small>{coverage.note}</small> : null}
+                  </th>
+                  <td>{coverage.termText}</td>
+                  <td>{coverage.remainingMilesText}</td>
+                  <td>{coverage.remainingTimeText}</td>
+                  <td>
+                    <span
+                      className={`inventory-warranty-pill inventory-warranty-pill--${coverage.status === "ACTIVE" ? "active" : coverage.status === "EXPIRED" ? "expired" : "unknown"}`}
+                    >
+                      {coverage.status === "ACTIVE" ? "Active" : coverage.status === "EXPIRED" ? "Expired" : "N/A"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {warrantySecondary ? (
+            <details className="inventory-vehicle-document__disclosure inventory-vehicle-document__vauto-packages">
+              <summary>
+                <span>AutoCheck estimate</span>
+                <small>{countLabel(warrantySecondary.coverages.length, "coverage type")}</small>
+                <ChevronDown size={17} strokeWidth={1.8} aria-hidden="true" />
+              </summary>
+              <ul aria-label="AutoCheck warranty estimate">
+                {warrantySecondary.coverages.map((coverage, index) => (
+                  <li key={`${coverage.type}-${index}`}>
+                    <span>
+                      <strong>{coverage.type}</strong>
+                    </span>
+                    <small>
+                      {coverage.termText} — {coverage.remainingMilesText} / {coverage.remainingTimeText}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+
+          <p className="inventory-vehicle-document__empty">
+            {warrantyPrimaryIsOasis
+              ? "Ford and Lincoln factory coverage follows the vehicle to the next owner at no cost. Remaining figures are calculated from Ford's printed term against this vehicle's listed odometer."
+              : "Experian estimate calculated from the best available in-service date against this vehicle's listed odometer."}
+            {" "}Verify with the store before quoting coverage to a customer.
+          </p>
+        </article> : null}
       </div>
 
       <div className="inventory-vehicle-documents__disclaimer" id={readOnlyNoteId}>
         <AlertTriangle size={17} strokeWidth={1.8} aria-hidden="true" />
         <span>
-          <strong>Documents are reference sources—not availability signals.</strong> These links are read-only. AutoCheck history, original sticker data, and vAuto informational equipment data do not confirm current condition, a hold, custody, sale, delivery, price, retail readiness, or physical availability. Confirm live status and installed equipment with the store.
+          <strong>Documents are reference sources—not availability signals.</strong> These links are read-only. AutoCheck history, original sticker data, vAuto informational equipment data, and Ford OASIS recall and warranty facts do not confirm current condition, a hold, custody, sale, delivery, price, retail readiness, or physical availability. Confirm live status, open recalls, and installed equipment with the store.
         </span>
       </div>
     </section>
@@ -2656,6 +2918,7 @@ export function VehicleWorkspace({
   const supportsFordDealerTools = /^(ford|lincoln)$/i.test(vehicle.make.trim());
   const invoiceUrl = supportsFordDealerTools ? fordInvoiceUrl(vehicle.vin) : null;
   const oasisUrl = supportsFordDealerTools ? fordOasisUrl(vehicle.vin) : null;
+  const openRecallCount = vehicle.fordOasis?.openFieldServiceActions.length ?? 0;
   const currentLocation = resolveCurrentLocation(vehicle);
   const canViewHoldEvidence = vehicle.dealerMail.canViewEvidence === true;
   const canManageDealerMail = vehicle.dealerMail.canManageHold === true;
@@ -2887,6 +3150,12 @@ export function VehicleWorkspace({
                   <div className="vdp-flow-meta">
                     {vehicle.inventoryDate ? <span>Inventory date {formatDate(vehicle.inventoryDate)}</span> : null}
                     {vehicle.certified ? <span className="vdp-flow-certified"><BadgeCheck size={15} aria-hidden="true" /> Certified</span> : null}
+                    {openRecallCount ? (
+                      <button type="button" className="vdp-flow-recall-flag" onClick={() => openAndFocusSection("data")} data-action="open-recalls"
+                        aria-label={`${countLabel(openRecallCount, "open Ford recall or field service action", "open Ford recalls or field service actions")}; review vehicle records`}>
+                        <AlertTriangle size={15} aria-hidden="true" /> {countLabel(openRecallCount, "open recall")} <ChevronRight size={14} aria-hidden="true" />
+                      </button>
+                    ) : null}
                   </div>
                   <section className="inventory-workspace-primary-status vdp-flow-operational-strip" aria-label="Vehicle operational summary">
                     <OperationalSignal id="hold" label="Hold status" value={holdLabel} detail={holdDetail}

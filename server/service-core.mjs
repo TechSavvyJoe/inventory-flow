@@ -130,14 +130,33 @@ function buildIndexes(dataset) {
     ? managerDispositionOverlay.records
     : []
   const managerDispositionByVin = new Map(managerDispositionRecords
-    .filter((row) => row?.matchStatus === 'matched' && typeof row?.vin === 'string')
+    .filter((row) => typeof row?.vin === 'string' && VIN_PATTERN.test(row.vin))
     .map((row) => [row.vin, row]))
-  const vins = new Set([...publicByVin.keys(), ...crmByVin.keys()])
+  const managerPendingVins = new Set(managerDispositionRecords
+    .filter((row) => row?.soldManagerLog === true && row?.deliveredManagerLog === false &&
+      typeof row?.vin === 'string' && VIN_PATTERN.test(row.vin))
+    .map((row) => row.vin))
+  const managerDeliveredVins = new Set(managerDispositionRecords
+    .filter((row) => row?.deliveredManagerLog === true &&
+      typeof row?.vin === 'string' && VIN_PATTERN.test(row.vin) &&
+      row?.matchStatus !== 'matched_vin_stock_review' && row?.matchStatus !== 'stock_ambiguous')
+    .map((row) => row.vin))
+  // A highlighted sold-board row is explicit delivered evidence for active
+  // Inventory Flow membership. The original public and CRM source rows remain
+  // in the encrypted audit release; only the operational app view changes.
+  // Sold-but-unhighlighted VINs remain active even after a source removes them.
+  const vins = new Set([...publicByVin.keys(), ...crmByVin.keys(), ...managerPendingVins])
+  for (const vin of managerDeliveredVins) vins.delete(vin)
   return {
     publicByVin, crmByVin, holdByVin, resourceByVin, homeByVin,
     releasedHistoryByVin, managerDispositionOverlay, managerDispositionRecords,
-    managerDispositionByVin, vins,
+    managerDispositionByVin, managerPendingVins, managerDeliveredVins, vins,
   }
+}
+
+function managerPendingRecord(source) {
+  return source?.managerDispositionRecord?.soldManagerLog === true &&
+    source.managerDispositionRecord.deliveredManagerLog === false
 }
 
 function sourceVehicle(indexes, vin) {
@@ -558,7 +577,8 @@ function movementSummary(source, activeTransfer, transfer, publicFreshness, even
       departedAt: movementDepartureAt(activeTransfer, events),
     }
   }
-  const sourceLocation = source.publicRecord?.store || source.crmRecord?.storeName || 'Unknown'
+  const sourceLocation = source.publicRecord?.store || source.crmRecord?.storeName ||
+    (managerPendingRecord(source) ? source.managerDispositionRecord?.sourceStore : null) || 'Unknown'
   return {
     state: 'source_reported',
     label: publicFreshness === 'current' ? 'Source-reported location' : 'Last verified source location',
@@ -576,6 +596,10 @@ function vehicleName(source) {
       .map(cleanText)
       .filter(Boolean)
       .join(' ') ||
+    cleanText(source.managerDispositionRecord?.vehicleName) ||
+    (managerPendingRecord(source) && cleanText(source.managerDispositionRecord?.stockNumber)
+      ? `Vehicle ${cleanText(source.managerDispositionRecord.stockNumber)}`
+      : '') ||
     source.vin
   )
 }
@@ -637,7 +661,8 @@ function publicPhotoUrls(publicRecord) {
 function vehicleView(source, transferRows, context, meta, { includePrivate = false, includePublicScan = false } = {}) {
   const publicRecord = source.publicRecord
   const crmRecord = source.crmRecord
-  const publicStore = publicRecord?.store || crmRecord?.storeName
+  const publicStore = publicRecord?.store || crmRecord?.storeName ||
+    (managerPendingRecord(source) ? source.managerDispositionRecord?.sourceStore : null)
   if (!STORE_NAMES.includes(publicStore)) return null
   const visibleTransferRows = transferRows.filter((row) => transferVisible(row, context))
   const latest = visibleTransferRows[0] ?? null
@@ -682,7 +707,8 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
   const reportDate = meta.reportDate
   const name = vehicleName(source)
   const year = publicRecord?.year ?? finiteNumber(crmRecord?.yearRaw) ?? cleanText(crmRecord?.yearRaw)
-  const stockNumber = cleanText(publicRecord?.stock_number) || cleanText(crmRecord?.stockNumber) || ''
+  const stockNumber = cleanText(publicRecord?.stock_number) || cleanText(crmRecord?.stockNumber) ||
+    cleanText(source.managerDispositionRecord?.stockNumber) || ''
   const hold = holdSummary(source, context, meta.dealerMailFreshness, { includePrivate })
   hold.canViewEvidence = context.canViewPrivateEvidence
   hold.canManage = context.canViewPrivateEvidence
@@ -709,6 +735,22 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
         ...source.resourceRecord.factoryEquipment,
         dataState: independentResourceState(source.resourceRecord.factoryEquipment),
         isOriginalWindowSticker: false,
+      }
+    : undefined
+  // Ford OASIS facts are read-only reference evidence from the resources
+  // channel. Open field service actions never imply availability or condition.
+  const fordOasis = source.resourceRecord?.fordOasis
+    ? {
+        ...source.resourceRecord.fordOasis,
+        dataState: independentResourceState(source.resourceRecord.fordOasis),
+      }
+    : undefined
+  // Warranty coverage check is read-only reference evidence from the same
+  // channel. Remaining coverage never implies condition or availability.
+  const warrantyCheck = source.resourceRecord?.warrantyCheck
+    ? {
+        ...source.resourceRecord.warrantyCheck,
+        dataState: independentResourceState(source.resourceRecord.warrantyCheck),
       }
     : undefined
   const view = {
@@ -767,11 +809,14 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     hold,
     movement,
     changeSummary: cleanText(publicRecord?.change_summary),
-    dataStatus: cleanText(publicRecord?.data_status) || (crmRecord ? 'CRM only — no current public listing' : 'Unknown'),
+    dataStatus: cleanText(publicRecord?.data_status) || (crmRecord ? 'CRM only — no current public listing' :
+      managerPendingRecord(source) ? 'Manager sold board — delivery pending; not in current public or CRM inventory' : 'Unknown'),
     ...(includePublicScan && publicRecord ? { publicScan: publicScanAudit(publicRecord) } : {}),
     ...(autoCheckReport ? { autoCheckReport } : {}),
     ...(windowSticker ? { windowSticker } : {}),
     ...(factoryEquipment ? { factoryEquipment } : {}),
+    ...(fordOasis ? { fordOasis } : {}),
+    ...(warrantyCheck ? { warrantyCheck } : {}),
   }
   const safeSearchParts = [
     source.vin,
@@ -874,6 +919,39 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ]),
     factoryEquipment?.disclaimer,
     factoryEquipment ? 'vAuto CAI informational equipment label not original Monroney window sticker' : null,
+    fordOasis?.dataState,
+    fordOasis?.sourceLabel,
+    fordOasis?.vehicleDescription,
+    fordOasis?.versionSeries,
+    fordOasis?.buildDate,
+    fordOasis?.warrantyStartDate,
+    fordOasis?.releaseDate,
+    fordOasis?.monthsInService,
+    fordOasis?.saleMileage,
+    ...(fordOasis?.openFieldServiceActions ?? []).flatMap((action) => [action.code, action.description]),
+    ...(fordOasis?.warrantyCoverages ?? []).flatMap((coverage) => [coverage.type, coverage.description]),
+    ...(fordOasis?.extendedCoverageExpirations ?? []),
+    fordOasis ? 'Ford OASIS' : null,
+    fordOasis?.openFieldServiceActions?.length ? 'open recall field service action' : null,
+    warrantyCheck?.dataState,
+    warrantyCheck?.sourceLabel,
+    warrantyCheck?.mileageEntered,
+    warrantyCheck?.mileageSource,
+    warrantyCheck?.autoCheck?.inServiceDate,
+    warrantyCheck?.autoCheck?.inServiceAgeMonths,
+    warrantyCheck?.fordOasis?.warrantyStartDate,
+    warrantyCheck?.fordOasis?.monthsInService,
+    ...[...(warrantyCheck?.autoCheck?.coverages ?? []), ...(warrantyCheck?.fordOasis?.coverages ?? [])].flatMap(
+      (coverage) => [
+        coverage.type,
+        coverage.termText,
+        coverage.remainingMilesText,
+        coverage.remainingTimeText,
+        coverage.status,
+        coverage.note,
+      ],
+    ),
+    warrantyCheck ? 'warranty check coverage' : null,
   ]
   if (context.canViewPrivateEvidence) safeSearchParts.push(privateSearchText(source))
   if (context.canViewPrivateEvidence && includePrivate) {
@@ -893,6 +971,8 @@ function mergedResourceCoverage(sources, enrichmentRows = 0) {
     autoCheck: 0,
     windowStickers: 0,
     factoryEquipment: 0,
+    fordOasis: 0,
+    warrantyCheck: 0,
     enrichmentRows,
   }
   for (const source of sources) {
@@ -901,12 +981,18 @@ function mergedResourceCoverage(sources, enrichmentRows = 0) {
     const hasAutoCheck = Boolean(source.resourceRecord?.autoCheckReport || source.publicRecord?.autoCheckReport)
     const hasWindowSticker = Boolean(source.publicRecord?.windowSticker)
     const hasFactoryEquipment = Boolean(source.resourceRecord?.factoryEquipment)
-    if (hasPhotos || hasAutoCheck || hasWindowSticker || hasFactoryEquipment) coverage.vehicles += 1
+    const hasFordOasis = Boolean(source.resourceRecord?.fordOasis)
+    const hasWarrantyCheck = Boolean(source.resourceRecord?.warrantyCheck)
+    if (hasPhotos || hasAutoCheck || hasWindowSticker || hasFactoryEquipment || hasFordOasis || hasWarrantyCheck) {
+      coverage.vehicles += 1
+    }
     if (hasPhotos) coverage.photos += 1
     coverage.photoUrls += imageUrls.length
     if (hasAutoCheck) coverage.autoCheck += 1
     if (hasWindowSticker) coverage.windowStickers += 1
     if (hasFactoryEquipment) coverage.factoryEquipment += 1
+    if (hasFordOasis) coverage.fordOasis += 1
+    if (hasWarrantyCheck) coverage.warrantyCheck += 1
   }
   return coverage
 }
@@ -1136,7 +1222,7 @@ function mergeAttentionWorkflow(database, items, context) {
   })
 }
 
-function attentionItems(meta, vehicles, stores, transferRows, database, context, conditionDay) {
+function attentionItems(meta, vehicles, stores, transferRows, database, context, conditionDay, managerDispositionRecords = []) {
   const items = []
   if (meta.publicFreshness !== 'current' || meta.dealerMailFreshness !== 'current') {
     items.push({
@@ -1272,6 +1358,34 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
       sourceId: row.id,
     })
   }
+  for (const record of managerDispositionRecords.filter((row) =>
+    row?.soldManagerLog === true && row?.deliveredManagerLog === false &&
+    (!row?.vin || ['matched_vin_stock_review', 'stock_ambiguous'].includes(row?.matchStatus)))) {
+    items.push({
+      id: versionedAttentionId(`manager-pending-identity-${record.sourceStore}-${record.stockNumber}`, [
+        conditionDay,
+        meta.reportDate,
+        record.sourcePeriod,
+        record.stockNumber,
+        record.matchStatus,
+      ]),
+      severity: 'warning',
+      priority: 'high',
+      type: 'manager_pending_identity_review',
+      label: `${record.stockNumber} is sold / delivery pending and needs an exact VIN match`,
+      vehicleName: record.vehicleName || `Vehicle ${record.stockNumber}`,
+      stockNumber: record.stockNumber,
+      vin: record.vin || undefined,
+      store: record.sourceStore,
+      relatedStores: [record.sourceStore],
+      owner: `${record.sourceStore} manager`,
+      sourceLabel: 'Manager-supplied sold board',
+      whyItMatters: 'The row is not highlighted, so it must stay operationally active, but it cannot be placed in the VIN-based inventory table until its identity is confirmed.',
+      recommendedAction: 'Confirm the exact stock number and VIN; do not treat this unit as delivered or available.',
+      href: '/attention',
+      sourceId: `${record.sourceStore}:${record.stockNumber}`,
+    })
+  }
   return mergeAttentionWorkflow(database, items, context)
 }
 
@@ -1353,13 +1467,13 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
 
   function attentionFromSnapshot(state) {
     const vehicles = state.sources
-      .filter((source) => source.publicRecord)
+      .filter((source) => source.publicRecord || managerPendingRecord(source))
       .map((source) => vehicleFromSnapshot(state, source))
       .filter(Boolean)
     sortVehicles(vehicles)
     const visibleTransferRows = state.allTransferRows.filter((row) => transferVisible(row, state.context))
     const stores = storeSummaries(vehicles, state.dataset.holdRows, visibleTransferRows, state.currentNow)
-    const crmOnlyVehicles = state.sources.filter((source) => !source.publicRecord)
+    const crmOnlyVehicles = state.sources.filter((source) => !source.publicRecord && !managerPendingRecord(source))
       .map((source) => vehicleFromSnapshot(state, source)).filter(Boolean)
     return attentionItems(
       state.meta,
@@ -1369,6 +1483,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       database,
       state.context,
       dateInTimeZone(state.currentNow, state.meta.timezone),
+      state.indexes.managerDispositionRecords,
     )
   }
 
@@ -1445,7 +1560,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         })
       }
       const vehicles = state.sources
-        .filter((source) => source.publicRecord)
+        .filter((source) => source.publicRecord || managerPendingRecord(source))
         .map((source) => vehicleFromSnapshot(state, source))
         .filter(Boolean)
       sortVehicles(vehicles)
@@ -1462,7 +1577,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         )
       })
       const stores = storeSummaries(vehicles, state.dataset.holdRows, visibleTransferRows, state.currentNow)
-      const crmOnlyVehicles = state.sources.filter((source) => !source.publicRecord)
+      const crmOnlyVehicles = state.sources.filter((source) => !source.publicRecord && !managerPendingRecord(source))
         .map((source) => vehicleFromSnapshot(state, source)).filter(Boolean)
       return {
         access: {
@@ -1489,6 +1604,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
           database,
           state.context,
           dateInTimeZone(state.currentNow, state.meta.timezone),
+          state.indexes.managerDispositionRecords,
         ),
         publicChanges: state.publicChanges,
       }
@@ -1575,7 +1691,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const state = snapshot(contextInput)
       const includeCrmOnly = query.includeCrmOnly === true || String(query.includeCrmOnly).toLowerCase() === 'true'
       let vehicles = state.sources
-        .filter((source) => source.publicRecord || includeCrmOnly)
+        .filter((source) => source.publicRecord || managerPendingRecord(source) || includeCrmOnly)
         .map((source) => ({
           vehicle: vehicleFromSnapshot(state, source),
           privateIndex: state.context.canViewPrivateEvidence ? privateSearchText(source) : '',
