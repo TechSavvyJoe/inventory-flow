@@ -1,0 +1,252 @@
+// capture-oasis.mjs - deterministic Ford OASIS capture for every Ford/Lincoln unit on the feed.
+//
+// Was hand-run through javascript_tool every morning, like the DealerMail capture was, which is
+// why 09/13 and 09/14/2026 have no OASIS file at all. Everything happens inside the automation
+// browser's already-authenticated FMCDealer tab over CDP (127.0.0.1:9222). Every request is a
+// GET; no credential is read, stored or sent.
+//
+//   node scripts/capture-oasis.mjs run 2026-09-14 [--max N] [--budget-ms N] [--refresh]
+//
+// Writes work/oasis-history/{date}-oasis.json (schema bob-maxey-oasis-capture-v1) and the
+// worklist work/oasis-vin-worklist-{date}.json that add_oasis_sheet.py reads.
+//
+// PRIVACY - REQUIRED: OASIS extended-coverage blocks carry the PRIOR OWNER'S NAME. This captures
+// coverage CATEGORY and EXPIRATION DATE only. No owner name is ever parsed, stored or emitted.
+//
+// SESSION: an expired FMCDealer session redirects to login.microsoftonline.com. That cross-origin
+// hop fails CORS, so the in-tab fetch throws (status 0) rather than returning a login page - the
+// same trap that made capture-warranty report a dead session as 'not_needed'. Every failure path
+// here sets a real state.
+//
+// CDP_TIMEOUT: a wedged renderer on an existing tab makes Page.enable hang forever. Observed
+// 09/14/2026 (it also killed that morning's vAuto step). closeOriginTabs() drops the origin's
+// tabs so getOriginTab opens a clean one, and the run retries once.
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { getOriginTab, fetchInTab, sleep, stripTags, targets, PORT } from './lib/cdp.mjs'
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+const ORIGIN = 'https://www.fordtechservice.dealerconnection.com'
+const OASIS_URL = vin => `${ORIGIN}/oasis/Index?vin=${vin}`
+const FORD_MAKES = new Set(['FORD', 'LINC', 'LINCOLN'])
+
+const [, , cmd, reportDate, ...rest] = process.argv
+if (cmd !== 'run' || !/^\d{4}-\d{2}-\d{2}$/.test(reportDate || '')) {
+  console.error('usage: capture-oasis.mjs run <YYYY-MM-DD> [--max N] [--budget-ms N] [--refresh]')
+  process.exit(2)
+}
+const num = (flag, dflt) => { const i = rest.indexOf(flag); return i >= 0 ? Number(rest[i + 1]) : dflt }
+const max = num('--max', Infinity)
+const budgetMs = num('--budget-ms', 1800000)
+const refresh = rest.includes('--refresh')
+
+// ---------------------------------------------------------------- worklist
+const snapPath = path.join(ROOT, 'work', 'inventory-history', 'snapshots', `${reportDate}-public.json`)
+if (!existsSync(snapPath)) { console.log(JSON.stringify({ error: `snapshot not found: ${snapPath}` })); process.exit(1) }
+const snapRaw = JSON.parse(readFileSync(snapPath, 'utf8')).vehicles || {}
+const vehicles = Array.isArray(snapRaw)
+  ? Object.fromEntries(snapRaw.filter(v => v && v.vin).map(v => [String(v.vin).toUpperCase(), v]))
+  : snapRaw
+
+const worklist = Object.entries(vehicles)
+  .filter(([, v]) => FORD_MAKES.has(String(v.make || '').toUpperCase()))
+  .map(([vin, v]) => ({ vin, stock: v.stock || v.stockNumber || '', store: v.storeCode || v.store || '',
+                        year: String(v.year || ''), make: String(v.make || '').toUpperCase(), model: String(v.model || '') }))
+  .sort((a, b) => a.vin.localeCompare(b.vin))
+
+mkdirSync(path.join(ROOT, 'work', 'oasis-history'), { recursive: true })
+writeFileSync(path.join(ROOT, 'work', `oasis-vin-worklist-${reportDate}.json`), JSON.stringify(worklist, null, 1))
+
+const outPath = path.join(ROOT, 'work', 'oasis-history', `${reportDate}-oasis.json`)
+let out = { schema: 'bob-maxey-oasis-capture-v1', reportDate, capturedAtUtc: new Date().toISOString(),
+            source: 'FMCDealer OASIS vehicle report, read-only capture from the authenticated automation browser tab',
+            privacyNote: 'Extended coverage is captured as category and expiration date only. No prior-owner name is ever parsed or stored.',
+            vehicleCount: 0, records: [] }
+if (!refresh && existsSync(outPath)) {
+  try { const prev = JSON.parse(readFileSync(outPath, 'utf8')); if (Array.isArray(prev.records)) out.records = prev.records } catch {}
+}
+const done = new Set(out.records.map(r => r.vin))
+const queue = worklist.map(w => w.vin).filter(v => !done.has(v)).slice(0, max)
+
+// ---------------------------------------------------------------- parsing
+function parseOasisFull(html) {
+  const text = stripTags(html)
+  if (!/OASIS RESULT/i.test(text)) return null
+  // Once tags are stripped, a value runs straight into the next label
+  // ("...SERIES 10 PAINT COLOR: ..."). A lookahead for "next ALL-CAPS run + colon"
+  // does NOT work: the caps class has to allow spaces, so it bridges across the
+  // value and matches a colon much further on, truncating "2022 F-SUPER DUTY" to
+  // "2022". Instead scan for the known labels, then take each value as the text
+  // between its own colon and the start of the next label. Deterministic, and it
+  // also avoids the "AXLE CODE:8L" artifact seen in earlier hand-run captures.
+  const LABELS = [
+    'VEHICLE DESCRIPTION', 'VERSION/SERIES', 'PAINT COLOR', 'PAINT CODE', 'BODY STYLE',
+    'DRIVE TYPE', 'ENGINE CALIBRATION', 'ENGINE', 'AXLE RATIO', 'AXLE CODE',
+    'GROSS VEHICLE WEIGHT', 'RADIO', 'TRANSMISSION', 'WHEEL SIZE', 'SYNC VERSION',
+    'FUEL TYPE', 'TIRE', 'VHR ACTIVATED', 'MODEM', 'MONTHS IN SERVICE',
+    'WARRANTY START DATE', 'BUILD DATE', 'RELEASE DATE', 'SALE MILEAGE',
+    'WARRANTY COVERAGE', 'COVERAGE TYPE', 'COVERAGE DESCRIPTION', 'ADDITIONAL INFO',
+    'EXTENDED COVERAGES', 'MARKETING MESSAGES', 'OUTSTANDING FIELD SERVICE ACTIONS',
+    'GENERAL WARRANTY INFORMATION', 'WARRANTY REPAIR HISTORY', 'VEHICLE STATUS',
+    'ODOMETER', 'FUEL LEVEL', 'OASIS RESULT', 'OASIS RESULTS', 'VIN',
+  ]
+  const esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // longest first so ENGINE CALIBRATION wins over ENGINE
+  const alt = [...LABELS].sort((a, b) => b.length - a.length).map(esc).join('|')
+  const scanner = new RegExp('\\b(' + alt + ')\\s*:', 'gi')
+  const marks = []
+  let sm
+  while ((sm = scanner.exec(text))) marks.push({ label: sm[1].toUpperCase(), start: sm.index, end: sm.index + sm[0].length })
+
+  const field = label => {
+    const want = label.toUpperCase()
+    const i = marks.findIndex(m => m.label === want)
+    if (i < 0) return ''
+    const from = marks[i].end
+    const to = i + 1 < marks.length ? marks[i + 1].start : text.length
+    let v = text.slice(from, to).replace(/\s+/g, ' ').trim()
+    if (/^[A-Z][A-Z ]*:?$/.test(v) && v.length < 4) v = ''
+    return v.slice(0, 160)
+  }
+  const dated = label => {
+    const v = field(label)
+    const m = v.match(/([0-9]{1,2}-[A-Za-z]+-[0-9]{4})/)
+    return m ? m[1] : ''
+  }
+
+  const coverages = []
+  const seen = new Set()
+  const block = text.slice(Math.max(0, text.search(/WARRANTY COVERAGE/i)))
+  const re = /COVERAGE TYPE:\s*([^:]*?)\s*COVERAGE DESCRIPTION:\s*([\s\S]*?)(?=\s*ADDITIONAL INFO:|\s*COVERAGE TYPE:|\s*MARKETING MESSAGES|\s*EXTENDED COVERAGES|$)/gi
+  let m
+  while ((m = re.exec(block)) && coverages.length < 20) {
+    const type = m[1].trim().slice(0, 120)
+    if (!type) continue
+    const key = type.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    coverages.push({ type, description: m[2].trim().slice(0, 300) })
+  }
+
+  // EXTENDED COVERAGES: categories + expiration dates ONLY. Never an owner name.
+  const categories = [], expirations = []
+  const ext = /EXTENDED COVERAGES([\s\S]{0,1500}?)(?:WARRANTY REPAIR HISTORY|End of OASIS report|$)/i.exec(text)
+  if (ext && !/NO ESP INFORMATION AVAILABLE/i.test(ext[1])) {
+    for (const d of (ext[1].match(/\d{1,2}-[A-Za-z]{3,}-\d{4}/g) || []).slice(0, 10)) expirations.push(d)
+    for (const c of (ext[1].match(/\b(?:ESP|EXTRA CARE|PREMIUM CARE|BASE CARE|POWERTRAIN CARE|MAINTENANCE)\b[A-Z ]{0,30}/gi) || []).slice(0, 10)) {
+      const v = c.trim().slice(0, 120)
+      if (v && !categories.includes(v)) categories.push(v)
+    }
+  }
+
+  const actions = []
+  const fsaBlock = /OUTSTANDING FIELD SERVICE ACTIONS([\s\S]{0,2500}?)(?:NO WARNING MESSAGES|GENERAL WARRANTY INFORMATION|WARRANTY COVERAGE|$)/i.exec(text)
+  if (fsaBlock && !/NO CAMPAIGN MESSAGE\(S\) FOUND/i.test(fsaBlock[1])) {
+    const fre = /\b(\d{2}[A-Z]\d{2,3})\b\s*([^]{0,200}?)(?=\b\d{2}[A-Z]\d{2,3}\b|$)/g
+    let f
+    while ((f = fre.exec(fsaBlock[1])) && actions.length < 60) {
+      const code = f[1]
+      if (actions.some(a => a.code === code)) continue
+      actions.push({ code, description: (f[2] || '').replace(/\s+/g, ' ').trim().slice(0, 300) })
+    }
+  }
+
+  const monthsRaw = (text.match(/MONTHS IN SERVICE:\s*(\d+)/i) || [])[1]
+  const saleRaw = (text.match(/SALE MILEAGE:\s*([\d,]+)/i) || [])[1]
+
+  return {
+    vehicleDescription: field('VEHICLE DESCRIPTION'),
+    versionSeries: field('VERSION/SERIES'),
+    bodyStyle: field('BODY STYLE'),
+    driveType: field('DRIVE TYPE'),
+    paintColor: field('PAINT COLOR'),
+    paintCode: field('PAINT CODE'),
+    engine: field('ENGINE'),
+    engineCalibration: field('ENGINE CALIBRATION'),
+    transmission: field('TRANSMISSION'),
+    axleRatio: field('AXLE RATIO'),
+    axleCode: field('AXLE CODE'),
+    grossVehicleWeight: field('GROSS VEHICLE WEIGHT'),
+    wheelSize: field('WHEEL SIZE'),
+    tire: field('TIRE'),
+    syncVersion: field('SYNC VERSION'),
+    fuelType: field('FUEL TYPE'),
+    monthsInService: monthsRaw || '',
+    warrantyStartDate: dated('WARRANTY START DATE'),
+    buildDate: dated('BUILD DATE'),
+    releaseDate: dated('RELEASE DATE'),
+    saleMileage: saleRaw ? saleRaw.replace(/,/g, '') : '',
+    openFieldServiceActions: actions,
+    openFieldServiceActionCount: actions.length,
+    warrantyCoverages: coverages,
+    extendedCoverageCategories: categories,
+    extendedCoverageExpirations: expirations,
+  }
+}
+
+// ---------------------------------------------------------------- capture
+async function closeOriginTabs() {
+  for (const t of await targets()) {
+    if (t.type === 'page' && (t.url || '').startsWith(ORIGIN)) {
+      try { await fetch(`http://127.0.0.1:${PORT}/json/close/${t.id}`) } catch {}
+    }
+  }
+  await sleep(1500)
+}
+
+let state = 'not_started'
+let ctx = null
+async function attach(seedVin) {
+  const c = await getOriginTab(ORIGIN, OASIS_URL(seedVin), { settleMs: 60000 })
+  if (!c.state || c.state.host !== 'www.fordtechservice.dealerconnection.com') {
+    const host = String((c.state && c.state.host) || '')
+    state = /microsoftonline|login|signin/i.test(host) ? 'session_expired' : 'unavailable'
+    try { c.page.close() } catch {}
+    return null
+  }
+  return c
+}
+
+const t0 = Date.now()
+const save = () => { out.vehicleCount = out.records.length; writeFileSync(outPath, JSON.stringify(out, null, 1)) }
+
+if (queue.length) {
+  try { ctx = await attach(queue[0]) } catch (e) {
+    if (/CDP_TIMEOUT/.test(String(e.message))) { await closeOriginTabs(); ctx = await attach(queue[0]).catch(() => null) }
+    else throw e
+  }
+}
+if (queue.length && !ctx) {
+  console.log(JSON.stringify({ sessionStatus: state, captured: out.records.length, queued: queue.length, out: outPath }))
+  process.exit(1)
+}
+
+const tally = { OK: 0, NO_OASIS: 0, ERROR: 0 }
+let stopped = null
+for (const vin of queue) {
+  if (Date.now() - t0 > budgetMs) { stopped = 'BUDGET_EXHAUSTED'; break }
+  try {
+    const r = await fetchInTab(ctx.page, OASIS_URL(vin), { timeoutMs: 45000 })
+    if (r.status === 0 || r.error) { state = 'session_expired'; stopped = 'SESSION_EXPIRED'; break }
+    if (r.status !== 200 || !r.text) { tally.ERROR++; continue }
+    if (/type=["']?password/i.test(r.text) || /login\.microsoftonline\.com/i.test(r.text)) {
+      state = 'session_expired'; stopped = 'SESSION_EXPIRED'; break
+    }
+    const parsed = parseOasisFull(r.text)
+    if (!parsed) { tally.NO_OASIS++; continue }
+    state = 'ok'
+    out.records.push({ vin, ...parsed, capturedAt: new Date().toISOString() })
+    tally.OK++
+    if (out.records.length % 10 === 0) save()
+  } catch (e) { tally.ERROR++ }
+  await sleep(80)
+}
+
+save()
+try { ctx && ctx.page.close() } catch {}
+console.log(JSON.stringify({
+  sessionStatus: state, records: out.records.length, worklist: worklist.length,
+  tally, stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), out: outPath
+}))
+process.exit(stopped === 'SESSION_EXPIRED' ? 1 : 0)
