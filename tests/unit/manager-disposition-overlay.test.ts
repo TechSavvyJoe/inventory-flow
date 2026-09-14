@@ -142,7 +142,17 @@ describe('strict manager disposition overlay', () => {
       metadata: { classification: 'operational-redacted', cloudUploadAllowed: true, sourceCount: 1, sourceStores: ['Howell'], soldRecordCount: 3, deliveredRecordCount: 1, reviewRecordCount: 1, strippedFieldCount: 1, sanitizer: 'strict_allowlist_v1', boundSourceSha256: rawHash },
     }
     bundle.release.manifest.manager_disposition_overlay = { status: 'complete', classification: 'operational-redacted', source_type: 'manager-log', path: `local-file:${bundle.reportDate.slice(0, 7)}-howell-operational.json`, sha256: rawHash, source_store: 'Howell', source_period: bundle.reportDate.slice(0, 7), sold_records: 3, delivered_records: 1, sold_not_marked_delivered: 2, matched_current_public_vins: 2, unmatched_records: 1, conflicting_records: 0, review_records: 1, cloud_upload_allowed: true }
-    expect(validateReleaseBundle(bundle)).toMatchObject({ managerDispositionRecordCount: 3, managerSoldRecordCount: 3, managerDeliveredRecordCount: 1, managerDispositionReviewCount: 1 })
+    const validated = validateReleaseBundle(bundle)
+    expect(validated).toMatchObject({
+      managerDispositionRecordCount: 3,
+      managerSoldRecordCount: 3,
+      managerDeliveredRecordCount: 1,
+      managerDispositionReviewCount: 1,
+      managerDeliveredExclusionCount: 1,
+      managerPendingCarryoverCount: 0,
+      managerPendingIdentityReviewCount: 1,
+    })
+    expect(validated.activeInventoryCount).toBe(validated.publicRowCount - 1)
     const tampered = structuredClone(bundle); tampered.release.managerDispositionOverlay.records[0].deliveryLabel = PRIVATE
     expect(() => validateReleaseBundle(tampered)).toThrow(/sanitized labels/)
     expect(JSON.stringify(bundle.release.managerDispositionOverlay)).not.toContain(PRIVATE)

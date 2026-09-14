@@ -6,7 +6,7 @@ import { loadLatestCompletedRelease } from '../server/importer.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { accessHeaders, publicationEndpoint, cloudReleaseFrom, encryptBundle, base64Key, publishEnvelope } from './publish-cloud-release.mjs'
 
-const COUNT_FIELDS = ['publicRowCount', 'dealerMailRowCount', 'dealerMailVinReconciledCount', 'dealerMailVinReviewCount', 'heldVinCount', 'activeHoldRecordCount', 'backupCount', 'deletedHoldRecordCount', 'resourceRecordCount', 'managerDispositionRecordCount', 'managerSoldRecordCount', 'managerDeliveredRecordCount', 'managerDispositionReviewCount', 'vehicleCount']
+const COUNT_FIELDS = ['publicRowCount', 'dealerMailRowCount', 'dealerMailVinReconciledCount', 'dealerMailVinReviewCount', 'heldVinCount', 'activeHoldRecordCount', 'backupCount', 'deletedHoldRecordCount', 'resourceRecordCount', 'managerDispositionRecordCount', 'managerSoldRecordCount', 'managerDeliveredRecordCount', 'managerDispositionReviewCount', 'activeInventoryCount', 'managerDeliveredExclusionCount', 'managerPendingCarryoverCount', 'managerPendingIdentityReviewCount', 'vehicleCount']
 const STORES = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
 export function reportDate(now = new Date()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now).map(part => [part.type, part.value]))
@@ -23,7 +23,7 @@ export function verifyPublishedRelease({ envelope, expected, status, readiness }
   for (const field of ['publicStoreCounts', 'crmStoreCounts']) {
     for (const store of STORES) check((status.metadata?.[field]?.[store] ?? 0) === (expected[field]?.[store] ?? 0), 'CLOUD_STORE_COUNT_MISMATCH')
   }
-  check(readiness.counts?.inventory === expected.publicRowCount && readiness.counts?.managerDispositions === expected.managerDispositionRecordCount && readiness.bootstrapBytes > 0, 'APP_READ_MODEL_MISMATCH')
+  check(readiness.counts?.inventory === expected.activeInventoryCount && readiness.counts?.managerDispositions === expected.managerDispositionRecordCount && readiness.bootstrapBytes > 0, 'APP_READ_MODEL_MISMATCH')
   return { ...Object.fromEntries(COUNT_FIELDS.map(field => [field, expected[field]])), publicStoreCounts: expected.publicStoreCounts, crmStoreCounts: expected.crmStoreCounts }
 }
 

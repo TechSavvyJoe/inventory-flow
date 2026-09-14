@@ -203,8 +203,14 @@ Two things happen alongside the prompt rather than inside it:
   binds `manifest.manager_disposition_overlay` (path + sha256 + counts). It
   runs the pipeline's own sanitizer and manifest-bound loader via
   `ingest_sold_delivered_helper.mjs`, never publishes, and backs the manifest
-  up first. 09/12/2026: Howell, 2026-09, 11 sold / 9 delivered, 1 matched a
-  current public VIN, 10 for review.
+  up first. Pink/highlighted rows are explicit manager evidence that delivery
+  is complete; unhighlighted rows remain sold / delivery pending even when a
+  handwritten date is present. The app's active view removes a delivered VIN
+  without deleting its public/CRM audit evidence and carries a pending VIN
+  forward if it has dropped from the source feeds. A pending row without a
+  verified VIN becomes a high-priority identity-review alert and is never
+  silently removed or called delivered. Re-run the protected daily publisher
+  after ingest so the redacted overlay and active membership reach the app/API.
 - **Baseline pointer advance.** See the next section. Run it after
   `published_and_verified`; it is not yet in the prompt as of 09/12/2026 -
   add it as STEP 6.5.
