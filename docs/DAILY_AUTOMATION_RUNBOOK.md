@@ -361,10 +361,26 @@ is ACTIVE / EXPIRED / N/A using AutoCheck's own expiry rules for both sources.
 Output `work\warranty-history\{date}-warranty.json` ->
 `build_vin_document_enrichment.py` attaches it as the `warrantyCheck` resource ->
 "Remaining factory warranty" card in the vehicle workspace, and the **Warranty** sheet
-in the workbook (`python work\add_warranty_sheet.py --report-date {date}`, run before
-the workbook is hashed). Non-fatal everywhere: warranty figures never block a publish.
-`oasisSession: session_expired` means the FMCDealer login lapsed - Ford/Lincoln units
-silently fall back to the AutoCheck estimate until Joe signs in again.
+in the workbook. The sheet no longer depends on a run remembering to call
+`add_warranty_sheet.py`: `work\tidy_workbook.py` (STEP 4, unconditional) calls
+`ensure_optional_sheets()`, which builds any of Ford OASIS / Ford Invoice / Warranty whose
+capture exists but whose tab is missing. `final_check.py` and `final_check12.py` accept all
+three as optional trailing sheets. Non-fatal everywhere: warranty figures never block a
+publish.
+
+**The session state is load-bearing - read it (fixed 09/14/2026).** FMCDealer bounces an
+expired session to `login.microsoftonline.com`. That cross-origin SSO hop fails CORS, so the
+in-tab `fetch` throws (`status: 0`, "Failed to fetch") and no body ever comes back to sniff
+for a password field. Until 09/14 that path returned without setting a state, so an expired
+session reported as `oasisSession: not_needed` - indistinguishable from "no Ford unit needed
+OASIS" - and every Ford/Lincoln unit silently fell through to the AutoCheck estimate. That is
+how 09/14 produced 178 Ford/Lincoln units on AutoCheck terms behind a clean-looking status
+line. Every failure path now sets a real state (`session_expired`, `http_{n}`,
+`no_oasis_result`, `unavailable`), and a Ford/Lincoln unit carrying only AutoCheck is tagged
+`fordWarrantyUnverified` with a source label reading DO NOT QUOTE TO A CUSTOMER - AutoCheck
+prints a generic 60-month bumper-to-bumper where Ford's is 36. The final JSON line carries
+`fordWarrantyUnverified: {n}`; anything above 0 means sign in to FMCDealer in the Work PC
+Automation Browser and re-run the capture.
 
 ## Ford OASIS in the app - deploy gate
 
