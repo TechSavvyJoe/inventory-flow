@@ -382,6 +382,71 @@ prints a generic 60-month bumper-to-bumper where Ford's is 36. The final JSON li
 `fordWarrantyUnverified: {n}`; anything above 0 means sign in to FMCDealer in the Work PC
 Automation Browser and re-run the capture.
 
+## Ford OASIS capture (`capture-oasis.mjs`, new 09/14/2026)
+
+    node apps\\inventory-ops\\scripts\\capture-oasis.mjs run {date} [--max N] [--budget-ms N] [--refresh]
+
+Like DealerMail, this was hand-run through `javascript_tool` every morning, which is why
+09/13 and 09/14/2026 have no OASIS file at all. Read-only, inside the authenticated
+FMCDealer tab over CDP. Builds `work\\oasis-vin-worklist-{date}.json` and writes
+`work\\oasis-history\\{date}-oasis.json`. Resumable; `--refresh` recomputes.
+
+**PRIVACY:** extended-coverage blocks carry the PRIOR OWNER'S NAME. This captures coverage
+category and expiration date only - no owner name is ever parsed or stored.
+
+**Parsing.** Once tags are stripped, a value runs straight into the next label
+("...SERIES 10 PAINT COLOR: ..."). A lookahead for "next ALL-CAPS run + colon" does NOT
+work: the caps class must allow spaces, so it bridges across the value and matches a colon
+much further on - that truncated `2022 F-SUPER DUTY` to `2022` and `Oxford White WB C/C` to
+`Oxford`. The script scans the known label set and takes each value as the text between its
+own colon and the next label. Verified field-for-field against the 09/12 hand-run capture:
+everything matches except two fields where the OLD capture was wrong (`engineCalibration`
+was the artifact `AXLE CODE:8L`, `saleMileage` was the literal string `None`).
+
+## Ford invoice capture (`capture-invoices.mjs` + `extract_invoice_text.py`, new 09/14/2026)
+
+    node apps\\inventory-ops\\scripts\\capture-invoices.mjs run {date} [--refresh]
+    python work\\extract_invoice_text.py --report-date {date}
+    python work\\parse_ford_invoice.py --report-date {date}
+
+**The SSO handshake is the whole trick.** fordvisions sits behind Entra/MSAL. A cold in-tab
+`fetch` only returns the `msal-browser` HTML shell, and the site root answers `403 Forbidden`
+even when signed in - so every prior run recorded "fordvisions unavailable" or a pile of
+`FETCH_ERROR TypeError: Failed to fetch` (48 of them on 09/12/2026) and the day lost its
+invoice data. NAVIGATING the tab once lets the MSAL javascript run and complete the silent
+SSO against the live FMCDealer session (it lands on `/FordEntraDealer/callback.html`, then on
+the real document). After that handshake, in-tab fetches return PDF bytes.
+
+09/14/2026 result: 178 Ford/Lincoln VINs, 131 PDFs, 47 unavailable (38 "Document Type is not
+retail", 9 "VIN not found"), **zero fetch errors**, 103 seconds. `extract_invoice_text.py`
+writes the `{VIN}.txt` files `parse_ford_invoice.py` reads (PyMuPDF, falling back to pypdf).
+
+## CDP_TIMEOUT means a wedged tab, not a dead browser
+
+`Page.enable: CDP_TIMEOUT` killed the 09/14 morning vAuto step and later blocked OASIS. Port
+9222 was listening and `/json/version` answered fine - the automation browser simply had a
+stale tab whose renderer was wedged, and `getOriginTab` attaches to the FIRST tab matching the
+origin. Closing that origin's tabs fixed it instantly (vAuto then finished in 2 seconds).
+`capture-oasis.mjs` does this automatically on CDP_TIMEOUT and retries once. Manually:
+list `http://127.0.0.1:9222/json`, `POST /json/close/{id}` for the stale tabs. Do NOT restart
+the browser - that costs the logins.
+
+## The baseline pointer survives a locked `latest.json`
+
+`advance_latest_pointer.py` used `os.replace`, which needs delete rights on the destination.
+Something local on dt-4094 keeps an open handle on `work\\inventory-history\\latest.json`
+that permits WRITES but blocks the delete a rename implies, so `os.replace` raised
+`PermissionError/WinError 5` while the file was perfectly writable. That blocked the 09/14
+advance even though the publish had succeeded, which would have left the next day's Daily
+Changes diffing against a stale snapshot. (The workspace is NOT in a OneDrive sync root -
+`Documents` is redirected, but this tree lives in the non-redirected `C:\\Users\\JoeGallant\\Documents`
+with no reparse point - so the holder is one of the local agents, not OneDrive.)
+It now falls back to writing the bytes in place. Not atomic, but the temp file is byte-verified
+against the source first and the existing post-write check re-verifies the pointer's date key
+AND full sha256, so a torn write raises instead of being silently accepted. Verified on this
+machine with a handle that shares read/write but not delete: rename raised WinError 5, the
+fallback wrote, sha matched.
+
 ## DealerMail deep capture (`capture-dealermail.mjs`, new 09/14/2026)
 
 For three days this was the only capture in the pipeline with no script - it was hand-run
