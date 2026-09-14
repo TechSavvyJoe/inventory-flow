@@ -62,4 +62,13 @@ describe('compare', () => {
     expect(result.onlyOn[0].items).toContain('BlueCruise')
     expect(compareVehicles([left, right, left, right]).vehicles).toHaveLength(3)
   })
+
+  it('names the certification program as text and treats equal programs as equal', () => {
+    const program = { name: 'Ford Blue Advantage', short: 'Blue Advantage', brand: 'ford', store: 'Howell' }
+    const left = vehicle({ certified: true, certifiedProgram: program })
+    const right = vehicle({ vin: 'V2', certified: true, certifiedProgram: { ...program } })
+    const certified = compareVehicles([left, right]).facts.find((fact) => fact.label === 'Certified')
+    expect(certified).toMatchObject({ values: ['Ford Blue Advantage', 'Ford Blue Advantage'], differs: false })
+    expect(compareVehicles([left, vehicle({ vin: 'V3', certified: false, certifiedProgram: null })]).facts.find((fact) => fact.label === 'Certified')).toMatchObject({ values: ['Ford Blue Advantage', 'No'], differs: true })
+  })
 })

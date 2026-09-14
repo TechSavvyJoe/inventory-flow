@@ -23,6 +23,8 @@ export const EMPTY_FILTERS = Object.freeze({
 
 const norm = (value) => String(value ?? '').trim().toLowerCase()
 const number = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null)
+// A model year is a four-digit year or nothing; a blank year must never become 0.
+const modelYear = (value) => { const year = Number.parseInt(String(value ?? '').trim(), 10); return Number.isInteger(year) && year >= 1900 && year <= 2100 ? year : null }
 
 export function normalizeFilters(value) {
   const source = value && typeof value === 'object' ? value : {}
@@ -50,7 +52,7 @@ function tally(vehicles, read) {
 
 /** Distinct values with counts, so the sheet only offers choices that exist. */
 export function filterOptions(vehicles) {
-  const years = vehicles.map((item) => number(Number(item.year))).filter((item) => item !== null)
+  const years = vehicles.map((item) => modelYear(item.year)).filter((item) => item !== null)
   const prices = vehicles.map((item) => item.price).filter((item) => item !== null)
   const miles = vehicles.map((item) => item.mileage).filter((item) => item !== null)
   return {
@@ -73,7 +75,7 @@ const inSet = (values, value) => values.length === 0 || values.some((item) => no
 
 export function matchesFilters(vehicle, filters) {
   const f = filters
-  const year = number(Number(vehicle.year))
+  const year = modelYear(vehicle.year)
   if (!inSet(f.makes, vehicle.make)) return false
   if (!inSet(f.models, vehicle.model)) return false
   if (!inSet(f.bodies, vehicle.bodyStyle)) return false
@@ -112,7 +114,7 @@ export function sortMatches(matches, sortId, { hasQuery = false } = {}) {
   const comparators = {
     'price-asc': asc((v) => v.price), 'price-desc': desc((v) => v.price),
     'mileage-asc': asc((v) => v.mileage),
-    'year-desc': desc((v) => number(Number(v.year))),
+    'year-desc': desc((v) => modelYear(v.year)),
     'days-asc': asc((v) => v.daysListed), 'days-desc': desc((v) => v.daysListed),
     'savings-desc': desc((v) => v.savings),
     name: byName,

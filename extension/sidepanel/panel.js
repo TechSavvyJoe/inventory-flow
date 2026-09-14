@@ -28,7 +28,7 @@ const PAGE = 60
 const TABS = [['overview', 'Overview'], ['hold', 'Hold & custody'], ['equipment', 'Equipment'], ['records', 'Records']]
 const state = {
   settings: null, workspace: null, data: null, bootstrap: null, index: [], results: [], shown: PAGE, details: new Map(), detailStatus: null,
-  query: '', scope: 'home', activeIndex: -1, selectedVin: null, view: 'list', tab: 'overview', photoIndex: 0, compare: [], odometer: new Map(),
+  query: '', scope: 'home', activeIndex: -1, selectedVin: null, view: 'list', tab: 'overview', photoIndex: 0, compare: [], odometer: new Map(), detailFailed: new Map(), detailPending: new Set(),
   filters: { ...EMPTY_FILTERS }, sort: 'relevance', sheetKind: 'settings',
   loading: false, error: null, fetchedAt: null, controller: null, toastTimer: null, sheetReturnFocus: null, previousView: 'list',
 }
@@ -97,6 +97,7 @@ function hydrate(bootstrap, fetchedAt) {
   state.data = buildPanelData(bootstrap)
   state.index = buildIndex(state.data.vehicles)
   state.details.clear()
+  state.detailFailed.clear()
   state.fetchedAt = fetchedAt
   state.error = null
   setCompare(state.compare.filter((vin) => vehicleByVin(vin)), { persist: false })
@@ -775,7 +776,8 @@ function holdTab(vehicle) {
   const status = []
   if (hold.canViewEvidence && hold.tone === 'held') {
     if (state.detailStatus === 'loading' && !hold.detailLoaded) status.push(el('p', { class: 'd-caption d-caption-live', text: 'Loading the full DealerMail record…' }))
-    if (state.detailStatus === 'failed' && !hold.detailLoaded) status.push(el('p', { class: 'd-caption' }, 'The full record could not be loaded. ', el('button', { type: 'button', class: 'd-inline', onclick: () => { state.details.delete(vehicle.vin); loadDetail(vehicle.vin) } }, 'Retry')))
+    if (state.detailStatus === 'failed' && !hold.detailLoaded) status.push(el('p', { class: 'd-caption' }, 'The full record could not be loaded. ', el('button', { type: 'button', class: 'd-inline', onclick: () => loadDetail(vehicle.vin, { retry: true }) }, 'Retry')))
+    if (state.detailStatus === 'gone' && !hold.detailLoaded) status.push(el('p', { class: 'd-caption d-caption-warn', text: 'This vehicle is no longer in the current snapshot; the DealerMail record could not be loaded.' }))
   }
   if (hold.tone === 'held' && !hold.canViewEvidence) status.push(el('p', { class: 'd-caption', text: 'Hold details are restricted for your role.' }))
   const actions = el('div', { class: 'dock-utils' },
@@ -956,16 +958,30 @@ function renderDetail(vehicle, { keepScroll = false } = {}) {
   ui.detail.scrollTop = keepScroll ? top : 0
 }
 
-async function loadDetail(vin) {
-  if (state.details.has(vin)) return
+/**
+ * Fetch the per-vehicle record once. A failure is remembered so that the
+ * views which re-render on completion (the compare view renders every
+ * vehicle in the set, and rendering asks for details) never turn one bad
+ * response into an endless stream of requests; only an explicit retry, or a
+ * fresh bootstrap, asks again.
+ */
+async function loadDetail(vin, { retry = false } = {}) {
+  if (state.details.has(vin) || state.detailPending.has(vin)) return
+  if (state.detailFailed.has(vin) && !retry) return
+  state.detailFailed.delete(vin)
+  state.detailPending.add(vin)
   state.detailStatus = 'loading'
+  if (retry && state.view === 'detail' && state.selectedVin === vin) { const vehicle = vehicleByVin(vin); if (vehicle) renderDetail(vehicle, { keepScroll: true }) }
   let detail = null
   try {
     detail = await fetchVehicle(state.workspace, state.settings, vin)
     state.detailStatus = null
   } catch (error) {
-    if (error?.name === 'AbortError') return
+    if (error?.name === 'AbortError') { state.detailPending.delete(vin); return }
     state.detailStatus = error instanceof PanelApiError && error.kind === 'notfound' ? 'gone' : 'failed'
+    state.detailFailed.set(vin, state.detailStatus)
+  } finally {
+    state.detailPending.delete(vin)
   }
   if (!state.bootstrap || !state.data) return
   if (detail) {
@@ -995,7 +1011,7 @@ function showView(id) {
 function openDetail(vehicle) {
   if (state.selectedVin !== vehicle.vin) state.photoIndex = 0
   state.selectedVin = vehicle.vin
-  state.detailStatus = state.details.has(vehicle.vin) ? null : 'loading'
+  state.detailStatus = state.details.has(vehicle.vin) ? null : state.detailFailed.get(vehicle.vin) ?? 'loading'
   renderDetail(vehicle)
   loadDetail(vehicle.vin)
   showView('detail')

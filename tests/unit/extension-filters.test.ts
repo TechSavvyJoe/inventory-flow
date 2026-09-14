@@ -23,6 +23,18 @@ describe('filter options', () => {
     expect(options.bodies[0]).toEqual({ value: 'SUV', count: 3 })
     expect(options).toMatchObject({ yearMin: 2021, yearMax: 2024, priceMax: 51800, mileageMax: 29450, certified: 2, photos: 3 })
   })
+
+  it('ignores a blank or unparseable year instead of reading it as year 0', () => {
+    // toPanelVehicle publishes '' for a record without a year; Number('') is 0.
+    const withBlank = [...vehicles, v({ vin: 'V5', stockNumber: 'S5', year: '' }), v({ vin: 'V6', stockNumber: 'S6', year: 'n/a' })]
+    expect(filterOptions(withBlank)).toMatchObject({ yearMin: 2021, yearMax: 2024 })
+    expect(matchesFilters(v({ year: '' }), normalizeFilters({ yearMin: 2020 }))).toBe(false)
+    // Year 0 would have satisfied an upper bound; a blank year must not.
+    expect(matchesFilters(v({ year: '' }), normalizeFilters({ yearMax: 2025 }))).toBe(false)
+    expect(matchesFilters(v({ year: '' }), normalizeFilters({}))).toBe(true)
+    const sorted = sortMatches(withBlank.map((vehicle) => ({ vehicle })), 'year-desc').map(({ vehicle }) => vehicle.vin)
+    expect(sorted.slice(-2).sort()).toEqual(['V5', 'V6'])
+  })
 })
 
 describe('matching', () => {
