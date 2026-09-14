@@ -579,6 +579,37 @@ function validateManagerDisposition(release, normalizedVehicles, reportDate) {
   return summary
 }
 
+function activeInventoryMembership(publicByVin, managerDispositionOverlay) {
+  const activeVins = new Set(publicByVin.keys())
+  let managerDeliveredExclusionCount = 0
+  let managerPendingCarryoverCount = 0
+  let managerPendingIdentityReviewCount = 0
+  for (const record of managerDispositionOverlay?.records ?? []) {
+    const vin = typeof record?.vin === 'string' && VIN.test(record.vin) ? record.vin : null
+    const conflicting = ['matched_vin_stock_review', 'stock_ambiguous'].includes(record?.matchStatus)
+    if (record?.deliveredManagerLog === true && vin && !conflicting) {
+      if (activeVins.delete(vin)) managerDeliveredExclusionCount += 1
+      continue
+    }
+    if (record?.soldManagerLog === true && record?.deliveredManagerLog === false) {
+      if (vin) {
+        if (!activeVins.has(vin)) {
+          activeVins.add(vin)
+          managerPendingCarryoverCount += 1
+        }
+      } else {
+        managerPendingIdentityReviewCount += 1
+      }
+    }
+  }
+  return {
+    activeInventoryCount: activeVins.size,
+    managerDeliveredExclusionCount,
+    managerPendingCarryoverCount,
+    managerPendingIdentityReviewCount,
+  }
+}
+
 function validateCrmSummary(summary, parsed, label) {
   ensure(object(summary) && integer(summary.totalRows, `${label} count`) === parsed.records.length && integer(summary.uniqueVinCount, `${label} source-VIN count`) === parsed.bySourceVin.size && integer(summary.uniqueStockCount, `${label} stock count`) === parsed.stocks.size, `${label} summary does not reconcile`)
   matchOptionalCounts(summary.byStore, parsed.counts, `${label} store totals`)
@@ -756,6 +787,7 @@ export function validateReleaseBundle(bundle) {
   ensure(sameSet(seen, expectedVins), 'normalized inventory omits source VINs')
   validateResourceRun(release.sourceRuns?.resources, resourceRows, bundle.reportDate)
   const managerDisposition = validateManagerDisposition(release, normalized, bundle.reportDate)
+  const activeMembership = activeInventoryMembership(publicData.byVin, release.managerDispositionOverlay)
   return {
     reportDate: bundle.reportDate,
     publicRowCount: publicData.byVin.size,
@@ -776,6 +808,7 @@ export function validateReleaseBundle(bundle) {
     managerSoldRecordCount: managerDisposition.soldRecordCount,
     managerDeliveredRecordCount: managerDisposition.deliveredRecordCount,
     managerDispositionReviewCount: managerDisposition.reviewRecordCount,
+    ...activeMembership,
     vehicleCount: seen.size,
   }
 }

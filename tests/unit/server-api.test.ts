@@ -6,6 +6,11 @@ import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs
 import { createInventoryServer, prepareNodeTransferEventInput } from '../../server/api.mjs'
 import { importRelease, openInventoryDatabase } from '../../server/database.mjs'
 import { findLatestCompletedManifest, loadLatestCompletedRelease } from '../../server/importer.mjs'
+import {
+  MANAGER_DISPOSITION_AUTHORITY,
+  MANAGER_DISPOSITION_INDEPENDENCE,
+  sanitizeManagerDispositionDocuments,
+} from '../../server/manager-disposition-schema.mjs'
 import { createInventoryService } from '../../server/service.mjs'
 
 const openResources: Array<{ server: ReturnType<typeof createInventoryServer>; database: ReturnType<typeof openInventoryDatabase> }> = []
@@ -172,6 +177,58 @@ async function advanceToArrival(baseUrl: string, vehicle: { vin: string }, suffi
 }
 
 describe('Inventory Flow API', () => {
+  it('uses the manager sold board to remove delivered VINs, retain pending VINs, and surface unresolved pending identities', async () => {
+    let deliveredVin = ''
+    let pendingCurrentVin = ''
+    const pendingCarryoverVin = '1FTFW1E50NFA99999'
+    const { baseUrl } = await harness((release) => {
+      const current = release.vehicles.filter((vehicle) => vehicle.publicRecord).slice(0, 2)
+      deliveredVin = current[0].vin
+      pendingCurrentVin = current[1].vin
+      const records = [
+        { stock_number: current[0].publicRecord.stock_number, vin: deliveredVin, vehicle: 'Ignored source vehicle text', sold_manager_log: true, delivered_manager_log: true, delivery_date: release.reportDate, confidence: 'high' },
+        { stock_number: current[1].publicRecord.stock_number, vin: pendingCurrentVin, vehicle: 'Ignored source vehicle text', sold_manager_log: true, delivered_manager_log: false, delivery_date: null, confidence: 'high' },
+        { stock_number: 'PENDING-OUT', vin: pendingCarryoverVin, vehicle: '2022 Ford F-150 XLT', sold_manager_log: true, delivered_manager_log: false, delivery_date: null, confidence: 'high' },
+        { stock_number: 'PENDING-NOVIN', vin: null, vehicle: '2022 Ford Edge', sold_manager_log: true, delivered_manager_log: false, delivery_date: null, confidence: 'low' },
+      ]
+      const source = {
+        schema_version: '1.0', classification: 'operational-redacted', cloud_upload_allowed: true,
+        source_store: 'Howell', source_period: release.reportDate.slice(0, 7), source_type: 'manager-log',
+        status_authority: MANAGER_DISPOSITION_AUTHORITY, status_independence: MANAGER_DISPOSITION_INDEPENDENCE,
+        records,
+        summary: { sold_records: 4, delivered_records: 1, sold_not_marked_delivered: 3 },
+      }
+      // The manager-only pending VIN is deliberately absent from public and CRM
+      // evidence. The redacted board projection is still allowed to keep it in
+      // the operational view until delivery is explicitly highlighted.
+      release.managerDispositionOverlay = sanitizeManagerDispositionDocuments({
+        documents: [{ expectedStore: 'Howell', data: source }],
+        reportDate: release.reportDate,
+        vehicles: release.vehicles,
+      })
+    })
+
+    const bootstrap = await fetch(`${baseUrl}/api/bootstrap?homeStore=Howell&role=manager`).then((response) => response.json())
+    expect(bootstrap.vehicles.some((vehicle) => vehicle.vin === deliveredVin)).toBe(false)
+    expect(bootstrap.vehicles.some((vehicle) => vehicle.vin === pendingCurrentVin)).toBe(true)
+    expect(bootstrap.vehicles).toContainEqual(expect.objectContaining({
+      vin: pendingCarryoverVin,
+      stockNumber: 'PENDING-OUT',
+      publicStore: 'Howell',
+      dataStatus: expect.stringContaining('delivery pending'),
+    }))
+    expect(bootstrap.attention).toContainEqual(expect.objectContaining({
+      type: 'manager_pending_identity_review',
+      stockNumber: 'PENDING-NOVIN',
+    }))
+    expect(bootstrap.managerDispositions).toHaveLength(4)
+
+    const delivered = await fetch(`${baseUrl}/api/vehicles/${deliveredVin}?homeStore=Howell&role=manager`, {
+      headers: roleHeaders('manager', 'Howell', 'Howell Manager'),
+    })
+    expect(delivered.status).toBe(404)
+  })
+
   it('fails closed when the standalone Node API cannot resolve a stable transport assignee identity', () => {
     const stableContext = {
       role: 'manager', store: 'Fowlerville', user: 'Fowlerville Manager', userId: 'manager-1',
