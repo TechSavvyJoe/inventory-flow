@@ -335,7 +335,7 @@
   font-size: 0.74rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--inventory-text-muted, #64748b);
+  color: var(--inventory-text-muted, var(--ifx-neutral-500));
   font-weight: 600;
   white-space: nowrap;
 }
@@ -350,7 +350,7 @@
 .inventory-vehicle-document__warranty-table tbody th[scope="row"] small {
   font-weight: 500;
   font-size: 0.74rem;
-  color: var(--inventory-text-muted, #64748b);
+  color: var(--inventory-text-muted, var(--ifx-neutral-500));
 }
 
 .inventory-vehicle-document__warranty-table tbody tr:last-child th,
@@ -360,7 +360,7 @@
 
 .inventory-vehicle-document__warranty-table tbody tr[data-status="EXPIRED"] td,
 .inventory-vehicle-document__warranty-table tbody tr[data-status="N/A"] td {
-  color: var(--inventory-text-muted, #64748b);
+  color: var(--inventory-text-muted, var(--ifx-neutral-500));
 }
 
 .inventory-warranty-pill {
@@ -376,25 +376,25 @@
 .inventory-warranty-pill--active {
   background: rgba(16, 185, 129, 0.13);
   border-color: rgba(16, 185, 129, 0.4);
-  color: #047857;
+  color: var(--ifx-success);
 }
 
 .inventory-warranty-pill--expired {
   background: rgba(244, 63, 94, 0.12);
   border-color: rgba(244, 63, 94, 0.38);
-  color: #be123c;
+  color: var(--ifx-danger);
 }
 
 .inventory-warranty-pill--unknown {
   background: rgba(148, 163, 184, 0.15);
   border-color: rgba(148, 163, 184, 0.38);
-  color: #475569;
+  color: var(--ifx-neutral-600);
 }
 
 @media (prefers-color-scheme: dark) {
-  .inventory-warranty-pill--active { color: #6ee7b7; }
-  .inventory-warranty-pill--expired { color: #fda4af; }
-  .inventory-warranty-pill--unknown { color: #cbd5e1; }
+  .inventory-warranty-pill--active { color: var(--ifx-success-surface); }
+  .inventory-warranty-pill--expired { color: var(--ifx-danger-surface); }
+  .inventory-warranty-pill--unknown { color: var(--ifx-neutral-300); }
 }
 
 @media (max-width: 640px) {

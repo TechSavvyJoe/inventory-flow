@@ -44,6 +44,15 @@ function Get-AutomationBrowser {
     Where-Object { $_.CommandLine -and $_.CommandLine -like "*$ProfileDir*" }
 }
 
+function Test-AutomationCdp {
+  try {
+    $version = Invoke-RestMethod -Uri 'http://127.0.0.1:9222/json/version' -TimeoutSec 5
+    return [bool]($version.webSocketDebuggerUrl)
+  } catch {
+    return $false
+  }
+}
+
 $browserExe = @(
   "$env:LOCALAPPDATA\Perplexity\Comet\Application\comet.exe",
   "$env:ProgramFiles\Perplexity\Comet\Application\comet.exe",
@@ -60,8 +69,17 @@ if ($existing -and $Restart) {
 }
 
 if ($existing) {
-  Write-Log "already running (pid $($existing.ProcessId -join ',')) - nothing to do"
-  exit 0
+  if (Test-AutomationCdp) {
+    Write-Log "already running ($($existing.Count) process(es)); CDP on 127.0.0.1:9222 is healthy"
+    exit 0
+  }
+
+  # Chromium can leave renderer/helper processes behind after the main browser
+  # or CDP endpoint dies. Those processes are not a usable automation browser.
+  # Stop only this isolated profile's exact processes and relaunch it.
+  Write-Log "stale automation browser detected ($($existing.Count) process(es), CDP unavailable); relaunching"
+  $existing | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  Start-Sleep -Seconds 3
 }
 
 if (-not (Test-Path $ProfileDir)) {
@@ -86,8 +104,13 @@ $browserArgs = @(
 Write-Log "launching automation comet (minimized) with $($OpenUrls.Count) tab(s)"
 Start-Process -FilePath $browserExe -ArgumentList $browserArgs -WindowStyle Minimized
 
-Start-Sleep -Seconds 5
-$now = Get-AutomationBrowser
-if ($now) { Write-Log "running (pid $($now.ProcessId -join ','))"; exit 0 }
-Write-Log 'ERROR launch did not produce a running automation comet process'
+for ($attempt = 1; $attempt -le 15; $attempt++) {
+  Start-Sleep -Seconds 1
+  $now = Get-AutomationBrowser
+  if ($now -and (Test-AutomationCdp)) {
+    Write-Log "running ($($now.Count) process(es)); CDP is healthy"
+    exit 0
+  }
+}
+Write-Log 'ERROR launch did not produce a healthy automation Comet and CDP endpoint'
 exit 1
