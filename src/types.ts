@@ -224,6 +224,25 @@ export interface MovementSummary {
   dueAt?: string
   returnRequired?: boolean
   returnDueAt?: string
+  /**
+   * The server's own decision on a new move request for this VIN: `true` when
+   * createTransfer would currently refuse it with 409 ACTIVE_TRANSFER_EXISTS
+   * because some ledger row — visible to this caller or not — still blocks
+   * one; `false` when a well-formed cross-store request would be accepted.
+   * It describes the whole ledger for the VIN, never the row whose facts
+   * happen to be shown (a canceled trip's stale 'picked_up' shape can carry
+   * `false`; a completed receipt can carry `true` when a store this caller
+   * cannot see has requested the vehicle again). Present only in simple mode
+   * for callers who may create transfers (sales, manager, group_manager);
+   * absent for roles the server refuses with 403 first, in advanced mode,
+   * and from older servers — treat absence as "the server did not say", not
+   * as "allowed". It is one boolean with no request id, actor, store,
+   * custodian, note or customer attached: the same single fact the 409
+   * message already discloses to anyone who tries. Other validation (the
+   * cross-store rule, role checks) can still refuse a POST before this rule
+   * is evaluated; `false` is about the ledger, not a promise of acceptance.
+   */
+  newRequestBlocked?: boolean
 }
 
 export interface PublicScanAuditRecord {

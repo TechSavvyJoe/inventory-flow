@@ -1,3 +1,4 @@
+import type { TransferRecord } from "../../types";
 import type {
   DealerMailHoldSignal,
   InventoryFilters,
@@ -167,11 +168,23 @@ export function movementTrackingPath(vehicle: InventoryVehicle): string | null {
 }
 
 /**
- * A vehicle on an open move cannot be requested again, whether or not this
- * role may see the transfer; the server rejects the duplicate request. The
- * adapter sets `movement` only for an open move: a completed home receipt is
- * kept as app-confirmed location evidence with `movement` null, because the
- * server (blocksNewSimpleRequest) accepts a new request for it.
+ * The server's word on whether a new move request would be refused
+ * (movement.newRequestBlocked, mapped to `moveRequestBlocked`). Only when the
+ * server did not publish a decision — an older deployment, or the advanced
+ * engine — does the client fall back to its own guess that an open move
+ * blocks one. Absence never means "allowed".
+ */
+export function isMoveRequestBlocked(vehicle: InventoryVehicle): boolean {
+  return vehicle.moveRequestBlocked ?? Boolean(vehicle.movement);
+}
+
+/**
+ * Whether this user may start a move request for the vehicle. Role and home
+ * store are the client's rules; whether the ledger blocks a new request is the
+ * server's. It decides over every row for the VIN, so a completed receipt and
+ * a canceled-after-departure trip both publish "not blocked" while a request
+ * from a store this user cannot see publishes "blocked" — neither of which
+ * the movement signal alone could tell apart.
  */
 export function canRequestVehicleMove(
   vehicle: InventoryVehicle,
@@ -181,7 +194,7 @@ export function canRequestVehicleMove(
   return (
     ["sales", "manager", "group_manager"].includes(role) &&
     vehicle.location.homeStore.id !== homeStoreId &&
-    !vehicle.movement
+    !isMoveRequestBlocked(vehicle)
   );
 }
 
@@ -502,3 +515,25 @@ export const SORT_LABELS: Record<InventorySortKey, string> = {
   currentLocation: "Current location",
   lastMovement: "Last movement",
 };
+
+const CLOSED_REQUEST_STATES = new Set(["declined", "canceled", "closed", "returned_home"]);
+
+/**
+ * One transfer per VIN to join with its vehicle. bootstrap.transfers is listed
+ * newest-first, so a plain Map kept the OLDEST row; when a party store sees a
+ * closed trip and a newer open request for the same VIN, the open one must
+ * win. Closed rows are still handed over when nothing is open — the adapter
+ * uses them as timeline history only. Mirrors the extension's join.
+ */
+export function transferByVin(transfers: TransferRecord[]): Map<string, TransferRecord> {
+  const byVin = new Map<string, TransferRecord>()
+  for (const transfer of transfers) {
+    const current = byVin.get(transfer.vin)
+    if (!current) { byVin.set(transfer.vin, transfer); continue }
+    const currentOpen = !CLOSED_REQUEST_STATES.has(current.requestStatus)
+    const candidateOpen = !CLOSED_REQUEST_STATES.has(transfer.requestStatus)
+    // Newest-first listing: keep the first open row seen; replace a closed row with an open one.
+    if (!currentOpen && candidateOpen) byVin.set(transfer.vin, transfer)
+  }
+  return byVin
+}

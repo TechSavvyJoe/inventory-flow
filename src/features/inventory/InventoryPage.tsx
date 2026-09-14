@@ -7,13 +7,14 @@ import { getVehicle } from '../../lib/api'
 import type { VehicleRecord } from '../../types'
 import type { InventoryScope, InventoryVehicle } from './types'
 import { InventoryExperience } from './InventoryExperience'
-import { canRequestVehicleMove, movementTrackingPath } from './inventory-utils'
+import { canRequestVehicleMove, movementTrackingPath, transferByVin } from './inventory-utils'
 import {
   hasInventorySearchRequest,
   inventorySearchAccessContext,
   readInventorySearchRequest,
   stripLegacyInventorySearchQuery,
 } from './inventory-navigation'
+
 
 export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   const { data, homeStore, role } = useAppData()
@@ -41,7 +42,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
 
   const vehicles = useMemo(() => {
     if (!data) return []
-    const transfers = new Map(data.transfers.map((transfer) => [transfer.vin, transfer]))
+    const transfers = transferByVin(data.transfers)
     return data.vehicles.map((vehicle) => {
       const detailed = vehicleDetails[vehicle.vin] ?? vehicle
       return toInventoryVehicle(detailed, data, transfers.get(vehicle.vin))

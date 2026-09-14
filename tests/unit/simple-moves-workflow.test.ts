@@ -187,10 +187,13 @@ describe('simple manager-led vehicle moves', () => {
     expect(service.listAttention({}, manager).items.some((item) => item.type === 'transfer_next_action')).toBe(false)
     expect(database.prepare('SELECT * FROM transfer_requests WHERE id=?').get(id)).toEqual(before)
     tick()
+    // The published decision matches what createTransfer is about to do.
+    expect(service.getVehicle(request.vin, sales).movement.newRequestBlocked).toBe(false)
     const next = service.createTransfer(request, sales, 'synthetic-new-request-after-home-receipt')
     expect(next.created).toBe(true)
     expect(next.record.id).not.toBe(id)
     expect(service.getVehicle(request.vin, sales).movement.transferId).toBe(next.record.id)
+    expect(service.getVehicle(request.vin, sales).movement.newRequestBlocked).toBe(true)
   })
 
   it('shares only group-safe current location and actual departure time, never inaccessible transfer identity or private evidence', () => {
@@ -207,8 +210,11 @@ describe('simple manager-led vehicle moves', () => {
       const context = { ...unrelated, role }
       const movement = service.getVehicle(request.vin, context).movement
       expect(movement).toMatchObject({ currentLocation: 'Fowlerville', state: 'at_requesting_store', departedAt, locationConfidence: 'verified' })
+      // newRequestBlocked is the caller's own createTransfer outcome: one
+      // boolean that the 409 text already discloses, carrying no identity.
+      expect(movement.newRequestBlocked).toBe(true)
       if (role !== 'group_manager') {
-        expect(Object.keys(movement).sort()).toEqual(['currentLocation', 'departedAt', 'destination', 'label', 'lastConfirmedAt', 'locationConfidence', 'state'].sort())
+        expect(Object.keys(movement).sort()).toEqual(['currentLocation', 'departedAt', 'destination', 'label', 'lastConfirmedAt', 'locationConfidence', 'newRequestBlocked', 'state'].sort())
         expect(JSON.stringify(movement)).not.toMatch(/Private|Synthetic|customer|actor|custodian|transferId|nextActionOwner/)
         expect(service.listTransfers({}, context).items).toHaveLength(0)
         expect(() => service.getTransfer(id, context)).toThrow('not found')
@@ -219,6 +225,9 @@ describe('simple manager-led vehicle moves', () => {
       const movement = service.getVehicle(request.vin, { ...unrelated, role }).movement
       expect(movement.state).toBe('source_reported')
       expect(movement.departedAt).toBeUndefined()
+      // Roles that cannot create a request never reach the 409, so the bit
+      // is not published to them at all — not even as false.
+      expect(movement.newRequestBlocked).toBeUndefined()
     }
     tick()
     service.appendTransferEvent(id, { type: 'return_started' }, sales)
@@ -323,18 +332,100 @@ describe('simple manager-led vehicle moves', () => {
     service.appendTransferEvent(later.id, { type: 'vehicle_departed', occurredAt: firstArrival }, sales)
     for (const context of [sales, unrelated]) {
       const movement = service.getVehicle(request.vin, context).movement
-      expect(movement).toMatchObject({ currentLocation: 'Unknown', state: 'location_exception', locationConfidence: 'conflicting', label: 'Location needs checking' })
+      // Even the conflict shape carries the server's own new-request decision: both trips are still open.
+      expect(movement).toMatchObject({ currentLocation: 'Unknown', state: 'location_exception', locationConfidence: 'conflicting', label: 'Location needs checking', newRequestBlocked: true })
       expect(movement.departedAt).toBeUndefined()
       expect(movement.transferId).toBeUndefined()
     }
     service.appendTransferEvent(later.id, { type: 'arrived', occurredAt: firstArrival }, sales)
     const agreed = service.getVehicle(request.vin, unrelated).movement
-    expect(agreed).toMatchObject({ currentLocation: 'Fowlerville', locationConfidence: 'verified' })
+    expect(agreed).toMatchObject({ currentLocation: 'Fowlerville', locationConfidence: 'verified', newRequestBlocked: true })
     // The location agrees; the two distinct departure clocks do not.
     expect(agreed.departedAt).toBeUndefined()
     tick()
     service.appendTransferEvent(later.id, { type: 'return_started' }, sales)
     expect(service.getVehicle(request.vin, unrelated).movement).toMatchObject({ currentLocation: 'In transit', locationConfidence: 'verified', departedAt: firstArrival })
+  })
+
+  it('publishes its own new-request decision on every movement shape, decided over every ledger row rather than the visible ones', () => {
+    const { service, database, id, tick } = harness()
+    // Source-only vehicle: nothing blocks. Creator roles get an explicit false;
+    // roles that cannot request (403 before the 409) get nothing.
+    expect(service.getVehicle('TESTDATAHWELL0002', sales).movement).toMatchObject({ state: 'source_reported', newRequestBlocked: false })
+    for (const role of ['driver', 'porter', 'coordinator']) {
+      expect(service.getVehicle('TESTDATAHWELL0002', { ...unrelated, role }).movement.newRequestBlocked).toBeUndefined()
+    }
+    // A pending request blocks. The party store receives the transfer shape,
+    // the unrelated store the physical-only fallback without a link; both true.
+    expect(service.getVehicle(request.vin, sales).movement).toMatchObject({ transferId: id, requestStatus: 'requested', newRequestBlocked: true })
+    const pending = service.getVehicle(request.vin, unrelated).movement
+    expect(pending).toMatchObject({ state: 'at_home', currentLocation: 'Howell', newRequestBlocked: true })
+    expect(pending.transferId).toBeUndefined()
+    const lincolnRequest = { ...request, requestingStore: 'Lincoln', requestedBy: unrelated.user }
+    expect(() => service.createTransfer(lincolnRequest, unrelated, 'lincoln-while-pending')).toThrow('already has an open move')
+    approve(service, id)
+    tick()
+    service.appendTransferEvent(id, { type: 'vehicle_departed' }, sales)
+    tick()
+    service.appendTransferEvent(id, { type: 'arrived' }, sales)
+    for (const context of [sales, homeManager, unrelated]) {
+      expect(service.getVehicle(request.vin, context).movement).toMatchObject({ state: 'at_requesting_store', newRequestBlocked: true })
+    }
+    expect(() => service.createTransfer(lincolnRequest, unrelated, 'lincoln-while-away')).toThrow('already has an open move')
+    tick()
+    service.appendTransferEvent(id, { type: 'return_started' }, sales)
+    tick()
+    service.appendTransferEvent(id, { type: 'returned_home' }, homeManager)
+    // The receipt stays the location authority (state 'returned_home') while
+    // the decision flips to false for every creator role.
+    for (const context of [sales, homeManager, unrelated]) {
+      const movement = service.getVehicle(request.vin, context).movement
+      expect(movement).toMatchObject({ state: 'returned_home', currentLocation: 'Howell', newRequestBlocked: false })
+      expect(movement.transferId).toBeUndefined()
+    }
+    tick()
+    const next = service.createTransfer(lincolnRequest, unrelated, 'lincoln-after-receipt')
+    expect(next.created).toBe(true)
+    // Fowlerville is party to the closed trip but not to the Lincoln request:
+    // it still sees the receipt's physical shape, now with true and no link.
+    const thirdStore = service.getVehicle(request.vin, sales).movement
+    expect(thirdStore).toMatchObject({ state: 'returned_home', newRequestBlocked: true })
+    expect(thirdStore.transferId).toBeUndefined()
+    expect(JSON.stringify(thirdStore)).not.toMatch(/Lincoln manager|transferId|actor|custodian/)
+    expect(service.getVehicle(request.vin, unrelated).movement.newRequestBlocked).toBe(true)
+    expect(service.getVehicle(request.vin, homeManager).movement).toMatchObject({ transferId: next.record.id, state: 'returned_home', newRequestBlocked: true })
+    expect(() => service.createTransfer(request, sales, 'fowlerville-while-lincoln-pending')).toThrow('already has an open move')
+    expect(database.prepare('SELECT COUNT(*) AS n FROM transfer_requests').get().n).toBe(2)
+
+    // Canceled after departure: the last physical fact is 'picked_up', 'In
+    // transit', but a terminal row blocks nothing. Unreachable through the
+    // simple API; models a corrected or legacy ledger.
+    const canceled = harness()
+    approve(canceled.service, canceled.id)
+    canceled.tick()
+    canceled.service.appendTransferEvent(canceled.id, { type: 'vehicle_departed' }, sales)
+    canceled.tick()
+    canceled.database.prepare("UPDATE transfer_requests SET status='canceled', closed_at=? WHERE id=?").run(SYNTHETIC_NOW.toISOString(), canceled.id)
+    for (const context of [sales, homeManager, unrelated]) {
+      const movement = canceled.service.getVehicle(request.vin, context).movement
+      expect(movement).toMatchObject({ state: 'picked_up', currentLocation: 'In transit', locationConfidence: 'verified', newRequestBlocked: false })
+      expect(movement.transferId).toBeUndefined()
+      expect(movement.departedAt).toBeUndefined()
+    }
+    for (const role of ['driver', 'porter', 'coordinator']) {
+      expect(canceled.service.getVehicle(request.vin, { ...unrelated, role }).movement.newRequestBlocked).toBeUndefined()
+    }
+    const afterCancel = canceled.service.createTransfer(lincolnRequest, unrelated, 'lincoln-after-cancel')
+    expect(afterCancel.created).toBe(true)
+    for (const context of [sales, homeManager, unrelated]) {
+      expect(canceled.service.getVehicle(request.vin, context).movement).toMatchObject({ state: 'picked_up', newRequestBlocked: true })
+    }
+
+    // The advanced engine allows overlaps, so there is no decision to publish.
+    const legacy = harness('advanced')
+    expect(legacy.service.getVehicle(request.vin, sales).movement.transferId).toBe(legacy.id)
+    expect(legacy.service.getVehicle(request.vin, sales).movement.newRequestBlocked).toBeUndefined()
+    expect(legacy.service.getVehicle('TESTDATAHWELL0002', sales).movement.newRequestBlocked).toBeUndefined()
   })
 
   it('does not treat a home assignment plus a bare request as a physical sighting', () => {

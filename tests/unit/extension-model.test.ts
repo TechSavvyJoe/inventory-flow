@@ -137,6 +137,58 @@ describe('deal desk view model', () => {
     expect(checked.movement).toBeNull()
   })
 
+  it('prefers the server\'s own new-request decision and falls back to the open-move rule only when it is absent', () => {
+    const sales = { role: 'sales', store: 'Howell', canCreateTransfer: true }
+    // A trip canceled after departure: stale 'picked_up' custody, no link,
+    // no blocking row. service-core publishes newRequestBlocked: false.
+    const canceledRecord = base({ homeStore: 'Fowlerville', publicStore: 'Fowlerville', sourceReportedLocation: 'Fowlerville', movement: { state: 'picked_up', label: 'picked up', currentLocation: 'In transit', destination: 'Howell', locationConfidence: 'verified', lastConfirmedAt: '2026-08-30T11:20:00Z', newRequestBlocked: false } })
+    const canceled = toPanelVehicle(canceledRecord, data(canceledRecord))
+    // The Movement tile and pill keep their precedence: still custody, still withheld.
+    expect(canceled.movement).toMatchObject({ state: 'picked_up', withheld: true, transferId: null })
+    expect(canceled.location).toMatchObject({ label: 'In transit', provenance: 'app-confirmed' })
+    expect(canceled.moveRequestBlocked).toBe(false)
+    expect(canRequestVehicle(canceled, sales)).toBe(true)
+    expect(requestBlockedReason(canceled, sales)).toBeNull()
+    // Role and home-store rules still apply on top of the server's answer.
+    expect(canRequestVehicle(canceled, { ...sales, store: 'Fowlerville' })).toBe(false)
+    expect(canRequestVehicle(canceled, { ...sales, role: 'porter' })).toBe(false)
+    // A withheld open move the server also blocks.
+    const withheldRecord = base({ homeStore: 'Fowlerville', movement: { state: 'in_transit', label: 'in transit', currentLocation: 'Howell', locationConfidence: 'verified', newRequestBlocked: true } })
+    const withheld = toPanelVehicle(withheldRecord, data(withheldRecord))
+    expect(withheld.moveRequestBlocked).toBe(true)
+    expect(canRequestVehicle(withheld, sales)).toBe(false)
+    expect(requestBlockedReason(withheld, sales)).toMatch(/already in progress/)
+    // A completed receipt blocked by a request from a store this user cannot
+    // see: no pill (nothing is moving that this user may know about), yet
+    // the server's word wins and the reason names no store or request.
+    const receiptRecord = base({ homeStore: 'Fowlerville', movement: { state: 'returned_home', label: 'returned home', currentLocation: 'Fowlerville', locationConfidence: 'verified', newRequestBlocked: true } })
+    const receipt = toPanelVehicle(receiptRecord, data(receiptRecord))
+    expect(receipt.movement).toBeNull()
+    expect(receipt.moveRequestBlocked).toBe(true)
+    expect(canRequestVehicle(receipt, sales)).toBe(false)
+    expect(requestBlockedReason(receipt, sales)).toBe('The app already has an open move request for this vehicle.')
+    expect(requestBlockedReason(receipt, sales)).not.toMatch(/Lincoln|Howell|Fowlerville|transfer-/)
+    // A source-only vehicle blocked the same way.
+    const sourceRecord = base({ homeStore: 'Fowlerville', movement: { state: 'source_reported', label: 'Source-reported location', currentLocation: 'Fowlerville', locationConfidence: 'reported', newRequestBlocked: true } })
+    expect(canRequestVehicle(toPanelVehicle(sourceRecord, data(sourceRecord)), sales)).toBe(false)
+    // Absent (older server, advanced mode): null, and the open-move rule decides.
+    for (const movement of [
+      { state: 'picked_up', label: 'picked up', currentLocation: 'In transit', locationConfidence: 'verified' },
+      { state: 'returned_home', label: 'returned home', currentLocation: 'Fowlerville', locationConfidence: 'verified' },
+      { state: 'source_reported', label: 'Source-reported location', currentLocation: 'Fowlerville', locationConfidence: 'reported' },
+    ]) {
+      const record = base({ homeStore: 'Fowlerville', movement })
+      const vehicle = toPanelVehicle(record, data(record))
+      expect(vehicle.moveRequestBlocked).toBeNull()
+      expect(canRequestVehicle(vehicle, sales)).toBe(!vehicle.movement)
+      expect(requestBlockedReason(vehicle, sales)).toBe(vehicle.movement ? 'A move is already in progress.' : null)
+    }
+    // The per-vehicle record replaces the bootstrap movement wholesale, carrying the bit with it.
+    const merged = toPanelVehicle(mergeDetail(base({ homeStore: 'Fowlerville' }), { ...canceledRecord, privateEvidence: { comments: [], alerts: [] } }), data(canceledRecord))
+    expect(merged.moveRequestBlocked).toBe(false)
+    expect(canRequestVehicle(merged, sales)).toBe(true)
+  })
+
   it('drops unofficial document and photo urls and splits features', () => {
     const record = base({ features: 'Heated Seats | Heated Seats, Tow Package', imageUrls: ['https://www.bobmaxeyfordhowell.com/inventoryphotos/1.jpg', 'http://insecure.example/x.jpg'], listingUrl: 'https://evil.example/used-x', autoCheckReport: { url: 'https://www.bobmaxeyfordhowell.com/autocheck.aspx?sv=a', score: 91 }, windowSticker: { url: 'https://www.bobmaxeyfordhowell.com/somewhere-else', totalMsrp: 68420 } })
     const vehicle = toPanelVehicle(record, data(record))

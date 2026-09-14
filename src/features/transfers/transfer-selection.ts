@@ -1,8 +1,9 @@
 /**
  * Resolve which queue entry a `/transfers?id=` or `/transfers?vin=` link points
- * at. A VIN link with no visible match selects nothing: the transfer is withheld
- * from this role or store (or was never created), and selecting the first queue
- * entry would present another vehicle's move as if it were the requested one.
+ * at. An id or VIN link with no visible match selects nothing: the transfer is
+ * withheld from this role or store, filtered out of this queue view, or gone,
+ * and selecting the first queue entry would present another vehicle's move as
+ * if it were the requested one.
  */
 export function selectRequestedTransfer<T extends { record: { id: string; vin: string } }>(
   entries: readonly T[],
@@ -16,5 +17,5 @@ export function selectRequestedTransfer<T extends { record: { id: string; vin: s
   if (requestedVin) {
     return entries.find(({ record }) => record.vin === requestedVin) ?? null
   }
-  return entries[0] ?? null
+  return requestedId ? null : entries[0] ?? null
 }

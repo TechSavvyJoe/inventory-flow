@@ -13,7 +13,7 @@ const record = {
   imageUrls: ['https://www.bobmaxeyfordhowell.com/photos/1.jpg', 'http://insecure.example/2.jpg'],
   websiteStatus: 'Listed', publicListingState: 'Listed publicly', dealerOn: { inStock: true, inTransit: false, inProduction: false },
   hold: { state: 'primary', label: 'Held · Demo Salesperson', backupCount: 0, canViewEvidence: true, primarySalesperson: 'Demo Salesperson', reason: 'Customer appointment' },
-  movement: { transferId: 'transfer-1', state: 'in_transit', currentLocation: 'Fowlerville', locationConfidence: 'verified', currentCustodian: 'Demo Driver' },
+  movement: { transferId: 'transfer-1', state: 'in_transit', currentLocation: 'Fowlerville', locationConfidence: 'verified', currentCustodian: 'Demo Driver', newRequestBlocked: true },
   autoCheckReport: { score: 91, ownerCount: 1, estimatedInServiceDate: '2024-03-14', checks: [] },
 }
 
@@ -31,7 +31,7 @@ describe('take-home sheet model', () => {
     expect(model.description).toBe('Synthetic description.')
     const serialized = JSON.stringify(model)
     // Operational facts, custody, and the internal warranty estimate must never leave the panel.
-    for (const forbidden of ['Demo Salesperson', 'Customer appointment', 'Fowlerville', 'Demo Driver', 'transfer-1', 'hold', 'inService', '2024-03-14', 'Bumper-to-bumper', 'expiresOn', 'monthsRemaining', 'OASIS']) {
+    for (const forbidden of ['Demo Salesperson', 'Customer appointment', 'Fowlerville', 'Demo Driver', 'transfer-1', 'hold', 'inService', '2024-03-14', 'Bumper-to-bumper', 'expiresOn', 'monthsRemaining', 'OASIS', 'RequestBlocked']) {
       expect(serialized).not.toContain(forbidden)
     }
   })
