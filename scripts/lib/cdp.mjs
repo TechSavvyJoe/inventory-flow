@@ -51,7 +51,16 @@ export async function connect(wsUrl, { timeoutMs = 30000, connectTimeoutMs = 100
     if (r.exceptionDetails) throw new Error('page JS: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text))
     return r.result.value
   }
-  await call('Page.enable')
+  try {
+    await call('Page.enable')
+  } catch (error) {
+    // connect() has not returned a page handle yet, so its caller cannot close
+    // this socket when the first CDP command times out. Close it here or every
+    // wedged candidate tab leaves a live handle that keeps unattended Node
+    // captures running after they have printed their final result.
+    try { ws.close() } catch {}
+    throw error
+  }
   return { ws, call, evalJs, close: () => { try { ws.close() } catch {} } }
 }
 
