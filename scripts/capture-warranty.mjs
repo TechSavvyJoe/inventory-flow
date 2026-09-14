@@ -222,6 +222,7 @@ const SOURCE_LABEL = {
   both: 'Ford OASIS warranty record (authoritative) with Experian AutoCheck estimate; remaining figures computed at the listed odometer',
   oasis: 'Ford OASIS warranty record; remaining figures computed at the listed odometer',
   autocheck: 'Experian AutoCheck warranty estimate; remaining figures computed at the listed odometer',
+  fordUnverified: 'UNVERIFIED - Experian AutoCheck estimate only, Ford OASIS was unavailable. AutoCheck prints generic terms (60-month bumper-to-bumper where Ford is 36). DO NOT QUOTE TO A CUSTOMER - sign in to FMCDealer in the Work PC Automation Browser and re-run the capture.',
 }
 
 async function fetchAutoCheckHtml(url) {
@@ -282,15 +283,26 @@ async function oasisFor(vin) {
   if (oasisState === 'unavailable') return null
   if (!oasisCtx) {
     const ctx = await getOriginTab(OASIS_ORIGIN, OASIS_URL(vin), { settleMs: 60000 })
-    if (!ctx.state || ctx.state.host !== 'www.fordtechservice.dealerconnection.com') { oasisState = 'unavailable'; try { ctx.page.close() } catch {} ; return null }
+    if (!ctx.state || ctx.state.host !== 'www.fordtechservice.dealerconnection.com') {
+      const host = String((ctx.state && ctx.state.host) || '')
+      oasisState = /microsoftonline|login|signin|\bsso\b/i.test(host) ? 'session_expired' : 'unavailable'
+      try { ctx.page.close() } catch {}
+      return null
+    }
     oasisCtx = ctx
   }
   const r = await fetchInTab(oasisCtx.page, OASIS_URL(vin), { timeoutMs: 45000 })
-  if (r.status !== 200 || !r.text) return null
-  if (/type=["']?password/i.test(r.text) || !/OASIS RESULT/i.test(r.text)) {
-    if (/type=["']?password/i.test(r.text)) oasisState = 'session_expired'
-    return null
-  }
+  // A same-origin fetch that comes back status 0 / "Failed to fetch" is the signature of
+  // FMCDealer bouncing to login.microsoftonline.com: the cross-origin SSO hop fails CORS,
+  // so there is never a body to sniff for a password field. Before 09/14/2026 this path
+  // returned null WITHOUT setting a state, so an expired session was reported as the
+  // reassuring 'not_needed' and every Ford/Lincoln unit silently fell through to
+  // AutoCheck's generic terms. A hard network failure looks identical from here; both
+  // want the same human action, which is to check the FMCDealer sign-in.
+  if (r.status === 0 || r.error) { oasisState = 'session_expired'; return null }
+  if (r.status !== 200 || !r.text) { oasisState = `http_${r.status}`; return null }
+  if (/type=["']?password/i.test(r.text) || /login\.microsoftonline\.com/i.test(r.text)) { oasisState = 'session_expired'; return null }
+  if (!/OASIS RESULT/i.test(r.text)) { oasisState = 'no_oasis_result'; return null }
   oasisState = 'ok'
   return parseOasis(r.text)
 }
@@ -336,7 +348,11 @@ for (const vin of queue) {
 
   if (rec.fordOasis && rec.autoCheck) { rec.result = 'OK'; rec.sourceLabel = SOURCE_LABEL.both }
   else if (rec.fordOasis) { rec.result = 'OK'; rec.sourceLabel = SOURCE_LABEL.oasis }
-  else if (rec.autoCheck) { rec.result = 'OK'; rec.sourceLabel = SOURCE_LABEL.autocheck }
+  else if (rec.autoCheck) {
+    rec.result = 'OK'
+    if (FORD_MAKES.has(make)) { rec.sourceLabel = SOURCE_LABEL.fordUnverified; rec.fordWarrantyUnverified = true }
+    else { rec.sourceLabel = SOURCE_LABEL.autocheck }
+  }
   else rec.result = 'NO_WARRANTY_SOURCE'
   tally[rec.result] = (tally[rec.result] || 0) + 1
   out.records.push(rec)
@@ -348,4 +364,5 @@ out.finishedAt = new Date().toISOString()
 out.oasisSession = oasisState
 out.tally = tally
 save()
-console.log(JSON.stringify({ records: out.records.length, tally, oasisSession: oasisState, stoppedReason: out.stoppedReason || null, seconds: Math.round((Date.now() - t0) / 1000), out: outPath }))
+out.fordWarrantyUnverified = out.records.filter(r => r.fordWarrantyUnverified).length
+console.log(JSON.stringify({ records: out.records.length, tally, oasisSession: oasisState, fordWarrantyUnverified: out.fordWarrantyUnverified, stoppedReason: out.stoppedReason || null, seconds: Math.round((Date.now() - t0) / 1000), out: outPath }))
