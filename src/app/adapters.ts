@@ -278,7 +278,23 @@ export function toInventoryVehicle(
   const home = inventoryStore(vehicle.homeStore)
   const sourceStore = inventoryStore(vehicle.sourceReportedLocation || vehicle.publicStore)
   const crmStore = vehicle.crmStore ? inventoryStore(vehicle.crmStore) : null
-  const movement = transfer ?? (vehicle.movement.transferId ? data.transfers.find((item) => item.id === vehicle.movement.transferId) : undefined)
+  // The transfer the server linked outranks the caller's join. InventoryPage
+  // joins bootstrap.transfers by VIN and keeps one row per VIN — the last of
+  // an updated_at DESC listing, so the oldest — which can be a closed trip
+  // from before the request the server is pointing at.
+  const linkedTransfer = vehicle.movement.transferId
+    ? data.transfers.find((item) => item.id === vehicle.movement.transferId)
+    : undefined
+  const movement = linkedTransfer ?? transfer
+  // Party stores receive their closed rows (declined, canceled, closed,
+  // returned home) in bootstrap.transfers too. A closed row is history for the
+  // timeline and nothing else: not custody evidence, not an open move, and
+  // never the source of a request id, status, next action, due date or
+  // custodian — a canceled trip must not read as "being moved" with a Track
+  // link, and a canceled request must not turn a source report into an
+  // app-confirmed location. Mirrors the extension's join, which skips
+  // terminal rows outright.
+  const openJoined = movement && !CLOSED_REQUEST_STATES.has(movement.requestStatus) ? movement : undefined
   // service-core publishes the ledger's state, location and confidence without
   // the transfer link when this role or store may not see the transfer itself
   // (sharedLocationSummary). Only a plain source report carries the state
@@ -286,7 +302,7 @@ export function toInventoryVehicle(
   // when transferId is withheld. Mirrors ledgerBacked() in the extension.
   const ledgerState = vehicle.movement.state?.trim()
   const hasAppCustodyRecord = Boolean(
-    movement || vehicle.movement.transferId || (ledgerState && ledgerState !== 'source_reported'),
+    openJoined || vehicle.movement.transferId || (ledgerState && ledgerState !== 'source_reported'),
   )
   // Custody evidence is not the same as an open move. Consumers read
   // `movement` as "being moved" (row pill, quick view, hiding Request vehicle),
@@ -303,9 +319,7 @@ export function toInventoryVehicle(
   //    lets be requested again, and a location conflict ('location_exception'),
   //    which the server emits without any transfer link even to the owning
   //    store. Both stay custody evidence; neither is an open move.
-  const openTransfer =
-    Boolean(vehicle.movement.transferId || vehicle.movement.requestStatus) ||
-    Boolean(movement && !CLOSED_REQUEST_STATES.has(movement.requestStatus))
+  const openTransfer = Boolean(vehicle.movement.transferId || vehicle.movement.requestStatus || openJoined)
   const conflicting = vehicle.movement.locationConfidence === 'conflicting' || ledgerState === 'location_exception'
   const hasOpenMove = openTransfer || (hasAppCustodyRecord && !conflicting && ledgerState !== 'returned_home')
   // vAuto/CAI equipment is sourced from the CRM-side inventory record. Its
@@ -418,40 +432,44 @@ export function toInventoryVehicle(
       homeStore: home,
       sourceReportedStore: sourceStore,
       crmStore,
-      appConfirmedLocation: hasAppCustodyRecord ? vehicle.movement.currentLocation || movement?.currentLocation || null : null,
+      appConfirmedLocation: hasAppCustodyRecord ? vehicle.movement.currentLocation || openJoined?.currentLocation || null : null,
       appConfirmedStore:
         hasAppCustodyRecord &&
-        (vehicle.movement.currentLocation || movement?.currentLocation) &&
+        (vehicle.movement.currentLocation || openJoined?.currentLocation) &&
         ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln'].includes(
-          vehicle.movement.currentLocation || movement?.currentLocation || '',
+          vehicle.movement.currentLocation || openJoined?.currentLocation || '',
         )
-          ? inventoryStore(vehicle.movement.currentLocation || movement?.currentLocation || '')
+          ? inventoryStore(vehicle.movement.currentLocation || openJoined?.currentLocation || '')
           : null,
-      appConfirmedAt: hasAppCustodyRecord ? vehicle.movement.lastConfirmedAt || movement?.lastConfirmedAt || null : null,
-      appConfirmedBy: hasAppCustodyRecord ? movement?.custodian || vehicle.movement.currentCustodian || null : null,
-      custodian: hasAppCustodyRecord ? vehicle.movement.currentCustodian || movement?.custodian || null : null,
+      appConfirmedAt: hasAppCustodyRecord ? vehicle.movement.lastConfirmedAt || openJoined?.lastConfirmedAt || null : null,
+      appConfirmedBy: hasAppCustodyRecord ? openJoined?.custodian || vehicle.movement.currentCustodian || null : null,
+      custodian: hasAppCustodyRecord ? vehicle.movement.currentCustodian || openJoined?.custodian || null : null,
       conflict: vehicle.movement.locationConfidence === 'conflicting',
     },
     movement: hasOpenMove
       ? {
-          state: movement?.movementStatus || vehicle.movement.state,
-          requestStatus: vehicle.movement.requestStatus || movement?.requestStatus || null,
-          custodyStatus: movement?.movementStatus || vehicle.movement.state,
-          customerOutcome: movement?.dealStatus || null,
-          deliveryConfirmation: movement?.deliveryStatus || null,
-          requestId: movement?.id || vehicle.movement.transferId || null,
-          withheld: !(movement?.id || vehicle.movement.transferId),
-          lastEventAt: vehicle.movement.lastConfirmedAt || movement?.lastConfirmedAt || null,
-          lastEventLabel: movement?.events.at(-1)?.label || null,
-          nextAction: vehicle.movement.nextAction || movement?.nextAction || null,
-          dueAt: vehicle.movement.dueAt || movement?.dueAt || null,
+          state: openJoined?.movementStatus || vehicle.movement.state,
+          requestStatus: vehicle.movement.requestStatus || openJoined?.requestStatus || null,
+          custodyStatus: openJoined?.movementStatus || vehicle.movement.state,
+          customerOutcome: openJoined?.dealStatus || null,
+          deliveryConfirmation: openJoined?.deliveryStatus || null,
+          requestId: vehicle.movement.transferId || openJoined?.id || null,
+          withheld: !(vehicle.movement.transferId || openJoined?.id),
+          lastEventAt: vehicle.movement.lastConfirmedAt || openJoined?.lastConfirmedAt || null,
+          lastEventLabel: openJoined?.events.at(-1)?.label || null,
+          nextAction: vehicle.movement.nextAction || openJoined?.nextAction || null,
+          dueAt: vehicle.movement.dueAt || openJoined?.dueAt || null,
           overdue:
             Boolean(vehicle.movement.dueAt && new Date(vehicle.movement.dueAt).getTime() < Date.now()) ||
-            Boolean(movement?.dueAt && new Date(movement.dueAt).getTime() < Date.now()),
-          custodian: vehicle.movement.currentCustodian || movement?.custodian || null,
-          transportAssignee: vehicle.movement.transportAssignee || movement?.transportAssignee || null,
+            Boolean(openJoined?.dueAt && new Date(openJoined.dueAt).getTime() < Date.now()),
+          custodian: vehicle.movement.currentCustodian || openJoined?.custodian || null,
+          transportAssignee: vehicle.movement.transportAssignee || openJoined?.transportAssignee || null,
         }
       : null,
+    // The server's own createTransfer decision (service-core vehicleView,
+    // simple mode, creator roles); null when this server did not publish it.
+    // Never derived from `movement` — the two answer different questions.
+    moveRequestBlocked: typeof vehicle.movement.newRequestBlocked === 'boolean' ? vehicle.movement.newRequestBlocked : null,
     holdEvidence: holdEvidence(vehicle, dealerMailState),
     dealerMailEvidence: vehicle.hold.canViewEvidence === true && vehicle.privateEvidence
       ? {
@@ -463,7 +481,8 @@ export function toInventoryVehicle(
       : undefined,
     timeline: [
       ...timelineFromPublicChanges(data, vehicle.vin),
-      ...(hasAppCustodyRecord ? timelineFromTransfer(movement) : []),
+      // Every joined row's events are history, whether the row is still open.
+      ...timelineFromTransfer(movement),
     ],
   }
 }

@@ -54,7 +54,9 @@ function service() {
     websiteStatus: 'Not provided', publicListingState: 'Listed publicly; availability not confirmed',
     dealerOn: { inStock: true, inTransit: false, inProduction: false },
     hold: { state: 'none_observed', backupCount: 0 },
-    movement: { state: 'arrived', currentLocation: 'Howell', lastConfirmedAt: '2026-09-09T12:00:00Z', locationConfidence: 'verified' },
+    // newRequestBlocked is an app-API field; the Location schema below is
+    // additionalProperties: false, so the contract walk proves it stays out.
+    movement: { state: 'arrived', currentLocation: 'Howell', lastConfirmedAt: '2026-09-09T12:00:00Z', locationConfidence: 'verified', newRequestBlocked: true },
     managerDisposition: {
       stockNumber: '0001TEST', vin: vinFor(1), vehicleName: '2024 Ford F-150 XLT', soldManagerLog: true, deliveredManagerLog: true,
       deliveryDate: '2026-09-09', confidence: 'high', sourceStore: 'Howell', sourcePeriod: '2026-09', matchMethod: 'vin',

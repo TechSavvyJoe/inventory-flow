@@ -305,6 +305,11 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
     hold: holdSignal(record, dealerMailState),
     location: resolveLocation(record, transfer),
     movement: movementSignal(record, transfer, now),
+    // The server's own createTransfer decision (service-core vehicleView
+    // publishes the guard behind 409 ACTIVE_TRANSFER_EXISTS, decided over
+    // every ledger row for the VIN); null when this server did not say.
+    // Never derived from `movement` — the two answer different questions.
+    moveRequestBlocked: typeof record.movement?.newRequestBlocked === 'boolean' ? record.movement.newRequestBlocked : null,
     managerLog: disposition
       ? {
         soldLabel: disposition.soldLabel, deliveryLabel: disposition.deliveryLabel, deliveryDate: text(disposition.deliveryDate), sourceStore: disposition.sourceStore, confidence: disposition.confidence,
@@ -340,21 +345,34 @@ function isTerminal(transfer) {
   return /cancel|declin|complete|returned|closed|rejected/.test(status)
 }
 
+/**
+ * The server's word on whether a ledger row still blocks a new request; an
+ * open move is only the fallback for servers that did not publish it (older
+ * deployments, the advanced engine). Absence never means "allowed".
+ */
+function moveRequestBlocked(vehicle) {
+  return vehicle.moveRequestBlocked ?? Boolean(vehicle.movement)
+}
+
 /** The app's own rule for showing "Request vehicle". */
 export function canRequestVehicle(vehicle, access) {
   if (!access || access.canCreateTransfer === false) return false
   if (!['sales', 'manager', 'group_manager'].includes(access.role)) return false
   if (vehicle.homeStore === access.store) return false
-  // Any open move blocks a new request — the server rejects one with
-  // "already has an open move" even when the transfer link is withheld.
-  return !vehicle.movement
+  // Role and home store are the panel's rules; whether the ledger blocks a
+  // new request is the server's (409 ACTIVE_TRANSFER_EXISTS).
+  return !moveRequestBlocked(vehicle)
 }
 
 export function requestBlockedReason(vehicle, access) {
   if (!access) return 'Sign in to request vehicles.'
   if (!['sales', 'manager', 'group_manager'].includes(access.role) || access.canCreateTransfer === false) return 'Your role cannot request vehicles.'
   if (vehicle.homeStore === access.store) return `Already at ${access.store}, your working store.`
-  if (vehicle.movement) return 'A move is already in progress.'
+  if (moveRequestBlocked(vehicle)) {
+    // Blocked without a visible move: a request this user may not see is
+    // open somewhere. Name no store, actor or request — the server does not.
+    return vehicle.movement ? 'A move is already in progress.' : 'The app already has an open move request for this vehicle.'
+  }
   return null
 }
 

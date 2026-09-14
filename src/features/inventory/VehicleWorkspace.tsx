@@ -50,6 +50,7 @@ import {
   formatMileage,
   formatMoney,
   formatStickerMoney,
+  isMoveRequestBlocked,
   resolveCurrentLocation,
   sameStore,
   vehicleDisplayName,
@@ -2249,8 +2250,20 @@ function MovementDetails({ vehicle }: { vehicle: InventoryVehicle }) {
   const current = resolveCurrentLocation(vehicle);
   const withheld = movement?.withheld === true;
   const withheldText = "Withheld for your role or store";
+  // The server says a new request would be refused, yet this role or store
+  // sees no move to explain it: a request it may not see is open somewhere.
+  const blockedUnseen = vehicle.moveRequestBlocked === true && !movement?.requestId;
   return (
     <div className="inventory-workspace-detail-content">
+      {blockedUnseen ? (
+        <div className="inventory-availability-note inventory-availability-note--compact">
+          <Truck size={17} strokeWidth={1.75} aria-hidden="true" />
+          <span>
+            <strong>The app already has an open move request for this vehicle.</strong>{" "}
+            A new request is not offered until it closes.
+          </span>
+        </div>
+      ) : null}
       {withheld ? (
         <div className="inventory-availability-note inventory-availability-note--compact">
           <Navigation size={17} strokeWidth={1.75} aria-hidden="true" />
@@ -2286,9 +2299,11 @@ function MovementDetails({ vehicle }: { vehicle: InventoryVehicle }) {
       <dl className="inventory-fact-grid">
         <Fact label="Home store">{location.homeStore.name}</Fact>
         <Fact label="App-confirmed location">
-          {location.appConfirmedLocation ||
-            location.appConfirmedStore?.name ||
-            "Not confirmed"}
+          {location.conflict
+            ? "Location needs checking"
+            : location.appConfirmedLocation ||
+              location.appConfirmedStore?.name ||
+              "Not confirmed"}
         </Fact>
         <Fact label="Last confirmed">
           {formatDateTime(location.appConfirmedAt)}
@@ -2938,7 +2953,7 @@ export function VehicleWorkspace({
                       <button type="button" className="vdp-flow-primary-action" onClick={() => onTrackMovement(vehicle)} data-action="track-movement">
                         <Truck size={17} aria-hidden="true" /> Track movement
                       </button>
-                    ) : !vehicle.movement && canRequestVehicle && onRequestVehicle ? (
+                    ) : !isMoveRequestBlocked(vehicle) && canRequestVehicle && onRequestVehicle ? (
                       <button type="button" className="vdp-flow-primary-action" onClick={() => onRequestVehicle(vehicle)} data-action="request-vehicle">
                         <ArrowLeftRight size={17} aria-hidden="true" /> Request vehicle
                       </button>

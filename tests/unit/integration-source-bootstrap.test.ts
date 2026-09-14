@@ -22,7 +22,7 @@ function fixture() {
     homeStore: 'Howell', homeStoreConfirmed: true, crmStore: 'Lincoln', websiteStatus: 'In Stock',
     imageUrl: 'https://images.dealeron.com/car.jpg', imageUrls: ['https://images.dealeron.com/car.jpg'],
     hold: { state: 'multiple', backupCount: 1, customerOrReason: PRIVATE, primarySalesperson: PRIVATE, raw: { notes: PRIVATE } },
-    movement: { state: 'arrived', currentLocation: 'Lincoln', destination: 'Lincoln', locationConfidence: 'verified', departedAt: '2026-09-08T12:00:00Z', lastConfirmedAt: '2026-09-09T12:00:00Z', notes: PRIVATE, actor: PRIVATE },
+    movement: { state: 'arrived', currentLocation: 'Lincoln', destination: 'Lincoln', locationConfidence: 'verified', departedAt: '2026-09-08T12:00:00Z', lastConfirmedAt: '2026-09-09T12:00:00Z', notes: PRIVATE, actor: PRIVATE, newRequestBlocked: true },
     autoCheckReport: { dataState: 'current', score: 90, checks: [{ label: 'Accident', status: 'No issue reported', detail: 'No accident reported', raw: PRIVATE }], url: PRIVATE, raw: PRIVATE },
     windowSticker: { dataState: 'current', equipmentGroup: '302A', options: ['TRAILER TOW PACKAGE'], standardEquipment: ['SYNC 4'], warranty: ['3YR/36000'], raw: PRIVATE, url: PRIVATE },
     factoryEquipment: { dataState: 'current', packages: [{ name: 'FX4', code: '55A', price: 1095, features: ['Hill descent'], raw: PRIVATE }], sections: [{ name: 'Safety', items: [{ label: 'Lane keeping', price: 0, raw: PRIVATE }], raw: PRIVATE }], raw: PRIVATE, url: PRIVATE },
@@ -49,6 +49,10 @@ describe('integration public-source bootstrap', () => {
     expect(result.vehicles[0]).toMatchObject({ stockNumber: '0001PUBLIC', year: 2024, make: 'Ford', model: 'F-150', trim: 'XLT', vehicleName: '2024 Ford F-150 XLT', listedPrice: 42000, mileage: 2052, publicStore: 'Howell', sourceReportedLocation: 'Howell', daysListed: 8, exteriorColor: 'Oxford White', engine: '3.5L EcoBoost', websiteStatus: 'Not provided' })
     expect(result.vehicles[0].dealerOn).toEqual({ inStock: true, inTransit: false, inProduction: false })
     expect(result.vehicles[0]).toMatchObject({ homeStore: 'Howell', homeStoreConfirmed: true, crmStore: 'Lincoln', movement: { currentLocation: 'Lincoln' } })
+    // The app API's own new-request decision is not a Shared Read API fact:
+    // the explicit movement allowlist keeps it (and the private keys) out.
+    expect(Object.keys(result.vehicles[0].movement).sort()).toEqual(['currentLocation', 'departedAt', 'destination', 'lastConfirmedAt', 'locationConfidence', 'state'])
+    expect(result.vehicles[0].movement).not.toHaveProperty('newRequestBlocked')
   })
 
   it('keeps absent public facts missing instead of relabeling CRM values as published data', () => {

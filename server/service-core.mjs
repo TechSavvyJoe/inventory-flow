@@ -312,6 +312,17 @@ function blocksNewSimpleRequest(row) {
     row.current_location_id === row.home_store_id)
 }
 
+/**
+ * The exact rule createTransfer enforces (409 ACTIVE_TRANSFER_EXISTS), decided
+ * over every ledger row for the VIN whether or not the caller may see it.
+ * vehicleView publishes the same answer so clients never guess it from the
+ * movement shape they happen to receive. The advanced engine allows overlaps,
+ * so it never blocks there.
+ */
+function newRequestBlocked(rows, workflowMode) {
+  return workflowMode === 'simple' && rows.some(blocksNewSimpleRequest)
+}
+
 function transferEventView(row, { includeNotes = false } = {}) {
   const event = {
     id: row.id,
@@ -651,11 +662,23 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     : location
       ? { ...sharedLocationSummary(location.row, location.events), ...(location.departureConflicting ? { departedAt: undefined } : {}) }
       : null
-  const movement = physicalMovement
-    ? !location.conflicting && active && transferVisible(location.row, context)
-      ? { ...baseMovement, ...physicalMovement }
-      : physicalMovement
-    : baseMovement
+  const movement = {
+    ...(physicalMovement
+      ? !location.conflicting && active && transferVisible(location.row, context)
+        ? { ...baseMovement, ...physicalMovement }
+        : physicalMovement
+      : baseMovement),
+    // The caller's own createTransfer outcome, decided over every row for the
+    // VIN (transferRows is state.transfersByVin, not the visibility-filtered
+    // list) so the value published is exactly what a POST would get. Only
+    // callers who could reach that 409 receive the bit; drivers, porters and
+    // coordinators are refused with 403 first, so for them presence itself
+    // would be a new disclosure. It is one boolean with no request identity,
+    // actor, store, custodian, note or customer attached — the same single
+    // fact the 409 message already states. Absent in advanced mode, where
+    // createTransfer never evaluates the single-active rule.
+    ...(simple && context.canCreateTransfer ? { newRequestBlocked: newRequestBlocked(transferRows, context.workflowMode) } : {}),
+  }
   const reportDate = meta.reportDate
   const name = vehicleName(source)
   const year = publicRecord?.year ?? finiteNumber(crmRecord?.yearRaw) ?? cleanText(crmRecord?.yearRaw)
@@ -1649,7 +1672,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         }
         return { record: this.getTransfer(replay.id, contextInput), created: false }
       }
-      if (workflowMode === 'simple' && (state.transfersByVin.get(vin) ?? []).some(blocksNewSimpleRequest)) {
+      if (newRequestBlocked(state.transfersByVin.get(vin) ?? [], workflowMode)) {
         // Do not reveal another store's private request identity or details.
         throw new WorkflowError('This vehicle already has an open move request. Review its location and ask your manager before starting another.', {
           status: 409, code: 'ACTIVE_TRANSFER_EXISTS',
@@ -1745,6 +1768,8 @@ export const serviceInternals = Object.freeze({
   privateSearchText,
   holdSummary,
   isActiveTransfer,
+  blocksNewSimpleRequest,
+  newRequestBlocked,
   transferVisible,
   transferMutationAuthorized,
   allowedUiActions,

@@ -293,6 +293,15 @@ export interface InventoryVehicle {
   dealerMail: DealerMailHoldSignal;
   location: VehicleLocationSignal;
   movement?: VehicleMovementSignal | null;
+  /**
+   * The server's own decision on a new move request: true = it would be
+   * refused (a request is open somewhere, visible to this store or not),
+   * false = it would be accepted, null = this server did not say (older
+   * deployment or advanced mode). Independent of `movement`: a received-home
+   * vehicle has `movement` null yet may be blocked, and a canceled trip's
+   * stale custody shape has `movement` set yet may be requestable.
+   */
+  moveRequestBlocked?: boolean | null;
   holdEvidence?: DealerMailHoldEvidence[];
   dealerMailEvidence?: DealerMailVehicleEvidence;
   timeline?: VehicleTimelineEvent[];
