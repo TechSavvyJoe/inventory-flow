@@ -140,7 +140,9 @@ function Test-ReceiptMatchesManagerOverlay {
 
   $binding = $manifest.manager_disposition_overlay
   $expected = if ($binding -and $binding.status -eq 'complete') { [string]$binding.sha256 } else { '' }
-  $published = if ($Receipt.sourceHashes) { [string]$Receipt.sourceHashes.managerDisposition } else { '' }
+  # The manifest checksum is the raw operational input. The managerDisposition
+  # receipt hash is the sanitized overlay and must not be compared to it.
+  $published = if ($Receipt.sourceHashes) { [string]$Receipt.sourceHashes.managerDispositionBinding } else { '' }
   # A missing optional binding is not authority to erase an overlay that was
   # already published. Only a complete, hash-bound current manifest may trigger
   # an automatic manager-overlay republish.
@@ -305,7 +307,7 @@ try {
 
     # Step 1.45 - remaining factory warranty per VIN, figured at that vehicle's listed odometer.
     # Ford/Lincoln coverage comes from Ford OASIS through the authenticated FMCDealer tab in the
-    # automation browser; every other make falls back to the Experian AutoCheck estimate, which is
+    # automation browser; non-Ford makes use the Experian AutoCheck estimate, which is
     # fetched straight from the dealer report page (no login, no clicking - the "enter mileage"
     # calculator is client-side arithmetic the script reproduces exactly).
     # NON-FATAL: warranty figures are reference data; a failure here must never block the publish.
@@ -316,7 +318,7 @@ try {
         Write-Log "warranty: capture incomplete (exit $($warrantyRun.ExitCode)) - continuing: $($warrOut.Trim())" 'WARN'
       } else {
         Write-Log "warranty: $($warrOut.Trim())"
-        if ($warrOut -match 'session_expired') { Write-Log 'warranty: FMCDealer session expired - sign in again in the Work PC Automation Browser (Ford/Lincoln units fall back to the AutoCheck estimate)' 'WARN' }
+        if ($warrOut -match 'session_expired|browser_unavailable|fordOasisPending[^0-9]*[1-9]') { Write-Log 'warranty: Ford OASIS is incomplete - sign in to FMCDealer in the Work PC Automation Browser; Ford/Lincoln AutoCheck-only rows are not published' 'WARN' }
       }
     } catch {
       Write-Log "warranty: skipped - $($_.Exception.Message)" 'WARN'

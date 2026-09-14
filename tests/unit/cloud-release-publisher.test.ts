@@ -256,6 +256,7 @@ describe('portable cloud release validation', () => {
     ['a duplicate coverage type', (w) => { w.fordOasis.coverages[1].type = 'Bumper-to-Bumper' }],
     ['a missing remaining text', (w) => { delete w.fordOasis.coverages[0].remainingMilesText }],
     ['no warranty source at all', (w) => { delete w.fordOasis; delete w.autoCheck }],
+    ['an explicitly unverified source label', (w) => { w.sourceLabel = 'UNVERIFIED - Ford OASIS was unavailable. DO NOT QUOTE.' }],
   ])('rejects a warranty check carrying %s', (_label, mutate) => {
     const bundle = completeBundle()
     addWarrantyCheck(bundle, { mutate })

@@ -14,6 +14,16 @@ export function reportDate(now = new Date()) {
 }
 function check(condition, code) { if (!condition) throw new Error(code) }
 
+export function receiptSourceHashes(release) {
+  return {
+    ...Object.fromEntries(['public', 'dealerMail', 'resources', 'managerDisposition'].map(name => [name, release.sourceRuns?.[name]?.sha256 ?? null])),
+    // sourceRuns.managerDisposition.sha256 binds the sanitized cloud overlay.
+    // The daily manifest binds the raw operational input. Preserve both so the
+    // idempotency guard compares like with like.
+    managerDispositionBinding: release.sourceRuns?.managerDisposition?.metadata?.boundSourceSha256 ?? null,
+  }
+}
+
 export function verifyPublishedRelease({ envelope, expected, status, readiness }) {
   check(status?.ready === true && readiness?.ready === true, 'CLOUD_NOT_READY')
   check(status.reportDate === envelope.reportDate && readiness.reportDate === envelope.reportDate, 'CLOUD_DATE_MISMATCH')
@@ -42,7 +52,18 @@ export async function syncCloudRelease({ release, environment = process.env, fet
   }
   const [status, readiness] = await Promise.all([read('/internal/status'), read('/internal/readiness')])
   const counts = verifyPublishedRelease({ envelope, expected, status, readiness })
-  return { schemaVersion: 1, reportDate: envelope.reportDate, complete: true, status: 'published_and_verified', publication: publication.status, bundleSha256: envelope.bundleSha256, verifiedAt: new Date().toISOString(), counts, validation: { exactContent: true, storeCounts: true, privateAppReadiness: true, managerDispositionBound: true }, sourceHashes: Object.fromEntries(['public', 'dealerMail', 'resources', 'managerDisposition'].map(name => [name, release.sourceRuns?.[name]?.sha256 ?? null])) }
+  return {
+    schemaVersion: 1,
+    reportDate: envelope.reportDate,
+    complete: true,
+    status: 'published_and_verified',
+    publication: publication.status,
+    bundleSha256: envelope.bundleSha256,
+    verifiedAt: new Date().toISOString(),
+    counts,
+    validation: { exactContent: true, storeCounts: true, privateAppReadiness: true, managerDispositionBound: true },
+    sourceHashes: receiptSourceHashes(release),
+  }
 }
 
 // A publication receipt is separate from the immutable audited report manifest:

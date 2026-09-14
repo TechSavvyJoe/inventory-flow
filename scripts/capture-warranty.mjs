@@ -1,5 +1,5 @@
 // capture-warranty.mjs — remaining factory warranty per VIN, at the vehicle's ACTUAL listed mileage.
-//   node scripts/capture-warranty.mjs run <YYYY-MM-DD> [--max N] [--budget-ms N] [--vin VIN]
+//   node scripts/capture-warranty.mjs run <YYYY-MM-DD> [--max N] [--budget-ms N] [--vin VIN] [--refresh]
 //
 // TWO SOURCES, both read-only:
 //   (1) Ford OASIS  (Ford/Lincoln only) - authoritative. Fetched through the already-authenticated
@@ -16,11 +16,14 @@
 //
 // Remaining time/miles are necessarily COMPUTED (term minus age/odometer). Every printed value -
 // the term text, the warranty start date, the months in service - is carried through verbatim.
-// PRIVACY: OASIS extended-coverage blocks carry the PRIOR OWNER'S NAME. This script captures
-// coverage category and expiration date only, and no owner/customer field is ever read.
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+// PRIVACY: OASIS extended-service-plan blocks can carry prior-owner details.
+// This script ignores that entire block and publishes only closed-vocabulary
+// factory warranty rows plus FSA codes.
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs'
 import path from 'node:path'
-import { getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { pathToFileURL } from 'node:url'
+import { closeOwnedTab, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { factoryTermText, isFactoryCoverageRow, isOasisDate } from '../server/oasis-coverage-grammar.mjs'
 
 const ROOT = path.resolve(import.meta.dirname, '../../..')
 const OASIS_ORIGIN = 'https://www.fordtechservice.dealerconnection.com'
@@ -30,7 +33,7 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 // ── shared warranty maths ────────────────────────────────────────────────────
 // Mirrors parseWarrantyLimitValue() in AutoCheck's main.js.
-function parseLimit(raw) {
+export function parseLimit(raw) {
   const s = String(raw ?? '').trim()
   if (!s || /^(na|n\/a|-)$/i.test(s)) return { kind: 'na' }
   if (/unlimited|lifetime/i.test(s)) return { kind: 'unlimited' }
@@ -41,7 +44,7 @@ const fmtMiles = n => `${Math.max(Math.floor(n), 0).toLocaleString('en-US')} mil
 const fmtMonths = n => `${n} ${n === 1 ? 'month' : 'months'}`
 
 // Mirrors recalculateWarrantyTable() exactly: same expiry rules, same wording.
-function remainingFor({ milesLimit, monthsLimit, currentMileage, currentAgeMonths }) {
+export function remainingFor({ milesLimit, monthsLimit, currentMileage, currentAgeMonths }) {
   const out = { status: 'N/A', remainingMilesText: 'N/A', remainingTimeText: 'N/A' }
   if (milesLimit.kind === 'na' && monthsLimit.kind === 'na') return out
   const hasMiles = milesLimit.kind === 'number'
@@ -75,7 +78,7 @@ function remainingFor({ milesLimit, monthsLimit, currentMileage, currentAgeMonth
 // Nothing is clicked. The table ships with the term limits as data attributes; the
 // on-page button only re-runs the arithmetic we reproduce in remainingFor().
 const COVERAGE_NOTE_MAX = 160
-function parseAutoCheckWarranty(html, currentMileage) {
+export function parseAutoCheckWarranty(html, currentMileage) {
   const tableMatch = html.match(/<table[^>]*id="warrantyDetail"[\s\S]*?<\/table>/i)
   if (!tableMatch) return null
   const table = tableMatch[0]
@@ -129,7 +132,7 @@ function stripTagsLocal(s) {
 }
 
 // The AutoCheck page also prints the estimated in-service date used for the age figure.
-function parseAutoCheckInServiceDate(html) {
+export function parseAutoCheckInServiceDate(html) {
   const text = stripTagsLocal(html)
   const m = text.match(/estimated in service(?: date)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2}|[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})/i)
   return m ? m[1].trim().slice(0, 40) : null
@@ -137,7 +140,7 @@ function parseAutoCheckInServiceDate(html) {
 
 // ── Ford OASIS: warranty start date, months in service, printed coverage terms ──
 // "3 years / 36,000 Miles (whichever occurs first)" -> 36 months / 36000 miles.
-function termFromOasisDescription(description) {
+export function termFromOasisDescription(description) {
   const d = String(description || '')
   const out = {}
   const years = d.match(/(\d+)\s*years?/i)
@@ -152,36 +155,40 @@ function termFromOasisDescription(description) {
   return out
 }
 
-function parseOasis(html) {
+function responseMentionsVin(text, expectedVin) {
+  const vin = String(expectedVin || '').trim().toUpperCase()
+  return /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) && String(text || '').toUpperCase().includes(vin)
+}
+
+export function parseOasis(html, expectedVin) {
   const text = stripTagsLocal(html)
-  if (!/OASIS RESULT/i.test(text)) return null
-  const field = (label) => {
-    const m = text.match(new RegExp(label + '\\s*:\\s*([^:]*?)(?=\\s+[A-Z][A-Z &/]{3,}\\s*:|\\s*$)', 'i'))
-    return m ? m[1].trim() : ''
-  }
-  const warrantyStartDate = (text.match(/WARRANTY START DATE:\s*([0-9]{1,2}-[A-Za-z]+-[0-9]{4})/i) || [])[1] || ''
+  if (!/OASIS RESULT/i.test(text) || !responseMentionsVin(text, expectedVin)) return null
+  const warrantyStartDate = (text.match(/WARRANTY START DATE:\s*((?:0?[1-9]|[12]\d|3[01])-(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)-\d{4})/i) || [])[1] || ''
   const monthsRaw = (text.match(/MONTHS IN SERVICE:\s*(\d+)/i) || [])[1]
   const saleMileageRaw = (text.match(/SALE MILEAGE:\s*([\d,]+)/i) || [])[1]
 
   const coverages = []
   const seen = new Set()
-  const block = text.slice(Math.max(0, text.search(/WARRANTY COVERAGE/i)))
-  const re = /COVERAGE TYPE:\s*([^:]*?)\s*COVERAGE DESCRIPTION:\s*([\s\S]*?)(?=\s*ADDITIONAL INFO:|\s*COVERAGE TYPE:|\s*MARKETING MESSAGES|\s*EXTENDED COVERAGES|$)/gi
+  let coverageCandidates = 0
+  const coverageStart = text.search(/WARRANTY COVERAGE/i)
+  if (coverageStart < 0) return null
+  const coverageTail = text.slice(coverageStart)
+  const coverageBoundary = coverageTail.search(/\b(?:EXTENDED COVERAGES|WARRANTY REPAIR HISTORY|MARKETING MESSAGES)\b/i)
+  // Stop before OASIS's separate extended-plan section. Searching one global
+  // regex across the remainder of the page would otherwise allow a plan row
+  // whose type and term happen to resemble a factory warranty row.
+  const block = coverageBoundary >= 0 ? coverageTail.slice(0, coverageBoundary) : coverageTail
+  const re = /COVERAGE TYPE:\s*([^:]*?)\s*COVERAGE DESCRIPTION:\s*([\s\S]*?)(?=\s*ADDITIONAL INFO:|\s*COVERAGE TYPE:|\s*MARKETING MESSAGES|\s*EXTENDED COVERAGES|\s*WARRANTY REPAIR HISTORY|$)/gi
   let m
   while ((m = re.exec(block)) && coverages.length < 12) {
-    const type = m[1].trim().slice(0, 60)
+    coverageCandidates += 1
+    const type = m[1].trim()
     const description = m[2].trim()
-    if (!type) continue
+    if (!isFactoryCoverageRow(type, description) || factoryTermText(description) !== description) continue
     const key = type.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
-    coverages.push({ type, description: description.slice(0, 120) })
-  }
-  // extended coverage CATEGORIES and expirations only - never an owner name
-  const extended = []
-  const extBlock = /EXTENDED COVERAGES([\s\S]{0,1200}?)(?:WARRANTY REPAIR HISTORY|End of OASIS report|$)/i.exec(text)
-  if (extBlock && !/NO ESP INFORMATION AVAILABLE/i.test(extBlock[1])) {
-    for (const d of (extBlock[1].match(/\d{1,2}-[A-Za-z]{3,}-\d{4}/g) || []).slice(0, 10)) extended.push(d)
+    coverages.push({ type, description })
   }
   const fsa = []
   const fsaBlock = /OUTSTANDING FIELD SERVICE ACTIONS([\s\S]{0,2000}?)(?:NO WARNING MESSAGES|GENERAL WARRANTY INFORMATION|$)/i.exec(text)
@@ -193,13 +200,13 @@ function parseOasis(html) {
     monthsInService: monthsRaw ? Number(monthsRaw) : null,
     saleMileage: saleMileageRaw ? Number(saleMileageRaw.replace(/,/g, '')) : null,
     coverages,
-    extendedCoverageExpirations: extended,
+    coverageCandidates,
     openFieldServiceActionCodes: fsa,
   }
 }
 
-function oasisWarrantyBlock(oasis, currentMileage) {
-  if (!oasis || !oasis.warrantyStartDate || oasis.monthsInService == null) return null
+export function oasisWarrantyBlock(oasis, currentMileage) {
+  if (!oasis || !isOasisDate(oasis.warrantyStartDate) || oasis.monthsInService == null) return null
   const age = oasis.monthsInService
   const coverages = []
   for (const c of oasis.coverages) {
@@ -207,7 +214,8 @@ function oasisWarrantyBlock(oasis, currentMileage) {
     const milesLimit = t.unlimitedMiles ? { kind: 'unlimited' } : t.termMiles != null ? { kind: 'number', value: t.termMiles } : { kind: 'na' }
     const monthsLimit = t.termMonths != null ? { kind: 'number', value: t.termMonths } : { kind: 'na' }
     const calc = remainingFor({ milesLimit, monthsLimit, currentMileage, currentAgeMonths: age })
-    const entry = { type: c.type, termText: (c.description || 'Varies').slice(0, 120), ...calc }
+    if (!isFactoryCoverageRow(c.type, c.description)) continue
+    const entry = { type: c.type, termText: c.description, ...calc }
     if (t.termMiles != null) entry.termMiles = t.termMiles
     if (t.termMonths != null) entry.termMonths = t.termMonths
     if (t.unlimitedMiles) entry.unlimitedMiles = true
@@ -217,15 +225,40 @@ function oasisWarrantyBlock(oasis, currentMileage) {
   return { warrantyStartDate: oasis.warrantyStartDate.slice(0, 40), monthsInService: age, coverages: coverages.slice(0, 12) }
 }
 
+const OASIS_NO_RECORD = /(?:NO\s+(?:OASIS|VEHICLE|WARRANTY)\s+(?:INFORMATION|RECORD|DATA)(?:\s+(?:IS\s+)?AVAILABLE|\s+FOUND)?|VEHICLE\s+(?:WAS\s+)?NOT\s+FOUND|VIN\s+(?:WAS\s+)?NOT\s+FOUND|INVALID\s+VIN)/i
+
+export function classifyOasisResponse(response, expectedVin) {
+  if (!response || response.status === 0 || response.error) return { state: 'unreachable' }
+  const text = String(response.text || '')
+  if (/type=["']?password/i.test(text) || /login\.microsoftonline\.com/i.test(text)) return { state: 'session_expired' }
+  if (response.status !== 200 || !text) return { state: 'unreachable' }
+  const plain = stripTagsLocal(text)
+  if (!responseMentionsVin(plain, expectedVin)) return { state: 'unparsed' }
+  if (OASIS_NO_RECORD.test(plain)) return { state: 'no_record' }
+  const oasis = parseOasis(text, expectedVin)
+  if (!oasis || !isOasisDate(oasis.warrantyStartDate) || !Number.isSafeInteger(oasis.monthsInService)) return { state: 'unparsed' }
+  if (oasis.coverageCandidates !== oasis.coverages.length) return { state: 'unparsed' }
+  return { state: 'ok', oasis }
+}
+
+export function isCompleteWarrantyRecord(record) {
+  if (!record || typeof record !== 'object') return false
+  const make = String(record.make || '').toUpperCase()
+  if (FORD_MAKES.has(make)) {
+    return (record.result === 'OK' && Boolean(record.fordOasis)) || ['no_record', 'no_factory_coverage'].includes(record.oasisOutcome)
+  }
+  return record.result === 'OK' && Boolean(record.autoCheck)
+}
+
 // ── drivers ──────────────────────────────────────────────────────────────────
 const SOURCE_LABEL = {
   both: 'Ford OASIS warranty record (authoritative) with Experian AutoCheck estimate; remaining figures computed at the listed odometer',
   oasis: 'Ford OASIS warranty record; remaining figures computed at the listed odometer',
   autocheck: 'Experian AutoCheck warranty estimate; remaining figures computed at the listed odometer',
-  fordUnverified: 'UNVERIFIED - Experian AutoCheck estimate only, Ford OASIS was unavailable. AutoCheck prints generic terms (60-month bumper-to-bumper where Ford is 36). DO NOT QUOTE TO A CUSTOMER - sign in to FMCDealer in the Work PC Automation Browser and re-run the capture.',
+  fordNoRecord: 'Ford OASIS returned no vehicle record; Experian AutoCheck estimate only, with remaining figures computed at the listed odometer',
 }
 
-async function fetchAutoCheckHtml(url) {
+export async function fetchAutoCheckHtml(url) {
   const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' }, redirect: 'follow', signal: AbortSignal.timeout(30000) })
   if (!r.ok) throw new Error('HTTP_' + r.status)
   const ct = r.headers.get('content-type') || ''
@@ -243,126 +276,157 @@ function loadSnapshot(reportDate) {
   return vehicles
 }
 
-const [, , cmd, dateArg, ...rest] = process.argv
-const flagNum = (name, dflt) => rest.includes(name) ? Number(rest[rest.indexOf(name) + 1]) : dflt
-const flagStr = (name, dflt) => rest.includes(name) ? String(rest[rest.indexOf(name) + 1]) : dflt
+export async function main(argv = process.argv.slice(2)) {
+  const [cmd, dateArg, ...rest] = argv
+  const flagNum = (name, dflt) => rest.includes(name) ? Number(rest[rest.indexOf(name) + 1]) : dflt
+  const flagStr = (name, dflt) => rest.includes(name) ? String(rest[rest.indexOf(name) + 1]) : dflt
+  if (cmd !== 'run' || !/^\d{4}-\d{2}-\d{2}$/.test(dateArg || '')) {
+    console.error('usage: capture-warranty.mjs run <YYYY-MM-DD> [--max N] [--budget-ms N] [--vin VIN] [--refresh]')
+    return 2
+  }
+  const reportDate = dateArg
+  const max = flagNum('--max', 9999)
+  const budgetMs = flagNum('--budget-ms', 900000)
+  const onlyVin = flagStr('--vin', null)?.toUpperCase() ?? null
+  const refresh = rest.includes('--refresh')
+  if (!Number.isSafeInteger(max) || max < 1 || !Number.isSafeInteger(budgetMs) || budgetMs < 1) throw new Error('INVALID_CAPTURE_LIMIT')
+  const vehicles = loadSnapshot(reportDate)
+  if (onlyVin && (!/^[A-HJ-NPR-Z0-9]{17}$/.test(onlyVin) || !Object.hasOwn(vehicles, onlyVin))) {
+    throw new Error('REQUESTED_VIN_NOT_IN_DATED_PUBLIC_SNAPSHOT')
+  }
 
-if (cmd !== 'run' || !/^\d{4}-\d{2}-\d{2}$/.test(dateArg || '')) {
-  console.error('usage: capture-warranty.mjs run <YYYY-MM-DD> [--max N] [--budget-ms N] [--vin VIN]')
-  process.exit(2)
-}
-const reportDate = dateArg
-const max = flagNum('--max', 9999)
-const budgetMs = flagNum('--budget-ms', 900000)
-const onlyVin = flagStr('--vin', null)
+  const outDir = path.join(ROOT, 'work', 'warranty-history')
+  mkdirSync(outDir, { recursive: true })
+  const outPath = path.join(outDir, `${reportDate}-warranty.json`)
+  let out = { schema: 'bob-maxey-warranty-capture-v1', reportDate, startedAt: new Date().toISOString(), records: [] }
+  try {
+    const prev = JSON.parse(readFileSync(outPath, 'utf8'))
+    if (prev.reportDate === reportDate && Array.isArray(prev.records)) out = { ...prev, startedAt: out.startedAt }
+  } catch {}
+  delete out.stoppedReason
+  delete out.finishedAt
+  delete out.tally
+  delete out.fordWarrantyUnverified
 
-const vehicles = loadSnapshot(reportDate)
-const outDir = path.join(ROOT, 'work', 'warranty-history')
-mkdirSync(outDir, { recursive: true })
-const outPath = path.join(outDir, `${reportDate}-warranty.json`)
+  // Resume only records whose contents prove completion. A legacy Ford result
+  // marked OK with AutoCheck alone is intentionally retried. --vin is an
+  // upsert: remove that VIN's prior row before capturing its replacement.
+  out.records = refresh ? [] : out.records.filter(isCompleteWarrantyRecord)
+  if (onlyVin) out.records = out.records.filter((record) => record.vin !== onlyVin)
+  const done = new Set(out.records.map((record) => record.vin))
+  let queue = onlyVin ? [onlyVin] : Object.keys(vehicles).sort().filter((vin) => !done.has(vin))
+  queue = queue.slice(0, max)
 
-let out = { schema: 'bob-maxey-warranty-capture-v1', reportDate, startedAt: new Date().toISOString(), records: [] }
-try { const prev = JSON.parse(readFileSync(outPath, 'utf8')); if (Array.isArray(prev.records)) out = { ...prev, startedAt: out.startedAt } } catch {}
-delete out.stoppedReason; delete out.finishedAt; delete out.tally
-// Each day gets its own file, so a fresh day is always a full run. Within a day the
-// capture resumes: VINs already captured are kept and skipped, so a run that hit its
-// budget can be finished by simply running it again. --refresh recomputes everything
-// (use it if the odometer feed moved materially during the day).
-const refresh = rest.includes('--refresh')
-const done = new Set(refresh ? [] : out.records.filter(r => r.result === 'OK').map(r => r.vin))
-out.records = refresh ? [] : out.records.filter(r => r.result === 'OK')
-
-let queue = Object.keys(vehicles).sort().filter(v => !done.has(v))
-if (onlyVin) queue = [onlyVin.toUpperCase()]
-queue = queue.slice(0, max)
-
-// One shared FMCDealer tab for every OASIS fetch; opened only if a Ford/Lincoln VIN needs it.
-let oasisCtx = null
-let oasisState = 'not_needed'
-async function oasisFor(vin) {
-  if (oasisState === 'unavailable') return null
-  if (!oasisCtx) {
-    const ctx = await getOriginTab(OASIS_ORIGIN, OASIS_URL(vin), { settleMs: 60000 })
-    if (!ctx.state || ctx.state.host !== 'www.fordtechservice.dealerconnection.com') {
-      const host = String((ctx.state && ctx.state.host) || '')
-      oasisState = /microsoftonline|login|signin|\bsso\b/i.test(host) ? 'session_expired' : 'unavailable'
-      try { ctx.page.close() } catch {}
-      return null
+  let oasisCtx = null
+  let oasisState = queue.some((vin) => FORD_MAKES.has(String(vehicles[vin]?.make || '').toUpperCase())) ? 'not_started' : 'not_needed'
+  async function oasisFor(vin) {
+    if (['session_expired', 'browser_unavailable'].includes(oasisState)) return { state: oasisState }
+    if (!oasisCtx) {
+      let ctx
+      try {
+        ctx = await getOriginTab(OASIS_ORIGIN, OASIS_URL(vin), { settleMs: 60000, connectTimeoutMs: 65000 })
+      } catch {
+        oasisState = 'browser_unavailable'
+        return { state: oasisState }
+      }
+      if (!ctx.state || ctx.state.host !== 'www.fordtechservice.dealerconnection.com') {
+        const host = String(ctx.state?.host || '')
+        oasisState = /microsoftonline|login|signin|\bsso\b/i.test(host) ? 'session_expired' : 'browser_unavailable'
+        await closeOwnedTab(ctx)
+        return { state: oasisState }
+      }
+      oasisCtx = ctx
     }
-    oasisCtx = ctx
+    let response
+    try {
+      response = await fetchInTab(oasisCtx.page, OASIS_URL(vin), { timeoutMs: 45000 })
+    } catch {
+      oasisState = 'browser_unavailable'
+      return { state: oasisState }
+    }
+    const outcome = classifyOasisResponse(response, vin)
+    if (outcome.state === 'session_expired') oasisState = 'session_expired'
+    else if (outcome.state === 'unreachable') oasisState = 'browser_unavailable'
+    else oasisState = outcome.state
+    return outcome
   }
-  const r = await fetchInTab(oasisCtx.page, OASIS_URL(vin), { timeoutMs: 45000 })
-  // A same-origin fetch that comes back status 0 / "Failed to fetch" is the signature of
-  // FMCDealer bouncing to login.microsoftonline.com: the cross-origin SSO hop fails CORS,
-  // so there is never a body to sniff for a password field. Before 09/14/2026 this path
-  // returned null WITHOUT setting a state, so an expired session was reported as the
-  // reassuring 'not_needed' and every Ford/Lincoln unit silently fell through to
-  // AutoCheck's generic terms. A hard network failure looks identical from here; both
-  // want the same human action, which is to check the FMCDealer sign-in.
-  if (r.status === 0 || r.error) { oasisState = 'session_expired'; return null }
-  if (r.status !== 200 || !r.text) { oasisState = `http_${r.status}`; return null }
-  if (/type=["']?password/i.test(r.text) || /login\.microsoftonline\.com/i.test(r.text)) { oasisState = 'session_expired'; return null }
-  if (!/OASIS RESULT/i.test(r.text)) { oasisState = 'no_oasis_result'; return null }
-  oasisState = 'ok'
-  return parseOasis(r.text)
+
+  const t0 = Date.now()
+  const save = () => {
+    const temporary = `${outPath}.tmp`
+    writeFileSync(temporary, JSON.stringify(out, null, 1))
+    renameSync(temporary, outPath)
+  }
+  for (const vin of queue) {
+    if (Date.now() - t0 > budgetMs) { out.stoppedReason = 'BUDGET_EXHAUSTED'; break }
+    const v = vehicles[vin] || {}
+    const make = String(v.make || '').toUpperCase()
+    const mileage = Number(v.mileage)
+    const rec = { vin, make: v.make || null, mileageEntered: Number.isFinite(mileage) ? Math.max(Math.round(mileage), 0) : null, capturedAt: new Date().toISOString() }
+    if (rec.mileageEntered == null) {
+      rec.result = 'NO_MILEAGE'
+      out.records.push(rec)
+      continue
+    }
+
+    if (FORD_MAKES.has(make)) {
+      const outcome = await oasisFor(vin)
+      rec.oasisOutcome = outcome.state
+      if (outcome.state === 'ok') {
+        const block = oasisWarrantyBlock(outcome.oasis, rec.mileageEntered)
+        if (block) {
+          rec.fordOasis = block
+          if (outcome.oasis.openFieldServiceActionCodes?.length) rec.openFieldServiceActionCodes = outcome.oasis.openFieldServiceActionCodes
+        } else if (outcome.oasis.coverageCandidates === 0) rec.oasisOutcome = 'no_factory_coverage'
+        else rec.oasisOutcome = 'unparsed'
+      }
+    }
+
+    const acUrl = v.autoCheckReport?.url
+    if (acUrl) {
+      try {
+        const html = await fetchAutoCheckHtml(acUrl)
+        if (!html.toUpperCase().includes(vin)) throw new Error('VIN_MISMATCH')
+        const ac = parseAutoCheckWarranty(html, rec.mileageEntered)
+        if (ac) {
+          const isd = parseAutoCheckInServiceDate(html) || v.autoCheckReport?.estimatedInServiceDate || null
+          if (isd) ac.inServiceDate = String(isd).slice(0, 40)
+          rec.autoCheck = ac
+        }
+      } catch (error) {
+        rec.autoCheckError = String(error?.message ?? error).slice(0, 120)
+      }
+    }
+
+    if (FORD_MAKES.has(make)) {
+      if (rec.fordOasis && rec.autoCheck) { rec.result = 'OK'; rec.sourceLabel = SOURCE_LABEL.both }
+      else if (rec.fordOasis) { rec.result = 'OK'; rec.sourceLabel = SOURCE_LABEL.oasis }
+      else if (rec.oasisOutcome === 'no_record' && rec.autoCheck) { rec.result = 'OK'; rec.sourceLabel = SOURCE_LABEL.fordNoRecord }
+      else if (['no_record', 'no_factory_coverage'].includes(rec.oasisOutcome)) rec.result = 'NO_WARRANTY_SOURCE'
+      else rec.result = 'OASIS_UNAVAILABLE'
+    } else if (rec.autoCheck) {
+      rec.result = 'OK'
+      rec.sourceLabel = SOURCE_LABEL.autocheck
+    } else rec.result = 'NO_WARRANTY_SOURCE'
+
+    out.records.push(rec)
+    if (out.records.length % 10 === 0) save()
+    await sleep(60)
+  }
+  await closeOwnedTab(oasisCtx)
+  out.finishedAt = new Date().toISOString()
+  out.oasisSession = oasisState
+  out.tally = {}
+  for (const record of out.records) out.tally[record.result] = (out.tally[record.result] || 0) + 1
+  out.fordOasisPending = out.records.filter((record) => record.result === 'OASIS_UNAVAILABLE').length
+  save()
+  console.log(JSON.stringify({ records: out.records.length, tally: out.tally, oasisSession: oasisState, fordOasisPending: out.fordOasisPending, stoppedReason: out.stoppedReason || null, seconds: Math.round((Date.now() - t0) / 1000), out: outPath }))
+  return out.fordOasisPending > 0 ? 1 : 0
 }
 
-const t0 = Date.now()
-const save = () => writeFileSync(outPath, JSON.stringify(out, null, 1))
-const tally = {}
-for (const vin of queue) {
-  if (Date.now() - t0 > budgetMs) { out.stoppedReason = 'BUDGET_EXHAUSTED'; break }
-  const v = vehicles[vin] || {}
-  const make = String(v.make || '').toUpperCase()
-  const mileage = Number(v.mileage)
-  const rec = { vin, make: v.make || null, mileageEntered: Number.isFinite(mileage) ? Math.max(Math.round(mileage), 0) : null, capturedAt: new Date().toISOString() }
-  if (rec.mileageEntered == null) { rec.result = 'NO_MILEAGE'; out.records.push(rec); tally[rec.result] = (tally[rec.result] || 0) + 1; continue }
-
-  // (1) Ford OASIS for Ford/Lincoln
-  if (FORD_MAKES.has(make)) {
-    try {
-      const oasis = await oasisFor(vin)
-      if (oasis) {
-        const block = oasisWarrantyBlock(oasis, rec.mileageEntered)
-        if (block) rec.fordOasis = block
-        if (oasis.extendedCoverageExpirations?.length) rec.extendedCoverageExpirations = oasis.extendedCoverageExpirations
-        if (oasis.openFieldServiceActionCodes?.length) rec.openFieldServiceActionCodes = oasis.openFieldServiceActionCodes
-      }
-    } catch (e) { rec.oasisError = String(e.message).slice(0, 120) }
-  }
-
-  // (2) AutoCheck for everything that has a report link
-  const acUrl = v.autoCheckReport?.url
-  if (acUrl) {
-    try {
-      const html = await fetchAutoCheckHtml(acUrl)
-      if (!html.includes(vin)) throw new Error('VIN_MISMATCH')
-      const ac = parseAutoCheckWarranty(html, rec.mileageEntered)
-      if (ac) {
-        const isd = parseAutoCheckInServiceDate(html) || v.autoCheckReport?.estimatedInServiceDate || null
-        if (isd) ac.inServiceDate = String(isd).slice(0, 40)
-        rec.autoCheck = ac
-      }
-    } catch (e) { rec.autoCheckError = String(e.message).slice(0, 120) }
-  }
-
-  if (rec.fordOasis && rec.autoCheck) { rec.result = 'OK'; rec.sourceLabel = SOURCE_LABEL.both }
-  else if (rec.fordOasis) { rec.result = 'OK'; rec.sourceLabel = SOURCE_LABEL.oasis }
-  else if (rec.autoCheck) {
-    rec.result = 'OK'
-    if (FORD_MAKES.has(make)) { rec.sourceLabel = SOURCE_LABEL.fordUnverified; rec.fordWarrantyUnverified = true }
-    else { rec.sourceLabel = SOURCE_LABEL.autocheck }
-  }
-  else rec.result = 'NO_WARRANTY_SOURCE'
-  tally[rec.result] = (tally[rec.result] || 0) + 1
-  out.records.push(rec)
-  if (out.records.length % 10 === 0) save()
-  await sleep(60)
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+  main().then((code) => { process.exitCode = code }).catch((error) => {
+    console.error(String(error?.message ?? error))
+    process.exitCode = 1
+  })
 }
-try { oasisCtx && oasisCtx.page.close() } catch {}
-out.finishedAt = new Date().toISOString()
-out.oasisSession = oasisState
-out.tally = tally
-save()
-out.fordWarrantyUnverified = out.records.filter(r => r.fordWarrantyUnverified).length
-console.log(JSON.stringify({ records: out.records.length, tally, oasisSession: oasisState, fordWarrantyUnverified: out.fordWarrantyUnverified, stoppedReason: out.stoppedReason || null, seconds: Math.round((Date.now() - t0) / 1000), out: outPath }))

@@ -17,6 +17,7 @@ import {
   normalizeDealerMailSnapshotForImport,
   sha256Buffer,
   validateVinDocumentEnrichment,
+  validateVinDocumentEnrichmentForPublish,
   validateDealerMailSnapshot,
   validatePublicSnapshot,
 } from '../../server/importer.mjs'
@@ -908,6 +909,14 @@ describe('verified daily source importer', () => {
     const ownerName = structuredClone(enrichment)
     ownerName.recordsByVin[vin].fordOasis.ownerName = 'Jane Example'
     expect(() => validateVinDocumentEnrichment(ownerName)).toThrow(/unsupported fields/i)
+    const rejected = []
+    const degraded = validateVinDocumentEnrichmentForPublish(ownerName, {
+      onResourceRejected: (finding) => rejected.push(finding),
+    })
+    expect(degraded.recordsByVin).toEqual({})
+    expect(rejected).toEqual([
+      expect.objectContaining({ vin, channel: 'fordOasis', reason: expect.stringMatching(/unsupported fields/i) }),
+    ])
     const coverageOwner = structuredClone(enrichment)
     coverageOwner.recordsByVin[vin].fordOasis.warrantyCoverages[0].customerName = 'Jane Example'
     expect(() => validateVinDocumentEnrichment(coverageOwner)).toThrow(/unsupported fields/i)

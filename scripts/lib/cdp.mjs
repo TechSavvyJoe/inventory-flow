@@ -5,20 +5,49 @@
 export const PORT = 9222
 export const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-export async function targets() { return (await fetch(`http://127.0.0.1:${PORT}/json`)).json() }
+export async function targets({ timeoutMs = 10000 } = {}) {
+  const response = await fetch(`http://127.0.0.1:${PORT}/json`, { signal: AbortSignal.timeout(timeoutMs) })
+  if (!response.ok) throw new Error(`CDP_TARGETS_HTTP_${response.status}`)
+  return response.json()
+}
 
-export async function connect(wsUrl, { timeoutMs = 30000 } = {}) {
+export async function connect(wsUrl, { timeoutMs = 30000, connectTimeoutMs = 10000 } = {}) {
   const ws = new WebSocket(wsUrl)
-  await new Promise((r, j) => { ws.addEventListener('open', r, { once: true }); ws.addEventListener('error', () => j(new Error('CDP_WS_CONNECT_FAILED')), { once: true }) })
-  let id = 0
-  const call = (method, params = {}) => new Promise((res, rej) => {
-    const my = ++id
-    const timer = setTimeout(() => { ws.removeEventListener('message', h); rej(new Error(method + ': CDP_TIMEOUT')) }, timeoutMs)
-    const h = ev => { const m = JSON.parse(String(ev.data)); if (m.id !== my) return; clearTimeout(timer); ws.removeEventListener('message', h); m.error ? rej(new Error(method + ': ' + m.error.message)) : res(m.result) }
-    ws.addEventListener('message', h); ws.send(JSON.stringify({ id: my, method, params }))
+  await new Promise((resolve, reject) => {
+    let timer
+    const cleanup = () => {
+      clearTimeout(timer)
+      ws.removeEventListener('open', opened)
+      ws.removeEventListener('error', failed)
+    }
+    const opened = () => { cleanup(); resolve() }
+    const failed = () => { cleanup(); reject(new Error('CDP_WS_CONNECT_FAILED')) }
+    timer = setTimeout(() => {
+      cleanup()
+      try { ws.close() } catch {}
+      reject(new Error('CDP_WS_CONNECT_TIMEOUT'))
+    }, connectTimeoutMs)
+    ws.addEventListener('open', opened, { once: true })
+    ws.addEventListener('error', failed, { once: true })
   })
-  const evalJs = async (expression) => {
-    const r = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
+  let id = 0
+  const call = (method, params = {}, { timeoutMs: callTimeoutMs = timeoutMs } = {}) => new Promise((res, rej) => {
+    const my = ++id
+    const timer = setTimeout(() => { ws.removeEventListener('message', h); rej(new Error(method + ': CDP_TIMEOUT')) }, callTimeoutMs)
+    const h = ev => {
+      let m
+      try { m = JSON.parse(String(ev.data)) } catch { return }
+      if (m.id !== my) return
+      clearTimeout(timer)
+      ws.removeEventListener('message', h)
+      m.error ? rej(new Error(method + ': ' + m.error.message)) : res(m.result)
+    }
+    ws.addEventListener('message', h)
+    try { ws.send(JSON.stringify({ id: my, method, params })) }
+    catch (error) { clearTimeout(timer); ws.removeEventListener('message', h); rej(error) }
+  })
+  const evalJs = async (expression, options = {}) => {
+    const r = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, options)
     if (r.exceptionDetails) throw new Error('page JS: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text))
     return r.result.value
   }
@@ -29,32 +58,70 @@ export async function connect(wsUrl, { timeoutMs = 30000 } = {}) {
 // Find a tab already on `origin` (https://host). If none, reuse an idle new-tab page or open
 // one, navigate it to `landingUrl`, and wait for the document to settle. The automation
 // browser runs minimized / off-screen, so nothing is shown to the user either way.
-export async function getOriginTab(origin, landingUrl, { settleMs = 60000 } = {}) {
+export async function getOriginTab(origin, landingUrl, {
+  settleMs = 60000,
+  connectTimeoutMs = 10000,
+  commandTimeoutMs = 30000,
+} = {}) {
   const list = await targets()
-  let tab = list.find(t => t.type === 'page' && (t.url || '').startsWith(origin + '/'))
-  let opened = false
-  if (!tab) {
-    const idle = list.find(t => t.type === 'page' && /^(chrome|comet):\/\/newtab\/?$|^about:blank$/i.test(t.url || ''))
-    if (idle) {
-      const p = await connect(idle.webSocketDebuggerUrl)
-      await p.call('Page.navigate', { url: landingUrl }); p.close()
-      tab = idle
-    } else {
-      const r = await fetch(`http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(landingUrl)}`, { method: 'PUT' })
-      tab = await r.json()
-    }
-    opened = true
+  const probeExpression = `({ host: location.host, href: location.href.slice(0, 200), ready: document.readyState, title: document.title.slice(0, 120) })`
+  for (const candidate of list.filter(t => t.type === 'page' && (t.url || '').startsWith(origin + '/'))) {
+    let candidatePage
+    try {
+      candidatePage = await connect(candidate.webSocketDebuggerUrl, {
+        timeoutMs: Math.min(commandTimeoutMs, 10000),
+        connectTimeoutMs,
+      })
+      const state = await candidatePage.evalJs(probeExpression, { timeoutMs: 5000 })
+      if (state?.href?.startsWith(origin)) return { page: candidatePage, tab: candidate, opened: false, state }
+    } catch {}
+    try { candidatePage?.close() } catch {}
   }
-  const page = await connect(tab.webSocketDebuggerUrl)
-  const probe = () => page.evalJs(`({ host: location.host, href: location.href.slice(0, 200), ready: document.readyState, title: document.title.slice(0, 120) })`).catch(() => null)
+
+  let tab = null
+  let opened = false
+  let navigated = false
+  const idle = list.find(t => t.type === 'page' && /^(chrome|comet):\/\/newtab\/?$|^about:blank$/i.test(t.url || ''))
+  if (idle) {
+    const p = await connect(idle.webSocketDebuggerUrl, { timeoutMs: commandTimeoutMs, connectTimeoutMs })
+    try { await p.call('Page.navigate', { url: landingUrl }) }
+    finally { p.close() }
+    tab = idle
+    navigated = true
+  } else {
+    const r = await fetch(`http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(landingUrl)}`, { method: 'PUT', signal: AbortSignal.timeout(connectTimeoutMs) })
+    if (!r.ok) throw new Error(`CDP_NEW_TAB_HTTP_${r.status}`)
+    // Ownership begins at the successful creation response, before parsing
+    // its body. Never mistake a pre-existing tab for one this script owns.
+    opened = true
+    navigated = true
+    tab = await r.json()
+  }
+  let page
+  try { page = await connect(tab.webSocketDebuggerUrl, { timeoutMs: commandTimeoutMs, connectTimeoutMs }) }
+  catch (error) {
+    if (opened && tab?.id) {
+      try { await fetch(`http://127.0.0.1:${PORT}/json/close/${encodeURIComponent(tab.id)}`, { method: 'POST', signal: AbortSignal.timeout(5000) }) } catch {}
+    }
+    throw error
+  }
+  const probe = () => page.evalJs(probeExpression).catch(() => null)
   const t0 = Date.now()
   let st = null
   while (Date.now() - t0 < settleMs) {
     st = await probe()
-    if (st && st.ready === 'complete' && (st.href.startsWith(origin) || !opened)) break
+    if (st && st.ready === 'complete' && (st.href.startsWith(origin) || !navigated)) break
     await sleep(1000)
   }
   return { page, tab, opened, state: st || await probe() }
+}
+
+export async function closeOwnedTab(context) {
+  if (!context) return
+  if (context.opened) {
+    try { await context.page?.call('Page.close', {}, { timeoutMs: 5000 }) } catch {}
+  }
+  try { context.page?.close() } catch {}
 }
 
 // Credentialed fetch performed by the page itself. Text responses come back as text; binary
@@ -77,7 +144,9 @@ export async function fetchInTab(page, url, { binary = false, headers = {}, time
     } catch (e) { return { status: 0, error: String(e).slice(0, 200) }; }
     finally { clearTimeout(timer); }
   })()`
-  return page.evalJs(expr)
+  // The outer CDP command must outlive the in-page AbortController or a slow
+  // request is mislabeled as a websocket failure before fetch can report it.
+  return page.evalJs(expr, { timeoutMs: timeoutMs + 5000 })
 }
 
 // Very small HTML helper for server-rendered pages (no DOM library in Node).

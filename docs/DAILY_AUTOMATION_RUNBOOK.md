@@ -139,6 +139,9 @@ device.
   browser makes requests with its own session; the script reads no cookies and
   no credentials, stores no protected data, and never logs in. Because it does
   not rely on an in-page timer it survives Comet restarts.
+- Expected tabs: three persistent keeper tabs (DealerMail, OASIS, and Ford
+  invoices). The vAuto API ping reuses an existing vAuto tab when available; if
+  it must create one, the ping closes only that script-owned tab afterward.
 - Output: `work\app-feed-status\dealermail-keeper.json` with a separate status
   for `dealermail`, `fmcdealer`, `fordvisions`, and `vauto`, plus one line per run appended to
   `work\app-feed-status\dealermail-keeper.log`.
@@ -190,7 +193,7 @@ manifest warnings. In order:
 | 5.5 Complete the manifest | Real counts, `dealermail_snapshot_path` = cloud-ready file, `final_workbook_sha256/bytes/sheets`, evidence, `"complete": true`. | The publish gate refuses an incomplete manifest - the single most common cause of a failed morning. |
 | 6 Publish: verify only | Read `app-feed-status\{date}.json` and `auto-publish-{date}.log`; report the code. May `Start-ScheduledTask BobMaxey-InventoryFlow-DailyPublish` once if the manifest completed after the last slot. | Never runs the publish, never touches secrets, never removes the lock. |
 | 3.95 vAuto Factory Equipment (API) | `python work\build_vauto_worklist.py --report-date {date}` then `node apps\inventory-ops\scripts\vauto-factory-equipment.mjs run work\vauto-history\worklist-{date}.json work\vauto-history\{date}-factory-equipment.json`. Every feed VIN not already OK, any make; ~0.2 s per VIN; resumable. | **Rewritten 09/12 (PM).** No form, no clicks, no popup, nothing on screen: the script calls vAuto's own `factoryequipment/WindowStickers/{VIN}` endpoint from inside the authenticated tab. `[]` = `NO_BUILD_DATA` (Euro/import makes), re-checked after 7 days. `SESSION_EXPIRED` = sign in to vAuto again in the automation Comet. The daily publish task runs this same pair as its Step 1.4, so the Cowork run is a second, harmless pass. |
-| 7 (retired) | The manual vAuto UI procedure. `--ui` on the driver keeps the old form-driving path as an emergency fallback only. | Never save, never "Temporary Save", never "Copy Information" on the duplicate modal. |
+| 7 (removed) | The old vAuto appraisal-form driver was deleted. `--ui` is rejected before browser access. | Only the read-only Factory Equipment API path is supported. |
 | 8 Finish | Message Joe: public / DealerMail / held counts, publish status, failures and why, vehicles needing manual review; attach the workbook. Dates MM/DD/YYYY. | A VIN that dropped off the public feed is a Removed change, not active inventory. |
 
 Two things happen alongside the prompt rather than inside it:
@@ -344,9 +347,8 @@ task also pings this endpoint and logs `vauto=SESSION_EXPIRED` in
 day's public snapshot: every VIN, any make, minus VINs OK in any prior capture
 (CAI URLs are stable) and minus `NO_BUILD_DATA` VINs checked in the last 7 days.
 
-The old UI path (`--ui`) still exists as an emergency fallback only: if it is
-ever needed, the rules stand - **Ignore** on the duplicate modal, never "Copy
-Information", never save, never "Temporary Save".
+The old appraisal-form UI path has been removed. Passing `--ui` fails before
+browser access; the capture supports only the read-only Factory Equipment API.
 
 ## Remaining factory warranty (STEP 1.45 of the publish; `capture-warranty.mjs`)
 
@@ -396,13 +398,22 @@ in-tab `fetch` throws (`status: 0`, "Failed to fetch") and no body ever comes ba
 for a password field. Until 09/14 that path returned without setting a state, so an expired
 session reported as `oasisSession: not_needed` - indistinguishable from "no Ford unit needed
 OASIS" - and every Ford/Lincoln unit silently fell through to the AutoCheck estimate. That is
-how 09/14 produced 178 Ford/Lincoln units on AutoCheck terms behind a clean-looking status
-line. Every failure path now sets a real state (`session_expired`, `http_{n}`,
-`no_oasis_result`, `unavailable`), and a Ford/Lincoln unit carrying only AutoCheck is tagged
-`fordWarrantyUnverified` with a source label reading DO NOT QUOTE TO A CUSTOMER - AutoCheck
-prints a generic 60-month bumper-to-bumper where Ford's is 36. The final JSON line carries
-`fordWarrantyUnverified: {n}`; anything above 0 means sign in to FMCDealer in the Work PC
-Automation Browser and re-run the capture.
+how 09/14 produced Ford/Lincoln units on AutoCheck terms behind a clean-looking status line.
+Every response is now bound to the requested VIN and classified as `ok`, `no_record`,
+`unparsed`, `session_expired`, or `browser_unavailable`. A Ford/Lincoln row is complete only
+with a parsed OASIS factory record or a VIN-bound definitive no-record response. AutoCheck-only
+Ford rows are `OASIS_UNAVAILABLE`, carry no publishable source label, remain retryable, and are
+reported as `fordOasisPending: {n}`. Anything above 0 means sign in to FMCDealer in the Work PC
+Automation Browser and run the next capture.
+
+The Windows publisher is idempotent after a verified release: the next scheduled publish slot
+will verify and exit before any capture step. To replace warranty evidence after that point,
+run `capture-warranty.mjs ... --refresh` (or `--vin VIN` for an upsert), then explicitly run the
+publisher with `-Force` so the rebuilt evidence is published and verified.
+
+The warranty parser ignores the entire OASIS extended-service-plan block, whose layout can
+contain prior-owner data. Only a closed vocabulary of factory coverage rows, strict printed
+factory terms, VIN-bound dates, and FSA codes can enter this channel.
 
 ## Ford OASIS capture (`capture-oasis.mjs`, new 09/14/2026)
 

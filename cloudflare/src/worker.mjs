@@ -10,6 +10,7 @@ import { importLedger, LedgerImportError } from './ledger-import.mjs'
 const FORMAT = 'inventory-flow-private-release-v1'
 const LEDGER_FORMAT = 'inventory-flow-private-ledger-v1'
 const MAX_UPLOAD = 25 * 1024 * 1024
+const RELEASE_VALIDATION = Symbol('inventory-flow-release-validation')
 const encoder = new TextEncoder()
 const decoder = new TextDecoder('utf-8', { fatal: true })
 const headers = {
@@ -118,7 +119,10 @@ export async function decryptEnvelope(envelope, env, format=FORMAT) {
     if(await digest(plaintext)!==envelope.bundleSha256) throw new Error()
     const bundle=JSON.parse(decoder.decode(plaintext))
     if(bundle.schemaVersion!==format || bundle.reportDate!==envelope.reportDate) throw new Error()
-    if(format===FORMAT) validateReleaseBundle(bundle)
+    if(format===FORMAT) {
+      const validation=validateReleaseBundle(bundle,{degradeOptionalResources:true})
+      Object.defineProperty(bundle,RELEASE_VALIDATION,{value:validation,enumerable:false})
+    }
     return bundle
   } catch {throw new HttpError('INVALID_OR_INCOMPLETE_RELEASE')}
 }
@@ -174,7 +178,7 @@ async function publisher(request, env) {
 async function publishRelease(request, env) {
   const envelope=await readJson(request,MAX_UPLOAD)
   const bundle=await decryptEnvelope(envelope,env)
-  const counts=validateReleaseBundle(bundle)
+  const counts=bundle[RELEASE_VALIDATION]??validateReleaseBundle(bundle,{degradeOptionalResources:true})
   releaseCompletionTime(bundle.release.completedAt)
   const existing=await env.INVENTORY_DB.prepare('SELECT * FROM cloud_release_versions WHERE bundle_sha256=? AND report_date=?').bind(envelope.bundleSha256,envelope.reportDate).first()
   if(existing && existing.status!=='rejected' && await env.RELEASE_SNAPSHOTS.head(existing.object_key)) return json(200,{status:'already_published',reportDate:envelope.reportDate})

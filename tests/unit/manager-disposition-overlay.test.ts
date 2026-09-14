@@ -100,7 +100,7 @@ describe('strict manager disposition overlay', () => {
     const { bundle, source } = fixtures()
     const real = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'manager-overlay-real-'))); directories.push(real)
     const alias = path.join(realpathSync(mkdtempSync(path.join(os.tmpdir(), 'manager-overlay-alias-'))), 'workspace'); directories.push(path.dirname(alias))
-    symlinkSync(real, alias, 'dir')
+    symlinkSync(real, alias, process.platform === 'win32' ? 'junction' : 'dir')
     const period = bundle.reportDate.slice(0, 7)
     const write = (root) => {
       const directory = path.join(root, 'work', 'manager-supplied', 'sold-logs'); mkdirSync(directory, { recursive: true })
@@ -112,7 +112,8 @@ describe('strict manager disposition overlay', () => {
     const load = (workspaceRoot, filePath, sha256) => loadManagerDispositionOverlay({ workspaceRoot, reportDate: bundle.reportDate, vehicles: bundle.release.vehicles, manifestBinding: binding(filePath, sha256) })
 
     // The workspace addressed through the symlinked ancestor loads.
-    const viaAlias = write(alias)
+    const viaReal = write(real)
+    const viaAlias = { filePath: path.join(alias, path.relative(real, viaReal.filePath)), sha256: viaReal.sha256 }
     expect(load(alias, viaAlias.filePath, viaAlias.sha256).sourceRun.metadata.boundSourceSha256).toBe(viaAlias.sha256)
 
     // A source directory that is itself a symlink out of the workspace does not.
@@ -120,14 +121,16 @@ describe('strict manager disposition overlay', () => {
     const escaped = write(outside)
     const trapped = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'manager-overlay-trap-'))); directories.push(trapped)
     mkdirSync(path.join(trapped, 'work', 'manager-supplied'), { recursive: true })
-    symlinkSync(path.join(outside, 'work', 'manager-supplied', 'sold-logs'), path.join(trapped, 'work', 'manager-supplied', 'sold-logs'), 'dir')
+    symlinkSync(path.join(outside, 'work', 'manager-supplied', 'sold-logs'), path.join(trapped, 'work', 'manager-supplied', 'sold-logs'), process.platform === 'win32' ? 'junction' : 'dir')
     expect(() => load(trapped, path.join(trapped, 'work', 'manager-supplied', 'sold-logs', `${period}-howell-operational.json`), escaped.sha256)).toThrow(/must not redirect/)
 
     // And a symlinked file is refused before its content is read.
-    const linked = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'manager-overlay-link-'))); directories.push(linked)
-    const linkedDirectory = path.join(linked, 'work', 'manager-supplied', 'sold-logs'); mkdirSync(linkedDirectory, { recursive: true })
-    symlinkSync(escaped.filePath, path.join(linkedDirectory, `${period}-howell-operational.json`), 'file')
-    expect(() => load(linked, path.join(linkedDirectory, `${period}-howell-operational.json`), escaped.sha256)).toThrow(/regular file/)
+    if (process.platform !== 'win32') {
+      const linked = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'manager-overlay-link-'))); directories.push(linked)
+      const linkedDirectory = path.join(linked, 'work', 'manager-supplied', 'sold-logs'); mkdirSync(linkedDirectory, { recursive: true })
+      symlinkSync(escaped.filePath, path.join(linkedDirectory, `${period}-howell-operational.json`), 'file')
+      expect(() => load(linked, path.join(linkedDirectory, `${period}-howell-operational.json`), escaped.sha256)).toThrow(/regular file/)
+    }
   })
 
   it('binds the sanitized projection and all four counts into cloud validation', () => {

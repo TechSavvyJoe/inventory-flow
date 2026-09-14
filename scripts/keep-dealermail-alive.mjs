@@ -36,13 +36,18 @@ const GRID = 'https://www.dealermail.com/prospect_manager/V2_inventory_search_CR
 const OASIS = vin => `https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=${vin}`
 const INVOICE = vin => `https://fordvisions.dealerconnection.com/vinv/GetInvoice.aspx?v=${vin}&n=%2C&pa=00000&p=&ct=USA`
 
-const openSocket = url => new Promise((res, rej) => {
+const openSocket = (url, timeoutMs = 10000) => new Promise((res, rej) => {
   const s = new WebSocket(url)
-  s.addEventListener('open', () => res(s), { once: true })
-  s.addEventListener('error', () => rej(new Error('websocket connect failed')), { once: true })
+  let timer
+  const cleanup = () => { clearTimeout(timer); s.removeEventListener('open', opened); s.removeEventListener('error', failed) }
+  const opened = () => { cleanup(); res(s) }
+  const failed = () => { cleanup(); rej(new Error('websocket connect failed')) }
+  timer = setTimeout(() => { cleanup(); try { s.close() } catch {}; rej(new Error('websocket connect timeout')) }, timeoutMs)
+  s.addEventListener('open', opened, { once: true })
+  s.addEventListener('error', failed, { once: true })
 })
 const cdp = (sock, id, method, params) => new Promise((res, rej) => {
-  const timer = setTimeout(() => rej(new Error(method + ': CDP_TIMEOUT')), 60000)
+  const timer = setTimeout(() => { sock.removeEventListener('message', onMsg); rej(new Error(method + ': CDP_TIMEOUT')) }, 60000)
   const onMsg = ev => {
     const m = JSON.parse(typeof ev.data === 'string' ? ev.data : ev.data.toString())
     if (m.id !== id) return
@@ -53,14 +58,14 @@ const cdp = (sock, id, method, params) => new Promise((res, rej) => {
   sock.send(JSON.stringify({ id, method, params }))
 })
 
-const targets = async () => (await (await fetch(`http://127.0.0.1:${PORT}/json`)).json())
+const targets = async () => (await (await fetch(`http://127.0.0.1:${PORT}/json`, { signal: AbortSignal.timeout(10000) })).json())
 const findTab = (list, re) => list.find(t => t.type === 'page' && re.test(t.url || ''))
 
 async function ensureTab(re, url) {
   let tab = findTab(await targets(), re)
   if (tab) return { tab, opened: false }
 
-  const response = await fetch(`http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' })
+  const response = await fetch(`http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(url)}`, { method: 'PUT', signal: AbortSignal.timeout(10000) })
   if (!response.ok) throw new Error(`could not open service tab: HTTP ${response.status}`)
   tab = await response.json()
   // Give Chromium enough time to establish the page origin. The service-specific
@@ -185,7 +190,7 @@ else {
 // ---- vAuto: its own ping (HTTP 401 "Entity and/or User is Null." when expired) ------------
 try {
   const out = execFileSync(process.execPath, [path.join(import.meta.dirname, 'vauto-factory-equipment.mjs'), 'ping'],
-    { encoding: 'utf8', timeout: 120000, windowsHide: true })
+    { encoding: 'utf8', timeout: 70000, windowsHide: true })
   status.vauto = JSON.parse(out.trim().split('\n').pop())
 } catch (e) {
   const last = e && e.stdout ? String(e.stdout).trim().split('\n').pop() : ''

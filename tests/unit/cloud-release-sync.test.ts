@@ -6,7 +6,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildSyntheticCloudBundle } from '../../fixtures/synthetic-cloud-bundle.mjs'
 import { validateReleaseBundle } from '../../cloudflare/src/release-validation.mjs'
-import { acquirePublicationLock, releasePublicationLock, reportDate, syncCloudRelease, verifyPublishedRelease, writeReceipt } from '../../scripts/sync-cloud-release.mjs'
+import { acquirePublicationLock, receiptSourceHashes, releasePublicationLock, reportDate, syncCloudRelease, verifyPublishedRelease, writeReceipt } from '../../scripts/sync-cloud-release.mjs'
 
 const environment = { INVENTORY_OPS_CLOUD_URL:'https://inventory-ops.joegallant.me', INVENTORY_OPS_RELEASE_ENCRYPTION_KEY_BASE64:Buffer.alloc(32, 7).toString('base64'), CF_ACCESS_CLIENT_ID:'synthetic', CF_ACCESS_CLIENT_SECRET:'synthetic', INVENTORY_OPS_RELEASE_PUBLISHER_TOKEN:'synthetic' }
 const now = new Date('2026-08-30T15:00:00Z')
@@ -17,6 +17,10 @@ function fixture() {
   return {bundle,expected,envelope,status:{ready:true,reportDate:bundle.reportDate,bundleSha256:envelope.bundleSha256,metadata:expected},readiness:{ready:true,reportDate:bundle.reportDate,bundleSha256:envelope.bundleSha256,counts:{inventory:expected.activeInventoryCount,managerDispositions:expected.managerDispositionRecordCount},bootstrapBytes:100}}
 }
 describe('verified daily cloud publication',()=>{
+  it('keeps the raw manager binding separate from the sanitized overlay hash',()=>{
+    const release={sourceRuns:{managerDisposition:{sha256:'a'.repeat(64),metadata:{boundSourceSha256:'B'.repeat(64)}}}}
+    expect(receiptSourceHashes(release)).toMatchObject({managerDisposition:'a'.repeat(64),managerDispositionBinding:'B'.repeat(64)})
+  })
   it('uses the New York date across UTC midnight',()=>expect(reportDate(new Date('2026-09-10T02:00:00Z'))).toBe('2026-09-09'))
   it('requires exact content as well as date and aggregate/store counts',()=>{
     const data=fixture()
@@ -49,7 +53,17 @@ describe('verified daily cloud publication',()=>{
     }
     const receipt=await syncCloudRelease({release:bundle.release,environment,fetchImpl,now})
     expect(routes.sort()).toEqual(['/internal/readiness','/internal/releases','/internal/status'])
-    expect(receipt).toMatchObject({complete:true,status:'published_and_verified',bundleSha256:hash,counts:{managerDispositionRecordCount:expected.managerDispositionRecordCount},validation:{managerDispositionBound:true},sourceHashes:{managerDisposition:bundle.release.sourceRuns.managerDisposition?.sha256??null}})
+    expect(receipt).toMatchObject({
+      complete:true,
+      status:'published_and_verified',
+      bundleSha256:hash,
+      counts:{managerDispositionRecordCount:expected.managerDispositionRecordCount},
+      validation:{managerDispositionBound:true},
+      sourceHashes:{
+        managerDisposition:bundle.release.sourceRuns.managerDisposition?.sha256??null,
+        managerDispositionBinding:bundle.release.sourceRuns.managerDisposition?.metadata?.boundSourceSha256??null,
+      },
+    })
     expect(JSON.stringify(receipt)).not.toMatch(/customer|reasonRaw|synthetic@example|CF-Access/)
     const dir=mkdtempSync(path.join(os.tmpdir(),'inventory-sync-'))
     try {

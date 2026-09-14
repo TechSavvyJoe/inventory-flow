@@ -1,4 +1,11 @@
 import { canonicalExternalAutoCheckUrl, resourceProvenanceSha256 } from '../../server/resource-validation.mjs'
+import {
+  containsForeignOasisText,
+  factoryCoverageType,
+  factoryTermText,
+  isFactoryCoverageRow,
+  isOasisDate,
+} from '../../server/oasis-coverage-grammar.mjs'
 
 // Portable validation for the encrypted daily evidence import. This module has
 // no filesystem, credentials, or source-fetching dependencies.
@@ -250,7 +257,11 @@ function validateFordOasis(value, vin) {
   for (const [field, max] of [
     ['sourceLabel', 160], ['vehicleDescription', 160], ['versionSeries', 120], ['buildDate', 40],
     ['warrantyStartDate', 40], ['releaseDate', 40],
-  ]) optionalText(value[field], `Ford OASIS ${field}`, max)
+  ]) {
+    const text = optionalText(value[field], `Ford OASIS ${field}`, max)
+    if (text && ['buildDate', 'warrantyStartDate', 'releaseDate'].includes(field)) ensure(isOasisDate(text), `Ford OASIS ${field} is not a recognized OASIS date`)
+    if (text && field === 'vehicleDescription') ensure(!containsForeignOasisText(text), 'Ford OASIS vehicleDescription contains non-vehicle material')
+  }
   optionalInteger(value.monthsInService, 'Ford OASIS monthsInService', 0, 600)
   optionalInteger(value.saleMileage, 'Ford OASIS saleMileage', 0, 999_999)
 
@@ -263,28 +274,32 @@ function validateFordOasis(value, vin) {
     ensure(code && FORD_OASIS_FIELD_SERVICE_ACTION_CODE.test(code), 'Ford OASIS field service action code is not a valid FSA code')
     ensure(!actionCodes.has(code), 'Ford OASIS field service actions contain a duplicate code')
     actionCodes.add(code)
-    optionalText(action.description, 'Ford OASIS field service action description', 300)
+    const description = optionalText(action.description, 'Ford OASIS field service action description', 300)
+    ensure(!description || !containsForeignOasisText(description), 'Ford OASIS field service action description contains non-FSA material')
   }
 
   const coverages = value.warrantyCoverages ?? []
   ensure(Array.isArray(coverages) && coverages.length <= 20, 'Ford OASIS warranty coverages must be a bounded array')
   for (const coverage of coverages) {
     onlyKeys(coverage, new Set(['type', 'description']), 'Ford OASIS warranty coverage')
-    ensure(optionalText(coverage.type, 'Ford OASIS warranty coverage type', 120), 'Ford OASIS warranty coverage type is required')
-    optionalText(coverage.description, 'Ford OASIS warranty coverage description', 300)
+    const type = optionalText(coverage.type, 'Ford OASIS warranty coverage type', 120)
+    ensure(type && factoryCoverageType(type), 'Ford OASIS warranty coverage type is not a recognized factory coverage')
+    const description = optionalText(coverage.description, 'Ford OASIS warranty coverage description', 300)
+    ensure(!description || factoryTermText(description) === description, 'Ford OASIS warranty coverage description is not a factory term')
   }
 
   const expirations = value.extendedCoverageExpirations ?? []
   ensure(Array.isArray(expirations) && expirations.length <= 10, 'Ford OASIS extended coverage expirations must be a bounded array')
   for (const item of expirations) {
-    ensure(optionalText(item, 'Ford OASIS extended coverage expiration', 40), 'Ford OASIS extended coverage expiration is required')
+    const date = optionalText(item, 'Ford OASIS extended coverage expiration', 40)
+    ensure(date && isOasisDate(date), 'Ford OASIS extended coverage expiration is not a recognized OASIS date')
   }
   return { factoryEquipment: 0, externalAutoCheck: 0, fordOasis: 1, warrantyCheck: 0 }
 }
 
-function validateWarrantyCheckCoverages(value, label, termTextMax, allowUnlimitedMonths) {
+function validateWarrantyCheckCoverages(value, label, termTextMax, allowUnlimitedMonths, requireFactoryGrammar = false) {
   const coverages = value ?? []
-  ensure(Array.isArray(coverages) && coverages.length <= 12, `${label} coverages must be a bounded array`)
+  ensure(Array.isArray(coverages) && coverages.length > 0 && coverages.length <= 12, `${label} coverages must be a non-empty bounded array`)
   const allowed = new Set([
     'type', 'termText', 'termMonths', 'termMiles', 'unlimitedMiles', 'remainingMiles', 'remainingMonths',
     'remainingMilesText', 'remainingTimeText', 'status', 'note',
@@ -297,7 +312,12 @@ function validateWarrantyCheckCoverages(value, label, termTextMax, allowUnlimite
     ensure(type, `${label} coverage type is required`)
     ensure(!types.has(type.toLowerCase()), `${label} coverages contain a duplicate type`)
     types.add(type.toLowerCase())
-    ensure(optionalText(coverage.termText, `${label} coverage termText`, termTextMax), `${label} coverage termText is required`)
+    const termText = optionalText(coverage.termText, `${label} coverage termText`, termTextMax)
+    ensure(termText, `${label} coverage termText is required`)
+    if (requireFactoryGrammar) {
+      ensure(isFactoryCoverageRow(type, termText), `${label} coverage is not a recognized factory coverage term`)
+      ensure(factoryTermText(termText) === termText, `${label} coverage term is not canonical factory text`)
+    }
     ensure(optionalText(coverage.remainingMilesText, `${label} coverage remainingMilesText`, 40), `${label} coverage remainingMilesText is required`)
     ensure(optionalText(coverage.remainingTimeText, `${label} coverage remainingTimeText`, 40), `${label} coverage remainingTimeText is required`)
     ensure(WARRANTY_CHECK_COVERAGE_STATUSES.has(coverage.status), `${label} coverage status is invalid`)
@@ -320,7 +340,9 @@ function validateWarrantyCheck(value, vin) {
   onlyKeys(value, new Set(['dataState', 'capturedAt', 'sourceLabel', 'mileageEntered', 'mileageSource', 'autoCheck', 'fordOasis']), 'warranty check record')
   ensure(RESOURCE_DATA_STATES.has(value.dataState), 'warranty check data state is invalid')
   ensure(optionalTimestamp(value.capturedAt, 'warranty check capturedAt'), 'warranty check capturedAt is required')
-  ensure(optionalText(value.sourceLabel, 'warranty check sourceLabel', 160), 'warranty check sourceLabel is required')
+  const sourceLabel = optionalText(value.sourceLabel, 'warranty check sourceLabel', 160)
+  ensure(sourceLabel, 'warranty check sourceLabel is required')
+  ensure(!/\bUNVERIFIED\b|DO NOT QUOTE|OASIS (?:WAS )?UNAVAILABLE/i.test(sourceLabel), 'warranty check sourceLabel marks the record as unverified')
   ensure(optionalInteger(value.mileageEntered, 'warranty check mileageEntered', 0, 999_999) !== undefined, 'warranty check mileageEntered is required')
   optionalText(value.mileageSource, 'warranty check mileageSource', 80)
   const hasAutoCheck = value.autoCheck !== undefined && value.autoCheck !== null
@@ -335,17 +357,27 @@ function validateWarrantyCheck(value, vin) {
   }
   if (hasFordOasis) {
     onlyKeys(value.fordOasis, new Set(['warrantyStartDate', 'monthsInService', 'coverages']), 'warranty check Ford OASIS block')
-    ensure(optionalText(value.fordOasis.warrantyStartDate, 'warranty check Ford OASIS warrantyStartDate', 40), 'warranty check Ford OASIS warrantyStartDate is required')
+    const warrantyStartDate = optionalText(value.fordOasis.warrantyStartDate, 'warranty check Ford OASIS warrantyStartDate', 40)
+    ensure(warrantyStartDate, 'warranty check Ford OASIS warrantyStartDate is required')
+    ensure(isOasisDate(warrantyStartDate), 'warranty check Ford OASIS warrantyStartDate is not a recognized OASIS date')
     ensure(optionalInteger(value.fordOasis.monthsInService, 'warranty check Ford OASIS monthsInService', 0, 600) !== undefined, 'warranty check Ford OASIS monthsInService is required')
-    validateWarrantyCheckCoverages(value.fordOasis.coverages, 'warranty check Ford OASIS', 120, false)
+    validateWarrantyCheckCoverages(value.fordOasis.coverages, 'warranty check Ford OASIS', 120, false, true)
   }
   return { factoryEquipment: 0, externalAutoCheck: 0, fordOasis: 0, warrantyCheck: 1 }
 }
 
-function validateResourceRecord(value, vin) {
+function resourceRejectionReason(error) {
+  return String(error?.message ?? error).replace(/^Invalid cloud release:\s*/i, '').slice(0, 240)
+}
+
+function validateResourceRecord(value, vin, {
+  degradeOptionalResources = false,
+  onResourceRejected = () => {},
+} = {}) {
   onlyKeys(value, new Set(['vin', 'factoryEquipment', 'autoCheckReport', 'fordOasis', 'warrantyCheck']), 'resource record')
   ensure(value.vin === vin && normalizedVin(value.vin) === vin, 'resource record VIN does not match its normalized vehicle')
   let counts = { factoryEquipment: 0, externalAutoCheck: 0, fordOasis: 0, warrantyCheck: 0 }
+  const rejected = []
   if (value.factoryEquipment !== undefined && value.factoryEquipment !== null) {
     const next = validateFactoryEquipment(value.factoryEquipment, vin)
     counts = { ...counts, factoryEquipment: counts.factoryEquipment + next.factoryEquipment }
@@ -355,15 +387,30 @@ function validateResourceRecord(value, vin) {
     counts = { ...counts, externalAutoCheck: counts.externalAutoCheck + next.externalAutoCheck }
   }
   if (value.fordOasis !== undefined && value.fordOasis !== null) {
-    const next = validateFordOasis(value.fordOasis, vin)
-    counts = { ...counts, fordOasis: counts.fordOasis + next.fordOasis }
+    try {
+      const next = validateFordOasis(value.fordOasis, vin)
+      counts = { ...counts, fordOasis: counts.fordOasis + next.fordOasis }
+    } catch (error) {
+      if (!degradeOptionalResources) throw error
+      const rejection = { vin, channel: 'fordOasis', reason: resourceRejectionReason(error) }
+      rejected.push(rejection)
+      onResourceRejected(rejection)
+    }
   }
   if (value.warrantyCheck !== undefined && value.warrantyCheck !== null) {
-    const next = validateWarrantyCheck(value.warrantyCheck, vin)
-    counts = { ...counts, warrantyCheck: counts.warrantyCheck + next.warrantyCheck }
+    try {
+      const next = validateWarrantyCheck(value.warrantyCheck, vin)
+      counts = { ...counts, warrantyCheck: counts.warrantyCheck + next.warrantyCheck }
+    } catch (error) {
+      if (!degradeOptionalResources) throw error
+      const rejection = { vin, channel: 'warrantyCheck', reason: resourceRejectionReason(error) }
+      rejected.push(rejection)
+      onResourceRejected(rejection)
+    }
   }
-  ensure(counts.factoryEquipment + counts.externalAutoCheck + counts.fordOasis + counts.warrantyCheck > 0, 'resource record contains no usable resource')
-  return counts
+  const usable = counts.factoryEquipment + counts.externalAutoCheck + counts.fordOasis + counts.warrantyCheck > 0
+  ensure(usable || (degradeOptionalResources && rejected.length > 0), 'resource record contains no usable resource')
+  return { counts, rejected, usable }
 }
 
 function validateResourceRun(run, resourceRows, reportDate) {
@@ -754,8 +801,16 @@ function validateDealerMail(snapshot, run, manifest, reportDate) {
   return { ...included, held, cdk, counters }
 }
 
-/** Validate a full decrypted bundle; return independently derived non-sensitive totals. */
-export function validateReleaseBundle(bundle) {
+/**
+ * Validate a full decrypted bundle; return independently derived non-sensitive
+ * totals. Strict is the default. The Worker opts into per-channel degradation
+ * only for fordOasis/warrantyCheck so a newly tightened optional validator can
+ * never make an otherwise valid stored release unreadable during deploy order.
+ */
+export function validateReleaseBundle(bundle, {
+  degradeOptionalResources = false,
+  onResourceRejected = () => {},
+} = {}) {
   ensure(object(bundle) && bundle.schemaVersion === RELEASE_FORMAT && bundle.complete === true, 'bundle is incomplete or unsupported')
   const release = bundle.release
   ensure(validDate(bundle.reportDate) && object(release) && release.reportDate === bundle.reportDate && release.timezone === 'America/New_York', 'report date/timezone mismatch')
@@ -780,12 +835,27 @@ export function validateReleaseBundle(bundle) {
       else ensure(record[field] === null || record[field] === undefined, `${field} has no matching source evidence`)
     }
     if (record.resourceRecord !== null && record.resourceRecord !== undefined) {
-      resourceRows.push({ vin, resourceRecord: record.resourceRecord, counts: validateResourceRecord(record.resourceRecord, vin) })
+      const resourceValidation = validateResourceRecord(record.resourceRecord, vin, {
+        degradeOptionalResources,
+        onResourceRejected,
+      })
+      resourceRows.push({ vin, resourceRecord: record.resourceRecord, record, ...resourceValidation })
     }
     seen.add(vin)
   }
   ensure(sameSet(seen, expectedVins), 'normalized inventory omits source VINs')
   validateResourceRun(release.sourceRuns?.resources, resourceRows, bundle.reportDate)
+  if (degradeOptionalResources) {
+    const warnings = Array.isArray(release.warnings) ? release.warnings : []
+    for (const row of resourceRows) {
+      for (const rejection of row.rejected) {
+        delete row.record.resourceRecord[rejection.channel]
+        warnings.push(`VIN ${rejection.vin}: dropped unsafe ${rejection.channel} enrichment: ${rejection.reason}`)
+      }
+      if (!row.usable) row.record.resourceRecord = null
+    }
+    release.warnings = [...new Set(warnings)]
+  }
   const managerDisposition = validateManagerDisposition(release, normalized, bundle.reportDate)
   const activeMembership = activeInventoryMembership(publicData.byVin, release.managerDispositionOverlay)
   return {
@@ -801,7 +871,7 @@ export function validateReleaseBundle(bundle) {
     deletedHoldRecordCount: crm.counters.deletedHistoricalHoldRows,
     publicStoreCounts: publicData.counts,
     crmStoreCounts: crm.counts,
-    resourceRecordCount: resourceRows.length,
+    resourceRecordCount: resourceRows.filter((row) => row.usable).length,
     fordOasisRecordCount: resourceRows.reduce((total, row) => total + row.counts.fordOasis, 0),
     warrantyCheckRecordCount: resourceRows.reduce((total, row) => total + row.counts.warrantyCheck, 0),
     managerDispositionRecordCount: managerDisposition.recordCount,
