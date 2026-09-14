@@ -382,6 +382,48 @@ prints a generic 60-month bumper-to-bumper where Ford's is 36. The final JSON li
 `fordWarrantyUnverified: {n}`; anything above 0 means sign in to FMCDealer in the Work PC
 Automation Browser and re-run the capture.
 
+## DealerMail deep capture (`capture-dealermail.mjs`, new 09/14/2026)
+
+For three days this was the only capture in the pipeline with no script - it was hand-run
+through `javascript_tool` every morning. That is why a lapsed session cost a whole day
+instead of producing a warning.
+
+    node apps\\inventory-ops\\scripts\\capture-dealermail.mjs run {date} [--budget-ms N]
+
+Everything happens inside the automation browser's already-authenticated DealerMail tab over
+CDP (127.0.0.1:9222). Every request is a GET; it never submits a form, never places or
+releases a hold, never adds a comment, and reads no credential. It writes the same five files
+`build_v2_snapshot.mjs` already consumes, and emits one JSON line:
+`{sessionStatus, rows, held, excludeView, reconciles, comments, alerts, cdk, holdsParsed}`.
+`reconciles` is `rows - held === excludeView`; if it is false the capture is not trustworthy.
+
+**Session detection, the whole point.** DealerMail does NOT return a login form when the
+session dies. It returns HTTP 200 with a body reading "Session Ended - Please Refresh (F5)".
+A status check or a password-field check calls that healthy. Authenticated here means all of:
+no "Session Ended" text, `typeof showModels === 'function'`, and >100 rows of exactly 22 cells
+after `showModels('ALL')`. Held rows are `onHold` - matching lowercase `onhold` with a
+case-sensitive `includes` silently finds zero holds.
+
+**Why this matters more than it looks.** No DealerMail capture means the manifest cannot be
+`complete: true`; `build_photo_cache.py` then aborts with "No completed dated run manifest was
+found" and the Cloudflare publish dies at step one. On 09/13 and 09/14/2026 that ran three
+times a day and published nothing, while the app kept serving 09/12 - silently. Any morning
+that skips DealerMail must say so as the FIRST line of the finish message.
+
+## CRM / public drift is normal - `final_check12.py` no longer treats it as fatal
+
+The DealerMail Inventory sheet is built straight from the CRM grid capture
+(`merge_dealermail.py` iterates `dm_inv["rows"]`), so it is NOT a set reconciled to the public
+feed, despite what the old comment claimed. The CRM and the public DealerOn feed drift: a unit
+can be sold in the CRM before it leaves the website, or be entered before it is published.
+
+`final_check12.py` asserted `dealermail_rows == master_rows` exactly. On 09/14/2026 an ordinary
+three-VIN skew (1FTER4FH6MLD87772 and 5LM5J7XC9SGL02594 public but not in the CRM,
+2FMPK4K9XGBC64506 in the CRM but no longer public) made that fatal and blocked the publish,
+while both captures had passed their own validators. It now prints `crm_public_drift:` and
+fails only beyond `max(5, 2% of master)` - a real capture failure rather than operational skew.
+Tighten the tolerance if the two systems are ever expected to agree exactly.
+
 ## Ford OASIS in the app - deploy gate
 
 `build_vin_document_enrichment.py` only emits `fordOasis` blocks when
