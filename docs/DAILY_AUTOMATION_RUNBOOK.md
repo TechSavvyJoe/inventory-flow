@@ -40,10 +40,13 @@ keeps working in that mode. Only Joe can do that step.
   as insurance.
 - Report date: `-ReportDate`, else the newest `work\inventory-history\snapshots\*-public.json`.
 - Idempotent: once `work\app-feed-status\{date}.json` shows
-  `published_and_verified`, it does not scrape or republish. It refreshes the
-  safe hash/count-only integration expectation from that verified receipt and
-  runs the authenticated read-only REST plus OAuth/MCP discovery smoke test;
-  then it exits `SKIPPED (already current)`. `-Force` republishes.
+  `published_and_verified`, it does not scrape or republish unless the completed
+  dated manifest now binds a manager-disposition overlay whose SHA is absent or
+  different in that receipt. That one drift case rebuilds through this protected
+  Windows publisher so a manager log added after the first publish is not silently
+  missed. Otherwise it refreshes the safe hash/count-only integration expectation,
+  runs the authenticated read-only REST plus OAuth/MCP discovery smoke test, and
+  exits `SKIPPED (already current)`. `-Force` remains an operator-only republish.
 - Photo cache: tries `build_photo_cache.py --reuse-snapshot-resources` first.
   Falls back to a fresh VDP extraction ONLY on a clean zero (snapshot has no
   embedded resources). A non-zero exit from the reuse path aborts with
@@ -53,6 +56,9 @@ keeps working in that mode. Only Joe can do that step.
   against `/internal/status` and `/internal/readiness`. Finally it verifies the
   same report date, bundle hash, total and all four store counts through the
   private integration API and verifies protected OAuth discovery/PKCE for MCP.
+- After every verified publish it runs the guarded latest-pointer helper and
+  records the verified receipt hash/time plus `latest_pointers_advanced: true`
+  back into the dated manifest. This removes the former manual post-publish step.
 - Log: `work\app-feed-status\auto-publish-{date}.log`. Secret VALUES are never
   written; only key names and counts.
 - Re-register or change the schedule: edit and run

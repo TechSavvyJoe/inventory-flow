@@ -122,6 +122,72 @@ function Resolve-ReportDate {
   return [regex]::Match($newest.Name, '^(\d{4}-\d{2}-\d{2})').Groups[1].Value
 }
 
+function Test-ReceiptMatchesManagerOverlay {
+  param(
+    [Parameter(Mandatory)]$Receipt,
+    [Parameter(Mandatory)][string]$Date
+  )
+
+  $manifestPath = Join-Path $WorkspaceRoot ("work\run-status\{0}.json" -f $Date)
+  if (-not (Test-Path $manifestPath)) { return $true }
+
+  try {
+    $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+  } catch {
+    Write-Log "manager overlay freshness check skipped because the dated manifest is unreadable" 'WARN'
+    return $true
+  }
+
+  $binding = $manifest.manager_disposition_overlay
+  $expected = if ($binding -and $binding.status -eq 'complete') { [string]$binding.sha256 } else { '' }
+  $published = if ($Receipt.sourceHashes) { [string]$Receipt.sourceHashes.managerDisposition } else { '' }
+  # A missing optional binding is not authority to erase an overlay that was
+  # already published. Only a complete, hash-bound current manifest may trigger
+  # an automatic manager-overlay republish.
+  if ([string]::IsNullOrWhiteSpace($expected)) { return $true }
+  return $expected.Equals($published, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Complete-VerifiedPublicationState {
+  param(
+    [Parameter(Mandatory)]$Receipt,
+    [Parameter(Mandatory)][string]$Date
+  )
+
+  $pointerRun = Invoke-NativeCapture -FilePath 'python' -Arguments @(
+    '..\..\work\advance_latest_pointer.py',
+    '--report-date',
+    $Date
+  )
+  if ($pointerRun.ExitCode -ne 0) {
+    Write-Log "latest pointers: FAILED: $($pointerRun.Output.Trim())" 'ERROR'
+    throw 'LATEST_POINTER_ADVANCE_FAILED'
+  }
+  Write-Log "latest pointers: $($pointerRun.Output.Trim())"
+
+  $manifestPath = Join-Path $WorkspaceRoot ("work\run-status\{0}.json" -f $Date)
+  if (-not (Test-Path $manifestPath)) { throw 'RUN_MANIFEST_MISSING_AFTER_PUBLISH' }
+  $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+  if ($manifest.complete -ne $true -or $manifest.report_date -ne $Date) {
+    throw 'RUN_MANIFEST_NOT_COMPLETE_AFTER_PUBLISH'
+  }
+
+  $manifest.latest_pointers_advanced = $true
+  $manifest.cloudflare_publish = [ordered]@{
+    attempted = $true
+    status = 'published_and_verified'
+    receipt_path = (Join-Path $LogDir ("{0}.json" -f $Date))
+    bundle_sha256 = [string]$Receipt.bundleSha256
+    verified_at = [string]$Receipt.verifiedAt
+    publisher = 'BobMaxey-InventoryFlow-DailyPublish'
+  }
+  $temporary = "$manifestPath.tmp"
+  $json = $manifest | ConvertTo-Json -Depth 32
+  [System.IO.File]::WriteAllText($temporary, $json + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
+  Move-Item -LiteralPath $temporary -Destination $manifestPath -Force
+  Write-Log 'run manifest: recorded verified cloud publication and advanced latest pointers'
+}
+
 $exitCode = 0
 $originalEnv = @{}
 $secretNames = @()
@@ -144,12 +210,18 @@ try {
       Write-Log "existing receipt unreadable, continuing with publish" 'WARN'
     }
     if ($receipt -and $receipt.status -eq 'published_and_verified' -and $receipt.reportDate -eq $date) {
-      Update-IntegrationExpectedMetadata -Receipt $receipt
-      Push-Location $AppRoot
-      try { Assert-IntegrationDeployment } finally { Pop-Location }
-      Write-Log "already published and verified for $date - nothing to do (use -Force to republish)"
-      Write-Log '=== daily-cloud-publish SKIPPED (already current) ==='
-      exit 0
+      if (Test-ReceiptMatchesManagerOverlay -Receipt $receipt -Date $date) {
+        Update-IntegrationExpectedMetadata -Receipt $receipt
+        Push-Location $AppRoot
+        try {
+          Assert-IntegrationDeployment
+          Complete-VerifiedPublicationState -Receipt $receipt -Date $date
+        } finally { Pop-Location }
+        Write-Log "already published and verified for $date - nothing to do (use -Force to republish)"
+        Write-Log '=== daily-cloud-publish SKIPPED (already current) ==='
+        exit 0
+      }
+      Write-Log "verified receipt is missing the manifest-bound manager disposition overlay; rebuilding through the protected Windows publisher" 'WARN'
     }
   }
 
@@ -281,6 +353,7 @@ try {
     $verifiedReceipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
     Update-IntegrationExpectedMetadata -Receipt $verifiedReceipt
     Assert-IntegrationDeployment
+    Complete-VerifiedPublicationState -Receipt $verifiedReceipt -Date $date
     Write-Log '=== daily-cloud-publish SUCCESS ==='
   } finally {
     Pop-Location
