@@ -23,7 +23,7 @@
 //
 // A keeper holds a live session open; it cannot revive a dead one. When a service reports
 // SESSION_EXPIRED, only Joe signing in inside the Work PC Automation Browser fixes it.
-import { writeFileSync, mkdirSync, appendFileSync, readdirSync, readFileSync, existsSync } from 'node:fs'
+import { writeFileSync, mkdirSync, appendFileSync, readdirSync, readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 
@@ -46,43 +46,72 @@ const openSocket = (url, timeoutMs = 10000) => new Promise((res, rej) => {
   s.addEventListener('open', opened, { once: true })
   s.addEventListener('error', failed, { once: true })
 })
-const cdp = (sock, id, method, params) => new Promise((res, rej) => {
-  const timer = setTimeout(() => { sock.removeEventListener('message', onMsg); rej(new Error(method + ': CDP_TIMEOUT')) }, 60000)
+const cdp = (sock, id, method, params, timeoutMs = 20000) => new Promise((res, rej) => {
+  const timer = setTimeout(() => { sock.removeEventListener('message', onMsg); rej(new Error(method + ': CDP_TIMEOUT')) }, timeoutMs)
   const onMsg = ev => {
-    const m = JSON.parse(typeof ev.data === 'string' ? ev.data : ev.data.toString())
+    let m
+    try { m = JSON.parse(typeof ev.data === 'string' ? ev.data : ev.data.toString()) } catch { return }
     if (m.id !== id) return
     clearTimeout(timer); sock.removeEventListener('message', onMsg)
     m.error ? rej(new Error(m.error.message)) : res(m.result)
   }
   sock.addEventListener('message', onMsg)
-  sock.send(JSON.stringify({ id, method, params }))
+  try { sock.send(JSON.stringify({ id, method, params })) }
+  catch (error) { clearTimeout(timer); sock.removeEventListener('message', onMsg); rej(error) }
 })
 
-const targets = async () => (await (await fetch(`http://127.0.0.1:${PORT}/json`, { signal: AbortSignal.timeout(10000) })).json())
-const findTab = (list, re) => list.find(t => t.type === 'page' && re.test(t.url || ''))
-
-async function ensureTab(re, url) {
-  let tab = findTab(await targets(), re)
-  if (tab) return { tab, opened: false }
-
+const targets = async () => {
+  const response = await fetch(`http://127.0.0.1:${PORT}/json`, { signal: AbortSignal.timeout(10000) })
+  if (!response.ok) throw new Error(`could not list service tabs: HTTP ${response.status}`)
+  return response.json()
+}
+async function openServiceTab(url) {
   const response = await fetch(`http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(url)}`, { method: 'PUT', signal: AbortSignal.timeout(10000) })
   if (!response.ok) throw new Error(`could not open service tab: HTTP ${response.status}`)
-  tab = await response.json()
+  const tab = await response.json()
   // Give Chromium enough time to establish the page origin. The service-specific
   // probe below remains the authority; opening a tab is never treated as healthy.
   await new Promise(resolve => setTimeout(resolve, 2500))
-  return { tab, opened: true }
+  return tab
+}
+
+async function closeServiceTab(tab) {
+  if (!tab?.id) return
+  try {
+    await fetch(`http://127.0.0.1:${PORT}/json/close/${encodeURIComponent(tab.id)}`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(5000),
+    })
+  } catch {}
+}
+
+async function evaluateTab(tab, expression, opened = false) {
+  const sock = await openSocket(tab.webSocketDebuggerUrl)
+  try {
+    const result = await cdp(sock, 1, 'Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
+    return { value: JSON.parse(result.result.value), tab: (tab.url || '').slice(0, 100), target: tab, opened }
+  } finally { try { sock.close() } catch {} }
 }
 
 // Runs `expression` inside a tab on that origin, opening the read-only probe URL if needed.
 async function inTab(re, expression, openUrl) {
-  const { tab, opened } = openUrl ? await ensureTab(re, openUrl) : { tab: findTab(await targets(), re), opened: false }
-  if (!tab) return { noTab: true }
-  const sock = await openSocket(tab.webSocketDebuggerUrl)
+  const candidates = (await targets()).filter(tab => tab.type === 'page' && re.test(tab.url || '')).slice(0, 3)
+  let lastError = null
+  for (const tab of candidates) {
+    try { return await evaluateTab(tab, expression) }
+    catch (error) { lastError = error }
+  }
+  if (!openUrl) {
+    if (lastError) throw lastError
+    return { noTab: true }
+  }
+  const tab = await openServiceTab(openUrl)
   try {
-    const r = await cdp(sock, 1, 'Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
-    return { value: JSON.parse(r.result.value), tab: (tab.url || '').slice(0, 100), opened }
-  } finally { try { sock.close() } catch {} }
+    return await evaluateTab(tab, expression, true)
+  } catch (error) {
+    await closeServiceTab(tab)
+    throw error
+  }
 }
 
 // A Ford VIN to probe FMCDealer / fordvisions with. Taken from the newest OASIS worklist so
@@ -164,7 +193,9 @@ else {
     else {
       let v = r.value
       if (!(v.pdf || v.fordRefusal)) {
-        const tab = findTab(await targets(), /fordvisions\.dealerconnection\.com/i)
+        // Renew the exact tab that answered the probe. Re-selecting the first
+        // matching target here can jump back to a separate wedged tab.
+        const tab = r.target
         if (tab) {
           const sock = await openSocket(tab.webSocketDebuggerUrl)
           try {
@@ -177,7 +208,7 @@ else {
               if (o.ready === 'complete' && /GetInvoice\.aspx/i.test(o.href) && !/callback\.html/i.test(o.href)) break
             }
           } finally { try { sock.close() } catch {} }
-          const again = await inTab(/fordvisions\.dealerconnection\.com/i, probeInvoice)
+          const again = await evaluateTab(tab, probeInvoice, r.opened)
           if (!again.noTab) { v = again.value; v.renewed = true }
         }
       }
