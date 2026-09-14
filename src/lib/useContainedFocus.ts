@@ -54,7 +54,22 @@ export function useContainedFocus({
     }
     const frame = window.requestAnimationFrame(focusInitial)
 
+    // A dialog opened on top of this one (a later aria-modal element that is
+    // neither this container nor inside it) owns the keyboard until it closes:
+    // its Escape must not close this dialog too, and its Tab must not be
+    // pulled back into this container.
+    // Contract: every [aria-modal="true"] element in the app is a body portal
+    // mounted in stacking order and owns its own useContainedFocus trap, so
+    // document order is open order. An aria-modal element without a trap
+    // would leave the dialogs beneath it keyboard-unclosable.
+    const coveredByNestedModal = () => {
+      const modals = document.querySelectorAll<HTMLElement>('[aria-modal="true"]')
+      const top = modals[modals.length - 1]
+      return Boolean(top && top !== container && !container.contains(top) && !top.contains(container))
+    }
+
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (coveredByNestedModal()) return
       if (event.key === 'Escape') {
         event.preventDefault()
         onEscapeRef.current()

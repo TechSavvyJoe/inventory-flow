@@ -19,7 +19,7 @@ const FACTS = [
   ['MPG', (v) => (v.specs.mpgCity !== null || v.specs.mpgHighway !== null ? `${v.specs.mpgCity ?? '—'} / ${v.specs.mpgHighway ?? '—'}` : '—')],
   ['Exterior', (v) => v.exteriorColor ?? '—'],
   ['Interior', (v) => v.interiorColor ?? '—'],
-  ['Certified', (v) => (v.certified ? v.certifiedProgram : 'No')],
+  ['Certified', (v) => (v.certified ? v.certifiedProgram?.name ?? 'Certified' : 'No')],
   ['AutoCheck', (v) => (v.documents.autoCheck?.score !== null && v.documents.autoCheck?.score !== undefined ? String(v.documents.autoCheck.score) : '—')],
   ['Hold', (v) => v.hold.label],
   ['Location', (v) => v.location.label],
