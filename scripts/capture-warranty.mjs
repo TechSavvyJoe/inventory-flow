@@ -23,9 +23,11 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { closeOwnedTab, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 import { factoryTermText, isFactoryCoverageRow, isOasisDate } from '../server/oasis-coverage-grammar.mjs'
 
-const ROOT = path.resolve(import.meta.dirname, '../../..')
+let resolvedRoot
+const workspaceRoot = () => (resolvedRoot ??= resolveWorkspaceRoot(import.meta.url))
 const OASIS_ORIGIN = 'https://www.fordtechservice.dealerconnection.com'
 const OASIS_URL = vin => `${OASIS_ORIGIN}/oasis/Index?vin=${vin}`
 const FORD_MAKES = new Set(['FORD', 'LINCOLN'])
@@ -269,7 +271,7 @@ export async function fetchAutoCheckHtml(url) {
 }
 
 function loadSnapshot(reportDate) {
-  const p = path.join(ROOT, 'work', 'inventory-history', 'snapshots', `${reportDate}-public.json`)
+  const p = path.join(workspaceRoot(), 'work', 'inventory-history', 'snapshots', `${reportDate}-public.json`)
   const snap = JSON.parse(readFileSync(p, 'utf8'))
   let vehicles = snap.vehicles || {}
   if (Array.isArray(vehicles)) vehicles = Object.fromEntries(vehicles.filter(v => v && v.vin).map(v => [String(v.vin).toUpperCase(), v]))
@@ -295,7 +297,7 @@ export async function main(argv = process.argv.slice(2)) {
     throw new Error('REQUESTED_VIN_NOT_IN_DATED_PUBLIC_SNAPSHOT')
   }
 
-  const outDir = path.join(ROOT, 'work', 'warranty-history')
+  const outDir = path.join(workspaceRoot(), 'work', 'warranty-history')
   mkdirSync(outDir, { recursive: true })
   const outPath = path.join(outDir, `${reportDate}-warranty.json`)
   let out = { schema: 'bob-maxey-warranty-capture-v1', reportDate, startedAt: new Date().toISOString(), records: [] }

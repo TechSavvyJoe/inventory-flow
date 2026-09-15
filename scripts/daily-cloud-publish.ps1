@@ -11,14 +11,39 @@
 param(
   [string]$ReportDate,
   [switch]$SkipPhotoCache,
-  [switch]$Force
+  [switch]$Force,
+  [string]$WorkspaceRoot
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $AppRoot       = Split-Path -Parent $PSScriptRoot
-$WorkspaceRoot = Split-Path -Parent (Split-Path -Parent $AppRoot)
+if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+  $WorkspaceRoot = $env:BOB_MAXEY_WORKSPACE_ROOT
+}
+if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+  $WorkspaceRoot = Split-Path -Parent (Split-Path -Parent $AppRoot)
+}
+$WorkspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+foreach ($requiredPath in @('work\run-status', 'outputs', 'apps\inventory-ops')) {
+  if (-not (Test-Path -LiteralPath (Join-Path $WorkspaceRoot $requiredPath))) {
+    throw "WORKSPACE_ROOT_INVALID: missing $requiredPath under $WorkspaceRoot"
+  }
+}
+# Child Node helpers inherit this so Windows junction resolution cannot redirect
+# their snapshots and status files into the physical repository parent.
+$env:BOB_MAXEY_WORKSPACE_ROOT = $WorkspaceRoot
+$env:INVENTORY_WORKSPACE_ROOT = $WorkspaceRoot
+$BundledDependencies = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies'
+$NodeExecutable = Join-Path $BundledDependencies 'node\bin\node.exe'
+$PythonExecutable = Join-Path $BundledDependencies 'python\python.exe'
+if (-not (Test-Path -LiteralPath $NodeExecutable)) {
+  $NodeExecutable = (Get-Command node -ErrorAction Stop).Source
+}
+if (-not (Test-Path -LiteralPath $PythonExecutable)) {
+  $PythonExecutable = (Get-Command python -ErrorAction Stop).Source
+}
 $LogDir        = Join-Path $WorkspaceRoot 'work\app-feed-status'
 $SecretPath    = Join-Path $AppRoot 'runtime\cloud-secrets\publisher.dpapi'
 $IntegrationExpectedPath = Join-Path $AppRoot 'runtime\integration-expected-release.json'
@@ -98,7 +123,7 @@ function Update-IntegrationExpectedMetadata {
 
 function Assert-IntegrationDeployment {
   if (-not (Test-Path $IntegrationCredentialPath)) { throw 'INTEGRATION_CREDENTIAL_MISSING' }
-  $verification = Invoke-NativeCapture -FilePath 'node' -Arguments @(
+  $verification = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @(
     'scripts\verify-integration-deployment.mjs',
     'runtime\integration-credentials\joe-app-development.json',
     '--expected',
@@ -113,13 +138,11 @@ function Assert-IntegrationDeployment {
 
 function Resolve-ReportDate {
   if ($ReportDate) { return $ReportDate }
-  $snapshotDir = Join-Path $WorkspaceRoot 'work\inventory-history\snapshots'
-  if (-not (Test-Path $snapshotDir)) { throw 'SNAPSHOT_DIR_MISSING' }
-  $newest = Get-ChildItem -Path $snapshotDir -Filter '*-public.json' -File |
-    Where-Object { $_.Name -match '^(\d{4}-\d{2}-\d{2})-public\.json$' } |
-    Sort-Object Name -Descending | Select-Object -First 1
-  if (-not $newest) { throw 'NO_PUBLIC_SNAPSHOT' }
-  return [regex]::Match($newest.Name, '^(\d{4}-\d{2}-\d{2})').Groups[1].Value
+  $eastern = [System.TimeZoneInfo]::FindSystemTimeZoneById('Eastern Standard Time')
+  $today = [System.TimeZoneInfo]::ConvertTime([System.DateTimeOffset]::UtcNow, $eastern).ToString('yyyy-MM-dd')
+  $snapshot = Join-Path $WorkspaceRoot ("work\inventory-history\snapshots\{0}-public.json" -f $today)
+  if (-not (Test-Path -LiteralPath $snapshot)) { throw 'NO_CURRENT_DAY_PUBLIC_SNAPSHOT' }
+  return $today
 }
 
 function Test-ReceiptMatchesManagerOverlay {
@@ -156,8 +179,8 @@ function Complete-VerifiedPublicationState {
     [Parameter(Mandatory)][string]$Date
   )
 
-  $pointerRun = Invoke-NativeCapture -FilePath 'python' -Arguments @(
-    '..\..\work\advance_latest_pointer.py',
+  $pointerRun = Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @(
+    (Join-Path $WorkspaceRoot 'work\advance_latest_pointer.py'),
     '--report-date',
     $Date
   )
@@ -251,7 +274,7 @@ try {
       # Prefer reusing resources already embedded in the hash-bound snapshot;
       # fall back to a fresh VDP extraction when that yields nothing.
       Write-Log 'photo cache: building (--reuse-snapshot-resources)'
-      $cacheRun = Invoke-NativeCapture -FilePath 'python' -Arguments @('scripts\build_photo_cache.py', '--report-date', $date, '--reuse-snapshot-resources')
+      $cacheRun = Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @('scripts\build_photo_cache.py', '--workspace-root', $WorkspaceRoot, '--report-date', $date, '--reuse-snapshot-resources')
       $cacheOut = $cacheRun.Output
       $reuseExit = $cacheRun.ExitCode
       $reuseEmpty = ($cacheOut -match '"vehicles_with_resources"\s*:\s*0')
@@ -265,7 +288,7 @@ try {
       if ($reuseEmpty) {
         # Clean run, zero embedded resources -> nothing to preserve, safe to extract fresh.
         Write-Log 'photo cache: snapshot has no embedded resources (clean zero) - falling back to fresh VDP extraction' 'WARN'
-        $cacheRun = Invoke-NativeCapture -FilePath 'python' -Arguments @('scripts\build_photo_cache.py', '--report-date', $date)
+        $cacheRun = Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @('scripts\build_photo_cache.py', '--workspace-root', $WorkspaceRoot, '--report-date', $date)
         $cacheOut = $cacheRun.Output
         if ($cacheRun.ExitCode -ne 0) { Write-Log "photo cache FAILED: $($cacheOut.Trim())" 'ERROR'; throw 'PHOTO_CACHE_FAILED' }
       }
@@ -284,13 +307,13 @@ try {
     try { $null = Invoke-WebRequest -Uri 'http://127.0.0.1:9222/json/version' -UseBasicParsing -TimeoutSec 5; $vautoUp = $true } catch {}
     if ($vautoUp) {
       try {
-        $worklistRun = Invoke-NativeCapture -FilePath 'python' -Arguments @('..\..\work\build_vauto_worklist.py', '--report-date', $date)
+        $worklistRun = Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @((Join-Path $WorkspaceRoot 'work\build_vauto_worklist.py'), '--report-date', $date)
         $wlOut = $worklistRun.Output
         if ($worklistRun.ExitCode -ne 0) { throw "worklist: $($wlOut.Trim())" }
         Write-Log "vauto: $($wlOut.Trim())"
-        $wlPath = "..\..\work\vauto-history\worklist-$date.json"
-        $feOut = "..\..\work\vauto-history\$date-factory-equipment.json"
-        $vautoRun = Invoke-NativeCapture -FilePath 'node' -Arguments @('scripts\vauto-factory-equipment.mjs', 'run', $wlPath, $feOut, '--budget-ms', '600000')
+        $wlPath = Join-Path $WorkspaceRoot "work\vauto-history\worklist-$date.json"
+        $feOut = Join-Path $WorkspaceRoot "work\vauto-history\$date-factory-equipment.json"
+        $vautoRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\vauto-factory-equipment.mjs', 'run', $wlPath, $feOut, '--budget-ms', '600000')
         $vautoOut = $vautoRun.Output
         if ($vautoRun.ExitCode -ne 0) {
           Write-Log "vauto: capture incomplete (exit $($vautoRun.ExitCode)) - continuing with prior captures: $($vautoOut.Trim())" 'WARN'
@@ -312,7 +335,7 @@ try {
     # calculator is client-side arithmetic the script reproduces exactly).
     # NON-FATAL: warranty figures are reference data; a failure here must never block the publish.
     try {
-      $warrantyRun = Invoke-NativeCapture -FilePath 'node' -Arguments @('scripts\capture-warranty.mjs', 'run', $date, '--budget-ms', '1200000')
+      $warrantyRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\capture-warranty.mjs', 'run', $date, '--budget-ms', '1200000')
       $warrOut = $warrantyRun.Output
       if ($warrantyRun.ExitCode -ne 0) {
         Write-Log "warranty: capture incomplete (exit $($warrantyRun.ExitCode)) - continuing: $($warrOut.Trim())" 'WARN'
@@ -329,12 +352,12 @@ try {
     # values copied as printed, then proves it against the REAL validators before
     # anything is published. A failure here stops the publish - never ships a bad file.
     Write-Log 'resources: building vin-document-enrichment.json'
-    $enrichRun = Invoke-NativeCapture -FilePath 'python' -Arguments @('..\..\work\build_vin_document_enrichment.py', '--report-date', $date)
+    $enrichRun = Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @((Join-Path $WorkspaceRoot 'work\build_vin_document_enrichment.py'), '--report-date', $date)
     $enrichOut = $enrichRun.Output
     if ($enrichRun.ExitCode -ne 0) { Write-Log "resources: build FAILED: $($enrichOut.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_BUILD_FAILED' }
     Write-Log "resources: $($enrichOut.Trim())"
     Write-Log 'resources: validating against release validators'
-    $enrichCheckRun = Invoke-NativeCapture -FilePath 'node' -Arguments @('scripts\dryrun_resource_enrichment_check.mjs', $date)
+    $enrichCheckRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\dryrun_resource_enrichment_check.mjs', $date)
     $enrichCheck = $enrichCheckRun.Output
     if ($enrichCheckRun.ExitCode -ne 0) { Write-Log "resources: validation FAILED: $($enrichCheck.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_INVALID' }
     Write-Log "resources: $($enrichCheck.Trim())"
@@ -343,7 +366,7 @@ try {
     # against /internal/status and /internal/readiness. Emits an uppercase error
     # CODE on failure, never raw detail.
     Write-Log 'cloud publish: running sync-cloud-release.mjs'
-    $syncRun = Invoke-NativeCapture -FilePath 'node' -Arguments @('scripts\sync-cloud-release.mjs')
+    $syncRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\sync-cloud-release.mjs')
     $syncOut = $syncRun.Output
     if ($syncRun.ExitCode -ne 0) { Write-Log "cloud publish FAILED: $($syncOut.Trim())" 'ERROR'; throw 'CLOUD_PUBLISH_FAILED' }
     Write-Log "cloud publish: $($syncOut.Trim())"

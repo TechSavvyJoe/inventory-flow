@@ -1,12 +1,11 @@
 // Dry-run: verify today's run-status manifest passes the real gate functions
 // before running the actual cloud:publish-release command.
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { hasCompletedManifestEvidence, findLatestCompletedManifest, loadLatestCompletedRelease } from '../server/importer.mjs';
+import { resolveWorkspaceRoot } from './lib/workspace-root.mjs';
 
 const REPORT_DATE = '2026-09-11';
-const APP_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const WORKSPACE_ROOT = path.resolve(APP_ROOT, '..', '..');
+const WORKSPACE_ROOT = resolveWorkspaceRoot(import.meta.url);
 
 async function main() {
   const out = { report_date: REPORT_DATE, workspaceRoot: WORKSPACE_ROOT };

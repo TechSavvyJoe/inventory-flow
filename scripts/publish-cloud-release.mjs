@@ -3,9 +3,9 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { loadLatestCompletedRelease } from '../server/importer.mjs'
 import { RELEASE_FORMAT, validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
+import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const APP_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
-const DEFAULT_WORKSPACE_ROOT = path.resolve(APP_ROOT, '..', '..')
 const PRIVATE_HOSTNAME = 'inventory-ops.joegallant.me'
 const MAX_ENVELOPE_BYTES = 25 * 1024 * 1024
 
@@ -159,7 +159,7 @@ export async function publishEnvelope(envelope, { environment = process.env, fet
 export async function main() {
   publicationEndpoint(requiredEnvironment('INVENTORY_OPS_CLOUD_URL'))
   accessHeaders()
-  const workspaceRoot = path.resolve(process.env.INVENTORY_WORKSPACE_ROOT || DEFAULT_WORKSPACE_ROOT)
+  const workspaceRoot = resolveWorkspaceRoot(import.meta.url)
   const release = loadLatestCompletedRelease({ workspaceRoot })
   if (release.sourceRuns?.public?.status !== 'current' || release.sourceRuns?.dealerMail?.status !== 'current') {
     throw new Error('Refusing to publish because the public or DealerMail source is not current')

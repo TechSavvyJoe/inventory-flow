@@ -7,17 +7,40 @@
 #
 # Re-runnable: -Force replaces any existing registration.
 
+[CmdletBinding()]
+param([string]$WorkspaceRoot)
+
 $ErrorActionPreference = 'Stop'
 
 $TaskName = 'BobMaxey-InventoryFlow-DailyPublish'
 $ScriptPath = Join-Path $PSScriptRoot 'daily-cloud-publish.ps1'
 $AppRoot = Split-Path -Parent $PSScriptRoot
 
+if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = $env:BOB_MAXEY_WORKSPACE_ROOT }
+if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) { $WorkspaceRoot = $env:INVENTORY_WORKSPACE_ROOT }
+if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+  $candidate = Split-Path -Parent (Split-Path -Parent $AppRoot)
+  if ((Test-Path (Join-Path $candidate 'work\run-status')) -and
+      (Test-Path (Join-Path $candidate 'outputs')) -and
+      (Test-Path (Join-Path $candidate 'apps\inventory-ops'))) {
+    $WorkspaceRoot = $candidate
+  }
+}
+if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+  throw 'Workspace root was not found. Pass -WorkspaceRoot with the reporting workspace path.'
+}
+$WorkspaceRoot = (Resolve-Path -LiteralPath $WorkspaceRoot).Path
+foreach ($requiredPath in @('work\run-status', 'outputs', 'apps\inventory-ops')) {
+  if (-not (Test-Path -LiteralPath (Join-Path $WorkspaceRoot $requiredPath))) {
+    throw "WORKSPACE_ROOT_INVALID: missing $requiredPath under $WorkspaceRoot"
+  }
+}
+
 if (-not (Test-Path $ScriptPath)) { throw "publish script not found: $ScriptPath" }
 
 $action = New-ScheduledTaskAction `
   -Execute 'powershell.exe' `
-  -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}"' -f $ScriptPath) `
+  -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -WorkspaceRoot "{1}"' -f $ScriptPath, $WorkspaceRoot) `
   -WorkingDirectory $AppRoot
 
 # First attempt at 09:15 local, then every 30 minutes through 15:15. This

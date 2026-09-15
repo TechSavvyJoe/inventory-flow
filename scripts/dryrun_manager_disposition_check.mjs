@@ -6,14 +6,13 @@
 //
 //   node scripts/dryrun_manager_disposition_check.mjs [YYYY-MM-DD]
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { hasCompletedManifestEvidence, loadLatestCompletedRelease } from '../server/importer.mjs'
 import { cloudReleaseFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
+import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const REPORT_DATE = process.argv[2] ?? '2026-09-12'
-const APP_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
-const WORKSPACE_ROOT = path.resolve(APP_ROOT, '..', '..')
+const WORKSPACE_ROOT = resolveWorkspaceRoot(import.meta.url)
 
 function mmddyyyy(iso) {
   return iso ? `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}` : ''

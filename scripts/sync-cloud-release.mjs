@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { loadLatestCompletedRelease } from '../server/importer.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { accessHeaders, publicationEndpoint, cloudReleaseFrom, encryptBundle, base64Key, publishEnvelope } from './publish-cloud-release.mjs'
+import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const COUNT_FIELDS = ['publicRowCount', 'dealerMailRowCount', 'dealerMailVinReconciledCount', 'dealerMailVinReviewCount', 'heldVinCount', 'activeHoldRecordCount', 'backupCount', 'deletedHoldRecordCount', 'resourceRecordCount', 'managerDispositionRecordCount', 'managerSoldRecordCount', 'managerDeliveredRecordCount', 'managerDispositionReviewCount', 'activeInventoryCount', 'managerDeliveredExclusionCount', 'managerPendingCarryoverCount', 'managerPendingIdentityReviewCount', 'vehicleCount']
 const STORES = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
@@ -128,7 +129,7 @@ export function acquirePublicationLock(lockPath) {
 }
 
 export async function main() {
-  const workspaceRoot = path.resolve(process.env.INVENTORY_WORKSPACE_ROOT || path.join(import.meta.dirname, '../../..'))
+  const workspaceRoot = resolveWorkspaceRoot(import.meta.url)
   const directory = path.join(workspaceRoot, 'work/app-feed-status')
   mkdirSync(directory, { recursive: true })
   const lockPath = path.join(directory, '.publication.lock')

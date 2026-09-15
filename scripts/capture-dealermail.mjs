@@ -21,10 +21,10 @@
 // real function, and the loaded grid has >100 rows of exactly 22 cells.
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+const ROOT = resolveWorkspaceRoot(import.meta.url)
 const ORIGIN = 'https://www.dealermail.com'
 const PM = ORIGIN + '/prospect_manager/'
 const GRID = PM + 'V2_inventory_search_CRM_USED_NEW.asp?selectedStore=26,25,27,95'

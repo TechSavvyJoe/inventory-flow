@@ -13,9 +13,10 @@ import { fileURLToPath } from 'node:url'
 import { loadLatestCompletedRelease, validateVinDocumentEnrichment } from '../server/importer.mjs'
 import { cloudReleaseFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
+import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const APP_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
-const WORKSPACE_ROOT = path.resolve(APP_ROOT, '..', '..')
+const WORKSPACE_ROOT = resolveWorkspaceRoot(import.meta.url)
 const ENRICHMENT_PATH = path.join(APP_ROOT, 'data', 'vin-document-enrichment.json')
 
 function todayInNewYork() {

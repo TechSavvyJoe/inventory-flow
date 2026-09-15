@@ -26,9 +26,10 @@
 import { writeFileSync, mkdirSync, appendFileSync, readdirSync, readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
+import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const PORT = 9222
-const ROOT = path.resolve(import.meta.dirname, '../../..')
+const ROOT = resolveWorkspaceRoot(import.meta.url)
 const DIR = path.join(ROOT, 'work', 'app-feed-status')
 const OUT = path.join(DIR, 'dealermail-keeper.json')
 const LOG = path.join(DIR, 'dealermail-keeper.log')
@@ -219,13 +220,25 @@ else {
 }
 
 // ---- vAuto: its own ping (HTTP 401 "Entity and/or User is Null." when expired) ------------
-try {
-  const out = execFileSync(process.execPath, [path.join(import.meta.dirname, 'vauto-factory-equipment.mjs'), 'ping'],
-    { encoding: 'utf8', timeout: 70000, windowsHide: true })
-  status.vauto = JSON.parse(out.trim().split('\n').pop())
-} catch (e) {
-  const last = e && e.stdout ? String(e.stdout).trim().split('\n').pop() : ''
-  try { status.vauto = JSON.parse(last) } catch { status.vauto = { status: 'ERROR', error: String(e && e.message || e).slice(0, 200) } }
+const pingVauto = () => {
+  try {
+    const out = execFileSync(process.execPath, [path.join(import.meta.dirname, 'vauto-factory-equipment.mjs'), 'ping'],
+      { encoding: 'utf8', timeout: 70000, windowsHide: true })
+    return JSON.parse(out.trim().split('\n').pop())
+  } catch (e) {
+    const last = e && e.stdout ? String(e.stdout).trim().split('\n').pop() : ''
+    try { return JSON.parse(last) }
+    catch { return { status: 'ERROR', error: String(e && e.message || e).slice(0, 200) } }
+  }
+}
+status.vauto = pingVauto()
+// The vAuto BFF occasionally returns a single status-0 fetch failure while the
+// authenticated browser session remains healthy. Retry only that transient
+// class; never mask a 401/403 or SESSION_EXPIRED result.
+if (status.vauto.status === 'ERROR') {
+  await new Promise(resolve => setTimeout(resolve, 1500))
+  const retry = pingVauto()
+  status.vauto = { ...retry, retried: true }
 }
 
 const services = ['dealermail', 'fmcdealer', 'fordvisions', 'vauto']

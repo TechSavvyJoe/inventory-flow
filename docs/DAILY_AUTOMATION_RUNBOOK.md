@@ -34,7 +34,9 @@ keeps working in that mode. Only Joe can do that step.
 
 ### BobMaxey-InventoryFlow-DailyPublish
 
-- Action: `scripts\daily-cloud-publish.ps1` (cwd `apps\inventory-ops`)
+- Action: `scripts\daily-cloud-publish.ps1 -WorkspaceRoot <reporting-workspace>`
+  (cwd `apps\inventory-ops`). The explicit root is required when the app folder
+  is a Windows junction.
 - Trigger: daily 09:15, repeat every 30 min for 6 h (last slot 15:15). Covers
   the 9:15/9:45/10:15/10:45 cadence in the Cloudflare runbook and keeps going
   as insurance.
@@ -62,7 +64,7 @@ keeps working in that mode. Only Joe can do that step.
 - Log: `work\app-feed-status\auto-publish-{date}.log`. Secret VALUES are never
   written; only key names and counts.
 - Re-register or change the schedule: edit and run
-  `scripts\register-daily-publish-task.ps1`.
+  `scripts\register-daily-publish-task.ps1 -WorkspaceRoot <reporting-workspace>`.
 - Remove: `Unregister-ScheduledTask -TaskName BobMaxey-InventoryFlow-DailyPublish`
 
 Error codes the log can end with, and what they mean:
@@ -128,8 +130,9 @@ device.
 
 ### BobMaxey-DealerMailKeeper
 
-- Action: `C:\Users\JoeGallant\AppData\Local\OpenClaw\deps\portable-node\node.exe scripts\keep-dealermail-alive.mjs`
-  (cwd `apps\inventory-ops`).
+- Action: `C:\Users\JoeGallant\AppData\Local\OpenClaw\deps\portable-node\node.exe scripts\keep-dealermail-alive.mjs --workspace-root <reporting-workspace>`
+  (cwd `apps\inventory-ops`). The explicit workspace protects snapshots and
+  status files when the app folder is reached through a Windows junction.
 - Trigger: registered 09/12/2026 11:50 as a one-shot that repeats every 10 min
   for 3650 days, i.e. indefinitely.
 - What it does: connects to the automation Comet over the Chrome DevTools

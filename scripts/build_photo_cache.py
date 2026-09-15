@@ -12,7 +12,18 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
+def _explicit_workspace_root() -> str | Path:
+    for name in ("BOB_MAXEY_WORKSPACE_ROOT", "INVENTORY_WORKSPACE_ROOT"):
+        if os.environ.get(name):
+            return os.environ[name]
+    if "--workspace-root" in sys.argv:
+        index = sys.argv.index("--workspace-root")
+        if index + 1 < len(sys.argv):
+            return sys.argv[index + 1]
+    return Path(__file__).resolve().parents[3]
+
+
+DEFAULT_WORKSPACE_ROOT = Path(_explicit_workspace_root()).resolve()
 sys.path.insert(0, str(DEFAULT_WORKSPACE_ROOT / "work"))
 import inventory_report as photo_extractor  # noqa: E402
 

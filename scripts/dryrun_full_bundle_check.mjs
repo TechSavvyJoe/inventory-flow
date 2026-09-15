@@ -3,10 +3,10 @@
 // validateReleaseBundle path publish-cloud-release.mjs calls internally)
 // against today's data, before touching the actual publish command.
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { hasCompletedManifestEvidence, loadLatestCompletedRelease, validateDealerMailSnapshot } from '../server/importer.mjs'
 import { cloudReleaseFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
+import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 function todayInNewYork() {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -23,8 +23,7 @@ const REPORT_DATE = process.argv[2] || todayInNewYork()
 if (!/^\d{4}-\d{2}-\d{2}$/.test(REPORT_DATE)) {
   throw new Error('report date must be YYYY-MM-DD')
 }
-const APP_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
-const WORKSPACE_ROOT = path.resolve(APP_ROOT, '..', '..')
+const WORKSPACE_ROOT = resolveWorkspaceRoot(import.meta.url)
 
 async function main() {
   const out = { report_date: REPORT_DATE, workspaceRoot: WORKSPACE_ROOT }

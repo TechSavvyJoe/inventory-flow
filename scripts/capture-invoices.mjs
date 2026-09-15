@@ -17,10 +17,10 @@
 // then on the real document). After that handshake, in-tab fetches return the PDF bytes.
 import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+const ROOT = resolveWorkspaceRoot(import.meta.url)
 const ORIGIN = 'https://fordvisions.dealerconnection.com'
 const INV_URL = vin => `${ORIGIN}/vinv/GetInvoice.aspx?v=${vin}&n=%2C&pa=00000&p=&ct=USA`
 const FORD_MAKES = new Set(['FORD', 'LINC', 'LINCOLN'])

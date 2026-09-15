@@ -23,10 +23,10 @@
 // tabs so getOriginTab opens a clean one, and the run retries once.
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { getOriginTab, fetchInTab, sleep, stripTags, targets, PORT } from './lib/cdp.mjs'
+import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+const ROOT = resolveWorkspaceRoot(import.meta.url)
 const ORIGIN = 'https://www.fordtechservice.dealerconnection.com'
 const OASIS_URL = vin => `${ORIGIN}/oasis/Index?vin=${vin}`
 const FORD_MAKES = new Set(['FORD', 'LINC', 'LINCOLN'])
