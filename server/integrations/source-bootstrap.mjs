@@ -36,6 +36,43 @@ function parsedFactoryEquipment(value) {
   }
 }
 
+function parsedFordOasis(value) {
+  if (!isObject(value)) return null
+  return {
+    ...pick(value, ['dataState', 'capturedAt', 'vehicleDescription', 'versionSeries', 'buildDate', 'warrantyStartDate', 'releaseDate', 'monthsInService', 'saleMileage']),
+    openFieldServiceActions: list(value.openFieldServiceActions).filter(isObject).map(item => pick(item, ['code', 'description'])),
+    warrantyCoverages: list(value.warrantyCoverages).filter(isObject).map(item => pick(item, ['type', 'description'])),
+    extendedCoverageExpirations: strings(value.extendedCoverageExpirations),
+  }
+}
+
+function warrantyCoverage(value) {
+  return pick(value, [
+    'type', 'termText', 'termMonths', 'termMiles', 'unlimitedMiles', 'unlimitedMonths',
+    'remainingMiles', 'remainingMonths', 'remainingMilesText', 'remainingTimeText', 'status',
+  ])
+}
+
+function parsedWarrantyCheck(value) {
+  if (!isObject(value)) return null
+  const result = {
+    ...pick(value, ['dataState', 'capturedAt', 'mileageEntered', 'mileageSource']),
+  }
+  if (isObject(value.autoCheck)) {
+    result.autoCheck = {
+      ...pick(value.autoCheck, ['inServiceDate', 'inServiceAgeMonths', 'defaultMileage']),
+      coverages: list(value.autoCheck.coverages).filter(isObject).map(warrantyCoverage),
+    }
+  }
+  if (isObject(value.fordOasis)) {
+    result.fordOasis = {
+      ...pick(value.fordOasis, ['warrantyStartDate', 'monthsInService']),
+      coverages: list(value.fordOasis.coverages).filter(isObject).map(warrantyCoverage),
+    }
+  }
+  return result
+}
+
 function managerDisposition(value) {
   if (!isObject(value)) return null
   return pick(value, [
@@ -92,6 +129,7 @@ function vehicle(view, record, meta) {
     movement: pick(view.movement, ['currentLocation', 'destination', 'locationConfidence', 'lastConfirmedAt', 'departedAt', 'state']),
     publicScan: publicScan(record),
     autoCheckReport: parsedAutoCheck(view.autoCheckReport), windowSticker: parsedSticker(view.windowSticker), factoryEquipment: parsedFactoryEquipment(view.factoryEquipment),
+    fordOasis: parsedFordOasis(view.fordOasis), warrantyCheck: parsedWarrantyCheck(view.warrantyCheck),
   }
 }
 
@@ -105,7 +143,11 @@ export function integrationBootstrapFromSource(bootstrap, release) {
     throw new IntegrationReadError('Verified source inventory is unavailable', { status: 503, code: 'SOURCE_DATA_UNAVAILABLE' })
   }
   const meta = {
-    ...pick(bootstrap.meta, ['reportDate', 'completedAt', 'timezone', 'publicFreshness', 'dealerMailFreshness', 'managerDispositionFreshness', 'managerDispositionCoverageStatus']),
+    ...pick(bootstrap.meta, [
+      'reportDate', 'completedAt', 'timezone', 'publicFreshness', 'dealerMailFreshness', 'resourceFreshness',
+      'managerDispositionFreshness', 'managerDispositionCoverageStatus', 'publicCount', 'crmCount', 'heldVinCount',
+      'managerDispositionCount', 'managerDeliveredCount', 'managerDispositionReviewCount', 'publicChangeBaselineDate', 'holdChangeStatus',
+    ]),
     managerDispositionCoveredSourceStores: STORE_NAMES.filter(store => list(bootstrap.meta.managerDispositionCoveredSourceStores).includes(store)),
   }
   const byVin = new Map(), duplicateVins = new Set()

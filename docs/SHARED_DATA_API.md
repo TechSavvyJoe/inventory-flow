@@ -18,7 +18,7 @@ API keys have per-application grants, expiry/revocation controls, store lists, r
 ## What the first version contains
 
 - The selected current release's **publicly listed vehicles**, identified by valid full VIN, with stock, physical store, home store, price, mileage, dates/aging, colors, model/trim, body, engine, transmission, drivetrain, fuel, MPG, certification flag, published features, permitted photo links, and the VIN/store-correct official listing link.
-- Parsed VIN-specific **AutoCheck facts**, original-window-sticker options, standard equipment/warranty, package codes and prices, and informational factory-equipment packages/sections. Exact source terminology is retained. Informational equipment labels are explicitly not original Monroney stickers. Original report files and authenticated document links are not exposed.
+- Parsed VIN-specific **AutoCheck facts**, original-window-sticker options, standard equipment/warranty, package codes and prices, informational factory-equipment packages/sections, read-only Ford OASIS facts, and read-only warranty-coverage facts. Exact source terminology is retained. Informational equipment labels are explicitly not original Monroney stickers. Original report files and authenticated document links are not exposed.
 - Conservative **hold state** and non-private backup counts; confirmed/reported store-level location and departure/confirmation timestamps. Source listing status, source stock flags, hold state, and app location remain distinct.
 - Typed **public change events** recorded with the selected release, their before/after values, and the comparison report dates.
 - Re-derived **manager-log sold and delivered evidence**: stock/VIN identity, sold and delivered flags, delivery date, match method/status, review flag, and the reporting source store and period. This is manager-supplied evidence only; manager-log free text is discarded at the source. It is independent of public listing status, DealerMail hold state, CDK evidence and physical location, and the absence of a row is not evidence that a vehicle is unsold, available or undelivered.
@@ -124,3 +124,17 @@ Keep each app's key only in its backend environment/secret manager. Do not put i
 After live deployment and managed OAuth configuration are verified, add the approved `/mcp` URL as a remote connector in a compatible AI client and complete the browser sign-in. The account must have an active approved identity and stores/scopes. MCP uses the same safe read service as REST; changing the client does not bypass field restrictions. An AI can search equipment or price changes but cannot access excluded customer notes or perform vehicle/CRM writes.
 
 If a client cannot complete the managed OAuth flow, report that exact compatibility issue. Do not disable authentication, paste a backend API key into the AI chat, or expose the original Inventory Flow database to work around it.
+
+### MCP operational-read tools
+
+The remote MCP exposes the same selected, verified daily release through the following **read-only** tools when the signed-in employee has the required store and scope grant:
+
+- `search_inventory` and `get_vehicle` — public inventory, safe equipment, conservative hold/location evidence, and current release metadata.
+- `search_operational_inventory` — richer filters across public, home, CRM, and current store; resource coverage; hold evidence; manager-log evidence; price, photo, and aging conditions.
+- `get_vehicle_resources` — safe VIN-specific AutoCheck, original-sticker, factory-equipment, Ford OASIS, warranty-coverage, and photo-metadata facts. It excludes original report files and authenticated document URLs.
+- `get_inventory_changes` — current selected-release public change events.
+- `get_data_health`, `get_daily_operations_report`, `get_data_quality_summary`, and `get_reconciliation_summary` — source freshness, scoped totals, per-store operational counts, resource coverage, exceptions, and bounded public/CRM/location/hold reconciliation.
+- `get_hold_summary` — conservative public-inventory hold aggregates only.
+- `list_manager_dispositions` — redacted manager-log sold/delivered evidence only.
+
+These tools do not expose customer or salesperson identities, reasons, CRM comments/alerts, raw CDK, raw source files, browser credentials, or authenticated document links. They cannot perform DealerMail, vAuto, FMCDealer, or Inventory Flow writes. A future Inventory Flow-only action tool must be separately designed with a named action, role/store restriction, explicit confirmation, idempotency key, and audit record; external vendor actions are never enabled by a blanket MCP permission.

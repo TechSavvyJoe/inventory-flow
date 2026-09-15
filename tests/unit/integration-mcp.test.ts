@@ -45,12 +45,12 @@ const dataOf = result => {
 }
 
 describe('official SDK2 read-only inventory MCP adapter', () => {
-  it.each(['auto', 'legacy'])('supports a real %s discovery/handshake, tool listing and all six tools', async mode => {
+  it.each(['auto', 'legacy'])('supports a real %s discovery/handshake, tool listing and all operational read tools', async mode => {
     const getReadService = vi.fn(() => readService()), audit = vi.fn()
     const connection = await connect({ mode, getReadService, onToolResult: audit })
     try {
       const { tools } = await connection.client.listTools()
-      expect(tools.map(tool => tool.name)).toEqual(['search_inventory', 'get_vehicle', 'get_inventory_changes', 'get_data_health', 'get_hold_summary', 'list_manager_dispositions'])
+      expect(tools.map(tool => tool.name)).toEqual(['search_inventory', 'get_vehicle', 'search_operational_inventory', 'get_vehicle_resources', 'get_inventory_changes', 'get_data_health', 'get_daily_operations_report', 'get_data_quality_summary', 'get_reconciliation_summary', 'get_hold_summary', 'list_manager_dispositions'])
       expect(getReadService).not.toHaveBeenCalled()
       for (const tool of tools) expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false })
       const inventory = dataOf(await connection.client.callTool({ name: 'search_inventory', arguments: { q: 'tow', limit: 2, sort: 'mileage', direction: 'desc' } }))
@@ -61,17 +61,22 @@ describe('official SDK2 read-only inventory MCP adapter', () => {
       expect(second.pagination.nextCursor).toBeNull()
       const vehicle = dataOf(await connection.client.callTool({ name: 'get_vehicle', arguments: { vin: vinFor(1) } }))
       expect(vehicle.data.features).toContain('TRAILER TOW PACKAGE')
+      expect(dataOf(await connection.client.callTool({ name: 'search_operational_inventory', arguments: { hasCurrentHold: true, limit: 1 } })).pagination.total).toBe(1)
+      expect(dataOf(await connection.client.callTool({ name: 'get_vehicle_resources', arguments: { vin: vinFor(1) } })).data.vin).toBe(vinFor(1))
       const changes = dataOf(await connection.client.callTool({ name: 'get_inventory_changes', arguments: { type: 'price_change', from: '2026-09-09', to: '2026-09-09', limit: 1 } }))
       expect(changes.pagination.total).toBe(1)
       const health = dataOf(await connection.client.callTool({ name: 'get_data_health', arguments: {} }))
       expect(health.data.visibleVehicleCount).toBe(3)
+      expect(dataOf(await connection.client.callTool({ name: 'get_daily_operations_report', arguments: {} })).data.counts.visiblePublicVehicles).toBe(3)
+      expect(dataOf(await connection.client.callTool({ name: 'get_data_quality_summary', arguments: {} })).data.visibleVehicles).toBe(3)
+      expect(dataOf(await connection.client.callTool({ name: 'get_reconciliation_summary', arguments: {} })).data.stores[0].publicStore).toBe('Howell')
       const holds = dataOf(await connection.client.callTool({ name: 'get_hold_summary', arguments: { store: 'Howell' } }))
       expect(holds.data[0].currentHeldVins).toBe(1)
       const dispositions = dataOf(await connection.client.callTool({ name: 'list_manager_dispositions', arguments: { store: 'Howell', delivered: true, review: false } }))
       expect(dispositions.pagination).toMatchObject({ total: 1, returned: 1 })
       expect(dispositions.data[0]).toMatchObject({ soldManagerLog: true, deliveredManagerLog: true, sourceStore: 'Howell', physicalStore: 'Howell' })
       expect(JSON.stringify([inventory, second, vehicle, changes, health, holds, dispositions])).not.toContain(PRIVATE)
-      expect(audit).toHaveBeenCalledTimes(7)
+      expect(audit).toHaveBeenCalledTimes(12)
       expect(audit.mock.calls.every(([record]) => record.status === 200 && !JSON.stringify(record).includes('vin'))).toBe(true)
       expect(audit).toHaveBeenCalledWith({ operation: 'managerDispositions', status: 200, resultCount: 1 })
       expect(connection.responses.every(response => response.session === null)).toBe(true)
@@ -80,8 +85,8 @@ describe('official SDK2 read-only inventory MCP adapter', () => {
   })
 
   it.each([
-    ['inventory.read', ['search_inventory', 'get_vehicle', 'list_manager_dispositions']], ['changes.read', ['get_inventory_changes']],
-    ['health.read', ['get_data_health']], ['holds.aggregate.read', ['get_hold_summary']],
+    ['inventory.read', ['search_inventory', 'get_vehicle', 'search_operational_inventory', 'get_vehicle_resources', 'list_manager_dispositions']], ['changes.read', ['get_inventory_changes']],
+    ['health.read', ['get_data_health', 'get_daily_operations_report', 'get_data_quality_summary', 'get_reconciliation_summary']], ['holds.aggregate.read', ['get_hold_summary']],
   ])('registers only tools granted by %s and denies an unlisted tool', async (scope, names) => {
     const who = { ...principal, scopes: [scope] }, getter = vi.fn(() => readService(who))
     const connection = await connect({ who, getReadService: getter })
@@ -160,7 +165,7 @@ describe('official SDK2 read-only inventory MCP adapter', () => {
     const connection = await connect({ who, getReadService: () => readService(noScopes) })
     who.scopes.push('inventory.read')
     try {
-      expect((await connection.client.listTools()).tools.map(tool => tool.name)).toEqual(['get_data_health'])
+      expect((await connection.client.listTools()).tools.map(tool => tool.name)).toEqual(['get_data_health', 'get_daily_operations_report', 'get_data_quality_summary', 'get_reconciliation_summary'])
       const result = await connection.client.callTool({ name: 'get_data_health', arguments: {} })
       expect(dataOf(result).error.code).toBe('INSUFFICIENT_SCOPE')
     } finally { await connection.close() }
@@ -196,7 +201,7 @@ describe('official SDK2 read-only inventory MCP adapter', () => {
     })
     try {
       await client.connect(transport)
-      expect((await client.listTools()).tools).toHaveLength(6)
+      expect((await client.listTools()).tools).toHaveLength(11)
       const inventory = dataOf(await client.callTool({ name: 'search_inventory', arguments: { limit: 1 } }))
       expect(inventory.pagination).toMatchObject({ total: 3, returned: 1 })
       expect(dataOf(await client.callTool({ name: 'get_data_health', arguments: {} })).data.visibleVehicleCount).toBe(3)
