@@ -1,7 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BootstrapData, TransferRecord } from '../../types';
+import type { BootstrapData, TransferRecord, VehicleRecord } from '../../types';
+import { toTransferVehicle } from '../../app/transferAdapters';
 import { TransferTracker } from './TransferTracker';
 import { TransfersPage } from './TransfersPage';
 import { TransferRequestWorkspace } from './TransferRequestWorkspace';
@@ -166,7 +167,7 @@ function detail(allowedActions: TransferDetail['allowedActions']): TransferDetai
 function renderPage(data: BootstrapData, initialEntry = '/transfers') {
   mocks.useAppData.mockReturnValue({
     data,
-    homeStore: 'Howell',
+    homeStore: 'Ford Detroit',
     role: 'manager',
     submitTransfer: vi.fn(),
   });
@@ -184,6 +185,46 @@ describe('transfer workspace v3 layout', () => {
     mocks.useAppData.mockReset();
   });
 
+  it.each([
+    ['unknown', 'Waiting for service'],
+    ['needs_service', 'Waiting for service'],
+    ['in_service', 'In service'],
+    ['serviced', 'Ready'],
+  ] as const)('shows permissioned %s service status in the selected move without changing location or actions', (status, label) => {
+    const current = detail(['confirm-return']);
+    const source: VehicleRecord = {
+      vin: current.vehicle.vin, stockNumber: current.vehicle.stock, year: 2025, make: 'Ford', model: 'F-150', trim: 'Lariat', vehicleName: current.vehicle.vehicleLabel,
+      listedPrice: 51800, mileage: 12450, daysListed: 43, exteriorColor: 'Synthetic blue', engine: 'Synthetic 3.5L engine', drivetrain: '4WD',
+      homeStore: 'Howell', publicStore: 'Howell', homeStoreConfirmed: true, sourceReportedLocation: 'Howell', websiteStatus: 'Available', publicListingState: 'Listed',
+      dealerOn: { inStock: true, inTransit: false, inProduction: false }, hold: { state: 'none_observed', label: 'No current hold', backupCount: 0 },
+      movement: { state: 'return_in_transit', label: 'Return in transit', currentLocation: 'Ford Detroit', locationConfidence: 'verified' },
+      serviceReadiness: { vin: current.vehicle.vin, status, version: 2, serviceEnteredAt: '2026-09-13', completedAt: status === 'serviced' ? '2026-09-14' : null, updatedAt: null, updatedBy: null, updatedByRole: null, updatedAtStore: null, store: 'Howell', canManage: false },
+    };
+    const mapped = toTransferVehicle(source, bootstrap(0).meta);
+    expect(mapped.serviceReadiness).toBe(source.serviceReadiness);
+    expect(mapped).toMatchObject({ listedPriceLabel: '$51,800', mileageLabel: '12,450 mi', exteriorColor: 'Synthetic blue', engine: 'Synthetic 3.5L engine', drivetrain: '4WD', daysListed: 43 });
+    const onAction = vi.fn();
+    render(<TransferTracker transfer={{ ...current, workflowMode: 'simple', vehicle: mapped }} onAction={onAction} />);
+    const link = screen.getByRole('link', { name: `${label}. Open service status for VIN ${source.vin}` });
+    expect(link).toBeVisible();
+    expect(link).toHaveAttribute('href', `/service?vin=${source.vin}`);
+    expect(link).toHaveTextContent(label);
+    expect(link.closest('header')).toHaveClass('simple-move-heading');
+    expect(link.closest('header')).toHaveTextContent('$51,800 · 12,450 mi · 43 days listed');
+    expect(link.closest('header')).toHaveTextContent('Synthetic blue · Synthetic 3.5L engine · 4WD');
+    expect(screen.getByRole('region', { name: 'Vehicle location and time away' })).toHaveTextContent('Ford Detroit');
+    expect(screen.getByRole('button', { name: 'Confirm back home' })).toBeVisible();
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it('does not infer service completion from a returned vehicle without a service record', () => {
+    const current = detail([]);
+    current.status.movement = { code: 'returned-home-confirmed', label: 'Back at home store' };
+    render(<TransferTracker transfer={{ ...current, workflowMode: 'simple' }} />);
+    expect(screen.getByRole('link', { name: /^Ready\. Open service status/ })).toHaveTextContent(/^Ready$/);
+    expect(screen.getByRole('heading', { name: 'Back home · move complete' })).toBeVisible();
+  });
+
   it('keeps a clear master-detail workspace even when only one or two moves are present', () => {
     const { container } = renderPage(bootstrap(2));
 
@@ -197,7 +238,7 @@ describe('transfer workspace v3 layout', () => {
     expect(screen.getByRole('heading', { name: '2025 Ford F-150 1' })).toBeInTheDocument();
   });
 
-  it('uses the independently scrolling master-detail layout for longer queues', () => {
+  it('keeps longer queues in the same comparison and detail layout', () => {
     const { container } = renderPage(bootstrap(4));
 
     const layout = container.querySelector('.transfers-layout');
@@ -210,7 +251,7 @@ describe('transfer workspace v3 layout', () => {
   it('renders the queue-first mobile contract without placing the selected detail in the queue state', () => {
     const { container } = renderPage(bootstrap(4));
 
-    const page = container.querySelector('.transfer-workspace-v3');
+    const page = container.querySelector('.vehicle-moves-page');
     expect(page).toHaveAttribute('data-mobile-detail-open', 'false');
     expect(container.querySelectorAll('.transfer-list-copy--concise')).toHaveLength(4);
     expect(screen.getByRole('combobox', { name: 'Filter vehicle moves' })).toBeInTheDocument();
@@ -231,7 +272,7 @@ describe('transfer workspace v3 layout', () => {
   it('opens a dedicated mobile detail state and returns to the queue', () => {
     const { container } = renderPage(bootstrap(4), '/transfers?id=transfer-2');
 
-    const page = container.querySelector('.transfer-workspace-v3');
+    const page = container.querySelector('.vehicle-moves-page');
     expect(page).toHaveAttribute('data-mobile-detail-open', 'true');
     const detailBar = container.querySelector('.transfer-mobile-detail-bar');
     expect(detailBar).toHaveTextContent('Vehicle move');
@@ -269,12 +310,60 @@ describe('transfer workspace v3 layout', () => {
     expect(screen.queryByRole('option', { name: 'Driver needed' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark vehicle collected' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Vehicle location and time away' })).toHaveTextContent('At home store');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Filter vehicle moves' }), { target: { value: 'my-home-inventory' } });
-    expect(container.querySelectorAll('.transfer-list-item')).toHaveLength(1);
-    expect(container.querySelector('.transfer-list-item')).toHaveTextContent('MOVE1');
+    expect(screen.getByRole('button', { name: /My store Ford Detroit/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(container.querySelectorAll('.transfer-list-item')).toHaveLength(2);
   });
 
-  it('refreshes same-ID move details after an event and immediately uses current bootstrap actions', async () => {
+  it('starts with moves connected to the employee store and deliberately expands to the group', () => {
+    const data = bootstrap(2);
+    data.transfers[1] = { ...data.transfers[1], requestingStore: 'Lincoln', destination: 'Lincoln' };
+    const { container } = renderPage(data);
+    expect(container.querySelectorAll('.transfer-list-item')).toHaveLength(1);
+    expect(container.querySelector('.transfer-list-item')).toHaveTextContent('MOVE1');
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }));
+    expect(container.querySelectorAll('.transfer-list-item')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: /^Active/ })).toHaveTextContent('2');
+  });
+
+  it('opens an authorized completed deep link independently of active queue filters', () => {
+    const data = bootstrap(2);
+    data.transfers[1] = { ...data.transfers[1], workflowMode: 'simple', requestStatus: 'closed', movementStatus: 'returned_home', allowedActions: [] };
+    const { container } = renderPage(data, '/transfers?id=transfer-2');
+    expect(container.querySelectorAll('.transfer-list-item')).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: '2025 Ford F-150 2' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Back home · move complete' })).toBeInTheDocument();
+  });
+
+  it('keeps one primary move action and discloses authorized return and issue options', () => {
+    const onAction = vi.fn();
+    render(<TransferTracker transfer={{ ...detail(['record-outcome', 'schedule-return', 'report-condition']), workflowMode: 'simple' }} onAction={onAction} />);
+    const actions = screen.getByLabelText('Available move actions');
+    expect(actions.querySelectorAll(':scope > button')).toHaveLength(1);
+    expect(actions.querySelector('details')).not.toHaveAttribute('open');
+    expect(within(actions).getByRole('button', { name: 'Update showing / outcome' })).toBeInTheDocument();
+    fireEvent.click(within(actions).getByText('Other options'));
+    fireEvent.click(within(actions).getByRole('button', { name: 'Start return' }));
+    expect(onAction).toHaveBeenCalledWith('schedule-return', expect.objectContaining({ id: 'transfer-return' }));
+    expect(within(actions).getByRole('button', { name: 'Report vehicle issue' })).toBeInTheDocument();
+  });
+
+  it('prevents an own-store vehicle request from silently selecting another requesting store', () => {
+    const data = bootstrap(0);
+    data.vehicles = [{ vin: 'TESTDATAOWNSTORE1', homeStore: 'Ford Detroit' } as BootstrapData['vehicles'][number]];
+    renderPage(data, '/transfers/new?vin=TESTDATAOWNSTORE1');
+    expect(screen.getByRole('heading', { name: 'This vehicle belongs to Ford Detroit' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ask my manager' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Find a vehicle at another store' })).toBeInTheDocument();
+  });
+
+  it('keeps the actual next step in the row while the vehicle is away', () => {
+    const data = bootstrap(1);
+    data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', currentLocation: 'Ford Detroit', nextAction: 'Confirm home receipt' };
+    renderPage(data);
+    expect(screen.getByRole('button', { name: /2025 Ford F-150 1/ })).toHaveTextContent('NextConfirm home receipt');
+  });
+
+  it('refreshes same-ID move details after an event without cancelling the current read', async () => {
     const data = bootstrap(1);
     data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', requestStatus: 'requested', allowedActions: ['approve'], privateEvidence: undefined, nextAction: 'Check availability and approve' };
     const initialPrivate = { ...data.transfers[0], privateEvidence: { requestReason: 'Previous private detail' } };
@@ -283,19 +372,45 @@ describe('transfer workspace v3 layout', () => {
     mocks.useAppData.mockReturnValue({ data, homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
     const { rerender } = render(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
     expect(await screen.findByText('Previous private detail')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve & mark available' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve this move' })).toBeInTheDocument();
 
     const updated = { ...data.transfers[0], requestStatus: 'approved', allowedActions: ['confirm-pickup'], nextAction: 'Record collection when the vehicle leaves' };
     const currentData = { ...data, transfers: [updated] };
     mocks.useAppData.mockReturnValue({ data: currentData, homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
     rerender(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
     expect(screen.queryByText('Previous private detail')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Approve & mark available' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve this move' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark vehicle collected' })).toBeInTheDocument();
     expect(mocks.getTransfer).toHaveBeenCalledTimes(2);
+    expect(mocks.getTransfer).toHaveBeenNthCalledWith(1, 'transfer-1', 'manager', 'Howell');
+    expect(mocks.getTransfer).toHaveBeenNthCalledWith(2, 'transfer-1', 'manager', 'Howell');
     await act(async () => { resolveCurrent({ ...updated, privateEvidence: { requestReason: 'Current private detail' } }); });
     expect(screen.getByText('Current private detail')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark vehicle collected' })).toBeInTheDocument();
+  });
+
+  it('does not abort a healthy detail request when an unchanged bootstrap response is replayed', async () => {
+    const data = bootstrap(1);
+    mocks.getTransfer.mockImplementation(() => new Promise<TransferRecord>(() => {}));
+    mocks.useAppData.mockReturnValue({ data, homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
+    const { rerender } = render(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+    await waitFor(() => expect(mocks.getTransfer).toHaveBeenCalledTimes(1));
+
+    // This mirrors a React replay or a fresh bootstrap response with the same
+    // server values but new JavaScript object identities.
+    const replayedData = {
+      ...data,
+      transfers: data.transfers.map((record) => ({
+        ...record,
+        allowedActions: record.allowedActions ? [...record.allowedActions] : undefined,
+        events: record.events.map((event) => ({ ...event })),
+      })),
+    };
+    mocks.useAppData.mockReturnValue({ data: replayedData, homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
+    rerender(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+
+    await waitFor(() => expect(mocks.getTransfer).toHaveBeenCalledTimes(1));
+    expect(mocks.getTransfer).toHaveBeenCalledWith('transfer-1', 'manager', 'Howell');
   });
 
   it('does not let a previous role/store detail response overwrite the current access view', async () => {
@@ -309,10 +424,12 @@ describe('transfer workspace v3 layout', () => {
     mocks.useAppData.mockReturnValue({ data: { ...data, transfers: [restricted] }, homeStore: 'Ford Detroit', role: 'sales', submitTransfer: vi.fn() });
     rerender(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
     await waitFor(() => expect(mocks.getTransfer).toHaveBeenLastCalledWith('transfer-1', 'sales', 'Ford Detroit'));
-    expect(screen.queryByRole('button', { name: 'Approve & mark available' })).not.toBeInTheDocument();
+    expect(mocks.getTransfer.mock.calls[0]).toHaveLength(3);
+    expect(mocks.getTransfer.mock.calls[1]).toHaveLength(3);
+    expect(screen.queryByRole('button', { name: 'Approve this move' })).not.toBeInTheDocument();
     await act(async () => { resolvePrevious({ ...data.transfers[0], privateEvidence: { requestReason: 'Other access private reason' } }); });
     expect(screen.queryByText('Other access private reason')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Approve & mark available' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve this move' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Waiting for requesting-store manager' })).toBeInTheDocument();
   });
 
@@ -326,8 +443,18 @@ describe('transfer workspace v3 layout', () => {
     mocks.useAppData.mockReturnValue({ data, homeStore: 'Ford Detroit', role: 'sales', submitTransfer: vi.fn() });
     rerender(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
     expect(screen.queryByText('Manager-only private reason')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Approve & mark available' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve this move' })).not.toBeInTheDocument();
     expect(mocks.getTransfer).toHaveBeenLastCalledWith('transfer-1', 'sales', 'Ford Detroit');
+  });
+
+  it('does not attach cancellation signals to selected-detail reads', () => {
+    const data = bootstrap(1);
+    mocks.useAppData.mockReturnValue({ data, homeStore: 'Ford Detroit', role: 'manager', submitTransfer: vi.fn() });
+    mocks.getTransfer.mockImplementation(() => new Promise(() => {}));
+    const { unmount } = render(<MemoryRouter><TransfersPage /></MemoryRouter>);
+    expect(mocks.getTransfer).toHaveBeenCalledWith('transfer-1', 'manager', 'Ford Detroit');
+    expect(mocks.getTransfer.mock.calls[0]).toHaveLength(3);
+    unmount();
   });
 
   it('moves received simple vehicles into history without another close step', () => {
@@ -339,19 +466,35 @@ describe('transfer workspace v3 layout', () => {
     data.transfers[1].workflowMode = 'simple';
     renderPage(data);
     expect(screen.queryByRole('button', { name: /2025 Ford F-150 1/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /History\s*1/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Completed\s*1/ }));
     expect(screen.getByRole('button', { name: /2025 Ford F-150 1/ })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Back home · move complete' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Close movement' })).not.toBeInTheDocument();
   });
 
   it('shows one requesting-manager check and no second-store approval in a simple request', () => {
-    render(<TransferRequestWorkspace workflowMode="simple" vehicle={detail([]).vehicle} stores={[{ value: 'Ford Detroit', label: 'Ford Detroit' }]} requesters={[{ value: 'sales', label: 'Demo Sales' }]} managerApprovers={[{ value: 'manager', label: 'Ford Detroit manager' }]} defaultRequestingStore="Ford Detroit" defaultRequesterId="sales" defaultManagerApproverId="manager" onSubmit={vi.fn()} />);
+    const vehicle = { ...detail([]).vehicle, exteriorColor: 'Synthetic blue', engine: 'Synthetic engine', drivetrain: '4WD', daysListed: 12 };
+    render(<TransferRequestWorkspace workflowMode="simple" vehicle={vehicle} stores={[{ value: 'Ford Detroit', label: 'Ford Detroit' }]} requesters={[{ value: 'sales', label: 'Demo Sales' }]} managerApprovers={[{ value: 'manager', label: 'Ford Detroit manager' }]} defaultRequestingStore="Ford Detroit" defaultRequesterId="sales" defaultManagerApproverId="manager" onSubmit={vi.fn()} />);
+    const header = screen.getByRole('heading', { name: vehicle.vehicleLabel }).closest('header');
+    expect(header).toHaveTextContent('$52,500 · 12,345 mi · 12 days listed');
+    expect(header).toHaveTextContent('Synthetic blue · Synthetic engine · 4WD');
+    expect(within(header!).getByRole('link', { name: /^Ready\. Open service status/ })).toHaveTextContent(/^Ready$/);
+    expect(document.querySelector('.move-request-current-location')).toHaveTextContent('Ford Detroit');
     const preview = screen.getByRole('complementary', { name: 'Request accountability preview' });
     expect(within(preview).getAllByRole('listitem')).toHaveLength(3);
     expect(preview).toHaveTextContent('Your manager checks and approves');
-    expect(preview).toHaveTextContent('No second approval in the app');
+    expect(preview).toHaveTextContent('They confirm availability with Howell and approve this move.');
     expect(preview).not.toHaveTextContent('assign a driver');
+  });
+
+  it('opens the exact saved simple request from its confirmation', async () => {
+    const onViewRequest = vi.fn();
+    render(<TransferRequestWorkspace workflowMode="simple" vehicle={detail([]).vehicle} stores={[{ value: 'Ford Detroit', label: 'Ford Detroit' }]} requesters={[{ value: 'sales', label: 'Demo Sales' }]} managerApprovers={[{ value: 'manager', label: 'Ford Detroit manager' }]} defaultRequestingStore="Ford Detroit" defaultRequesterId="sales" defaultManagerApproverId="manager" onSubmit={vi.fn().mockResolvedValue({ requestId: 'saved-move-123' })} onViewRequest={onViewRequest} />);
+    fireEvent.change(screen.getByLabelText('Needed by'), { target: { value: '2026-09-15T10:00' } });
+    fireEvent.change(screen.getByLabelText('What do you need?'), { target: { value: 'Synthetic customer visit' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ask my manager' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'View this move' }));
+    expect(onViewRequest).toHaveBeenCalledWith('saved-move-123');
   });
 
   it('filters sold-pending separately from delivery and sorts by an operational route', () => {

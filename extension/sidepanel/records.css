@@ -1,0 +1,39 @@
+/* Captured records are a readable ledger, not nested disclosure controls. */
+.rec { min-width: 0; }
+.rec-heading { margin-bottom: 8px; }
+.rec-heading .card-head { flex-wrap: wrap; margin-bottom: 2px; }
+.rec-heading .card-title { flex-wrap: wrap; min-width: 0; font-size: 15px; }
+.rec-state { color: var(--ink-3); font-size: 14px; line-height: 1.35; }
+.rec-state.is-warning { color: var(--moving); }
+.rec-source { display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; min-height: 44px; max-width: 100%; padding: 5px 0; border: 0; background: transparent; color: var(--blue); font: 600 14px/1.35 var(--font); text-align: left; cursor: pointer; }
+.rec-source:hover { text-decoration: underline; text-underline-offset: 3px; }
+.rec-source .icon { flex: none; }
+.rec-source:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; border-radius: 3px; }
+.rec-source-missing, .rec-note, .rec .d-caption { margin: 5px 0 8px; color: var(--ink-3); font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.rec-section { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.rec-section h4 { margin: 0 0 6px; color: var(--ink); font-size: 14px; font-weight: 600; line-height: 1.4; }
+.rec-list { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; line-height: 1.45; }
+.rec-list li { padding: 3px 0; overflow-wrap: anywhere; }
+.rec-priced-list { padding: 0; list-style: none; }
+.rec-line { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 3px 12px; color: var(--ink-2); font-size: 14px; line-height: 1.4; }
+.rec-line > :first-child { min-width: 0; flex: 1 1 150px; overflow-wrap: anywhere; }
+.rec-line > .num { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.rec-package + .rec-package, .rec-coverage + .rec-coverage { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.rec-package .rec-list { margin-top: 4px; }
+.rec .d-kv { grid-template-columns: minmax(90px, 38%) minmax(0, 1fr); gap: 4px 10px; margin-top: 6px; font-size: 14px; align-items: start; }
+.rec .d-kv dt, .rec .d-kv dd { min-height: 24px; line-height: 1.45; overflow-wrap: anywhere; }
+.rec .d-kv dd { align-items: flex-start; }
+.rec .price-line { min-height: 32px; flex-wrap: wrap; font-size: 14px; line-height: 1.4; }
+.rec .price-line dd { margin-left: auto; }
+.rec .price-line .copy-btn, .rec .d-kv .copy-btn { min-width: 44px; min-height: 44px; }
+.rec .checks { gap: 0; margin-top: 0; }
+.rec .check { padding: 7px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; font-size: 14px; }
+.rec .check.is-review { border-left: 3px solid var(--moving); padding-left: 7px; }
+.rec .check small { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.rec .score { gap: 10px; }
+.rec .score-big { width: auto; min-width: 88px; height: auto; min-height: 64px; padding: 6px; border-radius: 6px; background: var(--soft); color: var(--ink); }
+.rec .score-big small, .rec .score-range small { font-size: 14px; }
+.rec .score-range b { font-size: 16px; }
+.rec .score-big strong { font-size: 26px; }
+.rec-coverage > .rec-line > span { color: var(--ink-3); }
+.panel[data-width="wide"] .rec .checks { column-gap: 14px; }

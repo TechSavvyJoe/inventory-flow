@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import type { DealerMailEvidenceMessage, DealerMailHistoryRecord } from "../../types";
+import type { DealerMailEvidenceMessage, DealerMailHistoryRecord, ServiceReadiness, ServiceReadinessStatus } from "../../types";
 
 export type InventoryScope = "home" | "group";
 
@@ -330,6 +330,7 @@ export interface PublicScanAudit {
 export interface InventoryVehicle {
   id: string;
   vin: string;
+  serviceReadiness?: ServiceReadiness;
   stockNumber: string;
   year: number | string;
   make: string;
@@ -404,6 +405,7 @@ export interface InventoryFilters {
   dealerOn: InventoryDealerOnFilter;
   dealerMail: InventoryDealerMailFilter;
   movement: InventoryMovementFilter;
+  serviceReadiness?: "all" | ServiceReadinessStatus;
   minimumPrice?: number;
   maximumPrice?: number;
   maximumMileage?: number;
@@ -470,6 +472,7 @@ export interface InventoryExperienceProps {
   initialSorts?: InventorySort[];
   selectedVehicleId?: string | null;
   defaultSelectedVehicleId?: string | null;
+  initialWorkspaceTab?: VehicleWorkspaceTab;
   pageSize?: number;
   canRequestVehicle?: boolean | ((vehicle: InventoryVehicle) => boolean);
   onScopeChange?: (scope: InventoryScope) => void;

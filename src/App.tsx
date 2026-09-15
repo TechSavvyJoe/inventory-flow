@@ -2,7 +2,7 @@ import { Suspense, useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppDataProvider, useAppData } from './app/AppDataContext'
 import { AppShell } from './app/AppShell'
-import { AttentionPage, InventoryPage, ManagerPage, preloadRoute, TransfersPage } from './app/routeModules'
+import { AttentionPage, InventoryPage, InventoryUpdatesPage, ServicePage, ManagerPage, preloadRoute, TransfersPage } from './app/routeModules'
 import { ErrorState } from './components/ErrorState'
 import { LoadingState } from './components/LoadingState'
 import { RouteLoadBoundary } from './components/RouteLoadBoundary'
@@ -10,7 +10,7 @@ import { RouteLoadingState } from './components/RouteLoadingState'
 import './styles/pages.css'
 
 function AppRoutes() {
-  const { data, loading, error, refresh, role } = useAppData()
+  const { data, loading, error, refresh, role, homeStore, currentUser } = useAppData()
   if (loading && !data) return <LoadingState />
   if (error && !data) return <ErrorState message={error} retry={() => void refresh()} />
 
@@ -23,6 +23,8 @@ function AppRoutes() {
           <Route path="/transfers" element={<TransfersPage />} />
           <Route path="/transfers/new" element={<TransfersPage />} />
           <Route path="/attention" element={<AttentionPage />} />
+          <Route path="/updates" element={<InventoryUpdatesPage key={`${currentUser}:${role}:${homeStore}`} />} />
+          <Route path="/service" element={<ServicePage key={`${currentUser}:${role}:${homeStore}`} />} />
           <Route path="/manager" element={role === 'manager' || role === 'group_manager' ? <ManagerPage /> : <Navigate to="/attention" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

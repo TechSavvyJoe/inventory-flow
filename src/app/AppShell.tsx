@@ -14,6 +14,8 @@ import {
   Search,
   Settings2,
   Users,
+  ListChecks,
+  Wrench,
   X,
 } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
@@ -30,11 +32,16 @@ import {
 import { useAppData } from './AppDataContext'
 import { STORE_BRANDING } from './storeBranding'
 import '../styles/mobile-density.css'
+import { openStoreActionCount } from '../features/attention/action-center'
+import '../styles/workflow-navigation.css'
+import '../styles/compact-workspace.css'
 
 const NAV_ITEMS = [
   { id: 'inventory', to: '/inventory', label: 'Inventory', shortLabel: 'Inventory', icon: CarFront },
   { id: 'moves', to: '/transfers', label: 'Vehicle moves', shortLabel: 'Moves', icon: ArrowLeftRight },
-  { id: 'today', to: '/attention', label: 'Needs attention', shortLabel: 'Alerts', icon: Bell },
+  { id: 'today', to: '/attention', label: 'Action center', shortLabel: 'Actions', icon: Bell },
+  { id: 'updates', to: '/updates', label: 'Inventory updates', shortLabel: 'Updates', icon: ListChecks },
+  { id: 'service', to: '/service', label: 'Service status', shortLabel: 'Service', icon: Wrench },
 ] as const
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -70,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [navExpanded, setNavExpanded] = useState(readStoredNavigationState)
   const [utilityOpen, setUtilityOpen] = useState(false)
   const [storeSwitching, setStoreSwitching] = useState(false)
-  const searchAccessContext = inventorySearchAccessContext(role, homeStore)
+  const searchAccessContext = inventorySearchAccessContext(role, homeStore, currentUser)
   const [searchDraft, setSearchDraft] = useState(() => ({ accessContext: searchAccessContext, query: '' }))
   const query = searchDraft.accessContext === searchAccessContext ? searchDraft.query : ''
   const utilityDialogRef = useRef<HTMLDivElement>(null)
@@ -83,7 +90,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation()
   const previousLocationKeyRef = useRef(location.key)
   const isInventoryRoute = location.pathname === '/' || location.pathname.startsWith('/inventory')
-  const attentionCount = data?.attention.filter((item) => item.severity !== 'info').length ?? 0
+  const attentionCount = openStoreActionCount(data, homeStore)
   const storeBrand = STORE_BRANDING[homeStore]
   const canSeeManager = role === 'manager' || role === 'group_manager'
   const rolePreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
@@ -240,6 +247,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <ChevronDown aria-hidden="true" />
         </label> : null}
 
+        <NavLink className="utility-service-link" to="/service" onClick={() => setUtilityOpen(false)}><Wrench aria-hidden="true"/><span><strong>Service status</strong><small>Waiting, in service, and completed work</small></span><ChevronRight aria-hidden="true"/></NavLink>
+
         {canSeeManager ? (
           <NavLink className="utility-manager-link" to="/manager" onClick={() => setUtilityOpen(false)}>
             <Users aria-hidden="true" />
@@ -334,7 +343,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               aria-label="Search inventory"
               autoComplete="off"
             />
-            <button type="submit" aria-label="Search all inventory">
+            <button type="submit" aria-label="Search my store inventory">
               <ArrowRight aria-hidden="true" />
             </button>
           </form>
@@ -373,10 +382,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         </button>
       </header>
 
-      <main ref={mainContentRef} className="app-main" id="main-content" tabIndex={-1}>{children}</main>
+      <main ref={mainContentRef} className="app-main" id="main-content" tabIndex={-1}>{data?.meta.warnings.some(warning => warning.includes('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS')) && <p className="synthetic-preview-notice">Demo · Synthetic records &amp; AI illustrations.</p>}{children}</main>
 
       <nav className="mobile-bottom-nav" aria-label="Mobile primary">
-        {NAV_ITEMS.map(({ id, to, label, shortLabel, icon: Icon }) => {
+        {NAV_ITEMS.filter(item => item.id !== 'service').map(({ id, to, label, shortLabel, icon: Icon }) => {
           const active = isNavActive(id, to)
           return (
             <NavLink

@@ -11,7 +11,10 @@ import {
   listTransferRows,
   upsertAttentionWorkflow,
   createRepositoryContext,
+  listServiceEvents,
+  insertServiceEvent,
 } from './repository-dispatch.mjs'
+import { buildServiceReadinessEvent, serviceReadinessView } from './service-readiness.mjs'
 import { allowedAttentionActions, buildAttentionMutation, canSeePersistedAssignee } from './attention-workflow.mjs'
 import { STORE_NAMES } from './constants.mjs'
 import { normalizePublicChangeCounts } from './public-change-counts.mjs'
@@ -1440,6 +1443,12 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
     const meta = metaView(dataset, database, currentNow, loadStatus)
     const indexes = buildIndexes(dataset)
     const allTransferRows = listTransferRows(database)
+    const serviceEventsByVin = new Map()
+    for (const row of listServiceEvents(database)) {
+      const values = serviceEventsByVin.get(row.vin) ?? []
+      values.push(row)
+      serviceEventsByVin.set(row.vin, values)
+    }
     const transfersByVin = new Map()
     for (const row of allTransferRows) {
       const values = transfersByVin.get(row.vin) ?? []
@@ -1454,6 +1463,8 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       meta,
       indexes,
       allTransferRows,
+      serviceEventsByVin,
+      serviceIntakeByVin: new Map((dataset.serviceIntake ?? []).map((row) => [row.vin, row])),
       transfersByVin,
       sources,
       publicChanges: Array.isArray(publicChanges) ? publicChanges : [],
@@ -1462,7 +1473,22 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
   }
 
   function vehicleFromSnapshot(state, source, options = {}) {
-    return vehicleView(source, state.transfersByVin.get(source.vin) ?? [], state.context, state.meta, options)
+    const vehicle = vehicleView(source, state.transfersByVin.get(source.vin) ?? [], state.context, state.meta, options)
+    if (vehicle) {
+      // Internal provenance is non-enumerable: expose only the safe readiness view.
+      Object.defineProperty(vehicle, 'serviceIntake', { value: state.serviceIntakeByVin.get(source.vin) })
+      vehicle.serviceReadiness = serviceReadinessView(vehicle, state.serviceEventsByVin.get(source.vin)?.at(-1), state.context)
+    }
+    return vehicle
+  }
+
+  function serviceDetail(vehicle, rows, context, selectedRow = rows.at(-1)) {
+    return {
+      ...serviceReadinessView(vehicle, selectedRow, context, { includeNotes: true }),
+      history: context.canViewPrivateEvidence
+        ? [...rows].reverse().map((row) => serviceReadinessView(vehicle, row, context, { includeNotes: true }))
+        : [],
+    }
   }
 
   function attentionFromSnapshot(state) {
@@ -1608,6 +1634,34 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         ),
         publicChanges: state.publicChanges,
       }
+    },
+
+    getServiceReadiness(vinInput, contextInput = {}) {
+      const state = snapshot(contextInput)
+      const vin = normalizedVin(vinInput)
+      const source = state.sources.find((candidate) => candidate.vin === vin)
+      const vehicle = source && vehicleFromSnapshot(state, source)
+      if (!vehicle) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
+      return serviceDetail(vehicle, state.serviceEventsByVin.get(vin) ?? [], state.context)
+    },
+
+    updateServiceReadiness(vinInput, input, contextInput = {}, idempotencyKey) {
+      const state = snapshot(contextInput)
+      const vin = normalizedVin(vinInput)
+      const source = state.sources.find((candidate) => candidate.vin === vin)
+      const vehicle = source && vehicleFromSnapshot(state, source)
+      if (!vehicle) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
+      const rows = state.serviceEventsByVin.get(vin) ?? []
+      const result = buildServiceReadinessEvent(vehicle, rows, input, state.context, {
+        now: state.currentNow, today: dateInTimeZone(state.currentNow, state.meta.timezone), idempotencyKey,
+      })
+      if (result.created) {
+        insertServiceEvent(database, result.row)
+        rows.push(result.row)
+      }
+      // A delayed retry confirms the original write without presenting it as
+      // current after another manager has already saved a newer version.
+      return { created: result.created, record: serviceDetail(vehicle, rows, state.context) }
     },
 
     listAttention(query = {}, contextInput = {}) {

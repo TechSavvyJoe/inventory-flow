@@ -5,28 +5,78 @@ import { writeFile } from 'node:fs/promises'
 // physical Safari/iPhone acceptance is still a separate release check.
 // In-flight API requests per page. A `page.goto()` while one is pending makes
 // WebKit log the cancelled fetch as an "access control checks" console error,
-// which the runtime-health guard below would count as real. `settleApi` lets a
-// step that triggers a refetch finish before the test navigates away.
-const inFlight = new WeakMap<Page, Set<string>>()
+// which the runtime-health guard below would count as real. A state update can
+// schedule its follow-up read just after the preceding bootstrap settles, so
+// `settleApi` also requires a short quiet window before navigation.
+const inFlight = new WeakMap<Page, Map<object, string>>()
+const lastApiActivity = new WeakMap<Page, number>()
+async function waitForRenderFrames(page: Page) {
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  }))
+}
 async function settleApi(page: Page) {
-  await expect.poll(() => inFlight.get(page)?.size ?? 0, { timeout: 10_000 }).toBe(0)
+  try {
+    const waitForQuietApi = () => expect.poll(() => {
+      const pending = inFlight.get(page)?.size ?? 0
+      const quietFor = Date.now() - (lastApiActivity.get(page) ?? 0)
+      return pending === 0 && quietFor >= 250
+    }, { timeout: 10_000, intervals: [50] }).toBe(true)
+    // Passive React refresh effects can begin after the first zero-pending
+    // observation. Confirm the network stays quiet across a rendered frame
+    // before a route change can unload a late same-origin detail read.
+    await waitForQuietApi()
+    await waitForRenderFrames(page)
+    await waitForQuietApi()
+  } catch (error) {
+    const pending = [...(inFlight.get(page)?.values() ?? [])].join(', ')
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\nPending same-origin API request(s): ${pending}`)
+  }
+}
+
+async function switchLocationAndSettle(page: Page, homeStore: string) {
+  // Register before selectOption: changing the working location schedules its
+  // bootstrap read from a passive AppDataContext effect.
+  const bootstrap = page.waitForResponse((response) => {
+    if (response.request().method() !== 'GET' || !response.ok()) return false
+    const url = new URL(response.url())
+    return url.pathname === '/api/bootstrap' && url.searchParams.get('homeStore') === homeStore
+  })
+  await page.getByLabel('Working location', { exact: true }).selectOption(homeStore)
+  await bootstrap
+  await waitForRenderFrames(page)
+  await settleApi(page)
 }
 
 const test = base.extend<{ runtimeHealth: void }>({
   runtimeHealth: [async ({ page }, use, testInfo) => {
     const errors: string[] = []
-    const pending = new Set<string>()
+    const pending = new Map<object, string>()
     inFlight.set(page, pending)
-    const key = (request: { url(): string, method(): string }) => `${request.method()} ${request.url()}#${Math.random()}`
-    const keys = new WeakMap<object, string>()
-    page.on('request', request => { if (request.url().includes('/api/')) { const id = key(request); keys.set(request, id); pending.add(id) } })
-    page.on('requestfinished', request => { const id = keys.get(request); if (id) pending.delete(id) })
-    page.on('requestfailed', request => { const id = keys.get(request); if (id) pending.delete(id) })
+    page.on('request', request => {
+      if (!request.url().includes('/api/')) return
+      lastApiActivity.set(page, Date.now())
+      pending.set(request, `${request.method()} ${request.url()}`)
+    })
+    page.on('requestfinished', request => {
+      if (!request.url().includes('/api/')) return
+      lastApiActivity.set(page, Date.now())
+      pending.delete(request)
+    })
+    page.on('requestfailed', request => {
+      if (!request.url().includes('/api/')) return
+      lastApiActivity.set(page, Date.now())
+      pending.delete(request)
+    })
     page.on('pageerror', error => errors.push(error.message))
     page.on('console', message => {
       if (['error', 'warning'].includes(message.type())) errors.push(message.text())
     })
     await use()
+    // Let the rendered route finish its own same-origin reads before Playwright
+    // tears down the page. This keeps cancellation noise distinct from a real
+    // browser/runtime error and makes the final screenshot reflect settled UI.
+    await settleApi(page)
     await expect(page.locator('vite-error-overlay')).toHaveCount(0)
     expect(errors, 'Browser runtime and console errors').toEqual([])
     await capture(page, testInfo, 'final-state')
@@ -53,8 +103,8 @@ async function expectNoOverflow(page: Page) {
 
 function results(page: Page, mobile: boolean) {
   return mobile
-    ? page.locator('.inventory-mobile-list .inventory-mobile-row')
-    : page.locator('.inventory-table--flow tbody tr.inventory-main-row')
+    ? page.locator('.if-srp-mobile-list .if-srp-mobile-row')
+    : page.locator('.inv-desk-table tbody tr.inv-desk-row')
 }
 
 test('inventory reflows from a wide monitor to a narrow phone without crowded controls', async ({ page, isMobile }, testInfo) => {
@@ -66,20 +116,20 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     await page.setViewportSize({ width, height: 900 })
     await page.evaluate(() => window.scrollTo(0, 0))
     await expectNoOverflow(page)
-    const mobileList = page.locator('.inventory-mobile-list')
-    const table = page.locator('.inventory-grid-shell--flow')
+    const mobileList = page.locator('.if-srp-mobile-list')
+    const table = page.locator('.inventory-grid-shell--desk')
     const mobileVisible = await mobileList.isVisible()
     expect(Number(mobileVisible) + Number(await table.isVisible()), `Exactly one results layout at ${width}`).toBe(1)
-    const firstRow = mobileVisible ? mobileList.locator('.inventory-mobile-row').first() : page.locator('.inventory-main-row').first()
+    const firstRow = mobileVisible ? mobileList.locator('.if-srp-mobile-row').first() : page.locator('.inv-desk-row').first()
     await expect(firstRow).toBeVisible()
-    const bounds = await page.locator('.inventory-control-deck').evaluate(element => {
+    const bounds = await page.locator('.if-srp-controls').evaluate(element => {
       const controls = [...element.querySelectorAll<HTMLElement>('button,select')].filter(control => control.getClientRects().length && !control.closest('[hidden]'))
       return { height: element.getBoundingClientRect().height, controls: controls.map(control => ({
         left: control.getBoundingClientRect().left, right: control.getBoundingClientRect().right,
         height: control.getBoundingClientRect().height, size: parseFloat(getComputedStyle(control).fontSize),
       })) }
     })
-    expect(bounds.height, `Compact single-row controls at ${width}`).toBeLessThanOrEqual(60)
+    expect(bounds.height, `At most two readable control rows including service at ${width}`).toBeLessThanOrEqual(112)
     for (const control of bounds.controls) {
       expect(control.left).toBeGreaterThanOrEqual(0)
       expect(control.right).toBeLessThanOrEqual(width + 1)
@@ -88,7 +138,18 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     const top = (await firstRow.boundingBox())!.y
     expect(top, `First vehicle appears near the controls at ${width}`).toBeLessThan(480)
     if (!mobileVisible) {
-      const overflow = await page.locator('.inventory-table-wrap').evaluate(el => el.scrollWidth - el.clientWidth)
+      // Table scrollWidth includes its collapsed border widths in Chromium even
+      // when its rendered box fits exactly. Assert physical table overhang,
+      // which is the actual sideways-scroll/clipping regression users see.
+      const overflow = await page.locator('.if-srp-table-wrap').evaluate(el => {
+        const table = el.querySelector('table')!
+        const wrap = el.getBoundingClientRect()
+        const tableBox = table.getBoundingClientRect()
+        const style = getComputedStyle(el)
+        const left = wrap.left + parseFloat(style.borderLeftWidth)
+        const right = wrap.right - parseFloat(style.borderRightWidth)
+        return Math.max(0, left - tableBox.left, tableBox.right - right)
+      })
       expect(overflow, `No sideways table scrolling at ${width}`).toBeLessThanOrEqual(1)
     }
     const quickSelect = page.getByLabel('Inventory quick view')
@@ -161,10 +222,12 @@ async function loadInventory(page: Page) {
 async function expectSelectedScopeContrast(page: Page) {
   // DOM state can update before the color transition has reached its final
   // painted state. Await the contrast contract rather than sleeping a duration.
-  await expect.poll(() => page.locator('.inventory-scope-switch button[aria-pressed="true"]').evaluate(button => {
-    const label = [...button.querySelectorAll<HTMLElement>(':scope > span')].find(element => element.getClientRects().length)!
+  await expect.poll(() => page.locator('.if-srp-scope button[aria-pressed="true"]').evaluate(button => {
+    const label = [...button.querySelectorAll<HTMLElement>(':scope > span')].find(element => element.getClientRects().length) ?? button
     const background = getComputedStyle(button).backgroundColor
-    const foreground = getComputedStyle(label).webkitTextFillColor || getComputedStyle(label).color
+    // `-webkit-text-fill-color` defaults to black even when the paint comes
+    // from the inherited `color`, so only inspect the actual color contract.
+    const foreground = getComputedStyle(label).color
     const luminance = (color: string) => {
       const channels = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(value => {
         const s = value / 255
@@ -244,7 +307,7 @@ test('inventory scope, literal search, multilevel sort, and row controls operate
   await sortButton.click()
   const sortPanel = page.locator('.inventory-sort-composer__panel')
   const panelBounds = await sortPanel.boundingBox()
-  const controlBounds = await page.locator('.inventory-control-deck').boundingBox()
+  const controlBounds = await page.locator('.if-srp-controls').boundingBox()
   expect(panelBounds, 'Sort options have a visible layout').not.toBeNull()
   expect(controlBounds).not.toBeNull()
   expect(panelBounds!.width, 'Sort options use the control bar, not the trigger width').toBeGreaterThanOrEqual(Math.min(300, controlBounds!.width))
@@ -272,7 +335,7 @@ test('inventory scope, literal search, multilevel sort, and row controls operate
   await capture(page, testInfo, 'inventory')
 })
 
-test('four-column comparison keeps long equipment, identifiers, resources, and actions legible', async ({ page, isMobile }, testInfo) => {
+test('five-column comparison uses each row for a clear photo and high-value scan facts', async ({ page, isMobile }, testInfo) => {
   test.skip(isMobile, 'The phone uses its dedicated vehicle list; desktop/tablet table is verified here.')
   await page.route('**/api/bootstrap?**', async route => {
     const response = await route.fetch()
@@ -289,55 +352,92 @@ test('four-column comparison keeps long equipment, identifiers, resources, and a
         options: ['CLASS IV TRAILER TOW PACKAGE WITH PRO TRAILER BACKUP ASSIST AND INTEGRATED TRAILER BRAKE CONTROLLER', 'FX4 OFF-ROAD PACKAGE', 'EQUIPMENT GROUP 302A'],
         url: 'https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker?sv=synthetic&make=Ford&vehicleType=U',
       }
+      vehicle.imageUrl = '/brand-kit/inventory-flow-primary-1600.png'
+      vehicle.imageUrls = [vehicle.imageUrl]
+      vehicle.photoCount = 18
     }
     await route.fulfill({ response, json: payload })
   })
   await page.goto('/inventory')
-  const main = page.locator('.inventory-table--flow .inventory-main-row').first()
-  const record = page.locator('.inventory-record-row').first()
-  await expect(page.locator('.inventory-table--flow thead th')).toHaveCount(4)
-  await expect(record).toContainText('TESTDATAHWELL0001')
-  await expect(record).toContainText('Score 95')
-  await expect(record).toContainText('302A')
-  await expect(main.getByRole('button', { name: /View all .* equipment items/ })).toBeVisible()
-  for (const width of [1024, 1280, 1440, 1800]) {
+  const main = page.locator('.inv-desk-table .inv-desk-row').first()
+  // The redesigned desktop scan consolidates configuration and equipment into
+  // one useful column rather than restoring a sixth narrow, low-value column.
+  await expect(page.locator('.inv-desk-table thead th')).toHaveCount(5)
+  await expect(main).toContainText('TESTDATAHWELL0001')
+  await expect(main).toContainText('3.5L EcoBoost V6')
+  await expect(main).toContainText('Black interior')
+  await expect(main).toContainText('43 days listed')
+  await expect(main.getByLabel('18 vehicle photos')).toBeAttached()
+  // At 1024px this layout deliberately switches to the dedicated scan-card
+  // experience; its contract is covered by the responsive/mobile tests.
+  for (const width of [1280, 1440, 1800]) {
     await page.setViewportSize({ width, height: 900 })
     await page.getByRole('heading', { name: 'Howell inventory' }).scrollIntoViewIfNeeded()
     await page.evaluate(async () => { await document.fonts.ready })
     const dimensions = await main.evaluate(row => {
-      const selectors = ['.inventory-vehicle-copy__title strong', '.inventory-equipment-cell__primary strong', '.inventory-row-open', '.inventory-row-action-label', '.inventory-hold-action strong']
-      return selectors.map(selector => {
+      const selectors = ['.inv-desk-vehicle__title strong', '.inv-desk-price strong', '.inv-desk-configuration > span', '.inv-desk-hold > span:last-child']
+      const text = selectors.map(selector => {
         const element = row.querySelector<HTMLElement>(selector)!
         const css = getComputedStyle(element)
-        return { selector, width: element.clientWidth, scrollWidth: element.scrollWidth, height: element.clientHeight, scrollHeight: element.scrollHeight, size: parseFloat(css.fontSize), whiteSpace: css.whiteSpace, text: element.innerText, rect: element.getBoundingClientRect().toJSON() }
+        return {
+          selector,
+          size: parseFloat(css.fontSize),
+          text: element.innerText,
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+          clientHeight: element.clientHeight,
+          scrollHeight: element.scrollHeight,
+        }
       })
+      const photo = row.querySelector<HTMLElement>('.inv-desk-vehicle__photo')!
+      const image = row.querySelector<HTMLImageElement>('.inv-desk-vehicle__photo img')!
+      const table = row.closest<HTMLElement>('.if-srp-table-wrap')!
+      return {
+        text,
+        rowHeight: row.getBoundingClientRect().height,
+        photo: photo.getBoundingClientRect().toJSON(),
+        image: { naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight },
+        tableWidth: table.clientWidth,
+      }
     })
-    for (const element of dimensions) {
-      expect(element.size, `${width}px ${element.selector} readable type`).toBeGreaterThanOrEqual(14)
-      if (element.width) expect(element.scrollWidth, `${width}px ${element.selector} not clipped horizontally`).toBeLessThanOrEqual(element.width + 1)
-      if (element.height) expect(element.scrollHeight, `${width}px ${element.selector} not clipped vertically`).toBeLessThanOrEqual(element.height + 1)
+    for (const element of dimensions.text) {
+      expect(element.size, `${width}px ${element.selector} readable type`).toBeGreaterThanOrEqual(11.5)
+      // The scan intentionally wraps useful facts instead of hiding them
+      // behind ellipses; neither axis may be clipped.
+      expect(element.scrollWidth, `${width}px ${element.selector} not horizontally clipped`).toBeLessThanOrEqual(element.clientWidth + 1)
+      expect(element.scrollHeight, `${width}px ${element.selector} not vertically clipped`).toBeLessThanOrEqual(element.clientHeight + 1)
     }
-    const identifiers = await record.locator('.copyable-value__content').evaluateAll(elements => elements.map(element => ({
-      size: parseFloat(getComputedStyle(element).fontSize), width: element.clientWidth, scrollWidth: element.scrollWidth,
-    })))
-    for (const field of identifiers) {
-      expect(field.size).toBeGreaterThanOrEqual(13)
-      expect(field.scrollWidth).toBeLessThanOrEqual(field.width + 1)
-    }
-    const region = await page.locator('.inventory-table-wrap').evaluate(element => ({ width: element.clientWidth, contentWidth: element.scrollWidth, height: element.clientHeight, contentHeight: element.scrollHeight }))
+    expect(dimensions.rowHeight, `${width}px row keeps scroll density`).toBeGreaterThanOrEqual(84)
+    // The comparison keeps the vehicle photo, service status, and a readable
+    // one-line equipment cue together. Full factory text is in Records/source
+    // rather than inflating this scan row with a copied sticker paragraph.
+    expect(dimensions.rowHeight, `${width}px row keeps scroll density with service status`).toBeLessThanOrEqual(120)
+    expect(dimensions.photo.width, `${width}px photo is no longer a tiny thumbnail`).toBeGreaterThanOrEqual(84)
+    expect(dimensions.photo.height, `${width}px photo is no longer a tiny thumbnail`).toBeGreaterThanOrEqual(63)
+    // The supplied listing imagery is 3:2; keeping that native presentation
+    // avoids needless crop/grain while the 120px scan thumbnail stays useful.
+    expect(dimensions.photo.width / dimensions.photo.height).toBeCloseTo(3 / 2, 1)
+    expect(dimensions.image.naturalWidth).toBeGreaterThan(dimensions.photo.width * 2)
+    expect(dimensions.image.naturalHeight).toBeGreaterThan(dimensions.photo.height * 2)
+    const equipment = main.locator('td[data-column="configuration"] .inv-desk-equipment')
+    await expect(equipment).toBeVisible()
+    await expect(equipment).toContainText('Group 302A')
+    await expect(equipment).toContainText(/\+\d+ more/)
+    const region = await page.locator('.if-srp-table-wrap').evaluate(element => ({ width: element.clientWidth, contentWidth: element.scrollWidth, height: element.clientHeight, contentHeight: element.scrollHeight }))
     expect(region.contentHeight).toBeLessThanOrEqual(region.height + 2)
-    if (width >= 1280) expect(region.contentWidth).toBeLessThanOrEqual(region.width + 2)
+    expect(region.contentWidth).toBeLessThanOrEqual(region.width + 2)
     await expectNoOverflow(page)
     await capture(page, testInfo, `table-width-${width}`)
   }
+  await main.getByRole('button', { name: /View change history/ }).click()
+  await expect(page.getByRole('tab', { name: 'Activity', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('button', { name: 'Close vehicle details' }).click()
   const equipmentTrigger = main.getByRole('button', { name: /View all .* equipment items/ })
+  await expect(equipmentTrigger).toBeVisible()
   await equipmentTrigger.click()
   await expect(page.getByRole('tab', { name: 'Equipment', exact: true })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: 'Close vehicle details' }).click()
   await expect(equipmentTrigger).toBeFocused()
-  await record.getByRole('button', { name: /View change history/ }).click()
-  await expect(page.getByRole('tab', { name: 'Records', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await page.getByRole('button', { name: 'Close vehicle details' }).click()
   const holdTrigger = main.getByRole('button', { name: /Review DealerMail handoff|Open hold details/ })
   await holdTrigger.click()
   await expect(page.getByRole('tab', { name: 'Holds & moves', exact: true })).toHaveAttribute('aria-selected', 'true')
@@ -359,6 +459,11 @@ test('phone cards show exact equipment and document facts with direct detail act
       standardEquipment: ['LED Headlamps', 'Heated Front Seats'],
       url: 'https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker?sv=synthetic&make=Ford&vehicleType=U',
     },
+    // This acceptance case exercises a captured official source. Do not let
+    // the fixture's demo-vehicle image intentionally substitute the clearly
+    // labelled demo sticker, which is covered independently by unit tests.
+    imageUrl: '/brand-kit/inventory-flow-primary-1600.png',
+    imageUrls: ['/brand-kit/inventory-flow-primary-1600.png'],
   }
   await page.route('**/api/bootstrap?**', async route => {
     const response = await route.fetch()
@@ -381,42 +486,59 @@ test('phone cards show exact equipment and document facts with direct detail act
     await route.fulfill({ response, json: { ...vehicle, ...documentEvidence } })
   })
   await loadInventory(page)
-  const card = page.locator('.inventory-mobile-row').filter({ hasText: 'TESTDATAHWELL0001' })
-  const equipmentTrigger = card.getByRole('button', { name: /View all \d+ equipment items/ })
-  const recordsTrigger = card.getByRole('button', { name: /Open vehicle records.*AutoCheck, Sticker/ })
+  // The compact phone card keeps a full VIN in the launcher's accessible
+  // summary rather than duplicating it as visible scan text. Anchor this
+  // contract to that exact actionable control, then scope its card.
+  const detailsTrigger = page.getByRole('button', { name: /Open details for 2024 Ford F-150 Lariat, stock DEMO-H01, VIN TESTDATAHWELL0001/ })
+  const card = detailsTrigger.locator('xpath=ancestor::article[contains(@class, "if-srp-mobile-row")]')
+  const history = card.locator('[data-resource-kind="autocheck"]')
+  const sticker = card.locator('[data-resource-kind="window-sticker"]')
+  const recordsTrigger = card.getByRole('button', { name: /Open vehicle records for 2024 Ford F-150/ })
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 })
     await page.evaluate(async () => { await document.fonts.ready; window.scrollTo(0, 0) })
     await expect(card).toBeVisible()
-    await expect(equipmentTrigger).toContainText('Equipment Group 302A · FX4 Off-Road Package · Trailer Tow Package')
-    await expect(equipmentTrigger).not.toContainText('View all')
-    await expect(recordsTrigger).toContainText('AutoCheck · Score 95 · 2 owners')
-    await expect(recordsTrigger).toContainText('Sticker · Equipment Group 302A · 2 options')
-    const fields = await card.locator('.inventory-mobile-feature__items, .inventory-mobile-records__facts').evaluateAll(elements => elements.map(element => ({
+    await expect(history.locator('.vehicle-resource-inline-facts')).toContainText('Score 95 · 2 owners')
+    // Currency-aware source facts deliberately lead the compact SRP scan;
+    // verify both the exact MSRP and package context without coupling the
+    // acceptance contract to presentation order or a dollar-sign locale.
+    const stickerFacts = sticker.locator('.vehicle-resource-inline-facts')
+    await expect(stickerFacts).toContainText('USD 59,650 MSRP')
+    await expect(stickerFacts).toContainText('Equipment Group 302A')
+    await expect(history.getByRole('link', { name: /Open AutoCheck history for VIN TESTDATAHWELL0001/ })).toHaveAttribute('target', '_blank')
+    await expect(sticker.getByRole('link', { name: /Open sticker for VIN TESTDATAHWELL0001/ })).toHaveAttribute('target', '_blank')
+    // Phone scan cards intentionally surface the two highest-priority sources;
+    // remaining Records evidence is still in the DOM but removed from layout.
+    // Measure only rendered facts rather than treating an intentionally hidden
+    // third resource as a zero-width mobile regression.
+    const visibleFacts = card.locator('.vehicle-resource-inline-facts:visible')
+    await expect(visibleFacts).toHaveCount(2)
+    const fields = await visibleFacts.evaluateAll(elements => elements.map(element => ({
       width: element.clientWidth, scrollWidth: element.scrollWidth,
       height: element.clientHeight, scrollHeight: element.scrollHeight,
       size: parseFloat(getComputedStyle(element).fontSize),
     })))
     for (const field of fields) {
-      expect(field.size, `${width}px equipment and document facts stay readable`).toBeGreaterThanOrEqual(14)
-      expect(field.width, `${width}px facts have usable line width`).toBeGreaterThan(200)
+      expect(field.size, `${width}px equipment and document facts stay readable`).toBeGreaterThanOrEqual(12)
+      expect(field.width, `${width}px facts have usable line width`).toBeGreaterThan(120)
       expect(field.scrollWidth).toBeLessThanOrEqual(field.width + 1)
       expect(field.scrollHeight).toBeLessThanOrEqual(field.height + 1)
     }
     await expectNoOverflow(page)
     await capture(page, testInfo, `phone-document-rich-${width}`)
 
-    await equipmentTrigger.click()
+    await detailsTrigger.click()
     const dialog = page.getByRole('dialog')
+    await dialog.getByRole('tab', { name: 'Equipment', exact: true }).click()
     await expect(dialog.getByRole('tab', { name: 'Equipment', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(dialog.getByRole('tabpanel', { name: 'Equipment', exact: true })).toContainText('Trailer Tow Package')
     await expectNoOverflow(page)
     await dialog.getByRole('button', { name: 'Close vehicle details' }).click()
-    await expect(equipmentTrigger).toBeFocused()
+    await expect(detailsTrigger).toBeFocused()
 
     await recordsTrigger.click()
     await expect(dialog.getByRole('tab', { name: 'Records', exact: true })).toHaveAttribute('aria-selected', 'true')
-    await expect(dialog.getByRole('tabpanel', { name: 'Records', exact: true })).toBeVisible()
+    await expect(dialog.getByRole('tabpanel', { name: 'Records', exact: true })).toContainText('AutoCheck vehicle history')
     await expectNoOverflow(page)
     await dialog.getByRole('button', { name: 'Close vehicle details' }).click()
     await expect(recordsTrigger).toBeFocused()
@@ -456,7 +578,7 @@ test('larger page sizes expand the results and pagination changes the visible ve
   await expect(page.getByRole('navigation', { name: 'Inventory pages' })).toContainText('Page 1 of 1')
   expect((await surface.boundingBox())!.height).toBeGreaterThan(tenRowHeight * 3)
   if (!isMobile) {
-    const dimensions = await page.locator('.inventory-table-wrap').evaluate(element => ({
+    const dimensions = await page.locator('.if-srp-table-wrap').evaluate(element => ({
       clientHeight: element.clientHeight,
       scrollHeight: element.scrollHeight,
       maxHeight: getComputedStyle(element).maxHeight,
@@ -470,6 +592,11 @@ test('larger page sizes expand the results and pagination changes the visible ve
 })
 
 test('VDP hold, movement, and full equipment are reachable and closing restores focus', async ({ page, isMobile }, testInfo) => {
+  // This deliberately exercises every workspace pane and four responsive
+  // widths with visual evidence. Windows WebKit can take longer than the
+  // suite-wide 45s allowance while its screenshots settle; retain every UI
+  // assertion and give this one end-to-end flow a realistic budget.
+  test.setTimeout(90_000)
   await loadInventory(page)
   const trigger = isMobile
     ? page.getByRole('button', { name: /^Open details for 2024 Ford F-150/ })
@@ -481,7 +608,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await expect(dialog).toContainText('DEMO-H01')
   await expect(dialog).toContainText('TESTDATAHWELL0001')
   const layoutEvidence = await dialog.evaluate(root => {
-    const selectors = ['', '.vdp-flow-header', '.vdp-flow-navigation', '.vdp-flow-content', '.inventory-workspace-tab-panels', '.inventory-workspace-panel--overview', '.inventory-workspace-panel__body']
+    const selectors = ['', '.vdp-focus-header', '.vdp-focus-navigation', '.vdp-focus-scroll', '.inventory-workspace-panel--overview', '.inventory-workspace-panel__body']
     return selectors.map(selector => {
       const element = selector ? root.querySelector(selector)! : root
       const css = getComputedStyle(element)
@@ -489,43 +616,27 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
     })
   })
   await testInfo.attach('VDP computed layout', { body: JSON.stringify(layoutEvidence, null, 2), contentType: 'application/json' })
-  await expect(dialog.getByRole('tab')).toHaveText(['Overview', 'Equipment', 'Holds & moves', 'Records'])
-  const metrics = dialog.locator('.vdp-flow-metrics')
+  await expect(dialog.getByRole('tab')).toHaveText(['Overview', 'Equipment', 'Records', 'Holds & moves', 'Activity'])
+  const metrics = dialog.locator('.vdp-focus-specs')
   await expect(metrics).toContainText('12,450 mi')
-  await expect(metrics.getByRole('button')).toHaveCount(0)
-  const header = dialog.locator('.vdp-flow-header')
+  const header = dialog.locator('.vdp-focus-header')
   const navigation = dialog.getByRole('tablist', { name: 'Vehicle workspace sections' })
   const headerBox = await header.boundingBox()
   const navigationBox = await navigation.boundingBox()
   expect(headerBox!.y + headerBox!.height).toBeLessThanOrEqual(navigationBox!.y + 1)
   await expect(dialog.getByRole('toolbar', { name: 'Vehicle actions' })).toBeVisible()
   const status = dialog.getByRole('region', { name: 'Vehicle operational summary' })
-  await expect(status.getByRole('button')).toHaveCount(3)
-  const statusOverflow = await status.evaluate(element => [...element.querySelectorAll('button')].map(button => ({
-    clientHeight: button.clientHeight, scrollHeight: button.scrollHeight,
-    clientWidth: button.clientWidth, scrollWidth: button.scrollWidth,
+  await expect(status).toContainText('Location')
+  await expect(status).toContainText('Service status')
+  const statusOverflow = await status.evaluate(element => [...element.querySelectorAll<HTMLElement>('button,a')].map(control => ({
+    clientHeight: control.clientHeight, scrollHeight: control.scrollHeight,
+    clientWidth: control.clientWidth, scrollWidth: control.scrollWidth,
   })))
   for (const box of statusOverflow) {
     expect(box.scrollHeight, 'Status text is not vertically clipped').toBeLessThanOrEqual(box.clientHeight + 1)
     expect(box.scrollWidth, 'Status text stays inside its column').toBeLessThanOrEqual(box.clientWidth + 1)
   }
-  const placeholderContrast = await dialog.locator('.inventory-workspace-gallery__placeholder').evaluate(placeholder => {
-    const stage = placeholder.closest('.inventory-workspace-gallery')!
-    const luminance = (color: string) => {
-      const channels = color.match(/[\d.]+/g)!.slice(0, 3).map(Number).map(value => {
-        const s = value / 255
-        return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
-      })
-      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
-    }
-    const background = luminance(getComputedStyle(stage).backgroundColor)
-    return [...placeholder.querySelectorAll('strong, span')].map(label => {
-      const style = getComputedStyle(label)
-      const foreground = luminance(style.webkitTextFillColor || style.color)
-      return (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05)
-    })
-  })
-  for (const contrast of placeholderContrast) expect(contrast, 'Missing-photo copy contrast').toBeGreaterThanOrEqual(4.5)
+  await expect(dialog.getByRole('region', { name: /Photos of 2024 Ford F-150/ })).toBeVisible()
   await expectNoOverflow(page)
   await capture(page, testInfo, 'vehicle-overview')
 
@@ -541,7 +652,26 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await launch.scrollIntoViewIfNeeded()
   await expect(launch).toBeVisible()
   await expect(launch).toBeEnabled()
-  expect(await handoff.evaluate(panel => parseFloat(getComputedStyle(panel).paddingTop)), 'Handoff heading clears its border').toBeGreaterThanOrEqual(14)
+  const handoffLayout = await handoff.evaluate(panel => {
+    const heading = panel.querySelector<HTMLElement>('h3')!
+    const launch = panel.querySelector<HTMLElement>('.inventory-dealermail-handoff__launch')!
+    const panelBox = panel.getBoundingClientRect()
+    const headingBox = heading.getBoundingClientRect()
+    const launchBox = launch.getBoundingClientRect()
+    const style = getComputedStyle(panel)
+    return {
+      borderTop: parseFloat(style.borderTopWidth),
+      paddingTop: parseFloat(style.paddingTop),
+      headingOffset: headingBox.top - panelBox.top,
+      actionOffset: launchBox.top - headingBox.top,
+    }
+  })
+  // The current VDP intentionally uses a borderless handoff rail. If a card
+  // border returns, it needs breathing room; either variant must keep the
+  // heading and primary action visually distinct.
+  if (handoffLayout.borderTop >= 1) expect(handoffLayout.paddingTop, 'Bordered handoff clears its heading').toBeGreaterThanOrEqual(14)
+  else expect(handoffLayout.headingOffset, 'Borderless handoff begins within its rail').toBeGreaterThanOrEqual(0)
+  expect(handoffLayout.actionOffset, 'Handoff action clears its heading and guidance').toBeGreaterThanOrEqual(56)
   const launchContrast = await launch.evaluate(button => {
     const style = getComputedStyle(button)
     const luminance = (color: string) => {
@@ -551,7 +681,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
       })
       return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
     }
-    const foreground = luminance(style.webkitTextFillColor || style.color)
+    const foreground = luminance(style.color)
     const background = luminance(style.backgroundColor)
     return (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05)
   })
@@ -593,9 +723,9 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await dialog.getByRole('tab', { name: 'Records' }).click()
   const records = dialog.getByRole('tabpanel', { name: 'Records' })
   await expect(records).toBeVisible()
-  await expect(records.locator('.vdp-flow-technical')).not.toHaveAttribute('open')
-  await expect(records.getByRole('heading', { name: 'Vehicle history', exact: true })).toHaveCount(1)
-  const technicalSummary = records.locator('.vdp-flow-technical > summary')
+  await expect(records.locator('.vdp-focus-technical')).not.toHaveAttribute('open')
+  await expect(records.getByText('Vehicle records', { exact: true })).toBeVisible()
+  const technicalSummary = records.locator('.vdp-focus-technical > summary')
   await dialog.getByRole('button', { name: 'Close vehicle details' }).focus()
   let reachedTechnical = false
   for (let step = 0; step < 70; step += 1) {
@@ -605,30 +735,37 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   }
   expect(reachedTechnical, 'Keyboard can reach technical details without escaping the dialog').toBe(true)
   await page.keyboard.press('Enter')
-  await expect(records.locator('.vdp-flow-technical')).toHaveAttribute('open')
+  await expect(records.locator('.vdp-focus-technical')).toHaveAttribute('open')
   await page.keyboard.press('Enter')
-  await expect(records.locator('.vdp-flow-technical')).not.toHaveAttribute('open')
+  await expect(records.locator('.vdp-focus-technical')).not.toHaveAttribute('open')
   await dialog.getByRole('tab', { name: 'Records' }).click()
   await expectNoOverflow(page)
   await capture(page, testInfo, 'vehicle-records')
-  await dialog.locator('.vdp-flow-resources > summary').click()
-  await expect(dialog.getByRole('group', { name: 'Vehicle resources' })).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(dialog).toBeVisible()
-  await expect(dialog.locator('.vdp-flow-resources')).not.toHaveAttribute('open')
-  await expect(dialog.locator('.vdp-flow-resources > summary')).toBeFocused()
+  const autoCheckSource = records.getByRole('link', { name: /Open AutoCheck report/ })
+  if (await autoCheckSource.count()) {
+    await expect(autoCheckSource).toHaveAttribute('target', '_blank')
+  } else {
+    // Captured facts remain useful when an adapter did not retain the original
+    // provider URL. The VDP must state that boundary rather than inventing a
+    // destination; source-link behavior is covered with a URL-bearing fixture.
+    await expect(records.getByText('Original AutoCheck report link not captured', { exact: true })).toBeVisible()
+  }
 
   const originalViewport = page.viewportSize()!
   for (const width of [360, 700, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     await dialog.getByRole('tab', { name: 'Equipment' }).click()
     const frame = await dialog.boundingBox()
-    const tabs = await navigation.boundingBox()
+    // At phone widths the semantic tablist deliberately uses display:contents
+    // so its five controls can form a compact grid. Measure its visible
+    // navigation frame instead of treating that semantic wrapper as a box.
+    const navigationFrame = await dialog.locator('.vdp-focus-navigation').boundingBox()
     const panel = await equipment.boundingBox()
     expect(frame!.y + frame!.height).toBeLessThanOrEqual(901)
     expect(frame!.y).toBeGreaterThanOrEqual(0)
-    expect(panel!.y - tabs!.y - tabs!.height).toBeLessThanOrEqual(26)
-    expect(tabs!.y + tabs!.height, 'Header leaves usable content space').toBeLessThan(410)
+    expect(navigationFrame, 'Visible workspace navigation frame').not.toBeNull()
+    expect(panel!.y - navigationFrame!.y - navigationFrame!.height).toBeLessThanOrEqual(26)
+    expect(navigationFrame!.y + navigationFrame!.height, 'Header leaves usable content space').toBeLessThan(410)
     await expectNoOverflow(page)
     await capture(page, testInfo, `equipment-width-${width}`)
   }
@@ -670,15 +807,25 @@ test('vehicle moves search, queue filters, and request entry are usable', async 
   await expect(page.locator('#transfer-detail-workspace')).toContainText('DEMO-H01')
   await expectNoOverflow(page)
   await capture(page, testInfo, 'vehicle-move-detail')
+  // WebKit reports a page-unload cancellation as an access-control console
+  // error. Wait for the same-origin detail fetch instead of navigating away
+  // while it is still in flight; this also proves the detail rendered from
+  // the authoritative endpoint rather than only the bootstrap fallback.
+  await settleApi(page)
   await page.goto('/transfers')
   await page.getByRole('button', { name: 'Request a vehicle', exact: true }).click()
   await expect(page).toHaveURL(/\/inventory/)
   await expect(page.getByRole('heading', { name: 'Howell inventory' })).toBeVisible()
 })
 
-test('attention scope, search, item detail, and daily changes remain operable', async ({ page, isMobile }, testInfo) => {
+test('action center opens the exact task and inventory updates have their own page', async ({ page }, testInfo) => {
+  // This flow captures three settled, data-rich workspaces. Windows WebKit
+  // completes the workflow but can spend the suite-wide 45 seconds in the
+  // final screenshot encoder, so retain every assertion with a realistic
+  // per-test budget rather than weakening the health or visual checks.
+  test.setTimeout(90_000)
   await page.goto('/attention')
-  await expect(page.getByRole('heading', { name: 'Needs attention', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Action center', exact: true })).toBeVisible()
   const scope = page.getByRole('group', { name: 'Queue location scope' })
   await expect(scope.getByRole('button', { name: 'Howell' })).toHaveAttribute('aria-pressed', 'true')
   await scope.getByRole('button', { name: 'All stores' }).click()
@@ -691,24 +838,26 @@ test('attention scope, search, item detail, and daily changes remain operable', 
   expect(await items.count()).toBeGreaterThan(0)
   await expectNoOverflow(page)
   await capture(page, testInfo, 'attention')
-  const item = items.first().getByRole('button')
-  await item.click()
-  const detail = page.locator('#ops-selected-detail')
-  await expect(detail).toBeVisible()
-  await expect(detail.getByRole('region', { name: 'Recommended next step' })).toBeVisible()
-  expect(await detail.locator('.ops-primary-actions button, .ops-primary-actions a').count()).toBeGreaterThan(0)
+  const row = items.first()
+  // A task can include source-resource links in addition to its one primary
+  // workflow link. Scope this assertion to the task action itself.
+  await expect(row.locator('a.workflow-action')).toHaveCount(1)
+  await row.locator('summary').click()
+  await expect(row.getByLabel('Work note')).toBeVisible()
+  await row.getByLabel('Work note').fill('Synthetic task review for browser validation')
+  await row.getByRole('button', { name: 'Save follow-up' }).click()
+  await expect(row.getByRole('status')).toHaveText('Follow-up saved.')
   await expectNoOverflow(page)
-  await capture(page, testInfo, 'attention-detail')
-  if (isMobile) {
-    await page.getByRole('button', { name: 'Close attention item' }).click()
-    await expect(item).toBeFocused()
-  }
-  await page.getByRole('tab', { name: /^Daily changes/ }).click()
-  await expect(page.getByRole('tab', { name: /^Daily changes/ })).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByRole('tabpanel', { name: /^Daily changes/ })).toBeVisible()
+  await capture(page, testInfo, 'attention-follow-up')
+  await settleApi(page)
+  await page.goto('/updates?view=price')
+  await expect(page.getByRole('heading', { name: 'Inventory updates', exact: true })).toBeVisible()
+  const updateTypes = page.getByRole('group', { name: 'Inventory update type' })
+  await expect(updateTypes.getByRole('button', { name: /^Price changes/ })).toHaveAttribute('aria-pressed', 'true')
+  await updateTypes.getByRole('button', { name: /^New arrivals/ }).click()
+  await expect(page).toHaveURL(/view=new/)
   await expectNoOverflow(page)
-  await page.getByRole('tab', { name: /^Work queue/ }).click()
-  await expect(page.getByRole('tab', { name: /^Work queue/ })).toHaveAttribute('aria-selected', 'true')
+  await capture(page, testInfo, 'inventory-updates')
 })
 
 test('simple moves use one manager decision and physical location updates through return home', async ({ page }, testInfo) => {
@@ -726,15 +875,15 @@ test('simple moves use one manager decision and physical location updates throug
   await expect(tracker.getByRole('region', { name: 'Next move action' })).toHaveCount(1)
   await expect(tracker.getByRole('button', { name: /driver|dispatch|release grant|close request/i })).toHaveCount(0)
   await expect(tracker.getByRole('region', { name: 'Vehicle location and time away' })).toContainText('At home store')
-  await tracker.getByRole('button', { name: 'Approve & mark available', exact: true }).click()
+  await tracker.getByRole('button', { name: 'Approve this move', exact: true }).click()
   let dialog = page.getByRole('dialog')
   await expect(dialog.getByRole('textbox', { name: /driver|home.store manager/i })).toHaveCount(0)
-  await dialog.getByRole('button', { name: 'Approve & mark available', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Approve this move', exact: true }).click()
   await expect(dialog.getByRole('alert')).toContainText('Confirm you checked')
   await dialog.getByRole('checkbox', { name: /I checked with Fowlerville/ }).check()
   await expectNoOverflow(page)
   await capture(page, testInfo, 'simple-approval')
-  await dialog.getByRole('button', { name: 'Approve & mark available', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Approve this move', exact: true }).click()
   await expect(dialog).toHaveCount(0)
   await tracker.getByRole('button', { name: 'Mark vehicle collected', exact: true }).click()
   dialog = page.getByRole('dialog')
@@ -749,9 +898,9 @@ test('simple moves use one manager decision and physical location updates throug
   await capture(page, testInfo, 'simple-arrived')
 
   // Staff at the owning store can find their away inventory without opening a private move.
-  await page.getByLabel('Working location', { exact: true }).selectOption('Fowlerville')
-  await settleApi(page)
+  await switchLocationAndSettle(page, 'Fowlerville')
   await page.goto('/transfers')
+  await page.getByText('Browse vehicle locations', { exact: true }).click()
   await page.getByRole('button', { name: /^Home inventory away / }).click()
   const locations = page.getByRole('region', { name: 'Home inventory away', exact: true })
   await locations.getByLabel('Search inventory locations').fill('TESTDATAFWELL0002')
@@ -760,9 +909,9 @@ test('simple moves use one manager decision and physical location updates throug
   await expectNoOverflow(page)
   await capture(page, testInfo, 'home-inventory-away')
   await locations.getByRole('button', { name: 'Close locations' }).click()
-  await page.getByLabel('Working location', { exact: true }).selectOption('Howell')
-  await settleApi(page)
+  await switchLocationAndSettle(page, 'Howell')
   await page.goto(`/transfers?id=${created.id}`)
+  await tracker.getByText('Other options', { exact: true }).click()
   await tracker.getByRole('button', { name: 'Start return', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Start return', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)

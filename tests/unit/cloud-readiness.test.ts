@@ -29,7 +29,7 @@ function harness() {
   const {key,envelope}=encryptedFixture(),serialized=JSON.stringify(envelope)
   const first=vi.fn(async()=>({object_key:'synthetic-private-release',bundle_sha256:envelope.bundleSha256}))
   const batch=vi.fn(async statements=>{
-    expect(statements).toHaveLength(6)
+    expect(statements).toHaveLength(8)
     for(const {sql} of statements)expect(sql).toMatch(/^SELECT /)
     return statements.map(({sql})=>({success:true,results:sql.includes('cloud_app_revision')?[{revision:7}]:[]}))
   })

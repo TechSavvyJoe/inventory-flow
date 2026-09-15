@@ -38,6 +38,19 @@ describe('filter options', () => {
 })
 
 describe('matching', () => {
+  it('filters Ready inventory independently of store while retaining explicit unresolved service', () => {
+    const ready = v({ serviceReadiness: { status: 'serviced' } })
+    const waiting = v({ serviceReadiness: { status: 'needs_service' } })
+    const serviced = normalizeFilters({ serviceStatus: 'serviced', stores: ['Howell'] })
+    expect(matchesFilters(ready, serviced)).toBe(true)
+    expect(matchesFilters(waiting, serviced)).toBe(false)
+    expect(matchesFilters(v(), serviced)).toBe(true)
+    expect(matchesFilters(v({ serviceReadiness: { status: 'unknown' } }), serviced)).toBe(false)
+    expect(matchesFilters(waiting, normalizeFilters({ serviceStatus: 'unknown' }))).toBe(true)
+    expect(describeFilters(serviced)).toBe('Howell · ready only')
+    expect(normalizeFilters({ serviceStatus: 'available' }).serviceStatus).toBe('')
+  })
+
   it('combines criteria and treats missing facts as non-matches for numeric limits', () => {
     expect(vehicles.filter((vehicle) => matchesFilters(vehicle, normalizeFilters({ makes: ['ford'], bodies: ['SUV'] }))).map((item) => item.vin)).toEqual(['V2'])
     expect(vehicles.filter((vehicle) => matchesFilters(vehicle, normalizeFilters({ priceMax: 40000 }))).map((item) => item.vin)).toEqual(['V2', 'V3'])

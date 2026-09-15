@@ -35,6 +35,21 @@ afterEach(() => {
 })
 
 describe('page-session mutation retries', () => {
+  it('cancels an obsolete transfer read without misreporting a server timeout', async () => {
+    const controller = new AbortController()
+    const aborted = new DOMException('Selection changed.', 'AbortError')
+    fetchMock.mockImplementationOnce((_input, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(aborted), { once: true })
+    }))
+    const pending = api.getTransfer('old-transfer', 'manager', 'Howell', controller.signal)
+    const outcome = expect(pending).rejects.toBe(aborted)
+    const sentSignal = fetchMock.mock.calls[0][1]?.signal
+    expect(sentSignal?.aborted).toBe(false)
+    controller.abort()
+    expect(sentSignal?.aborted).toBe(true)
+    await outcome
+  })
+
   it('reuses a key after a network failure and clears it after confirmed success', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Connection lost')).mockImplementation(async () => json())
     await expect(create()).rejects.toThrow('Connection lost')

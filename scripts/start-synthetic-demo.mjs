@@ -6,6 +6,7 @@ import {
   SYNTHETIC_REPORT_DATE,
 } from '../fixtures/synthetic-release.mjs'
 import { startInventoryServer } from '../server/index.mjs'
+import { withSyntheticIllustrations, withSyntheticVehicleIllustration } from '../fixtures/synthetic-photos.mjs'
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url))
 const appDirectory = path.resolve(scriptDirectory, '..')
@@ -24,10 +25,25 @@ const app = startInventoryServer({
   port: Number.isFinite(port) ? port : 4174,
   refreshIntervalMs: 0,
   now: fixedNow,
-  releaseLoader: () => buildSyntheticRelease(),
+  releaseLoader: () => buildSyntheticRelease({ includeDemoChanges: true }),
 })
 
+// This launcher never reads dealership data. Keep illustrative assets here,
+// outside the production service and its exact-VIN photo validation.
+const syntheticBootstrap = app.service.bootstrap.bind(app.service)
+app.service.bootstrap = (context) => withSyntheticIllustrations(syntheticBootstrap(context))
+const syntheticVehicleDetail = app.service.getVehicle.bind(app.service)
+app.service.getVehicle = (vin, context) => withSyntheticVehicleIllustration(syntheticVehicleDetail(vin, context))
+
 function seedSyntheticWorkflow() {
+  // Three-state service examples. Other demo inventory remains baseline Ready;
+  // no fabricated completion dates are added to those existing vehicles.
+  app.service.updateServiceReadiness('TESTDATAHWELL0002', {
+    status: 'needs_service', expectedVersion: 0, notes: 'Synthetic arrival: waiting for the initial service inspection.',
+  }, { role: 'manager', store: 'Howell', user: 'Demo Howell Manager' }, 'synthetic-demo-service-waiting')
+  app.service.updateServiceReadiness('TESTDATAFWELL0001', {
+    status: 'in_service', expectedVersion: 0, serviceDate: '2026-08-29', notes: 'Synthetic vehicle inspection in progress.',
+  }, { role: 'manager', store: 'Fowlerville', user: 'Demo Fowlerville Manager' }, 'synthetic-demo-service-active')
   const approved = app.service.createTransfer(
     {
       vin: 'TESTDATAHWELL0001',

@@ -5,17 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>Inventory Flow Deal Desk</title>
+  <link rel="icon" href="../icons/icon-32.png" type="image/png">
   <link rel="stylesheet" href="panel.css">
+  <link rel="stylesheet" href="records.css">
+  <link rel="stylesheet" href="detail.css">
 </head>
 <body>
   <div class="panel" id="panel" data-view="list">
     <header class="mast">
       <button type="button" class="brand" id="brand" title="Open Inventory Flow">
         <img src="../icons/icon-32.png" alt="" width="20" height="20">
-        <span class="brand-type"><strong>Inventory Flow</strong><small>Deal desk</small></span>
+        <span class="brand-type"><strong>Inventory Flow</strong></span>
       </button>
       <div class="mast-right">
         <span class="who" id="who" aria-live="polite"></span>
+        <button type="button" class="icon-btn" id="refresh" aria-label="Refresh inventory"></button>
         <button type="button" class="icon-btn" id="settings-btn" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false"></button>
       </div>
     </header>
@@ -23,25 +27,40 @@
     <div class="views">
       <section class="view view-list" id="view-list" data-view-id="list" aria-label="Search inventory">
         <div class="sticky" id="sticky">
+          <div class="search-heading">
+            <h1>Inventory</h1>
+            <span id="store-context" class="visually-hidden"></span>
+            <div class="store-row" id="store-row" hidden>
+              <label class="store-picker"><span class="visually-hidden">Inventory at</span><select id="store-select" aria-label="Inventory home store"></select></label>
+              <button type="button" class="store-all" id="store-all" aria-pressed="false">All</button>
+              <button type="button" class="store-home" id="store-home" hidden>My store</button>
+            </div>
+          </div>
           <label class="search" id="search">
             <span class="search-icon" id="search-icon"></span>
-            <input id="q" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Stock, VIN, vehicle, or salesperson" aria-label="Search inventory" aria-controls="rows" aria-autocomplete="list">
+            <input id="q" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" placeholder="Stock, VIN, model, or equipment" aria-label="Search inventory" aria-controls="rows" aria-describedby="search-help" aria-autocomplete="list">
             <kbd class="search-kbd" id="search-kbd" aria-hidden="true">/</kbd>
             <button type="button" class="search-clear" id="clear" aria-label="Clear search" hidden></button>
           </label>
+          <p class="search-help visually-hidden" id="search-help">Search by stock, VIN, model, color, or equipment.</p>
           <div class="scope-row">
-            <div class="scope" id="scope" role="tablist" aria-label="Inventory scope">
+            <div class="scope" id="scope" role="group" aria-label="Inventory view">
               <span class="scope-ind" id="scope-ind" aria-hidden="true"></span>
             </div>
-            <button type="button" class="filter-btn" id="filters-btn" aria-label="Filters and sort" aria-haspopup="dialog" aria-expanded="false"><span class="filter-count" id="filter-count" hidden></span></button>
+            <button type="button" class="filter-btn" id="filters-btn" aria-label="Filters and sort" aria-haspopup="dialog" aria-expanded="false">Filters<span class="filter-count" id="filter-count" hidden></span></button>
           </div>
           <div class="filter-summary" id="filter-summary" hidden></div>
+          <div class="results-toolbar">
+            <div class="result-context" id="result-context" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+            <div class="expand-stores" id="expand-stores" hidden></div>
+          </div>
         </div>
         <div class="status" id="status" hidden></div>
-        <ol class="rows" id="rows" role="listbox" aria-label="Vehicles" tabindex="-1"></ol>
+        <ol class="rows" id="rows" role="listbox" aria-label="Vehicles" tabindex="0"></ol>
         <div class="more" id="more" hidden></div>
         <div class="skeleton" id="skeleton" aria-hidden="true" hidden></div>
         <div class="tray" id="tray" hidden></div>
+        <nav class="workspace-links" id="workspace-links" aria-label="Inventory Flow workspaces" hidden></nav>
       </section>
 
       <section class="view view-detail" id="view-detail" data-view-id="detail" aria-hidden="true" aria-label="Vehicle">
@@ -65,7 +84,6 @@
 
     <footer class="fresh" id="fresh">
       <span class="fresh-text" id="fresh-text"></span>
-      <button type="button" class="icon-btn icon-btn-sm" id="refresh" aria-label="Refresh inventory"></button>
     </footer>
 
     <div class="sheet-backdrop" id="sheet-backdrop" hidden></div>

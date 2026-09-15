@@ -1,3 +1,5 @@
+import { SERVICE_EVENT_COLUMNS } from '../../server/service-readiness.mjs'
+
 /**
  * D1 adapter for the platform-neutral, synchronous Inventory Flow service.
  * Each request reads one consistent ledger snapshot, stages its mutations,
@@ -253,6 +255,14 @@ function recordTransferEvent(database, row) {
 }
 
 export const d1SnapshotRepository = Object.freeze({
+  listServiceEvents(database) {
+    return [...database.serviceEvents].sort((a, b) => compare(a.vin, b.vin) || a.version - b.version).map(clone)
+  },
+  insertServiceEvent(database, row) {
+    insert(database, 'vehicle_service_events', SERVICE_EVENT_COLUMNS, row)
+    database.serviceEvents.push(clone(row))
+    return clone(row)
+  },
   getCurrentDataset(database) { return database.dataset },
   listTransferRows(database, { vin, status, store } = {}) {
     return database.transfers.filter((row) => (!vin || row.vin === String(vin).toUpperCase()) && (!status || row.status === status) &&
@@ -326,6 +336,8 @@ export async function loadD1Repository(d1, release, options = {}) {
     'SELECT * FROM attention_work_items ORDER BY updated_at DESC, attention_key',
     'SELECT * FROM attention_events ORDER BY occurred_at, created_at, rowid',
     'SELECT * FROM home_assignments WHERE effective_to IS NULL ORDER BY effective_from DESC',
+    'SELECT * FROM vehicle_service_events ORDER BY vin, version',
+    'SELECT * FROM vehicle_service_intake',
   ]
   const results = await d1.batch(statements.map((sql) => d1.prepare(sql)))
   if (results.length !== statements.length || results.some((result) => result.success === false || !Array.isArray(result.results))) {
@@ -334,9 +346,10 @@ export async function loadD1Repository(d1, release, options = {}) {
   const revision = results[0].results[0]?.revision
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('The shared workflow revision is not initialized')
   const database = {
-    dataset: datasetFromRelease(release, results[5].results, options),
+    dataset: { ...datasetFromRelease(release, results[5].results, options), serviceIntake: results[7].results },
     transfers: results[1].results, transferEvents: results[2].results,
     attention: results[3].results, attentionEvents: results[4].results,
+    serviceEvents: results[6].results,
     pending: [], closed: false,
   }
   return {

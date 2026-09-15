@@ -1,3 +1,5 @@
+import { serviceWorkflowStatus } from './service-readiness.mjs'
+
 // Builds the panel's vehicle view model from the app's /api/bootstrap record.
 // The rules mirror src/app/adapters.ts and src/features/inventory/
 // inventory-utils.ts so the panel never says something the app would not:
@@ -203,38 +205,85 @@ export function certifiedProgram(homeStore) {
   return { name: 'Ford Blue Advantage', short: 'Blue Advantage', brand: 'ford', store }
 }
 
+const documentState = (value, fallback) => value === 'stale' ? 'stale' : value === 'unknown' ? 'unknown' : value ? dataState(value) : fallback
+const entries = (value) => Array.isArray(value) ? value : []
+
+function warrantyCoverages(value) {
+  return entries(value).filter((item) => text(item?.type) && text(item?.termText) && text(item?.remainingMilesText) && text(item?.remainingTimeText) && ['ACTIVE', 'EXPIRED', 'N/A'].includes(item?.status))
+    .map((item) => ({
+      type: text(item.type), termText: text(item.termText), status: item.status,
+      remainingMilesText: text(item.remainingMilesText), remainingTimeText: text(item.remainingTimeText), note: text(item.note),
+      termMonths: number(item.termMonths), termMiles: number(item.termMiles), remainingMiles: number(item.remainingMiles), remainingMonths: number(item.remainingMonths),
+      unlimitedMiles: typeof item.unlimitedMiles === 'boolean' ? item.unlimitedMiles : null,
+      unlimitedMonths: typeof item.unlimitedMonths === 'boolean' ? item.unlimitedMonths : null,
+    }))
+}
+
+function capturedWarranty(record, fallback) {
+  if (!record || number(record.mileageEntered) === null) return null
+  const autoCheck = record.autoCheck ? {
+    inServiceDate: text(record.autoCheck.inServiceDate), inServiceAgeMonths: number(record.autoCheck.inServiceAgeMonths), defaultMileage: number(record.autoCheck.defaultMileage),
+    coverages: warrantyCoverages(record.autoCheck.coverages),
+  } : null
+  const fordOasis = record.fordOasis && text(record.fordOasis.warrantyStartDate) && number(record.fordOasis.monthsInService) !== null ? {
+    warrantyStartDate: text(record.fordOasis.warrantyStartDate), monthsInService: number(record.fordOasis.monthsInService), coverages: warrantyCoverages(record.fordOasis.coverages),
+  } : null
+  return autoCheck || fordOasis ? {
+    dataState: documentState(record.dataState, fallback), capturedAt: text(record.capturedAt), sourceLabel: text(record.sourceLabel),
+    mileageEntered: number(record.mileageEntered), mileageSource: text(record.mileageSource), autoCheck, fordOasis,
+  } : null
+}
+
 function documentsFor(record, publicState, dealerMailState) {
   const autoCheck = record.autoCheckReport
   const sticker = record.windowSticker
   const factory = record.factoryEquipment
+  const oasis = record.fordOasis
   return {
     autoCheck: autoCheck
       ? {
-        url: autoCheckUrl(autoCheck.url), dataState: autoCheck.dataState ? dataState(autoCheck.dataState) : publicState,
+        url: autoCheckUrl(autoCheck.url, record.listingUrl), dataState: documentState(autoCheck.dataState, publicState),
         score: number(autoCheck.score), rangeLow: number(autoCheck.scoreRangeLow), rangeHigh: number(autoCheck.scoreRangeHigh), ownerCount: number(autoCheck.ownerCount),
         usage: text(autoCheck.usage), lastReportedOdometer: number(autoCheck.lastReportedOdometer), lastReportedOdometerDate: text(autoCheck.lastReportedOdometerDate),
         vehicleClass: text(autoCheck.vehicleClass), assemblyCountry: text(autoCheck.assemblyCountry), inServiceDate: text(autoCheck.estimatedInServiceDate), reportRunAt: text(autoCheck.reportRunAt),
-        checks: (autoCheck.checks ?? []).filter((check) => text(check?.label)).map((check) => ({ label: text(check.label), status: text(check.status), detail: text(check.detail), tone: autoCheckTone(check.status) })),
+        sourceLabel: text(autoCheck.sourceLabel), sourceMessage: text(autoCheck.sourceMessage), failureReason: text(autoCheck.failureReason),
+        checks: entries(autoCheck.checks).filter((check) => text(check?.label)).map((check) => ({ label: text(check.label), status: text(check.status), detail: text(check.detail), tone: autoCheckTone(check.status) })),
       }
       : null,
     windowSticker: sticker
       ? {
-        url: windowStickerUrl(sticker.url), dataState: sticker.dataState ? dataState(sticker.dataState) : publicState,
+        url: windowStickerUrl(sticker.url, record.listingUrl), dataState: documentState(sticker.dataState, publicState),
         basePrice: number(sticker.basePrice), totalOptions: number(sticker.totalOptions), destinationCharge: number(sticker.destinationCharge), totalMsrp: number(sticker.totalMsrp),
         pricingCurrency: text(sticker.pricingCurrency), originalMarket: text(sticker.originalMarket), currencyEvidence: text(sticker.pricingCurrencyEvidence),
         vehicleDescription: text(sticker.vehicleDescription), equipmentGroup: text(sticker.equipmentGroup),
+        engine: text(sticker.engine), transmission: text(sticker.transmission), exteriorColor: text(sticker.exteriorColor), interiorColor: text(sticker.interiorColor),
+        sourceMessage: text(sticker.sourceMessage), failureReason: text(sticker.failureReason),
         options: list(sticker.options), standardEquipment: list(sticker.standardEquipment), warranty: list(sticker.warranty),
       }
       : null,
     factoryEquipment: factory
       ? {
-        url: factoryEquipmentUrl(factory.url), dataState: factory.dataState ? dataState(factory.dataState) : dealerMailState,
+        url: factoryEquipmentUrl(factory.url), dataState: documentState(factory.dataState, dealerMailState),
         basePrice: number(factory.basePrice), totalOptions: number(factory.totalOptions), destinationCharge: number(factory.destinationCharge), totalMsrp: number(factory.totalMsrp),
         capturedAt: text(factory.capturedAt), sourceLabel: text(factory.sourceLabel), disclaimer: text(factory.disclaimer),
-        packages: (factory.packages ?? []).filter((item) => text(item?.name)).map((item) => ({ name: text(item.name), code: text(item.code), price: number(item.price), features: list(item.features) })),
-        sections: (factory.sections ?? []).filter((section) => text(section?.name)).map((section) => ({ name: text(section.name), items: (section.items ?? []).filter((item) => text(item?.label)).map((item) => ({ label: text(item.label), price: number(item.price) })) })),
+        vehicleDescription: text(factory.vehicleDescription), engine: text(factory.engine), transmission: text(factory.transmission), drivetrain: text(factory.drivetrain),
+        exteriorColor: text(factory.exteriorColor), interiorColor: text(factory.interiorColor),
+        packages: entries(factory.packages).filter((item) => text(item?.name)).map((item) => ({ name: text(item.name), code: text(item.code), price: number(item.price), features: list(item.features) })),
+        sections: entries(factory.sections).filter((section) => text(section?.name)).map((section) => ({ name: text(section.name), items: entries(section.items).filter((item) => text(item?.label)).map((item) => ({ label: text(item.label), price: number(item.price) })) })),
       }
       : null,
+    fordOasis: oasis ? {
+      dataState: documentState(oasis.dataState, dealerMailState), capturedAt: text(oasis.capturedAt), sourceLabel: text(oasis.sourceLabel),
+      vehicleDescription: text(oasis.vehicleDescription), versionSeries: text(oasis.versionSeries),
+      buildDate: text(oasis.buildDate), warrantyStartDate: text(oasis.warrantyStartDate), releaseDate: text(oasis.releaseDate),
+      monthsInService: number(oasis.monthsInService), saleMileage: number(oasis.saleMileage),
+      // An omitted or malformed array is not evidence of zero service actions.
+      openActionsCaptured: Array.isArray(oasis.openFieldServiceActions) && oasis.openFieldServiceActions.every((item) => text(item?.code)),
+      openFieldServiceActions: entries(oasis.openFieldServiceActions).filter((item) => text(item?.code)).map((item) => ({ code: text(item.code), description: text(item.description) })),
+      warrantyCoverages: entries(oasis.warrantyCoverages).filter((item) => text(item?.type)).map((item) => ({ type: text(item.type), description: text(item.description) })),
+      extendedCoverageExpirations: list(oasis.extendedCoverageExpirations),
+    } : null,
+    warrantyCheck: capturedWarranty(record.warrantyCheck, dealerMailState),
   }
 }
 
@@ -247,7 +296,7 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
   const features = typeof record.features === 'string'
     ? [...new Set(record.features.split(/\s*\|\s*|\s*,\s*/).map((item) => item.trim()).filter(Boolean))]
     : []
-  const photos = [...new Set((record.imageUrls ?? (record.imageUrl ? [record.imageUrl] : [])).map(photoUrl).filter(Boolean))]
+  const photos = [...new Set([record.imageUrl, ...(Array.isArray(record.imageUrls) ? record.imageUrls : [])].map(photoUrl).filter(Boolean))]
   const disposition = record.managerDisposition
   const documents = documentsFor(record, publicState, dealerMailState)
   const make = text(record.make) || ''
@@ -276,6 +325,12 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
     engine: text(record.engine),
     transmission: text(record.transmission),
     fuelType: text(record.fuelType),
+    serviceReadiness: {
+      status: serviceWorkflowStatus(record.serviceReadiness),
+      readinessBasis: record.serviceReadiness?.readinessBasis || (record.serviceReadiness?.status ? 'manager_updated' : 'existing_inventory'),
+      serviceEnteredAt: text(record.serviceReadiness?.serviceEnteredAt), completedAt: text(record.serviceReadiness?.completedAt),
+      updatedAt: text(record.serviceReadiness?.updatedAt), store: text(record.serviceReadiness?.store), canManage: record.serviceReadiness?.canManage === true,
+    },
     certified: record.certified === true,
     certifiedProgram: record.certified === true ? certifiedProgram(record.homeStore) : null,
     specs: {
@@ -367,7 +422,7 @@ export function canRequestVehicle(vehicle, access) {
 export function requestBlockedReason(vehicle, access) {
   if (!access) return 'Sign in to request vehicles.'
   if (!['sales', 'manager', 'group_manager'].includes(access.role) || access.canCreateTransfer === false) return 'Your role cannot request vehicles.'
-  if (vehicle.homeStore === access.store) return `Already at ${access.store}, your working store.`
+  if (vehicle.homeStore === access.store) return `Belongs to ${access.store}, your working store. Check current location separately.`
   if (moveRequestBlocked(vehicle)) {
     // Blocked without a visible move: a request this user may not see is
     // open somewhere. Name no store, actor or request — the server does not.
@@ -398,7 +453,7 @@ export function copyFields(vehicle) {
     { key: 'destination', label: 'Destination & delivery', value: destination.value, kind: 'money', from: destination.from },
     { key: 'stickerTotal', label: 'Sticker total MSRP', value: total.value, kind: 'money', from: total.from },
     { key: 'mileage', label: 'Miles', value: vehicle.mileage, kind: 'mileage' },
-    { key: 'inService', label: 'In service (est.)', value: vehicle.warranty?.inService.date ?? null, kind: 'date' },
+    { key: 'inService', label: 'Warranty start (est.)', value: vehicle.warranty?.inService.date ?? null, kind: 'date' },
     { key: 'exterior', label: 'Exterior', value: vehicle.exteriorColor, kind: 'text' },
     { key: 'interior', label: 'Interior', value: vehicle.interiorColor, kind: 'text' },
     { key: 'engine', label: 'Engine', value: vehicle.engine, kind: 'text' },

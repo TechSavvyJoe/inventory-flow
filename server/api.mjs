@@ -106,6 +106,14 @@ function apiPath(pathname) {
   return match?.groups?.rest || null
 }
 
+function pathSegment(value) {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    throw new HttpError('Invalid path', 400, 'INVALID_PATH')
+  }
+}
+
 function safeStaticPath(distDir, pathname) {
   let decoded
   try {
@@ -172,7 +180,16 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
       }
       const vehicleMatch = route.match(/^\/vehicles\/([^/]+)$/)
       if (request.method === 'GET' && vehicleMatch) {
-        return sendJson(response, 200, service.getVehicle(decodeURIComponent(vehicleMatch[1]), context))
+        return sendJson(response, 200, service.getVehicle(pathSegment(vehicleMatch[1]), context))
+      }
+      const serviceMatch = route.match(/^\/vehicles\/([^/]+)\/service$/)
+      if (request.method === 'GET' && serviceMatch) {
+        return sendJson(response, 200, service.getServiceReadiness(pathSegment(serviceMatch[1]), context))
+      }
+      if (request.method === 'POST' && serviceMatch) {
+        const input = await readJson(request)
+        const result = service.updateServiceReadiness(pathSegment(serviceMatch[1]), input, context, String(request.headers['idempotency-key'] ?? '') || undefined)
+        return sendJson(response, result.created ? 201 : 200, result.record)
       }
       if (request.method === 'GET' && route === '/attention') {
         return sendJson(response, 200, service.listAttention(queryObject(url), context))
@@ -181,7 +198,7 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
       if (request.method === 'POST' && attentionEventMatch) {
         const input = await readJson(request)
         const result = service.appendAttentionEvent(
-          decodeURIComponent(attentionEventMatch[1]),
+          pathSegment(attentionEventMatch[1]),
           input,
           context,
           String(request.headers['idempotency-key'] ?? '') || undefined,
@@ -190,7 +207,7 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
       }
       const attentionMatch = route.match(/^\/attention\/([^/]+)$/)
       if (request.method === 'GET' && attentionMatch) {
-        return sendJson(response, 200, service.getAttention(decodeURIComponent(attentionMatch[1]), context))
+        return sendJson(response, 200, service.getAttention(pathSegment(attentionMatch[1]), context))
       }
       if (request.method === 'GET' && route === '/transfers') {
         return sendJson(response, 200, service.listTransfers(queryObject(url), context))
@@ -208,7 +225,7 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
       if (request.method === 'POST' && eventMatch) {
         const input = prepareNodeTransferEventInput(await readJson(request), context)
         const result = service.appendTransferEvent(
-          decodeURIComponent(eventMatch[1]),
+          pathSegment(eventMatch[1]),
           input,
           context,
           String(request.headers['idempotency-key'] ?? '') || undefined,
@@ -217,7 +234,7 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
       }
       const transferMatch = route.match(/^\/transfers\/([^/]+)$/)
       if (request.method === 'GET' && transferMatch) {
-        return sendJson(response, 200, service.getTransfer(decodeURIComponent(transferMatch[1]), context))
+        return sendJson(response, 200, service.getTransfer(pathSegment(transferMatch[1]), context))
       }
       return sendJson(response, 404, { error: 'API route not found', code: 'NOT_FOUND' })
     } catch (error) {

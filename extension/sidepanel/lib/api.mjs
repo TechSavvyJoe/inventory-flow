@@ -64,9 +64,9 @@ export async function fetchBootstrap(workspace, settings, { fetchImpl = globalTh
 }
 
 /**
- * The bootstrap list is a summary. The per-vehicle record adds the role-
- * filtered DealerMail evidence (backups, comments, alerts, CDK) and the
- * official documents, so the detail view fetches it after opening.
+ * Bootstrap already includes the captured vehicle reports used by list
+ * summaries. Detail adds public-scan context and role-filtered DealerMail
+ * evidence (backups, comments, alerts, CDK), fetched only after opening.
  */
 export async function fetchVehicle(workspace, settings, vin, { fetchImpl = globalThis.fetch, signal } = {}) {
   const payload = await fetchJson(vehicleRequest(workspace, settings, vin), { fetchImpl, signal })

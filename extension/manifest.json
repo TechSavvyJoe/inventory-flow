@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Inventory Flow Deal Desk",
   "short_name": "Deal Desk",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Search Maxey inventory, see hold and location status, and request a vehicle from a side panel while you work a deal.",
   "minimum_chrome_version": "116",
   "icons": {

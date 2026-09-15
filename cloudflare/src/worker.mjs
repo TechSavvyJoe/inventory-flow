@@ -4,6 +4,7 @@ import { AccessError, memberContext, verifyAccess } from './access.mjs'
 import { validateReleaseBundle } from './release-validation.mjs'
 import { loadD1Repository, RepositoryConflictError } from './repository.mjs'
 import { createInventoryServiceCore } from '../../server/service-core.mjs'
+import { serviceIntakeRows } from '../../server/service-intake.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
 import { importLedger, LedgerImportError } from './ledger-import.mjs'
 
@@ -196,6 +197,7 @@ async function publishRelease(request, env) {
       env.INVENTORY_DB.prepare("UPDATE cloud_release_versions SET status='superseded' WHERE status='current'"),
       env.INVENTORY_DB.prepare(`INSERT INTO cloud_release_versions (release_id,report_date,bundle_sha256,object_key,object_bytes,public_source_sha256,dealermail_source_sha256,public_row_count,dealermail_row_count,status,published_at,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,'current',?,?) ON CONFLICT(release_id) DO UPDATE SET status='current',published_at=excluded.published_at,metadata_json=excluded.metadata_json`).bind(id,envelope.reportDate,envelope.bundleSha256,objectKey,encoder.encode(serialized).length,bundle.release.sourceRuns.public.sha256,bundle.release.sourceRuns.dealerMail.sha256,counts.publicRowCount,counts.dealerMailRowCount,time,metadata),
       env.INVENTORY_DB.prepare("INSERT INTO cloud_release_state(key,value,updated_at) VALUES('current_release_id',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").bind(id,time),
+      ...serviceIntakeRows(bundle.release,time).map(row=>env.INVENTORY_DB.prepare('INSERT OR IGNORE INTO vehicle_service_intake (vin,first_arrival_date,observed_at) VALUES (?,?,?)').bind(row.vin,row.first_arrival_date,row.observed_at)),
     ])
   } catch {throw new HttpError('PUBLISH_CONFLICT_RETRY',409)}
   return json(201,{status:'published',reportDate:envelope.reportDate})
@@ -204,7 +206,7 @@ async function appApi(request,url,env,context) {
   const route=url.pathname.replace(/^\/api(?:\/v1)?/,'')
   const read=request.method==='GET', write=request.method==='POST'
   if(!read && !write) throw new HttpError('METHOD_NOT_ALLOWED',405)
-  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route))) throw new HttpError('NOT_FOUND',404)
+  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/service$/.test(route))) throw new HttpError('NOT_FOUND',404)
   // Decoded once here, before the release and repository are loaded: a path
   // that cannot be decoded can never address a record, so it should cost the
   // Worker nothing and answer 400 rather than a 500 from deeper in the stack.
@@ -223,6 +225,8 @@ async function appApi(request,url,env,context) {
     if(read && route==='/bootstrap') result=service.bootstrap(context)
     else if(read && route==='/vehicles') result=service.listVehicles(query,context)
     else if(read && /^\/vehicles\/[^/]+$/.test(route)) result=service.getVehicle(identifier,context)
+    else if(read && /^\/vehicles\/[^/]+\/service$/.test(route)) result=service.getServiceReadiness(identifier,context)
+    else if(write && /^\/vehicles\/[^/]+\/service$/.test(route)) {result=service.updateServiceReadiness(identifier,input,context,idempotency);mutation=true}
     else if(read && route==='/transfers') result=service.listTransfers(query,context)
     else if(read && /^\/transfers\/[^/]+$/.test(route)) result=service.getTransfer(identifier,context)
     else if(read && route==='/attention') result=service.listAttention(query,context)

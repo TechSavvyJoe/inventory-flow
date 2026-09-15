@@ -4,3 +4,9 @@ allowBuilds:
   # a package here requires a separate supply-chain review.
   esbuild: true
   workerd: true
+
+# Keep Wrangler's local Miniflare image-processing dependency on the patched
+# release identified by the security audit. This affects local dev/test tooling,
+# not the application runtime.
+overrides:
+  sharp: 0.35.4

@@ -1,0 +1,95 @@
+/* Laptop continuation of the compact inventory layout. Keep navigation labels
+   visible while reclaiming width; never shrink vehicle facts to tiny type. */
+@media (min-width:761px) and (max-width:1280px) {
+  #root .app-shell.is-nav-expanded { --shell-nav-width:176px; }
+  #root .app-shell .brand-block { padding-inline:12px; }
+  #root .app-shell .primary-nav { padding:12px 8px; }
+  #root .app-shell .nav-link { padding-inline:8px; gap:8px; white-space:normal; }
+  #root .app-shell .nav-label { font-size:14px; line-height:1.3; }
+  #root .app-shell .brand-block .ifx-brand-lockup { gap:8px; }
+  #root .app-shell .brand-block .ifx-brand-lockup__type strong { font-size:16px; }
+  #root .app-shell main.app-main { padding:16px; }
+}
+@media (min-width:761px) and (max-width:1100px) {
+  #root .app-shell:is(.is-nav-expanded,.is-nav-compact) { --shell-nav-width:104px; }
+  #root .app-shell .brand-block { justify-content:center; padding:0; }
+  #root .app-shell .brand-block .ifx-brand-lockup__type,
+  #root .app-shell .nav-footer-copy,
+  #root .app-shell .nav-collapse-button { display:none; }
+  #root .app-shell .primary-nav { gap:3px; padding:10px 6px; }
+  #root .app-shell .nav-link { flex-direction:column; justify-content:center; gap:5px; padding:8px 3px; min-height:66px; text-align:center; }
+  #root .app-shell .nav-link .nav-label { width:auto; max-width:92px; height:auto; opacity:1; transform:none; pointer-events:auto; overflow:visible; font-size:13px; }
+  #root .app-shell .nav-count { position:absolute; top:4px; right:4px; min-width:20px; margin:0; }
+  #root .app-shell .top-bar { padding-inline:14px; gap:10px; }
+}
+#inventory-results-workspace.if-srp .inventory-experience__content { padding:16px; }
+.if-srp-heading-grid { display:grid; gap:10px; margin-bottom:10px; }
+.if-srp .if-srp-heading-grid :is(.if-srp-header,.if-srp-searchbar) { margin-bottom:0; }
+.if-srp .if-srp-header h1 { font-size:25px; }
+.if-srp .if-srp-controls { margin-bottom:10px; gap:8px 12px; }
+.if-srp .if-srp-service-filters { padding-left:12px; }
+.if-srp .service-filter-label--short { display:none; }
+@container inventory-surface (min-width:900px) {
+  .if-srp-heading-grid { grid-template-columns:minmax(210px,.7fr) minmax(220px,1fr) auto; align-items:center; gap:12px; }
+  .if-srp .if-srp-header { display:contents; }
+  .if-srp .if-srp-header>div:first-child { grid-column:1; grid-row:1; }
+  .if-srp .if-srp-header .if-srp-scope { grid-column:3; grid-row:1; }
+  .if-srp .if-srp-searchbar { grid-column:2; grid-row:1; }
+}
+.workflow-page .workflow-page-heading,.action-queue .workflow-page-heading { margin-bottom:12px; }
+.workflow-page .workflow-toolbar,.action-queue .workflow-toolbar { margin-block:12px; }
+.workflow-page .updates-row { gap:16px; padding-block:14px; }
+.workflow-page :is(.workflow-vehicle small,.updates-specs,.updates-values,.workflow-muted),
+.action-queue :is(.action-task p,.action-owner,.action-owner>span,.action-follow-up summary) { font-size:14px; }
+.workflow-resource-row { grid-column:1 / -1; min-width:0; }
+.workflow-resource-row .vehicle-resources { margin:0; }
+@media(max-width:760px) {
+  #inventory-results-workspace.if-srp .inventory-experience__content { padding:10px; }
+  .if-srp .if-srp-header h1 { font-size:22px; }
+  .if-srp .if-srp-header p { margin-top:2px; }
+  .if-srp .if-srp-heading-grid { gap:8px; margin-bottom:8px; }
+  .if-srp .if-srp-controls { gap:6px; }
+  #inventory-results-workspace.if-srp .if-srp-service-filters { grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; }
+  #inventory-results-workspace.if-srp .if-srp-service-filters > button { flex-direction:column; justify-content:center; gap:2px; height:48px; min-height:48px; padding:4px 2px; line-height:18px; }
+  .if-srp .service-filter-label--full { display:none; }
+  .if-srp .service-filter-label--short { display:inline; }
+  .workflow-page .updates-row { gap:10px; padding-block:12px; }
+}
+
+/* Targeted phone SRP refinement: one scope/header row, search, one filter row.
+   Keep tap targets and type readable; reclaim repeated chrome instead. */
+@media(max-width:760px) {
+  #root .app-main:has(#inventory-results-workspace) .synthetic-preview-notice { margin-block:0 4px; padding-block:5px; line-height:20px; }
+  #inventory-results-workspace.if-srp .inventory-experience__content { padding:8px 10px; }
+  #inventory-results-workspace.if-srp .if-srp-header { flex-wrap:nowrap; gap:8px; }
+  #inventory-results-workspace.if-srp .if-srp-title-full { display:none; }
+  #inventory-results-workspace.if-srp .if-srp-title-mobile { display:inline; }
+  #inventory-results-workspace.if-srp .if-srp-header h1 { font-size:20px; }
+  #inventory-results-workspace.if-srp .if-srp-scope { width:auto; gap:4px; }
+  #inventory-results-workspace.if-srp .if-srp-scope > button { min-height:44px; padding:6px 9px; }
+  #inventory-results-workspace.if-srp .inventory-scope-switch__full { display:none; }
+  #inventory-results-workspace.if-srp .inventory-scope-switch__compact { display:inline; }
+  #inventory-results-workspace.if-srp .if-srp-controls { grid-template-columns:minmax(0,1fr) auto; align-items:start; gap:8px 6px; }
+  #inventory-results-workspace.if-srp .if-srp-quickviews { grid-column:1; grid-row:1; gap:2px; }
+  #inventory-results-workspace.if-srp .if-srp-quickviews > button { min-height:44px; padding:6px 7px; }
+  #inventory-results-workspace.if-srp .if-srp-tools { grid-column:2; grid-row:1; gap:4px; }
+  #inventory-results-workspace.if-srp .if-srp-tools .inv-btn { min-height:44px; padding:6px 7px; gap:3px; }
+  #inventory-results-workspace.if-srp .inventory-filter-button .inv-btn__count { display:inline; }
+  #inventory-results-workspace.if-srp .if-srp-service-filters { display:none; grid-column:1 / -1; grid-row:2; }
+  #inventory-results-workspace.if-srp[data-filters-open="true"] .if-srp-service-filters { display:grid; margin-top:2px; padding-top:8px; border-top:1px solid var(--border); }
+  #inventory-results-workspace.if-srp .if-srp-service-heading { display:block; grid-column:1 / -1; font-size:14px; margin-bottom:3px; }
+  #inventory-results-workspace.if-srp .if-srp-active-filters { gap:2px 4px; }
+  #inventory-results-workspace.if-srp .inventory-pagination--modern { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:6px; margin-top:8px; padding:4px 0; }
+  #inventory-results-workspace.if-srp .inventory-pagination--modern > span { flex:1 1 auto; font-size:14px; }
+  #inventory-results-workspace.if-srp .inventory-page-size { display:flex; flex:0 0 auto; align-items:center; gap:4px; margin:0; }
+  #inventory-results-workspace.if-srp .inventory-page-size > span { display:inline; font-size:14px; }
+  #inventory-results-workspace.if-srp .inventory-page-size select { width:56px; min-width:56px; min-height:44px; padding:4px; }
+  #inventory-results-workspace.if-srp .inventory-pagination--modern > div { display:flex; flex:0 0 auto; gap:4px; width:auto; margin:0; }
+  #inventory-results-workspace.if-srp .inventory-pagination--modern > div > span { display:none; }
+  #inventory-results-workspace.if-srp .inventory-pagination--modern > div > button { width:44px; min-width:44px; min-height:44px; margin:0; }
+}
+@media(max-width:360px) {
+  #inventory-results-workspace.if-srp .if-srp-scope > button { padding-inline:6px; }
+  #inventory-results-workspace.if-srp .if-srp-quickviews > button,
+  #inventory-results-workspace.if-srp .if-srp-tools .inv-btn { padding-inline:5px; }
+}

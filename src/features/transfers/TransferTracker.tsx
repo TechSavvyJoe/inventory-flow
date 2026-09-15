@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import {
   AlertTriangle,
   CalendarClock,
@@ -32,6 +33,7 @@ export interface TransferTrackerProps {
   onClose?: () => void;
   onCreateRequest?: () => void;
   mode?: 'drawer' | 'page';
+  vehicleResources?: ReactNode;
 }
 
 const WORKFLOW_PHASES = [
@@ -101,6 +103,7 @@ export function TransferTracker({
   onAction,
   onClose,
   onCreateRequest,
+  vehicleResources,
   mode = 'drawer',
 }: TransferTrackerProps) {
   if (!transfer) {
@@ -115,7 +118,7 @@ export function TransferTracker({
     );
   }
 
-  if (transfer.workflowMode === 'simple') return <SimpleTransferTracker transfer={transfer} onAction={onAction} onClose={onClose} mode={mode} />;
+  if (transfer.workflowMode === 'simple') return <SimpleTransferTracker transfer={transfer} onAction={onAction} onClose={onClose} mode={mode} vehicleResources={vehicleResources} />;
 
   const { vehicle } = transfer;
   const action = transfer.nextAction;
@@ -164,6 +167,7 @@ export function TransferTracker({
           </button>
         ) : null}
       </header>
+      {vehicleResources}
 
       <TransferProgress transfer={transfer} />
 

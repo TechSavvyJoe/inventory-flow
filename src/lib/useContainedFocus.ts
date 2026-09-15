@@ -104,7 +104,15 @@ export function useContainedFocus({
       window.cancelAnimationFrame(frame)
       document.removeEventListener('keydown', handleKeyDown)
       const target = returnFocusRef?.current ?? returnFocus
-      if (target?.isConnected) window.requestAnimationFrame(() => target.focus({ preventScroll: true }))
+      // Restore synchronously when possible, then retry after the next paint.
+      // WebKit can otherwise keep focus on a removed portal while a surrounding
+      // view transition is committing, leaving the original launch control
+      // inactive after the dialog is gone.
+      const restoreFocus = () => {
+        if (target?.isConnected) target.focus({ preventScroll: true })
+      }
+      restoreFocus()
+      window.requestAnimationFrame(restoreFocus)
     }
   }, [active, contain, containerRef, initialFocusRef, returnFocusRef])
 }

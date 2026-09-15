@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { InventoryVehicle } from "./types";
-import { equipmentByCategory, publishedEquipment, standoutEquipment } from "./vehicle-feature-utils";
+import { compactEquipmentScanLabel, equipmentByCategory, publishedEquipment, standoutEquipment } from "./vehicle-feature-utils";
 
 function vehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
   return {
@@ -41,6 +41,12 @@ describe("published vehicle equipment", () => {
 
   it("returns an empty evidence set when no source published equipment", () => {
     expect(publishedEquipment(vehicle())).toEqual([]);
+  });
+
+  it("turns a copied long factory option into a meaningful scan cue", () => {
+    expect(compactEquipmentScanLabel("CLASS IV TRAILER TOW PACKAGE WITH PRO TRAILER BACKUP ASSIST AND INTEGRATED TRAILER BRAKE CONTROLLER"))
+      .toBe("Class IV Trailer tow package");
+    expect(compactEquipmentScanLabel("XLT Sport Appearance Package")).toBe("XLT Sport Appearance Package");
   });
 
   it("recognizes exact cross-OEM safety phrases without inventing missing equipment", () => {

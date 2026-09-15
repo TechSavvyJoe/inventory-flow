@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_INVENTORY_FILTERS,
+  activeFilterCount,
   formatMoney,
   formatStickerMoney,
   resolveCurrentLocation,
@@ -47,6 +48,25 @@ function vehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
 }
 
 describe("inventory source-safe selectors", () => {
+  it("uses Ready baseline for existing inventory and maps legacy unknown records to waiting", () => {
+    const base = vehicle();
+    expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "serviced" })).toBe(true);
+    expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "unknown" })).toBe(false);
+    const serviced = vehicle({ serviceReadiness: { vin: base.vin, status: "serviced", version: 1, serviceEnteredAt: null, completedAt: "2026-09-14", updatedAt: null, updatedBy: null, updatedByRole: null, updatedAtStore: null, store: "Howell", canManage: false } });
+    expect(vehicleMatchesFilters(serviced, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "serviced" })).toBe(true);
+    expect(vehicleMatchesFilters(serviced, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "serviced", dealerMail: "held" })).toBe(false);
+    expect(activeFilterCount({ ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "serviced" })).toBe(1);
+    const legacy = vehicle({ serviceReadiness: { ...serviced.serviceReadiness!, status: "unknown" } });
+    expect(vehicleMatchesFilters(legacy, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "needs_service" })).toBe(true);
+    expect(vehicleMatchesFilters(legacy, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "serviced" })).toBe(false);
+  });
+
+  it("keeps service filtering when expanding a search to another store", () => {
+    const base = vehicle();
+    const inService = vehicle({ serviceReadiness: { vin: base.vin, status: "in_service", version: 1, serviceEnteredAt: "2026-09-14", completedAt: null, updatedAt: null, updatedBy: null, updatedByRole: null, updatedAtStore: null, store: "Howell", canManage: false } });
+    expect(vehicleMatchesFilters(inService, { ...DEFAULT_INVENTORY_FILTERS, storeId: "lincoln", serviceReadiness: "in_service" }, { ignoreStore: true })).toBe(true);
+    expect(vehicleMatchesFilters(inService, { ...DEFAULT_INVENTORY_FILTERS, storeId: "lincoln", serviceReadiness: "serviced" }, { ignoreStore: true })).toBe(false);
+  });
   it("labels original sticker currency without converting or changing public listing prices", () => {
     expect(formatStickerMoney(56650, { pricingCurrency: "CAD", originalMarket: "Canada" })).toMatch(/CAD\s56,650/);
     expect(formatStickerMoney(49924, {})).toBe("49,924 (original sticker currency; verify)");

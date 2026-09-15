@@ -336,6 +336,37 @@ export interface PublicScanAuditRecord {
   lastSeen: string | null
 }
 
+export type ServiceWorkflowStatus = 'needs_service' | 'in_service' | 'serviced'
+/** `unknown` is accepted only when reading historical/cached records. */
+export type ServiceReadinessStatus = ServiceWorkflowStatus | 'unknown'
+
+export interface ServiceReadiness {
+  vin: string
+  status: ServiceReadinessStatus
+  readinessBasis?: 'existing_inventory' | 'new_arrival' | 'manager_updated' | 'legacy_review'
+  version: number
+  serviceEnteredAt: string | null
+  completedAt: string | null
+  updatedAt: string | null
+  updatedBy: string | null
+  updatedByRole: UserRole | null
+  updatedAtStore: StoreName | null
+  store: StoreName | null
+  canManage: boolean
+  notes?: string | null
+}
+
+export interface ServiceReadinessDetail extends ServiceReadiness {
+  history: ServiceReadiness[]
+}
+
+export interface ServiceReadinessInput {
+  status: ServiceWorkflowStatus
+  serviceDate?: string
+  notes?: string
+  expectedVersion: number
+}
+
 export interface VehicleRecord {
   vin: string
   stockNumber: string
@@ -379,6 +410,7 @@ export interface VehicleRecord {
   hold: HoldSummary
   privateEvidence?: DealerMailPrivateEvidence
   movement: MovementSummary
+  serviceReadiness?: ServiceReadiness
   changeSummary?: string
   searchText?: string
   dataStatus?: string

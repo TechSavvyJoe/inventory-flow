@@ -5,7 +5,7 @@ import { groupStores, inventoryMetrics, inventoryStore, toInventoryVehicle } fro
 import { SourceWarning } from '../../components/SourceWarning'
 import { getVehicle } from '../../lib/api'
 import type { VehicleRecord } from '../../types'
-import type { InventoryScope, InventoryVehicle } from './types'
+import type { InventoryScope, InventoryVehicle, VehicleWorkspaceTab } from './types'
 import { InventoryExperience } from './InventoryExperience'
 import { canRequestVehicleMove, movementTrackingPath, transferByVin } from './inventory-utils'
 import {
@@ -17,7 +17,7 @@ import {
 
 
 export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
-  const { data, homeStore, role } = useAppData()
+  const { data, homeStore, role, currentUser } = useAppData()
   const [params] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -25,7 +25,9 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null)
   const [vehicleDetails, setVehicleDetails] = useState<Record<string, VehicleRecord>>({})
   const requestedScope: InventoryScope = params.get('scope') === 'group' ? 'group' : 'home'
-  const accessContext = inventorySearchAccessContext(role, homeStore)
+  const accessContext = inventorySearchAccessContext(role, homeStore, currentUser)
+  const requestedVin = params.get('vin')?.trim().toUpperCase() || null
+  const openedLinkRef = useRef('')
   const previousAccessContextRef = useRef(accessContext)
   const navigationRequest = readInventorySearchRequest(location.state, accessContext)
   const legacyQuery =
@@ -39,12 +41,17 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   }))
   const query =
     incomingQuery ?? (rememberedSearch.accessContext === accessContext ? rememberedSearch.query : '')
+  const detailContext = `${accessContext}:${requestedScope}:${query}`
+  const previousDetailContextRef = useRef(detailContext)
 
   const vehicles = useMemo(() => {
     if (!data) return []
     const transfers = transferByVin(data.transfers)
     return data.vehicles.map((vehicle) => {
-      const detailed = vehicleDetails[vehicle.vin] ?? vehicle
+      const cachedDetail = vehicleDetails[vehicle.vin]
+      // Service is live operational data: do not let an earlier detail fetch
+      // mask a manager's newer update delivered by the bootstrap refresh.
+      const detailed = cachedDetail ? { ...cachedDetail, serviceReadiness: vehicle.serviceReadiness } : vehicle
       return toInventoryVehicle(detailed, data, transfers.get(vehicle.vin))
     })
   }, [data, vehicleDetails])
@@ -72,13 +79,24 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   }, [accessContext, incomingQuery, location.hash, location.pathname, location.search, location.state, navigate, params])
 
   useEffect(() => {
+    if (previousDetailContextRef.current === detailContext) return
+    previousDetailContextRef.current = detailContext
     setVehicleDetails({})
     setSelectedVehicleId(null)
-  }, [accessContext, query, requestedScope])
+  }, [detailContext])
 
   useEffect(() => {
     setScope(requestedScope)
   }, [query, requestedScope])
+
+  useEffect(() => {
+    const key = `${accessContext}:${location.key}`
+    if (!requestedVin || !data || openedLinkRef.current === key) return
+    if (data.vehicles.some(vehicle => vehicle.vin === requestedVin)) {
+      openedLinkRef.current = key
+      setSelectedVehicleId(requestedVin)
+    }
+  }, [accessContext, data, location.key, requestedVin])
 
   useEffect(() => {
     if (!selectedVehicleId || vehicleDetails[selectedVehicleId]) return
@@ -93,7 +111,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
     return () => {
       canceled = true
     }
-  }, [homeStore, role, selectedVehicleId, vehicleDetails])
+  }, [accessContext, homeStore, role, selectedVehicleId, vehicleDetails])
 
   if (!data) return null
 
@@ -125,7 +143,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
     <section className={`inventory-page${homeMode ? ' inventory-home-mode' : ''}`}>
       <SourceWarning meta={data.meta} />
       <InventoryExperience
-        key={`${role}-${homeStore}-${query}-${homeMode ? 'home' : 'inventory'}`}
+        key={`${accessContext}-${query}-${homeMode ? 'home' : 'inventory'}`}
         homeStore={store}
         vehicles={vehicles}
         metrics={inventoryMetrics(data, homeStore)}
@@ -134,9 +152,16 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         initialScope={requestedScope}
         scope={scope}
         initialQuery={query}
-        searchPersistenceKey={`${role}:${homeStore}`}
+        initialWorkspaceTab={(['overview', 'equipment', 'movement', 'hold', 'timeline', 'data'] as VehicleWorkspaceTab[]).find(tab => tab === params.get('tab')) ?? 'overview'}
+        searchPersistenceKey={accessContext}
         selectedVehicleId={selectedVehicleId}
-        onSelectedVehicleChange={setSelectedVehicleId}
+        onSelectedVehicleChange={(id) => {
+          setSelectedVehicleId(id)
+          if (!id && requestedVin) {
+            const next = new URLSearchParams(params); next.delete('vin'); next.delete('tab')
+            navigate({ pathname: location.pathname, search: next.toString() }, { replace: true })
+          }
+        }}
         pageSize={25}
         canRequestVehicle={(vehicle) => canRequestVehicleMove(vehicle, role, store.id)}
         onScopeChange={setScope}

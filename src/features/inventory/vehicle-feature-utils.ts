@@ -111,6 +111,36 @@ export function standoutEquipment(vehicle: InventoryVehicle, limit = 4): Publish
   return publishedEquipment(vehicle).filter((item) => item.standout).slice(0, Math.max(0, limit));
 }
 
+/**
+ * A desktop comparison row needs a decision-ready equipment cue, not a copied
+ * window-sticker paragraph. The complete, verbatim source remains available
+ * in the Records workspace and on the source link. This returns a meaningful
+ * short name without ellipsizing or hiding text inside the scan row.
+ */
+export function compactEquipmentScanLabel(label: string): string {
+  const value = label.replace(/\s+/g, " ").trim();
+  if (!value || value.length <= 64) return value;
+
+  const equipmentGroup = value.match(/\bequipment\s+group\s+([a-z0-9-]+)/i);
+  if (equipmentGroup) return `Equipment Group ${equipmentGroup[1].toUpperCase()}`;
+
+  const hasPackage = /\b(package|edition|appearance\s+group|technology\s+group)\b/i.test(value);
+  const classLevel = value.match(/\bclass\s+([ivx]+)\b/i)?.[1]?.toUpperCase();
+  if (/\b(trailer|tow|towing|hitch)\b/i.test(value)) {
+    return `${classLevel ? `Class ${classLevel} ` : ""}Trailer tow${hasPackage ? " package" : " equipment"}`;
+  }
+  if (/\bfx4\b|\boff[- ]road\b/i.test(value)) return hasPackage ? "FX4 off-road package" : "Off-road equipment";
+  if (/\b360(?:-degree)?\s+camera\b|\bsurround\s+(?:view|vision)\b/i.test(value)) return "360° camera";
+  if (/\bbluecruise\b/i.test(value)) return "BlueCruise";
+  if (/\badaptive\s+cruise\b/i.test(value)) return "Adaptive cruise control";
+  if (/\b(blind\s+(?:spot|zone)|blis)\b/i.test(value)) return "Blind-spot assist";
+  if (/\b(heated|ventilated|cooled)\s+(?:front\s+)?seats?\b/i.test(value)) return "Premium front seats";
+
+  const namedPackage = value.match(/^(.+?\b(?:package|edition|appearance\s+group|technology\s+group)\b)/i)?.[1]?.trim();
+  if (namedPackage && namedPackage.length <= 56) return namedPackage;
+  return hasPackage ? "Featured package" : "Featured equipment";
+}
+
 export function equipmentByCategory(
   vehicle: InventoryVehicle,
 ): Array<{ category: EquipmentCategory; label: string; items: PublishedEquipmentItem[] }> {

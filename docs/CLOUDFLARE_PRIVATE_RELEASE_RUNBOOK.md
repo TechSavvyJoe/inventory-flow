@@ -65,15 +65,29 @@ From the app repository, on an explicitly authorized deployment host:
 ```powershell
 pnpm install --frozen-lockfile
 pnpm check
-pnpm cloud:d1:migrate
 pnpm cloud:validate
 pnpm cloud:deploy
 ```
 
-Both migrations are required. The Worker bundles the shared platform-neutral
-service core, D1 repository, strict release validation, and static frontend.
-The same core is tested against local SQLite and D1-shaped transactional
-storage. Deployment must retain the existing secret bindings.
+`pnpm cloud:validate` is offline: it checks the Worker modules and applies the
+numbered migration files only to an in-memory SQLite database. It never contacts
+Cloudflare or writes to D1.
+
+Do **not** run `pnpm cloud:d1:migrate` or a generic
+`wrangler d1 migrations apply` against the current production database. Its
+original migrations were applied outside Wrangler's migration ledger, and
+`0003_transport_assignment_identity.sql` contains non-idempotent column adds;
+a generic apply would stop partway through and leave a misleading partial
+ledger. Apply a reviewed future schema file as one explicit, authorized
+single-file operation, verify the resulting schema, then deploy. For the
+service-readiness release, apply `0007_service_readiness.sql` first and
+`0008_service_intake.sql` second before deploying the Worker that reads them.
+No remote migration or production write is performed by local code changes.
+
+The Worker bundles the shared platform-neutral service core, D1 repository,
+strict release validation, and static frontend. The same core is tested against
+local SQLite and D1-shaped transactional storage. Deployment must retain the
+existing secret bindings.
 
 Required Worker secrets: RELEASE_ENCRYPTION_KEY_BASE64,
 RELEASE_PUBLISHER_TOKEN, and PUBLISHER_CLIENT_ID. Issuer/audiences, exact private

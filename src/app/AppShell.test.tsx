@@ -135,7 +135,9 @@ describe('AppShell account and update controls', () => {
     )
 
     expect(screen.getByRole('link', { name: 'Vehicle moves' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Needs attention' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Action center' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Inventory updates' })).toHaveAttribute('href', '/updates')
+    expect(screen.getByRole('link', { name: 'Service status' })).toHaveAttribute('href', '/service')
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-controls', 'application-navigation')
   })
 

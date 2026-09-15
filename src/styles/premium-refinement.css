@@ -2010,18 +2010,18 @@ textarea:focus-visible {
 .transfer-list-accountability,
 .transfer-list-outcomes {
   color: #52677a;
-  font-size: 11px !important;
+  font-size: 12px !important;
   line-height: 1.35;
 }
 
 .transfer-list-views button {
   min-height: 38px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .transfer-list-views button span {
   min-width: 21px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .transfer-list-top {

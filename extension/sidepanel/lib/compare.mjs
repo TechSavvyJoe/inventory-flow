@@ -2,6 +2,7 @@
 // turns on, plus the equipment each one has that the others do not.
 import { equipmentKey, publishedEquipment } from './equipment.mjs'
 import { formatMileage, formatMoney, formatNumber } from './format.mjs'
+import { serviceWorkflowStatus } from './service-readiness.mjs'
 
 const FACTS = [
   ['Price', (v) => formatMoney(v.price)],
@@ -22,7 +23,9 @@ const FACTS = [
   ['Certified', (v) => (v.certified ? v.certifiedProgram?.name ?? 'Certified' : 'No')],
   ['AutoCheck', (v) => (v.documents.autoCheck?.score !== null && v.documents.autoCheck?.score !== undefined ? String(v.documents.autoCheck.score) : '—')],
   ['Hold', (v) => v.hold.label],
-  ['Location', (v) => v.location.label],
+  ['Service', (v) => ({ needs_service: 'Waiting for service', in_service: 'In service', serviced: 'Ready' })[serviceWorkflowStatus(v.serviceReadiness)]],
+  ['Location', (v) => [v.location.label, v.location.provenance].filter(Boolean).join(' · ')],
+  ['Movement', (v) => v.movement?.label ?? v.movement?.state ?? 'No move recorded'],
   ['Home store', (v) => v.homeStore],
   ['Stock', (v) => v.stockNumber],
   ['VIN', (v) => v.vin],

@@ -1,38 +1,52 @@
 /* Simple rollout: one manager decision, physical location updates, one action area. */
 #root .simple-transfer-tracker {
   display: grid;
-  gap: 18px;
-  padding: 20px;
+  gap: 16px;
+  padding: 18px;
   min-width: 0;
   color: var(--ifx-neutral-900);
   font: 400 15px/1.5 var(--font-app);
   font-synthesis: none;
 }
 #root .simple-transfer-tracker :is(h2,h3,p,dl,dd) { margin: 0; }
+#root .simple-transfer-tracker > .inventory-service-link { margin: 0; }
 #root .simple-transfer-tracker :is(button,summary) { font: 600 14px/1.4 var(--font-app); }
 #root .simple-transfer-tracker :is(button,summary):focus-visible { outline: 3px solid var(--ifx-info); outline-offset: 3px; }
 #root .simple-move-heading { display: flex; align-items: center; gap: 14px; min-width: 0; }
-#root .simple-move-heading > img { width: 88px; height: 66px; border-radius: 5px; object-fit: cover; }
+#root .simple-move-heading > img, #root .simple-move-photo-placeholder { width: 96px; height: 72px; flex: 0 0 96px; border-radius: 5px; object-fit: cover; }
+#root .simple-move-photo-placeholder { display: grid; place-items: center; background: var(--ifx-neutral-100); color: var(--ifx-neutral-600); }
+#root .simple-move-heading > .simple-move-photo-placeholder { display: grid; place-items: center; }
 #root .simple-move-heading > div { flex: 1; min-width: 0; }
-#root .simple-move-heading h2 { color: var(--ifx-neutral-900); font-size: 22px; font-weight: 700; line-height: 1.3; }
+#root .simple-move-heading h2 { color: var(--ifx-neutral-900); font-size: 20px; font-weight: 700; line-height: 1.3; }
 #root .simple-move-heading :is(span,small) { display: block; color: var(--ifx-neutral-700); font-size: 13px; line-height: 1.5; }
-#root .simple-move-heading > button { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; border: 1px solid var(--ifx-neutral-300); border-radius: 5px; background: var(--ifx-neutral-0); color: var(--ifx-neutral-800); }
-#root .simple-move-location { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; padding: 16px; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; background: var(--ifx-neutral-50); }
+#root .simple-move-heading > button { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border: 1px solid var(--ifx-neutral-300); border-radius: 5px; background: var(--ifx-neutral-0); color: var(--ifx-neutral-800); }
+#root .simple-move-route { display: flex; align-items: center; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--ifx-neutral-300); color: var(--ifx-neutral-900); font-size: 15px; font-weight: 600; }
+#root .simple-move-route span { display: grid; gap: 2px; }
+#root .simple-move-route small { color: var(--ifx-neutral-700); font-size: 12px; font-weight: 400; }
+#root .simple-move-progress { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; margin: 0; padding: 0 0 16px; border-bottom: 1px solid var(--ifx-neutral-300); list-style: none; }
+#root .simple-move-progress li { display: grid; justify-items: center; gap: 6px; color: var(--ifx-neutral-700); }
+#root .simple-move-progress li > span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--ifx-neutral-300); border-radius: 50%; font-size: 12px; }
+#root .simple-move-progress li strong { font-size: 12px; font-weight: 500; }
+#root .simple-move-progress .is-complete { color: var(--ifx-info); }
+#root .simple-move-progress .is-complete > span { border-color: var(--ifx-info); }
+#root .simple-move-progress .is-current > span { color: var(--ifx-neutral-0); border-color: var(--ifx-info); background: var(--ifx-info); }
+#root .simple-move-progress .is-current strong { color: var(--ifx-neutral-900); font-weight: 600; }
+#root .simple-move-location { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; padding: 0 0 16px; border: 0; border-bottom: 1px solid var(--ifx-neutral-300); border-radius: 0; background: transparent; }
 #root .simple-move-location > div { display: grid; align-content: start; gap: 4px; min-width: 0; }
 #root .simple-move-location > div > span { font-size: 14px; color: var(--ifx-neutral-700); }
 #root .simple-move-location strong { display: flex; align-items: center; gap: 5px; color: var(--ifx-neutral-900); font-size: 16px; line-height: 1.4; font-weight: 600; }
 #root .simple-move-location strong svg { flex-shrink: 0; }
 #root .simple-move-location small { font-size: 13px; color: var(--ifx-neutral-700); }
-#root .simple-move-next { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--ifx-neutral-300); border-left: 3px solid var(--ifx-info); border-radius: 6px; background: var(--ifx-neutral-0); }
+#root .simple-move-next { display: grid; gap: 14px; padding: 16px; border: 0; border-left: 3px solid var(--ifx-info); border-radius: 5px; background: var(--ifx-info-surface); }
 #root .simple-move-next > div > span { display: block; margin-bottom: 4px; font-size: 14px; color: var(--ifx-neutral-700); }
 #root .simple-move-next h3 { font-size: 17px; line-height: 1.45; font-weight: 600; }
 #root .simple-move-next p { margin-top: 4px; color: var(--ifx-neutral-700); font-size: 14px; }
 #root .simple-move-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-#root .simple-move-actions .mif-button { min-height: 40px; padding: 8px 12px; border-radius: 5px; box-shadow: none; white-space: normal; }
+#root .simple-move-actions .mif-button { min-height: 44px; padding: 10px 14px; border-radius: 5px; box-shadow: none; white-space: normal; }
 #root .simple-move-more { position: relative; }
-#root .simple-move-more > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 12px; border: 1px solid var(--ifx-neutral-300); border-radius: 5px; color: var(--ifx-neutral-800); list-style: none; cursor: pointer; }
+#root .simple-move-more > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--ifx-neutral-300); border-radius: 5px; color: var(--ifx-neutral-800); background: var(--ifx-neutral-0); list-style: none; cursor: pointer; }
 #root .simple-move-more > div { display: grid; position: absolute; z-index: 8; top: calc(100% + 5px); right: 0; min-width: 190px; padding: 4px; background: var(--ifx-neutral-0); border: 1px solid var(--ifx-neutral-300); border-radius: 6px; box-shadow: var(--ifx-elevation-2); }
-#root .simple-move-more button { min-height: 40px; padding: 8px 10px; text-align: left; border: 0; border-radius: 4px; background: transparent; color: var(--ifx-neutral-800); cursor: pointer; }
+#root .simple-move-more button { min-height: 44px; padding: 8px 10px; text-align: left; border: 0; border-radius: 4px; background: transparent; color: var(--ifx-neutral-800); cursor: pointer; }
 #root .simple-move-more button:hover { background: var(--ifx-info-surface); }
 #root .simple-move-details { min-width: 0; }
 #root .simple-move-details h3 { margin-bottom: 12px; font-size: 16px; font-weight: 600; }
@@ -43,7 +57,7 @@
 #root .simple-transfer-tracker .simple-move-secondary { color: var(--ifx-neutral-700); font-size: 13px; }
 #root .simple-move-reason { grid-column: 1 / -1; }
 #root .simple-move-records { padding: 12px 0; border-top: 1px solid var(--ifx-neutral-300); }
-#root .simple-move-records > summary { display: flex; align-items: center; gap: 8px; min-height: 32px; color: var(--ifx-neutral-800); list-style: none; cursor: pointer; }
+#root .simple-move-records > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; color: var(--ifx-neutral-800); list-style: none; cursor: pointer; }
 #root .simple-move-records > summary > svg { margin-left: auto; }
 #root .simple-move-records > summary > span { font-size: 13px; font-weight: 400; color: var(--ifx-neutral-700); }
 #root .simple-move-records > :not(summary) { margin-top: 16px; }
@@ -93,9 +107,8 @@
 @media (max-width: 700px) {
   #root .simple-transfer-tracker { gap: 16px; padding: 16px; }
   #root .simple-move-heading h2 { font-size: 20px; }
-  #root .simple-move-heading > img { width: 72px; height: 58px; }
-  #root .simple-move-location { grid-template-columns: repeat(2,minmax(0,1fr)); padding: 12px; }
-  #root .simple-move-location > div:last-child { grid-column: 1 / -1; padding-top: 10px; border-top: 1px solid var(--ifx-neutral-300); }
+  #root .simple-move-heading > img { width: 96px; height: 72px; }
+  #root .simple-move-location { grid-template-columns: repeat(2,minmax(0,1fr)); padding: 0 0 14px; }
   #root .simple-move-actions .mif-button { flex: 1 1 auto; min-height: 44px; }
   #root .simple-transfer-tracker dl { gap: 12px; }
   #root .vehicle-location-views { grid-template-columns: repeat(2,minmax(0,1fr)); }

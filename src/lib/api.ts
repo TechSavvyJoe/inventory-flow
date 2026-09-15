@@ -8,6 +8,8 @@ import type {
   TransferRequestInput,
   UserRole,
   VehicleRecord,
+  ServiceReadinessDetail,
+  ServiceReadinessInput,
 } from '../types'
 
 export class ApiError extends Error {
@@ -106,9 +108,8 @@ function isSignInResponse(response: Response) {
 
 // A dealership network can stall a connection without ever failing it, which
 // leaves `fetch` pending forever and the UI stuck loading with no recovery
-// path. Nothing here calls `fetch` with its own AbortSignal today, but the
-// composition below keeps that possible without this timeout silently
-// overriding a caller's own signal in the future.
+// path. Compose the timeout with caller cancellation so changing vehicle or
+// access context can end obsolete reads without waiting for the network.
 const REQUEST_TIMEOUT_MS = 20_000
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -138,6 +139,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       // module's existing retry classification below, so it is treated as
       // retryable exactly like a server-reported request timeout.
       if (cause instanceof DOMException && cause.name === 'AbortError') {
+        if (options.signal?.aborted) throw cause
         throw new ApiError('The request timed out before the server responded. Try again.', 408)
       }
       throw cause
@@ -194,6 +196,18 @@ export function getVehicle(vin: string, role: UserRole, store: StoreName): Promi
   })
 }
 
+export function getServiceReadiness(vin: string, role: UserRole, store: StoreName): Promise<ServiceReadinessDetail> {
+  return request<ServiceReadinessDetail>(`/api/vehicles/${encodeURIComponent(vin)}/service`, {
+    headers: demoIdentityHeaders(role, store),
+  })
+}
+
+export function updateServiceReadiness(vin: string, input: ServiceReadinessInput, role: UserRole, store: StoreName): Promise<ServiceReadinessDetail> {
+  return request<ServiceReadinessDetail>(`/api/vehicles/${encodeURIComponent(vin)}/service`, {
+    method: 'POST', headers: demoIdentityHeaders(role, store), body: JSON.stringify(input),
+  })
+}
+
 export function createTransfer(input: TransferRequestInput, role: UserRole, store: StoreName): Promise<TransferRecord> {
   const { requestedBy: _requestedBy, requestingStore: _requestingStore, ...requestInput } = input
   return request<TransferRecord>('/api/transfers', {
@@ -203,9 +217,10 @@ export function createTransfer(input: TransferRequestInput, role: UserRole, stor
   })
 }
 
-export function getTransfer(transferId: string, role: UserRole, store: StoreName): Promise<TransferRecord> {
+export function getTransfer(transferId: string, role: UserRole, store: StoreName, signal?: AbortSignal): Promise<TransferRecord> {
   return request<TransferRecord>(`/api/transfers/${encodeURIComponent(transferId)}`, {
     headers: demoIdentityHeaders(role, store),
+    signal,
   })
 }
 

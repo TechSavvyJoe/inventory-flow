@@ -4,6 +4,8 @@ const loadInventoryPage = () => import('../features/inventory/InventoryPage')
 const loadTransfersPage = () => import('../features/transfers/TransfersPage')
 const loadAttentionPage = () => import('../features/attention/AttentionPage')
 const loadManagerPage = () => import('../features/manager/ManagerPage')
+const loadInventoryUpdatesPage = () => import('../features/attention/InventoryUpdatesPage')
+const loadServicePage = () => import('../features/service/ServicePage')
 
 function warmRoute(loader: () => Promise<unknown>): void {
   // The route boundary owns any user-facing load failure once React renders
@@ -24,6 +26,8 @@ export const AttentionPage = lazy(() =>
 export const ManagerPage = lazy(() =>
   loadManagerPage().then((module) => ({ default: module.ManagerPage })),
 )
+export const InventoryUpdatesPage = lazy(() => loadInventoryUpdatesPage().then(module => ({ default: module.InventoryUpdatesPage })))
+export const ServicePage = lazy(() => loadServicePage().then(module => ({ default: module.ServicePage })))
 
 export function preloadRoute(pathname: string): void {
   if (pathname === '/' || pathname.startsWith('/inventory')) {
@@ -34,5 +38,9 @@ export function preloadRoute(pathname: string): void {
     warmRoute(loadAttentionPage)
   } else if (pathname.startsWith('/manager')) {
     warmRoute(loadManagerPage)
+  } else if (pathname.startsWith('/updates')) {
+    warmRoute(loadInventoryUpdatesPage)
+  } else if (pathname.startsWith('/service')) {
+    warmRoute(loadServicePage)
   }
 }

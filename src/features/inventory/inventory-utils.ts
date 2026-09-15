@@ -1,4 +1,5 @@
 import type { TransferRecord } from "../../types";
+import { serviceWorkflowStatus } from "../../lib/service-readiness";
 import type {
   DealerMailHoldSignal,
   InventoryFilters,
@@ -20,6 +21,7 @@ export const DEFAULT_INVENTORY_FILTERS: InventoryFilters = {
   dealerOn: "all",
   dealerMail: "all",
   movement: "all",
+  serviceReadiness: "all",
 };
 
 export const DEFAULT_INVENTORY_SORTS: InventorySort[] = [
@@ -295,6 +297,11 @@ export function vehicleMatchesFilters(
   if (filters.movement === "none" && hasMovement) return false;
   if (filters.movement === "overdue" && movement?.overdue !== true) return false;
 
+  // Only an explicit manager service record establishes completion. Website
+  // status, a hold, physical location, or a warranty date cannot imply service.
+  if (filters.serviceReadiness && filters.serviceReadiness !== "all" &&
+    serviceWorkflowStatus(vehicle.serviceReadiness) !== (filters.serviceReadiness === "unknown" ? "needs_service" : filters.serviceReadiness)) return false;
+
   if (
     typeof filters.minimumPrice === "number" &&
     (typeof vehicle.price !== "number" || vehicle.price < filters.minimumPrice)
@@ -479,6 +486,7 @@ export function activeFilterCount(filters: InventoryFilters): number {
     filters.dealerOn !== "all",
     filters.dealerMail !== "all",
     filters.movement !== "all",
+    Boolean(filters.serviceReadiness && filters.serviceReadiness !== "all"),
     typeof filters.minimumPrice === "number",
     typeof filters.maximumPrice === "number",
     typeof filters.maximumMileage === "number",

@@ -9,14 +9,14 @@ export interface InventorySearchRequest {
 
 export interface InventorySearchNavigation {
   pathname: '/inventory'
-  search: '?scope=group'
+  search: '?scope=home'
   state: {
     [INVENTORY_SEARCH_STATE_KEY]: InventorySearchRequest
   }
 }
 
-export function inventorySearchAccessContext(role: UserRole, homeStore: StoreName): string {
-  return `${role}:${homeStore}`
+export function inventorySearchAccessContext(role: UserRole, homeStore: StoreName, user?: string): string {
+  return `${role}:${homeStore}${user ? `:${user}` : ''}`
 }
 
 export function createInventorySearchNavigation(
@@ -25,7 +25,7 @@ export function createInventorySearchNavigation(
 ): InventorySearchNavigation {
   return {
     pathname: '/inventory',
-    search: '?scope=group',
+    search: '?scope=home',
     state: {
       [INVENTORY_SEARCH_STATE_KEY]: {
         query: query.trim(),
