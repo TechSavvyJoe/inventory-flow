@@ -111,7 +111,7 @@ describe('rich vehicle resource catalog', () => {
   });
 
   it('reports zero only from a complete dated OASIS capture, never as current safety or availability', () => {
-    const oasis = resource({fordOasis:{dataState:'stale',capturedAt:'2026-08-30',openFieldServiceActions:[]}},'oasis');
+    const oasis = resource({fordOasis:{dataState:'stale',capturedAt:'2026-08-30',openActionsCaptured:true,openFieldServiceActions:[]}},'oasis');
     expect(oasis.facts).toEqual(['0 open Ford actions in captured report']);
     expect(oasis.sourceNote).toBe('Saved report · refresh at source · Captured Aug 30, 2026');
     const partial = resource({fordOasis:{dataState:'incomplete',capturedAt:'2026-08-30',warrantyStartDate:'14-MAR-2024',openFieldServiceActions:[]}},'oasis');
@@ -119,8 +119,14 @@ describe('rich vehicle resource catalog', () => {
     expect(partial.sourceNote).toContain('Open-action result not captured');
   });
 
-  it.each(['9999-01-01', 'not a date'])('does not promote the %s capture timestamp into a zero action result', capturedAt => {
-    const oasis = resource({fordOasis:{dataState:'current',capturedAt,openFieldServiceActions:[]}},'oasis');
+  it.each([undefined, false])('does not treat a legacy or default empty action array with flag %s as a captured zero', openActionsCaptured => {
+    const oasis = resource({fordOasis:{dataState:'current',capturedAt:'2026-08-30',warrantyStartDate:'14-MAR-2024',openFieldServiceActions:[],openActionsCaptured}},'oasis');
+    expect(oasis.facts.join(' ')).not.toContain('0 open');
+    expect(oasis.sourceNote).toContain('Open-action result not captured');
+  });
+
+  it.each(['9999-01-01', 'not a date', '2026-02-30'])('does not promote the %s capture timestamp into a zero action result', capturedAt => {
+    const oasis = resource({fordOasis:{dataState:'current',capturedAt,openActionsCaptured:true,openFieldServiceActions:[]}},'oasis');
     expect(oasis.hasCapturedData).toBe(false);
     expect(oasis.facts).toEqual([]);
     expect(oasis.sourceNote).toMatch(/Future source date|Unrecognized source date/);

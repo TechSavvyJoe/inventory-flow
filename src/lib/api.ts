@@ -11,7 +11,7 @@ import type {
   ServiceReadinessDetail,
   ServiceReadinessInput,
 } from '../types'
-import type { AdminOverview } from '../features/admin/types'
+import type { AdminOverview, MembershipDirectory, MembershipInput } from '../features/admin/types'
 
 export class ApiError extends Error {
   status: number
@@ -74,6 +74,7 @@ async function beginMutation(path: string, body: RequestInit['body'], headers: H
     headers.get('x-inventory-demo-role'),
     headers.get('x-inventory-demo-store'),
     headers.get('x-inventory-demo-user'),
+    headers.get('x-inventory-preview-role'),
   ])
   let registration = mutationRegistrations.get(fingerprint)
   if (!registration) {
@@ -202,6 +203,8 @@ async function request<T>(path: string, options: RequestInit = {}, timing: Reque
 function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, string> {
   return {
     'x-inventory-demo-role': role,
+    // Production honors this only for a server-authenticated group manager.
+    'x-inventory-preview-role': role,
     'x-inventory-demo-store': store,
     'x-inventory-demo-user': import.meta.env.VITE_DEMO_USER_NAME || 'Joe Gallant',
   }
@@ -233,6 +236,14 @@ export function getAdminOverview(role: UserRole, store: StoreName, signal?: Abor
     headers: demoIdentityHeaders(role, store),
     signal,
   })
+}
+
+export function getMembershipDirectory(role: UserRole, store: StoreName, signal?: AbortSignal): Promise<MembershipDirectory> {
+  return request('/api/admin/members', { headers: demoIdentityHeaders(role, store), signal })
+}
+
+export function saveMembershipAccess(input: MembershipInput, role: UserRole, store: StoreName): Promise<{ saved: boolean; id: string }> {
+  return request('/api/admin/members', { method: 'POST', headers: demoIdentityHeaders(role, store), body: JSON.stringify(input) })
 }
 
 export function getServiceReadiness(vin: string, role: UserRole, store: StoreName): Promise<ServiceReadinessDetail> {

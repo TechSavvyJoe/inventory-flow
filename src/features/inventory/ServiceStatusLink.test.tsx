@@ -5,12 +5,12 @@ import { ServiceStatusLink } from './ServiceStatusLink'
 afterEach(cleanup)
 
 describe('service status shared across inventory and vehicle details', () => {
-  it('shows baseline Ready without creating a service-completion date', () => {
+  it('shows missing service confirmation as waiting without creating a completion date', () => {
     render(<ServiceStatusLink vin="TESTDATAHWELL0001" detailed />)
-    const link = screen.getByRole('link', { name: 'Ready. Open service status for VIN TESTDATAHWELL0001' })
-    expect(link).toHaveTextContent(/^Ready$/)
+    const link = screen.getByRole('link', { name: 'Waiting for service. Open service status for VIN TESTDATAHWELL0001' })
+    expect(link).toHaveTextContent(/^Waiting for service$/)
     expect(link).toHaveAttribute('href', '/service?vin=TESTDATAHWELL0001')
-    expect(link).toHaveAttribute('title', expect.stringContaining('no service completion date recorded'))
+    expect(link).toHaveAttribute('title', expect.stringContaining('service workflow'))
   })
 
   it.each([

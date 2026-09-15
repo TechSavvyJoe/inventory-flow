@@ -106,8 +106,9 @@ describe('extension working-store workflow and identity reset', () => {
     Object.defineProperty(bar,'offsetHeight',{value:50,configurable:true})
     Object.defineProperty(bar,'offsetTop',{value:900,configurable:true})
     document.querySelector('.doc-autocheck').click()
-    expect(detail.scrollTop).toBe(450)
-    expect(document.activeElement.id).toBe('tab-records')
+    expect(detail.scrollTop).toBeLessThan(450)
+    expect(document.activeElement.dataset.record).toBe('autocheck')
+    expect(document.querySelector('#tab-records').getAttribute('aria-selected')).toBe('true')
   })
 
   it('prioritizes a captured Ford action and keeps it separate from service status', async () => {
@@ -172,11 +173,11 @@ describe('extension working-store workflow and identity reset', () => {
     expect(document.querySelector('#service-select')).toBeNull()
   })
 
-  it('shows baseline Ready without claiming manager completion and exposes service without a submenu', async () => {
+  it('shows unconfirmed inventory waiting and exposes service without a submenu', async () => {
     await import('../../extension/sidepanel/panel.js')
-    await waitForText('#rows', 'Ready')
+    await waitForText('#rows', 'Waiting for service')
     document.querySelector('.row').click()
-    await waitForText('#detail .service-summary', 'Ready')
+    await waitForText('#detail .service-summary', 'Waiting for service')
     expect(document.querySelector('#detail .service-summary').textContent).not.toMatch(/Completed|Manager-confirmed/)
     expect(document.querySelector('#detail .service-update').textContent).toBe('Service')
     expect(document.querySelector('#detail .dock-more')).toBeNull()
@@ -184,8 +185,10 @@ describe('extension working-store workflow and identity reset', () => {
   })
 
   it('filters Ready in the service-first filter panel while preserving Waiting and store scope', async () => {
+    const ready = { ...vehicle(), serviceReadiness: { status: 'serviced' } }
     const waiting = { ...vehicle('Howell', 'TESTDATAHWELL0002'), serviceReadiness: { status: 'needs_service' } }
-    api.bootstrap.mockResolvedValue({ ...bootstrap(), vehicles: [vehicle(), waiting, vehicle('Lincoln', 'TESTDATALNCN00001')] })
+    const lincolnReady = { ...vehicle('Lincoln', 'TESTDATALNCN00001'), serviceReadiness: { status: 'serviced' } }
+    api.bootstrap.mockResolvedValue({ ...bootstrap(), vehicles: [ready, waiting, lincolnReady] })
     await import('../../extension/sidepanel/panel.js')
     await waitForText('#rows', 'Waiting for service')
     document.querySelector('#filters-btn').click()

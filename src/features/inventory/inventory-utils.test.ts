@@ -48,10 +48,10 @@ function vehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
 }
 
 describe("inventory source-safe selectors", () => {
-  it("uses Ready baseline for existing inventory and maps legacy unknown records to waiting", () => {
+  it("keeps existing inventory and legacy unknown records waiting until Ready is explicit", () => {
     const base = vehicle();
-    expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "serviced" })).toBe(true);
-    expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "unknown" })).toBe(false);
+    expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "serviced" })).toBe(false);
+    expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "unknown" })).toBe(true);
     const serviced = vehicle({ serviceReadiness: { vin: base.vin, status: "serviced", version: 1, serviceEnteredAt: null, completedAt: "2026-09-14", updatedAt: null, updatedBy: null, updatedByRole: null, updatedAtStore: null, store: "Howell", canManage: false } });
     expect(vehicleMatchesFilters(serviced, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "serviced" })).toBe(true);
     expect(vehicleMatchesFilters(serviced, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "serviced", dealerMail: "held" })).toBe(false);

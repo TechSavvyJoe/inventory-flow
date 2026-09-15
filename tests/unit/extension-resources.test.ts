@@ -21,7 +21,8 @@ const coverage = { type: 'Powertrain', termText: '60 months / 60,000 miles', rem
 describe('extension captured document model', () => {
   it('retains all captured OASIS fields and distinguishes missing action arrays', () => {
     const oasis = { dataState: 'stale', capturedAt: '2026-09-10', sourceLabel: 'Synthetic OASIS', vehicleDescription: 'Synthetic F-150', versionSeries: 'Lariat', buildDate: '08/01/2024', warrantyStartDate: '08/29/2024', releaseDate: '08/08/2024', monthsInService: 24, saleMileage: 18, openFieldServiceActions: [{ code: '24S00', description: 'Synthetic software update' }], warrantyCoverages: [{ type: 'Basic', description: '36 months / 36,000 miles' }], extendedCoverageExpirations: ['Synthetic ESP ends 08/29/2029'] }
-    expect(panel({ fordOasis: oasis }).documents.fordOasis).toEqual({ ...oasis, openActionsCaptured: true })
+    expect(panel({ fordOasis: { ...oasis, openActionsCaptured: true } }).documents.fordOasis).toEqual({ ...oasis, openActionsCaptured: true })
+    expect(panel({ fordOasis: oasis }).documents.fordOasis.openActionsCaptured).toBe(false)
     expect(panel({ fordOasis: { capturedAt: '2026-09-10' } }).documents.fordOasis.openActionsCaptured).toBe(false)
     expect(panel({ fordOasis: { openFieldServiceActions: [{}] } }).documents.fordOasis.openActionsCaptured).toBe(false)
   })
@@ -120,9 +121,9 @@ describe('extension resource summaries', () => {
   })
 
   it('only permits zero actions from an explicit complete, dated, nonfuture capture', () => {
-    const complete = { dataState: 'current', capturedAt: '2026-09-10', openFieldServiceActions: [] }
+    const complete = { dataState: 'current', capturedAt: '2026-09-10', openActionsCaptured: true, openFieldServiceActions: [] }
     expect(source({ fordOasis: complete }, 'oasis').facts).toContain('0 open Ford actions in captured report')
-    for (const bad of [{ ...complete, dataState: 'incomplete' }, { ...complete, capturedAt: '2030-01-01' }, { ...complete, capturedAt: '2026-02-30' }, { ...complete, capturedAt: 'invalid' }, { ...complete, capturedAt: undefined }, { ...complete, openFieldServiceActions: undefined }, { ...complete, openFieldServiceActions: [{}] }]) {
+    for (const bad of [{ ...complete, openActionsCaptured: undefined }, { ...complete, openActionsCaptured: false }, { ...complete, dataState: 'incomplete' }, { ...complete, capturedAt: '2030-01-01' }, { ...complete, capturedAt: '2026-02-30' }, { ...complete, capturedAt: 'invalid' }, { ...complete, capturedAt: undefined }, { ...complete, openFieldServiceActions: undefined }, { ...complete, openFieldServiceActions: [{}] }]) {
       const vehicle = panel({ fordOasis: bad })
       expect(capturedOasisActionsAreEmpty(vehicle.documents.fordOasis, { now })).toBe(false)
       expect(resourceSummaries(vehicle, { now }).find((item) => item.id === 'oasis').facts.join(' ')).not.toMatch(/0 open/)

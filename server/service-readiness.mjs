@@ -20,12 +20,14 @@ export function serviceStore(vehicle) {
 export function serviceReadinessView(vehicle, row, context, { includeNotes = false } = {}) {
   const store = serviceStore(vehicle)
   const canManage = context.role === 'group_manager' || (context.role === 'manager' && store === context.store)
+  const recordedStatus = SERVICE_STATUSES.includes(row?.status) ? row.status : null
   return {
     vin: vehicle.vin,
-    // Ready is a workflow baseline, not evidence that a service was performed.
-    // An explicit legacy review or recorded arrival stays waiting until a manager acts.
-    status: row ? (row.status === 'unknown' ? 'needs_service' : row.status) : vehicle.serviceIntake ? 'needs_service' : 'serviced',
-    readinessBasis: row ? (row.status === 'unknown' ? 'legacy_review' : 'manager_updated') : vehicle.serviceIntake ? 'new_arrival' : 'existing_inventory',
+    // Being listed, having no hold, or having an old warranty start date does
+    // not establish that this vehicle finished the store's current service work.
+    // Unconfirmed inventory shares the Waiting queue until a manager records it.
+    status: recordedStatus ?? 'needs_service',
+    readinessBasis: row ? (recordedStatus ? 'manager_updated' : 'legacy_review') : vehicle.serviceIntake ? 'new_arrival' : 'unconfirmed',
     version: row?.version ?? 0,
     serviceEnteredAt: row?.service_entered_at ?? null, completedAt: row?.completed_at ?? null,
     updatedAt: row?.updated_at ?? null, updatedBy: row?.actor ?? null,

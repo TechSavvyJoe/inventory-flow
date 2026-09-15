@@ -64,7 +64,7 @@ describe('manager service readiness ledger', () => {
     release.publicChangeEvents = [{ type: 'price_change', vin: VIN, reportDate: release.reportDate }, { type: 'new_arrival', vin: 'TESTDATAMISSING01', reportDate: release.reportDate }]
     expect(serviceIntakeRows(release, SYNTHETIC_NOW.toISOString())).toEqual([])
     const { service } = local()
-    expect(service.getServiceReadiness(VIN, manager)).toMatchObject({ status: 'serviced', completedAt: null, serviceEnteredAt: null })
+    expect(service.getServiceReadiness(VIN, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed', completedAt: null, serviceEnteredAt: null })
     expect(() => service.updateServiceReadiness(VIN, { status: 'unknown', expectedVersion: 0 }, manager, 'removed-option')).toThrowError(expect.objectContaining({ code: 'INVALID_SERVICE_STATUS' }))
   })
 
@@ -72,6 +72,40 @@ describe('manager service readiness ledger', () => {
     const row = { status: 'unknown', version: 4, actor: 'Historic manager', updated_at: '2026-08-20T12:00:00Z' }
     expect(serviceReadinessView({ vin: VIN, homeStore: 'Howell' }, row, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'legacy_review', version: 4, completedAt: null })
     expect(row.status).toBe('unknown')
+  })
+
+  it('does not infer readiness from source listing, hold, warranty or sold-board signals', () => {
+    const vehicle = {
+      vin: VIN, homeStore: 'Howell', daysListed: 500, inventoryDate: '2025-04-01',
+      websiteStatus: 'Available', dealerOn: { inStock: true }, certified: true,
+      hold: { state: 'none_observed' },
+      fordOasis: { warrantyStartDate: '2024-03-01', openFieldServiceActions: [] },
+      managerDisposition: { soldManagerLog: true, deliveredManagerLog: true },
+    }
+    expect(serviceReadinessView(vehicle, null, manager)).toMatchObject({
+      status: 'needs_service', readinessBasis: 'unconfirmed', version: 0,
+      completedAt: null, serviceEnteredAt: null, updatedAt: null, updatedBy: null,
+    })
+  })
+
+  it.each(['needs_service', 'in_service', 'serviced'])('preserves the manager %s state over feed arrival and baseline signals', (status) => {
+    const row = { status, version: 3, service_entered_at: status === 'needs_service' ? null : '2026-08-28', completed_at: status === 'serviced' ? '2026-08-30' : null, actor: manager.user }
+    expect(serviceReadinessView({ vin: VIN, homeStore: 'Howell', serviceIntake: { first_arrival_date: '2026-08-30' } }, row, manager)).toMatchObject({
+      status, readinessBasis: 'manager_updated', version: 3,
+      serviceEnteredAt: row.service_entered_at, completedAt: row.completed_at, updatedBy: manager.user,
+    })
+  })
+
+  it('keeps unconfirmed inventory Waiting across cold D1 loads without creating a manager attestation', async () => {
+    const { db, cold } = await cloud()
+    const first = await cold()
+    expect(first.service.getVehicle(VIN, manager).serviceReadiness).toMatchObject({
+      status: 'needs_service', readinessBasis: 'unconfirmed', version: 0,
+      completedAt: null, serviceEnteredAt: null, updatedAt: null, updatedBy: null,
+    })
+    expect((await cold()).service.bootstrap(manager).vehicles.find(vehicle => vehicle.vin === VIN).serviceReadiness.status).toBe('needs_service')
+    expect(db.prepare('SELECT COUNT(*) AS n FROM vehicle_service_events').get().n).toBe(0)
+    expect((await first.commit()).committed).toBe(false)
   })
 
   it('reads durable intake through cold D1 snapshots and never overrides a later manager action', async () => {
@@ -85,9 +119,9 @@ describe('manager service readiness ledger', () => {
     expect(db.prepare('SELECT first_arrival_date FROM vehicle_service_intake WHERE vin = ?').get(VIN).first_arrival_date).toBe('2026-08-30')
   })
 
-  it('starts baseline Ready without a completion claim, persists the full cycle and retains independent dates', () => {
+  it('keeps unconfirmed existing inventory Waiting, persists the full cycle and retains independent dates', () => {
     const { db, service, reload } = local()
-    expect(service.getVehicle(VIN, manager).serviceReadiness).toMatchObject({ status: 'serviced', version: 0, canManage: true, store: 'Howell', completedAt: null, updatedBy: null, readinessBasis: 'existing_inventory' })
+    expect(service.getVehicle(VIN, manager).serviceReadiness).toMatchObject({ status: 'needs_service', version: 0, canManage: true, store: 'Howell', completedAt: null, updatedBy: null, readinessBasis: 'unconfirmed' })
     const waiting = service.updateServiceReadiness(VIN, { status: 'needs_service', expectedVersion: 0, notes: 'Synthetic brake inspection' }, manager, 'service-waiting')
     expect(waiting.record).toMatchObject({ status: 'needs_service', version: 1, serviceEnteredAt: null, completedAt: null, updatedBy: manager.user })
     reload().updateServiceReadiness(VIN, { status: 'in_service', expectedVersion: 1, serviceDate: '2026-08-28' }, manager, 'service-started')
@@ -225,7 +259,7 @@ describe('manager service readiness ledger', () => {
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
     const endpoint = `http://127.0.0.1:${server.address().port}/api/vehicles/${VIN}/service`
     const post = (input, key) => fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(input) })
-    expect(await (await fetch(endpoint)).json()).toMatchObject({ status: 'serviced', readinessBasis: 'existing_inventory', completedAt: null, serviceEnteredAt: null, updatedBy: null })
+    expect(await (await fetch(endpoint)).json()).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed', completedAt: null, serviceEnteredAt: null, updatedBy: null })
     expect((await post({ status: 'needs_service', expectedVersion: 0, role: 'group_manager' }, 'http-spoof')).status).toBe(422)
     expect((await post({ status: 'needs_service', expectedVersion: 0 }, 'http-save')).status).toBe(201)
     expect((await (await fetch(endpoint)).json()).status).toBe('needs_service')

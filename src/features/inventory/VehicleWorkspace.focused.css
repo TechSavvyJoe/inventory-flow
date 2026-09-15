@@ -1,5 +1,7 @@
 /* Focused vehicle workspace: one fixed frame, one active pane, one scroller. */
 .vdp-focus-backdrop { display:block; position:fixed; inset:0; z-index:220; background:color-mix(in srgb,var(--ifx-neutral-950) 28%,transparent); }
+.vdp-focus-backdrop.is-take-home-open,
+#inventory-vehicle-workspace.is-take-home-open { display:none !important; }
 #inventory-vehicle-workspace {
   --v10-ink: var(--ifx-neutral-900);
   --v10-ink-strong: var(--ifx-neutral-950);
@@ -83,6 +85,17 @@
 #inventory-vehicle-workspace .vdp-focus-note,
 #inventory-vehicle-workspace .vdp-focus-listing { color:var(--v10-support); font-size:12px; line-height:1.4; margin:8px 0 0; }
 #inventory-vehicle-workspace .vdp-focus-resources { margin-top:14px; padding-top:12px; border-top:1px solid var(--v10-border); }
+#inventory-vehicle-workspace .vdp-focus-keyfacts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin-top:14px; border:1px solid var(--v10-border); border-radius:8px; background:var(--v10-surface-subtle); }
+#inventory-vehicle-workspace .vdp-focus-keyfacts .inventory-workspace-fact { padding:10px 12px; border-left:1px solid var(--v10-border); }
+#inventory-vehicle-workspace .vdp-focus-keyfacts .inventory-workspace-fact:first-child { border-left:0; }
+#inventory-vehicle-workspace .vdp-records-intro { display:grid; grid-template-columns:minmax(260px,1fr) minmax(420px,1.35fr); gap:18px; align-items:start; margin-bottom:16px; padding:14px; border:1px solid var(--v10-border); border-radius:8px; background:var(--v10-surface-subtle); }
+#inventory-vehicle-workspace .vdp-records-intro h3 { margin:0 0 4px; }
+#inventory-vehicle-workspace .vdp-records-intro p { margin:0; color:var(--v10-support); font-size:13px; }
+#inventory-vehicle-workspace .vdp-records-frequent { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border:1px solid var(--v10-border); border-radius:6px; background:var(--v10-surface); }
+#inventory-vehicle-workspace .vdp-records-frequent span { display:grid; gap:4px; padding:10px; border-left:1px solid var(--v10-border); min-width:0; }
+#inventory-vehicle-workspace .vdp-records-frequent span:first-child { border-left:0; }
+#inventory-vehicle-workspace .vdp-records-frequent small { color:var(--v10-support); font-size:12px; }
+#inventory-vehicle-workspace .vdp-records-frequent strong { overflow-wrap:anywhere; font-size:14px; }
 #inventory-vehicle-workspace .vdp-focus-resources > h3 { margin:0 0 10px; font-size:17px; }
 #inventory-vehicle-workspace .vehicle-resource-heading h3 { margin:0; font:600 15px/1.3 var(--font-app); }
 #inventory-vehicle-workspace .vehicle-resource-heading p { margin:2px 0 0; font:400 13px/1.3 var(--font-app); }
@@ -244,6 +257,8 @@
 #inventory-vehicle-workspace .inventory-vehicle-documents__grid { display:block; columns:2; column-gap:20px; }
 #inventory-vehicle-workspace .inventory-vehicle-document { display:inline-block; width:100%; break-inside:avoid; margin-bottom:16px; border:1px solid var(--v10-border); border-radius:8px; padding:14px; }
 #inventory-vehicle-workspace .vdp-focus-hold-grid { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:24px; align-items:start; }
+#inventory-vehicle-workspace .vdp-focus-hold-grid > div { min-width:0; padding:16px; border:1px solid var(--v10-border); border-radius:8px; background:var(--v10-surface); }
+#inventory-vehicle-workspace .vdp-focus-hold-grid[data-hold-state="held"] > div:first-child { border-color:var(--ifx-warning); box-shadow:inset 4px 0 0 var(--ifx-warning); }
 #inventory-vehicle-workspace .inventory-dealermail-handoff { padding:0 0 16px; border:0; border-bottom:1px solid var(--v10-border); }
 #inventory-vehicle-workspace .vdp-focus-movement { margin-top:16px; }
 #inventory-vehicle-workspace .inventory-workspace-movement { grid-template-columns:1fr; gap:10px; }
@@ -276,6 +291,10 @@
   #inventory-vehicle-workspace .vdp-focus-operations > dl { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
   #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact { display:block; }
   #inventory-vehicle-workspace .inventory-vehicle-documents__grid { columns:1; }
+  #inventory-vehicle-workspace .vdp-focus-keyfacts { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #inventory-vehicle-workspace .vdp-focus-keyfacts .inventory-workspace-fact:nth-child(3) { border-left:0; border-top:1px solid var(--v10-border); }
+  #inventory-vehicle-workspace .vdp-focus-keyfacts .inventory-workspace-fact:nth-child(4) { border-top:1px solid var(--v10-border); }
+  #inventory-vehicle-workspace .vdp-records-intro { grid-template-columns:1fr; }
 }
 @media (max-width:680px) {
   #inventory-vehicle-workspace { inset:0; height:100dvh; width:100%; border:0; border-radius:0; }
@@ -317,6 +336,14 @@
   #inventory-vehicle-workspace .vdp-focus-actions :is(a,button) { flex-basis:95px; font-size:14px; padding:6px; }
   #inventory-vehicle-workspace .vdp-focus-actions svg { display:none; }
   #inventory-vehicle-workspace .vdp-focus-highlights { grid-template-columns:1fr; gap:10px; }
+  #inventory-vehicle-workspace .vdp-focus-keyfacts { margin-top:10px; }
+  #inventory-vehicle-workspace .vdp-focus-keyfacts .inventory-workspace-fact { padding:8px; }
+  #inventory-vehicle-workspace .vdp-records-intro { padding:10px; }
+  #inventory-vehicle-workspace .vdp-records-intro p { display:none; }
+  #inventory-vehicle-workspace .vdp-records-frequent { grid-template-columns:1fr; }
+  #inventory-vehicle-workspace .vdp-records-frequent span { grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); align-items:center; gap:8px; padding:8px; border-left:0; border-top:1px solid var(--v10-border); }
+  #inventory-vehicle-workspace .vdp-records-frequent span:first-child { border-top:0; }
+  #inventory-vehicle-workspace .inventory-vehicle-documents__header { display:none; }
   #inventory-vehicle-workspace .vdp-focus-section-heading h3 { font-size:16px; }
   #inventory-vehicle-workspace .vdp-focus-footer { min-height:48px; padding:2px 10px; }
   #inventory-vehicle-workspace .vdp-focus-footer > span { display:none; }

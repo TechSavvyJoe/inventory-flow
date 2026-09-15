@@ -250,7 +250,7 @@ function validateFordOasis(value, vin) {
   onlyKeys(value, new Set([
     'dataState', 'capturedAt', 'sourceLabel', 'vehicleDescription', 'versionSeries', 'buildDate',
     'warrantyStartDate', 'releaseDate', 'monthsInService', 'saleMileage', 'openFieldServiceActions',
-    'warrantyCoverages', 'extendedCoverageExpirations',
+    'warrantyCoverages', 'extendedCoverageExpirations', 'openActionsCaptured',
   ]), 'Ford OASIS record')
   ensure(RESOURCE_DATA_STATES.has(value.dataState), 'Ford OASIS data state is invalid')
   ensure(optionalTimestamp(value.capturedAt, 'Ford OASIS capturedAt'), 'Ford OASIS capturedAt is required')
@@ -266,6 +266,8 @@ function validateFordOasis(value, vin) {
   optionalInteger(value.saleMileage, 'Ford OASIS saleMileage', 0, 999_999)
 
   const actions = value.openFieldServiceActions ?? []
+  ensure(value.openActionsCaptured === undefined || typeof value.openActionsCaptured === 'boolean', 'Ford OASIS action capture flag must be a boolean')
+  ensure(value.openActionsCaptured !== true || Array.isArray(value.openFieldServiceActions), 'Ford OASIS captured action result requires an explicit array')
   ensure(Array.isArray(actions) && actions.length <= 60, 'Ford OASIS open field service actions must be a bounded array')
   const actionCodes = new Set()
   for (const action of actions) {

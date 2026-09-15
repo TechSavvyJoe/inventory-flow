@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ArrowLeft, CarFront, CheckCircle2, Search, Wrench } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
@@ -15,9 +15,9 @@ export const SERVICE_LABELS: Record<ServiceReadinessStatus, string> = {
 const STATUSES = SERVICE_STATUS_OPTIONS.map(option => option.value)
 const STATUS_HELP: Record<ServiceReadinessStatus, string> = {
   unknown: 'Service status has not been confirmed. A manager can check each vehicle and record the result.',
-  needs_service: 'These vehicles are confirmed to need service and are waiting for work to begin.',
+  needs_service: 'Vehicles waiting for service or still needing a manager service review. Ready is never assumed.',
   in_service: 'Service has started. Record completion when the work is finished.',
-  serviced: 'Normal inventory. Service completion dates appear only when a manager has recorded them; holds still apply.',
+  serviced: 'Ready inventory confirmed by a manager. Completion dates appear when service work was recorded; holds still apply.',
 }
 const EMPTY_TITLES: Record<ServiceReadinessStatus, string> = {
   unknown: 'No vehicles need a service review', needs_service: 'No vehicles waiting for service',
@@ -54,7 +54,16 @@ function ServiceEditor({ vehicle, role, store, initialAction, defaultDate, onSav
   const [error, setError] = useState('')
   const [saved, setSaved] = useState('')
   const [retry, setRetry] = useState(0)
+  const editorRef = useRef<HTMLElement>(null)
   const newerRecordAvailable = detail !== null && (vehicle.serviceReadiness?.version ?? 0) > detail.version
+
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    editor.scrollTop = 0
+    editor.focus({ preventScroll: true })
+    if (window.matchMedia?.('(max-width: 850px)').matches) editor.scrollIntoView?.({ block: 'start' })
+  }, [vehicle.vin])
 
   function acceptDetail(value: ServiceReadinessDetail, openAction = false) {
     setDetail(value)
@@ -102,12 +111,17 @@ function ServiceEditor({ vehicle, role, store, initialAction, defaultDate, onSav
     } finally { setBusy(false) }
   }
 
-  return <aside className="service-editor" aria-label={`Service for ${vehicle.vehicleName}`}>
+  return <aside ref={editorRef} tabIndex={-1} className="service-editor" aria-label={`Service for ${vehicle.vehicleName}`}>
     <button className="service-back" type="button" onClick={onBack}><ArrowLeft size={17} />Back to service list</button>
     <div className="service-editor-heading"><ServicePhoto key={vehicle.vin} vehicle={vehicle} /><div><h2>{vehicle.vehicleName}</h2><p>#{vehicle.stockNumber} · {vehicle.serviceReadiness?.store ?? vehicle.homeStore}</p><small>{vehicle.vin}</small></div></div>
     <div className="service-editor-facts"><strong>{formatCurrency(vehicle.listedPrice)}</strong><span>{formatNumber(vehicle.mileage)} mi</span><span>{vehicle.exteriorColor}</span><span>{vehicle.engine}</span></div>
+    <dl className="service-fact-grid" aria-label="Service decision facts">
+      <div><dt>Store</dt><dd>{vehicle.serviceReadiness?.store ?? vehicle.homeStore}</dd></div>
+      <div><dt>Inventory age</dt><dd>{vehicle.daysListed != null ? `${vehicle.daysListed} days` : 'Not captured'}</dd></div>
+      <div><dt>Hold</dt><dd>{['primary', 'backup', 'multiple'].includes(vehicle.hold?.state) ? vehicle.hold.label || 'Held — confirm availability' : vehicle.hold?.state === 'none_observed' ? 'No observed hold' : 'Review hold status'}</dd></div>
+      <div><dt>Location</dt><dd>{vehicle.movement?.currentLocation || vehicle.sourceReportedLocation || vehicle.homeStore}</dd></div>
+    </dl>
     <Link className="service-vehicle-link" to={`/inventory?vin=${encodeURIComponent(vehicle.vin)}`}>Open full vehicle details</Link>
-    {!editing && <WorkflowVehicleResources vehicle={vehicle} />}
     {loading ? <p role="status">Loading service history…</p> : <>
       {error && <div className="service-error" role="alert"><p>{error}</p>{!detail && <button type="button" onClick={() => setRetry((value) => value + 1)}>Try again</button>}</div>}
       {newerRecordAvailable && <div className="service-error" role="status">
@@ -117,6 +131,7 @@ function ServiceEditor({ vehicle, role, store, initialAction, defaultDate, onSav
       {saved && <p className="service-saved" role="status"><CheckCircle2 size={18} />{saved}</p>}
       {detail && <>
         <p className="service-current">Current state<strong>{serviceStatusLabel(detail)}</strong></p>
+        {detail.readinessBasis === 'unconfirmed' && <p className="service-unconfirmed">No service completion is recorded. Check the vehicle’s service record, then mark it Ready or start the work needed.</p>}
         {(detail.serviceEnteredAt || detail.completedAt) && <div className="service-recorded-dates">{detail.serviceEnteredAt && <span>Entered service<strong>{displayDate(detail.serviceEnteredAt)}</strong></span>}{detail.completedAt && <span>Completed<strong>{displayDate(detail.completedAt)}</strong></span>}</div>}
         {detail.canManage ? <>
           {!editing && <div className="service-direct-actions" role="group" aria-label="Service actions">
@@ -133,8 +148,9 @@ function ServiceEditor({ vehicle, role, store, initialAction, defaultDate, onSav
           <p className="service-form-help">{status === 'serviced' ? 'Confirm the vehicle is ready. This records your name and completion date.' : 'Your name and save time are recorded.'}</p>
           <div className="service-direct-actions"><button className="service-save" type="submit" disabled={busy || newerRecordAvailable}>{busy ? 'Saving…' : 'Save service status'}</button><button type="button" disabled={busy} onClick={() => { acceptDetail(detail); setEditing(false) }}>Cancel</button></div>
         </form>}</> : <p className="service-permission">{detail.store ? `A ${detail.store} manager can update this vehicle’s service status.` : 'A group manager can update service until the vehicle’s store is confirmed.'}</p>}
+        {!editing && <WorkflowVehicleResources vehicle={vehicle} />}
         <section className="service-history" aria-labelledby="service-history-title"><h3 id="service-history-title">Service history</h3>
-          {detail.history.length ? <ol>{detail.history.map((entry) => <li key={entry.version}><strong>{serviceStatusLabel(entry)}</strong><span>{entry.updatedBy} · {displayDate(entry.updatedAt)}</span>{entry.serviceEnteredAt && <span>Entered service {displayDate(entry.serviceEnteredAt)}</span>}{entry.completedAt && <span>Completed {displayDate(entry.completedAt)}</span>}{entry.notes && <p>{entry.notes}</p>}</li>)}</ol> : <p>{detail.version ? 'Detailed service history is limited to sales staff and managers.' : serviceWorkflowStatus(detail) === 'serviced' ? 'Existing inventory · no recorded service completion date.' : 'New arrival · waiting for a manager update.'}</p>}
+          {detail.history.length ? <ol>{detail.history.map((entry) => <li key={entry.version}><strong>{serviceStatusLabel(entry)}</strong><span>{entry.updatedBy} · {displayDate(entry.updatedAt)}</span>{entry.serviceEnteredAt && <span>Entered service {displayDate(entry.serviceEnteredAt)}</span>}{entry.completedAt && <span>Completed {displayDate(entry.completedAt)}</span>}{entry.notes && <p>{entry.notes}</p>}</li>)}</ol> : <p>{detail.version ? 'Detailed service history is limited to sales staff and managers.' : serviceWorkflowStatus(detail) === 'serviced' ? 'Ready is recorded, but no service completion date was captured.' : 'Service has not been confirmed. A manager must mark this vehicle Ready after review.'}</p>}
         </section>
       </>}
     </>}

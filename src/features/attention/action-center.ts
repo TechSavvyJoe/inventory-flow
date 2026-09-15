@@ -16,19 +16,20 @@ export function actionableItems(data: BootstrapData): AttentionItem[] {
   const items = data.attention.filter(item => item.type !== 'source_freshness').map(item => item.vin && item.href?.startsWith('/inventory') ? { ...item, href: `/inventory?scope=group&vin=${encodeURIComponent(item.vin)}${['past_expected_hold', 'hold_alert', 'vehicle_alert'].includes(item.type) ? '&tab=hold' : ''}` } : item)
   const serviceItems: AttentionItem[] = (data.vehicles ?? []).flatMap(vehicle => {
     const service = vehicle.serviceReadiness
-    if (!service || serviceWorkflowStatus(service) === 'serviced') return []
+    const normalizedStatus = serviceWorkflowStatus(service)
+    if (normalizedStatus === 'serviced') return []
     // The ledger may temporarily omit its service-store association while a
     // vehicle is being reconciled. The vehicle's home store is still the
     // safest actionable owner; without this fallback, an open service task
     // silently disappears from every store's Action center.
-    const serviceStore = service.store ?? vehicle.homeStore
+    const serviceStore = service?.store ?? vehicle.homeStore
     return [{ id: `service-${vehicle.vin}`, type: 'service_pending', status: 'open', priority: 'normal', severity: 'info',
-      label: service.status === 'in_service' ? 'Confirm service completion' : 'Arrange service',
+      label: normalizedStatus === 'in_service' ? 'Confirm service completion' : service ? 'Arrange service' : 'Review service status',
       vehicleName: vehicle.vehicleName, stockNumber: vehicle.stockNumber, vin: vehicle.vin,
       store: serviceStore, relatedStores: [serviceStore],
       owner: `${serviceStore} manager`,
-      whyItMatters: service.status === 'in_service' ? 'Service has started. Completion has not been recorded.' : 'This vehicle is marked as waiting for service.',
-      recommendedAction: service.status === 'in_service' ? 'Check progress and record completion when service is finished.' : 'Confirm the service plan and record when work starts.',
+      whyItMatters: normalizedStatus === 'in_service' ? 'Service has started. Completion has not been recorded.' : service ? 'This vehicle is marked as waiting for service.' : 'Service has not been confirmed for this vehicle.',
+      recommendedAction: normalizedStatus === 'in_service' ? 'Check progress and record completion when service is finished.' : 'Confirm whether service is needed, then record when work starts or mark the vehicle Ready.',
       href: `/service?vin=${encodeURIComponent(vehicle.vin)}`, allowedActions: [], events: [],
     } satisfies AttentionItem]
   })

@@ -793,6 +793,7 @@ function validatedFordOasis(value, vin) {
       'monthsInService',
       'saleMileage',
       'openFieldServiceActions',
+      'openActionsCaptured',
       'warrantyCoverages',
       'extendedCoverageExpirations',
     ]),
@@ -832,6 +833,11 @@ function validatedFordOasis(value, vin) {
   }
 
   const actions = value.openFieldServiceActions ?? []
+  assertValid(value.openActionsCaptured === undefined || typeof value.openActionsCaptured === 'boolean', 'Ford OASIS action capture flag must be a boolean', { vin })
+  assertValid(value.openActionsCaptured !== true || Array.isArray(value.openFieldServiceActions), 'Ford OASIS captured action result requires an explicit array', { vin })
+  // A normalized default [] is not evidence of a zero result. Preserve an
+  // explicit false flag if this record is validated again after normalization.
+  result.openActionsCaptured = value.openActionsCaptured ?? Array.isArray(value.openFieldServiceActions)
   assertValid(
     Array.isArray(actions) && actions.length <= 60,
     'Ford OASIS open field service actions must be a bounded array',

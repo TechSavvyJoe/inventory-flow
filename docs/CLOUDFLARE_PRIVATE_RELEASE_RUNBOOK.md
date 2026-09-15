@@ -29,9 +29,16 @@ In-memory pnpm dev:demo is unaffected.
 
 Employee Access and upload-only Access use separate audiences. Employee routes
 require signature, issuer, audience, expiry, and enabled D1 membership checks.
-User-supplied role/store headers are ignored. Membership determines the employee
+User-supplied identity/store headers are ignored. Membership determines the employee
 identity, role, and home store. Sales/manager evidence permissions differ from
 transport permissions; free-form notes are withheld from transport roles.
+
+An enabled Group manager may request a supported lower role using the dedicated
+role-preview header. The Worker rechecks the real membership on every request,
+preserves the same employee ID and store, and enforces the previewed role on
+reads and writes. Other employees cannot elevate themselves with this header.
+Preview actions affect live records; the UI labels this explicitly. Return to
+Group manager restores the real account role. See [Admin access](ADMIN_ACCESS.md).
 
 The current access policy is a single-account pilot, not an open employee
 rollout. Adding staff requires both an explicitly approved Access allowlist and
@@ -82,6 +89,8 @@ ledger. Apply a reviewed future schema file as one explicit, authorized
 single-file operation, verify the resulting schema, then deploy. For the
 service-readiness release, apply `0007_service_readiness.sql` first and
 `0008_service_intake.sql` second before deploying the Worker that reads them.
+The 1.2.0 employee-management release also requires the exact reviewed
+`0009_membership_admin.sql` file before deployment. It does not promote users.
 No remote migration or production write is performed by local code changes.
 
 The Worker bundles the shared platform-neutral service core, D1 repository,

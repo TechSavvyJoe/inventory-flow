@@ -882,6 +882,7 @@ describe('verified daily source importer', () => {
         releaseDate: '12-May-2023',
         monthsInService: 38,
         saleMileage: 3,
+        openActionsCaptured: true,
         openFieldServiceActions: [{ code: '24N08', description: 'DRIVERS SIDE SEAT BUCKLE REPLACEMENT' }],
         warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain' }],
         extendedCoverageExpirations: ['01/16/2029'],
@@ -900,6 +901,20 @@ describe('verified daily source importer', () => {
     const withoutNumbers = validateVinDocumentEnrichment(nullNumbers).recordsByVin[vin].fordOasis
     expect(withoutNumbers).not.toHaveProperty('monthsInService')
     expect(withoutNumbers).not.toHaveProperty('saleMileage')
+
+    const missingActions = structuredClone(enrichment)
+    delete missingActions.recordsByVin[vin].fordOasis.openFieldServiceActions
+    const unconfirmedActions = validateVinDocumentEnrichment(missingActions).recordsByVin[vin].fordOasis
+    expect(unconfirmedActions).toMatchObject({ openFieldServiceActions: [], openActionsCaptured: false })
+    missingActions.recordsByVin[vin].fordOasis = unconfirmedActions
+    expect(validateVinDocumentEnrichment(missingActions).recordsByVin[vin].fordOasis.openActionsCaptured).toBe(false)
+    const capturedEmpty = structuredClone(enrichment)
+    capturedEmpty.recordsByVin[vin].fordOasis.openFieldServiceActions = []
+    expect(validateVinDocumentEnrichment(capturedEmpty).recordsByVin[vin].fordOasis).toMatchObject({ openFieldServiceActions: [], openActionsCaptured: true })
+    const invalidCapture = structuredClone(enrichment)
+    delete invalidCapture.recordsByVin[vin].fordOasis.openFieldServiceActions
+    invalidCapture.recordsByVin[vin].fordOasis.openActionsCaptured = true
+    expect(() => validateVinDocumentEnrichment(invalidCapture)).toThrow(/requires an explicit array/i)
 
     const unsupportedField = structuredClone(enrichment)
     unsupportedField.recordsByVin[vin].fordOasis.engineCalibration = 'PCTCCRNA'

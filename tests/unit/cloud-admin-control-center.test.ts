@@ -107,6 +107,25 @@ function adminDirectoryQueries(prepare) {
 }
 
 describe('Cloudflare Admin Control Center route', () => {
+  it('creates employee access through authenticated same-origin route and rejects unauthorized writes', async () => {
+    const { database, env } = harness()
+    const jwt = await token('group@example.invalid')
+    const body = { email: 'new@example.invalid', name: 'Synthetic New User', role: 'manager', homeStore: 'Howell', enabled: true, reason: 'Synthetic onboarding', expectedRevision: 0 }
+    const options = { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': 'synthetic-new-member', origin: `https://${host}` }, body: JSON.stringify(body) }
+    const crossOrigin = await worker.fetch(request('/api/admin/members', jwt, { ...options, headers: { ...options.headers, origin: 'https://elsewhere.invalid' } }), env)
+    expect(crossOrigin.status).toBe(403)
+    const managerWrite = await worker.fetch(request('/api/admin/members', await token('manager@example.invalid'), options), env)
+    expect(managerWrite.status).toBe(403)
+    const created = await worker.fetch(request('/api/admin/members', jwt, options), env)
+    expect(created.status).toBe(200)
+    expect(await created.json()).toMatchObject({ saved: true, replayed: false })
+    const directory = await worker.fetch(request('/api/admin/members', jwt), env)
+    const result = await directory.json()
+    expect(result.members).toContainEqual(expect.objectContaining({ email: body.email, role: 'manager', homeStore: 'Howell', enabled: true }))
+    expect(result.audit[0]).toMatchObject({ actor: 'Synthetic Group Manager', targetName: body.name, action: 'created' })
+    expect(database.prepare('SELECT COUNT(*) AS count FROM cloud_membership_events').get().count).toBe(1)
+  })
+
   it('uses the D1 membership as identity and returns only the explicit directory projection', async () => {
     const { database, env, prepare } = harness()
     const jwt = await token('group@example.invalid', { role: 'driver', store: 'Unknown' })
@@ -169,5 +188,29 @@ describe('Cloudflare Admin Control Center route', () => {
     const text = await response.text()
     expect(text).toContain('ADMIN_DIRECTORY_UNAVAILABLE')
     expect(text).not.toContain('SYNTHETIC_PRIVATE_D1_DETAIL')
+  })
+
+  it('returns server-owned preview metadata, applies the effective role to data and writes, and restores admin access', async () => {
+    const { database, env } = harness()
+    const jwt = await token('group@example.invalid')
+    const preview = { headers: { 'x-inventory-preview-role': 'driver' } }
+    const response = await worker.fetch(request('/api/bootstrap?role=group_manager&store=Howell', jwt, preview), env)
+    expect(response.status).toBe(200)
+    const bootstrap = await response.json()
+    expect(bootstrap.access).toMatchObject({
+      role: 'driver', authenticatedRole: 'group_manager', canPreviewRoles: true, rolePreviewActive: true,
+      store: 'Lincoln', canViewPrivateEvidence: false, canCreateTransfer: false,
+    })
+    expect(bootstrap.vehicles.every(vehicle => vehicle.hold.canViewEvidence === false)).toBe(true)
+    expect((await worker.fetch(request('/api/admin/overview', jwt, preview), env)).status).toBe(403)
+    const deniedWrite = await worker.fetch(request(`/api/vehicles/${bootstrap.vehicles[0].vin}/service`, jwt, {
+      method: 'POST', headers: { ...preview.headers, Origin: `https://${host}`, 'Content-Type': 'application/json', 'Idempotency-Key': 'synthetic-preview-denied' },
+      body: JSON.stringify({ status: 'needs_service', expectedVersion: 0 }),
+    }), env)
+    expect(deniedWrite.status).toBe(403)
+    expect(database.prepare('SELECT COUNT(*) AS n FROM vehicle_service_events').get().n).toBe(0)
+    const restored = await worker.fetch(request('/api/bootstrap', jwt), env)
+    expect((await restored.json()).access).toMatchObject({ role: 'group_manager', authenticatedRole: 'group_manager', canPreviewRoles: true, rolePreviewActive: false })
+    expect((await worker.fetch(request('/api/admin/overview', jwt), env)).status).toBe(200)
   })
 })

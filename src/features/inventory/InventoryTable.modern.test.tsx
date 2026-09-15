@@ -107,9 +107,9 @@ describe('modern inventory result access', () => {
     });
   });
 
-  it('uses Ready for existing inventory without service metadata without inventing a completion date', () => {
+  it('keeps existing inventory without service metadata waiting until manager confirmation', () => {
     render(<InventoryTable vehicles={[heldMovingVehicle()]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
-    expect(screen.getByRole('link', { name: /^Ready\. Open service status/ })).toBeVisible();
+    expect(screen.getByRole('link', { name: /^Waiting for service\. Open service status/ })).toBeVisible();
     expect(screen.queryByText(/completed|2026-09-14/i)).not.toBeInTheDocument();
   });
 
@@ -413,7 +413,7 @@ describe('modern inventory result access', () => {
     render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} onTrackMovement={vi.fn()} />);
     expect(document.querySelector('.inventory-mobile-update--warning')).toHaveTextContent('Move needs attention');
     expect(screen.getByRole('button', { name: /Track movement for/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /^Ready\. Open service status/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Waiting for service\. Open service status/ })).toBeInTheDocument();
     expect(screen.getByRole('article')).toHaveAttribute('data-hold-state', 'held');
   });
 
@@ -500,7 +500,7 @@ describe('modern inventory result access', () => {
     ]));
   });
 
-  it('exposes View, Move, and Listing directly with existing callbacks and no More menu', () => {
+  it('exposes details, records, hold, service, move, and listing directly with no More menu', () => {
     const vehicle = heldMovingVehicle();
     const onSelectVehicle = vi.fn();
     const onOpenSourceRecord = vi.fn();
@@ -510,14 +510,19 @@ describe('modern inventory result access', () => {
     const props = { vehicles: [vehicle], sorts: [] as const, onSortChange: vi.fn(), onSelectVehicle, canRequestVehicle: true, onRequestVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord };
     const { rerender } = render(<InventoryTable {...props} sorts={[]} />);
     const actions = screen.getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' });
-    expect(within(actions).getAllByRole('button').map(button => button.getAttribute('title'))).toEqual(['Open vehicle', 'Track movement', 'Open listing']);
+    expect(within(actions).getAllByRole('button').map(button => button.getAttribute('title'))).toEqual(['Open vehicle', 'Open vehicle records', 'Open hold and movement details', 'Track movement', 'Open listing']);
     fireEvent.click(within(actions).getByRole('button', { name: /Open vehicle details/ }));
     expect(onSelectVehicle).toHaveBeenCalledExactlyOnceWith(vehicle);
+    fireEvent.click(within(actions).getByRole('button', { name: /Open vehicle records/ }));
+    expect(onSelectVehicle).toHaveBeenLastCalledWith(vehicle, 'data');
+    fireEvent.click(within(actions).getByRole('button', { name: /Open hold and movement details/ }));
+    expect(onSelectVehicle).toHaveBeenLastCalledWith(vehicle, 'hold');
+    expect(within(actions).getByRole('link', { name: /Open service status/ })).toHaveAttribute('href', `/service?vin=${vehicle.vin}`);
     fireEvent.click(within(actions).getByRole('button', { name: /Track movement/ }));
     expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(vehicle);
     fireEvent.click(within(actions).getByRole('button', { name: /Open listing/ }));
     expect(onOpenListing).toHaveBeenCalledExactlyOnceWith(vehicle);
-    expect(onSelectVehicle).toHaveBeenCalledTimes(1);
+    expect(onSelectVehicle).toHaveBeenCalledTimes(3);
     fireEvent.click(screen.getByRole('button', { name: /Review DealerMail handoff/ }));
     expect(onOpenSourceRecord).toHaveBeenCalledExactlyOnceWith(vehicle, 'dealermail');
     expect(resource('invoice')).toHaveAttribute('href', expect.stringContaining(vehicle.vin));

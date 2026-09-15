@@ -6,10 +6,10 @@ export const SERVICE_STATUS_OPTIONS: ReadonlyArray<{ value: ServiceWorkflowStatu
   { value: 'serviced', label: 'Ready' },
 ]
 
-/** Missing legacy metadata uses the existing-inventory baseline, never an invented completion. */
+/** Missing metadata is unconfirmed work, never an invented Ready decision. */
 export function serviceWorkflowStatus(service?: { status?: string } | null): ServiceWorkflowStatus {
-  if (service?.status === 'unknown' || service?.status === 'needs_service') return 'needs_service'
-  return service?.status === 'in_service' ? 'in_service' : 'serviced'
+  if (service?.status === 'in_service') return 'in_service'
+  return service?.status === 'serviced' ? 'serviced' : 'needs_service'
 }
 
 export function serviceStatusLabel(service?: { status?: string } | null): string {

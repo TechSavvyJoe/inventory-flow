@@ -139,7 +139,7 @@ describe('AdminPage read-only overview', () => {
     const auditTable = screen.getByRole('table', { name: 'Recent read-only audit activity' })
     expect(within(auditTable).getByText('Service started')).toBeInTheDocument()
     expect(within(auditTable).getByText('Not recorded')).toBeInTheDocument()
-    expect(screen.getByText(/Changes are not available in this phase/)).toBeInTheDocument()
+    expect(screen.getByText(/Employee editing is unavailable on this host/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /add|create|delete|disable|edit|save/i })).not.toBeInTheDocument()
   })
 

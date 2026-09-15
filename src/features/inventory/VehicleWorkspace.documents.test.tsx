@@ -122,6 +122,15 @@ describe('vehicle document workspace', () => {
     expect(within(panel).queryByText('No open recalls or field service actions listed')).not.toBeInTheDocument();
   });
 
+  it.each([undefined, false])('keeps dated legacy/default empty OASIS actions with flag %s unconfirmed', openActionsCaptured => {
+    const legacy = vehicle(false);
+    legacy.fordOasis = { dataState: 'current', capturedAt: '2026-09-11T14:00:00Z', openActionsCaptured, openFieldServiceActions: [], warrantyCoverages: [], extendedCoverageExpirations: [] };
+    render(<VehicleWorkspace vehicle={legacy} homeStore={legacy.location.homeStore} onClose={vi.fn()} initialTab="data" />);
+    const panel = screen.getByRole('region', { name: 'Vehicle documents' });
+    expect(within(panel).getByRole('status', { name: 'Open recalls and field service actions' })).toHaveTextContent('No recall or field service action findings captured');
+    expect(within(panel).queryByText('No open recalls or field service actions listed')).not.toBeInTheDocument();
+  });
+
   it('labels Canadian original document pricing and preserves its raw market evidence', async () => {
     const canadian = vehicle();
     canadian.windowSticker = { ...canadian.windowSticker!, originalMarket: 'Canada', pricingCurrency: 'CAD', pricingCurrencyEvidence: 'Canadian original sticker; amounts retained without conversion' };
@@ -242,7 +251,7 @@ describe('vehicle document workspace', () => {
     if (!panel) return;
     expect(within(panel).getByText('vAuto factory-equipment profile')).toBeInTheDocument();
     expect(within(panel).getByText(/Informational equipment label—not an original window sticker/i)).toBeInTheDocument();
-    expect(within(panel).getByText('$66,360')).toBeInTheDocument();
+    expect(within(panel).getByText('66,360 · currency not captured')).toBeInTheDocument();
     expect(within(panel).getByText(/this is not the actual Monroney label/i)).toBeInTheDocument();
     expect(within(panel).getByRole('link', { name: /Open vAuto factory-equipment profile/i })).toHaveAttribute(
       'href',
@@ -251,7 +260,7 @@ describe('vehicle document workspace', () => {
     expect(within(panel).queryByText('Factory window sticker')).not.toBeInTheDocument();
     const card = panel.querySelector('[data-document-kind="vauto-factory-equipment"]') as HTMLElement;
     expect(card.querySelector('details')).toBeNull();
-    for (const value of ['Safety Package (PQB)', 'Blind Spot Monitor · Rear Cross Traffic Alert', 'Aerial View Display System', '$0', '$250']) expect(within(card).getByText(value)).toBeVisible();
+    for (const value of ['Safety Package (PQB)', 'Blind Spot Monitor · Rear Cross Traffic Alert', 'Aerial View Display System', '0 · currency not captured', '250 · currency not captured']) expect(within(card).getByText(value)).toBeVisible();
   });
 
   it('shows Ford OASIS open recalls first with dates exactly as printed', async () => {
@@ -318,6 +327,7 @@ describe('vehicle document workspace', () => {
       dataState: 'stale',
       capturedAt: '2026-09-11T14:52:37.597Z',
       warrantyStartDate: '09-June-2026',
+      openActionsCaptured: true,
       openFieldServiceActions: [],
       warrantyCoverages: [],
       extendedCoverageExpirations: [],

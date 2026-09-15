@@ -93,7 +93,7 @@ describe('extension compact shell regressions', () => {
     expect(rows().map((row) => row.dataset.vin)).toEqual(['TESTDATAHWELL0001'])
     document.querySelector('#store-all').click()
     expect(rows().map((row) => row.dataset.vin).sort()).toEqual(['TESTDATAFWELL0001', 'TESTDATAHWELL0001', 'TESTDATALNCN00001'].sort())
-    expect(document.querySelector('#rows').textContent).not.toContain('Waiting for service')
+    expect(document.querySelector('#rows').textContent).toContain('Waiting for service')
   })
 
   it('shows a move-specific empty state and clears the removed keyboard active row', async () => {

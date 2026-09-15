@@ -127,6 +127,8 @@ function fordOasisResource(
     monthsInService: cleanOptionalNumber(fordOasis.monthsInService),
     saleMileage: cleanOptionalNumber(fordOasis.saleMileage),
     openFieldServiceActions,
+    openActionsCaptured: fordOasis.openActionsCaptured === true && Array.isArray(fordOasis.openFieldServiceActions)
+      && openFieldServiceActions.length === fordOasis.openFieldServiceActions.length,
     warrantyCoverages,
     extendedCoverageExpirations: cleanTextList(fordOasis.extendedCoverageExpirations),
   }

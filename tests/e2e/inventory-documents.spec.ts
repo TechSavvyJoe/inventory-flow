@@ -44,11 +44,11 @@ test('inventory search opens the VIN-specific premium document workspace', async
   await expect(documents.getByText('86–93', { exact: true })).toBeVisible()
   await expect(documents.getByText('History checks')).toBeVisible()
   await expect(documents.getByText('Informational equipment label—not an original window sticker.', { exact: true })).toBeVisible()
-  await expect(documents.getByText('$68,420', { exact: true })).toBeVisible()
+  await expect(documents.getByText('68,420 · currency not captured', { exact: true })).toBeVisible()
   const packages = documents.locator('section.vdp-record-section[aria-label="Packages & priced equipment"]')
   await expect(packages).toBeVisible()
   await expect(packages.getByText('Synthetic Premium Technology Package')).toBeVisible()
-  await expect(packages.getByText('$3,005', { exact: true })).toBeVisible()
+  await expect(packages.getByText('3,005 · currency not captured', { exact: true })).toBeVisible()
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
   expect(overflow).toBe(false)

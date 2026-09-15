@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleUserRound,
+  Download,
   Ellipsis,
   LayoutDashboard,
   RefreshCw,
@@ -109,7 +110,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const mobileNavigationItems = canSeeAdmin
     ? [ADMIN_NAV_ITEM, NAV_ITEMS[0], NAV_ITEMS[1], NAV_ITEMS[4]]
     : NAV_ITEMS.filter((item) => item.id !== 'service')
-  const rolePreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
+  const rolePreviewEnabled = data?.access?.canPreviewRoles === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
+  const productionRolePreview = data?.access?.rolePreviewActive === true
   const freshnessState = !data
     ? 'unknown'
     : data.meta.dealerMailFreshness === 'incomplete' || data.meta.publicFreshness === 'incomplete'
@@ -252,7 +254,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        {rolePreviewEnabled ? <label className="utility-role-control" title="Prototype role preview; production will use dealership sign-in">
+        {rolePreviewEnabled ? <label className="utility-role-control" title="Test the app with this role’s permissions">
           <Settings2 aria-hidden="true" />
           <span>
             <small>Preview role</small>
@@ -262,6 +264,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           </span>
           <ChevronDown aria-hidden="true" />
         </label> : null}
+        {data?.access?.canPreviewRoles && <p className="utility-role-help">Your account is a Group manager. Choose a role to test its permissions. Any changes you save affect live records.</p>}
+
+        {import.meta.env.PROD && <a className="utility-service-link" href="/downloads/inventory-flow-deal-desk.zip" download="inventory-flow-deal-desk.zip"><Download aria-hidden="true"/><span><strong>Download companion extension</strong><small>Extract the ZIP, then load or reload it in Chrome extensions.</small></span><ChevronRight aria-hidden="true"/></a>}
 
         <NavLink className="utility-service-link" to="/service" onClick={() => setUtilityOpen(false)}><Wrench aria-hidden="true"/><span><strong>Service status</strong><small>Waiting, in service, and completed work</small></span><ChevronRight aria-hidden="true"/></NavLink>
 
@@ -398,7 +403,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         </button>
       </header>
 
-      <main ref={mainContentRef} className="app-main" id="main-content" tabIndex={-1}>{data?.meta.warnings.some(warning => warning.includes('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS')) && <p className="synthetic-preview-notice">Demo · Synthetic records &amp; AI illustrations.</p>}{children}</main>
+      <main ref={mainContentRef} className="app-main" id="main-content" tabIndex={-1}>
+        {productionRolePreview && <div className="role-preview-banner" role="status"><span>Testing {ROLE_LABELS[role]} · Live records</span><button type="button" onClick={() => setRole('group_manager')}>Return to Group manager</button></div>}
+        {data?.meta.warnings.some(warning => warning.includes('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS')) && <p className="synthetic-preview-notice">Demo · Synthetic records &amp; AI illustrations.</p>}{children}
+      </main>
 
       <nav className={`mobile-bottom-nav${canSeeAdmin ? ' is-group-manager' : ''}`} aria-label="Mobile primary">
         {mobileNavigationItems.map(({ id, to, label, shortLabel, icon: Icon }) => {

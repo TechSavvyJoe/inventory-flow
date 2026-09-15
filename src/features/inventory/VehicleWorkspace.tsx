@@ -46,6 +46,7 @@ import {
 import { CopyableValue } from "../../components/CopyableValue";
 import { DealerMailHandoff } from "./DealerMailHandoff";
 import { VehicleResourceCards } from "./VehicleResourceCards";
+import { hasCapturedOasisActionResult } from "./vehicle-resource-catalog";
 import { FactoryStickerIcon } from "../../design-system/icons";
 import {
   formatDate,
@@ -101,6 +102,10 @@ const WORKSPACE_SECTIONS: Array<{ id: WorkspacePageId; label: string }> = [
 ];
 
 const REDUCED_MOTION_MEDIA_QUERY = "(prefers-reduced-motion: reduce)";
+
+function formatReferencePrice(value: number): string {
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value)} · currency not captured`;
+}
 
 function workspacePage(section: WorkspaceSectionId): WorkspacePageId {
   if (section === "movement") return "hold";
@@ -679,7 +684,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const factoryEquipmentUrl = vautoFactoryEquipmentUrl(factoryEquipment?.url);
   const oasisUrl = /^(ford|lincoln)$/i.test(vehicle.make.trim()) ? fordOasisUrl(vehicle.vin) : null;
   const openRecallCount = fordOasis?.openFieldServiceActions.length ?? 0;
-  const hasCapturedRecallResult = fordOasis?.dataState === "current" || fordOasis?.dataState === "stale";
+  const hasCapturedRecallResult = hasCapturedOasisActionResult(fordOasis);
   // OASIS dates are Ford's printed strings; they are shown exactly as captured.
   const fordOasisFacts = fordOasis
     ? [
@@ -948,10 +953,10 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
 
           {factoryEquipment.totalMsrp != null || factoryEquipment.basePrice != null || factoryEquipment.totalOptions != null || factoryEquipment.destinationCharge != null ? (
             <dl className="inventory-vehicle-document__metrics inventory-vehicle-document__metrics--sticker" aria-label="vAuto equipment-label pricing">
-              {factoryEquipment.totalMsrp != null ? <Fact label="Reference MSRP" emphasize>{formatMoney(factoryEquipment.totalMsrp)}</Fact> : null}
-              {factoryEquipment.basePrice != null ? <Fact label="Base price">{formatMoney(factoryEquipment.basePrice)}</Fact> : null}
-              {factoryEquipment.totalOptions != null ? <Fact label="Total options">{formatMoney(factoryEquipment.totalOptions)}</Fact> : null}
-              {factoryEquipment.destinationCharge != null ? <Fact label="Destination">{formatMoney(factoryEquipment.destinationCharge)}</Fact> : null}
+              {factoryEquipment.totalMsrp != null ? <Fact label="Reference MSRP" emphasize>{formatReferencePrice(factoryEquipment.totalMsrp)}</Fact> : null}
+              {factoryEquipment.basePrice != null ? <Fact label="Reference base price">{formatReferencePrice(factoryEquipment.basePrice)}</Fact> : null}
+              {factoryEquipment.totalOptions != null ? <Fact label="Total options">{formatReferencePrice(factoryEquipment.totalOptions)}</Fact> : null}
+              {factoryEquipment.destinationCharge != null ? <Fact label="Destination">{formatReferencePrice(factoryEquipment.destinationCharge)}</Fact> : null}
             </dl>
           ) : null}
 
@@ -972,7 +977,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                     <li key={`${name}-${index}`}>
                       <span>
                         <strong>{name}</strong>
-                        {item.price != null ? <b>{formatMoney(item.price)}</b> : null}
+                        {item.price != null ? <b>{formatReferencePrice(item.price)}</b> : null}
                       </span>
                       {item.features?.length ? <small>{item.features.join(" · ")}</small> : null}
                     </li>
@@ -992,7 +997,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                       {section.items.map((item, index) => (
                         <li key={`${section.name}-${item.label}-${index}`}>
                           <span>{item.label}</span>
-                          {item.price != null ? <b>{formatMoney(item.price)}</b> : null}
+                          {item.price != null ? <b>{formatReferencePrice(item.price)}</b> : null}
                         </li>
                       ))}
                     </ul>
@@ -1419,7 +1424,7 @@ function LegacySourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle
           value: [factoryEquipment.engine, factoryEquipment.transmission, factoryEquipment.drivetrain].filter(Boolean).join(" · "),
         }
       : null,
-    factoryEquipment?.totalMsrp != null ? { label: "VIN profile reference MSRP", value: formatMoney(factoryEquipment.totalMsrp) } : null,
+    factoryEquipment?.totalMsrp != null ? { label: "VIN profile reference MSRP", value: formatReferencePrice(factoryEquipment.totalMsrp) } : null,
   ].filter(Boolean) as Array<{ label: string; value: string }>;
   const hasStructuredVauto = Boolean(factoryEquipment?.packages?.length || factoryEquipment?.sections?.length);
   const configurationHeading = sticker && factoryEquipment
@@ -1513,7 +1518,7 @@ function LegacySourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle
                         <strong>{item.name}</strong>
                         {item.code ? <small>Code {item.code}</small> : null}
                       </span>
-                      {item.price != null ? <b>{formatMoney(item.price)}</b> : null}
+                      {item.price != null ? <b>{formatReferencePrice(item.price)}</b> : null}
                     </header>
                     {item.features?.length ? (
                       <ul>
@@ -1554,7 +1559,7 @@ function LegacySourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle
                         <small className="inventory-workspace-equipment-item-source">
                           VIN equipment profile
                           {display.sourceSection ? ` · ${display.sourceSection}` : ""}
-                          {item.price != null ? ` · ${formatMoney(item.price)}` : ""}
+                          {item.price != null ? ` · ${formatReferencePrice(item.price)}` : ""}
                         </small>
                       </span>
                     </li>
@@ -1764,7 +1769,7 @@ function EquipmentLedgerGroup({
                 </small>
               </span>
               <span className="inventory-workspace-equipment-item__value">
-                {item.price != null ? formatMoney(item.price) : factoryDocumented ? "Included" : "Published"}
+                {item.price != null ? formatReferencePrice(item.price) : factoryDocumented ? "Included" : "Published"}
               </span>
             </li>
           );
@@ -2779,7 +2784,7 @@ export function VehicleWorkspace({
   const supportsFordDealerTools = /^(ford|lincoln)$/i.test(vehicle.make.trim());
   const invoiceUrl = supportsFordDealerTools ? fordInvoiceUrl(vehicle.vin) : null;
   const oasisUrl = supportsFordDealerTools ? fordOasisUrl(vehicle.vin) : null;
-  const openRecallCount = vehicle.fordOasis?.openFieldServiceActions.length ?? 0;
+  const openRecallCount = vehicle.fordOasis?.openFieldServiceActions?.length ?? 0;
   const currentLocation = resolveCurrentLocation(vehicle);
   const canViewHoldEvidence = vehicle.dealerMail.canViewEvidence === true;
   const canManageDealerMail = vehicle.dealerMail.canManageHold === true;
@@ -2798,6 +2803,22 @@ export function VehicleWorkspace({
     : humanizeWorkflowValue(vehicle.movement?.state) || humanizeWorkflowValue(vehicle.movement?.requestStatus) || "No tracked move";
   const serviceStatus = serviceWorkflowStatus(vehicle.serviceReadiness);
   const serviceHref = `/service?vin=${encodeURIComponent(vehicle.vin)}`;
+  const oasisInServiceDate = vehicle.fordOasis?.warrantyStartDate
+    || vehicle.warrantyCheck?.fordOasis?.warrantyStartDate;
+  const warrantyInServiceDate = oasisInServiceDate
+    || vehicle.autoCheckReport?.estimatedInServiceDate
+    || vehicle.warrantyCheck?.autoCheck?.inServiceDate
+    || null;
+  const warrantyInServiceLabel = !oasisInServiceDate && warrantyInServiceDate ? "In-service · AutoCheck estimate" : oasisInServiceDate ? "Warranty in-service · OASIS" : "Warranty in-service";
+  const hasStickerBase = vehicle.windowSticker?.basePrice != null;
+  const baseMsrpLabel = !hasStickerBase && vehicle.factoryEquipment?.basePrice != null ? "Reference base price · vAuto" : hasStickerBase ? "Base MSRP · sticker" : "Base MSRP";
+  const baseMsrpDisplay = hasStickerBase
+    ? formatStickerMoney(vehicle.windowSticker!.basePrice, vehicle.windowSticker!)
+    : vehicle.factoryEquipment?.basePrice != null ? formatReferencePrice(vehicle.factoryEquipment.basePrice) : "Not captured";
+  const weightFeePattern = /\bweight(?:\s+|[-/])?(?:fee|tax)\b/i;
+  const referenceWeightFee = vehicle.factoryEquipment?.sections?.flatMap((section) => section.items).find((item) => weightFeePattern.test(item.label));
+  const weightFee = vehicle.windowSticker?.options?.find((option) => weightFeePattern.test(option))
+    ?? (referenceWeightFee ? `${referenceWeightFee.label}${referenceWeightFee.price != null ? ` · ${formatReferencePrice(referenceWeightFee.price)}` : ""}` : null);
   const recordsNeedReview = [vehicle.publicListing.dataState, vehicle.dealerOn.dataState, vehicle.dealerMail.dataState]
     .some((state) => state !== "current");
   const keyEquipment = standoutEquipment(vehicle, 5);
@@ -2859,14 +2880,14 @@ export function VehicleWorkspace({
     pendingFocus.current = null;
   }, [activeTarget, vehicle.id]);
   useContainedFocus({
-    active: true, contain: true, containerRef: workspaceRef, initialFocusRef: activeTabRef,
+    active: !takeHomeOpen, contain: true, containerRef: workspaceRef, initialFocusRef: activeTabRef,
     returnFocusRef, onEscape: onClose,
   });
 
   return createPortal(
     <>
-      <div className="inventory-workspace-backdrop vdp-focus-backdrop" onClick={onClose} aria-hidden="true" />
-      <aside id="inventory-vehicle-workspace" className="inventory-workspace inventory-workspace--focused"
+      <div className={`inventory-workspace-backdrop vdp-focus-backdrop${takeHomeOpen ? " is-take-home-open" : ""}`} onClick={onClose} aria-hidden="true" />
+      <aside id="inventory-vehicle-workspace" className={`inventory-workspace inventory-workspace--focused${takeHomeOpen ? " is-take-home-open" : ""}`}
         ref={workspaceRef} role="dialog" aria-modal="true" aria-label={displayName + " vehicle workspace"} tabIndex={-1}
         data-active-section={activePage} data-active-target={activeTarget}>
         <header className="vdp-focus-header">
@@ -2918,6 +2939,12 @@ export function VehicleWorkspace({
                 <p className="vdp-focus-note">Confirm with the home store before promising availability.</p>
               </section>
             </div>
+            <section className="vdp-focus-keyfacts" aria-label="Frequently used vehicle facts">
+              <Fact label={warrantyInServiceLabel}>{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "Not captured"}</Fact>
+              <Fact label={baseMsrpLabel}>{baseMsrpDisplay}</Fact>
+              <Fact label="Weight fee">{weightFee || "Not listed in captured sticker data"}</Fact>
+              <Fact label="Inventory date">{vehicle.inventoryDate ? formatDate(vehicle.inventoryDate) : "Not captured"}</Fact>
+            </section>
             <section className="vdp-focus-resources" aria-label="Documents and vehicle records">
               <h3>Documents &amp; vehicle records</h3>
               <VehicleResourceCards vehicle={vehicle} variant="cards" onOpenSection={openAndFocusSection} />
@@ -2942,6 +2969,7 @@ export function VehicleWorkspace({
             <section aria-label="Complete vehicle specifications"><h3>Specifications</h3><dl className="vdp-focus-extra-specs">{specifications.map(([label, value]) => <Fact key={label} label={label!}>{value}</Fact>)}<Fact label="Fuel">{vehicle.fuelType || "Not published"}</Fact><Fact label="Listed MSRP">{vehicle.msrp != null ? formatMoney(vehicle.msrp) : "Not published"}</Fact><Fact label="Inventory date">{vehicle.inventoryDate ? formatDate(vehicle.inventoryDate) : "Not published"}</Fact></dl></section>
           </WorkspacePanel>
           <WorkspacePanel id="data" label="Records" active={activePage === "data"}>
+            <div className="vdp-records-intro"><div><h3>Records &amp; source documents</h3><p>Start with the saved facts, then use the clearly labeled source button when you need the complete original report.</p></div><div className="vdp-records-frequent"><span><small>{warrantyInServiceLabel}</small><strong>{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "Not captured"}</strong></span><span><small>{baseMsrpLabel}</small><strong>{baseMsrpDisplay}</strong></span><span><small>Weight fee</small><strong>{weightFee || "Not captured"}</strong></span></div></div>
             <VehicleDocuments vehicle={vehicle} />
             {!vehicle.autoCheckReport && !vehicle.windowSticker && !vehicle.factoryEquipment && !vehicle.fordOasis && !vehicle.warrantyCheck ? <div className="vdp-focus-empty"><h3>Vehicle records</h3><p>No AutoCheck, window sticker, VIN equipment profile, or warranty record has been captured for this VIN.</p></div> : null}
             {openRecallCount ? <a className="vdp-focus-warning" href={oasisUrl ?? undefined} target="_blank" rel="noopener noreferrer">{countLabel(openRecallCount, "open Ford recall or field service action", "open Ford recalls or field service actions")} · Review OASIS</a> : null}

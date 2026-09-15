@@ -66,19 +66,32 @@ function numeric(value?: number | null): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-function capturedByNow(date?: string | null): boolean {
+function captureTimestamp(date?: string | null): number | null {
   const timestamp = text(date) ? Date.parse(date!) : NaN;
-  return Number.isFinite(timestamp) && timestamp <= Date.now();
+  const calendar = date ? /^(\d{4})-(\d{2})-(\d{2})(?:T|$)/.exec(date) : null;
+  if (calendar) {
+    const parsed = new Date(Date.UTC(+calendar[1], +calendar[2] - 1, +calendar[3]));
+    if (parsed.getUTCFullYear() !== +calendar[1] || parsed.getUTCMonth() !== +calendar[2] - 1 || parsed.getUTCDate() !== +calendar[3]) return null;
+  }
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+/** Legacy arrays may have been defaulted by an importer, so the capture flag is required. */
+export function hasCapturedOasisActionResult(oasis?: VehicleResourceVehicle['fordOasis']): boolean {
+  const timestamp = captureTimestamp(oasis?.capturedAt);
+  return oasis?.openActionsCaptured === true && Array.isArray(oasis.openFieldServiceActions)
+    && timestamp !== null && timestamp <= Date.now() && ['current', 'stale', 'stale_unverified'].includes(oasis.dataState ?? '');
 }
 
 function sourceNote(state: string | undefined, hasFacts: boolean, date?: string | null, dateLabel = 'Captured', missing = 'No report details captured'): string | null {
+  const timestamp = captureTimestamp(date);
   return join([
     state === 'stale' || state === 'stale_unverified' ? 'Saved report · refresh at source'
       : state === 'incomplete' ? 'Partial captured record'
         : state === 'unavailable' ? 'Source currently unavailable'
           : state === 'unknown' ? 'Source status unknown' : null,
     !hasFacts ? missing : null,
-    text(date) ? capturedByNow(date) ? `${dateLabel} ${formatDate(date)}` : Number.isFinite(Date.parse(date!)) ? `Future source date: ${formatDate(date)}` : `Unrecognized source date: ${date}` : null,
+    text(date) ? timestamp === null ? `Unrecognized source date: ${date}` : timestamp <= Date.now() ? `${dateLabel} ${formatDate(date)}` : `Future source date: ${formatDate(date)}` : null,
   ]);
 }
 
@@ -200,8 +213,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
     const coverages = present((oasis?.warrantyCoverages ?? []).map(coverage => join([coverage.type, coverage.description])));
     // Adapters can supply default empty arrays. A dated, complete source capture
     // is required before an empty action list can be described as a zero result.
-    const capturedEmptyActions = Array.isArray(oasis?.openFieldServiceActions) && oasis.openFieldServiceActions.length === 0
-      && capturedByNow(oasis.capturedAt) && ['current', 'stale', 'stale_unverified'].includes(oasis.dataState ?? '');
+    const capturedEmptyActions = hasCapturedOasisActionResult(oasis) && oasis?.openFieldServiceActions?.length === 0;
     const warrantyStart = text(oasis?.warrantyStartDate) ? `Warranty start ${oasis!.warrantyStartDate}` : null;
     const buildDate = text(oasis?.buildDate) ? `Built ${oasis!.buildDate}` : null;
     const oasisFacts = present([

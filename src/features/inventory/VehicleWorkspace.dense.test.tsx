@@ -77,6 +77,44 @@ function vehicle(): InventoryVehicle {
 }
 
 describe('focused vehicle workspace', () => {
+  it('keeps reference pricing currency separate from a partial original sticker', async () => {
+    const unit = vehicle();
+    unit.windowSticker = { dataState: 'current', pricingCurrency: 'CAD' };
+    unit.factoryEquipment = { dataState: 'current', isOriginalWindowSticker: false, basePrice: 31234.5, totalMsrp: 35432, sections: [{ name: 'Fees', items: [{ label: 'Weight fee', price: 123.45 }] }] };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
+    expect(facts).toHaveTextContent('Reference base price · vAuto31,234.5 · currency not captured');
+    expect(facts).toHaveTextContent('Weight fee · 123.45 · currency not captured');
+    expect(facts).not.toHaveTextContent(/CAD|USD|\$/);
+    await userEvent.click(screen.getByRole('tab', { name: 'Records' }));
+    const profile = document.querySelector('[data-document-kind="vauto-factory-equipment"]')!;
+    expect(profile).toHaveTextContent('35,432 · currency not captured');
+    expect(profile).not.toHaveTextContent(/CAD|USD|\$/);
+  });
+
+  it('uses actual sticker base currency and clearly attributes estimated in-service dates', async () => {
+    const unit = vehicle();
+    unit.windowSticker = { dataState: 'current', basePrice: 45000, pricingCurrency: 'CAD' };
+    unit.factoryEquipment = { dataState: 'current', isOriginalWindowSticker: false, basePrice: 31234 };
+    unit.autoCheckReport = { dataState: 'current', estimatedInServiceDate: '2023-05-12' };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
+    expect(facts).toHaveTextContent('Base MSRP · stickerCAD 45,000');
+    expect(facts).toHaveTextContent('In-service · AutoCheck estimateMay 12, 2023');
+    await userEvent.click(screen.getByRole('tab', { name: 'Records' }));
+    expect(document.querySelector('.vdp-records-frequent')).toHaveTextContent('In-service · AutoCheck estimateMay 12, 2023');
+  });
+
+  it('prefers captured OASIS in-service date over AutoCheck estimates', () => {
+    const unit = vehicle();
+    unit.fordOasis = { dataState: 'current', warrantyStartDate: '2023-05-13', openFieldServiceActions: [], warrantyCoverages: [], extendedCoverageExpirations: [] };
+    unit.autoCheckReport = { dataState: 'current', estimatedInServiceDate: '2023-05-12' };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
+    expect(facts).toHaveTextContent('Warranty in-service · OASISMay 13, 2023');
+    expect(facts).not.toHaveTextContent('estimate');
+  });
+
   it('keeps one vehicle identity, exact copy controls and persistent close controls', () => {
     render(<main><VehicleWorkspace vehicle={vehicle()} homeStore={vehicle().location.homeStore} onClose={vi.fn()} /></main>);
     expect(document.querySelectorAll('main')).toHaveLength(1);
@@ -137,7 +175,7 @@ describe('focused vehicle workspace', () => {
     for (const label of ['Backup holds', 'Service status']) {
       expect(within(operations).getByText(label).closest('.inventory-workspace-fact')).toHaveClass('vdp-focus-desktop-field');
     }
-    expect(screen.getByRole('link', { name: 'Service: Ready' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Service: Waiting for service' })).toBeVisible();
   });
 
   it('renders only the selected pane and resets scroll without moving the header or navigation', async () => {
@@ -224,15 +262,15 @@ describe('focused vehicle workspace', () => {
     expect(screen.queryByRole('button', { name: 'DealerMail tools' })).not.toBeInTheDocument();
   });
 
-  it('renders service confirmation links with an exact VIN and a quiet baseline Ready status', () => {
+  it('renders service confirmation links with an exact VIN and keeps missing status waiting', () => {
     const unit = vehicle();
     unit.serviceReadiness = { vin: unit.vin, status: 'needs_service' } as NonNullable<InventoryVehicle['serviceReadiness']>;
     const { rerender } = render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     expect(screen.getByRole('link', { name: 'Start service' })).toHaveAttribute('href', '/service?vin=1FTFW1E86HFA48871&action=in_service');
     expect(screen.getByRole('link', { name: 'Mark Ready' })).toHaveAttribute('href', '/service?vin=1FTFW1E86HFA48871&action=serviced');
     rerender(<VehicleWorkspace vehicle={{ ...unit, serviceReadiness: undefined }} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
-    expect(screen.queryByRole('link', { name: 'Mark Ready' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Service: Ready' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Mark Ready' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Service: Waiting for service' })).toBeVisible();
   });
 
   it('keeps every captured equipment item with provenance and a simple show-all button', async () => {

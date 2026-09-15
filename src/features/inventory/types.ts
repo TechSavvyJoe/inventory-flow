@@ -172,6 +172,7 @@ export interface FordOasisResource {
   monthsInService?: number | null;
   saleMileage?: number | null;
   openFieldServiceActions: FordOasisFieldServiceAction[];
+  openActionsCaptured?: boolean;
   warrantyCoverages: FordOasisWarrantyCoverage[];
   extendedCoverageExpirations: string[];
 }

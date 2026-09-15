@@ -33,6 +33,18 @@ function TaskVehicle({ item, vehicle }: { item: AttentionItem; vehicle?: Vehicle
   </div></div>
 }
 
+function TaskActions({ item, vehicle }: { item: AttentionItem; vehicle?: VehicleRecord }) {
+  return <div className="action-next-steps" aria-label="Task and vehicle actions">
+    {item.href ? <Link className="workflow-action workflow-action--primary" to={item.href}>{taskLinkLabel(item)}<ArrowRight aria-hidden="true"/></Link> : <span className="workflow-muted">Ask your manager</span>}
+    {vehicle ? <div className="workflow-quick-actions">
+      <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}`}>Details</Link>
+      <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}&tab=data`}>Records</Link>
+      <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}&tab=hold`}>Hold</Link>
+      <Link to={`/service?vin=${encodeURIComponent(vehicle.vin)}`}>Service</Link>
+    </div> : null}
+  </div>
+}
+
 function TaskFollowUp({ item, role, homeStore, currentUser, onAction }: Pick<OperationsQueueProps, 'role' | 'homeStore' | 'currentUser' | 'onAction'> & { item: AttentionItem }) {
   const [note, setNote] = useState('')
   const [date, setDate] = useState('')
@@ -92,7 +104,7 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
         <TaskVehicle item={item} vehicle={vehicleMap.get(item.vin ?? '')}/>
         <div className="action-task"><strong>{taskTitle(item)}</strong><p>{taskDescription(item)}</p></div>
         <div className="action-owner"><strong>{item.assignedTo || item.owner || 'Store manager'}</strong><span className={isTaskOverdue(item, reportDate) ? 'workflow-overdue' : undefined}>{item.followUpAt ? `Follow up ${formatDateTime(item.followUpAt)}` : item.dueAt ? `Due ${formatDate(item.dueAt)}` : item.status === 'resolved' ? 'Reviewed' : 'Next store review'}</span></div>
-        {item.href ? <Link className="workflow-action" to={item.href}>{taskLinkLabel(item)}<ArrowRight aria-hidden="true"/></Link> : <span className="workflow-muted">Ask your manager</span>}
+        <TaskActions item={item} vehicle={vehicleMap.get(item.vin ?? '')}/>
         <WorkflowVehicleResources vehicle={vehicleMap.get(item.vin ?? '')} />
       </div>{item.type !== 'service_pending' ? <TaskFollowUp item={item} role={role} homeStore={homeStore} currentUser={currentUser} onAction={onAction}/> : null}</article>)}
       {!visible.length ? <div className="workflow-empty"><CheckCircle2 aria-hidden="true"/><h2>{query || category !== 'all' ? 'No tasks match this view' : status === 'reviewed' ? 'No reviewed tasks yet' : 'Your store is caught up'}</h2><p>{status === 'open' ? 'New follow-ups appear here when there is a next step to take.' : 'Completed reviews will appear here.'}</p>{query || category !== 'all' ? <button type="button" onClick={() => { setQuery(''); setCategory('all') }}>Clear filters</button> : null}</div> : null}

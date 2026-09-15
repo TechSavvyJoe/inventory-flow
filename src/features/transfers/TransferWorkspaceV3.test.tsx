@@ -221,7 +221,7 @@ describe('transfer workspace v3 layout', () => {
     const current = detail([]);
     current.status.movement = { code: 'returned-home-confirmed', label: 'Back at home store' };
     render(<TransferTracker transfer={{ ...current, workflowMode: 'simple' }} />);
-    expect(screen.getByRole('link', { name: /^Ready\. Open service status/ })).toHaveTextContent(/^Ready$/);
+    expect(screen.getByRole('link', { name: /^Waiting for service\. Open service status/ })).toHaveTextContent(/^Waiting for service$/);
     expect(screen.getByRole('heading', { name: 'Back home · move complete' })).toBeVisible();
   });
 
@@ -478,7 +478,7 @@ describe('transfer workspace v3 layout', () => {
     const header = screen.getByRole('heading', { name: vehicle.vehicleLabel }).closest('header');
     expect(header).toHaveTextContent('$52,500 · 12,345 mi · 12 days listed');
     expect(header).toHaveTextContent('Synthetic blue · Synthetic engine · 4WD');
-    expect(within(header!).getByRole('link', { name: /^Ready\. Open service status/ })).toHaveTextContent(/^Ready$/);
+    expect(within(header!).getByRole('link', { name: /^Waiting for service\. Open service status/ })).toHaveTextContent(/^Waiting for service$/);
     expect(document.querySelector('.move-request-current-location')).toHaveTextContent('Ford Detroit');
     const preview = screen.getByRole('complementary', { name: 'Request accountability preview' });
     expect(within(preview).getAllByRole('listitem')).toHaveLength(3);

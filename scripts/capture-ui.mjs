@@ -2,9 +2,9 @@ import { chromium } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 
-const baseUrl = process.env.INVENTORY_OPS_QA_URL || 'http://127.0.0.1:4174/inventory'
+const baseUrl = process.env.INVENTORY_OPS_QA_URL || 'http://127.0.0.1:4173/inventory'
 const chromePath = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-const outputDirectory = path.resolve('design')
+const outputDirectory = path.resolve(process.env.INVENTORY_OPS_QA_OUTPUT || 'design')
 
 await mkdir(outputDirectory, { recursive: true })
 
@@ -45,10 +45,10 @@ await desktopPage.screenshot({ path: path.join(outputDirectory, 'qa-desktop-vehi
 await desktopPage.getByRole('tab', { name: 'Equipment' }).click()
 await desktopPage.waitForTimeout(100)
 await desktopPage.screenshot({ path: path.join(outputDirectory, 'qa-desktop-equipment-1440x900.png') })
-await desktopPage.getByRole('tab', { name: 'Hold and availability' }).click()
-const dealerMailPanel = desktopPage.locator('section.inventory-dealermail-actions[aria-labelledby="inventory-dealermail-actions-title"]')
-await dealerMailPanel.waitFor()
-await dealerMailPanel.evaluate((element) => element.scrollIntoView({ block: 'start' }))
+await desktopPage.getByRole('tab', { name: 'Holds & moves' }).click()
+const holdsPanel = desktopPage.locator('#inventory-section-hold')
+await holdsPanel.waitFor()
+await holdsPanel.evaluate((element) => element.scrollIntoView({ block: 'start' }))
 await desktopPage.waitForTimeout(100)
 await desktopPage.screenshot({ path: path.join(outputDirectory, 'qa-desktop-hold-tools-1440x900.png') })
 
@@ -72,8 +72,8 @@ const mobilePage = await mobileContext.newPage()
 await loadInventory(mobilePage)
 await waitForVisibleImages(mobilePage)
 await mobilePage.screenshot({ path: path.join(outputDirectory, 'qa-mobile-inventory-390x844.png') })
-await mobilePage.locator('.inventory-mobile-row').first().click()
-await mobilePage.getByRole('dialog').waitFor()
+await mobilePage.locator('.inventory-mobile-row__open').first().click()
+await mobilePage.locator('#inventory-vehicle-workspace').waitFor()
 await waitForVisibleImages(mobilePage)
 await mobilePage.screenshot({ path: path.join(outputDirectory, 'qa-mobile-vehicle-workspace-390x844.png') })
 await mobilePage.getByRole('tab', { name: 'Equipment' }).click()
@@ -88,7 +88,7 @@ const mobileMetrics = await mobilePage.evaluate(() => ({
   desktopTableVisible: Boolean(
     [...document.querySelectorAll('table')].find((element) => element.getClientRects().length > 0),
   ),
-  mobileRowsVisible: [...document.querySelectorAll('.inventory-mobile-row')].filter(
+  mobileRowsVisible: [...document.querySelectorAll('.if-srp-mobile-row')].filter(
     (element) => element.getClientRects().length > 0,
   ).length,
 }))

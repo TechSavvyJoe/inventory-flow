@@ -19,6 +19,7 @@ import { formatDateTime, formatNumber } from '../../lib/format'
 import { getAdminOverview } from '../../lib/api'
 import { STORE_NAMES, type StoreName } from '../../types'
 import type { AdminAuditEntry, AdminFeed, AdminOverview, AdminPerson } from './types'
+import { MembershipManagement } from './MembershipManagement'
 import './admin.css'
 
 interface AdminLoadState {
@@ -455,7 +456,7 @@ export function AdminPage() {
         </article>
         <article aria-label={`${data.summary.feedsCurrent} of ${data.summary.connectedStores} connected feeds current`}>
           <span className={`admin-summary__dot${data.summary.connectedStores > 0 && data.summary.feedsCurrent === data.summary.connectedStores ? ' is-current' : ''}`} aria-hidden="true" />
-          <span><strong>{feedSummaryLabel(data)}</strong><small>Feeds status · {verificationLabel}</small></span>
+          <span><strong>{feedSummaryLabel(data)}</strong><small>Feed status<span className="admin-heading__desktop-copy"> · {verificationLabel}</span></small></span>
         </article>
       </section>
 
@@ -468,10 +469,12 @@ export function AdminPage() {
 
       <p className="admin-readonly-note">
         <LockKeyhole aria-hidden="true" />
-        <span><strong>Read-only view</strong> for group managers. Changes are not available in this phase.</span>
+        <span>{data.canManageMembers ? <><strong>Group manager controls</strong> · Access changes are recorded.</> : <><strong>Read-only view</strong> for group managers. Employee editing is unavailable on this host.</>}</span>
       </p>
 
-      <PeopleSection people={data.people} />
+      {data.canManageMembers ? <MembershipManagement role={role} store={homeStore} onSaved={() => {
+        void getAdminOverview(role, homeStore).then(updated => setLoadState(current => current.accessContext === accessContext ? { ...current, data: updated } : current)).catch(() => { /* Employee save succeeded; Reload refreshes the overview if this read fails. */ })
+      }} /> : <PeopleSection people={data.people} />}
       <FeedSection feeds={data.feeds} />
       <AuditSection audit={data.audit} />
 

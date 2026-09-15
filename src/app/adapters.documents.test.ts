@@ -3,6 +3,22 @@ import { buildInventorySearchIndex, rankInventorySearch } from '../features/inve
 import type { BootstrapData, VehicleRecord } from '../types';
 import { toInventoryVehicle } from './adapters';
 
+describe('OASIS action capture provenance', () => {
+  it.each([undefined, false, true])('preserves capture flag %s independently of normalized empty arrays', openActionsCaptured => {
+    const record = sourceVehicle();
+    record.fordOasis = { dataState: 'current', capturedAt: '2026-08-30T08:00:00Z', openFieldServiceActions: [], openActionsCaptured };
+    expect(toInventoryVehicle(record, sourceData()).fordOasis).toMatchObject({ openFieldServiceActions: [], openActionsCaptured: openActionsCaptured === true });
+  });
+
+  it('never upgrades missing or dropped invalid actions into a captured zero', () => {
+    const record = sourceVehicle();
+    record.fordOasis = { dataState: 'current', capturedAt: '2026-08-30T08:00:00Z', openActionsCaptured: true };
+    expect(toInventoryVehicle(record, sourceData()).fordOasis?.openActionsCaptured).toBe(false);
+    record.fordOasis.openFieldServiceActions = [{ code: ' ' }];
+    expect(toInventoryVehicle(record, sourceData()).fordOasis).toMatchObject({ openFieldServiceActions: [], openActionsCaptured: false });
+  });
+});
+
 function sourceVehicle(): VehicleRecord {
   return {
     vin: '1FMUK8DHXTGB76992',

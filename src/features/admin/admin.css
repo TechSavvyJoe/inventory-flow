@@ -1,3 +1,60 @@
+.admin-primary-button, .admin-secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm, 6px);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.admin-primary-button { background: var(--blue-600); border-color: var(--blue-600); color: white; }
+.admin-secondary-button { background: var(--surface, white); color: var(--blue-700); }
+.admin-primary-button:disabled, .admin-secondary-button:disabled { opacity: .55; cursor: default; }
+.admin-member-toolbar { display: flex; gap: 8px; padding: 12px 0; }
+.admin-member-search { display: flex; gap: 8px; align-items: center; flex: 1; border: 1px solid var(--border-strong); padding: 0 10px; border-radius: 6px; }
+.admin-member-search input { width: 100%; border: 0; min-height: 38px; font: inherit; background: transparent; color: var(--ink-900); outline-offset: 2px; }
+.admin-member-list { display: grid; gap: 7px; }
+.admin-member-card { display: grid; grid-template-columns: minmax(160px,1.3fr) minmax(130px,1fr) auto auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface, white); }
+.admin-member-card > div { display: grid; gap: 4px; min-width: 0; }
+.admin-member-card small { color: var(--ink-600); overflow-wrap: anywhere; }
+.admin-you-tag { font-size: 12px; background: var(--blue-050); border: 1px solid var(--border-strong); border-radius: 4px; color: var(--blue-700); padding: 2px 5px; margin-left: 7px; }
+.admin-member-form { margin: 6px 0 14px; padding: 16px; border: 2px solid var(--blue-600); border-radius: 8px; background: var(--blue-050); scroll-margin-top: 90px; }
+.admin-member-form header, .admin-member-form footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.admin-member-form h3, .admin-access-history h3 { margin: 0; font-size: 16px; }
+.admin-member-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0; }
+.admin-member-fields label, .admin-change-reason { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 650; }
+.admin-member-form input:not([type=radio]), .admin-member-form select { border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface, white); color: var(--ink-900); padding: 9px 10px; width: 100%; min-height: 40px; font: inherit; }
+.admin-member-fields small { font-weight: 400; color: var(--ink-600); line-height: 1.4; }
+.admin-access-toggle { border: 0; padding: 0; margin: 0 0 12px; display: flex; gap: 16px; }
+.admin-access-toggle legend { font-weight: 650; font-size: 13px; margin-bottom: 7px; }
+.admin-access-toggle label { display: flex; gap: 6px; align-items: center; min-height: 32px; }
+.admin-member-help, .admin-member-form footer p { color: var(--ink-600); font-size: 12px; line-height: 1.5; }
+.admin-member-form footer { margin-top: 12px; }
+.admin-member-form footer p { max-width: 560px; margin: 0; }
+.admin-member-form footer p svg { vertical-align: middle; margin-right: 5px; }
+.admin-save-notice, .admin-save-error { padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 6px; display: flex; gap: 8px; align-items: center; }
+.admin-save-notice { background: var(--green-bg); color: var(--green); }
+.admin-save-error { background: var(--red-bg); color: var(--red); }
+.admin-access-history { margin-top: 20px; border-top: 1px solid var(--border-strong); padding-top: 14px; }
+.admin-access-history article { padding: 10px 0; border-bottom: 1px solid var(--border-strong); }
+.admin-access-history p { margin: 5px 0; font-size: 13px; }
+.admin-access-history small { color: var(--ink-600); }
+@media (max-width: 640px) {
+  .admin-member-card { grid-template-columns: 1fr auto; gap: 8px; }
+  .admin-member-card > div:first-child { grid-column: 1; }
+  .admin-member-card > div:nth-child(2) { grid-column: 1; grid-row: 2; }
+  .admin-member-card > .admin-status { grid-column: 2; grid-row: 1; justify-self: end; }
+  .admin-member-card > button { grid-column: 2; grid-row: 2; }
+  .admin-member-fields { grid-template-columns: 1fr; }
+  .admin-member-form { padding: 12px; }
+  .admin-member-form footer { flex-direction: column; align-items: stretch; }
+  .admin-section__header > .admin-primary-button { font-size: 12px; padding: 8px; }
+}
+
 .admin-page {
   --admin-blue: var(--blue-600);
   --admin-blue-strong: var(--blue-700);
@@ -543,17 +600,17 @@
   }
 
   .admin-heading {
-    padding: 8px 0 16px;
+    padding: 4px 0 8px;
   }
 
   .admin-heading h1 {
-    font-size: clamp(29px, 8vw, 36px);
+    font-size: 27px;
     line-height: 1.05;
   }
 
   .admin-heading p {
-    margin-top: 7px;
-    font-size: 17px;
+    margin-top: 5px;
+    font-size: 13px;
     line-height: 1.35;
   }
 
@@ -569,7 +626,7 @@
 
   .admin-tabs a {
     min-width: 0;
-    min-height: 48px;
+    min-height: 44px;
     padding-inline: 5px;
     font-size: 15px;
   }
@@ -587,19 +644,18 @@
     min-width: 0;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     justify-self: stretch;
-    padding: 13px 0;
+    padding: 8px 0;
     border-bottom: 1px solid var(--admin-line);
   }
 
   .admin-summary article {
-    min-height: 68px;
+    min-height: 46px;
     gap: 9px;
     padding: 5px clamp(7px, 2.4vw, 16px);
   }
 
   .admin-summary article > svg {
-    width: 27px;
-    height: 27px;
+    display: none;
   }
 
   .admin-summary strong {
@@ -617,8 +673,7 @@
   }
 
   .admin-summary__dot {
-    width: 14px;
-    height: 14px;
+    display: none;
   }
 
   .admin-readonly-note {
@@ -630,7 +685,7 @@
   }
 
   .admin-section {
-    padding-top: 20px;
+    padding-top: 12px;
     scroll-margin-top: calc(var(--top-height, 64px) + 8px);
   }
 
@@ -641,7 +696,7 @@
   }
 
   .admin-section__header h2 {
-    font-size: 23px;
+    font-size: 20px;
   }
 
   .admin-section__header p {
@@ -975,7 +1030,7 @@
 
 @media (max-width: 430px) {
   .admin-heading p {
-    font-size: 15px;
+    font-size: 13px;
   }
 
   .admin-summary article {

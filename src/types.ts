@@ -177,6 +177,8 @@ export interface FordOasisRecord {
   monthsInService?: number | null
   saleMileage?: number | null
   openFieldServiceActions?: FordOasisFieldServiceActionRecord[]
+  /** True only when the source explicitly supplied an action result. */
+  openActionsCaptured?: boolean
   warrantyCoverages?: FordOasisWarrantyCoverageRecord[]
   extendedCoverageExpirations?: string[]
 }
@@ -343,7 +345,7 @@ export type ServiceReadinessStatus = ServiceWorkflowStatus | 'unknown'
 export interface ServiceReadiness {
   vin: string
   status: ServiceReadinessStatus
-  readinessBasis?: 'existing_inventory' | 'new_arrival' | 'manager_updated' | 'legacy_review'
+  readinessBasis?: 'unconfirmed' | 'existing_inventory' | 'new_arrival' | 'manager_updated' | 'legacy_review'
   version: number
   serviceEnteredAt: string | null
   completedAt: string | null
@@ -576,6 +578,9 @@ export interface BootstrapData {
     user: string
     role: UserRole
     store: StoreName
+    authenticatedRole?: UserRole
+    canPreviewRoles?: boolean
+    rolePreviewActive?: boolean
     canViewPrivateEvidence: boolean
     canCreateTransfer: boolean
   }

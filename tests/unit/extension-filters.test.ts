@@ -38,13 +38,13 @@ describe('filter options', () => {
 })
 
 describe('matching', () => {
-  it('filters Ready inventory independently of store while retaining explicit unresolved service', () => {
+  it('filters manager-confirmed Ready inventory independently of store while retaining unresolved service', () => {
     const ready = v({ serviceReadiness: { status: 'serviced' } })
     const waiting = v({ serviceReadiness: { status: 'needs_service' } })
     const serviced = normalizeFilters({ serviceStatus: 'serviced', stores: ['Howell'] })
     expect(matchesFilters(ready, serviced)).toBe(true)
     expect(matchesFilters(waiting, serviced)).toBe(false)
-    expect(matchesFilters(v(), serviced)).toBe(true)
+    expect(matchesFilters(v(), serviced)).toBe(false)
     expect(matchesFilters(v({ serviceReadiness: { status: 'unknown' } }), serviced)).toBe(false)
     expect(matchesFilters(waiting, normalizeFilters({ serviceStatus: 'unknown' }))).toBe(true)
     expect(describeFilters(serviced)).toBe('Howell · ready only')

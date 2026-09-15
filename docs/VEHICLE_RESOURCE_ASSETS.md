@@ -2,6 +2,8 @@
 
 The resource cards identify the actual read-only provider. AutoCheck is not CARFAX; vAuto's informational equipment profile is not an original factory window sticker. Ford OASIS and invoice controls are exact-VIN dealer lookups that may require an authorized DealerConnection sign-in, not a claim that the source has already been captured.
 
+OASIS zero-action statements require `openActionsCaptured: true`, an explicit action array, and a valid completed capture date. The importer derives this flag from an explicit source array and preserves a prior false flag during revalidation. Missing arrays and legacy saved records without the flag retain their other report facts but say the action result was not captured. This prevents an old normalized empty array from becoming a false clear report. The website and companion extension use the same rule; no database migration or historical report rewrite is required.
+
 The following official artwork was retrieved on September 14, 2026 and is bundled under `public/resource-brands/` and `extension/resource-brands/`:
 
 | File | Official source | Treatment |

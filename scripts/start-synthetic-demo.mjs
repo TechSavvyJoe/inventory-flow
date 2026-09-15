@@ -5,7 +5,7 @@ import {
   SYNTHETIC_NOW,
   SYNTHETIC_REPORT_DATE,
 } from '../fixtures/synthetic-release.mjs'
-import { createSyntheticAdminDirectory } from '../fixtures/synthetic-admin-directory.mjs'
+import { createSyntheticMembershipAdmin } from '../fixtures/synthetic-membership-admin.mjs'
 import { startInventoryServer } from '../server/index.mjs'
 import { withSyntheticIllustrations, withSyntheticVehicleIllustration } from '../fixtures/synthetic-photos.mjs'
 
@@ -27,7 +27,7 @@ const app = startInventoryServer({
   refreshIntervalMs: 0,
   now: fixedNow,
   releaseLoader: () => buildSyntheticRelease({ includeDemoChanges: true }),
-  adminDirectory: createSyntheticAdminDirectory(),
+  adminDirectory: createSyntheticMembershipAdmin(),
 })
 
 // This launcher never reads dealership data. Keep illustrative assets here,
@@ -38,8 +38,11 @@ const syntheticVehicleDetail = app.service.getVehicle.bind(app.service)
 app.service.getVehicle = (vin, context) => withSyntheticVehicleIllustration(syntheticVehicleDetail(vin, context))
 
 function seedSyntheticWorkflow() {
-  // Three-state service examples. Other demo inventory remains baseline Ready;
-  // no fabricated completion dates are added to those existing vehicles.
+  // Three-state examples use explicit synthetic manager events. Inventory with
+  // no recorded service state stays in Waiting for manager confirmation.
+  app.service.updateServiceReadiness('TESTDATAHWELL0001', {
+    status: 'serviced', expectedVersion: 0, serviceDate: '2026-08-29', notes: 'Synthetic inspection completed; ready for demonstration.',
+  }, { role: 'manager', store: 'Howell', user: 'Demo Howell Manager' }, 'synthetic-demo-service-ready')
   app.service.updateServiceReadiness('TESTDATAHWELL0002', {
     status: 'needs_service', expectedVersion: 0, notes: 'Synthetic arrival: waiting for the initial service inspection.',
   }, { role: 'manager', store: 'Howell', user: 'Demo Howell Manager' }, 'synthetic-demo-service-waiting')

@@ -278,7 +278,7 @@ function documentsFor(record, publicState, dealerMailState) {
       buildDate: text(oasis.buildDate), warrantyStartDate: text(oasis.warrantyStartDate), releaseDate: text(oasis.releaseDate),
       monthsInService: number(oasis.monthsInService), saleMileage: number(oasis.saleMileage),
       // An omitted or malformed array is not evidence of zero service actions.
-      openActionsCaptured: Array.isArray(oasis.openFieldServiceActions) && oasis.openFieldServiceActions.every((item) => text(item?.code)),
+      openActionsCaptured: oasis.openActionsCaptured === true && Array.isArray(oasis.openFieldServiceActions) && oasis.openFieldServiceActions.every((item) => text(item?.code)),
       openFieldServiceActions: entries(oasis.openFieldServiceActions).filter((item) => text(item?.code)).map((item) => ({ code: text(item.code), description: text(item.description) })),
       warrantyCoverages: entries(oasis.warrantyCoverages).filter((item) => text(item?.type)).map((item) => ({ type: text(item.type), description: text(item.description) })),
       extendedCoverageExpirations: list(oasis.extendedCoverageExpirations),
@@ -327,7 +327,7 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
     fuelType: text(record.fuelType),
     serviceReadiness: {
       status: serviceWorkflowStatus(record.serviceReadiness),
-      readinessBasis: record.serviceReadiness?.readinessBasis || (record.serviceReadiness?.status ? 'manager_updated' : 'existing_inventory'),
+      readinessBasis: record.serviceReadiness?.readinessBasis || (['needs_service', 'in_service', 'serviced'].includes(record.serviceReadiness?.status) ? 'manager_updated' : 'unconfirmed'),
       serviceEnteredAt: text(record.serviceReadiness?.serviceEnteredAt), completedAt: text(record.serviceReadiness?.completedAt),
       updatedAt: text(record.serviceReadiness?.updatedAt), store: text(record.serviceReadiness?.store), canManage: record.serviceReadiness?.canManage === true,
     },
@@ -451,7 +451,7 @@ export function copyFields(vehicle) {
     { key: 'base', label: 'Base MSRP', value: base.value, kind: 'money', from: base.from },
     { key: 'options', label: 'Options total', value: options.value, kind: 'money', from: options.from },
     { key: 'destination', label: 'Destination & delivery', value: destination.value, kind: 'money', from: destination.from },
-    { key: 'stickerTotal', label: 'Sticker total MSRP', value: total.value, kind: 'money', from: total.from },
+    { key: 'stickerTotal', label: total.from === 'label' ? 'Equipment label total MSRP' : 'Sticker total MSRP', value: total.value, kind: 'money', from: total.from },
     { key: 'mileage', label: 'Miles', value: vehicle.mileage, kind: 'mileage' },
     { key: 'inService', label: 'Warranty start (est.)', value: vehicle.warranty?.inService.date ?? null, kind: 'date' },
     { key: 'exterior', label: 'Exterior', value: vehicle.exteriorColor, kind: 'text' },

@@ -6,6 +6,7 @@
 export interface AdminOverview {
   generatedAt: string | null
   readOnly: true
+  canManageMembers?: boolean
   summary: {
     activeUsers: number
     connectedStores: number
@@ -16,6 +17,24 @@ export interface AdminOverview {
   feeds: AdminFeed[]
   audit: AdminAuditEntry[]
 }
+
+export interface ManagedMember {
+  id: string
+  email: string
+  name: string
+  role: import('../../types').UserRole
+  homeStore: import('../../types').StoreName
+  enabled: boolean
+}
+
+export interface MembershipDirectory {
+  revision: number
+  currentUserId: string
+  members: ManagedMember[]
+  audit: { id: string; actor: string; targetName: string; action: string; reason: string; occurredAt: string }[]
+}
+
+export type MembershipInput = Omit<ManagedMember, 'id'> & { id?: string; reason: string; expectedRevision: number }
 
 export interface AdminPerson {
   id: string

@@ -559,10 +559,11 @@ interface DeskRowActionsProps extends Pick<
   | "onOpenSourceRecord"
 > {
   vehicle: InventoryVehicle;
+  variant?: "desktop" | "mobile";
 }
 
 function DeskRowActions({
-  vehicle, canRequestVehicle, onRequestVehicle, onTrackMovement, onOpenListing, onSelectVehicle,
+  vehicle, canRequestVehicle, onRequestVehicle, onTrackMovement, onOpenListing, onSelectVehicle, variant = "desktop",
 }: DeskRowActionsProps) {
   const name = vehicleDisplayName(vehicle);
   const listingUrl = vehicle.publicListing.listingUrl?.trim() || null;
@@ -571,11 +572,26 @@ function DeskRowActions({
   const canRequest = requestAllowed && Boolean(onRequestVehicle);
   return (
     <div className="inv-desk-actions" role="group" aria-label={`Actions for ${name}`} onClick={stopRowSelection}>
-      <button type="button" className="inv-desk-action inv-desk-action--primary"
+      {variant === "desktop" ? <button type="button" className="inv-desk-action inv-desk-action--primary"
         data-row-action="open-details" data-inventory-vehicle-trigger={vehicle.id}
         onClick={() => onSelectVehicle(vehicle)} aria-label={`Open vehicle details for ${name}`} title="Open vehicle">
-        View
+        Details
+      </button> : null}
+      <button type="button" className="inv-desk-action" data-row-action="records"
+        onClick={(event) => {
+          event.currentTarget.focus({ preventScroll: true });
+          onSelectVehicle(vehicle, "data");
+        }} aria-label={`Open vehicle records for ${name}`} title="Open vehicle records">
+        Records
       </button>
+      {variant === "desktop" ? <button type="button" className="inv-desk-action" data-row-action="holds"
+        onClick={() => onSelectVehicle(vehicle, "hold")} aria-label={`Open hold and movement details for ${name}`} title="Open hold and movement details">
+        Hold
+      </button> : null}
+      <a className="inv-desk-action" data-row-action="service" href={`/service?vin=${encodeURIComponent(vehicle.vin)}`}
+        aria-label={`Open service status for ${name}`} title="Open service status">
+        Service
+      </a>
       {canTrack || canRequest ? <button type="button" className="inv-desk-action"
         data-row-action={canTrack ? "track-movement" : "request-vehicle"}
         onClick={() => canTrack ? onTrackMovement?.(vehicle) : onRequestVehicle?.(vehicle)}
@@ -704,7 +720,7 @@ export function InventoryTable({
                   <td className="inv-desk-td" data-column="status">
                     <DeskStatusCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} onOpenSourceRecord={onOpenSourceRecord} />
                   </td>
-                  <td className="inv-desk-td inv-desk-td--actions" data-column="actions" rowSpan={hasResources ? 2 : 1}>
+                  <td className="inv-desk-td inv-desk-td--actions" data-column="actions">
                     <DeskRowActions
                       vehicle={vehicle}
                       onSelectVehicle={onSelectVehicle}
@@ -717,7 +733,7 @@ export function InventoryTable({
                   </td>
                 </tr>
                 {hasResources ? <tr className={`inv-desk-resource-row${selected ? " is-selected" : ""}`}>
-                  <td colSpan={4}>
+                  <td colSpan={5}>
                     <VehicleResourceCards vehicle={vehicle} variant="inline" onOpenSection={(target) => onSelectVehicle(vehicle, target)} />
                   </td>
                 </tr> : null}
@@ -778,6 +794,7 @@ export function InventoryMobileList({
               <span className="inventory-mobile-row__main">
                 <span className="inventory-mobile-row__title">
                   <strong>{name}</strong>
+                  <ChevronRight className="inventory-mobile-open-indicator" size={16} aria-hidden="true" />
                 </span>
                 <span className="inventory-mobile-row__valuation">
                   <b>{formatMoney(vehicle.price)}</b>
@@ -832,14 +849,9 @@ export function InventoryMobileList({
               <VehicleResourceCards vehicle={vehicle} variant="inline" onOpenSection={(target) => onSelectVehicle(vehicle, target)} />
             </div>
             <div className="inventory-mobile-row__actions">
-            <DeskRowActions vehicle={vehicle} onSelectVehicle={onSelectVehicle} onOpenSourceRecord={onOpenSourceRecord}
+            <DeskRowActions vehicle={vehicle} variant="mobile" onSelectVehicle={onSelectVehicle} onOpenSourceRecord={onOpenSourceRecord}
               canRequestVehicle={canRequestVehicle} onRequestVehicle={onRequestVehicle}
               onTrackMovement={onTrackMovement} onOpenListing={onOpenListing} />
-              <button type="button" className="inventory-mobile-records" data-inventory-vehicle-trigger={vehicle.id}
-                aria-label={`Open vehicle records for ${name}`} onClick={(event) => {
-                  event.currentTarget.focus({ preventScroll: true });
-                  onSelectVehicle(vehicle, "data");
-                }}>Records<ChevronRight size={14} aria-hidden="true" /></button>
             </div>
             </div>
           </article>

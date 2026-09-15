@@ -23,21 +23,21 @@ beforeEach(() => { vi.clearAllMocks(); mocked.context = { data: data(), homeStor
 function show() { return render(<MemoryRouter><AttentionPage/></MemoryRouter>) }
 
 describe('Action center page and shared navigation count', () => {
-  it('excludes source freshness and baseline Ready while including legacy waiting and in-service work', () => {
+  it('excludes source freshness and includes unconfirmed, legacy waiting, and in-service work', () => {
     const fixture = data()
     const items = actionableItems(fixture)
     expect(items.some(item => item.type === 'source_freshness')).toBe(false)
-    expect(items.filter(item => item.type === 'service_pending').map(item => item.vin)).toEqual(['SYNTHETIC-SERVICE-2', 'SYNTHETIC-SERVICE-3', 'SYNTHETIC-SERVICE-4', 'SYNTHETIC-SERVICE-6'])
-    expect(openStoreActionCount(fixture, 'Howell')).toBe(4)
+    expect(items.filter(item => item.type === 'service_pending').map(item => item.vin)).toEqual(['SYNTHETIC-SERVICE-1', 'SYNTHETIC-SERVICE-2', 'SYNTHETIC-SERVICE-3', 'SYNTHETIC-SERVICE-4', 'SYNTHETIC-SERVICE-6'])
+    expect(openStoreActionCount(fixture, 'Howell')).toBe(5)
     expect(openStoreActionCount(null, 'Howell')).toBe(0)
     show()
     expect(screen.getAllByRole('listitem')).toHaveLength(openStoreActionCount(fixture, 'Howell'))
-    expect(screen.getByRole('button', { name: /All tasks\s*4/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Service\s*3/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /All tasks\s*5/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Service\s*4/ })).toBeInTheDocument()
     expect(screen.queryByText('Synthetic source_freshness')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Service status/ })).toHaveTextContent('2 waiting for service · 1 in service')
+    expect(screen.getByRole('link', { name: /Service status/ })).toHaveTextContent('3 waiting for service · 1 in service')
     fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
-    expect(screen.getAllByRole('listitem')).toHaveLength(6)
+    expect(screen.getAllByRole('listitem')).toHaveLength(7)
   })
 
   it('keeps a service task visible to the vehicle home store while the service-store association is pending', () => {
@@ -54,7 +54,7 @@ describe('Action center page and shared navigation count', () => {
       relatedStores: ['Howell'],
       owner: 'Howell manager',
     })
-    expect(openStoreActionCount(fixture, 'Howell')).toBe(5)
+    expect(openStoreActionCount(fixture, 'Howell')).toBe(6)
   })
 
   it('uses an exact VIN link and keeps resolved tasks out of the open navigation count', () => {
@@ -62,10 +62,10 @@ describe('Action center page and shared navigation count', () => {
     fixture.attention[1].status = 'resolved'
     const exact = actionableItems(fixture).find(item => item.type === 'past_expected_hold')
     expect(exact?.href).toBe('/inventory?scope=group&vin=TESTDATAHWELL0001&tab=hold')
-    expect(openStoreActionCount(fixture, 'Howell')).toBe(3)
+    expect(openStoreActionCount(fixture, 'Howell')).toBe(4)
     mocked.context.data = fixture
     show()
-    expect(screen.getAllByRole('listitem')).toHaveLength(3)
+    expect(screen.getAllByRole('listitem')).toHaveLength(4)
   })
 
   it('communicates delayed sources without turning source health into an employee task', () => {
@@ -73,7 +73,7 @@ describe('Action center page and shared navigation count', () => {
     show()
     expect(screen.getByText(/Some source data needs an update/)).toHaveAttribute('role', 'status')
     expect(screen.queryByText('Synthetic source_freshness')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /All tasks\s*4/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /All tasks\s*5/ })).toBeInTheDocument()
   })
 
   it('resets queue scope when the signed-in working store changes', () => {

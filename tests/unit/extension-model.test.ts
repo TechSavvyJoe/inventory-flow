@@ -15,8 +15,8 @@ const base = (overrides = {}) => ({
 const data = (record, extra = {}) => ({ meta: meta(extra.meta), stores: [], transfers: extra.transfers ?? [], attention: [], vehicles: [record], access: extra.access })
 
 describe('deal desk view model', () => {
-  it('uses Ready as a workflow baseline without inventing manager service completion dates', () => {
-    expect(toPanelVehicle(base(), data(base())).serviceReadiness).toMatchObject({ status: 'serviced', completedAt: null, readinessBasis: 'existing_inventory' })
+  it('keeps unconfirmed existing inventory waiting without inventing manager service completion dates', () => {
+    expect(toPanelVehicle(base(), data(base())).serviceReadiness).toMatchObject({ status: 'needs_service', completedAt: null, readinessBasis: 'unconfirmed' })
     const serviced = base({ serviceReadiness: { status: 'serviced', completedAt: '2026-09-14', store: 'Howell', canManage: true } })
     expect(toPanelVehicle(serviced, data(serviced)).serviceReadiness).toMatchObject({ status: 'serviced', completedAt: '2026-09-14', store: 'Howell', canManage: true })
     const legacy = base({ serviceReadiness: { status: 'unknown' } })

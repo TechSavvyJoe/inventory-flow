@@ -33,7 +33,7 @@ describe('modern inventory scope and paging', () => {
   beforeEach(() => window.sessionStorage.clear());
 
   it('keeps a collapsed service filter visible and counts it with Held', () => {
-    const readyHeld = { ...vehicle(1), dealerMail: { dataState: 'current' as const, hasActiveHold: true, position: null } };
+    const readyHeld = { ...vehicle(1), dealerMail: { dataState: 'current' as const, hasActiveHold: true, position: null }, serviceReadiness: { vin: vehicle(1).vin, status: 'serviced' as const, version: 1, serviceEnteredAt: null, completedAt: '2026-09-14', updatedAt: '2026-09-14T12:00:00Z', updatedBy: 'Synthetic manager', updatedByRole: 'manager' as const, updatedAtStore: 'Howell' as const, store: 'Howell' as const, canManage: false } };
     render(<InventoryExperience homeStore={homeStore} vehicles={[readyHeld, vehicle(2)]} metrics={{ publicUnits: 2, currentHolds: 1, awayFromHome: 0, returnOverdue: 0 }} />);
     fireEvent.click(screen.getByRole('button', { name: /^Held:/ }));
     fireEvent.click(screen.getByRole('button', { name: /^Ready:/ }));
@@ -110,7 +110,7 @@ describe('modern inventory scope and paging', () => {
 
     expect(screen.getByPlaceholderText('Search stock, VIN, vehicle, packages, or equipment…')).toHaveAccessibleName('Search inventory');
     expect(screen.getByRole('button', { name: 'All service: 1 vehicles' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Ready: 1 vehicles' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Waiting for service: 1 vehicles' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Being moved: 0 vehicles' })).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Inventory quick view' })).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: 'Inventory service status' })).not.toBeInTheDocument();

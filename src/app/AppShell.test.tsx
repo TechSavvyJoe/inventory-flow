@@ -39,6 +39,17 @@ describe('AppShell account and update controls', () => {
     vi.clearAllMocks()
   })
 
+  it('shows the effective test role and a direct return to the authenticated Group manager role', () => {
+    const context = useAppDataMock()
+    useAppDataMock.mockReturnValue({ ...context, data: { ...context.data, access: { role: 'sales', authenticatedRole: 'group_manager', canPreviewRoles: true, rolePreviewActive: true } } })
+    render(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory</p></AppShell></MemoryRouter>)
+    expect(screen.getByText('Testing Salesperson · Live records')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Group manager' }))
+    expect(context.setRole).toHaveBeenCalledWith('group_manager')
+    fireEvent.click(screen.getByRole('button', { name: 'Open account and app controls' }))
+    expect(screen.getByLabelText('Preview role')).toHaveValue('sales')
+  })
+
   it('portals the modal outside the app shell, isolates the page, and restores opener focus', async () => {
     const { container } = render(
       <MemoryRouter initialEntries={['/inventory']}>

@@ -35,10 +35,10 @@ describe('Service readiness workspace', () => {
     expect(mocked.update).not.toHaveBeenCalled()
   })
 
-  it('does not manufacture a completion date for baseline Ready inventory', async () => {
+  it('does not manufacture a completion date for an explicit Ready record', async () => {
     mocked.get.mockResolvedValue(detail('serviced'))
     show('/service?vin=TESTDATAHWELL0001')
-    expect(await screen.findByText('Existing inventory · no recorded service completion date.')).toBeInTheDocument()
+    expect(await screen.findByText('Ready is recorded, but no service completion date was captured.')).toBeInTheDocument()
     expect(screen.queryByLabelText('Date service completed')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit note' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Record service completion' }))
