@@ -16,6 +16,7 @@ import {
 } from './repository-dispatch.mjs'
 import { buildServiceReadinessEvent, serviceReadinessView } from './service-readiness.mjs'
 import { allowedAttentionActions, buildAttentionMutation, canSeePersistedAssignee } from './attention-workflow.mjs'
+import { assertAdminOverviewAccess, buildAdminOverview } from './admin-control-center.mjs'
 import { STORE_NAMES } from './constants.mjs'
 import { normalizePublicChangeCounts } from './public-change-counts.mjs'
 import { MANAGER_DISPOSITION_COVERAGE_CAVEAT } from './manager-disposition-schema.mjs'
@@ -1430,6 +1431,64 @@ function normalizedVin(value) {
   return vin
 }
 
+function healthView(state, loadStatus) {
+  const ready = Boolean(state.meta.reportDate && state.dataset.publicRows.length)
+  const resourceCoverage = mergedResourceCoverage(state.sources, state.dataset.resourceRows?.length ?? 0)
+  return {
+    ok: ready && state.meta.publicFreshness !== 'incomplete' && state.meta.dealerMailFreshness !== 'incomplete',
+    ready,
+    reportDate: state.meta.reportDate || null,
+    freshness: {
+      public: state.meta.publicFreshness,
+      dealerMail: state.meta.dealerMailFreshness,
+      resources: state.meta.resourceFreshness,
+      managerDisposition: state.meta.managerDispositionFreshness,
+    },
+    counts: {
+      public: state.dataset.publicRows.length,
+      crm: state.meta.crmCount,
+      heldVins: state.dataset.holdRows.length,
+      resources: resourceCoverage.vehicles,
+      resourceCoverage,
+      managerDispositions: state.indexes.managerDispositionRecords.length,
+      transfers: state.allTransferRows.length,
+    },
+    sources: {
+      public: state.dataset.sourceRuns.public
+        ? {
+            sha256: state.dataset.sourceRuns.public.content_sha256,
+            rows: state.dataset.sourceRuns.public.row_count,
+            extractedAt: state.dataset.sourceRuns.public.extracted_at,
+          }
+        : null,
+      dealerMail: state.dataset.sourceRuns.dealerMail
+        ? {
+            sha256: state.dataset.sourceRuns.dealerMail.content_sha256,
+            rows: state.dataset.sourceRuns.dealerMail.row_count,
+            extractedAt: state.dataset.sourceRuns.dealerMail.extracted_at,
+          }
+        : null,
+      resources: state.dataset.sourceRuns.resources
+        ? {
+            sha256: state.dataset.sourceRuns.resources.content_sha256,
+            rows: state.dataset.sourceRuns.resources.row_count,
+            extractedAt: state.dataset.sourceRuns.resources.extracted_at,
+          }
+        : null,
+      managerDisposition: state.dataset.sourceRuns.managerDisposition
+        ? {
+            sha256: state.dataset.sourceRuns.managerDisposition.content_sha256,
+            rows: state.dataset.sourceRuns.managerDisposition.row_count,
+            extractedAt: state.dataset.sourceRuns.managerDisposition.extracted_at,
+          }
+        : null,
+    },
+    lastRefreshAttemptAt: loadStatus.lastAttemptAt ?? null,
+    lastRefreshSuccessAt: loadStatus.lastSuccessAt ?? null,
+    warnings: state.meta.warnings,
+  }
+}
+
 export function createInventoryServiceCore({ database: databaseHandle, repository, now = () => new Date(), initialLoadStatus = {}, workflowMode = 'simple' }) {
   if (!['simple', 'advanced'].includes(workflowMode)) throw new TypeError('workflowMode must be simple or advanced')
   const database = createRepositoryContext(databaseHandle, repository)
@@ -1519,62 +1578,26 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
     },
 
     health() {
-      const state = snapshot({ role: 'sales', store: 'Howell', user: 'health-check' })
-      const ready = Boolean(state.meta.reportDate && state.dataset.publicRows.length)
-      const resourceCoverage = mergedResourceCoverage(state.sources, state.dataset.resourceRows?.length ?? 0)
-      return {
-        ok: ready && state.meta.publicFreshness !== 'incomplete' && state.meta.dealerMailFreshness !== 'incomplete',
-        ready,
-        reportDate: state.meta.reportDate || null,
-        freshness: {
-          public: state.meta.publicFreshness,
-          dealerMail: state.meta.dealerMailFreshness,
-          resources: state.meta.resourceFreshness,
-          managerDisposition: state.meta.managerDispositionFreshness,
-        },
-        counts: {
-          public: state.dataset.publicRows.length,
-          crm: state.meta.crmCount,
-          heldVins: state.dataset.holdRows.length,
-          resources: resourceCoverage.vehicles,
-          resourceCoverage,
-          managerDispositions: state.indexes.managerDispositionRecords.length,
-          transfers: state.allTransferRows.length,
-        },
-        sources: {
-          public: state.dataset.sourceRuns.public
-            ? {
-                sha256: state.dataset.sourceRuns.public.content_sha256,
-                rows: state.dataset.sourceRuns.public.row_count,
-                extractedAt: state.dataset.sourceRuns.public.extracted_at,
-              }
-            : null,
-          dealerMail: state.dataset.sourceRuns.dealerMail
-            ? {
-                sha256: state.dataset.sourceRuns.dealerMail.content_sha256,
-                rows: state.dataset.sourceRuns.dealerMail.row_count,
-                extractedAt: state.dataset.sourceRuns.dealerMail.extracted_at,
-              }
-            : null,
-          resources: state.dataset.sourceRuns.resources
-            ? {
-                sha256: state.dataset.sourceRuns.resources.content_sha256,
-                rows: state.dataset.sourceRuns.resources.row_count,
-                extractedAt: state.dataset.sourceRuns.resources.extracted_at,
-              }
-            : null,
-          managerDisposition: state.dataset.sourceRuns.managerDisposition
-            ? {
-                sha256: state.dataset.sourceRuns.managerDisposition.content_sha256,
-                rows: state.dataset.sourceRuns.managerDisposition.row_count,
-                extractedAt: state.dataset.sourceRuns.managerDisposition.extracted_at,
-              }
-            : null,
-        },
-        lastRefreshAttemptAt: loadStatus.lastAttemptAt ?? null,
-        lastRefreshSuccessAt: loadStatus.lastSuccessAt ?? null,
-        warnings: state.meta.warnings,
-      }
+      return healthView(snapshot({ role: 'sales', store: 'Howell', user: 'health-check' }), loadStatus)
+    },
+
+    adminOverview(contextInput = {}, members = []) {
+      assertAdminOverviewAccess(contextInput)
+      const state = snapshot(contextInput)
+      const attentionRows = listAttentionWorkflowRows(database)
+      return buildAdminOverview({
+        generatedAt: state.currentNow.toISOString(),
+        members,
+        meta: state.meta,
+        sourceRuns: state.dataset.sourceRuns,
+        publicRows: state.dataset.publicRows,
+        crmRows: state.dataset.crmRows,
+        transferRows: state.allTransferRows,
+        attentionRows,
+        serviceEvents: listServiceEvents(database),
+        getTransferEvents: (transfer) => getTransferEvents(database, transfer.id),
+        getAttentionEvents: (attention) => getAttentionEvents(database, attention.attention_key),
+      })
     },
 
     bootstrap(contextInput = {}) {

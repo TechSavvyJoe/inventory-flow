@@ -861,6 +861,10 @@ test('action center opens the exact task and inventory updates have their own pa
 })
 
 test('simple moves use one manager decision and physical location updates through return home', async ({ page }, testInfo) => {
+  // This end-to-end move captures four settled states and crosses stores twice.
+  // Windows WebKit can exceed the suite-wide 45 seconds while encoding those
+  // screenshots, so preserve the complete workflow with a realistic budget.
+  test.setTimeout(90_000)
   // This config starts an isolated in-memory demo, never the production app.
   const headers = { 'x-inventory-demo-role': 'manager', 'x-inventory-demo-store': 'Howell', 'x-inventory-demo-user': 'Synthetic acceptance manager' }
   const response = await page.request.post('/api/transfers', {

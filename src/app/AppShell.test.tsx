@@ -141,6 +141,34 @@ describe('AppShell account and update controls', () => {
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-controls', 'application-navigation')
   })
 
+  it('exposes Control center navigation only to group managers', () => {
+    const baseContext = useAppDataMock()
+    useAppDataMock.mockReturnValue({ ...baseContext, role: 'group_manager' })
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AppShell><span>Admin content</span></AppShell>
+      </MemoryRouter>,
+    )
+
+    const primary = screen.getByRole('navigation', { name: 'Primary' })
+    const mobile = screen.getByRole('navigation', { name: 'Mobile primary' })
+    expect(within(primary).getByRole('link', { name: 'Control center' })).toHaveAttribute('aria-current', 'page')
+    expect(within(mobile).getByRole('link', { name: 'Control center' })).toHaveAttribute('aria-current', 'page')
+    expect(within(mobile).getByRole('link', { name: 'Service' })).toHaveAttribute('href', '/service')
+    expect(within(mobile).queryByRole('button', { name: 'More app controls' })).not.toBeInTheDocument()
+    unmount()
+
+    useAppDataMock.mockReturnValue(baseContext)
+    render(
+      <MemoryRouter initialEntries={['/attention']}>
+        <AppShell><span>Store content</span></AppShell>
+      </MemoryRouter>,
+    )
+
+    expect(within(screen.getByRole('navigation', { name: 'Primary' })).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('navigation', { name: 'Mobile primary' })).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
+  })
+
   it('moves focus to the main content after client-side route changes without moving focus on initial load', async () => {
     render(
       <MemoryRouter initialEntries={['/manager']}>

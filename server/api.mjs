@@ -1,6 +1,7 @@
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import path from 'node:path'
+import { assertAdminOverviewAccess } from './admin-control-center.mjs'
 import { createIdentityResolver, IdentityError } from './identity.mjs'
 import { WorkflowError } from './workflow.mjs'
 
@@ -101,6 +102,34 @@ function queryObject(url) {
   return Object.fromEntries(url.searchParams.entries())
 }
 
+export async function readAdminDirectory(adminDirectory) {
+  if (!adminDirectory || typeof adminDirectory.listMembers !== 'function') {
+    throw new HttpError(
+      'The server-owned employee directory is unavailable',
+      503,
+      'ADMIN_DIRECTORY_UNAVAILABLE',
+    )
+  }
+  let members
+  try {
+    members = await adminDirectory.listMembers()
+  } catch {
+    throw new HttpError(
+      'The server-owned employee directory is unavailable',
+      503,
+      'ADMIN_DIRECTORY_UNAVAILABLE',
+    )
+  }
+  if (!Array.isArray(members)) {
+    throw new HttpError(
+      'The server-owned employee directory is unavailable',
+      503,
+      'ADMIN_DIRECTORY_UNAVAILABLE',
+    )
+  }
+  return members
+}
+
 function apiPath(pathname) {
   const match = pathname.match(/^\/api(?:\/v1)?(?<rest>\/.*|$)/)
   return match?.groups?.rest || null
@@ -158,7 +187,7 @@ function serveStatic(request, response, distDir, url) {
   else createReadStream(candidate).pipe(response)
 }
 
-export function createApiHandler({ service, serveDist = false, distDir, identityResolver = createIdentityResolver() } = {}) {
+export function createApiHandler({ service, serveDist = false, distDir, identityResolver = createIdentityResolver(), adminDirectory } = {}) {
   if (!service) throw new Error('service is required')
   if (!identityResolver?.resolve) throw new Error('identityResolver is required')
   return async function handler(request, response) {
@@ -172,6 +201,16 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
 
       if (request.method === 'GET' && route === '/health') return sendJson(response, 200, service.health())
       const context = identityResolver.resolve(request, url, { allowQuery: route === '/bootstrap' })
+      if (route === '/admin/overview') {
+        if (request.method !== 'GET') {
+          return sendJson(response, 405, { error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' })
+        }
+        // Authorize before touching the employee directory. The core repeats
+        // this guard as defense in depth.
+        assertAdminOverviewAccess(context)
+        const members = await readAdminDirectory(adminDirectory)
+        return sendJson(response, 200, service.adminOverview(context, members))
+      }
       if (request.method === 'GET' && route === '/bootstrap') {
         return sendJson(response, 200, service.bootstrap(context))
       }

@@ -4,6 +4,7 @@ import { AccessError, memberContext, verifyAccess } from './access.mjs'
 import { validateReleaseBundle } from './release-validation.mjs'
 import { loadD1Repository, RepositoryConflictError } from './repository.mjs'
 import { createInventoryServiceCore } from '../../server/service-core.mjs'
+import { assertAdminOverviewAccess } from '../../server/admin-control-center.mjs'
 import { serviceIntakeRows } from '../../server/service-intake.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
 import { importLedger, LedgerImportError } from './ledger-import.mjs'
@@ -105,6 +106,25 @@ export async function prepareTransportAssignment(input, env, preflight) {
     return { input: await resolveTransportAssignment(preflightInput, env), replay: null }
   }
 }
+
+/** Read only the fields exposed by the Phase-1 employee access projection. */
+export async function loadAdminMembers(env) {
+  let result
+  try {
+    result = await env.INVENTORY_DB.prepare(`
+      SELECT user_id, name, role, home_store, enabled
+      FROM cloud_memberships
+      ORDER BY name COLLATE NOCASE, user_id
+    `).all()
+  } catch {
+    throw new HttpError('ADMIN_DIRECTORY_UNAVAILABLE', 503)
+  }
+  if (result?.success === false || !Array.isArray(result?.results)) {
+    throw new HttpError('ADMIN_DIRECTORY_UNAVAILABLE', 503)
+  }
+  return result.results
+}
+
 export async function decryptEnvelope(envelope, env, format=FORMAT) {
   if(envelope?.version!==format || !/^\d{4}-\d{2}-\d{2}$/.test(envelope.reportDate??'') || !/^[a-f0-9]{64}$/.test(envelope.bundleSha256??'')) throw new HttpError('INVALID_ENVELOPE')
   if(typeof envelope.ciphertext!=='string' || envelope.ciphertext.length>MAX_UPLOAD) throw new HttpError('BODY_TOO_LARGE',413)
@@ -206,7 +226,12 @@ async function appApi(request,url,env,context) {
   const route=url.pathname.replace(/^\/api(?:\/v1)?/,'')
   const read=request.method==='GET', write=request.method==='POST'
   if(!read && !write) throw new HttpError('METHOD_NOT_ALLOWED',405)
-  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/service$/.test(route))) throw new HttpError('NOT_FOUND',404)
+  const adminOverview=route==='/admin/overview'
+  if(adminOverview && !read) throw new HttpError('METHOD_NOT_ALLOWED',405)
+  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/service$/.test(route) || adminOverview)) throw new HttpError('NOT_FOUND',404)
+  // The membership context was resolved from Access + D1 before this point.
+  // Check it before reading the group directory or private release.
+  if(adminOverview) assertAdminOverviewAccess(context)
   // Decoded once here, before the release and repository are loaded: a path
   // that cannot be decoded can never address a record, so it should cost the
   // Worker nothing and answer 400 rather than a 500 from deeper in the stack.
@@ -215,6 +240,7 @@ async function appApi(request,url,env,context) {
   const idempotency=request.headers.get('idempotency-key')
   if(write && (!idempotency || idempotency.length>160 || /[\x00-\x1f]/.test(idempotency))) throw new HttpError('IDEMPOTENCY_KEY_REQUIRED')
   const input=write?await readJson(request,64*1024):null
+  const adminMembers=adminOverview?await loadAdminMembers(env):null
   const release=await readRelease(env)
   let resolvedAssignmentInput=null
   for(let attempt=0;attempt<3;attempt++) {
@@ -222,7 +248,8 @@ async function appApi(request,url,env,context) {
     const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
     const query=Object.fromEntries(url.searchParams)
     let result, mutation=false
-    if(read && route==='/bootstrap') result=service.bootstrap(context)
+    if(read && adminOverview) result=service.adminOverview(context,adminMembers)
+    else if(read && route==='/bootstrap') result=service.bootstrap(context)
     else if(read && route==='/vehicles') result=service.listVehicles(query,context)
     else if(read && /^\/vehicles\/[^/]+$/.test(route)) result=service.getVehicle(identifier,context)
     else if(read && /^\/vehicles\/[^/]+\/service$/.test(route)) result=service.getServiceReadiness(identifier,context)

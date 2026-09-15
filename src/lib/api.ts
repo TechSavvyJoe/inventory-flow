@@ -11,6 +11,7 @@ import type {
   ServiceReadinessDetail,
   ServiceReadinessInput,
 } from '../types'
+import type { AdminOverview } from '../features/admin/types'
 
 export class ApiError extends Error {
   status: number
@@ -193,6 +194,19 @@ export function getBootstrap(homeStore: StoreName, role: UserRole): Promise<Boot
 export function getVehicle(vin: string, role: UserRole, store: StoreName): Promise<VehicleRecord> {
   return request<VehicleRecord>(`/api/vehicles/${encodeURIComponent(vin)}`, {
     headers: demoIdentityHeaders(role, store),
+  })
+}
+
+/**
+ * Group-manager-only, read-only Control Center projection. Authorization is
+ * enforced by the API; the role/store headers preserve the local demo's
+ * existing identity contract while the production Access layer supplies the
+ * authenticated membership context.
+ */
+export function getAdminOverview(role: UserRole, store: StoreName, signal?: AbortSignal): Promise<AdminOverview> {
+  return request<AdminOverview>('/api/admin/overview', {
+    headers: demoIdentityHeaders(role, store),
+    signal,
   })
 }
 

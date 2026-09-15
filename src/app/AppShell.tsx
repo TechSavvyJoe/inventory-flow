@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CircleUserRound,
   Ellipsis,
+  LayoutDashboard,
   RefreshCw,
   Search,
   Settings2,
@@ -43,6 +44,16 @@ const NAV_ITEMS = [
   { id: 'updates', to: '/updates', label: 'Inventory updates', shortLabel: 'Updates', icon: ListChecks },
   { id: 'service', to: '/service', label: 'Service status', shortLabel: 'Service', icon: Wrench },
 ] as const
+
+const ADMIN_NAV_ITEM = {
+  id: 'admin',
+  to: '/admin',
+  label: 'Control center',
+  shortLabel: 'Control center',
+  icon: LayoutDashboard,
+} as const
+
+type NavigationItemId = (typeof NAV_ITEMS)[number]['id'] | typeof ADMIN_NAV_ITEM.id
 
 const ROLE_LABELS: Record<UserRole, string> = {
   sales: 'Salesperson',
@@ -93,6 +104,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const attentionCount = openStoreActionCount(data, homeStore)
   const storeBrand = STORE_BRANDING[homeStore]
   const canSeeManager = role === 'manager' || role === 'group_manager'
+  const canSeeAdmin = role === 'group_manager'
+  const desktopNavigationItems = canSeeAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS
+  const mobileNavigationItems = canSeeAdmin
+    ? [ADMIN_NAV_ITEM, NAV_ITEMS[0], NAV_ITEMS[1], NAV_ITEMS[4]]
+    : NAV_ITEMS.filter((item) => item.id !== 'service')
   const rolePreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
   const freshnessState = !data
     ? 'unknown'
@@ -171,14 +187,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     setUtilityOpen(true)
   }
 
-  function isNavActive(id: (typeof NAV_ITEMS)[number]['id'], to: string) {
+  function isNavActive(id: NavigationItemId, to: string) {
     if (id === 'inventory') return location.pathname === '/' || location.pathname.startsWith('/inventory')
     return location.pathname === to || location.pathname.startsWith(`${to}/`)
   }
 
   const primaryNavigation = (
     <nav className="primary-nav" aria-label="Primary">
-      {NAV_ITEMS.map(({ id, to, label, icon: Icon }) => {
+      {desktopNavigationItems.map(({ id, to, label, icon: Icon }) => {
         const active = isNavActive(id, to)
         return (
           <NavLink
@@ -384,8 +400,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <main ref={mainContentRef} className="app-main" id="main-content" tabIndex={-1}>{data?.meta.warnings.some(warning => warning.includes('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS')) && <p className="synthetic-preview-notice">Demo · Synthetic records &amp; AI illustrations.</p>}{children}</main>
 
-      <nav className="mobile-bottom-nav" aria-label="Mobile primary">
-        {NAV_ITEMS.filter(item => item.id !== 'service').map(({ id, to, label, shortLabel, icon: Icon }) => {
+      <nav className={`mobile-bottom-nav${canSeeAdmin ? ' is-group-manager' : ''}`} aria-label="Mobile primary">
+        {mobileNavigationItems.map(({ id, to, label, shortLabel, icon: Icon }) => {
           const active = isNavActive(id, to)
           return (
             <NavLink
@@ -400,7 +416,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </NavLink>
           )
         })}
-        <button
+        {canSeeAdmin ? null : <button
           type="button"
           className={utilityOpen ? 'is-active' : ''}
           aria-label="More app controls"
@@ -411,7 +427,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         >
           <Ellipsis aria-hidden="true" />
           <span>More</span>
-        </button>
+        </button>}
       </nav>
 
     </div>
