@@ -1,4 +1,5 @@
 import { getDemoWindowSticker } from '../../lib/demo-documents';
+import { sourceDisplayText } from '../../lib/source-text';
 import type { AutoCheckResource, FactoryEquipmentResource, FordOasisResource, WindowStickerResource, VehicleWorkspaceTab } from './types';
 import { formatDate, formatNumber, formatStickerMoney } from './inventory-utils';
 import { fordInvoiceUrl, fordOasisUrl, officialVehicleDocumentUrl, vautoFactoryEquipmentUrl } from './vehicle-document-utils';
@@ -209,8 +210,8 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   if (fordFamily) {
     const oasis = vehicle.fordOasis;
     const oasisHref = fordOasisUrl(vehicle.vin);
-    const actions = present((oasis?.openFieldServiceActions ?? []).map(action => join([action.code, action.description])));
-    const coverages = present((oasis?.warrantyCoverages ?? []).map(coverage => join([coverage.type, coverage.description])));
+    const actions = present((oasis?.openFieldServiceActions ?? []).map(action => join([action.code, sourceDisplayText(action.description)])));
+    const coverages = present((oasis?.warrantyCoverages ?? []).map(coverage => join([coverage.type, sourceDisplayText(coverage.description)])));
     // Adapters can supply default empty arrays. A dated, complete source capture
     // is required before an empty action list can be described as a zero result.
     const capturedEmptyActions = hasCapturedOasisActionResult(oasis) && oasis?.openFieldServiceActions?.length === 0;

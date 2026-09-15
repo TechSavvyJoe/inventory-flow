@@ -14,6 +14,7 @@ import { clear, el, icon } from './lib/dom.mjs'
 import { copyText, host, openExtensionPage, openUrl, placeholderPhotos, previewFlags, storage } from './lib/host.mjs'
 import { takeHomeModel } from './lib/takehome.mjs'
 import { serviceWorkflowStatus } from './lib/service-readiness.mjs'
+import { sourceDisplayText } from './lib/source-text.mjs'
 import { resourceSummaries } from './lib/resources.mjs'
 import { syntheticPreviewPhotos } from './lib/synthetic-photos.mjs'
 
@@ -1199,8 +1200,8 @@ function recordsTab(vehicle) {
       ['Build date', oasis.buildDate ? fmt.formatDate(oasis.buildDate) : null], ['Release date', oasis.releaseDate ? fmt.formatDate(oasis.releaseDate) : null],
       ['Months in service', hasNumber(oasis.monthsInService) ? String(oasis.monthsInService) : null], ['Sale mileage', hasNumber(oasis.saleMileage) ? fmt.formatMileage(oasis.saleMileage) : null],
     ]) : null,
-    oasis?.openFieldServiceActions.length ? recordSection('Open Ford service actions', [el('ul', { class: 'rec-list' }, ...oasis.openFieldServiceActions.map((item) => el('li', {}, item.code ? el('b', { text: item.code }) : null, item.code && item.description ? ' · ' : '', item.description)))]) : oasis ? note('No individual open service-action details are shown in the captured data. Verify current actions in OASIS.') : null,
-    oasis?.warrantyCoverages.length ? recordSection('Ford warranty coverages', [el('ul', { class: 'rec-list' }, ...oasis.warrantyCoverages.map((item) => el('li', {}, el('b', { text: item.type }), item.description ? ` · ${item.description}` : '')))]) : null,
+    oasis?.openFieldServiceActions.length ? recordSection('Open Ford service actions', [el('ul', { class: 'rec-list' }, ...oasis.openFieldServiceActions.map((item) => el('li', {}, item.code ? el('b', { text: item.code }) : null, item.code && item.description ? ' · ' : '', sourceDisplayText(item.description))))]) : oasis ? note('No individual open service-action details are shown in the captured data. Verify current actions in OASIS.') : null,
+    oasis?.warrantyCoverages.length ? recordSection('Ford warranty coverages', [el('ul', { class: 'rec-list' }, ...oasis.warrantyCoverages.map((item) => el('li', {}, el('b', { text: item.type }), item.description ? ` · ${sourceDisplayText(item.description)}` : '')))]) : null,
     recordList('Extended coverage expirations', oasis?.extendedCoverageExpirations),
   ))
   const warranty = docs.warrantyCheck

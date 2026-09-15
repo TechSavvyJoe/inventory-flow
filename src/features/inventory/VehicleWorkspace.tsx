@@ -1,4 +1,5 @@
 import { serviceStatusLabel, serviceWorkflowStatus } from "../../lib/service-readiness";
+import { sourceDisplayText } from "../../lib/source-text";
 import {
   useEffect,
   useLayoutEffect,
@@ -1067,7 +1068,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
               {fordOasis.openFieldServiceActions.map((action) => (
                 <li key={action.code}>
                   <b>{action.code}</b>
-                  <span>{action.description || "Description not captured"}</span>
+                  <span>{sourceDisplayText(action.description) || "Description not captured"}</span>
                 </li>
               ))}
             </ul>
@@ -1089,7 +1090,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                     <span>
                       <strong>{coverage.type}</strong>
                     </span>
-                    {coverage.description ? <small>{coverage.description}</small> : null}
+                    {coverage.description ? <small>{sourceDisplayText(coverage.description)}</small> : null}
                   </li>
                 ))}
               </ul>

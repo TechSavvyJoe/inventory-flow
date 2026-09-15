@@ -51,6 +51,20 @@ describe('extension captured document model', () => {
 })
 
 describe('extension resource summaries', () => {
+  it('decodes OASIS descriptions for display while preserving model and raw evidence', () => {
+    const fordOasis = {
+      dataState: 'current', capturedAt: '2026-09-01',
+      openFieldServiceActions: [{ code: 'TEST-26A', description: 'REAR AXLE &#x25B4; &amp; HUB' }],
+      warrantyCoverages: [{ type: 'Powertrain', description: '5 years &amp; 60,000 miles' }],
+    }
+    const vehicle = panel({ fordOasis })
+    const oasis = resourceSummaries(vehicle, { now }).find((item) => item.id === 'oasis')
+    expect(oasis.compactFacts[0]).toBe('Open FSA TEST-26A · REAR AXLE ▴ & HUB')
+    expect(oasis.facts).toContain('Recorded coverage: Powertrain · 5 years & 60,000 miles')
+    expect(vehicle.documents.fordOasis.openFieldServiceActions[0].description).toBe('REAR AXLE &#x25B4; &amp; HUB')
+    expect(fordOasis.warrantyCoverages[0].description).toBe('5 years &amp; 60,000 miles')
+  })
+
   it('prioritizes history hazards before score and owners while retaining every captured check', () => {
     const autoCheckReport = { score: 91, ownerCount: 1, usage: 'Personal', reportRunAt: '2026-09-10', lastReportedOdometer: 12450, lastReportedOdometerDate: '2026-09-09', checks: [{ label: 'Accident', status: 'No accidents reported' }, { label: 'Title', status: 'Salvage brand reported' }, { label: 'Odometer', status: 'Odometer discrepancy reported' }] }
     const summary = source({ autoCheckReport }, 'autocheck')

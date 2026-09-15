@@ -102,6 +102,19 @@ describe('rich vehicle resource catalog', () => {
     expect(oasis.facts.join(' ')).not.toMatch(/active coverage|verified today/i);
   });
 
+  it('decodes OASIS display descriptions without changing captured evidence', () => {
+    const fordOasis = {
+      dataState: 'current', capturedAt: '2026-09-01',
+      openFieldServiceActions: [{ code: 'TEST-26A', description: 'REAR AXLE &#x25B4; &amp; HUB' }],
+      warrantyCoverages: [{ type: 'Powertrain', description: '5 years &amp; 60,000 miles' }],
+    };
+    const oasis = resource({ fordOasis }, 'oasis');
+    expect(oasis.compactFacts[0]).toBe('Open FSA TEST-26A · REAR AXLE ▴ & HUB');
+    expect(oasis.facts).toContain('Recorded coverage: Powertrain · 5 years & 60,000 miles');
+    expect(fordOasis.openFieldServiceActions[0].description).toBe('REAR AXLE &#x25B4; &amp; HUB');
+    expect(fordOasis.warrantyCoverages[0].description).toBe('5 years &amp; 60,000 miles');
+  });
+
   it.each([undefined, 'current', 'incomplete', 'unknown'])('does not equate an undated %s empty OASIS array with a captured zero result', state => {
     const oasis = resource({fordOasis:{dataState:state,openFieldServiceActions:[],warrantyCoverages:[]}},'oasis');
     expect(oasis.hasCapturedData).toBe(false);

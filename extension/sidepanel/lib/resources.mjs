@@ -1,4 +1,5 @@
 import { formatDate, formatNumber, formatStickerMoney } from './format.mjs'
+import { sourceDisplayText } from './source-text.mjs'
 
 // Read-only report summaries for the inventory list and vehicle overview.
 // Accept the panel view model, never raw API URLs. documentsFor() already
@@ -162,8 +163,8 @@ export function resourceSummaries(vehicle, { now = Date.now() } = {}) {
 
   if (fordFamily) {
     const oasis = docs.fordOasis
-    const actions = present(entries(oasis?.openFieldServiceActions).map((action) => join([action.code, action.description])))
-    const coverages = present(entries(oasis?.warrantyCoverages).map((coverage) => join([coverage.type, coverage.description])))
+    const actions = present(entries(oasis?.openFieldServiceActions).map((action) => join([action.code, sourceDisplayText(action.description)])))
+    const coverages = present(entries(oasis?.warrantyCoverages).map((coverage) => join([coverage.type, sourceDisplayText(coverage.description)])))
     const capturedEmpty = capturedOasisActionsAreEmpty(oasis, { now })
     const warrantyStart = clean(oasis?.warrantyStartDate) ? `Warranty start ${oasis.warrantyStartDate}` : clean(warranty?.fordOasis?.warrantyStartDate) ? `Warranty start ${warranty.fordOasis.warrantyStartDate}` : null
     const buildDate = clean(oasis?.buildDate) ? `Built ${oasis.buildDate}` : null

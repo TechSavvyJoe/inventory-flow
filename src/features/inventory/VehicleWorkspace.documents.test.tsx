@@ -321,6 +321,27 @@ describe('vehicle document workspace', () => {
     expect(oasisLink).toHaveAttribute('data-read-only', 'true');
   });
 
+  it('shows decoded OASIS descriptions as plain text without mutating captured evidence', async () => {
+    const oasisVehicle = vehicle(false);
+    const encoded = 'REAR AXLE &#x25B4; &amp; &lt;img src=x onerror=alert(1)&gt;';
+    oasisVehicle.fordOasis = {
+      dataState: 'current', capturedAt: '2026-09-01',
+      openFieldServiceActions: [{ code: 'TEST-26A', description: encoded }],
+      warrantyCoverages: [{ type: 'Powertrain', description: '5 years &amp; 60,000 miles' }],
+      extendedCoverageExpirations: [],
+    };
+    render(<VehicleWorkspace vehicle={oasisVehicle} homeStore={{ id: 'howell', name: 'Howell' }} onClose={vi.fn()} />);
+    const panel = await openVehicleDocuments();
+    expect(panel).not.toBeNull();
+    if (!panel) return;
+    const list = within(panel).getByRole('list', { name: 'Open field service action details' });
+    expect(list).toHaveTextContent('REAR AXLE ▴ & <img src=x onerror=alert(1)>');
+    expect(list.querySelector('img')).toBeNull();
+    expect(list.querySelector('[onerror]')).toBeNull();
+    expect(within(panel).getByRole('list', { name: 'Ford warranty coverages' })).toHaveTextContent('5 years & 60,000 miles');
+    expect(oasisVehicle.fordOasis.openFieldServiceActions![0].description).toBe(encoded);
+  });
+
   it('states plainly when OASIS lists no open recalls and never flags the overview', async () => {
     const clearVehicle = vehicle(false);
     clearVehicle.fordOasis = {

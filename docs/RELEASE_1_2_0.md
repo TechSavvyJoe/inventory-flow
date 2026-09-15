@@ -28,10 +28,12 @@ reported website, mobile, companion, service, document and administration issues
   includes only tracked extension files and verifies the extracted bytes.
 - Missing OASIS action results can no longer become false zero-action claims.
   Explicit capture provenance and a valid non-future date are required.
+- OASIS symbols and encoded text display correctly in source summaries and
+  Records on both surfaces, without changing captured evidence or inserting HTML.
 
 ## Release evidence
 
-- `pnpm check`: 105 test files, 1,296 tests, safety/design gates and production build.
+- `pnpm check`: 106 test files, 1,320 tests, safety/design gates and production build.
 - `pnpm test:e2e`: 18 desktop/mobile browser tests including employee creation,
   editing, disabling, access history, document details and readable layouts.
 - `pnpm cloud:validate`: nine contiguous migrations validated in memory.

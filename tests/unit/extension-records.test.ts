@@ -73,6 +73,20 @@ describe('extension captured Records detail parity', () => {
     expect(oasis.textContent).toContain('Open OASIS dealer lookup')
     expect(oasis.textContent).toContain('not a saved report')
   })
+
+  it('renders decoded OASIS descriptions as safe text, leaving source evidence intact', async () => {
+    const record = recordWithSources()
+    const encoded = 'REAR AXLE &#x25B4; &amp; &lt;img src=x onerror=alert(1)&gt;'
+    record.fordOasis.openFieldServiceActions[0].description = encoded
+    record.fordOasis.warrantyCoverages[0].description = '5 years &amp; 60,000 miles'
+    const detail = await openRecords(record)
+    const oasis = detail.querySelector('.rec-oasis')
+    expect(oasis.textContent).toContain('REAR AXLE ▴ & <img src=x onerror=alert(1)>')
+    expect(oasis.textContent).toContain('5 years & 60,000 miles')
+    expect(oasis.querySelector('.rec-list img')).toBeNull()
+    expect(oasis.querySelector('[onerror]')).toBeNull()
+    expect(record.fordOasis.openFieldServiceActions[0].description).toBe(encoded)
+  })
   it('keeps Ford coverage and AutoCheck estimates distinct with mileage and captured remaining terms', async () => {
     const detail = await openRecords()
     const warranty = detail.querySelector('.rec-warranty')
