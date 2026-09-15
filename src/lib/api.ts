@@ -112,8 +112,17 @@ function isSignInResponse(response: Response) {
 // path. Compose the timeout with caller cancellation so changing vehicle or
 // access context can end obsolete reads without waiting for the network.
 const REQUEST_TIMEOUT_MS = 20_000
+// The production bootstrap is intentionally rich and currently several MB.
+// Keep the ordinary 20s deadline for reaching the server, but once its headers
+// arrive allow a slower mobile connection enough time to finish that one large
+// read. Mutations and every other request retain their existing total deadline.
+const BOOTSTRAP_BODY_TIMEOUT_MS = 60_000
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+type RequestTiming = {
+  bodyTimeoutMs?: number
+}
+
+async function request<T>(path: string, options: RequestInit = {}, timing: RequestTiming = {}): Promise<T> {
   const headers = new Headers(options.headers)
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   const mutation = options.method?.toUpperCase() === 'POST'
@@ -122,7 +131,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (mutation) headers.set('Idempotency-Key', mutation.pending.key)
 
   const timeoutController = new AbortController()
-  const timeout = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT_MS)
+  let timeout = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT_MS)
   const signal = options.signal
     ? AbortSignal.any([options.signal, timeoutController.signal])
     : timeoutController.signal
@@ -145,6 +154,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       }
       throw cause
     }
+    if (timing.bodyTimeoutMs != null) {
+      clearTimeout(timeout)
+      timeout = setTimeout(() => timeoutController.abort(), timing.bodyTimeoutMs)
+    }
     const isJson = /^application\/(?:[\w.-]+\+)?json(?:\s*;|$)/i.test(response.headers.get('Content-Type') ?? '')
     const isSignIn = isSignInResponse(response)
     if (response.status === 401 || isSignIn || (response.ok && !isJson)) {
@@ -160,7 +173,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     let payload: T
     try {
       payload = await response.json() as T
-    } catch {
+    } catch (cause) {
+      // `fetch()` resolves as soon as response headers arrive, while
+      // `response.json()` continues consuming the body with the same signal.
+      // Preserve intentional caller cancellation, and classify our own alarm
+      // as a retryable timeout instead of falsely reporting valid JSON as bad.
+      if (options.signal?.aborted) throw cause
+      if (timeoutController.signal.aborted) {
+        throw new ApiError('The server response took too long to finish. Try again.', 408)
+      }
       // The action may have succeeded even if its response was interrupted.
       throw new ApiError('The server response could not be read. Please try again.', 502)
     }
@@ -188,7 +209,11 @@ function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, s
 
 export function getBootstrap(homeStore: StoreName, role: UserRole): Promise<BootstrapData> {
   const params = new URLSearchParams({ homeStore, role })
-  return request<BootstrapData>(`/api/bootstrap?${params}`, { headers: demoIdentityHeaders(role, homeStore) })
+  return request<BootstrapData>(
+    `/api/bootstrap?${params}`,
+    { headers: demoIdentityHeaders(role, homeStore) },
+    { bodyTimeoutMs: BOOTSTRAP_BODY_TIMEOUT_MS },
+  )
 }
 
 export function getVehicle(vin: string, role: UserRole, store: StoreName): Promise<VehicleRecord> {
