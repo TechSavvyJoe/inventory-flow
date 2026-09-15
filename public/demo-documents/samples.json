@@ -1,0 +1,182 @@
+{
+  "TESTDATAHWELL0001": {
+    "vin": "TESTDATAHWELL0001",
+    "title": "2024 Ford F-150 Lariat",
+    "stock": "DEMO-H01",
+    "store": "Howell",
+    "msrp": 68420,
+    "exterior": "Antimatter Blue Metallic",
+    "interior": "Black",
+    "engine": "3.5L EcoBoost V6",
+    "transmission": "10-Speed Automatic",
+    "drivetrain": "4WD",
+    "body": "SuperCrew",
+    "features": [
+      "Ford Co-Pilot360 Assist 2.0",
+      "360-Degree Camera",
+      "Adaptive Cruise Control",
+      "Max Trailer Tow Package",
+      "Heated and Ventilated Front Seats",
+      "B&O Sound System"
+    ],
+    "pricing": {
+      "base": 63420,
+      "options": 3005,
+      "destination": 1995
+    }
+  },
+  "TESTDATAHWELL0002": {
+    "vin": "TESTDATAHWELL0002",
+    "title": "2023 Ford Bronco Sport Badlands",
+    "stock": "DEMO-H02",
+    "store": "Howell",
+    "msrp": 40375,
+    "exterior": "Cactus Gray",
+    "interior": "Ebony/Roast",
+    "engine": "2.0L EcoBoost",
+    "transmission": "8-Speed Automatic",
+    "drivetrain": "4WD",
+    "body": "SUV",
+    "features": [
+      "Badlands Package",
+      "Advanced 4x4",
+      "Trail Control",
+      "Heated Front Seats",
+      "Ford Co-Pilot360",
+      "Class II Trailer Tow Package"
+    ],
+    "pricing": null
+  },
+  "TESTDATAFWELL0001": {
+    "vin": "TESTDATAFWELL0001",
+    "title": "2025 Ford Escape ST-Line Select",
+    "stock": "DEMO-F01",
+    "store": "Fowlerville",
+    "msrp": 41780,
+    "exterior": "Rapid Red Metallic",
+    "interior": "Ebony",
+    "engine": "2.0L EcoBoost",
+    "transmission": "8-Speed Automatic",
+    "drivetrain": "AWD",
+    "body": "SUV",
+    "features": [
+      "Tech Pack 2",
+      "360-Degree Camera",
+      "Adaptive Cruise Control",
+      "Panoramic Vista Roof",
+      "Heated Steering Wheel",
+      "Wireless Apple CarPlay"
+    ],
+    "pricing": null
+  },
+  "TESTDATAFWELL0002": {
+    "vin": "TESTDATAFWELL0002",
+    "title": "2022 Ford Maverick Lariat",
+    "stock": "DEMO-F02",
+    "store": "Fowlerville",
+    "msrp": 34260,
+    "exterior": "Area 51",
+    "interior": "Desert Brown",
+    "engine": "2.0L EcoBoost",
+    "transmission": "8-Speed Automatic",
+    "drivetrain": "AWD",
+    "body": "Crew Cab",
+    "features": [
+      "Lariat Luxury Package",
+      "FX4 Off-Road Package",
+      "Ford Co-Pilot360",
+      "4K Tow Package",
+      "Spray-In Bedliner",
+      "B&O Sound System"
+    ],
+    "pricing": null
+  },
+  "TESTDATADETRT0001": {
+    "vin": "TESTDATADETRT0001",
+    "title": "2024 Ford Explorer Platinum",
+    "stock": "DEMO-D01",
+    "store": "Ford Detroit",
+    "msrp": 58955,
+    "exterior": "Star White Metallic",
+    "interior": "Light Sandstone",
+    "engine": "3.0L EcoBoost V6",
+    "transmission": "10-Speed Automatic",
+    "drivetrain": "4WD",
+    "body": "SUV",
+    "features": [
+      "Premium Technology Package",
+      "Active Park Assist 2.0",
+      "360-Degree Camera",
+      "Massaging Front Seats",
+      "Twin-Panel Moonroof",
+      "Class IV Trailer Tow Package"
+    ],
+    "pricing": null
+  },
+  "TESTDATADETRT0002": {
+    "vin": "TESTDATADETRT0002",
+    "title": "2023 Chevrolet Silverado 1500 RST",
+    "stock": "DEMO-D02",
+    "store": "Ford Detroit",
+    "msrp": 57390,
+    "exterior": "Glacier Blue Metallic",
+    "interior": "Jet Black",
+    "engine": "5.3L V8",
+    "transmission": "10-Speed Automatic",
+    "drivetrain": "4WD",
+    "body": "Crew Cab",
+    "features": [
+      "All Star Premium Package",
+      "Safety Package",
+      "Trailering Package",
+      "Blind Spot Monitoring",
+      "HD Surround Vision",
+      "Heated Front Seats"
+    ],
+    "pricing": null
+  },
+  "TESTDATALNCN00001": {
+    "vin": "TESTDATALNCN00001",
+    "title": "2024 Lincoln Nautilus Reserve",
+    "stock": "DEMO-L01",
+    "store": "Lincoln",
+    "msrp": 67125,
+    "exterior": "Infinite Black Metallic",
+    "interior": "Black Onyx",
+    "engine": "2.0L Turbocharged I-4",
+    "transmission": "8-Speed Automatic",
+    "drivetrain": "AWD",
+    "body": "SUV",
+    "features": [
+      "Jet Appearance Package",
+      "Lincoln Co-Pilot360 2.2 Vision",
+      "Revel Ultima 3D Audio",
+      "24-Way Perfect Position Seats",
+      "Panoramic Vista Roof",
+      "Phone As A Key"
+    ],
+    "pricing": null
+  },
+  "TESTDATALNCN00002": {
+    "vin": "TESTDATALNCN00002",
+    "title": "2022 Lincoln Corsair Grand Touring",
+    "stock": "DEMO-L02",
+    "store": "Lincoln",
+    "msrp": 56530,
+    "exterior": "Ceramic Pearl",
+    "interior": "Cashew",
+    "engine": "2.5L Plug-In Hybrid",
+    "transmission": "eCVT",
+    "drivetrain": "AWD",
+    "body": "SUV",
+    "features": [
+      "Elements Technology Bundle",
+      "Lincoln Co-Pilot360 1.5 Plus",
+      "Head-Up Display",
+      "Panoramic Vista Roof",
+      "Hands-Free Liftgate",
+      "Revel Audio"
+    ],
+    "pricing": null
+  }
+}

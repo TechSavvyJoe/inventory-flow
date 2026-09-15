@@ -6,6 +6,8 @@
  * workspace, browser state, cookies, or the local runtime database.
  */
 
+import { buildPublicChangeEvents, summarizePublicChangeEvents } from '../server/public-change-events.mjs'
+
 export const SYNTHETIC_FIXTURE_MARKER = 'SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS'
 export const SYNTHETIC_REPORT_DATE = '2026-08-30'
 export const SYNTHETIC_NOW = new Date('2026-08-30T10:15:00-04:00')
@@ -69,7 +71,7 @@ const VEHICLES = [
     engine: '2.0L EcoBoost',
     transmission: '8-Speed Automatic',
     fuel: 'Gasoline',
-    inventoryDate: '2026-08-03',
+    inventoryDate: '2026-08-30',
     features: 'Badlands Package | Advanced 4x4 | Trail Control | Heated Front Seats | Ford Co-Pilot360 | Class II Trailer Tow Package',
   },
   {
@@ -394,7 +396,7 @@ function autoCheckReport() {
 
 const heldVins = new Set(['TESTDATAHWELL0001', 'TESTDATALNCN00001'])
 
-function releaseTemplate() {
+function releaseTemplate(includeDemoChanges = false) {
   const records = VEHICLES.map((vehicle) => {
     const held = heldVins.has(vehicle.vin)
     return {
@@ -422,15 +424,12 @@ function releaseTemplate() {
   })
 
   const storeCounts = Object.fromEntries(Object.keys(STORES).map((store) => [store, VEHICLES.filter((row) => row.store === store).length]))
-  const zeroChanges = {
-    new_arrival: 0,
-    removed: 0,
-    price_change: 0,
-    mileage_change: 0,
-    website_status_change: 0,
-    stock_correction: 0,
-    store_transfer: 0,
-  }
+  // Two fabricated snapshots exercise the same reconciliation path as real
+  // imports. These are demonstration changes, never production history.
+  const currentSnapshot = { report_date: SYNTHETIC_REPORT_DATE, vehicles: Object.fromEntries(records.map(row => [row.vin, row.publicRecord])) }
+  const previousSnapshot = { report_date: '2026-08-29', vehicles: Object.fromEntries(records.filter(row => row.vin !== 'TESTDATAHWELL0002').map(row => [row.vin, { ...row.publicRecord, listed_price: row.publicRecord.listed_price + (['TESTDATAHWELL0001', 'TESTDATALNCN00001'].includes(row.vin) ? 1500 : 0) }])) }
+  const publicChangeEvents = includeDemoChanges ? buildPublicChangeEvents({ previousSnapshot, currentSnapshot }) : []
+  const changeCounts = summarizePublicChangeEvents(publicChangeEvents)
 
   return {
     reportDate: SYNTHETIC_REPORT_DATE,
@@ -451,7 +450,7 @@ function releaseTemplate() {
         dealermail_used_rows: records.length,
         active_held_vins: heldVins.size,
       },
-      public_change_counts: zeroChanges,
+      public_change_counts: changeCounts,
       validation_results: { passed: true },
     },
     warnings: [
@@ -473,8 +472,8 @@ function releaseTemplate() {
           fixtureMarker: SYNTHETIC_FIXTURE_MARKER,
           storeCounts,
           sourceStatuses: Object.keys(STORES).map((source) => ({ source, status: 'SYNTHETIC' })),
-          changeBaseline: null,
-          changeEventCount: 0,
+          changeBaseline: includeDemoChanges ? '2026-08-29' : null,
+          changeEventCount: publicChangeEvents.length,
         },
       },
       dealerMail: {
@@ -510,13 +509,13 @@ function releaseTemplate() {
     },
     publicSnapshot: { fixture_marker: SYNTHETIC_FIXTURE_MARKER },
     dealerMailSnapshot: { fixture_marker: SYNTHETIC_FIXTURE_MARKER },
-    publicChangeEvents: [],
+    publicChangeEvents,
     vehicles: records,
   }
 }
 
-export function buildSyntheticRelease() {
-  return structuredClone(releaseTemplate())
+export function buildSyntheticRelease({ includeDemoChanges = false } = {}) {
+  return structuredClone(releaseTemplate(includeDemoChanges))
 }
 
 export const syntheticFixtureInternals = Object.freeze({

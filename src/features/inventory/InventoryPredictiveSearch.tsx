@@ -84,6 +84,22 @@ export function InventoryPredictiveSearch({
     setActiveIndex(-1);
   }, [value]);
 
+  useEffect(() => {
+    const query = value.trim().toLocaleLowerCase();
+    if (!query || matches.length !== 1) return;
+
+    const exactVehicleIdentifier = [matches[0].vehicle.vin, matches[0].vehicle.stockNumber]
+      .some((identifier) => identifier.toLocaleLowerCase() === query);
+
+    // Once a manager has entered an exact stock or VIN, the filtered row is
+    // the clearest next target. Leaving a popover over that row on a phone
+    // made its normal “Open details” action impossible to reach.
+    if (exactVehicleIdentifier) {
+      setPopupOpen(false);
+      setActiveIndex(-1);
+    }
+  }, [matches, value]);
+
   const hasQuery = Boolean(value.trim());
   const optionsLength = hasQuery ? matches.length : recentSearches.length;
   const expanded = popupOpen && (hasQuery || recentSearches.length > 0);

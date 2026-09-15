@@ -1,13 +1,25 @@
 // @vitest-environment node
 // @ts-nocheck -- dependency-free ESM link builders.
 import { describe, expect, it } from 'vitest'
-import { DEALERMAIL_INVENTORY_URL, autoCheckUrl, factoryEquipmentUrl, inventorySearchUrl, listingUrl, requestVehicleUrl, trackMovementUrl, windowStickerUrl } from '../../extension/sidepanel/lib/links.mjs'
+import { DEALERMAIL_INVENTORY_URL, autoCheckUrl, factoryEquipmentUrl, inventorySearchUrl, listingUrl, photoUrl, requestVehicleUrl, serviceStatusUrl, trackMovementUrl, windowStickerUrl, workspaceUrl } from '../../extension/sidepanel/lib/links.mjs'
 import { bootstrapRequest, fetchBootstrap, fetchVehicle, PanelApiError, vehicleRequest } from '../../extension/sidepanel/lib/api.mjs'
 import { WORKSPACES } from '../../extension/sidepanel/lib/config.mjs'
+import { officialVehicleDocumentUrl } from '../../src/features/inventory/vehicle-document-utils'
 
 const origin = 'https://inventory-ops.joegallant.me'
 
 describe('deal desk links', () => {
+  it('opens only the defined operational and update workspaces', () => {
+    expect(workspaceUrl(origin, 'price')).toBe(`${origin}/updates?view=price`)
+    expect(workspaceUrl(origin, 'new')).toBe(`${origin}/updates?view=new`)
+    expect(workspaceUrl(origin, 'moves')).toBe(`${origin}/transfers`)
+    expect(workspaceUrl(origin, 'attention')).toBe(`${origin}/attention`)
+    expect(workspaceUrl(origin, 'service')).toBe(`${origin}/service`)
+    expect(workspaceUrl(origin, 'https://example.com')).toBeNull()
+    expect(workspaceUrl(origin, '__proto__')).toBeNull()
+    expect(serviceStatusUrl(origin, 'TESTDATAHWELL0001')).toBe(`${origin}/service?vin=TESTDATAHWELL0001`)
+  })
+
   it('deep-links into the app\'s own request, tracking and search screens', () => {
     expect(requestVehicleUrl(origin, 'TESTDATAHWELL0001')).toBe(`${origin}/transfers/new?vin=TESTDATAHWELL0001`)
     expect(trackMovementUrl(origin, { transferId: 'abc 1', vin: 'X' })).toBe(`${origin}/transfers?id=abc+1`)
@@ -23,11 +35,72 @@ describe('deal desk links', () => {
     expect(listingUrl('https://bobmaxeyfordhowell.com.evil.example/x')).toBeNull()
     expect(autoCheckUrl('https://www.bobmaxeyford.com/AutoCheck.aspx?sv=1&ac=2')).toBe('https://www.bobmaxeyford.com/AutoCheck.aspx?sv=1&ac=2')
     expect(autoCheckUrl('https://www.bobmaxeyford.com/other.aspx')).toBeNull()
-    expect(windowStickerUrl('https://www.bobmaxeylincoln.com/api/vhcliaa/inventory/21521/window-sticker?vin=x')).toContain('window-sticker')
+    expect(windowStickerUrl('https://www.bobmaxeylincoln.com/api/vhcliaa/inventory/21521/window-sticker?sv=SYNTHETIC&make=Lincoln&vehicleType=Used')).toContain('window-sticker')
     expect(windowStickerUrl('https://www.bobmaxeylincoln.com/api/vhcliaa/inventory/abc/window-sticker')).toBeNull()
     expect(factoryEquipmentUrl('https://assets.cai-media-management.com/window-stickers/12345678-1234-1234-8abc-123456789abc.jpg')).toContain('cai-media-management')
     expect(factoryEquipmentUrl('https://assets.cai-media-management.com/window-stickers/../secret.jpg')).toBeNull()
     expect(DEALERMAIL_INVENTORY_URL).toMatch(/^https:\/\/www\.dealermail\.com\//)
+  })
+
+  it('keeps source photos on HTTPS names while rejecting local and literal-IP targets', () => {
+    expect(photoUrl('https://images.example.test/vehicle.jpg')).toBe('https://images.example.test/vehicle.jpg')
+    for (const unsafe of ['http://images.example.test/vehicle.jpg', 'https://localhost/vehicle.jpg', 'https://preview.localhost/vehicle.jpg', 'https://127.0.0.1/vehicle.jpg', 'https://192.168.1.10/vehicle.jpg', 'https://[::1]/vehicle.jpg']) {
+      expect(photoUrl(unsafe)).toBeNull()
+    }
+  })
+
+  const reportHost = 'https://www.bobmaxeyfordhowell.com'
+  const syntheticListing = `${reportHost}/used-Synthetic-TESTDATAHWELL0001`
+  const autoCheck = `${reportHost}/AutoCheck.aspx?sv=SYNTHETIC&ac=SYNTHETIC`
+  const sticker = `${reportHost}/api/vhcliaa/inventory/21521/window-sticker?sv=SYNTHETIC&make=Ford&vehicleType=Used`
+
+  it.each([
+    ['autocheck', autoCheckUrl, autoCheck],
+    ['autocheck', autoCheckUrl, `${reportHost}/autocheck.aspx?ac=SYNTHETIC%20REPORT&sv=SYNTHETIC`],
+    ['window-sticker', windowStickerUrl, sticker],
+    ['window-sticker', windowStickerUrl, `${sticker}&dealerCode=SYNTHETIC`],
+  ])('preserves approved %s source shapes with or without a listing record', (kind, validate, source) => {
+    expect(validate(source, syntheticListing)).toBe(source)
+    expect(validate(source)).toBe(source)
+    expect(validate(source, syntheticListing)).toBe(officialVehicleDocumentUrl(source, kind, syntheticListing))
+  })
+
+  it.each([
+    ['autocheck', autoCheckUrl, autoCheck],
+    ['window-sticker', windowStickerUrl, sticker],
+  ])('binds %s to the vehicle listing host and rejects unsafe source URLs', (kind, validate, source) => {
+    for (const listing of ['https://www.bobmaxeylincoln.com/used-Synthetic', 'http://www.bobmaxeyfordhowell.com/used-Synthetic', 'not a URL']) {
+      expect(validate(source, listing)).toBeNull()
+      expect(validate(source, listing)).toBe(officialVehicleDocumentUrl(source, kind, listing))
+    }
+    for (const unsafe of [
+      `${source}#report`, `${source}&redirect=https://example.com`, `${source}&sv=OTHER`,
+      source.replace('https:', 'http:'), source.replace(reportHost, `${reportHost}:8443`),
+      source.replace('https://', 'https://user:password@'), source.replace('www.bobmaxeyfordhowell.com', 'www.bobmaxeyfordhowell.com.evil.example'),
+    ]) {
+      expect(validate(unsafe, syntheticListing)).toBeNull()
+      expect(validate(unsafe, syntheticListing)).toBe(officialVehicleDocumentUrl(unsafe, kind, syntheticListing))
+    }
+  })
+
+  it.each([
+    '', '?sv=SYNTHETIC', '?sv=&ac=SYNTHETIC', '?sv=%20&ac=SYNTHETIC', '?sv=SYNTHETIC&ac=',
+    '?sv=SYNTHETIC&ac=SYNTHETIC&ac=OTHER', '?sv=SYNTHETIC&ac=SYNTHETIC&extra=1', '?vin=SYNTHETIC&ac=SYNTHETIC',
+  ])('rejects incomplete or ambiguous AutoCheck query %s', (query) => {
+    const source = `${reportHost}/AutoCheck.aspx${query}`
+    expect(autoCheckUrl(source)).toBeNull()
+    expect(autoCheckUrl(source)).toBe(officialVehicleDocumentUrl(source, 'autocheck'))
+  })
+
+  it.each([
+    '', '?vin=SYNTHETIC', '?sv=SYNTHETIC&make=Ford', '?sv=SYNTHETIC&make=Ford&vehicleType=',
+    '?sv=SYNTHETIC&make=%20&vehicleType=Used', '?sv=SYNTHETIC&make=Ford&vehicleType=Used&make=Lincoln',
+    '?sv=SYNTHETIC&make=Ford&vehicleType=Used&dealerCode=1&dealerCode=2',
+    '?sv=SYNTHETIC&make=Ford&vehicleType=Used&download=1',
+  ])('rejects incomplete or ambiguous sticker query %s', (query) => {
+    const source = `${reportHost}/api/vhcliaa/inventory/21521/window-sticker${query}`
+    expect(windowStickerUrl(source)).toBeNull()
+    expect(windowStickerUrl(source)).toBe(officialVehicleDocumentUrl(source, 'window-sticker'))
   })
 })
 

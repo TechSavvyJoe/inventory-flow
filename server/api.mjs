@@ -1,6 +1,7 @@
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import path from 'node:path'
+import { assertAdminOverviewAccess } from './admin-control-center.mjs'
 import { createIdentityResolver, IdentityError } from './identity.mjs'
 import { WorkflowError } from './workflow.mjs'
 
@@ -101,9 +102,45 @@ function queryObject(url) {
   return Object.fromEntries(url.searchParams.entries())
 }
 
+export async function readAdminDirectory(adminDirectory) {
+  if (!adminDirectory || typeof adminDirectory.listMembers !== 'function') {
+    throw new HttpError(
+      'The server-owned employee directory is unavailable',
+      503,
+      'ADMIN_DIRECTORY_UNAVAILABLE',
+    )
+  }
+  let members
+  try {
+    members = await adminDirectory.listMembers()
+  } catch {
+    throw new HttpError(
+      'The server-owned employee directory is unavailable',
+      503,
+      'ADMIN_DIRECTORY_UNAVAILABLE',
+    )
+  }
+  if (!Array.isArray(members)) {
+    throw new HttpError(
+      'The server-owned employee directory is unavailable',
+      503,
+      'ADMIN_DIRECTORY_UNAVAILABLE',
+    )
+  }
+  return members
+}
+
 function apiPath(pathname) {
   const match = pathname.match(/^\/api(?:\/v1)?(?<rest>\/.*|$)/)
   return match?.groups?.rest || null
+}
+
+function pathSegment(value) {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    throw new HttpError('Invalid path', 400, 'INVALID_PATH')
+  }
 }
 
 function safeStaticPath(distDir, pathname) {
@@ -150,7 +187,7 @@ function serveStatic(request, response, distDir, url) {
   else createReadStream(candidate).pipe(response)
 }
 
-export function createApiHandler({ service, serveDist = false, distDir, identityResolver = createIdentityResolver() } = {}) {
+export function createApiHandler({ service, serveDist = false, distDir, identityResolver = createIdentityResolver(), adminDirectory } = {}) {
   if (!service) throw new Error('service is required')
   if (!identityResolver?.resolve) throw new Error('identityResolver is required')
   return async function handler(request, response) {
@@ -164,6 +201,31 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
 
       if (request.method === 'GET' && route === '/health') return sendJson(response, 200, service.health())
       const context = identityResolver.resolve(request, url, { allowQuery: route === '/bootstrap' })
+      if (route === '/admin/overview') {
+        if (request.method !== 'GET') {
+          return sendJson(response, 405, { error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' })
+        }
+        // Authorize before touching the employee directory. The core repeats
+        // this guard as defense in depth.
+        assertAdminOverviewAccess(context)
+        const members = await readAdminDirectory(adminDirectory)
+        const overview = service.adminOverview(context, members)
+        if (identityResolver.mode === 'demo' && typeof adminDirectory?.saveMember === 'function') overview.canManageMembers = true
+        return sendJson(response, 200, overview)
+      }
+      if (route === '/admin/members') {
+        assertAdminOverviewAccess(context)
+        // Mutations on this Node surface are available only to the isolated
+        // synthetic demo adapter. Hosted access uses Access + D1 memberships.
+        if (identityResolver.mode !== 'demo' || !adminDirectory?.readMembers || !adminDirectory?.saveMember) throw new HttpError('Employee editing is unavailable on this host.', 503, 'ADMIN_EDITING_UNAVAILABLE')
+        if (request.method === 'GET') return sendJson(response, 200, await adminDirectory.readMembers(context))
+        if (request.method !== 'POST') return sendJson(response, 405, { error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' })
+        const origin = String(request.headers.origin ?? '')
+        let originUrl
+        try { originUrl = new URL(origin) } catch { throw new HttpError('Use the local demo page to make this change.', 403, 'SAME_ORIGIN_REQUIRED') }
+        if (!['127.0.0.1', 'localhost'].includes(originUrl.hostname) || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress)) throw new HttpError('Use the local demo page to make this change.', 403, 'SAME_ORIGIN_REQUIRED')
+        return sendJson(response, 200, await adminDirectory.saveMember(await readJson(request), context, String(request.headers['idempotency-key'] ?? '')))
+      }
       if (request.method === 'GET' && route === '/bootstrap') {
         return sendJson(response, 200, service.bootstrap(context))
       }
@@ -172,7 +234,16 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
       }
       const vehicleMatch = route.match(/^\/vehicles\/([^/]+)$/)
       if (request.method === 'GET' && vehicleMatch) {
-        return sendJson(response, 200, service.getVehicle(decodeURIComponent(vehicleMatch[1]), context))
+        return sendJson(response, 200, service.getVehicle(pathSegment(vehicleMatch[1]), context))
+      }
+      const serviceMatch = route.match(/^\/vehicles\/([^/]+)\/service$/)
+      if (request.method === 'GET' && serviceMatch) {
+        return sendJson(response, 200, service.getServiceReadiness(pathSegment(serviceMatch[1]), context))
+      }
+      if (request.method === 'POST' && serviceMatch) {
+        const input = await readJson(request)
+        const result = service.updateServiceReadiness(pathSegment(serviceMatch[1]), input, context, String(request.headers['idempotency-key'] ?? '') || undefined)
+        return sendJson(response, result.created ? 201 : 200, result.record)
       }
       if (request.method === 'GET' && route === '/attention') {
         return sendJson(response, 200, service.listAttention(queryObject(url), context))
@@ -181,7 +252,7 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
       if (request.method === 'POST' && attentionEventMatch) {
         const input = await readJson(request)
         const result = service.appendAttentionEvent(
-          decodeURIComponent(attentionEventMatch[1]),
+          pathSegment(attentionEventMatch[1]),
           input,
           context,
           String(request.headers['idempotency-key'] ?? '') || undefined,
@@ -190,7 +261,7 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
       }
       const attentionMatch = route.match(/^\/attention\/([^/]+)$/)
       if (request.method === 'GET' && attentionMatch) {
-        return sendJson(response, 200, service.getAttention(decodeURIComponent(attentionMatch[1]), context))
+        return sendJson(response, 200, service.getAttention(pathSegment(attentionMatch[1]), context))
       }
       if (request.method === 'GET' && route === '/transfers') {
         return sendJson(response, 200, service.listTransfers(queryObject(url), context))
@@ -208,7 +279,7 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
       if (request.method === 'POST' && eventMatch) {
         const input = prepareNodeTransferEventInput(await readJson(request), context)
         const result = service.appendTransferEvent(
-          decodeURIComponent(eventMatch[1]),
+          pathSegment(eventMatch[1]),
           input,
           context,
           String(request.headers['idempotency-key'] ?? '') || undefined,
@@ -217,7 +288,7 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
       }
       const transferMatch = route.match(/^\/transfers\/([^/]+)$/)
       if (request.method === 'GET' && transferMatch) {
-        return sendJson(response, 200, service.getTransfer(decodeURIComponent(transferMatch[1]), context))
+        return sendJson(response, 200, service.getTransfer(pathSegment(transferMatch[1]), context))
       }
       return sendJson(response, 404, { error: 'API route not found', code: 'NOT_FOUND' })
     } catch (error) {

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { InventoryPredictiveSearch } from "./InventoryPredictiveSearch";
+import { serviceWorkflowStatus } from "../../lib/service-readiness";
 import { runInterfaceTransition } from "../../lib/interfaceTransition";
 import { useModalBackgroundIsolation } from "../../lib/useModalBackgroundIsolation";
 import { InventoryMobileList, InventoryTable, inventorySortSummary } from "./InventoryTable";
@@ -41,12 +42,23 @@ import type {
 } from "./types";
 import "./inventory.css";
 import "./inventory-modern.css";
-import "./InventoryExperience.production-v4.css";
-import "./InventoryControls.flow.css";
+import "./InventoryServiceFilter.css";
 
 const PAGE_SIZE_OPTIONS = [10, 15, 20, 25, 50, 100] as const;
 const MAX_SORT_LEVELS = 5;
 type QuickView = "all" | "no-hold" | "held" | "moving" | "new" | "price";
+type ServiceFilter = NonNullable<InventoryFilters["serviceReadiness"]>;
+const SERVICE_FILTERS: Array<[ServiceFilter, string]> = [["all", "All service"], ["needs_service", "Waiting for service"], ["in_service", "In service"], ["serviced", "Ready"]];
+
+function initialServiceFilter(key: string, preferred?: InventoryFilters["serviceReadiness"]): ServiceFilter {
+  if (preferred === "unknown") return "needs_service";
+  if (preferred && SERVICE_FILTERS.some(([value]) => value === preferred)) return preferred;
+  try {
+    const saved = window.sessionStorage.getItem(key);
+    if (saved === "unknown") return "needs_service";
+    return SERVICE_FILTERS.some(([value]) => value === saved) ? saved as ServiceFilter : "all";
+  } catch { return "all"; }
+}
 
 function numericInputValue(value: string): number | undefined {
   if (!value.trim()) return undefined;
@@ -93,7 +105,7 @@ function ScopeSwitch({
   onChange: (scope: InventoryScope) => void;
 }) {
   return (
-    <div className="inventory-scope-switch inventory-scope-switch--modern inv-desk-segment" role="group" aria-label="Inventory location scope">
+    <div className="if-srp-scope" role="group" aria-label="Inventory location scope">
       <button type="button" className={scope === "home" ? "is-active" : undefined} aria-label={`${homeStore.name} inventory, ${homeCount} of ${groupCount} group vehicles`} aria-pressed={scope === "home"} onClick={() => onChange("home")}>
         <span className="inventory-scope-switch__full">{homeStore.name} <b>{homeCount}</b></span>
         <span className="inventory-scope-switch__compact" aria-hidden="true">{homeStore.name} <b>{homeCount}</b></span>
@@ -354,6 +366,7 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     initialSorts = DEFAULT_INVENTORY_SORTS,
     selectedVehicleId: controlledSelectedVehicleId,
     defaultSelectedVehicleId = null,
+    initialWorkspaceTab = "overview",
     pageSize = 10,
     canRequestVehicle = false,
     onScopeChange,
@@ -371,18 +384,25 @@ export function InventoryExperience(props: InventoryExperienceProps) {
   const [internalScope, setInternalScope] = useState<InventoryScope>(initialScope);
   const scope = controlledScope ?? internalScope;
   const [query, setQuery] = useState(initialQuery);
-  const [filters, setFilters] = useState<InventoryFilters>({ ...DEFAULT_INVENTORY_FILTERS, ...initialFilters });
+  const filterContext = `inventory-service:v1:${searchPersistenceKey || "session"}:${homeStore.id}`;
+  const contextFilters = () => ({ ...DEFAULT_INVENTORY_FILTERS, ...initialFilters, serviceReadiness: initialServiceFilter(filterContext, initialFilters?.serviceReadiness) });
+  const [filterState, setFilterState] = useState<{ context: string; value: InventoryFilters }>(() => ({ context: filterContext, value: contextFilters() }));
+  const fallbackFilters = useMemo(contextFilters, [filterContext, initialFilters]);
+  const filters: InventoryFilters = filterState.context === filterContext ? filterState.value : fallbackFilters;
+  const setFilters = (next: SetStateAction<InventoryFilters>) => setFilterState(current => ({ context: filterContext, value: typeof next === "function" ? next(current.context === filterContext ? current.value : contextFilters()) : next }));
   const [sorts, setSorts] = useState<InventorySort[]>(initialSorts);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [quickView, setQuickView] = useState<QuickView>("all");
   const [rowsPerPage, setRowsPerPage] = useState(() => initialRowsPerPage(pageSize));
   const [page, setPage] = useState(1);
   const [internalSelectedVehicleId, setInternalSelectedVehicleId] = useState<string | null>(defaultSelectedVehicleId);
-  const [workspaceInitialTab, setWorkspaceInitialTab] = useState<VehicleWorkspaceTab>("overview");
+  const [workspaceInitialTab, setWorkspaceInitialTab] = useState<VehicleWorkspaceTab>(initialWorkspaceTab);
   const selectedVehicleId = controlledSelectedVehicleId !== undefined ? controlledSelectedVehicleId : internalSelectedVehicleId;
   const filterPanelId = useId();
   const backgroundRef = useRef<HTMLDivElement>(null);
+  const filterTriggerRef = useRef<HTMLButtonElement>(null);
   const workspaceReturnFocusRef = useRef<HTMLElement | null>(null);
+  const pendingWorkspaceReturnFocusRef = useRef<{ vehicleId: string; trigger: HTMLElement | null } | null>(null);
   const stores = useMemo(() => uniqueStores(homeStore, vehicles, groupStores), [groupStores, homeStore, vehicles]);
   const groupVehicleCount = vehicles.length;
   const homeVehicleCount = useMemo(
@@ -407,12 +427,20 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     runInterfaceTransition(updateSelection, "vehicle");
   };
 
-  const visibleVehicleTrigger = (vehicleId: string) => Array.from(
-    backgroundRef.current?.querySelectorAll<HTMLElement>("button[data-inventory-vehicle-trigger]") ?? [],
-  ).find((element) =>
-    element.dataset.inventoryVehicleTrigger === vehicleId &&
-    element.getClientRects().length > 0,
-  ) ?? null;
+  const visibleVehicleTrigger = (vehicleId: string) => {
+    const triggers = Array.from(
+      backgroundRef.current?.querySelectorAll<HTMLElement>("button[data-inventory-vehicle-trigger]") ?? [],
+    ).filter((element) =>
+      element.dataset.inventoryVehicleTrigger === vehicleId &&
+      element.getClientRects().length > 0,
+    );
+    // Several summary controls can open the same workspace. When Safari does
+    // not assign focus to a pointer-clicked row action, restore to the clear
+    // primary View action instead of whichever secondary cell happens to be
+    // first in DOM order. A genuinely focused secondary action is preserved
+    // by openVehicleWorkspace below.
+    return triggers.find((element) => element.dataset.rowAction === "open-details") ?? triggers[0] ?? null;
+  };
 
   const openVehicleWorkspace = (vehicle: InventoryVehicle, section: VehicleWorkspaceTab = "overview") => {
     setWorkspaceInitialTab(section);
@@ -440,6 +468,10 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     () => vehicles.filter((vehicle) => vehicleMatchesQuery(vehicle, query) && vehicleMatchesFilters(vehicle, filters)),
     [filters, query, vehicles],
   );
+  const searchableVehicles = useMemo(
+    () => vehicles.filter(vehicle => vehicleMatchesFilters(vehicle, filters, { ignoreStore: true }) && matchesQuickView(vehicle, quickView)),
+    [filters, quickView, vehicles],
+  );
   const scopedVehicles = useMemo(() => {
     const scoped = baseMatches.filter((vehicle) => (scope === "group" || vehicle.location.homeStore.id === homeStore.id) && matchesQuickView(vehicle, quickView));
     return sortVehicles(scoped, sorts);
@@ -457,33 +489,49 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     };
   }, [baseMatches, homeStore.id, scope]);
 
+  const serviceCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: 0, needs_service: 0, in_service: 0, serviced: 0 };
+    for (const vehicle of vehicles) {
+      if (scope !== "group" && vehicle.location.homeStore.id !== homeStore.id) continue;
+      if (!vehicleMatchesQuery(vehicle, query) || !matchesQuickView(vehicle, quickView)) continue;
+      if (!vehicleMatchesFilters(vehicle, { ...filters, serviceReadiness: "all" })) continue;
+      counts.all += 1;
+      counts[serviceWorkflowStatus(vehicle.serviceReadiness)] += 1;
+    }
+    return counts;
+  }, [filters, homeStore.id, query, quickView, scope, vehicles]);
+
   const otherLocationMatches = useMemo(() => {
     if (!query.trim() || scope === "group") return 0;
-    return vehicles.filter((vehicle) => vehicle.location.homeStore.id !== homeStore.id && vehicleMatchesQuery(vehicle, query) && vehicleMatchesFilters(vehicle, filters, { ignoreStore: true })).length;
-  }, [filters, homeStore.id, query, scope, vehicles]);
+    return vehicles.filter((vehicle) => vehicle.location.homeStore.id !== homeStore.id && vehicleMatchesQuery(vehicle, query) && vehicleMatchesFilters(vehicle, filters, { ignoreStore: true }) && matchesQuickView(vehicle, quickView)).length;
+  }, [filters, homeStore.id, query, quickView, scope, vehicles]);
 
   const totalPages = Math.max(1, Math.ceil(scopedVehicles.length / rowsPerPage));
   const safePage = Math.min(page, totalPages);
   const pageStart = (safePage - 1) * rowsPerPage;
   const pageVehicles = scopedVehicles.slice(pageStart, pageStart + rowsPerPage);
   const selectedVehicle = selectedVehicleId ? vehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null : null;
-  const filterCount = activeFilterCount(filters);
+  const filterCount = activeFilterCount(filters) + (quickView === "all" ? 0 : 1);
+  const selectedServiceLabel = SERVICE_FILTERS.find(([value]) => value === filters.serviceReadiness && value !== "all")?.[1];
+  const secondaryViewLabel = quickView === "no-hold" ? "No current hold" : quickView === "new" ? "New today" : quickView === "price" ? "Price changed" : null;
   const canRequestSelected = selectedVehicle
     ? typeof canRequestVehicle === "function" ? canRequestVehicle(selectedVehicle) : canRequestVehicle
     : false;
 
   const closeVehicleWorkspace = () => {
-    const closingVehicleId = selectedVehicleId;
-    const priorTrigger = workspaceReturnFocusRef.current;
+    if (selectedVehicleId) {
+      const currentTrigger = workspaceReturnFocusRef.current;
+      const currentStillVisible = Boolean(currentTrigger?.isConnected && currentTrigger.getClientRects().length > 0);
+      const returnTrigger = currentStillVisible ? currentTrigger : visibleVehicleTrigger(selectedVehicleId);
+      // Keep the ref current too: VehicleWorkspace owns a contained-focus
+      // cleanup and should restore the same, still-visible launch control.
+      workspaceReturnFocusRef.current = returnTrigger;
+      pendingWorkspaceReturnFocusRef.current = {
+        vehicleId: selectedVehicleId,
+        trigger: returnTrigger,
+      };
+    }
     setSelectedVehicleId(null);
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        const target = priorTrigger?.isConnected
-          ? priorTrigger
-          : closingVehicleId ? visibleVehicleTrigger(closingVehicleId) : null;
-        target?.focus({ preventScroll: true });
-      });
-    });
   };
 
   useModalBackgroundIsolation({
@@ -491,36 +539,65 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     backgroundRef,
   });
 
+  // A vehicle selection can be committed inside a view transition. Restore
+  // focus only after that commit has removed background inertness, rather than
+  // racing the transition from the close handler (especially noticeable in
+  // WebKit after a viewport resize).
+  useLayoutEffect(() => {
+    const pending = pendingWorkspaceReturnFocusRef.current;
+    if (selectedVehicleId !== null || !pending) return;
+    pendingWorkspaceReturnFocusRef.current = null;
+
+    const restoreFocus = () => {
+      const visibleTrigger = visibleVehicleTrigger(pending.vehicleId);
+      const pendingVisible = Boolean(pending.trigger?.isConnected && pending.trigger.getClientRects().length > 0);
+      const target = pendingVisible ? pending.trigger : visibleTrigger;
+      target?.focus({ preventScroll: true });
+    };
+
+    restoreFocus();
+    const frame = window.requestAnimationFrame(restoreFocus);
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedVehicleId]);
+
   useEffect(() => setPage(1), [filters, query, quickView, rowsPerPage, scope, sorts]);
+  useEffect(() => setWorkspaceInitialTab(initialWorkspaceTab), [initialWorkspaceTab]);
   useEffect(() => onViewStateChange?.({ scope, query, filters, sorts }), [filters, onViewStateChange, query, scope, sorts]);
   useEffect(() => {
     try { window.sessionStorage.setItem("inventory:rows-per-page", String(rowsPerPage)); } catch { /* storage is optional */ }
   }, [rowsPerPage]);
+  useEffect(() => {
+    try { window.sessionStorage.setItem(filterContext, filters.serviceReadiness ?? "all"); } catch { /* storage is optional */ }
+  }, [filterContext, filters.serviceReadiness]);
 
   const clearFilters = () => {
     setFilters({ ...DEFAULT_INVENTORY_FILTERS });
     setQuickView("all");
   };
+  const returnToFilterTrigger = () => window.requestAnimationFrame(() => filterTriggerRef.current?.focus({ preventScroll: true }));
+  const closeFilters = () => {
+    setFiltersOpen(false);
+    window.requestAnimationFrame(() => {
+      filterTriggerRef.current?.focus({ preventScroll: true });
+      filterTriggerRef.current?.scrollIntoView?.({ block: "nearest" });
+    });
+  };
 
   return (
-    <section id="inventory-results-workspace" className={`inventory-experience inventory-experience--modern inventory-experience--responsive${selectedVehicle ? " has-workspace" : ""}${className ? ` ${className}` : ""}`} aria-label={props["aria-label"] || "Inventory"}>
+    <section id="inventory-results-workspace" data-filters-open={filtersOpen} className={`inventory-experience if-srp${selectedVehicle ? " has-workspace" : ""}${className ? ` ${className}` : ""}`} aria-label={props["aria-label"] || "Inventory"}>
       <div className="inventory-experience__content" ref={backgroundRef}>
-        <header className="inventory-page-header inventory-page-header--modern inv-desk-page-header">
+        <div className="if-srp-heading-grid">
+        <header className="if-srp-header">
           <div>
-            <h1>{title}</h1>
-            <p>
-              {scope === "home"
-                ? `${homeVehicleCount} vehicles at ${homeStore.name} · ${groupVehicleCount} across the group`
-                : `${groupVehicleCount} vehicles across four locations`}
-            </p>
+            <h1 aria-label={scope === "group" ? "All locations inventory" : title}><span className="if-srp-title-full">{scope === "group" ? "All locations inventory" : title}</span><span className="if-srp-title-mobile" aria-hidden="true">Inventory</span></h1>
           </div>
           <ScopeSwitch homeStore={homeStore} scope={scope} homeCount={homeVehicleCount} groupCount={groupVehicleCount} onChange={setScope} />
         </header>
 
-        <div className="inventory-command-bar" role="group" aria-label="Inventory search and location scope">
+        <div className="if-srp-searchbar" role="group" aria-label="Inventory search and location scope">
           <InventoryPredictiveSearch
             id={`${filterPanelId}-search`}
-            vehicles={vehicles}
+            vehicles={searchableVehicles}
             value={query}
             onChange={setQuery}
             onSelectVehicle={(vehicle) => {
@@ -532,26 +609,13 @@ export function InventoryExperience(props: InventoryExperienceProps) {
           />
         </div>
 
-        <div className="inventory-control-deck inv-desk-deck">
-          <label className="inventory-status-select">
-            <span className="inventory-visually-hidden">Quick view</span>
-            <select aria-label="Inventory quick view" value={quickView} onChange={(event) => setQuickView(event.target.value as QuickView)}>
-              <option value="all">All vehicles ({quickViewCounts.all})</option>
-              <option value="no-hold">No current hold ({quickViewCounts["no-hold"]})</option>
-              <option value="held">Held ({quickViewCounts.held})</option>
-              <option value="moving">Being moved ({quickViewCounts.moving})</option>
-              <option value="new">New today ({quickViewCounts.new})</option>
-              <option value="price">Price changed ({quickViewCounts.price})</option>
-            </select>
-          </label>
-          <div className="inventory-quick-filters inv-desk-segment" role="group" aria-label="Inventory quick filters">
+        </div>
+        <div className="if-srp-controls">
+          <div className="if-srp-quickviews" role="group" aria-label="Inventory quick filters">
             {([
               ["all", "All", "All"],
-              ["no-hold", "No current hold", "No hold"],
               ["held", "Held", "Held"],
               ["moving", "Being moved", "Moving"],
-              ["new", "New today", "New"],
-              ["price", "Price changed", "Price"],
             ] as Array<[QuickView, string, string]>).map(([value, label, compactLabel]) => (
               <button key={value} type="button" className={quickView === value ? "is-active" : undefined} aria-label={`${label}: ${quickViewCounts[value]} vehicles`} aria-pressed={quickView === value} onClick={() => setQuickView(value)}>
                 <span className="inventory-quick-filter-label inventory-quick-filter-label--full" aria-hidden="true">{label}</span>
@@ -561,9 +625,16 @@ export function InventoryExperience(props: InventoryExperienceProps) {
             ))}
           </div>
 
-          <div className="inventory-toolbar inventory-toolbar--modern">
+          <div id={`${filterPanelId}-service`} className="if-srp-service-filters" role="group" aria-label="Inventory service status" onKeyDown={event => { if (filtersOpen && event.key === "Escape") { event.preventDefault(); closeFilters(); } }}>
+            <strong className="if-srp-service-heading">Service status</strong>
+            {SERVICE_FILTERS.map(([value, label]) => <button key={value} type="button" aria-label={`${label}: ${serviceCounts[value]} vehicles`} aria-pressed={(filters.serviceReadiness ?? "all") === value} onClick={() => setFilters(current => ({ ...current, serviceReadiness: value }))}>
+              <span className="service-filter-label--full">{label}</span><span className="service-filter-label--short" aria-hidden="true">{value === 'needs_service' ? 'Waiting' : label}</span><span>{serviceCounts[value]}</span>
+            </button>)}
+          </div>
+
+          <div className="if-srp-tools">
             <div className="inventory-toolbar__left">
-              <button type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen ? " is-active" : ""}`} onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={filterPanelId}>
+              <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen ? " is-active" : ""}`} onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
                 <Filter size={16} strokeWidth={1.8} aria-hidden="true" /> Filters {filterCount > 0 ? <span className="inv-btn__count">{filterCount}</span> : null}
               </button>
               <strong className="inventory-results-count" aria-live="polite">
@@ -577,7 +648,21 @@ export function InventoryExperience(props: InventoryExperienceProps) {
           </div>
         </div>
 
-        {filtersOpen ? <FiltersPanel id={filterPanelId} filters={filters} stores={stores} homeStore={homeStore} scope={scope} onChange={setFilters} onClear={clearFilters} /> : null}
+        {!filtersOpen && filterCount > 0 ? <div className="if-srp-active-filters" role="group" aria-label="Active inventory filters">
+          {selectedServiceLabel ? <button type="button" aria-label={`Clear service filter: ${selectedServiceLabel}`} onClick={() => { setFilters(current => ({ ...current, serviceReadiness: "all" })); returnToFilterTrigger(); }}>Service: {selectedServiceLabel}<X size={14} aria-hidden="true" /></button> : null}
+          {secondaryViewLabel ? <button type="button" aria-label={`Clear view filter: ${secondaryViewLabel}`} onClick={() => { setQuickView("all"); returnToFilterTrigger(); }}>{secondaryViewLabel}<X size={14} aria-hidden="true" /></button> : null}
+          <button type="button" className="if-srp-clear-filters" onClick={() => { clearFilters(); returnToFilterTrigger(); }}>Clear {filterCount} {filterCount === 1 ? "filter" : "filters"}</button>
+        </div> : null}
+
+        <div id={filterPanelId} hidden={!filtersOpen} onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); closeFilters(); } }}>
+        {filtersOpen ? <>
+          <div className="if-srp-secondary-views" role="group" aria-label="More inventory views">
+            {([["no-hold", "No current hold"], ["new", "New today"], ["price", "Price changed"]] as Array<[QuickView, string]>).map(([value, label]) => <button key={value} type="button" aria-pressed={quickView === value} onClick={() => setQuickView(quickView === value ? "all" : value)}>{label} <span>{quickViewCounts[value]}</span></button>)}
+          </div>
+          <FiltersPanel id={`${filterPanelId}-details`} filters={filters} stores={stores} homeStore={homeStore} scope={scope} onChange={setFilters} onClear={clearFilters} />
+          <button type="button" className="if-srp-show-results inv-btn" onClick={closeFilters}>Show {scopedVehicles.length} {scopedVehicles.length === 1 ? "vehicle" : "vehicles"}</button>
+        </> : null}
+        </div>
 
         <div className="inventory-results-surface">
           {pageVehicles.length ? (
@@ -599,6 +684,10 @@ export function InventoryExperience(props: InventoryExperienceProps) {
                 selectedVehicleId={selectedVehicleId}
                 onSelectVehicle={openVehicleWorkspace}
                 onOpenSourceRecord={openSourceRecord}
+                canRequestVehicle={canRequestVehicle}
+                onRequestVehicle={onRequestVehicle}
+                onTrackMovement={onTrackMovement}
+                onOpenListing={onOpenListing}
               />
             </>
           ) : (

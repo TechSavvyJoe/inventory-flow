@@ -9,11 +9,15 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleUserRound,
+  Download,
   Ellipsis,
+  LayoutDashboard,
   RefreshCw,
   Search,
   Settings2,
   Users,
+  ListChecks,
+  Wrench,
   X,
 } from 'lucide-react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
@@ -30,12 +34,27 @@ import {
 import { useAppData } from './AppDataContext'
 import { STORE_BRANDING } from './storeBranding'
 import '../styles/mobile-density.css'
+import { openStoreActionCount } from '../features/attention/action-center'
+import '../styles/workflow-navigation.css'
+import '../styles/compact-workspace.css'
 
 const NAV_ITEMS = [
   { id: 'inventory', to: '/inventory', label: 'Inventory', shortLabel: 'Inventory', icon: CarFront },
   { id: 'moves', to: '/transfers', label: 'Vehicle moves', shortLabel: 'Moves', icon: ArrowLeftRight },
-  { id: 'today', to: '/attention', label: 'Needs attention', shortLabel: 'Alerts', icon: Bell },
+  { id: 'today', to: '/attention', label: 'Action center', shortLabel: 'Actions', icon: Bell },
+  { id: 'updates', to: '/updates', label: 'Inventory updates', shortLabel: 'Updates', icon: ListChecks },
+  { id: 'service', to: '/service', label: 'Service status', shortLabel: 'Service', icon: Wrench },
 ] as const
+
+const ADMIN_NAV_ITEM = {
+  id: 'admin',
+  to: '/admin',
+  label: 'Control center',
+  shortLabel: 'Control center',
+  icon: LayoutDashboard,
+} as const
+
+type NavigationItemId = (typeof NAV_ITEMS)[number]['id'] | typeof ADMIN_NAV_ITEM.id
 
 const ROLE_LABELS: Record<UserRole, string> = {
   sales: 'Salesperson',
@@ -70,7 +89,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [navExpanded, setNavExpanded] = useState(readStoredNavigationState)
   const [utilityOpen, setUtilityOpen] = useState(false)
   const [storeSwitching, setStoreSwitching] = useState(false)
-  const searchAccessContext = inventorySearchAccessContext(role, homeStore)
+  const searchAccessContext = inventorySearchAccessContext(role, homeStore, currentUser)
   const [searchDraft, setSearchDraft] = useState(() => ({ accessContext: searchAccessContext, query: '' }))
   const query = searchDraft.accessContext === searchAccessContext ? searchDraft.query : ''
   const utilityDialogRef = useRef<HTMLDivElement>(null)
@@ -83,10 +102,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation()
   const previousLocationKeyRef = useRef(location.key)
   const isInventoryRoute = location.pathname === '/' || location.pathname.startsWith('/inventory')
-  const attentionCount = data?.attention.filter((item) => item.severity !== 'info').length ?? 0
+  const attentionCount = openStoreActionCount(data, homeStore)
   const storeBrand = STORE_BRANDING[homeStore]
   const canSeeManager = role === 'manager' || role === 'group_manager'
-  const rolePreviewEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
+  const canSeeAdmin = role === 'group_manager'
+  const desktopNavigationItems = canSeeAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS
+  const mobileNavigationItems = canSeeAdmin
+    ? [ADMIN_NAV_ITEM, NAV_ITEMS[0], NAV_ITEMS[1], NAV_ITEMS[4]]
+    : NAV_ITEMS.filter((item) => item.id !== 'service')
+  const rolePreviewEnabled = data?.access?.canPreviewRoles === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
+  const productionRolePreview = data?.access?.rolePreviewActive === true
   const freshnessState = !data
     ? 'unknown'
     : data.meta.dealerMailFreshness === 'incomplete' || data.meta.publicFreshness === 'incomplete'
@@ -164,14 +189,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     setUtilityOpen(true)
   }
 
-  function isNavActive(id: (typeof NAV_ITEMS)[number]['id'], to: string) {
+  function isNavActive(id: NavigationItemId, to: string) {
     if (id === 'inventory') return location.pathname === '/' || location.pathname.startsWith('/inventory')
     return location.pathname === to || location.pathname.startsWith(`${to}/`)
   }
 
   const primaryNavigation = (
     <nav className="primary-nav" aria-label="Primary">
-      {NAV_ITEMS.map(({ id, to, label, icon: Icon }) => {
+      {desktopNavigationItems.map(({ id, to, label, icon: Icon }) => {
         const active = isNavActive(id, to)
         return (
           <NavLink
@@ -229,7 +254,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        {rolePreviewEnabled ? <label className="utility-role-control" title="Prototype role preview; production will use dealership sign-in">
+        {rolePreviewEnabled ? <label className="utility-role-control" title="Test the app with this role’s permissions">
           <Settings2 aria-hidden="true" />
           <span>
             <small>Preview role</small>
@@ -239,6 +264,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           </span>
           <ChevronDown aria-hidden="true" />
         </label> : null}
+        {data?.access?.canPreviewRoles && <p className="utility-role-help">Your account is a Group manager. Choose a role to test its permissions. Any changes you save affect live records.</p>}
+
+        {import.meta.env.PROD && <a className="utility-service-link" href="/downloads/inventory-flow-deal-desk.zip" download="inventory-flow-deal-desk.zip"><Download aria-hidden="true"/><span><strong>Download companion extension</strong><small>Extract the ZIP, then load or reload it in Chrome extensions.</small></span><ChevronRight aria-hidden="true"/></a>}
+
+        <NavLink className="utility-service-link" to="/service" onClick={() => setUtilityOpen(false)}><Wrench aria-hidden="true"/><span><strong>Service status</strong><small>Waiting, in service, and completed work</small></span><ChevronRight aria-hidden="true"/></NavLink>
 
         {canSeeManager ? (
           <NavLink className="utility-manager-link" to="/manager" onClick={() => setUtilityOpen(false)}>
@@ -334,7 +364,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               aria-label="Search inventory"
               autoComplete="off"
             />
-            <button type="submit" aria-label="Search all inventory">
+            <button type="submit" aria-label="Search my store inventory">
               <ArrowRight aria-hidden="true" />
             </button>
           </form>
@@ -373,10 +403,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         </button>
       </header>
 
-      <main ref={mainContentRef} className="app-main" id="main-content" tabIndex={-1}>{children}</main>
+      <main ref={mainContentRef} className="app-main" id="main-content" tabIndex={-1}>
+        {productionRolePreview && <div className="role-preview-banner" role="status"><span>Testing {ROLE_LABELS[role]} · Live records</span><button type="button" onClick={() => setRole('group_manager')}>Return to Group manager</button></div>}
+        {data?.meta.warnings.some(warning => warning.includes('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS')) && <p className="synthetic-preview-notice">Demo · Synthetic records &amp; AI illustrations.</p>}{children}
+      </main>
 
-      <nav className="mobile-bottom-nav" aria-label="Mobile primary">
-        {NAV_ITEMS.map(({ id, to, label, shortLabel, icon: Icon }) => {
+      <nav className={`mobile-bottom-nav${canSeeAdmin ? ' is-group-manager' : ''}`} aria-label="Mobile primary">
+        {mobileNavigationItems.map(({ id, to, label, shortLabel, icon: Icon }) => {
           const active = isNavActive(id, to)
           return (
             <NavLink
@@ -391,7 +424,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </NavLink>
           )
         })}
-        <button
+        {canSeeAdmin ? null : <button
           type="button"
           className={utilityOpen ? 'is-active' : ''}
           aria-label="More app controls"
@@ -402,7 +435,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         >
           <Ellipsis aria-hidden="true" />
           <span>More</span>
-        </button>
+        </button>}
       </nav>
 
     </div>

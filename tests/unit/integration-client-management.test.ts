@@ -170,6 +170,8 @@ describe('explicit integration provisioning', () => {
 })
 
 describe('private credential file handling', () => {
+  const fileBehaviorOptions = { checkIgnore: false, protectWindows: () => {} }
+
   it('restricts output to one explicitly named ignored private JSON file', () => {
     const root = fileFixture()
     // The target is anchored to the app root's real location (macOS resolves
@@ -185,10 +187,10 @@ describe('private credential file handling', () => {
   it('writes exclusively, never overwrites, and refuses to remove edited files on rollback', () => {
     const root = fileFixture()
     const value = { token: `iflow_${randomBytes(16).toString('hex')}_${randomBytes(32).toString('base64url')}` }
-    const first = writePrivateIntegrationCredential(options.secretOutput, value, { appRoot: root, checkIgnore: false })
+    const first = writePrivateIntegrationCredential(options.secretOutput, value, { appRoot: root, ...fileBehaviorOptions })
     expect(JSON.parse(readFileSync(first.path, 'utf8'))).toEqual(value)
     if (process.platform !== 'win32') expect(statSync(first.path).mode & 0o777).toBe(0o600)
-    expect(() => writePrivateIntegrationCredential(options.secretOutput, { token: 'synthetic replacement' }, { appRoot: root, checkIgnore: false })).toThrow('SECRET_WRITE_FAILED')
+    expect(() => writePrivateIntegrationCredential(options.secretOutput, { token: 'synthetic replacement' }, { appRoot: root, ...fileBehaviorOptions })).toThrow('SECRET_WRITE_FAILED')
     expect(JSON.parse(readFileSync(first.path, 'utf8'))).toEqual(value)
     writeFileSync(first.path, 'user changed this file', 'utf8')
     expect(first.rollback()).toBe(false)
@@ -197,10 +199,10 @@ describe('private credential file handling', () => {
 
   it('removes only the exact unmodified credential file it created', () => {
     const root = fileFixture()
-    const file = writePrivateIntegrationCredential(options.secretOutput, { token: 'synthetic-test-only' }, { appRoot: root, checkIgnore: false })
+    const file = writePrivateIntegrationCredential(options.secretOutput, { token: 'synthetic-test-only' }, { appRoot: root, ...fileBehaviorOptions })
     const neighbor = path.join(path.dirname(file.path), 'keep.json')
     writeFileSync(neighbor, 'existing user data', 'utf8')
-    const second = writePrivateIntegrationCredential('runtime/integration-credentials/second.json', { token: 'another-synthetic-test-only' }, { appRoot: root, checkIgnore: false })
+    const second = writePrivateIntegrationCredential('runtime/integration-credentials/second.json', { token: 'another-synthetic-test-only' }, { appRoot: root, ...fileBehaviorOptions })
     expect(existsSync(second.path)).toBe(true)
     expect(second.rollback()).toBe(true)
     expect(file.rollback()).toBe(true)

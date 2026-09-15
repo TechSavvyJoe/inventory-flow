@@ -4,6 +4,9 @@ import { AccessError, memberContext, verifyAccess } from './access.mjs'
 import { validateReleaseBundle } from './release-validation.mjs'
 import { loadD1Repository, RepositoryConflictError } from './repository.mjs'
 import { createInventoryServiceCore } from '../../server/service-core.mjs'
+import { assertAdminOverviewAccess } from '../../server/admin-control-center.mjs'
+import { readMembershipAdmin, saveMembership } from './membership-admin.mjs'
+import { serviceIntakeRows } from '../../server/service-intake.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
 import { importLedger, LedgerImportError } from './ledger-import.mjs'
 
@@ -104,6 +107,25 @@ export async function prepareTransportAssignment(input, env, preflight) {
     return { input: await resolveTransportAssignment(preflightInput, env), replay: null }
   }
 }
+
+/** Read only the fields exposed by the Phase-1 employee access projection. */
+export async function loadAdminMembers(env) {
+  let result
+  try {
+    result = await env.INVENTORY_DB.prepare(`
+      SELECT user_id, name, role, home_store, enabled
+      FROM cloud_memberships
+      ORDER BY name COLLATE NOCASE, user_id
+    `).all()
+  } catch {
+    throw new HttpError('ADMIN_DIRECTORY_UNAVAILABLE', 503)
+  }
+  if (result?.success === false || !Array.isArray(result?.results)) {
+    throw new HttpError('ADMIN_DIRECTORY_UNAVAILABLE', 503)
+  }
+  return result.results
+}
+
 export async function decryptEnvelope(envelope, env, format=FORMAT) {
   if(envelope?.version!==format || !/^\d{4}-\d{2}-\d{2}$/.test(envelope.reportDate??'') || !/^[a-f0-9]{64}$/.test(envelope.bundleSha256??'')) throw new HttpError('INVALID_ENVELOPE')
   if(typeof envelope.ciphertext!=='string' || envelope.ciphertext.length>MAX_UPLOAD) throw new HttpError('BODY_TOO_LARGE',413)
@@ -196,6 +218,7 @@ async function publishRelease(request, env) {
       env.INVENTORY_DB.prepare("UPDATE cloud_release_versions SET status='superseded' WHERE status='current'"),
       env.INVENTORY_DB.prepare(`INSERT INTO cloud_release_versions (release_id,report_date,bundle_sha256,object_key,object_bytes,public_source_sha256,dealermail_source_sha256,public_row_count,dealermail_row_count,status,published_at,metadata_json) VALUES (?,?,?,?,?,?,?,?,?,'current',?,?) ON CONFLICT(release_id) DO UPDATE SET status='current',published_at=excluded.published_at,metadata_json=excluded.metadata_json`).bind(id,envelope.reportDate,envelope.bundleSha256,objectKey,encoder.encode(serialized).length,bundle.release.sourceRuns.public.sha256,bundle.release.sourceRuns.dealerMail.sha256,counts.publicRowCount,counts.dealerMailRowCount,time,metadata),
       env.INVENTORY_DB.prepare("INSERT INTO cloud_release_state(key,value,updated_at) VALUES('current_release_id',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").bind(id,time),
+      ...serviceIntakeRows(bundle.release,time).map(row=>env.INVENTORY_DB.prepare('INSERT OR IGNORE INTO vehicle_service_intake (vin,first_arrival_date,observed_at) VALUES (?,?,?)').bind(row.vin,row.first_arrival_date,row.observed_at)),
     ])
   } catch {throw new HttpError('PUBLISH_CONFLICT_RETRY',409)}
   return json(201,{status:'published',reportDate:envelope.reportDate})
@@ -204,7 +227,13 @@ async function appApi(request,url,env,context) {
   const route=url.pathname.replace(/^\/api(?:\/v1)?/,'')
   const read=request.method==='GET', write=request.method==='POST'
   if(!read && !write) throw new HttpError('METHOD_NOT_ALLOWED',405)
-  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route))) throw new HttpError('NOT_FOUND',404)
+  const adminOverview=route==='/admin/overview'
+  const adminMembersRoute=route==='/admin/members'
+  if(adminOverview && !read) throw new HttpError('METHOD_NOT_ALLOWED',405)
+  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/service$/.test(route) || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
+  // The membership context was resolved from Access + D1 before this point.
+  // Check it before reading the group directory or private release.
+  if(adminOverview || adminMembersRoute) assertAdminOverviewAccess(context)
   // Decoded once here, before the release and repository are loaded: a path
   // that cannot be decoded can never address a record, so it should cost the
   // Worker nothing and answer 400 rather than a 500 from deeper in the stack.
@@ -213,6 +242,10 @@ async function appApi(request,url,env,context) {
   const idempotency=request.headers.get('idempotency-key')
   if(write && (!idempotency || idempotency.length>160 || /[\x00-\x1f]/.test(idempotency))) throw new HttpError('IDEMPOTENCY_KEY_REQUIRED')
   const input=write?await readJson(request,64*1024):null
+  if(adminMembersRoute) return json(200,read
+    ? await readMembershipAdmin(env.INVENTORY_DB,context)
+    : await saveMembership(env.INVENTORY_DB,input,context,idempotency))
+  const adminMembers=adminOverview?await loadAdminMembers(env):null
   const release=await readRelease(env)
   let resolvedAssignmentInput=null
   for(let attempt=0;attempt<3;attempt++) {
@@ -220,9 +253,15 @@ async function appApi(request,url,env,context) {
     const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
     const query=Object.fromEntries(url.searchParams)
     let result, mutation=false
-    if(read && route==='/bootstrap') result=service.bootstrap(context)
+    if(read && adminOverview) result={...service.adminOverview(context,adminMembers),canManageMembers:true}
+    else if(read && route==='/bootstrap') {
+      result=service.bootstrap(context)
+      result.access={...result.access,authenticatedRole:context.authenticatedRole??context.role,canPreviewRoles:context.canPreviewRoles===true,rolePreviewActive:context.rolePreviewActive===true}
+    }
     else if(read && route==='/vehicles') result=service.listVehicles(query,context)
     else if(read && /^\/vehicles\/[^/]+$/.test(route)) result=service.getVehicle(identifier,context)
+    else if(read && /^\/vehicles\/[^/]+\/service$/.test(route)) result=service.getServiceReadiness(identifier,context)
+    else if(write && /^\/vehicles\/[^/]+\/service$/.test(route)) {result=service.updateServiceReadiness(identifier,input,context,idempotency);mutation=true}
     else if(read && route==='/transfers') result=service.listTransfers(query,context)
     else if(read && /^\/transfers\/[^/]+$/.test(route)) result=service.getTransfer(identifier,context)
     else if(read && route==='/attention') result=service.listAttention(query,context)
@@ -264,7 +303,7 @@ export default {
         if(request.method==='GET' && url.pathname==='/internal/readiness') return json(200,await appReadiness(env))
         throw new HttpError('NOT_FOUND',404)
       }
-      const context=await memberContext(await verifyAccess(request,env),env)
+      const context=await memberContext(await verifyAccess(request,env),env,request)
       if(request.method==='GET' && url.pathname==='/api/health') return json(200,{ok:true,ready:Boolean(await currentRelease(env)),service:'inventory-flow-cloud'})
       if(url.pathname.startsWith('/api/')) return await appApi(request,url,env,context)
       if(!['GET','HEAD'].includes(request.method)) throw new HttpError('METHOD_NOT_ALLOWED',405)

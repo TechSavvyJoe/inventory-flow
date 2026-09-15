@@ -446,6 +446,15 @@
   grid-template-columns: minmax(208px, 1fr) auto minmax(168px, 196px);
 }
 
+@media (min-width: 881px) {
+  /* Inventory's search lives in its results controls. Pin the three visible
+     header controls to this three-column layout; legacy inventory styles
+     otherwise reserve a phantom search track and squeeze freshness to 44px. */
+  .app-shell .top-bar.is-inventory-route > .store-control-region { grid-column: 1; }
+  .app-shell .top-bar.is-inventory-route > .freshness-chip { grid-column: 2; }
+  .app-shell .top-bar.is-inventory-route > .profile-button { grid-column: 3; }
+}
+
 .top-bar::after {
   content: '';
   position: absolute;

@@ -1,3 +1,5 @@
+import { serviceWorkflowStatus } from './service-readiness.mjs'
+
 // Multi-criteria filtering and sorting over the panel's vehicles. Search
 // ranking finds the exact vehicle; these narrow a list to the kind of vehicle
 // a customer is asking for (make, body, drivetrain, fuel, year, price, miles,
@@ -19,6 +21,7 @@ export const EMPTY_FILTERS = Object.freeze({
   makes: [], models: [], bodies: [], drivetrains: [], fuels: [], stores: [],
   yearMin: null, yearMax: null, priceMax: null, mileageMax: null,
   certified: false, listed: false, noHold: false, photos: false,
+  serviceStatus: '',
 })
 
 const norm = (value) => String(value ?? '').trim().toLowerCase()
@@ -34,6 +37,7 @@ export function normalizeFilters(value) {
     makes: list('makes'), models: list('models'), bodies: list('bodies'), drivetrains: list('drivetrains'), fuels: list('fuels'), stores: list('stores'),
     yearMin: num('yearMin'), yearMax: num('yearMax'), priceMax: num('priceMax'), mileageMax: num('mileageMax'),
     certified: source.certified === true, listed: source.listed === true, noHold: source.noHold === true, photos: source.photos === true,
+    serviceStatus: source.serviceStatus === 'unknown' ? 'needs_service' : ['needs_service', 'in_service', 'serviced'].includes(source.serviceStatus) ? source.serviceStatus : '',
   }
 }
 
@@ -91,6 +95,7 @@ export function matchesFilters(vehicle, filters) {
   // "No hold" means the current snapshot found none — never an availability promise.
   if (f.noHold && vehicle.hold?.hasActiveHold !== false) return false
   if (f.photos && !vehicle.photos.length) return false
+  if (f.serviceStatus && serviceWorkflowStatus(vehicle.serviceReadiness) !== f.serviceStatus) return false
   return true
 }
 
@@ -128,7 +133,7 @@ export function sortMatches(matches, sortId, { hasQuery = false } = {}) {
 export function activeFilterCount(filters) {
   const f = normalizeFilters(filters)
   return [f.makes, f.models, f.bodies, f.drivetrains, f.fuels, f.stores].filter((list) => list.length).length
-    + [f.yearMin !== null || f.yearMax !== null, f.priceMax !== null, f.mileageMax !== null, f.certified, f.listed, f.noHold, f.photos].filter(Boolean).length
+    + [f.yearMin !== null || f.yearMax !== null, f.priceMax !== null, f.mileageMax !== null, f.certified, f.listed, f.noHold, f.photos, f.serviceStatus].filter(Boolean).length
 }
 
 const money = (value) => `$${Math.round(value / 1000)}k`
@@ -141,6 +146,7 @@ export function describeFilters(filters) {
     f.priceMax !== null ? `under ${money(f.priceMax)}` : null,
     f.mileageMax !== null ? `under ${Math.round(f.mileageMax / 1000)}k mi` : null,
     f.certified ? 'certified' : null, f.listed ? 'listed' : null, f.noHold ? 'no hold found' : null, f.photos ? 'with photos' : null,
+    ({ needs_service: 'waiting for service', in_service: 'in service', serviced: 'ready only' })[f.serviceStatus],
   ].filter(Boolean)
   return parts.join(' · ')
 }

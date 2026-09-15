@@ -46,6 +46,19 @@ describe('bounded-memory release decoding',()=>{
     await expect(decryptEnvelope({...envelope,ciphertext:tampered.toString('base64url')},env,format)).rejects.toMatchObject({code:'INVALID_OR_INCOMPLETE_RELEASE'})
     await expect(decryptEnvelope({...envelope,bundleSha256:'0'.repeat(64)},env,format)).rejects.toMatchObject({code:'INVALID_OR_INCOMPLETE_RELEASE'})
   })
+  it.each([undefined,false,true])('preserves OASIS action capture flag %s through encrypted release validation',async(openActionsCaptured)=>{
+    const bundle=buildSyntheticCloudBundle()
+    const vehicle=bundle.release.vehicles.find((record)=>record.resourceRecord)
+    vehicle.resourceRecord.fordOasis={dataState:'current',capturedAt:'2026-08-30T14:00:00Z',openFieldServiceActions:[],...(openActionsCaptured===undefined?{}:{openActionsCaptured})}
+    const run=bundle.release.sourceRuns.resources
+    run.metadata.fordOasisCount=1
+    run.provenanceSha256=resourceProvenanceSha256(run,bundle.release.vehicles)
+    const {env,envelope}=encryptedPayload(bundle,randomBytes(32),releaseFormat)
+    const result=await decryptEnvelope(envelope,env)
+    const oasis=result.release.vehicles.find((record)=>record.vin===vehicle.vin).resourceRecord.fordOasis
+    expect(oasis.openActionsCaptured).toBe(openActionsCaptured)
+    expect(oasis.openFieldServiceActions).toEqual([])
+  })
   it('keeps an older release readable by dropping only unsafe new Ford channels with warnings',async()=>{
     const bundle=buildSyntheticCloudBundle()
     const vehicle=bundle.release.vehicles.find((record)=>record.resourceRecord)

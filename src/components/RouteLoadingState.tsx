@@ -4,7 +4,9 @@ import './RouteLoadingState.css'
 const ROUTE_LABELS: ReadonlyArray<readonly [prefix: string, label: string]> = [
   ['/inventory', 'inventory workspace'],
   ['/transfers', 'vehicle moves'],
-  ['/attention', 'today’s priorities'],
+  ['/attention', 'action center'],
+  ['/updates', 'inventory updates'],
+  ['/service', 'service status'],
   ['/manager', 'manager workspace'],
 ]
 

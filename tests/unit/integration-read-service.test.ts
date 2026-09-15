@@ -25,6 +25,8 @@ function row(index = 1, physicalStore = 'Howell') {
     autoCheckReport: { url: `https://www.autocheck.com/report?token=${PRIVATE}`, dataState: 'current', reportRunAt: '2026-09-09T12:00:00Z', score: 95, scoreRangeLow: 85, scoreRangeHigh: 96, usage: 'Personal', ownerCount: 2, lastReportedOdometer: 2050, lastReportedOdometerDate: '2026-09-01', vehicleClass: 'Truck', assemblyCountry: 'United States', estimatedInServiceDate: '2024-01-01', checks: [{ label: 'Accident check', status: 'No issue reported', detail: 'No accident reported by source', raw: PRIVATE }], raw: PRIVATE },
     windowSticker: { url: `https://windowsticker.example/private/${PRIVATE}`, dataState: 'current', originalMarket: 'USA', pricingCurrency: 'USD', pricingCurrencyEvidence: 'US original label', sourceMessage: PRIVATE, failureReason: PRIVATE, vehicleDescription: '2024 F-150 XLT', equipmentGroup: '302A', basePrice: 50000, totalOptions: 11000, destinationCharge: 2000, totalMsrp: 63000, exteriorColor: 'Oxford White', interiorColor: 'Black', engine: '3.5L EcoBoost', transmission: '10-speed', options: ['EQUIPMENT GROUP 302A', 'TRAILER TOW PACKAGE'], standardEquipment: ['PRE-COLLISION ASSIST'], warranty: ['3YR/36,000 BUMPER / BUMPER'], raw: PRIVATE },
     factoryEquipment: { url: `https://example.com/${PRIVATE}`, sourceLabel: PRIVATE, disclaimer: PRIVATE, dataState: 'current', capturedAt: '2026-09-09T12:00:00Z', vehicleDescription: '2024 F-150', basePrice: 50000, totalOptions: 11000, destinationCharge: 2000, totalMsrp: 63000, exteriorColor: 'Oxford White', interiorColor: 'Black', engine: '3.5L EcoBoost', transmission: '10-speed', drivetrain: '4WD', packages: [{ name: 'FX4 OFF-ROAD PACKAGE', code: '55A', price: 1095, features: ['Hill Descent Control'], raw: PRIVATE }], sections: [{ name: 'Safety', items: [{ label: 'Lane-Keeping System', price: 0, raw: PRIVATE }], raw: PRIVATE }], isOriginalWindowSticker: true, raw: PRIVATE },
+    fordOasis: { dataState: 'current', capturedAt: '2026-09-09T12:00:00Z', vehicleDescription: '2024 Ford F-150 XLT', versionSeries: 'F-150', buildDate: '2024-01-01', warrantyStartDate: '2024-02-01', releaseDate: '2024-01-05', monthsInService: 31, saleMileage: 15, openFieldServiceActions: [{ code: '24B01', description: 'Field service action' }], warrantyCoverages: [{ type: 'Basic', description: '36 months / 36,000 miles' }], extendedCoverageExpirations: ['2029-02-01'], raw: PRIVATE },
+    warrantyCheck: { dataState: 'current', capturedAt: '2026-09-09T12:00:00Z', mileageEntered: 2052, mileageSource: 'Public listing', autoCheck: { inServiceDate: '2024-02-01', inServiceAgeMonths: 31, defaultMileage: 12000, coverages: [{ type: 'Basic', termText: '36 months / 36,000 miles', termMonths: 36, termMiles: 36000, remainingMiles: 33948, remainingMonths: 5, remainingMilesText: '33,948 miles', remainingTimeText: '5 months', status: 'estimated', note: PRIVATE }] }, raw: PRIVATE },
   }
 }
 
@@ -71,7 +73,12 @@ describe('shared integration read service', () => {
     expect(data.windowSticker.isOriginalWindowSticker).toBe(true)
     expect(data.autoCheckReport.score).toBe(95)
     expect(data.autoCheckReport.checks[0].detail).toBe('No accident reported by source')
-    const serialized = JSON.stringify([api.inventory(), api.vehicle(vinFor(1)), api.changes(), api.holdSummary(), api.managerDispositions(), api.health(), api.capabilities])
+    expect(data).not.toHaveProperty('fordOasis')
+    expect(data).not.toHaveProperty('warrantyCheck')
+    const resources = api.vehicleResources(vinFor(1)).data
+    expect(resources.fordOasis.openFieldServiceActions).toEqual([{ code: '24B01', description: 'Field service action' }])
+    expect(resources.warrantyCheck.autoCheck.coverages[0]).toMatchObject({ type: 'Basic', remainingMiles: 33948 })
+    const serialized = JSON.stringify([api.inventory(), api.vehicle(vinFor(1)), api.vehicleResources(vinFor(1)), api.operationalInventory({ resource: 'ford_oasis' }), api.changes(), api.holdSummary(), api.managerDispositions(), api.health(), api.dailyOperations(), api.dataQuality(), api.reconciliation(), api.capabilities])
     expect(serialized).not.toContain(PRIVATE)
     expect(serialized).not.toContain('999999')
     expect(data).not.toHaveProperty('dealerComments')
@@ -95,7 +102,7 @@ describe('shared integration read service', () => {
   })
 
   it.each([
-    ['inventory', 'inventory.read', {}], ['vehicle', 'inventory.read', vinFor(1)], ['managerDispositions', 'inventory.read', {}], ['changes', 'changes.read', {}], ['health', 'health.read', undefined], ['holdSummary', 'holds.aggregate.read', {}],
+    ['inventory', 'inventory.read', {}], ['vehicle', 'inventory.read', vinFor(1)], ['vehicleResources', 'inventory.read', vinFor(1)], ['operationalInventory', 'inventory.read', {}], ['managerDispositions', 'inventory.read', {}], ['changes', 'changes.read', {}], ['health', 'health.read', undefined], ['dailyOperations', 'health.read', undefined], ['dataQuality', 'health.read', undefined], ['reconciliation', 'health.read', undefined], ['holdSummary', 'holds.aggregate.read', {}],
   ])('requires the exact %s scope', (method, scope, query) => {
     const api = service(fixture(), { ...principal, scopes: principal.scopes.filter(value => value !== scope) })
     expect(errorOf(() => api[method](query))).toMatchObject({ status: 403, code: 'INSUFFICIENT_SCOPE' })
@@ -187,6 +194,18 @@ describe('shared integration read service', () => {
     for (const query of [{ delivered: 'yes' }, { review: 1 }, { private: true }, { limit: 101 }, { q: 'a'.repeat(257) }]) {
       expect(errorOf(() => api.managerDispositions(query))).toMatchObject({ status: 400, code: 'INVALID_QUERY' })
     }
+  })
+
+  it('provides safe operational search, release summaries, reconciliation, and resource-specific records without private source fields', () => {
+    const api = service()
+    expect(api.operationalInventory({ homeStore: 'Howell', hasCurrentHold: true, resource: 'ford_oasis' }).data.map(value => value.vin)).toEqual([vinFor(1)])
+    expect(api.operationalInventory({ hasPrice: true, hasPhoto: true, minDaysListed: 1, maxDaysListed: 1 }).pagination.total).toBe(1)
+    expect(api.vehicleResources(vinFor(1)).data).toMatchObject({ vin: vinFor(1), fordOasis: { versionSeries: 'F-150' }, warrantyCheck: { mileageEntered: 2052 } })
+    expect(api.dailyOperations().data).toMatchObject({ counts: { visiblePublicVehicles: 4, currentHeldPublicVins: 1 }, publicChanges: { price_change: 1 } })
+    expect(api.dataQuality().data).toMatchObject({ visibleVehicles: 4, resources: { fordOasis: 4, warrantyCheck: 4 } })
+    expect(api.reconciliation().data.stores[0]).toMatchObject({ publicStore: 'Howell', publiclyListedVehicles: 4 })
+    const serialized = JSON.stringify([api.operationalInventory({ resource: 'warranty_check' }), api.vehicleResources(vinFor(1)), api.dailyOperations(), api.dataQuality(), api.reconciliation()])
+    expect(serialized).not.toContain(PRIVATE)
   })
 
   it('requires source-safe typed change fields and preserves current selected-release date semantics', () => {

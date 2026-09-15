@@ -4,6 +4,7 @@ import { buildPanelData, canRequestVehicle, copyFields, dealSheetText, mergeDeta
 import { buildEntry, buildIndex, rank } from './lib/search.mjs'
 import { SOURCE_LABELS } from './lib/equipment.mjs'
 import { EMPTY_FILTERS, SORTS, activeFilterCount, applyFilters, describeFilters, filterOptions, normalizeFilters, sortMatches } from './lib/filters.mjs'
+import { groupMatchesByStore, resolveStoreScope, scopeCounts, scopeMatches } from './lib/scope.mjs'
 import { compareVehicles } from './lib/compare.mjs'
 import { certifiedTerms, warrantyOutlook } from './lib/warranty.mjs'
 import { brandFor } from './lib/brand.mjs'
@@ -12,12 +13,17 @@ import * as fmt from './lib/format.mjs'
 import { clear, el, icon } from './lib/dom.mjs'
 import { copyText, host, openExtensionPage, openUrl, placeholderPhotos, previewFlags, storage } from './lib/host.mjs'
 import { takeHomeModel } from './lib/takehome.mjs'
+import { serviceWorkflowStatus } from './lib/service-readiness.mjs'
+import { sourceDisplayText } from './lib/source-text.mjs'
+import { resourceSummaries } from './lib/resources.mjs'
+import { syntheticPreviewPhotos } from './lib/synthetic-photos.mjs'
 
 const $ = (id) => document.getElementById(id)
 const ui = {
   panel: $('panel'), brand: $('brand'), who: $('who'), settingsBtn: $('settings-btn'),
   sticky: $('sticky'), search: $('search'), searchIcon: $('search-icon'), q: $('q'), clearBtn: $('clear'), kbd: $('search-kbd'),
   scope: $('scope'), scopeInd: $('scope-ind'), filtersBtn: $('filters-btn'), filterCount: $('filter-count'), filterSummary: $('filter-summary'), status: $('status'), rows: $('rows'), more: $('more'), skeleton: $('skeleton'), tray: $('tray'),
+  storeRow: $('store-row'), storeSelect: $('store-select'), storeHome: $('store-home'), storeAll: $('store-all'), storeContext: $('store-context'), resultContext: $('result-context'), expandStores: $('expand-stores'), workspaceLinks: $('workspace-links'),
   back: $('back'), detailTitle: $('detail-bar-title'), detailTools: $('detail-tools'), detail: $('detail'),
   compareBack: $('compare-back'), compareTitle: $('compare-title'), compareTools: $('compare-tools'), compare: $('compare'),
   freshText: $('fresh-text'), refresh: $('refresh'),
@@ -25,12 +31,13 @@ const ui = {
 }
 
 const PAGE = 60
-const TABS = [['overview', 'Overview'], ['hold', 'Hold & custody'], ['equipment', 'Equipment'], ['records', 'Records']]
+const TABS = [['overview', 'Overview'], ['equipment', 'Equipment'], ['records', 'Records'], ['hold', 'Holds & moves']]
 const state = {
   settings: null, workspace: null, data: null, bootstrap: null, index: [], results: [], shown: PAGE, details: new Map(), detailStatus: null,
-  query: '', scope: 'home', activeIndex: -1, selectedVin: null, view: 'list', tab: 'overview', photoIndex: 0, compare: [], odometer: new Map(), detailFailed: new Map(), detailPending: new Set(),
+  query: '', scope: 'inventory', storeScope: 'home', activeIndex: -1, selectedVin: null, view: 'list', tab: 'overview', photoIndex: 0, compare: [], odometer: new Map(), detailFailed: new Map(), detailPending: new Set(),
   filters: { ...EMPTY_FILTERS }, sort: 'relevance', sheetKind: 'settings',
   loading: false, error: null, fetchedAt: null, controller: null, toastTimer: null, sheetReturnFocus: null, previousView: 'list',
+  dataGeneration: 0,
 }
 
 /* Icons that live in static markup */
@@ -54,8 +61,8 @@ function applyDensity() { document.documentElement.dataset.density = state.setti
 new ResizeObserver(([entry]) => {
   const width = entry.contentRect.width
   ui.panel.dataset.width = width < 352 ? 'narrow' : width < 430 ? 'medium' : 'wide'
-  ui.q.placeholder = width < 352 ? 'Stock, VIN, or vehicle' : 'Stock, VIN, vehicle, or salesperson'
-  positionIndicator(ui.scope, ui.scopeInd, '.scope-tab')
+  ui.q.placeholder = width < 352 ? 'Stock, VIN, model, equipment' : 'Stock, VIN, model, or equipment'
+  positionIndicator(ui.scope, ui.scopeInd, '.scope-tab', 'aria-pressed')
   const tabs = ui.detail.querySelector('.tabs')
   if (tabs) positionIndicator(tabs, tabs.querySelector('.tabs-ind'), '.tab')
 }).observe(ui.panel)
@@ -84,6 +91,7 @@ async function copy(value, label, button) {
 
 /* Data ------------------------------------------------------------------ */
 function workingStore() { return state.data?.access?.store ?? (state.workspace.demo ? state.settings.demoStore : null) }
+function appOrigin() { return host === 'preview' ? WORKSPACES.demo.origin : state.workspace.origin }
 
 function cacheKey() {
   const identity = state.workspace.demo ? `${state.settings.demoRole}:${state.settings.demoStore}` : 'access'
@@ -93,6 +101,11 @@ function cacheKey() {
 function vehicleByVin(vin) { return state.data?.vehicles.find((item) => item.vin === vin) ?? null }
 
 function hydrate(bootstrap, fetchedAt) {
+  const before = state.data?.access
+  const after = bootstrap.access
+  if (before && (before.user !== after?.user || before.userId !== after?.userId || before.role !== after?.role || before.store !== after?.store)) resetIdentityView()
+  state.dataGeneration += 1
+  state.detailPending.clear()
   state.bootstrap = bootstrap
   state.data = buildPanelData(bootstrap)
   state.index = buildIndex(state.data.vehicles)
@@ -102,6 +115,8 @@ function hydrate(bootstrap, fetchedAt) {
   state.error = null
   setCompare(state.compare.filter((vin) => vehicleByVin(vin)), { persist: false })
   renderWho()
+  renderStorePicker()
+  renderWorkspaceLinks()
   renderScopes()
   renderList()
   renderFreshness()
@@ -131,7 +146,14 @@ async function load({ silent = false } = {}) {
     state.error = error instanceof PanelApiError ? error : new PanelApiError('invalid')
     // A sign-in or membership failure means the identity behind any cached
     // document can no longer be trusted.
-    if (['signin', 'forbidden'].includes(state.error.kind)) storage.clearCache().catch(() => {})
+    if (['signin', 'forbidden'].includes(state.error.kind)) {
+      resetIdentityView()
+      state.data = null; state.bootstrap = null; state.index = []; state.results = []
+      clear(ui.rows); clear(ui.detail); clear(ui.compare); clear(ui.tray)
+      renderScopes(); renderStorePicker(); renderWorkspaceLinks(); renderWho()
+      ui.resultContext.hidden = true; ui.expandStores.hidden = true; ui.more.hidden = true; ui.tray.hidden = true
+      storage.clearCache().catch(() => {})
+    }
     if (!state.data) { hideSkeleton(); renderStatus() }
     else toast(errorTitle(state.error), { iconName: 'alert' })
     renderFreshness()
@@ -144,25 +166,76 @@ function isStale() { return !state.fetchedAt || Date.now() - state.fetchedAt > S
 
 function photosFor(vehicle) {
   if (vehicle.photos.length) return vehicle.photos
+  const illustrations = syntheticPreviewPhotos(vehicle, { host, workspace: state.workspace })
+  if (illustrations.length) return illustrations
   return previewFlags.photos ? placeholderPhotos(vehicle) : []
 }
 
 /* Rendering: masthead + scope ----------------------------------------- */
 function renderWho() {
   const access = state.data?.access
-  ui.who.textContent = access ? `${access.store} · ${roleLabel(access.role)}` : ''
-  ui.who.title = access?.user ? `Signed in as ${access.user}` : ''
+  ui.who.textContent = access ? roleLabel(access.role) : ''
+  ui.who.title = access?.user ? `Signed in as ${access.user} · ${access.store}` : ''
+}
+
+function resetIdentityView() {
+  state.dataGeneration += 1; state.detailPending.clear()
+  state.storeScope = 'home'; state.scope = 'inventory'; state.query = ''; state.selectedVin = null; state.activeIndex = -1
+  state.filters = { ...EMPTY_FILTERS }; state.sort = 'relevance'; state.compare = []; state.odometer.clear(); state.details.clear(); state.detailFailed.clear()
+  state.view = 'list'; ui.panel.dataset.view = 'list'; ui.q.value = ''; ui.search.classList.remove('has-value'); ui.clearBtn.hidden = true
+  clear(ui.detail); clear(ui.detailTools); clear(ui.compare); clear(ui.compareTools); clear(ui.tray)
+  document.querySelector('.d-utilities')?.remove()
+  ui.detailTitle.textContent = ''; ui.tray.hidden = true
+  for (const view of document.querySelectorAll('[data-view-id]')) view.setAttribute('aria-hidden', String(view.dataset.viewId !== 'list'))
+  storage.setCompare([]).catch(() => {}); storage.setFilters({ filters: state.filters, sort: state.sort }).catch(() => {})
+  renderFilterState()
+}
+
+function selectedStore() { return resolveStoreScope(state.storeScope, workingStore()) }
+function storeLabel() { return selectedStore() || 'all stores' }
+function rankedFiltered() { return applyFilters(rank(state.index, state.query), state.filters) }
+function renderStorePicker() {
+  ui.storeRow.hidden = !state.data
+  ui.storeContext.textContent = workingStore() ? `${workingStore()} first` : ''
+  clear(ui.storeSelect)
+  if (!state.data) return
+  const home = workingStore()
+  if (home) ui.storeSelect.append(el('option', { value: 'home', text: home }))
+  ui.storeSelect.append(el('option', { value: 'all', text: 'All stores' }))
+  const stores = [...new Set([...STORES, ...state.data.vehicles.map((v) => v.homeStore)].filter(Boolean))]
+  for (const store of stores) if (store !== home) ui.storeSelect.append(el('option', { value: store, text: store }))
+  if (!home && state.storeScope === 'home') state.storeScope = 'all'
+  ui.storeSelect.value = state.storeScope
+  ui.storeRow.dataset.all = String(state.storeScope === 'all')
+  ui.storeSelect.closest('label').hidden = Boolean(home && state.storeScope === 'all')
+  ui.storeHome.hidden = !home || state.storeScope !== 'all'
+  ui.storeHome.textContent = home || 'My store'
+  ui.storeHome.setAttribute('aria-label', `Return to my store${home ? `, ${home}` : ''}`)
+  ui.storeAll.setAttribute('aria-pressed', String(state.storeScope === 'all'))
+  ui.storeAll.setAttribute('aria-label', 'Show inventory from all stores')
+}
+
+function setStoreScope(value) {
+  state.storeScope = value; state.shown = PAGE; state.activeIndex = -1
+  renderStorePicker(); renderList()
+}
+
+function renderWorkspaceLinks() {
+  clear(ui.workspaceLinks); ui.workspaceLinks.hidden = !state.data
+  if (!state.data) return
+  const navButton = (label, name, destination, accessibleLabel = label) => el('button', { type: 'button', onclick: () => openUrl(links.workspaceUrl(appOrigin(), destination)), 'aria-label': `${accessibleLabel} (opens in app)`, title: `Open ${accessibleLabel.toLowerCase()} in Inventory Flow` }, icon(name, { size: 19 }), el('span', { text: label }))
+  ui.workspaceLinks.append(
+    navButton('New', 'car', 'new', 'New inventory'), navButton('Prices', 'tag', 'price', 'Price changes'),
+    navButton('Moves', 'truck', 'moves', 'Vehicle moves'), navButton('Service', 'wrench', 'service'), navButton('Actions', 'bell', 'attention', 'Action center'),
+  )
 }
 
 function scopeDefinitions() {
-  const store = workingStore()
-  const vehicles = state.data?.vehicles ?? []
-  const held = vehicles.filter((item) => item.hold.hasActiveHold === true).length
-  const home = store ? vehicles.filter((item) => item.homeStore === store).length : vehicles.length
+  const counts = scopeCounts(rankedFiltered(), { storeScope: state.storeScope, workingStore: workingStore() })
   return [
-    { id: 'home', label: store ?? 'Home', count: home, filter: (item) => !store || item.homeStore === store },
-    { id: 'group', label: 'All stores', count: vehicles.length, filter: () => true },
-    { id: 'held', label: 'Held', count: held, filter: (item) => item.hold.hasActiveHold === true },
+    { id: 'inventory', label: 'All', count: counts.inventory },
+    { id: 'held', label: 'Held', count: counts.held },
+    { id: 'moving', label: 'Moving', count: counts.moving },
   ]
 }
 
@@ -171,19 +244,22 @@ function renderScopes() {
   // not shown at all rather than showing zeros.
   ui.scope.parentElement.hidden = !state.data
   const scopes = scopeDefinitions()
+  const focusedScope = document.activeElement?.dataset?.scope
   for (const node of [...ui.scope.querySelectorAll('.scope-tab')]) node.remove()
   for (const scope of scopes) {
     ui.scope.append(el('button', {
-      type: 'button', class: 'scope-tab', role: 'tab', id: `scope-${scope.id}`, dataset: { scope: scope.id },
-      'aria-selected': String(scope.id === state.scope), tabindex: scope.id === state.scope ? '0' : '-1',
+      type: 'button', class: 'scope-tab', id: `scope-${scope.id}`, dataset: { scope: scope.id },
+      'aria-pressed': String(scope.id === state.scope), tabindex: scope.id === state.scope ? '0' : '-1',
       onclick: () => setScope(scope.id),
-    }, scope.label, el('b', { text: fmt.formatNumber(scope.count) })))
+      'aria-label': `${scope.label === 'All' ? 'All inventory' : scope.label} (${fmt.formatNumber(scope.count)})`,
+    }, scope.label))
   }
-  positionIndicator(ui.scope, ui.scopeInd, '.scope-tab')
+  positionIndicator(ui.scope, ui.scopeInd, '.scope-tab', 'aria-pressed')
+  if (focusedScope) ui.scope.querySelector(`[data-scope="${focusedScope}"]`)?.focus({ preventScroll: true })
 }
 
-function positionIndicator(container, indicator, selector) {
-  const active = container?.querySelector(`${selector}[aria-selected="true"]`)
+function positionIndicator(container, indicator, selector, selectedAttribute = 'aria-selected') {
+  const active = container?.querySelector(`${selector}[${selectedAttribute}="true"]`)
   if (!active || !indicator) return
   indicator.style.width = `${active.offsetWidth}px`
   indicator.style.transform = `translateX(${active.offsetLeft}px)`
@@ -192,23 +268,25 @@ function positionIndicator(container, indicator, selector) {
 function setScope(id) {
   if (state.scope === id) return
   state.scope = id
+  // A Held view and a No hold filter can never match. The explicit view wins.
+  if (id === 'held' && state.filters.noHold) { state.filters = { ...state.filters, noHold: false }; storage.setFilters({ filters: state.filters, sort: state.sort }).catch(() => {}); renderFilterState() }
   state.shown = PAGE
   state.activeIndex = -1
   for (const tab of ui.scope.querySelectorAll('.scope-tab')) {
     const selected = tab.dataset.scope === id
-    tab.setAttribute('aria-selected', String(selected))
+    tab.setAttribute('aria-pressed', String(selected))
     tab.tabIndex = selected ? 0 : -1
   }
-  positionIndicator(ui.scope, ui.scopeInd, '.scope-tab')
+  positionIndicator(ui.scope, ui.scopeInd, '.scope-tab', 'aria-pressed')
   renderList()
 }
 
 /* Rendering: list ------------------------------------------------------ */
 function currentResults() {
-  const scope = scopeDefinitions().find((item) => item.id === state.scope) ?? scopeDefinitions()[0]
   const hasQuery = Boolean(state.query.trim())
-  const ranked = applyFilters(rank(state.index, state.query).filter((match) => scope.filter(match.vehicle)), state.filters)
-  return sortMatches(ranked, state.sort, { hasQuery })
+  const ranked = scopeMatches(rankedFiltered(), { storeScope: state.storeScope, workingStore: workingStore(), view: state.scope })
+  const sorted = sortMatches(ranked, state.sort, { hasQuery })
+  return selectedStore() ? sorted : groupMatchesByStore(sorted, workingStore()).flatMap((group) => group.matches)
 }
 
 function renderFilterState() {
@@ -256,27 +334,102 @@ function certifiedBadge(vehicle, { size = 'sm' } = {}) {
 
 function rowThumb(vehicle) {
   const photos = photosFor(vehicle)
-  if (photos.length) return el('span', { class: 'row-thumb' }, el('img', { src: photos[0], alt: '', loading: 'lazy', decoding: 'async' }))
+  if (photos.length) {
+    let index = 0
+    const frame = el('span', { class: 'row-thumb' })
+    const photo = el('img', { src: photos[0], alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer', onerror: () => {
+      index += 1
+      if (index < photos.length) photo.src = photos[index]
+      else { clear(frame); frame.classList.add('is-empty'); frame.append(icon('image', { size: 16 })); frame.title = 'Photos could not load' }
+    } })
+    frame.append(photo)
+    const count = vehicle.specs.photoCount ?? photos.length
+    if (count > 1) frame.append(el('span', { class: 'row-photo-count', title: `${count} photos`, text: String(count) }))
+    return frame
+  }
   return el('span', { class: 'row-thumb is-empty', title: 'No photos published' }, icon('image', { size: 13 }))
 }
 
 function renderRow(match, position) {
   const vehicle = match.vehicle
-  const metaParts = [fmt.formatMoney(vehicle.price), vehicle.mileage !== null ? fmt.formatMileage(vehicle.mileage) : null, fmt.formatDays(vehicle.daysListed)]
+  const metaParts = [fmt.formatMoney(vehicle.price), vehicle.mileage !== null ? fmt.formatMileage(vehicle.mileage) : null]
   const via = state.query && match.matchedLabels.find((label) => !['Stock', 'VIN', 'Vehicle', 'Make', 'Model', 'Year', 'Trim'].includes(label))
   const inCompare = state.compare.includes(vehicle.vin)
+  const config = fmt.joinFacts([vehicle.exteriorColor, vehicle.daysListed !== null ? `${fmt.formatNumber(vehicle.daysListed)} days listed` : null])
+  const powertrain = fmt.joinFacts([vehicle.engine, vehicle.drivetrain])
+  const primaryHold = vehicle.hold.canViewEvidence ? vehicle.hold.evidence[0] : null
+  const holdDetail = vehicle.hold.hasActiveHold === true ? fmt.joinFacts([primaryHold?.salesperson, primaryHold?.expectedDate ? `Expected ${fmt.formatDate(primaryHold.expectedDate)}` : null, vehicle.hold.backupCount ? `${vehicle.hold.backupCount} backup${vehicle.hold.backupCount === 1 ? '' : 's'}` : null]) : null
   return el('li', {
     class: `row ${position === state.activeIndex ? 'is-active' : ''} ${inCompare ? 'is-compared' : ''}`.trim(), role: 'option', id: `row-${vehicle.vin}`,
     'aria-selected': String(position === state.activeIndex), dataset: { vin: vehicle.vin, index: String(position) },
     onclick: () => openDetail(vehicle),
   },
-    el('span', { class: 'plate' }, rowThumb(vehicle), el('b', { text: vehicle.stockNumber, title: `Stock ${vehicle.stockNumber}` }), el('small', { text: vehicle.homeStore })),
+    el('span', { class: 'plate' }, rowThumb(vehicle), el('b', { text: vehicle.stockNumber, title: `Stock ${vehicle.stockNumber}` })),
     el('span', { class: 'row-main' },
       el('span', { class: 'row-title', text: vehicle.name, title: vehicle.name }),
-      el('span', { class: 'row-meta' }, fmt.joinFacts(metaParts), via ? el('em', { text: ` · via ${via.toLowerCase()}` }) : null),
-      el('span', { class: 'row-status' }, holdPill(vehicle), movementPill(vehicle), vehicle.certified ? el('span', { class: 'pill pill-blue', title: `${vehicle.certifiedProgram.name} — separate from any factory warranty` }, icon('badge-check'), 'Certified') : null, locationNode(vehicle)),
+      el('span', { class: 'row-meta', title: fmt.joinFacts([metaParts[0], metaParts[1], fmt.formatDays(vehicle.daysListed)]) }, el('strong', { text: metaParts[0] }), metaParts.slice(1).some(Boolean) ? ' · ' : '', fmt.joinFacts(metaParts.slice(1))),
+      powertrain ? el('span', { class: 'row-spec row-powertrain', text: powertrain, title: powertrain }) : null,
+      config ? el('span', { class: 'row-spec', text: config, title: config }) : null,
+      via ? el('span', { class: 'row-match', text: `Matched ${via.toLowerCase()}` }) : null,
     ),
     inCompare ? el('span', { class: 'row-cmp', title: 'In the compare set' }, icon('columns', { size: 13 })) : icon('chevron-right', { size: 14 }),
+    el('span', { class: 'row-operations' },
+      el('span', { class: 'row-status' }, el('strong', { class: 'row-store', text: vehicle.homeStore }), holdPill(vehicle), servicePill(vehicle)),
+      vehicle.movement ? el('span', { class: 'row-movement' }, movementPill(vehicle), vehicle.movement.destination ? el('span', { text: `To ${vehicle.movement.destination}` }) : null) : null,
+      holdDetail ? el('span', { class: 'row-spec row-hold-detail', text: holdDetail, title: holdDetail }) : null,
+      vehicle.location.store !== vehicle.homeStore || vehicle.location.provenance === 'app-confirmed' || vehicle.location.conflict ? locationNode(vehicle) : null,
+    ),
+    rowDocumentFacts(vehicle),
+  )
+}
+
+function importantSourceNote(note) {
+  return note && /stale|saved report|partial|refresh|unknown|unavailable|future|unrecognized|not captured/i.test(note)
+}
+
+function sourceNoteLabel(note) {
+  if (/saved report/i.test(note)) return 'Saved report'
+  if (/partial/i.test(note)) return 'Partial'
+  if (/refresh/i.test(note)) return 'Refresh'
+  if (/stale/i.test(note)) return 'Older capture'
+  if (/unavailable/i.test(note)) return 'Unavailable'
+  if (/unknown|unrecognized/i.test(note)) return 'Check source'
+  if (/not captured/i.test(note)) return 'Not captured'
+  return 'Source note'
+}
+
+function scanFact(resource) {
+  const [primary, ...remaining] = resource.compactFacts
+  const full = [primary, ...remaining].filter(Boolean).join(' · ')
+  if (!primary) return null
+  // The scan list surfaces the highest-priority captured fact for each source.
+  // The full facts stay available in the vehicle's Records tab; retaining them
+  // as visually hidden text also gives assistive technology the same context.
+  return el('span', { class: 'row-doc-facts', title: full },
+    el('span', { text: primary }),
+    remaining.length ? el('span', { class: 'visually-hidden', text: ` · ${remaining.join(' · ')}` }) : null,
+  )
+}
+
+function sourceNoteBadge(note) {
+  if (!importantSourceNote(note)) return null
+  return el('span', { class: 'row-doc-note', title: note, 'aria-label': note },
+    sourceNoteLabel(note),
+    el('span', { class: 'visually-hidden', text: `: ${note}` }),
+  )
+}
+
+function rowDocumentFacts(vehicle) {
+  const summaries = resourceSummaries(vehicle).filter(resource => resource.hasCapturedData && resource.id !== 'invoice')
+  const prioritized = [...summaries.filter(resource => resource.id === 'oasis' && resource.compactFacts.some(fact => /Open FSA/i.test(fact))), ...summaries.filter(resource => !(resource.id === 'oasis' && resource.compactFacts.some(fact => /Open FSA/i.test(fact))))].slice(0, 3)
+  if (!prioritized.length) return null
+  // Listbox options keep one coherent keyboard action: open this vehicle.
+  // Originals and saved-record actions are separate controls in its detail view.
+  return el('span', { class: 'row-documents', 'aria-label': 'Captured report highlights. Open the vehicle for complete records and source links.' }, ...prioritized.map(resource =>
+    el('span', { class: 'row-doc-summary', dataset: { resource: resource.id } },
+      el('span', { class: 'row-doc-provider' }, resource.brand ? resourceBrand(resource.brand, 'row-doc-brand') : icon('file-text'), resource.brand === 'autocheck' || resource.brand === 'vauto' ? null : el('b', { text: resource.id === 'oasis' ? 'OASIS' : 'Sticker' }), sourceNoteBadge(resource.sourceNote)),
+      el('span', { class: 'row-doc-content' }, scanFact(resource)),
+    )),
   )
 }
 
@@ -284,14 +437,26 @@ function renderList() {
   if (!state.data) return
   hideSkeleton()
   state.results = currentResults()
+  renderScopes()
+  renderResultsContext()
   clear(ui.rows)
   clear(ui.more)
   ui.more.hidden = true
   renderTray()
-  if (state.results.length === 0) { renderStatus(); return }
+  ui.rows.removeAttribute('aria-activedescendant')
+  if (state.results.length === 0) { state.activeIndex = -1; renderStatus(); return }
   ui.status.hidden = true
   const visible = state.results.slice(0, state.shown)
-  visible.forEach((match, position) => ui.rows.append(renderRow(match, position)))
+  let previousStore = null
+  visible.forEach((match, position) => {
+    if (!selectedStore() && match.vehicle.homeStore !== previousStore) {
+      previousStore = match.vehicle.homeStore
+      const count = state.results.filter((item) => item.vehicle.homeStore === previousStore).length
+      const label = `${previousStore || 'Store not provided'}${previousStore === workingStore() ? ' · My store' : ''}`
+      ui.rows.append(el('li', { class: 'store-group', role: 'presentation' }, icon('store', { size: 14 }), el('span', { text: label }), el('b', { text: fmt.formatNumber(count) })))
+    }
+    ui.rows.append(renderRow(match, position))
+  })
   if (state.results.length > visible.length) {
     ui.more.hidden = false
     ui.more.append(el('button', { type: 'button', onclick: () => { state.shown += PAGE; renderList() } }, `Show ${fmt.formatNumber(Math.min(PAGE, state.results.length - visible.length))} more of ${fmt.formatNumber(state.results.length)}`))
@@ -300,10 +465,28 @@ function renderList() {
   else ui.rows.removeAttribute('aria-activedescendant')
 }
 
+const SERVICE_LABELS = { needs_service: 'Waiting for service', in_service: 'In service', serviced: 'Ready' }
+function servicePill(vehicle) {
+  const status = serviceWorkflowStatus(vehicle.serviceReadiness)
+  return el('span', { class: `service-pill service-pill--${status}`, title: status === 'needs_service' && vehicle.serviceReadiness?.readinessBasis === 'unconfirmed' ? 'No service status has been recorded. A manager can confirm Waiting, In service, or Ready.' : `Service status: ${SERVICE_LABELS[status]}` }, icon(status === 'serviced' ? 'check' : 'wrench'), SERVICE_LABELS[status])
+}
+
+function renderResultsContext() {
+  const count = state.results.length
+  ui.resultContext.hidden = false
+  clear(ui.resultContext)
+  ui.resultContext.append(el('span', { text: `${fmt.formatNumber(count)} ${state.scope === 'held' ? 'held vehicle' : state.scope === 'moving' ? 'moving vehicle' : 'vehicle'}${count === 1 ? '' : 's'} · ${storeLabel()}` }))
+  ui.storeAll.textContent = `All ${fmt.formatNumber(scopeMatches(rankedFiltered(), { storeScope: 'all', view: state.scope }).length)}`
+  clear(ui.expandStores)
+  const other = selectedStore() ? scopeMatches(rankedFiltered(), { storeScope: 'all', view: state.scope }).filter(({ vehicle }) => vehicle.homeStore !== selectedStore()).length : 0
+  ui.expandStores.hidden = !other
+  if (other) ui.expandStores.append(el('button', { type: 'button', onclick: () => setStoreScope('all'), 'aria-label': `Include other stores (${fmt.formatNumber(other)} more vehicles)` }, 'All stores', el('b', { text: `+${fmt.formatNumber(other)}` }), icon('chevron-right', { size: 14 })))
+}
+
 function setActive(index) {
   const max = Math.min(state.results.length, state.shown) - 1
   state.activeIndex = Math.max(-1, Math.min(max, index))
-  for (const row of ui.rows.children) {
+  for (const row of ui.rows.querySelectorAll('.row')) {
     const active = Number(row.dataset.index) === state.activeIndex
     row.classList.toggle('is-active', active)
     row.setAttribute('aria-selected', String(active))
@@ -328,7 +511,7 @@ function renderStatus() {
     ui.status.append(el('div', { class: 'status-icon' }, icon(iconName, { size: 18 })), el('h3', { text: errorTitle(error) }))
     if (error.kind === 'signin') {
       ui.status.append(el('p', { text: 'The panel uses your Inventory Flow sign-in. Sign in once in a tab and come back — nothing else to set up.' }))
-      actions.append(el('button', { type: 'button', class: 'btn btn-primary', onclick: () => openUrl(links.appHomeUrl(state.workspace.origin)) }, icon('external'), 'Open Inventory Flow'))
+      actions.append(el('button', { type: 'button', class: 'btn btn-primary', onclick: () => openUrl(links.appHomeUrl(appOrigin())) }, icon('external'), 'Open Inventory Flow'))
     } else if (error.kind === 'forbidden') {
       ui.status.append(el('p', { text: 'You are signed in, but Inventory Flow has not enabled this account. Ask a manager to add you.' }))
       if (error.code) ui.status.append(el('p', {}, 'Code ', el('code', { text: error.code })))
@@ -347,19 +530,16 @@ function renderStatus() {
   }
   ui.status.classList.add('is-empty')
   const query = state.query.trim()
-  const scope = scopeDefinitions().find((item) => item.id === state.scope)
   if (query) {
     ui.status.append(el('div', { class: 'status-icon' }, icon('search', { size: 18 })), el('h3', {}, 'No matches for ', el('q', { text: query })))
-    ui.status.append(el('p', { text: `Nothing in ${scope?.label ?? 'this view'} matches${activeFilterCount(state.filters) ? ' with these filters' : ''}. Try the stock number, the last 8 of the VIN, or a make and model.` }))
+    ui.status.append(el('p', { text: `Nothing in ${storeLabel()} matches${activeFilterCount(state.filters) ? ' with these filters' : ''}. Try a stock number, the last 8 of the VIN, or a make and model.` }))
     if (activeFilterCount(state.filters)) actions.append(el('button', { type: 'button', class: 'btn', onclick: () => { state.filters = { ...EMPTY_FILTERS }; storage.setFilters({ filters: state.filters, sort: state.sort }).catch(() => {}); renderFilterState(); renderList() } }, 'Clear filters'))
-    if (state.scope !== 'group') actions.append(el('button', { type: 'button', class: 'btn', onclick: () => setScope('group') }, 'Search all stores'))
-    actions.append(el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.inventorySearchUrl(state.workspace.origin, query)) }, icon('external'), 'Search in the app'))
+    actions.append(el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.inventorySearchUrl(appOrigin(), query)) }, icon('external'), 'Search in the app'))
   } else {
     const filtered = activeFilterCount(state.filters) > 0
-    ui.status.append(el('div', { class: 'status-icon' }, icon('car', { size: 18 })), el('h3', { text: filtered ? 'No vehicles match these filters' : state.scope === 'held' ? 'No current DealerMail holds' : 'No vehicles in this view' }))
-    ui.status.append(el('p', { text: filtered ? `Nothing in ${scope?.label ?? 'this view'} fits ${describeFilters(state.filters)}. Loosen a filter or widen the scope.` : state.scope === 'held' ? 'No vehicle in the verified snapshot has a current hold. That is not an availability promise.' : 'The selected release has no public vehicles for this store.' }))
+    ui.status.append(el('div', { class: 'status-icon' }, icon('car', { size: 18 })), el('h3', { text: filtered ? 'No vehicles match these filters' : state.scope === 'held' ? 'No current DealerMail holds' : state.scope === 'moving' ? 'No vehicles moving in this view' : 'No vehicles in this view' }))
+    ui.status.append(el('p', { text: filtered ? `Nothing in ${storeLabel()} fits ${describeFilters(state.filters)}. Clear a filter or choose another store.` : state.scope === 'held' ? `No current DealerMail holds were found in ${storeLabel()}. Hold status alone does not confirm availability.` : state.scope === 'moving' ? `No active vehicle moves were found in ${storeLabel()}. Choose All to see the rest of the inventory.` : 'The selected release has no vehicles for this store.' }))
     if (filtered) actions.append(el('button', { type: 'button', class: 'btn', onclick: () => { state.filters = { ...EMPTY_FILTERS }; storage.setFilters({ filters: state.filters, sort: state.sort }).catch(() => {}); renderFilterState(); renderList() } }, 'Clear filters'))
-    if (state.scope !== 'group') actions.append(el('button', { type: 'button', class: 'btn', onclick: () => setScope('group') }, 'Show all stores'))
   }
   if (actions.childElementCount) ui.status.append(actions)
 }
@@ -386,6 +566,7 @@ function renderFreshness() {
   const stale = isStale()
   const problem = meta.publicFreshness !== 'current' || meta.dealerMailFreshness !== 'current'
   ui.freshText.append(
+    state.workspace.demo ? el('span', { class: 'demo-disclosure', text: 'Demo · synthetic records & illustrations' }) : '',
     el('span', { class: `dot ${state.error ? 'is-off' : problem ? 'is-stale' : ''}`.trim() }),
     `${fmt.formatReportDate(meta.reportDate)} release`,
     problem ? ` · ${meta.dealerMailFreshness !== 'current' ? 'DealerMail ' + meta.dealerMailFreshness : 'public ' + meta.publicFreshness}` : '',
@@ -458,7 +639,7 @@ function humanize(value) {
 
 function fieldText(field, vehicle) {
   if (field.value === null || field.value === undefined || field.value === '') return '—'
-  if (field.kind === 'money') return field.from === 'sticker' ? fmt.formatStickerMoney(field.value, vehicle.documents.windowSticker) : fmt.formatMoney(field.value)
+  if (field.kind === 'money') return field.from === 'sticker' ? fmt.formatStickerMoney(field.value, vehicle.documents.windowSticker) : field.from === 'label' ? fmt.formatReferencePrice(field.value) : fmt.formatMoney(field.value)
   if (field.kind === 'mileage') return fmt.formatMileage(field.value)
   if (field.kind === 'date') return fmt.formatDate(field.value)
   return String(field.value)
@@ -478,9 +659,9 @@ function hero(vehicle) {
   }
   state.photoIndex = Math.min(state.photoIndex, photos.length - 1)
   const alt = (index) => `${vehicle.name}, photo ${index + 1} of ${photos.length}`
-  const img = el('img', { class: 'hero-img', src: photos[state.photoIndex], alt: alt(state.photoIndex), decoding: 'async' })
   const count = el('span', { class: 'hero-count num', text: `${state.photoIndex + 1} / ${photos.length}` })
   const thumbs = photos.length > 1 ? el('div', { class: 'hero-thumbs', role: 'group', 'aria-label': 'Photos' }) : null
+  const failedPhotos = new Set()
   const show = (index) => {
     state.photoIndex = (index + photos.length) % photos.length
     img.src = photos[state.photoIndex]
@@ -488,37 +669,45 @@ function hero(vehicle) {
     count.textContent = `${state.photoIndex + 1} / ${photos.length}`
     if (thumbs) for (const thumb of thumbs.children) { const on = Number(thumb.dataset.index) === state.photoIndex; thumb.classList.toggle('is-on', on); thumb.setAttribute('aria-pressed', String(on)); if (on) thumb.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }
   }
-  if (thumbs) photos.slice(0, 16).forEach((src, index) => thumbs.append(el('button', { type: 'button', class: `hero-thumb ${index === state.photoIndex ? 'is-on' : ''}`.trim(), dataset: { index: String(index) }, 'aria-label': `Photo ${index + 1}`, 'aria-pressed': String(index === state.photoIndex), onclick: () => show(index) }, el('img', { src, alt: '', loading: 'lazy', decoding: 'async' }))))
+  const img = el('img', { class: 'hero-img', src: photos[state.photoIndex], alt: alt(state.photoIndex), decoding: 'async', referrerpolicy: 'no-referrer', onerror: () => {
+    failedPhotos.add(state.photoIndex)
+    let next = null
+    for (let offset = 1; offset < photos.length; offset += 1) {
+      const candidate = (state.photoIndex + offset) % photos.length
+      if (!failedPhotos.has(candidate)) { next = candidate; break }
+    }
+    if (next !== null) { show(next); return }
+    clear(frame)
+    frame.classList.add('is-empty')
+    frame.removeAttribute('tabindex')
+    frame.removeAttribute('aria-label')
+    frame.append(el('span', { class: 'hero-empty' }, icon('image', { size: 18 }), el('span', { text: 'Photos could not load' })), logo)
+    thumbs?.setAttribute('hidden', '')
+  } })
+  if (thumbs) photos.slice(0, 16).forEach((src, index) => thumbs.append(el('button', { type: 'button', class: `hero-thumb ${index === state.photoIndex ? 'is-on' : ''}`.trim(), dataset: { index: String(index) }, 'aria-label': `Photo ${index + 1}`, 'aria-pressed': String(index === state.photoIndex), onclick: () => show(index) }, el('img', { src, alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer' }))))
   const frame = el('div', { class: 'hero-frame', tabindex: '0', 'aria-label': 'Vehicle photos, use the arrow keys', onkeydown: (event) => { if (event.key === 'ArrowLeft') { event.preventDefault(); show(state.photoIndex - 1) } if (event.key === 'ArrowRight') { event.preventDefault(); show(state.photoIndex + 1) } } },
     img, logo, count,
     photos.length > 1 ? el('button', { type: 'button', class: 'hero-nav hero-prev', 'aria-label': 'Previous photo', onclick: () => show(state.photoIndex - 1) }, icon('chevron-left', { size: 18 })) : null,
     photos.length > 1 ? el('button', { type: 'button', class: 'hero-nav hero-next', 'aria-label': 'Next photo', onclick: () => show(state.photoIndex + 1) }, icon('chevron-right', { size: 18 })) : null,
   )
-  return el('div', { class: 'hero' }, frame, thumbs)
+  return el('section', { class: 'hero detail-gallery', 'aria-label': 'Vehicle photos' },
+    el('div', { class: 'detail-section-head' }, el('h3', { text: `Photos (${photos.length})` }), vehicle.listing.url ? el('button', { type: 'button', class: 'link-btn', onclick: () => openUrl(vehicle.listing.url) }, 'View listing', icon('external', { size: 13 })) : null),
+    el('div', { class: `detail-gallery-body ${thumbs ? 'has-thumbs' : ''}` }, frame, thumbs))
 }
 
 function identity(vehicle) {
-  const descriptor = fmt.joinFacts([vehicle.trim, vehicle.bodyStyle, vehicle.drivetrain, vehicle.engine, vehicle.exteriorColor])
-  const priceMeta = []
-  if (vehicle.msrp !== null) priceMeta.push(el('span', { text: `MSRP ${fmt.formatMoney(vehicle.msrp)}` }))
-  if (vehicle.savings) priceMeta.push(el('b', { class: 'save', text: `${fmt.formatMoney(vehicle.savings)} under MSRP` }))
-  if (vehicle.msrp === null) priceMeta.push(el('span', { text: 'MSRP not published' }))
   return el('div', { class: 'd-head' },
-    el('div', { class: 'd-plate-row' },
-      el('span', { class: 'd-plate' }, icon('tag'), vehicle.stockNumber),
-      certifiedBadge(vehicle), holdPill(vehicle), movementPill(vehicle),
-    ),
     el('h1', { class: 'd-name', text: vehicle.name }),
-    descriptor ? el('p', { class: 'd-sub', text: descriptor }) : null,
     el('div', { class: 'price-row' },
-      el('div', { class: 'price' }, el('strong', { class: 'num', text: fmt.formatMoney(vehicle.price) }), vehicle.price !== null ? copyButton(vehicle.price, 'listed price', { size: 14 }) : null),
-      el('div', { class: 'price-meta' }, ...priceMeta),
+      el('strong', { class: 'detail-price num', text: vehicle.price !== null ? fmt.formatMoney(vehicle.price) : 'Price not published' }),
+      vehicle.mileage !== null ? el('span', { class: 'num', text: `· ${fmt.formatMileage(vehicle.mileage)}` }) : null,
     ),
-    el('div', { class: 'd-facts' },
-      fact('Mileage', vehicle.mileage !== null ? fmt.formatMileage(vehicle.mileage) : '—', vehicle.mileage === null),
-      fact('Days listed', vehicle.daysListed !== null ? fmt.formatNumber(vehicle.daysListed) : '—', vehicle.daysListed === null),
-      fact('Home store', vehicle.homeStore),
+    el('div', { class: 'detail-home' }, el('span', { text: vehicle.homeStore }), vehicle.daysListed !== null ? el('span', { text: `· ${fmt.formatNumber(vehicle.daysListed)} days listed` }) : null, certifiedBadge(vehicle)),
+    el('div', { class: 'service-summary detail-status-line' },
+      holdPill(vehicle), servicePill(vehicle), movementPill(vehicle),
+      vehicle.serviceReadiness?.completedAt ? el('span', { text: `Completed ${fmt.formatDate(vehicle.serviceReadiness.completedAt)}` }) : vehicle.serviceReadiness?.serviceEnteredAt ? el('span', { text: `Since ${fmt.formatDate(vehicle.serviceReadiness.serviceEnteredAt)}` }) : null,
     ),
+    vehicle.serviceReadiness?.readinessBasis === 'unconfirmed' ? el('p', { class: 'service-unconfirmed', text: 'Service not yet confirmed · manager review needed' }) : null,
   )
 }
 
@@ -550,42 +739,55 @@ function statusGrid(vehicle) {
 }
 
 function dock(vehicle) {
-  const origin = state.workspace.origin
+  const origin = appOrigin()
   const access = state.data?.access
   const allowed = canRequestVehicle(vehicle, access)
   const blocked = requestBlockedReason(vehicle, access)
+  const hasMove = Boolean(vehicle.movement?.transferId)
   const primary = el('div', { class: 'dock-primary' },
-    el('button', { type: 'button', class: 'btn btn-primary', disabled: !allowed, title: allowed ? 'Opens the request form in Inventory Flow' : blocked ?? '', onclick: () => openUrl(links.requestVehicleUrl(origin, vehicle.vin)) }, icon('truck'), 'Request vehicle'),
-    el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.inventorySearchUrl(origin, vehicle.stockNumber)) }, icon('external'), 'Open in app'),
+    el('button', { type: 'button', class: 'btn btn-primary', onclick: () => openUrl(links.inventorySearchUrl(origin, vehicle.stockNumber)) }, 'Open in app', icon('external')),
+    hasMove ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.trackMovementUrl(origin, { transferId: vehicle.movement.transferId, vin: vehicle.vin })) }, 'View move', icon('arrow-right'))
+      : allowed ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.requestVehicleUrl(origin, vehicle.vin)) }, 'Request move', icon('arrow-right')) : null,
   )
-  const inCompare = state.compare.includes(vehicle.vin)
-  const utils = el('div', { class: 'dock-utils' },
-    chip(inCompare ? 'Comparing' : 'Compare', 'columns', (button) => toggleCompare(vehicle, button), { title: inCompare ? 'Remove from the compare set' : 'Add to the compare set (C)', pressed: inCompare }),
+  const utils = el('nav', { class: 'd-utilities', 'aria-label': 'Vehicle utilities' },
     chip('Deal sheet', 'copy', (button) => copy(dealSheetText(vehicle, (field) => fieldText(field, vehicle)), 'Deal sheet', button), { title: 'Copy every identifying and pricing fact as text' }),
-    chip('Take-home page', 'file-text', () => openTakeHome(vehicle), { title: 'One-page customer sheet to print or save as PDF' }),
+    chip('Take-home page', 'file-text', () => openTakeHome(vehicle), { title: 'Customer sheet to print or save as PDF' }),
     vehicle.hold.canManage ? chip('DealerMail', 'mail', async (button) => { await copy(vehicle.stockNumber, 'Stock number', button); openUrl(links.DEALERMAIL_INVENTORY_URL) }, { title: 'Copies the stock number, then opens DealerMail inventory' }) : null,
-    vehicle.movement?.transferId ? chip('Track move', 'truck', () => openUrl(links.trackMovementUrl(origin, { transferId: vehicle.movement.transferId, vin: vehicle.vin }))) : null,
   )
-  return el('div', { class: 'dock' }, primary, !allowed && blocked ? el('p', { class: 'dock-note', text: blocked }) : null, utils)
+  return el('div', { class: 'dock' }, primary,
+    vehicle.moveRequestBlocked && !hasMove && blocked ? el('p', { class: 'dock-note', text: blocked }) : null,
+    utils)
 }
 
 async function openTakeHome(vehicle) {
   // Only published facts leave the panel; the print page renders the model
   // it is handed and never re-fetches anything.
-  await storage.setTakeHome(vehicle.vin, takeHomeModel(vehicle, photosFor(vehicle)))
-  openExtensionPage(`print.html#${encodeURIComponent(vehicle.vin)}`)
+  const handoff = storage.setTakeHome(vehicle.vin, takeHomeModel(vehicle, photosFor(vehicle)))
+  const path = `print.html#${encodeURIComponent(vehicle.vin)}`
+  // Preview uses window.open(), so retain the click gesture while its local
+  // storage write settles. Chrome extension storage remains persisted first.
+  if (host === 'preview') openExtensionPage(path)
+  await handoff
+  if (host !== 'preview') openExtensionPage(path)
 }
 
 function tabsBar(vehicle) {
-  const bar = el('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Vehicle sections' }, el('span', { class: 'tabs-ind', 'aria-hidden': 'true' }))
+  const tablist = el('div', { class: 'detail-tablist', role: 'tablist', 'aria-label': 'Vehicle sections' })
+  const bar = el('div', { class: 'tabs detail-tabs' }, el('span', { class: 'tabs-ind', 'aria-hidden': 'true' }), tablist)
   const counts = { equipment: vehicle.equipment.byCategory.reduce((sum, group) => sum + group.items.length, 0), hold: vehicle.hold.tone === 'held' ? hold_count(vehicle) : 0 }
   for (const [id, label] of TABS) {
-    bar.append(el('button', {
+    tablist.append(el('button', {
       type: 'button', class: 'tab', role: 'tab', id: `tab-${id}`, dataset: { tab: id }, 'aria-selected': String(id === state.tab), 'aria-controls': 'tab-panel', tabindex: id === state.tab ? '0' : '-1',
       onclick: () => switchTab(id),
     }, label, counts[id] ? el('b', { text: fmt.formatNumber(counts[id]) }) : null))
   }
+  const selected = state.compare.includes(vehicle.vin)
+  bar.append(
+    el('button', { type: 'button', class: 'tab-action service-update', 'aria-label': vehicle.serviceReadiness?.canManage ? 'Update service in Inventory Flow' : 'View service in Inventory Flow', onclick: () => openUrl(links.serviceStatusUrl(appOrigin(), vehicle.vin)) }, 'Service', icon('external', { size: 12 })),
+    el('button', { type: 'button', class: 'tab-action detail-compare-toggle', 'aria-label': selected ? 'Remove vehicle from comparison' : 'Add vehicle to comparison', 'aria-pressed': String(selected), onclick: (event) => { const wasSelected = state.compare.includes(vehicle.vin); toggleCompare(vehicle, event.currentTarget); event.currentTarget.setAttribute('aria-label', state.compare.includes(vehicle.vin) ? 'Remove vehicle from comparison' : 'Add vehicle to comparison'); event.currentTarget.textContent = state.compare.includes(vehicle.vin) ? 'Comparing' : 'Compare'; if (!wasSelected && state.compare.length >= 2) openCompare() } }, selected ? 'Comparing' : 'Compare'),
+  )
   bar.addEventListener('keydown', (event) => {
+    if (event.target.getAttribute('role') !== 'tab') return
     const tabs = [...bar.querySelectorAll('.tab')]
     const current = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true')
     if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
@@ -610,8 +812,14 @@ function switchTab(id) {
     positionIndicator(bar, bar.querySelector('.tabs-ind'), '.tab')
   }
   const panel = ui.detail.querySelector('#tab-panel')
+  // A sticky bar's offsetTop follows its stuck position. Use the content's
+  // normal-flow position so a deep Overview link never lands mid-Records.
+  const sectionTop = bar && panel ? Math.max(0, ui.detail.scrollTop + panel.getBoundingClientRect().top - ui.detail.getBoundingClientRect().top - bar.offsetHeight) : 0
   if (panel) { const next = tabPanel(vehicle); panel.replaceWith(next); if (changed) next.classList.add('is-fresh') }
-  if (bar && changed && ui.detail.scrollTop > bar.offsetTop) ui.detail.scrollTop = bar.offsetTop
+  if (bar && panel) {
+    ui.detail.scrollTop = Math.min(ui.detail.scrollTop, sectionTop)
+    bar.querySelector('[aria-selected="true"]')?.focus({ preventScroll: true })
+  }
 }
 
 function tabPanel(vehicle) {
@@ -619,32 +827,57 @@ function tabPanel(vehicle) {
   return el('div', { class: 'tab-panel', id: 'tab-panel', role: 'tabpanel', 'aria-labelledby': `tab-${state.tab}` }, ...(builders[state.tab] ?? overviewTab)(vehicle))
 }
 
+function openRecord(id) {
+  switchTab('records')
+  const target = [...ui.detail.querySelectorAll('[data-record]')].find((node) => node.dataset.record === id)
+  if (!target) return
+  const bar = ui.detail.querySelector('.detail-tabs')
+  ui.detail.scrollTop = Math.max(0, ui.detail.scrollTop + target.getBoundingClientRect().top - ui.detail.getBoundingClientRect().top - (bar?.offsetHeight ?? 0) - 8)
+  target.focus({ preventScroll: true })
+}
+
 /* Overview tab */
+function resourceBrand(brand, className = 'doc-brand') {
+  return el('img', { class: `${className} ${className}--${brand}`, src: `../resource-brands/${brand}.svg`, alt: brand === 'autocheck' ? 'AutoCheck' : brand === 'vauto' ? 'vAuto' : 'Ford' })
+}
+
 function docTile({ title, sub, iconName, url, onOpen, disabledText, score, brand }) {
   const available = Boolean(url) || Boolean(onOpen)
+  const accessibleTitle = brand === 'autocheck' ? 'AutoCheck history' : brand === 'vauto' ? 'vAuto equipment label' : title
   return el('button', {
-    type: 'button', class: `doc ${available ? '' : 'is-off'} ${brand ? `doc-${brand}` : ''}`.trim(), disabled: !available, title: available ? `Open ${title}` : disabledText ?? `${title} not published`,
+    type: 'button', class: `doc ${available ? '' : 'is-off'} ${brand ? `doc-${brand}` : ''}`.trim(), disabled: !available, title: available ? `${onOpen ? 'View captured' : 'Open'} ${accessibleTitle}` : disabledText ?? `${accessibleTitle} not published`, 'aria-label': `${available ? onOpen ? 'View captured' : 'Open' : 'Unavailable:'} ${accessibleTitle}`,
     onclick: () => (onOpen ? onOpen() : openUrl(url)),
   },
-    score !== null && score !== undefined ? el('span', { class: 'doc-score num', text: String(score) }) : el('span', { class: 'doc-icon' }, icon(iconName, { size: 16 })),
-    el('span', { class: 'doc-body' }, el('strong', { text: title }), el('small', { text: available ? sub : disabledText ?? 'Not published' })),
+    brand ? resourceBrand(brand) : score !== null && score !== undefined ? el('span', { class: 'doc-score num', text: String(score) }) : el('span', { class: 'doc-icon' }, icon(iconName, { size: 16 })),
+    el('span', { class: 'doc-body' }, el('strong', { text: brand === 'autocheck' ? 'History' : brand === 'vauto' ? 'Equipment' : title }), el('small', { text: available ? sub : disabledText ?? 'Not published' })),
     available ? icon('external', { size: 12, className: 'doc-ext' }) : null,
   )
 }
 
 function documentsGrid(vehicle) {
-  const docs = vehicle.documents
-  const ac = docs.autoCheck
-  const fordFamily = Boolean(vehicle.links.oasis)
-  const tiles = [
-    docTile({ title: 'AutoCheck', sub: ac ? fmt.joinFacts([ac.score !== null ? `Score ${ac.score}` : null, ac.rangeLow !== null && ac.rangeHigh !== null ? `range ${ac.rangeLow}–${ac.rangeHigh}` : null, ac.ownerCount !== null ? `${ac.ownerCount} owner${ac.ownerCount === 1 ? '' : 's'}` : null]) || 'Vehicle history report' : '', iconName: 'shield', url: ac?.url, score: ac?.score ?? null, disabledText: ac ? 'Report link not published' : 'No report captured', brand: 'autocheck' }),
-    docTile({ title: 'Window sticker', sub: docs.windowSticker ? fmt.joinFacts([docs.windowSticker.totalMsrp !== null ? fmt.formatStickerMoney(docs.windowSticker.totalMsrp, docs.windowSticker) : null, docs.windowSticker.originalMarket ? `${docs.windowSticker.originalMarket} market` : null]) || 'Original Monroney' : '', iconName: 'file-text', url: docs.windowSticker?.url, disabledText: docs.windowSticker ? 'Sticker link not published' : 'No sticker captured' }),
-    fordFamily ? docTile({ title: 'OASIS', sub: 'Warranty start, recalls, service', iconName: 'wrench', url: vehicle.links.oasis, brand: 'ford' }) : null,
-    fordFamily ? docTile({ title: 'Ford invoice', sub: 'DealerConnection invoice', iconName: 'receipt', url: vehicle.links.invoice, brand: 'ford' }) : null,
-    docTile({ title: 'Listing', sub: vehicle.listing.isListed === true ? 'Dealer website page' : vehicle.listing.isListed === false ? 'Not publicly listed' : 'Dealer website', iconName: 'globe', url: vehicle.listing.url, disabledText: 'No listing link' }),
-    docTile({ title: 'Equipment label', sub: docs.factoryEquipment ? fmt.joinFacts([docs.factoryEquipment.totalMsrp !== null ? `ref. ${fmt.formatMoney(docs.factoryEquipment.totalMsrp)}` : null, docs.factoryEquipment.packages.length ? `${docs.factoryEquipment.packages.length} package${docs.factoryEquipment.packages.length === 1 ? '' : 's'}` : null]) || 'vAuto informational label' : '', iconName: 'layers', url: docs.factoryEquipment?.url, disabledText: docs.factoryEquipment ? 'Label image not published' : 'No label captured' }),
-  ].filter(Boolean)
-  return el('div', { class: 'doc-grid' }, ...tiles)
+  const resources = resourceSummaries(vehicle).filter(resource => resource.id !== 'invoice')
+  const cards = resources.map(resource => {
+    const captured = resource.hasCapturedData
+    const accessibleTitle = resource.id === 'autocheck' ? 'AutoCheck history' : resource.id === 'vauto' ? 'vAuto equipment label' : resource.title
+    const label = captured ? `View captured ${accessibleTitle}` : resource.url ? `Open ${resource.title}` : `${resource.title}: no details captured`
+    return el('section', { class: 'doc-summary', dataset: { resource: resource.id }, 'aria-label': `${resource.title} summary` },
+      el('button', { type: 'button', class: `doc doc-summary-heading${resource.brand ? ` doc-${resource.brand}` : ''}`, disabled: !captured && !resource.url, 'aria-label': label,
+        onclick: () => captured ? openRecord(resource.id) : openUrl(resource.url) },
+        resource.brand ? resourceBrand(resource.brand) : icon('file-text'),
+        el('span', { class: 'doc-body' }, el('strong', { text: resource.title }), el('small', { text: captured ? 'View saved details' : resource.sourceKind })),
+        icon(captured ? 'arrow-right' : 'external', { size: 14 })),
+      resource.facts.length ? el('ul', { class: 'doc-summary-facts' }, ...resource.facts.slice(0, 5).map(fact => el('li', { text: fact }))) : null,
+      resource.sourceNote ? el('p', { class: 'doc-source-note', text: resource.sourceNote }) : null,
+      captured && resource.url ? el('button', { type: 'button', class: 'doc-source-open', 'aria-label': `Open ${resource.sourceKind.toLowerCase()} for ${resource.title}`, onclick: () => openUrl(resource.url) }, resource.sourceKind === 'Dealer lookup' ? `Open ${resource.title} lookup` : resource.sourceKind === 'Source document' ? 'Open source document' : 'Open original source', icon('external', { size: 14 })) : null,
+    )
+  })
+  return el('section', { class: 'document-summaries', 'aria-label': 'Documents and captured report details' },
+    el('h3', { class: 'card-title', text: 'Documents & report details' }),
+    el('div', { class: 'doc-grid doc-grid--summaries' }, ...cards),
+    el('div', { class: 'doc-grid doc-grid--utilities' },
+      vehicle.links.invoice ? docTile({ title: 'Ford invoice', sub: 'Dealer lookup · sign-in required', iconName: 'receipt', url: vehicle.links.invoice, brand: 'ford' }) : null,
+      vehicle.listing.url ? docTile({ title: 'Listing', sub: 'Open dealer website', iconName: 'globe', url: vehicle.listing.url }) : null),
+  )
 }
 
 function dealSheet(vehicle) {
@@ -671,7 +904,7 @@ function coverageRow(item) {
   const parts = [item.monthsRemaining !== null ? `${item.monthsRemaining} mo` : null, item.milesRemaining !== null ? `${fmt.formatNumber(item.milesRemaining)} mi` : null].filter(Boolean)
   const remaining = item.status === 'expired'
     ? (item.limitedBy === 'miles' ? `past ${fmt.formatNumber(item.termMiles)} mi` : `ended ${fmt.formatDate(item.expiresOn)}`)
-    : parts.length ? `${parts.join(' / ')} left${item.expiresOn ? ` · ends ${fmt.formatDate(item.expiresOn)}` : ''}` : 'needs in-service date and miles'
+    : parts.length ? `${parts.join(' / ')} left${item.expiresOn ? ` · ends ${fmt.formatDate(item.expiresOn)}` : ''}` : 'needs warranty start date and miles'
   const timePct = item.monthsRemaining !== null ? item.monthsRemaining / item.termMonths : null
   const milesPct = item.milesRemaining !== null ? item.milesRemaining / item.termMiles : null
   const pct = [timePct, milesPct].filter((value) => value !== null).reduce((min, value) => Math.min(min, value), 1)
@@ -690,22 +923,25 @@ function coverageRow(item) {
 function warrantyCard(vehicle) {
   const miles = state.odometer.has(vehicle.vin) ? state.odometer.get(vehicle.vin) : vehicle.mileage
   const outlook = warrantyOutlook({ ...vehicle, mileage: miles })
+  const recordedOasisStart = vehicle.documents.fordOasis?.warrantyStartDate ?? vehicle.documents.warrantyCheck?.fordOasis?.warrantyStartDate
   const rerender = () => { const next = warrantyCard(vehicle); card.replaceWith(next); next.querySelector('.warr-odo')?.focus() }
   const input = el('input', {
     class: 'warr-odo num', type: 'number', inputmode: 'numeric', min: '0', step: '100', placeholder: 'miles', 'aria-label': 'Odometer now', value: miles === null || miles === undefined ? '' : String(miles),
     onchange: (event) => { const value = event.target.value === '' ? null : Math.max(0, Math.floor(Number(event.target.value))); state.odometer.set(vehicle.vin, value); rerender() },
   })
   const head = el('div', { class: 'card-head' },
-    el('h3', { class: 'card-title' }, icon('shield', { size: 13 }), 'Factory warranty'),
+    el('h3', { class: 'card-title' }, icon('shield', { size: 13 }), 'Factory warranty estimate'),
     outlook.program ? el('small', { class: 'card-sub', text: outlook.program }) : el('small', { class: 'card-sub', text: `No terms on file for ${vehicle.make || 'this make'}` }),
   )
   const facts = el('div', { class: 'warr-facts' },
-    el('div', { class: 'warr-fact' }, el('small', { text: 'Original in-service' }), el('strong', { text: outlook.inService.date ? fmt.formatDate(outlook.inService.date) : 'Not on the report' }), outlook.inService.date ? el('span', { text: 'AutoCheck estimate' }) : el('span', { text: 'Needed to date the coverage' })),
+    el('div', { class: 'warr-fact' }, el('small', { text: 'Estimated warranty start' }), el('strong', { text: outlook.inService.date ? fmt.formatDate(outlook.inService.date) : 'Not on the report' }), outlook.inService.date ? el('span', { text: 'AutoCheck estimate' }) : el('span', { text: 'Needed to date the coverage' })),
     el('div', { class: 'warr-fact' }, el('label', {}, el('small', { text: 'Odometer now' }), input), el('span', { text: 'Edit to recalculate' })),
   )
   const cert = vehicle.certifiedProgram ? certifiedTerms(vehicle.certifiedProgram.store) : null
   const card = el('section', { class: 'card warr' },
-    head, facts,
+    head,
+    recordedOasisStart ? el('div', { class: 'doc-source-note' }, el('p', { text: `OASIS recorded warranty start: ${fmt.formatDate(recordedOasisStart)}. The calculator below uses the AutoCheck estimate; use the captured OASIS record for Ford warranty details.` }), el('button', { type: 'button', class: 'doc-source-open', onclick: () => switchTab('records') }, 'View captured OASIS', icon('arrow-right', { size: 14 }))) : null,
+    facts,
     outlook.coverages.length ? el('div', { class: 'warr-rows' }, ...outlook.coverages.map(coverageRow)) : null,
     outlook.stickerWarranty.length ? el('div', { class: 'warr-sticker' }, el('b', { text: 'Printed on the original window sticker' }), el('ul', {}, ...outlook.stickerWarranty.map((text) => el('li', { text })))) : null,
     cert ? el('div', { class: 'warr-cert' },
@@ -743,8 +979,35 @@ function specsCard(vehicle) {
   return el('section', { class: 'card' }, el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, icon('gauge', { size: 13 }), 'Specifications')), node)
 }
 
+function frequentFacts(vehicle) {
+  const docs = vehicle.documents
+  const oasisStart = docs.fordOasis?.warrantyStartDate ?? docs.warrantyCheck?.fordOasis?.warrantyStartDate
+  const estimatedStart = docs.autoCheck?.inServiceDate ?? docs.warrantyCheck?.autoCheck?.inServiceDate
+  const stickerBase = docs.windowSticker?.basePrice
+  const labelBase = docs.factoryEquipment?.basePrice
+  const weightFee = docs.windowSticker?.options.find((item) => /\bweight(?:\s+|[-/])?(?:fee|tax)\b/i.test(item))
+    ?? docs.factoryEquipment?.sections.flatMap((group) => group.items).find((item) => /\bweight(?:\s+|[-/])?(?:fee|tax)\b/i.test(item.label))?.label
+  return el('section', { class: 'detail-frequent-facts', 'aria-label': 'Frequently used vehicle facts' },
+    fact(oasisStart ? 'Warranty in-service · OASIS' : estimatedStart ? 'Warranty in-service · estimate' : 'Warranty in-service', oasisStart || estimatedStart ? fmt.formatDate(oasisStart || estimatedStart) : 'Not captured'),
+    fact('Base MSRP', stickerBase !== null && stickerBase !== undefined ? fmt.formatStickerMoney(stickerBase, docs.windowSticker) : labelBase !== null && labelBase !== undefined ? fmt.formatReferencePrice(labelBase) : 'Not captured'),
+    fact('Weight fee', weightFee || 'Not captured'),
+    fact('Inventory date', vehicle.specs.inventoryDate ? fmt.formatDate(vehicle.specs.inventoryDate) : 'Not captured'),
+  )
+}
+
 function overviewTab(vehicle) {
-  return [documentsGrid(vehicle), dealSheet(vehicle), warrantyCard(vehicle), highlights(vehicle), specsCard(vehicle), readOnlyNote()]
+  const specification = el('section', { class: 'detail-specification' },
+    el('h3', { text: 'Specifications' }),
+    kv([['Engine', vehicle.engine], ['Drive', vehicle.drivetrain], ['Exterior', vehicle.exteriorColor], ['Interior', vehicle.interiorColor], ['MSRP', vehicle.msrp !== null ? fmt.formatMoney(vehicle.msrp) : null], ['Fuel', vehicle.fuelType]]))
+  const fullSpecifications = el('section', { class: 'detail-specification detail-full-specs' }, el('h3', { text: 'Vehicle details' }),
+    kv([['Stock', vehicle.stockNumber], ['VIN', vehicle.vin], ['Transmission', vehicle.transmission], ['Body', vehicle.bodyStyle], ['Vehicle class', vehicle.documents.autoCheck?.vehicleClass], ['Location', fmt.joinFacts([vehicle.location.label, vehicle.location.provenance])], ['Model code', vehicle.specs.modelCode], ['Under MSRP', vehicle.savings ? fmt.formatMoney(vehicle.savings) : null], ['Fuel economy', vehicle.specs.mpgCity !== null || vehicle.specs.mpgHighway !== null ? `${vehicle.specs.mpgCity ?? '—'} city / ${vehicle.specs.mpgHighway ?? '—'} highway` : null]]))
+  const calculator = el('section', { class: 'detail-calculator' }, el('button', { type: 'button', class: 'detail-calculator-toggle', 'aria-expanded': 'false', onclick: (event) => {
+    const expanded = event.currentTarget.getAttribute('aria-expanded') === 'true'
+    event.currentTarget.setAttribute('aria-expanded', String(!expanded))
+    if (expanded) calculator.querySelector('.warr')?.remove()
+    else calculator.append(warrantyCard(vehicle))
+  } }, icon('shield', { size: 15 }), 'Warranty calculator', icon('chevron-right', { size: 14 })))
+  return [hero(vehicle), frequentFacts(vehicle), specification, documentsGrid(vehicle), fullSpecifications, highlights(vehicle), calculator, readOnlyNote()]
 }
 
 function readOnlyNote() {
@@ -770,7 +1033,7 @@ function holdTab(vehicle) {
   const messages = []
   if (hold.canViewEvidence && hold.tone === 'held') {
     for (const [label, iconName, items] of [['Comment', 'message', hold.comments], ['Alert', 'bell', hold.alerts]]) {
-      for (const item of items.slice(0, 6)) messages.push(el('div', { class: `d-evidence ${label === 'Alert' ? 'is-alert' : ''}`.trim() }, icon(iconName, { size: 12 }), el('b', { text: label }), item.author ? el('span', { text: ` · ${item.author}` }) : null, item.timestamp ? el('span', { text: ` · ${fmt.formatDateTime(item.timestamp)}` }) : null, el('div', {}, el('span', { text: item.text }))))
+      for (const item of items) messages.push(el('div', { class: `d-evidence ${label === 'Alert' ? 'is-alert' : ''}`.trim() }, icon(iconName, { size: 14 }), el('b', { text: label }), item.author ? el('span', { text: ` · ${item.author}` }) : null, item.timestamp ? el('span', { text: ` · ${fmt.formatDateTime(item.timestamp)}` }) : null, el('div', {}, el('span', { text: item.text }))))
     }
   }
   const status = []
@@ -783,7 +1046,7 @@ function holdTab(vehicle) {
   const actions = el('div', { class: 'dock-utils' },
     vehicle.hold.canManage ? chip('Open in DealerMail', 'mail', async (button) => { await copy(vehicle.stockNumber, 'Stock number', button); openUrl(links.DEALERMAIL_INVENTORY_URL) }, { title: 'Copies the stock number, then opens DealerMail inventory' }) : null,
     chip('Stock', 'tag', (button) => copy(vehicle.stockNumber, 'Stock number', button), { title: 'Copy stock number' }),
-    chip('Open in app', 'external', () => openUrl(links.inventorySearchUrl(state.workspace.origin, vehicle.stockNumber))),
+    chip('Open in app', 'external', () => openUrl(links.inventorySearchUrl(appOrigin(), vehicle.stockNumber))),
   )
   const holdCard = el('section', { class: `card hold-card is-${hold.tone}` },
     el('div', { class: 'hold-head' }, el('span', { class: 'hold-icon' }, icon(hold.tone === 'held' ? 'lock' : hold.tone === 'clear' ? 'check' : 'help', { size: 16 })), el('div', {}, el('strong', { text: headline }), el('small', { text: hold.tone === 'held' ? hold.label : `DealerMail snapshot ${hold.dataState}` }))),
@@ -806,7 +1069,7 @@ function holdTab(vehicle) {
       line('truck', humanize(move.label ?? move.state) ?? 'Move in progress', humanize(move.requestStatus)),
       move.withheld ? el('p', { class: 'd-caption', text: 'Move details are limited to the stores involved; the location and status above are still the app\'s own record.' }) : null,
       kv([['Next', fmt.joinFacts([move.nextAction, move.nextActionOwner])], ['To', move.destination], [move.overdue ? 'Overdue' : 'Due', move.dueAt ? fmt.formatDateTime(move.dueAt) : null], ['Transport', move.transportAssignee], ['Requested by', move.requestingStore]]),
-      move.transferId ? el('div', { class: 'dock-utils' }, chip('Track move', 'truck', () => openUrl(links.trackMovementUrl(state.workspace.origin, { transferId: move.transferId, vin: vehicle.vin })))) : null,
+      move.transferId ? el('div', { class: 'dock-utils' }, chip('View vehicle move', 'truck', () => openUrl(links.trackMovementUrl(appOrigin(), { transferId: move.transferId, vin: vehicle.vin })))) : null,
     ]
     : [el('p', { class: 'd-caption', text: 'No move request in Inventory Flow for this vehicle.' })], { iconName: 'truck', pill: move ? el('span', { class: `pill ${move.overdue ? 'pill-alert' : 'pill-moving'}`, text: move.overdue ? 'Overdue' : 'Active' }) : null })
 
@@ -836,15 +1099,15 @@ function equipmentTab(vehicle) {
     children.push(el('section', { class: 'card' },
       el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, icon('layers', { size: 13 }), 'Packages on the equipment label'), docs.factoryEquipment.url ? el('button', { type: 'button', class: 'link-btn', onclick: () => openUrl(docs.factoryEquipment.url) }, 'Open label', icon('external', { size: 12 })) : null),
       ...docs.factoryEquipment.packages.map((pkg) => el('div', { class: 'pkg' },
-        el('div', { class: 'pkg-head' }, el('b', { text: pkg.name }), pkg.code ? el('code', { text: pkg.code }) : null, pkg.price !== null ? el('span', { class: 'num', text: fmt.formatMoney(pkg.price) }) : null),
+        el('div', { class: 'pkg-head' }, el('b', { text: pkg.name }), pkg.code ? el('code', { text: pkg.code }) : null, pkg.price !== null ? el('span', { class: 'num', text: `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(pkg.price)} · currency not captured` }) : null),
         pkg.features.length ? el('div', { class: 'd-features' }, ...pkg.features.map((feature) => el('span', { class: 'd-feature', text: feature }))) : null,
       )),
     ))
   }
   if (docs.windowSticker?.equipmentGroup) children.push(el('p', { class: 'd-caption' }, el('b', { text: 'Sticker equipment group: ' }), docs.windowSticker.equipmentGroup))
-  groups.forEach((group, index) => {
-    const details = el('details', { class: 'eq-group', open: index < 2 ? true : null },
-      el('summary', {}, icon('chevron-right', { size: 14, className: 'eq-caret' }), el('span', { text: group.label }), el('b', { class: 'num', text: fmt.formatNumber(group.items.length) })),
+  groups.forEach((group) => {
+    const details = el('section', { class: 'eq-group eq-ledger', 'aria-label': group.label },
+      el('h3', {}, el('span', { text: group.label }), el('b', { class: 'num', text: fmt.formatNumber(group.items.length) })),
       el('ul', { class: 'eq-list' }, ...group.items.map((item) => el('li', { class: `eq-item ${item.standout ? 'is-standout' : ''}`.trim(), title: SOURCE_LABELS[item.source] }, el('i', { class: `src-dot src-${item.source}` }), el('span', { text: item.label })))),
     )
     children.push(details)
@@ -860,47 +1123,101 @@ function recordsTab(vehicle) {
   const docs = vehicle.documents
   const ac = docs.autoCheck
   const children = []
+  const resourceNotes = new Map(resourceSummaries(vehicle).map((resource) => [resource.id, resource.sourceNote]))
+  const recordHead = (title, { brand, iconName = 'file-text', url, action, missing, dataState } = {}) => el('div', { class: 'rec-heading' },
+    el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, brand ? resourceBrand(brand, 'record-brand') : icon(iconName, { size: 16 }), title), dataState ? el('span', { class: `rec-state ${dataState === 'current' ? '' : 'is-warning'}`, text: dataState === 'current' ? 'Captured data' : `${humanize(dataState)} data` }) : null),
+    url ? el('button', { type: 'button', class: 'rec-source', 'aria-label': `${action} for ${vehicle.stockNumber}`, onclick: () => openUrl(url) }, action, icon('external', { size: 14 })) : missing ? el('p', { class: 'rec-source-missing', text: missing }) : null,
+  )
+  const recordSection = (title, content) => el('section', { class: 'rec-section', 'aria-label': title }, el('h4', { text: title }), ...content.filter(Boolean))
+  const recordList = (title, items) => items?.length ? recordSection(title, [el('ul', { class: 'rec-list' }, ...items.map((text) => el('li', { text })))]) : null
+  const sourceNote = (source, id) => resourceNotes.get(id) || fmt.joinFacts([source?.sourceMessage, source?.failureReason])
+  const note = (text) => text ? el('p', { class: 'rec-note', text }) : null
+  const hasNumber = (value) => typeof value === 'number' && Number.isFinite(value)
+  const referencePrice = (value) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(value)
+  const recordPrices = (rows, format) => {
+    const present = rows.filter(([, value]) => hasNumber(value))
+    return present.length ? el('dl', { class: 'price-table' }, ...present.map(([title, value]) => el('div', { class: `price-line ${/^total/i.test(title) ? 'is-total' : ''}` }, el('dt', { text: title }), el('dd', { class: 'num', text: format(value) })))) : null
+  }
   if (ac) {
     const facts = kv([
-      ['Owners', ac.ownerCount !== null ? `${ac.ownerCount} reported` : null],
+      ['Owners', hasNumber(ac.ownerCount) ? `${ac.ownerCount} reported` : null],
       ['Use', ac.usage],
       ['Last odometer', ac.lastReportedOdometer !== null ? fmt.joinFacts([fmt.formatMileage(ac.lastReportedOdometer), ac.lastReportedOdometerDate ? fmt.formatDate(ac.lastReportedOdometerDate) : null]) : null],
-      ['In service (est.)', ac.inServiceDate ? fmt.formatDate(ac.inServiceDate) : null, ac.inServiceDate],
+      ['Warranty start (est.)', ac.inServiceDate ? fmt.formatDate(ac.inServiceDate) : null],
       ['Class', ac.vehicleClass], ['Assembly', ac.assemblyCountry], ['Report run', ac.reportRunAt ? fmt.formatDateTime(ac.reportRunAt) : null],
     ])
-    children.push(el('section', { class: 'card rec rec-autocheck' },
-      el('div', { class: 'card-head' },
-        el('h3', { class: 'card-title' }, icon('shield', { size: 13 }), 'AutoCheck history'),
-        el('span', { class: `pill ${ac.dataState === 'current' ? 'pill-ok' : 'pill-moving'}`, text: ac.dataState === 'current' ? 'Current' : humanize(ac.dataState) }),
-      ),
+    children.push(el('section', { class: 'card rec rec-autocheck', dataset: { record: 'autocheck' }, tabindex: '-1' },
+      recordHead('History', { brand: 'autocheck', url: ac.url, action: 'Open original AutoCheck report', missing: 'Original AutoCheck report link not captured.', dataState: ac.dataState }),
+      note(sourceNote(ac, 'autocheck')),
       ac.score !== null || (ac.rangeLow !== null && ac.rangeHigh !== null) ? el('div', { class: 'score' },
         ac.score !== null ? el('div', { class: 'score-big' }, el('strong', { class: 'num', text: String(ac.score) }), el('small', { text: 'AutoCheck score' })) : null,
         ac.rangeLow !== null && ac.rangeHigh !== null ? el('div', { class: 'score-range' }, el('small', { text: 'Similar vehicles' }), el('b', { class: 'num', text: `${ac.rangeLow}–${ac.rangeHigh}` })) : null,
       ) : null,
       facts,
-      ac.checks.length ? el('div', { class: 'checks' }, ...ac.checks.map((check) => el('div', { class: `check is-${check.tone}` }, icon(check.tone === 'clear' ? 'check' : check.tone === 'review' ? 'alert' : 'help', { size: 13 }), el('span', {}, el('b', { text: check.label }), el('small', { text: fmt.joinFacts([check.status, check.detail]) || 'No result published' }))))) : null,
-      el('div', { class: 'dock-utils' }, ac.url ? chip('Open report', 'external', () => openUrl(ac.url)) : el('span', { class: 'pill', text: 'Report link not published' })),
+      ac.checks.length ? recordSection('History checks', [el('div', { class: 'checks' }, ...ac.checks.map((check) => el('div', { class: `check is-${check.tone}` }, icon(check.tone === 'clear' ? 'check' : check.tone === 'review' ? 'alert' : 'help', { size: 14 }), el('span', {}, el('b', { text: check.label }), el('small', { text: fmt.joinFacts([check.status, check.detail]) || 'No result captured' })))))]) : note('No individual history-check results were captured. A missing result is not a clear history.'),
     ))
   }
   const sticker = docs.windowSticker
   if (sticker) {
-    children.push(el('section', { class: 'card rec' },
-      el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, icon('file-text', { size: 13 }), 'Original window sticker'), el('span', { class: `pill ${sticker.dataState === 'current' ? 'pill-ok' : 'pill-moving'}`, text: sticker.dataState === 'current' ? 'Current' : humanize(sticker.dataState) })),
+    children.push(el('section', { class: 'card rec', dataset: { record: 'window-sticker' }, tabindex: '-1' },
+      recordHead('Original window sticker', { url: sticker.url, action: 'Open original window sticker', missing: 'Original window sticker link not captured.', dataState: sticker.dataState }),
+      note(sourceNote(sticker, 'window-sticker')),
       sticker.vehicleDescription ? el('p', { class: 'd-caption', text: sticker.vehicleDescription }) : null,
-      priceTable([['Base MSRP', sticker.basePrice], ['Options', sticker.totalOptions], ['Destination & delivery', sticker.destinationCharge], ['Total MSRP', sticker.totalMsrp]], (value) => fmt.formatStickerMoney(value, sticker)),
+      recordPrices([['Base MSRP', sticker.basePrice], ['Options', sticker.totalOptions], ['Destination & delivery', sticker.destinationCharge], ['Total MSRP', sticker.totalMsrp]], (value) => fmt.formatStickerMoney(value, sticker)),
       sticker.originalMarket || sticker.pricingCurrency ? el('p', { class: 'd-caption', text: fmt.joinFacts([sticker.originalMarket ? `${sticker.originalMarket} market` : null, sticker.pricingCurrency ? `priced in ${sticker.pricingCurrency}` : null, sticker.currencyEvidence]) }) : null,
-      el('div', { class: 'dock-utils' }, sticker.url ? chip('Open sticker', 'external', () => openUrl(sticker.url)) : el('span', { class: 'pill', text: 'Sticker link not published' })),
+      kv([['Equipment group', sticker.equipmentGroup], ['Engine', sticker.engine], ['Transmission', sticker.transmission], ['Exterior', sticker.exteriorColor], ['Interior', sticker.interiorColor]]),
+      recordList('Factory options', sticker.options),
+      recordList('Standard equipment', sticker.standardEquipment),
+      recordList('Warranty printed on sticker', sticker.warranty),
+      note('Original document prices retain their printed currency. Sticker warranty terms are not confirmation of remaining coverage.'),
     ))
   }
   const label = docs.factoryEquipment
   if (label) {
-    children.push(el('section', { class: 'card rec' },
-      el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, icon('layers', { size: 13 }), 'vAuto equipment label'), el('span', { class: `pill ${label.dataState === 'current' ? 'pill-ok' : 'pill-moving'}`, text: label.dataState === 'current' ? 'Current' : humanize(label.dataState) })),
-      priceTable([['Base MSRP', label.basePrice], ['Options', label.totalOptions], ['Destination & delivery', label.destinationCharge], ['Total MSRP (reference)', label.totalMsrp]], fmt.formatMoney),
-      el('p', { class: 'd-caption', text: fmt.joinFacts([label.sourceLabel, label.capturedAt ? `captured ${fmt.formatDateTime(label.capturedAt)}` : null]) || 'Informational equipment label — not an original Monroney sticker.' }),
-      el('div', { class: 'dock-utils' }, label.url ? chip('Open label', 'external', () => openUrl(label.url)) : el('span', { class: 'pill', text: 'Label image not published' })),
+    children.push(el('section', { class: 'card rec', dataset: { record: 'vauto' }, tabindex: '-1' },
+      recordHead('Equipment label', { brand: 'vauto', url: label.url, action: 'Open vAuto source document', missing: 'vAuto source document link not captured.', dataState: label.dataState }),
+      note(fmt.joinFacts([label.sourceLabel, sourceNote(label, 'vauto')])),
+      note(label.vehicleDescription),
+      [label.basePrice, label.totalOptions, label.destinationCharge, label.totalMsrp, ...label.packages.map((pkg) => pkg.price), ...label.sections.flatMap((group) => group.items.map((item) => item.price))].some(hasNumber) ? note('Reference label prices · currency not captured. Verify the currency on the source document; these values are not converted.') : null,
+      recordPrices([['Base MSRP', label.basePrice], ['Options', label.totalOptions], ['Destination & delivery', label.destinationCharge], ['Total MSRP (reference)', label.totalMsrp]], referencePrice),
+      kv([['Engine', label.engine], ['Transmission', label.transmission], ['Drivetrain', label.drivetrain], ['Exterior', label.exteriorColor], ['Interior', label.interiorColor]]),
+      label.packages.length ? recordSection('Equipment packages', label.packages.map((pkg) => el('div', { class: 'rec-package' },
+        el('div', { class: 'rec-line' }, el('b', { text: fmt.joinFacts([pkg.name, pkg.code]) }), hasNumber(pkg.price) ? el('span', { class: 'num', text: referencePrice(pkg.price) }) : null),
+        pkg.features.length ? el('ul', { class: 'rec-list' }, ...pkg.features.map((text) => el('li', { text }))) : null,
+      ))) : null,
+      ...label.sections.map((group) => recordSection(group.name, [el('ul', { class: 'rec-list rec-priced-list' }, ...group.items.map((item) => el('li', { class: 'rec-line' }, el('span', { text: item.label }), hasNumber(item.price) ? el('span', { class: 'num', text: referencePrice(item.price) }) : null)))])),
+      note(label.disclaimer || 'The vAuto label is informational, not an original Monroney window sticker. Confirm installed equipment on the vehicle.'),
     ))
   }
+  const oasis = docs.fordOasis
+  if (oasis || vehicle.links.oasis) children.push(el('section', { class: 'card rec rec-oasis', dataset: { record: 'oasis' }, tabindex: '-1' },
+    recordHead('OASIS', { brand: 'ford', url: vehicle.links.oasis, action: 'Open OASIS dealer lookup', missing: 'OASIS dealer lookup unavailable for this VIN.', dataState: oasis?.dataState }),
+    note('Dealer lookup · Ford sign-in may be required. The lookup opens Ford’s tool, not a saved report.'),
+    oasis ? note(fmt.joinFacts([oasis.sourceLabel, sourceNote(oasis, 'oasis')])) : note('No OASIS report details were captured. Open the dealer lookup to check this vehicle.'),
+    oasis ? kv([
+      ['Vehicle', oasis.vehicleDescription], ['Series', oasis.versionSeries],
+      ['Warranty start', oasis.warrantyStartDate ? fmt.formatDate(oasis.warrantyStartDate) : null],
+      ['Build date', oasis.buildDate ? fmt.formatDate(oasis.buildDate) : null], ['Release date', oasis.releaseDate ? fmt.formatDate(oasis.releaseDate) : null],
+      ['Months in service', hasNumber(oasis.monthsInService) ? String(oasis.monthsInService) : null], ['Sale mileage', hasNumber(oasis.saleMileage) ? fmt.formatMileage(oasis.saleMileage) : null],
+    ]) : null,
+    oasis?.openFieldServiceActions.length ? recordSection('Open Ford service actions', [el('ul', { class: 'rec-list' }, ...oasis.openFieldServiceActions.map((item) => el('li', {}, item.code ? el('b', { text: item.code }) : null, item.code && item.description ? ' · ' : '', sourceDisplayText(item.description))))]) : oasis ? note('No individual open service-action details are shown in the captured data. Verify current actions in OASIS.') : null,
+    oasis?.warrantyCoverages.length ? recordSection('Ford warranty coverages', [el('ul', { class: 'rec-list' }, ...oasis.warrantyCoverages.map((item) => el('li', {}, el('b', { text: item.type }), item.description ? ` · ${sourceDisplayText(item.description)}` : '')))]) : null,
+    recordList('Extended coverage expirations', oasis?.extendedCoverageExpirations),
+  ))
+  const warranty = docs.warrantyCheck
+  const coverageBlock = (title, block) => block?.coverages.length ? recordSection(title, [
+    kv([['Warranty start', block.warrantyStartDate ? fmt.formatDate(block.warrantyStartDate) : null], ['In service (estimate)', block.inServiceDate ? fmt.formatDate(block.inServiceDate) : null], ['Months in service', hasNumber(block.monthsInService) ? String(block.monthsInService) : hasNumber(block.inServiceAgeMonths) ? String(block.inServiceAgeMonths) : null], ['AutoCheck default mileage', hasNumber(block.defaultMileage) ? fmt.formatMileage(block.defaultMileage) : null]]),
+    ...block.coverages.map((coverage) => el('div', { class: 'rec-coverage' }, el('div', { class: 'rec-line' }, el('b', { text: coverage.type }), el('span', { text: `Captured: ${coverage.status}` })),
+      kv([['Printed term', coverage.termText], ['Remaining time', coverage.remainingTimeText], ['Remaining miles', coverage.remainingMilesText]]), note(coverage.note))),
+  ]) : null
+  if (warranty && (warranty.fordOasis || warranty.autoCheck)) children.push(el('section', { class: 'card rec rec-warranty', dataset: { record: 'warranty' }, tabindex: '-1' },
+    recordHead('Captured warranty check', { iconName: 'shield', dataState: warranty.dataState, url: warranty.fordOasis ? vehicle.links.oasis : ac?.url, action: warranty.fordOasis ? 'Open OASIS coverage lookup' : 'Open original AutoCheck report', missing: warranty.fordOasis ? 'OASIS dealer lookup unavailable for this VIN.' : 'Original AutoCheck report link not captured.' }),
+    note(fmt.joinFacts([warranty.sourceLabel, sourceNote(warranty, warranty.fordOasis ? 'oasis' : 'autocheck')])),
+    kv([['Figured at', hasNumber(warranty.mileageEntered) ? fmt.formatMileage(warranty.mileageEntered) : null], ['Mileage source', warranty.mileageSource]]),
+    coverageBlock('Ford OASIS coverage', warranty.fordOasis),
+    coverageBlock('AutoCheck warranty estimate', warranty.autoCheck),
+    note(warranty.fordOasis ? 'Ford OASIS is the primary factory-coverage source. Any AutoCheck estimate is separate reference evidence. Verify current coverage with the store.' : 'AutoCheck warranty figures are estimates at the captured mileage, not manufacturer confirmation. Verify current coverage with the store.'),
+  ))
   const scan = vehicle.publicScan
   const listing = vehicle.listing
   const flags = fmt.joinFacts([listing.dealerOn.inStock === true ? 'in stock' : listing.dealerOn.inStock === false ? 'not in stock' : null, listing.dealerOn.inTransit === true ? 'in transit' : null, listing.dealerOn.inProduction === true ? 'in production' : null])
@@ -928,6 +1245,10 @@ function recordsTab(vehicle) {
   if (vehicle.changeSummary) children.push(section('Last change', [line('history', null, vehicle.changeSummary)], { iconName: 'history' }))
   if (!ac && !sticker && !label) children.push(el('p', { class: 'd-caption', text: 'No AutoCheck report, window sticker or equipment label was captured for this vehicle.' }))
   children.push(el('p', { class: 'd-freshness', text: `From the ${fmt.formatReportDate(state.data.meta.reportDate)} release · public ${state.data.meta.publicFreshness} · DealerMail ${state.data.meta.dealerMailFreshness}. Reference documents only: they do not confirm condition, availability, sale or delivery.` }))
+  const labels = { autocheck: 'AutoCheck', 'window-sticker': 'Sticker', vauto: 'Equipment label', oasis: 'OASIS', warranty: 'Warranty' }
+  const records = children.filter((node) => node?.dataset?.record)
+  if (records.length) children.unshift(el('nav', { class: 'record-jumps', 'aria-label': 'Jump to captured record' }, ...records.map((node) => el('button', { type: 'button', class: 'btn', onclick: () => openRecord(node.dataset.record) }, labels[node.dataset.record]))))
+  children.unshift(frequentFacts(vehicle))
   return children
 }
 
@@ -953,7 +1274,12 @@ function renderDetail(vehicle, { keepScroll = false } = {}) {
     el('button', { type: 'button', class: `icon-btn ${inCompare ? 'is-on' : ''}`.trim(), 'aria-label': inCompare ? 'Remove from compare' : 'Add to compare', 'aria-pressed': String(inCompare), title: 'Compare (C)', onclick: (event) => toggleCompare(vehicle, event.currentTarget) }, icon('columns', { size: 15 })),
   )
   clear(ui.detail)
-  ui.detail.append(hero(vehicle), identity(vehicle), statusGrid(vehicle), dock(vehicle), tabsBar(vehicle), tabPanel(vehicle))
+  const actions = dock(vehicle)
+  const utilities = actions.querySelector('.d-utilities')
+  utilities?.remove()
+  ui.detail.parentElement.querySelector(':scope > .d-utilities')?.remove()
+  ui.detail.append(identity(vehicle), actions, tabsBar(vehicle), tabPanel(vehicle))
+  if (utilities) ui.detail.after(utilities)
   requestAnimationFrame(() => { const bar = ui.detail.querySelector('.tabs'); if (bar) positionIndicator(bar, bar.querySelector('.tabs-ind'), '.tab') })
   ui.detail.scrollTop = keepScroll ? top : 0
 }
@@ -973,15 +1299,18 @@ async function loadDetail(vin, { retry = false } = {}) {
   state.detailStatus = 'loading'
   if (retry && state.view === 'detail' && state.selectedVin === vin) { const vehicle = vehicleByVin(vin); if (vehicle) renderDetail(vehicle, { keepScroll: true }) }
   let detail = null
+  const generation = state.dataGeneration
   try {
     detail = await fetchVehicle(state.workspace, state.settings, vin)
+    if (generation !== state.dataGeneration) return
     state.detailStatus = null
   } catch (error) {
+    if (generation !== state.dataGeneration) return
     if (error?.name === 'AbortError') { state.detailPending.delete(vin); return }
     state.detailStatus = error instanceof PanelApiError && error.kind === 'notfound' ? 'gone' : 'failed'
     state.detailFailed.set(vin, state.detailStatus)
   } finally {
-    state.detailPending.delete(vin)
+    if (generation === state.dataGeneration) state.detailPending.delete(vin)
   }
   if (!state.bootstrap || !state.data) return
   if (detail) {
@@ -1042,6 +1371,10 @@ function closeCompare() {
 
 function renderCompare() {
   const vehicles = state.compare.map(vehicleByVin).filter(Boolean)
+  const sameSet = ui.compare.dataset.vehicleSet === vehicles.map((vehicle) => vehicle.vin).join('|')
+  const previousScroll = state.view === 'compare' && sameSet ? ui.compare.scrollTop : 0
+  const differencesOnly = ui.compare.dataset.differencesOnly === 'true'
+  ui.compare.dataset.vehicleSet = vehicles.map((vehicle) => vehicle.vin).join('|')
   for (const vehicle of vehicles) loadDetail(vehicle.vin)
   clear(ui.compareTools)
   clear(ui.compare)
@@ -1052,12 +1385,12 @@ function renderCompare() {
   }
   ui.compareTools.append(el('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Clear compare set', title: 'Clear', onclick: () => { setCompare([]); closeCompare(); renderList() } }, icon('x', { size: 15 })))
   const result = compareVehicles(vehicles)
-  const head = el('div', { class: 'cmp-head', style: { '--cols': vehicles.length } }, el('span', { class: 'cmp-corner' }),
+  const head = el('div', { class: 'cmp-head', style: { '--cols': vehicles.length } },
     ...vehicles.map((vehicle) => {
       const photos = photosFor(vehicle)
       return el('div', { class: 'cmp-col' },
-        photos.length ? el('img', { class: 'cmp-photo', src: photos[0], alt: '', loading: 'lazy' }) : el('span', { class: 'cmp-photo is-empty' }, icon('image', { size: 14 })),
-        el('button', { type: 'button', class: 'cmp-stock', title: 'Open this vehicle', onclick: () => { openDetail(vehicle) } }, el('b', { text: vehicle.stockNumber })),
+        photos.length ? el('img', { class: 'cmp-photo', src: photos[0], alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : el('span', { class: 'cmp-photo is-empty' }, icon('image', { size: 14 })),
+        el('button', { type: 'button', class: 'cmp-stock', 'aria-label': `Open ${vehicle.stockNumber}`, onclick: () => { openDetail(vehicle) } }, el('b', { text: vehicle.stockNumber }), icon('arrow-right', { size: 13 })),
         el('small', { text: vehicle.name, title: vehicle.name }),
         el('button', { type: 'button', class: 'cmp-remove', 'aria-label': `Remove ${vehicle.stockNumber} from compare`, onclick: () => { setCompare(state.compare.filter((vin) => vin !== vehicle.vin)); renderList(); renderCompare() } }, icon('x', { size: 12 })),
       )
@@ -1066,25 +1399,33 @@ function renderCompare() {
   let diffs = 0
   for (const fact of result.facts) {
     if (fact.differs) diffs += 1
-    rows.append(el('div', { class: `cmp-row ${fact.differs ? 'is-diff' : ''}`.trim() }, el('span', { class: 'cmp-label', text: fact.label }), ...fact.values.map((value) => el('span', { class: `cmp-val ${/^[\d$,.\s–-]+(?:\s?mi)?$/.test(value) ? 'num' : ''}`.trim(), text: value, title: value }))))
+    rows.append(el('section', { class: `cmp-row ${fact.differs ? 'is-diff' : ''}`.trim(), 'aria-label': fact.label, dataset: { differs: String(fact.differs) }, hidden: differencesOnly && !fact.differs },
+      el('h3', { class: 'cmp-label', text: fact.label }),
+      el('div', { class: 'cmp-values' }, ...fact.values.map((value, index) => el('span', { class: `cmp-val ${/^[\d$,.\s–-]+(?:\s?mi)?$/.test(value) ? 'num' : ''}`.trim(), text: value, 'aria-label': `${vehicles[index].stockNumber}: ${value}` })))))
   }
   const onlyOn = result.onlyOn.filter((entry) => entry.items.length)
   ui.compare.append(
     head,
+    el('div', { class: 'cmp-controls' }, el('button', { type: 'button', class: 'btn cmp-differences-toggle', 'aria-pressed': String(differencesOnly), onclick: (event) => {
+      const only = ui.compare.dataset.differencesOnly !== 'true'
+      ui.compare.dataset.differencesOnly = String(only)
+      event.currentTarget.setAttribute('aria-pressed', String(only))
+      for (const row of rows.children) row.hidden = only && row.dataset.differs !== 'true'
+    } }, 'Differences only')),
     el('p', { class: 'cmp-note', text: `${diffs} of ${result.facts.length} facts differ · ${fmt.formatNumber(result.shared)} equipment item${result.shared === 1 ? '' : 's'} in common` }),
     rows,
     onlyOn.length ? el('section', { class: 'card' }, el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, icon('sparkles', { size: 13 }), 'Equipment differences')),
-      ...onlyOn.map((entry) => el('div', { class: 'cmp-only' }, el('b', { text: `Only on ${entry.vehicle.stockNumber}` }), el('div', { class: 'd-features' }, ...entry.items.slice(0, 40).map((label) => el('span', { class: 'd-feature', text: label })), entry.items.length > 40 ? el('span', { class: 'd-feature', text: `+${entry.items.length - 40} more` }) : null)))) : null,
+      ...onlyOn.map((entry) => el('div', { class: 'cmp-only' }, el('b', { text: `Only on ${entry.vehicle.stockNumber}` }), el('ul', { class: 'cmp-equipment-list' }, ...entry.items.map((label) => el('li', { text: label })))))) : null,
     el('p', { class: 'd-freshness', text: 'Hold, location and listing are the current snapshot for each vehicle; equipment comes from the website, the equipment label and any captured sticker.' }),
   )
-  ui.compare.scrollTop = 0
+  ui.compare.scrollTop = previousScroll
 }
 
 /* Settings sheet -------------------------------------------------------- */
-function segmented(options, value, onChange) {
-  const seg = el('div', { class: 'seg', role: 'group' })
+function segmented(options, value, onChange, label) {
+  const seg = el('div', { class: 'seg', role: 'group', 'aria-label': label })
   for (const option of options) {
-    seg.append(el('button', { type: 'button', 'aria-pressed': String(option.value === value), onclick: async () => { await onChange(option.value); for (const button of seg.children) button.setAttribute('aria-pressed', String(button.textContent === option.label)) } }, option.label))
+    seg.append(el('button', { type: 'button', dataset: { value: option.value }, 'aria-pressed': String(option.value === value), onclick: async () => { await onChange(option.value); for (const button of seg.children) button.setAttribute('aria-pressed', String(button.dataset.value === option.value)) } }, option.label))
   }
   return seg
 }
@@ -1099,19 +1440,19 @@ async function updateSettings(patch, { reload = false } = {}) {
   state.settings = await storage.setSettings(patch)
   state.workspace = workspaceFor(state.settings, host)
   applyTheme(); applyDensity()
-  if (reload) { state.data = null; state.index = []; state.error = null; state.fetchedAt = null; await storage.clearCache(); renderWho(); renderScopes(); await load() }
+  if (reload) { resetIdentityView(); state.data = null; state.bootstrap = null; state.index = []; state.error = null; state.fetchedAt = null; clear(ui.rows); clear(ui.detail); clear(ui.compare); clear(ui.tray); ui.tray.hidden = true; ui.more.hidden = true; ui.resultContext.hidden = true; ui.expandStores.hidden = true; await storage.clearCache(); renderWho(); renderScopes(); renderStorePicker(); renderWorkspaceLinks(); await load() }
 }
 
 function renderSheet() {
   clear(ui.sheetBody)
   const s = state.settings
   ui.sheetBody.append(
-    el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Appearance' }), segmented([{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }], s.theme, (theme) => updateSettings({ theme }))),
-    el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Density' }), segmented([{ value: 'comfortable', label: 'Comfortable' }, { value: 'compact', label: 'Compact' }], s.density, (density) => updateSettings({ density }))),
+    el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Appearance' }), segmented([{ value: 'light', label: 'Match app' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'System' }], s.theme, (theme) => updateSettings({ theme }), 'Appearance'), el('p', { class: 'field-help', text: 'Match app uses Inventory Flow’s white, navy, and blue design. System follows your device.' })),
+    el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Density' }), segmented([{ value: 'comfortable', label: 'Comfortable' }, { value: 'compact', label: 'Compact' }], s.density, (density) => updateSettings({ density }), 'Density')),
   )
   if (host === 'extension') {
     ui.sheetBody.append(el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Workspace' }),
-      segmented(Object.values(WORKSPACES).map((item) => ({ value: item.id, label: item.label })), s.workspace, (workspace) => updateSettings({ workspace }, { reload: true }).then(renderSheet)),
+      segmented(Object.values(WORKSPACES).map((item) => ({ value: item.id, label: item.label })), s.workspace, (workspace) => updateSettings({ workspace }, { reload: true }).then(() => { renderSheet(); ui.sheetBody.querySelector('[aria-label="Workspace"] [aria-pressed="true"]')?.focus({ preventScroll: true }) }), 'Workspace'),
       el('p', { class: 'field-help', text: s.workspace === 'demo' ? 'The local demo is synthetic training data from pnpm dev:demo — never live inventory.' : 'Production uses your Cloudflare Access sign-in for Inventory Flow.' })))
   }
   if (state.workspace.demo) {
@@ -1142,10 +1483,11 @@ function optionChips(label, key, options, { format = (value) => value } = {}) {
   for (const option of options) {
     const on = state.filters[key].some((item) => item.toLowerCase() === option.value.toLowerCase())
     row.append(el('button', { type: 'button', class: `opt ${on ? 'is-on' : ''}`.trim(), 'aria-pressed': String(on), onclick: (event) => {
+      const wasOn = state.filters[key].some((item) => item.toLowerCase() === option.value.toLowerCase())
       const next = state.filters[key].filter((item) => item.toLowerCase() !== option.value.toLowerCase())
-      if (!on) next.push(option.value)
+      if (!wasOn) next.push(option.value)
       setFilters({ [key]: next })
-      const nowOn = !on
+      const nowOn = !wasOn
       event.currentTarget.classList.toggle('is-on', nowOn); event.currentTarget.setAttribute('aria-pressed', String(nowOn))
       updateSheetFooter()
     } }, format(option.value), el('b', { class: 'num', text: fmt.formatNumber(option.count) })))
@@ -1168,6 +1510,7 @@ function toggle(label, key, hint) {
 
 function setFilters(patch) {
   state.filters = normalizeFilters({ ...state.filters, ...patch })
+  if (patch.noHold === true) state.scope = 'inventory'
   state.shown = PAGE
   state.activeIndex = -1
   storage.setFilters({ filters: state.filters, sort: state.sort }).catch(() => {})
@@ -1191,60 +1534,101 @@ function updateSheetFooter() {
 
 function renderFilterSheet() {
   clear(ui.sheetBody)
-  const vehicles = state.data?.vehicles ?? []
+  const vehicles = (state.data?.vehicles ?? []).filter((vehicle) => !selectedStore() || vehicle.homeStore === selectedStore())
   const options = filterOptions(vehicles)
   const years = options.yearMin !== null && options.yearMax !== null ? Array.from({ length: options.yearMax - options.yearMin + 1 }, (_, index) => options.yearMax - index) : []
+  const ledger = (title, ...fields) => el('section', { class: 'filter-ledger', 'aria-label': title }, el('h3', { class: 'filter-ledger-title', text: title }), el('div', { class: 'filter-ledger-fields' }, ...fields))
   ui.sheetBody.append(
-    el('div', { class: 'field' }, el('label', { class: 'field-label', for: 'sort-select', text: 'Sort' }), Object.assign(select(SORTS.map((item) => item.id), state.sort, (sort) => { state.sort = sort; storage.setFilters({ filters: state.filters, sort }).catch(() => {}); renderFilterState(); renderList() }, (id) => SORTS.find((item) => item.id === id)?.label ?? id), { id: 'sort-select' })),
-    el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Only show' }), el('div', { class: 'opt-row' },
-      toggle('Certified', 'certified'), toggle('Listed publicly', 'listed'), toggle('No hold found', 'noHold', 'The current DealerMail snapshot found no hold — not an availability promise'), toggle('With photos', 'photos'))),
-    optionChips('Make', 'makes', options.makes),
-    optionChips('Model', 'models', options.models),
-    optionChips('Body', 'bodies', options.bodies),
-    optionChips('Drivetrain', 'drivetrains', options.drivetrains),
-    optionChips('Fuel', 'fuels', options.fuels),
-    optionChips('Home store', 'stores', options.stores),
-    el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Year' }), el('div', { class: 'range-row' }, rangeSelect('Year from', 'yearMin', [...years].reverse(), { placeholder: 'From' }), el('span', { class: 'range-sep', text: 'to' }), rangeSelect('Year to', 'yearMax', years, { placeholder: 'To' }))),
-    el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Price and mileage' }), el('div', { class: 'range-row' },
-      rangeSelect('Price up to', 'priceMax', steps(options.priceMax, 5000), { format: (value) => `Up to ${fmt.formatMoney(value)}`, placeholder: 'Any price' }),
-      rangeSelect('Mileage up to', 'mileageMax', steps(options.mileageMax, 10000), { format: (value) => `Up to ${fmt.formatMileage(value)}`, placeholder: 'Any mileage' }))),
+    el('p', { class: 'field-help filter-context', text: `Filters apply to ${storeLabel()} inventory. Results update as you choose.` }),
+    ledger('Service', el('div', { class: 'service-filter-buttons', id: 'service-filter-buttons', role: 'group', 'aria-label': 'Service status' }, ...['', 'needs_service', 'in_service', 'serviced'].map((status) => el('button', { type: 'button', class: 'opt-chip', 'aria-pressed': String(state.filters.serviceStatus === status), dataset: { serviceStatus: status }, onclick: (event) => { setFilters({ serviceStatus: status }); for (const button of event.currentTarget.parentElement.children) button.setAttribute('aria-pressed', String(button.dataset.serviceStatus === status)); updateSheetFooter() } }, SERVICE_LABELS[status] ?? 'All')))),
+    ledger('Sort and inventory',
+      el('div', { class: 'field' }, el('label', { class: 'field-label', for: 'sort-select', text: 'Sort' }), Object.assign(select(SORTS.map((item) => item.id), state.sort, (sort) => { state.sort = sort; storage.setFilters({ filters: state.filters, sort }).catch(() => {}); renderFilterState(); renderList() }, (id) => SORTS.find((item) => item.id === id)?.label ?? id), { id: 'sort-select' })),
+      el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Only show' }), el('div', { class: 'opt-row', role: 'group', 'aria-label': 'Inventory signals' },
+        toggle('Certified', 'certified'), toggle('Listed publicly', 'listed'), toggle('No hold found', 'noHold', 'The current DealerMail snapshot found no hold — not an availability promise'), toggle('With photos', 'photos')), el('p', { class: 'field-help', text: 'A public listing or no recorded hold does not confirm availability.' }))),
+    ledger('Vehicle', optionChips('Make', 'makes', options.makes), optionChips('Model', 'models', options.models), optionChips('Body', 'bodies', options.bodies), optionChips('Drivetrain', 'drivetrains', options.drivetrains), optionChips('Fuel', 'fuels', options.fuels)),
+    ledger('Year, price and mileage',
+      el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Year' }), el('div', { class: 'range-row' }, rangeSelect('Year from', 'yearMin', [...years].reverse(), { placeholder: 'From' }), el('span', { class: 'range-sep', text: 'to' }), rangeSelect('Year to', 'yearMax', years, { placeholder: 'To' }))),
+      el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Price and mileage' }), el('div', { class: 'range-row' },
+        rangeSelect('Price up to', 'priceMax', steps(options.priceMax, 5000), { format: (value) => `Up to ${fmt.formatMoney(value)}`, placeholder: 'Any price' }),
+        rangeSelect('Mileage up to', 'mileageMax', steps(options.mileageMax, 10000), { format: (value) => `Up to ${fmt.formatMileage(value)}`, placeholder: 'Any mileage' })))),
     el('div', { class: 'sheet-foot' },
-      el('button', { type: 'button', class: 'btn', onclick: () => { state.filters = { ...EMPTY_FILTERS }; state.sort = 'relevance'; storage.setFilters({ filters: state.filters, sort: state.sort }).catch(() => {}); renderFilterState(); renderList(); renderFilterSheet() } }, 'Clear all'),
+      el('button', { type: 'button', class: 'btn', onclick: () => { state.filters = { ...EMPTY_FILTERS }; state.sort = 'relevance'; storage.setFilters({ filters: state.filters, sort: state.sort }).catch(() => {}); renderFilterState(); renderList(); renderFilterSheet(); ui.sheetBody.querySelector('.sheet-foot .btn')?.focus({ preventScroll: true }) } }, 'Clear all'),
       el('button', { type: 'button', class: 'btn btn-primary', onclick: closeSheet }, `Show ${fmt.formatNumber(currentResults().length)} vehicle${currentResults().length === 1 ? '' : 's'}`),
     ),
   )
 }
 
+let sheetOpen = false
+let sheetCloseTimer = null
+const sheetBackgroundState = new Map()
+
+function setSheetBackgroundInert(active) {
+  if (active) {
+    for (const node of ui.panel.children) {
+      if (node === ui.sheet || node === ui.backdrop || node === ui.toast) continue
+      if (!sheetBackgroundState.has(node)) sheetBackgroundState.set(node, node.hasAttribute('inert'))
+      node.setAttribute('inert', '')
+    }
+  } else {
+    for (const [node, wasInert] of sheetBackgroundState) if (!wasInert) node.removeAttribute('inert')
+    sheetBackgroundState.clear()
+  }
+}
+
+function sheetFocusableElements() {
+  return [...ui.sheet.querySelectorAll('button, a[href], input, select, textarea, [tabindex]')]
+    .filter((node) => !node.matches(':disabled') && node.tabIndex >= 0 && !node.closest('[hidden], [inert], [aria-hidden="true"]'))
+}
+
 function openFilters() {
+  clearTimeout(sheetCloseTimer)
+  sheetOpen = true
   state.sheetKind = 'filters'
   state.sheetReturnFocus = document.activeElement
   document.getElementById('sheet-title').textContent = 'Filters & sort'
+  ui.sheetClose.setAttribute('aria-label', 'Close filters and sort')
+  ui.sheet.dataset.kind = 'filters'
   renderFilterSheet()
   ui.backdrop.hidden = false
   ui.sheet.hidden = false
+  ui.sheet.removeAttribute('inert')
+  ui.sheet.setAttribute('aria-hidden', 'false')
+  setSheetBackgroundInert(true)
   ui.filtersBtn.setAttribute('aria-expanded', 'true')
-  requestAnimationFrame(() => { ui.backdrop.classList.add('is-in'); ui.sheet.classList.add('is-in'); ui.sheetClose.focus() })
+  requestAnimationFrame(() => { if (!sheetOpen) return; ui.backdrop.classList.add('is-in'); ui.sheet.classList.add('is-in'); ui.sheetClose.focus() })
 }
 
 function openSheet() {
+  clearTimeout(sheetCloseTimer)
+  sheetOpen = true
   state.sheetKind = 'settings'
   state.sheetReturnFocus = document.activeElement
   document.getElementById('sheet-title').textContent = 'Settings'
+  ui.sheetClose.setAttribute('aria-label', 'Close settings')
+  ui.sheet.dataset.kind = 'settings'
   renderSheet()
   ui.backdrop.hidden = false
   ui.sheet.hidden = false
+  ui.sheet.removeAttribute('inert')
+  ui.sheet.setAttribute('aria-hidden', 'false')
+  setSheetBackgroundInert(true)
   ui.settingsBtn.setAttribute('aria-expanded', 'true')
-  requestAnimationFrame(() => { ui.backdrop.classList.add('is-in'); ui.sheet.classList.add('is-in'); ui.sheetClose.focus() })
+  requestAnimationFrame(() => { if (!sheetOpen) return; ui.backdrop.classList.add('is-in'); ui.sheet.classList.add('is-in'); ui.sheetClose.focus() })
 }
 
 function closeSheet() {
-  if (ui.sheet.hidden) return
+  if (!sheetOpen) return
+  sheetOpen = false
   ui.backdrop.classList.remove('is-in')
   ui.sheet.classList.remove('is-in')
+  ui.sheet.setAttribute('inert', '')
+  ui.sheet.setAttribute('aria-hidden', 'true')
+  setSheetBackgroundInert(false)
   ui.settingsBtn.setAttribute('aria-expanded', 'false')
   ui.filtersBtn.setAttribute('aria-expanded', 'false')
-  setTimeout(() => { ui.backdrop.hidden = true; ui.sheet.hidden = true }, 280)
-  state.sheetReturnFocus?.focus?.()
+  sheetCloseTimer = setTimeout(() => { ui.backdrop.hidden = true; ui.sheet.hidden = true }, 280)
+  const returnTarget = state.sheetReturnFocus?.isConnected && !state.sheetReturnFocus.closest('[inert]') ? state.sheetReturnFocus : state.sheetKind === 'filters' ? ui.filtersBtn : ui.settingsBtn
+  returnTarget?.focus?.({ preventScroll: true })
 }
 
 /* Search input ---------------------------------------------------------- */
@@ -1280,7 +1664,21 @@ ui.rows.addEventListener('keydown', (event) => {
 
 document.addEventListener('keydown', (event) => {
   const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)
-  if (!ui.sheet.hidden) { if (event.key === 'Escape') closeSheet(); return }
+  if (sheetOpen) {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeSheet() }
+    else if (event.key === 'Tab') {
+      const focusable = sheetFocusableElements()
+      const first = focusable[0] ?? ui.sheetClose
+      const last = focusable.at(-1) ?? first
+      const active = document.activeElement
+      if (!focusable.includes(active) || (event.shiftKey ? active === first : active === last)) {
+        event.preventDefault()
+        const nextFocus = event.shiftKey ? last : first
+        nextFocus.focus({ preventScroll: true })
+      }
+    }
+    return
+  }
   if (event.key === '/' && !typing) { event.preventDefault(); ui.q.focus(); ui.q.select(); return }
   if ((event.key === 'f' || event.key === 'F') && !typing && state.view === 'list' && !event.metaKey && !event.ctrlKey && !event.altKey) { event.preventDefault(); openFilters(); return }
   if (state.view === 'compare') {
@@ -1301,20 +1699,23 @@ document.addEventListener('keydown', (event) => {
 
 ui.scope.addEventListener('keydown', (event) => {
   const tabs = [...ui.scope.querySelectorAll('.scope-tab')]
-  const current = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true')
+  const current = tabs.findIndex((tab) => tab.getAttribute('aria-pressed') === 'true')
   if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
     event.preventDefault()
     const next = tabs[(current + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]
-    setScope(next.dataset.scope); next.focus()
+    setScope(next.dataset.scope); ui.scope.querySelector(`[data-scope="${state.scope}"]`)?.focus()
   }
 })
 
 ui.back.addEventListener('click', closeDetail)
 ui.compareBack.addEventListener('click', closeCompare)
 ui.refresh.addEventListener('click', () => load())
-ui.brand.addEventListener('click', () => openUrl(links.appHomeUrl(state.workspace.origin)))
+ui.brand.addEventListener('click', () => openUrl(links.appHomeUrl(appOrigin())))
 ui.settingsBtn.addEventListener('click', openSheet)
 ui.filtersBtn.addEventListener('click', openFilters)
+ui.storeSelect.addEventListener('change', () => setStoreScope(ui.storeSelect.value))
+ui.storeHome.addEventListener('click', () => setStoreScope('home'))
+ui.storeAll.addEventListener('click', () => setStoreScope('all'))
 ui.sheetClose.addEventListener('click', closeSheet)
 ui.backdrop.addEventListener('click', closeSheet)
 
@@ -1331,7 +1732,9 @@ async function boot() {
   renderScopes()
   state.compare = await storage.getCompare()
   const saved = await storage.getFilters()
-  state.filters = normalizeFilters(saved?.filters)
+  // Store scope is now explicit above the list. Retire the hidden saved
+  // store filter so reopening never strands the user in another store.
+  state.filters = normalizeFilters({ ...saved?.filters, stores: [] })
   state.sort = SORTS.some((item) => item.id === saved?.sort) ? saved.sort : 'relevance'
   renderFilterState()
   const pending = await storage.takePendingQuery()
@@ -1344,7 +1747,7 @@ async function boot() {
   const cache = await storage.getCache()
   if (state.workspace.demo && cache?.bootstrap && cache.key === cacheKey()) hydrate(cache.bootstrap, cache.fetchedAt)
   await load({ silent: Boolean(state.data) })
-  requestAnimationFrame(() => { ui.panel.classList.remove('no-motion'); positionIndicator(ui.scope, ui.scopeInd, '.scope-tab') })
+  requestAnimationFrame(() => { ui.panel.classList.remove('no-motion'); positionIndicator(ui.scope, ui.scopeInd, '.scope-tab', 'aria-pressed') })
   if (!pending) ui.q.focus()
 }
 

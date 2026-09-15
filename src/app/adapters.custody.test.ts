@@ -583,9 +583,9 @@ describe('app custody adapter', () => {
     );
     await user.click(screen.getByRole('tab', { name: 'Holds & moves' }));
     const movement = screen.getByRole('region', { name: 'Location & movement' });
-    expect(within(movement).queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
     expect(movement).toHaveTextContent('In transit');
-    await user.click(within(movement).getByRole('button', { name: 'Request vehicle' }));
+    await user.click(screen.getByRole('button', { name: 'Request vehicle' }));
     expect(onRequestVehicle).toHaveBeenCalledExactlyOnceWith(joined);
     expect(onTrackMovement).not.toHaveBeenCalled();
   });
@@ -660,10 +660,10 @@ describe('server-published new-request decision', () => {
     );
     await user.click(screen.getByRole('tab', { name: 'Holds & moves' }));
     const movement = screen.getByRole('region', { name: 'Location & movement' });
-    expect(within(movement).queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
     // The stale physical fact is still shown truthfully.
     expect(movement).toHaveTextContent('In transit');
-    await user.click(within(movement).getByRole('button', { name: 'Request vehicle' }));
+    await user.click(screen.getByRole('button', { name: 'Request vehicle' }));
     expect(onRequestVehicle).toHaveBeenCalledExactlyOnceWith(stale);
     expect(onTrackMovement).not.toHaveBeenCalled();
 
@@ -679,8 +679,8 @@ describe('server-published new-request decision', () => {
         onTrackMovement,
       }),
     );
-    expect(within(movement).queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
-    expect(within(movement).queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
   });
 });
 
@@ -736,8 +736,8 @@ describe('withheld custody navigation guards', () => {
     );
     await user.click(screen.getByRole('tab', { name: 'Holds & moves' }));
     const movement = screen.getByRole('region', { name: 'Location & movement' });
-    expect(within(movement).queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
-    expect(within(movement).queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
     expect(movement).toHaveTextContent('Howell');
     // Withheld facts read as withheld, not as missing.
     expect(movement).toHaveTextContent('Move details are limited to the stores involved.');
@@ -754,7 +754,7 @@ describe('withheld custody navigation guards', () => {
         onTrackMovement,
       }),
     );
-    expect(within(movement).queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
 
     const transfer = transferRecord();
     const visible = toInventoryVehicle(sourceVehicle({ ...withheldInTransit, transferId: transfer.id }), sourceData([transfer]), transfer);
@@ -768,7 +768,7 @@ describe('withheld custody navigation guards', () => {
         onTrackMovement,
       }),
     );
-    await user.click(within(movement).getByRole('button', { name: 'Track movement' }));
+    await user.click(screen.getByRole('button', { name: 'Track movement' }));
     expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(visible);
     expect(onRequestVehicle).not.toHaveBeenCalled();
   });
@@ -792,10 +792,10 @@ describe('withheld custody navigation guards', () => {
     );
     await user.click(screen.getByRole('tab', { name: 'Holds & moves' }));
     const movement = screen.getByRole('region', { name: 'Location & movement' });
-    expect(within(movement).queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
     // The ledger's receipt is still what locates the vehicle.
     expect(movement).toHaveTextContent('Fowlerville');
-    await user.click(within(movement).getByRole('button', { name: 'Request vehicle' }));
+    await user.click(screen.getByRole('button', { name: 'Request vehicle' }));
     expect(onRequestVehicle).toHaveBeenCalledExactlyOnceWith(received);
     expect(onTrackMovement).not.toHaveBeenCalled();
   });
@@ -822,8 +822,8 @@ describe('withheld custody navigation guards', () => {
     );
     await user.click(screen.getByRole('tab', { name: 'Holds & moves' }));
     const movement = screen.getByRole('region', { name: 'Location & movement' });
-    expect(within(movement).queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
-    expect(within(movement).queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
     // Names no store, actor or request — the server does not either.
     expect(movement).toHaveTextContent('The app already has an open move request for this vehicle.');
     expect(movement).not.toHaveTextContent('Howell');

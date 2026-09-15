@@ -10,7 +10,6 @@ import {
   Route,
   ShieldCheck,
   Store,
-  UserRound,
   X,
 } from 'lucide-react';
 import type {
@@ -21,7 +20,9 @@ import type {
   TransferVehicleSummary,
 } from './types';
 import { locationConfidenceLabel } from './presentation';
+import { ServiceStatusLink } from '../inventory/ServiceStatusLink';
 import './transfers.css';
+import './transfer-vehicle-context.css';
 
 export interface RouteSummary {
   originLabel: string;
@@ -45,6 +46,7 @@ export interface TransferRequestWorkspaceProps {
   ) => TransferRequestResult | void | Promise<TransferRequestResult | void>;
   onDraftChange?: (draft: TransferRequestDraft) => void;
   onCancel?: () => void;
+  onViewRequest?: (requestId: string) => void;
   disabled?: boolean;
 }
 
@@ -97,6 +99,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
     onSubmit,
     onDraftChange,
     onCancel,
+    onViewRequest,
     disabled = false,
     workflowMode = 'advanced',
   } = props;
@@ -186,12 +189,11 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
     return (
       <section className="mif-transfer-feature mif-request-confirmation" aria-live="polite">
         <CheckCircle2 aria-hidden="true" size={34} strokeWidth={1.75} />
-        <h1>Movement request submitted</h1>
+        <h1>{simple ? 'Request sent to your manager' : 'Movement request submitted'}</h1>
         <p>
           {simple ? `Your request is with the ${draft.requestingStore} manager. They will check with ${vehicle.homeStore} and approve it when available. Nothing is reserved or ready for collection until that confirmation.` : `No availability or release is confirmed. Your requesting-store manager must approve the request, contact the ${vehicle.homeStore} manager, and record that manager’s decision before a driver can be assigned.`}
         </p>
-        {submittedRequestId ? <strong>Request {submittedRequestId}</strong> : null}
-        {onCancel ? (
+        {submittedRequestId && onViewRequest ? <button className="mif-button mif-button--primary" onClick={() => onViewRequest(submittedRequestId)} type="button">View this move <ArrowRight aria-hidden="true" size={18} /></button> : onCancel ? (
           <button className="mif-button mif-button--primary" onClick={onCancel} type="button">
             Done
           </button>
@@ -201,14 +203,19 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
   }
 
   return (
-    <section className="mif-transfer-feature mif-request-workspace" aria-labelledby={`${formId}-title`}>
+    <section className={`mif-transfer-feature mif-request-workspace${simple ? ' move-request-simple' : ''}`} aria-labelledby={`${formId}-title`}>
       <header className="mif-request-header">
         <div className="mif-vehicle-heading">
           {vehicle.imageUrl ? <img alt="" src={vehicle.imageUrl} /> : null}
           <div>
             <h1 id={`${formId}-title`}>{vehicle.vehicleLabel}</h1>
-            {vehicle.trimLabel ? <p>{vehicle.trimLabel}</p> : null}
+            {vehicle.trimLabel && !vehicle.vehicleLabel.includes(vehicle.trimLabel) ? <p>{vehicle.trimLabel}</p> : null}
             <span>{vehicle.stock} · {vehicle.vin}</span>
+          </div>
+          <div className="move-vehicle-context">
+            <p className="move-vehicle-value">{[vehicle.listedPriceLabel, vehicle.mileageLabel, vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : null].filter(value => value && !/not published/i.test(value)).join(' · ')}</p>
+            <p className="move-vehicle-specs">{[vehicle.exteriorColor, vehicle.engine, vehicle.drivetrain].filter(Boolean).join(' · ')}</p>
+            <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} />
           </div>
         </div>
         {onCancel ? (
@@ -218,7 +225,9 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
         ) : null}
       </header>
 
-      <div className="mif-request-source-strip">
+      {simple ? <p className="move-request-current-location"><MapPin aria-hidden="true" size={16}/><strong>{vehicle.currentLocation.label}</strong><span>{locationConfidenceLabel(vehicle.currentLocation.confidence)}</span></p> : null}
+
+      {simple ? <div className="move-request-route"><span><small>From</small><strong>{vehicle.homeStore}</strong></span><ArrowRight aria-hidden="true" size={20} /><span><small>To your store</small><strong>{selectedStore?.label || draft.requestingStore}</strong></span><p>Requested by {selectedRequester?.label || 'you'} · Reviewed by {selectedManager?.label || `${draft.requestingStore} manager`}</p></div> : <div className="mif-request-source-strip">
         <div>
           <Store aria-hidden="true" size={16} strokeWidth={1.75} />
           <span>Home Store</span>
@@ -236,7 +245,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
           <strong>Confirm with home store</strong>
           <small>Availability not confirmed</small>
         </div>
-      </div>
+      </div>}
 
       <form ref={formRef} className="mif-request-layout" onSubmit={handleSubmit} noValidate>
         <div className="mif-request-fields">
@@ -255,7 +264,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
           ) : null}
 
           <div className="mif-form-grid">
-            <div className="mif-field">
+            {!simple ? <><div className="mif-field">
               <span>Your store</span>
               <span className="mif-readonly-field">
                 {selectedStore?.label || draft.requestingStore || 'Not set'}
@@ -289,7 +298,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
               </span>
               <small>{simple ? `Checks with ${vehicle.homeStore}, then approves this request.` : `Approves the request first, then contacts the ${vehicle.homeStore} manager.`}</small>
               {errors.managerApproverId ? <small className="mif-field-error">{errors.managerApproverId}</small> : null}
-            </div>
+            </div></> : null}
 
             <label className="mif-field">
               <span>Needed by</span>
@@ -342,7 +351,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
             </label>
 
             <details className="mif-more-details mif-field--wide">
-              <summary>Customer reference and preferred return timing</summary>
+              <summary>{simple ? 'Optional details: return timing and customer reference' : 'Customer reference and preferred return timing'}</summary>
               <label className="mif-field">
                 <span>Customer or CRM reference <small>Optional · manager access only</small></span>
                 <input
@@ -390,7 +399,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
             <ol className="mif-accountability-list">
               {simple ? <>
                 <li><span>1</span><b>Send the request</b><small>Your {draft.requestingStore || 'store'} manager gets the vehicle and timing.</small></li>
-                <li><span>2</span><b>Your manager checks and approves</b><small>They contact {vehicle.homeStore} manually and mark it available for this move. No second approval in the app.</small></li>
+                <li><span>2</span><b>Your manager checks and approves</b><small>They confirm availability with {vehicle.homeStore} and approve this move.</small></li>
                 <li><span>3</span><b>Keep the location up to date</b><small>Record collection, arrival and return. The app shows where it is and how long it has been away.</small></li>
               </> : <>
               <li><span>1</span><b>Salesperson submits the request</b><small>{draft.requestingStore || 'Requesting store'} asks for the vehicle.</small></li>

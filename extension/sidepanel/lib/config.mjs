@@ -10,7 +10,7 @@ export const ROLES = Object.freeze(['sales', 'manager', 'coordinator', 'porter',
 
 export const DEFAULT_SETTINGS = Object.freeze({
   workspace: 'production',
-  theme: 'system',      // system | light | dark
+  theme: 'light',       // Match the app for new installs; preserve saved system | light | dark.
   density: 'comfortable', // comfortable | compact
   demoRole: 'sales',
   demoStore: 'Howell',

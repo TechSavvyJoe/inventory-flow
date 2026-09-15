@@ -27,7 +27,7 @@ export async function verifyAccess(request, env, audience = env.ACCESS_AUDIENCE)
   } catch { throw new AccessError('ACCESS_TOKEN_INVALID') }
 }
 
-export async function memberContext(claims, env) {
+export async function memberContext(claims, env, request) {
   if (typeof claims.email !== 'string' || !claims.email || claims.common_name) throw new AccessError('EMPLOYEE_ACCESS_REQUIRED',403)
   const row = await env.INVENTORY_DB.prepare(`
     SELECT member.user_id, member.name, member.role, member.home_store,
@@ -45,8 +45,16 @@ export async function memberContext(claims, env) {
   if (!row || !roles.includes(row.role) || !stores.includes(row.home_store) || !validIdentity(row.name) || !validIdentity(row.user_id)) {
     throw new AccessError('EMPLOYEE_NOT_AUTHORIZED',403)
   }
+  // A preview can only narrow a freshly verified group manager membership.
+  // Neither JWT role claims nor browser headers grant the underlying authority.
+  const canPreviewRoles = row.role === 'group_manager'
+  const previewRole = canPreviewRoles ? request?.headers.get('x-inventory-preview-role') : null
+  if (previewRole && !roles.includes(previewRole)) throw new AccessError('INVALID_PREVIEW_ROLE', 400)
+  const effectiveRole = previewRole || row.role
   return {
-    role: row.role,
+    role: effectiveRole,
+    authenticatedRole: row.role,
+    rolePreviewActive: effectiveRole !== row.role,
     store: row.home_store,
     user: row.name,
     userId: row.user_id,
@@ -56,6 +64,6 @@ export async function memberContext(claims, env) {
       Number(row.transport_name_matches) === 1,
     identityMode: 'trusted_proxy',
     authenticated: true,
-    canPreviewRoles: false,
+    canPreviewRoles,
   }
 }

@@ -1,0 +1,11 @@
+/* Five primary mobile destinations for store roles. Group managers receive the
+   four-destination control-center rail from the approved mobile workspace. */
+.utility-service-link { display: flex; gap: 12px; align-items: center; min-height: 56px; color: var(--ink-900); padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-control); text-decoration: none; }
+.utility-service-link > span { display: grid; gap: 4px; flex: 1; }
+.utility-service-link small { color: var(--ink-600); font-size: 12px; }
+.utility-service-link svg { width: 20px; height: 20px; }
+@media (max-width: 760px) {
+  #root .app-shell .mobile-bottom-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  #root .app-shell .mobile-bottom-nav.is-group-manager { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.synthetic-preview-notice { margin:0 0 12px; padding:8px 12px; font-size:14px; color:var(--ifx-neutral-700); background:var(--ifx-neutral-100); border-left:3px solid var(--ifx-info); }

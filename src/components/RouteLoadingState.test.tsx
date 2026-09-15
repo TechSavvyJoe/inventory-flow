@@ -9,7 +9,9 @@ describe('RouteLoadingState', () => {
   it.each([
     ['/inventory', 'Preparing inventory workspace'],
     ['/transfers/new', 'Preparing vehicle moves'],
-    ['/attention', 'Preparing today’s priorities'],
+    ['/attention', 'Preparing action center'],
+    ['/updates', 'Preparing inventory updates'],
+    ['/service', 'Preparing service status'],
     ['/manager', 'Preparing manager workspace'],
   ])('announces the destination for %s without moving focus', (pathname, announcement) => {
     render(

@@ -1,0 +1,21 @@
+.inventory-service-link { display: inline-flex; align-items: center; gap: 5px; width: fit-content; max-width: 100%; min-height: 44px; padding: 0; border: 0; color: var(--ink-600); background: transparent; font-size: 14px; font-weight: 600; line-height: 18px; text-decoration: none; white-space: normal; }
+.inventory-service-link svg { flex-shrink: 0; }
+.inventory-service-link:hover { text-decoration: underline; }
+.inventory-service-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.inventory-service-link--needs_service { color: var(--amber); }
+.inventory-service-link--in_service { color: var(--blue-700); }
+.inventory-service-link--serviced { color: var(--green); }
+.inventory-service-link.is-detailed { margin: 0; font-size: 14px; }
+
+/* Existing mobile signal rules flatten every child. Keep service explicit
+   without changing the hold, movement, or document controls beside it. */
+@media (max-width: 760px) {
+  #root #inventory-results-workspace .inventory-mobile-row__signals > .inventory-service-link {
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-size: 14px;
+  }
+}

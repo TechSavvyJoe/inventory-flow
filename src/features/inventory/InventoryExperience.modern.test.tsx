@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InventoryExperience, normalizedPageSize } from './InventoryExperience';
 import type { InventoryVehicle } from './types';
 
@@ -32,6 +32,60 @@ function vehicle(index: number): InventoryVehicle {
 describe('modern inventory scope and paging', () => {
   beforeEach(() => window.sessionStorage.clear());
 
+  it('keeps a collapsed service filter visible and counts it with Held', () => {
+    const readyHeld = { ...vehicle(1), dealerMail: { dataState: 'current' as const, hasActiveHold: true, position: null }, serviceReadiness: { vin: vehicle(1).vin, status: 'serviced' as const, version: 1, serviceEnteredAt: null, completedAt: '2026-09-14', updatedAt: '2026-09-14T12:00:00Z', updatedBy: 'Synthetic manager', updatedByRole: 'manager' as const, updatedAtStore: 'Howell' as const, store: 'Howell' as const, canManage: false } };
+    render(<InventoryExperience homeStore={homeStore} vehicles={[readyHeld, vehicle(2)]} metrics={{ publicUnits: 2, currentHolds: 1, awayFromHome: 0, returnOverdue: 0 }} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Held:/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Ready:/ }));
+    expect(screen.getByRole('button', { name: 'Filters 2' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'Clear service filter: Ready' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^All:/ }));
+    expect(screen.getByRole('button', { name: 'Filters 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Ready:/ })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear service filter: Ready' }));
+    expect(screen.getByRole('button', { name: 'Filters' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^All service:/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('never loses a secondary view restriction when Filters closes', () => {
+    render(<InventoryExperience homeStore={homeStore} vehicles={[vehicle(1)]} metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(screen.getByRole('button', { name: /^New today/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show 0 vehicles' }));
+    expect(screen.getByRole('button', { name: 'Filters 1' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: 'Clear view filter: New today' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear 1 filter' }));
+    expect(screen.queryByRole('group', { name: 'Active inventory filters' })).not.toBeInTheDocument();
+    expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument();
+  });
+
+  it('restores a saved service filter with its visible summary, and persists clearing it', () => {
+    const key = 'inventory-service:v1:session:howell';
+    window.sessionStorage.setItem(key, 'serviced');
+    const props = { homeStore, vehicles: [vehicle(1)], metrics: { publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 } };
+    const mounted = render(<InventoryExperience {...props} />);
+    expect(screen.getByRole('button', { name: 'Clear service filter: Ready' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear 1 filter' }));
+    expect(window.sessionStorage.getItem(key)).toBe('all');
+    mounted.unmount();
+    render(<InventoryExperience {...props} />);
+    expect(screen.queryByRole('group', { name: 'Active inventory filters' })).not.toBeInTheDocument();
+  });
+
+  it('connects the disclosure to both filter areas and returns focus on Escape', async () => {
+    render(<InventoryExperience homeStore={homeStore} vehicles={[vehicle(1)]} metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }} />);
+    const trigger = screen.getByRole('button', { name: 'Filters' });
+    const ids = trigger.getAttribute('aria-controls')!.split(' ');
+    expect(ids).toHaveLength(2);
+    ids.forEach(id => expect(document.getElementById(id)).not.toBeNull());
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.keyDown(screen.getByRole('button', { name: /^Waiting for service:/ }), { key: 'Escape' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(screen.queryByRole('region', { name: 'Inventory filters' })).not.toBeInTheDocument();
+  });
+
   it('uses 10 rows as the safe default', () => {
     expect(normalizedPageSize(8)).toBe(10);
     render(
@@ -55,11 +109,32 @@ describe('modern inventory scope and paging', () => {
     );
 
     expect(screen.getByPlaceholderText('Search stock, VIN, vehicle, packages, or equipment…')).toHaveAccessibleName('Search inventory');
-    expect(screen.getByRole('button', { name: 'No current hold: 1 vehicles' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All service: 1 vehicles' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Waiting for service: 1 vehicles' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Being moved: 0 vehicles' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'New today: 0 vehicles' })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Inventory quick view' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Inventory service status' })).not.toBeInTheDocument();
     expect(container.querySelector('.inventory-quick-filter-label--compact')).toHaveTextContent('All');
-    expect(container.querySelectorAll('.inventory-quick-filter-label--compact')).toHaveLength(6);
+    expect(container.querySelectorAll('.inventory-quick-filter-label--compact')).toHaveLength(3);
+  });
+
+  it('keeps the filtered row actionable after an exact VIN or stock search', async () => {
+    const target = vehicle(1);
+    render(
+      <InventoryExperience
+        homeStore={homeStore}
+        vehicles={[target]}
+        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
+      />,
+    );
+
+    const search = screen.getByRole('combobox', { name: 'Search inventory' });
+    fireEvent.focus(search);
+    fireEvent.change(search, { target: { value: target.vin } });
+
+    await waitFor(() => expect(search).toHaveAttribute('aria-expanded', 'false'));
+    expect(screen.queryByRole('listbox', { name: 'Inventory suggestions' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: new RegExp(`Open vehicle details for ${target.year} ${target.make} ${target.model}`, 'i') })[0]).toBeVisible();
   });
 
   it('labels home scope accurately and only exposes a location filter for all locations', () => {
@@ -75,10 +150,10 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getByRole('button', { name: 'Howell inventory, 1 of 1 group vehicles' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: /Filters/i }));
     expect(screen.getByLabelText('Home inventory: Howell')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Location')).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Location' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'All locations, 1 group vehicles' }));
-    expect(screen.getByLabelText('Location')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Location' })).toBeInTheDocument();
   });
 
   it('exposes five-level sort composition with explicit direction and priority controls', () => {
@@ -132,16 +207,16 @@ describe('vehicle workspace background isolation', () => {
     render(<InventoryExperience homeStore={homeStore} vehicles={[unit]}
       metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }} />);
 
-    for (const [control, section] of [
-      [/View all 1 equipment items for/i, 'Equipment'],
-      [/View change history for/i, 'Records'],
-      [/Open hold details for/i, 'Holds & moves'],
+    for (const [control, section, target] of [
+      [/View all 1 equipment items for/i, 'Equipment', 'equipment'],
+      [/View change history for/i, 'Activity', 'timeline'],
+      [/Open hold details for/i, 'Holds & moves', 'hold'],
     ] as const) {
       const table = screen.getByRole('region', { name: 'Inventory results table' });
       fireEvent.click(within(table).getByRole('button', { name: control }));
       const dialog = screen.getByRole('dialog');
-      await waitFor(() => expect(within(dialog).getByRole('tab', { name: section })).toHaveAttribute('aria-selected', 'true'));
-      expect(within(dialog).getByRole('tabpanel', { name: section })).toBeVisible();
+      await waitFor(() => expect(dialog).toHaveAttribute('data-active-target', target));
+      expect(within(dialog).getByRole('tab', { name: section, selected: true })).toBeVisible();
       expect(within(dialog).getByRole('heading', { name: '2024 Ford F-150 XLT 4' })).toBeVisible();
       closeWorkspace();
     }
@@ -163,6 +238,49 @@ describe('vehicle workspace background isolation', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
 
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it('returns focus to the vehicle trigger after the visible Close action', async () => {
+    render(
+      <InventoryExperience
+        homeStore={homeStore}
+        vehicles={[vehicle(5)]}
+        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
+      />,
+    );
+    const trigger = screen.getAllByRole('button', { name: /^Open details for 2024 Ford F-150/i })[0];
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close vehicle details' }));
+
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it('uses the primary View action as the fallback when a pointer click does not focus it', async () => {
+    const unit = vehicle(6);
+    unit.features = ['FX4 Off-Road Package'];
+    render(
+      <InventoryExperience
+        homeStore={homeStore}
+        vehicles={[unit]}
+        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
+      />,
+    );
+    const trigger = document.querySelector<HTMLButtonElement>('button[data-row-action="open-details"]')!;
+    const secondary = document.querySelector<HTMLButtonElement>('.inv-desk-equipment')!;
+    const visibleRects = { length: 1 } as DOMRectList;
+    const triggerRects = vi.spyOn(trigger, 'getClientRects').mockReturnValue(visibleRects);
+    const secondaryRects = vi.spyOn(secondary, 'getClientRects').mockReturnValue(visibleRects);
+    trigger.focus();
+    trigger.blur();
+    expect(trigger).not.toHaveFocus();
+
+    fireEvent.click(trigger);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close vehicle details' }));
+
+    await waitFor(() => expect(trigger).toHaveFocus());
+    triggerRects.mockRestore();
+    secondaryRects.mockRestore();
   });
 
   it('locks scrolling, isolates only the page background, and restores prior inline state', () => {

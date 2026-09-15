@@ -101,14 +101,14 @@ describe('inventory search privacy flow', () => {
     )
 
     await user.type(screen.getByLabelText('Search inventory'), 'Customer asks for evening call')
-    await user.click(screen.getByRole('button', { name: 'Search all inventory' }))
+    await user.click(screen.getByRole('button', { name: 'Search my store inventory' }))
 
     const location = JSON.parse(screen.getByTestId('location').textContent || '{}') as {
       pathname: string
       search: string
       state: { inventorySearchRequest: { query: string } }
     }
-    expect(`${location.pathname}${location.search}`).toBe('/inventory?scope=group')
+    expect(`${location.pathname}${location.search}`).toBe('/inventory?scope=home')
     expect(location.search).not.toContain('Customer')
     expect(location.state.inventorySearchRequest.query).toBe('Customer asks for evening call')
     expect(screen.queryByLabelText('Search inventory')).not.toBeInTheDocument()
@@ -167,7 +167,7 @@ describe('inventory search privacy flow', () => {
         search: string
         state: unknown
       }
-      expect(location.search).toBe('?scope=group')
+      expect(location.search).toBe('?scope=home')
       expect(location.state).toBeNull()
     })
     expect(screen.getByTestId('inventory-query')).toHaveTextContent('private alert phrase')
@@ -242,7 +242,7 @@ describe('inventory search privacy flow', () => {
       const location = JSON.parse(screen.getByTestId('location').textContent || '{}') as {
         search: string
       }
-      expect(location.search).toBe('?scope=group')
+      expect(location.search).toBe('?scope=home')
     })
   })
 })

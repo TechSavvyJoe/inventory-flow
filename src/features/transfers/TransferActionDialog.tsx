@@ -103,7 +103,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
   const needsDecisionReason = eventType === 'declined' || eventType === 'request_declined'
   const recordsHomeStoreDecision = !simple && (needsHomeReleaseConfirmation || (needsDecisionReason && normalizedStatus(record.requestStatus) === 'manager-reviewed'))
   const isConditionIssue = eventType === 'condition_issue'
-  const actionTitle = needsAvailabilityConfirmation ? 'Approve & mark available'
+  const actionTitle = needsAvailabilityConfirmation ? 'Approve this move'
     : eventType === 'vehicle_departed' ? 'Mark vehicle collected'
     : simple && eventType === 'arrived' ? `Mark arrived at ${record.destination}`
     : simple && eventType === 'returned_home' ? 'Confirm back home'
@@ -115,7 +115,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
       : recordsHomeStoreDecision
         ? 'Record home-store decline'
         : transferActionLabels[action]
-  const submitLabel = needsAvailabilityConfirmation ? 'Approve & mark available'
+  const submitLabel = needsAvailabilityConfirmation ? 'Approve this move'
     : eventType === 'vehicle_departed' ? 'Mark collected'
     : simple && eventType === 'arrived' ? 'Mark arrived'
     : simple && eventType === 'returned_home' ? 'Confirm back home'
@@ -221,7 +221,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
       <div className="transfer-action-scrim" onClick={onClose} aria-hidden="true" />
       <form
         ref={dialogRef}
-        className="transfer-action-dialog"
+        className={`transfer-action-dialog${simple ? ' move-action-simple' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -251,17 +251,21 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
 
         {needsAvailabilityConfirmation ? (
           <label className="action-availability-confirmation">
-            <input type="checkbox" checked={availabilityConfirmed} onChange={(event) => setAvailabilityConfirmed(event.target.checked)} />
+            <input type="checkbox" checked={availabilityConfirmed} onChange={(event) => { setAvailabilityConfirmed(event.target.checked); setError(null) }} />
             <span>
               <strong>I checked with {record.homeStore}; this vehicle is available for this move.</strong>
-              <small>Approve as the {record.requestingStore} manager. No separate approval is sent to the other store.</small>
+              <small>You are recording the availability check for {record.requestingStore}. Collection can be recorded after this approval.</small>
             </span>
           </label>
         ) : eventType === 'vehicle_departed' ? (
           <div className="action-approval-sequence" role="note">
             <strong>Record the actual collection</strong>
-            <span>This starts the time-away clock and shows the vehicle as in transit to {record.destination}. No driver assignment is required.</span>
+            <span>Confirm the vehicle has left {record.homeStore} for {record.destination}. This starts the time-away clock.</span>
           </div>
+        ) : simple && eventType === 'arrived' ? (
+          <div className="action-approval-sequence" role="note"><strong>Confirm arrival at {record.destination}</strong><span>Record this after the vehicle and keys have arrived. The next step is to update the showing or start its return.</span></div>
+        ) : simple && eventType === 'returned_home' ? (
+          <div className="action-approval-sequence" role="note"><strong>Confirm {record.homeStore} received the vehicle</strong><span>Check the vehicle and keys are back at the home store. This completes the move and stops the time-away clock.</span></div>
         ) : eventType === 'return_started' ? (
           <div className="action-approval-sequence" role="note">
             <strong>Returning to {record.homeStore}</strong>

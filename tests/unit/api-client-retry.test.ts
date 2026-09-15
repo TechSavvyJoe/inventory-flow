@@ -35,6 +35,21 @@ afterEach(() => {
 })
 
 describe('page-session mutation retries', () => {
+  it('cancels an obsolete transfer read without misreporting a server timeout', async () => {
+    const controller = new AbortController()
+    const aborted = new DOMException('Selection changed.', 'AbortError')
+    fetchMock.mockImplementationOnce((_input, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(aborted), { once: true })
+    }))
+    const pending = api.getTransfer('old-transfer', 'manager', 'Howell', controller.signal)
+    const outcome = expect(pending).rejects.toBe(aborted)
+    const sentSignal = fetchMock.mock.calls[0][1]?.signal
+    expect(sentSignal?.aborted).toBe(false)
+    controller.abort()
+    expect(sentSignal?.aborted).toBe(true)
+    await outcome
+  })
+
   it('reuses a key after a network failure and clears it after confirmed success', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Connection lost')).mockImplementation(async () => json())
     await expect(create()).rejects.toThrow('Connection lost')
@@ -155,6 +170,129 @@ describe('page-session mutation retries', () => {
     await expect(create()).rejects.toMatchObject({ status: 502 })
     await create()
     expect(keyAt(1)).toBe(keyAt(0))
+  })
+})
+
+describe('response body deadlines', () => {
+  it('lets the large bootstrap body finish after the ordinary request deadline', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      let signal: AbortSignal | undefined
+      let reading = false
+      let resolveBody!: (value: unknown) => void
+      fetchMock.mockImplementationOnce(async (_input, init) => {
+        signal = init?.signal ?? undefined
+        const response = json()
+        vi.spyOn(response, 'json').mockImplementation(() => {
+          reading = true
+          return new Promise((resolve) => { resolveBody = resolve })
+        })
+        return response
+      })
+
+      const pending = api.getBootstrap('Howell', 'manager')
+      while (!reading) await new Promise((resolve) => setImmediate(resolve))
+
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(signal?.aborted).toBe(false)
+      resolveBody({ meta: { reportDate: '2026-09-15' }, vehicles: [] })
+      await expect(pending).resolves.toMatchObject({ meta: { reportDate: '2026-09-15' } })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports a stalled bootstrap body as a retryable timeout rather than damaged JSON', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      let signal: AbortSignal | undefined
+      let reading = false
+      fetchMock.mockImplementationOnce(async (_input, init) => {
+        signal = init?.signal ?? undefined
+        const response = json()
+        vi.spyOn(response, 'json').mockImplementation(() => {
+          reading = true
+          return new Promise((_resolve, reject) => {
+            signal?.addEventListener('abort', () => {
+              reject(new DOMException('The operation was aborted.', 'AbortError'))
+            }, { once: true })
+          })
+        })
+        return response
+      })
+
+      const pending = api.getBootstrap('Howell', 'manager')
+      const outcome = expect(pending).rejects.toMatchObject({
+        status: 408,
+        message: expect.stringMatching(/response took too long to finish/i),
+      })
+      while (!reading) await new Promise((resolve) => setImmediate(resolve))
+
+      await vi.advanceTimersByTimeAsync(59_999)
+      expect(signal?.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(signal?.aborted).toBe(true)
+      await outcome
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the original 20-second body deadline and retry key for mutations', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      let signal: AbortSignal | undefined
+      let reading = false
+      fetchMock.mockImplementationOnce(async (_input, init) => {
+        signal = init?.signal ?? undefined
+        const response = json()
+        vi.spyOn(response, 'json').mockImplementation(() => {
+          reading = true
+          return new Promise((_resolve, reject) => {
+            signal?.addEventListener('abort', () => {
+              reject(new DOMException('The operation was aborted.', 'AbortError'))
+            }, { once: true })
+          })
+        })
+        return response
+      }).mockImplementation(async () => json())
+
+      const pending = create()
+      const outcome = expect(pending).rejects.toMatchObject({ status: 408 })
+      while (!reading) await new Promise((resolve) => setImmediate(resolve))
+
+      await vi.advanceTimersByTimeAsync(19_999)
+      expect(signal?.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(signal?.aborted).toBe(true)
+      await outcome
+
+      await create()
+      expect(keyAt(1)).toBe(keyAt(0))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('preserves intentional caller cancellation while a response body is being read', async () => {
+    const controller = new AbortController()
+    const aborted = new DOMException('Selection changed.', 'AbortError')
+    let reading = false
+    fetchMock.mockImplementationOnce(async (_input, init) => {
+      const response = json()
+      vi.spyOn(response, 'json').mockImplementation(() => {
+        reading = true
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(aborted), { once: true })
+        })
+      })
+      return response
+    })
+
+    const pending = api.getTransfer('old-transfer', 'manager', 'Howell', controller.signal)
+    while (!reading) await new Promise((resolve) => setImmediate(resolve))
+    controller.abort()
+    await expect(pending).rejects.toBe(aborted)
   })
 })
 

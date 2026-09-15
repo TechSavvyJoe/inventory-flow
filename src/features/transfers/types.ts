@@ -1,3 +1,5 @@
+import type { ServiceReadiness } from '../../types';
+
 export type StoreName =
   | 'Howell'
   | 'Fowlerville'
@@ -187,7 +189,12 @@ export interface TransferVehicleSummary {
   currentLocation: LocationSnapshot;
   listedPriceLabel?: string;
   mileageLabel?: string;
+  exteriorColor?: string;
+  engine?: string;
+  drivetrain?: string;
+  daysListed?: number | null;
   listingUrl?: string;
+  serviceReadiness?: ServiceReadiness;
   status: Pick<TransferStatusLanes, 'dealerMail' | 'publicListing' | 'cdk'> &
     Partial<
       Pick<

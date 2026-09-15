@@ -15,6 +15,22 @@ const base = (overrides = {}) => ({
 const data = (record, extra = {}) => ({ meta: meta(extra.meta), stores: [], transfers: extra.transfers ?? [], attention: [], vehicles: [record], access: extra.access })
 
 describe('deal desk view model', () => {
+  it('keeps unconfirmed existing inventory waiting without inventing manager service completion dates', () => {
+    expect(toPanelVehicle(base(), data(base())).serviceReadiness).toMatchObject({ status: 'needs_service', completedAt: null, readinessBasis: 'unconfirmed' })
+    const serviced = base({ serviceReadiness: { status: 'serviced', completedAt: '2026-09-14', store: 'Howell', canManage: true } })
+    expect(toPanelVehicle(serviced, data(serviced)).serviceReadiness).toMatchObject({ status: 'serviced', completedAt: '2026-09-14', store: 'Howell', canManage: true })
+    const legacy = base({ serviceReadiness: { status: 'unknown' } })
+    expect(toPanelVehicle(legacy, data(legacy)).serviceReadiness.status).toBe('needs_service')
+  })
+
+  it('keeps the primary photo when the gallery is empty and deduplicates the full gallery', () => {
+    const primary = 'https://www.bobmaxeyfordhowell.com/a.jpg'
+    const next = 'https://www.bobmaxeyfordhowell.com/b.jpg'
+    const record = base({ imageUrl: primary, imageUrls: [] })
+    expect(toPanelVehicle(record, data(record)).photos).toEqual([primary])
+    expect(toPanelVehicle({ ...record, imageUrls: [primary, next] }, data(record)).photos).toEqual([primary, next])
+  })
+
   it('keeps hold, listing, movement and location as separate facts', () => {
     const vehicle = toPanelVehicle(base(), data(base()))
     expect(vehicle.hold.hasActiveHold).toBe(false)
@@ -100,7 +116,7 @@ describe('deal desk view model', () => {
     const sales = { role: 'sales', store: 'Howell', canCreateTransfer: true }
     expect(canRequestVehicle(away, sales)).toBe(true)
     expect(canRequestVehicle(home, sales)).toBe(false)
-    expect(requestBlockedReason(home, sales)).toMatch(/Already at Howell/)
+    expect(requestBlockedReason(home, sales)).toMatch(/Belongs to Howell/)
     expect(canRequestVehicle(away, { ...sales, role: 'porter' })).toBe(false)
     expect(canRequestVehicle(away, null)).toBe(false)
     const moving = { ...away, movement: { transferId: 'transfer-2' } }
@@ -195,7 +211,8 @@ describe('deal desk view model', () => {
     expect(vehicle.features).toEqual(['Heated Seats', 'Tow Package'])
     expect(vehicle.photos).toEqual(['https://www.bobmaxeyfordhowell.com/inventoryphotos/1.jpg'])
     expect(vehicle.listing.url).toBeNull()
-    expect(vehicle.documents.autoCheck).toMatchObject({ url: 'https://www.bobmaxeyfordhowell.com/autocheck.aspx?sv=a', score: 91 })
+    // Captured facts survive rejection of an incomplete or cross-host source URL.
+    expect(vehicle.documents.autoCheck).toMatchObject({ url: null, score: 91 })
     expect(vehicle.documents.windowSticker.url).toBeNull()
   })
 

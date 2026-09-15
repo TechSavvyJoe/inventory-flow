@@ -12,7 +12,7 @@ describe('private inventory search navigation', () => {
     const accessContext = inventorySearchAccessContext('manager', 'Howell')
     const navigation = createInventorySearchNavigation('  customer note: call after 5  ', accessContext)
 
-    expect(`${navigation.pathname}${navigation.search}`).toBe('/inventory?scope=group')
+    expect(`${navigation.pathname}${navigation.search}`).toBe('/inventory?scope=home')
     expect(`${navigation.pathname}${navigation.search}`).not.toContain('customer')
     expect(readInventorySearchRequest(navigation.state, accessContext)).toEqual({
       query: 'customer note: call after 5',
@@ -46,7 +46,7 @@ describe('private inventory search navigation', () => {
     const navigation = createInventorySearchNavigation('   ', accessContext)
 
     expect(readInventorySearchRequest(navigation.state, accessContext)?.query).toBe('')
-    expect(navigation.search).toBe('?scope=group')
+    expect(navigation.search).toBe('?scope=home')
   })
 
   it('sanitizes a legacy public deep-link query while preserving other filters', () => {

@@ -6,6 +6,7 @@ import {
   CarFront,
   ChevronRight,
   CircleAlert,
+  ChevronDown,
   ListFilter,
   MapPin,
   Plus,
@@ -15,6 +16,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { toTransferDetail, toTransferVehicle } from '../../app/transferAdapters'
 import { SourceWarning } from '../../components/SourceWarning'
+import { WorkflowVehicleResources } from '../../components/WorkflowVehicleResources'
 import { getTransfer } from '../../lib/api'
 import type { BootstrapData, StoreName, TransferRecord, UserRole } from '../../types'
 import { formatDateTime, humanizeStatusLabel } from './presentation'
@@ -26,9 +28,11 @@ import type { SelectOption, TransferActionKind, TransferDetail, TransferRequestD
 import { awayFromHomeSummary } from './moveSummary'
 import { selectRequestedTransfer } from './transfer-selection'
 import { VehicleLocationOverview } from './VehicleLocationOverview'
+import { simpleTransferActions } from './SimpleTransferTracker'
 import './transfers-page.css'
 import './transfer-workspace-v3.css'
 import './transfer-workspace-v4.css'
+import './vehicle-moves.css'
 
 const REASON_LABELS: Record<TransferRequestDraft['reasonCode'], string> = {
   'customer-need': 'Customer need',
@@ -44,6 +48,8 @@ type TransferQueueFilter =
   | 'requested-by-my-store'
   | 'away-from-home'
   | 'awaiting-approval'
+  | 'ready-to-collect'
+  | 'at-requesting-store'
   | 'driver-needed'
   | 'moving'
   | 'return-due'
@@ -63,7 +69,8 @@ function isTerminalTransfer(record: TransferRecord): boolean {
 }
 
 function needsTransferAction(detail: TransferDetail): boolean {
-  return detail.allowedActions.some((action) => !PASSIVE_TRANSFER_ACTIONS.has(action))
+  const actions = detail.workflowMode === 'simple' ? simpleTransferActions(detail) : detail.allowedActions
+  return actions.some((action) => !PASSIVE_TRANSFER_ACTIONS.has(action))
 }
 
 function transferIssueLabel(detail: TransferDetail): string | null {
@@ -152,6 +159,7 @@ function compactNextAction(value?: string): string {
 function compactRequestStatus(value: string, simple = false): string {
   const status = normalizedStatus(value)
   if (simple) {
+    if (status === 'closed') return 'Complete'
     if (['requested', 'submitted', 'manager-reviewed', 'needs-information'].includes(status)) return 'Manager checking availability'
     if (status === 'approved') return 'Approved for collection'
     if (['transport-assigned', 'pickup-scheduled'].includes(status)) return 'Ready to collect'
@@ -187,26 +195,42 @@ function TransferDetailLoader({
   onAction: (action: TransferActionKind, detail: TransferDetail) => void;
 }) {
   // A same-ID bootstrap refresh can change both actions and private-data access.
-  // Never reuse a detail response unless it belongs to this exact selection/context.
+  // Use the record's value as the refresh key, rather than its object identity:
+  // React development replay and an unchanged bootstrap response both create a
+  // new object. Treating either as a new selection aborts a healthy request,
+  // which WebKit reports as an "access control" console error even though the
+  // request is same-origin. A meaningful record change still invalidates the
+  // detail immediately, so private data and authorized actions never linger.
   const selectedRecord = selected?.record
-  const requestContext = useMemo(() => ({ selectedRecord, role, homeStore }), [selectedRecord, role, homeStore])
+  const selectedRecordRefreshKey = selectedRecord ? JSON.stringify(selectedRecord) : ''
+  const requestContext = useMemo(
+    () => ({ id: selectedRecord?.id, refreshKey: selectedRecordRefreshKey, role, homeStore }),
+    [selectedRecord?.id, selectedRecordRefreshKey, role, homeStore],
+  )
   const [recordDetail, setRecordDetail] = useState<{ context: typeof requestContext; record: TransferRecord } | null>(null)
   useEffect(() => {
     let active = true
-    const id = requestContext.selectedRecord?.id
+    const id = requestContext.id
     if (!id) {
       setRecordDetail(null)
       return () => { active = false }
     }
+    // The active flag guards private data and actions from an earlier context.
+    // Do not abort a small same-origin read on every status refresh: WebKit
+    // reports those expected cancellations as access-control console errors.
+    // A stale response is safely ignored, while the latest context still gets
+    // its own authoritative detail request.
     getTransfer(id, requestContext.role, requestContext.homeStore)
       .then((record) => { if (active && record?.id === id) setRecordDetail({ context: requestContext, record }) })
       .catch(() => { if (active) setRecordDetail(null) })
-    return () => { active = false }
+    return () => {
+      active = false
+    }
   }, [requestContext])
   const detail = recordDetail?.context === requestContext
     ? toTransferDetail(recordDetail.record, data.vehicles.find((vehicle) => vehicle.vin === recordDetail.record.vin), data.meta, role)
     : selected?.detail ?? null
-  return <TransferTracker transfer={detail} mode="page" onAction={onAction} />
+  return <TransferTracker transfer={detail} mode="page" onAction={onAction} vehicleResources={<WorkflowVehicleResources vehicle={data.vehicles.find(vehicle => vehicle.vin === selectedRecord?.vin)} />} />
 }
 
 export function TransfersPage() {
@@ -218,6 +242,7 @@ export function TransfersPage() {
   const [query, setQuery] = useState('')
   const [queueView, setQueueView] = useState<TransferQueueView>('active')
   const [queueFilter, setQueueFilter] = useState<TransferQueueFilter>('all')
+  const [storeScope, setStoreScope] = useState<'home' | 'group'>('home')
   const [queueSort, setQueueSort] = useState<TransferQueueSort>('urgency')
   const requestMode = location.pathname.endsWith('/new')
 
@@ -236,7 +261,9 @@ export function TransfersPage() {
   const requestedId = params.get('id')
   const requestedVin = params.get('vin')?.toUpperCase()
   const normalizedQuery = query.trim().toLowerCase()
-  const filteredDetails = details
+  const scopedDetails = details.filter(({ record }) => storeScope === 'group' ||
+    [record.homeStore, record.requestingStore, record.currentLocation, record.destination].includes(homeStore))
+  const filteredDetails = scopedDetails
     .filter(({ record, detail }) => {
       const terminal = isTerminalTransfer(record)
       const needsAction = needsTransferAction(detail)
@@ -249,6 +276,8 @@ export function TransfersPage() {
       if (queueFilter === 'requested-by-my-store' && record.requestingStore !== homeStore) return false
       if (queueFilter === 'away-from-home' && !awayFromHomeSummary(record.homeStore, record.currentLocation, record.events).isAway) return false
       if (queueFilter === 'awaiting-approval' && !isAwaitingApproval(record)) return false
+      if (queueFilter === 'ready-to-collect' && !['approved', 'transport-assigned', 'pickup-scheduled'].includes(normalizedStatus(record.requestStatus))) return false
+      if (queueFilter === 'at-requesting-store' && !['arrived', 'customer-showing', 'sale-outcome-pending', 'sale-confirmed', 'not-sold'].includes(normalizedStatus(record.requestStatus))) return false
       if (
         queueFilter === 'driver-needed' &&
         (terminal || Boolean(record.transportAssignee) || workflowStage(record.requestStatus) < 3 || workflowStage(record.requestStatus) > 4)
@@ -299,11 +328,13 @@ export function TransfersPage() {
       if (priorityDifference) return priorityDifference
       return dateScore(left.detail.nextAction.dueAt) - dateScore(right.detail.nextAction.dueAt)
     })
-  const selected = selectRequestedTransfer(filteredDetails, requestedId, requestedVin)
+  // An authorized deep link opens the exact move, including completed moves or
+  // a different store. Filtering the queue must never substitute another move.
+  const selected = selectRequestedTransfer(requestedId || requestedVin ? details : filteredDetails, requestedId, requestedVin)
   const queueCounts = {
-    'needs-action': details.filter(({ record, detail }) => !isTerminalTransfer(record) && needsTransferAction(detail)).length,
-    active: details.filter(({ record }) => !isTerminalTransfer(record)).length,
-    history: details.filter(({ record }) => isTerminalTransfer(record)).length,
+    'needs-action': scopedDetails.filter(({ record, detail }) => !isTerminalTransfer(record) && needsTransferAction(detail)).length,
+    active: scopedDetails.filter(({ record }) => !isTerminalTransfer(record)).length,
+    history: scopedDetails.filter(({ record }) => isTerminalTransfer(record)).length,
   }
   const requestVehicle = requestedVin ? data.vehicles.find((vehicle) => vehicle.vin === requestedVin) : undefined
 
@@ -319,11 +350,19 @@ export function TransfersPage() {
   }
 
   if (requestMode) {
+    if (requestVehicle?.homeStore === homeStore) {
+      return <section className="transfer-request-page"><div className="move-request-home-message">
+        <CarFront aria-hidden="true" size={32} />
+        <h1>This vehicle belongs to {homeStore}</h1>
+        <p>A move request brings another store’s vehicle to your store. Choose a vehicle from another store to ask your manager.</p>
+        <button type="button" className="mif-button mif-button--primary" onClick={() => navigate('/inventory?scope=group')}>Find a vehicle at another store</button>
+      </div></section>
+    }
     const vehicleSummary = requestVehicle ? toTransferVehicle(requestVehicle, data.meta) : null
     const stores: SelectOption[] = data.stores
       .filter((store) => store.store !== requestVehicle?.homeStore)
       .map((store) => ({ value: store.store, label: store.store }))
-    const defaultRequestingStore = stores.some((store) => store.value === homeStore) ? homeStore : stores[0]?.value
+    const defaultRequestingStore = homeStore
     const requestingManagerStore = defaultRequestingStore ?? homeStore
     const managerApprovers: SelectOption[] = requestVehicle
       ? [{ value: `${requestingManagerStore}-manager`, label: `${requestingManagerStore} manager`, secondaryLabel: `Checks with ${requestVehicle.homeStore}, then approves the request` }]
@@ -342,6 +381,7 @@ export function TransfersPage() {
           defaultRequesterId="signed-in-user"
           defaultManagerApproverId={managerApprovers[0]?.value}
           onCancel={() => navigate(requestVehicle ? '/transfers' : '/inventory')}
+          onViewRequest={(id) => navigate(`/transfers?id=${encodeURIComponent(id)}`)}
           onSubmit={async (draft) => {
             const created = await submitTransfer({
               vin: draft.vin,
@@ -365,14 +405,14 @@ export function TransfersPage() {
 
   return (
     <section
-      className={`transfers-page transfer-workspace-v3 transfer-workspace-v4${simple ? ' is-simple' : ''}${requestedId && selected ? ' is-mobile-detail-open' : ''}`}
-      data-mobile-detail-open={requestedId && selected ? 'true' : 'false'}
+      className={`transfers-page vehicle-moves-page${simple ? ' is-simple' : ''}${(requestedId || requestedVin) && selected ? ' is-mobile-detail-open' : ''}`}
+      data-mobile-detail-open={(requestedId || requestedVin) && selected ? 'true' : 'false'}
     >
       <SourceWarning meta={data.meta} />
       <header className="transfers-page-header">
         <div>
           <h1>Vehicle moves</h1>
-          <p>{simple ? 'Request a vehicle. Your manager checks availability. Track its location and return.' : 'Requesting manager approves, Home Store releases, then the driver moves the vehicle.'}</p>
+          <p>See where each vehicle is, who is responsible, and what happens next.</p>
         </div>
         <button className="mif-button mif-button--primary transfer-header-create" type="button" aria-label="Request a vehicle" onClick={() => navigate('/inventory')}>
           <Plus aria-hidden="true" />
@@ -380,7 +420,11 @@ export function TransfersPage() {
         </button>
       </header>
 
-      {simple ? <VehicleLocationOverview vehicles={data.vehicles} transfers={data.transfers} homeStore={homeStore} /> : null}
+      <div className="move-store-scope" role="group" aria-label="Vehicle move stores">
+        <button type="button" aria-pressed={storeScope === 'home'} onClick={() => setStoreScope('home')}>My store <span>{homeStore}</span></button>
+        <button type="button" aria-pressed={storeScope === 'group'} onClick={() => setStoreScope('group')}>All stores</button>
+        <p>{storeScope === 'home' ? `Vehicles requested by, owned by, or currently at ${homeStore}.` : 'Moves you can access across the group.'}</p>
+      </div>
 
       {details.length === 0 ? (
         <div className="transfers-empty-surface">
@@ -403,9 +447,9 @@ export function TransfersPage() {
               </label>
               <div className="transfer-list-views" role="group" aria-label="Movement queue view">
                 {([
-                  ['needs-action', 'Needs action'],
                   ['active', 'Active'],
-                  ['history', 'History'],
+                  ['needs-action', 'Your next steps'],
+                  ['history', 'Completed'],
                 ] as Array<[TransferQueueView, string]>).map(([value, label]) => (
                   <button type="button" key={value} className={queueView === value ? 'is-active' : undefined} onClick={() => setQueueView(value)} aria-pressed={queueView === value}>
                     {label}<span>{queueCounts[value]}</span>
@@ -422,14 +466,14 @@ export function TransfersPage() {
                   onChange={(event) => setQueueFilter(event.target.value as TransferQueueFilter)}
                 >
                   <option value="all">All moves</option>
-                  <option value="my-location">My location</option>
-                  {simple ? <><option value="my-home-inventory">My home inventory</option><option value="requested-by-my-store">Requested by my store</option><option value="away-from-home">Away from home</option></> : null}
-                  <option value="awaiting-approval">Awaiting approval</option>
+                  <option value="awaiting-approval">Waiting for approval</option>
+                  <option value="ready-to-collect">Ready to collect</option>
+                  <option value="at-requesting-store">At requesting store</option>
                   {!simple ? <option value="driver-needed">Driver needed</option> : null}
-                  <option value="moving">Pickup or in transit</option>
-                  <option value="return-due">Return required / due</option>
-                  <option value="sold-pending">Sold pending · not delivered</option>
-                  <option value="issues">Issue or overdue</option>
+                  <option value="moving">In transit</option>
+                  <option value="return-due">Return to follow up</option>
+                  {!simple ? <option value="sold-pending">Sold pending · not delivered</option> : null}
+                  <option value="issues">Issue to review</option>
                 </select>
               </label>
               <label className="transfer-list-sort" title="Sort vehicle moves">
@@ -477,32 +521,32 @@ export function TransfersPage() {
                       <span className="transfer-list-photo transfer-list-photo--placeholder" aria-hidden="true"><CarFront /></span>
                     )}
                     <span className="transfer-list-copy transfer-list-copy--concise">
-                      <span className="transfer-list-top"><strong>{detail.vehicle.vehicleLabel}</strong><b className={`priority-${detail.priority ?? 'normal'}`}>{detail.priority ?? 'normal'}</b></span>
-                      <span className="transfer-list-route"><strong>{detail.vehicle.stock}</strong><span>{detail.vehicle.homeStore} → {record.destination}</span></span>
-                      <span className="transfer-list-state-row">
-                        <span className="transfer-location"><MapPin aria-hidden="true" />Now {record.currentLocation}</span>
+                      <span className="move-row-vehicle">
+                        <span className="transfer-list-top"><strong>{detail.vehicle.vehicleLabel}</strong>{detail.priority === 'high' || detail.priority === 'critical' ? <b className={`priority-${detail.priority}`}>{detail.priority === 'critical' ? 'Urgent' : 'High priority'}</b> : null}</span>
+                        <span className="move-row-stock">Stock {detail.vehicle.stock}</span>
+                        <span className="move-row-vin">{record.vin}</span>
+                      </span>
+                      <span className="move-row-route">
+                        <span className="transfer-list-route">{detail.vehicle.homeStore} → {record.destination}</span>
+                        <span className="transfer-location"><MapPin aria-hidden="true" />{record.currentLocation}</span>
+                        {away.isAway ? <span>{away.label}</span> : null}
+                      </span>
+                      <span className="move-row-next">
                         <span className="transfer-list-stage">{simpleRecord ? compactRequestStatus(record.requestStatus, true) : `Step ${step} of 5 · ${compactRequestStatus(record.requestStatus)}`}</span>
+                        <span className="transfer-next"><small>Next</small><strong>{compactNextAction(record.nextAction)}</strong></span>
+                        <span className="transfer-list-owner-row"><span>{record.nextActionOwner || 'Responsible person not recorded'}</span><span className={dueTone}>{dueLabel(detail)}</span></span>
+                        {issueLabel ? <span className="transfer-list-alert"><CircleAlert aria-hidden="true" />{issueLabel}</span> : record.returnRequired && away.isAway ? <span className="transfer-list-return">{returnTimingLabel(record)}</span> : null}
                       </span>
-                      <span className="transfer-next"><small>{simpleRecord && away.isAway ? 'Away' : 'Next'}</small><strong>{simpleRecord && away.isAway ? away.label : compactNextAction(record.nextAction)}</strong></span>
-                      <span className="transfer-list-owner-row">
-                        <span>{record.nextActionOwner || 'Owner not assigned'}</span>
-                        <span className={dueTone}>{dueLabel(detail)}</span>
-                      </span>
-                      {issueLabel ? (
-                        <span className="transfer-list-alert"><CircleAlert aria-hidden="true" />{issueLabel}</span>
-                      ) : record.returnRequired ? (
-                        <span className="transfer-list-return">{returnTimingLabel(record)}</span>
-                      ) : null}
                     </span>
                     <ChevronRight aria-hidden="true" />
                   </button>
                 )
               })}
-              {filteredDetails.length === 0 ? <p className="transfer-list-no-results">No moves match this view and search.</p> : null}
+              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores or clear the search and stage filter.' : 'Clear the search or choose a different stage.'}</p></div> : null}
             </div>
           </aside>
           <div className="transfer-detail-surface" id="transfer-detail-workspace">
-            {requestedId && selected ? (
+            {(requestedId || requestedVin) && selected ? (
               <header className="transfer-mobile-detail-bar">
                 <button type="button" onClick={() => navigate('/transfers')} aria-label="Back to vehicle moves">
                   <ArrowLeft aria-hidden="true" />
@@ -517,6 +561,8 @@ export function TransfersPage() {
           </div>
         </div>
       )}
+
+      {simple ? <details className="move-location-disclosure"><summary><MapPin aria-hidden="true" size={18} /> Browse vehicle locations <ChevronDown aria-hidden="true" size={16} /></summary><VehicleLocationOverview vehicles={data.vehicles} transfers={data.transfers} homeStore={homeStore} /></details> : null}
 
       {pendingAction ? (
         <TransferActionDialog

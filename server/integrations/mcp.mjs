@@ -28,15 +28,34 @@ const managerDispositionSchema = z.strictObject({
   q: shortText.optional(), store: store.optional(), delivered: z.boolean().optional(),
   review: z.boolean().optional(), limit: limit.optional(), cursor: cursor.optional(),
 })
+const operationalInventorySchema = z.strictObject({
+  q: shortText.optional(), store: store.optional(), homeStore: store.optional(), crmStore: store.optional(), currentStore: store.optional(),
+  certified: z.boolean().optional(), hasPrice: z.boolean().optional(), hasPhoto: z.boolean().optional(), hasCurrentHold: z.boolean().optional(), hasManagerDisposition: z.boolean().optional(),
+  resource: z.enum(['autocheck', 'original_window_sticker', 'factory_equipment', 'ford_oasis', 'warranty_check']).optional(),
+  minDaysListed: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(), maxDaysListed: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  sort: z.enum(['vehicleName', 'stockNumber', 'year', 'listedPrice', 'mileage', 'daysListed', 'make', 'model', 'publicStore', 'homeStore']).optional(),
+  direction: z.enum(['asc', 'desc']).optional(), limit: limit.optional(), cursor: cursor.optional(),
+})
+const vinSchema = z.strictObject({ vin: z.string().regex(/^[A-HJ-NPR-Z0-9]{17}$/i) })
 const TOOLS = [
   { name: 'search_inventory', operation: 'inventory', scope: 'inventory.read', schema: inventorySchema,
     description: 'Search permitted vehicles in the selected verified release. Returns exact equipment, non-sensitive hold and location facts, freshness, and an opaque pagination cursor. Availability still requires store confirmation.' },
-  { name: 'get_vehicle', operation: 'vehicle', scope: 'inventory.read', schema: z.strictObject({ vin: z.string().regex(/^[A-HJ-NPR-Z0-9]{17}$/i) }),
+  { name: 'get_vehicle', operation: 'vehicle', scope: 'inventory.read', schema: vinSchema,
     description: 'Read one permitted vehicle by its full VIN, including captured equipment and report facts. Private customer notes and authenticated report URLs are excluded.' },
+  { name: 'search_operational_inventory', operation: 'operationalInventory', scope: 'inventory.read', schema: operationalInventorySchema,
+    description: 'Search the permitted verified daily release with operational filters for home/CRM/current store, resource coverage, hold evidence, manager-log evidence, pricing, photos, and aging. The result remains read-only and availability requires store confirmation.' },
+  { name: 'get_vehicle_resources', operation: 'vehicleResources', scope: 'inventory.read', schema: vinSchema,
+    description: 'Read safe captured VIN-specific AutoCheck facts, original sticker facts, factory equipment, Ford OASIS facts, warranty coverage facts, and photo metadata. Original reports, authenticated documents, and customer data are excluded.' },
   { name: 'get_inventory_changes', operation: 'changes', scope: 'changes.read', schema: changesSchema,
     description: 'Read validated public inventory changes in the selected release. Date filters filter this release only; they do not retrieve historical snapshots.' },
   { name: 'get_data_health', operation: 'health', scope: 'health.read', schema: z.strictObject({}),
     description: 'Read selected-release completion, source freshness, and permitted inventory counts without raw source or customer data.' },
+  { name: 'get_daily_operations_report', operation: 'dailyOperations', scope: 'health.read', schema: z.strictObject({}),
+    description: 'Read a safe daily operational summary for permitted stores: public/CRM coverage where authorized, hold evidence, resource coverage, per-store counts, and change categories.' },
+  { name: 'get_data_quality_summary', operation: 'dataQuality', scope: 'health.read', schema: z.strictObject({}),
+    description: 'Read non-private data-quality and completeness counts from the selected verified release. Raw source files, private notes, and customer data are excluded.' },
+  { name: 'get_reconciliation_summary', operation: 'reconciliation', scope: 'health.read', schema: z.strictObject({}),
+    description: 'Read a bounded public-to-CRM/location/hold reconciliation summary for permitted public VINs. It does not expose CRM-only records or customer/hold-detail fields.' },
   { name: 'get_hold_summary', operation: 'holdSummary', scope: 'holds.aggregate.read', schema: z.strictObject({ store: store.optional() }),
     description: 'Read non-sensitive hold totals for permitted publicly listed vehicles by physical store. These are not complete CRM inventory totals or availability determinations.' },
   { name: 'list_manager_dispositions', operation: 'managerDispositions', scope: 'inventory.read', schema: managerDispositionSchema,
@@ -83,7 +102,7 @@ export function createInventoryMcpHandler({ getReadService, principal, onToolRes
         try {
           readService ??= Promise.resolve().then(() => getReadService())
           const service = await readService
-          const value = await service[tool.operation](tool.operation === 'vehicle' ? args.vin : args)
+          const value = await service[tool.operation](['vehicle', 'vehicleResources'].includes(tool.operation) ? args.vin : args)
           if (!value || typeof value !== 'object' || Array.isArray(value) || !Object.hasOwn(value, 'data')) throw new Error()
           result = toolResult(value)
           if (encoder.encode(JSON.stringify(result)).byteLength > MAX_TOOL_RESULT_BYTES) {

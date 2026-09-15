@@ -61,6 +61,50 @@ afterEach(() => {
 })
 
 describe('manager-friendly inventory UI', () => {
+  it.each([
+    ['unknown', 'Waiting for service'], ['needs_service', 'Waiting for service'],
+    ['in_service', 'In service'], ['serviced', 'Ready'],
+  ] as const)('keeps %s visible in the persistent vehicle navigation', (status, label) => {
+    const current = vehicle(1, true);
+    current.serviceReadiness = { vin: current.vin, status, version: 1, serviceEnteredAt: '2026-09-13', completedAt: status === 'serviced' ? '2026-09-14' : null, updatedAt: null, updatedBy: null, updatedByRole: null, updatedAtStore: null, store: 'Howell', canManage: false };
+    render(<VehicleWorkspace vehicle={current} homeStore={{ id: 'Howell', name: 'Howell' }} onClose={vi.fn()} />);
+    const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
+    expect(operations).toHaveTextContent(label);
+    for (const section of ['Equipment', 'Holds & moves', 'Records']) {
+      fireEvent.click(screen.getByRole('tab', { name: section }));
+      expect(screen.getByRole('link', { name: `Service: ${label}` })).toBeVisible();
+      expect(screen.getByRole('tabpanel', { name: section })).toBeVisible();
+    }
+    expect(screen.getAllByRole('tablist')).toHaveLength(1);
+  });
+
+  it('combines service status with held inventory, search, and an explicit expansion to other stores', () => {
+    const home = vehicle(1, true);
+    home.serviceReadiness = { vin: home.vin, status: 'serviced', version: 1, serviceEnteredAt: null, completedAt: '2026-09-14', updatedAt: null, updatedBy: null, updatedByRole: null, updatedAtStore: null, store: 'Howell', canManage: false };
+    const other = { ...vehicle(3, true), serviceReadiness: { ...home.serviceReadiness, vin: vehicle(3).vin }, location: { homeStore: { id: 'Lincoln', name: 'Lincoln' } } };
+    const unserviced = vehicle(5, true);
+    unserviced.serviceReadiness = { ...home.serviceReadiness, vin: unserviced.vin, status: 'needs_service', completedAt: null };
+    const { container } = render(<InventoryExperience homeStore={{ id: 'Howell', name: 'Howell' }} vehicles={[home, other, unserviced]} metrics={{ publicUnits: 2, currentHolds: 2, awayFromHome: 0, returnOverdue: 0 }} />);
+    fireEvent.click(screen.getByRole('button', { name: /^Ready: / }));
+    fireEvent.click(screen.getByRole('button', { name: /^Held: / }));
+    expect(container.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(1);
+    fireEvent.change(screen.getByRole('combobox', { name: /Search inventory/ }), { target: { value: 'F-150' } });
+    const expand = screen.getByRole('button', { name: /1 additional vehicle match at other locations/ });
+    fireEvent.click(expand);
+    expect(container.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: /^Ready: / })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('persists the service filter within an employee context and resets for another context', async () => {
+    const props = { homeStore: { id: 'Howell', name: 'Howell' }, vehicles: [vehicle(1)], metrics: { publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 } };
+    const { rerender, unmount } = render(<InventoryExperience {...props} searchPersistenceKey="employee-one:manager:Howell" />);
+    fireEvent.click(screen.getByRole('button', { name: /^Ready: / }));
+    rerender(<InventoryExperience {...props} searchPersistenceKey="employee-two:sales:Howell" />);
+    expect(screen.getByRole('button', { name: /^All service: / })).toHaveAttribute('aria-pressed', 'true');
+    unmount();
+    render(<InventoryExperience {...props} searchPersistenceKey="employee-one:manager:Howell" />);
+    expect(screen.getByRole('button', { name: /^Ready: / })).toHaveAttribute('aria-pressed', 'true');
+  });
   it('makes the home count and complete group count unmistakable while staying home-store first', async () => {
     const vehicles = Array.from({ length: 7 }, (_, index) => vehicle(index + 1))
     for (const otherStoreVehicle of vehicles.slice(4)) {
@@ -75,18 +119,16 @@ describe('manager-friendly inventory UI', () => {
       />,
     )
 
-    expect(screen.getByText(/4 vehicles at Howell · 7 across the group/)).toBeInTheDocument()
-    expect(screen.getByText('4 shown · 4 of 7 group')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Howell inventory' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Howell inventory, 4 of 7 group vehicles' })).toHaveAttribute('aria-pressed', 'true')
 
     fireEvent.click(screen.getByRole('button', { name: 'All locations, 7 group vehicles' }))
 
-    expect(screen.getByText(/7 vehicles across four locations/)).toBeInTheDocument()
-    expect(screen.getByText('7 shown · 7 group')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'All locations inventory' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'All locations, 7 group vehicles' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('offers the requested row-count increments and keeps the table paged', async () => {
-    const user = userEvent.setup()
     render(
       <InventoryExperience
         homeStore={{ id: 'Howell', name: 'Howell' }}
@@ -99,17 +141,17 @@ describe('manager-friendly inventory UI', () => {
     expect(within(rowsSelect).getAllByRole('option').map((option) => option.textContent)).toEqual([
       '10', '15', '20', '25', '50', '100',
     ])
-    // One compact row per vehicle: no record strip doubles the row count.
+    // Paging counts vehicles, independently of their visible source-resource strip.
     expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(10)
-    expect(document.querySelectorAll('.inv-desk-table tbody tr')).toHaveLength(10)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-resource-row')).toHaveLength(10)
 
-    await user.selectOptions(rowsSelect, '20')
+    fireEvent.change(rowsSelect, { target: { value: '20' } })
     expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(20)
-    expect(document.querySelectorAll('.inv-desk-table tbody tr')).toHaveLength(20)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-resource-row')).toHaveLength(20)
     expect(screen.getByText('Showing 1–20 of 28')).toBeInTheDocument()
-    await user.selectOptions(rowsSelect, '100')
+    fireEvent.change(rowsSelect, { target: { value: '100' } })
     expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(28)
-    expect(document.querySelectorAll('.inv-desk-table tbody tr')).toHaveLength(28)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-resource-row')).toHaveLength(28)
     expect(screen.getByText('Showing 1–28 of 28')).toBeInTheDocument()
   })
 
@@ -142,7 +184,7 @@ describe('manager-friendly inventory UI', () => {
     render(<InventoryExperience homeStore={{ id: 'Howell', name: 'Howell' }} vehicles={[current]} metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }} onOpenSourceRecord={external} />)
     const row = document.querySelector('.inv-desk-table tbody tr.inv-desk-row') as HTMLElement
     fireEvent.click(within(row).getByRole('button', { name: /Review DealerMail handoff for stock/ }))
-    await waitFor(() => expect(screen.getByRole('tab', { name: 'Holds & moves' })).toHaveAttribute('aria-selected', 'true'))
+    await waitFor(() => expect(screen.getByRole('tabpanel', { name: 'Holds & moves' })).toBeVisible())
     expect(screen.getByRole('region', { name: 'DealerMail vehicle tools' })).toHaveTextContent(current.stockNumber)
     expect(screen.getByRole('button', { name: 'Open DealerMail & copy stock' })).toBeVisible()
     expect(openSpy).not.toHaveBeenCalled()
@@ -168,28 +210,23 @@ describe('manager-friendly inventory UI', () => {
     expect(writeText.mock.invocationCallOrder[0]).toBeLessThan(openSpy.mock.invocationCallOrder[0])
     expect(fetchSpy).not.toHaveBeenCalled()
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent('DealerMail tab requested')
-      expect(screen.getByRole('status')).toHaveTextContent(`Stock ${current.stockNumber} copied`)
-      expect(screen.getByRole('status')).not.toHaveTextContent('did not open')
-      expect(screen.getByRole('status')).toHaveTextContent('No DealerMail record was changed')
+      expect(within(panel).getByRole('status')).toHaveTextContent('DealerMail tab requested')
+      expect(within(panel).getByRole('status')).toHaveTextContent(`Stock ${current.stockNumber} copied`)
+      expect(within(panel).getByRole('status')).not.toHaveTextContent('did not open')
+      expect(within(panel).getByRole('status')).toHaveTextContent('No DealerMail record was changed')
     })
   })
 
-  it('uses separate saved comment and alert views without launching DealerMail', () => {
+  it('shows captured comments and alerts together without launching DealerMail', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
     const current = vehicle(8, true)
     current.dealerMailEvidence = { dataState: 'current', history: [], comments: [{ text: 'Synthetic comment only', author: 'Synthetic reviewer', timestamp: '2026-09-09T10:00:00Z' }], alerts: [{ text: 'Synthetic alert only', author: 'Synthetic manager', timestamp: '2026-09-09T11:00:00Z' }] }
     render(<VehicleWorkspace vehicle={current} homeStore={{ id: 'Howell', name: 'Howell' }} initialTab="hold" onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Saved comments' }))
-    expect(screen.getByRole('region', { name: 'Saved comments' })).toHaveTextContent('Synthetic comment only')
-    expect(screen.queryByText('Synthetic alert only')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Saved alerts' }))
-    expect(screen.getByRole('region', { name: 'Saved alerts' })).toHaveTextContent('Synthetic alert only')
-    expect(screen.queryByText('Synthetic comment only')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Hold records' }))
+    expect(screen.getByText('Synthetic comment only')).toBeVisible()
+    expect(screen.getByText('Synthetic alert only')).toBeVisible()
     expect(document.querySelector('.inventory-hold-evidence-list')).toBeInTheDocument()
     expect(openSpy).not.toHaveBeenCalled()
-    expect(screen.queryByRole('button', { name: /Place Hold in DealerMail|Add Backup in DealerMail|Review.*Hold in DealerMail/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Saved comments' })).not.toBeInTheDocument()
   })
 
   it('keeps stale data read-only and requires verification for its one handoff', () => {
@@ -232,7 +269,7 @@ describe('manager-friendly inventory UI', () => {
 
     expect(screen.getByText('Last verified primary hold')).toBeInTheDocument()
     expect(screen.getAllByText('Current state unverified — confirm in DealerMail').length).toBeGreaterThan(0)
-    expect(screen.getByText('Last verified salesperson')).toBeInTheDocument()
+    expect(within(screen.getByRole('tabpanel', { name: 'Holds & moves' })).getByText('Last verified salesperson')).toBeInTheDocument()
     expect(screen.getByText('Last verified customer / reason')).toBeInTheDocument()
     expect(screen.getByText('Last verified comments & alerts')).toBeInTheDocument()
     expect(document.querySelector('.inventory-hold-evidence__stale-note')).toHaveTextContent('does not confirm a current hold, release, sale, delivery, or availability')
@@ -289,7 +326,7 @@ describe('manager-friendly inventory UI', () => {
     const panel = openDealerMailTools()
     fireEvent.click(within(panel).getByRole('button', { name: 'Open DealerMail & copy stock' }))
     await waitFor(() => {
-      const status = screen.getByRole('status')
+      const status = within(panel).getByRole('status')
       expect(status).toHaveTextContent('could not request a new tab')
       expect(status).toHaveTextContent('Stock could not be copied')
       expect(status).toHaveTextContent(current.stockNumber)
@@ -342,37 +379,14 @@ describe('manager-friendly inventory UI', () => {
     expect(secondThumbnail).not.toHaveAttribute('role')
   })
 
-  it('makes hold, location, and movement signals tactile shortcuts to their full details', async () => {
-    render(
-      <VehicleWorkspace
-        vehicle={vehicle(12, true)}
-        homeStore={{ id: 'Howell', name: 'Howell' }}
-        onClose={vi.fn()}
-      />,
-    )
-
-    const holdSignal = document.querySelector('.inventory-workspace-signal--hold') as HTMLButtonElement
-    const locationSignal = document.querySelector('.inventory-workspace-signal--location') as HTMLButtonElement
-    expect(holdSignal.tagName).toBe('BUTTON')
-    expect(holdSignal).toHaveAttribute('aria-controls', 'inventory-section-hold')
-    expect(locationSignal.tagName).toBe('BUTTON')
-    expect(locationSignal).toHaveAttribute('aria-controls', 'inventory-section-movement')
-
-    fireEvent.click(holdSignal)
-    await waitFor(() => {
-      expect(document.querySelector('#inventory-section-hold')).toHaveAttribute('open')
-      expect(screen.getByRole('tab', { name: 'Holds & moves' })).toHaveAttribute('aria-selected', 'true')
-      expect(screen.getByRole('tabpanel', { name: 'Holds & moves' })).toBeVisible()
-    })
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Overview' }))
-    expect(locationSignal).toBeVisible()
-    fireEvent.click(locationSignal)
-    await waitFor(() => {
-      expect(screen.getByRole('tab', { name: 'Holds & moves' })).toHaveAttribute('aria-selected', 'true')
-      expect(document.querySelector('#inventory-section-movement')).toBeVisible()
-      expect(document.querySelector('#inventory-section-movement')).toHaveFocus()
-    })
+  it('opens a focused hold pane with its location context and stable navigation', async () => {
+    render(<VehicleWorkspace vehicle={vehicle(12, true)} homeStore={{ id: 'Howell', name: 'Howell' }} onClose={vi.fn()} />)
+    const jump = screen.getByRole('tab', { name: 'Holds & moves' })
+    expect(jump).toHaveAttribute('aria-controls', 'inventory-section-hold')
+    fireEvent.click(jump)
+    await waitFor(() => expect(jump).toHaveFocus())
+    expect(screen.getByRole('tabpanel', { name: 'Holds & moves' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Location & movement' })).toBeVisible()
   })
 
   it('opens exact official document links from the row and presents parsed facts progressively', () => {
@@ -404,11 +418,10 @@ describe('manager-friendly inventory UI', () => {
         onSelectVehicle={onSelectVehicle}
       />,
     )
-    // Row documents live in the row's More menu; opening them never selects the vehicle.
-    fireEvent.click(screen.getByRole('button', { name: /More actions for/ }))
-    const rowMenu = screen.getByRole('group', { name: /More actions for/ })
-    const autoCheckRowLink = within(rowMenu).getByRole('link', { name: /open autocheck report/i })
-    const stickerRowLink = within(rowMenu).getByRole('link', { name: /open window sticker/i })
+    // Branded source links are visible in the row; opening one never selects the vehicle.
+    const row = document.querySelector('.inv-desk-resource-row') as HTMLElement
+    const autoCheckRowLink = within(row).getByRole('link', { name: /open AutoCheck history for VIN/i })
+    const stickerRowLink = within(row).getByRole('link', { name: /open sticker for VIN/i })
     expect(autoCheckRowLink).toHaveAttribute('href', documentedVehicle.autoCheckReport.url)
     expect(stickerRowLink).toHaveAttribute('href', documentedVehicle.windowSticker.url)
     fireEvent.click(autoCheckRowLink)
@@ -427,9 +440,7 @@ describe('manager-friendly inventory UI', () => {
     expect(within(documents).getByText('89–94')).toBeInTheDocument()
     expect(within(documents).getByText('200A')).toBeInTheDocument()
     expect(within(documents).getByText('49,480 (original sticker currency; verify)')).toBeInTheDocument()
-    const fullFactoryDetails = within(documents).getByText('Full factory equipment & warranty').closest('summary')
-    expect(fullFactoryDetails).not.toBeNull()
-    fireEvent.click(fullFactoryDetails!)
+    expect(within(documents).getByRole('heading', { name: 'Full factory equipment & warranty' })).toBeVisible()
     expect(within(documents).getByText('Functional: Rear view camera')).toBeInTheDocument()
     expect(within(documents).getByText('3YR/36,000 BUMPER / BUMPER')).toBeInTheDocument()
   })
@@ -449,7 +460,7 @@ describe('manager-friendly inventory UI', () => {
     )
     const documents = openRecordDetails()
     expect(within(documents).getByRole('link', { name: /open autocheck report/i })).toBeInTheDocument()
-    expect(within(documents).getByText(/no summary facts were safely captured/i)).toBeInTheDocument()
+    expect(within(documents).getByText(/No AutoCheck history facts were captured/i)).toBeInTheDocument()
     expect(within(documents).queryByText('Not published')).not.toBeInTheDocument()
     expect(within(documents).queryByText(/factory window sticker/i)).not.toBeInTheDocument()
   })

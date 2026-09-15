@@ -27,6 +27,12 @@ function appUrl(origin, path, params = {}) {
 
 export function appHomeUrl(origin) { return appUrl(origin, '/') }
 export function inventorySearchUrl(origin, query) { return appUrl(origin, '/inventory', { q: query }) }
+export function workspaceUrl(origin, destination) {
+  const destinations = { attention: ['/attention'], moves: ['/transfers'], new: ['/updates', { view: 'new' }], price: ['/updates', { view: 'price' }], service: ['/service'] }
+  const target = Object.hasOwn(destinations, destination) ? destinations[destination] : null
+  return target ? appUrl(origin, target[0], target[1]) : null
+}
+export function serviceStatusUrl(origin, vin) { return appUrl(origin, '/service', { vin }) }
 export function requestVehicleUrl(origin, vin) { return appUrl(origin, '/transfers/new', { vin }) }
 export function trackMovementUrl(origin, { transferId, vin }) {
   return transferId ? appUrl(origin, '/transfers', { id: transferId }) : appUrl(origin, '/transfers', { vin })
@@ -72,15 +78,41 @@ export function listingUrl(value) {
   return url && OFFICIAL_HOSTS.has(url.hostname.toLowerCase()) ? url.href : null
 }
 
-export function autoCheckUrl(value) {
-  const url = parseHttps(value)
-  return url && OFFICIAL_HOSTS.has(url.hostname.toLowerCase()) && url.pathname.toLowerCase() === '/autocheck.aspx' ? url.href : null
+function hasExactlyOneNonEmptyValue(url, key) {
+  const values = url.searchParams.getAll(key)
+  return values.length === 1 && Boolean(values[0]?.trim())
 }
 
-export function windowStickerUrl(value) {
+/** Mirrors the app's officialVehicleDocumentUrl guard; a captured report can
+ * remain readable even when its original source URL is not safe to open. */
+function officialDocumentUrl(value, kind, vehicleListingUrl) {
   const url = parseHttps(value)
-  return url && OFFICIAL_HOSTS.has(url.hostname.toLowerCase()) && WINDOW_STICKER_PATH.test(url.pathname) ? url.href : null
+  if (!url || !OFFICIAL_HOSTS.has(url.hostname.toLowerCase()) || url.hash) return null
+  try {
+    if (decodeURIComponent(url.pathname).split('/').includes('..')) return null
+    if (vehicleListingUrl) {
+      const listing = new URL(vehicleListingUrl)
+      if (listing.protocol !== 'https:' || listing.hostname.toLowerCase() !== url.hostname.toLowerCase()) return null
+    }
+    const keys = [...url.searchParams.keys()]
+    if (kind === 'autocheck') {
+      if (url.pathname.toLowerCase() !== '/autocheck.aspx' || keys.length !== 2
+        || !hasExactlyOneNonEmptyValue(url, 'sv') || !hasExactlyOneNonEmptyValue(url, 'ac')
+        || keys.some((key) => key !== 'sv' && key !== 'ac')) return null
+    } else {
+      const allowed = new Set(['sv', 'make', 'vehicleType', 'dealerCode'])
+      if (!WINDOW_STICKER_PATH.test(url.pathname) || keys.some((key) => !allowed.has(key))
+        || keys.length < 3 || keys.length > 4
+        || !hasExactlyOneNonEmptyValue(url, 'sv') || !hasExactlyOneNonEmptyValue(url, 'make')
+        || !hasExactlyOneNonEmptyValue(url, 'vehicleType') || url.searchParams.getAll('dealerCode').length > 1) return null
+    }
+    return url.href
+  } catch { return null }
 }
+
+export function autoCheckUrl(value, vehicleListingUrl) { return officialDocumentUrl(value, 'autocheck', vehicleListingUrl) }
+
+export function windowStickerUrl(value, vehicleListingUrl) { return officialDocumentUrl(value, 'window-sticker', vehicleListingUrl) }
 
 /** vAuto's informational equipment label — never presented as a Monroney sticker. */
 export function factoryEquipmentUrl(value) {
@@ -89,8 +121,17 @@ export function factoryEquipmentUrl(value) {
   return url.href
 }
 
-/** Photos come from dealer sites over https only; anything else is dropped. */
+function localOrLiteralHost(hostname) {
+  const host = hostname.toLowerCase()
+  return host === 'localhost' || host.endsWith('.localhost')
+    || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)
+    || /^\[[0-9a-f:.]+\]$/i.test(host)
+}
+
+/** Photos come from dealer sites over https only; loopback and literal-IP
+ * targets are dropped so a bad feed record cannot turn the panel into a
+ * request to a local device. Production host allowlisting belongs at ingest. */
 export function photoUrl(value) {
   const url = parseHttps(value)
-  return url ? url.href : null
+  return url && !localOrLiteralHost(url.hostname) ? url.href : null
 }

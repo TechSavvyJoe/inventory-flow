@@ -123,6 +123,49 @@ function factoryEquipment(value) {
   }
 }
 
+function fordOasis(value) {
+  if (!value || typeof value !== 'object') return null
+  return {
+    dataState: freshness(value.dataState), capturedAt: text(value.capturedAt), vehicleDescription: text(value.vehicleDescription),
+    versionSeries: text(value.versionSeries), buildDate: text(value.buildDate), warrantyStartDate: text(value.warrantyStartDate),
+    releaseDate: text(value.releaseDate), monthsInService: number(value.monthsInService, { integer: true }), saleMileage: number(value.saleMileage),
+    openFieldServiceActions: array(value.openFieldServiceActions).slice(0, 60).map(item => ({ code: text(item?.code, 20), description: text(item?.description, 300) })),
+    warrantyCoverages: array(value.warrantyCoverages).slice(0, 20).map(item => ({ type: text(item?.type, 120), description: text(item?.description, 300) })),
+    extendedCoverageExpirations: strings(value.extendedCoverageExpirations).slice(0, 10),
+    disclaimer: 'Ford OASIS facts are read-only reference evidence. Open field service actions do not establish availability, condition, sale, delivery, or physical presence.',
+  }
+}
+
+function warrantyCoverage(value) {
+  return {
+    type: text(value?.type, 120), termText: text(value?.termText, 120), termMonths: number(value?.termMonths, { integer: true }), termMiles: number(value?.termMiles, { integer: true }),
+    unlimitedMiles: bool(value?.unlimitedMiles), unlimitedMonths: bool(value?.unlimitedMonths), remainingMiles: number(value?.remainingMiles, { integer: true }),
+    remainingMonths: number(value?.remainingMonths, { integer: true }), remainingMilesText: text(value?.remainingMilesText, 40), remainingTimeText: text(value?.remainingTimeText, 40),
+    status: text(value?.status, 80),
+  }
+}
+
+function warrantyCheck(value) {
+  if (!value || typeof value !== 'object') return null
+  const result = {
+    dataState: freshness(value.dataState), capturedAt: text(value.capturedAt), mileageEntered: number(value.mileageEntered, { integer: true }), mileageSource: text(value.mileageSource, 80),
+    disclaimer: 'Warranty coverage is read-only reference evidence and does not establish vehicle condition or availability.',
+  }
+  if (value.autoCheck && typeof value.autoCheck === 'object') {
+    result.autoCheck = {
+      inServiceDate: text(value.autoCheck.inServiceDate), inServiceAgeMonths: number(value.autoCheck.inServiceAgeMonths, { integer: true }), defaultMileage: number(value.autoCheck.defaultMileage, { integer: true }),
+      coverages: array(value.autoCheck.coverages).slice(0, 12).map(warrantyCoverage),
+    }
+  }
+  if (value.fordOasis && typeof value.fordOasis === 'object') {
+    result.fordOasis = {
+      warrantyStartDate: text(value.fordOasis.warrantyStartDate), monthsInService: number(value.fordOasis.monthsInService, { integer: true }),
+      coverages: array(value.fordOasis.coverages).slice(0, 12).map(warrantyCoverage),
+    }
+  }
+  return result
+}
+
 function publicHold(value, dealerMailFreshness) {
   const rawState = HOLD_STATES.includes(value?.state) ? value.state : 'unknown'
   const state = dealerMailFreshness === 'current' ? rawState : rawState === 'unknown' ? 'unknown' : 'stale'
@@ -189,6 +232,7 @@ function projectVehicle(value, meta) {
       sourceCount: number(value.publicScan.sourceCount, { integer: true }),
     } : null,
     autoCheckReport: autoCheck(value.autoCheckReport), windowSticker: sticker(value.windowSticker), factoryEquipment: factoryEquipment(value.factoryEquipment),
+    fordOasis: fordOasis(value.fordOasis), warrantyCheck: warrantyCheck(value.warrantyCheck),
   }
 }
 
@@ -236,6 +280,13 @@ function numericQuery(value, name, { integer = false, max = Number.MAX_SAFE_INTE
   if (!Number.isFinite(result) || result < min || result > max || (integer && !Number.isInteger(result))) fail(`Invalid ${name}`)
   return result
 }
+function booleanQuery(value, name) {
+  if (value === undefined) return null
+  if (typeof value === 'boolean') return value
+  if (value === 'true') return true
+  if (value === 'false') return false
+  fail(`Invalid ${name}`)
+}
 function dateQuery(value, name) {
   if (value === undefined) return null
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) fail(`Invalid ${name}; expected YYYY-MM-DD`)
@@ -257,6 +308,7 @@ export function createIntegrationReadService({ bootstrap, principal, bundleSha25
     dealerMailFreshness: freshness(bootstrap.meta.dealerMailFreshness),
     managerDispositionFreshness: freshness(bootstrap.meta.managerDispositionFreshness),
   }
+  const resourceFreshness = freshness(bootstrap.meta.resourceFreshness)
   const managerDispositionCoverage = {
     status: bootstrap.meta.managerDispositionCoverageStatus === 'provided' ? 'provided' : 'not_provided',
     coveredSourceStores: STORE_NAMES.filter(item => array(bootstrap.meta.managerDispositionCoveredSourceStores).includes(item)),
@@ -271,7 +323,12 @@ export function createIntegrationReadService({ bootstrap, principal, bundleSha25
     excludedFields: ['customer identity', 'salesperson identity', 'hold reasons', 'CRM comments and alerts', 'raw CDK', 'manager-log free text', 'free-form operational notes', 'raw source objects', 'authenticated document URLs'],
   }
   // Authorization is applied before projection, searching, counting, or lookups.
-  const vehicles = bootstrap.vehicles.filter(value => allowedStores.includes(value.publicStore) && VIN.test(value.vin ?? '')).map(value => projectVehicle(value, sourceMeta))
+  const projectedVehicles = bootstrap.vehicles.filter(value => allowedStores.includes(value.publicStore) && VIN.test(value.vin ?? '')).map(value => projectVehicle(value, sourceMeta))
+  const resourcesByVin = new Map(projectedVehicles.map(value => [value.vin, Object.freeze({
+    autoCheckReport: value.autoCheckReport, windowSticker: value.windowSticker, factoryEquipment: value.factoryEquipment,
+    fordOasis: value.fordOasis, warrantyCheck: value.warrantyCheck,
+  })]))
+  const vehicles = projectedVehicles.map(({ fordOasis, warrantyCheck, ...value }) => value)
   const publicChanges = array(bootstrap.publicChanges).filter(value => allowedStores.includes(value.store) && CHANGE_TYPES.includes(value.type) && CHANGE_FIELDS[value.type].aliases.includes(value.field) && VIN.test(value.vin ?? '')).map(value => ({
     id: text(value.id, 200), type: value.type, field: CHANGE_FIELDS[value.type].field,
     valueType: CHANGE_FIELDS[value.type].valueType,
@@ -283,6 +340,7 @@ export function createIntegrationReadService({ bootstrap, principal, bundleSha25
   const managerDispositions = array(bootstrap.managerDispositions)
     .map(value => managerDispositionView(value, sourceMeta.managerDispositionFreshness))
     .filter(value => value && allowedStores.includes(value.physicalStore ?? value.sourceStore))
+  const allStoresGranted = allowedStores.length === STORE_NAMES.length
   const binding = digest({ bundleSha256, clientId: text(principal.clientId), userId: text(principal.userId), role: text(principal.role), allowedStores, scopes, data: digest([vehicles, publicChanges, managerDispositions]) })
 
   function selectedStore(value) {
@@ -315,6 +373,120 @@ export function createIntegrationReadService({ bootstrap, principal, bundleSha25
     return { data: clone(rows.slice(offset, end)), meta: clone(meta), pagination: { total: rows.length, limit: normalized.limit, returned: end - offset, nextCursor } }
   }
 
+  function rowsByStore(makeRow) {
+    return allowedStores.map(publicStore => makeRow(publicStore, vehicles.filter(value => value.publicStore === publicStore)))
+  }
+
+  function matchesVehicle(value, q) {
+    return matches({ vehicle: value, resources: resourcesByVin.get(value.vin) ?? null }, q)
+  }
+
+  function changeCounts() {
+    return Object.fromEntries(CHANGE_TYPES.map(type => [type, publicChanges.filter(value => value.type === type).length]))
+  }
+
+  function resourceCoverage(rows = vehicles) {
+    return {
+      vehicles: rows.length,
+      withPhotos: rows.filter(value => (value.photoCount ?? 0) > 0).length,
+      autoCheck: rows.filter(value => resourcesByVin.get(value.vin)?.autoCheckReport).length,
+      originalWindowSticker: rows.filter(value => resourcesByVin.get(value.vin)?.windowSticker).length,
+      factoryEquipment: rows.filter(value => resourcesByVin.get(value.vin)?.factoryEquipment).length,
+      fordOasis: rows.filter(value => resourcesByVin.get(value.vin)?.fordOasis).length,
+      warrantyCheck: rows.filter(value => resourcesByVin.get(value.vin)?.warrantyCheck).length,
+    }
+  }
+
+  function safeSourceWarnings() {
+    return [
+      ['public', sourceMeta.publicFreshness], ['dealerMail', sourceMeta.dealerMailFreshness],
+      ['resources', resourceFreshness], ['managerDisposition', sourceMeta.managerDispositionFreshness],
+    ].filter(([, state]) => state !== 'current').map(([source, state]) => ({ source, state, code: `${source}_not_current` }))
+  }
+
+  function summaryStoreRow(publicStore, rows) {
+    const currentHolds = sourceMeta.dealerMailFreshness === 'current'
+    return {
+      publicStore,
+      publiclyListedVehicles: rows.length,
+      crmStorePresentOnPublicRows: rows.filter(value => value.crmStore !== null).length,
+      crmStoreMismatchOnPublicRows: rows.filter(value => value.crmStore && value.crmStore !== value.publicStore).length,
+      homeStoreMismatchOnPublicRows: rows.filter(value => value.homeStore && value.homeStore !== value.publicStore).length,
+      currentLocationMismatchOnPublicRows: rows.filter(value => value.location.currentStore && value.location.currentStore !== value.publicStore).length,
+      currentHeldPublicVins: currentHolds ? rows.filter(value => value.hold.hasCurrentHold === true).length : null,
+      noCurrentHoldFoundPublicVins: currentHolds ? rows.filter(value => value.hold.state === 'none_observed').length : null,
+      holdUnverifiedPublicVins: rows.filter(value => value.hold.hasCurrentHold === null).length,
+      managerSoldSignals: rows.filter(value => value.managerDisposition?.soldManagerLog === true).length,
+      managerDeliveredSignals: rows.filter(value => value.managerDisposition?.deliveredManagerLog === true).length,
+    }
+  }
+
+  function operationsReport() {
+    const currentHolds = sourceMeta.dealerMailFreshness === 'current'
+    return {
+      report: {
+        reportDate: meta.reportDate, completedAt: meta.completedAt, timezone: meta.timezone, bundleSha256,
+        sourceFreshness: { ...clone(sourceMeta), resources: resourceFreshness }, scopeFullyCoversGroup: allStoresGranted,
+      },
+      counts: {
+        visiblePublicVehicles: vehicles.length,
+        completeGroupPublicVehicles: allStoresGranted ? number(bootstrap.meta.publicCount, { integer: true }) : null,
+        completeGroupCrmRows: allStoresGranted ? number(bootstrap.meta.crmCount, { integer: true }) : null,
+        completeGroupHeldVins: allStoresGranted ? number(bootstrap.meta.heldVinCount, { integer: true }) : null,
+        currentHeldPublicVins: currentHolds ? vehicles.filter(value => value.hold.hasCurrentHold === true).length : null,
+        currentBackupRecordsOnPublicVins: currentHolds ? vehicles.reduce((total, value) => total + (value.hold.backupCount ?? 0), 0) : null,
+        holdUnverifiedPublicVins: vehicles.filter(value => value.hold.hasCurrentHold === null).length,
+        managerSoldSignals: managerDispositions.length,
+        managerDeliveredSignals: managerDispositions.filter(value => value.deliveredManagerLog).length,
+      },
+      publicChanges: changeCounts(),
+      resources: resourceCoverage(),
+      stores: rowsByStore(summaryStoreRow),
+      warnings: safeSourceWarnings(),
+      caveats: [DISCLAIMER, 'Complete CRM counts are shown only to grants covering all four stores. Per-store CRM figures here are limited to publicly listed VINs with a CRM store match.'],
+    }
+  }
+
+  function dataQualitySummary() {
+    const currentHolds = sourceMeta.dealerMailFreshness === 'current'
+    const exceptions = {
+      noPublishedPrice: vehicles.filter(value => value.listedPrice === null).length,
+      missingWebsiteStatus: vehicles.filter(value => value.websiteStatus === 'Not provided').length,
+      onePhoto: vehicles.filter(value => value.photoCount === 1).length,
+      missingDrivetrain: vehicles.filter(value => value.drivetrain === null).length,
+      missingMpg: vehicles.filter(value => value.mpgCity === null || value.mpgHighway === null).length,
+      missingMsrp: vehicles.filter(value => value.msrp === null).length,
+      missingVehicleId: vehicles.filter(value => value.publicScan?.vehicleId === null).length,
+      unusualCertifiedMake: vehicles.filter(value => value.certified === true && !['ford', 'lincoln'].includes(String(value.make ?? '').toLowerCase())).length,
+      missingOfficialListingLink: vehicles.filter(value => value.listingUrl === null).length,
+      crmStoreMismatch: vehicles.filter(value => value.crmStore && value.crmStore !== value.publicStore).length,
+      unverifiedHoldState: vehicles.filter(value => value.hold.hasCurrentHold === null).length,
+      heldPublicVins: currentHolds ? vehicles.filter(value => value.hold.hasCurrentHold === true).length : null,
+    }
+    return {
+      verifiedRelease: { reportDate: meta.reportDate, completedAt: meta.completedAt, bundleSha256, sourceFreshness: { ...clone(sourceMeta), resources: resourceFreshness }, scopeFullyCoversGroup: allStoresGranted },
+      visibleVehicles: vehicles.length,
+      resources: resourceCoverage(),
+      exceptions,
+      warnings: safeSourceWarnings(),
+      excludedFields: clone(meta.excludedFields),
+      caveat: 'Exception counts preserve source values and flag review needs; they do not silently correct the daily source data.',
+    }
+  }
+
+  function reconciliationSummary() {
+    return {
+      coverage: {
+        publicNormalizedVinRows: vehicles.length,
+        completeGroupCrmRows: allStoresGranted ? number(bootstrap.meta.crmCount, { integer: true }) : null,
+        note: 'This comparison is restricted to current publicly listed VINs. CRM-only rows, customer reasons, comments, alerts, and raw CDK data are not exposed.',
+      },
+      stores: rowsByStore(summaryStoreRow),
+      sourceFreshness: { ...clone(sourceMeta), resources: resourceFreshness },
+      caveat: DISCLAIMER,
+    }
+  }
+
   return {
     capabilities: Object.freeze({ schemaVersion: 'inventory-read.v1', readOnly: true, scopes: Object.freeze(scopes), stores: Object.freeze(allowedStores), maxPageSize: 100, defaultPageSize: 20, historicalSnapshots: false, licensedReports: 'Parsed facts only; authenticated document URLs and original reports excluded', inventorySortFields: Object.freeze(SORT_FIELDS.slice()), managerDispositions: true }),
     inventory(query = {}) {
@@ -330,7 +502,7 @@ export function createIntegrationReadService({ bootstrap, principal, bundleSha25
       if ((normalized.minPrice !== null && normalized.maxPrice !== null && normalized.minPrice > normalized.maxPrice) || (normalized.minMileage !== null && normalized.maxMileage !== null && normalized.minMileage > normalized.maxMileage)) fail('Minimum cannot exceed maximum')
       const rows = vehicles.filter(value => (!normalized.store || value.publicStore === normalized.store) && (!normalized.make || folded(value.make) === folded(normalized.make)) && (!normalized.model || folded(value.model) === folded(normalized.model)) && (normalized.year === null || value.year === normalized.year) && (!normalized.holdState || value.hold.state === normalized.holdState)
         && (normalized.minPrice === null || (value.listedPrice !== null && value.listedPrice >= normalized.minPrice)) && (normalized.maxPrice === null || (value.listedPrice !== null && value.listedPrice <= normalized.maxPrice))
-        && (normalized.minMileage === null || (value.mileage !== null && value.mileage >= normalized.minMileage)) && (normalized.maxMileage === null || (value.mileage !== null && value.mileage <= normalized.maxMileage)) && matches(value, normalized.q))
+        && (normalized.minMileage === null || (value.mileage !== null && value.mileage >= normalized.minMileage)) && (normalized.maxMileage === null || (value.mileage !== null && value.mileage <= normalized.maxMileage)) && matchesVehicle(value, normalized.q))
       rows.sort((left, right) => {
         const a = left[normalized.sort], b = right[normalized.sort]
         if (a === null && b !== null) return 1
@@ -345,6 +517,54 @@ export function createIntegrationReadService({ bootstrap, principal, bundleSha25
       const value = typeof vin === 'string' && VIN.test(vin.toUpperCase()) ? vehicles.find(row => row.vin === vin.toUpperCase()) : null
       if (!value) fail('Vehicle not found', 404, 'NOT_FOUND')
       return { data: clone(value), meta: clone(meta) }
+    },
+    vehicleResources(vin) {
+      requireScope('inventory.read')
+      const value = typeof vin === 'string' && VIN.test(vin.toUpperCase()) ? vehicles.find(row => row.vin === vin.toUpperCase()) : null
+      if (!value) fail('Vehicle not found', 404, 'NOT_FOUND')
+      const resources = resourcesByVin.get(value.vin)
+      return {
+        data: clone({
+          vin: value.vin, stockNumber: value.stockNumber, vehicleName: value.vehicleName, publicStore: value.publicStore, listingUrl: value.listingUrl,
+          photoCount: value.photoCount, imageUrls: value.imageUrls, autoCheckReport: resources?.autoCheckReport ?? null, windowSticker: resources?.windowSticker ?? null,
+          factoryEquipment: resources?.factoryEquipment ?? null, fordOasis: resources?.fordOasis ?? null, warrantyCheck: resources?.warrantyCheck ?? null,
+          sourceFreshness: value.sourceFreshness,
+        }),
+        meta: clone(meta),
+      }
+    },
+    operationalInventory(query = {}) {
+      requireScope('inventory.read')
+      queryObject(query, ['q', 'store', 'homeStore', 'crmStore', 'currentStore', 'certified', 'hasPrice', 'hasPhoto', 'hasCurrentHold', 'hasManagerDisposition', 'resource', 'minDaysListed', 'maxDaysListed', 'sort', 'direction', 'limit', 'cursor'])
+      const normalized = {
+        q: scalarQuery(query.q), store: selectedStore(query.store), homeStore: selectedStore(query.homeStore), crmStore: selectedStore(query.crmStore), currentStore: selectedStore(query.currentStore),
+        certified: booleanQuery(query.certified, 'certified'), hasPrice: booleanQuery(query.hasPrice, 'hasPrice'), hasPhoto: booleanQuery(query.hasPhoto, 'hasPhoto'),
+        hasCurrentHold: booleanQuery(query.hasCurrentHold, 'hasCurrentHold'), hasManagerDisposition: booleanQuery(query.hasManagerDisposition, 'hasManagerDisposition'),
+        resource: scalarQuery(query.resource), minDaysListed: numericQuery(query.minDaysListed, 'minDaysListed', { integer: true }), maxDaysListed: numericQuery(query.maxDaysListed, 'maxDaysListed', { integer: true }),
+        sort: scalarQuery(query.sort, 'vehicleName'), direction: scalarQuery(query.direction, 'asc'), limit: numericQuery(query.limit ?? 20, 'limit', { integer: true, min: 1, max: 100 }),
+      }
+      const resourceFields = { autocheck: 'autoCheckReport', original_window_sticker: 'windowSticker', factory_equipment: 'factoryEquipment', ford_oasis: 'fordOasis', warranty_check: 'warrantyCheck' }
+      if (normalized.resource && !Object.hasOwn(resourceFields, normalized.resource)) fail('Invalid resource')
+      if (!SORT_FIELDS.includes(normalized.sort) || !['asc', 'desc'].includes(normalized.direction)) fail('Invalid sort or direction')
+      if (normalized.minDaysListed !== null && normalized.maxDaysListed !== null && normalized.minDaysListed > normalized.maxDaysListed) fail('Minimum cannot exceed maximum')
+      const rows = vehicles.filter(value =>
+        (!normalized.store || value.publicStore === normalized.store) && (!normalized.homeStore || value.homeStore === normalized.homeStore) &&
+        (!normalized.crmStore || value.crmStore === normalized.crmStore) && (!normalized.currentStore || value.location.currentStore === normalized.currentStore) &&
+        (normalized.certified === null || value.certified === normalized.certified) && (normalized.hasPrice === null || (value.listedPrice !== null) === normalized.hasPrice) &&
+        (normalized.hasPhoto === null || ((value.photoCount ?? 0) > 0) === normalized.hasPhoto) && (normalized.hasCurrentHold === null || value.hold.hasCurrentHold === normalized.hasCurrentHold) &&
+        (normalized.hasManagerDisposition === null || (value.managerDisposition !== null) === normalized.hasManagerDisposition) &&
+        (!normalized.resource || Boolean(resourcesByVin.get(value.vin)?.[resourceFields[normalized.resource]])) &&
+        (normalized.minDaysListed === null || (value.daysListed !== null && value.daysListed >= normalized.minDaysListed)) &&
+        (normalized.maxDaysListed === null || (value.daysListed !== null && value.daysListed <= normalized.maxDaysListed)) && matchesVehicle(value, normalized.q),
+      )
+      rows.sort((left, right) => {
+        const a = left[normalized.sort], b = right[normalized.sort]
+        if (a === null && b !== null) return 1
+        if (b === null && a !== null) return -1
+        const result = typeof a === 'number' && typeof b === 'number' ? a - b : String(a ?? '').localeCompare(String(b ?? ''), 'en', { numeric: true, sensitivity: 'base' })
+        return result * (normalized.direction === 'desc' ? -1 : 1) || left.vin.localeCompare(right.vin)
+      })
+      return paginate(rows, normalized, 'operational-inventory', query.cursor)
     },
     changes(query = {}) {
       requireScope('changes.read')
@@ -394,6 +614,18 @@ export function createIntegrationReadService({ bootstrap, principal, bundleSha25
       requireScope('health.read')
       const checkedAt = typeof now === 'function' ? now() : now
       return { data: { ready: Boolean(meta.reportDate && vehicles.length), freshness: clone(sourceMeta), visibleVehicleCount: vehicles.length, checkedAt: new Date(checkedAt).toISOString() }, meta: clone(meta) }
+    },
+    dailyOperations() {
+      requireScope('health.read')
+      return { data: clone(operationsReport()), meta: clone(meta) }
+    },
+    dataQuality() {
+      requireScope('health.read')
+      return { data: clone(dataQualitySummary()), meta: clone(meta) }
+    },
+    reconciliation() {
+      requireScope('health.read')
+      return { data: clone(reconciliationSummary()), meta: clone(meta) }
     },
   }
 }

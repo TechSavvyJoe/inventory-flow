@@ -26,6 +26,8 @@ function fixture() {
     autoCheckReport: { dataState: 'current', score: 90, checks: [{ label: 'Accident', status: 'No issue reported', detail: 'No accident reported', raw: PRIVATE }], url: PRIVATE, raw: PRIVATE },
     windowSticker: { dataState: 'current', equipmentGroup: '302A', options: ['TRAILER TOW PACKAGE'], standardEquipment: ['SYNC 4'], warranty: ['3YR/36000'], raw: PRIVATE, url: PRIVATE },
     factoryEquipment: { dataState: 'current', packages: [{ name: 'FX4', code: '55A', price: 1095, features: ['Hill descent'], raw: PRIVATE }], sections: [{ name: 'Safety', items: [{ label: 'Lane keeping', price: 0, raw: PRIVATE }], raw: PRIVATE }], raw: PRIVATE, url: PRIVATE },
+    fordOasis: { dataState: 'current', capturedAt: '2026-09-09T12:00:00Z', vehicleDescription: '2024 Ford F-150', versionSeries: 'F-150', buildDate: '2024-01-01', warrantyStartDate: '2024-02-01', releaseDate: '2024-01-05', monthsInService: 31, saleMileage: 10, openFieldServiceActions: [{ code: '24B01', description: 'Field service action', raw: PRIVATE }], warrantyCoverages: [{ type: 'Basic', description: '36 months / 36,000 miles', raw: PRIVATE }], extendedCoverageExpirations: ['2029-02-01'], raw: PRIVATE },
+    warrantyCheck: { dataState: 'current', capturedAt: '2026-09-09T12:00:00Z', mileageEntered: 2052, mileageSource: 'Public listing', autoCheck: { inServiceDate: '2024-02-01', inServiceAgeMonths: 31, defaultMileage: 12000, coverages: [{ type: 'Basic', termText: '36 months / 36,000 miles', remainingMilesText: '33,948 miles', remainingTimeText: '5 months', status: 'estimated', note: PRIVATE, raw: PRIVATE }] }, raw: PRIVATE },
     privateEvidence: { customer: PRIVATE }, dealerComments: PRIVATE, raw: PRIVATE, searchText: PRIVATE,
   }
   return {
@@ -82,6 +84,8 @@ describe('integration public-source bootstrap', () => {
     expect(result.meta.managerDispositionCoveredSourceStores).toEqual(['Howell'])
     expect(result.vehicles[0].windowSticker.options).toEqual(['TRAILER TOW PACKAGE'])
     expect(result.vehicles[0].factoryEquipment.sections[0].items).toEqual([{ label: 'Lane keeping', price: 0 }])
+    expect(result.vehicles[0].fordOasis.openFieldServiceActions).toEqual([{ code: '24B01', description: 'Field service action' }])
+    expect(result.vehicles[0].warrantyCheck.autoCheck.coverages[0]).toMatchObject({ type: 'Basic', status: 'estimated' })
     expect(result.vehicles[0].hold).toEqual({ state: 'multiple', backupCount: 1 })
     result.vehicles[0].windowSticker.options.push('Changed')
     result.vehicles[0].factoryEquipment.packages[0].features.push('Changed')

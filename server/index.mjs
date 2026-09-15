@@ -29,6 +29,7 @@ export function startInventoryServer({
   identityMode = process.env.INVENTORY_OPS_IDENTITY_MODE,
   environment = process.env.NODE_ENV || 'development',
   trustedProxySecret = process.env.INVENTORY_OPS_TRUSTED_PROXY_SECRET,
+  adminDirectory,
 } = {}) {
   assertLocalLedgerWritable({ databasePath, runtimeDir })
   // Resolve the trust boundary before opening data or binding a port so an
@@ -54,7 +55,7 @@ export function startInventoryServer({
   }
 
   const refreshResult = refresh()
-  const server = createInventoryServer({ service, serveDist, distDir, identityResolver })
+  const server = createInventoryServer({ service, serveDist, distDir, identityResolver, adminDirectory })
   const timer = refreshIntervalMs > 0 ? setInterval(refresh, refreshIntervalMs) : null
   timer?.unref()
 

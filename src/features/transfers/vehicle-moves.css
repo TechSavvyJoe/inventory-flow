@@ -1,0 +1,141 @@
+/* The everyday movement workspace: a comparison queue and one next action. */
+#root .vehicle-moves-page { display: block; width: 100%; min-width: 0; max-width: none; color: var(--ifx-neutral-900); font: 400 15px/1.5 var(--font-app); }
+#root .vehicle-moves-page .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+#root .vehicle-moves-page :is(button,input,select,summary) { font-family: inherit; }
+#root .vehicle-moves-page :is(button,input,select,summary):focus-visible { outline: 3px solid var(--ifx-info); outline-offset: 2px; }
+#root .vehicle-moves-page .transfers-page-header { display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 20px; margin: 0 0 16px; }
+#root .vehicle-moves-page .transfers-page-header > div { min-width: 0; }
+#root .vehicle-moves-page .transfers-page-header h1 { margin: 0; color: var(--ifx-neutral-900); font-size: 28px; line-height: 1.25; }
+#root .vehicle-moves-page .transfers-page-header p { display: block; margin: 5px 0 0; font-size: 14px; color: var(--ifx-neutral-700); }
+#root .vehicle-moves-page .transfer-header-create { width: auto; min-height: 44px; flex-shrink: 0; box-shadow: none; }
+#root .move-store-scope { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+#root .move-store-scope button { min-height: 44px; padding: 9px 14px; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; background: var(--ifx-neutral-0); color: var(--ifx-neutral-800); font-size: 14px; font-weight: 600; cursor: pointer; }
+#root .move-store-scope button[aria-pressed="true"] { border-color: var(--ifx-info); color: var(--ifx-info); background: var(--ifx-info-surface); }
+#root .move-store-scope button span { margin-left: 6px; font-weight: 400; }
+#root .move-store-scope p { margin: 0 0 0 8px; color: var(--ifx-neutral-700); font-size: 13px; }
+#root .vehicle-moves-page .transfers-layout { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(370px,1fr); grid-template-rows: auto; min-height: 0; max-height: none; height: auto; align-items: start; gap: 0; overflow: visible; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; background: var(--ifx-neutral-0); box-shadow: none; }
+#root .vehicle-moves-page .transfer-list { min-width: 0; display: block; height: auto; padding: 0; overflow: visible; background: var(--ifx-neutral-0); border: 0; border-radius: 0; }
+#root .vehicle-moves-page .transfer-list-toolbar { display: grid; grid-template-columns: minmax(0,1fr); gap: 12px; position: static; padding: 16px; border-bottom: 1px solid var(--ifx-neutral-300); background: var(--ifx-neutral-0); }
+#root .vehicle-moves-page .transfer-list-search { position: relative; display: flex; align-items: center; min-height: 44px; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; }
+#root .vehicle-moves-page .transfer-list-search svg { width: 18px; height: 18px; position: absolute; left: 12px; color: var(--ifx-neutral-700); }
+#root .vehicle-moves-page .transfer-list-search input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px 10px 39px; border: 0; background: transparent; color: var(--ifx-neutral-900); font-size: 14px; }
+#root .vehicle-moves-page .transfer-list-views { display: flex; gap: 14px; border-bottom: 1px solid var(--ifx-neutral-300); }
+#root .vehicle-moves-page .transfer-list-views button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 9px 2px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--ifx-neutral-700); font-size: 14px; font-weight: 600; cursor: pointer; }
+#root .vehicle-moves-page .transfer-list-views button.is-active { border-bottom-color: var(--ifx-info); color: var(--ifx-info); background: transparent; }
+#root .vehicle-moves-page .transfer-list-views button span { display: inline; min-width: 22px; padding: 1px 5px; border-radius: 4px; background: var(--ifx-neutral-100); color: inherit; font-size: 13px; }
+#root .vehicle-moves-page .transfer-list-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) { display: flex; align-items: center; position: relative; grid-area: auto; order: 0; width: auto; min-width: 0; min-height: 44px; flex: 1 1 165px; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; background: var(--ifx-neutral-0); }
+#root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) svg { position: absolute; left: 10px; width: 16px; height: 16px; color: var(--ifx-neutral-700); pointer-events: none; }
+#root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) select { position: static; width: 100%; height: auto; min-height: 44px; padding: 8px 25px 8px 33px; border: 0; opacity: 1; background: transparent; color: var(--ifx-neutral-800); font-size: 13px; }
+#root .vehicle-moves-page .transfer-list-count { font-size: 13px; color: var(--ifx-neutral-700); }
+#root .vehicle-moves-page .transfer-list-items { display: block; padding: 0; max-height: none; overflow: visible; }
+#root .vehicle-moves-page .transfer-list-item { display: grid; grid-template-columns: 96px minmax(0,1.05fr) minmax(0,.85fr) minmax(0,1.15fr) 14px; align-items: center; gap: 12px; width: 100%; min-height: 126px; padding: 16px 12px; border: 0; border-bottom: 1px solid var(--ifx-neutral-300); border-left: 3px solid transparent; border-radius: 0; color: var(--ifx-neutral-900); background: var(--ifx-neutral-0); text-align: left; box-shadow: none; cursor: pointer; }
+#root .vehicle-moves-page .transfer-list-item.is-selected { border-left-color: var(--ifx-info); background: var(--ifx-info-surface); }
+#root .vehicle-moves-page .transfer-list-item:hover { background: var(--ifx-neutral-50); }
+#root .vehicle-moves-page .transfer-list-item > svg { width: 14px; height: 14px; color: var(--ifx-neutral-700); }
+#root .vehicle-moves-page .transfer-list-photo { width: 96px; height: 72px; object-fit: cover; border: 0; border-radius: 5px; }
+#root .vehicle-moves-page .transfer-list-photo--placeholder { display: grid; place-items: center; background: var(--ifx-neutral-100); color: var(--ifx-neutral-600); }
+#root .vehicle-moves-page .transfer-list-photo--placeholder svg { width: 32px; height: 32px; }
+#root .vehicle-moves-page .transfer-list-copy { display: contents; }
+#root .vehicle-moves-page :is(.move-row-vehicle,.move-row-route,.move-row-next) { display: grid; min-width: 0; gap: 5px; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+#root .vehicle-moves-page .transfer-list-top { display: grid; min-width: 0; gap: 5px; }
+#root .vehicle-moves-page .transfer-list-top strong { color: var(--ifx-neutral-900); font-size: 15px; font-weight: 650; line-height: 1.4; white-space: normal; }
+#root .vehicle-moves-page .transfer-list-top b { width: fit-content; padding: 1px 5px; color: var(--ifx-warning); background: var(--ifx-warning-surface); font-size: 12px; font-weight: 600; }
+#root .vehicle-moves-page :is(.move-row-vin,.move-row-stock,.move-row-route,.transfer-list-owner-row,.transfer-list-return) { color: var(--ifx-neutral-700); font-size: 13px; }
+#root .vehicle-moves-page .move-row-vin { font-size: 12px; }
+#root .vehicle-moves-page .transfer-list-route { display: block; color: var(--ifx-neutral-900); font-size: 14px; font-weight: 500; }
+#root .vehicle-moves-page .transfer-location { display: flex; align-items: flex-start; gap: 4px; color: var(--ifx-neutral-700); font-size: 13px; }
+#root .vehicle-moves-page .transfer-location svg { flex: 0 0 14px; width: 14px; height: 14px; margin-top: 3px; }
+#root .vehicle-moves-page .transfer-list-stage { padding: 0; background: transparent; color: var(--ifx-neutral-900); font-size: 13px; font-weight: 650; white-space: normal; }
+#root .vehicle-moves-page .transfer-next { display: block; padding: 0; border: 0; color: var(--ifx-neutral-700); font-size: 13px; }
+#root .vehicle-moves-page .transfer-next small { margin-right: 4px; font-size: 12px; }
+#root .vehicle-moves-page .transfer-next strong { font-size: 13px; font-weight: 400; }
+#root .vehicle-moves-page .transfer-list-owner-row { display: grid; gap: 2px; }
+#root .vehicle-moves-page .transfer-list-owner-row .is-overdue { color: var(--ifx-danger); }
+#root .vehicle-moves-page .transfer-list-alert { display: flex; align-items: center; gap: 5px; color: var(--ifx-warning); font-size: 13px; }
+#root .vehicle-moves-page .transfer-list-alert svg { width: 14px; height: 14px; flex-shrink: 0; }
+#root .vehicle-moves-page .transfer-list-no-results { margin: 0; padding: 36px 20px; text-align: center; color: var(--ifx-neutral-700); font-size: 14px; }
+#root .vehicle-moves-page .transfer-list-no-results strong { color: var(--ifx-neutral-900); font-weight: 600; }
+#root .vehicle-moves-page .transfer-list-no-results p { margin: 7px 0 0; }
+#root .vehicle-moves-page .transfer-detail-surface { min-width: 0; height: auto; overflow: visible; border-left: 1px solid var(--ifx-neutral-300); }
+#root .vehicle-moves-page .transfer-mobile-detail-bar { display: none; }
+#root .move-location-disclosure { margin-top: 18px; border-top: 1px solid var(--ifx-neutral-300); }
+#root .move-location-disclosure > summary { display: flex; align-items: center; gap: 8px; min-height: 48px; color: var(--ifx-neutral-700); font-size: 14px; font-weight: 600; list-style: none; cursor: pointer; }
+#root .move-location-disclosure > summary > svg:last-child { margin-left: auto; }
+#root .move-request-home-message { max-width: 600px; margin: 36px auto; padding: 24px; color: var(--ifx-neutral-900); }
+#root .move-request-home-message h1 { font-size: 24px; }
+#root .move-request-home-message p { font-size: 15px; color: var(--ifx-neutral-700); }
+#root .move-request-simple .mif-request-header { padding: 16px 20px; }
+#root .move-request-simple .mif-vehicle-heading img { width: 96px; height: 72px; object-fit: cover; }
+#root .move-request-route { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--ifx-neutral-300); }
+#root .move-request-route > span { display: grid; gap: 3px; }
+#root .move-request-route small { color: var(--ifx-neutral-700); font-size: 13px; }
+#root .move-request-route strong { color: var(--ifx-neutral-900); font-size: 16px; }
+#root .move-request-route p { flex-basis: 100%; margin: 2px 0 0; color: var(--ifx-neutral-700); font-size: 13px; }
+#root .move-request-simple .mif-request-layout { padding: 20px; grid-template-columns: minmax(0,1.6fr) minmax(250px,1fr); gap: 24px; }
+#root .move-request-simple .mif-request-fields { padding: 0; border: 0; border-radius: 0; }
+#root .move-request-simple .mif-request-fields__heading p { color: var(--ifx-neutral-700); font-size: 14px; }
+#root .move-request-simple :is(.mif-field > span:first-child,.mif-readonly-field,.mif-check-field small,.mif-auto-return-rule span,.mif-accountability-list small,.mif-safety-note p) { font-size: 14px; }
+#root .move-request-simple :is(input,select,textarea,summary,button) { min-height: 44px; font-size: 14px; }
+#root .move-request-simple .mif-request-review { display: grid; align-content: start; gap: 16px; padding: 0 0 0 24px; border: 0; border-left: 1px solid var(--ifx-neutral-300); border-radius: 0; background: transparent; }
+#root .move-request-simple .mif-request-review section { padding: 0; border: 0; border-radius: 0; background: transparent; }
+#root .move-request-simple .mif-request-review h3 { font-size: 15px; }
+#root .move-request-simple .mif-accountability-list b { font-size: 14px; }
+#root .move-request-simple .mif-accountability-list small { line-height: 1.5; }
+#root .move-request-simple .mif-request-actions { padding-top: 0; }
+.move-action-simple .action-field > span { font-size: 14px; }
+.move-action-simple :is(input,select,textarea) { min-height: 44px; font-size: 15px; }
+.move-action-simple footer > button:first-child { flex: 0 0 auto; min-width: 80px; }
+.move-action-simple footer > button:last-child { flex: 1; }
+@media (max-width: 1380px) {
+  #root .vehicle-moves-page .transfers-layout { grid-template-columns: minmax(0,1.15fr) minmax(360px,1fr); }
+  #root .vehicle-moves-page .transfer-list-item { grid-template-columns: 96px minmax(0,1fr) 14px; }
+  #root .vehicle-moves-page .transfer-list-photo { grid-column: 1; grid-row: 1 / 3; align-self: start; }
+  #root .vehicle-moves-page .move-row-vehicle { grid-column: 2; }
+  #root .vehicle-moves-page .move-row-route { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  #root .vehicle-moves-page .move-row-next { grid-column: 1 / 3; grid-template-columns: minmax(0,1fr) minmax(0,1fr); column-gap: 12px; }
+  #root .vehicle-moves-page .transfer-next { grid-column: 1 / -1; }
+  #root .vehicle-moves-page .transfer-list-owner-row { grid-column: 2; grid-row: 1; }
+  #root .vehicle-moves-page .transfer-list-item > svg { grid-column: 3; grid-row: 1 / 4; }
+}
+@media (max-width: 1000px) {
+  #root .vehicle-moves-page .transfers-layout { grid-template-columns: minmax(0,1fr) minmax(340px,1fr); }
+  #root .move-store-scope { flex-wrap: wrap; }
+  #root .move-store-scope p { flex-basis: 100%; margin-left: 0; }
+  #root .vehicle-moves-page .transfer-list-views { gap: 8px; }
+  #root .vehicle-moves-page .transfer-list-views button { font-size: 13px; }
+  #root .vehicle-moves-page .transfer-list-views button span { font-size: 12px; }
+  #root .move-request-simple .mif-request-layout { grid-template-columns: 1fr; }
+  #root .move-request-simple .mif-request-review { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--ifx-neutral-300); }
+}
+@media (max-width: 760px) {
+  #root .vehicle-moves-page .transfers-page-header { align-items: flex-start; gap: 12px; }
+  #root .vehicle-moves-page .transfers-page-header h1 { font-size: 25px; }
+  #root .vehicle-moves-page .transfers-page-header p { display: none; }
+  #root .vehicle-moves-page .transfer-header-create { min-width: 0; padding: 8px 10px; font-size: 13px; }
+  #root .vehicle-moves-page .transfer-header-create svg { width: 17px; }
+  #root .vehicle-moves-page .transfers-layout { display: block; }
+  #root .vehicle-moves-page .transfer-list-toolbar { padding: 12px; }
+  #root .vehicle-moves-page .transfer-list-tools { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+  #root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) { grid-area: auto; width: 100%; }
+  #root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) select { position: static !important; inset: auto !important; width: 100% !important; height: auto !important; opacity: 1 !important; padding: 8px 25px 8px 33px !important; }
+  #root .vehicle-moves-page .transfer-list-count { grid-area: auto; grid-column: 1 / -1; order: 0; }
+  #root .move-store-scope p { display: none; }
+  #root .vehicle-moves-page .transfer-list-item { gap: 9px 12px; padding: 14px 12px; }
+  #root .vehicle-moves-page .move-row-next { display: grid; grid-template-columns: 1fr; }
+  #root .vehicle-moves-page .transfer-list-owner-row { grid-column: auto; grid-row: auto; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  #root .vehicle-moves-page .transfer-next { grid-column: auto; }
+  #root .vehicle-moves-page[data-mobile-detail-open="false"] .transfer-detail-surface { display: none; }
+  #root .vehicle-moves-page[data-mobile-detail-open="true"] > :is(.transfers-page-header,.move-store-scope,.move-location-disclosure),
+  #root .vehicle-moves-page[data-mobile-detail-open="true"] .transfer-list { display: none; }
+  #root .vehicle-moves-page[data-mobile-detail-open="true"] .transfer-detail-surface { display: block; border: 0; }
+  #root .vehicle-moves-page .transfer-mobile-detail-bar { display: grid; grid-template-columns: 44px minmax(0,1fr); align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--ifx-neutral-300); }
+  #root .vehicle-moves-page .transfer-mobile-detail-bar button { width: 44px; height: 44px; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; background: var(--ifx-neutral-0); color: var(--ifx-neutral-900); }
+  #root .vehicle-moves-page .transfer-mobile-detail-bar h1 { margin: 0; font-size: 16px; }
+  #root .vehicle-moves-page .transfer-mobile-detail-bar small { font-size: 13px; color: var(--ifx-neutral-700); }
+  #root .move-request-simple .mif-request-layout { padding: 16px 16px calc(88px + var(--mobile-bottom-height)); }
+  #root .move-request-simple .mif-request-actions .mif-button:first-child { flex: 0 0 auto; min-width: 90px; }
+  #root .move-request-simple .mif-request-actions .mif-button:last-child { flex: 1; }
+  #root .move-request-simple .mif-request-header { padding: 16px; }
+  #root .move-request-route { padding: 14px 16px; }
+}

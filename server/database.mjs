@@ -3,6 +3,8 @@ import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { WorkflowError } from './workflow.mjs'
+import { SERVICE_EVENT_COLUMNS } from './service-readiness.mjs'
+import { serviceIntakeRows } from './service-intake.mjs'
 
 function assertDatabasePath(databasePath, runtimeDir) {
   if (databasePath === ':memory:') return databasePath
@@ -241,6 +243,24 @@ export function migrate(database) {
       UNIQUE (attention_key, idempotency_key)
     );
 
+    CREATE TABLE IF NOT EXISTS vehicle_service_events (
+      id TEXT PRIMARY KEY, vin TEXT NOT NULL, version INTEGER NOT NULL CHECK (version > 0),
+      status TEXT NOT NULL CHECK (status IN ('unknown', 'needs_service', 'in_service', 'serviced')),
+      service_entered_at TEXT, completed_at TEXT, notes TEXT, updated_at TEXT NOT NULL,
+      actor TEXT NOT NULL, actor_user_id TEXT,
+      actor_role TEXT NOT NULL CHECK (actor_role IN ('manager', 'group_manager')),
+      store_id TEXT NOT NULL, input_hash TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+      UNIQUE (vin, version), UNIQUE (vin, idempotency_key)
+    );
+    CREATE TABLE IF NOT EXISTS vehicle_service_intake (
+      vin TEXT PRIMARY KEY, first_arrival_date TEXT NOT NULL, observed_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS vehicle_service_events_vin_idx ON vehicle_service_events(vin, version DESC);
+    CREATE TRIGGER IF NOT EXISTS vehicle_service_events_no_update
+    BEFORE UPDATE ON vehicle_service_events BEGIN SELECT RAISE(ABORT, 'Service history is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS vehicle_service_events_no_delete
+    BEFORE DELETE ON vehicle_service_events BEGIN SELECT RAISE(ABORT, 'Service history is append-only'); END;
+
     CREATE INDEX IF NOT EXISTS public_snapshot_store_idx
       ON public_vehicle_snapshots(source_run_id, physical_store_id);
     CREATE INDEX IF NOT EXISTS crm_snapshot_store_idx
@@ -298,6 +318,8 @@ export function importRelease(database, release, { loadedAt = new Date().toISOSt
   const managerDispositionId = managerDispositionRun ? sourceRunId(managerDispositionRun) : null
 
   return withTransaction(database, () => {
+    const intake = database.prepare('INSERT OR IGNORE INTO vehicle_service_intake (vin, first_arrival_date, observed_at) VALUES (?, ?, ?)')
+    for (const row of serviceIntakeRows(release, loadedAt)) intake.run(row.vin, row.first_arrival_date, row.observed_at)
     const insertRun = database.prepare(`
       INSERT OR IGNORE INTO source_runs (
         id, source_type, report_date, extracted_at, loaded_at, snapshot_path,
@@ -484,7 +506,8 @@ export function getCurrentDataset(database) {
     .prepare('SELECT * FROM home_assignments WHERE effective_to IS NULL ORDER BY effective_from DESC')
     .all()
 
-  return { state, sourceRuns, publicRows, crmRows, holdRows, resourceRows, homeAssignments }
+  const serviceIntake = database.prepare('SELECT * FROM vehicle_service_intake').all()
+  return { state, sourceRuns, publicRows, crmRows, holdRows, resourceRows, homeAssignments, serviceIntake }
 }
 
 function hydrateSourceRun(row) {
@@ -784,6 +807,20 @@ export function upsertAttentionWorkflow(database, workflow, event) {
       )
 
     return { row: getAttentionWorkflowRow(database, workflow.attentionKey), created: true }
+  })
+}
+
+export function listServiceEvents(database) {
+  return database.prepare('SELECT * FROM vehicle_service_events ORDER BY vin, version').all()
+}
+
+export function insertServiceEvent(database, row) {
+  return withTransaction(database, () => {
+    const latest = database.prepare('SELECT MAX(version) AS version FROM vehicle_service_events WHERE vin = ?').get(row.vin)
+    if ((latest.version ?? 0) + 1 !== row.version) throw new WorkflowError('Another manager updated this vehicle. Reload and try again.', { status: 409, code: 'SERVICE_VERSION_CONFLICT' })
+    database.prepare(`INSERT INTO vehicle_service_events (${SERVICE_EVENT_COLUMNS.join(', ')}) VALUES (${SERVICE_EVENT_COLUMNS.map(() => '?').join(', ')})`)
+      .run(...SERVICE_EVENT_COLUMNS.map((key) => row[key] ?? null))
+    return row
   })
 }
 

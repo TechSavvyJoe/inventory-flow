@@ -171,7 +171,12 @@ export function toTransferVehicle(vehicle: VehicleRecord, meta: SourceMeta): Tra
     },
     listedPriceLabel: formatCurrency(vehicle.listedPrice),
     mileageLabel: vehicle.mileage == null ? 'Mileage not published' : `${formatNumber(vehicle.mileage)} mi`,
+    exteriorColor: vehicle.exteriorColor,
+    engine: vehicle.engine,
+    drivetrain: vehicle.drivetrain,
+    daysListed: vehicle.daysListed,
     listingUrl: vehicle.listingUrl,
+    serviceReadiness: vehicle.serviceReadiness,
     status: {
       dealerMail: dealerMailStatus(vehicle.hold.label),
       publicListing: publicStatus(vehicle.publicListingState, meta.publicFreshness),

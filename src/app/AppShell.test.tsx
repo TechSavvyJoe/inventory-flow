@@ -39,6 +39,17 @@ describe('AppShell account and update controls', () => {
     vi.clearAllMocks()
   })
 
+  it('shows the effective test role and a direct return to the authenticated Group manager role', () => {
+    const context = useAppDataMock()
+    useAppDataMock.mockReturnValue({ ...context, data: { ...context.data, access: { role: 'sales', authenticatedRole: 'group_manager', canPreviewRoles: true, rolePreviewActive: true } } })
+    render(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory</p></AppShell></MemoryRouter>)
+    expect(screen.getByText('Testing Salesperson · Live records')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Group manager' }))
+    expect(context.setRole).toHaveBeenCalledWith('group_manager')
+    fireEvent.click(screen.getByRole('button', { name: 'Open account and app controls' }))
+    expect(screen.getByLabelText('Preview role')).toHaveValue('sales')
+  })
+
   it('portals the modal outside the app shell, isolates the page, and restores opener focus', async () => {
     const { container } = render(
       <MemoryRouter initialEntries={['/inventory']}>
@@ -135,8 +146,38 @@ describe('AppShell account and update controls', () => {
     )
 
     expect(screen.getByRole('link', { name: 'Vehicle moves' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Needs attention' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Action center' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Inventory updates' })).toHaveAttribute('href', '/updates')
+    expect(screen.getByRole('link', { name: 'Service status' })).toHaveAttribute('href', '/service')
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-controls', 'application-navigation')
+  })
+
+  it('exposes Control center navigation only to group managers', () => {
+    const baseContext = useAppDataMock()
+    useAppDataMock.mockReturnValue({ ...baseContext, role: 'group_manager' })
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AppShell><span>Admin content</span></AppShell>
+      </MemoryRouter>,
+    )
+
+    const primary = screen.getByRole('navigation', { name: 'Primary' })
+    const mobile = screen.getByRole('navigation', { name: 'Mobile primary' })
+    expect(within(primary).getByRole('link', { name: 'Control center' })).toHaveAttribute('aria-current', 'page')
+    expect(within(mobile).getByRole('link', { name: 'Control center' })).toHaveAttribute('aria-current', 'page')
+    expect(within(mobile).getByRole('link', { name: 'Service' })).toHaveAttribute('href', '/service')
+    expect(within(mobile).queryByRole('button', { name: 'More app controls' })).not.toBeInTheDocument()
+    unmount()
+
+    useAppDataMock.mockReturnValue(baseContext)
+    render(
+      <MemoryRouter initialEntries={['/attention']}>
+        <AppShell><span>Store content</span></AppShell>
+      </MemoryRouter>,
+    )
+
+    expect(within(screen.getByRole('navigation', { name: 'Primary' })).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('navigation', { name: 'Mobile primary' })).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
   })
 
   it('moves focus to the main content after client-side route changes without moving focus on initial load', async () => {

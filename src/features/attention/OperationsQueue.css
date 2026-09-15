@@ -1,0 +1,18 @@
+.action-queue .action-vehicle { align-items: flex-start; }
+.action-vehicle p { margin: 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.action-vehicle .action-vehicle-value { color: var(--ink-900); font-weight: 600; font-variant-numeric: tabular-nums; }
+.action-vehicle .action-vehicle-specs, .action-vehicle .action-vehicle-readiness { color: var(--ink-600); }
+.action-queue .action-status-buttons { flex-shrink: 0; }
+.action-queue .action-status-buttons button { min-height: 44px; font-size: 14px; }
+.action-queue .action-list-head, .action-queue .action-row-content { grid-template-columns: minmax(330px, 1.6fr) minmax(190px, 1fr) minmax(145px, .7fr) 145px; gap: 16px; }
+.action-queue .action-row { padding-block: 12px 4px; }
+.action-queue .workflow-vehicle small { font-size: 14px; }
+@media (max-width: 1200px) {
+  .action-queue .action-list-head, .action-queue .action-row-content { grid-template-columns: minmax(260px, 1.4fr) minmax(180px, 1fr) 140px; gap: 12px; }
+}
+@media (max-width: 760px) {
+  .action-queue .action-row-content { grid-template-columns: 1fr auto; }
+  .action-queue .action-status-buttons { width: auto; }
+  .action-queue .action-vehicle { gap: 12px; }
+  .action-queue .action-vehicle > .workflow-photo { width: 88px; height: 66px; }
+}
