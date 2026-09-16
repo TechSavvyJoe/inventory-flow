@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -241,16 +241,36 @@ function SortHeader({ label, displayLabel, column, numeric = false, options, sor
 export function VehiclePhoto({ vehicle, className = "" }: { vehicle: InventoryVehicle; className?: string }) {
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const imageRef = useRef<HTMLImageElement>(null);
   const sources = useMemo(() => vehiclePhotoDisplaySources(vehicle, { width: 240 }), [vehicle]);
   const sourceKey = sources.join("\u0000");
   const [sourceIndex, setSourceIndex] = useState(0);
   const src = sources[sourceIndex];
+
+  const markSourceFailed = useCallback(() => {
+    setLoaded(false);
+    setSourceIndex((current) => {
+      if (current < sources.length - 1) return current + 1;
+      setFailed(true);
+      return current;
+    });
+  }, [sources.length]);
 
   useEffect(() => {
     setSourceIndex(0);
     setFailed(false);
     setLoaded(false);
   }, [sourceKey]);
+
+  useEffect(() => {
+    const image = imageRef.current;
+    if (!src || failed || !image?.complete) return;
+    if (image.naturalWidth > 0) {
+      setLoaded(true);
+      return;
+    }
+    markSourceFailed();
+  }, [src, failed, sourceKey, markSourceFailed]);
 
   return src && !failed ? (
     <>
@@ -263,6 +283,7 @@ export function VehiclePhoto({ vehicle, className = "" }: { vehicle: InventoryVe
         </span>
       )}
       <img
+        ref={imageRef}
         key={src}
         className={`${className}${loaded ? " is-loaded" : " is-loading"}`.trim()}
         src={src}
@@ -276,14 +297,7 @@ export function VehiclePhoto({ vehicle, className = "" }: { vehicle: InventoryVe
         decoding="async"
         referrerPolicy="no-referrer"
         onLoad={() => setLoaded(true)}
-        onError={() => {
-          setLoaded(false);
-          setSourceIndex((current) => {
-            if (current < sources.length - 1) return current + 1;
-            setFailed(true);
-            return current;
-          });
-        }}
+        onError={markSourceFailed}
       />
     </>
   ) : (

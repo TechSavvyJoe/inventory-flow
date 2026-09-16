@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InventoryMobileList, InventoryTable, VehiclePhoto, vehicleOperationalStatus } from './InventoryTable';
 import type { InventoryVehicle } from './types';
@@ -217,6 +217,26 @@ describe('modern inventory result access', () => {
 
     render(<VehiclePhoto vehicle={vehicle} className="inv-desk-vehicle__img" />);
     expect(screen.getByRole('img', { name: '2024 Ford F-150 XLT exterior' })).toHaveAttribute('src', `${vehicle.imageUrls[0]}?width=240`);
+  });
+
+  it('clears the loading placeholder when a cached browser image is already complete', async () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.imageUrl = 'https://www.bobmaxeyfordhowell.com/inventoryphotos/example/cached.jpg';
+    vehicle.imageUrls = [vehicle.imageUrl];
+
+    const complete = vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockReturnValue(true);
+    const naturalWidth = vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockReturnValue(240);
+    const naturalHeight = vi.spyOn(HTMLImageElement.prototype, 'naturalHeight', 'get').mockReturnValue(180);
+    try {
+      render(<VehiclePhoto vehicle={vehicle} className="inv-desk-vehicle__img" />);
+      const photo = screen.getByRole('img', { name: '2024 Ford F-150 XLT exterior' });
+      await waitFor(() => expect(photo).toHaveClass('is-loaded'));
+      expect(document.querySelector('.inventory-vehicle-visual__placeholder--loading')).not.toBeInTheDocument();
+    } finally {
+      complete.mockRestore();
+      naturalWidth.mockRestore();
+      naturalHeight.mockRestore();
+    }
   });
 
   it('keeps vehicle-history facts out of activity and omits an empty change control', () => {
