@@ -161,6 +161,7 @@ export function toTransferVehicle(vehicle: VehicleRecord, meta: SourceMeta): Tra
     vehicleLabel: vehicle.vehicleName,
     trimLabel: vehicle.trim,
     imageUrl: vehicle.imageUrl || vehicle.imageUrls?.[0] || undefined,
+    imageUrls: vehicle.imageUrls ?? (vehicle.imageUrl ? [vehicle.imageUrl] : []),
     homeStore: vehicle.homeStore,
     currentLocation: {
       label: vehicle.movement.currentLocation || vehicle.sourceReportedLocation,

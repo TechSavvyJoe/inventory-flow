@@ -1,5 +1,6 @@
 import { serviceStatusLabel, serviceWorkflowStatus } from "../../lib/service-readiness";
 import { sourceDisplayText } from "../../lib/source-text";
+import { vehiclePhotoFullSources } from "../../lib/vehicle-photos";
 import {
   useEffect,
   useLayoutEffect,
@@ -410,10 +411,7 @@ function FordOasisWordmark() {
 
 function VehicleGallery({ vehicle }: { vehicle: InventoryVehicle }) {
   const suppliedImages = useMemo(() => {
-    const candidates = [...(vehicle.imageUrls ?? []), vehicle.imageUrl]
-      .map((value) => value?.trim())
-      .filter((value): value is string => Boolean(value));
-    return [...new Set(candidates)];
+    return vehiclePhotoFullSources(vehicle);
   }, [vehicle.imageUrl, vehicle.imageUrls]);
   const [failedImages, setFailedImages] = useState<Set<string>>(() => new Set());
   const [activeIndex, setActiveIndex] = useState(0);
@@ -484,6 +482,7 @@ function VehicleGallery({ vehicle }: { vehicle: InventoryVehicle }) {
           key={activeImage}
           src={activeImage}
           alt={activeImage.startsWith('/demo-vehicles/') ? `${displayName}, AI-generated demo illustration` : `${displayName}, photo ${activeIndex + 1}`}
+          referrerPolicy="no-referrer"
           onError={() => markImageFailed(activeImage)}
         />
         {activeImage.startsWith('/demo-vehicles/') && <span className="vdp-demo-photo"><span className="vdp-demo-photo-full">Demo illustration</span><span className="vdp-demo-photo-short">Demo</span></span>}
@@ -537,6 +536,7 @@ function VehicleGallery({ vehicle }: { vehicle: InventoryVehicle }) {
                 src={url}
                 alt=""
                 loading="lazy"
+                referrerPolicy="no-referrer"
                 onError={() => markImageFailed(url)}
               />
             </button>

@@ -17,6 +17,7 @@ import { useAppData } from '../../app/AppDataContext'
 import { toTransferDetail, toTransferVehicle } from '../../app/transferAdapters'
 import { SourceWarning } from '../../components/SourceWarning'
 import { getTransfer } from '../../lib/api'
+import { vehiclePhotoDisplaySources } from '../../lib/vehicle-photos'
 import type { BootstrapData, StoreName, TransferRecord, UserRole } from '../../types'
 import { formatDateTime, humanizeStatusLabel } from './presentation'
 import { TransferActionDialog } from './TransferActionDialog'
@@ -59,6 +60,27 @@ type TransferQueueSort = 'urgency' | 'needed-by' | 'recent' | 'stock' | 'route'
 
 const TERMINAL_TRANSFER_STATES = new Set(['closed', 'declined', 'canceled', 'expired'])
 const PASSIVE_TRANSFER_ACTIONS = new Set<TransferActionKind>(['open-source', 'report-condition', 'mark-exception', 'escalate'])
+
+function TransferListPhoto({ vehicle }: { vehicle: TransferDetail['vehicle'] }) {
+  const candidates = useMemo(() => vehiclePhotoDisplaySources(vehicle, { width: 240 }), [vehicle.imageUrl, vehicle.imageUrls])
+  const [index, setIndex] = useState(0)
+  const sourceKey = candidates.join('\u0000')
+  useEffect(() => { setIndex(0) }, [sourceKey])
+  const src = candidates[index]
+  return src ? (
+    <img
+      className="transfer-list-photo"
+      src={src}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onError={() => setIndex((value) => value + 1)}
+    />
+  ) : (
+    <span className="transfer-list-photo transfer-list-photo--placeholder" aria-hidden="true"><CarFront /></span>
+  )
+}
 
 function normalizedStatus(value?: string): string {
   return (value ?? '').toLowerCase().trim().replace(/[_\s/]+/g, '-').replace(/[^a-z0-9-]/g, '')
@@ -521,11 +543,7 @@ export function TransfersPage() {
                     aria-current={isSelected ? 'true' : undefined}
                     aria-controls="transfer-detail-workspace"
                   >
-                    {detail.vehicle.imageUrl ? (
-                      <img className="transfer-list-photo" src={detail.vehicle.imageUrl} alt="" />
-                    ) : (
-                      <span className="transfer-list-photo transfer-list-photo--placeholder" aria-hidden="true"><CarFront /></span>
-                    )}
+                    <TransferListPhoto vehicle={detail.vehicle} />
                     <span className="transfer-list-copy transfer-list-copy--concise">
                       <span className="move-row-vehicle">
                         <span className="transfer-list-top"><strong>{detail.vehicle.vehicleLabel}</strong>{detail.priority === 'high' || detail.priority === 'critical' ? <b className={`priority-${detail.priority}`}>{detail.priority === 'critical' ? 'Urgent' : 'High priority'}</b> : null}</span>

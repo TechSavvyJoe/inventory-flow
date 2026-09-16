@@ -185,6 +185,7 @@ export interface TransferVehicleSummary {
   vehicleLabel: string;
   trimLabel?: string;
   imageUrl?: string;
+  imageUrls?: string[];
   homeStore: StoreName;
   currentLocation: LocationSnapshot;
   listedPriceLabel?: string;

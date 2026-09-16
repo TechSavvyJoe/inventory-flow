@@ -5,6 +5,7 @@ import { useAppData } from '../../app/AppDataContext'
 import { ApiError, getServiceReadiness, updateServiceReadiness } from '../../lib/api'
 import { formatNumber } from '../../lib/format'
 import { SERVICE_STATUS_OPTIONS, serviceWorkflowStatus, serviceStatusLabel } from '../../lib/service-readiness'
+import { vehiclePhotoDisplaySources } from '../../lib/vehicle-photos'
 import { currentWorkspaceReturnPath, vehicleWorkspacePath } from '../inventory/inventory-navigation'
 import type { ServiceReadinessDetail, ServiceReadinessStatus, ServiceWorkflowStatus, StoreName, UserRole, VehicleRecord } from '../../types'
 import './ServiceDesk.css'
@@ -34,10 +35,11 @@ function localToday() {
 }
 
 function ServicePhoto({ vehicle }: { vehicle: VehicleRecord }) {
-  const candidates = [vehicle.imageUrl, ...(vehicle.imageUrls ?? [])].filter((url): url is string => Boolean(url))
+  const candidates = useMemo(() => vehiclePhotoDisplaySources(vehicle, { width: 240 }), [vehicle.imageUrl, vehicle.imageUrls])
   const [index, setIndex] = useState(0)
+  useEffect(() => { setIndex(0) }, [candidates.join('\u0000')])
   return <span className="service-photo">{candidates[index]
-    ? <img src={candidates[index]} alt="" loading="lazy" onError={() => setIndex((value) => value + 1)} />
+    ? <img src={candidates[index]} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setIndex((value) => value + 1)} />
     : <CarFront aria-hidden="true" size={30} />}</span>
 }
 
