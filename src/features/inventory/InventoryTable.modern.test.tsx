@@ -192,6 +192,8 @@ describe('modern inventory result access', () => {
     const { rerender } = render(<VehiclePhoto vehicle={vehicle} className="inv-desk-vehicle__img" />);
     let photo = screen.getByRole('img', { name: '2024 Ford F-150 XLT exterior' });
     expect(photo).toHaveAttribute('src', vehicle.imageUrl);
+    expect(photo).toHaveAttribute('loading', 'eager');
+    expect(photo).toHaveAttribute('fetchpriority', 'low');
     fireEvent.error(photo);
     photo = screen.getByRole('img', { name: '2024 Ford F-150 XLT exterior' });
     expect(photo).toHaveAttribute('src', vehicle.imageUrls[1]);

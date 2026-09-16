@@ -273,7 +273,12 @@ export function VehiclePhoto({ vehicle, className = "" }: { vehicle: InventoryVe
         className={`${className}${loaded ? " is-loaded" : " is-loading"}`.trim()}
         src={src}
         alt={`${vehicleDisplayName(vehicle)} exterior`}
-        loading="lazy"
+        // The SRP is already paginated. Eagerly start the current page's small
+        // thumbnail requests so a manager does not have to scroll to a row or
+        // open the VDP before a valid dealer photo appears. The browser reuses
+        // the same URL for the desktop/mobile render paths and VDP gallery.
+        loading="eager"
+        fetchPriority="low"
         decoding="async"
         onLoad={() => setLoaded(true)}
         onError={() => {
