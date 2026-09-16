@@ -92,6 +92,32 @@ async function postAttentionEvent(
   return { response, body: await response.json() }
 }
 
+it('keeps SRP thumbnails available when the release has photo count but no cached URL list', async () => {
+  const { baseUrl, release } = await harness((draft) => {
+    const source = draft.vehicles.find((record) => record.publicRecord?.store === 'Howell')
+    if (!source?.publicRecord) throw new Error('Synthetic fixture is missing a Howell public vehicle')
+    source.publicRecord.photo_count = 3
+    source.publicRecord.photo_urls = []
+    source.publicRecord.photo_preview_url = ''
+  })
+  const source = release.vehicles.find((record) => record.publicRecord?.store === 'Howell')!
+  const response = await fetch(`${baseUrl}/api/bootstrap`, {
+    headers: roleHeaders('manager', 'Howell', 'Thumbnail QA'),
+  })
+  expect(response.status).toBe(200)
+  const body = await response.json()
+  const vehicle = body.vehicles.find((item) => item.vin === source.vin)
+  expect(vehicle?.photoCount).toBe(3)
+  expect(vehicle?.imageUrl).toBe(
+    `https://www.bobmaxeyfordhowell.com/inventoryphotos/23482/${source.vin.toLowerCase()}/ip/1.jpg`,
+  )
+  expect(vehicle?.imageUrls).toEqual([
+    `https://www.bobmaxeyfordhowell.com/inventoryphotos/23482/${source.vin.toLowerCase()}/ip/1.jpg`,
+    `https://www.bobmaxeyfordhowell.com/inventoryphotos/23482/${source.vin.toLowerCase()}/ip/2.jpg`,
+    `https://www.bobmaxeyfordhowell.com/inventoryphotos/23482/${source.vin.toLowerCase()}/ip/3.jpg`,
+  ])
+})
+
 async function createSalesRequest(baseUrl: string, vehicle: { vin: string }, salesperson = 'Fowlerville Salesperson') {
   const response = await fetch(`${baseUrl}/api/transfers`, {
     method: 'POST',

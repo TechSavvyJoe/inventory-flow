@@ -617,12 +617,56 @@ const PUBLIC_PHOTO_HOSTS = new Set([
   'www.bobmaxeylincoln.com',
 ])
 
+const DEALERON_PHOTO_ACCOUNT_BY_HOST = Object.freeze({
+  'www.bobmaxeyfordhowell.com': '23482',
+  'www.bobmaxeyfordinfowlerville.com': '14236',
+  'www.bobmaxeyford.com': '11801',
+  'www.bobmaxeylincoln.com': '11803',
+})
+
+const PUBLIC_PHOTO_HOST_BY_STORE = Object.freeze({
+  Howell: 'www.bobmaxeyfordhowell.com',
+  Fowlerville: 'www.bobmaxeyfordinfowlerville.com',
+  'Ford Detroit': 'www.bobmaxeyford.com',
+  Lincoln: 'www.bobmaxeylincoln.com',
+})
+
+function publicListingHost(publicRecord) {
+  const configuredHost = PUBLIC_PHOTO_HOST_BY_STORE[publicRecord?.store]
+  if (configuredHost && PUBLIC_PHOTO_HOSTS.has(configuredHost)) return configuredHost
+  const listing = cleanText(publicRecord?.listing_url)
+  if (!listing) return null
+  try {
+    const url = new URL(listing)
+    const host = url.hostname.toLowerCase()
+    return PUBLIC_PHOTO_HOSTS.has(host) ? host : null
+  } catch {
+    return null
+  }
+}
+
+function inferredDealerOnPhotoUrls(publicRecord, vin) {
+  const count = positiveInteger(publicRecord?.photo_count)
+  if (!count) return []
+  const host = publicListingHost(publicRecord)
+  const account = host ? DEALERON_PHOTO_ACCOUNT_BY_HOST[host] : null
+  if (!account) return []
+  const lowerVin = vin.toLowerCase()
+  const cappedCount = Math.min(count, 100)
+  return Array.from({ length: cappedCount }, (_, index) =>
+    `https://${host}/inventoryphotos/${account}/${lowerVin}/ip/${index + 1}.jpg`)
+}
+
 function publicPhotoUrls(publicRecord) {
   if (!publicRecord) return []
   const vin = cleanText(publicRecord.vin)?.toLowerCase()
   if (!vin) return []
   const storedGallery = Array.isArray(publicRecord.photo_urls) ? publicRecord.photo_urls : []
-  const candidates = storedGallery.length ? storedGallery : [publicRecord.photo_preview_url]
+  const candidates = storedGallery.length
+    ? storedGallery
+    : cleanText(publicRecord.photo_preview_url)
+      ? [publicRecord.photo_preview_url]
+      : inferredDealerOnPhotoUrls(publicRecord, vin)
   const urls = []
   const seen = new Set()
   for (const value of candidates) {
