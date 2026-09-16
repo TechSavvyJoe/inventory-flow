@@ -32,6 +32,8 @@ export interface VehicleResource {
   subtitle: string;
   brand: 'autocheck' | 'vauto' | 'ford' | null;
   facts: string[];
+  /** Concise primary-card facts; full evidence remains in facts and Records. */
+  summaryFacts?: string[];
   /** Two high-value, source-backed summaries for inventory results. */
   compactFacts: string[];
   /** Provenance and availability, deliberately separate from vehicle facts. */
@@ -102,7 +104,9 @@ function checkPriority(check: HistoryCheck): number {
   // Ranking changes order only. Display the captured wording; never turn a
   // keyword match or a missing check into a clean/unsafe vehicle assertion.
   const result = join([check.status, check.detail]) ?? '';
-  const unnegated = result.replace(/\b(?:no|zero|0|without|not)\s+(?:(?:reported|recorded|known|major|structural)\s+)?(?:accidents?|damages?|issues?|problems?|records?|title brands?|salvage|flood|odometer discrepancies|rollback)(?:\s+(?:reported|recorded|found|detected))?/gi, '');
+  const unnegated = result.replace(/\blast reported odometer:\s*[\d,]+(?:\s*(?:mi|miles))?(?:\s*\([^)]*\))?/gi, '')
+    .replace(/\bno\s+accidents?\s*(?:or|\/|&)\s*damage(?:\s+reported)?/gi, '')
+    .replace(/\b(?:no|zero|0|without|not)\s+(?:(?:reported|recorded|known|major|structural)\s+)?(?:accidents?|damages?|issues?|problems?|records?|title brands?|salvage|flood|odometer discrepancies|rollback)(?:\s+(?:reported|recorded|found|detected))?/gi, '');
   if (/\b(?:warning|review|alert|issue|problem|damage|accident|salvage|rebuilt|flood|rollback|discrepanc\w*|not actual|theft|stolen|lemon|buyback|branded|lien)\b/i.test(unnegated)) return 0;
   if (/accident|damage|title|odometer/i.test(check.label) && /\b(?:[1-9]\d*\s+records?|brand|reported|found)\b/i.test(unnegated)) return 0;
   if (/\b(?:unknown|unavailable|not reported|not checked|unable|incomplete)\b/i.test(result)) return 1;
@@ -114,9 +118,39 @@ function historyCheckFacts(history?: VehicleResourceVehicle['autoCheckReport']) 
   return (history?.checks ?? []).filter(check => text(check.label) && (text(check.status) || text(check.detail)))
     .map((check, index) => ({
       priority: checkPriority(check), index,
-      compact: `${text(check.label)}: ${join([check.status, !text(check.status) || checkPriority({ label: check.label, status: check.detail }) === 0 ? check.detail : null])}`,
+      compact: historyCheckSummary(check, history),
       full: `${text(check.label)}: ${join([check.status, check.detail])}`,
+      summary: historyCheckSummary(check, history),
     })).sort((a, b) => a.priority - b.priority || a.index - b.index);
+}
+
+function historyCheckSummary(check: HistoryCheck, history?: VehicleResourceVehicle['autoCheckReport']): string {
+  const label = text(check.label) ?? '';
+  let detail = text(check.detail);
+  // Only remove the same captured reading, never an unrelated historical
+  // reading or a discrepancy warning. The dedicated odometer fact keeps it.
+  if (/odometer/i.test(label) && numeric(history?.lastReportedOdometer) && detail) {
+    detail = text(detail.replace(/\bLast reported odometer:\s*([\d,]+)(?:\s*(?:mi|miles))?(?:\s*\(([^)]*)\))?/gi, (original, amount: string, date?: string) => {
+      const detailDate = captureTimestamp(date), recordedDate = captureTimestamp(history.lastReportedOdometerDate);
+      const sameDate = !date || (detailDate !== null && recordedDate !== null && new Date(detailDate).toISOString().slice(0, 10) === new Date(recordedDate).toISOString().slice(0, 10));
+      return sameDate && Number(amount.replace(/,/g, '')) === history.lastReportedOdometer ? '' : original;
+    }).replace(/^[\s·;|,-]+|[\s·;|,-]+$/g, ''));
+  }
+  const status = text(check.status);
+  const genericStatus = /^(?:no issues?|no problems?|clear|normal)$/i.test(status ?? '');
+  const value = join([genericStatus && detail ? null : status, detail]);
+  return value ? `${label}: ${value}` : '';
+}
+
+function equipmentIdentity(value?: string | null): string {
+  return (text(value) ?? '').toLowerCase().replace(/\bequipment\s+group\b/g, '')
+    .replace(/\b(?:usd|cad)\s*/g, '').replace(/\$?[\d,]+\.\d{2}/g, '')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function stickerSummaryOptions(sticker?: VehicleResourceVehicle['windowSticker']): string[] {
+  const group = equipmentIdentity(sticker?.equipmentGroup);
+  return importantItems(sticker?.options ?? []).filter(option => !group || equipmentIdentity(option) !== group);
 }
 
 function importantItems(values: string[]): string[] {
@@ -133,6 +167,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   const sticker = vehicle.windowSticker;
   const demoSticker = getDemoWindowSticker(vehicle);
   const stickerHref = demoSticker?.url ?? officialVehicleDocumentUrl(sticker?.url, 'window-sticker', listing);
+  const stickerOptions = stickerSummaryOptions(sticker);
   const stickerFacts = demoSticker ? present([
     [vehicle.model, vehicle.trim].filter(Boolean).join(' ') || vehicle.vehicleName,
     numeric(vehicle.msrp) ? `${formatStickerMoney(vehicle.msrp, { pricingCurrency: 'USD' })} MSRP` : null,
@@ -146,15 +181,20 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
     ...importantItems(sticker?.standardEquipment ?? []).slice(0, 2),
     sticker?.warranty?.[0] ? `Printed warranty: ${sticker.warranty[0]}` : null,
   ]);
+  const stickerSummary = demoSticker ? stickerFacts : present([
+    join([numeric(sticker?.totalMsrp) ? `${formatStickerMoney(sticker.totalMsrp, sticker!)} MSRP` : null, sticker?.equipmentGroup]),
+    ...stickerOptions.slice(0, 3), join([sticker?.engine, sticker?.transmission]),
+  ]);
   const stickerCompact = demoSticker ? stickerFacts.slice(0, 2) : present([
     join([numeric(sticker?.totalMsrp) ? `${formatStickerMoney(sticker.totalMsrp, sticker!)} MSRP` : null, sticker?.equipmentGroup]),
-    join(importantItems(sticker?.options ?? []).slice(0, 2)) ?? join([sticker?.engine, sticker?.transmission]) ?? sticker?.standardEquipment?.[0],
-    ...stickerFacts,
+    join(stickerOptions.slice(0, 2)) ?? join([sticker?.engine, sticker?.transmission]) ?? sticker?.standardEquipment?.[0],
+    ...stickerSummary,
   ], 2);
   if (stickerHref || stickerFacts.length || sticker) result.push({
     id: 'window-sticker', title: demoSticker?.label ?? 'Window sticker', subtitle: demoSticker ? 'Synthetic sample · not an original' : 'Original MSRP & equipment',
     brand: demoSticker ? null : fordFamily ? 'ford' : null,
     facts: stickerFacts, compactFacts: stickerCompact,
+    summaryFacts: stickerSummary,
     sourceNote: demoSticker ? 'Synthetic sample · not an original' : join([sourceNote(sticker?.dataState, stickerFacts.length > 0), sticker?.sourceMessage, sticker?.failureReason]),
     href: stickerHref, target: 'data', action: demoSticker ? 'Open demo sticker' : 'Open sticker', dataAction: 'View sticker data', hasCapturedData: stickerFacts.length > 0,
     previewUrl: demoSticker?.previewUrl, demo: Boolean(demoSticker),
@@ -176,12 +216,21 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   ]);
   const historyCompact = present([
     ...checks.filter(check => check.priority <= 1).map(check => check.compact),
-    join([numeric(history?.score) ? `Score ${formatNumber(history.score)}` : null, numeric(history?.ownerCount) ? `${formatNumber(history.ownerCount)} ${history.ownerCount === 1 ? 'owner' : 'owners'}` : history?.usage]),
+    join([numeric(history?.score) ? `Score ${formatNumber(history.score)}` : null, ownership]),
     checks.find(check => check.priority > 1)?.compact,
     odometer,
   ], 2);
   if (historyHref || historyFacts.length || history) result.push({
     id: 'autocheck', title: 'AutoCheck', subtitle: 'Vehicle history · Experian', brand: 'autocheck', facts: historyFacts,
+    summaryFacts: present([
+      ...checks.filter(check => check.priority <= 1).map(check => check.summary),
+      ...checks.filter(check => check.priority > 1 && /title|accident|damage/i.test(check.summary)).map(check => check.summary),
+      ownership,
+      ...checks.filter(check => /service/i.test(check.summary) && check.priority > 1).map(check => check.summary),
+      ...checks.filter(check => /odometer/i.test(check.summary) && check.priority > 1).map(check => check.summary),
+      odometer,
+      ...checks.filter(check => check.priority > 1 && !/title|accident|damage|service|odometer/i.test(check.summary)).map(check => check.summary),
+    ]),
     compactFacts: historyCompact, sourceNote: sourceNote(history?.dataState, historyFacts.length > 0, history?.reportRunAt, 'Report run'),
     href: historyHref, target: 'data', action: 'Open history', dataAction: 'View AutoCheck data', hasCapturedData: historyFacts.length > 0,
     score: numeric(history?.score) ? { value: history.score, range: scoreRange } : undefined,
@@ -202,6 +251,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   const hasEquipment = equipmentFacts.length > 0;
   if (equipmentHref || hasEquipment || equipment) result.push({
     id: 'vauto', title: 'vAuto equipment', subtitle: 'Informational equipment label', brand: 'vauto', facts: equipmentFacts,
+    summaryFacts: present([...packages.slice(0, 2), ...equipmentItems.filter(item => !packages.some(pkg => equipmentIdentity(pkg) === equipmentIdentity(item))).slice(0, 3), powertrain]),
     compactFacts: present([join(packages.slice(0, 2)), join(equipmentItems.slice(0, 2)) ?? powertrain, powertrain], 2),
     sourceNote: join(['Informational · not an original sticker', sourceNote(equipment?.dataState, hasEquipment, equipment?.capturedAt)]),
     href: equipmentHref, target: 'equipment', action: 'Open equipment', dataAction: 'View equipment data', hasCapturedData: hasEquipment,
@@ -230,6 +280,9 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
     if (oasisHref || hasOasis) result.push({
       id: 'oasis', title: 'Ford OASIS', subtitle: hasOasis ? 'Warranty & service actions' : 'Exact-VIN dealer lookup', brand: 'ford',
       facts: oasisFacts,
+      summaryFacts: present([...actions.map(action => `Open FSA ${action}`), warrantyStart,
+        ...coverages.map(coverage => `Recorded coverage: ${coverage}`),
+        capturedEmptyActions ? '0 open Ford actions in captured report' : null]),
       compactFacts: present([actions[0] ? `Open FSA ${actions[0]}` : null, warrantyStart, coverages[0] ? `Recorded coverage: ${coverages[0]}` : null, capturedEmptyActions ? '0 open Ford actions in captured report' : null, buildDate, !hasOasis ? 'DealerConnection sign-in' : null], 2),
       sourceNote: join([sourceNote(oasis?.dataState, hasOasis, oasis?.capturedAt, 'Captured', 'No OASIS report details captured'), hasOasis && !actions.length && !capturedEmptyActions ? 'Open-action result not captured' : null]),
       href: oasisHref, target: 'data', action: 'Open OASIS', dataAction: 'View OASIS data', hasCapturedData: hasOasis,

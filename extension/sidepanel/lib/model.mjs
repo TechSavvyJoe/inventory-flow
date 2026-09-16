@@ -9,6 +9,7 @@ import { serviceWorkflowStatus } from './service-readiness.mjs'
 import { STORES } from './config.mjs'
 import { autoCheckUrl, factoryEquipmentUrl, fordInvoiceUrl, fordOasisUrl, listingUrl, photoUrl, windowStickerUrl } from './links.mjs'
 import { autoCheckTone, equipmentByCategory, standoutEquipment } from './equipment.mjs'
+import { historyDetailTone } from './resources.mjs'
 import { warrantyOutlook } from './warranty.mjs'
 
 const ROLE_LABELS = Object.freeze({
@@ -247,7 +248,12 @@ function documentsFor(record, publicState, dealerMailState) {
         usage: text(autoCheck.usage), lastReportedOdometer: number(autoCheck.lastReportedOdometer), lastReportedOdometerDate: text(autoCheck.lastReportedOdometerDate),
         vehicleClass: text(autoCheck.vehicleClass), assemblyCountry: text(autoCheck.assemblyCountry), inServiceDate: text(autoCheck.estimatedInServiceDate), reportRunAt: text(autoCheck.reportRunAt),
         sourceLabel: text(autoCheck.sourceLabel), sourceMessage: text(autoCheck.sourceMessage), failureReason: text(autoCheck.failureReason),
-        checks: entries(autoCheck.checks).filter((check) => text(check?.label)).map((check) => ({ label: text(check.label), status: text(check.status), detail: text(check.detail), tone: autoCheckTone(check.status) })),
+        checks: entries(autoCheck.checks).filter((check) => text(check?.label)).map((check) => {
+          const statusTone = autoCheckTone(check.status)
+          const detailTone = historyDetailTone(check.detail)
+          const tone = statusTone === 'review' || detailTone === 'review' ? 'review' : detailTone ?? statusTone
+          return { label: text(check.label), status: text(check.status), detail: text(check.detail), tone }
+        }),
       }
       : null,
     windowSticker: sticker

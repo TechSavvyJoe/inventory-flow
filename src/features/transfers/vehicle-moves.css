@@ -8,14 +8,14 @@
 #root .vehicle-moves-page .transfers-page-header h1 { margin: 0; color: var(--ifx-neutral-900); font-size: 28px; line-height: 1.25; }
 #root .vehicle-moves-page .transfers-page-header p { display: block; margin: 5px 0 0; font-size: 14px; color: var(--ifx-neutral-700); }
 #root .vehicle-moves-page .transfer-header-create { width: auto; min-height: 44px; flex-shrink: 0; box-shadow: none; }
-#root .move-store-scope { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+#root .move-store-scope { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 #root .move-store-scope button { min-height: 44px; padding: 9px 14px; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; background: var(--ifx-neutral-0); color: var(--ifx-neutral-800); font-size: 14px; font-weight: 600; cursor: pointer; }
 #root .move-store-scope button[aria-pressed="true"] { border-color: var(--ifx-info); color: var(--ifx-info); background: var(--ifx-info-surface); }
 #root .move-store-scope button span { margin-left: 6px; font-weight: 400; }
 #root .move-store-scope p { margin: 0 0 0 8px; color: var(--ifx-neutral-700); font-size: 13px; }
 #root .vehicle-moves-page .transfers-layout { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(370px,1fr); grid-template-rows: auto; min-height: 0; max-height: none; height: auto; align-items: start; gap: 0; overflow: visible; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; background: var(--ifx-neutral-0); box-shadow: none; }
 #root .vehicle-moves-page .transfer-list { min-width: 0; display: block; height: auto; padding: 0; overflow: visible; background: var(--ifx-neutral-0); border: 0; border-radius: 0; }
-#root .vehicle-moves-page .transfer-list-toolbar { display: grid; grid-template-columns: minmax(0,1fr); gap: 12px; position: static; padding: 16px; border-bottom: 1px solid var(--ifx-neutral-300); background: var(--ifx-neutral-0); }
+#root .vehicle-moves-page .transfer-list-toolbar { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; position: static; padding: 12px; border-bottom: 1px solid var(--ifx-neutral-300); background: var(--ifx-neutral-0); }
 #root .vehicle-moves-page .transfer-list-search { position: relative; display: flex; align-items: center; min-height: 44px; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; }
 #root .vehicle-moves-page .transfer-list-search svg { width: 18px; height: 18px; position: absolute; left: 12px; color: var(--ifx-neutral-700); }
 #root .vehicle-moves-page .transfer-list-search input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px 10px 39px; border: 0; background: transparent; color: var(--ifx-neutral-900); font-size: 14px; }

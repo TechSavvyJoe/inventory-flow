@@ -77,18 +77,52 @@ function vehicle(): InventoryVehicle {
 }
 
 describe('focused vehicle workspace', () => {
+  it('does not turn a literal fee or total MSRP into the base-MSRP lookup when base is missing', async () => {
+    const unit = vehicle();
+    unit.windowSticker = {dataState:'current',totalMsrp:50560,pricingCurrency:'USD',options:['WEIGHT FEE — $123.45']};
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    const facts=screen.getByRole('region',{name:'Frequently used vehicle facts'});
+    const lookup=within(facts).getByText('Weight fee lookup · Base MSRP',{selector:'dt'}).parentElement!;
+    expect(lookup).toHaveTextContent('Not captured');
+    expect(lookup).not.toHaveTextContent(/123\.45|50,560|USD|\$/);
+    expect(within(facts).queryByText('Weight fee',{selector:'dt'})).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab',{name:'Records'}));
+    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Weight fee lookup · Base MSRPNot captured');
+    expect(screen.getByRole('list',{name:'Factory options'})).toHaveTextContent('WEIGHT FEE — $123.45');
+  });
+
+  it('retains an original sticker base with unknown currency without borrowing another source currency', () => {
+    const unit=vehicle();
+    unit.windowSticker={dataState:'current',basePrice:42500.5};
+    unit.factoryEquipment={dataState:'current',isOriginalWindowSticker:false,basePrice:39999};
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    const facts=screen.getByRole('region',{name:'Frequently used vehicle facts'});
+    const lookup=within(facts).getByText('Weight fee lookup · Base MSRP',{selector:'dt'}).parentElement!;
+    expect(lookup).toHaveTextContent('42,500.5');
+    expect(lookup).toHaveTextContent('Sticker · confirm currency');
+    expect(lookup).not.toHaveTextContent(/USD|CAD|\$|39,999/);
+    expect(unit.windowSticker.basePrice).toBe(42500.5);
+  });
+
   it('keeps reference pricing currency separate from a partial original sticker', async () => {
     const unit = vehicle();
     unit.windowSticker = { dataState: 'current', pricingCurrency: 'CAD' };
     unit.factoryEquipment = { dataState: 'current', isOriginalWindowSticker: false, basePrice: 31234.5, totalMsrp: 35432, sections: [{ name: 'Fees', items: [{ label: 'Weight fee', price: 123.45 }] }] };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
-    expect(facts).toHaveTextContent('Reference base price · vAuto31,234.5 · currency not captured');
-    expect(facts).toHaveTextContent('Weight fee · 123.45 · currency not captured');
+    expect(facts).toHaveTextContent('Weight fee lookup · Base MSRP31,234.5');
+    expect(facts).toHaveTextContent('vAuto reference · confirm on sticker');
+    expect(within(facts).queryByText('Weight fee', {selector:'dt'})).not.toBeInTheDocument();
+    expect(facts).not.toHaveTextContent('123.45');
     expect(facts).not.toHaveTextContent(/CAD|USD|\$/);
     await userEvent.click(screen.getByRole('tab', { name: 'Records' }));
     const profile = document.querySelector('[data-document-kind="vauto-factory-equipment"]')!;
-    expect(profile).toHaveTextContent('35,432 · currency not captured');
+    expect(within(profile as HTMLElement).getByText('35,432')).not.toBeVisible();
+    fireEvent.click(within(profile as HTMLElement).getByText('Source details'));
+    expect(within(profile as HTMLElement).getByText('35,432')).toBeVisible();
+    expect(profile).toHaveTextContent('Reference amounts only · currency not captured');
+    expect(profile).toHaveTextContent('123.45');
+    expect(profile).toHaveTextContent('Verify installed equipment and the currency of any reference prices.');
     expect(profile).not.toHaveTextContent(/CAD|USD|\$/);
   });
 
@@ -99,10 +133,13 @@ describe('focused vehicle workspace', () => {
     unit.autoCheckReport = { dataState: 'current', estimatedInServiceDate: '2023-05-12' };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
-    expect(facts).toHaveTextContent('Base MSRP · stickerCAD 45,000');
+    expect(facts).toHaveTextContent('Weight fee lookup · Base MSRPCAD 45,000');
+    expect(facts).not.toHaveTextContent('31,234');
+    expect(within(facts).getAllByText('Weight fee lookup · Base MSRP')).toHaveLength(1);
     expect(facts).toHaveTextContent('In-service · AutoCheck estimateMay 12, 2023');
     await userEvent.click(screen.getByRole('tab', { name: 'Records' }));
-    expect(document.querySelector('.vdp-records-frequent')).toHaveTextContent('In-service · AutoCheck estimateMay 12, 2023');
+    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('In-service · AutoCheck estimateMay 12, 2023');
+    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Weight fee lookup · Base MSRPCAD 45,000');
   });
 
   it('prefers captured OASIS in-service date over AutoCheck estimates', () => {

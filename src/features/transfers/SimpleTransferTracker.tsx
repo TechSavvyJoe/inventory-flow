@@ -36,12 +36,12 @@ function moveProgress(transfer: TransferDetail): number {
   return 0;
 }
 
-export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleResources, mode = 'page' }: {
+export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLinks, mode = 'page' }: {
   transfer: TransferDetail;
   onAction?: (action: TransferActionKind, transfer: TransferDetail) => void;
   onClose?: () => void;
   mode?: 'drawer' | 'page';
-  vehicleResources?: ReactNode;
+  vehicleLinks?: ReactNode;
 }) {
   const { vehicle } = transfer;
   const away = awayFromHomeSummary(vehicle.homeStore, vehicle.currentLocation.label, transfer.timeline);
@@ -60,13 +60,9 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleReso
         <div><span>Stock {vehicle.stock}</span><h2>{vehicle.vehicleLabel}</h2><small>{vehicle.vin}</small></div>
         {onClose ? <button type="button" aria-label="Close movement detail" onClick={onClose}><X aria-hidden="true" size={20} /></button> : null}
         <div className="move-vehicle-context">
-          <p className="move-vehicle-value">{[vehicle.listedPriceLabel, vehicle.mileageLabel, vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : null].filter(value => value && !/not published/i.test(value)).join(' · ')}</p>
-          <p className="move-vehicle-specs">{[vehicle.exteriorColor, vehicle.engine, vehicle.drivetrain].filter(Boolean).join(' · ')}</p>
           <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} />
         </div>
       </header>
-
-      {vehicleResources}
 
       <div className="simple-move-route"><span>{vehicle.homeStore}<small>Home store</small></span><ArrowRight aria-hidden="true" size={20} /><span>{target}<small>Requesting store</small></span></div>
 
@@ -84,6 +80,8 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleReso
           {additional.length ? <details className="simple-move-more"><summary>Other options <ChevronDown aria-hidden="true" size={16} /></summary><div>{additional.map(action => <button type="button" key={action} onClick={() => takeAction(action)}>{simpleTransferActionLabel(action)}</button>)}</div></details> : null}
         </div> : !terminal ? <p className="simple-move-waiting">Waiting on {transfer.nextAction.ownerLabel || `${transfer.requestingStore || target} manager`}. Your available updates will appear here.</p> : null}
       </section>
+
+      {vehicleLinks}
 
       {!terminal || transfer.status.movement.code === 'returned-home-confirmed' ? <ol className="simple-move-progress" aria-label="Vehicle move progress">
         {['Approval', 'Collect', 'Arrive', 'Return'].map((label, index) => <li key={label} className={index < progress ? 'is-complete' : index === progress ? 'is-current' : undefined} aria-current={index === progress ? 'step' : undefined}><span>{index < progress ? <Check aria-hidden="true" size={14} /> : index + 1}</span><strong>{label}</strong></li>)}

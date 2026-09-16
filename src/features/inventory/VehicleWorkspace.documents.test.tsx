@@ -67,21 +67,91 @@ function openVehicleDocuments() {
   return screen.queryByRole('region', { name: 'Vehicle documents' });
 }
 
+function openSourceDetails(card: HTMLElement) {
+  const details = card.querySelector<HTMLDetailsElement>('details.vdp-record-source-details')!;
+  expect(details).not.toBeNull();
+  expect(details.open).toBe(false);
+  fireEvent.click(within(details).getByText('Source details'));
+  expect(details.open).toBe(true);
+  return details;
+}
+
 describe('vehicle document workspace', () => {
-  it('exposes every captured history finding and sticker line without nested disclosure controls', () => {
+  it('orders complete records by the working flow and moves keyboard focus to each named section', () => {
+    const complete=vehicle();
+    complete.fordOasis={dataState:'current',warrantyStartDate:'09-June-2026',openFieldServiceActions:[],warrantyCoverages:[],extendedCoverageExpirations:[]};
+    complete.warrantyCheck={dataState:'current',mileageEntered:2052,autoCheck:null,fordOasis:{warrantyStartDate:'09-June-2026',monthsInService:3,coverages:[]}};
+    complete.factoryEquipment={dataState:'current',isOriginalWindowSticker:false,packages:[],sections:[]};
+    render(<VehicleWorkspace vehicle={complete} homeStore={complete.location.homeStore} onClose={vi.fn()} initialTab="data"/>);
+    const panel=screen.getByRole('region',{name:'Vehicle documents'});
+    expect([...panel.querySelectorAll('[data-record-section]')].map(section=>section.getAttribute('data-record-section'))).toEqual(['autocheck','oasis','warranty','sticker','equipment']);
+    const nav=within(panel).getByRole('navigation',{name:'Record sections'});
+    expect(within(nav).getAllByRole('button').map(button=>button.textContent)).toEqual(['AutoCheck','OASIS','Warranty','Window sticker','Equipment']);
+    const scroll=panel.closest<HTMLElement>('.vdp-focus-scroll')!;
+    const dialog=panel.closest<HTMLElement>('[role="dialog"]')!;
+    Object.defineProperty(scroll,'getBoundingClientRect',{configurable:true,value:()=>new DOMRect(0,100,500,500)});
+    dialog.scrollTop=75;
+    const pageTop=window.scrollY;
+    const documentTop=document.documentElement.scrollTop;
+    const pageScrollTo=vi.spyOn(window,'scrollTo').mockImplementation(()=>{});
+    const pageScrollBy=vi.spyOn(window,'scrollBy').mockImplementation(()=>{});
+    try {
+      for (const [index,[id,label]] of [['autocheck','AutoCheck'],['oasis','OASIS'],['warranty','Warranty'],['sticker','Window sticker'],['equipment','Equipment']].entries()) {
+        const section=panel.querySelector<HTMLElement>(`[data-record-section="${id}"]`)!;
+        Object.defineProperty(section,'getBoundingClientRect',{configurable:true,value:()=>new DOMRect(0,350+index*100,300,200)});
+        scroll.scrollTop=120;
+        const focus=vi.spyOn(section,'focus');
+        fireEvent.click(within(nav).getByRole('button',{name:label}));
+        expect(section).toHaveFocus();
+        expect(focus).toHaveBeenCalledWith({preventScroll:true});
+        expect(scroll.scrollTop).toBe(360+index*100);
+        expect(dialog.scrollTop).toBe(75);
+        expect(window.scrollY).toBe(pageTop);
+        expect(document.documentElement.scrollTop).toBe(documentTop);
+      }
+      expect(pageScrollTo).not.toHaveBeenCalled();
+      expect(pageScrollBy).not.toHaveBeenCalled();
+    } finally {
+      pageScrollTo.mockRestore();
+      pageScrollBy.mockRestore();
+    }
+  });
+
+  it('keeps an odometer discrepancy visible even when its detail also includes a last reading', () => {
+    const complete=vehicle();
+    complete.autoCheckReport={...complete.autoCheckReport!,checks:[{label:'Odometer Check',status:'No Issue',detail:'Odometer discrepancy reported; Last reported odometer: 100,000 (09/01/2026)'}]};
+    render(<VehicleWorkspace vehicle={complete} homeStore={complete.location.homeStore} onClose={vi.fn()} initialTab="data"/>);
+    const history=document.querySelector('[data-document-kind="autocheck"]') as HTMLElement;
+    const checks=within(history).getByLabelText('AutoCheck at-a-glance results');
+    expect(checks).toHaveTextContent('Odometer discrepancy reported');
+    expect(checks.querySelector('[data-result-tone="review"]')).not.toBeNull();
+    const details=openSourceDetails(history);
+    expect(within(details).getByRole('list',{name:'Original AutoCheck findings'})).toHaveTextContent('No Issue · Odometer discrepancy reported; Last reported odometer: 100,000 (09/01/2026)');
+  });
+
+  it('shows concise history and sticker facts while retaining complete findings in closed source details', () => {
     const complete = vehicle();
     complete.autoCheckReport = { ...complete.autoCheckReport!, usage: 'Personal / lease', ownerCount: 2, vehicleClass: 'SUV', assemblyCountry: 'USA', estimatedInServiceDate: '2025-05-01', checks: Array.from({ length: 7 }, (_, index) => ({ label: `History check ${index + 1}`, status: `Captured result ${index + 1}`, detail: `Source detail ${index + 1}` })) };
     complete.windowSticker = { ...complete.windowSticker!, standardEquipment: ['Factory line one', 'Factory line two'], warranty: ['3 years / 36,000 miles'], exteriorColor: 'Gray', interiorColor: 'Black' };
     render(<VehicleWorkspace vehicle={complete} homeStore={complete.location.homeStore} onClose={vi.fn()} initialTab="data" />);
     const panel = screen.getByRole('region', { name: 'Vehicle documents' });
     const history = panel.querySelector('[data-document-kind="autocheck"]') as HTMLElement;
-    expect(history.querySelector('details')).toBeNull();
-    for (const value of ['2 owners', 'Personal / lease', '2,052 mi · May 23, 2026', 'SUV', 'USA', 'May 1, 2025', 'History check 7', 'Captured result 7 · Source detail 7']) expect(within(history).getByText(value)).toBeVisible();
+    const summary = within(history).getByLabelText('AutoCheck summary');
+    for (const value of ['Owners2', 'Personal / lease', '2,052 mi', 'May 23, 2026']) expect(summary).toHaveTextContent(value);
+    const checks = within(history).getByLabelText('AutoCheck at-a-glance results');
+    expect(within(checks).getByText('History check 7')).toBeVisible();
+    expect(within(checks).getByText('Captured result 7 · Source detail 7')).toBeVisible();
+    expect(within(history).getByText('SUV')).not.toBeVisible();
+    const sourceDetails = openSourceDetails(history);
+    for (const value of ['2 owners', 'Personal / lease', '2,052 mi · May 23, 2026', 'SUV', 'USA', 'May 1, 2025']) expect(within(sourceDetails).getByText(value)).toBeVisible();
+    expect(within(sourceDetails).getByRole('list', {name:'Original AutoCheck findings'})).toHaveTextContent('History check 7 · Captured result 7 · Source detail 7');
     const source = within(history).getByRole('link', { name: /Open AutoCheck report/ });
-    expect(source.compareDocumentPosition(within(history).getByText('History check 7')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(source).toHaveTextContent('Open report');
+    expect(source.compareDocumentPosition(checks) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const sticker = panel.querySelector('[data-document-kind="window-sticker"]') as HTMLElement;
-    expect(sticker.querySelector('details')).toBeNull();
-    for (const value of ['Active Comfort Package', '20-inch wheels', 'Factory line one', 'Factory line two', '3 years / 36,000 miles', '42,585 (original sticker currency; verify)', '5,100 (original sticker currency; verify)', '1,795 (original sticker currency; verify)', '49,480 (original sticker currency; verify)']) expect(within(sticker).getByText(value)).toBeVisible();
+    expect(sticker.querySelector('details')).not.toHaveAttribute('open');
+    for (const value of ['Active Comfort Package', '20-inch wheels', 'Factory line one', 'Factory line two', '3 years / 36,000 miles', '42,585', '5,100', '1,795', '49,480']) expect(within(sticker).getByText(value)).toBeVisible();
+    expect(within(sticker).getByText('Original sticker amounts · confirm currency on the sticker.')).toBeVisible();
   });
 
   it('does not claim original links exist when only a failed capture is available', () => {
@@ -92,6 +162,8 @@ describe('vehicle document workspace', () => {
     const panel = screen.getByRole('region', { name: 'Vehicle documents' });
     expect(within(panel).queryByRole('link', { name: /Open (AutoCheck report|window sticker)/ })).not.toBeInTheDocument();
     expect(within(panel).queryByText(/official.*link is available/i)).not.toBeInTheDocument();
+    expect(within(panel).getByText('The source did not publish a document for this VIN.')).not.toBeVisible();
+    openSourceDetails(panel.querySelector('[data-document-kind="window-sticker"]') as HTMLElement);
     expect(within(panel).getByText('The source did not publish a document for this VIN.')).toBeVisible();
     expect(within(panel).getByLabelText('Original window sticker link not captured')).toBeVisible();
   });
@@ -102,9 +174,12 @@ describe('vehicle document workspace', () => {
     complete.warrantyCheck = { dataState: 'current', capturedAt: '2026-09-12T14:52:37.597Z', mileageEntered: 2052, mileageSource: 'Entered dealer odometer', fordOasis: { warrantyStartDate: '09-June-2026', monthsInService: 3, coverages: [coverage] }, autoCheck: { inServiceDate: '11-June-2026', inServiceAgeMonths: 2, defaultMileage: 2011, coverages: [{ ...coverage, status: 'EXPIRED', note: 'Experian source note', remainingTimeText: 'Expired by time' }] } };
     render(<VehicleWorkspace vehicle={complete} homeStore={complete.location.homeStore} onClose={vi.fn()} initialTab="data" />);
     const card = document.querySelector('[data-document-kind="warranty-check"]') as HTMLElement;
-    expect(card.querySelector('details')).toBeNull();
+    expect(card.querySelector('details')).not.toHaveAttribute('open');
     expect(card).toHaveAttribute('data-warranty-source', 'ford-oasis');
-    expect(within(card).getByText('Entered dealer odometer')).toBeVisible();
+    expect(within(card).getByText('Mileage source: Entered dealer odometer')).not.toBeVisible();
+    expect(within(card).getByRole('table', { name: 'Remaining factory warranty by coverage' })).toBeVisible();
+    openSourceDetails(card);
+    expect(within(card).getByText('Mileage source: Entered dealer odometer')).toBeVisible();
     expect(within(card).getByRole('link', { name: /Open OASIS coverage lookup/ })).toHaveAttribute('href', 'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=1FMUK8DHXTGB76992');
     const estimate = within(card).getByRole('region', { name: 'AutoCheck estimate' });
     for (const value of ['11-June-2026', '2 months', '2,011 mi', 'Experian source note', 'Expired by time', 'Expired']) expect(within(estimate).getByText(value)).toBeVisible();
@@ -138,7 +213,10 @@ describe('vehicle document workspace', () => {
     const panel = await openVehicleDocuments();
     expect(panel).not.toBeNull();
     expect(within(panel!).getByText(/CAD\s49,480/)).toBeInTheDocument();
+    expect(within(panel!).getByText(/Original market: Canada/)).not.toBeVisible();
+    openSourceDetails(panel!.querySelector('[data-document-kind="window-sticker"]') as HTMLElement);
     expect(within(panel!).getByText(/Original market: Canada/)).toHaveTextContent('amounts retained without conversion');
+    expect(within(panel!).getByText(/Original market: Canada/)).toBeVisible();
     expect(within(panel!).queryByText('$49,480')).not.toBeInTheDocument();
   });
 
@@ -166,10 +244,10 @@ describe('vehicle document workspace', () => {
     );
     expect(within(panel).getByRole('img', { name: 'Ford factory window sticker' })).toBeInTheDocument();
     expect(within(panel).getByText('92')).toBeInTheDocument();
-    expect(within(panel).getByText('89–94')).toBeInTheDocument();
+    expect(within(panel).getByText('Typical 89–94')).toBeVisible();
     expect(within(panel).getByText('Equipment Group 200A')).toBeInTheDocument();
     expect(within(panel).getByText('Active Comfort Package')).toBeInTheDocument();
-    expect(within(panel).getByText(/Documents are reference sources—not availability signals/i)).toBeInTheDocument();
+    expect(within(panel).getByText('Records don’t confirm availability.')).toBeInTheDocument();
     expect(within(panel).queryByText(/equipment verified|no issues found/i)).not.toBeInTheDocument();
   });
 
@@ -251,16 +329,21 @@ describe('vehicle document workspace', () => {
     if (!panel) return;
     expect(within(panel).getByText('vAuto factory-equipment profile')).toBeInTheDocument();
     expect(within(panel).getByText(/Informational equipment label—not an original window sticker/i)).toBeInTheDocument();
-    expect(within(panel).getByText('66,360 · currency not captured')).toBeInTheDocument();
-    expect(within(panel).getByText(/this is not the actual Monroney label/i)).toBeInTheDocument();
+    expect(within(panel).getByText('66,360')).not.toBeVisible();
+    expect(within(panel).getByText(/this is not the actual Monroney label/i)).not.toBeVisible();
     expect(within(panel).getByRole('link', { name: /Open vAuto factory-equipment profile/i })).toHaveAttribute(
       'href',
       fallbackVehicle.factoryEquipment.url,
     );
     expect(within(panel).queryByText('Factory window sticker')).not.toBeInTheDocument();
     const card = panel.querySelector('[data-document-kind="vauto-factory-equipment"]') as HTMLElement;
-    expect(card.querySelector('details')).toBeNull();
-    for (const value of ['Safety Package (PQB)', 'Blind Spot Monitor · Rear Cross Traffic Alert', 'Aerial View Display System', '0 · currency not captured', '250 · currency not captured']) expect(within(card).getByText(value)).toBeVisible();
+    const sourceDetails = openSourceDetails(card);
+    expect(within(sourceDetails).getByText('66,360')).toBeVisible();
+    expect(within(sourceDetails).getByText('Reference amounts only · currency not captured. Use the original sticker when available.')).toBeVisible();
+    expect(within(sourceDetails).getByText(/this is not the actual Monroney label/i)).toBeVisible();
+    expect(sourceDetails).not.toHaveTextContent(/USD|CAD|\$/);
+    for (const value of ['Safety Package (PQB)', 'Blind Spot Monitor · Rear Cross Traffic Alert', 'Aerial View Display System', '0', '250']) expect(within(card).getByText(value)).toBeVisible();
+    expect(within(card).getByText(/Verify installed equipment and the currency of any reference prices\./)).toBeVisible();
   });
 
   it('shows Ford OASIS open recalls first with dates exactly as printed', async () => {
@@ -300,7 +383,7 @@ describe('vehicle document workspace', () => {
     const card = panel.querySelector('[data-document-kind="ford-oasis"]');
     expect(card).not.toBeNull();
     expect(card).toHaveAttribute('data-open-recall-count', '2');
-    expect(card!.querySelector('details')).toBeNull();
+    expect(card!.querySelector('details')).not.toHaveAttribute('open');
     expect(within(card as HTMLElement).getByRole('list', { name: 'Ford warranty coverages' })).toBeVisible();
     expect(within(card as HTMLElement).getByRole('list', { name: 'Extended service plan expirations' })).toBeVisible();
     expect(within(panel).getByText('Ford OASIS vehicle report')).toBeInTheDocument();

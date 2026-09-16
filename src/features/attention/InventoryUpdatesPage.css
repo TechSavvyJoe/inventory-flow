@@ -1,0 +1,25 @@
+.inventory-updates-page .workflow-page-heading { margin-bottom:12px; }
+.inventory-updates-page .workflow-toolbar { margin:12px 0; }
+.inventory-updates-page .updates-row { grid-template-columns:minmax(270px,1.5fr) minmax(175px,.85fr) minmax(145px,.7fr) 165px; grid-template-areas:"vehicle change context actions"; gap:14px; padding:14px; }
+.inventory-updates-page .updates-row > .workflow-vehicle { grid-area:vehicle; }
+.inventory-updates-page .updates-values { grid-area:change; padding:8px 12px; border-left:3px solid var(--blue-600); background:var(--surface-soft); border-radius:4px; }
+.inventory-updates-page .updates-specs { grid-area:context; padding:0; }
+.inventory-updates-page .updates-actions { grid-area:actions; }
+.inventory-updates-page .workflow-quick-actions a { min-height:44px; }
+.inventory-updates-page .workflow-quick-actions > a:only-child { grid-column:1/-1; }
+@media(max-width:1200px) {
+ .inventory-updates-page .updates-row { grid-template-columns:minmax(0,1fr) minmax(165px,.65fr) 155px; grid-template-areas:"vehicle change actions" "context change actions"; gap:10px 14px; }
+ .inventory-updates-page .updates-specs { display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; }
+}
+@media(max-width:760px) {
+ .inventory-updates-page .workflow-page-heading > div:first-child p { display:none; }
+ .inventory-updates-page .updates-row { grid-template-columns:minmax(0,1fr); grid-template-areas:"vehicle" "change" "context" "actions"; gap:10px; padding:12px; }
+ .inventory-updates-page .updates-values { display:flex; align-items:center; flex-wrap:wrap; gap:5px 12px; }
+ .inventory-updates-page .updates-values > strong { font-size:20px; }
+ .inventory-updates-page .updates-actions { display:flex; flex-wrap:wrap; gap:6px; }
+ .inventory-updates-page .updates-actions > a { flex:1; }
+ .inventory-updates-page .workflow-quick-actions { display:flex; flex:1; }
+ .inventory-updates-page .workflow-quick-actions > a { flex:1; min-width:64px; }
+ .inventory-updates-page .workflow-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+ .inventory-updates-page .workflow-tabs button { justify-content:center; gap:5px; padding:8px 4px; font-size:12px; }
+}

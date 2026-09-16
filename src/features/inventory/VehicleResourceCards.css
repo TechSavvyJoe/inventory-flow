@@ -19,6 +19,13 @@
 .vehicle-resources .vehicle-resource-body li:first-child { color: var(--ink-900); font-weight: 600; }
 .vehicle-resources .vehicle-resource-body li { overflow-wrap:anywhere; margin-bottom:3px; }
 .vehicle-resources .vehicle-resource-source-note { margin:0; color:var(--ink-600); font:400 14px/1.35 var(--font-app); overflow-wrap:anywhere; }
+.vehicle-resources .vehicle-resource-source-warning { margin:0; color:var(--ink-700); font:600 12px/1.35 var(--font-app); }
+.vehicle-resources .vehicle-resource-source-details { min-width:0; margin:0; }
+.vehicle-resources .vehicle-resource-source-details > summary { display:flex; align-items:center; gap:4px; min-height:44px; width:fit-content; color:var(--blue-700); font:500 12px/1.3 var(--font-app); list-style:none; cursor:pointer; }
+.vehicle-resources .vehicle-resource-source-details > summary::-webkit-details-marker { display:none; }
+.vehicle-resources .vehicle-resource-source-details[open] > summary svg { transform:rotate(180deg); }
+.vehicle-resources .vehicle-resource-source-details > p { margin:0 0 4px; padding:6px 8px; border-left:2px solid var(--border); background:var(--surface-muted); color:var(--ink-600); font:400 12px/1.4 var(--font-app); overflow-wrap:anywhere; }
+.vehicle-resources .vehicle-resource-source-details > summary:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
 .vehicle-resources .vehicle-resource-actions { display:flex; flex-wrap:wrap; gap:0 12px; margin-top:auto; }
 .vehicle-resources .vehicle-resource-preview { width: 42%; max-width: 125px; height: 72px; object-fit: contain; object-position: left center; }
 .vehicle-resources .vehicle-resource-open { display: inline-flex; align-items: center; justify-content: flex-start; gap: 8px; min-height: 44px; width: fit-content; max-width: 100%; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--blue-700); text-decoration: none; font: 600 14px/1.3 var(--font-app); cursor: pointer; }
@@ -26,10 +33,16 @@
 .vehicle-resources .vehicle-resource-unavailable { align-self: center; margin: 0; color: var(--ink-600); font: 400 14px/1.3 var(--font-app); }
 .vehicle-resources--inline { display:flex; flex-wrap:wrap; align-items:flex-start; gap:8px 16px; }
 .vehicle-resource-inline-item { flex:1 1 150px; min-width:0; max-width:260px; }
+.vehicle-resources .vehicle-resource-inline-item--lookup[data-resource-kind="invoice"] { flex:0 0 auto; max-width:120px; }
+/* Detail-bearing sources share the row; an uncaptured invoice only needs the
+   width of its source action. Flex wrapping handles any provider count. */
+.if-srp-grid .inv-desk-resource-row .vehicle-resources.vehicle-resources--inline:has(> [data-resource-kind="invoice"]) { display:flex; flex-wrap:wrap; align-items:stretch; }
+.if-srp-grid .inv-desk-resource-row .vehicle-resources > .vehicle-resource-inline-item { flex:1 1 150px; }
+.if-srp-grid .inv-desk-resource-row .vehicle-resources > .vehicle-resource-inline-item--lookup[data-resource-kind="invoice"] { flex:0 0 92px; max-width:120px; }
 .vehicle-resources .vehicle-resource-inline-item .vehicle-resource-inline { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:1px; width:100%; text-align:left; }
 .vehicle-resources .vehicle-resource-inline-heading { display:flex; align-items:center; gap:5px; min-width:0; }
 .vehicle-resources .vehicle-resource-inline-heading > svg:last-child { flex-shrink:0; }
-.vehicle-resources .vehicle-resource-source-kind { color:var(--blue-700); font:500 14px/1.3 var(--font-app); }
+.vehicle-resources .vehicle-resource-source-kind { color:var(--ink-600); font:500 12px/1.3 var(--font-app); }
 .vehicle-resources .vehicle-resource-inline-facts { margin:2px 0 4px; color:var(--ink-700); font:400 14px/1.35 var(--font-app); overflow-wrap:anywhere; }
 .vehicle-resources .vehicle-resource-inline { display: inline-flex; align-items: center; justify-content: flex-start; gap: 5px; min-height: 44px; width: fit-content; max-width: 100%; margin: 0; padding: 0; border: 0; background: transparent; color: var(--blue-700); text-decoration: none; font: 600 14px/1.3 var(--font-app); cursor: pointer; }
 .vehicle-resources .vehicle-resource-inline:hover { text-decoration: underline; }
@@ -43,6 +56,7 @@
   .vehicle-resources--cards { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 560px) {
+  .vehicle-resources .vehicle-resource-source-details > summary { min-height:44px; }
   .vehicle-resources .vehicle-resource-card { gap:6px; padding:8px; }
   .vehicle-resources .vehicle-resource-heading { flex-wrap: wrap; gap: 4px; align-content: start; }
   .vehicle-resources .vehicle-resource-heading .vehicle-resource-brand { width: 90px; height: 24px; }

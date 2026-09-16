@@ -1,12 +1,18 @@
 .action-queue .action-vehicle { align-items: flex-start; }
 .action-vehicle p { margin: 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
 .action-vehicle .action-vehicle-value { color: var(--ink-900); font-weight: 600; font-variant-numeric: tabular-nums; }
-.action-vehicle .action-vehicle-specs, .action-vehicle .action-vehicle-readiness { color: var(--ink-600); }
+.action-vehicle .action-vehicle-readiness { color: var(--ink-600); }
 .action-queue .action-status-buttons { flex-shrink: 0; }
 .action-queue .action-status-buttons button { min-height: 44px; font-size: 14px; }
-.action-queue .action-list-head, .action-queue .action-row-content { grid-template-columns: minmax(330px, 1.6fr) minmax(190px, 1fr) minmax(145px, .7fr) 145px; gap: 16px; }
+.action-queue .action-list-head, .action-queue .action-row-content { grid-template-columns: minmax(260px, 1.3fr) minmax(190px, 1.1fr) minmax(145px, .7fr) 150px; gap: 16px; }
 .action-queue .action-row { padding-block: 12px 4px; }
-.action-queue .workflow-vehicle small { font-size: 14px; }
+.action-queue .workflow-vehicle small { font-size: 13px; }
+.action-queue .workflow-page-heading { margin-bottom:12px; }
+.action-queue .workflow-toolbar { margin:12px 0; }
+.action-queue .workflow-quick-actions { grid-template-columns:1fr; gap:0; }
+.action-queue .workflow-quick-actions a { min-height:44px; border:0; justify-content:flex-start; padding:6px 0; }
+.action-queue .action-task { padding-left:12px; border-left:3px solid var(--blue-600); }
+.action-queue .action-owner strong { font-weight:650; }
 @media (max-width: 1200px) {
   .action-queue .action-list-head, .action-queue .action-row-content { grid-template-columns: minmax(260px, 1.4fr) minmax(180px, 1fr) 140px; gap: 12px; }
 }
@@ -15,4 +21,11 @@
   .action-queue .action-status-buttons { width: auto; }
   .action-queue .action-vehicle { gap: 12px; }
   .action-queue .action-vehicle > .workflow-photo { width: 88px; height: 66px; }
+  .action-queue .workflow-page-heading p { display:none; }
+  .action-queue .workflow-tabs { flex-wrap:nowrap; overflow-x:auto; gap:4px; }
+  .action-queue .workflow-tabs button { flex-shrink:0; padding:8px; }
+  .action-queue .workflow-quick-actions { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .action-queue .workflow-quick-actions a { justify-content:center; }
+  .action-queue .action-owner { grid-column:1/-1; }
+  .action-queue .action-row-content > .action-next-steps { grid-column:1/-1; grid-row:4; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:center; gap:8px; }
 }

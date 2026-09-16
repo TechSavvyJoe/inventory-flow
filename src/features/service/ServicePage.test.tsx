@@ -27,6 +27,31 @@ beforeEach(() => {
 })
 
 describe('Service readiness workspace', () => {
+  it('puts direct service actions before secondary facts, with links instead of full provider panels', async () => {
+    const { container } = show('/service?vin=TESTDATAHWELL0001')
+    const actions = await screen.findByRole('group', { name: 'Service actions' })
+    const facts = screen.getByLabelText('Service decision facts')
+    expect(actions.compareDocumentPosition(facts)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(screen.getByRole('link', { name: 'Vehicle details' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001')
+    expect(screen.getByRole('link', { name: 'Records' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data')
+    expect(container.querySelector('.workflow-resource-row')).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Saved Ford service actions' })).not.toBeInTheDocument()
+    expect(mocked.update).not.toHaveBeenCalled()
+  })
+
+  it('shows only actually saved Ford service actions and never treats them as a service-status update', async () => {
+    const vehicle = record('in_service')
+    vehicle.fordOasis = { openFieldServiceActions: [{ code: 'SYN-24', description: 'Synthetic action' }] }
+    mocked.context.data = { meta: { reportDate: '2026-08-30' }, vehicles: [vehicle] }
+    mocked.get.mockResolvedValue(detail('in_service'))
+    show('/service?vin=TESTDATAHWELL0001')
+    const source = await screen.findByRole('region', { name: 'Saved Ford service actions' })
+    expect(source).toHaveTextContent('OASIS: 1 open service action in saved report')
+    expect(source).toHaveTextContent('SYN-24')
+    expect(screen.getByRole('link', { name: 'Review service actions in Records' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data')
+    expect(screen.getByText('Current state')).toHaveTextContent('In service')
+    expect(mocked.update).not.toHaveBeenCalled()
+  })
   it('opens the VDP start-service link as a confirmation without saving automatically', async () => {
     mocked.get.mockResolvedValue(detail('needs_service'))
     show('/service?vin=TESTDATAHWELL0001&action=in_service')

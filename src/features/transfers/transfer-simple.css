@@ -1,8 +1,8 @@
 /* Simple rollout: one manager decision, physical location updates, one action area. */
 #root .simple-transfer-tracker {
   display: grid;
-  gap: 16px;
-  padding: 18px;
+  gap: 12px;
+  padding: 14px;
   min-width: 0;
   color: var(--ifx-neutral-900);
   font: 400 15px/1.5 var(--font-app);
@@ -37,7 +37,7 @@
 #root .simple-move-location strong { display: flex; align-items: center; gap: 5px; color: var(--ifx-neutral-900); font-size: 16px; line-height: 1.4; font-weight: 600; }
 #root .simple-move-location strong svg { flex-shrink: 0; }
 #root .simple-move-location small { font-size: 13px; color: var(--ifx-neutral-700); }
-#root .simple-move-next { display: grid; gap: 14px; padding: 16px; border: 0; border-left: 3px solid var(--ifx-info); border-radius: 5px; background: var(--ifx-info-surface); }
+#root .simple-move-next { display: grid; gap: 10px; padding: 12px; border: 0; border-left: 3px solid var(--ifx-info); border-radius: 5px; background: var(--ifx-info-surface); }
 #root .simple-move-next > div > span { display: block; margin-bottom: 4px; font-size: 14px; color: var(--ifx-neutral-700); }
 #root .simple-move-next h3 { font-size: 17px; line-height: 1.45; font-weight: 600; }
 #root .simple-move-next p { margin-top: 4px; color: var(--ifx-neutral-700); font-size: 14px; }

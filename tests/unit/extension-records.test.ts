@@ -44,6 +44,52 @@ async function openRecords(record = recordWithSources()) {
 }
 
 describe('extension captured Records detail parity', () => {
+  it('puts history and OASIS coverage before long sticker and equipment lists with matching named jumps', async () => {
+    const detail = await openRecords()
+    expect([...detail.querySelectorAll('#tab-panel > [data-record]')].map((node) => node.dataset.record)).toEqual(['autocheck', 'oasis', 'warranty', 'window-sticker', 'vauto'])
+    expect([...detail.querySelectorAll('.record-jumps button')].map((node) => node.textContent)).toEqual(['AutoCheck', 'OASIS & warranty', 'Warranty check', 'Sticker', 'Equipment'])
+  })
+  it('summarizes captured history without turning missing or adverse checks into clean results', async () => {
+    const record = recordWithSources()
+    record.autoCheckReport.checks.push({ label: 'Service history', status: 'Records reported', detail: '2 synthetic service records' }, { label: 'Open recall check', status: 'Not reported' })
+    const detail = await openRecords(record)
+    const summary = detail.querySelector('.history-metrics')
+    expect(summary.querySelectorAll('.history-metric')).toHaveLength(5)
+    expect(summary.textContent).toContain('2 synthetic service records')
+    expect(summary.closest('details')).toBeNull()
+    expect(detail.querySelectorAll('.rec-autocheck .check.is-clear')).toHaveLength(5)
+    expect(detail.querySelectorAll('.rec-autocheck .check.is-unknown')).toHaveLength(1)
+    expect([...detail.querySelectorAll('.rec-autocheck .check.is-review')].some((node) => node.textContent.includes('Synthetic salvage record requires review'))).toBe(true)
+    expect(detail.querySelector('.rec-autocheck .check.is-unknown').textContent).toContain('Not reported')
+  })
+  it('keeps duplicate equipment reference pricing in source details and original sticker pricing visible', async () => {
+    const detail = await openRecords()
+    const referencePrices = detail.querySelector('[data-record="vauto"] .price-table')
+    expect(referencePrices.closest('details').classList.contains('rec-source-details')).toBe(true)
+    expect(referencePrices.closest('details').open).toBe(false)
+    expect(detail.querySelector('[data-record="window-sticker"] .price-table').closest('details')).toBeNull()
+    expect(detail.querySelector('[data-record="vauto"] .rec-price-context').textContent).toBe('Reference prices · currency not captured')
+    expect(detail.querySelector('[data-record="vauto"] .rec-price-context').closest('details')).toBeNull()
+    expect(detail.querySelector('[data-record="vauto"] .rec-priced-list').closest('details')).toBeNull()
+  })
+  it('retains service counts from the status and keeps full findings visible beside the compact summary', async () => {
+    const record = recordWithSources()
+    record.autoCheckReport.checks = [
+      { label: 'Service history', status: '12 service records reported', detail: 'Synthetic inspection history available' },
+      { label: 'Odometer', status: 'No issue reported', detail: 'Last reported odometer: 23,456 mi; conflicting reading: 20,000 mi' },
+      { label: 'CPO', status: 'No issue reported', detail: 'CPO details not captured; last reported odometer: 23,456 mi' },
+    ]
+    const detail = await openRecords(record)
+    expect(detail.querySelector('.history-metrics').textContent).toContain('12 service records reported')
+    const checks = [...detail.querySelectorAll('.rec-autocheck .check')]
+    record.autoCheckReport.checks.forEach((source, index) => {
+      expect(checks[index].textContent).toContain(source.status)
+      expect(checks[index].textContent).toContain(source.detail)
+      expect(checks[index].closest('details')).toBeNull()
+    })
+    expect(checks[1].classList.contains('is-review')).toBe(true)
+    expect(checks[2].classList.contains('is-unknown')).toBe(true)
+  })
   it('shows every history check, warning and report fact without an expander', async () => {
     const detail = await openRecords()
     expect(detail.querySelectorAll('.rec-autocheck .check')).toHaveLength(6)
@@ -52,7 +98,9 @@ describe('extension captured Records detail parity', () => {
     expect(detail.textContent).toContain('Synthetic rental use')
     expect(detail.textContent).toContain('23,456 mi')
     expect(detail.querySelector('.rec-autocheck .rec-state').textContent).toBe('Stale data')
-    expect(detail.querySelectorAll('.rec details')).toHaveLength(0)
+    expect(detail.querySelectorAll('.rec details .check')).toHaveLength(0)
+    expect(detail.querySelector('.rec-autocheck .rec-source-details').open).toBe(false)
+    expect(detail.querySelector('.rec-autocheck .rec-source-details summary').textContent).toContain('Check source')
     expect(detail.querySelector('.record-brand--autocheck').getAttribute('alt')).toBe('AutoCheck')
   })
   it('shows sticker currency, equipment, options, standard items and printed warranty directly', async () => {
@@ -70,7 +118,8 @@ describe('extension captured Records detail parity', () => {
     const detail = await openRecords()
     const oasis = detail.querySelector('.rec-oasis')
     for (const text of ['Warranty start', 'Apr 10, 2024', 'Build date', 'Feb 2, 2024', 'TEST-26A', 'Synthetic service-action description', 'Synthetic Ford coverage term', 'Synthetic ESP expiration']) expect(oasis.textContent).toContain(text)
-    expect(oasis.textContent).toContain('Open OASIS dealer lookup')
+    expect(oasis.querySelector('.rec-source').textContent).toContain('Open OASIS')
+    expect(oasis.querySelector('.rec-source').getAttribute('aria-label')).toContain('Open OASIS dealer lookup')
     expect(oasis.textContent).toContain('not a saved report')
   })
 
@@ -97,7 +146,8 @@ describe('extension captured Records detail parity', () => {
     const detail = await openRecords()
     const { openUrl } = await import('../../extension/sidepanel/lib/host.mjs')
     const button = detail.querySelector('.rec-autocheck .rec-heading button')
-    expect(button.textContent).toContain('Open original AutoCheck report')
+    expect(button.textContent).toContain('Open report')
+    expect(button.getAttribute('aria-label')).toBe('Open original AutoCheck report for DEMO-RECORDS')
     button.click()
     expect(openUrl).toHaveBeenCalledWith('https://www.bobmaxeyfordhowell.com/autocheck.aspx?sv=SYNTHETIC&ac=TEST-REPORT')
     expect(document.querySelector('#tab-records').getAttribute('aria-selected')).toBe('true')
@@ -130,7 +180,7 @@ describe('extension captured Records detail parity', () => {
     ['2099-09-14T12:00:00Z', 'Future source date:'],
     ['not-a-date', 'Unrecognized source date: not-a-date'],
     ['2026-02-30T12:00:00Z', 'Unrecognized source date: 2026-02-30T12:00:00Z'],
-  ])('shows visible provenance warnings for source date %s', async (date, expected) => {
+  ])('flags provenance warnings before expanding source details for source date %s', async (date, expected) => {
     const record = recordWithSources()
     record.autoCheckReport.reportRunAt = date
     record.factoryEquipment.capturedAt = date
@@ -139,7 +189,9 @@ describe('extension captured Records detail parity', () => {
     const detail = await openRecords(record)
     for (const section of [detail.querySelector('.rec-autocheck'), detail.querySelector('.record-brand--vauto').closest('.rec'), detail.querySelector('.rec-oasis'), detail.querySelector('.rec-warranty')]) {
       expect([...section.querySelectorAll('.rec-note')].some((note) => note.textContent.includes(expected))).toBe(true)
-      expect(section.querySelector('details')).toBeNull()
+      expect(section.querySelector('.rec-source-details summary').textContent).toContain('Check source')
+      expect(section.querySelector('.rec-source-details').open).toBe(false)
+      expect([...section.querySelectorAll('.rec-source-details .rec-note')].some((note) => note.textContent.includes(expected))).toBe(true)
     }
   })
   it('preserves decimal source numerals without inventing vAuto currency', async () => {

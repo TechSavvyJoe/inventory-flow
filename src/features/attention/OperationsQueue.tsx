@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react'
 import { ArrowRight, CheckCircle2, Search, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
-import { WorkflowVehicleResources } from '../../components/WorkflowVehicleResources'
 import { formatCurrency, formatDate, formatDateTime, formatNumber } from '../../lib/format'
 import { serviceStatusLabel } from '../../lib/service-readiness'
 import type { AttentionEventInput, AttentionItem, StoreName, UserRole, VehicleRecord } from '../../types'
@@ -21,13 +20,12 @@ function TaskVehicle({ item, vehicle }: { item: AttentionItem; vehicle?: Vehicle
   const location = vehicle?.movement?.locationConfidence === 'verified' && vehicle.movement.currentLocation
     ? `Confirmed at ${vehicle.movement.currentLocation}`
     : vehicle?.sourceReportedLocation ? `Reported at ${vehicle.sourceReportedLocation}` : null
-  const value = vehicle ? [vehicle.listedPrice != null ? formatCurrency(vehicle.listedPrice) : null, vehicle.mileage != null ? `${formatNumber(vehicle.mileage)} mi` : null, vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : null].filter(Boolean).join(' · ') : ''
-  const specs = vehicle ? [vehicle.exteriorColor, vehicle.engine, vehicle.drivetrain].filter(Boolean).join(' · ') : ''
+  const category = actionCategory(item)
+  const value = vehicle ? [category === 'inventory' && vehicle.listedPrice != null ? formatCurrency(vehicle.listedPrice) : null, category === 'service' && vehicle.mileage != null ? `${formatNumber(vehicle.mileage)} mi` : null, ['inventory', 'service'].includes(category) && vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : null].filter(Boolean).join(' · ') : ''
   return <div className="workflow-vehicle action-vehicle"><VehicleThumbnail vehicle={vehicle}/><div>
     <strong>{vehicle?.vehicleName || item.vehicleName || item.store || 'Store inventory'}</strong>
     <small>{[vehicle?.stockNumber || item.stockNumber, vehicle?.homeStore || item.store].filter(Boolean).join(' · ')}</small>
     {value ? <p className="action-vehicle-value">{value}</p> : null}
-    {specs ? <p className="action-vehicle-specs">{specs}</p> : null}
     {vehicle ? <p className="action-vehicle-readiness">{[serviceStatusLabel(vehicle.serviceReadiness), location].filter(Boolean).join(' · ')}</p> : null}
     {item.count ? <small>{item.count} {item.count === 1 ? 'vehicle' : 'vehicles'}</small> : null}
   </div></div>
@@ -37,10 +35,8 @@ function TaskActions({ item, vehicle }: { item: AttentionItem; vehicle?: Vehicle
   return <div className="action-next-steps" aria-label="Task and vehicle actions">
     {item.href ? <Link className="workflow-action workflow-action--primary" to={item.href}>{taskLinkLabel(item)}<ArrowRight aria-hidden="true"/></Link> : <span className="workflow-muted">Ask your manager</span>}
     {vehicle ? <div className="workflow-quick-actions">
-      <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}`}>Details</Link>
+      <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}`}>Vehicle details</Link>
       <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}&tab=data`}>Records</Link>
-      <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}&tab=hold`}>Hold</Link>
-      <Link to={`/service?vin=${encodeURIComponent(vehicle.vin)}`}>Service</Link>
     </div> : null}
   </div>
 }
@@ -105,7 +101,6 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
         <div className="action-task"><strong>{taskTitle(item)}</strong><p>{taskDescription(item)}</p></div>
         <div className="action-owner"><strong>{item.assignedTo || item.owner || 'Store manager'}</strong><span className={isTaskOverdue(item, reportDate) ? 'workflow-overdue' : undefined}>{item.followUpAt ? `Follow up ${formatDateTime(item.followUpAt)}` : item.dueAt ? `Due ${formatDate(item.dueAt)}` : item.status === 'resolved' ? 'Reviewed' : 'Next store review'}</span></div>
         <TaskActions item={item} vehicle={vehicleMap.get(item.vin ?? '')}/>
-        <WorkflowVehicleResources vehicle={vehicleMap.get(item.vin ?? '')} />
       </div>{item.type !== 'service_pending' ? <TaskFollowUp item={item} role={role} homeStore={homeStore} currentUser={currentUser} onAction={onAction}/> : null}</article>)}
       {!visible.length ? <div className="workflow-empty"><CheckCircle2 aria-hidden="true"/><h2>{query || category !== 'all' ? 'No tasks match this view' : status === 'reviewed' ? 'No reviewed tasks yet' : 'Your store is caught up'}</h2><p>{status === 'open' ? 'New follow-ups appear here when there is a next step to take.' : 'Completed reviews will appear here.'}</p>{query || category !== 'all' ? <button type="button" onClick={() => { setQuery(''); setCategory('all') }}>Clear filters</button> : null}</div> : null}
     </div>
