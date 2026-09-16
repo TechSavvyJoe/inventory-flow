@@ -191,9 +191,15 @@ describe('modern inventory result access', () => {
 
     const { rerender } = render(<VehiclePhoto vehicle={vehicle} className="inv-desk-vehicle__img" />);
     let photo = screen.getByRole('img', { name: '2024 Ford F-150 XLT exterior' });
-    expect(photo).toHaveAttribute('src', vehicle.imageUrl);
+    expect(photo).toHaveAttribute('src', `${vehicle.imageUrl}?width=240`);
     expect(photo).toHaveAttribute('loading', 'eager');
     expect(photo).toHaveAttribute('fetchpriority', 'low');
+    fireEvent.error(photo);
+    photo = screen.getByRole('img', { name: '2024 Ford F-150 XLT exterior' });
+    expect(photo).toHaveAttribute('src', vehicle.imageUrl);
+    fireEvent.error(photo);
+    photo = screen.getByRole('img', { name: '2024 Ford F-150 XLT exterior' });
+    expect(photo).toHaveAttribute('src', `${vehicle.imageUrls[1]}?width=240`);
     fireEvent.error(photo);
     photo = screen.getByRole('img', { name: '2024 Ford F-150 XLT exterior' });
     expect(photo).toHaveAttribute('src', vehicle.imageUrls[1]);
@@ -210,7 +216,7 @@ describe('modern inventory result access', () => {
     vehicle.imageUrls = ['https://www.bobmaxeyfordhowell.com/inventoryphotos/example/current-gallery.jpg'];
 
     render(<VehiclePhoto vehicle={vehicle} className="inv-desk-vehicle__img" />);
-    expect(screen.getByRole('img', { name: '2024 Ford F-150 XLT exterior' })).toHaveAttribute('src', vehicle.imageUrls[0]);
+    expect(screen.getByRole('img', { name: '2024 Ford F-150 XLT exterior' })).toHaveAttribute('src', `${vehicle.imageUrls[0]}?width=240`);
   });
 
   it('keeps vehicle-history facts out of activity and omits an empty change control', () => {

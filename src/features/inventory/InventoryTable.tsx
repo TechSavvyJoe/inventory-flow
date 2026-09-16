@@ -240,7 +240,7 @@ function SortHeader({ label, displayLabel, column, numeric = false, options, sor
 export function VehiclePhoto({ vehicle, className = "" }: { vehicle: InventoryVehicle; className?: string }) {
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const sources = [...new Set(
+  const fullSizeSources = [...new Set(
     // Match the VDP gallery order. Some feeds retain an older primary URL while
     // providing current gallery photos, so the SRP should lead with the same
     // usable image a manager sees after opening the vehicle.
@@ -248,6 +248,23 @@ export function VehiclePhoto({ vehicle, className = "" }: { vehicle: InventoryVe
       .map((source) => source?.trim())
       .filter((source): source is string => Boolean(source)),
   )];
+  const sources = fullSizeSources.flatMap((source) => {
+    try {
+      const url = new URL(source);
+      if (url.protocol !== "https:" || !url.pathname.toLowerCase().startsWith("/inventoryphotos/")) {
+        return [source];
+      }
+      // DealerOn serves the same approved VIN-specific image as a compact
+      // thumbnail when width is supplied. Prefer that 240px response in the
+      // SRP (roughly 10 KB instead of 150+ KB), but retain the canonical full
+      // image immediately after it so a store-specific transform failure can
+      // never hide a photo that still works in the VDP.
+      url.searchParams.set("width", "240");
+      return [url.toString(), source];
+    } catch {
+      return [source];
+    }
+  });
   const sourceKey = sources.join("\u0000");
   const [sourceIndex, setSourceIndex] = useState(0);
   const src = sources[sourceIndex];
