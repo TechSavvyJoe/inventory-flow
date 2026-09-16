@@ -22,7 +22,23 @@ The Today screen turns the daily report into an action layer. It opens on the em
 
 Design and implementation notes are in [Brand architecture](docs/BRAND_ARCHITECTURE.md), [Store brand assets](docs/BRAND_ASSETS.md), [Today and change center](docs/CHANGE_CENTER.md), and [Fidelity and interaction QA](docs/FIDELITY_QA.md).
 
-## Release 1.2.0: manager access and service accuracy
+## Release 1.2.1: focused workflows and vehicle records
+
+Vehicle moves, Action center, inventory updates, and service prioritize the
+task, responsible person, timing, and next action. Unrelated provider panels
+are replaced by explicit **Vehicle details** and **Records** links.
+
+On the site and companion, **Weight fee lookup · Base MSRP** means the original
+base MSRP used for registration lookup, not a calculated fee. Original sticker
+pricing takes priority; an informational vAuto fallback is explicitly labeled.
+Unknown currency is never assumed to be USD.
+
+Records show compact history summaries and checks, then OASIS and warranty,
+before the full sticker/equipment detail. Routine provenance and duplicate
+reference pricing remain available under **Source details**. Section buttons
+move within the vehicle workspace without scrolling its header out of view.
+
+### Manager access and service accuracy
 
 Group managers open **Control center** (`/admin`) to manage employees and review
 access history. The account menu offers permission previews of the other roles;
@@ -36,7 +52,7 @@ in-service dates do not prove reconditioning completion. See
 [Service readiness](docs/SERVICE_READINESS.md).
 
 The account menu's **Download companion extension** action provides the matching
-1.2.0 Chrome package. Extract it and load the folder containing `manifest.json`
+1.2.1 Chrome package. Extract it and load the folder containing `manifest.json`
 through Chrome's Extensions page, or reload the existing unpacked extension
 after updating its files. This is a private unpacked release, not a Chrome Web
 Store automatic update. See [Companion installation](extension/README.md).

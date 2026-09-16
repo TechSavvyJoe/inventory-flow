@@ -43,16 +43,20 @@ async function boot(records = [record()]) {
 }
 
 describe('companion concept vehicle workspace', () => {
-  it('puts captured in-service, base MSRP and weight fee on Overview and Records with source labels', async () => {
+  it('uses original base MSRP for the single weight-fee lookup shortcut on Overview and Records', async () => {
     const vehicle = { ...record(), inventoryDate: '2026-09-12', autoCheckReport: { estimatedInServiceDate: '2024-01-01' }, fordOasis: { warrantyStartDate: '2024-04-10' }, windowSticker: { basePrice: 42500, pricingCurrency: 'CAD', options: ['WEIGHT FEE — CAD 100'] } }
     await boot([vehicle])
     const facts = () => document.querySelector('.detail-frequent-facts').textContent.replace(/\s+/g, ' ')
     expect(facts()).toContain('Warranty in-service · OASIS')
     expect(facts()).toContain('Apr 10, 2024')
     expect(facts()).toContain('CAD 42,500')
-    expect(facts()).toContain('WEIGHT FEE — CAD 100')
+    expect(facts()).toContain('Weight fee lookup · Base MSRP')
+    expect(facts()).not.toContain('WEIGHT FEE — CAD 100')
+    expect(document.querySelectorAll('.detail-frequent-facts .d-fact')).toHaveLength(2)
+    expect(document.querySelector('.detail-full-specs').textContent).toContain('Inventory date')
     document.querySelector('#tab-records').click()
     expect(facts()).toContain('CAD 42,500')
+    expect(document.querySelector('[data-record="window-sticker"]').textContent).toContain('WEIGHT FEE — CAD 100')
     const jump = [...document.querySelectorAll('.record-jumps button')].find((node) => node.textContent === 'Sticker')
     jump.click()
     expect(document.activeElement.dataset.record).toBe('window-sticker')
@@ -61,6 +65,7 @@ describe('companion concept vehicle workspace', () => {
     await boot([{ ...record(), windowSticker: { pricingCurrency: 'USD' }, factoryEquipment: { basePrice: 42500 } }])
     expect(document.querySelector('.detail-frequent-facts').textContent).toContain('42,500 · currency not captured')
     expect(document.querySelector('.detail-frequent-facts').textContent).not.toContain('$42,500')
+    expect(document.querySelector('.detail-frequent-facts').textContent).toContain('vAuto reference')
   })
   it.each([undefined, { pricingCurrency: 'CAD' }])('keeps copied equipment-label pricing in unknown currency despite sticker metadata %j', async (windowSticker) => {
     await boot([{ ...record(), windowSticker, factoryEquipment: { basePrice: 42500.5, totalOptions: 1200, destinationCharge: 1995, totalMsrp: 45695.5 } }])

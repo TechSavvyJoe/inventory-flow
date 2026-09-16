@@ -56,11 +56,17 @@ function checkPriority(check) {
   // vehicle, completed service, availability, or remaining warranty.
   const result = join([check.status, check.detail]) ?? ''
   const unnegated = result.replace(/\b(?:no|zero|0|without|not)\s+(?:(?:reported|recorded|known|major|structural)\s+)?(?:accidents?|damages?|issues?|problems?|records?|title brands?|salvage|flood|odometer discrepancies|rollback)(?:\s+(?:reported|recorded|found|detected))?/gi, '')
-  if (/\b(?:warning|review|alert|issue|problem|damage|accident|salvage|rebuilt|flood|rollback|discrepanc\w*|not actual|theft|stolen|lemon|buyback|branded|lien)\b/i.test(unnegated)) return 0
+  if (/\b(?:warning|review|alert|issue|problem|damage|accident|salvage|rebuilt|flood|rollback|discrepanc\w*|conflict\w*|not actual|theft|stolen|lemon|buyback|branded|lien)\b/i.test(unnegated)) return 0
   if (/accident|damage|title|odometer/i.test(check.label) && /\b(?:[1-9]\d*\s+records?|brand|reported|found)\b/i.test(unnegated)) return 0
-  if (/\b(?:unknown|unavailable|not reported|not checked|unable|incomplete)\b/i.test(result)) return 1
+  if (/\b(?:unknown|unavailable|not reported|not captured|not checked|unable|incomplete)\b/i.test(result)) return 1
   if (/accident|damage|title|odometer/i.test(check.label)) return 2
   return 3
+}
+
+/** Explicit adverse/missing detail overrides a nominally clear status color. */
+export function historyDetailTone(detail) {
+  const priority = checkPriority({ status: detail })
+  return priority === 0 ? 'review' : priority === 1 ? 'unknown' : null
 }
 
 function historyChecks(history) {
@@ -68,7 +74,7 @@ function historyChecks(history) {
     .map((check, index) => ({
       priority: checkPriority(check), index,
       full: `${clean(check.label)}: ${join([check.status, check.detail])}`,
-      compact: `${clean(check.label)}: ${join([check.status, !clean(check.status) || checkPriority({ label: check.label, status: check.detail }) === 0 ? check.detail : null])}`,
+      compact: `${clean(check.label)}: ${join([check.status, !clean(check.status) || checkPriority({ label: check.label, status: check.detail }) <= 1 ? check.detail : null])}`,
     })).sort((a, b) => a.priority - b.priority || a.index - b.index)
 }
 

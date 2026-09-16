@@ -3,12 +3,12 @@ import { ArrowRight, CheckCircle2, Info, Search, X } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
-import { WorkflowVehicleResources } from '../../components/WorkflowVehicleResources'
 import { formatCurrency, formatDate, formatNumber } from '../../lib/format'
 import type { PublicChangeEvent, PublicChangeType } from '../../types'
 import { scopePublicChanges } from './change-scope'
 import { ServiceStatusLink } from '../inventory/ServiceStatusLink'
 import '../../styles/workflow-pages.css'
+import './InventoryUpdatesPage.css'
 
 type UpdateView = 'new' | 'price' | 'other'
 const LABELS: Record<PublicChangeType, string> = { new_arrival: 'New arrival', price_change: 'Price changed', removed: 'Listing removed', mileage_change: 'Mileage updated', website_status_change: 'Online status changed', stock_correction: 'Stock number corrected', store_transfer: 'Listed store changed' }
@@ -43,7 +43,7 @@ export function InventoryUpdatesPage() {
     return a.vehicleName.localeCompare(b.vehicleName)
   }) : []
   function selectView(next: UpdateView) { const nextParams = new URLSearchParams(params); nextParams.set('view', next); setParams(nextParams) }
-  return <section className="workflow-page">
+  return <section className="workflow-page inventory-updates-page">
     <div className="workflow-page-heading"><div><h1>Inventory updates</h1><p>New arrivals and price changes since the last verified update.</p></div><div className="workflow-scope" role="group" aria-label="Inventory change store scope"><button type="button" disabled={!detailCertified} aria-pressed={displayScope === 'home'} onClick={() => setScope('home')}>{homeStore}</button><button type="button" aria-pressed={displayScope === 'group'} onClick={() => setScope('group')}>All stores</button></div></div>
     <div className="workflow-tabs" role="group" aria-label="Inventory update type">{([['new','New arrivals'], ['price','Price changes'], ['other','Other updates']] as const).map(([key,label]) => <button key={key} type="button" aria-pressed={view === key} onClick={() => selectView(key)}>{label}<span>{hasComparison ? totals[key] : '—'}</span></button>)}</div>
     <div className="workflow-toolbar"><label className="workflow-search"><Search aria-hidden="true"/><span className="sr-only">Search inventory updates</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search make, model, stock, or VIN"/>{query ? <button type="button" aria-label="Clear update search" onClick={() => setQuery('')}><X aria-hidden="true"/></button> : null}</label>
@@ -56,10 +56,9 @@ export function InventoryUpdatesPage() {
       {visible.map(event => { const vehicle = vehicles.get(event.vin); const delta = event.type === 'price_change' && typeof event.beforeValue === 'number' && typeof event.afterValue === 'number' ? event.afterValue - event.beforeValue : null
         return <article key={event.id} role="listitem" className="updates-row">
           <div className="workflow-vehicle"><VehicleThumbnail vehicle={vehicle}/><div><strong>{event.vehicleName}</strong><small>Stock {event.stockNumber}</small><small>{event.vin}</small></div></div>
-          <div className="updates-specs"><strong>{event.store}</strong>{typeof vehicle?.mileage === 'number' ? <span>{formatNumber(vehicle.mileage)} mi</span> : null}{vehicle?.engine ? <span>{vehicle.engine}</span> : null}{vehicle?.exteriorColor ? <span>{vehicle.exteriorColor}</span> : null}{vehicle && event.currentVehicle ? <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} /> : null}</div>
           <div className="updates-values">{view === 'price' ? <><del>{eventValue(event,event.beforeValue)}</del><strong>{eventValue(event,event.afterValue)}</strong>{delta !== null && delta !== 0 ? <span className={delta < 0 ? 'price-down' : 'price-up'}>{delta < 0 ? 'Down' : 'Up'} {formatCurrency(Math.abs(delta))}</span> : null}</> : view === 'new' ? <><span>Added {formatDate(event.reportDate)}</span><strong>{typeof vehicle?.listedPrice === 'number' ? formatCurrency(vehicle.listedPrice) : 'Price not published'}</strong></> : <><strong style={{fontSize: 14}}>{LABELS[event.type]}</strong><span>{event.field}</span><span>{eventValue(event,event.beforeValue)} → {eventValue(event,event.afterValue)}</span></>}</div>
-          {event.currentVehicle ? <div className="updates-actions"><Link className="workflow-action workflow-action--primary" to={`/inventory?scope=group&vin=${encodeURIComponent(event.vin)}`}>Open vehicle<ArrowRight aria-hidden="true"/></Link>{vehicle ? <div className="workflow-quick-actions"><Link to={`/inventory?scope=group&vin=${encodeURIComponent(event.vin)}&tab=data`}>Records</Link><Link to={`/service?vin=${encodeURIComponent(event.vin)}`}>Service</Link></div> : null}</div> : <span className="workflow-muted">No current listing</span>}
-          {event.currentVehicle && vehicle ? <WorkflowVehicleResources vehicle={vehicle} /> : null}
+          <div className="updates-specs"><strong>{event.store}</strong>{typeof vehicle?.mileage === 'number' ? <span>{formatNumber(vehicle.mileage)} mi</span> : null}{vehicle && event.currentVehicle && view === 'new' ? <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} /> : null}</div>
+          {event.currentVehicle ? <div className="updates-actions"><Link className="workflow-action workflow-action--primary" to={`/inventory?scope=group&vin=${encodeURIComponent(event.vin)}`}>Vehicle details<ArrowRight aria-hidden="true"/></Link>{vehicle ? <div className="workflow-quick-actions"><Link to={`/inventory?scope=group&vin=${encodeURIComponent(event.vin)}&tab=data`}>Records</Link>{view === 'new' ? <Link to={`/service?vin=${encodeURIComponent(event.vin)}`}>Service</Link> : null}</div> : null}</div> : <span className="updates-actions workflow-muted">No current listing</span>}
         </article>
       })}
       {!visible.length ? <div className="workflow-empty">{!detailCertified ? <Info aria-hidden="true" style={{ color: 'var(--ink-600)' }}/> : <CheckCircle2 aria-hidden="true"/>}<h2>{!hasComparison ? 'Waiting for the first inventory comparison' : !detailCertified ? 'Vehicle details are unavailable for this comparison' : query ? 'No updates match your search' : `No ${view === 'new' ? 'new arrivals' : view === 'price' ? 'price changes' : 'other updates'} in this view`}</h2><p>{!hasComparison ? 'New arrivals and price changes appear after two completed inventory updates.' : detailCertified ? `Showing ${displayScope === 'home' ? homeStore : 'all stores'} for the latest verified comparison.` : 'The verified totals remain available above.'}</p>{query ? <button type="button" onClick={() => setQuery('')}>Clear search</button> : detailCertified && scope === 'home' ? <button type="button" onClick={() => setScope('group')}>See all stores</button> : null}</div> : null}

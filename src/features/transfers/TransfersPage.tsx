@@ -12,11 +12,10 @@ import {
   Plus,
   Search,
 } from 'lucide-react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { toTransferDetail, toTransferVehicle } from '../../app/transferAdapters'
 import { SourceWarning } from '../../components/SourceWarning'
-import { WorkflowVehicleResources } from '../../components/WorkflowVehicleResources'
 import { getTransfer } from '../../lib/api'
 import type { BootstrapData, StoreName, TransferRecord, UserRole } from '../../types'
 import { formatDateTime, humanizeStatusLabel } from './presentation'
@@ -230,7 +229,11 @@ function TransferDetailLoader({
   const detail = recordDetail?.context === requestContext
     ? toTransferDetail(recordDetail.record, data.vehicles.find((vehicle) => vehicle.vin === recordDetail.record.vin), data.meta, role)
     : selected?.detail ?? null
-  return <TransferTracker transfer={detail} mode="page" onAction={onAction} vehicleResources={<WorkflowVehicleResources vehicle={data.vehicles.find(vehicle => vehicle.vin === selectedRecord?.vin)} />} />
+  const vehicle = data.vehicles.find(vehicle => vehicle.vin === selectedRecord?.vin)
+  return <TransferTracker transfer={detail} mode="page" onAction={onAction} vehicleLinks={vehicle ? <nav className="move-vehicle-links" aria-label="Vehicle reference">
+    <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}`}>Vehicle details</Link>
+    <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}&tab=data`}>Records</Link>
+  </nav> : null} />
 }
 
 export function TransfersPage() {

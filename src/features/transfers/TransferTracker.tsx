@@ -24,6 +24,7 @@ import {
 import { TransferEmptyState } from './TransferEmptyState';
 import { TransferTimeline } from './TransferTimeline';
 import { SimpleTransferTracker } from './SimpleTransferTracker';
+import { ServiceStatusLink } from '../inventory/ServiceStatusLink';
 import './transfers.css';
 import './transfer-workspace-v3.css';
 
@@ -33,7 +34,7 @@ export interface TransferTrackerProps {
   onClose?: () => void;
   onCreateRequest?: () => void;
   mode?: 'drawer' | 'page';
-  vehicleResources?: ReactNode;
+  vehicleLinks?: ReactNode;
 }
 
 const WORKFLOW_PHASES = [
@@ -103,7 +104,7 @@ export function TransferTracker({
   onAction,
   onClose,
   onCreateRequest,
-  vehicleResources,
+  vehicleLinks,
   mode = 'drawer',
 }: TransferTrackerProps) {
   if (!transfer) {
@@ -118,7 +119,7 @@ export function TransferTracker({
     );
   }
 
-  if (transfer.workflowMode === 'simple') return <SimpleTransferTracker transfer={transfer} onAction={onAction} onClose={onClose} mode={mode} vehicleResources={vehicleResources} />;
+  if (transfer.workflowMode === 'simple') return <SimpleTransferTracker transfer={transfer} onAction={onAction} onClose={onClose} mode={mode} vehicleLinks={vehicleLinks} />;
 
   const { vehicle } = transfer;
   const action = transfer.nextAction;
@@ -167,9 +168,10 @@ export function TransferTracker({
           </button>
         ) : null}
       </header>
-      {vehicleResources}
-
-      <TransferProgress transfer={transfer} />
+      <div className="move-route-readiness" aria-label="Move route and service status">
+        <strong>{vehicle.homeStore} → {transfer.destination ?? transfer.requestingStore ?? 'Destination not set'}</strong>
+        <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} />
+      </div>
 
       {transfer.exception ? (
         <div className={`mif-exception-banner is-${transfer.exception.severity}`} role="status">
@@ -233,6 +235,9 @@ export function TransferTracker({
           </footer>
         ) : null}
       </section>
+
+      {vehicleLinks}
+      <TransferProgress transfer={transfer} />
 
       <div className="mif-tracker-overview-grid">
         <section className="mif-detail-block" aria-label="Request and vehicle summary">

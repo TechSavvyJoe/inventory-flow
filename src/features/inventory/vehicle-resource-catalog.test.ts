@@ -60,7 +60,7 @@ describe('rich vehicle resource catalog', () => {
       {label:'Accident check',status:'1 record reported'},
     ] } }, 'autocheck');
     expect(history.compactFacts[0]).toBe('Accident check: 1 record reported');
-    expect(history.compactFacts[1]).toBe('1 owner');
+    expect(history.compactFacts[1]).toBe('1 owner · Rental');
     expect(history.facts).toContain('1 owner · Rental');
     expect(history.facts).toContain('Last reported 12,450 mi · Aug 29, 2026');
     expect(history.facts).toContain('Title check: No title brands found');
@@ -73,6 +73,42 @@ describe('rich vehicle resource catalog', () => {
     expect(sticker.facts).toContain('Printed warranty: 3 years / 60,000 km');
     expect(sticker.facts.filter(fact => fact === 'Trailer Tow Package')).toHaveLength(1);
     expect(sticker.facts.join(' ')).not.toContain('captured options');
+  });
+
+  it('deduplicates an equipment group in summaries without deleting the priced source option', () => {
+    const sticker = resource({ windowSticker: { dataState:'current', equipmentGroup:'502A 4,805.00', options:['EQUIPMENT GROUP 502A — $4,805.00', 'Twin panel moonroof'], totalMsrp:68420, pricingCurrency:'CAD' } }, 'window-sticker');
+    expect(sticker.summaryFacts).toEqual(['CAD 68,420 MSRP · 502A 4,805.00', 'Twin panel moonroof']);
+    expect(sticker.compactFacts).toEqual(['CAD 68,420 MSRP · 502A 4,805.00', 'Twin panel moonroof']);
+    expect(sticker.facts).toContain('EQUIPMENT GROUP 502A — $4,805.00');
+    const groupOnly = resource({windowSticker:{dataState:'current',equipmentGroup:'302A',options:['EQUIPMENT GROUP 302A']}},'window-sticker');
+    expect(groupOnly.compactFacts).toEqual(['302A']);
+  });
+
+  it('shows concise history facts, service evidence and one matching last odometer while retaining full checks', () => {
+    const history = resource({autoCheckReport:{dataState:'current',ownerCount:1,usage:'Lease',lastReportedOdometer:9192,lastReportedOdometerDate:'2026-09-10',checks:[
+      {label:'State Title Brand',status:'Clean'},
+      {label:'Accident / Damage',status:'No Issue',detail:'No Accidents or Damage Reported'},
+      {label:'Service',status:'4 records reported'},
+      {label:'Odometer Check',status:'No Issue',detail:'Last reported odometer: 9,192 (09/10/2026)'},
+    ]}},'autocheck');
+    expect(history.summaryFacts).toEqual(['State Title Brand: Clean','Accident / Damage: No Accidents or Damage Reported','1 owner · Lease','Service: 4 records reported','Odometer Check: No Issue','Last reported 9,192 mi · Sep 10, 2026']);
+    expect(history.summaryFacts!.join(' ').match(/9,192/g)).toHaveLength(1);
+    expect(history.facts).toContain('Odometer Check: No Issue · Last reported odometer: 9,192 (09/10/2026)');
+  });
+
+  it('never deduplicates a different historical odometer or suppresses its discrepancy warning', () => {
+    const history = resource({autoCheckReport:{dataState:'current',lastReportedOdometer:9192,checks:[{label:'Odometer',status:'No Issue',detail:'Odometer discrepancy reported; Last reported odometer: 100,000 (09/01/2026)'}]}},'autocheck');
+    expect(history.summaryFacts![0]).toContain('Odometer discrepancy reported');
+    expect(history.summaryFacts![0]).toContain('100,000');
+    expect(history.summaryFacts).toContain('Last reported 9,192 mi');
+    const anotherDate = resource({autoCheckReport:{dataState:'current',lastReportedOdometer:9192,lastReportedOdometerDate:'2026-09-10',checks:[{label:'Odometer',status:'No Issue',detail:'Last reported odometer: 9,192 (09/01/2026)'}]}},'autocheck');
+    expect(anotherDate.summaryFacts!.join(' ')).toContain('9,192 (09/01/2026)');
+  });
+
+  it('places relevant OASIS actions, warranty start and coverage ahead of build metadata', () => {
+    const oasis=resource({fordOasis:{dataState:'current',capturedAt:'2026-09-01',warrantyStartDate:'08-AUG-2023',buildDate:'01-JUL-2023',openFieldServiceActions:[{code:'TEST-24N',description:'Synthetic inspection'}],warrantyCoverages:[{type:'Powertrain',description:'5 years / 60,000 miles'}]}},'oasis');
+    expect(oasis.summaryFacts).toEqual(['Open FSA TEST-24N · Synthetic inspection','Warranty start 08-AUG-2023','Recorded coverage: Powertrain · 5 years / 60,000 miles']);
+    expect(oasis.facts).toContain('Built 01-JUL-2023');
   });
 
   it('keeps unavailable sticker context separate from source facts and preserves URL guards', () => {

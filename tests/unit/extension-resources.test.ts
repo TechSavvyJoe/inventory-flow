@@ -80,6 +80,25 @@ describe('extension resource summaries', () => {
     const summary = source({ autoCheckReport: { checks: [{ label: 'Title', status: 'No issues found', detail: 'Salvage title reported' }] } }, 'autocheck')
     expect(summary.compactFacts[0]).toBe('Title: No issues found · Salvage title reported')
   })
+  it.each(['Odometer discrepancy reported; last reported odometer: 12,450', 'Conflicting reading: 10,000 mi', 'Last reported odometer: 12,450 mi; conflicting reading: 10,000 mi'])('retains the complete compact odometer warning: %s', (detail) => {
+    const summary = source({ autoCheckReport: { lastReportedOdometer: 12450, checks: [{ label: 'Odometer', status: 'No issues found', detail }] } }, 'autocheck')
+    expect(summary.compactFacts[0]).toBe(`Odometer: No issues found · ${detail}`)
+  })
+  it.each(['Not reported; last reported odometer: 12,450 mi', 'CPO details not captured'])('retains missing CPO source details beneath populated check status: %s', (detail) => {
+    const summary = source({ autoCheckReport: { checks: [{ label: 'CPO', status: 'No issues found', detail }] } }, 'autocheck')
+    expect(summary.compactFacts[0]).toBe(`CPO: No issues found · ${detail}`)
+  })
+  it('does not turn a plain repeated odometer value or explicitly negated finding into an adverse detail tone', () => {
+    const vehicle = panel({ autoCheckReport: { checks: [
+      { label: 'Odometer', status: 'No issue reported', detail: 'Last reported odometer: 12,450 mi' },
+      { label: 'Odometer', status: 'No issue reported', detail: 'No odometer discrepancies reported' },
+    ] } })
+    expect(vehicle.documents.autoCheck.checks.map((check) => check.tone)).toEqual(['clear', 'clear'])
+  })
+  it('does not downgrade an adverse status when additional detail is missing', () => {
+    const vehicle = panel({ autoCheckReport: { checks: [{ label: 'Title', status: 'Salvage brand reported', detail: 'Additional details not captured' }] } })
+    expect(vehicle.documents.autoCheck.checks[0].tone).toBe('review')
+  })
 
   it('does not invent a clean result or omit explicit zero numeric values', () => {
     const empty = source({ autoCheckReport: { dataState: 'incomplete', score: NaN, checks: [{ label: 'Title' }] } }, 'autocheck')

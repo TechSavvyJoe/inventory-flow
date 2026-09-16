@@ -12,3 +12,7 @@
 #root .mif-request-header .mif-vehicle-heading:not(:has(> img)) { grid-template-columns: minmax(0,1fr); }
 #root .mif-transfer-feature .move-vehicle-context p { margin: 0; }
 #root .mif-transfer-feature .move-vehicle-context .inventory-service-link span { color: inherit; font-size: 14px; }
+#root .mif-transfer-feature .move-vehicle-links { display:flex; gap:8px; flex-wrap:wrap; margin:0; }
+#root .mif-transfer-feature .move-vehicle-links a { display:inline-flex; justify-content:center; align-items:center; flex:1; min-height:44px; padding:8px 12px; border:1px solid var(--ifx-neutral-300); border-radius:6px; color:var(--ifx-info); background:var(--ifx-neutral-0); text-decoration:none; font:600 14px/1.4 var(--font-app); }
+#root .mif-transfer-feature .move-vehicle-links a:focus-visible { outline:3px solid var(--ifx-info); outline-offset:3px; }
+#root .mif-transfer-feature .move-route-readiness { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 14px; padding:12px 0; border-bottom:1px solid var(--ifx-neutral-300); }

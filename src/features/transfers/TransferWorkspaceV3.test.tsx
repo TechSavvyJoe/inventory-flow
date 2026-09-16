@@ -210,11 +210,32 @@ describe('transfer workspace v3 layout', () => {
     expect(link).toHaveAttribute('href', `/service?vin=${source.vin}`);
     expect(link).toHaveTextContent(label);
     expect(link.closest('header')).toHaveClass('simple-move-heading');
-    expect(link.closest('header')).toHaveTextContent('$51,800 · 12,450 mi · 43 days listed');
-    expect(link.closest('header')).toHaveTextContent('Synthetic blue · Synthetic 3.5L engine · 4WD');
+    expect(link.closest('header')).not.toHaveTextContent('$51,800');
+    expect(link.closest('header')).not.toHaveTextContent('Synthetic 3.5L engine');
     expect(screen.getByRole('region', { name: 'Vehicle location and time away' })).toHaveTextContent('Ford Detroit');
     expect(screen.getByRole('button', { name: 'Confirm back home' })).toBeVisible();
     expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it.each(['simple', 'advanced'] as const)('places the %s move action before records and secondary history', (workflowMode) => {
+    const current = detail(['confirm-return']);
+    const { container } = render(<TransferTracker transfer={{ ...current, workflowMode }} onAction={vi.fn()} vehicleLinks={<nav aria-label="Vehicle reference"><a href={`/inventory?scope=group&vin=${current.vehicle.vin}`}>Vehicle details</a><a href={`/inventory?scope=group&vin=${current.vehicle.vin}&tab=data`}>Records</a></nav>} />);
+    const action = screen.getByRole('region', { name: 'Next move action' });
+    const references = screen.getByRole('navigation', { name: 'Vehicle reference' });
+    expect(action.compareDocumentPosition(references)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(action).toHaveTextContent(current.nextAction.ownerLabel!);
+    expect(container.querySelector('.workflow-resource-row')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Records' })).toHaveAttribute('href', `/inventory?scope=group&vin=${current.vehicle.vin}&tab=data`);
+  });
+
+  it('links a selected current vehicle to its exact details and records without inline provider summaries', () => {
+    const data = bootstrap(1);
+    const current = data.transfers[0];
+    data.vehicles = [{ vin: current.vin, stockNumber: current.stockNumber, vehicleName: current.vehicleName, homeStore: current.homeStore, publicListingState: 'Listed', movement: { state: 'return_in_transit', label: 'Return in transit', currentLocation: 'Ford Detroit', locationConfidence: 'reported' }, hold: { state: 'none_observed', label: 'No observed hold' } } as VehicleRecord];
+    const { container } = renderPage(data);
+    expect(screen.getByRole('link', { name: 'Vehicle details' })).toHaveAttribute('href', `/inventory?scope=group&vin=${current.vin}`);
+    expect(screen.getByRole('link', { name: 'Records' })).toHaveAttribute('href', `/inventory?scope=group&vin=${current.vin}&tab=data`);
+    expect(container.querySelector('.workflow-resource-row')).toBeNull();
   });
 
   it('does not infer service completion from a returned vehicle without a service record', () => {

@@ -146,8 +146,8 @@ describe('extension working-store workflow and identity reset', () => {
     expect(document.querySelector('#tab-records')?.getAttribute('aria-selected')).toBe('true')
     expect(document.querySelector('.record-brand--autocheck')?.getAttribute('alt')).toBe('AutoCheck')
     expect(document.querySelector('.record-brand--vauto')?.getAttribute('alt')).toBe('vAuto')
-    expect(document.querySelector('.score-big')?.textContent).toContain('91')
-    expect(document.querySelector('.score-range')?.textContent).toContain('86–93')
+    expect(document.querySelector('.history-metric:first-child strong')?.textContent).toBe('91')
+    expect(document.querySelector('.history-metric:first-child')?.textContent).toContain('86–93')
     expect(document.querySelector('#detail')?.textContent).not.toContain('CARFAX')
   })
 
