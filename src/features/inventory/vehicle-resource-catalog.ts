@@ -231,7 +231,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
       odometer,
       ...checks.filter(check => check.priority > 1 && !/title|accident|damage|service|odometer/i.test(check.summary)).map(check => check.summary),
     ]),
-    compactFacts: historyCompact, sourceNote: sourceNote(history?.dataState, historyFacts.length > 0, history?.reportRunAt, 'Report run'),
+    compactFacts: historyCompact.slice(0, 2), sourceNote: null,
     href: historyHref, target: 'data', action: 'Open history', dataAction: 'View AutoCheck data', hasCapturedData: historyFacts.length > 0,
     score: numeric(history?.score) ? { value: history.score, range: scoreRange } : undefined,
   });
@@ -246,14 +246,14 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   const powertrain = join([equipment?.engine, equipment?.transmission, equipment?.drivetrain]);
   const equipmentFacts = present([
     ...packages.slice(0, 2), ...equipmentItems.slice(0, 4), powertrain,
-    numeric(equipment?.totalMsrp) ? `${formatNumber(equipment.totalMsrp)} reference MSRP · currency not captured` : null,
+    numeric(equipment?.totalMsrp) ? `${formatNumber(equipment.totalMsrp)} MSRP` : null,
   ]);
   const hasEquipment = equipmentFacts.length > 0;
   if (equipmentHref || hasEquipment || equipment) result.push({
     id: 'vauto', title: 'vAuto equipment', subtitle: 'Informational equipment label', brand: 'vauto', facts: equipmentFacts,
-    summaryFacts: present([...packages.slice(0, 2), ...equipmentItems.filter(item => !packages.some(pkg => equipmentIdentity(pkg) === equipmentIdentity(item))).slice(0, 3), powertrain]),
-    compactFacts: present([join(packages.slice(0, 2)), join(equipmentItems.slice(0, 2)) ?? powertrain, powertrain], 2),
-    sourceNote: join(['Informational · not an original sticker', sourceNote(equipment?.dataState, hasEquipment, equipment?.capturedAt)]),
+    summaryFacts: present([packages[0], equipmentItems.find(item => !packages.some(pkg => equipmentIdentity(pkg) === equipmentIdentity(item))) ?? powertrain]),
+    compactFacts: present([packages[0], equipmentItems[0] ?? powertrain], 1),
+    sourceNote: null,
     href: equipmentHref, target: 'equipment', action: 'Open equipment', dataAction: 'View equipment data', hasCapturedData: hasEquipment,
   });
 
@@ -270,26 +270,24 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
     const oasisFacts = present([
       ...actions.map(action => `Open FSA ${action}`),
       warrantyStart, buildDate,
-      ...coverages.map(coverage => `Recorded coverage: ${coverage}`),
-      capturedEmptyActions ? '0 open Ford actions in captured report' : null,
+      ...coverages.map(coverage => `Coverage: ${coverage}`),
+      capturedEmptyActions ? 'No open Ford actions' : null,
       ...(oasis?.extendedCoverageExpirations ?? []).map(expiration => `Extended coverage: ${expiration}`),
-      numeric(oasis?.monthsInService) ? `${formatNumber(oasis.monthsInService)} months in service at capture` : null,
+      numeric(oasis?.monthsInService) ? `${formatNumber(oasis.monthsInService)} months in service` : null,
       numeric(oasis?.saleMileage) ? `${formatNumber(oasis.saleMileage)} mi at sale` : null,
     ]);
     const hasOasis = oasisFacts.length > 0;
     if (oasisHref || hasOasis) result.push({
       id: 'oasis', title: 'Ford OASIS', subtitle: hasOasis ? 'Warranty & service actions' : 'Exact-VIN dealer lookup', brand: 'ford',
       facts: oasisFacts,
-      summaryFacts: present([...actions.map(action => `Open FSA ${action}`), warrantyStart,
-        ...coverages.map(coverage => `Recorded coverage: ${coverage}`),
-        capturedEmptyActions ? '0 open Ford actions in captured report' : null]),
-      compactFacts: present([actions[0] ? `Open FSA ${actions[0]}` : null, warrantyStart, coverages[0] ? `Recorded coverage: ${coverages[0]}` : null, capturedEmptyActions ? '0 open Ford actions in captured report' : null, buildDate, !hasOasis ? 'DealerConnection sign-in' : null], 2),
-      sourceNote: join([sourceNote(oasis?.dataState, hasOasis, oasis?.capturedAt, 'Captured', 'No OASIS report details captured'), hasOasis && !actions.length && !capturedEmptyActions ? 'Open-action result not captured' : null]),
+      summaryFacts: present([actions[0] ? `Open FSA ${actions[0]}` : null, warrantyStart, coverages[0] ? `Coverage: ${coverages[0]}` : null, capturedEmptyActions ? 'No open Ford actions' : null]),
+      compactFacts: present([actions[0] ? `Open FSA ${actions[0]}` : null, warrantyStart, coverages[0] ? `Coverage: ${coverages[0]}` : null, capturedEmptyActions ? 'No open Ford actions' : null], 1),
+      sourceNote: null,
       href: oasisHref, target: 'data', action: 'Open OASIS', dataAction: 'View OASIS data', hasCapturedData: hasOasis,
     });
     const invoiceHref = fordInvoiceUrl(vehicle.vin);
     if (invoiceHref) result.push({
-      id: 'invoice', title: 'Ford invoice', subtitle: 'Exact-VIN dealer lookup', brand: 'ford', facts: [], compactFacts: ['DealerConnection sign-in'], sourceNote: 'Invoice details are not captured',
+      id: 'invoice', title: 'Ford invoice', subtitle: 'Vehicle invoice', brand: 'ford', facts: [], compactFacts: [], sourceNote: null,
       href: invoiceHref, target: 'data', action: 'Open invoice', dataAction: 'View invoice data', hasCapturedData: false,
     });
   }

@@ -741,7 +741,7 @@ describe('withheld custody navigation guards', () => {
     expect(movement).toHaveTextContent('Howell');
     // Withheld facts read as withheld, not as missing.
     expect(movement).toHaveTextContent('Move details are limited to the stores involved.');
-    expect(movement).toHaveTextContent('Withheld for your role or store');
+    expect(movement).not.toHaveTextContent('Withheld for your role or store');
 
     // Even a caller that wrongly allows requests cannot re-request custody.
     view.rerender(

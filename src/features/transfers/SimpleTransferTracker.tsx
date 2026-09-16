@@ -8,11 +8,12 @@ import { ServiceStatusLink } from '../inventory/ServiceStatusLink';
 import './transfer-simple.css';
 import './transfer-vehicle-context.css';
 
-const SIMPLE_ACTION_ORDER: TransferActionKind[] = ['approve', 'confirm-pickup', 'confirm-arrival', 'confirm-return', 'record-outcome', 'schedule-return', 'decline', 'close'];
+const SIMPLE_ACTION_ORDER: TransferActionKind[] = ['approve', 'record-outcome', 'schedule-return', 'confirm-return', 'decline', 'close'];
 const ADVANCED_ACTIONS = new Set<TransferActionKind>(['review-request', 'request-driver', 'assign-transport', 'edit-request', 'escalate']);
+const RETIRED_SIMPLE_ACTIONS = new Set<TransferActionKind>(['confirm-pickup', 'confirm-arrival']);
 
 export function simpleTransferActions(transfer: TransferDetail): TransferActionKind[] {
-  return transfer.allowedActions.filter(action => !ADVANCED_ACTIONS.has(action));
+  return transfer.allowedActions.filter(action => !ADVANCED_ACTIONS.has(action) && !RETIRED_SIMPLE_ACTIONS.has(action));
 }
 
 export function simpleTransferActionLabel(action: TransferActionKind): string {
@@ -28,10 +29,9 @@ export function simpleTransferActionLabel(action: TransferActionKind): string {
 
 function moveProgress(transfer: TransferDetail): number {
   const movement = transfer.status.movement.code;
-  if (movement === 'returned-home-confirmed') return 4;
-  if (['in-transit-return', 'return-required', 'return-scheduled', 'returned-awaiting-receipt'].includes(movement)) return 3;
-  if (['at-requesting-store-verified', 'at-authorized-location'].includes(movement)) return 3;
-  if (['released-to-custodian', 'in-transit-outbound'].includes(movement)) return 2;
+  if (movement === 'returned-home-confirmed') return 2;
+  if (['in-transit-return', 'return-required', 'return-scheduled', 'returned-awaiting-receipt'].includes(movement)) return 1;
+  if (['at-requesting-store-verified', 'at-authorized-location', 'released-to-custodian', 'in-transit-outbound'].includes(movement)) return 1;
   if (transfer.status.request.code === 'approved' || ['release-approved', 'pickup-scheduled'].includes(movement)) return 1;
   return 0;
 }
@@ -84,7 +84,7 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
       {vehicleLinks}
 
       {!terminal || transfer.status.movement.code === 'returned-home-confirmed' ? <ol className="simple-move-progress" aria-label="Vehicle move progress">
-        {['Approval', 'Collect', 'Arrive', 'Return'].map((label, index) => <li key={label} className={index < progress ? 'is-complete' : index === progress ? 'is-current' : undefined} aria-current={index === progress ? 'step' : undefined}><span>{index < progress ? <Check aria-hidden="true" size={14} /> : index + 1}</span><strong>{label}</strong></li>)}
+        {['Approval', 'Return home'].map((label, index) => <li key={label} className={index < progress ? 'is-complete' : index === progress ? 'is-current' : undefined} aria-current={index === progress ? 'step' : undefined}><span>{index < progress ? <Check aria-hidden="true" size={14} /> : index + 1}</span><strong>{label}</strong></li>)}
       </ol> : null}
 
       <section className="simple-move-location" aria-label="Vehicle location and time away">

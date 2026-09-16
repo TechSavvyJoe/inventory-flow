@@ -78,12 +78,12 @@ describe('source-backed vehicle resource cards', () => {
     expect(document.querySelector('.vehicle-resources')).toBeNull();
   });
 
-  it('labels valid uncaptured Ford destinations as sign-in lookups, not completed reports', () => {
+  it('keeps valid Ford destinations compact when no report details are available', () => {
     const entries=vehicleResourceCatalog({vin:sources().vin,make:'Ford'});
     expect(entries.map(entry=>entry.id)).toEqual(['oasis','invoice']);
-    expect(entries.every(entry=>!entry.hasCapturedData && entry.subtitle==='Exact-VIN dealer lookup')).toBe(true);
-    expect(entries.find(entry=>entry.id==='oasis')?.compactFacts).toEqual(['DealerConnection sign-in']);
-    expect(entries.find(entry=>entry.id==='oasis')?.sourceNote).toBe('No OASIS report details captured');
+    expect(entries.every(entry=>!entry.hasCapturedData)).toBe(true);
+    expect(entries.find(entry=>entry.id==='oasis')?.compactFacts).toEqual([]);
+    expect(entries.find(entry=>entry.id==='oasis')?.sourceNote).toBeNull();
   });
 
   it('uses a clearly marked local demo sticker only with the exact synthetic identity and image', () => {
@@ -91,7 +91,7 @@ describe('source-backed vehicle resource cards', () => {
     render(<VehicleResourceCards vehicle={vehicle} variant="cards"/>);
     expect(screen.getByRole('link',{name:/Open demo sticker/})).toHaveAttribute('href','/demo-documents/window-sticker.html?vehicle=TESTDATAHWELL0001');
     const card=document.querySelector('[data-resource="window-sticker"]') as HTMLElement;
-    expect(within(card).getByText('Synthetic sample · not an original')).toBeVisible();
+    expect(within(card).getByText('Demo document')).toBeVisible();
     expect(within(card).getByText('F-150 Lariat')).toBeVisible();
     expect(within(card).getByText('USD 68,420 MSRP')).toBeVisible();
     expect(within(card).queryByText('Open the source for its full details.')).not.toBeInTheDocument();
@@ -116,7 +116,7 @@ describe('source-backed vehicle resource cards', () => {
   it('accepts both application and common API records without an adapter', () => {
     const record={...sources(),fordOasis:{dataState:'stale_unverified',warrantyStartDate:'14-AUG-2024'}} as unknown as VehicleRecord;
     const adapted=sources() as InventoryVehicle;
-    expect(vehicleResourceCatalog(record).find(entry=>entry.id==='oasis')?.sourceNote).toContain('Saved report · refresh at source');
+    expect(vehicleResourceCatalog(record).find(entry=>entry.id==='oasis')?.sourceNote).toBeNull();
     expect(vehicleResourceCatalog(adapted)).toHaveLength(5);
   });
 
@@ -125,20 +125,19 @@ describe('source-backed vehicle resource cards', () => {
     const history = document.querySelector('[data-resource-kind="autocheck"]') as HTMLElement;
     expect(history.querySelector('.vehicle-resource-inline-facts')).toHaveTextContent('Score 91');
     expect(history.querySelector('.vehicle-resource-inline-facts')).toHaveTextContent('1 owner');
-    expect(history.querySelector('.vehicle-resource-inline-facts')).toHaveTextContent('No accidents reported');
+    expect(history.querySelector('.vehicle-resource-inline-facts')).not.toHaveTextContent('No accidents reported');
     expect(within(history).queryByText('Original source')).not.toBeInTheDocument();
     const sticker = document.querySelector('[data-resource-kind="window-sticker"]') as HTMLElement;
     expect(sticker.querySelector('.vehicle-resource-inline-facts')).toHaveTextContent('CAD 68,420 MSRP');
     expect(sticker.querySelector('.vehicle-resource-inline-facts')).toHaveTextContent('Synthetic equipment group');
   });
 
-  it('keeps non-original and synthetic source identity visible in compact SRP cards', () => {
+  it('keeps compact SRP cards focused on the vehicle facts and actions', () => {
     const { unmount } = render(<VehicleResourceCards vehicle={sources()} variant="inline" onOpenSection={vi.fn()}/>);
     const equipment = document.querySelector('[data-resource-kind="vauto"]') as HTMLElement;
-    expect(within(equipment).getByText('Informational label')).toBeVisible();
-    expect(within(equipment).getByText('Informational · not an original sticker')).not.toBeVisible();
-    fireEvent.click(equipment.querySelector('summary')!);
-    expect(within(equipment).getByText('Informational · not an original sticker')).toBeVisible();
+    expect(within(equipment).getByText('Equipment')).toBeVisible();
+    expect(equipment.querySelector('summary')).toBeNull();
+    expect(within(equipment).queryByText(/Informational/)).not.toBeInTheDocument();
 
     unmount();
     render(<VehicleResourceCards vehicle={{
@@ -146,7 +145,7 @@ describe('source-backed vehicle resource cards', () => {
       imageUrl: '/demo-vehicles/f150.png',
     }} variant="inline" onOpenSection={vi.fn()}/>);
     const demo = document.querySelector('[data-resource-kind="window-sticker"]') as HTMLElement;
-    expect(within(demo).getByText('Synthetic sample · not an original')).toBeVisible();
+    expect(within(demo).getByText('Demo document')).toBeVisible();
   });
 
   it('keeps captured VDP details separate from the original source action', () => {
@@ -159,31 +158,25 @@ describe('source-backed vehicle resource cards', () => {
     expect(within(history).getByText('Accident / damage: No accidents reported')).toBeVisible();
   });
 
-  it('shows partial or stale provenance with an explicit saved-data action', () => {
+  it('keeps an incomplete record concise while retaining its useful history result', () => {
     const vehicle=sources();
     vehicle.autoCheckReport={dataState:'stale',ownerCount:1,checks:[{label:'Title',status:'Salvage reported'}]};
     render(<VehicleResourceCards vehicle={vehicle} variant="inline" onOpenSection={vi.fn()}/>);
     const history=document.querySelector('[data-resource-kind="autocheck"]') as HTMLElement;
-    expect(within(history).getByText('Saved data')).toBeVisible();
     expect(history.querySelector('.vehicle-resource-inline-facts')).toHaveTextContent('Title: Salvage reported');
-    expect(within(history).getByText('Refresh source')).toBeVisible();
-    expect(within(history).getByText('Saved report · refresh at source')).not.toBeVisible();
-    fireEvent.click(history.querySelector('summary')!);
-    expect(within(history).getByText('Saved report · refresh at source')).toBeVisible();
+    expect(within(history).queryByText(/Saved data|Refresh source|Saved report/)).not.toBeInTheDocument();
     expect(within(history).queryByRole('link')).not.toBeInTheDocument();
   });
 
-  it.each(['2099-01-01', 'not-a-date'])('keeps suspect capture dates visible in inline summaries: %s', reportRunAt => {
+  it.each(['2099-01-01', 'not-a-date'])('keeps technical capture dates out of inline summaries: %s', reportRunAt => {
     const vehicle=sources();
     vehicle.autoCheckReport!.reportRunAt=reportRunAt;
     vehicle.fordOasis={dataState:'current',warrantyStartDate:'14-AUG-2024',openFieldServiceActions:[]};
     render(<VehicleResourceCards vehicle={vehicle} variant="inline" onOpenSection={vi.fn()}/>);
     const history=document.querySelector('[data-resource-kind="autocheck"]') as HTMLElement;
-    expect(within(history).getByText('Source date needs verification')).toBeVisible();
-    fireEvent.click(history.querySelector('summary')!);
-    expect(within(history).getByText(/Future source date|Unrecognized source date/)).toBeVisible();
+    expect(within(history).queryByText(/Source date|Future source date|Unrecognized source date/)).not.toBeInTheDocument();
     const oasis=document.querySelector('[data-resource-kind="oasis"]') as HTMLElement;
-    expect(within(oasis).getByText('Action result not captured')).toBeVisible();
+    expect(within(oasis).queryByText(/Action result not captured/)).not.toBeInTheDocument();
   });
 
   it('keeps invoice as one compact sign-in source link with no blank summary block', () => {
@@ -193,19 +186,18 @@ describe('source-backed vehicle resource cards', () => {
     expect(within(invoice as HTMLElement).getByRole('link',{name:/Open invoice/})).toHaveAttribute('href',expect.stringContaining('v=1FTFW1E84RKF12345'));
     expect(invoice.querySelector('.vehicle-resource-inline-facts')).toBeNull();
     expect(invoice.querySelector('details')).toBeNull();
-    expect(invoice).toHaveTextContent('Dealer sign-in');
-    expect(invoice).not.toHaveTextContent('Invoice details are not captured');
+    expect(invoice).not.toHaveTextContent('Dealer sign-in');
+    expect(invoice).toHaveTextContent('Invoice');
   });
 
-  it('keeps routine capture dates out of primary summaries but reachable under Source details', () => {
+  it('keeps routine capture dates out of the manager-facing cards', () => {
     const vehicle=sources(); vehicle.autoCheckReport!.reportRunAt='2026-09-01';
     render(<VehicleResourceCards vehicle={vehicle} variant="cards"/>);
     const history=document.querySelector('[data-resource="autocheck"]') as HTMLElement;
-    expect(within(history).getByText('Report run Sep 1, 2026')).not.toBeVisible();
-    expect(history.querySelector('summary')).toHaveAttribute('aria-label','Source details for AutoCheck');
+    expect(within(history).queryByText('Report run Sep 1, 2026')).not.toBeInTheDocument();
+    expect(history.querySelector('summary')).toBeNull();
     expect(history.querySelector('.vehicle-resource-body')).not.toHaveTextContent('Report run');
-    fireEvent.click(history.querySelector('summary')!);
-    expect(within(history).getByText('Report run Sep 1, 2026')).toBeVisible();
+    expect(within(history).queryByText('Report run Sep 1, 2026')).not.toBeInTheDocument();
   });
 
   it('does not rewrite a long OASIS warning as an equipment cue', () => {

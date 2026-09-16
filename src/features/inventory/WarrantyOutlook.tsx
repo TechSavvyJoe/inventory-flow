@@ -69,8 +69,7 @@ export function WarrantyOutlook({ vehicle }: { vehicle: InventoryVehicle }) {
         <div className="inventory-workspace-fact inventory-workspace-fact--emphasized">
           <dt>Original in-service</dt>
           <dd>
-            {outlook.inService.date ? formatDate(outlook.inService.date) : "Not on the captured report"}
-            {outlook.inService.date ? <small> AutoCheck estimate</small> : null}
+            {outlook.inService.date ? formatDate(outlook.inService.date) : "Not available"}
           </dd>
         </div>
         <div className="inventory-workspace-fact">

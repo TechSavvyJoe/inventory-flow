@@ -1,4 +1,4 @@
-/* Simple rollout: one manager decision, physical location updates, one action area. */
+/* Simple rollout: one manager decision, outcome/return follow-through, one action area. */
 #root .simple-transfer-tracker {
   display: grid;
   gap: 12px;
@@ -23,7 +23,7 @@
 #root .simple-move-route { display: flex; align-items: center; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--ifx-neutral-300); color: var(--ifx-neutral-900); font-size: 15px; font-weight: 600; }
 #root .simple-move-route span { display: grid; gap: 2px; }
 #root .simple-move-route small { color: var(--ifx-neutral-700); font-size: 12px; font-weight: 400; }
-#root .simple-move-progress { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; margin: 0; padding: 0 0 16px; border-bottom: 1px solid var(--ifx-neutral-300); list-style: none; }
+#root .simple-move-progress { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 0; padding: 0 0 16px; border-bottom: 1px solid var(--ifx-neutral-300); list-style: none; }
 #root .simple-move-progress li { display: grid; justify-items: center; gap: 6px; color: var(--ifx-neutral-700); }
 #root .simple-move-progress li > span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--ifx-neutral-300); border-radius: 50%; font-size: 12px; }
 #root .simple-move-progress li strong { font-size: 12px; font-weight: 500; }

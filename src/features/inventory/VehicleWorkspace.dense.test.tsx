@@ -83,11 +83,11 @@ describe('focused vehicle workspace', () => {
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     const facts=screen.getByRole('region',{name:'Frequently used vehicle facts'});
     const lookup=within(facts).getByText('Weight fee lookup · Base MSRP',{selector:'dt'}).parentElement!;
-    expect(lookup).toHaveTextContent('Not captured');
+    expect(lookup).toHaveTextContent('—');
     expect(lookup).not.toHaveTextContent(/123\.45|50,560|USD|\$/);
     expect(within(facts).queryByText('Weight fee',{selector:'dt'})).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('tab',{name:'Records'}));
-    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Weight fee lookup · Base MSRPNot captured');
+    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Weight fee lookup · Base MSRP—');
     expect(screen.getByRole('list',{name:'Factory options'})).toHaveTextContent('WEIGHT FEE — $123.45');
   });
 
@@ -99,7 +99,7 @@ describe('focused vehicle workspace', () => {
     const facts=screen.getByRole('region',{name:'Frequently used vehicle facts'});
     const lookup=within(facts).getByText('Weight fee lookup · Base MSRP',{selector:'dt'}).parentElement!;
     expect(lookup).toHaveTextContent('42,500.5');
-    expect(lookup).toHaveTextContent('Sticker · confirm currency');
+    expect(lookup).not.toHaveTextContent('Sticker · confirm currency');
     expect(lookup).not.toHaveTextContent(/USD|CAD|\$|39,999/);
     expect(unit.windowSticker.basePrice).toBe(42500.5);
   });
@@ -111,18 +111,16 @@ describe('focused vehicle workspace', () => {
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
     expect(facts).toHaveTextContent('Weight fee lookup · Base MSRP31,234.5');
-    expect(facts).toHaveTextContent('vAuto reference · confirm on sticker');
+    expect(facts).not.toHaveTextContent('vAuto reference · confirm on sticker');
     expect(within(facts).queryByText('Weight fee', {selector:'dt'})).not.toBeInTheDocument();
     expect(facts).not.toHaveTextContent('123.45');
     expect(facts).not.toHaveTextContent(/CAD|USD|\$/);
     await userEvent.click(screen.getByRole('tab', { name: 'Records' }));
     const profile = document.querySelector('[data-document-kind="vauto-factory-equipment"]')!;
-    expect(within(profile as HTMLElement).getByText('35,432')).not.toBeVisible();
-    fireEvent.click(within(profile as HTMLElement).getByText('Source details'));
-    expect(within(profile as HTMLElement).getByText('35,432')).toBeVisible();
-    expect(profile).toHaveTextContent('Reference amounts only · currency not captured');
-    expect(profile).toHaveTextContent('123.45');
-    expect(profile).toHaveTextContent('Verify installed equipment and the currency of any reference prices.');
+    expect(within(profile as HTMLElement).queryByText('35,432')).not.toBeInTheDocument();
+    expect(within(profile as HTMLElement).queryByText('Source details')).not.toBeInTheDocument();
+    expect(profile).toHaveTextContent('Weight fee');
+    expect(profile).not.toHaveTextContent('currency not captured');
     expect(profile).not.toHaveTextContent(/CAD|USD|\$/);
   });
 
@@ -136,9 +134,9 @@ describe('focused vehicle workspace', () => {
     expect(facts).toHaveTextContent('Weight fee lookup · Base MSRPCAD 45,000');
     expect(facts).not.toHaveTextContent('31,234');
     expect(within(facts).getAllByText('Weight fee lookup · Base MSRP')).toHaveLength(1);
-    expect(facts).toHaveTextContent('In-service · AutoCheck estimateMay 12, 2023');
+    expect(facts).toHaveTextContent('Warranty in-serviceMay 12, 2023');
     await userEvent.click(screen.getByRole('tab', { name: 'Records' }));
-    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('In-service · AutoCheck estimateMay 12, 2023');
+    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Warranty in-serviceMay 12, 2023');
     expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Weight fee lookup · Base MSRPCAD 45,000');
   });
 
@@ -148,7 +146,7 @@ describe('focused vehicle workspace', () => {
     unit.autoCheckReport = { dataState: 'current', estimatedInServiceDate: '2023-05-12' };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
-    expect(facts).toHaveTextContent('Warranty in-service · OASISMay 13, 2023');
+    expect(facts).toHaveTextContent('Warranty in-serviceMay 13, 2023');
     expect(facts).not.toHaveTextContent('estimate');
   });
 
@@ -324,14 +322,14 @@ describe('focused vehicle workspace', () => {
     expect(equipment).not.toHaveTextContent('Equipment Group 502A');
   });
 
-  it('labels VIN profiles and original stickers as separate configuration evidence', async () => {
+  it('groups available configuration details in one clear vehicle section', async () => {
     const user = userEvent.setup(); const unit = vehicle();
     unit.factoryEquipment = { dataState: 'current', isOriginalWindowSticker: false, vehicleDescription: '2017 Ford F-150 Lariat SuperCrew 4x4', packages: [{ name: 'Safety Package', code: 'PQB' }] };
     const { rerender } = render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} initialTab="equipment" onClose={vi.fn()} />);
-    await user.click(screen.getByText('Original build details', { selector: 'summary span' }));
-    expect(screen.getByRole('heading', { name: 'VIN equipment profile' })).toBeVisible();
+    await user.click(screen.getByText('Vehicle configuration', { selector: 'summary span' }));
+    expect(screen.getByRole('heading', { name: 'Vehicle configuration' })).toBeVisible();
     rerender(<VehicleWorkspace vehicle={{ ...unit, windowSticker: { dataState: 'current', equipmentGroup: 'Equipment Group 502A' } }} homeStore={unit.location.homeStore} initialTab="equipment" onClose={vi.fn()} />);
-    expect(screen.getByRole('heading', { name: 'VIN-linked configuration sources' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Vehicle configuration' })).toBeVisible();
   });
 
   it('shows unheld alerts without fabricating a primary hold', () => {
@@ -340,7 +338,7 @@ describe('focused vehicle workspace', () => {
     unit.dealerMailEvidence = { dataState: 'current', comments: [], alerts: [{ text: 'Synthetic vehicle alert', author: 'Manager' }], history: [] };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} initialTab="hold" onClose={vi.fn()} />);
     expect(screen.getByText('Synthetic vehicle alert')).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'No current DealerMail hold found' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'No active hold' })).toBeVisible();
     expect(screen.queryByText('Primary hold', { exact: true })).not.toBeInTheDocument();
   });
 

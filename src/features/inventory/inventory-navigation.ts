@@ -68,3 +68,39 @@ export function stripLegacyInventorySearchQuery(search: string): string {
   const nextSearch = params.toString()
   return nextSearch ? `?${nextSearch}` : ''
 }
+
+export interface WorkspaceReturnLocation {
+  pathname: string
+  search?: string
+  hash?: string
+}
+
+export function currentWorkspaceReturnPath(location: WorkspaceReturnLocation): string {
+  return `${location.pathname}${location.search ?? ''}${location.hash ?? ''}`
+}
+
+export function vehicleWorkspacePath(
+  vin: string,
+  { tab, returnTo }: { tab?: string; returnTo?: string } = {},
+): string {
+  const params = new URLSearchParams({ scope: 'group', vin })
+  if (tab) params.set('tab', tab)
+  if (returnTo) params.set('returnTo', returnTo)
+  return `/inventory?${params.toString()}`
+}
+
+export function withWorkspaceReturnPath(path: string, returnTo?: string): string {
+  if (!returnTo || !path.startsWith('/inventory')) return path
+  const [pathAndSearch, hash = ''] = path.split('#', 2)
+  const [pathname, rawSearch = ''] = pathAndSearch.split('?', 2)
+  const params = new URLSearchParams(rawSearch)
+  params.set('returnTo', returnTo)
+  return `${pathname}?${params.toString()}${hash ? `#${hash}` : ''}`
+}
+
+// The destination is created by this app. Refuse protocol-relative or external
+// values so a copied inventory URL cannot turn the close control into a redirect.
+export function readWorkspaceReturnPath(value: string | null): string | null {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return null
+  return value
+}

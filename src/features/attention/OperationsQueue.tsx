@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { ArrowRight, CheckCircle2, Search, X } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
 import { formatCurrency, formatDate, formatDateTime, formatNumber } from '../../lib/format'
 import { serviceStatusLabel } from '../../lib/service-readiness'
 import type { AttentionEventInput, AttentionItem, StoreName, UserRole, VehicleRecord } from '../../types'
 import { actionCategory, belongsToActionStore, isTaskOverdue, taskDescription, taskLinkLabel, taskTitle, type ActionCategory } from './action-center'
+import { currentWorkspaceReturnPath, vehicleWorkspacePath, withWorkspaceReturnPath } from '../inventory/inventory-navigation'
 import '../../styles/workflow-pages.css'
 import './OperationsQueue.css'
 
@@ -31,12 +32,12 @@ function TaskVehicle({ item, vehicle }: { item: AttentionItem; vehicle?: Vehicle
   </div></div>
 }
 
-function TaskActions({ item, vehicle }: { item: AttentionItem; vehicle?: VehicleRecord }) {
+function TaskActions({ item, vehicle, returnTo }: { item: AttentionItem; vehicle?: VehicleRecord; returnTo: string }) {
   return <div className="action-next-steps" aria-label="Task and vehicle actions">
-    {item.href ? <Link className="workflow-action workflow-action--primary" to={item.href}>{taskLinkLabel(item)}<ArrowRight aria-hidden="true"/></Link> : <span className="workflow-muted">Ask your manager</span>}
+    {item.href ? <Link className="workflow-action workflow-action--primary" to={withWorkspaceReturnPath(item.href, returnTo)}>{taskLinkLabel(item)}<ArrowRight aria-hidden="true"/></Link> : <span className="workflow-muted">Ask your manager</span>}
     {vehicle ? <div className="workflow-quick-actions">
-      <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}`}>Vehicle details</Link>
-      <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}&tab=data`}>Records</Link>
+      <Link to={vehicleWorkspacePath(vehicle.vin, { returnTo })}>Vehicle details</Link>
+      <Link to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo })}>Records</Link>
     </div> : null}
   </div>
 }
@@ -79,6 +80,8 @@ function TaskFollowUp({ item, role, homeStore, currentUser, onAction }: Pick<Ope
 }
 
 export function OperationsQueue({ items, homeStore, role, reportDate, vehicles = [], currentUser, onAction }: OperationsQueueProps) {
+  const location = useLocation()
+  const returnTo = currentWorkspaceReturnPath(location)
   const [scope, setScope] = useState<'home' | 'group'>('home')
   const [category, setCategory] = useState<ActionCategory>('all')
   const [status, setStatus] = useState('open')
@@ -100,7 +103,7 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
         <TaskVehicle item={item} vehicle={vehicleMap.get(item.vin ?? '')}/>
         <div className="action-task"><strong>{taskTitle(item)}</strong><p>{taskDescription(item)}</p></div>
         <div className="action-owner"><strong>{item.assignedTo || item.owner || 'Store manager'}</strong><span className={isTaskOverdue(item, reportDate) ? 'workflow-overdue' : undefined}>{item.followUpAt ? `Follow up ${formatDateTime(item.followUpAt)}` : item.dueAt ? `Due ${formatDate(item.dueAt)}` : item.status === 'resolved' ? 'Reviewed' : 'Next store review'}</span></div>
-        <TaskActions item={item} vehicle={vehicleMap.get(item.vin ?? '')}/>
+        <TaskActions item={item} vehicle={vehicleMap.get(item.vin ?? '')} returnTo={returnTo}/>
       </div>{item.type !== 'service_pending' ? <TaskFollowUp item={item} role={role} homeStore={homeStore} currentUser={currentUser} onAction={onAction}/> : null}</article>)}
       {!visible.length ? <div className="workflow-empty"><CheckCircle2 aria-hidden="true"/><h2>{query || category !== 'all' ? 'No tasks match this view' : status === 'reviewed' ? 'No reviewed tasks yet' : 'Your store is caught up'}</h2><p>{status === 'open' ? 'New follow-ups appear here when there is a next step to take.' : 'Completed reviews will appear here.'}</p>{query || category !== 'all' ? <button type="button" onClick={() => { setQuery(''); setCategory('all') }}>Clear filters</button> : null}</div> : null}
     </div>

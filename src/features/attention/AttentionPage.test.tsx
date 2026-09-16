@@ -71,7 +71,7 @@ describe('Action center page and shared navigation count', () => {
   it('communicates delayed sources without turning source health into an employee task', () => {
     const fixture = data(); fixture.meta.dealerMailFreshness = 'stale_unverified'; mocked.context.data = fixture
     show()
-    expect(screen.getByText(/Some source data needs an update/)).toHaveAttribute('role', 'status')
+    expect(screen.queryByText(/source data|inventory details may be out of date/i)).not.toBeInTheDocument()
     expect(screen.queryByText('Synthetic source_freshness')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /All tasks\s*5/ })).toBeInTheDocument()
   })

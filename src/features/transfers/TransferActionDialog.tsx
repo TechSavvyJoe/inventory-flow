@@ -254,7 +254,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
             <input type="checkbox" checked={availabilityConfirmed} onChange={(event) => { setAvailabilityConfirmed(event.target.checked); setError(null) }} />
             <span>
               <strong>I checked with {record.homeStore}; this vehicle is available for this move.</strong>
-              <small>You are recording the availability check for {record.requestingStore}. Collection can be recorded after this approval.</small>
+              <small>You are recording the availability check for {record.requestingStore}. The sales team can update the outcome or start the return when appropriate.</small>
             </span>
           </label>
         ) : eventType === 'vehicle_departed' ? (

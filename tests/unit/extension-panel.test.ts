@@ -53,7 +53,7 @@ describe('extension working-store workflow and identity reset', () => {
     await import('../../extension/sidepanel/panel.js')
     await waitForText('#rows','Salvage reported')
     expect(document.querySelector('.row-documents').textContent).toContain('CAD 68,420 MSRP')
-    expect(document.querySelector('.row-documents').textContent).toContain('Saved report')
+    expect(document.querySelector('.row-documents').textContent).not.toContain('Saved report')
     expect(document.querySelector('.row-documents button, .row-documents a')).toBeNull()
     expect(api.vehicle).not.toHaveBeenCalled()
   })
@@ -66,11 +66,11 @@ describe('extension working-store workflow and identity reset', () => {
     const documents = document.querySelector('.row-documents')
     const summary = documents.querySelector('[data-resource="autocheck"]')
     const fact = summary.querySelector('.row-doc-facts')
-    expect(documents.getAttribute('aria-label')).toContain('complete records and source links')
+    expect(documents.getAttribute('aria-label')).toContain('complete details')
     expect(fact.querySelector(':scope > span:not(.visually-hidden)').textContent).toContain('Score 91')
     expect(fact.title).toContain('Title: No title brands found')
     expect(fact.textContent).toContain('Title: No title brands found')
-    expect(summary.querySelector('.row-doc-note').getAttribute('aria-label')).toContain('Saved report · refresh at source')
+    expect(summary.querySelector('.row-doc-note')).toBeNull()
   })
 
   it('keeps source-open actions separate from captured detail navigation', async () => {
@@ -123,8 +123,8 @@ describe('extension working-store workflow and identity reset', () => {
     await vi.waitFor(()=>expect(document.querySelector('.detail-calculator-toggle')).not.toBeNull())
     document.querySelector('.detail-calculator-toggle').click()
     await waitForText('#detail','Factory warranty estimate')
-    expect(document.querySelector('.warr').textContent).toContain('OASIS recorded warranty start:')
-    expect(document.querySelector('.warr').textContent).toContain('calculator below uses the AutoCheck estimate')
+    expect(document.querySelector('.warr').textContent).toContain('Warranty in-service date:')
+    expect(document.querySelector('.warr').textContent).toContain('View warranty details')
   })
 
   it('uses authentic provider assets and retains captured report facts without substituting CARFAX', async () => {
@@ -140,7 +140,7 @@ describe('extension working-store workflow and identity reset', () => {
     await vi.waitFor(() => expect(document.querySelector('.doc-autocheck img')).not.toBeNull())
     expect(document.querySelector('.doc-autocheck img')?.getAttribute('src')).toBe('../resource-brands/autocheck.svg')
     expect(document.querySelector('.doc-vauto img')?.getAttribute('src')).toBe('../resource-brands/vauto.svg')
-    expect(document.querySelector('.doc-autocheck')?.getAttribute('aria-label')).toBe('View captured AutoCheck history')
+    expect(document.querySelector('.doc-autocheck')?.getAttribute('aria-label')).toBe('View AutoCheck history')
     expect(document.querySelector('.doc-autocheck')?.disabled).toBe(false)
     document.querySelector('.doc-autocheck').click()
     expect(document.querySelector('#tab-records')?.getAttribute('aria-selected')).toBe('true')

@@ -26,8 +26,8 @@ describe('Action center store workflow', () => {
     expect(row).toHaveTextContent('Howell managerDue Sep 13, 2026')
     expect(row).toHaveTextContent('Waiting for service · Reported at Howell')
     expect(row).not.toHaveTextContent('Confirmed at Howell')
-    expect(within(row).getByRole('link', { name: 'Vehicle details' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001')
-    expect(within(row).getByRole('link', { name: 'Records' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data')
+    expect(within(row).getByRole('link', { name: 'Vehicle details' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&returnTo=%2F')
+    expect(within(row).getByRole('link', { name: 'Records' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data&returnTo=%2F')
     expect(row.querySelector('.workflow-resource-row')).toBeNull()
     expect(screen.queryByRole('combobox', { name: 'Task status' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open' })).toHaveAttribute('aria-pressed', 'true')
@@ -75,7 +75,7 @@ describe('Action center store workflow', () => {
 
   it('saves trimmed work notes with the current employee identity and keeps the primary hold link available', async () => {
     const { onAction } = show()
-    expect(screen.getByRole('link', { name: 'Review hold' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001')
+    expect(screen.getByRole('link', { name: 'Review hold' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&returnTo=%2F')
     expandFollowUp()
     expect(screen.getByRole('button', { name: 'Save follow-up' })).toBeDisabled()
     fireEvent.change(screen.getByLabelText('Work note'), { target: { value: '  Synthetic appointment confirmed.  ' } })

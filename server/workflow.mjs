@@ -22,9 +22,15 @@ const SIMPLE_EVENT_STATUS = Object.freeze({
 const SIMPLE_EVENT_FROM = Object.freeze({
   request_approved: new Set(['requested', 'manager_reviewed']),
   request_declined: new Set(['requested', 'manager_reviewed']),
+  // Retained only so a previously released integration can finish its saved
+  // audit trail. The everyday interface no longer presents this as a step.
   vehicle_departed: new Set(['approved', 'transport_assigned']),
-  return_started: new Set(['arrived', 'customer_showing', 'sale_outcome_pending', 'not_sold', 'return_requested', 'return_assigned']),
+  // An approved move can be worked or returned without requiring a separate
+  // collection and arrival acknowledgement from two different managers.
+  return_started: new Set(['approved', 'transport_assigned', 'picked_up', 'in_transit', 'arrived', 'customer_showing', 'sale_outcome_pending', 'not_sold', 'return_requested', 'return_assigned']),
 })
+const SIMPLE_OUTCOME_EVENTS = new Set(['customer_showing', 'sale_outcome_pending', 'sale_confirmed', 'not_sold'])
+const SIMPLE_OUTCOME_FROM = new Set(['approved', 'transport_assigned', 'picked_up', 'in_transit', 'arrived'])
 
 export const TRANSITION_MAP = Object.freeze({
   requested: new Set(['manager_reviewed', 'declined', 'canceled']),
@@ -321,6 +327,8 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
 }
 
 function eventRoleAllowed(eventType, role, workflowMode) {
+  // Existing simple-ledger rows may retain an old arrival entry. Keep that
+  // historical reconciliation path valid without exposing it as a new UI step.
   if (workflowMode === 'simple' && eventType === 'arrived' && role === 'sales') return true
   return EVENT_ROLE_RULES[eventType]?.has(role) === true
 }
@@ -341,6 +349,7 @@ function transitionAllowed(currentStatus, eventType, workflowMode = 'advanced') 
   if (Object.hasOwn(SIMPLE_EVENT_FROM, eventType)) {
     return workflowMode === 'simple' && SIMPLE_EVENT_FROM[eventType].has(currentStatus)
   }
+  if (workflowMode === 'simple' && SIMPLE_OUTCOME_EVENTS.has(eventType) && SIMPLE_OUTCOME_FROM.has(currentStatus)) return true
   if (eventType === 'driver_requested') return currentStatus === 'approved'
   if (ACTIVE_ONLY_PASSIVE_EVENTS.has(eventType) && ['declined', 'canceled', 'closed'].includes(currentStatus)) return false
   if (PASSIVE_EVENTS.has(eventType)) return true
@@ -353,6 +362,9 @@ export function allowedEventTypes(currentStatus, role, workflowMode = 'advanced'
   if (workflowMode === 'simple') {
     for (const [event, states] of Object.entries(SIMPLE_EVENT_FROM)) {
       if (states.has(currentStatus)) candidates.add(event)
+    }
+    if (SIMPLE_OUTCOME_FROM.has(currentStatus)) {
+      for (const event of SIMPLE_OUTCOME_EVENTS) candidates.add(event)
     }
   }
   return [...candidates].filter(
@@ -375,7 +387,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'request_approved':
       Object.assign(patch, {
         approved_by: actor,
-        next_action: 'Record when the vehicle leaves its home store',
+        next_action: 'Work the vehicle or start its return when it is done',
         next_action_owner: current.requested_by || `${destination} salesperson`,
       })
       break

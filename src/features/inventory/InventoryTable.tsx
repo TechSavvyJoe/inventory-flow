@@ -241,7 +241,10 @@ export function VehiclePhoto({ vehicle, className = "" }: { vehicle: InventoryVe
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const sources = [...new Set(
-    [vehicle.imageUrl, ...(vehicle.imageUrls ?? [])]
+    // Match the VDP gallery order. Some feeds retain an older primary URL while
+    // providing current gallery photos, so the SRP should lead with the same
+    // usable image a manager sees after opening the vehicle.
+    [...(vehicle.imageUrls ?? []), vehicle.imageUrl]
       .map((source) => source?.trim())
       .filter((source): source is string => Boolean(source)),
   )];

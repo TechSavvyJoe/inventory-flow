@@ -11,6 +11,7 @@ import { canRequestVehicleMove, movementTrackingPath, transferByVin } from './in
 import {
   hasInventorySearchRequest,
   inventorySearchAccessContext,
+  readWorkspaceReturnPath,
   readInventorySearchRequest,
   stripLegacyInventorySearchQuery,
 } from './inventory-navigation'
@@ -27,6 +28,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   const requestedScope: InventoryScope = params.get('scope') === 'group' ? 'group' : 'home'
   const accessContext = inventorySearchAccessContext(role, homeStore, currentUser)
   const requestedVin = params.get('vin')?.trim().toUpperCase() || null
+  const workspaceReturnPath = readWorkspaceReturnPath(params.get('returnTo'))
   const openedLinkRef = useRef('')
   const previousAccessContextRef = useRef(accessContext)
   const navigationRequest = readInventorySearchRequest(location.state, accessContext)
@@ -158,6 +160,10 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         onSelectedVehicleChange={(id) => {
           setSelectedVehicleId(id)
           if (!id && requestedVin) {
+            if (workspaceReturnPath) {
+              navigate(workspaceReturnPath, { replace: true })
+              return
+            }
             const next = new URLSearchParams(params); next.delete('vin'); next.delete('tab')
             navigate({ pathname: location.pathname, search: next.toString() }, { replace: true })
           }

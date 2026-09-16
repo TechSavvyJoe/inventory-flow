@@ -28,6 +28,7 @@ import { awayFromHomeSummary } from './moveSummary'
 import { selectRequestedTransfer } from './transfer-selection'
 import { VehicleLocationOverview } from './VehicleLocationOverview'
 import { simpleTransferActions } from './SimpleTransferTracker'
+import { currentWorkspaceReturnPath, vehicleWorkspacePath } from '../inventory/inventory-navigation'
 import './transfers-page.css'
 import './transfer-workspace-v3.css'
 import './transfer-workspace-v4.css'
@@ -160,7 +161,7 @@ function compactRequestStatus(value: string, simple = false): string {
   if (simple) {
     if (status === 'closed') return 'Complete'
     if (['requested', 'submitted', 'manager-reviewed', 'needs-information'].includes(status)) return 'Manager checking availability'
-    if (status === 'approved') return 'Approved for collection'
+    if (status === 'approved') return 'Approved — work vehicle or return'
     if (['transport-assigned', 'pickup-scheduled'].includes(status)) return 'Ready to collect'
     if (['picked-up', 'in-transit'].includes(status)) return 'In transit'
     if (['arrived', 'customer-showing', 'sale-outcome-pending'].includes(status)) return 'At requesting store'
@@ -186,12 +187,14 @@ function TransferDetailLoader({
   role,
   homeStore,
   onAction,
+  returnTo,
 }: {
   selected: { record: TransferRecord; detail: TransferDetail } | null;
   data: BootstrapData;
   role: UserRole;
   homeStore: StoreName;
   onAction: (action: TransferActionKind, detail: TransferDetail) => void;
+  returnTo: string;
 }) {
   // A same-ID bootstrap refresh can change both actions and private-data access.
   // Use the record's value as the refresh key, rather than its object identity:
@@ -231,8 +234,8 @@ function TransferDetailLoader({
     : selected?.detail ?? null
   const vehicle = data.vehicles.find(vehicle => vehicle.vin === selectedRecord?.vin)
   return <TransferTracker transfer={detail} mode="page" onAction={onAction} vehicleLinks={vehicle ? <nav className="move-vehicle-links" aria-label="Vehicle reference">
-    <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}`}>Vehicle details</Link>
-    <Link to={`/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}&tab=data`}>Records</Link>
+    <Link to={vehicleWorkspacePath(vehicle.vin, { returnTo })}>Vehicle details</Link>
+    <Link to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo })}>Records</Link>
   </nav> : null} />
 }
 
@@ -434,7 +437,7 @@ export function TransfersPage() {
           <TransferEmptyState onAction={() => navigate('/inventory')} actionLabel="Find a vehicle" />
           <div className="movement-operating-rule">
             <ArrowLeftRight aria-hidden="true" />
-            <div><strong>{simple ? 'One manager review, then simple location updates.' : 'Home Store owns the release. Requesting Store owns the custody.'}</strong><span>{simple ? 'Your manager checks with the vehicle’s home store and approves. Record collection, arrival, and return so everyone knows where it is.' : 'Accountability continues until the Home Store confirms return or an authorized final disposition is recorded.'}</span></div>
+            <div><strong>{simple ? 'One manager review, then a simple return.' : 'Home Store owns the release. Requesting Store owns the custody.'}</strong><span>{simple ? 'Your manager checks with the vehicle’s home store and approves. Sales records the outcome or starts the return; the home store confirms it is back.' : 'Accountability continues until the Home Store confirms return or an authorized final disposition is recorded.'}</span></div>
           </div>
         </div>
       ) : (
@@ -470,8 +473,8 @@ export function TransfersPage() {
                 >
                   <option value="all">All moves</option>
                   <option value="awaiting-approval">Waiting for approval</option>
-                  <option value="ready-to-collect">Ready to collect</option>
-                  <option value="at-requesting-store">At requesting store</option>
+                  {!simple ? <option value="ready-to-collect">Ready to collect</option> : null}
+                  {!simple ? <option value="at-requesting-store">At requesting store</option> : null}
                   {!simple ? <option value="driver-needed">Driver needed</option> : null}
                   <option value="moving">In transit</option>
                   <option value="return-due">Return to follow up</option>
@@ -560,7 +563,7 @@ export function TransfersPage() {
                 </span>
               </header>
             ) : null}
-            <TransferDetailLoader selected={selected} data={data} role={role} homeStore={homeStore} onAction={handleAction} />
+            <TransferDetailLoader selected={selected} data={data} role={role} homeStore={homeStore} onAction={handleAction} returnTo={currentWorkspaceReturnPath(location)} />
           </div>
         </div>
       )}

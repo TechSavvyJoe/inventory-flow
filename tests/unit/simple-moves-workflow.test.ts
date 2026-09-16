@@ -48,14 +48,16 @@ describe('simple manager-led vehicle moves', () => {
     expect(approved.lastConfirmedAt).toBe(created.lastConfirmedAt)
     expect(approved.events.at(-1)).toMatchObject({ type: 'request_approved', confirmedBy: manager.user })
     expect(approved.events.at(-1).label).toContain('confirmed availability for this move')
-    expect(approved.allowedActions).toContain('confirm-pickup')
+    expect(approved.allowedActions).toEqual(expect.arrayContaining(['record-outcome', 'schedule-return']))
+    expect(approved.allowedActions).not.toEqual(expect.arrayContaining(['confirm-pickup', 'confirm-arrival']))
     expect(approved.nextAction).not.toMatch(/driver|dispatch/i)
     tick()
     const departed = service.appendTransferEvent(id, { type: 'vehicle_departed', fromLocation: 'Fake place', toLocation: 'Fake destination' }, sales, 'synthetic-departure').record
     expect(departed).toMatchObject({ requestStatus: 'picked_up', movementStatus: 'picked_up', currentLocation: 'In transit', locationConfidence: 'verified' })
     expect(departed.transportAssignee).toBeUndefined()
     expect(departed.events.at(-1)).toMatchObject({ type: 'vehicle_departed', fromLocation: 'Howell', toLocation: 'In transit' })
-    expect(departed.allowedActions).toContain('confirm-arrival')
+    expect(departed.allowedActions).toEqual(expect.arrayContaining(['record-outcome', 'schedule-return']))
+    expect(departed.allowedActions).not.toEqual(expect.arrayContaining(['confirm-pickup', 'confirm-arrival']))
     tick()
     const arrived = service.appendTransferEvent(id, { type: 'arrived', toLocation: 'Fowlerville' }, sales, 'synthetic-arrival').record
     expect(arrived.currentLocation).toBe('Fowlerville')
@@ -146,7 +148,8 @@ describe('simple manager-led vehicle moves', () => {
     const rawBefore = database.prepare('SELECT * FROM transfer_requests WHERE id=?').get(id)
     const simpleView = service.getTransfer(id, manager)
     expect(simpleView.nextAction).not.toMatch(/driver|dispatch/i)
-    expect(simpleView.allowedActions).toContain('confirm-pickup')
+    expect(simpleView.allowedActions).toContain('schedule-return')
+    expect(simpleView.allowedActions).not.toEqual(expect.arrayContaining(['confirm-pickup', 'confirm-arrival']))
     expect(simpleView.allowedActions).not.toContain('assign-transport')
     expect(database.prepare('SELECT * FROM transfer_requests WHERE id=?').get(id)).toEqual(rawBefore)
     const departed = service.appendTransferEvent(id, { type: 'vehicle_departed' }, sales).record

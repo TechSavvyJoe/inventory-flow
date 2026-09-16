@@ -408,8 +408,11 @@ function allowedUiActions(row, context) {
   add('decline', events.has(simple ? 'request_declined' : 'declined'))
   add('request-driver', !simple && events.has('driver_requested'))
   add('assign-transport', !simple && (events.has('transport_assigned') || events.has('return_assigned')))
-  add('confirm-pickup', simple ? events.has('vehicle_departed') : events.has('picked_up') || events.has('return_in_transit'))
-  add('confirm-arrival', events.has('arrived'))
+  // Collection and destination-arrival were not reliably recorded by the two
+  // stores. Keep historical evidence read-only, but do not make either one an
+  // everyday manager task or a gate to the outcome/return workflow.
+  add('confirm-pickup', !simple && (events.has('picked_up') || events.has('return_in_transit')))
+  add('confirm-arrival', !simple && events.has('arrived'))
   add(
     'record-outcome',
     ['customer_showing', 'sale_outcome_pending', 'sale_confirmed', 'delivery_confirmed', 'not_sold'].some((event) =>
@@ -435,10 +438,9 @@ function simpleNextAction(row) {
       return { label: 'Your manager confirms availability and approves the request', owner: row.approval_owner || `${row.requesting_store_id} manager` }
     case 'approved':
     case 'transport_assigned':
-      return { label: 'Record when the vehicle leaves its home store', owner: row.requested_by || `${row.requesting_store_id} salesperson` }
     case 'picked_up':
     case 'in_transit':
-      return { label: 'Confirm arrival at requesting store', owner: `${row.requesting_store_id} sales/manager` }
+      return { label: 'Work the vehicle or start its return when it is done', owner: row.requested_by || `${row.requesting_store_id} salesperson` }
     case 'arrived':
     case 'customer_showing':
     case 'sale_outcome_pending':

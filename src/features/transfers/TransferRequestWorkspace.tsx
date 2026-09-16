@@ -400,7 +400,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
               {simple ? <>
                 <li><span>1</span><b>Send the request</b><small>Your {draft.requestingStore || 'store'} manager gets the vehicle and timing.</small></li>
                 <li><span>2</span><b>Your manager checks and approves</b><small>They confirm availability with {vehicle.homeStore} and approve this move.</small></li>
-                <li><span>3</span><b>Keep the location up to date</b><small>Record collection, arrival and return. The app shows where it is and how long it has been away.</small></li>
+                <li><span>3</span><b>Record the outcome or start the return</b><small>When the appointment is done, record the result or start the return. The home store confirms it is back.</small></li>
               </> : <>
               <li><span>1</span><b>Salesperson submits the request</b><small>{draft.requestingStore || 'Requesting store'} asks for the vehicle.</small></li>
               <li><span>2</span><b>Requesting-store manager approves</b><small>{selectedManager?.label || `${draft.requestingStore || 'Your store'} manager`} reviews the request first.</small></li>

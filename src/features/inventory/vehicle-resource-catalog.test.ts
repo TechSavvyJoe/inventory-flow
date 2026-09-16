@@ -29,7 +29,7 @@ describe('rich vehicle resource catalog', () => {
     expect(history.facts).toEqual([]);
     expect(history.compactFacts).toEqual([]);
     expect(history.score).toBeUndefined();
-    expect(history.sourceNote).toBe('Partial captured record · No report details captured');
+    expect(history.sourceNote).toBeNull();
   });
 
   it('prioritizes captured title and odometer hazards over a high score or a clear accident result', () => {
@@ -41,7 +41,7 @@ describe('rich vehicle resource catalog', () => {
     expect(history.compactFacts).toEqual(['Title check: Salvage brand reported', 'Odometer check: Odometer discrepancy reported']);
     expect(history.facts[0]).toBe('Score 91');
     expect(history.facts).toContain('Accident check: No accidents reported');
-    expect(history.sourceNote).toBe('Saved report · refresh at source · Report run Aug 30, 2026');
+    expect(history.sourceNote).toBeNull();
     expect(history.facts.join(' ')).not.toMatch(/refresh at source|Report run/);
   });
 
@@ -51,7 +51,7 @@ describe('rich vehicle resource catalog', () => {
       {label:'Title check',status:'No issues found',detail:'Salvage title reported by state source'},
     ] } }, 'autocheck');
     expect(history.compactFacts[0]).toBe('Title check: No issues found · Salvage title reported by state source');
-    expect(history.sourceNote).toBe('Partial captured record');
+    expect(history.sourceNote).toBeNull();
   });
 
   it('surfaces a positive accident record before clean checks without deriving new outcome text', () => {
@@ -107,7 +107,7 @@ describe('rich vehicle resource catalog', () => {
 
   it('places relevant OASIS actions, warranty start and coverage ahead of build metadata', () => {
     const oasis=resource({fordOasis:{dataState:'current',capturedAt:'2026-09-01',warrantyStartDate:'08-AUG-2023',buildDate:'01-JUL-2023',openFieldServiceActions:[{code:'TEST-24N',description:'Synthetic inspection'}],warrantyCoverages:[{type:'Powertrain',description:'5 years / 60,000 miles'}]}},'oasis');
-    expect(oasis.summaryFacts).toEqual(['Open FSA TEST-24N · Synthetic inspection','Warranty start 08-AUG-2023','Recorded coverage: Powertrain · 5 years / 60,000 miles']);
+    expect(oasis.summaryFacts).toEqual(['Open FSA TEST-24N · Synthetic inspection','Warranty start 08-AUG-2023','Coverage: Powertrain · 5 years / 60,000 miles']);
     expect(oasis.facts).toContain('Built 01-JUL-2023');
   });
 
@@ -122,18 +122,18 @@ describe('rich vehicle resource catalog', () => {
 
   it('uses named vAuto packages and important captured items rather than counts', () => {
     const equipment = resource({ factoryEquipment: { dataState:'stale_unverified', capturedAt:'2026-08-28', isOriginalWindowSticker:false, engine:'2.0L', drivetrain:'AWD', packages:[{name:'Technology Package',code:'66T',features:['360-degree camera']}], sections:[{name:'Equipment',items:[{label:'Floor mats'},{label:'Adaptive cruise control'},{label:'360-degree camera'},{label:'Adaptive cruise control'}]}] } }, 'vauto');
-    expect(equipment.compactFacts).toEqual(['Technology Package · 66T', 'Adaptive cruise control · 360-degree camera']);
+    expect(equipment.compactFacts).toEqual(['Technology Package · 66T']);
     expect(equipment.facts).toContain('2.0L · AWD');
     expect(equipment.facts.filter(fact => fact === 'Adaptive cruise control')).toHaveLength(1);
-    expect(equipment.sourceNote).toBe('Informational · not an original sticker · Saved report · refresh at source · Captured Aug 28, 2026');
+    expect(equipment.sourceNote).toBeNull();
   });
 
   it('puts actual open OASIS codes and descriptions first while retaining exact coverage/date evidence', () => {
     const oasis = resource({ fordOasis:{dataState:'current',capturedAt:'2026-08-30',warrantyStartDate:'14-MAR-2024',buildDate:'20-FEB-2024',openFieldServiceActions:[{code:'DEMO-24A',description:'Synthetic camera inspection'}],warrantyCoverages:[{type:'Powertrain',description:'5 years / 60,000 miles'}],monthsInService:0,saleMileage:0} }, 'oasis');
-    expect(oasis.compactFacts).toEqual(['Open FSA DEMO-24A · Synthetic camera inspection','Warranty start 14-MAR-2024']);
+    expect(oasis.compactFacts).toEqual(['Open FSA DEMO-24A · Synthetic camera inspection']);
     expect(oasis.facts).toContain('Built 20-FEB-2024');
-    expect(oasis.facts).toContain('Recorded coverage: Powertrain · 5 years / 60,000 miles');
-    expect(oasis.facts).toContain('0 months in service at capture');
+    expect(oasis.facts).toContain('Coverage: Powertrain · 5 years / 60,000 miles');
+    expect(oasis.facts).toContain('0 months in service');
     expect(oasis.facts).toContain('0 mi at sale');
     expect(oasis.facts.join(' ')).not.toMatch(/active coverage|verified today/i);
   });
@@ -146,7 +146,7 @@ describe('rich vehicle resource catalog', () => {
     };
     const oasis = resource({ fordOasis }, 'oasis');
     expect(oasis.compactFacts[0]).toBe('Open FSA TEST-26A · REAR AXLE ▴ & HUB');
-    expect(oasis.facts).toContain('Recorded coverage: Powertrain · 5 years & 60,000 miles');
+    expect(oasis.facts).toContain('Coverage: Powertrain · 5 years & 60,000 miles');
     expect(fordOasis.openFieldServiceActions[0].description).toBe('REAR AXLE &#x25B4; &amp; HUB');
     expect(fordOasis.warrantyCoverages[0].description).toBe('5 years &amp; 60,000 miles');
   });
@@ -155,31 +155,30 @@ describe('rich vehicle resource catalog', () => {
     const oasis = resource({fordOasis:{dataState:state,openFieldServiceActions:[],warrantyCoverages:[]}},'oasis');
     expect(oasis.hasCapturedData).toBe(false);
     expect(oasis.facts).toEqual([]);
-    expect(oasis.compactFacts).toEqual(['DealerConnection sign-in']);
-    expect(oasis.sourceNote).toContain('No OASIS report details captured');
+    expect(oasis.compactFacts).toEqual([]);
+    expect(oasis.sourceNote).toBeNull();
   });
 
   it('reports zero only from a complete dated OASIS capture, never as current safety or availability', () => {
     const oasis = resource({fordOasis:{dataState:'stale',capturedAt:'2026-08-30',openActionsCaptured:true,openFieldServiceActions:[]}},'oasis');
-    expect(oasis.facts).toEqual(['0 open Ford actions in captured report']);
-    expect(oasis.sourceNote).toBe('Saved report · refresh at source · Captured Aug 30, 2026');
+    expect(oasis.facts).toEqual(['No open Ford actions']);
+    expect(oasis.sourceNote).toBeNull();
     const partial = resource({fordOasis:{dataState:'incomplete',capturedAt:'2026-08-30',warrantyStartDate:'14-MAR-2024',openFieldServiceActions:[]}},'oasis');
     expect(partial.facts).toEqual(['Warranty start 14-MAR-2024']);
-    expect(partial.sourceNote).toContain('Open-action result not captured');
+    expect(partial.sourceNote).toBeNull();
   });
 
   it.each([undefined, false])('does not treat a legacy or default empty action array with flag %s as a captured zero', openActionsCaptured => {
     const oasis = resource({fordOasis:{dataState:'current',capturedAt:'2026-08-30',warrantyStartDate:'14-MAR-2024',openFieldServiceActions:[],openActionsCaptured}},'oasis');
     expect(oasis.facts.join(' ')).not.toContain('0 open');
-    expect(oasis.sourceNote).toContain('Open-action result not captured');
+    expect(oasis.sourceNote).toBeNull();
   });
 
   it.each(['9999-01-01', 'not a date', '2026-02-30'])('does not promote the %s capture timestamp into a zero action result', capturedAt => {
     const oasis = resource({fordOasis:{dataState:'current',capturedAt,openActionsCaptured:true,openFieldServiceActions:[]}},'oasis');
     expect(oasis.hasCapturedData).toBe(false);
     expect(oasis.facts).toEqual([]);
-    expect(oasis.sourceNote).toMatch(/Future source date|Unrecognized source date/);
-    expect(oasis.sourceNote).not.toContain('Captured ');
+    expect(oasis.sourceNote).toBeNull();
   });
 
   it('does not display a reversed score range as a source comparison', () => {

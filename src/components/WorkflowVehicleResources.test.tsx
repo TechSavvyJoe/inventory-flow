@@ -12,7 +12,7 @@ describe('vehicle resources across workflow pages', () => {
     const vehicle = {vin:'TESTDATAHWELL0001',make:'Ford',autoCheckReport:{dataState:'current',score:91}} as VehicleRecord
     render(<MemoryRouter initialEntries={['/attention']}><WorkflowVehicleResources vehicle={vehicle}/><CurrentRoute/></MemoryRouter>)
     fireEvent.click(screen.getByRole('button',{name:/View AutoCheck data for VIN TESTDATAHWELL0001/}))
-    expect(screen.getByRole('status')).toHaveTextContent('/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data')
+    expect(screen.getByRole('status')).toHaveTextContent('/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data&returnTo=%2Fattention')
   })
   it('keeps synthetic sample documents separate from provider records', () => {
     const vehicle = {vin:'TESTDATALNCN00001',make:'Lincoln',imageUrl:'/demo-vehicles/nautilus.png'} as VehicleRecord

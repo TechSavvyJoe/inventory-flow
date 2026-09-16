@@ -10,15 +10,14 @@ export function CapturedDealerMailMessages({ vehicle, kind }: { vehicle: Invento
   const messages = vehicle.dealerMailEvidence?.[kind]?.length
     ? vehicle.dealerMailEvidence[kind]
     : vehicle.holdEvidence?.flatMap(record => record[kind] ?? []) ?? []
-  const title = kind === 'comments' ? 'Saved comments' : 'Saved alerts'
-  const stale = vehicle.dealerMail.dataState !== 'current' || (vehicle.dealerMailEvidence && vehicle.dealerMailEvidence.dataState !== 'current')
+  const title = kind === 'comments' ? 'Comments' : 'Alerts'
   return <section className="inventory-captured-messages" aria-label={title}>
     <h3>{title}</h3>
-    <p>{stale ? 'Last verified information — current state is unverified.' : 'Read-only information from the latest captured record.'} Add or change {kind} only in the verified live DealerMail record.</p>
+    <p>Review or update {kind} in DealerMail.</p>
     {messages.length ? messages.map((message, index) => <article key={index}>
-      <p>{message.text || 'Text was not supplied.'}</p>
-      <small>{[message.author, message.timestamp, 'metadataRaw' in message ? message.metadataRaw : null, 'spiffRaw' in message && message.spiffRaw ? `Spiff: ${message.spiffRaw}` : null].filter(Boolean).join(' · ')}</small>
-    </article>) : <p>No {kind} were captured for this vehicle. This does not confirm there are none in DealerMail now.</p>}
+      <p>{message.text || 'No message text available.'}</p>
+      {message.author ? <small>{message.author}</small> : null}
+    </article>) : <p>No {kind} are available.</p>}
   </section>
 }
 
@@ -64,7 +63,7 @@ export function DealerMailHandoff({ vehicle, panelRef }: {
   }
 
   return <section className="inventory-dealermail-handoff inventory-workspace-dealermail-rail" aria-label="DealerMail vehicle tools" ref={panelRef} tabIndex={-1}>
-    <header><h3>Continue in DealerMail</h3><p>Live holds, comments, and alerts are managed in DealerMail.</p></header>
+    <header><h3>Continue in DealerMail</h3><p>Review or update the live hold.</p></header>
     <dl className="inventory-dealermail-handoff__identity">
       <div><dt>Stock</dt><dd>{vehicle.stockNumber || 'Not supplied'}</dd></div>
       <div><dt>Verify full VIN</dt><dd>{vehicle.vin}</dd></div>
@@ -72,9 +71,8 @@ export function DealerMailHandoff({ vehicle, panelRef }: {
     <button type="button" className="inventory-dealermail-handoff__launch" onClick={launch} disabled={!url}>
       <ExternalLink size={17} aria-hidden="true" /> Open DealerMail &amp; copy stock
     </button>
-    <p>In DealerMail, paste the stock into <strong>LAST8 / STOCK</strong>, click <strong>Search</strong>, and verify the VIN.</p>
-    <p className="inventory-dealermail-handoff__note">DealerMail opens its inventory search; the vehicle is not selected automatically.</p>
-    {vehicle.dealerMail.dataState !== 'current' ? <p role="note">Hold status is not confirmed. Verify the live DealerMail record before acting.</p> : null}
+    <p>Paste the stock number into DealerMail and verify the VIN before updating the record.</p>
+    {vehicle.dealerMail.dataState !== 'current' ? <p role="note">Confirm the current hold before acting.</p> : null}
     {feedback ? <div className="inventory-dealermail-handoff__feedback" role="status">{feedback} {url ? <a href={url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">Open DealerMail inventory</a> : null}</div> : null}
   </section>
 }

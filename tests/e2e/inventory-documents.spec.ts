@@ -38,18 +38,15 @@ test('inventory search opens the VIN-specific premium document workspace', async
   await expect(dialog).toBeVisible()
   await dialog.getByRole('tab', { name: 'Records', exact: true }).click()
   const documents = dialog.getByRole('region', { name: 'Vehicle documents' })
-  // Synthetic AutoCheck score and range, then the informational factory
-  // equipment profile with its reference MSRP and priced package.
+  // Synthetic AutoCheck score and range, followed by concise equipment
+  // highlights with the complete record still one click away.
   await expect(documents.getByLabel('AutoCheck summary').locator('dd').first()).toContainText('91')
   await expect(documents.getByText('Typical 86–93', { exact: true })).toBeVisible()
   await expect(documents.getByText('History checks')).toBeVisible()
   await documents.getByRole('navigation', { name: 'Record sections' }).getByRole('button', { name: 'Equipment', exact: true }).click()
-  await expect(documents.getByText(/Informational equipment label—not an original window sticker\./)).toBeVisible()
   const profile = documents.locator('[data-document-kind="vauto-factory-equipment"]')
-  await expect(profile.getByText('68,420', { exact: true })).toBeHidden()
-  await profile.locator('.vdp-record-source-details > summary').click()
-  await expect(profile.getByText('68,420', { exact: true })).toBeVisible()
-  await expect(profile.getByText(/Reference amounts only · currency not captured/)).toBeVisible()
+  await expect(profile.getByText(/Informational equipment label—not an original window sticker\./)).toHaveCount(0)
+  await expect(profile.locator('.vdp-record-source-details')).toHaveCount(0)
   const packages = documents.locator('section.vdp-record-section[aria-label="Packages & priced equipment"]')
   await expect(packages).toBeVisible()
   await expect(packages.getByText('Synthetic Premium Technology Package')).toBeVisible()
