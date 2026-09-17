@@ -197,14 +197,23 @@ function Complete-VerifiedPublicationState {
     throw 'RUN_MANIFEST_NOT_COMPLETE_AFTER_PUBLISH'
   }
 
-  $manifest.latest_pointers_advanced = $true
-  $manifest.cloudflare_publish = [ordered]@{
+  if ($manifest.PSObject.Properties.Name -contains 'latest_pointers_advanced') {
+    $manifest.latest_pointers_advanced = $true
+  } else {
+    $manifest | Add-Member -NotePropertyName latest_pointers_advanced -NotePropertyValue $true
+  }
+  $cloudflarePublish = [ordered]@{
     attempted = $true
     status = 'published_and_verified'
     receipt_path = (Join-Path $LogDir ("{0}.json" -f $Date))
     bundle_sha256 = [string]$Receipt.bundleSha256
     verified_at = [string]$Receipt.verifiedAt
     publisher = 'BobMaxey-InventoryFlow-DailyPublish'
+  }
+  if ($manifest.PSObject.Properties.Name -contains 'cloudflare_publish') {
+    $manifest.cloudflare_publish = $cloudflarePublish
+  } else {
+    $manifest | Add-Member -NotePropertyName cloudflare_publish -NotePropertyValue $cloudflarePublish
   }
   $temporary = "$manifestPath.tmp"
   $json = $manifest | ConvertTo-Json -Depth 32
