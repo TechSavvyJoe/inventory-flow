@@ -48,4 +48,54 @@ describe('repository safety gate', () => {
       ]),
     )
   })
+
+  it('flags a literal credential in a PowerShell script', () => {
+    const root = temporaryRepository()
+    const syntheticToken = `ghp_${'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcd'}`
+    writeFileSync(
+      path.join(root, 'deploy.ps1'),
+      `# example\n$token = '${syntheticToken}'\n`,
+    )
+    const result = inspectRepository(root)
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ file: 'deploy.ps1', reason: expect.stringMatching(/GitHub personal access token/) }),
+      ]),
+    )
+  })
+
+  it('flags backup script file names', () => {
+    const root = temporaryRepository()
+    mkdirSync(path.join(root, 'scripts'), { recursive: true })
+    writeFileSync(path.join(root, 'scripts', 'publish.ps1.bak-20260912'), '# old\n')
+    writeFileSync(path.join(root, 'scripts', 'launcher.ps1.chrome-backup'), '# old\n')
+    const result = inspectRepository(root)
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ file: 'scripts/publish.ps1.bak-20260912', reason: expect.stringMatching(/backup copies/) }),
+        expect.objectContaining({ file: 'scripts/launcher.ps1.chrome-backup', reason: expect.stringMatching(/backup copies/) }),
+      ]),
+    )
+  })
+
+  it('flags a host-specific Windows user-profile path but not %USERPROFILE%', () => {
+    const root = temporaryRepository()
+    // Built via concatenation so this file's own source text does not itself
+    // contain the literal path and trip the gate when it scans this file.
+    const hostSpecificPath = ['C:', '\\Users\\', 'Someone', '\\AppData\\Local\\app.log'].join('')
+    writeFileSync(path.join(root, 'NOTES.md'), `Log lives at ${hostSpecificPath}\n`)
+    writeFileSync(
+      path.join(root, 'SAFE.md'),
+      'Log lives at %USERPROFILE%\\AppData\\Local\\app.log\n',
+    )
+    const result = inspectRepository(root)
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ file: 'NOTES.md', reason: expect.stringMatching(/host-specific Windows user-profile path/) }),
+      ]),
+    )
+    expect(result.findings).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ file: 'SAFE.md' })]),
+    )
+  })
 })
