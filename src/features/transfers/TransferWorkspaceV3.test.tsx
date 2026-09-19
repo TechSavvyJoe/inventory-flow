@@ -432,6 +432,56 @@ describe('transfer workspace v3 layout', () => {
     expect(within(progress).queryByText('Approval')).not.toBeInTheDocument();
   });
 
+  it('shows a sold-pending vehicle waiting on its delivery, never on a return home', () => {
+    const sold = detail(['record-outcome', 'report-condition']);
+    sold.timeline = [{
+      id: 'direct-sold',
+      kind: 'direct_move_recorded',
+      title: 'Vehicle moved to destination store',
+      occurredAt: '2026-09-19T16:27:00.000Z',
+      location: 'Howell',
+      actorLabel: 'Group Manager',
+      actorRole: 'group_manager',
+      source: 'app',
+    }];
+    sold.status = {
+      ...sold.status,
+      request: { code: 'submitted', label: 'Sale confirmed', tone: 'info' },
+      movement: { code: 'at-requesting-store-verified', label: 'At requesting store', tone: 'location' },
+      deal: { code: 'sold-pending', label: 'Sold pending — delivery not confirmed', tone: 'info' },
+      delivery: { code: 'not-confirmed', label: 'Delivery not confirmed', tone: 'neutral' },
+    };
+    sold.nextAction = { label: 'Confirm the customer delivery, or record that the deal fell through', ownerLabel: 'Howell manager', sla: 'on-track' };
+    const onAction = vi.fn();
+    render(<TransferTracker transfer={{ ...sold, workflowMode: 'simple' }} onAction={onAction} />);
+    const progress = screen.getByRole('list', { name: 'Vehicle move progress' });
+    expect(within(progress).queryByText('Return home')).not.toBeInTheDocument();
+    expect(within(progress).getByText('Customer delivery').closest('li')).toHaveAttribute('aria-current', 'step');
+    expect(within(progress).getByText('At destination').closest('li')).toHaveClass('is-complete');
+    const summary = screen.getByRole('region', { name: 'Request and vehicle summary' });
+    expect(within(summary).getByText('Paused while sold pending')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Next move action' })).not.toHaveTextContent(/return/i);
+    fireEvent.click(within(screen.getByLabelText('Available move actions')).getByRole('button', { name: 'Confirm delivery / update outcome' }));
+    expect(onAction).toHaveBeenCalledWith('record-outcome', expect.objectContaining({ id: 'transfer-return' }));
+  });
+
+  it('marks a delivered vehicle complete with no return step', () => {
+    const delivered = detail([]);
+    delivered.status = {
+      ...delivered.status,
+      request: { code: 'closed', label: 'Complete', tone: 'success' },
+      movement: { code: 'at-requesting-store-verified', label: 'At requesting store', tone: 'location' },
+      deal: { code: 'sold-pending', label: 'Sold pending — delivery not confirmed', tone: 'info' },
+      delivery: { code: 'confirmed', label: 'Delivery confirmed', tone: 'success' },
+    };
+    render(<TransferTracker transfer={{ ...delivered, workflowMode: 'simple' }} />);
+    expect(screen.getByRole('heading', { name: 'Delivered · move complete' })).toBeInTheDocument();
+    const progress = screen.getByRole('list', { name: 'Vehicle move progress' });
+    expect(within(progress).queryByText('Return home')).not.toBeInTheDocument();
+    expect(within(progress).getByText('Customer delivery').closest('li')).toHaveClass('is-complete');
+    expect(within(screen.getByRole('region', { name: 'Request and vehicle summary' })).getByText('Not required · delivered')).toBeInTheDocument();
+  });
+
   it('keeps advanced direct-move records free of request approval and needed-by language', () => {
     const direct = detail(['record-outcome']);
     direct.timeline = [{
@@ -719,6 +769,9 @@ describe('transfer workspace v3 layout', () => {
     const data = bootstrap(4);
     data.transfers[1].dealStatus = 'sold pending';
     data.transfers[1].deliveryStatus = 'not confirmed';
+    data.transfers[1].requestStatus = 'sale_confirmed';
+    data.transfers[1].currentLocation = 'Ford Detroit';
+    data.transfers[1].dueAt = '2099-01-01T15:00:00.000Z';
     data.transfers[2].dealStatus = 'sold pending';
     data.transfers[2].deliveryStatus = 'delivery_confirmed';
     const { container } = renderPage(data);
@@ -728,6 +781,10 @@ describe('transfer workspace v3 layout', () => {
     });
     expect(container.querySelectorAll('.transfer-list-item')).toHaveLength(1);
     expect(container.querySelector('.transfer-list-item')).toHaveTextContent('MOVE2');
+    // A sold vehicle away from home is waiting on its delivery, not on a return.
+    expect(container.querySelector('.transfer-list-item')).toHaveTextContent('Sold pending · awaiting delivery');
+    expect(container.querySelector('.transfer-list-item')).toHaveTextContent('Sold pending · return paused');
+    expect(container.querySelector('.transfer-list-item')).not.toHaveTextContent('Return required');
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Filter vehicle moves' }), {
       target: { value: 'all' },

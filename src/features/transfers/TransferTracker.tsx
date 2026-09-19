@@ -126,13 +126,17 @@ export function TransferTracker({
   const latestConditionIssue = transfer.timeline.find((event) => event.kind === 'condition_issue');
   const directMoveEvent = [...transfer.timeline].reverse().find((event) => event.kind === 'direct_move_recorded');
   const directMove = Boolean(directMoveEvent);
-  const returnPlan = transfer.returnRequired === true
-    ? transfer.returnDueAt
-      ? formatDateTime(transfer.returnDueAt)
-      : 'Required · date not set'
-    : transfer.returnRequired === false
-      ? 'Not required'
-       : 'Not recorded';
+  const returnPlan = transfer.status.delivery.code === 'confirmed'
+    ? 'Not required · delivered'
+    : transfer.status.deal.code === 'sold-pending'
+      ? 'Paused while sold pending'
+      : transfer.returnRequired === true
+        ? transfer.returnDueAt
+          ? formatDateTime(transfer.returnDueAt)
+          : 'Required · date not set'
+        : transfer.returnRequired === false
+          ? 'Not required'
+          : 'Not recorded';
   const handleAction = (kind: TransferActionKind) => onAction?.(kind, transfer);
   const nextActionText = action.label.toLowerCase();
   const contextualPrimary = ([

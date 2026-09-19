@@ -116,6 +116,20 @@ describe('TransferActionDialog modal accessibility', () => {
     document.body.style.removeProperty('overscroll-behavior')
   })
 
+  it('lets only a manager record that a confirmed sale fell through', () => {
+    const sold = { ...record, requestStatus: 'sale_confirmed', dealStatus: 'sold_pending', workflowMode: 'simple' as const }
+    const { unmount } = render(<TransferActionDialog action="record-outcome" record={sold} detail={detail} onClose={vi.fn()} />)
+    expect(screen.getByRole('radio', { name: /Delivery confirmed/ })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /Deal fell through — not sold/ })).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /Shown — not sold/ })).not.toBeInTheDocument()
+    unmount()
+
+    mocks.useAppData.mockReturnValue({ addTransferEvent: mocks.addTransferEvent, homeStore: 'Howell', role: 'sales' })
+    render(<TransferActionDialog action="record-outcome" record={sold} detail={detail} onClose={vi.fn()} />)
+    expect(screen.getByRole('radio', { name: /Delivery confirmed/ })).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /Deal fell through/ })).not.toBeInTheDocument()
+  })
+
   it('opens as a named modal, isolates the app background, and places focus reliably', async () => {
     document.body.style.setProperty('overflow', 'auto')
     const { container } = render(<DialogHarness />)

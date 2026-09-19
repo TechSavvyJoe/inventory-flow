@@ -16,13 +16,18 @@ export function simpleTransferActions(transfer: TransferDetail): TransferActionK
   return transfer.allowedActions.filter(action => !ADVANCED_ACTIONS.has(action) && !RETIRED_SIMPLE_ACTIONS.has(action));
 }
 
-export function simpleTransferActionLabel(action: TransferActionKind): string {
+/** Sold pending with no delivery yet: the vehicle waits at the destination for its customer, not for a trip home. */
+export function awaitingCustomerDelivery(transfer: Pick<TransferDetail, 'status'>): boolean {
+  return transfer.status.deal.code === 'sold-pending' && transfer.status.delivery.code !== 'confirmed';
+}
+
+export function simpleTransferActionLabel(action: TransferActionKind, transfer?: Pick<TransferDetail, 'status'>): string {
   if (action === 'approve') return 'Approve this move';
   if (action === 'confirm-pickup') return 'Mark vehicle collected';
   if (action === 'confirm-arrival') return 'Mark arrived';
   if (action === 'schedule-return') return 'Start return';
   if (action === 'confirm-return') return 'Confirm back home';
-  if (action === 'record-outcome') return 'Update showing / outcome';
+  if (action === 'record-outcome') return transfer && awaitingCustomerDelivery(transfer) ? 'Confirm delivery / update outcome' : 'Update showing / outcome';
   if (action === 'mark-exception') return 'Report a location or timing issue';
   return transferActionLabels[action];
 }
@@ -54,7 +59,20 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
   const takeAction = (action: TransferActionKind) => onAction?.(action, transfer);
   const target = transfer.destination || transfer.requestingStore || 'Requesting store';
   const terminal = transfer.status.movement.code === 'returned-home-confirmed' || ['closed', 'declined', 'canceled', 'expired'].includes(transfer.status.request.code);
-  const progress = moveProgress(transfer);
+  const delivered = transfer.status.delivery.code === 'confirmed';
+  const soldPending = !terminal && awaitingCustomerDelivery(transfer);
+  // A sold vehicle's last step is the customer delivery, never a return home.
+  const finalStep = soldPending || delivered ? 'Customer delivery' : 'Return home';
+  const progress = delivered ? 2 : moveProgress(transfer);
+  const returnDueLabel = transfer.returnRequired === false
+    ? 'Return not required'
+    : delivered
+      ? 'Not required · delivered'
+      : soldPending
+        ? 'Paused while sold pending'
+        : transfer.returnDueAt
+          ? formatDateTime(transfer.returnDueAt)
+          : 'Not set';
   return (
     <article className={`mif-transfer-feature simple-transfer-tracker simple-transfer-tracker--${mode}`}>
       <header className="simple-move-heading">
@@ -76,17 +94,17 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
       ) : null}
 
       <section className="simple-move-next" aria-label="Next move action">
-        <div><span>{terminal ? 'Request status' : 'Next step'}</span><h3>{terminal ? transfer.status.movement.code === 'returned-home-confirmed' ? 'Back home · move complete' : humanizeStatusLabel(transfer.status.request.label) : transfer.nextAction.label}</h3>{!terminal ? <p>{transfer.nextAction.ownerLabel || `${transfer.requestingStore || target} manager`}{transfer.nextAction.dueAt ? ` · Needed ${formatDateTime(transfer.nextAction.dueAt)}` : ''}</p> : null}</div>
+        <div><span>{terminal ? 'Request status' : 'Next step'}</span><h3>{terminal ? transfer.status.movement.code === 'returned-home-confirmed' ? 'Back home · move complete' : delivered ? 'Delivered · move complete' : humanizeStatusLabel(transfer.status.request.label) : transfer.nextAction.label}</h3>{!terminal ? <p>{transfer.nextAction.ownerLabel || `${transfer.requestingStore || target} manager`}{transfer.nextAction.dueAt ? ` · Needed ${formatDateTime(transfer.nextAction.dueAt)}` : ''}</p> : null}</div>
         {allowed.length && onAction ? <div className="simple-move-actions" aria-label="Available move actions">
-          {primary ? <button type="button" className="mif-button mif-button--primary" onClick={() => takeAction(primary)}>{simpleTransferActionLabel(primary)}</button> : null}
-          {additional.length ? <details className="simple-move-more"><summary>Other options <ChevronDown aria-hidden="true" size={16} /></summary><div>{additional.map(action => <button type="button" key={action} onClick={() => takeAction(action)}>{simpleTransferActionLabel(action)}</button>)}</div></details> : null}
+          {primary ? <button type="button" className="mif-button mif-button--primary" onClick={() => takeAction(primary)}>{simpleTransferActionLabel(primary, transfer)}</button> : null}
+          {additional.length ? <details className="simple-move-more"><summary>Other options <ChevronDown aria-hidden="true" size={16} /></summary><div>{additional.map(action => <button type="button" key={action} onClick={() => takeAction(action)}>{simpleTransferActionLabel(action, transfer)}</button>)}</div></details> : null}
         </div> : !terminal ? <p className="simple-move-waiting">Waiting on {transfer.nextAction.ownerLabel || `${transfer.requestingStore || target} manager`}. Your available updates will appear here.</p> : null}
       </section>
 
       {vehicleLinks}
 
-      {!terminal || transfer.status.movement.code === 'returned-home-confirmed' ? <ol className="simple-move-progress" aria-label="Vehicle move progress">
-        {(directMove ? ['At destination', 'Return home'] : ['Approval', 'Return home']).map((label, index) => <li key={label} className={index < progress ? 'is-complete' : index === progress ? 'is-current' : undefined} aria-current={index === progress ? 'step' : undefined}><span>{index < progress ? <Check aria-hidden="true" size={14} /> : index + 1}</span><strong>{label}</strong></li>)}
+      {!terminal || transfer.status.movement.code === 'returned-home-confirmed' || delivered ? <ol className="simple-move-progress" aria-label="Vehicle move progress">
+        {[directMove ? 'At destination' : 'Approval', finalStep].map((label, index) => <li key={label} className={index < progress ? 'is-complete' : index === progress ? 'is-current' : undefined} aria-current={index === progress ? 'step' : undefined}><span>{index < progress ? <Check aria-hidden="true" size={14} /> : index + 1}</span><strong>{label}</strong></li>)}
       </ol> : null}
 
       <section className="simple-move-location" aria-label="Vehicle location and time away">
@@ -100,7 +118,7 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
           <div><dt>{directMove ? 'Recorded by' : 'Requested by'}</dt><dd>{transfer.requestedByLabel || 'Not recorded'}</dd>{!directMove ? <dd className="simple-move-secondary">{transfer.requestingStore || 'Store not recorded'} · {formatDateTime(transfer.requestedAt)}</dd> : null}</div>
           <div><dt>{directMove ? 'Destination' : 'Requested destination'}</dt><dd>{target}</dd></div>
           <div><dt>{directMove ? 'Moved at' : 'Needed by'}</dt><dd>{formatDateTime(directMoveEvent?.occurredAt || transfer.neededBy)}</dd></div>
-          <div><dt>Return due</dt><dd>{transfer.returnRequired === false ? 'Return not required' : transfer.returnDueAt ? formatDateTime(transfer.returnDueAt) : 'Not set'}</dd></div>
+          <div><dt>Return due</dt><dd>{returnDueLabel}</dd></div>
           {!directMove ? <div><dt>Requesting-store manager</dt><dd>{transfer.approvalOwnerLabel || `${transfer.requestingStore || target} manager`}</dd></div> : null}
           <div className="simple-move-reason"><dt>Reason</dt><dd>{transfer.requestReason || 'Not available in this access view'}</dd>{transfer.customerReference ? <dd className="simple-move-secondary">{transfer.customerReference}</dd> : null}</div>
         </dl>

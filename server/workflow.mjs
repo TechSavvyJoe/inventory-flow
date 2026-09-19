@@ -46,7 +46,9 @@ export const TRANSITION_MAP = Object.freeze({
   arrived: new Set(['customer_showing', 'sale_outcome_pending', 'sale_confirmed', 'not_sold', 'return_requested']),
   customer_showing: new Set(['sale_outcome_pending', 'sale_confirmed', 'not_sold', 'return_requested']),
   sale_outcome_pending: new Set(['sale_confirmed', 'not_sold', 'return_requested']),
-  sale_confirmed: new Set(['delivery_confirmed']),
+  // A sold-pending vehicle waits for its customer delivery; the return path
+  // reopens only when a manager records that the deal fell through.
+  sale_confirmed: new Set(['delivery_confirmed', 'not_sold']),
   delivery_confirmed: new Set(['closed']),
   not_sold: new Set(['return_requested']),
   return_requested: new Set(['return_assigned']),
@@ -446,6 +448,11 @@ function requireEventPermission(eventType, role, workflowMode) {
   }
 }
 
+// A manager confirmed the sale; only a manager may record that it fell through.
+function saleUnwindRestricted(currentStatus, eventType, role) {
+  return eventType === 'not_sold' && currentStatus === 'sale_confirmed' && !PRIVILEGED_ROLES.has(role)
+}
+
 function transitionAllowed(currentStatus, eventType, workflowMode = 'advanced') {
   if (Object.hasOwn(SIMPLE_EVENT_FROM, eventType)) {
     return workflowMode === 'simple' && SIMPLE_EVENT_FROM[eventType].has(currentStatus)
@@ -469,7 +476,10 @@ export function allowedEventTypes(currentStatus, role, workflowMode = 'advanced'
     }
   }
   return [...candidates].filter(
-    (eventType) => eventRoleAllowed(eventType, role, workflowMode) && transitionAllowed(currentStatus, eventType, workflowMode),
+    (eventType) =>
+      eventRoleAllowed(eventType, role, workflowMode) &&
+      transitionAllowed(currentStatus, eventType, workflowMode) &&
+      !saleUnwindRestricted(currentStatus, eventType, role),
   )
 }
 
@@ -600,7 +610,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'sale_confirmed':
       Object.assign(patch, {
         deal_status: 'sold_pending',
-        next_action: 'Confirm delivery separately before closing the movement workflow',
+        next_action: 'Confirm the customer delivery, or record that the deal fell through',
         next_action_owner: `${destination} manager`,
         last_confirmed_at: occurredAt,
       })
@@ -616,6 +626,9 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'not_sold':
       Object.assign(patch, {
         deal_status: 'not_sold',
+        // A deal that fell through after a sold-pending record leaves no
+        // delivery behind; the row must not keep reading as sold.
+        delivery_status: 'not_confirmed',
         next_action: 'Request return to home store',
         next_action_owner: `${destination} manager`,
         last_confirmed_at: occurredAt,
@@ -718,6 +731,9 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
   if (!current) throw new WorkflowError('Transfer request was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
   const eventType = requiredText(input?.type, 'type', 60).toLowerCase()
   requireEventPermission(eventType, context.role, context.workflowMode)
+  if (saleUnwindRestricted(current.status, eventType, context.role)) {
+    throw new WorkflowError('Only a manager can record that a confirmed sale fell through', { status: 403, code: 'FORBIDDEN' })
+  }
   const groupOverride = context.role === 'group_manager'
   const recordsHomeStoreDecision =
     eventType === 'approved' || (eventType === 'declined' && current.status === 'manager_reviewed')

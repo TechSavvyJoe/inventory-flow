@@ -25,7 +25,9 @@ interface EventChoice {
 
 function outcomeChoices(status: string, manager: boolean): EventChoice[] {
   if (status === 'sale_confirmed') {
-    return [{ value: 'delivery_confirmed', label: 'Delivery confirmed', help: 'Use only after an authorized manager has explicit delivery confirmation.' }]
+    const choices: EventChoice[] = [{ value: 'delivery_confirmed', label: 'Delivery confirmed', help: 'Use only after an authorized manager has explicit delivery confirmation.' }]
+    if (manager) choices.push({ value: 'not_sold', label: 'Deal fell through — not sold', help: 'Reopens the return-to-home path for this vehicle.' })
+    return choices
   }
   const values: EventChoice[] = [
     { value: 'customer_showing', label: 'Showing in progress', help: 'The customer outcome is still open.' },

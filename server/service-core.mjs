@@ -26,6 +26,10 @@ import { allowedEventTypes, buildTransferEvent, buildTransferRequest, roleContex
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/
 const TERMINAL_TRANSFER_STATES = new Set(['declined', 'canceled', 'closed'])
 const RETURN_COMPLETE_STATES = new Set(['returned_home', 'closed'])
+// A sold-pending vehicle is waiting on its customer delivery, not on a trip
+// home, so its return clock is paused until a manager records the deal fell
+// through (not_sold) and the return path reopens.
+const RETURN_PAUSED_STATES = new Set(['sale_confirmed', 'delivery_confirmed'])
 const SIMPLE_DESTINATION_CUSTODY_EVENTS = new Set(['customer_showing', 'sale_outcome_pending', 'sale_confirmed', 'not_sold'])
 const ACTIVE_TRANSPORT_ASSIGNMENT_STATES = new Set([
   'transport_assigned',
@@ -503,6 +507,10 @@ function simpleNextAction(row) {
     case 'customer_showing':
     case 'sale_outcome_pending':
       return { label: 'Record an outcome or return the vehicle', owner: `${row.requesting_store_id} sales/manager` }
+    case 'sale_confirmed':
+      return { label: 'Confirm the customer delivery, or record that the deal fell through', owner: `${row.requesting_store_id} manager` }
+    case 'delivery_confirmed':
+      return { label: 'Delivered — close the move', owner: `${row.requesting_store_id} manager` }
     case 'not_sold':
     case 'return_requested':
     case 'return_assigned':
@@ -1276,6 +1284,7 @@ function storeSummaries(vehicles, holdRows, transferRows, now) {
         row.return_due_at &&
         new Date(row.return_due_at) < now &&
         !RETURN_COMPLETE_STATES.has(row.status) &&
+        !RETURN_PAUSED_STATES.has(row.status) &&
         !RETURN_COMPLETE_STATES.has(row.movement_status),
     ).length
     const sourceConflicts = vehicles.filter(
