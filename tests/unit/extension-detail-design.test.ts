@@ -47,7 +47,7 @@ describe('companion concept vehicle workspace', () => {
     const vehicle = { ...record(), inventoryDate: '2026-09-12', autoCheckReport: { estimatedInServiceDate: '2024-01-01' }, fordOasis: { warrantyStartDate: '2024-04-10' }, windowSticker: { basePrice: 42500, pricingCurrency: 'CAD', options: ['WEIGHT FEE — CAD 100'] } }
     await boot([vehicle])
     const facts = () => document.querySelector('.detail-frequent-facts').textContent.replace(/\s+/g, ' ')
-    expect(facts()).toContain('Warranty in-service')
+    expect(facts()).toContain('Warranty in-service · OASIS')
     expect(facts()).toContain('Apr 10, 2024')
     expect(facts()).toContain('CAD 42,500')
     expect(facts()).toContain('Weight fee lookup · Base MSRP')
@@ -60,6 +60,13 @@ describe('companion concept vehicle workspace', () => {
     const jump = [...document.querySelectorAll('.record-jumps button')].find((node) => node.textContent === 'Sticker')
     jump.click()
     expect(document.activeElement.dataset.record).toBe('window-sticker')
+  })
+  it('qualifies an in-service date that only AutoCheck estimated', async () => {
+    await boot([{ ...record(), autoCheckReport: { estimatedInServiceDate: '2024-01-01' } }])
+    const facts = document.querySelector('.detail-frequent-facts').textContent.replace(/\s+/g, ' ')
+    expect(facts).toContain('Warranty in-service · estimate')
+    expect(facts).toContain('Jan 1, 2024')
+    expect(facts).not.toContain('OASIS')
   })
   it('does not attribute equipment-label prices to a sticker missing its base price', async () => {
     await boot([{ ...record(), windowSticker: { pricingCurrency: 'USD' }, factoryEquipment: { basePrice: 42500 } }])

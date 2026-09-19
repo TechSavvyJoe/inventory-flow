@@ -2720,9 +2720,9 @@ export function VehicleWorkspace({
     || vehicle.warrantyCheck?.autoCheck?.inServiceDate
     || null;
   const warrantyInServiceLabel = oasisInServiceDate
-    ? "Warranty in-service (OASIS)"
+    ? "Warranty in-service · OASIS"
     : warrantyInServiceDate
-      ? "Est. in-service (AutoCheck)"
+      ? "In-service · AutoCheck estimate"
       : "Warranty in-service";
   const hasStickerBase = vehicle.windowSticker?.basePrice != null;
   const baseMsrpLabel = "Weight fee lookup · Base MSRP";

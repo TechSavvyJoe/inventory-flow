@@ -134,9 +134,9 @@ describe('focused vehicle workspace', () => {
     expect(facts).toHaveTextContent('Weight fee lookup · Base MSRPCAD 45,000');
     expect(facts).not.toHaveTextContent('31,234');
     expect(within(facts).getAllByText('Weight fee lookup · Base MSRP')).toHaveLength(1);
-    expect(facts).toHaveTextContent('Est. in-service (AutoCheck)May 12, 2023');
+    expect(facts).toHaveTextContent('In-service · AutoCheck estimateMay 12, 2023');
     await userEvent.click(screen.getByRole('tab', { name: 'Records' }));
-    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Est. in-service (AutoCheck)May 12, 2023');
+    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('In-service · AutoCheck estimateMay 12, 2023');
     expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Weight fee lookup · Base MSRPCAD 45,000');
   });
 
@@ -146,7 +146,7 @@ describe('focused vehicle workspace', () => {
     unit.autoCheckReport = { dataState: 'current', estimatedInServiceDate: '2023-05-12' };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
-    expect(facts).toHaveTextContent('Warranty in-service (OASIS)May 13, 2023');
+    expect(facts).toHaveTextContent('Warranty in-service · OASISMay 13, 2023');
     expect(facts).not.toHaveTextContent('estimate');
   });
 
