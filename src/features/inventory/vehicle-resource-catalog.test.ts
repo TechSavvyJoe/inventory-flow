@@ -70,9 +70,24 @@ describe('rich vehicle resource catalog', () => {
     const sticker = resource({ windowSticker: { dataState:'current', totalMsrp:68420, pricingCurrency:'CAD', equipmentGroup:'502A', options:['Trailer Tow Package','Heated front seats','Trailer Tow Package'], engine:'3.5L EcoBoost V6', transmission:'10-speed automatic', warranty:['3 years / 60,000 km'] } }, 'window-sticker');
     expect(sticker.compactFacts).toEqual([expect.stringMatching(/^CAD\s68,420 MSRP · 502A$/), 'Trailer Tow Package · Heated front seats']);
     expect(sticker.facts).toContain('3.5L EcoBoost V6 · 10-speed automatic');
-    expect(sticker.facts).toContain('Printed warranty: 3 years / 60,000 km');
+    expect(sticker.facts).toContain('Printed warranty: 3 years / 37,282 mi (60,000 km in the source)');
     expect(sticker.facts.filter(fact => fact === 'Trailer Tow Package')).toHaveLength(1);
     expect(sticker.facts.join(' ')).not.toContain('captured options');
+  });
+
+  it('shows every source distance in US miles and keeps the source figure as evidence', () => {
+    const sticker = resource({ windowSticker: { dataState:'current', warranty:['5 years / 100,000 km powertrain'], options:['Combined 9.8 L/100 km'] } }, 'window-sticker');
+    expect(sticker.facts).toContain('Printed warranty: 5 years / 62,137 mi powertrain (100,000 km in the source)');
+    expect(sticker.facts).toContain('Combined 24 mpg (9.8 L/100 km in the source)');
+    expect(sticker.facts.join(' ')).not.toMatch(/\d\s*km\b(?! in the source)/);
+
+    const history = resource({ autoCheckReport: { dataState:'current', usage:'Personal · 148 000 km reported', checks:[{ label:'Odometer check', detail:'Last reported odometer: 148,000 km' }] } }, 'autocheck');
+    expect(history.facts).toContain('Personal · 91,963 mi reported (148,000 km in the source)');
+    expect(history.facts).toContain('Odometer check: Last reported odometer: 91,963 mi (148,000 km in the source)');
+
+    const oasis = resource({ make:'Ford', fordOasis: { dataState:'current', warrantyCoverages:[{ type:'Powertrain', description:'60 months/100,000 km' }], extendedCoverageExpirations:['ESP to 160,000 km'] } }, 'oasis');
+    expect(oasis.facts).toContain('Coverage: Powertrain · 60 months/62,137 mi (100,000 km in the source)');
+    expect(oasis.facts).toContain('Extended coverage: ESP to 99,419 mi (160,000 km in the source)');
   });
 
   it('deduplicates an equipment group in summaries without deleting the priced source option', () => {

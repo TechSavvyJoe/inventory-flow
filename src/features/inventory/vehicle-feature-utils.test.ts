@@ -86,4 +86,23 @@ describe("published vehicle equipment", () => {
     expect(items.find((item) => item.label === "Blind Spot Monitor")?.category).toBe("driver-assistance");
     expect(items.some((item) => item.source.startsWith("factory-"))).toBe(false);
   });
+
+  it("shows a metric equipment label in US miles and keeps the source figure", () => {
+    const record = vehicle({
+      windowSticker: {
+        dataState: "current",
+        originalMarket: "Canada",
+        standardEquipment: ["Combined fuel economy 9.8 L/100 km"],
+        options: ["Extended range tank — 900 km"],
+      },
+    });
+
+    const items = publishedEquipment(record);
+    expect(items.map((item) => item.label)).toEqual(
+      expect.arrayContaining([
+        "Combined fuel economy 24 mpg (9.8 L/100 km in the source)",
+        "Extended range tank — 559 mi (900 km in the source)",
+      ]),
+    );
+  });
 });

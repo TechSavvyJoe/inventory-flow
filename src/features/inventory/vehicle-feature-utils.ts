@@ -1,3 +1,4 @@
+import { sourceDistanceText } from "../../lib/source-distance";
 import type { InventoryVehicle } from "./types";
 
 export type EquipmentCategory =
@@ -84,7 +85,8 @@ export function publishedEquipment(vehicle: InventoryVehicle): PublishedEquipmen
   const byKey = new Map<string, PublishedEquipmentItem>();
 
   for (const candidate of candidateItems(vehicle)) {
-    const label = candidate.label?.replace(/\s+/g, " ").trim();
+    // A factory or vAuto label can print a metric consumption or range figure.
+    const label = candidate.label ? sourceDistanceText(candidate.label.replace(/\s+/g, " ").trim()) : undefined;
     if (!label) continue;
     const key = normalizedEquipmentKey(label);
     if (!key) continue;

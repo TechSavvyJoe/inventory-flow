@@ -8,6 +8,8 @@
 //
 // Keep this file in step with src/features/inventory/vehicle-warranty-utils.ts.
 
+import { sourceDistanceText } from './source-distance.mjs'
+
 export const WARRANTY_TERMS = Object.freeze({
   // [months, miles]; `electrified` is the hybrid/EV unique-component coverage.
   ford: { basic: [36, 36000], powertrain: [60, 60000], electrified: [96, 100000] },
@@ -174,7 +176,8 @@ export function warrantyOutlook(vehicle, { now = Date.now() } = {}) {
     mileage,
     electrified,
     coverages,
-    stickerWarranty: (vehicle.documents?.windowSticker?.warranty ?? []).filter(Boolean),
+    // A Canadian sticker prints its terms in kilometres; staff read miles.
+    stickerWarranty: (vehicle.documents?.windowSticker?.warranty ?? []).filter(Boolean).map(sourceDistanceText),
     verify,
   }
 }

@@ -1,5 +1,6 @@
 import { formatDate, formatNumber, formatStickerMoney } from './format.mjs'
 import { sourceDisplayText } from './source-text.mjs'
+import { sourceDistanceText } from './source-distance.mjs'
 
 // Read-only report summaries for the inventory list and vehicle overview.
 // Accept the panel view model, never raw API URLs. documentsFor() already
@@ -16,6 +17,10 @@ const present = (values, limit = Infinity) => {
   }).slice(0, limit)
 }
 const join = (values) => present(values).join(' · ') || null
+// Source prose that can state a distance: a Canadian sticker, an OASIS factory
+// term or an AutoCheck detail line may print kilometres. Applied once, where
+// the raw field enters a fact, so a converted string is never re-converted.
+const fact = (value) => { const cleaned = clean(value); return cleaned === null ? null : sourceDistanceText(cleaned) }
 
 function captureTimestamp(value) {
   const raw = clean(value)
@@ -73,13 +78,13 @@ function historyChecks(history) {
   return entries(history?.checks).filter((check) => clean(check?.label) && (clean(check.status) || clean(check.detail)))
     .map((check, index) => ({
       priority: checkPriority(check), index,
-      full: `${clean(check.label)}: ${join([check.status, check.detail])}`,
-      compact: `${clean(check.label)}: ${join([check.status, !clean(check.status) || checkPriority({ label: check.label, status: check.detail }) <= 1 ? check.detail : null])}`,
+      full: fact(`${clean(check.label)}: ${join([check.status, check.detail])}`),
+      compact: fact(`${clean(check.label)}: ${join([check.status, !clean(check.status) || checkPriority({ label: check.label, status: check.detail }) <= 1 ? check.detail : null])}`),
     })).sort((a, b) => a.priority - b.priority || a.index - b.index)
 }
 
 function importantItems(values) {
-  const items = present(values)
+  const items = present(values).map((item) => sourceDistanceText(item))
   const important = /360|camera|adaptive cruise|blind spot|blis\b|heated|ventilated|cooled|leather|tow|trailer|moonroof|sunroof|panoramic|power liftgate|navigation|remote start/i
   return [...items.filter((item) => important.test(item)), ...items.filter((item) => !important.test(item))]
 }
@@ -87,9 +92,9 @@ function importantItems(values) {
 function coverageFacts(block, estimate = false) {
   return entries(block?.coverages).map((coverage) => join([
     `${estimate ? 'Warranty estimate' : 'Captured warranty'}: ${coverage.type}`,
-    coverage.status, coverage.termText,
+    coverage.status, fact(coverage.termText),
     coverage.remainingTimeText ? `${coverage.remainingTimeText} remaining time` : null,
-    coverage.remainingMilesText ? `${coverage.remainingMilesText} remaining miles` : null,
+    coverage.remainingMilesText ? `${fact(coverage.remainingMilesText)} remaining miles` : null,
   ]))
 }
 
@@ -100,13 +105,13 @@ export function resourceSummaries(vehicle, { now = Date.now() } = {}) {
   const fordFamily = /^(ford|lincoln)$/i.test(clean(vehicle.make) ?? '')
   const sticker = docs.windowSticker
   const options = importantItems(entries(sticker?.options))
-  const stickerPowertrain = join([sticker?.engine, sticker?.transmission])
+  const stickerPowertrain = join([fact(sticker?.engine), fact(sticker?.transmission)])
   const stickerFacts = present([
     numeric(sticker?.totalMsrp) ? `${formatStickerMoney(sticker.totalMsrp, sticker)} MSRP` : null,
     sticker?.equipmentGroup, ...options.slice(0, 2), stickerPowertrain, ...options.slice(2),
     join([sticker?.exteriorColor ? `Exterior ${sticker.exteriorColor}` : null, sticker?.interiorColor ? `Interior ${sticker.interiorColor}` : null]),
     ...importantItems(entries(sticker?.standardEquipment)),
-    ...entries(sticker?.warranty).map((line) => `Printed warranty: ${line}`),
+    ...entries(sticker?.warranty).map((line) => `Printed warranty: ${fact(line)}`),
   ])
   if (sticker) result.push({
     id: 'window-sticker', title: 'Window sticker', brand: fordFamily ? 'ford' : null, facts: stickerFacts,
@@ -123,7 +128,7 @@ export function resourceSummaries(vehicle, { now = Date.now() } = {}) {
   const warranty = docs.warrantyCheck
   const range = numeric(history?.rangeLow) && numeric(history?.rangeHigh) && history.rangeLow <= history.rangeHigh ? `${formatNumber(history.rangeLow)}–${formatNumber(history.rangeHigh)} range` : null
   const score = numeric(history?.score) ? join([`Score ${formatNumber(history.score)}`, range]) : null
-  const ownership = join([numeric(history?.ownerCount) ? `${formatNumber(history.ownerCount)} ${history.ownerCount === 1 ? 'owner' : 'owners'}` : null, history?.usage])
+  const ownership = join([numeric(history?.ownerCount) ? `${formatNumber(history.ownerCount)} ${history.ownerCount === 1 ? 'owner' : 'owners'}` : null, fact(history?.usage)])
   const odometer = numeric(history?.lastReportedOdometer) ? `Last reported ${formatNumber(history.lastReportedOdometer)} mi${clean(history.lastReportedOdometerDate) ? ` · ${formatDate(history.lastReportedOdometerDate, now)}` : ''}` : null
   const historyFacts = present([
     ...checks.filter((check) => check.priority <= 1).map((check) => check.full), score, ownership, odometer,
@@ -153,7 +158,7 @@ export function resourceSummaries(vehicle, { now = Date.now() } = {}) {
     ...entries(factory?.sections).flatMap((section) => entries(section.items).map((item) => item.label)),
     ...entries(factory?.packages).flatMap((pkg) => entries(pkg.features)),
   ])
-  const powertrain = join([factory?.engine, factory?.transmission, factory?.drivetrain])
+  const powertrain = join([fact(factory?.engine), fact(factory?.transmission), factory?.drivetrain])
   const equipmentFacts = present([
     ...packages, ...equipmentItems.slice(0, 4), powertrain,
     join([factory?.exteriorColor ? `Exterior ${factory.exteriorColor}` : null, factory?.interiorColor ? `Interior ${factory.interiorColor}` : null]),
@@ -169,8 +174,8 @@ export function resourceSummaries(vehicle, { now = Date.now() } = {}) {
 
   if (fordFamily) {
     const oasis = docs.fordOasis
-    const actions = present(entries(oasis?.openFieldServiceActions).map((action) => join([action.code, sourceDisplayText(action.description)])))
-    const coverages = present(entries(oasis?.warrantyCoverages).map((coverage) => join([coverage.type, sourceDisplayText(coverage.description)])))
+    const actions = present(entries(oasis?.openFieldServiceActions).map((action) => join([action.code, fact(sourceDisplayText(action.description))])))
+    const coverages = present(entries(oasis?.warrantyCoverages).map((coverage) => join([coverage.type, fact(sourceDisplayText(coverage.description))])))
     const capturedEmpty = capturedOasisActionsAreEmpty(oasis, { now })
     const warrantyStart = clean(oasis?.warrantyStartDate) ? `Warranty start ${oasis.warrantyStartDate}` : clean(warranty?.fordOasis?.warrantyStartDate) ? `Warranty start ${warranty.fordOasis.warrantyStartDate}` : null
     const buildDate = clean(oasis?.buildDate) ? `Built ${oasis.buildDate}` : null
@@ -178,7 +183,7 @@ export function resourceSummaries(vehicle, { now = Date.now() } = {}) {
       ...actions.map((action) => `Open FSA ${action}`), warrantyStart, buildDate,
       ...coverages.map((coverage) => `Recorded coverage: ${coverage}`),
       capturedEmpty ? '0 open Ford actions in captured report' : null,
-      ...entries(oasis?.extendedCoverageExpirations).map((expiration) => `Extended coverage: ${expiration}`),
+      ...entries(oasis?.extendedCoverageExpirations).map((expiration) => `Extended coverage: ${fact(expiration)}`),
       numeric(oasis?.monthsInService) ? `${formatNumber(oasis.monthsInService)} months in service at capture` : null,
       numeric(oasis?.saleMileage) ? `${formatNumber(oasis.saleMileage)} mi at sale` : null,
       clean(oasis?.releaseDate) ? `Released ${oasis.releaseDate}` : null,

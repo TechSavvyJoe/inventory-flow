@@ -6,6 +6,7 @@ import { EMPTY_FILTERS, SORTS, activeFilterCount, applyFilters, describeFilters,
 import { groupMatchesByStore, resolveStoreScope, scopeCounts, scopeMatches } from './lib/scope.mjs'
 import { compareVehicles } from './lib/compare.mjs'
 import { certifiedTerms, warrantyOutlook } from './lib/warranty.mjs'
+import { sourceDistanceText } from './lib/source-distance.mjs'
 import { brandFor } from './lib/brand.mjs'
 import * as links from './lib/links.mjs'
 import * as fmt from './lib/format.mjs'
@@ -1122,7 +1123,7 @@ function historyMetrics(ac) {
   return el('div', { class: 'history-metrics', 'aria-label': 'Vehicle history summary' },
     metric('Score', ac.score !== null ? String(ac.score) : null, ac.rangeLow !== null && ac.rangeHigh !== null ? `Typical ${ac.rangeLow}–${ac.rangeHigh}` : null),
     metric('Owners', ac.ownerCount !== null ? `${ac.ownerCount} reported` : null),
-    metric('Use', ac.usage),
+    metric('Use', sourceDistanceText(ac.usage) || null),
     metric('Service records', serviceCountSources.length ? fmt.joinFacts(serviceCountSources) : service ? service.detail || service.status : null),
     metric('Last odometer', ac.lastReportedOdometer !== null ? fmt.formatMileage(ac.lastReportedOdometer) : null, ac.lastReportedOdometerDate ? fmt.formatDate(ac.lastReportedOdometerDate) : null),
   )
@@ -1132,7 +1133,7 @@ function historyCheck(check) {
   const iconName = /accident|damage/i.test(check.label) ? 'car' : /odometer/i.test(check.label) ? 'gauge' : /service/i.test(check.label) ? 'wrench' : /recall/i.test(check.label) ? 'alert' : /insurance|title/i.test(check.label) ? 'shield' : /cpo|certif/i.test(check.label) ? 'award' : 'file-text'
   return el('div', { class: `check is-${check.tone}` },
     el('span', { class: 'history-check-icon' }, icon(iconName, { size: 19 })),
-    el('span', { class: 'history-check-copy' }, el('b', { text: check.label }), el('small', { text: fmt.joinFacts([check.status, check.detail]) || 'Not reported' })),
+    el('span', { class: 'history-check-copy' }, el('b', { text: check.label }), el('small', { text: sourceDistanceText(fmt.joinFacts([check.status, check.detail])) || 'Not reported' })),
     icon(check.tone === 'clear' ? 'check' : check.tone === 'review' ? 'alert' : 'minus', { size: 15, className: 'history-check-status' }),
   )
 }
@@ -1146,7 +1147,8 @@ function recordsTab(vehicle) {
     url ? el('button', { type: 'button', class: 'rec-source', 'aria-label': `${action} for ${vehicle.stockNumber}`, onclick: () => openUrl(url) }, brand === 'autocheck' ? 'Open report' : brand === 'ford' ? 'Open OASIS' : brand === 'vauto' ? 'Open equipment' : /sticker/i.test(action) ? 'Open sticker' : 'Open details', icon('external', { size: 14 })) : missing ? el('p', { class: 'rec-source-missing', text: 'Details unavailable' }) : null,
   )
   const recordSection = (title, content) => el('section', { class: 'rec-section', 'aria-label': title }, el('h4', { text: title }), ...content.filter(Boolean))
-  const recordList = (title, items) => items?.length ? recordSection(title, [el('ul', { class: 'rec-list' }, ...items.map((text) => el('li', { text })))]) : null
+  // Source lines can print a distance in kilometres; staff read miles.
+  const recordList = (title, items) => items?.length ? recordSection(title, [el('ul', { class: 'rec-list' }, ...items.map((text) => el('li', { text: sourceDistanceText(text) })))]) : null
   const sourceNote = () => null
   const note = (text) => text ? el('p', { class: 'rec-note', text }) : null
   const hasNumber = (value) => typeof value === 'number' && Number.isFinite(value)
@@ -1158,7 +1160,7 @@ function recordsTab(vehicle) {
   if (ac) {
     const facts = kv([
       ['Warranty start', ac.inServiceDate ? fmt.formatDate(ac.inServiceDate) : null],
-      ['Class', ac.vehicleClass], ['Assembly', ac.assemblyCountry],
+      ['Class', sourceDistanceText(ac.vehicleClass) || null], ['Assembly', ac.assemblyCountry],
     ])
     facts?.classList.add('rec-metadata')
     children.push(el('section', { class: 'card rec rec-autocheck', dataset: { record: 'autocheck' }, tabindex: '-1' },
@@ -1176,7 +1178,7 @@ function recordsTab(vehicle) {
       note(sourceNote(sticker, 'window-sticker')),
       sticker.vehicleDescription ? el('p', { class: 'd-caption', text: sticker.vehicleDescription }) : null,
       recordPrices([['Base MSRP', sticker.basePrice], ['Options', sticker.totalOptions], ['Destination & delivery', sticker.destinationCharge], ['Total MSRP', sticker.totalMsrp]], (value) => fmt.formatStickerMoney(value, sticker)),
-      kv([['Equipment group', sticker.equipmentGroup], ['Engine', sticker.engine], ['Transmission', sticker.transmission], ['Exterior', sticker.exteriorColor], ['Interior', sticker.interiorColor]]),
+      kv([['Equipment group', sticker.equipmentGroup], ['Engine', sourceDistanceText(sticker.engine)], ['Transmission', sourceDistanceText(sticker.transmission)], ['Exterior', sticker.exteriorColor], ['Interior', sticker.interiorColor]]),
       recordList('Factory options', sticker.options),
       recordList('Standard equipment', sticker.standardEquipment),
       recordList('Warranty printed on sticker', sticker.warranty),
@@ -1211,15 +1213,15 @@ function recordsTab(vehicle) {
       ['Build date', oasis.buildDate ? fmt.formatDate(oasis.buildDate) : null], ['Release date', oasis.releaseDate ? fmt.formatDate(oasis.releaseDate) : null],
       ['Months in service', hasNumber(oasis.monthsInService) ? String(oasis.monthsInService) : null], ['Sale mileage', hasNumber(oasis.saleMileage) ? fmt.formatMileage(oasis.saleMileage) : null],
     ]) : null,
-    oasis?.openFieldServiceActions.length ? recordSection('Open Ford service actions', [el('ul', { class: 'rec-list oasis-actions' }, ...oasis.openFieldServiceActions.map((item) => el('li', {}, icon('alert', { size: 17 }), el('span', {}, item.code ? el('b', { text: item.code }) : null, item.code && item.description ? ' · ' : '', sourceDisplayText(item.description)))))]) : el('p', { class: 'rec-empty', text: 'Verify current actions in OASIS.' }),
-    oasis?.warrantyCoverages.length ? recordSection('Ford warranty coverages', [el('ul', { class: 'rec-list' }, ...oasis.warrantyCoverages.map((item) => el('li', {}, el('b', { text: item.type }), item.description ? ` · ${sourceDisplayText(item.description)}` : '')))]) : null,
+    oasis?.openFieldServiceActions.length ? recordSection('Open Ford service actions', [el('ul', { class: 'rec-list oasis-actions' }, ...oasis.openFieldServiceActions.map((item) => el('li', {}, icon('alert', { size: 17 }), el('span', {}, item.code ? el('b', { text: item.code }) : null, item.code && item.description ? ' · ' : '', sourceDistanceText(sourceDisplayText(item.description))))))]) : el('p', { class: 'rec-empty', text: 'Verify current actions in OASIS.' }),
+    oasis?.warrantyCoverages.length ? recordSection('Ford warranty coverages', [el('ul', { class: 'rec-list' }, ...oasis.warrantyCoverages.map((item) => el('li', {}, el('b', { text: item.type }), item.description ? ` · ${sourceDistanceText(sourceDisplayText(item.description))}` : '')))]) : null,
     recordList('Extended coverage expirations', oasis?.extendedCoverageExpirations),
   ))
   const warranty = docs.warrantyCheck
   const coverageBlock = (title, block) => block?.coverages.length ? recordSection(title, [
     kv([['Warranty start', block.warrantyStartDate ? fmt.formatDate(block.warrantyStartDate) : null], ['In service (estimate)', block.inServiceDate ? fmt.formatDate(block.inServiceDate) : null], ['Months in service', hasNumber(block.monthsInService) ? String(block.monthsInService) : hasNumber(block.inServiceAgeMonths) ? String(block.inServiceAgeMonths) : null], ['AutoCheck default mileage', hasNumber(block.defaultMileage) ? fmt.formatMileage(block.defaultMileage) : null]]),
     ...block.coverages.map((coverage) => el('div', { class: 'rec-coverage' }, el('div', { class: 'rec-line' }, el('b', { text: coverage.type }), el('span', { text: coverage.status })),
-      kv([['Printed term', coverage.termText], ['Remaining time', coverage.remainingTimeText], ['Remaining miles', coverage.remainingMilesText]]), note(coverage.note))),
+      kv([['Printed term', sourceDistanceText(coverage.termText)], ['Remaining time', coverage.remainingTimeText], ['Remaining miles', sourceDistanceText(coverage.remainingMilesText)]]), note(coverage.note))),
   ]) : null
   if (warranty && (warranty.fordOasis || warranty.autoCheck)) children.push(el('section', { class: 'card rec rec-warranty', dataset: { record: 'warranty' }, tabindex: '-1' },
     recordHead('Warranty check', { iconName: 'shield', dataState: warranty.dataState, url: warranty.fordOasis ? vehicle.links.oasis : ac?.url, action: warranty.fordOasis ? 'Open OASIS' : 'Open AutoCheck report', missing: 'Warranty details unavailable.' }),
