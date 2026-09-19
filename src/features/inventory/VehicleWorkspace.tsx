@@ -669,6 +669,8 @@ function CapturedRecordSection({ title, count, children }: { title: string; coun
   </section>;
 }
 
+// Call sites whose children are all conditional guard this themselves: an
+// empty disclosure is a control that opens onto nothing.
 function RecordSourceDetails({ children }: { children: ReactNode }) {
   return <details className="vdp-record-source-details"><summary>Source details<ChevronDown size={14} aria-hidden="true" /></summary><div>{children}</div></details>;
 }
@@ -983,7 +985,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
 
           <CapturedWarrantyTable coverages={warrantyPrimary.coverages} label="Remaining factory warranty by coverage" />
 
-          <RecordSourceDetails>
+          {warrantyCheck.mileageSource || warrantySecondary ? <RecordSourceDetails>
           {warrantyCheck.mileageSource ? <p>Mileage source: {warrantyCheck.mileageSource}</p> : null}
           {warrantySecondary ? (
             <CapturedRecordSection title="AutoCheck estimate" count={countLabel(warrantySecondary.coverages.length, "coverage type")}>
@@ -996,7 +998,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
               <CapturedWarrantyTable coverages={warrantySecondary.coverages} label="AutoCheck warranty estimate" />
             </CapturedRecordSection>
           ) : null}
-          </RecordSourceDetails>
+          </RecordSourceDetails> : null}
 
           <p className="inventory-vehicle-document__empty">
             {warrantyPrimaryIsOasis
@@ -1103,7 +1105,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
               <Fact label="Base MSRP" emphasize>{compactSourcePrice(factoryEquipment.basePrice)}</Fact>
             </dl>
           ) : null}
-          <RecordSourceDetails>
+          {factoryEquipmentFacts.length || factoryEquipment.disclaimer ? <RecordSourceDetails>
           {factoryEquipmentFacts.length ? (
             <dl className="inventory-vehicle-document__facts">
               {factoryEquipmentFacts.map((fact) => (
@@ -1112,7 +1114,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             </dl>
           ) : null}
           {factoryEquipment.disclaimer ? <p>{factoryEquipment.disclaimer}</p> : null}
-          </RecordSourceDetails>
+          </RecordSourceDetails> : null}
 
           {factoryEquipment.packages?.length ? (
             <CapturedRecordSection title="Packages & priced equipment" count={countLabel(factoryEquipment.packages.length, "VIN-linked item")}>

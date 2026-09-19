@@ -46,7 +46,10 @@ test('inventory search opens the VIN-specific premium document workspace', async
   await documents.getByRole('navigation', { name: 'Record sections' }).getByRole('button', { name: 'Equipment', exact: true }).click()
   const profile = documents.locator('[data-document-kind="vauto-factory-equipment"]')
   await expect(profile.getByText(/Informational equipment label—not an original window sticker\./)).toHaveCount(0)
-  await expect(profile.locator('.vdp-record-source-details')).toHaveCount(0)
+  // The demo record carries equipment facts and a disclaimer, so the source
+  // disclosure renders — collapsed, with nothing of it on screen but its summary.
+  await expect(profile.locator('.vdp-record-source-details')).toHaveCount(1)
+  await expect(profile.locator('.vdp-record-source-details > div')).toBeHidden()
   const packages = documents.locator('section.vdp-record-section[aria-label="Packages & priced equipment"]')
   await expect(packages).toBeVisible()
   await expect(packages.getByText('Synthetic Premium Technology Package')).toBeVisible()

@@ -141,6 +141,7 @@ describe('vehicle document workspace', () => {
     expect(within(checks).getByText('History check 7')).toBeVisible();
     expect(within(checks).getByText('Captured result 7 · Source detail 7')).toBeVisible();
     expect(within(history).getByText('SUV')).not.toBeVisible();
+    expect(history.querySelector('.vdp-record-source-details')).not.toBeVisible();
     const source = within(history).getByRole('link', { name: /Open AutoCheck report/ });
     expect(source).toHaveTextContent('Open report');
     expect(source.compareDocumentPosition(checks) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -172,7 +173,7 @@ describe('vehicle document workspace', () => {
     expect(within(card).getByText('Mileage source: Entered dealer odometer')).not.toBeVisible();
     expect(within(card).getByRole('table', { name: 'Remaining factory warranty by coverage' })).toBeVisible();
     expect(within(card).getByRole('link', { name: /Open OASIS coverage lookup/ })).toHaveAttribute('href', 'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=1FMUK8DHXTGB76992');
-    expect(within(card).getByRole('heading', { name: 'AutoCheck estimate' })).not.toBeVisible();
+    expect(within(card).getByRole('region', { name: 'AutoCheck estimate' })).not.toBeVisible();
     expect(within(card).getByRole('table', { name: 'Remaining factory warranty by coverage' })).not.toHaveTextContent('Ford source note');
     expect(within(card).getByRole('table', { name: 'AutoCheck warranty estimate', hidden: true })).not.toBeVisible();
   });
