@@ -30,6 +30,14 @@ describe('Cloud Worker authentication boundary',()=>{
   it('rejects a forged header',async()=>expect((await worker.fetch(request('/api/health','forged'),env)).status).toBe(401))
   it.each([{aud:'wrong'}, {iss:'https://wrong.cloudflareaccess.com'}, {exp:1}, {nbf:9999999999}])('rejects invalid signed claims %j',async claims=>expect((await worker.fetch(request('/api/health',await token(claims)),env)).status).toBe(401))
   it('accepts valid employee signatures and registered membership',async()=>expect((await worker.fetch(request('/api/health',await token()),env)).status).toBe(200))
+  it('reports null version metadata without the binding, and the mapped fields when it is present',async()=>{
+    const jwt=await token()
+    const bare=await (await worker.fetch(request('/api/health',jwt),env)).json()
+    expect(bare.version).toBeNull()
+    const withVersion={...env,CF_VERSION_METADATA:{id:'v1',tag:'release-1',timestamp:'2026-09-19T00:00:00Z'}}
+    const tagged=await (await worker.fetch(request('/api/health',jwt),withVersion)).json()
+    expect(tagged.version).toEqual({versionId:'v1',versionTag:'release-1',versionTimestamp:'2026-09-19T00:00:00Z'})
+  })
   it('fails closed for unregistered employees',async()=>{
     const denied={...env,INVENTORY_DB:{prepare(){return {bind(){return this},first:async()=>null}}}}
     expect((await worker.fetch(request('/api/health',await token()),denied)).status).toBe(403)
