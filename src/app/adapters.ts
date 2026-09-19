@@ -603,6 +603,7 @@ export function toInventoryVehicle(
             Boolean(openJoined?.dueAt && new Date(openJoined.dueAt).getTime() < Date.now()),
           custodian: vehicle.movement.currentCustodian || openJoined?.custodian || null,
           transportAssignee: vehicle.movement.transportAssignee || openJoined?.transportAssignee || null,
+          canDirectReroute: vehicle.movement.canDirectReroute === true,
         }
       : null,
     // The server's own createTransfer decision (service-core vehicleView,

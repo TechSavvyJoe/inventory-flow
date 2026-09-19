@@ -65,6 +65,34 @@
 #root .move-request-home-message { max-width: 600px; margin: 36px auto; padding: 24px; color: var(--ifx-neutral-900); }
 #root .move-request-home-message h1 { font-size: 24px; }
 #root .move-request-home-message p { font-size: 15px; color: var(--ifx-neutral-700); }
+#root .move-vehicle-picker-page { width: min(1080px, 100%); margin: 0 auto; color: var(--ifx-neutral-900); }
+#root .move-picker-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+#root .move-picker-heading > div { min-width: 0; }
+#root .move-picker-heading span { color: var(--ifx-info); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+#root .move-picker-heading h1 { margin: 3px 0 4px; font-size: 28px; line-height: 1.25; }
+#root .move-picker-heading p { max-width: 680px; margin: 0; color: var(--ifx-neutral-700); font-size: 14px; }
+#root .move-picker-heading .mif-icon-button { flex: 0 0 44px; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--ifx-neutral-300); border-radius: 7px; background: var(--ifx-neutral-0); color: var(--ifx-neutral-800); cursor: pointer; }
+#root .move-picker-heading .mif-icon-button svg { width: 19px; height: 19px; }
+#root .move-picker-search { position: relative; display: flex; align-items: center; min-height: 48px; margin-bottom: 14px; border: 1px solid var(--ifx-neutral-300); border-radius: 8px; background: var(--ifx-neutral-0); }
+#root .move-picker-search:focus-within { border-color: var(--ifx-info); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ifx-info) 16%, transparent); }
+#root .move-picker-search svg { position: absolute; left: 14px; width: 19px; height: 19px; color: var(--ifx-neutral-700); pointer-events: none; }
+#root .move-picker-search input { width: 100%; min-width: 0; min-height: 48px; padding: 11px 14px 11px 43px; border: 0; outline: 0; background: transparent; color: var(--ifx-neutral-900); font: inherit; }
+#root .move-picker-results { overflow: hidden; border: 1px solid var(--ifx-neutral-300); border-radius: 8px; background: var(--ifx-neutral-0); }
+#root .move-picker-row { display: grid; grid-template-columns: 104px minmax(0, 1fr) auto; align-items: center; gap: 15px; min-height: 106px; padding: 14px 16px; border-bottom: 1px solid var(--ifx-neutral-300); }
+#root .move-picker-row:last-child { border-bottom: 0; }
+#root .move-picker-row:hover { background: var(--ifx-neutral-50); }
+#root .move-picker-row .transfer-list-photo { width: 104px; height: 78px; object-fit: cover; border-radius: 6px; background: var(--ifx-neutral-100); }
+#root .move-picker-row > div { display: grid; min-width: 0; gap: 3px; }
+#root .move-picker-row strong { font-size: 15px; line-height: 1.35; }
+#root .move-picker-row span { color: var(--ifx-neutral-700); font-size: 13px; }
+#root .move-picker-row small { overflow: hidden; color: var(--ifx-neutral-600); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+#root .move-picker-row > .mif-button { min-width: 132px; min-height: 42px; justify-content: center; }
+#root .move-picker-actions { display: grid; min-width: 132px; gap: 7px; }
+#root .move-picker-actions > .mif-button { width: 100%; min-height: 40px; justify-content: center; }
+#root .move-picker-empty { display: grid; justify-items: center; gap: 6px; padding: 54px 20px; color: var(--ifx-neutral-700); text-align: center; }
+#root .move-picker-empty svg { width: 34px; height: 34px; color: var(--ifx-neutral-600); }
+#root .move-picker-empty strong { color: var(--ifx-neutral-900); font-size: 16px; }
+#root .move-picker-empty p { margin: 0; font-size: 13px; }
 #root .move-request-simple .mif-request-header { padding: 16px 20px; }
 #root .move-request-simple .mif-vehicle-heading img { width: 96px; height: 72px; object-fit: cover; }
 #root .move-request-route { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--ifx-neutral-300); }
@@ -109,6 +137,14 @@
   #root .move-request-simple .mif-request-review { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--ifx-neutral-300); }
 }
 @media (max-width: 760px) {
+  #root .move-picker-heading { gap: 12px; margin-bottom: 14px; }
+  #root .move-picker-heading h1 { font-size: 24px; }
+  #root .move-picker-heading p { font-size: 13px; }
+  #root .move-picker-row { grid-template-columns: 80px minmax(0, 1fr); gap: 11px; min-height: 0; padding: 12px; }
+  #root .move-picker-row .transfer-list-photo { grid-row: 1; width: 80px; height: 60px; }
+  #root .move-picker-row > .mif-button,
+  #root .move-picker-actions { grid-column: 1 / -1; width: 100%; }
+  #root .move-picker-row > .mif-button { min-height: 44px; }
   #root .vehicle-moves-page .transfers-page-header { align-items: flex-start; gap: 12px; }
   #root .vehicle-moves-page .transfers-page-header h1 { font-size: 25px; }
   #root .vehicle-moves-page .transfers-page-header p { display: none; }

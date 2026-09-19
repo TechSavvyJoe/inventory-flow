@@ -342,6 +342,7 @@ code { font: 500 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace; background:
 /* Dock */
 .dock { display: flex; flex-direction: column; gap: 8px; padding: 10px var(--gutter); border-bottom: 1px solid var(--line); }
 .dock-primary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dock-primary.has-reroute .btn:first-child { grid-column: 1 / -1; }
 .dock-note { margin: 0; font-size: 12px; color: var(--ink-3); line-height: 1.45; }
 .dock-utils { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {

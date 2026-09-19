@@ -6,6 +6,7 @@ import {
   formatStickerMoney,
   resolveCurrentLocation,
   sortVehicles,
+  vehicleMoveAction,
   vehicleMatchesFilters,
   vehicleMatchesQuery,
 } from "./inventory-utils";
@@ -48,6 +49,28 @@ function vehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
 }
 
 describe("inventory source-safe selectors", () => {
+  it("chooses request versus direct move from role and vehicle ownership", () => {
+    const howell = { id: "howell", name: "Howell" };
+    const own = vehicle();
+    const other = vehicle({ location: { ...own.location, homeStore: { id: "lincoln", name: "Lincoln" } } });
+
+    expect(vehicleMoveAction(own, "manager", howell)).toMatchObject({ intent: "direct", label: "Move to another store" });
+    expect(vehicleMoveAction(other, "manager", howell)).toMatchObject({ intent: "request", label: "Request to Howell" });
+    expect(vehicleMoveAction(own, "sales", howell)).toBeNull();
+    expect(vehicleMoveAction(other, "sales", howell)).toMatchObject({ intent: "request", label: "Request to Howell" });
+    expect(vehicleMoveAction(own, "group_manager", howell)).toMatchObject({ intent: "direct" });
+    expect(vehicleMoveAction(other, "group_manager", howell)).toMatchObject({ intent: "direct" });
+    expect(vehicleMoveAction(vehicle({ moveRequestBlocked: true }), "group_manager", howell)).toBeNull();
+    const reroutable = vehicle({
+      moveRequestBlocked: true,
+      movement: { state: 'arrived', requestId: 'direct-move-1', canDirectReroute: true },
+    });
+    expect(vehicleMoveAction(reroutable, "group_manager", howell)).toMatchObject({ intent: "direct", label: "Move again" });
+    expect(vehicleMoveAction(reroutable, "manager", howell)).toMatchObject({ intent: "direct", label: "Move again" });
+    expect(vehicleMoveAction(reroutable, "sales", howell)).toBeNull();
+    expect(vehicleMoveAction({ ...reroutable, location: { ...reroutable.location, homeStore: { id: 'lincoln', name: 'Lincoln' } } }, "manager", howell)).toBeNull();
+  });
+
   it("keeps existing inventory and legacy unknown records waiting until Ready is explicit", () => {
     const base = vehicle();
     expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "serviced" })).toBe(false);

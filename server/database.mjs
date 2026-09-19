@@ -565,6 +565,63 @@ export function getTransferEvents(database, transferId) {
     .all(transferId)
 }
 
+function insertTransferRequestRows(database, request, initialEvent) {
+  const id = request.id || randomUUID()
+  database
+    .prepare(`
+      INSERT INTO transfer_requests (
+        id, vin, stock_at_request, vehicle_name_at_request, home_store_id,
+        home_store_confirmed, requesting_store_id, destination_store_id,
+        requested_by, requested_at, needed_by, reason, customer_reference,
+        customer_appointment, approval_owner, approved_by, priority, status,
+        movement_status, deal_status, delivery_status, current_location_id,
+        current_custodian, transport_assignee, transport_assignee_user_id, next_action, next_action_owner,
+        due_at, return_required, return_due_at, last_confirmed_at,
+        location_confidence, closed_at, created_at, updated_at, idempotency_key
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    .run(
+      id,
+      request.vin,
+      request.stockAtRequest,
+      request.vehicleNameAtRequest,
+      request.homeStoreId,
+      request.homeStoreConfirmed ? 1 : 0,
+      request.requestingStoreId,
+      request.destinationStoreId,
+      request.requestedBy,
+      request.requestedAt,
+      request.neededBy || null,
+      request.reason,
+      request.customerReference || null,
+      request.customerAppointment ? 1 : 0,
+      request.approvalOwner || null,
+      request.approvedBy || null,
+      request.priority,
+      request.status,
+      request.movementStatus,
+      request.dealStatus,
+      request.deliveryStatus,
+      request.currentLocationId,
+      request.currentCustodian || null,
+      request.transportAssignee || null,
+      request.transportAssigneeUserId || null,
+      request.nextAction,
+      request.nextActionOwner || null,
+      request.dueAt || null,
+      request.returnRequired ? 1 : 0,
+      request.returnDueAt || null,
+      request.lastConfirmedAt || null,
+      request.locationConfidence,
+      request.closedAt || null,
+      request.createdAt,
+      request.updatedAt,
+      request.idempotencyKey || null,
+    )
+  insertTransferEventRow(database, id, initialEvent)
+  return { row: getTransferRow(database, id), created: true }
+}
+
 export function insertTransferRequest(database, request, initialEvent) {
   return withTransaction(database, () => {
     if (request.idempotencyKey) {
@@ -584,61 +641,7 @@ export function insertTransferRequest(database, request, initialEvent) {
       })
     }
 
-    const id = request.id || randomUUID()
-    database
-      .prepare(`
-        INSERT INTO transfer_requests (
-          id, vin, stock_at_request, vehicle_name_at_request, home_store_id,
-          home_store_confirmed, requesting_store_id, destination_store_id,
-          requested_by, requested_at, needed_by, reason, customer_reference,
-          customer_appointment, approval_owner, approved_by, priority, status,
-          movement_status, deal_status, delivery_status, current_location_id,
-          current_custodian, transport_assignee, transport_assignee_user_id, next_action, next_action_owner,
-          due_at, return_required, return_due_at, last_confirmed_at,
-          location_confidence, closed_at, created_at, updated_at, idempotency_key
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-      .run(
-        id,
-        request.vin,
-        request.stockAtRequest,
-        request.vehicleNameAtRequest,
-        request.homeStoreId,
-        request.homeStoreConfirmed ? 1 : 0,
-        request.requestingStoreId,
-        request.destinationStoreId,
-        request.requestedBy,
-        request.requestedAt,
-        request.neededBy || null,
-        request.reason,
-        request.customerReference || null,
-        request.customerAppointment ? 1 : 0,
-        request.approvalOwner || null,
-        request.approvedBy || null,
-        request.priority,
-        request.status,
-        request.movementStatus,
-        request.dealStatus,
-        request.deliveryStatus,
-        request.currentLocationId,
-        request.currentCustodian || null,
-        request.transportAssignee || null,
-        request.transportAssigneeUserId || null,
-        request.nextAction,
-        request.nextActionOwner || null,
-        request.dueAt || null,
-        request.returnRequired ? 1 : 0,
-        request.returnDueAt || null,
-        request.lastConfirmedAt || null,
-        request.locationConfidence,
-        request.closedAt || null,
-        request.createdAt,
-        request.updatedAt,
-        request.idempotencyKey || null,
-      )
-
-    insertTransferEventRow(database, id, initialEvent)
-    return { row: getTransferRow(database, id), created: true }
+    return insertTransferRequestRows(database, request, initialEvent)
   })
 }
 
@@ -712,6 +715,56 @@ export function appendTransferEvent(database, transferId, event, requestPatch) {
         .run(...entries.map(([, value]) => value ?? null), transferId)
     }
     return { row: getTransferRow(database, transferId), created: true }
+  })
+}
+
+export function supersedeTransferRequest(
+  database,
+  supersededId,
+  expectedUpdatedAt,
+  supersedeEvent,
+  request,
+  initialEvent,
+) {
+  return withTransaction(database, () => {
+    if (request.idempotencyKey) {
+      const existing = database.prepare('SELECT * FROM transfer_requests WHERE idempotency_key = ?').get(request.idempotencyKey)
+      if (existing) return { row: existing, created: false }
+    }
+    const current = getTransferRow(database, supersededId)
+    const directOrigin = database.prepare(`
+      SELECT 1 AS found FROM transfer_events
+      WHERE transfer_request_id = ? AND event_type = 'direct_move_recorded'
+      LIMIT 1
+    `).get(supersededId)
+    if (!current || current.updated_at !== expectedUpdatedAt ||
+        ['declined', 'canceled', 'closed'].includes(current.status) ||
+        !directOrigin) {
+      throw new WorkflowError('The active direct move changed. Reload and try the reroute again.', {
+        status: 409,
+        code: 'ACTIVE_TRANSFER_CHANGED',
+      })
+    }
+    insertTransferEventRow(database, supersededId, supersedeEvent)
+    database.prepare(`
+      UPDATE transfer_requests
+      SET status = 'canceled', next_action = ?, next_action_owner = NULL,
+          closed_at = ?, updated_at = ?
+      WHERE id = ?
+    `).run('Superseded by a newer direct move', supersedeEvent.occurredAt, supersedeEvent.createdAt, supersededId)
+    const overlap = database.prepare(`
+      SELECT id FROM transfer_requests
+      WHERE vin = ? AND id <> ? AND status NOT IN ('declined', 'canceled', 'closed')
+      AND NOT (status = 'returned_home' AND movement_status = 'returned_home' AND current_location_id = home_store_id)
+      LIMIT 1
+    `).get(request.vin, supersededId)
+    if (overlap) {
+      throw new WorkflowError('This vehicle already has another open move request.', {
+        status: 409,
+        code: 'ACTIVE_TRANSFER_EXISTS',
+      })
+    }
+    return insertTransferRequestRows(database, request, initialEvent)
   })
 }
 

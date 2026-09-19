@@ -6,6 +6,7 @@ import { STORE_NAMES, type StoreName, type UserRole } from '../../types'
 import type { ManagedMember, MembershipDirectory, MembershipInput } from './types'
 
 const ROLE_LABELS: Record<UserRole, string> = { sales: 'Salesperson', manager: 'Store manager', group_manager: 'Group manager', coordinator: 'Transport coordinator', porter: 'Porter', driver: 'Driver' }
+const ASSIGNABLE_ROLES: UserRole[] = ['sales', 'manager', 'group_manager']
 const ROLE_HELP: Record<UserRole, string> = {
   sales: 'Search inventory, review holds, and request vehicles.',
   manager: 'Manage service and store workflows for the assigned home store.',
@@ -68,6 +69,7 @@ export function MembershipManagement({ role, store, onSaved }: { role: UserRole;
   }
   const filtered = directory?.members.filter(member => `${member.name} ${member.email} ${ROLE_LABELS[member.role]} ${member.homeStore}`.toLowerCase().includes(query.toLowerCase())) ?? []
   const self = draft?.id === directory?.currentUserId
+  const legacyDraftRole = draft && !ASSIGNABLE_ROLES.includes(draft.role) ? draft.role : null
   return <section className="admin-section admin-section--people" id="admin-people" aria-labelledby="admin-people-title">
     <header className="admin-section__header">
       <div><h2 id="admin-people-title">People &amp; access</h2><p>Choose each employee's role, home store, and sign-in access.</p></div>
@@ -84,7 +86,7 @@ export function MembershipManagement({ role, store, onSaved }: { role: UserRole;
       <div className="admin-member-fields">
         <label>Full name<input required maxLength={160} value={draft.name} disabled={saving} onChange={event => change('name', event.target.value)} /></label>
         <label>Sign-in email<input aria-label="Sign-in email" required type="email" maxLength={254} value={draft.email} disabled={saving || Boolean(draft.id)} onChange={event => change('email', event.target.value)} />{draft.id && <small>Email stays tied to this employee's history.</small>}</label>
-        <label>Role<select aria-label="Role" value={draft.role} disabled={saving || self} onChange={event => change('role', event.target.value as UserRole)}>{Object.entries(ROLE_LABELS).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>{ROLE_HELP[draft.role]}</small></label>
+        <label>Role<select aria-label="Role" value={draft.role} disabled={saving || self} onChange={event => change('role', event.target.value as UserRole)}>{legacyDraftRole && <option value={legacyDraftRole} disabled>{ROLE_LABELS[legacyDraftRole]} · Legacy</option>}{ASSIGNABLE_ROLES.map(value => <option value={value} key={value}>{ROLE_LABELS[value]}</option>)}</select><small>{ROLE_HELP[draft.role]}</small></label>
         <label>Home store<select aria-label="Home store" value={draft.homeStore} disabled={saving} onChange={event => change('homeStore', event.target.value as StoreName)}>{STORE_NAMES.map(value => <option key={value}>{value}</option>)}</select><small>{draft.role === 'group_manager' ? 'Group managers can manage every store.' : 'Store permissions follow this home store.'}</small></label>
       </div>
       <fieldset className="admin-access-toggle" disabled={saving || self}><legend>Sign-in access</legend><label><input type="radio" name="member-enabled" checked={draft.enabled} onChange={() => change('enabled', true)} /> Active</label><label><input type="radio" name="member-enabled" checked={!draft.enabled} onChange={() => change('enabled', false)} /> Disabled</label></fieldset>

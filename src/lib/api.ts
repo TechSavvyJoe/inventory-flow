@@ -75,6 +75,7 @@ async function beginMutation(path: string, body: RequestInit['body'], headers: H
     headers.get('x-inventory-demo-store'),
     headers.get('x-inventory-demo-user'),
     headers.get('x-inventory-preview-role'),
+    headers.get('x-inventory-preview-store'),
   ])
   let registration = mutationRegistrations.get(fingerprint)
   if (!registration) {
@@ -205,6 +206,7 @@ function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, s
     'x-inventory-demo-role': role,
     // Production honors this only for a server-authenticated group manager.
     'x-inventory-preview-role': role,
+    'x-inventory-preview-store': store,
     'x-inventory-demo-store': store,
     'x-inventory-demo-user': import.meta.env.VITE_DEMO_USER_NAME || 'Joe Gallant',
   }

@@ -270,6 +270,8 @@ export interface VehicleMovementSignal {
   overdue?: boolean;
   custodian?: string | null;
   transportAssignee?: string | null;
+  /** Server-authorized escape hatch for superseding an active direct move. */
+  canDirectReroute?: boolean;
 }
 
 export type VehicleTimelineSource =
@@ -458,6 +460,14 @@ export type VehicleWorkspaceTab = "overview" | "equipment" | "movement" | "hold"
 
 export type InventorySourceRecord = "public" | "dealeron" | "dealermail" | "movement";
 
+export type VehicleMoveIntent = "request" | "direct";
+
+export interface InventoryMoveAction {
+  intent: VehicleMoveIntent;
+  label: string;
+  shortLabel: string;
+}
+
 export interface InventoryExperienceProps {
   homeStore: InventoryStore;
   vehicles: InventoryVehicle[];
@@ -476,6 +486,7 @@ export interface InventoryExperienceProps {
   initialWorkspaceTab?: VehicleWorkspaceTab;
   pageSize?: number;
   canRequestVehicle?: boolean | ((vehicle: InventoryVehicle) => boolean);
+  moveActionFor?: (vehicle: InventoryVehicle) => InventoryMoveAction | null;
   onScopeChange?: (scope: InventoryScope) => void;
   onViewStateChange?: (state: InventoryViewState) => void;
   onSelectedVehicleChange?: (vehicleId: string | null) => void;
@@ -483,6 +494,7 @@ export interface InventoryExperienceProps {
   onGroupStoreSelect?: (store: InventoryStore) => void;
   onViewVehicle?: (vehicle: InventoryVehicle) => void;
   onRequestVehicle?: (vehicle: InventoryVehicle) => void;
+  onMoveVehicle?: (vehicle: InventoryVehicle, intent: VehicleMoveIntent) => void;
   onTrackMovement?: (vehicle: InventoryVehicle) => void;
   onOpenListing?: (vehicle: InventoryVehicle) => void;
   onOpenSourceRecord?: (
@@ -505,7 +517,9 @@ export interface InventoryTableProps {
   onSortChange: (sorts: InventorySort[]) => void;
   onSelectVehicle: (vehicle: InventoryVehicle, section?: VehicleWorkspaceTab) => void;
   canRequestVehicle?: boolean | ((vehicle: InventoryVehicle) => boolean);
+  moveActionFor?: (vehicle: InventoryVehicle) => InventoryMoveAction | null;
   onRequestVehicle?: (vehicle: InventoryVehicle) => void;
+  onMoveVehicle?: (vehicle: InventoryVehicle, intent: VehicleMoveIntent) => void;
   onTrackMovement?: (vehicle: InventoryVehicle) => void;
   onOpenListing?: (vehicle: InventoryVehicle) => void;
   onOpenSourceRecord?: (
@@ -518,11 +532,13 @@ export interface VehicleWorkspaceProps {
   vehicle: InventoryVehicle;
   homeStore: InventoryStore;
   canRequestVehicle?: boolean;
+  moveAction?: InventoryMoveAction | null;
   initialTab?: VehicleWorkspaceTab;
   returnFocusRef?: RefObject<HTMLElement | null>;
   onClose: () => void;
   onViewVehicle?: (vehicle: InventoryVehicle) => void;
   onRequestVehicle?: (vehicle: InventoryVehicle) => void;
+  onMoveVehicle?: (vehicle: InventoryVehicle, intent: VehicleMoveIntent) => void;
   onTrackMovement?: (vehicle: InventoryVehicle) => void;
   onOpenListing?: (vehicle: InventoryVehicle) => void;
   onOpenSourceRecord?: (

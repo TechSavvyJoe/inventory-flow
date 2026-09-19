@@ -15,6 +15,7 @@ const REQUIRED_METHODS = Object.freeze([
   "listTransferRows",
   "listServiceEvents",
   "insertServiceEvent",
+  "supersedeTransferRequest",
   "upsertAttentionWorkflow"
 ])
 
@@ -59,6 +60,10 @@ export function getTransferRow(context, ...args) {
 
 export function insertTransferRequest(context, ...args) {
   return invoke(context, 'insertTransferRequest', args)
+}
+
+export function supersedeTransferRequest(context, ...args) {
+  return invoke(context, 'supersedeTransferRequest', args)
 }
 
 export function listAttentionWorkflowRows(context, ...args) {

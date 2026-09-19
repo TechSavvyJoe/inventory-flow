@@ -74,7 +74,10 @@ function readHomeStore(): StoreName {
 
 function readRole(): UserRole {
   const stored = readStorage('maxey-role')
-  return stored === 'sales' || stored === 'coordinator' || stored === 'porter' || stored === 'driver' || stored === 'group_manager' || stored === 'manager'
+  // Only the three customer-facing roles remain selectable. Legacy transport
+  // memberships are still honored when the server returns one, but an old
+  // preview saved in this browser must not silently restore a removed option.
+  return stored === 'sales' || stored === 'group_manager' || stored === 'manager'
     ? stored
     : 'manager'
 }

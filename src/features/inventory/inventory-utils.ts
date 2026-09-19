@@ -6,6 +6,7 @@ import type {
   InventorySort,
   InventorySortKey,
   InventoryStore,
+  InventoryMoveAction,
   InventoryVehicle,
   SourceDataState,
   WindowStickerResource,
@@ -198,6 +199,47 @@ export function canRequestVehicleMove(
     vehicle.location.homeStore.id !== homeStoreId &&
     !isMoveRequestBlocked(vehicle)
   );
+}
+
+/**
+ * Resolve the single creation action that belongs on the SRP and VDP.
+ * Salespeople request another store's vehicle. Store managers may also send
+ * their own inventory directly, while group managers may directly move any
+ * vehicle. An open ledger entry remains a Track action and is handled by the
+ * caller before this resolver is used.
+ */
+export function vehicleMoveAction(
+  vehicle: InventoryVehicle,
+  role: string,
+  workingStore: InventoryStore,
+): InventoryMoveAction | null {
+  const belongsToWorkingStore = sameStore(vehicle.location.homeStore, workingStore);
+
+  if (isMoveRequestBlocked(vehicle)) {
+    // A blocking direct move is not a dead end for the people who own its
+    // location decision. The server still verifies that the active row is a
+    // direct move and atomically supersedes it; this flag only makes that
+    // authorized path reachable without taking Track away.
+    if (vehicle.movement?.canDirectReroute === true && (role === "group_manager" || (role === "manager" && belongsToWorkingStore))) {
+      return { intent: "direct", label: "Move again", shortLabel: "Move again" };
+    }
+    return null;
+  }
+
+  if (role === "group_manager") {
+    return { intent: "direct", label: "Move vehicle", shortLabel: "Move" };
+  }
+  if (role === "manager" && belongsToWorkingStore) {
+    return { intent: "direct", label: "Move to another store", shortLabel: "Move" };
+  }
+  if (["sales", "manager"].includes(role) && !belongsToWorkingStore) {
+    return {
+      intent: "request",
+      label: `Request to ${workingStore.name}`,
+      shortLabel: "Request",
+    };
+  }
+  return null;
 }
 
 export function sourceStateLabel(state: SourceDataState): string {

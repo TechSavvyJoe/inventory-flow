@@ -285,6 +285,41 @@ export const d1SnapshotRepository = Object.freeze({
     recordTransferEvent(database, event)
     return { row: clone(row), created: true }
   },
+  supersedeTransferRequest(database, supersededId, expectedUpdatedAt, supersedeEvent, request, initialEvent) {
+    const existing = request.idempotencyKey && database.transfers.find((row) => row.idempotency_key === request.idempotencyKey)
+    if (existing) return { row: clone(existing), created: false }
+    const current = database.transfers.find((row) => row.id === supersededId)
+    const hasDirectOrigin = (transferEventsById(database).get(supersededId) ?? [])
+      .some((event) => event.event_type === 'direct_move_recorded')
+    if (!current || current.updated_at !== expectedUpdatedAt ||
+        ['declined', 'canceled', 'closed'].includes(current.status) ||
+        !hasDirectOrigin) {
+      throw new RepositoryConflictError()
+    }
+    const overlap = database.transfers.find((row) => row.vin === request.vin && row.id !== supersededId &&
+      !['declined', 'canceled', 'closed'].includes(row.status) &&
+      !(row.status === 'returned_home' && row.movement_status === 'returned_home' && row.current_location_id === row.home_store_id))
+    if (overlap) throw new RepositoryConflictError()
+
+    const supersedeRow = transferEventRow(supersededId, supersedeEvent)
+    insert(database, 'transfer_events', TRANSFER_EVENT_COLUMNS, supersedeRow)
+    stage(database, `UPDATE transfer_requests
+      SET status = 'canceled', next_action = ?, next_action_owner = NULL, closed_at = ?, updated_at = ?
+      WHERE id = ?`, ['Superseded by a newer direct move', supersedeEvent.occurredAt, supersedeEvent.createdAt, supersededId])
+    Object.assign(current, {
+      status: 'canceled', next_action: 'Superseded by a newer direct move', next_action_owner: null,
+      closed_at: supersedeEvent.occurredAt, updated_at: supersedeEvent.createdAt,
+    })
+    recordTransferEvent(database, supersedeRow)
+
+    const row = transferRequestRow(request)
+    const event = transferEventRow(row.id, initialEvent)
+    insert(database, 'transfer_requests', TRANSFER_COLUMNS, row)
+    insert(database, 'transfer_events', TRANSFER_EVENT_COLUMNS, event)
+    database.transfers.push(row)
+    recordTransferEvent(database, event)
+    return { row: clone(row), created: true }
+  },
   appendTransferEvent(database, id, event, requestPatch) {
     const current = database.transfers.find((row) => row.id === id)
     if (!current) return { row: null, created: false }

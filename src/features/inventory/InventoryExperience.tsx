@@ -369,12 +369,14 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     initialWorkspaceTab = "overview",
     pageSize = 10,
     canRequestVehicle = false,
+    moveActionFor,
     onScopeChange,
     onViewStateChange,
     onSelectedVehicleChange,
     onGroupStoreSelect,
     onViewVehicle,
     onRequestVehicle,
+    onMoveVehicle,
     onTrackMovement,
     onOpenListing,
     onOpenSourceRecord,
@@ -517,6 +519,7 @@ export function InventoryExperience(props: InventoryExperienceProps) {
   const canRequestSelected = selectedVehicle
     ? typeof canRequestVehicle === "function" ? canRequestVehicle(selectedVehicle) : canRequestVehicle
     : false;
+  const selectedMoveAction = selectedVehicle ? moveActionFor?.(selectedVehicle) ?? null : null;
 
   const closeVehicleWorkspace = () => {
     if (selectedVehicleId) {
@@ -674,7 +677,9 @@ export function InventoryExperience(props: InventoryExperienceProps) {
                 onSortChange={setSorts}
                 onSelectVehicle={openVehicleWorkspace}
                 canRequestVehicle={canRequestVehicle}
+                moveActionFor={moveActionFor}
                 onRequestVehicle={onRequestVehicle}
+                onMoveVehicle={onMoveVehicle}
                 onTrackMovement={onTrackMovement}
                 onOpenListing={onOpenListing}
                 onOpenSourceRecord={openSourceRecord}
@@ -685,7 +690,9 @@ export function InventoryExperience(props: InventoryExperienceProps) {
                 onSelectVehicle={openVehicleWorkspace}
                 onOpenSourceRecord={openSourceRecord}
                 canRequestVehicle={canRequestVehicle}
+                moveActionFor={moveActionFor}
                 onRequestVehicle={onRequestVehicle}
+                onMoveVehicle={onMoveVehicle}
                 onTrackMovement={onTrackMovement}
                 onOpenListing={onOpenListing}
               />
@@ -737,10 +744,12 @@ export function InventoryExperience(props: InventoryExperienceProps) {
           initialTab={workspaceInitialTab}
           homeStore={homeStore}
           canRequestVehicle={canRequestSelected}
+          moveAction={selectedMoveAction}
           returnFocusRef={workspaceReturnFocusRef}
           onClose={closeVehicleWorkspace}
           onViewVehicle={onViewVehicle}
           onRequestVehicle={onRequestVehicle}
+          onMoveVehicle={onMoveVehicle}
           onTrackMovement={onTrackMovement}
           onOpenListing={onOpenListing}
           onOpenSourceRecord={onOpenSourceRecord}

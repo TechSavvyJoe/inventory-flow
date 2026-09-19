@@ -47,7 +47,22 @@ describe('AppShell account and update controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Return to Group manager' }))
     expect(context.setRole).toHaveBeenCalledWith('group_manager')
     fireEvent.click(screen.getByRole('button', { name: 'Open account and app controls' }))
-    expect(screen.getByLabelText('Preview role')).toHaveValue('sales')
+    const preview = screen.getByLabelText('Preview role')
+    expect(preview).toHaveValue('sales')
+    expect(within(preview).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Salesperson', 'Store manager', 'Group manager',
+    ])
+  })
+
+  it('lets a verified group manager change working stores', () => {
+    const context = useAppDataMock()
+    useAppDataMock.mockReturnValue({ ...context, data: { ...context.data, access: { role: 'group_manager', store: 'Howell', canPreviewStores: true } } })
+    const { unmount } = render(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory</p></AppShell></MemoryRouter>)
+    const groupStore = screen.getByRole('combobox', { name: 'Working location' })
+    expect(groupStore).toBeEnabled()
+    fireEvent.change(groupStore, { target: { value: 'Ford Detroit' } })
+    expect(context.setHomeStore).toHaveBeenCalledWith('Ford Detroit')
+    unmount()
   })
 
   it('portals the modal outside the app shell, isolates the page, and restores opener focus', async () => {

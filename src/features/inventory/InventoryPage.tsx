@@ -7,7 +7,7 @@ import { getVehicle } from '../../lib/api'
 import type { VehicleRecord } from '../../types'
 import type { InventoryScope, InventoryVehicle, VehicleWorkspaceTab } from './types'
 import { InventoryExperience } from './InventoryExperience'
-import { canRequestVehicleMove, movementTrackingPath, transferByVin } from './inventory-utils'
+import { canRequestVehicleMove, movementTrackingPath, transferByVin, vehicleMoveAction } from './inventory-utils'
 import {
   hasInventorySearchRequest,
   inventorySearchAccessContext,
@@ -120,7 +120,12 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   const store = inventoryStore(homeStore)
 
   function requestVehicle(vehicle: InventoryVehicle) {
-    navigate(`/transfers/new?vin=${encodeURIComponent(vehicle.vin)}`)
+    navigate(`/transfers/new?vin=${encodeURIComponent(vehicle.vin)}&intent=request`)
+  }
+
+  function moveVehicle(vehicle: InventoryVehicle, intent: 'request' | 'direct') {
+    const returnTo = `${location.pathname}${location.search}`
+    navigate(`/transfers/new?vin=${encodeURIComponent(vehicle.vin)}&intent=${intent}&returnTo=${encodeURIComponent(returnTo)}`)
   }
 
   function trackMovement(vehicle: InventoryVehicle) {
@@ -170,9 +175,11 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         }}
         pageSize={25}
         canRequestVehicle={(vehicle) => canRequestVehicleMove(vehicle, role, store.id)}
+        moveActionFor={(vehicle) => vehicleMoveAction(vehicle, role, store)}
         onScopeChange={setScope}
         onGroupStoreSelect={() => setScope('group')}
         onRequestVehicle={requestVehicle}
+        onMoveVehicle={moveVehicle}
         onTrackMovement={trackMovement}
         onOpenListing={openListing}
         onOpenSourceRecord={(vehicle, source) => {

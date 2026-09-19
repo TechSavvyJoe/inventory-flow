@@ -65,6 +65,8 @@ const ROLE_LABELS: Record<UserRole, string> = {
   driver: 'Driver',
 }
 
+const ROLE_PREVIEW_OPTIONS: UserRole[] = ['sales', 'manager', 'group_manager']
+
 const NAV_STORAGE_KEY = 'maxey-inventory-flow:expanded-navigation-v3'
 
 function readStoredNavigationState() {
@@ -111,6 +113,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     ? [ADMIN_NAV_ITEM, NAV_ITEMS[0], NAV_ITEMS[1], NAV_ITEMS[4]]
     : NAV_ITEMS.filter((item) => item.id !== 'service')
   const rolePreviewEnabled = data?.access?.canPreviewRoles === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
+  const storePreviewEnabled = data?.access?.canPreviewStores === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
   const productionRolePreview = data?.access?.rolePreviewActive === true
   const freshnessState = !data
     ? 'unknown'
@@ -259,7 +262,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span>
             <small>Preview role</small>
             <select value={role} onChange={(event) => setRole(event.target.value as UserRole)}>
-              {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              {ROLE_PREVIEW_OPTIONS.map((value) => <option key={value} value={value}>{ROLE_LABELS[value]}</option>)}
             </select>
           </span>
           <ChevronDown aria-hidden="true" />
@@ -335,11 +338,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="store-select-wrap">
                 <select
                   value={homeStore}
+                  disabled={!storePreviewEnabled}
                   onChange={(event) => {
                     const nextStore = event.target.value as StoreName
                     runInterfaceTransition(() => setHomeStore(nextStore), 'oem')
                   }}
                   aria-label="Working location"
+                  title={storePreviewEnabled ? 'Change the working location' : `Your account is assigned to ${homeStore}`}
                 >
                   {STORE_NAMES.map((store) => <option key={store}>{store}</option>)}
                 </select>

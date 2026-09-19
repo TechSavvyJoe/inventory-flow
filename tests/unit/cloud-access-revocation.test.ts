@@ -25,9 +25,10 @@ async function token(overrides = {}, key = signing.privateKey) {
   const now = Math.floor(Date.now() / 1000)
   return new SignJWT({ iss: issuer, aud: audience, sub: 'synthetic-subject', email: 'synthetic@example.invalid', iat: now, exp: now + 3600, ...overrides }).setProtectedHeader({ alg: 'RS256', kid: 'synthetic-revocation' }).sign(key)
 }
-function request(jwt, previewRole, pathname = '/api/health') {
+function request(jwt, previewRole, pathname = '/api/health', previewStore) {
   const headers = new Headers({ 'cf-access-jwt-assertion': jwt, 'x-inventory-authenticated-role': 'group_manager', 'x-inventory-authenticated-store': 'Lincoln' })
   if (previewRole !== undefined) headers.set('x-inventory-preview-role', previewRole)
+  if (previewStore !== undefined) headers.set('x-inventory-preview-store', previewStore)
   return new Request(`https://synthetic.invalid${pathname}`, { headers })
 }
 function harness() {
@@ -84,12 +85,26 @@ describe('session and employee revocation boundary', () => {
     expect(await memberContext(await verifyAccess(restored, env), env, restored)).toMatchObject({ role: 'group_manager', rolePreviewActive: false })
   })
 
+  it.each(['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln'])('lets a verified group manager work as %s without changing the membership home store', async (store) => {
+    const { database, env } = harness()
+    database.exec("UPDATE cloud_memberships SET role='group_manager'")
+    const req = request(await token(), undefined, '/api/health', store)
+    const context = await memberContext(await verifyAccess(req, env), env, req)
+    expect(context).toMatchObject({
+      role: 'group_manager', authenticatedRole: 'group_manager',
+      store, authenticatedStore: 'Howell', canPreviewStores: true,
+      storePreviewActive: store !== 'Howell', userId: 'synthetic-user',
+    })
+    expect(database.prepare('SELECT role,home_store FROM cloud_memberships').get()).toMatchObject({ role: 'group_manager', home_store: 'Howell' })
+  })
+
   it.each(['sales', 'manager', 'coordinator', 'porter', 'driver'])('ignores preview headers for authenticated %s members', async (role) => {
     const { database, env } = harness()
     database.prepare('UPDATE cloud_memberships SET role=?').run(role)
-    const req = request(await token({ role: 'group_manager' }), 'group_manager')
+    const req = request(await token({ role: 'group_manager' }), 'group_manager', '/api/health', 'Ford Detroit')
     expect(await memberContext(await verifyAccess(req, env), env, req)).toMatchObject({
-      role, authenticatedRole: role, canPreviewRoles: false, rolePreviewActive: false, store: 'Howell',
+      role, authenticatedRole: role, canPreviewRoles: false, canPreviewStores: false,
+      rolePreviewActive: false, storePreviewActive: false, store: 'Howell', authenticatedStore: 'Howell',
     })
     const forbidden = await worker.fetch(request(req.headers.get('cf-access-jwt-assertion'), 'group_manager', '/api/admin/overview'), env)
     expect(forbidden.status).toBe(403)
@@ -116,5 +131,12 @@ describe('session and employee revocation boundary', () => {
     expect((await worker.fetch(request(jwt, 'sales', '/api/admin/overview'), env)).status).toBe(403)
     expect((await worker.fetch(request(jwt, 'sales', '/api/admin/members'), env)).status).toBe(403)
     expect((await worker.fetch(request(jwt, 'group_manager'), env)).status).toBe(200)
+  })
+
+  it('rejects an invalid working-store preview from a verified group manager', async () => {
+    const { database, env } = harness()
+    database.exec("UPDATE cloud_memberships SET role='group_manager'")
+    const jwt = await token()
+    expect((await worker.fetch(request(jwt, undefined, '/api/health', 'Not a store'), env)).status).toBe(400)
   })
 })

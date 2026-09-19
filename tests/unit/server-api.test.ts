@@ -881,6 +881,62 @@ describe('Inventory Flow API', () => {
     expect(unrelatedAfterMovement.status).toBe(404)
   })
 
+  it('authorizes and persists direct moves from the trusted role and store context', async () => {
+    const { baseUrl, database } = await harness()
+    const bootstrap = await fetch(`${baseUrl}/api/bootstrap`, {
+      headers: roleHeaders('group_manager', 'Howell', 'Synthetic group manager'),
+    }).then((response) => response.json())
+    const howellVehicles = bootstrap.vehicles.filter((row: { homeStore: string }) => row.homeStore === 'Howell')
+    const fowlervilleVehicle = bootstrap.vehicles.find((row: { homeStore: string }) => row.homeStore === 'Fowlerville')
+    expect(howellVehicles.length).toBeGreaterThanOrEqual(2)
+    expect(fowlervilleVehicle).toBeTruthy()
+    const movedAt = '2026-08-29T22:00:00.000Z'
+    const body = (vin: string, destinationStore = 'Ford Detroit') => JSON.stringify({
+      vin, intent: 'direct', destinationStore, movedAt,
+      reason: 'Synthetic customer showing', returnRequired: true,
+    })
+
+    const salesAttempt = await fetch(`${baseUrl}/api/transfers`, {
+      method: 'POST', headers: roleHeaders('sales', 'Howell', 'Synthetic salesperson'),
+      body: body(howellVehicles[0].vin),
+    })
+    expect(salesAttempt.status).toBe(403)
+    expect((await salesAttempt.json()).code).toBe('FORBIDDEN')
+
+    const otherStoreManager = await fetch(`${baseUrl}/api/transfers`, {
+      method: 'POST', headers: roleHeaders('manager', 'Fowlerville', 'Synthetic Fowlerville manager'),
+      body: body(howellVehicles[0].vin),
+    })
+    expect(otherStoreManager.status).toBe(403)
+    expect((await otherStoreManager.json()).code).toBe('WRONG_STORE_ROLE')
+
+    const managerMove = await fetch(`${baseUrl}/api/transfers`, {
+      method: 'POST', headers: roleHeaders('manager', 'Howell', 'Synthetic Howell manager'),
+      body: body(howellVehicles[0].vin),
+    })
+    expect(managerMove.status).toBe(201)
+    const moved = await managerMove.json()
+    expect(moved).toMatchObject({
+      homeStore: 'Howell', requestingStore: 'Ford Detroit', destination: 'Ford Detroit',
+      requestStatus: 'arrived', movementStatus: 'at_requesting_store', currentLocation: 'Ford Detroit',
+      locationConfidence: 'verified', lastConfirmedAt: movedAt,
+    })
+    expect(moved.events).toContainEqual(expect.objectContaining({
+      type: 'direct_move_recorded', actor: 'Synthetic Howell manager', store: 'Howell',
+      fromLocation: 'Howell', toLocation: 'Ford Detroit', occurredAt: movedAt,
+    }))
+
+    const groupMove = await fetch(`${baseUrl}/api/transfers`, {
+      method: 'POST', headers: roleHeaders('group_manager', 'Howell', 'Synthetic group manager'),
+      body: body(fowlervilleVehicle.vin, 'Lincoln'),
+    })
+    expect(groupMove.status).toBe(201)
+    expect(await groupMove.json()).toMatchObject({ homeStore: 'Fowlerville', currentLocation: 'Lincoln', requestStatus: 'arrived' })
+
+    expect(database.prepare("SELECT COUNT(*) AS n FROM transfer_requests WHERE status='arrived' AND movement_status='at_requesting_store'").get().n).toBe(2)
+    expect(database.prepare("SELECT COUNT(*) AS n FROM transfer_events WHERE event_type='direct_move_recorded'").get().n).toBe(2)
+  })
+
   it('enforces manager review, release evidence, driver coordination, and porter handoffs', async () => {
     const { baseUrl, database } = await harness()
     const bootstrap = await fetch(`${baseUrl}/api/bootstrap?homeStore=Fowlerville&role=sales`).then((response) => response.json())

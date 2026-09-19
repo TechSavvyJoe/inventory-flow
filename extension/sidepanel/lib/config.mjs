@@ -7,6 +7,7 @@ export const WORKSPACES = Object.freeze({
 
 export const STORES = Object.freeze(['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln'])
 export const ROLES = Object.freeze(['sales', 'manager', 'coordinator', 'porter', 'driver', 'group_manager'])
+export const ROLE_PICKER_ROLES = Object.freeze(['sales', 'manager', 'group_manager'])
 
 export const DEFAULT_SETTINGS = Object.freeze({
   workspace: 'production',

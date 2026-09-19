@@ -215,6 +215,56 @@ describe('extension working-store workflow and identity reset', () => {
     expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:4173/updates?view=price')
   })
 
+  it('opens a direct move for a manager viewing inventory owned by their store', async () => {
+    const { openUrl } = await import('../../extension/sidepanel/lib/host.mjs')
+    api.bootstrap.mockResolvedValue(bootstrap('Howell', 'manager'))
+    await import('../../extension/sidepanel/panel.js')
+    await waitForText('#rows', 'DEMO-H01')
+    document.querySelector('#row-TESTDATAHWELL0001').click()
+    await waitForText('.dock-primary', 'Move vehicle')
+    document.querySelector('.dock-primary button:last-child').click()
+    expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:4173/transfers/new?vin=TESTDATAHWELL0001&intent=direct')
+  })
+
+  it('opens an inbound request for a salesperson viewing another store\'s vehicle', async () => {
+    const { openUrl } = await import('../../extension/sidepanel/lib/host.mjs')
+    api.bootstrap.mockResolvedValue(bootstrap('Howell', 'sales'))
+    await import('../../extension/sidepanel/panel.js')
+    await waitForText('#rows', 'DEMO-H01')
+    document.querySelector('#expand-stores button').click()
+    document.querySelector('#row-TESTDATALNCN00001').click()
+    await waitForText('.dock-primary', 'Request vehicle')
+    document.querySelector('.dock-primary button:last-child').click()
+    expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:4173/transfers/new?vin=TESTDATALNCN00001&intent=request')
+  })
+
+  it('keeps View move and adds Move again for a server-authorized active direct move', async () => {
+    const { openUrl } = await import('../../extension/sidepanel/lib/host.mjs')
+    const reroutable = {
+      ...vehicle(),
+      movement: {
+        transferId: 'direct-move-1',
+        state: 'at_requesting_store',
+        currentLocation: 'Ford Detroit',
+        locationConfidence: 'verified',
+        newRequestBlocked: true,
+        canDirectReroute: true,
+      },
+    }
+    api.bootstrap.mockResolvedValue({ ...bootstrap('Howell', 'group_manager'), vehicles: [reroutable] })
+    api.vehicle.mockResolvedValue(reroutable)
+    await import('../../extension/sidepanel/panel.js')
+    await waitForText('#rows', 'DEMO-H01')
+    document.querySelector('#row-TESTDATAHWELL0001').click()
+    await waitForText('.dock-primary', 'Move again')
+    const dock = document.querySelector('.dock-primary')
+    expect(dock.textContent).toContain('View move')
+    dock.querySelectorAll('button')[1].click()
+    expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:4173/transfers?id=direct-move-1')
+    dock.querySelectorAll('button')[2].click()
+    expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:4173/transfers/new?vin=TESTDATAHWELL0001&intent=direct')
+  })
+
   it('keeps Held local, expands explicitly, then returns to the working store with the query intact', async () => {
     await import('../../extension/sidepanel/panel.js')
     await waitForText('#result-context', '1 vehicle · Howell')

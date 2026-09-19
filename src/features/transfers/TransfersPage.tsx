@@ -90,6 +90,19 @@ function isTerminalTransfer(record: TransferRecord): boolean {
   return TERMINAL_TRANSFER_STATES.has(normalizedStatus(record.requestStatus)) || (record.workflowMode === 'simple' && normalizedStatus(record.requestStatus) === 'returned-home')
 }
 
+function creationIntentFor(vehicle: BootstrapData['vehicles'][number], role: UserRole, homeStore: StoreName): 'request' | 'direct' | null {
+  if (role === 'group_manager') return 'direct'
+  if (role === 'manager') return vehicle.homeStore === homeStore ? 'direct' : 'request'
+  if (role === 'sales' && vehicle.homeStore !== homeStore) return 'request'
+  return null
+}
+
+function localDateTimeToIso(value?: string): string | undefined {
+  if (!value) return undefined
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString()
+}
+
 function needsTransferAction(detail: TransferDetail): boolean {
   const actions = detail.workflowMode === 'simple' ? simpleTransferActions(detail) : detail.allowedActions
   return actions.some((action) => !PASSIVE_TRANSFER_ACTIONS.has(action))
@@ -268,6 +281,7 @@ export function TransfersPage() {
   const [params] = useSearchParams()
   const [pendingAction, setPendingAction] = useState<{ action: TransferActionKind; detail: TransferDetail; record: TransferRecord } | null>(null)
   const [query, setQuery] = useState('')
+  const [requestQuery, setRequestQuery] = useState('')
   const [queueView, setQueueView] = useState<TransferQueueView>('active')
   const [queueFilter, setQueueFilter] = useState<TransferQueueFilter>('all')
   const [storeScope, setStoreScope] = useState<'home' | 'group'>('home')
@@ -378,17 +392,72 @@ export function TransfersPage() {
   }
 
   if (requestMode) {
-    if (requestVehicle?.homeStore === homeStore) {
+    const safeReturnTo = (() => {
+      const value = params.get('returnTo')
+      return value?.startsWith('/') && !value.startsWith('//') ? value : '/transfers'
+    })()
+
+    if (!requestedVin) {
+      const normalizedVehicleQuery = requestQuery.trim().toLowerCase()
+      const activeByVin = new Map(data.transfers.filter(record => !isTerminalTransfer(record)).map(record => [record.vin, record]))
+      const candidates = data.vehicles
+        .filter(vehicle => creationIntentFor(vehicle, role, homeStore))
+        .filter(vehicle => !normalizedVehicleQuery || [vehicle.stockNumber, vehicle.vin, vehicle.vehicleName, vehicle.homeStore]
+          .some(value => value?.toLowerCase().includes(normalizedVehicleQuery)))
+        .slice(0, 30)
+      return <section className="transfer-request-page move-vehicle-picker-page">
+        <SourceWarning meta={data.meta} />
+        <header className="move-picker-heading">
+          <div><span>Vehicle moves</span><h1>Start a move</h1><p>Search by stock, VIN, or vehicle. The next step matches your role and the vehicle’s home store.</p></div>
+          <button type="button" className="mif-icon-button" aria-label="Close vehicle picker" onClick={() => navigate('/transfers')}><ArrowLeft aria-hidden="true" /></button>
+        </header>
+        <label className="move-picker-search">
+          <Search aria-hidden="true" />
+          <input autoFocus value={requestQuery} onChange={event => setRequestQuery(event.target.value)} placeholder="Search stock, VIN, or vehicle" aria-label="Search inventory to move" />
+        </label>
+        <div className="move-picker-results" aria-live="polite">
+          {candidates.map(vehicle => {
+            const active = activeByVin.get(vehicle.vin)
+            const intent = creationIntentFor(vehicle, role, homeStore)!
+            const summary = toTransferVehicle(vehicle, data.meta)
+            const blocked = vehicle.movement?.newRequestBlocked === true && !active
+            return <article className="move-picker-row" key={vehicle.vin}>
+              <TransferListPhoto vehicle={summary} />
+              <div><strong>{vehicle.vehicleName}</strong><span>Stock {vehicle.stockNumber} · {vehicle.homeStore}</span><small>{vehicle.vin}</small></div>
+              {active ? <div className="move-picker-actions">
+                <button type="button" className="mif-button mif-button--secondary" onClick={() => navigate(`/transfers?id=${encodeURIComponent(active.id)}`)}>Track move</button>
+                {vehicle.movement?.canDirectReroute === true ? <button type="button" className="mif-button mif-button--primary" onClick={() => navigate(`/transfers/new?vin=${encodeURIComponent(vehicle.vin)}&intent=direct`)}>Move again</button> : null}
+              </div>
+                : <button type="button" className="mif-button mif-button--primary" disabled={blocked} title={blocked ? 'Another move is already open for this vehicle.' : undefined} onClick={() => navigate(`/transfers/new?vin=${encodeURIComponent(vehicle.vin)}&intent=${intent}`)}>{blocked ? 'Move already open' : intent === 'direct' ? 'Move vehicle' : `Request to ${homeStore}`}</button>}
+            </article>
+          })}
+          {!candidates.length ? <div className="move-picker-empty"><CarFront aria-hidden="true" /><strong>No matching vehicles</strong><p>Check the stock number or search across the vehicle name and VIN.</p></div> : null}
+        </div>
+      </section>
+    }
+
+    const permittedIntent = requestVehicle ? creationIntentFor(requestVehicle, role, homeStore) : null
+    if (requestVehicle && !permittedIntent) {
       return <section className="transfer-request-page"><div className="move-request-home-message">
         <CarFront aria-hidden="true" size={32} />
-        <h1>This vehicle belongs to {homeStore}</h1>
-        <p>A move request brings another store’s vehicle to your store. Choose a vehicle from another store to ask your manager.</p>
-        <button type="button" className="mif-button mif-button--primary" onClick={() => navigate('/inventory?scope=group')}>Find a vehicle at another store</button>
+        <h1>This move is not available for your role</h1>
+        <p>Salespeople request vehicles from another store. A store manager can directly move their own inventory, and a group manager can move inventory between any stores.</p>
+        <button type="button" className="mif-button mif-button--primary" onClick={() => navigate('/transfers/new')}>Choose another vehicle</button>
       </div></section>
     }
+    const intent = permittedIntent ?? (params.get('intent') === 'direct' ? 'direct' : 'request')
     const vehicleSummary = requestVehicle ? toTransferVehicle(requestVehicle, data.meta) : null
+    const movementLocation = requestVehicle?.movement?.currentLocation?.trim()
+    const knownCurrentStore = movementLocation && data.stores.some(store => store.store === movementLocation)
+      ? movementLocation
+      : null
+    // "In transit" and other non-store custody labels are not a store. Do not
+    // guess home as the origin and accidentally remove it from the valid
+    // destinations. With no movement location at all, however, the home store
+    // remains the authoritative origin for an initial direct move.
+    const directOrigin = knownCurrentStore ?? (!movementLocation ? requestVehicle?.homeStore : null)
     const stores: SelectOption[] = data.stores
-      .filter((store) => store.store !== requestVehicle?.homeStore)
+      .filter((store) => intent !== 'direct' ? store.store !== requestVehicle?.homeStore : !directOrigin || store.store !== directOrigin)
       .map((store) => ({ value: store.store, label: store.store }))
     const defaultRequestingStore = homeStore
     const requestingManagerStore = defaultRequestingStore ?? homeStore
@@ -401,29 +470,44 @@ export function TransfersPage() {
         <SourceWarning meta={data.meta} />
         <TransferRequestWorkspace
           workflowMode="simple"
+          intent={intent}
           vehicle={vehicleSummary}
           stores={stores}
           requesters={[{ value: 'signed-in-user', label: currentUser || 'Signed-in salesperson', secondaryLabel: homeStore }]}
           managerApprovers={managerApprovers}
           defaultRequestingStore={defaultRequestingStore}
+          defaultDestinationStore={intent === 'direct' && stores.some(store => store.value === params.get('destination')) ? params.get('destination') || undefined : undefined}
           defaultRequesterId="signed-in-user"
           defaultManagerApproverId={managerApprovers[0]?.value}
-          onCancel={() => navigate(requestVehicle ? '/transfers' : '/inventory')}
+          onCancel={() => navigate(safeReturnTo)}
           onViewRequest={(id) => navigate(`/transfers?id=${encodeURIComponent(id)}`)}
           onSubmit={async (draft) => {
-            const created = await submitTransfer({
+            const movedAt = intent === 'direct' ? localDateTimeToIso(draft.movedAt) : undefined
+            const common = {
               vin: draft.vin,
               requestingStore: draft.requestingStore as typeof homeStore,
               requestedBy: currentUser || 'Signed-in salesperson',
-              neededBy: draft.neededBy,
               reason: `${REASON_LABELS[draft.reasonCode]}${draft.reasonDetail?.trim() ? `: ${draft.reasonDetail.trim()}` : ''}`,
               customerReference: draft.customerReference?.trim() || undefined,
               customerAppointment: false,
               returnRequired: draft.returnRequired,
-              returnDueAt: draft.targetReturnAt || undefined,
+              returnDueAt: localDateTimeToIso(draft.targetReturnAt),
               priority: draft.priority,
-              approvalOwner: managerApprovers.find((option) => option.value === draft.managerApproverId)?.label,
-            })
+              approvalOwner: intent === 'direct' ? currentUser || `${homeStore} manager` : managerApprovers.find((option) => option.value === draft.managerApproverId)?.label,
+            }
+            const created = intent === 'direct'
+              ? await submitTransfer({
+                ...common,
+                intent: 'direct',
+                destinationStore: draft.destinationStore as typeof homeStore,
+                movedAt,
+              })
+              : await submitTransfer({
+                ...common,
+                intent: 'request',
+                destinationStore: draft.requestingStore as typeof homeStore,
+                neededBy: localDateTimeToIso(draft.neededBy) || draft.neededBy,
+              })
             return { requestId: created.id }
           }}
         />
@@ -442,9 +526,9 @@ export function TransfersPage() {
           <h1>Vehicle moves</h1>
           <p>See where each vehicle is, who is responsible, and what happens next.</p>
         </div>
-        <button className="mif-button mif-button--primary transfer-header-create" type="button" aria-label="Request a vehicle" onClick={() => navigate('/inventory')}>
+        <button className="mif-button mif-button--primary transfer-header-create" type="button" aria-label="Start a vehicle move" onClick={() => navigate('/transfers/new')}>
           <Plus aria-hidden="true" />
-          Request vehicle
+          Start a move
         </button>
       </header>
 
@@ -456,7 +540,7 @@ export function TransfersPage() {
 
       {details.length === 0 ? (
         <div className="transfers-empty-surface">
-          <TransferEmptyState onAction={() => navigate('/inventory')} actionLabel="Find a vehicle" />
+          <TransferEmptyState onAction={() => navigate('/transfers/new')} actionLabel="Start a move" />
           <div className="movement-operating-rule">
             <ArrowLeftRight aria-hidden="true" />
             <div><strong>{simple ? 'One manager review, then a simple return.' : 'Home Store owns the release. Requesting Store owns the custody.'}</strong><span>{simple ? 'Your manager checks with the vehicle’s home store and approves. Sales records the outcome or starts the return; the home store confirms it is back.' : 'Accountability continues until the Home Store confirms return or an authorized final disposition is recorded.'}</span></div>

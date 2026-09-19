@@ -1,6 +1,6 @@
-import { ROLES, STALE_AFTER_MS, STORES, WORKSPACES, workspaceFor } from './lib/config.mjs'
+import { ROLE_PICKER_ROLES, STALE_AFTER_MS, STORES, WORKSPACES, workspaceFor } from './lib/config.mjs'
 import { PanelApiError, fetchBootstrap, fetchVehicle } from './lib/api.mjs'
-import { buildPanelData, canRequestVehicle, copyFields, dealSheetText, mergeDetail, requestBlockedReason, roleLabel, toPanelVehicle } from './lib/model.mjs'
+import { buildPanelData, copyFields, dealSheetText, mergeDetail, requestBlockedReason, roleLabel, toPanelVehicle, vehicleMoveAction } from './lib/model.mjs'
 import { buildEntry, buildIndex, rank } from './lib/search.mjs'
 import { EMPTY_FILTERS, SORTS, activeFilterCount, applyFilters, describeFilters, filterOptions, normalizeFilters, sortMatches } from './lib/filters.mjs'
 import { groupMatchesByStore, resolveStoreScope, scopeCounts, scopeMatches } from './lib/scope.mjs'
@@ -742,13 +742,14 @@ function statusGrid(vehicle) {
 function dock(vehicle) {
   const origin = appOrigin()
   const access = state.data?.access
-  const allowed = canRequestVehicle(vehicle, access)
+  const moveAction = vehicleMoveAction(vehicle, access)
   const blocked = requestBlockedReason(vehicle, access)
   const hasMove = Boolean(vehicle.movement?.transferId)
-  const primary = el('div', { class: 'dock-primary' },
+  const canReroute = hasMove && moveAction === 'direct'
+  const primary = el('div', { class: `dock-primary${canReroute ? ' has-reroute' : ''}` },
     el('button', { type: 'button', class: 'btn btn-primary', onclick: () => openUrl(links.inventorySearchUrl(origin, vehicle.stockNumber)) }, 'Open in app', icon('external')),
-    hasMove ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.trackMovementUrl(origin, { transferId: vehicle.movement.transferId, vin: vehicle.vin })) }, 'View move', icon('arrow-right'))
-      : allowed ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.requestVehicleUrl(origin, vehicle.vin)) }, 'Request move', icon('arrow-right')) : null,
+    hasMove ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.trackMovementUrl(origin, { transferId: vehicle.movement.transferId, vin: vehicle.vin })) }, 'View move', icon('arrow-right')) : null,
+    moveAction ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.requestVehicleUrl(origin, vehicle.vin, moveAction)) }, canReroute ? 'Move again' : moveAction === 'direct' ? 'Move vehicle' : 'Request vehicle', icon('arrow-right')) : null,
   )
   const utils = el('nav', { class: 'd-utilities', 'aria-label': 'Vehicle utilities' },
     chip('Deal sheet', 'copy', (button) => copy(dealSheetText(vehicle, (field) => fieldText(field, vehicle)), 'Deal sheet', button), { title: 'Copy every identifying and pricing fact as text' }),
@@ -1469,8 +1470,10 @@ function renderSheet() {
       el('p', { class: 'field-help', text: s.workspace === 'demo' ? 'The local demo is synthetic training data from pnpm dev:demo — never live inventory.' : 'Production uses your Cloudflare Access sign-in for Inventory Flow.' })))
   }
   if (state.workspace.demo) {
+    const demoRole = select(ROLE_PICKER_ROLES, s.demoRole, (nextRole) => updateSettings({ demoRole: nextRole }, { reload: true }), roleLabel)
+    if (!ROLE_PICKER_ROLES.includes(s.demoRole)) demoRole.prepend(el('option', { value: s.demoRole, selected: true, disabled: true, text: `${roleLabel(s.demoRole)} · Legacy` }))
     ui.sheetBody.append(
-      el('div', { class: 'field' }, el('label', { class: 'field-label', for: 'demo-role', text: 'Demo role' }), Object.assign(select(ROLES, s.demoRole, (demoRole) => updateSettings({ demoRole }, { reload: true }), roleLabel), { id: 'demo-role' })),
+      el('div', { class: 'field' }, el('label', { class: 'field-label', for: 'demo-role', text: 'Demo role' }), Object.assign(demoRole, { id: 'demo-role' })),
       el('div', { class: 'field' }, el('label', { class: 'field-label', for: 'demo-store', text: 'Demo store' }), Object.assign(select(STORES, s.demoStore, (demoStore) => updateSettings({ demoStore }, { reload: true })), { id: 'demo-store' })),
     )
   }

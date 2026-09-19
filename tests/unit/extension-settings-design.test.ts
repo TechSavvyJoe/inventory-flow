@@ -85,6 +85,20 @@ describe('extension settings compatibility', () => {
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(mock.saveSettings).not.toHaveBeenCalled()
   })
+
+  it('offers only salesperson, store manager, and group manager roles', async () => {
+    await boot(); open('settings-btn')
+    const role = document.querySelector('#demo-role')
+    expect([...role.options].map((option) => option.textContent)).toEqual(['Salesperson', 'Store manager', 'Group manager'])
+  })
+
+  it('preserves a saved legacy role as read-only', async () => {
+    mock.settings = { ...mock.settings, demoRole: 'porter' }
+    await boot(); open('settings-btn')
+    const legacy = document.querySelector('#demo-role option[value="porter"]')
+    expect(legacy).toBeDisabled()
+    expect(legacy).toHaveTextContent('Porter · Legacy')
+  })
 })
 
 describe('extension filter workflow and keyboard containment', () => {

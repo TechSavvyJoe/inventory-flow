@@ -77,6 +77,7 @@ function ContextProbe() {
       <output data-testid="user">{currentUser}</output>
       <button type="button" onClick={() => setRole('porter')}>Use porter role</button>
       <button type="button" onClick={() => setHomeStore('Lincoln')}>Use Lincoln store</button>
+      <button type="button" onClick={() => setHomeStore('Ford Detroit')}>Use Ford Detroit store</button>
     </div>
   )
 }
@@ -159,6 +160,55 @@ describe('AppDataProvider access-context isolation', () => {
     expect(window.localStorage.getItem('maxey-role')).toBe('sales')
     expect(window.localStorage.getItem('maxey-home-store')).toBe('Fowlerville')
     expect(apiMocks.getBootstrap).toHaveBeenCalledWith('Fowlerville', 'sales')
+  })
+
+  it('does not restore a removed legacy transport role from browser preview storage', async () => {
+    window.localStorage.setItem('maxey-role', 'porter')
+    apiMocks.getBootstrap.mockResolvedValue(bootstrap('2026-08-30'))
+
+    render(<AppDataProvider><ContextProbe /></AppDataProvider>)
+
+    await waitFor(() => expect(apiMocks.getBootstrap).toHaveBeenCalledWith('Howell', 'manager'))
+    expect(screen.getByTestId('context')).toHaveTextContent('manager:Howell')
+  })
+
+  it('keeps a group manager on the server-approved working store instead of snapping back to the membership home store', async () => {
+    window.localStorage.setItem('maxey-role', 'group_manager')
+    const howell = {
+      ...bootstrap('2026-08-30'),
+      access: {
+        user: 'Authenticated Group Manager',
+        role: 'group_manager' as const,
+        authenticatedRole: 'group_manager' as const,
+        store: 'Howell' as const,
+        authenticatedStore: 'Howell' as const,
+        canPreviewRoles: true,
+        canPreviewStores: true,
+        rolePreviewActive: false,
+        storePreviewActive: false,
+        canViewPrivateEvidence: true,
+        canCreateTransfer: true,
+      },
+    }
+    const detroit = {
+      ...howell,
+      access: {
+        ...howell.access,
+        store: 'Ford Detroit' as const,
+        storePreviewActive: true,
+      },
+    }
+    apiMocks.getBootstrap.mockImplementation((store: string) => Promise.resolve(store === 'Ford Detroit' ? detroit : howell))
+
+    render(<AppDataProvider><ContextProbe /></AppDataProvider>)
+    await waitFor(() => expect(screen.getByTestId('context')).toHaveTextContent('group_manager:Howell'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use Ford Detroit store' }))
+
+    await waitFor(() => expect(apiMocks.getBootstrap).toHaveBeenCalledWith('Ford Detroit', 'group_manager'))
+    await waitFor(() => expect(screen.getByTestId('context')).toHaveTextContent('group_manager:Ford Detroit'))
+    expect(window.localStorage.getItem('maxey-home-store')).toBe('Ford Detroit')
+    expect(apiMocks.getBootstrap.mock.calls.at(-1)).toEqual(['Ford Detroit', 'group_manager'])
   })
 
   it('still boots and switches store/role when storage access throws on every call', async () => {

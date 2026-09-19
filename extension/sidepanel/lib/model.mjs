@@ -13,7 +13,7 @@ import { historyDetailTone } from './resources.mjs'
 import { warrantyOutlook } from './warranty.mjs'
 
 const ROLE_LABELS = Object.freeze({
-  sales: 'Sales', manager: 'Manager', coordinator: 'Coordinator', porter: 'Porter', driver: 'Driver', group_manager: 'Group manager',
+  sales: 'Salesperson', manager: 'Store manager', coordinator: 'Transport coordinator', porter: 'Porter', driver: 'Driver', group_manager: 'Group manager',
 })
 
 export function roleLabel(role) { return ROLE_LABELS[role] ?? 'Team member' }
@@ -183,6 +183,7 @@ function movementSignal(record, transfer, now) {
     transportAssignee: text(movement.transportAssignee) || text(transfer?.transportAssignee),
     returnRequired: movement.returnRequired === true,
     returnDueAt: text(movement.returnDueAt),
+    canDirectReroute: movement.canDirectReroute === true,
   }
 }
 
@@ -415,25 +416,43 @@ function moveRequestBlocked(vehicle) {
   return vehicle.moveRequestBlocked ?? Boolean(vehicle.movement)
 }
 
-/** The app's own rule for showing "Request vehicle". */
-export function canRequestVehicle(vehicle, access) {
+/**
+ * Resolve the one move action this user can start for this vehicle.
+ *
+ * Salespeople request vehicles from another store. Store managers can record
+ * a direct move for inventory owned by their store and request inventory from
+ * another store. Group managers can record a direct move for any vehicle.
+ */
+export function vehicleMoveAction(vehicle, access) {
   if (!access || access.canCreateTransfer === false) return false
   if (!['sales', 'manager', 'group_manager'].includes(access.role)) return false
-  if (vehicle.homeStore === access.store) return false
   // Role and home store are the panel's rules; whether the ledger blocks a
   // new request is the server's (409 ACTIVE_TRANSFER_EXISTS).
-  return !moveRequestBlocked(vehicle)
+  if (moveRequestBlocked(vehicle)) {
+    const ownsVehicle = access.role === 'group_manager' || (access.role === 'manager' && vehicle.homeStore === access.store)
+    return vehicle.movement?.canDirectReroute === true && ownsVehicle ? 'direct' : false
+  }
+  if (access.role === 'group_manager') return 'direct'
+  if (access.role === 'manager' && vehicle.homeStore === access.store) return 'direct'
+  if (vehicle.homeStore !== access.store) return 'request'
+  return false
+}
+
+/** Backward-compatible boolean used by older extension surfaces and tests. */
+export function canRequestVehicle(vehicle, access) {
+  return Boolean(vehicleMoveAction(vehicle, access))
 }
 
 export function requestBlockedReason(vehicle, access) {
   if (!access) return 'Sign in to request vehicles.'
-  if (!['sales', 'manager', 'group_manager'].includes(access.role) || access.canCreateTransfer === false) return 'Your role cannot request vehicles.'
-  if (vehicle.homeStore === access.store) return `Belongs to ${access.store}, your working store. Check current location separately.`
+  if (!['sales', 'manager', 'group_manager'].includes(access.role) || access.canCreateTransfer === false) return 'Your role cannot request or move vehicles.'
   if (moveRequestBlocked(vehicle)) {
+    if (vehicleMoveAction(vehicle, access) === 'direct') return null
     // Blocked without a visible move: a request this user may not see is
     // open somewhere. Name no store, actor or request — the server does not.
     return vehicle.movement ? 'A move is already in progress.' : 'The app already has an open move request for this vehicle.'
   }
+  if (access.role === 'sales' && vehicle.homeStore === access.store) return 'Ask your store manager to move this vehicle to another location.'
   return null
 }
 

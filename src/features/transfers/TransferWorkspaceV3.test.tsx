@@ -97,6 +97,27 @@ function bootstrap(count: number): BootstrapData {
   };
 }
 
+function inventoryVehicle(homeStore: BootstrapData['vehicles'][number]['homeStore'], vin = 'TESTDATAOWNSTORE1', stockNumber = 'MOVE-TEST'): VehicleRecord {
+  return {
+    vin,
+    stockNumber,
+    year: 2023,
+    make: 'Ford',
+    model: 'Bronco',
+    trim: 'Outer Banks',
+    vehicleName: '2023 Ford Bronco Outer Banks',
+    homeStore,
+    publicStore: homeStore,
+    homeStoreConfirmed: true,
+    sourceReportedLocation: homeStore,
+    websiteStatus: 'Available',
+    publicListingState: 'Listed',
+    dealerOn: { inStock: true, inTransit: false, inProduction: false },
+    hold: { state: 'none_observed', label: 'No current hold', backupCount: 0 },
+    movement: { state: 'at_home', label: 'At home store', currentLocation: homeStore, locationConfidence: 'reported', newRequestBlocked: false },
+  };
+}
+
 function detail(allowedActions: TransferDetail['allowedActions']): TransferDetail {
   return {
     id: 'transfer-return',
@@ -164,17 +185,20 @@ function detail(allowedActions: TransferDetail['allowedActions']): TransferDetai
   };
 }
 
-function renderPage(data: BootstrapData, initialEntry = '/transfers') {
+function renderPage(data: BootstrapData, initialEntry = '/transfers', contextOverrides: Record<string, unknown> = {}) {
+  const submitTransfer = vi.fn().mockResolvedValue({ id: 'created-move-1' });
   mocks.useAppData.mockReturnValue({
     data,
     homeStore: 'Ford Detroit',
     role: 'manager',
-    submitTransfer: vi.fn(),
+    currentUser: 'Joe Manager',
+    submitTransfer,
+    ...contextOverrides,
   });
   mocks.getTransfer.mockImplementation((id: string) =>
     Promise.resolve(data.transfers.find((item) => item.id === id)),
   );
-  return render(<MemoryRouter initialEntries={[initialEntry]}><TransfersPage /></MemoryRouter>);
+  return { ...render(<MemoryRouter initialEntries={[initialEntry]}><TransfersPage /></MemoryRouter>), submitTransfer };
 }
 
 afterEach(() => cleanup());
@@ -277,17 +301,33 @@ describe('transfer workspace v3 layout', () => {
     expect(container.querySelectorAll('.transfer-list-copy--concise')).toHaveLength(4);
     expect(screen.getByRole('combobox', { name: 'Filter vehicle moves' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Sort vehicle moves' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Request a vehicle' })).toHaveTextContent('Request vehicle');
+    expect(screen.getByRole('button', { name: 'Start a vehicle move' })).toHaveTextContent('Start a move');
     expect(screen.getByRole('button', { name: /2025 Ford F-150 1/i })).toHaveTextContent('MOVE1');
     expect(screen.getByRole('button', { name: /2025 Ford F-150 1/i })).toHaveTextContent('Manager 1');
   });
 
-  it('gives the request route one accessible primary heading when no vehicle is selected', () => {
+  it('opens an in-page searchable vehicle picker when no VIN is selected', () => {
     renderPage(bootstrap(0), '/transfers/new');
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole('heading', { level: 1, name: 'Select a vehicle to request' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Choose vehicle in Inventory' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Start a move' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Search inventory to move' })).toBeInTheDocument();
+    expect(screen.getByText('No matching vehicles')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['manager', 'Ford Detroit', 'Move vehicle'],
+    ['manager', 'Howell', 'Request to Ford Detroit'],
+    ['sales', 'Ford Detroit', null],
+    ['sales', 'Howell', 'Request to Ford Detroit'],
+    ['group_manager', 'Ford Detroit', 'Move vehicle'],
+    ['group_manager', 'Howell', 'Move vehicle'],
+  ] as const)('offers the correct picker action for %s on %s inventory', (role, vehicleStore, expectedAction) => {
+    const data = bootstrap(0);
+    data.vehicles = [inventoryVehicle(vehicleStore)];
+    renderPage(data, '/transfers/new', { role });
+    if (expectedAction) expect(screen.getByRole('button', { name: expectedAction })).toBeInTheDocument();
+    else expect(screen.getByText('No matching vehicles')).toBeInTheDocument();
   });
 
   it('opens a dedicated mobile detail state and returns to the queue', () => {
@@ -368,13 +408,170 @@ describe('transfer workspace v3 layout', () => {
     expect(within(actions).getByRole('button', { name: 'Report vehicle issue' })).toBeInTheDocument();
   });
 
-  it('prevents an own-store vehicle request from silently selecting another requesting store', () => {
+  it('labels a direct move with its recorded movement time instead of a false needed-by time', () => {
+    const direct = detail(['record-outcome']);
+    direct.timeline = [{
+      id: 'direct-1',
+      kind: 'direct_move_recorded',
+      title: 'Vehicle moved directly',
+      occurredAt: '2026-09-18T21:30:00.000Z',
+      location: 'Ford Detroit',
+      actorLabel: 'Group Manager',
+      actorRole: 'group_manager',
+      source: 'app',
+    }];
+    render(<TransferTracker transfer={{ ...direct, workflowMode: 'simple' }} />);
+    const summary = screen.getByRole('region', { name: 'Request and vehicle summary' });
+    expect(within(summary).getByText('Move details')).toBeInTheDocument();
+    expect(within(summary).getByText('Moved at')).toBeInTheDocument();
+    expect(within(summary).getByText('Sep 18, 5:30 PM')).toBeInTheDocument();
+    expect(within(summary).queryByText('Needed by')).not.toBeInTheDocument();
+    expect(within(summary).queryByText('Requesting-store manager')).not.toBeInTheDocument();
+    const progress = screen.getByRole('list', { name: 'Vehicle move progress' });
+    expect(within(progress).getByText('At destination')).toBeInTheDocument();
+    expect(within(progress).queryByText('Approval')).not.toBeInTheDocument();
+  });
+
+  it('keeps advanced direct-move records free of request approval and needed-by language', () => {
+    const direct = detail(['record-outcome']);
+    direct.timeline = [{
+      id: 'direct-advanced-1',
+      kind: 'direct_move_recorded',
+      title: 'Vehicle moved directly',
+      occurredAt: '2026-09-18T21:30:00.000Z',
+      location: 'Ford Detroit',
+      actorLabel: 'Group Manager',
+      actorRole: 'group_manager',
+      source: 'app',
+    }];
+    render(<TransferTracker transfer={direct} />);
+    const summary = screen.getByRole('region', { name: 'Move and vehicle summary' });
+    expect(within(summary).getByText('Move details')).toBeInTheDocument();
+    expect(within(summary).getByText('Moved at')).toBeInTheDocument();
+    expect(within(summary).queryByText('Needed by')).not.toBeInTheDocument();
+    const accountability = screen.getByRole('region', { name: 'Location and accountability' });
+    expect(within(accountability).getByText('Destination store')).toBeInTheDocument();
+    expect(within(accountability).queryByText('Requesting-store approval owner')).not.toBeInTheDocument();
+    expect(within(accountability).queryByText('Home-store release authority')).not.toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Inter-store request approval and movement progress' })).not.toBeInTheDocument();
+  });
+
+  it('lets a store manager directly move their own inventory and submits destination plus an ISO moved-at time', async () => {
     const data = bootstrap(0);
-    data.vehicles = [{ vin: 'TESTDATAOWNSTORE1', homeStore: 'Ford Detroit' } as BootstrapData['vehicles'][number]];
-    renderPage(data, '/transfers/new?vin=TESTDATAOWNSTORE1');
-    expect(screen.getByRole('heading', { name: 'This vehicle belongs to Ford Detroit' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Ask my manager' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Find a vehicle at another store' })).toBeInTheDocument();
+    data.vehicles = [inventoryVehicle('Ford Detroit')];
+    data.stores = [
+      { store: 'Ford Detroit' },
+      { store: 'Howell' },
+    ] as BootstrapData['stores'];
+    const { submitTransfer } = renderPage(data, '/transfers/new?vin=TESTDATAOWNSTORE1&intent=request');
+    expect(screen.getByRole('heading', { name: 'Move vehicle' })).toBeInTheDocument();
+    expect(screen.queryByText('Requesting-store manager')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Destination store'), { target: { value: 'Howell' } });
+    const localMovedAt = '2026-09-18T17:30';
+    const localReturnAt = '2026-09-19T12:15';
+    fireEvent.change(screen.getByLabelText('Moved at'), { target: { value: localMovedAt } });
+    fireEvent.change(screen.getByLabelText('Why is it moving?'), { target: { value: 'Detroit picked it up for a customer showing' } });
+    fireEvent.click(screen.getByText('Optional details: return timing and customer reference'));
+    fireEvent.change(screen.getByLabelText(/Preferred return by/), { target: { value: localReturnAt } });
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Howell' }));
+    await waitFor(() => expect(submitTransfer).toHaveBeenCalledTimes(1));
+    expect(submitTransfer).toHaveBeenCalledWith(expect.objectContaining({
+      vin: 'TESTDATAOWNSTORE1',
+      intent: 'direct',
+      requestingStore: 'Ford Detroit',
+      destinationStore: 'Howell',
+      movedAt: new Date(localMovedAt).toISOString(),
+      returnDueAt: new Date(localReturnAt).toISOString(),
+    }));
+    expect(submitTransfer.mock.calls[0]?.[0]).not.toHaveProperty('neededBy');
+    expect(await screen.findByRole('heading', { name: 'Vehicle move recorded' })).toBeInTheDocument();
+  });
+
+  it('keeps Track and Move again reachable for a server-authorized active direct move', () => {
+    const data = bootstrap(1);
+    const active = data.transfers[0];
+    data.vehicles = [inventoryVehicle('Howell', active.vin, active.stockNumber)];
+    data.vehicles[0].movement = {
+      ...data.vehicles[0].movement,
+      transferId: active.id,
+      requestStatus: active.requestStatus,
+      newRequestBlocked: true,
+      canDirectReroute: true,
+    };
+    data.stores = [{ store: 'Ford Detroit' }, { store: 'Howell' }, { store: 'Lincoln' }] as BootstrapData['stores'];
+    renderPage(data, '/transfers/new', { role: 'group_manager' });
+    expect(screen.getByRole('button', { name: 'Track move' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Move again' }));
+    expect(screen.getByRole('heading', { name: 'Move vehicle' })).toBeInTheDocument();
+  });
+
+  it('keeps the home store available when an authorized direct move is currently In transit', () => {
+    const data = bootstrap(0);
+    const unit = inventoryVehicle('Howell', 'TESTDATAINTRANSIT1', 'MOVE-TRANSIT');
+    unit.movement = {
+      ...unit.movement,
+      state: 'in_transit',
+      currentLocation: 'In transit',
+      locationConfidence: 'verified',
+      canDirectReroute: true,
+      newRequestBlocked: true,
+    };
+    data.vehicles = [unit];
+    data.stores = [{ store: 'Howell' }, { store: 'Ford Detroit' }, { store: 'Lincoln' }] as BootstrapData['stores'];
+    renderPage(data, '/transfers/new?vin=TESTDATAINTRANSIT1&intent=direct', { role: 'group_manager' });
+    const destination = screen.getByLabelText('Destination store');
+    expect(within(destination).getByRole('option', { name: 'Howell' })).toBeInTheDocument();
+    expect(within(destination).getByRole('option', { name: 'Ford Detroit' })).toBeInTheDocument();
+  });
+
+  it('excludes the home store for an initial direct move when no movement location has been reported', () => {
+    const data = bootstrap(0);
+    const unit = inventoryVehicle('Howell', 'TESTDATAINITIALMOVE1', 'MOVE-INITIAL');
+    delete (unit.movement as Partial<NonNullable<VehicleRecord['movement']>>).currentLocation;
+    data.vehicles = [unit];
+    data.stores = [{ store: 'Howell' }, { store: 'Ford Detroit' }, { store: 'Lincoln' }] as BootstrapData['stores'];
+    renderPage(data, '/transfers/new?vin=TESTDATAINITIALMOVE1&intent=direct', { role: 'group_manager' });
+    const destination = screen.getByLabelText('Destination store');
+    expect(within(destination).queryByRole('option', { name: 'Howell' })).not.toBeInTheDocument();
+    expect(within(destination).getByRole('option', { name: 'Ford Detroit' })).toBeInTheDocument();
+  });
+
+  it('uses second precision and starts a reroute strictly after the latest confirmed location event', async () => {
+    const data = bootstrap(0);
+    const confirmedAt = '2099-09-18T21:30:45.000Z';
+    const unit = inventoryVehicle('Howell', 'TESTDATAREROUTETIME1', 'MOVE-TIME');
+    unit.movement = {
+      ...unit.movement,
+      currentLocation: 'Ford Detroit',
+      lastConfirmedAt: confirmedAt,
+      locationConfidence: 'verified',
+      canDirectReroute: true,
+      newRequestBlocked: true,
+    };
+    data.vehicles = [unit];
+    data.stores = [{ store: 'Howell' }, { store: 'Ford Detroit' }, { store: 'Lincoln' }] as BootstrapData['stores'];
+    const { submitTransfer } = renderPage(data, '/transfers/new?vin=TESTDATAREROUTETIME1&intent=direct', { role: 'group_manager' });
+    const movedAt = screen.getByLabelText('Moved at');
+    expect(movedAt).toHaveAttribute('step', '1');
+    expect(new Date((movedAt as HTMLInputElement).value).getTime()).toBeGreaterThan(new Date(confirmedAt).getTime());
+
+    const confirmed = new Date(confirmedAt);
+    const equalLocal = new Date(confirmed.getTime() - confirmed.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+    fireEvent.change(movedAt, { target: { value: equalLocal } });
+    fireEvent.change(screen.getByLabelText('Destination store'), { target: { value: 'Howell' } });
+    fireEvent.change(screen.getByLabelText('Why is it moving?'), { target: { value: 'Same-minute reroute correction' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Howell' }));
+    expect(movedAt).toHaveAttribute('aria-invalid', 'true');
+    expect(await screen.findAllByText('Moved at must be after the latest confirmed location update.')).toHaveLength(2);
+    expect(submitTransfer).not.toHaveBeenCalled();
+  });
+
+  it('labels another store vehicle as an inbound request for a store manager', () => {
+    const data = bootstrap(0);
+    data.vehicles = [inventoryVehicle('Howell', 'TESTDATAOTHERSTORE1', 'H-OTHER')];
+    data.stores = [{ store: 'Ford Detroit' }, { store: 'Howell' }] as BootstrapData['stores'];
+    renderPage(data, '/transfers/new');
+    expect(screen.getByRole('button', { name: 'Request to Ford Detroit' })).toBeInTheDocument();
   });
 
   it('keeps the actual next step in the row while the vehicle is away', () => {
@@ -574,11 +771,39 @@ describe('transfer workspace v3 layout', () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(await screen.findByRole('heading', { level: 1, name: 'Movement request submitted' })).toBeInTheDocument();
     expect(screen.getByText(/No availability or release is confirmed/i)).toBeInTheDocument();
-    expect(screen.getByText(/before a driver can be assigned/i)).toBeInTheDocument();
+    expect(screen.getByText(/requesting-store manager must approve/i)).toBeInTheDocument();
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
       returnRequired: true,
       targetReturnAt: '2026-09-02T16:00',
     }));
+  });
+
+  it('rejects a preferred return time that is not after the requested movement time', async () => {
+    const onSubmit = vi.fn();
+    render(
+      <TransferRequestWorkspace
+        vehicle={detail([]).vehicle}
+        stores={[{ value: 'Ford Detroit', label: 'Ford Detroit' }]}
+        requesters={[{ value: 'joe', label: 'Joe Gallant' }]}
+        managerApprovers={[{ value: 'manager', label: 'Ford Detroit manager' }]}
+        defaultRequestingStore="Ford Detroit"
+        defaultRequesterId="joe"
+        defaultManagerApproverId="manager"
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Needed by'), { target: { value: '2026-09-02T14:00' } });
+    fireEvent.change(screen.getByLabelText('What do you need?'), { target: { value: 'Customer appointment' } });
+    fireEvent.click(screen.getByText('Customer reference and preferred return timing'));
+    const preferredReturn = screen.getByLabelText(/Preferred return by/);
+    expect(preferredReturn).toHaveAttribute('min', '2026-09-02T14:00');
+    fireEvent.change(preferredReturn, { target: { value: '2026-09-01T16:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ask my manager' }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(preferredReturn).toHaveAttribute('aria-invalid', 'true');
+    expect(await screen.findAllByText('Preferred return must be after the vehicle is needed.')).toHaveLength(2);
   });
 
   it('announces request errors, links them to fields, and focuses the first fixable field', async () => {

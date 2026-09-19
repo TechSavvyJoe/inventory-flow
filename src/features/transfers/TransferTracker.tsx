@@ -124,6 +124,8 @@ export function TransferTracker({
   const { vehicle } = transfer;
   const action = transfer.nextAction;
   const latestConditionIssue = transfer.timeline.find((event) => event.kind === 'condition_issue');
+  const directMoveEvent = [...transfer.timeline].reverse().find((event) => event.kind === 'direct_move_recorded');
+  const directMove = Boolean(directMoveEvent);
   const returnPlan = transfer.returnRequired === true
     ? transfer.returnDueAt
       ? formatDateTime(transfer.returnDueAt)
@@ -237,15 +239,15 @@ export function TransferTracker({
       </section>
 
       {vehicleLinks}
-      <TransferProgress transfer={transfer} />
+      {!directMove ? <TransferProgress transfer={transfer} /> : null}
 
       <div className="mif-tracker-overview-grid">
-        <section className="mif-detail-block" aria-label="Request and vehicle summary">
-          <h3>Request details</h3>
+        <section className="mif-detail-block" aria-label={directMove ? 'Move and vehicle summary' : 'Request and vehicle summary'}>
+          <h3>{directMove ? 'Move details' : 'Request details'}</h3>
           <div className="mif-tracker-request-summary">
             <div><span>Route</span><strong>{vehicle.homeStore} → {transfer.destination ?? transfer.requestingStore ?? 'Not set'}</strong></div>
-            <div><span>Requested by</span><strong>{transfer.requestedByLabel ?? 'Not provided'}</strong><small>{formatDateTime(transfer.requestedAt)}</small></div>
-            <div><span>Needed by</span><strong>{formatDateTime(transfer.neededBy)}</strong></div>
+            <div><span>{directMove ? 'Recorded by' : 'Requested by'}</span><strong>{transfer.requestedByLabel ?? 'Not provided'}</strong>{!directMove ? <small>{formatDateTime(transfer.requestedAt)}</small> : null}</div>
+            <div><span>{directMove ? 'Moved at' : 'Needed by'}</span><strong>{formatDateTime(directMoveEvent?.occurredAt || transfer.neededBy)}</strong></div>
             <div><span>Vehicle</span><strong>{vehicle.listedPriceLabel ?? 'Price not published'}</strong><small>{vehicle.mileageLabel ?? 'Mileage not published'}</small></div>
             <div className="mif-tracker-request-summary__reason"><span>Reason / customer reference</span><strong>{transfer.requestReason ?? 'Not available in this access view'}</strong>{transfer.customerReference ? <small>{transfer.customerReference}</small> : null}</div>
           </div>
@@ -256,13 +258,13 @@ export function TransferTracker({
           <div className="mif-tracker-accountability">
             <div><span>Home store</span><strong>{vehicle.homeStore}</strong></div>
             <div><span>Current location</span><strong><MapPin aria-hidden="true" size={15} strokeWidth={1.75} /> {vehicle.currentLocation.label}</strong><small>{locationConfidenceLabel(vehicle.currentLocation.confidence)} · {formatDateTime(vehicle.currentLocation.confirmedAt)}</small></div>
-            <div><span>Requesting store</span><strong>{transfer.requestingStore ?? 'Not set'}</strong></div>
-            <div><span>Requesting-store approval owner</span><strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.approvalOwnerLabel ?? 'Not recorded'}</strong></div>
-            <div><span>Home-store release authority</span><strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {vehicle.homeStore} used-car manager</strong><small>Availability is not inferred.</small></div>
+            <div><span>{directMove ? 'Destination store' : 'Requesting store'}</span><strong>{transfer.destination ?? transfer.requestingStore ?? 'Not set'}</strong></div>
+            {!directMove ? <div><span>Requesting-store approval owner</span><strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.approvalOwnerLabel ?? 'Not recorded'}</strong></div> : null}
+            {!directMove ? <div><span>Home-store release authority</span><strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {vehicle.homeStore} used-car manager</strong><small>Availability is not inferred.</small></div> : null}
             <div><span>Current action owner</span><strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {action.ownerLabel ?? 'Not assigned'}</strong>{action.ownerRole ? <small>{action.ownerRole}</small> : null}</div>
             <div><span>Custodian</span><strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.custodianLabel ?? 'Not assigned'}</strong></div>
             <div><span>Driver</span><strong><UserRound aria-hidden="true" size={15} strokeWidth={1.75} /> {transfer.transportAssigneeLabel ?? 'Not set'}</strong></div>
-            <div><span>Pickup / next target</span><strong>{formatDateTime(action.dueAt)}</strong></div>
+            {!directMove ? <div><span>Pickup / next target</span><strong>{formatDateTime(action.dueAt)}</strong></div> : null}
             <div><span>Return due</span><strong>{returnPlan}</strong></div>
           </div>
         </section>

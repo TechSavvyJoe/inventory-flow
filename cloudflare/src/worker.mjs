@@ -256,7 +256,7 @@ async function appApi(request,url,env,context) {
     if(read && adminOverview) result={...service.adminOverview(context,adminMembers),canManageMembers:true}
     else if(read && route==='/bootstrap') {
       result=service.bootstrap(context)
-      result.access={...result.access,authenticatedRole:context.authenticatedRole??context.role,canPreviewRoles:context.canPreviewRoles===true,rolePreviewActive:context.rolePreviewActive===true}
+      result.access={...result.access,authenticatedRole:context.authenticatedRole??context.role,authenticatedStore:context.authenticatedStore??context.store,canPreviewRoles:context.canPreviewRoles===true,canPreviewStores:context.canPreviewStores===true,rolePreviewActive:context.rolePreviewActive===true,storePreviewActive:context.storePreviewActive===true}
     }
     else if(read && route==='/vehicles') result=service.listVehicles(query,context)
     else if(read && /^\/vehicles\/[^/]+$/.test(route)) result=service.getVehicle(identifier,context)

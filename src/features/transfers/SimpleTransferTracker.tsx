@@ -49,6 +49,8 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
   const primary = SIMPLE_ACTION_ORDER.find(action => allowed.includes(action));
   const additional = allowed.filter(action => action !== primary);
   const issue = transfer.timeline.find(event => event.kind === 'condition_issue');
+  const directMoveEvent = [...transfer.timeline].reverse().find(event => event.kind === 'direct_move_recorded');
+  const directMove = Boolean(directMoveEvent);
   const takeAction = (action: TransferActionKind) => onAction?.(action, transfer);
   const target = transfer.destination || transfer.requestingStore || 'Requesting store';
   const terminal = transfer.status.movement.code === 'returned-home-confirmed' || ['closed', 'declined', 'canceled', 'expired'].includes(transfer.status.request.code);
@@ -64,7 +66,7 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
         </div>
       </header>
 
-      <div className="simple-move-route"><span>{vehicle.homeStore}<small>Home store</small></span><ArrowRight aria-hidden="true" size={20} /><span>{target}<small>Requesting store</small></span></div>
+      <div className="simple-move-route"><span>{vehicle.homeStore}<small>Home store</small></span><ArrowRight aria-hidden="true" size={20} /><span>{target}<small>{directMove ? 'Destination store' : 'Requesting store'}</small></span></div>
 
       {transfer.exception || issue ? (
         <section className="simple-move-issue" role="status">
@@ -84,7 +86,7 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
       {vehicleLinks}
 
       {!terminal || transfer.status.movement.code === 'returned-home-confirmed' ? <ol className="simple-move-progress" aria-label="Vehicle move progress">
-        {['Approval', 'Return home'].map((label, index) => <li key={label} className={index < progress ? 'is-complete' : index === progress ? 'is-current' : undefined} aria-current={index === progress ? 'step' : undefined}><span>{index < progress ? <Check aria-hidden="true" size={14} /> : index + 1}</span><strong>{label}</strong></li>)}
+        {(directMove ? ['At destination', 'Return home'] : ['Approval', 'Return home']).map((label, index) => <li key={label} className={index < progress ? 'is-complete' : index === progress ? 'is-current' : undefined} aria-current={index === progress ? 'step' : undefined}><span>{index < progress ? <Check aria-hidden="true" size={14} /> : index + 1}</span><strong>{label}</strong></li>)}
       </ol> : null}
 
       <section className="simple-move-location" aria-label="Vehicle location and time away">
@@ -93,13 +95,13 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
       </section>
 
       <section className="simple-move-details" aria-label="Request and vehicle summary">
-        <h3>Request details</h3>
+        <h3>{directMove ? 'Move details' : 'Request details'}</h3>
         <dl>
-          <div><dt>Requested by</dt><dd>{transfer.requestedByLabel || 'Not recorded'}</dd><dd className="simple-move-secondary">{transfer.requestingStore || 'Store not recorded'} · {formatDateTime(transfer.requestedAt)}</dd></div>
-          <div><dt>Requested destination</dt><dd>{target}</dd></div>
-          <div><dt>Needed by</dt><dd>{formatDateTime(transfer.neededBy)}</dd></div>
+          <div><dt>{directMove ? 'Recorded by' : 'Requested by'}</dt><dd>{transfer.requestedByLabel || 'Not recorded'}</dd>{!directMove ? <dd className="simple-move-secondary">{transfer.requestingStore || 'Store not recorded'} · {formatDateTime(transfer.requestedAt)}</dd> : null}</div>
+          <div><dt>{directMove ? 'Destination' : 'Requested destination'}</dt><dd>{target}</dd></div>
+          <div><dt>{directMove ? 'Moved at' : 'Needed by'}</dt><dd>{formatDateTime(directMoveEvent?.occurredAt || transfer.neededBy)}</dd></div>
           <div><dt>Return due</dt><dd>{transfer.returnRequired === false ? 'Return not required' : transfer.returnDueAt ? formatDateTime(transfer.returnDueAt) : 'Not set'}</dd></div>
-          <div><dt>Requesting-store manager</dt><dd>{transfer.approvalOwnerLabel || `${transfer.requestingStore || target} manager`}</dd></div>
+          {!directMove ? <div><dt>Requesting-store manager</dt><dd>{transfer.approvalOwnerLabel || `${transfer.requestingStore || target} manager`}</dd></div> : null}
           <div className="simple-move-reason"><dt>Reason</dt><dd>{transfer.requestReason || 'Not available in this access view'}</dd>{transfer.customerReference ? <dd className="simple-move-secondary">{transfer.customerReference}</dd> : null}</div>
         </dl>
       </section>

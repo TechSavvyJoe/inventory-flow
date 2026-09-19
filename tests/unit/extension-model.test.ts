@@ -1,7 +1,7 @@
 // @vitest-environment node
 // @ts-nocheck -- dependency-free ESM view model; synthetic fixtures only.
 import { describe, expect, it } from 'vitest'
-import { buildPanelData, canRequestVehicle, certifiedProgram, copyFields, dealSheetText, holdLabel, mergeDetail, requestBlockedReason, resolveLocation, toPanelVehicle } from '../../extension/sidepanel/lib/model.mjs'
+import { buildPanelData, canRequestVehicle, certifiedProgram, copyFields, dealSheetText, holdLabel, mergeDetail, requestBlockedReason, resolveLocation, toPanelVehicle, vehicleMoveAction } from '../../extension/sidepanel/lib/model.mjs'
 
 const meta = (overrides = {}) => ({ reportDate: '2026-08-30', completedAt: '2026-08-30T10:00:00-04:00', publicFreshness: 'current', dealerMailFreshness: 'current', ...overrides })
 const base = (overrides = {}) => ({
@@ -110,17 +110,30 @@ describe('deal desk view model', () => {
     expect(stale.documents.windowSticker).toMatchObject({ totalMsrp: 54000, pricingCurrency: 'CAD', originalMarket: 'Canada' })
   })
 
-  it('applies the app\'s own rule for who may request a vehicle', () => {
+  it('resolves sales requests and manager direct moves by vehicle ownership', () => {
     const away = toPanelVehicle(base({ homeStore: 'Fowlerville' }), data(base({ homeStore: 'Fowlerville' })))
     const home = toPanelVehicle(base(), data(base()))
     const sales = { role: 'sales', store: 'Howell', canCreateTransfer: true }
     expect(canRequestVehicle(away, sales)).toBe(true)
+    expect(vehicleMoveAction(away, sales)).toBe('request')
     expect(canRequestVehicle(home, sales)).toBe(false)
-    expect(requestBlockedReason(home, sales)).toMatch(/Belongs to Howell/)
+    expect(requestBlockedReason(home, sales)).toMatch(/store manager/i)
+    expect(vehicleMoveAction(home, { ...sales, role: 'manager' })).toBe('direct')
+    expect(vehicleMoveAction(away, { ...sales, role: 'manager' })).toBe('request')
+    expect(vehicleMoveAction(home, { ...sales, role: 'group_manager' })).toBe('direct')
+    expect(vehicleMoveAction(away, { ...sales, role: 'group_manager' })).toBe('direct')
     expect(canRequestVehicle(away, { ...sales, role: 'porter' })).toBe(false)
     expect(canRequestVehicle(away, null)).toBe(false)
     const moving = { ...away, movement: { transferId: 'transfer-2' } }
     expect(requestBlockedReason(moving, sales)).toMatch(/already in progress/)
+    const reroutableRecord = base({ movement: { transferId: 'direct-2', state: 'at_requesting_store', currentLocation: 'Ford Detroit', locationConfidence: 'verified', newRequestBlocked: true, canDirectReroute: true } })
+    const reroutable = toPanelVehicle(reroutableRecord, data(reroutableRecord))
+    expect(reroutable.movement).toMatchObject({ transferId: 'direct-2', canDirectReroute: true })
+    expect(vehicleMoveAction(reroutable, { ...sales, role: 'group_manager' })).toBe('direct')
+    expect(vehicleMoveAction(reroutable, { ...sales, role: 'manager' })).toBe('direct')
+    expect(vehicleMoveAction(reroutable, sales)).toBe(false)
+    expect(vehicleMoveAction(reroutable, { ...sales, role: 'manager', store: 'Lincoln' })).toBe(false)
+    expect(requestBlockedReason(reroutable, { ...sales, role: 'group_manager' })).toBeNull()
     // A withheld move (no transfer link) is still an open move the server would reject a request for.
     const withheldRecord = base({ homeStore: 'Fowlerville', publicStore: 'Fowlerville', sourceReportedLocation: 'Fowlerville', movement: { state: 'in_transit', label: 'in transit', currentLocation: 'Howell', locationConfidence: 'verified' } })
     const withheld = toPanelVehicle(withheldRecord, data(withheldRecord))

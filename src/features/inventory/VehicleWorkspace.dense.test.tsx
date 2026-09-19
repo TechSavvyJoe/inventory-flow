@@ -284,6 +284,45 @@ describe('focused vehicle workspace', () => {
     expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(moving);
   });
 
+  it('shows a manager direct-move label and preserves the selected intent', async () => {
+    const user = userEvent.setup();
+    const unit = vehicle();
+    const onMoveVehicle = vi.fn();
+    render(
+      <VehicleWorkspace
+        vehicle={unit}
+        homeStore={unit.location.homeStore}
+        moveAction={{ intent: 'direct', label: 'Move to another store', shortLabel: 'Move' }}
+        onMoveVehicle={onMoveVehicle}
+        onClose={vi.fn()}
+      />,
+    );
+    await user.click(within(screen.getByRole('region', { name: 'Vehicle operational summary' })).getByRole('button', { name: 'Move to another store' }));
+    expect(onMoveVehicle).toHaveBeenCalledExactlyOnceWith(unit, 'direct');
+  });
+
+  it('preserves Track beside Move again for an authorized active direct move', async () => {
+    const user = userEvent.setup();
+    const unit = { ...vehicle(), movement: { state: 'arrived', requestId: 'direct-move-1', canDirectReroute: true } };
+    const onMoveVehicle = vi.fn();
+    const onTrackMovement = vi.fn();
+    render(
+      <VehicleWorkspace
+        vehicle={unit}
+        homeStore={unit.location.homeStore}
+        moveAction={{ intent: 'direct', label: 'Move again', shortLabel: 'Move again' }}
+        onMoveVehicle={onMoveVehicle}
+        onTrackMovement={onTrackMovement}
+        onClose={vi.fn()}
+      />,
+    );
+    const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
+    await user.click(within(operations).getByRole('button', { name: 'Track movement' }));
+    await user.click(within(operations).getByRole('button', { name: 'Move again' }));
+    expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(unit);
+    expect(onMoveVehicle).toHaveBeenCalledExactlyOnceWith(unit, 'direct');
+  });
+
   it('never renders customer evidence for a restricted role even inside the selected hold pane', () => {
     const unit = vehicle();
     unit.dealerMail = { ...unit.dealerMail, canViewEvidence: false, canManageHold: false };

@@ -13,6 +13,10 @@ const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic reques
 const homeManager = { role: 'manager', store: 'Howell', user: 'Synthetic home manager', userId: 'manager-2' }
 const homeSales = { role: 'sales', store: 'Howell', user: 'Synthetic home salesperson', userId: 'sales-2' }
 const unrelated = { role: 'manager', store: 'Lincoln', user: 'Synthetic unrelated manager', userId: 'manager-3' }
+const unrelatedSales = { role: 'sales', store: 'Lincoln', user: 'Synthetic unrelated salesperson', userId: 'sales-3' }
+const alternateSales = { role: 'sales', store: 'Fowlerville', user: 'Synthetic alternate salesperson', userId: 'sales-4' }
+const detroitManager = { role: 'manager', store: 'Ford Detroit', user: 'Synthetic Detroit manager', userId: 'manager-4' }
+const groupManager = { role: 'group_manager', store: 'Howell', user: 'Synthetic group manager', userId: 'group-manager-1' }
 const request = {
   vin: 'TESTDATAHWELL0001', requestingStore: 'Fowlerville', requestedBy: sales.user,
   neededBy: '2026-08-30T19:00:00Z', returnDueAt: '2026-08-31T19:00:00Z',
@@ -29,12 +33,317 @@ function harness(workflowMode?: string) {
   return { database, service, id: created.record.id, created: created.record, tick: () => { clock = new Date(clock.getTime() + 60_000) } }
 }
 
+function emptyHarness() {
+  const database = openInventoryDatabase()
+  databases.push(database)
+  importRelease(database, buildSyntheticRelease(), { loadedAt: SYNTHETIC_NOW.toISOString() })
+  let clock = new Date(SYNTHETIC_NOW)
+  const service = createInventoryService({ database, now: () => clock })
+  return { database, service, tick: () => { clock = new Date(clock.getTime() + 60_000) } }
+}
+
 function approve(service, id) {
   return service.appendTransferEvent(id, { type: 'request_approved', availabilityConfirmed: true }, manager, 'synthetic-approval')
 }
 
 describe('simple manager-led vehicle moves', () => {
-  it('defaults to one manager approval and a driver-free outward and return trip, keeping independent statuses and audit', () => {
+  it('lets the home-store manager record one direct move at its destination with an atomic physical audit', () => {
+    const { service, database } = emptyHarness()
+    const movedAt = new Date(SYNTHETIC_NOW.getTime() - 24 * 60 * 60 * 1000).toISOString()
+    const direct = {
+      vin: 'TESTDATAHWELL0002', intent: 'direct', requestingStore: 'Howell', destinationStore: 'Ford Detroit',
+      requestedBy: homeManager.user, movedAt, reason: 'Synthetic customer showing', priority: 'normal', returnRequired: true,
+    }
+
+    const created = service.createTransfer(direct, homeManager, 'synthetic-direct-move')
+    expect(created.created).toBe(true)
+    expect(created.record).toMatchObject({
+      homeStore: 'Howell', requestingStore: 'Ford Detroit', destination: 'Ford Detroit',
+      requestStatus: 'arrived', movementStatus: 'at_requesting_store', currentLocation: 'Ford Detroit',
+      approvedBy: homeManager.user, locationConfidence: 'verified', lastConfirmedAt: movedAt,
+    })
+    expect(created.record.allowedActions).not.toContain('record-outcome')
+    expect(created.record.allowedActions).not.toEqual(expect.arrayContaining(['confirm-pickup', 'confirm-arrival']))
+    expect(service.getTransfer(created.record.id, detroitManager).allowedActions).toEqual(expect.arrayContaining(['record-outcome', 'schedule-return']))
+    expect(created.record.events).toHaveLength(1)
+    expect(created.record.events[0]).toMatchObject({
+      type: 'direct_move_recorded', actor: homeManager.user, actorRole: 'manager', store: 'Howell',
+      fromLocation: 'Howell', toLocation: 'Ford Detroit', occurredAt: movedAt,
+    })
+    expect(created.record.requestedAt).toBe(SYNTHETIC_NOW.toISOString())
+    expect(service.getVehicle(direct.vin, homeManager).movement).toMatchObject({
+      state: 'at_requesting_store', currentLocation: 'Ford Detroit', destination: 'Ford Detroit',
+      departedAt: movedAt, locationConfidence: 'verified', newRequestBlocked: true,
+    })
+
+    const row = database.prepare('SELECT * FROM transfer_requests WHERE id=?').get(created.record.id)
+    const event = database.prepare('SELECT * FROM transfer_events WHERE transfer_request_id=?').get(created.record.id)
+    expect(row).toMatchObject({ status: 'arrived', movement_status: 'at_requesting_store', current_location_id: 'Ford Detroit' })
+    expect(event).toMatchObject({ event_type: 'direct_move_recorded', occurred_at: movedAt, created_at: SYNTHETIC_NOW.toISOString() })
+
+    expect(service.createTransfer(direct, homeManager, 'synthetic-direct-move')).toMatchObject({ created: false, record: { id: created.record.id } })
+    for (const changed of [
+      { ...direct, destinationStore: 'Lincoln' },
+      { ...direct, movedAt: new Date(Date.parse(movedAt) + 60_000).toISOString() },
+      { ...direct, reason: 'A different direct-move reason' },
+      { ...direct, returnDueAt: new Date(Date.parse(movedAt) + 86_400_000).toISOString() },
+      { ...direct, priority: 'high' },
+      { ...direct, customerReference: 'Different customer' },
+      { ...direct, returnRequired: false },
+    ]) {
+      expect(() => service.createTransfer(changed, homeManager, 'synthetic-direct-move'))
+        .toThrow('key belongs to another request')
+    }
+    expect(database.prepare('SELECT COUNT(*) AS n FROM transfer_requests').get().n).toBe(1)
+    expect(database.prepare('SELECT COUNT(*) AS n FROM transfer_events').get().n).toBe(1)
+    expect(() => service.createTransfer({
+      ...direct, movedAt: new Date(Date.parse(movedAt) + 60 * 60 * 1000).toISOString(),
+    }, homeManager, 'second-direct-move')).toThrow('different from the vehicle current location')
+  })
+
+  it('atomically supersedes an active direct move for the owning manager or group manager only', () => {
+    const { service, database } = emptyHarness()
+    const firstMovedAt = new Date(SYNTHETIC_NOW.getTime() - 3 * 60 * 60 * 1000).toISOString()
+    const first = service.createTransfer({
+      vin: 'TESTDATAHWELL0002', intent: 'direct', requestingStore: 'Howell', destinationStore: 'Ford Detroit',
+      requestedBy: homeManager.user, movedAt: firstMovedAt, reason: 'Initial direct destination',
+      priority: 'normal', returnRequired: true, customerAppointment: false,
+    }, homeManager, 'direct-reroute-a').record
+    service.appendTransferEvent(first.id, {
+      type: 'note_added', note: 'Backdated passive note must not hide the direct origin',
+      occurredAt: new Date(Date.parse(firstMovedAt) - 60_000).toISOString(),
+    }, homeManager, 'direct-reroute-backdated-note')
+    expect(service.getVehicle(first.vin, homeManager).movement).toMatchObject({ newRequestBlocked: true, canDirectReroute: true })
+    expect(service.getVehicle(first.vin, detroitManager).movement.canDirectReroute).toBeUndefined()
+    expect(service.getVehicle(first.vin, homeSales).movement.canDirectReroute).toBeUndefined()
+
+    const secondMovedAt = new Date(SYNTHETIC_NOW.getTime() - 2 * 60 * 60 * 1000).toISOString()
+    expect(() => service.createTransfer({
+      vin: first.vin, intent: 'direct', requestingStore: manager.store, destinationStore: 'Lincoln',
+      requestedBy: manager.user, movedAt: secondMovedAt, reason: 'Unauthorized other manager reroute',
+      priority: 'normal', returnRequired: true, customerAppointment: false,
+    }, manager, 'direct-reroute-denied-manager')).toThrow('owned by their store')
+    expect(() => service.createTransfer({
+      vin: first.vin, intent: 'direct', requestingStore: sales.store, destinationStore: 'Lincoln',
+      requestedBy: sales.user, movedAt: secondMovedAt, reason: 'Unauthorized salesperson reroute',
+      priority: 'normal', returnRequired: true, customerAppointment: false,
+    }, sales, 'direct-reroute-denied-sales')).toThrow('Only a manager')
+
+    const second = service.createTransfer({
+      vin: first.vin, intent: 'direct', requestingStore: 'Howell', destinationStore: 'Lincoln',
+      requestedBy: homeManager.user, movedAt: secondMovedAt, reason: 'Owning manager reroute',
+      priority: 'normal', returnRequired: true, customerAppointment: false,
+    }, homeManager, 'direct-reroute-b').record
+    expect(second.events[0]).toMatchObject({ type: 'direct_move_recorded', fromLocation: 'Ford Detroit', toLocation: 'Lincoln' })
+    expect(database.prepare('SELECT status FROM transfer_requests WHERE id=?').get(first.id).status).toBe('canceled')
+    expect(service.getTransfer(first.id, homeManager).events.at(-1)).toMatchObject({
+      type: 'direct_move_superseded', fromLocation: 'Ford Detroit', toLocation: 'Lincoln', actorRole: 'manager',
+    })
+    expect(database.prepare("SELECT COUNT(*) AS n FROM transfer_requests WHERE status NOT IN ('declined','canceled','closed')").get().n).toBe(1)
+
+    const thirdMovedAt = new Date(SYNTHETIC_NOW.getTime() - 60 * 60 * 1000).toISOString()
+    const third = service.createTransfer({
+      vin: first.vin, intent: 'direct', requestingStore: 'Howell', destinationStore: 'Fowlerville',
+      requestedBy: groupManager.user, movedAt: thirdMovedAt, reason: 'Group manager reroute',
+      priority: 'normal', returnRequired: true, customerAppointment: false,
+    }, groupManager, 'direct-reroute-c').record
+    expect(third.events[0]).toMatchObject({ type: 'direct_move_recorded', fromLocation: 'Lincoln', toLocation: 'Fowlerville', actorRole: 'group_manager' })
+    expect(database.prepare('SELECT status FROM transfer_requests WHERE id=?').get(second.id).status).toBe('canceled')
+    expect(database.prepare("SELECT COUNT(*) AS n FROM transfer_requests WHERE status NOT IN ('declined','canceled','closed')").get().n).toBe(1)
+  })
+
+  it('enforces direct-move ownership, request roles, destinations, and movedAt bounds', () => {
+    const direct = {
+      vin: 'TESTDATAHWELL0002', intent: 'direct', requestingStore: 'Howell', destinationStore: 'Ford Detroit',
+      requestedBy: homeManager.user, movedAt: SYNTHETIC_NOW.toISOString(), reason: 'Synthetic move', priority: 'normal', returnRequired: true,
+    }
+
+    expect(() => emptyHarness().service.createTransfer({ ...direct, requestedBy: sales.user, requestingStore: sales.store }, sales, 'sales-direct'))
+      .toThrow('Only a manager')
+    expect(() => emptyHarness().service.createTransfer({ ...direct, requestedBy: manager.user, requestingStore: manager.store }, manager, 'other-manager-direct'))
+      .toThrow('owned by their store')
+    expect(() => emptyHarness().service.createTransfer({ ...direct, destinationStore: 'Howell' }, homeManager, 'same-store-direct'))
+      .toThrow('different from the vehicle current location')
+    const managerRequest = emptyHarness().service.createTransfer({ ...request, requestedBy: manager.user }, manager, 'manager-request')
+    expect(managerRequest.record.requestStatus).toBe('requested')
+
+    const approvalHarness = emptyHarness()
+    const pending = approvalHarness.service.createTransfer(request, sales, 'group-approval-request').record
+    const groupApproved = approvalHarness.service.appendTransferEvent(
+      pending.id,
+      { type: 'request_approved', availabilityConfirmed: true },
+      groupManager,
+      'group-approval',
+    ).record
+    expect(groupApproved).toMatchObject({ requestStatus: 'approved', approvedBy: groupManager.user })
+
+    const group = emptyHarness()
+    const groupMove = group.service.createTransfer({
+      ...direct, vin: 'TESTDATAFWELL0002', requestingStore: groupManager.store,
+      requestedBy: groupManager.user, destinationStore: 'Ford Detroit',
+    }, groupManager, 'group-direct').record
+    expect(groupMove).toMatchObject({ homeStore: 'Fowlerville', currentLocation: 'Ford Detroit', requestStatus: 'arrived' })
+
+    const tooOld = new Date(SYNTHETIC_NOW.getTime() - (91 * 24 * 60 * 60 * 1000)).toISOString()
+    const tooFuture = new Date(SYNTHETIC_NOW.getTime() + (6 * 60 * 1000)).toISOString()
+    expect(() => emptyHarness().service.createTransfer({ ...direct, movedAt: tooOld }, homeManager, 'old-direct')).toThrow('more than 90 days')
+    expect(() => emptyHarness().service.createTransfer({ ...direct, movedAt: tooFuture }, homeManager, 'future-direct')).toThrow('materially in the future')
+    expect(() => emptyHarness().service.createTransfer({
+      ...direct,
+      movedAt: '2026-08-30T10:00:00-04:00',
+      returnDueAt: '2026-08-30T14:00:00Z',
+    }, homeManager, 'equal-direct-return')).toThrow('later than movedAt')
+    expect(() => emptyHarness().service.createTransfer({
+      ...request,
+      neededBy: '2026-08-30T15:00:00-04:00',
+      returnDueAt: '2026-08-30T19:00:00Z',
+    }, sales, 'equal-request-return')).toThrow('later than neededBy')
+
+    const salesRequest = emptyHarness().service.createTransfer({ ...request, destinationStore: 'Fowlerville' }, sales, 'sales-request')
+    expect(salesRequest.record.requestStatus).toBe('requested')
+    expect(() => emptyHarness().service.createTransfer({ ...request, destinationStore: 'Lincoln' }, sales, 'spoofed-destination'))
+      .toThrow('active store')
+  })
+
+  it('rejects a reused request key when any mutation-defining request field changes', () => {
+    const { service, id } = harness()
+    expect(service.createTransfer(request, sales, 'synthetic-request')).toMatchObject({ created: false, record: { id } })
+    for (const changed of [
+      { ...request, neededBy: '2026-08-30T20:00:00Z' },
+      { ...request, reason: 'Different request reason' },
+      { ...request, returnDueAt: '2026-09-01T19:00:00Z' },
+      { ...request, priority: 'urgent' },
+      { ...request, customerReference: 'Different customer' },
+      { ...request, customerAppointment: true },
+      { ...request, returnRequired: false },
+      { ...request, approvalOwner: 'Different manager' },
+    ]) {
+      expect(() => service.createTransfer(changed, sales, 'synthetic-request'))
+        .toThrow('key belongs to another request')
+    }
+  })
+
+  it('replays an older direct key without revalidating it against later physical moves', () => {
+    const { service } = emptyHarness()
+    const direct = (destinationStore, movedAt, reason) => ({
+      vin: 'TESTDATAHWELL0002', intent: 'direct', requestingStore: 'Howell', destinationStore,
+      requestedBy: homeManager.user, movedAt, reason, priority: 'normal', returnRequired: true,
+      customerAppointment: false,
+    })
+    const close = (id, prefix) => {
+      service.appendTransferEvent(id, { type: 'sale_confirmed' }, groupManager, `${prefix}-sale`)
+      service.appendTransferEvent(id, { type: 'delivery_confirmed' }, groupManager, `${prefix}-delivery`)
+      service.appendTransferEvent(id, { type: 'closed' }, groupManager, `${prefix}-close`)
+    }
+    const firstInput = direct('Ford Detroit', '2026-08-30T13:00:00Z', 'First direct move')
+    const first = service.createTransfer(firstInput, homeManager, 'historical-direct-a').record
+    close(first.id, 'historical-a')
+    const second = service.createTransfer({
+      ...direct('Lincoln', '2026-08-30T13:30:00Z', 'Second direct move'), requestedBy: groupManager.user,
+    }, groupManager, 'historical-direct-b').record
+    close(second.id, 'historical-b')
+    const third = service.createTransfer({
+      ...direct('Ford Detroit', '2026-08-30T14:00:00Z', 'Third direct move'), requestedBy: groupManager.user,
+    }, groupManager, 'historical-direct-c').record
+    close(third.id, 'historical-c')
+
+    expect(service.createTransfer(firstInput, homeManager, 'historical-direct-a'))
+      .toMatchObject({ created: false, record: { id: first.id } })
+  })
+
+  it('records authenticated group-manager authority while previewing a store manager', () => {
+    const { service, tick } = emptyHarness()
+    const preview = {
+      role: 'manager', store: 'Ford Detroit', authenticatedRole: 'group_manager', authenticatedStore: 'Howell',
+      user: groupManager.user, userId: groupManager.userId,
+    }
+    const created = service.createTransfer({
+      ...request, requestingStore: 'Ford Detroit', requestedBy: preview.user,
+    }, preview, 'preview-manager-request')
+    expect(created.record.events[0]).toMatchObject({
+      type: 'requested', actorRole: 'group_manager', store: 'Ford Detroit', actor: groupManager.user,
+    })
+    expect(service.createTransfer({
+      ...request, requestingStore: 'Ford Detroit', requestedBy: preview.user,
+    }, preview, 'preview-manager-request')).toMatchObject({ created: false, record: { id: created.record.id } })
+    tick()
+    const approvalInput = { type: 'request_approved', availabilityConfirmed: true }
+    const approved = service.appendTransferEvent(created.record.id, approvalInput, preview, 'preview-manager-approval')
+    expect(approved.record.events.at(-1)).toMatchObject({
+      type: 'request_approved', actorRole: 'group_manager', store: 'Ford Detroit', actor: groupManager.user,
+    })
+    expect(service.appendTransferEvent(created.record.id, approvalInput, preview, 'preview-manager-approval').created).toBe(false)
+    expect(() => service.appendTransferEvent(
+      created.record.id,
+      { ...approvalInput, note: 'Changed replay payload' },
+      preview,
+      'preview-manager-approval',
+    )).toThrow('key belongs to another action')
+  })
+
+  it('rejects chronology regression and moves from the latest physical store without changing vehicle ownership', () => {
+    const { service, database, tick } = emptyHarness()
+    const pending = service.createTransfer(request, sales, 'prior-away-request').record
+    service.appendTransferEvent(pending.id, { type: 'request_approved', availabilityConfirmed: true }, manager, 'prior-away-approval')
+    tick()
+    service.appendTransferEvent(pending.id, { type: 'vehicle_departed' }, sales, 'prior-away-departure')
+    tick()
+    const arrived = service.appendTransferEvent(pending.id, { type: 'arrived' }, sales, 'prior-away-arrival').record
+    const latestPhysicalAt = arrived.events.at(-1).occurredAt
+    database.prepare("UPDATE transfer_requests SET status='canceled', closed_at=? WHERE id=?").run(latestPhysicalAt, pending.id)
+    tick()
+
+    const direct = {
+      vin: request.vin, intent: 'direct', requestingStore: 'Howell', destinationStore: 'Ford Detroit',
+      requestedBy: homeManager.user, movedAt: latestPhysicalAt, reason: 'Synthetic corrected movement',
+      priority: 'normal', returnRequired: true,
+    }
+    expect(() => service.createTransfer(direct, homeManager, 'backdated-direct'))
+      .toThrowError(expect.objectContaining({ code: 'MOVE_CHRONOLOGY_CONFLICT' }))
+    expect(database.prepare('SELECT COUNT(*) AS n FROM transfer_requests').get().n).toBe(1)
+
+    const laterMovedAt = new Date(Date.parse(latestPhysicalAt) + 60_000).toISOString()
+    expect(() => service.createTransfer({ ...direct, destinationStore: 'Fowlerville', movedAt: laterMovedAt }, homeManager, 'same-location-direct'))
+      .toThrow('different from the vehicle current location')
+
+    const returned = service.createTransfer({
+      ...direct, destinationStore: 'Howell', movedAt: laterMovedAt,
+    }, homeManager, 'away-to-home-direct').record
+    expect(returned).toMatchObject({
+      homeStore: 'Howell', requestingStore: 'Howell', destination: 'Howell',
+      currentLocation: 'Howell', requestStatus: 'arrived', locationConfidence: 'verified',
+    })
+    expect(returned.events).toContainEqual(expect.objectContaining({
+      type: 'direct_move_recorded', fromLocation: 'Fowlerville', toLocation: 'Howell', occurredAt: laterMovedAt,
+    }))
+    expect(service.getVehicle(request.vin, homeManager).movement).toMatchObject({
+      currentLocation: 'Howell', state: 'at_requesting_store', locationConfidence: 'verified',
+    })
+  })
+
+  it('preserves an authoritative in-transit origin for a later direct correction', () => {
+    const { service, database, tick } = emptyHarness()
+    const prior = service.createTransfer(request, sales, 'prior-transit-request').record
+    service.appendTransferEvent(prior.id, { type: 'request_approved', availabilityConfirmed: true }, manager, 'prior-transit-approval')
+    tick()
+    const departed = service.appendTransferEvent(prior.id, { type: 'vehicle_departed' }, sales, 'prior-transit-departure').record
+    const latestPhysicalAt = departed.events.at(-1).occurredAt
+    database.prepare("UPDATE transfer_requests SET status='canceled', closed_at=? WHERE id=?").run(latestPhysicalAt, prior.id)
+    tick()
+
+    const movedAt = new Date(Date.parse(latestPhysicalAt) + 60_000).toISOString()
+    const corrected = service.createTransfer({
+      vin: request.vin, intent: 'direct', requestingStore: groupManager.store, destinationStore: 'Howell',
+      requestedBy: groupManager.user, movedAt, reason: 'Synthetic terminal transit correction',
+      priority: 'normal', returnRequired: true, customerAppointment: false,
+    }, groupManager, 'transit-to-home-direct').record
+    expect(corrected).toMatchObject({ homeStore: 'Howell', currentLocation: 'Howell', requestStatus: 'arrived' })
+    expect(corrected.events[0]).toMatchObject({
+      type: 'direct_move_recorded', fromLocation: 'In transit', toLocation: 'Howell', occurredAt: movedAt,
+    })
+  })
+
+  it('uses the first visible outcome as destination custody and completes a driver-free return with no hidden steps', () => {
     const { service, database, id, created, tick } = harness()
     expect(created.workflowMode).toBe('simple')
     expect(created.requestStatus).toBe('requested')
@@ -52,30 +361,108 @@ describe('simple manager-led vehicle moves', () => {
     expect(approved.allowedActions).not.toEqual(expect.arrayContaining(['confirm-pickup', 'confirm-arrival']))
     expect(approved.nextAction).not.toMatch(/driver|dispatch/i)
     tick()
-    const departed = service.appendTransferEvent(id, { type: 'vehicle_departed', fromLocation: 'Fake place', toLocation: 'Fake destination' }, sales, 'synthetic-departure').record
-    expect(departed).toMatchObject({ requestStatus: 'picked_up', movementStatus: 'picked_up', currentLocation: 'In transit', locationConfidence: 'verified' })
-    expect(departed.transportAssignee).toBeUndefined()
-    expect(departed.events.at(-1)).toMatchObject({ type: 'vehicle_departed', fromLocation: 'Howell', toLocation: 'In transit' })
-    expect(departed.allowedActions).toEqual(expect.arrayContaining(['record-outcome', 'schedule-return']))
-    expect(departed.allowedActions).not.toEqual(expect.arrayContaining(['confirm-pickup', 'confirm-arrival']))
-    tick()
-    const arrived = service.appendTransferEvent(id, { type: 'arrived', toLocation: 'Fowlerville' }, sales, 'synthetic-arrival').record
-    expect(arrived.currentLocation).toBe('Fowlerville')
-    expect(arrived.allowedActions).toContain('schedule-return')
+    const worked = service.appendTransferEvent(id, { type: 'customer_showing' }, sales, 'synthetic-showing').record
+    expect(worked).toMatchObject({
+      requestStatus: 'customer_showing', movementStatus: 'at_requesting_store', currentLocation: 'Fowlerville',
+      locationConfidence: 'verified', dealStatus: 'customer_showing', custodian: sales.user,
+    })
+    expect(worked.transportAssignee).toBeUndefined()
+    expect(worked.events.at(-1)).toMatchObject({ type: 'customer_showing', fromLocation: 'Howell', toLocation: 'Fowlerville' })
+    expect(worked.allowedActions).toEqual(expect.arrayContaining(['record-outcome', 'schedule-return']))
+    expect(worked.allowedActions).not.toEqual(expect.arrayContaining(['confirm-pickup', 'confirm-arrival']))
+    expect(service.getVehicle(request.vin, sales).movement).toMatchObject({
+      state: 'at_requesting_store', currentLocation: 'Fowlerville', destination: 'Fowlerville',
+      departedAt: worked.events.at(-1).occurredAt, locationConfidence: 'verified',
+    })
     tick()
     const returning = service.appendTransferEvent(id, { type: 'return_started', dueAt: '2026-08-30T20:00:00Z' }, sales, 'synthetic-return').record
     expect(returning).toMatchObject({ requestStatus: 'return_in_transit', currentLocation: 'In transit', returnDueAt: '2026-08-30T20:00:00.000Z' })
+    expect(returning.events.at(-1)).toMatchObject({ type: 'return_started', fromLocation: 'Fowlerville', toLocation: 'In transit' })
+    expect(service.getVehicle(request.vin, sales).movement).toMatchObject({ currentLocation: 'In transit', departedAt: worked.events.at(-1).occurredAt })
     expect(returning.allowedActions).not.toContain('confirm-return')
     expect(service.getTransfer(id, homeManager).allowedActions).toContain('confirm-return')
     tick()
     const home = service.appendTransferEvent(id, { type: 'returned_home', toLocation: 'Howell' }, homeManager, 'synthetic-receipt').record
-    expect(home).toMatchObject({ requestStatus: 'closed', movementStatus: 'returned_home', currentLocation: 'Howell', dealStatus: 'not_confirmed', deliveryStatus: 'not_confirmed' })
+    expect(home).toMatchObject({ requestStatus: 'closed', movementStatus: 'returned_home', currentLocation: 'Howell', dealStatus: 'customer_showing', deliveryStatus: 'not_confirmed' })
     expect(home.allowedActions).not.toContain('close')
     expect(database.prepare('SELECT closed_at FROM transfer_requests WHERE id=?').get(id).closed_at).toBe(home.events.at(-1).occurredAt)
     expect(service.listAttention({}, manager).items.some((item) => item.type === 'transfer_next_action')).toBe(false)
     expect(home.dealerMailHoldState).toBe(created.dealerMailHoldState)
-    expect(home.events.map((event) => event.type)).toEqual(['requested', 'request_approved', 'vehicle_departed', 'arrived', 'return_started', 'returned_home'])
+    expect(home.events.map((event) => event.type)).toEqual(['requested', 'request_approved', 'customer_showing', 'return_started', 'returned_home'])
     expect(database.prepare('SELECT COUNT(*) AS n FROM transfer_events WHERE driver_or_porter IS NOT NULL').get().n).toBe(0)
+  })
+
+  it('treats return started from approval as proof it had reached the destination', () => {
+    const { service, id, tick } = harness()
+    approve(service, id)
+    tick()
+    const input = { type: 'return_started', fromLocation: 'Howell' }
+    const returning = service.appendTransferEvent(id, input, sales, 'return-directly-after-approval').record
+    const event = returning.events.at(-1)
+    expect(returning).toMatchObject({ requestStatus: 'return_in_transit', movementStatus: 'return_in_transit', currentLocation: 'In transit', locationConfidence: 'verified' })
+    expect(event).toMatchObject({ type: 'return_started', fromLocation: 'Fowlerville', toLocation: 'In transit' })
+    expect(service.getVehicle(request.vin, sales).movement).toMatchObject({
+      state: 'return_in_transit', currentLocation: 'In transit', departedAt: event.occurredAt,
+    })
+    expect(service.appendTransferEvent(id, input, sales, 'return-directly-after-approval').created).toBe(false)
+    expect(() => service.appendTransferEvent(
+      id,
+      { ...input, fromLocation: 'Lincoln' },
+      sales,
+      'return-directly-after-approval',
+    )).toThrow('key belongs to another action')
+  })
+
+  it('does not advertise a direct reroute while physical location evidence conflicts', () => {
+    const { service, database, tick } = emptyHarness()
+    const vin = 'TESTDATAHWELL0002'
+    const prior = service.createTransfer({ ...request, vin }, sales, 'conflict-prior-request').record
+    service.appendTransferEvent(prior.id, { type: 'request_approved', availabilityConfirmed: true }, manager, 'conflict-prior-approval')
+    tick()
+    service.appendTransferEvent(prior.id, { type: 'vehicle_departed' }, sales, 'conflict-prior-departure')
+    tick()
+    const arrived = service.appendTransferEvent(prior.id, { type: 'arrived' }, sales, 'conflict-prior-arrival').record
+    database.prepare("UPDATE transfer_requests SET status='canceled', closed_at=? WHERE id=?")
+      .run(arrived.events.at(-1).occurredAt, prior.id)
+    tick()
+    const movedAt = new Date(Date.parse(arrived.events.at(-1).occurredAt) + 60_000).toISOString()
+    const direct = service.createTransfer({
+      vin, intent: 'direct', destinationStore: 'Ford Detroit', requestedBy: homeManager.user,
+      movedAt, reason: 'Synthetic direct location', priority: 'normal', returnRequired: true,
+    }, homeManager, 'conflict-active-direct').record
+    database.prepare("UPDATE transfer_events SET occurred_at=? WHERE transfer_request_id=? AND event_type='arrived'")
+      .run(movedAt, prior.id)
+    const movement = service.getVehicle(vin, homeManager).movement
+    expect(movement).toMatchObject({ currentLocation: 'Unknown', locationConfidence: 'conflicting', newRequestBlocked: true })
+    expect(movement.canDirectReroute).toBeUndefined()
+    expect(database.prepare("SELECT status FROM transfer_requests WHERE id=?").get(direct.id).status).toBe('arrived')
+  })
+
+  it('keeps simplified destination custody durable after closure and uses it as the next direct origin', () => {
+    const { service, database, id, tick } = harness()
+    approve(service, id)
+    tick()
+    const showing = service.appendTransferEvent(id, { type: 'customer_showing' }, sales, 'durable-showing').record
+    const custodyAt = showing.events.at(-1).occurredAt
+    tick()
+    service.appendTransferEvent(id, { type: 'sale_confirmed' }, manager, 'durable-sale')
+    tick()
+    service.appendTransferEvent(id, { type: 'delivery_confirmed' }, manager, 'durable-delivery')
+    tick()
+    service.appendTransferEvent(id, { type: 'closed' }, manager, 'durable-close')
+    expect(service.getVehicle(request.vin, unrelated).movement).toMatchObject({
+      currentLocation: 'Fowlerville', locationConfidence: 'verified',
+    })
+
+    tick()
+    const movedAt = new Date(Date.parse(custodyAt) + 4 * 60_000).toISOString()
+    const direct = service.createTransfer({
+      vin: request.vin, intent: 'direct', requestingStore: 'Howell', destinationStore: 'Ford Detroit',
+      requestedBy: homeManager.user, movedAt, reason: 'Synthetic post-sale location correction', returnRequired: true,
+      priority: 'normal', customerAppointment: false,
+    }, homeManager, 'direct-after-simple-close').record
+    expect(direct.events[0]).toMatchObject({ type: 'direct_move_recorded', fromLocation: 'Fowlerville', toLocation: 'Ford Detroit' })
+    expect(database.prepare("SELECT COUNT(*) AS n FROM transfer_events WHERE event_type='arrived'").get().n).toBe(0)
   })
 
   it('requires a real Boolean confirmation, requesting manager scope, and cannot be approved by sales or the other store', () => {
@@ -93,6 +480,16 @@ describe('simple manager-led vehicle moves', () => {
     expect(() => second.service.appendTransferEvent(second.id, input, unrelated)).toThrow('not found')
     expect(second.service.getTransfer(second.id, homeManager).allowedActions).not.toContain('approve')
     expect(second.database.prepare('SELECT COUNT(*) AS n FROM transfer_events').get().n).toBe(1)
+  })
+
+  it('limits simplified custody outcomes to the requesting store', () => {
+    const { service, id } = harness()
+    approve(service, id)
+    expect(service.getTransfer(id, homeManager).allowedActions).not.toContain('record-outcome')
+    expect(() => service.appendTransferEvent(id, { type: 'customer_showing' }, homeSales, 'wrong-store-showing'))
+      .toThrow('requesting store')
+    expect(service.appendTransferEvent(id, { type: 'customer_showing' }, sales, 'right-store-showing').record.currentLocation)
+      .toBe('Fowlerville')
   })
 
   it('denies premature movement, wrong-store arrival/return, and home receipt without the home manager', () => {
@@ -123,6 +520,26 @@ describe('simple manager-led vehicle moves', () => {
     expect(legacy.created.workflowMode).toBe('advanced')
     expect(() => approve(legacy.service, legacy.id)).toThrow('Cannot record')
     expect(legacy.service.getTransfer(legacy.id, manager).allowedActions).toContain('review-request')
+  })
+
+  it('rejects an event replay key when its immutable payload changes', () => {
+    const { service, id } = harness()
+    approve(service, id)
+    const event = { type: 'return_started', dueAt: '2026-08-30T20:00:00Z', note: 'Customer finished showing' }
+    expect(service.appendTransferEvent(id, event, sales, 'stable-return-start').created).toBe(true)
+    expect(service.appendTransferEvent(id, event, sales, 'stable-return-start').created).toBe(false)
+    expect(() => service.appendTransferEvent(
+      id,
+      { ...event, dueAt: '2026-08-30T21:00:00Z' },
+      sales,
+      'stable-return-start',
+    )).toThrow('key belongs to another action')
+    expect(() => service.appendTransferEvent(
+      id,
+      { ...event, note: 'Different immutable note' },
+      sales,
+      'stable-return-start',
+    )).toThrow('key belongs to another action')
   })
 
   it('declines a legacy reviewed request in one manager action without requiring the retired second approval form', () => {
@@ -268,7 +685,7 @@ describe('simple manager-led vehicle moves', () => {
     expect(() => service.createTransfer(request, sales, 'another-away-request')).toThrow('already has an open move')
     expect(service.getVehicle(request.vin, unrelated).movement).toEqual(before)
     expect(service.createTransfer(request, sales, 'synthetic-request')).toMatchObject({ created: false, record: { id } })
-    expect(() => service.createTransfer({ ...request, requestedBy: manager.user }, manager, 'synthetic-request')).toThrow('key belongs to another request')
+    expect(() => service.createTransfer({ ...request, requestedBy: alternateSales.user }, alternateSales, 'synthetic-request')).toThrow('key belongs to another request')
     expect(() => service.createTransfer({ ...request, vin: 'TESTDATAHWELL0002' }, sales, 'synthetic-request')).toThrow('key belongs to another request')
     expect(database.prepare('SELECT COUNT(*) AS n FROM transfer_requests').get().n).toBe(1)
   })
@@ -316,7 +733,7 @@ describe('simple manager-led vehicle moves', () => {
     expect(() => service.getTransfer(id, unrelated)).toThrow('not found')
     tick()
     // A later request must not relabel the physical receipt as a new sighting.
-    const next = service.createTransfer({ ...request, requestingStore: 'Lincoln', requestedBy: unrelated.user }, unrelated, 'after-receipt')
+    const next = service.createTransfer({ ...request, requestingStore: 'Lincoln', requestedBy: unrelatedSales.user }, unrelatedSales, 'after-receipt')
     expect(next.created).toBe(true)
     expect(next.record.homeStore).toBe('Howell')
     expect(service.getVehicle(request.vin, homeManager).movement).toMatchObject({ currentLocation: 'Howell', state: 'returned_home', lastConfirmedAt: receipt.lastConfirmedAt })
@@ -364,8 +781,8 @@ describe('simple manager-led vehicle moves', () => {
     const pending = service.getVehicle(request.vin, unrelated).movement
     expect(pending).toMatchObject({ state: 'at_home', currentLocation: 'Howell', newRequestBlocked: true })
     expect(pending.transferId).toBeUndefined()
-    const lincolnRequest = { ...request, requestingStore: 'Lincoln', requestedBy: unrelated.user }
-    expect(() => service.createTransfer(lincolnRequest, unrelated, 'lincoln-while-pending')).toThrow('already has an open move')
+    const lincolnRequest = { ...request, requestingStore: 'Lincoln', requestedBy: unrelatedSales.user }
+    expect(() => service.createTransfer(lincolnRequest, unrelatedSales, 'lincoln-while-pending')).toThrow('already has an open move')
     approve(service, id)
     tick()
     service.appendTransferEvent(id, { type: 'vehicle_departed' }, sales)
@@ -374,7 +791,7 @@ describe('simple manager-led vehicle moves', () => {
     for (const context of [sales, homeManager, unrelated]) {
       expect(service.getVehicle(request.vin, context).movement).toMatchObject({ state: 'at_requesting_store', newRequestBlocked: true })
     }
-    expect(() => service.createTransfer(lincolnRequest, unrelated, 'lincoln-while-away')).toThrow('already has an open move')
+    expect(() => service.createTransfer(lincolnRequest, unrelatedSales, 'lincoln-while-away')).toThrow('already has an open move')
     tick()
     service.appendTransferEvent(id, { type: 'return_started' }, sales)
     tick()
@@ -387,7 +804,7 @@ describe('simple manager-led vehicle moves', () => {
       expect(movement.transferId).toBeUndefined()
     }
     tick()
-    const next = service.createTransfer(lincolnRequest, unrelated, 'lincoln-after-receipt')
+    const next = service.createTransfer(lincolnRequest, unrelatedSales, 'lincoln-after-receipt')
     expect(next.created).toBe(true)
     // Fowlerville is party to the closed trip but not to the Lincoln request:
     // it still sees the receipt's physical shape, now with true and no link.
@@ -418,7 +835,7 @@ describe('simple manager-led vehicle moves', () => {
     for (const role of ['driver', 'porter', 'coordinator']) {
       expect(canceled.service.getVehicle(request.vin, { ...unrelated, role }).movement.newRequestBlocked).toBeUndefined()
     }
-    const afterCancel = canceled.service.createTransfer(lincolnRequest, unrelated, 'lincoln-after-cancel')
+    const afterCancel = canceled.service.createTransfer(lincolnRequest, unrelatedSales, 'lincoln-after-cancel')
     expect(afterCancel.created).toBe(true)
     for (const context of [sales, homeManager, unrelated]) {
       expect(canceled.service.getVehicle(request.vin, context).movement).toMatchObject({ state: 'picked_up', newRequestBlocked: true })

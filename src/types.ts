@@ -322,7 +322,8 @@ export interface MovementSummary {
    * cross-store rule, role checks) can still refuse a POST before this rule
    * is evaluated; `false` is about the ledger, not a promise of acceptance.
    */
-  newRequestBlocked?: boolean
+    newRequestBlocked?: boolean
+    canDirectReroute?: boolean
 }
 
 export interface PublicScanAuditRecord {
@@ -579,8 +580,11 @@ export interface BootstrapData {
     role: UserRole
     store: StoreName
     authenticatedRole?: UserRole
+    authenticatedStore?: StoreName
     canPreviewRoles?: boolean
+    canPreviewStores?: boolean
     rolePreviewActive?: boolean
+    storePreviewActive?: boolean
     canViewPrivateEvidence: boolean
     canCreateTransfer: boolean
   }
@@ -594,11 +598,10 @@ export interface BootstrapData {
   publicChanges?: PublicChangeEvent[]
 }
 
-export interface TransferRequestInput {
+interface TransferRequestInputBase {
   vin: string
   requestingStore: StoreName
   requestedBy: string
-  neededBy: string
   reason: string
   customerReference?: string
   customerAppointment: boolean
@@ -607,6 +610,21 @@ export interface TransferRequestInput {
   priority: TransferRecord['priority']
   approvalOwner?: string
 }
+
+export type TransferRequestInput = TransferRequestInputBase & (
+  | {
+      intent?: 'request'
+      destinationStore?: StoreName
+      neededBy: string
+      movedAt?: never
+    }
+  | {
+      intent: 'direct'
+      destinationStore: StoreName
+      movedAt?: string
+      neededBy?: never
+    }
+)
 
 export interface TransferEventInput {
   type: string

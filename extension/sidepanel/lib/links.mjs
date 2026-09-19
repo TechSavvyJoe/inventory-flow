@@ -33,7 +33,7 @@ export function workspaceUrl(origin, destination) {
   return target ? appUrl(origin, target[0], target[1]) : null
 }
 export function serviceStatusUrl(origin, vin) { return appUrl(origin, '/service', { vin }) }
-export function requestVehicleUrl(origin, vin) { return appUrl(origin, '/transfers/new', { vin }) }
+export function requestVehicleUrl(origin, vin, intent) { return appUrl(origin, '/transfers/new', { vin, intent }) }
 export function trackMovementUrl(origin, { transferId, vin }) {
   return transferId ? appUrl(origin, '/transfers', { id: transferId }) : appUrl(origin, '/transfers', { vin })
 }

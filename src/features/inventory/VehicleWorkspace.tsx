@@ -2679,8 +2679,8 @@ function DataDetails({
 }
 
 export function VehicleWorkspace({
-  vehicle, canRequestVehicle = false, initialTab = "overview", returnFocusRef,
-  onClose, onViewVehicle, onRequestVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord,
+  vehicle, canRequestVehicle = false, moveAction, initialTab = "overview", returnFocusRef,
+  onClose, onViewVehicle, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord,
 }: VehicleWorkspaceProps) {
   const [activeTarget, setActiveTarget] = useState<WorkspaceSectionId>(initialTab);
   const [takeHomeOpen, setTakeHomeOpen] = useState(false);
@@ -2743,11 +2743,18 @@ export function VehicleWorkspace({
     [vehicle.engine, vehicle.drivetrain].filter(Boolean).join(" · "),
     [vehicle.exteriorColor, vehicle.interiorColor].filter(Boolean).join(" / "),
   ].filter(Boolean);
-  const movementAction = vehicle.movement?.requestId && onTrackMovement
-    ? <button type="button" onClick={() => onTrackMovement(vehicle)} data-action="track-movement"><Truck size={18} aria-hidden="true" />Track movement</button>
-    : !isMoveRequestBlocked(vehicle) && canRequestVehicle && onRequestVehicle
-      ? <button type="button" onClick={() => onRequestVehicle(vehicle)} data-action="request-vehicle"><ArrowLeftRight size={18} aria-hidden="true" />Request vehicle</button>
-      : null;
+  // `moveAction` is the role-aware server-backed path. Keep the legacy
+  // boolean prop as a compatibility fallback, but never let it overrule the
+  // server's explicit active-move/blocking decision.
+  const resolvedMoveAction = moveAction ?? (!isMoveRequestBlocked(vehicle) && canRequestVehicle
+    ? { intent: "request" as const, label: "Request vehicle", shortLabel: "Request" }
+    : null);
+  const canTrackMovement = Boolean(vehicle.movement?.requestId && onTrackMovement);
+  const canCreateMovement = Boolean(resolvedMoveAction && (onMoveVehicle || onRequestVehicle) && (!canTrackMovement || moveAction));
+  const movementAction = <>
+    {canTrackMovement ? <button type="button" onClick={() => onTrackMovement?.(vehicle)} data-action="track-movement"><Truck size={18} aria-hidden="true" />Track movement</button> : null}
+    {canCreateMovement && resolvedMoveAction ? <button type="button" onClick={() => onMoveVehicle ? onMoveVehicle(vehicle, resolvedMoveAction.intent) : onRequestVehicle?.(vehicle)} data-action={resolvedMoveAction.intent === "direct" ? "move-vehicle" : "request-vehicle"}><ArrowLeftRight size={18} aria-hidden="true" />{resolvedMoveAction.label}</button> : null}
+  </>;
 
   function openAndFocusSection(target: WorkspaceSectionId) {
     pendingFocus.current = "tab";

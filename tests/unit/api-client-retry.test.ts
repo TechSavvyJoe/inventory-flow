@@ -147,6 +147,31 @@ describe('page-session mutation retries', () => {
     expect(keyAt(7)).toBe(keyAt(0))
   })
 
+  it('sends direct-move intent, destination, and movement time but not client-controlled identity', async () => {
+    fetchMock.mockImplementation(async () => json())
+    await api.createTransfer({
+      vin: input.vin,
+      intent: 'direct',
+      requestingStore: input.requestingStore,
+      destinationStore: 'Ford Detroit',
+      requestedBy: input.requestedBy,
+      movedAt: '2026-09-02T16:00:00.000Z',
+      reason: input.reason,
+      customerAppointment: input.customerAppointment,
+      returnRequired: input.returnRequired,
+      priority: input.priority,
+    }, 'manager', 'Howell')
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+    expect(body).toMatchObject({
+      vin: input.vin,
+      intent: 'direct',
+      destinationStore: 'Ford Detroit',
+      movedAt: '2026-09-02T16:00:00.000Z',
+    })
+    expect(body).not.toHaveProperty('requestedBy')
+    expect(body).not.toHaveProperty('requestingStore')
+  })
+
   it('keeps uncertain retry memory bounded and expires old idle actions', async () => {
     let now = 1000
     vi.spyOn(Date, 'now').mockImplementation(() => now)
@@ -334,6 +359,10 @@ describe('Access sign-in and response handling', () => {
     fetchMock.mockResolvedValue(new Response('{"id":"synthetic"}', { headers: { 'Content-Type': 'application/vnd.inventory+json' } }))
     await expect(api.getTransfer('synthetic', 'sales', 'Howell')).resolves.toMatchObject({ id: 'synthetic' })
     expect(keyAt(0)).toBeNull()
-    expect(new Headers(fetchMock.mock.calls[0][1]?.headers).get('x-inventory-demo-role')).toBe('sales')
+    const headers = new Headers(fetchMock.mock.calls[0][1]?.headers)
+    expect(headers.get('x-inventory-demo-role')).toBe('sales')
+    expect(headers.get('x-inventory-preview-role')).toBe('sales')
+    expect(headers.get('x-inventory-demo-store')).toBe('Howell')
+    expect(headers.get('x-inventory-preview-store')).toBe('Howell')
   })
 })

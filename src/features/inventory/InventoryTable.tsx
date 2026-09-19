@@ -569,7 +569,9 @@ function DeskConfigurationCell({ vehicle, onSelectVehicle }: { vehicle: Inventor
 interface DeskRowActionsProps extends Pick<
   InventoryTableProps,
   | "canRequestVehicle"
+  | "moveActionFor"
   | "onRequestVehicle"
+  | "onMoveVehicle"
   | "onTrackMovement"
   | "onOpenListing"
   | "onSelectVehicle"
@@ -580,13 +582,15 @@ interface DeskRowActionsProps extends Pick<
 }
 
 function DeskRowActions({
-  vehicle, canRequestVehicle, onRequestVehicle, onTrackMovement, onOpenListing, onSelectVehicle, variant = "desktop",
+  vehicle, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onSelectVehicle, variant = "desktop",
 }: DeskRowActionsProps) {
   const name = vehicleDisplayName(vehicle);
   const listingUrl = vehicle.publicListing.listingUrl?.trim() || null;
   const requestAllowed = typeof canRequestVehicle === "function" ? canRequestVehicle(vehicle) : canRequestVehicle === true;
   const canTrack = Boolean(onTrackMovement && vehicle.movement?.requestId && vehicleMovementStatus(vehicle));
-  const canRequest = requestAllowed && Boolean(onRequestVehicle);
+  const explicitMoveAction = moveActionFor?.(vehicle) ?? null;
+  const moveAction = explicitMoveAction ?? (requestAllowed ? { intent: "request" as const, label: "Request vehicle", shortLabel: "Request" } : null);
+  const canCreateMove = Boolean(moveAction && (onMoveVehicle || onRequestVehicle) && (!canTrack || explicitMoveAction));
   return (
     <div className="inv-desk-actions" role="group" aria-label={`Actions for ${name}`} onClick={stopRowSelection}>
       {variant === "desktop" ? <button type="button" className="inv-desk-action inv-desk-action--primary"
@@ -609,11 +613,16 @@ function DeskRowActions({
         aria-label={`Open service status for ${name}`} title="Open service status">
         Service
       </a>
-      {canTrack || canRequest ? <button type="button" className="inv-desk-action"
-        data-row-action={canTrack ? "track-movement" : "request-vehicle"}
-        onClick={() => canTrack ? onTrackMovement?.(vehicle) : onRequestVehicle?.(vehicle)}
-        aria-label={canTrack ? `Track movement for ${name}` : `Request vehicle ${name}`}
-        title={canTrack ? "Track movement" : "Request vehicle"}>Move</button> : null}
+      {canTrack ? <button type="button" className="inv-desk-action" data-row-action="track-movement"
+        onClick={() => onTrackMovement?.(vehicle)} aria-label={`Track movement for ${name}`} title="Track movement">Track</button> : null}
+      {canCreateMove ? <button type="button" className="inv-desk-action"
+        data-row-action={moveAction?.intent === "direct" ? "move-vehicle" : "request-vehicle"}
+        onClick={() => {
+          if (moveAction && onMoveVehicle) onMoveVehicle(vehicle, moveAction.intent);
+          else onRequestVehicle?.(vehicle);
+        }}
+        aria-label={`${moveAction?.label} ${name}`}
+        title={moveAction?.label}>{moveAction?.shortLabel}</button> : null}
       {listingUrl ? onOpenListing ? (
         <button type="button" className="inv-desk-action inv-desk-action--quiet" data-row-action="listing"
           title="Open listing" aria-label={`Open listing for ${name}`} onClick={() => onOpenListing(vehicle)}>
@@ -670,7 +679,9 @@ export function InventoryTable({
   onSortChange,
   onSelectVehicle,
   canRequestVehicle,
+  moveActionFor,
   onRequestVehicle,
+  onMoveVehicle,
   onTrackMovement,
   onOpenListing,
   onOpenSourceRecord,
@@ -742,7 +753,9 @@ export function InventoryTable({
                       vehicle={vehicle}
                       onSelectVehicle={onSelectVehicle}
                       canRequestVehicle={canRequestVehicle}
+                      moveActionFor={moveActionFor}
                       onRequestVehicle={onRequestVehicle}
+                      onMoveVehicle={onMoveVehicle}
                       onTrackMovement={onTrackMovement}
                       onOpenListing={onOpenListing}
                       onOpenSourceRecord={onOpenSourceRecord}
@@ -770,10 +783,12 @@ export function InventoryMobileList({
   onSelectVehicle,
   onOpenSourceRecord,
   canRequestVehicle,
+  moveActionFor,
   onRequestVehicle,
+  onMoveVehicle,
   onTrackMovement,
   onOpenListing,
-}: Pick<InventoryTableProps, "vehicles" | "selectedVehicleId" | "onSelectVehicle" | "onOpenSourceRecord" | "canRequestVehicle" | "onRequestVehicle" | "onTrackMovement" | "onOpenListing">) {
+}: Pick<InventoryTableProps, "vehicles" | "selectedVehicleId" | "onSelectVehicle" | "onOpenSourceRecord" | "canRequestVehicle" | "moveActionFor" | "onRequestVehicle" | "onMoveVehicle" | "onTrackMovement" | "onOpenListing">) {
   return (
     <div className="if-srp-mobile-list" aria-label="Inventory results">
       {vehicles.map((vehicle) => {
@@ -867,7 +882,7 @@ export function InventoryMobileList({
             </div>
             <div className="inventory-mobile-row__actions">
             <DeskRowActions vehicle={vehicle} variant="mobile" onSelectVehicle={onSelectVehicle} onOpenSourceRecord={onOpenSourceRecord}
-              canRequestVehicle={canRequestVehicle} onRequestVehicle={onRequestVehicle}
+              canRequestVehicle={canRequestVehicle} moveActionFor={moveActionFor} onRequestVehicle={onRequestVehicle} onMoveVehicle={onMoveVehicle}
               onTrackMovement={onTrackMovement} onOpenListing={onOpenListing} />
             </div>
             </div>

@@ -571,6 +571,44 @@ describe('modern inventory result access', () => {
     expect(onRequestVehicle).toHaveBeenCalledExactlyOnceWith(notMoving);
   });
 
+  it('uses the role-aware direct-move action on a stationary manager-owned row', () => {
+    const unit = { ...heldMovingVehicle(), movement: undefined };
+    const onMoveVehicle = vi.fn();
+    render(
+      <InventoryTable
+        vehicles={[unit]}
+        sorts={[]}
+        onSortChange={vi.fn()}
+        onSelectVehicle={vi.fn()}
+        moveActionFor={() => ({ intent: 'direct', label: 'Move to another store', shortLabel: 'Move' })}
+        onMoveVehicle={onMoveVehicle}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^Move to another store/ }));
+    expect(onMoveVehicle).toHaveBeenCalledExactlyOnceWith(unit, 'direct');
+  });
+
+  it('keeps Track and Move again visible together for an authorized active direct move', () => {
+    const unit = heldMovingVehicle();
+    const onTrackMovement = vi.fn();
+    const onMoveVehicle = vi.fn();
+    render(
+      <InventoryTable
+        vehicles={[unit]}
+        sorts={[]}
+        onSortChange={vi.fn()}
+        onSelectVehicle={vi.fn()}
+        moveActionFor={() => ({ intent: 'direct', label: 'Move again', shortLabel: 'Move again' })}
+        onMoveVehicle={onMoveVehicle}
+        onTrackMovement={onTrackMovement}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^Track movement/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Move again/ }));
+    expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(unit);
+    expect(onMoveVehicle).toHaveBeenCalledExactlyOnceWith(unit, 'direct');
+  });
+
   it('keeps visible header actions on their named fields when a secondary category is the active sort', () => {
     const onSortChange = vi.fn();
     render(<InventoryTable vehicles={[heldMovingVehicle()]} sorts={[{ key: 'stock', direction: 'desc' }, { key: 'mileage', direction: 'desc' }]} onSortChange={onSortChange} onSelectVehicle={vi.fn()} />);

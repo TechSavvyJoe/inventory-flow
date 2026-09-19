@@ -7,6 +7,7 @@ import {
   getTransferEvents,
   getTransferRow,
   insertTransferRequest,
+  supersedeTransferRequest,
   listAttentionWorkflowRows,
   listTransferRows,
   upsertAttentionWorkflow,
@@ -25,6 +26,7 @@ import { allowedEventTypes, buildTransferEvent, buildTransferRequest, roleContex
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/
 const TERMINAL_TRANSFER_STATES = new Set(['declined', 'canceled', 'closed'])
 const RETURN_COMPLETE_STATES = new Set(['returned_home', 'closed'])
+const SIMPLE_DESTINATION_CUSTODY_EVENTS = new Set(['customer_showing', 'sale_outcome_pending', 'sale_confirmed', 'not_sold'])
 const ACTIVE_TRANSPORT_ASSIGNMENT_STATES = new Set([
   'transport_assigned',
   'picked_up',
@@ -45,6 +47,61 @@ function parseJson(value, fallback = null) {
 function cleanText(value) {
   const text = String(value ?? '').trim()
   return text || undefined
+}
+
+function normalizedTimestamp(value) {
+  if (value === undefined || value === null || value === '') return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.valueOf()) ? undefined : parsed.toISOString()
+}
+
+function transferEventLocationBefore(replay, current, events) {
+  let location = current.home_store_id
+  const replayIndex = events.findIndex((event) => event.id === replay.id)
+  if (replayIndex < 0) return undefined
+  for (const event of events.slice(0, replayIndex)) {
+    const recordsPhysicalLocation = [
+      'direct_move_recorded', 'vehicle_departed', 'picked_up', 'in_transit', 'arrived',
+      'return_started', 'return_in_transit', 'returned_home',
+    ].includes(event.event_type) ||
+      (SIMPLE_DESTINATION_CUSTODY_EVENTS.has(event.event_type) && event.to_location_id === current.destination_store_id)
+    if (recordsPhysicalLocation && cleanText(event.to_location_id)) location = cleanText(event.to_location_id)
+  }
+  return location
+}
+
+function transferEventReplayPayloadMatches(replay, input, context, current, events) {
+  const expectedOccurredAt = normalizedTimestamp(input?.occurredAt)
+  if (expectedOccurredAt === undefined) return false
+  if (expectedOccurredAt !== null && replay.occurred_at !== expectedOccurredAt) return false
+  // An omitted occurredAt is replayable only when the original event used its
+  // server creation time. This distinguishes an explicit historical timestamp.
+  if (expectedOccurredAt === null && replay.occurred_at !== replay.created_at) return false
+  if ((replay.note ?? null) !== (cleanText(input?.note) ?? null)) return false
+  if ((replay.expected_arrival_at ?? null) !== normalizedTimestamp(input?.dueAt)) return false
+  if ((replay.driver_or_porter ?? null) !== (cleanText(input?.assignee) ?? null)) return false
+  if ((replay.driver_or_porter_user_id ?? null) !== (cleanText(input?.assigneeUserId) ?? null)) return false
+  if (Object.hasOwn(input ?? {}, 'fromLocation')) {
+    const inputFrom = cleanText(input.fromLocation) ?? null
+    // Starting a simple return before an explicit arrival proves destination
+    // custody. The immutable audit stores that canonical physical origin, but
+    // the browser retry contains the location displayed before the action.
+    // Reconstruct that pre-event value so a lost-response retry is stable.
+    const expectedInputFrom = context.workflowMode === 'simple' &&
+      replay.event_type === 'return_started' && replay.to_location_id === 'In transit'
+      ? transferEventLocationBefore(replay, current, events)
+      : replay.from_location_id
+    if ((expectedInputFrom ?? null) !== inputFrom) return false
+  }
+  if (Object.hasOwn(input ?? {}, 'toLocation') &&
+      (replay.to_location_id ?? null) !== (cleanText(input.toLocation) ?? null)) return false
+  if (Object.hasOwn(input ?? {}, 'homeStoreManager') &&
+      (replay.confirmed_by ?? null) !== (cleanText(input.homeStoreManager) ?? null)) return false
+  if (replay.event_type === 'request_approved' && input?.availabilityConfirmed !== true) return false
+  if (input?.actor && input.actor !== context.user) return false
+  if (input?.actorRole && input.actorRole !== context.role) return false
+  if (input?.store && input.store !== context.store) return false
+  return true
 }
 
 function finiteNumber(value) {
@@ -395,6 +452,7 @@ function allowedUiActions(row, context) {
       if (simple && ['sales', 'manager'].includes(context.role)) {
         events.delete('arrived')
         events.delete('return_started')
+        for (const eventType of SIMPLE_DESTINATION_CUSTODY_EVENTS) events.delete(eventType)
       }
     }
     if (!homeStoreAction) events.delete('returned_home')
@@ -509,22 +567,30 @@ function movementDepartureAt(row, events) {
   if (!row || !isActiveTransfer(row) || !row.current_location_id || row.current_location_id === row.home_store_id ||
       ['unknown', 'conflicting'].includes(row.location_confidence) ||
       ![...STORE_NAMES, 'In transit'].includes(row.current_location_id)) return undefined
-  // Reset only on a recorded physical home receipt. A request, approval, note,
-  // ETA or customer outcome cannot start or reset the time-away clock.
+  // Reset only on a recorded physical home receipt. In the simplified flow,
+  // a destination-tagged outcome (or return beginning at that destination) is
+  // the first reliable proof that the vehicle is away when pickup/arrival were
+  // intentionally omitted.
   const dated = events.map((event) => ({ event, time: Date.parse(event.occurred_at) })).filter(({ time }) => Number.isFinite(time))
   const lastReceipt = Math.max(-Infinity, ...dated.filter(({ event }) => event.event_type === 'returned_home').map(({ time }) => time))
-  const departed = dated.filter(({ event, time }) => time > lastReceipt &&
-    ['vehicle_departed', 'picked_up', 'in_transit'].includes(event.event_type)).sort((a, b) => a.time - b.time)[0]
+  const departed = dated.filter(({ event, time }) => time > lastReceipt && (
+    ['direct_move_recorded', 'vehicle_departed', 'picked_up', 'in_transit'].includes(event.event_type) ||
+    (SIMPLE_DESTINATION_CUSTODY_EVENTS.has(event.event_type) && event.to_location_id === row.destination_store_id) ||
+    (event.event_type === 'return_started' && event.from_location_id === row.destination_store_id)
+  )).sort((a, b) => a.time - b.time)[0]
   return departed ? new Date(departed.time).toISOString() : undefined
 }
 
 function physicalLocationAuthority(rows, database) {
-  const physicalEvents = new Set(['vehicle_departed', 'picked_up', 'in_transit', 'arrived', 'return_started', 'return_in_transit', 'returned_home'])
+  const physicalEvents = new Set(['direct_move_recorded', 'vehicle_departed', 'picked_up', 'in_transit', 'arrived', 'return_started', 'return_in_transit', 'returned_home'])
   // A later request or note is not a physical move. Completed receipts remain
   // evidence even though the simple workflow closes in that same transaction.
   const evidence = rows.map((row) => {
     const events = getTransferEvents(database, row.id)
-    const physical = events.filter((event) => physicalEvents.has(event.event_type) && Number.isFinite(Date.parse(event.occurred_at)))
+    const physical = events.filter((event) => (
+      physicalEvents.has(event.event_type) ||
+      (SIMPLE_DESTINATION_CUSTODY_EVENTS.has(event.event_type) && event.to_location_id === row.destination_store_id)
+    ) && Number.isFinite(Date.parse(event.occurred_at)))
     return { row, events, time: Math.max(-Infinity, ...physical.map((event) => Date.parse(event.occurred_at))) }
   }).filter(({ time }) => Number.isFinite(time)).sort((a, b) => b.time - a.time || a.row.id.localeCompare(b.row.id))
   if (evidence.length) {
@@ -645,6 +711,11 @@ function publicListingHost(publicRecord) {
   }
 }
 
+function directMoveInitial(row, database) {
+  if (!row) return null
+  return getTransferEvents(database, row.id).find((event) => event.event_type === 'direct_move_recorded') ?? null
+}
+
 function inferredDealerOnPhotoUrls(publicRecord, vin) {
   const count = positiveInteger(publicRecord?.photo_count)
   if (!count) return []
@@ -725,6 +796,10 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
       visibleTransferRows.find(blocksNewSimpleRequest) ?? null)
     : visibleTransferRows.find(isActiveTransfer) ?? null
   const activeEvents = active ? getTransferEvents(meta.database, active.id) : []
+  const blockingTransferRows = transferRows.filter(blocksNewSimpleRequest)
+  const activeDirect = blockingTransferRows.length === 1 && directMoveInitial(blockingTransferRows[0], meta.database)
+    ? blockingTransferRows[0]
+    : null
   const activeTransferView = active
     ? transferView(active, activeEvents, source, context, meta.dealerMailFreshness, { includePrivate: false })
     : null
@@ -753,6 +828,10 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     // fact the 409 message already states. Absent in advanced mode, where
     // createTransfer never evaluates the single-active rule.
     ...(simple && context.canCreateTransfer ? { newRequestBlocked: newRequestBlocked(transferRows, context.workflowMode) } : {}),
+    ...(simple && activeDirect && !location?.conflicting &&
+      (context.role === 'group_manager' || (context.role === 'manager' && context.store === activeDirect.home_store_id))
+      ? { canDirectReroute: true }
+      : {}),
   }
   const reportDate = meta.reportDate
   const name = vehicleName(source)
@@ -1892,26 +1971,146 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const state = snapshot(contextInput)
       const vin = normalizedVin(input?.vin)
       const source = state.indexes.vins.has(vin) ? sourceVehicle(state.indexes, vin) : null
-      const location = workflowMode === 'simple' ? physicalLocationAuthority(state.transfersByVin.get(vin) ?? [], database) : null
+      const replayKey = String(idempotencyKey ?? '').trim()
+      const replayCandidate = replayKey
+        ? state.allTransferRows.find((row) => row.idempotency_key === replayKey)
+        : null
+      const vinRows = state.transfersByVin.get(vin) ?? []
+      const directIntent = String(input?.intent ?? '').trim().toLowerCase() === 'direct'
+      if (replayCandidate) {
+        const conflict = () => {
+          throw new WorkflowError('This request key belongs to another request', { status: 409, code: 'IDEMPOTENCY_CONFLICT' })
+        }
+        if (replayCandidate.vin !== vin) conflict()
+        const initial = getTransferEvents(database, replayCandidate.id).find((event) =>
+          ['requested', 'direct_move_recorded'].includes(event.event_type))
+        if (!initial) conflict()
+        const replayInput = directIntent && !input?.movedAt && initial.occurred_at === replayCandidate.requested_at
+          ? { ...input, movedAt: initial.occurred_at }
+          : input
+        let replayBuild
+        try {
+          replayBuild = buildTransferRequest({
+            input: { ...replayInput, vin },
+            vehicle: {
+              vin,
+              homeAssignment: { home_store_id: replayCandidate.home_store_id },
+              movementHomeStore: replayCandidate.home_store_id,
+              movementCurrentLocation: initial.from_location_id,
+              publicRecord: {
+                vehicle_name: replayCandidate.vehicle_name_at_request,
+                stock_number: replayCandidate.stock_at_request,
+              },
+            },
+            context: state.context,
+            idempotencyKey,
+            now: new Date(replayCandidate.requested_at),
+          })
+        } catch {
+          conflict()
+        }
+        const sameActor = state.context.userId
+          ? initial.actor_user_id === state.context.userId
+          : !cleanText(initial.actor_user_id) && initial.actor === state.context.user
+        const sameMutation =
+          replayCandidate.requested_by === replayBuild.request.requestedBy &&
+          (replayCandidate.needed_by ?? null) === (replayBuild.request.neededBy ?? null) &&
+          replayCandidate.reason === replayBuild.request.reason &&
+          (replayCandidate.customer_reference ?? null) === (replayBuild.request.customerReference ?? null) &&
+          Boolean(replayCandidate.customer_appointment) === replayBuild.request.customerAppointment &&
+          (replayCandidate.approval_owner ?? null) === (replayBuild.request.approvalOwner ?? null) &&
+          replayCandidate.priority === replayBuild.request.priority &&
+          Boolean(replayCandidate.return_required) === replayBuild.request.returnRequired &&
+          (replayCandidate.return_due_at ?? null) === (replayBuild.request.returnDueAt ?? null) &&
+          (initial.event_type !== 'direct_move_recorded' || initial.occurred_at === replayBuild.initialEvent.occurredAt)
+        if (replayCandidate.requesting_store_id !== replayBuild.request.requestingStoreId ||
+            replayCandidate.destination_store_id !== replayBuild.request.destinationStoreId ||
+            initial.event_type !== replayBuild.initialEvent.eventType ||
+            initial.store_id !== state.context.store ||
+            !sameActor || initial.actor_role !== state.context.authenticatedRole ||
+            !sameMutation) conflict()
+        return { record: this.getTransfer(replayCandidate.id, contextInput), created: false }
+      }
+
+      const location = (workflowMode === 'simple' || directIntent) ? physicalLocationAuthority(vinRows, database) : null
+      const requestBlocked = newRequestBlocked(vinRows, workflowMode)
+      const blockingRows = workflowMode === 'simple' ? vinRows.filter(blocksNewSimpleRequest) : []
+      const activeDirect = blockingRows.length === 1 && directMoveInitial(blockingRows[0], database)
+        ? blockingRows[0]
+        : null
+      const canSupersedeDirect = Boolean(directIntent && activeDirect &&
+        (state.context.role === 'group_manager' ||
+          (state.context.role === 'manager' && state.context.store === activeDirect.home_store_id)))
       const built = buildTransferRequest({
         input: { ...input, vin },
-        vehicle: source && location && !location.conflicting ? { ...source, movementHomeStore: location.row.home_store_id } : source,
+        vehicle: source
+          ? {
+              ...source,
+              existingMoveBlocked: requestBlocked,
+              ...(location && !location.conflicting ? {
+                movementHomeStore: location.row.home_store_id,
+                movementCurrentLocation: location.row.current_location_id,
+              } : {}),
+            }
+          : source,
         context: state.context,
         idempotencyKey,
         now: state.currentNow,
       })
-      const replay = built.request.idempotencyKey && state.allTransferRows.find((row) => row.idempotency_key === built.request.idempotencyKey)
-      if (replay) {
-        const initial = getTransferEvents(database, replay.id).find((event) => event.event_type === 'requested')
-        const sameActor = state.context.userId
-          ? initial?.actor_user_id === state.context.userId
-          : !cleanText(initial?.actor_user_id) && initial?.actor === state.context.user
-        if (replay.vin !== vin || replay.requesting_store_id !== state.context.store || !sameActor || initial?.actor_role !== state.context.role) {
-          throw new WorkflowError('This request key belongs to another request', { status: 409, code: 'IDEMPOTENCY_CONFLICT' })
+      if (built.initialEvent.eventType === 'direct_move_recorded' && (!requestBlocked || canSupersedeDirect)) {
+        if (location?.conflicting) {
+          throw new WorkflowError('The vehicle location has conflicting physical records and must be resolved before moving it', {
+            status: 409,
+            code: 'LOCATION_CONFLICT',
+          })
         }
-        return { record: this.getTransfer(replay.id, contextInput), created: false }
+        const movedTime = Date.parse(built.initialEvent.occurredAt)
+        if (Number.isFinite(location?.time) && movedTime <= location.time) {
+          throw new WorkflowError('movedAt must be later than the latest recorded physical location update', {
+            status: 409,
+            code: 'MOVE_CHRONOLOGY_CONFLICT',
+            details: { latestPhysicalAt: new Date(location.time).toISOString() },
+          })
+        }
       }
-      if (newRequestBlocked(state.transfersByVin.get(vin) ?? [], workflowMode)) {
+      if (requestBlocked) {
+        if (canSupersedeDirect) {
+          if (location?.row.current_location_id === built.request.destinationStoreId) {
+            throw new WorkflowError('Destination store must be different from the vehicle current location', {
+              details: {
+                currentLocation: location.row.current_location_id,
+                destinationStore: built.request.destinationStoreId,
+              },
+            })
+          }
+          built.request.enforceSingleActive = true
+          const supersedeEvent = {
+            eventType: 'direct_move_superseded',
+            label: 'Direct move superseded by a new destination',
+            actor: state.context.user,
+            actorUserId: state.context.userId,
+            actorRole: state.context.authenticatedRole,
+            storeId: state.context.store,
+            fromLocationId: location?.row.current_location_id || activeDirect.current_location_id,
+            toLocationId: built.request.destinationStoreId,
+            occurredAt: built.initialEvent.occurredAt,
+            confirmedBy: state.context.user,
+            note: null,
+            createdAt: state.currentNow.toISOString(),
+            idempotencyKey: built.request.idempotencyKey
+              ? `${built.request.idempotencyKey}:supersede:${activeDirect.id}`
+              : null,
+          }
+          const result = supersedeTransferRequest(
+            database,
+            activeDirect.id,
+            activeDirect.updated_at,
+            supersedeEvent,
+            built.request,
+            built.initialEvent,
+          )
+          return { record: this.getTransfer(result.row.id, contextInput), created: result.created }
+        }
         // Do not reveal another store's private request identity or details.
         throw new WorkflowError('This vehicle already has an open move request. Review its location and ask your manager before starting another.', {
           status: 409, code: 'ACTIVE_TRANSFER_EXISTS',
@@ -1941,13 +2140,17 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
           { includePrivate: state.context.canViewPrivateEvidence },
         )
       const replayType = String(input?.type ?? '').trim().toLowerCase()
+      const replayPayloadMatches = replay
+        ? transferEventReplayPayloadMatches(replay, input, state.context, current, events)
+        : false
       const stableReplayActor = replay && cleanText(replay.actor_user_id)
       const stableReplayAuthorized = Boolean(
         stableReplayActor &&
         state.context.userId &&
         stableReplayActor === state.context.userId &&
-        replay.actor_role === state.context.role &&
-        replay.event_type === replayType,
+        replay.actor_role === state.context.authenticatedRole &&
+        replay.event_type === replayType &&
+        replayPayloadMatches,
       )
       const mutationAuthorized = transferMutationAuthorized(current, state.context)
       if (stableReplayAuthorized && mutationAuthorized) return { record: recordView(current), created: false }
@@ -1979,8 +2182,9 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         const legacyReplayAuthorized = !cleanText(replay.actor_user_id) &&
           !state.context.userId &&
           replay.actor === state.context.user &&
-          replay.actor_role === state.context.role &&
-          replay.event_type === replayType
+          replay.actor_role === state.context.authenticatedRole &&
+          replay.event_type === replayType &&
+          replayPayloadMatches
         if (!legacyReplayAuthorized) {
           throw new WorkflowError('This action key belongs to another action', { status: 409, code: 'IDEMPOTENCY_CONFLICT' })
         }
