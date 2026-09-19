@@ -80,7 +80,8 @@ export function formatDateTime(value?: string): string {
   if (!value) return 'Not set';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
     month: 'short',
     day: 'numeric',
     hour: 'numeric',

@@ -1,10 +1,30 @@
 // @ts-nocheck -- the daily orchestrator is plain ESM.
 // @vitest-environment node
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+
+let workspaceRoot: string
+let previousWorkspaceRoot: string | undefined
+
+beforeAll(() => {
+  workspaceRoot = mkdtempSync(path.join(tmpdir(), 'inventory-flow-daily-'))
+  mkdirSync(path.join(workspaceRoot, 'work', 'run-status'), { recursive: true })
+  mkdirSync(path.join(workspaceRoot, 'outputs'), { recursive: true })
+  mkdirSync(path.join(workspaceRoot, 'apps', 'inventory-ops'), { recursive: true })
+  previousWorkspaceRoot = process.env.BOB_MAXEY_WORKSPACE_ROOT
+  process.env.BOB_MAXEY_WORKSPACE_ROOT = workspaceRoot
+})
+
+afterAll(() => {
+  if (previousWorkspaceRoot === undefined) delete process.env.BOB_MAXEY_WORKSPACE_ROOT
+  else process.env.BOB_MAXEY_WORKSPACE_ROOT = previousWorkspaceRoot
+  rmSync(workspaceRoot, { recursive: true, force: true })
+})
 
 describe('app-first daily orchestrator helpers', () => {
   async function loadInternals() {
-    process.env.BOB_MAXEY_WORKSPACE_ROOT = 'C:\\Users\\JoeGallant\\Documents\\Codex\\2026-08-27\\let-s-set-up-a-scheduled-3'
     return (await import('../../scripts/run-inventory-flow-daily.mjs')).internals
   }
 
