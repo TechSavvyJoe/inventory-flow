@@ -64,12 +64,12 @@ describe('bounded-memory release decoding',()=>{
     const vehicle=bundle.release.vehicles.find((record)=>record.resourceRecord)
     vehicle.resourceRecord.fordOasis={
       dataState:'current',capturedAt:'2026-08-30T14:00:00Z',sourceLabel:'Ford OASIS',
-      vehicleDescription:'2023 Escape',warrantyStartDate:'09-June-2023',openFieldServiceActions:[],
+      vehicleDescription:'2023 Synthetic SUV',warrantyStartDate:'01-Jan-2023',openFieldServiceActions:[],
       warrantyCoverages:[{type:'PremiumCARE',description:'8 years / 100,000 Miles'}],extendedCoverageExpirations:[],
     }
     vehicle.resourceRecord.warrantyCheck={
       dataState:'current',capturedAt:'2026-08-30T14:00:00Z',sourceLabel:'UNVERIFIED - Ford OASIS was unavailable. DO NOT QUOTE.',mileageEntered:1000,
-      fordOasis:{warrantyStartDate:'09-June-2023',monthsInService:12,coverages:[{
+      fordOasis:{warrantyStartDate:'01-Jan-2023',monthsInService:12,coverages:[{
         type:'Powertrain',termText:'5 years / 60,000 Miles (whichever occurs first)',termMonths:60,termMiles:60000,
         remainingMiles:59000,remainingMonths:48,remainingMilesText:'59,000 miles left',remainingTimeText:'48 months',status:'ACTIVE',
       }]},

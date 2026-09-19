@@ -137,18 +137,18 @@ function addExternalAutoCheck(bundle, url) {
 function fordOasisFixture() {
   return {
     dataState: 'current',
-    capturedAt: '2026-09-12T14:52:37.597Z',
+    capturedAt: '2026-09-12T15:00:00.000Z',
     sourceLabel: 'Ford OASIS vehicle report (FMCDealer read-only capture)',
-    vehicleDescription: '2023 Escape',
-    versionSeries: 'SERIES 10',
-    buildDate: '11-May-2023',
-    warrantyStartDate: '09-June-2023',
-    releaseDate: '12-May-2023',
-    monthsInService: 38,
-    saleMileage: 3,
+    vehicleDescription: '2023 Synthetic SUV',
+    versionSeries: 'SERIES 00',
+    buildDate: '01-Jan-2023',
+    warrantyStartDate: '01-Jan-2023',
+    releaseDate: '01-Jan-2023',
+    monthsInService: 36,
+    saleMileage: 0,
     openFieldServiceActions: [{ code: '00T01', description: 'Synthetic field service action' }],
     warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain' }],
-    extendedCoverageExpirations: ['01/16/2029'],
+    extendedCoverageExpirations: ['01/01/2029'],
   }
 }
 
@@ -476,7 +476,7 @@ describe('portable cloud release validation', () => {
     expect(() => validateReleaseBundle(badCode)).toThrow(/not a valid FSA code/)
 
     const stringMonths = structuredClone(bundle)
-    stringMonths.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.monthsInService = '38'
+    stringMonths.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.monthsInService = '36'
     expect(() => validateReleaseBundle(stringMonths)).toThrow(/monthsInService must be an integer/)
 
     const unclaimed = structuredClone(bundle)

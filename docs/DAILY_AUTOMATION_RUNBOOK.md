@@ -313,8 +313,8 @@ there - commit them when convenient so a `git checkout .` cannot wipe them.
 - AutoCheck is already fully captured through the dealer VDPs (226 of 226 on
   09/12) via `publicRecord`. No further AutoCheck work is needed. DealerMail's
   own AUTOCHECK button opens whatever report is loaded in the dealership's
-  shared seat, not the row's VIN (tested: clicked the 2023 Escape, got a 2020
-  F-150) - not safe to automate.
+  shared seat, not the row's VIN (tested: clicked one row and got an unrelated
+  vehicle's report) - not safe to automate.
 - `resourceRecord.autoCheckReport.url` must be a canonical `autocheck.com`
   report link and `factoryEquipment.url` must be an `assets.cai-media-management.com`
   image. Dealer-hosted proxy links never pass, by design. Do not widen either
@@ -431,7 +431,7 @@ FMCDealer tab over CDP. Builds `work\\oasis-vin-worklist-{date}.json` and writes
 category and expiration date only - no owner name is ever parsed or stored.
 
 **Parsing.** Once tags are stripped, a value runs straight into the next label
-("...SERIES 10 PAINT COLOR: ..."). A lookahead for "next ALL-CAPS run + colon" does NOT
+("...SERIES 00 PAINT COLOR: ..."). A lookahead for "next ALL-CAPS run + colon" does NOT
 work: the caps class must allow spaces, so it bridges across the value and matches a colon
 much further on - that truncated `2022 F-SUPER DUTY` to `2022` and `Oxford White WB C/C` to
 `Oxford`. The script scans the known label set and takes each value as the text between its
