@@ -150,13 +150,17 @@ function ServiceEditor({ vehicle, role, store, initialAction, defaultDate, onSav
           <span>{openFordActions.map(action => action.code).join(' · ')}</span>
           <Link to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: currentWorkspaceReturnPath(location) })}>Review service actions in Records</Link>
         </section>}
-        <dl className="service-fact-grid" aria-label="Service decision facts">
-          <div><dt>Store</dt><dd>{vehicle.serviceReadiness?.store ?? vehicle.homeStore}</dd></div>
-          <div><dt>Inventory age</dt><dd>{vehicle.daysListed != null ? `${vehicle.daysListed} days` : '—'}</dd></div>
-          <div><dt>Hold</dt><dd>{['primary', 'backup', 'multiple'].includes(vehicle.hold?.state) ? vehicle.hold.label || 'Held — confirm availability' : vehicle.hold?.state === 'none_observed' ? 'No observed hold' : 'Review hold status'}</dd></div>
-          <div><dt>Location</dt><dd>{vehicle.movement?.currentLocation || vehicle.sourceReportedLocation || 'Not confirmed'}<small>{vehicle.movement?.currentLocation && vehicle.movement.locationConfidence === 'verified' ? 'Confirmed location' : 'Confirm with the store'}</small></dd></div>
-        </dl>
-        <nav className="service-vehicle-links" aria-label="Vehicle reference"><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { returnTo: currentWorkspaceReturnPath(location) })}>Vehicle details</Link><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: currentWorkspaceReturnPath(location) })}>Records</Link></nav>
+      </>}
+      {/* Vehicle references come from the inventory record, not the service
+          endpoint, so they stay readable when service detail fails to load. */}
+      <dl className="service-fact-grid" aria-label="Service decision facts">
+        <div><dt>Store</dt><dd>{vehicle.serviceReadiness?.store ?? vehicle.homeStore}</dd></div>
+        <div><dt>Inventory age</dt><dd>{vehicle.daysListed != null ? `${vehicle.daysListed} days` : '—'}</dd></div>
+        <div><dt>Hold</dt><dd>{['primary', 'backup', 'multiple'].includes(vehicle.hold?.state) ? vehicle.hold.label || 'Held — confirm availability' : vehicle.hold?.state === 'none_observed' ? 'No observed hold' : 'Review hold status'}</dd></div>
+        <div><dt>Location</dt><dd>{vehicle.movement?.currentLocation || vehicle.sourceReportedLocation || 'Not confirmed'}<small>{vehicle.movement?.currentLocation && vehicle.movement.locationConfidence === 'verified' ? 'Confirmed location' : 'Confirm with the store'}</small></dd></div>
+      </dl>
+      <nav className="service-vehicle-links" aria-label="Vehicle reference"><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { returnTo: currentWorkspaceReturnPath(location) })}>Vehicle details</Link><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: currentWorkspaceReturnPath(location) })}>Records</Link></nav>
+      {detail && <>
         <section className="service-history" aria-labelledby="service-history-title"><h3 id="service-history-title">Service history</h3>
           {detail.history.length ? <ol>{detail.history.map((entry) => <li key={entry.version}><strong>{serviceStatusLabel(entry)}</strong><span>{entry.updatedBy} · {displayDate(entry.updatedAt)}</span>{entry.serviceEnteredAt && <span>Entered service {displayDate(entry.serviceEnteredAt)}</span>}{entry.completedAt && <span>Completed {displayDate(entry.completedAt)}</span>}{entry.notes && <p>{entry.notes}</p>}</li>)}</ol> : <p>{detail.version ? 'Detailed service history is limited to sales staff and managers.' : serviceWorkflowStatus(detail) === 'serviced' ? 'Ready is recorded. No completion date is available.' : 'Service has not been confirmed. A manager must mark this vehicle Ready after review.'}</p>}
         </section>
