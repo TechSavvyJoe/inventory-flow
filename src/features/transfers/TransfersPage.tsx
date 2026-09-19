@@ -29,7 +29,7 @@ import { awayFromHomeSummary } from './moveSummary'
 import { selectRequestedTransfer } from './transfer-selection'
 import { VehicleLocationOverview } from './VehicleLocationOverview'
 import { simpleTransferActions } from './SimpleTransferTracker'
-import { currentWorkspaceReturnPath, vehicleWorkspacePath } from '../inventory/inventory-navigation'
+import { currentWorkspaceReturnPath, readWorkspaceReturnPath, vehicleWorkspacePath } from '../inventory/inventory-navigation'
 import './transfers-page.css'
 import './transfer-workspace-v3.css'
 import './transfer-workspace-v4.css'
@@ -402,10 +402,7 @@ export function TransfersPage() {
   }
 
   if (requestMode) {
-    const safeReturnTo = (() => {
-      const value = params.get('returnTo')
-      return value?.startsWith('/') && !value.startsWith('//') ? value : '/transfers'
-    })()
+    const safeReturnTo = readWorkspaceReturnPath(params.get('returnTo')) ?? '/transfers'
 
     if (!requestedVin) {
       const normalizedVehicleQuery = requestQuery.trim().toLowerCase()

@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BootstrapData, TransferRecord, VehicleRecord } from '../../types';
 import { toTransferVehicle } from '../../app/transferAdapters';
@@ -183,6 +183,11 @@ function detail(allowedActions: TransferDetail['allowedActions']): TransferDetai
     }],
     allowedActions,
   };
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="router-location">{`${location.pathname}${location.search}`}</output>;
 }
 
 function renderPage(data: BootstrapData, initialEntry = '/transfers', contextOverrides: Record<string, unknown> = {}) {
@@ -555,6 +560,25 @@ describe('transfer workspace v3 layout', () => {
     }));
     expect(submitTransfer.mock.calls[0]?.[0]).not.toHaveProperty('neededBy');
     expect(await screen.findByRole('heading', { name: 'Vehicle move recorded' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['/\\evil.example', '/transfers'],
+    ['//evil.example', '/transfers'],
+    ['/inventory?scope=group', '/inventory?scope=group'],
+  ])('cancels a move back to %s only when it is a path this app made', (returnTo, expected) => {
+    const data = bootstrap(0);
+    data.vehicles = [inventoryVehicle('Ford Detroit')];
+    data.stores = [{ store: 'Ford Detroit' }, { store: 'Howell' }] as BootstrapData['stores'];
+    mocks.useAppData.mockReturnValue({ data, homeStore: 'Ford Detroit', role: 'manager', currentUser: 'Joe Manager', submitTransfer: vi.fn() });
+    render(
+      <MemoryRouter initialEntries={[`/transfers/new?vin=TESTDATAOWNSTORE1&intent=request&returnTo=${encodeURIComponent(returnTo)}`]}>
+        <TransfersPage />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByTestId('router-location').textContent).toBe(expected);
   });
 
   it('keeps Track and Move again reachable for a server-authorized active direct move', () => {

@@ -74,4 +74,10 @@ describe('private inventory search navigation', () => {
     expect(readWorkspaceReturnPath('https://example.test')).toBeNull()
     expect(readWorkspaceReturnPath('//example.test')).toBeNull()
   })
+
+  it('rejects backslashes browsers can reinterpret as a protocol-relative redirect', () => {
+    expect(readWorkspaceReturnPath('/\\evil.example')).toBeNull()
+    expect(readWorkspaceReturnPath('//evil.example')).toBeNull()
+    expect(readWorkspaceReturnPath('/inventory?scope=group')).toBe('/inventory?scope=group')
+  })
 })

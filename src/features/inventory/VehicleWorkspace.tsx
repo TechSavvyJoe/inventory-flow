@@ -108,7 +108,7 @@ const WORKSPACE_SECTIONS: Array<{ id: WorkspacePageId; label: string }> = [
 const REDUCED_MOTION_MEDIA_QUERY = "(prefers-reduced-motion: reduce)";
 
 function formatReferencePrice(value: number): string {
-  return formatMoney(value);
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value)} · currency not captured`;
 }
 
 function compactSourcePrice(value: number | null | undefined, sticker?: InventoryVehicle["windowSticker"]): string {
@@ -669,10 +669,10 @@ function CapturedRecordSection({ title, count, children }: { title: string; coun
   </section>;
 }
 
+// Call sites whose children are all conditional guard this themselves: an
+// empty disclosure is a control that opens onto nothing.
 function RecordSourceDetails({ children }: { children: ReactNode }) {
-  // Preserve the record for audit/admin use without exposing feed mechanics.
-  void children;
-  return null;
+  return <details className="vdp-record-source-details"><summary>Source details<ChevronDown size={14} aria-hidden="true" /></summary><div>{children}</div></details>;
 }
 
 function RecordSourceAction({ href, label, accessibleLabel, unavailableLabel }: { href: string | null; label: string; accessibleLabel: string; unavailableLabel: string }) {
@@ -985,7 +985,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
 
           <CapturedWarrantyTable coverages={warrantyPrimary.coverages} label="Remaining factory warranty by coverage" />
 
-          <RecordSourceDetails>
+          {warrantyCheck.mileageSource || warrantySecondary ? <RecordSourceDetails>
           {warrantyCheck.mileageSource ? <p>Mileage source: {warrantyCheck.mileageSource}</p> : null}
           {warrantySecondary ? (
             <CapturedRecordSection title="AutoCheck estimate" count={countLabel(warrantySecondary.coverages.length, "coverage type")}>
@@ -998,7 +998,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
               <CapturedWarrantyTable coverages={warrantySecondary.coverages} label="AutoCheck warranty estimate" />
             </CapturedRecordSection>
           ) : null}
-          </RecordSourceDetails>
+          </RecordSourceDetails> : null}
 
           <p className="inventory-vehicle-document__empty">
             {warrantyPrimaryIsOasis
@@ -1105,7 +1105,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
               <Fact label="Base MSRP" emphasize>{compactSourcePrice(factoryEquipment.basePrice)}</Fact>
             </dl>
           ) : null}
-          <RecordSourceDetails>
+          {factoryEquipmentFacts.length || factoryEquipment.disclaimer ? <RecordSourceDetails>
           {factoryEquipmentFacts.length ? (
             <dl className="inventory-vehicle-document__facts">
               {factoryEquipmentFacts.map((fact) => (
@@ -1114,7 +1114,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             </dl>
           ) : null}
           {factoryEquipment.disclaimer ? <p>{factoryEquipment.disclaimer}</p> : null}
-          </RecordSourceDetails>
+          </RecordSourceDetails> : null}
 
           {factoryEquipment.packages?.length ? (
             <CapturedRecordSection title="Packages & priced equipment" count={countLabel(factoryEquipment.packages.length, "VIN-linked item")}>
@@ -2728,7 +2728,11 @@ export function VehicleWorkspace({
     || vehicle.autoCheckReport?.estimatedInServiceDate
     || vehicle.warrantyCheck?.autoCheck?.inServiceDate
     || null;
-  const warrantyInServiceLabel = "Warranty in-service";
+  const warrantyInServiceLabel = oasisInServiceDate
+    ? "Warranty in-service · OASIS"
+    : warrantyInServiceDate
+      ? "In-service · AutoCheck estimate"
+      : "Warranty in-service";
   const hasStickerBase = vehicle.windowSticker?.basePrice != null;
   const baseMsrpLabel = "Weight fee lookup · Base MSRP";
   const baseMsrpDisplay = hasStickerBase

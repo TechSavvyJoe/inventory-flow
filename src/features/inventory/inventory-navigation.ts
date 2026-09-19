@@ -99,8 +99,11 @@ export function withWorkspaceReturnPath(path: string, returnTo?: string): string
 }
 
 // The destination is created by this app. Refuse protocol-relative or external
-// values so a copied inventory URL cannot turn the close control into a redirect.
+// values, and backslashes or control characters browsers can reinterpret as a
+// scheme or host, so a copied URL cannot turn a close or cancel control into a
+// redirect. Every caller reads a return path through here.
 export function readWorkspaceReturnPath(value: string | null): string | null {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return null
+  if (value.includes('\\') || /[\x00-\x1f\x7f]/.test(value)) return null
   return value
 }

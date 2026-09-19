@@ -991,7 +991,7 @@ function frequentFacts(vehicle) {
   const baseLookup = fact('Weight fee lookup · Base MSRP', hasStickerBase ? fmt.formatStickerMoney(stickerBase, docs.windowSticker) : hasLabelBase ? fmt.formatReferencePrice(labelBase) : '—')
   return el('section', { class: 'detail-frequent-facts', 'aria-label': 'Frequently used vehicle facts' },
     baseLookup,
-    fact('Warranty in-service', oasisStart || estimatedStart ? fmt.formatDate(oasisStart || estimatedStart) : '—'),
+    fact(oasisStart ? 'Warranty in-service · OASIS' : estimatedStart ? 'Warranty in-service · estimate' : 'Warranty in-service', oasisStart || estimatedStart ? fmt.formatDate(oasisStart || estimatedStart) : '—'),
   )
 }
 
