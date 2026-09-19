@@ -33,7 +33,7 @@ describe('Inventory updates workspace', () => {
     show()
     expect(screen.getByRole('button', { name: /New arrivals\s*1/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: /Price changes\s*2/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Other updates\s*3/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Other updates\s*2/ })).toBeInTheDocument()
     const results = screen.getByRole('list', { name: 'New arrivals results' })
     expect(within(results).getAllByRole('listitem')).toHaveLength(1)
     expect(within(results).getByText('Synthetic new-home')).toBeInTheDocument()
@@ -66,17 +66,22 @@ describe('Inventory updates workspace', () => {
     expect(screen.getByRole('button', { name: /Price changes\s*2/ })).toBeInTheDocument()
   })
 
-  it('updates the URL for each view and shows listing removal without an open-current-vehicle action', () => {
+  it('updates the URL for each view and keeps website listing status out of the feed', () => {
+    mocked.context = { data: { ...fixture(), publicChanges: [...fixture().publicChanges, change('online', { type: 'website_status_change', field: 'Website Status', beforeValue: 'In transit', afterValue: 'In stock' })] }, homeStore: 'Howell' }
+    ;(mocked.context.data as BootstrapData).meta.publicChangeCounts.websiteStatusChange = 1
     show('/updates?view=price&source=companion')
     fireEvent.click(screen.getByRole('button', { name: /Other updates/ }))
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/updates?view=other&source=companion')
-    fireEvent.change(screen.getByLabelText('Other update type'), { target: { value: 'removed' } })
+    // Removed listings and online status changes are listing noise, not work:
+    // they are neither listed nor offered as a type to pick, and the count
+    // only covers what is shown.
+    expect(screen.getByRole('button', { name: /Other updates\s*2/ })).toBeInTheDocument()
     const rows = within(screen.getByRole('list', { name: 'Other updates results' })).getAllByRole('listitem')
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toHaveTextContent('Listing removed')
-    expect(rows[0]).toHaveTextContent('Listed → Not listed')
-    expect(rows[0]).toHaveTextContent('No current listing')
-    expect(within(rows[0]).queryByRole('link', { name: 'Vehicle details' })).not.toBeInTheDocument()
+    expect(rows).toHaveLength(2)
+    expect(screen.queryByText('Listing removed')).not.toBeInTheDocument()
+    expect(screen.queryByText('Online status changed')).not.toBeInTheDocument()
+    expect(screen.queryByText('Synthetic removed')).not.toBeInTheDocument()
+    expect(Array.from((screen.getByLabelText('Other update type') as HTMLSelectElement).options).map(option => option.value)).toEqual(['all', 'mileage_change', 'stock_correction', 'store_transfer'])
     fireEvent.click(screen.getByRole('button', { name: /New arrivals/ }))
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/updates?view=new&source=companion')
   })
