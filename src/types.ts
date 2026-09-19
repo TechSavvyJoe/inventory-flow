@@ -241,6 +241,13 @@ export interface HoldSummary {
   reason?: string
   commentsCount?: number
   alertsCount?: number
+  loaner?: {
+    active: boolean
+    program?: string | null
+    label: string
+    serviceDate?: string | null
+    rawAlert?: string | null
+  } | null
 }
 
 export interface DealerMailEvidenceMessage {

@@ -134,4 +134,4 @@ try {
   console.log(JSON.stringify(output, null, 2))
 } catch (error) { console.error(JSON.stringify({ ...output, verified: false, stage, httpStatus: Number.isInteger(error.status) ? error.status : null, code: /^[A-Z_]{3,80}$/.test(error.code ?? '') ? error.code : 'VERIFICATION_FAILED', diagnostic: 'No credentials or source responses logged.' })); process.exitCode = 1 }
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main()
+if (process.argv[1] && path.basename(process.argv[1]) === 'verify-integration-deployment.mjs') await main()

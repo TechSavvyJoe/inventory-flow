@@ -562,6 +562,7 @@ export function toInventoryVehicle(
             ? 1
             : 0,
       conciseState: vehicle.hold.label,
+      loaner: vehicle.hold.loaner ?? null,
       canViewEvidence: vehicle.hold.canViewEvidence === true,
       canManageHold: vehicle.hold.canManage === true,
       redactionReason: vehicle.hold.canViewEvidence === true ? null : 'Exact DealerMail evidence is restricted for this role.',

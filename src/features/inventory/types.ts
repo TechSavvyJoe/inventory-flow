@@ -230,6 +230,13 @@ export interface DealerMailHoldSignal {
   position?: HoldPosition;
   activeRecordCount?: number | null;
   conciseState?: string | null;
+  loaner?: {
+    active: boolean;
+    program?: string | null;
+    label: string;
+    serviceDate?: string | null;
+    rawAlert?: string | null;
+  } | null;
   canViewEvidence?: boolean;
   canManageHold?: boolean;
   redactionReason?: string | null;

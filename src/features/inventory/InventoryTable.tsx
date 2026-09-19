@@ -329,6 +329,19 @@ export function vehicleOperationalStatus(vehicle: InventoryVehicle): Operational
     };
   }
 
+  if (vehicle.dealerMail.loaner?.active) {
+    const serviceDate = vehicle.dealerMail.loaner.serviceDate?.trim();
+    const loanerLabel = vehicle.dealerMail.loaner.program
+      ? `Loaner ${vehicle.dealerMail.loaner.program}`
+      : vehicle.dealerMail.loaner.label || "Loaner";
+    return {
+      label: serviceDate ? `${loanerLabel} · ${serviceDate}` : loanerLabel,
+      detail: vehicle.dealerMail.loaner.rawAlert || "Current loaner/service status from DealerMail alert",
+      tone: "move",
+      icon: CircleHelp,
+    };
+  }
+
   if (vehicle.dealerMail.hasActiveHold === true) {
     const visibleEvidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
     const primary = visibleEvidence?.find((record) => record.position === "primary") ?? visibleEvidence?.[0];
