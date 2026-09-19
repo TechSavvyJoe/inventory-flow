@@ -45,7 +45,7 @@ export function VehicleLocationOverview({ vehicles, transfers, homeStore }: {
         const current = location(vehicle);
         const record = vehicle.movement.transferId ? records.get(vehicle.movement.transferId) : undefined;
         const departureEvidence = vehicle.movement.departedAt ? [{ type: 'vehicle_departed', occurredAt: vehicle.movement.departedAt }] : [];
-        const timing = knownLocation(vehicle) ? awayFromHomeSummary(vehicle.homeStore, current, record?.events ?? departureEvidence) : { label: 'Location needs checking' };
+        const timing = knownLocation(vehicle) ? awayFromHomeSummary(vehicle.homeStore, current, record?.events ?? departureEvidence, { destination: record?.destination }) : { label: 'Location needs checking' };
         const timingLabel = timing.label === 'Departure not recorded' && !record ? 'Departure time unavailable' : timing.label;
         return <tr key={vehicle.vin}><td><Link to={`/inventory?scope=group&q=${encodeURIComponent(vehicle.vin)}`}>{vehicle.vehicleName}</Link><small>Stock {vehicle.stockNumber}</small></td><td data-label="Home">{vehicle.homeStore}</td><td data-label="Current"><span><MapPin aria-hidden="true" size={14} />{current}</span>{!knownLocation(vehicle) ? <small>Not confirmed</small> : null}</td><td data-label="Away">{timingLabel}</td></tr>;
       })}</tbody></table></div> : <p className="vehicle-location-empty">No vehicles match this location view.</p>}

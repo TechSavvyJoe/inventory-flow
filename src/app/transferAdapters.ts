@@ -321,6 +321,7 @@ export function toTransferDetail(
       title: event.label,
       occurredAt: event.occurredAt,
       location: event.toLocation || event.store,
+      fromLocation: event.fromLocation,
       actorLabel: event.actor,
       actorRole: event.actorRole,
       source: 'app',

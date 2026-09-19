@@ -432,6 +432,26 @@ describe('transfer workspace v3 layout', () => {
     expect(within(progress).queryByText('Approval')).not.toBeInTheDocument();
   });
 
+  it('credits custody at the destination without claiming the vehicle was collected', () => {
+    const outcome = detail(['schedule-return']);
+    outcome.destination = 'Ford Detroit';
+    outcome.timeline = [{
+      id: 'outcome-1',
+      kind: 'sale_confirmed',
+      title: 'Sale confirmed',
+      occurredAt: '2026-09-18T21:30:00.000Z',
+      location: 'Ford Detroit',
+      actorLabel: 'Joe Gallant',
+      actorRole: 'sales',
+      source: 'app',
+    }];
+    render(<TransferTracker transfer={{ ...outcome, workflowMode: 'simple' }} />);
+    const timing = screen.getByRole('region', { name: 'Vehicle location and time away' });
+    expect(within(timing).getByText(/^At Ford Detroit since /)).toBeInTheDocument();
+    expect(within(timing).queryByText(/Collected/)).not.toBeInTheDocument();
+    expect(within(timing).queryByText('Departure not recorded')).not.toBeInTheDocument();
+  });
+
   it('keeps advanced direct-move records free of request approval and needed-by language', () => {
     const direct = detail(['record-outcome']);
     direct.timeline = [{
