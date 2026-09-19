@@ -118,7 +118,7 @@ describe('focused vehicle workspace', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Records' }));
     const profile = document.querySelector('[data-document-kind="vauto-factory-equipment"]')!;
     expect(within(profile as HTMLElement).queryByText('35,432')).not.toBeInTheDocument();
-    expect(within(profile as HTMLElement).queryByText('Source details')).not.toBeInTheDocument();
+    expect(within(profile as HTMLElement).getByText('Source details')).toBeVisible();
     expect(profile).toHaveTextContent('Weight fee');
     expect(profile).not.toHaveTextContent('currency not captured');
     expect(profile).not.toHaveTextContent(/CAD|USD|\$/);

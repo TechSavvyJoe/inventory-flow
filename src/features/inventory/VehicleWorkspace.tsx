@@ -670,9 +670,7 @@ function CapturedRecordSection({ title, count, children }: { title: string; coun
 }
 
 function RecordSourceDetails({ children }: { children: ReactNode }) {
-  // Preserve the record for audit/admin use without exposing feed mechanics.
-  void children;
-  return null;
+  return <details className="vdp-record-source-details"><summary>Source details<ChevronDown size={14} aria-hidden="true" /></summary><div>{children}</div></details>;
 }
 
 function RecordSourceAction({ href, label, accessibleLabel, unavailableLabel }: { href: string | null; label: string; accessibleLabel: string; unavailableLabel: string }) {
