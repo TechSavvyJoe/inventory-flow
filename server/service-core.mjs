@@ -244,10 +244,29 @@ function primaryAndBackups(holdRecord) {
   return { active, primary, backups }
 }
 
+function loanerSignal(messages) {
+  const alert = (messages.alerts ?? []).find((item) => {
+    const text = cleanText(item?.alertTextRaw ?? item?.textRaw ?? item?.bodyTextRaw)
+    return /\b(?:LCTP|FCTP|loaner)\b/i.test(text)
+  })
+  const rawAlert = cleanText(alert?.alertTextRaw ?? alert?.textRaw ?? alert?.bodyTextRaw)
+  if (!rawAlert) return null
+  const program = /\bFCTP\b/i.test(rawAlert) ? 'FCTP' : /\bLCTP\b/i.test(rawAlert) ? 'LCTP' : 'Loaner'
+  const dateMatch = rawAlert.match(/\b(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/)
+  return {
+    active: true,
+    program,
+    label: program === 'Loaner' ? 'Current loaner' : `Current loaner ${program}`,
+    serviceDate: dateMatch ? dateMatch[1] : null,
+    rawAlert,
+  }
+}
+
 function holdSummary(source, context, freshness, { includePrivate = false } = {}) {
   const holdRecord = source.holdRecord
   const crmRecord = source.crmRecord
   const messages = dealerMailMessages(source)
+  const loaner = loanerSignal(messages)
   const messageCounts = {
     commentsCount: messages.comments.reduce((count, group) => count + (Array.isArray(group?.rows) ? group.rows.length : 0), 0),
     alertsCount: messages.alerts.length,
@@ -257,11 +276,20 @@ function holdSummary(source, context, freshness, { includePrivate = false } = {}
       state: holdRecord ? 'stale' : crmRecord ? 'stale' : 'unknown',
       label: holdRecord ? 'Last verified hold — confirm in DealerMail' : 'Hold status stale — confirm in DealerMail',
       backupCount: holdRecord ? primaryAndBackups(holdRecord).backups.length : 0,
+      loaner,
       ...messageCounts,
     }
   }
-  if (!crmRecord) return { state: 'unknown', label: 'Not found in current CRM inventory', backupCount: 0 }
-  if (!holdRecord) return { state: 'none_observed', label: 'No hold observed in verified CRM snapshot', backupCount: 0, ...messageCounts }
+  if (!crmRecord) return { state: 'unknown', label: 'Not found in current CRM inventory', backupCount: 0, loaner }
+  if (!holdRecord) {
+    return {
+      state: 'none_observed',
+      label: loaner?.active ? loaner.label : 'No hold observed in verified CRM snapshot',
+      backupCount: 0,
+      loaner,
+      ...messageCounts,
+    }
+  }
 
   const { primary, backups } = primaryAndBackups(holdRecord)
   const summary = {
@@ -269,6 +297,7 @@ function holdSummary(source, context, freshness, { includePrivate = false } = {}
     label: backups.length ? `Primary hold + ${backups.length} backup${backups.length === 1 ? '' : 's'}` : 'Primary hold',
     backupCount: backups.length,
     expectedDate: cleanText(primary?.expectedDeliveryDateRaw),
+    loaner,
     ...messageCounts,
   }
   if (!['driver', 'porter', 'coordinator'].includes(context.role)) summary.primarySalesperson = cleanText(primary?.salespersonRaw)

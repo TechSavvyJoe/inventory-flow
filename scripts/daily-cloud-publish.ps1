@@ -91,18 +91,21 @@ function Update-IntegrationExpectedMetadata {
 
   if ($Receipt.status -ne 'published_and_verified' -or
       $Receipt.bundleSha256 -notmatch '^[a-fA-F0-9]{64}$' -or
-      -not $Receipt.counts -or
-      -not $Receipt.counts.publicStoreCounts) {
+      -not $Receipt.counts) {
     throw 'VERIFIED_RECEIPT_METADATA_INVALID'
   }
 
+  $sourceCounts = if ($Receipt.counts.activeStoreCounts) { $Receipt.counts.activeStoreCounts } else { $Receipt.counts.publicStoreCounts }
+  $sourceTotal = if ($null -ne $Receipt.counts.activeInventoryCount) { $Receipt.counts.activeInventoryCount } else { $Receipt.counts.publicRowCount }
+  if (-not $sourceCounts) { throw 'VERIFIED_RECEIPT_METADATA_INVALID' }
+
   $stores = [ordered]@{}
   foreach ($store in @('Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln')) {
-    $value = $Receipt.counts.publicStoreCounts.$store
+    $value = $sourceCounts.$store
     if ($null -eq $value -or [int64]$value -lt 0) { throw 'VERIFIED_RECEIPT_STORE_COUNTS_INVALID' }
     $stores[$store] = [int64]$value
   }
-  $total = [int64]$Receipt.counts.publicRowCount
+  $total = [int64]$sourceTotal
   if (($stores.Values | Measure-Object -Sum).Sum -ne $total -or $total -le 0) {
     throw 'VERIFIED_RECEIPT_STORE_COUNTS_INVALID'
   }

@@ -2706,7 +2706,14 @@ export function VehicleWorkspace({
   const holdCurrent = vehicle.dealerMail.dataState === "current";
   const holdCount = vehicle.dealerMail.activeRecordCount ??
     (canViewHoldEvidence ? vehicle.holdEvidence?.length : null) ?? 0;
+  const loanerLabel = vehicle.dealerMail.loaner?.active
+    ? vehicle.dealerMail.loaner.serviceDate
+      ? `${vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"} · ${vehicle.dealerMail.loaner.serviceDate}`
+      : vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"
+    : null;
   const holdLabel = !holdCurrent ? "Hold status unverified"
+    : loanerLabel
+      ? loanerLabel
     : vehicle.dealerMail.hasActiveHold === true
       ? "On hold"
       : vehicle.dealerMail.hasActiveHold === false ? "No current hold" : "Hold status not provided";
@@ -2839,7 +2846,7 @@ export function VehicleWorkspace({
                 <h3>Operations</h3>
                 <dl>
                   <Fact label="Location"><strong>{currentLocation.label}</strong>{vehicle.location.conflict ? <small>Location conflict — review needed</small> : null}</Fact>
-                  <Fact label="Hold status"><strong>{holdCurrent && vehicle.dealerMail.hasActiveHold && primaryHold?.salesperson ? `Held · ${primaryHold.salesperson}` : holdLabel}</strong>{holdCount > 1 ? <small className="vdp-focus-mobile-backup">{holdCount - 1} backup {holdCount === 2 ? "hold" : "holds"}</small> : null}</Fact>
+                  <Fact label="Hold status"><strong>{loanerLabel || (holdCurrent && vehicle.dealerMail.hasActiveHold && primaryHold?.salesperson ? `Held · ${primaryHold.salesperson}` : holdLabel)}</strong>{vehicle.dealerMail.loaner?.rawAlert && loanerLabel ? <small>{vehicle.dealerMail.loaner.rawAlert}</small> : null}{holdCount > 1 ? <small className="vdp-focus-mobile-backup">{holdCount - 1} backup {holdCount === 2 ? "hold" : "holds"}</small> : null}</Fact>
                   {!holdCurrent && primaryHold?.salesperson ? <Fact label="Salesperson">{primaryHold.salesperson}</Fact> : null}
                   {primaryHold?.expectedDeliveryDate ? <Fact label="Expected">{formatDate(primaryHold.expectedDeliveryDate)}</Fact> : null}
                   {holdCount > 1 ? <Fact label="Backup holds" className="vdp-focus-desktop-field">{holdCount - 1}</Fact> : null}
