@@ -16,7 +16,7 @@ import {
   insertServiceEvent,
 } from './repository-dispatch.mjs'
 import { buildServiceReadinessEvent, serviceReadinessView } from './service-readiness.mjs'
-import { allowedAttentionActions, buildAttentionMutation, canSeePersistedAssignee } from './attention-workflow.mjs'
+import { allowedAttentionActions, buildAttentionMutation, canSeePersistedAssignee, isTransportItem } from './attention-workflow.mjs'
 import { assertAdminOverviewAccess, buildAdminOverview } from './admin-control-center.mjs'
 import { STORE_NAMES } from './constants.mjs'
 import { normalizePublicChangeCounts } from './public-change-counts.mjs'
@@ -551,6 +551,20 @@ function simpleNextAction(row) {
     default:
       return { label: row.next_action, owner: cleanText(row.next_action_owner) }
   }
+}
+
+/**
+ * Which store owns a move's current next step. The persisted next-action owner
+ * names a person, a driver or a coordinator, never a store, so the queue reads
+ * the movement instead: only a return already travelling or received is the
+ * Home Store's to confirm. Everything else sits with the requesting store.
+ */
+function transferNextActionStore(row) {
+  const returning = ['return_in_transit', 'returned_home']
+  if (returning.includes(row.movement_status) || returning.includes(row.status)) {
+    return cleanText(row.home_store_id)
+  }
+  return cleanText(row.destination_store_id) || cleanText(row.requesting_store_id)
 }
 
 function transferView(row, events, source, context, dealerMailFreshness, { includePrivate = false } = {}) {
@@ -1368,6 +1382,40 @@ function versionedAttentionId(baseId, evidence) {
   return `${baseId}-${fingerprint}`
 }
 
+/**
+ * Conditions that describe the group's data rather than one store's next step.
+ * They stay in the Action center so nothing is hidden, but they never enter the
+ * navigation badge: a badge that counts source health and website pricing gaps
+ * alongside real handoffs stops telling anyone whether they have work to do.
+ */
+const INFORMATIONAL_ATTENTION_TYPES = Object.freeze({
+  source_freshness: 'source_health',
+  missing_price: 'public_listing',
+})
+
+/** Roles that only ever act on vehicle movement, never on hold or sold-board review. */
+const TRANSPORT_ONLY_ROLES = Object.freeze(['driver', 'porter'])
+
+/**
+ * Whether the signed-in viewer can take this item's next step today. The rule is
+ * deliberately narrow: the step has to belong to the viewer's own store and be
+ * something their role performs. Group managers are not exempt, because an item
+ * another store owns is still that store's next step, not theirs.
+ */
+function attentionActionability(item, context) {
+  const informational = (reason) => ({ actionability: 'informational', informationalReason: reason })
+  if (Object.hasOwn(INFORMATIONAL_ATTENTION_TYPES, item.type)) {
+    return informational(INFORMATIONAL_ATTENTION_TYPES[item.type])
+  }
+  const owningStore = cleanText(item.actionStore) || cleanText(item.store)
+  if (!owningStore || owningStore !== context.store) return informational('other_store')
+  if (!isTransportItem(item) && TRANSPORT_ONLY_ROLES.includes(context.role)) return informational('role_scope')
+  if (item.type === 'manager_pending_identity_review' && !['manager', 'group_manager'].includes(context.role)) {
+    return informational('role_scope')
+  }
+  return { actionability: 'actionable', informationalReason: null }
+}
+
 function mergeAttentionWorkflow(database, items, context) {
   const workflows = new Map(listAttentionWorkflowRows(database).map((row) => [row.attention_key, row]))
   return items.map((item) => {
@@ -1385,6 +1433,7 @@ function mergeAttentionWorkflow(database, items, context) {
       events: workflow ? getAttentionEvents(database, item.id).map((event) => attentionEventView(event, { includeNotes: context.canViewPrivateEvidence })) : [],
     }
     record.allowedActions = allowedAttentionActions(record, context)
+    Object.assign(record, attentionActionability(record, context))
     return record
   })
 }
@@ -1515,6 +1564,7 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
       stockNumber: row.stock_at_request,
       vin: row.vin,
       store: row.requesting_store_id,
+      actionStore: transferNextActionStore(row),
       relatedStores: [...new Set([row.home_store_id, row.requesting_store_id, row.destination_store_id])],
       owner: next.owner,
       dueAt: cleanText(row.due_at),
