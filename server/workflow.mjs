@@ -61,36 +61,36 @@ export const TRANSITION_MAP = Object.freeze({
 })
 
 const EVENT_LABELS = Object.freeze({
-  requested: 'Vehicle requested',
+  requested: 'Move requested',
   direct_move_recorded: 'Vehicle moved to destination store',
-  request_approved: 'Requesting-store manager approved and confirmed availability for this move',
+  request_approved: 'Requesting-store manager approved the move and confirmed the vehicle was free',
   request_declined: 'Requesting-store manager declined the request',
-  vehicle_departed: 'Vehicle left the home store',
+  vehicle_departed: 'Vehicle collected from the home store',
   return_started: 'Vehicle returning to the home store',
-  manager_reviewed: 'Requesting-store manager approved; home-store call required',
-  approved: 'Home-store availability and release confirmed',
+  manager_reviewed: 'Requesting-store manager approved · home store still to call',
+  approved: 'Home store confirmed the vehicle is free and released it',
   declined: 'Request declined',
   canceled: 'Request canceled',
-  transport_assigned: 'Transport assigned',
-  picked_up: 'Vehicle picked up',
+  transport_assigned: 'Driver assigned',
+  picked_up: 'Vehicle collected',
   in_transit: 'Vehicle in transit',
   arrived: 'Vehicle arrived at requesting store',
-  customer_showing: 'Customer showing in progress',
-  sale_outcome_pending: 'Sale outcome pending confirmation',
+  customer_showing: 'Showing in progress',
+  sale_outcome_pending: 'Decision or paperwork pending',
   sale_confirmed: 'Sold pending recorded in Inventory Flow',
   delivery_confirmed: 'Delivery explicitly confirmed in Inventory Flow',
-  not_sold: 'Vehicle not sold',
+  not_sold: 'Shown · not sold',
   return_requested: 'Return to home store requested',
-  return_assigned: 'Return transport assigned',
+  return_assigned: 'Return driver assigned',
   return_in_transit: 'Vehicle returning to home store',
-  returned_home: 'Home store receipt confirmed',
-  closed: 'Transfer workflow closed',
-  note_added: 'Operational note added',
+  returned_home: 'Home store confirmed the vehicle is back',
+  closed: 'Move closed',
+  note_added: 'Note added',
   eta_updated: 'Due time updated',
-  driver_requested: 'Driver coordination requested',
-  location_exception: 'Location exception recorded',
+  driver_requested: 'Driver requested',
+  location_exception: 'Location issue reported',
   condition_issue: 'Vehicle condition issue reported',
-  escalated: 'Transfer escalated for manager attention',
+  escalated: 'Move escalated for manager attention',
 })
 
 const EVENT_ROLE_RULES = Object.freeze({
@@ -393,8 +393,8 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
     currentCustodian: null,
     transportAssignee: null,
     transportAssigneeUserId: null,
-    nextAction: direct ? 'Record an outcome or return the vehicle' : 'Requesting-store manager reviews and approves the request',
-    nextActionOwner: direct ? `${destinationStoreId} sales/manager` : approvalOwner,
+    nextAction: direct ? 'Record the showing outcome, or start the return' : 'Check the vehicle is free, then approve this move',
+    nextActionOwner: direct ? `${destinationStoreId} sales` : approvalOwner,
     dueAt: direct ? returnDueAt : neededBy,
     returnRequired: input.returnRequired !== false,
     returnDueAt,
@@ -438,7 +438,7 @@ function eventRoleAllowed(eventType, role, workflowMode) {
 
 function requireEventPermission(eventType, role, workflowMode) {
   const allowed = EVENT_ROLE_RULES[eventType]
-  if (!allowed) throw new WorkflowError('Unsupported transfer event type', { details: { eventType } })
+  if (!allowed) throw new WorkflowError('Unsupported move event type', { details: { eventType } })
   if (!eventRoleAllowed(eventType, role, workflowMode)) {
     throw new WorkflowError(`Role ${role} cannot record ${eventType}`, {
       status: 403,
@@ -498,8 +498,8 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'request_approved':
       Object.assign(patch, {
         approved_by: actor,
-        next_action: 'Work the vehicle or start its return when it is done',
-        next_action_owner: current.requested_by || `${destination} salesperson`,
+        next_action: 'Show the vehicle, then start its return',
+        next_action_owner: current.requested_by || `${destination} sales`,
       })
       break
     case 'vehicle_departed':
@@ -507,8 +507,8 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'picked_up',
         current_location_id: 'In transit',
         current_custodian: null,
-        next_action: 'Confirm arrival at requesting store',
-        next_action_owner: `${destination} sales/manager`,
+        next_action: `Confirm the vehicle arrived at ${destination}`,
+        next_action_owner: `${destination} sales`,
         last_confirmed_at: occurredAt,
         location_confidence: 'verified',
       })
@@ -518,7 +518,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'return_in_transit',
         current_location_id: 'In transit',
         current_custodian: null,
-        next_action: 'Confirm the vehicle is back at its home store',
+        next_action: `Confirm the vehicle is back at ${home}`,
         next_action_owner: `${home} manager`,
         due_at: dueAt || current.return_due_at,
         return_due_at: dueAt || current.return_due_at,
@@ -528,7 +528,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
       break
     case 'manager_reviewed':
       Object.assign(patch, {
-        next_action: `Requesting-store manager calls ${home} used-car manager and records the release decision`,
+        next_action: `Call the ${home} used-car manager and record the answer`,
         next_action_owner: current.approval_owner || `${destination} manager`,
         last_confirmed_at: occurredAt,
       })
@@ -536,8 +536,8 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'approved':
       Object.assign(patch, {
         approved_by: actor,
-        next_action: destination === 'Howell' ? 'Salesperson calls Stacey for a driver' : 'Requesting store asks its manager or coordinator for a driver',
-        next_action_owner: current.requested_by || `${destination} salesperson`,
+        next_action: destination === 'Howell' ? 'Ask Stacey for a driver' : 'Ask your manager or coordinator for a driver',
+        next_action_owner: current.requested_by || `${destination} sales`,
         last_confirmed_at: occurredAt,
       })
       break
@@ -552,8 +552,8 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
       })
       break
     case 'transport_assigned':
-      if (!assignee) throw new WorkflowError('assignee is required when transport is assigned')
-      if (!dueAt) throw new WorkflowError('dueAt is required so the requesting team can see the pickup target')
+      if (!assignee) throw new WorkflowError('Name the assigned driver so staff know who has the vehicle.')
+      if (!dueAt) throw new WorkflowError('Set a pickup time so the requesting store knows when the driver is coming.')
       if (context.userId && !assigneeUserId) {
         throw new WorkflowError('A verified transport assignee identity is required', {
           code: 'ASSIGNEE_IDENTITY_REQUIRED',
@@ -563,7 +563,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'transport_assigned',
         transport_assignee: assignee,
         transport_assignee_user_id: assigneeUserId,
-        next_action: 'Assigned driver picks up vehicle and confirms custody',
+        next_action: 'Collect the vehicle and confirm you have it',
         next_action_owner: assignee,
         due_at: dueAt,
       })
@@ -574,7 +574,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: eventType,
         current_location_id: 'In transit',
         current_custodian: assignee || current.transport_assignee || actor,
-        next_action: 'Confirm arrival at requesting store',
+        next_action: `Confirm the vehicle arrived at ${destination}`,
         next_action_owner: assignee || current.transport_assignee || actor,
         last_confirmed_at: occurredAt,
         location_confidence: 'verified',
@@ -585,8 +585,8 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'at_requesting_store',
         current_location_id: destination,
         current_custodian: actor,
-        next_action: 'Record customer showing or vehicle outcome',
-        next_action_owner: `${destination} sales/manager`,
+        next_action: 'Record the showing outcome',
+        next_action_owner: `${destination} sales`,
         last_confirmed_at: occurredAt,
         location_confidence: 'verified',
       })
@@ -594,7 +594,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'customer_showing':
       Object.assign(patch, {
         deal_status: 'customer_showing',
-        next_action: 'Record sale outcome',
+        next_action: 'Record the sale outcome',
         next_action_owner: actor,
         last_confirmed_at: occurredAt,
       })
@@ -602,7 +602,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'sale_outcome_pending':
       Object.assign(patch, {
         deal_status: 'pending_confirmation',
-        next_action: 'Manager confirms sale or starts return',
+        next_action: 'Confirm the sale, or start the return',
         next_action_owner: `${destination} manager`,
         last_confirmed_at: occurredAt,
       })
@@ -610,7 +610,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'sale_confirmed':
       Object.assign(patch, {
         deal_status: 'sold_pending',
-        next_action: 'Confirm the customer delivery, or record that the deal fell through',
+        next_action: 'Confirm delivery, or record the deal fell through',
         next_action_owner: `${destination} manager`,
         last_confirmed_at: occurredAt,
       })
@@ -618,7 +618,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'delivery_confirmed':
       Object.assign(patch, {
         delivery_status: 'delivery_confirmed',
-        next_action: 'Close movement workflow',
+        next_action: 'Close the move',
         next_action_owner: `${destination} manager`,
         last_confirmed_at: occurredAt,
       })
@@ -629,7 +629,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         // A deal that fell through after a sold-pending record leaves no
         // delivery behind; the row must not keep reading as sold.
         delivery_status: 'not_confirmed',
-        next_action: 'Request return to home store',
+        next_action: `Start the return to ${home}`,
         next_action_owner: `${destination} manager`,
         last_confirmed_at: occurredAt,
       })
@@ -637,15 +637,15 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'return_requested':
       Object.assign(patch, {
         movement_status: 'return_requested',
-        next_action: destination === 'Howell' ? 'Stacey coordinates the return driver' : 'Requesting store assigns the return driver',
+        next_action: destination === 'Howell' ? 'Ask Stacey for a return driver' : 'Assign the return driver',
         next_action_owner: destination === 'Howell' ? 'Stacey (Howell transport coordinator)' : `${destination} manager`,
         due_at: dueAt || current.return_due_at,
         last_confirmed_at: occurredAt,
       })
       break
     case 'return_assigned':
-      if (!assignee) throw new WorkflowError('assignee is required when return transport is assigned')
-      if (!dueAt) throw new WorkflowError('dueAt is required so the Home Store can see the return target')
+      if (!assignee) throw new WorkflowError('Name the return driver so staff know who has the vehicle.')
+      if (!dueAt) throw new WorkflowError('Set a return time so the home store knows when to expect the vehicle.')
       if (context.userId && !assigneeUserId) {
         throw new WorkflowError('A verified transport assignee identity is required', {
           code: 'ASSIGNEE_IDENTITY_REQUIRED',
@@ -655,7 +655,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'return_assigned',
         transport_assignee: assignee,
         transport_assignee_user_id: assigneeUserId,
-        next_action: 'Return vehicle to home store',
+        next_action: `Drive the vehicle back to ${home}`,
         next_action_owner: assignee,
         due_at: dueAt,
       })
@@ -665,7 +665,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'return_in_transit',
         current_location_id: 'In transit',
         current_custodian: assignee || current.transport_assignee || actor,
-        next_action: 'Home manager confirms receipt',
+        next_action: `Confirm the vehicle is back at ${home}`,
         next_action_owner: `${home} manager`,
         last_confirmed_at: occurredAt,
         location_confidence: 'verified',
@@ -677,7 +677,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'returned_home',
         current_location_id: home,
         current_custodian: `${home} manager`,
-        next_action: context.workflowMode === 'simple' ? 'No further action' : 'Close movement workflow',
+        next_action: context.workflowMode === 'simple' ? 'No further action' : 'Close the move',
         next_action_owner: context.workflowMode === 'simple' ? null : `${home} manager`,
         last_confirmed_at: occurredAt,
         location_confidence: 'verified',
@@ -692,12 +692,12 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
       })
       break
     case 'eta_updated':
-      if (!dueAt) throw new WorkflowError('dueAt is required for an ETA update')
+      if (!dueAt) throw new WorkflowError('Set the new due time before saving this update.')
       Object.assign(patch, { due_at: dueAt })
       break
     case 'driver_requested':
       Object.assign(patch, {
-        next_action: destination === 'Howell' ? 'Stacey assigns the driver and pickup time' : 'Requesting manager or coordinator assigns the driver',
+        next_action: 'Assign a driver and a pickup time',
         next_action_owner: destination === 'Howell' ? 'Stacey (Howell transport coordinator)' : `${destination} manager`,
       })
       break
@@ -707,7 +707,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'escalated':
       break
     default:
-      throw new WorkflowError('Unsupported transfer event type', { details: { eventType } })
+      throw new WorkflowError('Unsupported move event type', { details: { eventType } })
   }
 
   // The simplified UI deliberately removed the unreliable pickup/arrival
@@ -728,7 +728,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
 }
 
 export function buildTransferEvent({ current, input, context, idempotencyKey, now = new Date() }) {
-  if (!current) throw new WorkflowError('Transfer request was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
+  if (!current) throw new WorkflowError('That vehicle move was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
   const eventType = requiredText(input?.type, 'type', 60).toLowerCase()
   requireEventPermission(eventType, context.role, context.workflowMode)
   if (saleUnwindRestricted(current.status, eventType, context.role)) {
@@ -831,7 +831,7 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
     id: randomUUID(),
     eventType,
     label: eventType === 'returned_home' && context.workflowMode === 'simple'
-      ? 'Home store receipt confirmed; movement completed'
+      ? 'Home store confirmed the vehicle is back · move complete'
       : EVENT_LABELS[eventType],
     actor,
     actorUserId: context.userId,

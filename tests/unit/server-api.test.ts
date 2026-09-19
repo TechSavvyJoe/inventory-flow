@@ -974,7 +974,7 @@ describe('Inventory Flow API', () => {
     expect(createdResponse.status).toBe(201)
     expect(created.requestStatus).toBe('requested')
     expect(created.requestedBy).toBe('Fowlerville Salesperson')
-    expect(created.nextAction).toBe('Requesting-store manager reviews and approves the request')
+    expect(created.nextAction).toBe('Check the vehicle is free, then approve this move')
     expect(created.events).toHaveLength(1)
     expect(created.allowedActions).not.toContain('review-request')
 
@@ -1030,7 +1030,7 @@ describe('Inventory Flow API', () => {
     expect(review.response.status).toBe(201)
     expect(review.body.requestStatus).toBe('manager_reviewed')
     expect(review.body.nextAction).toBe(
-      'Requesting-store manager calls Howell used-car manager and records the release decision',
+      'Call the Howell used-car manager and record the answer',
     )
     expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(2)
 
@@ -1085,7 +1085,7 @@ describe('Inventory Flow API', () => {
     )
     expect(driverRequested.response.status).toBe(201)
     expect(driverRequested.body.requestStatus).toBe('approved')
-    expect(driverRequested.body.nextAction).toContain('assigns the driver')
+    expect(driverRequested.body.nextAction).toContain('Assign a driver')
 
     const missingAssignee = await postEvent(
       baseUrl,
@@ -1094,7 +1094,7 @@ describe('Inventory Flow API', () => {
       { type: 'transport_assigned', dueAt: '2026-08-30T13:30:00-04:00' },
     )
     expect(missingAssignee.response.status).toBe(422)
-    expect(missingAssignee.body.error).toContain('assignee is required')
+    expect(missingAssignee.body.error).toContain('Name the assigned driver')
 
     const missingDue = await postEvent(
       baseUrl,
@@ -1103,7 +1103,7 @@ describe('Inventory Flow API', () => {
       { type: 'transport_assigned', assignee: 'Porter One' },
     )
     expect(missingDue.response.status).toBe(422)
-    expect(missingDue.body.error).toContain('dueAt is required')
+    expect(missingDue.body.error).toContain('Set a pickup time')
 
     const dueAt = '2026-08-30T13:30:00-04:00'
     const assigned = await postEvent(
@@ -1281,7 +1281,7 @@ describe('Inventory Flow API', () => {
     expect(initial).toMatchObject({
       status: 'open',
       priority: 'high',
-      sourceLabel: 'Inventory Flow transfer ledger',
+      sourceLabel: 'Inventory Flow move ledger',
       events: [],
     })
     expect(initial.allowedActions).toEqual(expect.arrayContaining(['acknowledge', 'assign', 'resolve']))

@@ -143,7 +143,7 @@ function closedTransferRecord(): TransferRecord {
     deliveryStatus: 'not_confirmed',
     custodian: undefined,
     transportAssignee: undefined,
-    nextAction: 'Back at home store — move complete',
+    nextAction: 'Move complete · back at Howell',
     dueAt: undefined,
     lastConfirmedAt: '2026-08-30T14:20:00Z',
     events: [
@@ -170,7 +170,7 @@ function canceledAfterDepartureRecord(): TransferRecord {
     deliveryStatus: 'not_confirmed',
     custodian: undefined,
     transportAssignee: undefined,
-    nextAction: 'Confirm arrival at requesting store',
+    nextAction: 'Confirm the vehicle arrived at Fowlerville',
     dueAt: '2026-08-30T19:00:00Z',
     lastConfirmedAt: '2026-08-30T11:20:00Z',
     events: [
@@ -398,7 +398,7 @@ describe('app custody adapter', () => {
       movementStatus: 'at_home',
       custodian: undefined,
       transportAssignee: undefined,
-      nextAction: 'Your manager confirms availability and approves the request',
+      nextAction: 'Check the vehicle is free, then approve this move',
       nextActionOwner: 'Fowlerville manager',
       dueAt: '2026-09-02T12:00:00Z',
       lastConfirmedAt: '2026-08-30T14:20:00Z',
@@ -547,7 +547,7 @@ describe('app custody adapter', () => {
       movementStatus: 'at_home',
       custodian: undefined,
       transportAssignee: undefined,
-      nextAction: 'Your manager confirms availability and approves the request',
+      nextAction: 'Check the vehicle is free, then approve this move',
       dueAt: '2026-09-02T12:00:00Z',
       events: [{ id: 'event-5', type: 'requested', label: 'Requested', occurredAt: '2026-09-01T09:00:00Z', actor: 'Demo Salesperson' }],
     };
@@ -825,7 +825,7 @@ describe('withheld custody navigation guards', () => {
     expect(screen.queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Track movement' })).not.toBeInTheDocument();
     // Names no store, actor or request — the server does not either.
-    expect(movement).toHaveTextContent('The app already has an open move request for this vehicle.');
+    expect(movement).toHaveTextContent('This vehicle already has an open move request.');
     expect(movement).not.toHaveTextContent('Howell');
   });
 });

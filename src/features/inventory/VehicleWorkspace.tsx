@@ -2352,7 +2352,7 @@ function MovementDetails({ vehicle }: { vehicle: InventoryVehicle }) {
         <div className="inventory-availability-note inventory-availability-note--compact">
           <Truck size={17} strokeWidth={1.75} aria-hidden="true" />
           <span>
-            <strong>The app already has an open move request for this vehicle.</strong>{" "}
+            <strong>This vehicle already has an open move request.</strong>{" "}
             A new request is not offered until it closes.
           </span>
         </div>

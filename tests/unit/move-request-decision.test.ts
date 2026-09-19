@@ -97,7 +97,7 @@ describe('the app and the Deal Desk panel reach the server\'s request decision',
     expect(earlyCancel.server).toMatchObject({ state: 'source_reported', newRequestBlocked: false })
     expect(earlyCancel.app.movement).toBeNull()
     expect(earlyCancel.app.location).toMatchObject({ appConfirmedLocation: null, appConfirmedAt: null })
-    expect(earlyCancel.app.timeline.map((event) => event.title)).toEqual(['Vehicle requested', 'Request canceled'])
+    expect(earlyCancel.app.timeline.map((event) => event.title)).toEqual(['Move requested', 'Request canceled'])
     expect(movementTrackingPath(earlyCancel.app)).toBeNull()
     expect(earlyCancel.panel.movement).toBeNull()
     expect(earlyCancel.panel.location.provenance).toBe('source-reported')
@@ -133,7 +133,7 @@ describe('the app and the Deal Desk panel reach the server\'s request decision',
       expect([view.appCanRequest, view.panelCanRequest]).toEqual([true, true])
     }
     expect(partyStore.app.movement).toEqual(thirdStore.app.movement)
-    expect(partyStore.app.timeline.map((event) => event.title)).toContain('Vehicle left the home store')
+    expect(partyStore.app.timeline.map((event) => event.title)).toContain('Vehicle collected from the home store')
     expect(attempt(service, lincolnRequest, unrelated, 'lincoln-after-cancel')).toBe('created')
 
     // Once Lincoln's request is open, the Fowlerville store is still handed

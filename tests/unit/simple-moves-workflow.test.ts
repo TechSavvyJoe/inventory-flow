@@ -356,7 +356,7 @@ describe('simple manager-led vehicle moves', () => {
     expect(approved).toMatchObject({ requestStatus: 'approved', currentLocation: 'Howell', approvedBy: manager.user })
     expect(approved.lastConfirmedAt).toBe(created.lastConfirmedAt)
     expect(approved.events.at(-1)).toMatchObject({ type: 'request_approved', confirmedBy: manager.user })
-    expect(approved.events.at(-1).label).toContain('confirmed availability for this move')
+    expect(approved.events.at(-1).label).toContain('confirmed the vehicle was free')
     expect(approved.allowedActions).toEqual(expect.arrayContaining(['record-outcome', 'schedule-return']))
     expect(approved.allowedActions).not.toEqual(expect.arrayContaining(['confirm-pickup', 'confirm-arrival']))
     expect(approved.nextAction).not.toMatch(/driver|dispatch/i)
@@ -406,7 +406,7 @@ describe('simple manager-led vehicle moves', () => {
       requestStatus: 'sale_confirmed', dealStatus: 'sold_pending', deliveryStatus: 'not_confirmed',
       movementStatus: 'at_requesting_store', currentLocation: 'Fowlerville', returnRequired: true,
     })
-    expect(sold.nextAction).toBe('Confirm the customer delivery, or record that the deal fell through')
+    expect(sold.nextAction).toBe('Confirm delivery, or record the deal fell through')
     expect(sold.allowedActions).toContain('record-outcome')
     expect(sold.allowedActions).not.toContain('schedule-return')
     // The return clock pauses while the sale is pending: a past return-due
@@ -418,7 +418,7 @@ describe('simple manager-led vehicle moves', () => {
     expect(() => service.appendTransferEvent(id, { type: 'not_sold' }, sales, 'sold-pending-sales-unwind')).toThrow(/Only a manager/)
     expect(service.getTransfer(id, sales).allowedActions).not.toContain('record-outcome')
     const unwound = service.appendTransferEvent(id, { type: 'not_sold' }, manager, 'sold-pending-unwind').record
-    expect(unwound).toMatchObject({ requestStatus: 'not_sold', dealStatus: 'not_sold', deliveryStatus: 'not_confirmed', nextAction: 'Record when the vehicle starts its return' })
+    expect(unwound).toMatchObject({ requestStatus: 'not_sold', dealStatus: 'not_sold', deliveryStatus: 'not_confirmed', nextAction: 'Start the return when the vehicle leaves' })
     expect(unwound.allowedActions).toContain('schedule-return')
     expect(service.bootstrap(homeManager).stores.find((store) => store.store === 'Howell').returnOverdue).toBe(1)
     clock = new Date(clock.getTime() + 60_000)
@@ -434,7 +434,7 @@ describe('simple manager-led vehicle moves', () => {
     service.appendTransferEvent(id, { type: 'sale_confirmed' }, manager, 'delivered-sale')
     tick()
     const delivered = service.appendTransferEvent(id, { type: 'delivery_confirmed' }, manager, 'delivered-delivery').record
-    expect(delivered).toMatchObject({ requestStatus: 'delivery_confirmed', dealStatus: 'sold_pending', deliveryStatus: 'delivery_confirmed', currentLocation: 'Fowlerville', nextAction: 'Delivered — close the move' })
+    expect(delivered).toMatchObject({ requestStatus: 'delivery_confirmed', dealStatus: 'sold_pending', deliveryStatus: 'delivery_confirmed', currentLocation: 'Fowlerville', nextAction: 'Close the move · the customer took delivery' })
     expect(delivered.allowedActions).toContain('close')
     expect(delivered.allowedActions).not.toEqual(expect.arrayContaining(['schedule-return', 'confirm-return']))
   })
@@ -649,7 +649,7 @@ describe('simple manager-led vehicle moves', () => {
     const before = database.prepare('SELECT * FROM transfer_requests WHERE id=?').get(id)
     const view = service.getTransfer(id, homeManager)
     expect(view.requestStatus).toBe('returned_home')
-    expect(view.nextAction).toContain('move complete')
+    expect(view.nextAction).toContain('Move complete')
     expect(view.allowedActions).toEqual(['open-source'])
     expect(service.listAttention({}, manager).items.some((item) => item.type === 'transfer_next_action')).toBe(false)
     expect(database.prepare('SELECT * FROM transfer_requests WHERE id=?').get(id)).toEqual(before)
