@@ -267,6 +267,9 @@ export function publicListingLabel(vehicle: InventoryVehicle): string {
 
 export function dealerMailHoldLabel(signal: DealerMailHoldSignal): string {
   if (signal.dataState !== "current") return "Hold status not verified";
+  if (signal.loaner?.active) {
+    return signal.loaner.serviceDate ? `${signal.loaner.label} · ${signal.loaner.serviceDate}` : signal.loaner.label;
+  }
   if (signal.hasActiveHold === true) {
     if (signal.conciseState?.trim()) return signal.conciseState;
     if (signal.position === "backup") return "DealerMail backup hold";
