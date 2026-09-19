@@ -7,7 +7,7 @@ export function formatMoney(value) { return finite(value) ? money.format(value) 
 export function formatMileage(value) { return finite(value) ? `${integer.format(value)} mi` : '—' }
 export function formatNumber(value) { return finite(value) ? integer.format(value) : '—' }
 export function formatReferencePrice(value) {
-  return finite(value) ? money.format(value) : '—'
+  return finite(value) ? `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(value)} · currency not captured` : '—'
 }
 export function formatDays(value) {
   if (!finite(value)) return null

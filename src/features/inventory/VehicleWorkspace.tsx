@@ -108,7 +108,7 @@ const WORKSPACE_SECTIONS: Array<{ id: WorkspacePageId; label: string }> = [
 const REDUCED_MOTION_MEDIA_QUERY = "(prefers-reduced-motion: reduce)";
 
 function formatReferencePrice(value: number): string {
-  return formatMoney(value);
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value)} · currency not captured`;
 }
 
 function compactSourcePrice(value: number | null | undefined, sticker?: InventoryVehicle["windowSticker"]): string {

@@ -63,7 +63,7 @@ describe('companion concept vehicle workspace', () => {
   })
   it('does not attribute equipment-label prices to a sticker missing its base price', async () => {
     await boot([{ ...record(), windowSticker: { pricingCurrency: 'USD' }, factoryEquipment: { basePrice: 42500 } }])
-    expect(document.querySelector('.detail-frequent-facts').textContent).toContain('$42,500')
+    expect(document.querySelector('.detail-frequent-facts').textContent).toContain('42,500 · currency not captured')
     expect(document.querySelector('.detail-frequent-facts').textContent).not.toContain('vAuto reference')
   })
   it.each([undefined, { pricingCurrency: 'CAD' }])('keeps copied equipment-label pricing in unknown currency despite sticker metadata %j', async (windowSticker) => {
@@ -73,13 +73,13 @@ describe('companion concept vehicle workspace', () => {
     await vi.waitFor(() => expect(copyText).toHaveBeenCalled())
     const text = copyText.mock.calls[0][0]
     expect(text).toContain('Listed price: $32,000')
-    expect(text).toContain('Base MSRP: $42,501')
-    expect(text).toContain('Options total: $1,200')
-    expect(text).toContain('Destination & delivery: $1,995')
-    expect(text).toContain('Equipment label total MSRP: $45,696')
+    expect(text).toContain('Base MSRP: 42,500.5 · currency not captured')
+    expect(text).toContain('Options total: 1,200 · currency not captured')
+    expect(text).toContain('Destination & delivery: 1,995 · currency not captured')
+    expect(text).toContain('Equipment label total MSRP: 45,695.5 · currency not captured')
     expect(text).not.toContain('Sticker total MSRP')
-    expect(text).toContain('$42,501')
-    expect(document.querySelector('.detail-frequent-facts').textContent).toContain('$42,501')
+    expect(text).toContain('42,500.5 · currency not captured')
+    expect(document.querySelector('.detail-frequent-facts').textContent).toContain('42,500.5 · currency not captured')
   })
   it('explains unconfirmed service without inventing a fourth state or a completion', async () => {
     await boot([{ ...record(), serviceReadiness: { status: 'needs_service', readinessBasis: 'unconfirmed' } }])
