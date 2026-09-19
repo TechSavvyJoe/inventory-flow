@@ -326,7 +326,7 @@ export function TransfersPage() {
       ) return false
       if (queueFilter === 'my-home-inventory' && record.homeStore !== homeStore) return false
       if (queueFilter === 'requested-by-my-store' && record.requestingStore !== homeStore) return false
-      if (queueFilter === 'away-from-home' && !awayFromHomeSummary(record.homeStore, record.currentLocation, record.events).isAway) return false
+      if (queueFilter === 'away-from-home' && !awayFromHomeSummary(record.homeStore, record.currentLocation, record.events, { destination: record.destination }).isAway) return false
       if (queueFilter === 'awaiting-approval' && !isAwaitingApproval(record)) return false
       if (queueFilter === 'ready-to-collect' && !['approved', 'transport-assigned', 'pickup-scheduled'].includes(normalizedStatus(record.requestStatus))) return false
       if (queueFilter === 'at-requesting-store' && !['arrived', 'customer-showing', 'sale-outcome-pending', 'sale-confirmed', 'not-sold'].includes(normalizedStatus(record.requestStatus))) return false
@@ -621,7 +621,7 @@ export function TransfersPage() {
                 const isSelected = selected?.record.id === record.id
                 const step = workflowStep(record.requestStatus)
                 const simpleRecord = record.workflowMode === 'simple'
-                const away = awayFromHomeSummary(record.homeStore, record.currentLocation, record.events)
+                const away = awayFromHomeSummary(record.homeStore, record.currentLocation, record.events, { destination: record.destination })
                 const issueLabel = transferIssueLabel(detail)
                 const dueTone = detail.nextAction.sla === 'breached' || detail.nextAction.sla === 'overdue'
                   ? 'is-overdue'

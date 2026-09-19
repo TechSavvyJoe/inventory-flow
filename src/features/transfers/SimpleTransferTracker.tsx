@@ -49,7 +49,16 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
   vehicleLinks?: ReactNode;
 }) {
   const { vehicle } = transfer;
-  const away = awayFromHomeSummary(vehicle.homeStore, vehicle.currentLocation.label, transfer.timeline);
+  const target = transfer.destination || transfer.requestingStore || 'Requesting store';
+  const away = awayFromHomeSummary(vehicle.homeStore, vehicle.currentLocation.label, transfer.timeline, { destination: target });
+  // Custody at the destination proves the vehicle is away; it is not a collection record.
+  const awayEvidence = away.departedAt
+    ? away.evidence === 'collected'
+      ? `Collected ${formatDateTime(away.departedAt)}`
+      : away.evidence === 'return-started'
+        ? `Left ${target} ${formatDateTime(away.departedAt)}`
+        : `At ${target} since ${formatDateTime(away.departedAt)}`
+    : undefined;
   const allowed = simpleTransferActions(transfer);
   const primary = SIMPLE_ACTION_ORDER.find(action => allowed.includes(action));
   const additional = allowed.filter(action => action !== primary);
@@ -57,7 +66,6 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
   const directMoveEvent = [...transfer.timeline].reverse().find(event => event.kind === 'direct_move_recorded');
   const directMove = Boolean(directMoveEvent);
   const takeAction = (action: TransferActionKind) => onAction?.(action, transfer);
-  const target = transfer.destination || transfer.requestingStore || 'Requesting store';
   const terminal = transfer.status.movement.code === 'returned-home-confirmed' || ['closed', 'declined', 'canceled', 'expired'].includes(transfer.status.request.code);
   const delivered = transfer.status.delivery.code === 'confirmed';
   const soldPending = !terminal && awaitingCustomerDelivery(transfer);
@@ -109,7 +117,7 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
 
       <section className="simple-move-location" aria-label="Vehicle location and time away">
         <div><span>Current location</span><strong><MapPin aria-hidden="true" size={16} />{vehicle.currentLocation.label}</strong><small>{locationConfidenceLabel(vehicle.currentLocation.confidence)}{vehicle.currentLocation.confirmedAt ? ` · ${formatDateTime(vehicle.currentLocation.confirmedAt)}` : ''}</small></div>
-        <div><span>Time away from home</span><strong>{away.label}</strong>{away.departedAt ? <small>Collected {formatDateTime(away.departedAt)}</small> : null}</div>
+        <div><span>Time away from home</span><strong>{away.label}</strong>{awayEvidence ? <small>{awayEvidence}</small> : null}</div>
       </section>
 
       <section className="simple-move-details" aria-label="Request and vehicle summary">

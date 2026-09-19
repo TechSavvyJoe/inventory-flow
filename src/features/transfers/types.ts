@@ -170,6 +170,7 @@ export interface TransferTimelineEvent {
   title: string;
   occurredAt: string;
   location?: string;
+  fromLocation?: string;
   actorLabel?: string;
   actorRole?: string;
   custodianLabel?: string;
