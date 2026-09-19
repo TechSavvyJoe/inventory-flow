@@ -151,8 +151,14 @@ function isMoving(record: TransferRecord): boolean {
     ['pickup-scheduled', 'released-to-custodian', 'in-transit-outbound', 'in-transit-return'].some((value) => movement.includes(value))
 }
 
+function isDeliveryConfirmed(record: TransferRecord): boolean {
+  return ['confirmed', 'delivery-confirmed'].includes(normalizedStatus(record.deliveryStatus))
+}
+
 function needsReturnAttention(record: TransferRecord): boolean {
   if (!record.returnRequired || isTerminalTransfer(record)) return false
+  // A sold vehicle is waiting on its delivery, not on a trip home.
+  if (isSoldPendingNotDelivered(record) || isDeliveryConfirmed(record)) return false
   const request = normalizedStatus(record.requestStatus)
   const movement = normalizedStatus(record.movementStatus)
   const deal = normalizedStatus(record.dealStatus)
@@ -160,9 +166,7 @@ function needsReturnAttention(record: TransferRecord): boolean {
 }
 
 function isSoldPendingNotDelivered(record: TransferRecord): boolean {
-  const soldPending = normalizedStatus(record.dealStatus).includes('sold-pending')
-  const deliveryConfirmed = ['confirmed', 'delivery-confirmed'].includes(normalizedStatus(record.deliveryStatus))
-  return soldPending && !deliveryConfirmed
+  return normalizedStatus(record.dealStatus).includes('sold-pending') && !isDeliveryConfirmed(record)
 }
 
 function transferPriorityScore(record: TransferRecord): number {
@@ -177,6 +181,8 @@ function dateScore(value?: string, fallback = Number.POSITIVE_INFINITY): number 
 
 function returnTimingLabel(record: TransferRecord): string {
   if (!record.returnRequired) return 'Return not required'
+  if (isDeliveryConfirmed(record)) return 'Delivered · no return'
+  if (isSoldPendingNotDelivered(record)) return 'Sold pending · return paused'
   if (record.returnDueAt) return `Return due ${formatDateTime(record.returnDueAt)}`
   return 'Return required · date not set'
 }
@@ -200,6 +206,8 @@ function compactRequestStatus(value: string, simple = false): string {
     if (['transport-assigned', 'pickup-scheduled'].includes(status)) return 'Ready to collect'
     if (['picked-up', 'in-transit'].includes(status)) return 'In transit'
     if (['arrived', 'customer-showing', 'sale-outcome-pending'].includes(status)) return 'At requesting store'
+    if (status === 'sale-confirmed') return 'Sold pending · awaiting delivery'
+    if (status === 'delivery-confirmed') return 'Delivered'
     if (status === 'returned-home') return 'Back home'
     if (status.includes('return')) return 'Returning home'
     return humanizeStatusLabel(value)
@@ -212,6 +220,8 @@ function compactRequestStatus(value: string, simple = false): string {
   if (/transport-assigned|pickup-scheduled/.test(status)) return 'Driver assigned'
   if (/picked-up|in-transit/.test(status)) return 'In transit'
   if (/arrived|customer-showing/.test(status)) return 'At requesting store'
+  if (status === 'sale-confirmed') return 'Sold pending · awaiting delivery'
+  if (status === 'delivery-confirmed') return 'Delivered'
   if (/return/.test(status)) return 'Return in progress'
   return humanizeStatusLabel(value)
 }

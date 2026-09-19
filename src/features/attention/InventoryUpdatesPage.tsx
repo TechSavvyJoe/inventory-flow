@@ -13,7 +13,12 @@ import './InventoryUpdatesPage.css'
 
 type UpdateView = 'new' | 'price' | 'other'
 const LABELS: Record<PublicChangeType, string> = { new_arrival: 'New arrival', price_change: 'Price changed', removed: 'Listing removed', mileage_change: 'Mileage updated', website_status_change: 'Online status changed', stock_correction: 'Stock number corrected', store_transfer: 'Listed store changed' }
-const belongsToView = (event: PublicChangeEvent, view: UpdateView) => view === 'new' ? event.type === 'new_arrival' : view === 'price' ? event.type === 'price_change' : !['new_arrival', 'price_change'].includes(event.type)
+// Website listing state is not an operational change for store staff: a unit
+// leaving or changing status on the website confirms nothing about a sale,
+// delivery, hold, or physical location. Keep it out of the feed so the changes
+// people act on (arrivals, prices, mileage, stock, store) stay visible.
+const HIDDEN_UPDATE_TYPES: ReadonlySet<PublicChangeType> = new Set(['removed', 'website_status_change'])
+const belongsToView = (event: PublicChangeEvent, view: UpdateView) => !HIDDEN_UPDATE_TYPES.has(event.type) && (view === 'new' ? event.type === 'new_arrival' : view === 'price' ? event.type === 'price_change' : !['new_arrival', 'price_change'].includes(event.type))
 function eventValue(event: PublicChangeEvent, value: PublicChangeEvent['beforeValue']) {
   if (value === null || value === '') return 'Not published'
   if (event.valueType === 'money') return formatCurrency(Number(value))
@@ -39,7 +44,7 @@ export function InventoryUpdatesPage() {
   const scoped = scopePublicChanges(allChanges, displayScope, homeStore)
   const vehicles = useMemo(() => new Map(data?.vehicles.map(vehicle => [vehicle.vin, vehicle]) ?? []), [data?.vehicles])
   if (!data) return null
-  const totals = detailCertified ? { new: scoped.filter(event => event.type === 'new_arrival').length, price: scoped.filter(event => event.type === 'price_change').length, other: scoped.filter(event => belongsToView(event, 'other')).length } : { new: data.meta.publicChangeCounts.newArrival, price: data.meta.publicChangeCounts.priceChange, other: certifiedTotal - data.meta.publicChangeCounts.newArrival - data.meta.publicChangeCounts.priceChange }
+  const totals = detailCertified ? { new: scoped.filter(event => event.type === 'new_arrival').length, price: scoped.filter(event => event.type === 'price_change').length, other: scoped.filter(event => belongsToView(event, 'other')).length } : { new: data.meta.publicChangeCounts.newArrival, price: data.meta.publicChangeCounts.priceChange, other: certifiedTotal - data.meta.publicChangeCounts.newArrival - data.meta.publicChangeCounts.priceChange - data.meta.publicChangeCounts.removed - data.meta.publicChangeCounts.websiteStatusChange }
   const visible = detailCertified ? scoped.filter(event => belongsToView(event, view) && (view !== 'other' || otherType === 'all' || event.type === otherType) && [event.vehicleName, event.stockNumber, event.vin, event.store].join(' ').toLowerCase().includes(query.trim().toLowerCase())).sort((a, b) => {
     if (view === 'price') return (Number(a.afterValue) - Number(a.beforeValue)) - (Number(b.afterValue) - Number(b.beforeValue))
     return a.vehicleName.localeCompare(b.vehicleName)
@@ -49,7 +54,7 @@ export function InventoryUpdatesPage() {
     <div className="workflow-page-heading"><div><h1>Inventory updates</h1><p>New arrivals and price changes for your inventory.</p></div><div className="workflow-scope" role="group" aria-label="Inventory change store scope"><button type="button" disabled={!detailCertified} aria-pressed={displayScope === 'home'} onClick={() => setScope('home')}>{homeStore}</button><button type="button" aria-pressed={displayScope === 'group'} onClick={() => setScope('group')}>All stores</button></div></div>
     <div className="workflow-tabs" role="group" aria-label="Inventory update type">{([['new','New arrivals'], ['price','Price changes'], ['other','Other updates']] as const).map(([key,label]) => <button key={key} type="button" aria-pressed={view === key} onClick={() => selectView(key)}>{label}<span>{hasComparison ? totals[key] : '—'}</span></button>)}</div>
     <div className="workflow-toolbar"><label className="workflow-search"><Search aria-hidden="true"/><span className="sr-only">Search inventory updates</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search make, model, stock, or VIN"/>{query ? <button type="button" aria-label="Clear update search" onClick={() => setQuery('')}><X aria-hidden="true"/></button> : null}</label>
-      {view === 'other' ? <label className="workflow-select"><span className="sr-only">Other update type</span><select value={otherType} onChange={event => setOtherType(event.target.value)}><option value="all">All other updates</option>{Object.entries(LABELS).filter(([type]) => !['new_arrival','price_change'].includes(type)).map(([type,label]) => <option value={type} key={type}>{label}</option>)}</select></label> : null}
+      {view === 'other' ? <label className="workflow-select"><span className="sr-only">Other update type</span><select value={otherType} onChange={event => setOtherType(event.target.value)}><option value="all">All other updates</option>{Object.entries(LABELS).filter(([type]) => !['new_arrival','price_change'].includes(type) && !HIDDEN_UPDATE_TYPES.has(type as PublicChangeType)).map(([type,label]) => <option value={type} key={type}>{label}</option>)}</select></label> : null}
       <span className="updates-date">{baseline ? `${formatDate(baseline)} → ` : ''}{formatDate(data.meta.reportDate)}</span>
     </div>
     {data.meta.publicFreshness !== 'current' ? <p className="workflow-notice" role="status">Some inventory changes need review before acting on them.</p> : null}
@@ -65,6 +70,6 @@ export function InventoryUpdatesPage() {
       })}
       {!visible.length ? <div className="workflow-empty">{!detailCertified ? <Info aria-hidden="true" style={{ color: 'var(--ink-600)' }}/> : <CheckCircle2 aria-hidden="true"/>}<h2>{!hasComparison ? 'Waiting for the first inventory comparison' : !detailCertified ? 'Vehicle details are unavailable for this comparison' : query ? 'No updates match your search' : `No ${view === 'new' ? 'new arrivals' : view === 'price' ? 'price changes' : 'other updates'} in this view`}</h2><p>{!hasComparison ? 'New arrivals and price changes appear after two completed inventory updates.' : detailCertified ? `Showing ${displayScope === 'home' ? homeStore : 'all stores'} for the latest verified comparison.` : 'The verified totals remain available above.'}</p>{query ? <button type="button" onClick={() => setQuery('')}>Clear search</button> : detailCertified && scope === 'home' ? <button type="button" onClick={() => setScope('group')}>See all stores</button> : null}</div> : null}
     </div>
-    <details className="updates-source"><summary>About this update</summary><p>Changes compare completed public inventory snapshots. A removed listing does not confirm a sale, delivery, hold release, or physical departure.</p><p>Hold follow-ups are in Action center. Service status is recorded separately by store managers.</p></details>
+    <details className="updates-source"><summary>About this update</summary><p>Changes compare completed public inventory snapshots. Website listing status and removed listings are left out: they do not confirm a sale, delivery, hold release, or physical departure.</p><p>Hold follow-ups are in Action center. Service status is recorded separately by store managers.</p></details>
   </section>
 }

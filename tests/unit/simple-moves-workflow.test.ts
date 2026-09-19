@@ -392,6 +392,53 @@ describe('simple manager-led vehicle moves', () => {
     expect(database.prepare('SELECT COUNT(*) AS n FROM transfer_events WHERE driver_or_porter IS NOT NULL').get().n).toBe(0)
   })
 
+  it('keeps a sold-pending vehicle waiting on its delivery, off the return path, until a manager records the deal fell through', () => {
+    const database = openInventoryDatabase()
+    databases.push(database)
+    importRelease(database, buildSyntheticRelease(), { loadedAt: SYNTHETIC_NOW.toISOString() })
+    let clock = new Date(SYNTHETIC_NOW)
+    const service = createInventoryService({ database, now: () => clock })
+    const id = service.createTransfer(request, sales, 'sold-pending-request').record.id
+    approve(service, id)
+    clock = new Date(clock.getTime() + 60_000)
+    const sold = service.appendTransferEvent(id, { type: 'sale_confirmed' }, manager, 'sold-pending-sale').record
+    expect(sold).toMatchObject({
+      requestStatus: 'sale_confirmed', dealStatus: 'sold_pending', deliveryStatus: 'not_confirmed',
+      movementStatus: 'at_requesting_store', currentLocation: 'Fowlerville', returnRequired: true,
+    })
+    expect(sold.nextAction).toBe('Confirm the customer delivery, or record that the deal fell through')
+    expect(sold.allowedActions).toContain('record-outcome')
+    expect(sold.allowedActions).not.toContain('schedule-return')
+    // The return clock pauses while the sale is pending: a past return-due
+    // date is not an overdue return for the home store.
+    clock = new Date('2026-09-01T12:00:00Z')
+    expect(new Date(request.returnDueAt) < clock).toBe(true)
+    expect(service.bootstrap(homeManager).stores.find((store) => store.store === 'Howell').returnOverdue).toBe(0)
+    // A manager confirmed the sale; a salesperson cannot unwind it.
+    expect(() => service.appendTransferEvent(id, { type: 'not_sold' }, sales, 'sold-pending-sales-unwind')).toThrow(/Only a manager/)
+    expect(service.getTransfer(id, sales).allowedActions).not.toContain('record-outcome')
+    const unwound = service.appendTransferEvent(id, { type: 'not_sold' }, manager, 'sold-pending-unwind').record
+    expect(unwound).toMatchObject({ requestStatus: 'not_sold', dealStatus: 'not_sold', deliveryStatus: 'not_confirmed', nextAction: 'Record when the vehicle starts its return' })
+    expect(unwound.allowedActions).toContain('schedule-return')
+    expect(service.bootstrap(homeManager).stores.find((store) => store.store === 'Howell').returnOverdue).toBe(1)
+    clock = new Date(clock.getTime() + 60_000)
+    const returning = service.appendTransferEvent(id, { type: 'return_started', dueAt: '2026-09-01T15:00:00Z' }, sales, 'sold-pending-return').record
+    expect(returning).toMatchObject({ requestStatus: 'return_in_transit', currentLocation: 'In transit' })
+    expect(unwound.events.map((event) => event.type)).toEqual(['requested', 'request_approved', 'sale_confirmed', 'not_sold'])
+  })
+
+  it('finishes a delivered vehicle at the destination with no return step', () => {
+    const { service, id, tick } = harness()
+    approve(service, id)
+    tick()
+    service.appendTransferEvent(id, { type: 'sale_confirmed' }, manager, 'delivered-sale')
+    tick()
+    const delivered = service.appendTransferEvent(id, { type: 'delivery_confirmed' }, manager, 'delivered-delivery').record
+    expect(delivered).toMatchObject({ requestStatus: 'delivery_confirmed', dealStatus: 'sold_pending', deliveryStatus: 'delivery_confirmed', currentLocation: 'Fowlerville', nextAction: 'Delivered — close the move' })
+    expect(delivered.allowedActions).toContain('close')
+    expect(delivered.allowedActions).not.toEqual(expect.arrayContaining(['schedule-return', 'confirm-return']))
+  })
+
   it('treats return started from approval as proof it had reached the destination', () => {
     const { service, id, tick } = harness()
     approve(service, id)

@@ -330,20 +330,26 @@ function publicChangeValue(event: PublicChangeEvent, value: string | number | nu
 
 function publicChangeTitle(type: PublicChangeEvent['type']): string {
   const labels: Record<PublicChangeEvent['type'], string> = {
-    new_arrival: 'New public-inventory arrival',
+    new_arrival: 'Added to inventory',
     removed: 'Removed from public release',
-    price_change: 'Listed price changed',
-    mileage_change: 'Published mileage changed',
+    price_change: 'Price changed',
+    mileage_change: 'Mileage updated',
     website_status_change: 'Website Status changed',
     stock_correction: 'Stock number corrected',
-    store_transfer: 'Source physical store changed',
+    store_transfer: 'Store changed',
   }
   return labels[type]
 }
 
+// Website listing state (appeared, left, or changed status online) is not an
+// activity anyone acts on from a vehicle record; it confirms nothing about a
+// sale, delivery, hold, or location. Only changes to the vehicle's own facts
+// belong in its activity.
+const HIDDEN_TIMELINE_CHANGE_TYPES: ReadonlySet<PublicChangeEvent['type']> = new Set(['new_arrival', 'removed', 'website_status_change'])
+
 function timelineFromPublicChanges(data: BootstrapData, vin: string): VehicleTimelineEvent[] {
   return (data.publicChanges ?? [])
-    .filter((event) => event.vin === vin)
+    .filter((event) => event.vin === vin && !HIDDEN_TIMELINE_CHANGE_TYPES.has(event.type))
     .map((event) => ({
       id: event.id,
       occurredAt: `${event.reportDate}T12:00:00`,
