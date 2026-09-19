@@ -95,6 +95,23 @@ describe('extension resource summaries', () => {
     ] } })
     expect(vehicle.documents.autoCheck.checks.map((check) => check.tone)).toEqual(['clear', 'clear'])
   })
+  it.each([
+    'No accidents or damage reported',
+    'No major accidents or structural damage reported',
+    'No salvage, flood or odometer discrepancies reported',
+  ])('keeps a compound negated AutoCheck phrase clear: %s', (detail) => {
+    // autoCheckTone already reads the compound phrase as clear in a status;
+    // the detail tone must not contradict it by matching the trailing subject.
+    const vehicle = panel({ autoCheckReport: { checks: [{ label: 'Accident', status: 'No issues reported', detail }] } })
+    expect(vehicle.documents.autoCheck.checks[0].tone).toBe('clear')
+  })
+  it.each([
+    'No accidents reported, 1 damage record found',
+    'No accidents and 2 damage records',
+  ])('still reviews a partly negated finding that names a real record: %s', (detail) => {
+    const vehicle = panel({ autoCheckReport: { checks: [{ label: 'Accident', status: 'No issues reported', detail }] } })
+    expect(vehicle.documents.autoCheck.checks[0].tone).toBe('review')
+  })
   it('does not downgrade an adverse status when additional detail is missing', () => {
     const vehicle = panel({ autoCheckReport: { checks: [{ label: 'Title', status: 'Salvage brand reported', detail: 'Additional details not captured' }] } })
     expect(vehicle.documents.autoCheck.checks[0].tone).toBe('review')

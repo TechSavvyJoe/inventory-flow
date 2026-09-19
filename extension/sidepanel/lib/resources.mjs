@@ -51,11 +51,18 @@ export function capturedOasisActionsAreEmpty(oasis, { now = Date.now() } = {}) {
     && timestamp !== null && timestamp <= now && ['current', 'stale', 'stale_unverified'].includes(oasis.dataState)
 }
 
+// A negated AutoCheck finding often names several subjects at once, as in
+// "No accidents or damage reported". Consuming only the first subject leaves
+// the rest to match the adverse keywords below, which turns an ordinary clean
+// line into a false vehicle-history warning, so remove the whole chain.
+const NEGATED_SUBJECT = '(?:(?:reported|recorded|known|major|structural)\\s+)?(?:accidents?|damages?|issues?|problems?|records?|title brands?|salvage|flood|odometer discrepancies|rollback)'
+const NEGATED_FINDING = new RegExp(`\\b(?:no|zero|0|without|not)\\s+${NEGATED_SUBJECT}(?:\\s*(?:,|\\/|\\bor\\b|\\band\\b)\\s*${NEGATED_SUBJECT})*(?:\\s+(?:reported|recorded|found|detected))?`, 'gi')
+
 function checkPriority(check) {
   // Ranking only: always display the source wording, never infer a clean
   // vehicle, completed service, availability, or remaining warranty.
   const result = join([check.status, check.detail]) ?? ''
-  const unnegated = result.replace(/\b(?:no|zero|0|without|not)\s+(?:(?:reported|recorded|known|major|structural)\s+)?(?:accidents?|damages?|issues?|problems?|records?|title brands?|salvage|flood|odometer discrepancies|rollback)(?:\s+(?:reported|recorded|found|detected))?/gi, '')
+  const unnegated = result.replace(NEGATED_FINDING, '')
   if (/\b(?:warning|review|alert|issue|problem|damage|accident|salvage|rebuilt|flood|rollback|discrepanc\w*|conflict\w*|not actual|theft|stolen|lemon|buyback|branded|lien)\b/i.test(unnegated)) return 0
   if (/accident|damage|title|odometer/i.test(check.label) && /\b(?:[1-9]\d*\s+records?|brand|reported|found)\b/i.test(unnegated)) return 0
   if (/\b(?:unknown|unavailable|not reported|not captured|not checked|unable|incomplete)\b/i.test(result)) return 1
