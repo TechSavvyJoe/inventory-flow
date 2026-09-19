@@ -67,8 +67,10 @@ describe('Inventory updates workspace', () => {
   })
 
   it('updates the URL for each view and keeps website listing status out of the feed', () => {
-    mocked.context = { data: { ...fixture(), publicChanges: [...fixture().publicChanges, change('online', { type: 'website_status_change', field: 'Website Status', beforeValue: 'In transit', afterValue: 'In stock' })] }, homeStore: 'Howell' }
-    ;(mocked.context.data as BootstrapData).meta.publicChangeCounts.websiteStatusChange = 1
+    const data = fixture()
+    data.publicChanges = [...(data.publicChanges ?? []), change('online', { type: 'website_status_change', field: 'Website Status', beforeValue: 'In transit', afterValue: 'In stock' })]
+    data.meta.publicChangeCounts.websiteStatusChange = 1
+    mocked.context = { data, homeStore: 'Howell' }
     show('/updates?view=price&source=companion')
     fireEvent.click(screen.getByRole('button', { name: /Other updates/ }))
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/updates?view=other&source=companion')
