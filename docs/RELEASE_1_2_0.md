@@ -58,7 +58,11 @@ remains read-only until real backend consumers are implemented; no decorative
 settings claim to change a feed. Broader rollout and recovery requirements remain
 documented in the private-release runbook.
 
-Deployment requires the exact migration `0009_membership_admin.sql`, followed by
-the normal Worker deployment and full encrypted-readiness and signed-in browser
-checks. The private companion is unpacked distribution, not an automatic Chrome
+Deployment requires three exact reviewed migrations, applied in this order on an
+installation still at the parent `0006` schema: `0007_service_readiness.sql`,
+`0008_service_intake.sql`, then `0009_membership_admin.sql`. The Worker queries
+`vehicle_service_events` and `vehicle_service_intake` unconditionally, so normal
+API requests fail until `0007` and `0008` are applied. This matches the
+private-release runbook. The migrations are followed by the normal Worker
+deployment and full encrypted-readiness and signed-in browser checks. The private companion is unpacked distribution, not an automatic Chrome
 Web Store update; installed copies must be refreshed separately.
