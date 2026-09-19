@@ -104,7 +104,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation()
   const previousLocationKeyRef = useRef(location.key)
   const isInventoryRoute = location.pathname === '/' || location.pathname.startsWith('/inventory')
-  const attentionCount = openStoreActionCount(data, homeStore)
+  const attentionCount = openStoreActionCount(data, { store: homeStore, role })
   const storeBrand = STORE_BRANDING[homeStore]
   const canSeeManager = role === 'manager' || role === 'group_manager'
   const canSeeAdmin = role === 'group_manager'

@@ -39,6 +39,30 @@ describe('AppShell account and update controls', () => {
     vi.clearAllMocks()
   })
 
+  it('counts only the work this store and role can take in the Action center badge', () => {
+    const context = useAppDataMock()
+    const hold = { id: 'synthetic-hold', type: 'hold_alert', severity: 'warning', status: 'open', priority: 'high', label: 'Synthetic hold alert', vin: 'TESTDATAHWELL0001', store: 'Howell', actionability: 'actionable', allowedActions: [], events: [] }
+    const awayMove = { ...hold, id: 'synthetic-move', type: 'transfer_next_action', vin: 'TESTDATAFOWLER001', store: 'Fowlerville', actionStore: 'Fowlerville', relatedStores: ['Howell', 'Fowlerville'], actionability: 'informational', informationalReason: 'other_store' }
+    const feeds = { ...hold, id: 'synthetic-feeds', type: 'source_freshness', vin: undefined, store: undefined, actionability: 'informational', informationalReason: 'source_health' }
+    // The same vehicle carries a hold and an unrecorded service status: one row.
+    const vehicles = [{ vin: 'TESTDATAHWELL0001', stockNumber: 'SYN-H01', vehicleName: 'Synthetic Ford H01', homeStore: 'Howell', serviceReadiness: { status: 'needs_service', store: 'Howell', canManage: true } }]
+    useAppDataMock.mockReturnValue({ ...context, role: 'manager', data: { ...context.data, attention: [hold, awayMove, feeds], vehicles } })
+
+    render(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory</p></AppShell></MemoryRouter>)
+    expect(screen.getAllByLabelText('1 items need attention today').length).toBeGreaterThan(0)
+  })
+
+  it('hides the Action center badge when nothing is this store and role to do', () => {
+    const context = useAppDataMock()
+    const feeds = { id: 'synthetic-feeds', type: 'source_freshness', severity: 'critical', status: 'open', priority: 'urgent', label: 'Synthetic feed health', actionability: 'informational', informationalReason: 'source_health', allowedActions: [], events: [] }
+    // A salesperson cannot record a service status, so it is never their badge.
+    const vehicles = [{ vin: 'TESTDATAHWELL0001', stockNumber: 'SYN-H01', vehicleName: 'Synthetic Ford H01', homeStore: 'Howell', serviceReadiness: { status: 'needs_service', store: 'Howell', canManage: false } }]
+    useAppDataMock.mockReturnValue({ ...context, role: 'sales', data: { ...context.data, attention: [feeds], vehicles } })
+
+    render(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory</p></AppShell></MemoryRouter>)
+    expect(screen.queryByLabelText(/items need attention today/)).not.toBeInTheDocument()
+  })
+
   it('shows the effective test role and a direct return to the authenticated Group manager role', () => {
     const context = useAppDataMock()
     useAppDataMock.mockReturnValue({ ...context, data: { ...context.data, access: { role: 'sales', authenticatedRole: 'group_manager', canPreviewRoles: true, rolePreviewActive: true } } })

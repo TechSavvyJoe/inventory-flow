@@ -15,6 +15,7 @@ function show(items = [task()], onAction = vi.fn().mockResolvedValue(task()), ve
   return { onAction, ...render(<MemoryRouter><OperationsQueue items={items} vehicles={vehicles} homeStore="Howell" role="manager" currentUser="Synthetic Manager" reportDate="2026-09-14" onAction={onAction}/></MemoryRouter>) }
 }
 function expandFollowUp() { fireEvent.click(screen.getByText('Follow-up & history')) }
+function tasks() { return within(screen.getByRole('list', { name: 'Attention items' })).getAllByRole('listitem') }
 
 describe('Action center store workflow', () => {
   it('keeps hold follow-ups focused on owner and timing, with records one click away and no assumed custody', () => {
@@ -50,16 +51,45 @@ describe('Action center store workflow', () => {
     expect(row.querySelector('.action-vehicle-readiness')).toBeNull()
   })
   it('starts with home and related-store tasks, then deliberately expands to all stores with correct counts', () => {
-    show([task(), task({ id: 'other', vehicleName: 'Synthetic Lincoln L01', store: 'Lincoln' }), task({ id: 'incoming', vehicleName: 'Synthetic incoming move', store: 'Fowlerville', relatedStores: ['Howell'], type: 'transfer_next_action', href: '/transfers?id=synthetic-move' })])
-    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+    show([task(), task({ id: 'other', vin: 'TESTDATALINCOLN01', vehicleName: 'Synthetic Lincoln L01', store: 'Lincoln' }), task({ id: 'incoming', vin: 'TESTDATAFOWLER001', vehicleName: 'Synthetic incoming move', store: 'Fowlerville', relatedStores: ['Howell'], type: 'transfer_next_action', href: '/transfers?id=synthetic-move' })])
+    expect(tasks()).toHaveLength(2)
     expect(screen.getByRole('button', { name: /All tasks\s*2/ })).toBeInTheDocument()
     expect(screen.queryByText('Synthetic Lincoln L01')).not.toBeInTheDocument()
     expect(screen.getByText('Synthetic incoming move')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
-    expect(screen.getAllByRole('listitem')).toHaveLength(3)
+    expect(tasks()).toHaveLength(3)
     expect(screen.getByRole('button', { name: /All tasks\s*3/ })).toBeInTheDocument()
     fireEvent.change(screen.getByRole('textbox', { name: 'Search work queue' }), { target: { value: 'Lincoln L01' } })
-    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    expect(tasks()).toHaveLength(1)
+    expect(screen.getByRole('status')).toHaveTextContent('1 task')
+  })
+
+  it('counts only actionable work and collapses the rest into one collapsed group', () => {
+    show([
+      task(),
+      task({ id: 'away-move', vin: 'TESTDATAFOWLER001', vehicleName: 'Synthetic Fowlerville move', type: 'transfer_next_action', store: 'Fowlerville', actionStore: 'Fowlerville', relatedStores: ['Howell', 'Fowlerville'], href: '/transfers?id=synthetic-away', actionability: 'informational', informationalReason: 'other_store' }),
+      task({ id: 'feeds', vin: undefined, vehicleName: undefined, store: undefined, type: 'source_freshness', href: '/attention', actionability: 'informational', informationalReason: 'source_health' }),
+    ])
+    expect(tasks()).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /All tasks\s*1/ })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('1 task')
+
+    const also = screen.getByRole('list', { name: 'Also worth knowing' })
+    const entries = within(also).getAllByRole('listitem')
+    expect(entries).toHaveLength(2)
+    expect(entries[0]).toHaveTextContent('Synthetic Fowlerville move · Fowlerville · Another store’s next step')
+    expect(entries[1]).toHaveTextContent('Source health')
+    expect(within(entries[0]).getByRole('link', { name: 'Open move' })).toHaveAttribute('href', '/transfers?id=synthetic-away')
+  })
+
+  it('collapses one vehicle into a single row that names its other conditions', () => {
+    show([task(), task({ id: 'also-alert', type: 'hold_alert', priority: 'low' }), task({ id: 'also-service', type: 'service_pending', priority: 'low', label: 'Arrange service', href: '/service?vin=TESTDATAHWELL0001' })])
+    const row = within(screen.getByRole('list', { name: 'Attention items' })).getByRole('listitem')
+    expect(row).toHaveTextContent('Follow up on the expected hold date')
+    expect(row).toHaveTextContent('Also on this vehicle: Review the hold alert · Arrange service')
+    // The row keeps the most urgent condition's own next step and follow-up.
+    expect(within(row).getByRole('link', { name: 'Review hold' })).toBeInTheDocument()
+    expect(within(row).getByText('Follow-up & history')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('1 task')
   })
 

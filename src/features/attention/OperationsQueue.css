@@ -29,3 +29,13 @@
   .action-queue .action-owner { grid-column:1/-1; }
   .action-queue .action-row-content > .action-next-steps { grid-column:1/-1; grid-row:4; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:center; gap:8px; }
 }
+.action-queue .action-task-conditions { margin: 4px 0 0; font-size: 13px; color: var(--ink-600); }
+.action-also { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.action-also > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; color: var(--ink-900); cursor: pointer; }
+.action-also .action-also-count { min-width: 24px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: center; }
+.action-also > p { margin: 0 0 8px; font-size: 13px; }
+.action-also-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.action-also-list li { display: grid; gap: 2px; padding: 8px 0; border-top: 1px solid var(--border); }
+.action-also-list li strong { font-size: 15px; font-weight: 600; color: var(--ink-900); }
+.action-also-list li span { font-size: 13px; color: var(--ink-600); }
+.action-also-list li a { min-height: 44px; display: inline-flex; align-items: center; font-size: 14px; color: var(--blue-600); }
