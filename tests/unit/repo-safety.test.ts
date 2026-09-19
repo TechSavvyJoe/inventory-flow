@@ -48,4 +48,69 @@ describe('repository safety gate', () => {
       ]),
     )
   })
+
+  it('flags a literal credential in a PowerShell script', () => {
+    const root = temporaryRepository()
+    const syntheticToken = `ghp_${'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcd'}`
+    writeFileSync(
+      path.join(root, 'deploy.ps1'),
+      `# example\n$token = '${syntheticToken}'\n`,
+    )
+    const result = inspectRepository(root)
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ file: 'deploy.ps1', reason: expect.stringMatching(/GitHub personal access token/) }),
+      ]),
+    )
+  })
+
+  it('flags backup script file names wherever the marker sits in the name', () => {
+    const root = temporaryRepository()
+    mkdirSync(path.join(root, 'scripts'), { recursive: true })
+    const backupNames = [
+      'scripts/publish.ps1.bak-20260912',
+      'scripts/launcher.ps1.chrome-backup',
+      'scripts/publish-backup.ps1',
+      'scripts/publish.bak.ps1',
+      'scripts/publish.ps1.bak.txt',
+      'scripts/publish.bak-2026-09-12',
+    ]
+    for (const name of backupNames) writeFileSync(path.join(root, ...name.split('/')), '# old\n')
+    const result = inspectRepository(root)
+    expect(result.findings).toEqual(
+      expect.arrayContaining(
+        backupNames.map((file) => expect.objectContaining({ file, reason: expect.stringMatching(/backup copies/) })),
+      ),
+    )
+  })
+
+  it('leaves ordinary names that merely contain a marker word alone', () => {
+    const root = temporaryRepository()
+    mkdirSync(path.join(root, 'scripts'), { recursive: true })
+    for (const name of ['threshold.ts', 'gold.json', 'backup-plan.md', 'scripts/back-up-notes.md']) {
+      writeFileSync(path.join(root, ...name.split('/')), 'notes\n')
+    }
+    expect(inspectRepository(root).findings).toEqual([])
+  })
+
+  it('flags a host-specific Windows user-profile path but not %USERPROFILE%', () => {
+    const root = temporaryRepository()
+    // Built via concatenation so this file's own source text does not itself
+    // contain the literal path and trip the gate when it scans this file.
+    const hostSpecificPath = ['C:', '\\Users\\', 'Someone', '\\AppData\\Local\\app.log'].join('')
+    writeFileSync(path.join(root, 'NOTES.md'), `Log lives at ${hostSpecificPath}\n`)
+    writeFileSync(
+      path.join(root, 'SAFE.md'),
+      'Log lives at %USERPROFILE%\\AppData\\Local\\app.log\n',
+    )
+    const result = inspectRepository(root)
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ file: 'NOTES.md', reason: expect.stringMatching(/host-specific Windows user-profile path/) }),
+      ]),
+    )
+    expect(result.findings).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ file: 'SAFE.md' })]),
+    )
+  })
 })

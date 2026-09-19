@@ -45,9 +45,17 @@ const FORBIDDEN_PATHS = [
   { pattern: /(^|\/)design\/.*\.(?:png|jpe?g|webp|heic)$/i, reason: 'unreviewed raster captures may contain live VIN or hold details' },
   { pattern: /(?:^|\/)\.env(?:\..+)?$/i, reason: 'environment files may contain secrets', allow: /^\.env\.example$/i },
   { pattern: /\.(?:sqlite(?:-shm|-wal|-journal)?|db|log|har|xlsx?|csv|jsonl|zip)$/i, reason: 'database, log, browser, report, or bulk-data artifact' },
+  {
+    // A backup marker counts wherever it lands in the name: before the extension
+    // (publish-backup.ps1), between extensions (publish.bak.ps1), or trailing a
+    // dated copy (publish.ps1.bak-2026-09-12). It must start its own token, so
+    // ordinary words keep passing (threshold.ts, gold.json, back-up-notes.md).
+    pattern: /(?:\.(?:bak|backup|orig|old|save)|[-_]backup)(?![A-Za-z0-9])[.\-_A-Za-z0-9]*$/i,
+    reason: 'backup copies of scripts or configs are not repository files',
+  },
 ]
 
-const TEXT_FILE = /\.(?:c?js|mjs|ts|tsx|json|md|ya?ml|toml|txt|html|css|svg|example)$/i
+const TEXT_FILE = /\.(?:c?js|mjs|ts|tsx|json|md|ya?ml|toml|txt|html|css|svg|example|ps1|psm1|psd1|sh|bash|zsh|bat|cmd|py)$/i
 const SECRET_PATTERNS = [
   { pattern: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/, reason: 'private key material' },
   { pattern: /\bghp_[A-Za-z0-9]{30,}\b/, reason: 'GitHub personal access token' },
@@ -57,6 +65,12 @@ const SECRET_PATTERNS = [
   {
     pattern: /\b(?:password|passwd|client_secret|access_token|api[_-]?key)\b\s*[:=]\s*["'][^"'\r\n]{8,}["']/i,
     reason: 'literal credential assignment',
+  },
+  {
+    pattern: /C:\\{1,2}Users\\{1,2}[^\\%"'\r\n]+\\{1,2}/gi,
+    reason: 'host-specific Windows user-profile path; use %USERPROFILE% or a placeholder',
+    // "Synthetic" is the repo's reserved fixture user name (see tests/unit/cloud-release-publisher.test.ts); never widen this to a real account name.
+    allow: /^C:\\{1,2}Users\\{1,2}Synthetic\\{1,2}$/i,
   },
 ]
 
@@ -127,7 +141,10 @@ export function inspectRepository(root = defaultRoot) {
     }
     const content = readFileSync(fullPath, 'utf8')
     for (const rule of SECRET_PATTERNS) {
-      if (rule.pattern.test(content)) findings.push({ file: normalized, reason: rule.reason })
+      const globalPattern = new RegExp(rule.pattern.source, rule.pattern.flags.includes('g') ? rule.pattern.flags : `${rule.pattern.flags}g`)
+      const matches = [...content.matchAll(globalPattern)]
+      const violates = rule.allow ? matches.some((match) => !rule.allow.test(match[0])) : matches.length > 0
+      if (violates) findings.push({ file: normalized, reason: rule.reason })
     }
     if (normalized.startsWith('fixtures/') && !content.includes('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS')) {
       findings.push({ file: normalized, reason: 'fixture lacks the required synthetic-data marker' })

@@ -841,7 +841,7 @@ describe('verified daily source importer', () => {
   })
 
   it('validates read-only Ford OASIS recall and warranty facts as an independent VIN resource', () => {
-    const vin = '1FMCU9GN3PUA06249'
+    const vin = 'TESTDATAHWELL0007'
     const enrichment = {
       schemaVersion: 'inventory-flow-vin-document-enrichment-v1',
       generatedAt: '2026-09-12T15:00:00Z',
@@ -850,18 +850,18 @@ describe('verified daily source importer', () => {
           vin,
           fordOasis: {
             dataState: 'current',
-            capturedAt: '2026-09-12T14:52:37.597Z',
+            capturedAt: '2026-09-01T00:00:00.000Z',
             sourceLabel: 'Ford OASIS vehicle report (FMCDealer read-only capture)',
-            vehicleDescription: '2023 Escape',
-            versionSeries: 'SERIES 10',
-            buildDate: '11-May-2023',
-            warrantyStartDate: '09-June-2023',
-            releaseDate: '12-May-2023',
-            monthsInService: 38,
-            saleMileage: 3,
-            openFieldServiceActions: [{ code: '24N08', description: 'DRIVERS SIDE SEAT BUCKLE REPLACEMENT' }],
+            vehicleDescription: '2023 Synthetic SUV',
+            versionSeries: 'SERIES 00',
+            buildDate: '01-Jan-2023',
+            warrantyStartDate: '01-Jan-2023',
+            releaseDate: '01-Jan-2023',
+            monthsInService: 36,
+            saleMileage: 0,
+            openFieldServiceActions: [{ code: '00T01', description: 'Synthetic field service action' }],
             warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain', description: '' }],
-            extendedCoverageExpirations: ['01/16/2029'],
+            extendedCoverageExpirations: ['01/01/2029'],
           },
         },
       },
@@ -873,19 +873,19 @@ describe('verified daily source importer', () => {
       vin,
       fordOasis: {
         dataState: 'current',
-        capturedAt: '2026-09-12T14:52:37.597Z',
+        capturedAt: '2026-09-01T00:00:00.000Z',
         sourceLabel: 'Ford OASIS vehicle report (FMCDealer read-only capture)',
-        vehicleDescription: '2023 Escape',
-        versionSeries: 'SERIES 10',
-        buildDate: '11-May-2023',
-        warrantyStartDate: '09-June-2023',
-        releaseDate: '12-May-2023',
-        monthsInService: 38,
-        saleMileage: 3,
+        vehicleDescription: '2023 Synthetic SUV',
+        versionSeries: 'SERIES 00',
+        buildDate: '01-Jan-2023',
+        warrantyStartDate: '01-Jan-2023',
+        releaseDate: '01-Jan-2023',
+        monthsInService: 36,
+        saleMileage: 0,
         openActionsCaptured: true,
-        openFieldServiceActions: [{ code: '24N08', description: 'DRIVERS SIDE SEAT BUCKLE REPLACEMENT' }],
+        openFieldServiceActions: [{ code: '00T01', description: 'Synthetic field service action' }],
         warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain' }],
-        extendedCoverageExpirations: ['01/16/2029'],
+        extendedCoverageExpirations: ['01/01/2029'],
       },
     })
     expect(validated.metadata).toMatchObject({
@@ -940,10 +940,10 @@ describe('verified daily source importer', () => {
     badCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: 'RECALL-1', description: 'Not an FSA code' }]
     expect(() => validateVinDocumentEnrichment(badCode)).toThrow(/not a valid FSA code/i)
     const lowercaseCode = structuredClone(enrichment)
-    lowercaseCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: '24n08' }]
+    lowercaseCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: '00t01' }]
     expect(() => validateVinDocumentEnrichment(lowercaseCode)).toThrow(/not a valid FSA code/i)
     const duplicateCode = structuredClone(enrichment)
-    duplicateCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: '24N08' }, { code: '24N08' }]
+    duplicateCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: '00T01' }, { code: '00T01' }]
     expect(() => validateVinDocumentEnrichment(duplicateCode)).toThrow(/duplicate code/i)
 
     const missingCapture = structuredClone(enrichment)

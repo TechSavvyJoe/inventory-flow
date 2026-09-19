@@ -79,8 +79,8 @@ function openSourceDetails(card: HTMLElement) {
 describe('vehicle document workspace', () => {
   it('orders complete records by the working flow and moves keyboard focus to each named section', () => {
     const complete=vehicle();
-    complete.fordOasis={dataState:'current',warrantyStartDate:'09-June-2026',openFieldServiceActions:[],warrantyCoverages:[],extendedCoverageExpirations:[]};
-    complete.warrantyCheck={dataState:'current',mileageEntered:2052,autoCheck:null,fordOasis:{warrantyStartDate:'09-June-2026',monthsInService:3,coverages:[]}};
+    complete.fordOasis={dataState:'current',warrantyStartDate:'01-June-2026',openFieldServiceActions:[],warrantyCoverages:[],extendedCoverageExpirations:[]};
+    complete.warrantyCheck={dataState:'current',mileageEntered:2052,autoCheck:null,fordOasis:{warrantyStartDate:'01-June-2026',monthsInService:3,coverages:[]}};
     complete.factoryEquipment={dataState:'current',isOriginalWindowSticker:false,packages:[],sections:[]};
     render(<VehicleWorkspace vehicle={complete} homeStore={complete.location.homeStore} onClose={vi.fn()} initialTab="data"/>);
     const panel=screen.getByRole('region',{name:'Vehicle documents'});
@@ -166,7 +166,7 @@ describe('vehicle document workspace', () => {
   it('shows captured OASIS coverage and the separate AutoCheck estimate with all supporting fields', () => {
     const complete = vehicle(false);
     const coverage = { type: 'Powertrain', termText: '5 years / 60,000 miles', remainingMilesText: '57,948 miles', remainingTimeText: '4 years', status: 'ACTIVE' as const, note: 'Ford source note' };
-    complete.warrantyCheck = { dataState: 'current', capturedAt: '2026-09-12T14:52:37.597Z', mileageEntered: 2052, mileageSource: 'Entered dealer odometer', fordOasis: { warrantyStartDate: '09-June-2026', monthsInService: 3, coverages: [coverage] }, autoCheck: { inServiceDate: '11-June-2026', inServiceAgeMonths: 2, defaultMileage: 2011, coverages: [{ ...coverage, status: 'EXPIRED', note: 'Experian source note', remainingTimeText: 'Expired by time' }] } };
+    complete.warrantyCheck = { dataState: 'current', capturedAt: '2026-09-12T15:00:00.000Z', mileageEntered: 2052, mileageSource: 'Entered dealer odometer', fordOasis: { warrantyStartDate: '01-June-2026', monthsInService: 3, coverages: [coverage] }, autoCheck: { inServiceDate: '02-June-2026', inServiceAgeMonths: 2, defaultMileage: 2011, coverages: [{ ...coverage, status: 'EXPIRED', note: 'Experian source note', remainingTimeText: 'Expired by time' }] } };
     render(<VehicleWorkspace vehicle={complete} homeStore={complete.location.homeStore} onClose={vi.fn()} initialTab="data" />);
     const card = document.querySelector('[data-document-kind="warranty-check"]') as HTMLElement;
     expect(card.querySelector('details')).toBeNull();
@@ -335,20 +335,20 @@ describe('vehicle document workspace', () => {
     const oasisVehicle = vehicle(false);
     oasisVehicle.fordOasis = {
       dataState: 'current',
-      capturedAt: '2026-09-12T14:52:37.597Z',
+      capturedAt: '2026-09-12T15:00:00.000Z',
       vehicleDescription: '2026 Explorer',
-      versionSeries: 'SERIES 10',
-      buildDate: '11-May-2026',
-      warrantyStartDate: '09-June-2026',
-      releaseDate: '12-May-2026',
+      versionSeries: 'SERIES 00',
+      buildDate: '01-May-2026',
+      warrantyStartDate: '01-June-2026',
+      releaseDate: '02-May-2026',
       monthsInService: 3,
       saleMileage: 12,
       openFieldServiceActions: [
-        { code: '24N08', description: 'DRIVERS SIDE SEAT BUCKLE REPLACEMENT' },
+        { code: '00T01', description: 'Synthetic field service action' },
         { code: '25S66', description: null },
       ],
       warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain' }],
-      extendedCoverageExpirations: ['01/16/2029'],
+      extendedCoverageExpirations: ['01/01/2029'],
     };
 
     render(
@@ -376,14 +376,14 @@ describe('vehicle document workspace', () => {
       '2 open recalls / field service actions',
     );
     const recallList = within(panel).getByRole('list', { name: 'Open field service action details' });
-    expect(within(recallList).getByText('24N08')).toBeInTheDocument();
-    expect(within(recallList).getByText('DRIVERS SIDE SEAT BUCKLE REPLACEMENT')).toBeInTheDocument();
+    expect(within(recallList).getByText('00T01')).toBeInTheDocument();
+    expect(within(recallList).getByText('Synthetic field service action')).toBeInTheDocument();
     expect(within(recallList).getByText('25S66')).toBeInTheDocument();
-    expect(within(panel).getByText('09-June-2026')).toBeInTheDocument();
-    expect(within(panel).getByText('11-May-2026')).toBeInTheDocument();
+    expect(within(panel).getByText('01-June-2026')).toBeInTheDocument();
+    expect(within(panel).getByText('01-May-2026')).toBeInTheDocument();
     expect(within(panel).getByText('3 months')).toBeInTheDocument();
     expect(within(panel).getByText('12 mi')).toBeInTheDocument();
-    expect(within(panel).getByText('01/16/2029')).toBeInTheDocument();
+    expect(within(panel).getByText('01/01/2029')).toBeInTheDocument();
     const oasisLink = within(panel).getByRole('link', { name: /Open Ford OASIS lookup for 2026 Ford Explorer Active/i });
     expect(oasisLink).toHaveAttribute('href', 'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=1FMUK8DHXTGB76992');
     expect(oasisLink).toHaveAttribute('data-read-only', 'true');
@@ -414,8 +414,8 @@ describe('vehicle document workspace', () => {
     const clearVehicle = vehicle(false);
     clearVehicle.fordOasis = {
       dataState: 'stale',
-      capturedAt: '2026-09-11T14:52:37.597Z',
-      warrantyStartDate: '09-June-2026',
+      capturedAt: '2026-09-11T15:00:00.000Z',
+      warrantyStartDate: '01-June-2026',
       openActionsCaptured: true,
       openFieldServiceActions: [],
       warrantyCoverages: [],

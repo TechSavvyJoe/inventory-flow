@@ -2,7 +2,7 @@
 #
 # Why a Windows task and not the Claude/Cowork scheduled task: the publish step
 # is classified as a production deploy and is refused in unattended AI sessions.
-# Windows Task Scheduler has no such gate, and running as JoeGallant keeps the
+# Windows Task Scheduler has no such gate, and running as the automation account keeps the
 # DPAPI (current-user) secret bundle decryptable.
 #
 # Re-runnable: -Force replaces any existing registration.
@@ -76,7 +76,7 @@ Register-ScheduledTask `
   -Trigger $trigger `
   -Settings $settings `
   -Principal $principal `
-  -Description 'Bob Maxey Inventory Flow: builds the vehicle resource/photo cache and publishes the verified release to Cloudflare. Runs as JoeGallant so the DPAPI secret store decrypts. Idempotent - skips if the day is already published_and_verified.' `
+  -Description 'Bob Maxey Inventory Flow: builds the vehicle resource/photo cache and publishes the verified release to Cloudflare. Runs as the automation account so the DPAPI secret store decrypts. Idempotent - skips if the day is already published_and_verified.' `
   -Force | Out-Null
 
 $task = Get-ScheduledTask -TaskName $TaskName
