@@ -64,5 +64,7 @@ installation still at the parent `0006` schema: `0007_service_readiness.sql`,
 `vehicle_service_events` and `vehicle_service_intake` unconditionally, so normal
 API requests fail until `0007` and `0008` are applied. This matches the
 private-release runbook. The migrations are followed by the normal Worker
-deployment and full encrypted-readiness and signed-in browser checks. The private companion is unpacked distribution, not an automatic Chrome
-Web Store update; installed copies must be refreshed separately.
+deployment and full encrypted-readiness and signed-in browser checks.
+
+The private companion is unpacked distribution, not an automatic Chrome Web
+Store update; installed copies must be refreshed separately.
