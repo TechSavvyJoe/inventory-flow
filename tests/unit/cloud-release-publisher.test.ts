@@ -146,7 +146,7 @@ function fordOasisFixture() {
     releaseDate: '12-May-2023',
     monthsInService: 38,
     saleMileage: 3,
-    openFieldServiceActions: [{ code: '24N08', description: 'DRIVERS SIDE SEAT BUCKLE REPLACEMENT' }],
+    openFieldServiceActions: [{ code: '00T01', description: 'Synthetic field service action' }],
     warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain' }],
     extendedCoverageExpirations: ['01/16/2029'],
   }

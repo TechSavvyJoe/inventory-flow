@@ -1,6 +1,6 @@
 ﻿# Daily Inventory Flow photo sync + Cloudflare publish.
 #
-# Runs unattended under Windows Task Scheduler as JoeGallant on dt-4094, so the
+# Runs unattended under Windows Task Scheduler as the automation account on the automation PC, so the
 # DPAPI (current-user scoped) secret bundle decrypts without a prompt and without
 # an AI session in the loop. Deterministic: no classifier, no approval gate.
 #

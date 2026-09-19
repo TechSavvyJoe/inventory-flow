@@ -24,7 +24,7 @@ function oasisHtml(responseVin = vin) {
     COVERAGE TYPE: Powertrain COVERAGE DESCRIPTION: 5 years / 60,000 Miles (whichever occurs first)
     EXTENDED COVERAGES OWNER NAME: Private Person PREMIUMCARE DEDUCTIBLE $100 01/16/2029
     COVERAGE TYPE: Safety Restraint COVERAGE DESCRIPTION: 8 years / 100,000 Miles (whichever occurs first)
-    OUTSTANDING FIELD SERVICE ACTIONS 24N08 Customer Satisfaction Program
+    OUTSTANDING FIELD SERVICE ACTIONS 00T01 Customer Satisfaction Program
     GENERAL WARRANTY INFORMATION
   </body></html>`
 }
@@ -36,7 +36,7 @@ describe('Ford OASIS warranty capture boundary', () => {
       warrantyStartDate: '09-June-2023',
       monthsInService: 38,
       saleMileage: 3,
-      openFieldServiceActionCodes: ['24N08'],
+      openFieldServiceActionCodes: ['00T01'],
     })
     expect(parsed.coverages.map((row) => row.type)).toEqual(['Bumper-to-Bumper', 'Powertrain'])
     expect(JSON.stringify(parsed)).not.toMatch(/Private Person|PREMIUMCARE|DEDUCTIBLE|01\/16\/2029|Safety Restraint|8 years/)

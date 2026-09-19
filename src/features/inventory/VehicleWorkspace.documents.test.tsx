@@ -344,7 +344,7 @@ describe('vehicle document workspace', () => {
       monthsInService: 3,
       saleMileage: 12,
       openFieldServiceActions: [
-        { code: '24N08', description: 'DRIVERS SIDE SEAT BUCKLE REPLACEMENT' },
+        { code: '00T01', description: 'Synthetic field service action' },
         { code: '25S66', description: null },
       ],
       warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain' }],
@@ -376,8 +376,8 @@ describe('vehicle document workspace', () => {
       '2 open recalls / field service actions',
     );
     const recallList = within(panel).getByRole('list', { name: 'Open field service action details' });
-    expect(within(recallList).getByText('24N08')).toBeInTheDocument();
-    expect(within(recallList).getByText('DRIVERS SIDE SEAT BUCKLE REPLACEMENT')).toBeInTheDocument();
+    expect(within(recallList).getByText('00T01')).toBeInTheDocument();
+    expect(within(recallList).getByText('Synthetic field service action')).toBeInTheDocument();
     expect(within(recallList).getByText('25S66')).toBeInTheDocument();
     expect(within(panel).getByText('09-June-2026')).toBeInTheDocument();
     expect(within(panel).getByText('11-May-2026')).toBeInTheDocument();
