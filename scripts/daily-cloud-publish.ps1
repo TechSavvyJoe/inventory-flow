@@ -1,8 +1,9 @@
 ﻿# Daily Inventory Flow photo sync + Cloudflare publish.
 #
-# Runs unattended under Windows Task Scheduler as the automation account on the automation PC, so the
-# DPAPI (current-user scoped) secret bundle decrypts without a prompt and without
-# an AI session in the loop. Deterministic: no classifier, no approval gate.
+# Runs unattended under Windows Task Scheduler as the automation account on the
+# automation PC, so the DPAPI (current-user scoped) secret bundle decrypts
+# without a prompt and without an AI session in the loop. Deterministic: no
+# classifier, no approval gate.
 #
 # Secret VALUES are never written to the log, stdout, or any file. Only key NAMES
 # and structural counts are logged.

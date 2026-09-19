@@ -46,7 +46,11 @@ const FORBIDDEN_PATHS = [
   { pattern: /(?:^|\/)\.env(?:\..+)?$/i, reason: 'environment files may contain secrets', allow: /^\.env\.example$/i },
   { pattern: /\.(?:sqlite(?:-shm|-wal|-journal)?|db|log|har|xlsx?|csv|jsonl|zip)$/i, reason: 'database, log, browser, report, or bulk-data artifact' },
   {
-    pattern: /(?:\.(?:bak|backup|orig|old)|-backup)(?:-[A-Za-z0-9]+)?$/i,
+    // A backup marker counts wherever it lands in the name: before the extension
+    // (publish-backup.ps1), between extensions (publish.bak.ps1), or trailing a
+    // dated copy (publish.ps1.bak-2026-09-12). It must start its own token, so
+    // ordinary words keep passing (threshold.ts, gold.json, back-up-notes.md).
+    pattern: /(?:\.(?:bak|backup|orig|old|save)|[-_]backup)(?![A-Za-z0-9])[.\-_A-Za-z0-9]*$/i,
     reason: 'backup copies of scripts or configs are not repository files',
   },
 ]
@@ -65,6 +69,7 @@ const SECRET_PATTERNS = [
   {
     pattern: /C:\\{1,2}Users\\{1,2}[^\\%"'\r\n]+\\{1,2}/gi,
     reason: 'host-specific Windows user-profile path; use %USERPROFILE% or a placeholder',
+    // "Synthetic" is the repo's reserved fixture user name (see tests/unit/cloud-release-publisher.test.ts); never widen this to a real account name.
     allow: /^C:\\{1,2}Users\\{1,2}Synthetic\\{1,2}$/i,
   },
 ]

@@ -64,18 +64,33 @@ describe('repository safety gate', () => {
     )
   })
 
-  it('flags backup script file names', () => {
+  it('flags backup script file names wherever the marker sits in the name', () => {
     const root = temporaryRepository()
     mkdirSync(path.join(root, 'scripts'), { recursive: true })
-    writeFileSync(path.join(root, 'scripts', 'publish.ps1.bak-20260912'), '# old\n')
-    writeFileSync(path.join(root, 'scripts', 'launcher.ps1.chrome-backup'), '# old\n')
+    const backupNames = [
+      'scripts/publish.ps1.bak-20260912',
+      'scripts/launcher.ps1.chrome-backup',
+      'scripts/publish-backup.ps1',
+      'scripts/publish.bak.ps1',
+      'scripts/publish.ps1.bak.txt',
+      'scripts/publish.bak-2026-09-12',
+    ]
+    for (const name of backupNames) writeFileSync(path.join(root, ...name.split('/')), '# old\n')
     const result = inspectRepository(root)
     expect(result.findings).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ file: 'scripts/publish.ps1.bak-20260912', reason: expect.stringMatching(/backup copies/) }),
-        expect.objectContaining({ file: 'scripts/launcher.ps1.chrome-backup', reason: expect.stringMatching(/backup copies/) }),
-      ]),
+      expect.arrayContaining(
+        backupNames.map((file) => expect.objectContaining({ file, reason: expect.stringMatching(/backup copies/) })),
+      ),
     )
+  })
+
+  it('leaves ordinary names that merely contain a marker word alone', () => {
+    const root = temporaryRepository()
+    mkdirSync(path.join(root, 'scripts'), { recursive: true })
+    for (const name of ['threshold.ts', 'gold.json', 'backup-plan.md', 'scripts/back-up-notes.md']) {
+      writeFileSync(path.join(root, ...name.split('/')), 'notes\n')
+    }
+    expect(inspectRepository(root).findings).toEqual([])
   })
 
   it('flags a host-specific Windows user-profile path but not %USERPROFILE%', () => {

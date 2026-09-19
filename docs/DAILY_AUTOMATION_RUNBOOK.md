@@ -111,10 +111,9 @@ Cloudflare runbook's lock rules.
   extensions.
 
 State as of 09/12/2026: the Claude in Chrome extension is installed in that
-profile and the browser is registered to Joe's Claude account as
-**"Work PC Automation Browser"**, deviceId
-`<automation-browser-device-id>` (a placeholder the operator fills in with the
-real deviceId). The daily task selects it by that
+profile and the browser is registered to Joe's Claude account as **"Work PC
+Automation Browser"**, deviceId `<automation-browser-device-id>` (a placeholder
+the operator fills in with the real deviceId). The daily task selects it by that
 deviceId and never acts in any other connected browser (the others are Joe's
 personal ones, two of them on a Mac). DealerMail, vAuto/Provision and FMCDealer
 are signed in inside it; Comet holds those credentials in this profile's own
@@ -286,9 +285,10 @@ why and exits 2, touching nothing. Each pointer is backed up first as
 | `work\advance_latest_pointer.py` | NEW. See "Baseline pointers" above. |
 
 Git: only `apps\inventory-ops` is a repository; `work\` is not under version
-control. As of this writing the Comet launcher edit, `keep-dealermail-alive.mjs`,
-`dryrun_manager_disposition_check.mjs` are uncommitted
-there - commit them when convenient so a `git checkout .` cannot wipe them.
+control. The old Chrome launcher has been removed from the repository, and as
+of this writing the Comet launcher edit, `keep-dealermail-alive.mjs` and
+`dryrun_manager_disposition_check.mjs` are uncommitted there - commit them when
+convenient so a `git checkout .` cannot wipe them.
 
 ## Known data facts (verified 09/12/2026)
 
