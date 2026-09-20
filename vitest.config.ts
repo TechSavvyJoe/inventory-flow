@@ -10,6 +10,10 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: [fileURLToPath(new URL('./tests/unit/setup.ts', import.meta.url))],
-    include: ['tests/unit/**/*.test.{ts,tsx}', 'src/**/*.test.{ts,tsx}'],
+    include: [
+      'tests/unit/**/*.test.{ts,tsx}',
+      'src/**/*.test.{ts,tsx}',
+      'tests/e2e/**/*.test.{ts,tsx}',
+    ],
   },
 })

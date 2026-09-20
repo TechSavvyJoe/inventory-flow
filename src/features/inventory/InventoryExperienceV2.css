@@ -1,0 +1,472 @@
+/* ==========================================================================
+   Inventory Experience V2 Stylesheet
+   High-density top section: Header, Decision Metrics Rail, Search & Filters
+   ========================================================================== */
+
+/* 1. Screen-reader accessible utility */
+.inventory-sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* 2. Page Container */
+.inventory-experience-v2 {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--v10-surface);
+  min-height: 100%;
+}
+
+/* 3. Header & Scope Switcher */
+.inv-v2-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.inv-v2-title-group h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--v10-ink-strong);
+  line-height: 1.2;
+}
+
+.inv-v2-title-count {
+  font-size: 12px;
+  color: var(--v10-support);
+  font-weight: 500;
+}
+
+.inv-v2-scope-toggle {
+  display: inline-flex;
+  background: var(--v10-surface-subtle);
+  border: 1px solid var(--v10-border);
+  border-radius: var(--radius-control, 6px);
+  padding: 2px;
+}
+
+.inv-v2-scope-btn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--v10-support);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.inv-v2-scope-btn.is-active {
+  background: var(--v10-surface);
+  color: var(--v10-ink-strong);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+/* 4. Decision Metrics Rail (High-Density Horizontal 4-Column Grid) */
+.inventory-decision-rail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+
+.inventory-metric {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  min-height: 54px;
+  min-width: 0;
+  background: var(--v10-surface);
+  border: 1px solid var(--v10-border);
+  border-radius: var(--radius-card, 8px);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+  text-align: left;
+}
+
+.inventory-metric--button {
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.inventory-metric--button:hover {
+  background: var(--v10-surface-subtle);
+  border-color: var(--v10-blue);
+}
+
+.inventory-metric--button.is-active {
+  background: var(--v10-surface-active);
+  border-color: var(--v10-blue);
+}
+
+.inventory-metric__icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: var(--ifx-radius-xs, 4px);
+}
+
+.inventory-tone--blue {
+  color: var(--v10-blue);
+  background: var(--v10-surface-active);
+  border: 1px solid color-mix(in srgb, var(--v10-blue) 22%, transparent);
+}
+
+.inventory-tone--orange {
+  color: var(--ifx-warning);
+  background: var(--ifx-warning-surface);
+  border: 1px solid color-mix(in srgb, var(--ifx-warning) 22%, transparent);
+}
+
+.inventory-tone--violet {
+  color: var(--ifx-hold);
+  background: var(--ifx-hold-surface);
+  border: 1px solid color-mix(in srgb, var(--ifx-hold) 22%, transparent);
+}
+
+.inventory-tone--red {
+  color: var(--ifx-danger);
+  background: var(--ifx-danger-surface);
+  border: 1px solid color-mix(in srgb, var(--ifx-danger) 22%, transparent);
+}
+
+.inventory-metric__copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.inventory-metric__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--v10-support);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inventory-metric__value {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--v10-ink-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.inventory-metric__chevron {
+  margin-left: auto;
+  color: var(--v10-support);
+  flex-shrink: 0;
+}
+
+/* 5. Controls Bar (Search + Quick View Filter Pills) */
+.inv-v2-controls-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.inv-v2-search-wrapper {
+  flex: 1 1 320px;
+  max-width: 440px;
+  position: relative;
+}
+
+.inventory-predictive-search {
+  position: relative;
+  width: 100%;
+}
+
+.inventory-primary-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--v10-border);
+  border-radius: var(--radius-control, 6px);
+  background: var(--v10-surface);
+  color: var(--v10-support);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.inventory-primary-search:focus-within {
+  border-color: var(--v10-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v10-blue) 18%, transparent);
+}
+
+.inventory-primary-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--v10-ink-strong);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 0;
+}
+
+.inventory-primary-search input::placeholder {
+  color: var(--v10-support);
+}
+
+.inventory-primary-search button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v10-support);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.inventory-primary-search button:hover {
+  background: var(--v10-surface-subtle);
+  color: var(--v10-ink);
+}
+
+/* 6. Search Popover Dropdown */
+.inventory-search-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: var(--v10-surface);
+  border: 1px solid var(--v10-border);
+  border-radius: var(--radius-card, 8px);
+  box-shadow: 0 10px 25px -5px rgb(0 0 0 / 14%), 0 8px 10px -6px rgb(0 0 0 / 8%);
+  overflow: hidden;
+}
+
+.inventory-search-popover__heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--v10-surface-subtle);
+  border-bottom: 1px solid var(--v10-border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v10-support);
+}
+
+.inventory-search-popover__heading > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inventory-search-popover ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.inventory-search-popover li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 20px;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--v10-border-soft);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.inventory-search-popover li:last-child {
+  border-bottom: none;
+}
+
+.inventory-search-popover li:hover,
+.inventory-search-popover li.is-active {
+  background: var(--v10-surface-active);
+}
+
+.inventory-search-result__vehicle {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.inventory-search-result__vehicle strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v10-ink-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-search-result__vehicle small {
+  font-size: 12px;
+  color: var(--v10-support);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-search-result__numbers {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.inventory-search-result__numbers strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v10-ink-strong);
+}
+
+.inventory-search-result__numbers small {
+  font-size: 12px;
+  color: var(--v10-support);
+}
+
+.inventory-search-result__why {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v10-blue);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-search-popover li.inventory-search-recent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inventory-search-recent-label {
+  flex: 1;
+  font-size: 12px;
+  color: var(--v10-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-search-popover__empty,
+.inventory-search-popover__footer {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--v10-support);
+  margin: 0;
+}
+
+.inventory-search-popover__footer {
+  border-top: 1px solid var(--v10-border);
+  background: var(--v10-surface-subtle);
+}
+
+/* 7. Quick View Filter Pills */
+.inv-v2-pills-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.inv-v2-pill-btn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: var(--ifx-radius-full, 9999px);
+  border: 1px solid var(--v10-border);
+  background: var(--v10-surface);
+  color: var(--v10-ink);
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+
+.inv-v2-pill-btn.is-active {
+  border-color: var(--v10-blue);
+  background: var(--v10-surface-active);
+  color: var(--v10-blue);
+}
+
+/* 8. Pagination Footer */
+.inv-v2-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 4px;
+  font-size: 12px;
+  color: var(--v10-support);
+}
+
+.inv-v2-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inv-v2-pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-control, 6px);
+  border: 1px solid var(--v10-border);
+  background: var(--v10-surface);
+  color: var(--v10-ink);
+  cursor: pointer;
+}
+
+.inv-v2-pagination-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.inv-v2-pagination-page {
+  font-weight: 600;
+}
+
+/* Responsive adjustments */
+@media (max-width: 900px) {
+  .inventory-decision-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .inventory-decision-rail {
+    grid-template-columns: 1fr;
+  }
+}
