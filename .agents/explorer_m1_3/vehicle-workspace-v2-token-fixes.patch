@@ -1,0 +1,29 @@
+--- a/src/features/inventory/VehicleWorkspaceV2.css
++++ b/src/features/inventory/VehicleWorkspaceV2.css
+@@ -421,7 +421,7 @@
+   gap: 2px;
+ }
+ .vdp-header-persistent-rail .vdp-focus-identifiers dt {
+-  font-size: 11px;
++  font-size: 12px;
+   text-transform: uppercase;
+   letter-spacing: 0.5px;
+   color: var(--v10-support);
+@@ -447,7 +447,7 @@
+   gap: 6px;
+   padding: 6px 14px;
+   background: var(--v10-ink-strong);
+-  color: #fff;
++  color: var(--v10-surface);
+   border-radius: 6px;
+   font-weight: 600;
+   font-size: 13px;
+@@ -504,7 +504,7 @@
+   margin: 0;
+ }
+ .vdp-dense-grid .inventory-workspace-fact dt {
+-  font-size: 11px;
++  font-size: 12px;
+   color: var(--v10-support);
+   text-transform: uppercase;
+   letter-spacing: 0.3px;

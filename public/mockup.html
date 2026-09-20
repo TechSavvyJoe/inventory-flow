@@ -1,0 +1,1168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Maxey Inventory Flow — Deal Desk Cockpit (Meticulous Production Spec)</title>
+  <style>
+    :root {
+      --bg-backdrop: rgba(5, 12, 19, 0.85);
+      --bg-panel: #0a1622;
+      --bg-panel-elevated: #0f2030;
+      --bg-panel-subtle: #08121c;
+      --bg-hover: #162b40;
+      --border-main: #1b334a;
+      --border-subtle: #132637;
+      --border-focus: #2ed3e6;
+
+      --ink-primary: #ffffff;
+      --ink-secondary: #9cb1c4;
+      --ink-muted: #5e768d;
+      
+      --flow-blue: #2f68ff;
+      --flow-blue-hover: #4579ff;
+      --arc-cyan: #2ed3e6;
+      --gold-cpo: #f59e0b;
+      --status-green: #10b981;
+      --status-red: #f43f5e;
+      --status-amber: #f59e0b;
+
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "SF Pro Text", Inter, Aptos, sans-serif;
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--ink-primary);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: radial-gradient(circle at 50% 0%, #102438 0%, #050b11 100%);
+      min-height: 100vh;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    /* THE MODAL SHELL */
+    .vdp-modal {
+      width: 100%;
+      max-width: 1480px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-main);
+      border-radius: 14px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(46, 211, 230, 0.1);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ========================================================= */
+    /* TIER 1: PERSISTENT COCKPIT (NEVER SCROLLS AWAY)           */
+    /* ========================================================= */
+    .vdp-cockpit {
+      background: linear-gradient(180deg, #0e1e2d 0%, #091522 100%);
+      border-bottom: 1px solid var(--border-main);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .cockpit-top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .vehicle-headline {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .vehicle-title {
+      font-size: 19px;
+      font-weight: 750;
+      letter-spacing: -0.02em;
+      color: #fff;
+    }
+
+    .vehicle-price-lockup {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .sale-price {
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .msrp-delta {
+      font-size: 12px;
+      font-weight: 600;
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .status-badges-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .badge-green { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); }
+    .badge-red { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.35); }
+    .badge-amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); }
+    .badge-gold { background: rgba(245, 158, 11, 0.18); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.5); }
+    .badge-cyan { background: rgba(46, 211, 230, 0.15); color: #2ed3e6; border: 1px solid rgba(46, 211, 230, 0.35); }
+
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .cockpit-close-btn {
+      background: var(--bg-panel-elevated);
+      border: 1px solid var(--border-main);
+      color: var(--ink-secondary);
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .cockpit-close-btn:hover { background: var(--bg-hover); color: #fff; }
+
+    /* COCKPIT GRID: PHOTO + VITALS + ACTION DOCK */
+    .cockpit-grid {
+      display: grid;
+      grid-template-columns: 240px 1.4fr 1.3fr 260px;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    /* 1. Photo block */
+    .cockpit-media {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .main-photo-frame {
+      width: 100%;
+      height: 130px;
+      background: #000;
+      border: 1px solid var(--border-main);
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+    }
+    .main-photo-frame img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: radial-gradient(circle, #1a2f44 0%, #081119 100%);
+    }
+    .photo-count-badge {
+      position: absolute;
+      bottom: 6px;
+      right: 6px;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(4px);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .thumb-strip {
+      display: flex;
+      gap: 4px;
+      height: 28px;
+    }
+    .thumb-strip img {
+      width: 44px;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 1px solid var(--border-main);
+      cursor: pointer;
+      opacity: 0.7;
+      transition: all 0.15s;
+    }
+    .thumb-strip img:hover, .thumb-strip img.active {
+      opacity: 1;
+      border-color: var(--arc-cyan);
+    }
+
+    /* 2. Core Vitals Column */
+    .vitals-col {
+      background: var(--bg-panel-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    .vitals-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 12px;
+      border-bottom: 1px dashed rgba(27, 51, 74, 0.6);
+      padding-bottom: 3px;
+    }
+    .vitals-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .vitals-k { color: var(--ink-secondary); }
+    .vitals-v { font-weight: 600; color: #fff; text-align: right; }
+    .vitals-v.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
+    
+    .copy-chip {
+      background: var(--bg-panel-elevated);
+      border: 1px solid var(--border-main);
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-size: 10px;
+      color: var(--arc-cyan);
+      cursor: pointer;
+      margin-left: 4px;
+    }
+    .copy-chip:hover { background: var(--border-main); color: #fff; }
+
+    /* 3. Custody & Service Column */
+    .custody-col {
+      background: var(--bg-panel-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    /* 4. Action Dock Column */
+    .action-dock {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      justify-content: center;
+    }
+    .btn-action-primary {
+      background: linear-gradient(145deg, #3d72ff, #1d4fd8);
+      border: 1px solid #4f82ff;
+      border-radius: 8px;
+      padding: 12px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 750;
+      letter-spacing: -0.01em;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 8px 20px rgba(29, 79, 216, 0.35);
+      transition: all 0.15s;
+    }
+    .btn-action-primary:hover {
+      background: linear-gradient(145deg, #4f82ff, #2558e8);
+      box-shadow: 0 10px 24px rgba(29, 79, 216, 0.5);
+      transform: translateY(-1px);
+    }
+    .btn-action-secondary {
+      background: var(--bg-panel-elevated);
+      border: 1px solid var(--border-main);
+      border-radius: 7px;
+      padding: 9px 12px;
+      color: var(--ink-primary);
+      font-size: 12px;
+      font-weight: 650;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      transition: all 0.15s;
+    }
+    .btn-action-secondary:hover {
+      background: var(--bg-hover);
+      border-color: #274868;
+      color: #fff;
+    }
+    .action-row-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    /* ========================================================= */
+    /* TIER 2: TAB NAVIGATION (NON-REDUNDANT ARCHITECTURE)       */
+    /* ========================================================= */
+    .vdp-tabs-bar {
+      background: var(--bg-panel-elevated);
+      border-bottom: 1px solid var(--border-main);
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .tabs-nav {
+      display: flex;
+      gap: 4px;
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--ink-secondary);
+      font-size: 12.5px;
+      font-weight: 650;
+      padding: 12px 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: #fff; }
+    .tab-btn.active {
+      color: var(--arc-cyan);
+      border-bottom-color: var(--arc-cyan);
+      background: rgba(46, 211, 230, 0.05);
+    }
+    .tab-count {
+      font-size: 10.5px;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-main);
+      color: var(--ink-secondary);
+    }
+
+    .tabs-side-meta {
+      font-size: 11.5px;
+      color: var(--ink-muted);
+    }
+
+    /* ========================================================= */
+    /* TIER 3: DEEP CANVAS PANELS (ZERO DUPLICATE DATA)          */
+    /* ========================================================= */
+    .vdp-canvas {
+      padding: 20px;
+      background: var(--bg-panel);
+      min-height: 480px;
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; animation: fadeIn 0.15s ease-out; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* TAB 1: BUILD SHEET & OPTIONS */
+    .build-sheet-grid {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 16px;
+    }
+
+    .panel-card {
+      background: var(--bg-panel-subtle);
+      border: 1px solid var(--border-main);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .panel-card-head {
+      background: var(--bg-panel-elevated);
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-main);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .table-build {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .table-build th {
+      background: rgba(15, 32, 48, 0.5);
+      border-bottom: 1px solid var(--border-main);
+      padding: 7px 12px;
+      font-size: 11px;
+      color: var(--ink-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      text-align: left;
+    }
+    .table-build td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      vertical-align: top;
+    }
+    .table-build tr:hover td { background: var(--bg-hover); }
+    .code-pill {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 700;
+      color: var(--arc-cyan);
+      background: rgba(46, 211, 230, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(46, 211, 230, 0.25);
+      font-size: 11px;
+    }
+    .price-col {
+      text-align: right;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 650;
+      color: #fff;
+      white-space: nowrap;
+    }
+    .spec-detail-list {
+      color: var(--ink-secondary);
+      font-size: 11.5px;
+      margin-top: 3px;
+      line-height: 1.5;
+    }
+
+    .comments-box {
+      padding: 14px;
+      color: var(--ink-secondary);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    /* TAB 2: HISTORY & WARRANTY */
+    .history-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .warranty-meter-card {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .warranty-track {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .warranty-track-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+    .progress-bar-bg {
+      width: 100%;
+      height: 7px;
+      background: #122232;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+    }
+
+    /* TAB 3: TRANSFER TRACKER */
+    .transfer-stepper {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .step-box {
+      background: var(--bg-panel-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: relative;
+    }
+    .step-box.completed {
+      border-color: rgba(16, 185, 129, 0.4);
+      background: rgba(16, 185, 129, 0.05);
+    }
+    .step-box.current {
+      border-color: var(--flow-blue);
+      background: rgba(47, 104, 255, 0.08);
+      box-shadow: 0 0 12px rgba(47, 104, 255, 0.2);
+    }
+    .step-num {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--ink-muted);
+    }
+    .step-box.current .step-num { color: var(--arc-cyan); }
+    .step-title { font-size: 13px; font-weight: 700; color: #fff; }
+    .step-desc { font-size: 11px; color: var(--ink-secondary); }
+
+    /* TAB 4: OFFICIAL DOCUMENT LAUNCHERS */
+    .docs-matrix {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .doc-card {
+      background: var(--bg-panel-subtle);
+      border: 1px solid var(--border-main);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 12px;
+      transition: all 0.15s;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .doc-card:hover {
+      background: var(--bg-hover);
+      border-color: var(--arc-cyan);
+      transform: translateY(-2px);
+    }
+    .doc-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .doc-brand {
+      height: 22px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .doc-brand img { height: 18px; }
+    .doc-desc { font-size: 11.5px; color: var(--ink-secondary); line-height: 1.4; }
+    .doc-action-label { font-size: 11px; font-weight: 700; color: var(--arc-cyan); display: flex; align-items: center; gap: 4px; }
+
+    /* TOAST NOTIFICATION */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1e3a56;
+      color: #fff;
+      border: 1px solid var(--arc-cyan);
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+      z-index: 9999;
+    }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+  <div class="vdp-modal">
+
+    <!-- ========================================================= -->
+    <!-- TIER 1: PERSISTENT COCKPIT (ALWAYS VISIBLE)               -->
+    <!-- ========================================================= -->
+    <header class="vdp-cockpit">
+      
+      <!-- Top Line: Title + Live Status Badges + Close -->
+      <div class="cockpit-top-bar">
+        <div class="vehicle-headline">
+          <h1 class="vehicle-title">2023 Ford F-150 Lariat SuperCrew 4x4 (145" WB)</h1>
+          <div class="vehicle-price-lockup">
+            <span class="sale-price">$52,000</span>
+            <span class="msrp-delta">-$8,795 Under MSRP</span>
+          </div>
+          <div class="status-badges-row">
+            <span class="badge badge-green"><span class="pulse-dot"></span>In-Stock</span>
+            <span class="badge badge-red"><span class="pulse-dot"></span>Primary Hold: Joe Salesman</span>
+            <span class="badge badge-gold">Gold Certified</span>
+            <span class="badge badge-amber">Recall 23S35</span>
+            <span class="badge badge-cyan">-$1,200 Drop</span>
+          </div>
+        </div>
+        <button class="cockpit-close-btn" onclick="showToast('Closing modal...')">
+          <span>Esc</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <!-- Core Cockpit Grid: 4 Dedicated Pillars -->
+      <div class="cockpit-grid">
+
+        <!-- 1. Visual Block -->
+        <div class="cockpit-media">
+          <div class="main-photo-frame">
+            <img id="heroPhoto" src="/demo-vehicles/f150.png" alt="2023 Ford F-150 Lariat" onerror="this.src='https://images.unsplash.com/photo-1583121274602-3e2820c69888?auto=format&fit=crop&w=600&q=80'" />
+            <span class="photo-count-badge">32 HD Photos</span>
+          </div>
+          <div class="thumb-strip">
+            <img class="active" src="/demo-vehicles/f150.png" onclick="swapPhoto(this)" />
+            <img src="/demo-vehicles/bronco-sport.png" onclick="swapPhoto(this)" />
+            <img src="/demo-vehicles/explorer.png" onclick="swapPhoto(this)" />
+            <img src="/demo-vehicles/maverick.png" onclick="swapPhoto(this)" />
+            <img src="/demo-vehicles/nautilus.png" onclick="swapPhoto(this)" />
+          </div>
+        </div>
+
+        <!-- 2. Core Vitals Column -->
+        <div class="vitals-col">
+          <div class="vitals-row">
+            <span class="vitals-k">VIN</span>
+            <span class="vitals-v mono">1FTFW1E83PK109482 <button class="copy-chip" onclick="copyText('1FTFW1E83PK109482')">Copy</button></span>
+          </div>
+          <div class="vitals-row">
+            <span class="vitals-k">Stock #</span>
+            <span class="vitals-v mono">230495 <button class="copy-chip" onclick="copyText('230495')">Copy</button></span>
+          </div>
+          <div class="vitals-row">
+            <span class="vitals-k">Mileage / Days</span>
+            <span class="vitals-v mono">24,150 mi <small style="color:var(--ink-muted)">· 14 Days on Lot</small></span>
+          </div>
+          <div class="vitals-row">
+            <span class="vitals-k">Engine & Trans</span>
+            <span class="vitals-v">3.5L V6 EcoBoost · 10-Spd Auto</span>
+          </div>
+          <div class="vitals-row">
+            <span class="vitals-k">Drivetrain & Axle</span>
+            <span class="vitals-v">4WD · 3.55 E-Lock Rear</span>
+          </div>
+          <div class="vitals-row">
+            <span class="vitals-k">Exterior / Interior</span>
+            <span class="vitals-v">Agate Black (UM) / Black Lthr</span>
+          </div>
+        </div>
+
+        <!-- 3. Real-Time Custody & Service -->
+        <div class="custody-col">
+          <div class="vitals-row">
+            <span class="vitals-k">Home Store</span>
+            <span class="vitals-v" style="color:var(--arc-cyan)">HOWELL</span>
+          </div>
+          <div class="vitals-row">
+            <span class="vitals-k">Physical Location</span>
+            <span class="vitals-v" style="color:#34d399">🟢 At Howell (Row 4, Spot 14)</span>
+          </div>
+          <div class="vitals-row">
+            <span class="vitals-k">Key Tag Custody</span>
+            <span class="vitals-v">Pegboard #4 · Desk 2</span>
+          </div>
+          <div class="vitals-row">
+            <span class="vitals-k">DealerMail Hold</span>
+            <span class="vitals-v" style="color:#fb7185">🔴 Primary: Joe S. (Due Today)</span>
+          </div>
+          <div class="vitals-row">
+            <span class="vitals-k">Backup Queue</span>
+            <span class="vitals-v" style="color:#fbbf24">1 Backup Hold (B. Miller)</span>
+          </div>
+          <div class="vitals-row">
+            <span class="vitals-k">Service Readiness</span>
+            <span class="vitals-v" style="color:#34d399">🟢 Safety Done · 🟡 Detail Bay</span>
+          </div>
+        </div>
+
+        <!-- 4. Action Dock -->
+        <div class="action-dock">
+          <button class="btn-action-primary" onclick="showToast('Opening 4-Step Move Workflow...')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/></svg>
+            Request Move
+          </button>
+          <button class="btn-action-secondary" onclick="showToast('Connecting to DealerMail...')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            DealerMail Tools
+          </button>
+          <div class="action-row-split">
+            <button class="btn-action-secondary" onclick="showToast('Generating Buyer Take-Home PDF...')">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              Buyer Sheet
+            </button>
+            <button class="btn-action-secondary" onclick="window.print()">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              Print
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </header>
+
+    <!-- ========================================================= -->
+    <!-- TIER 2: TAB NAVIGATION (CLEAN, DISTINCT INTENT)           -->
+    <!-- ========================================================= -->
+    <nav class="vdp-tabs-bar">
+      <div class="tabs-nav">
+        <button class="tab-btn active" onclick="switchTab('tab-build', this)">
+          <span>📦 Factory Build & Window Sticker</span>
+          <span class="tab-count">6 Options</span>
+        </button>
+        <button class="tab-btn" onclick="switchTab('tab-history', this)">
+          <span>📑 AutoCheck & Warranty</span>
+          <span class="tab-count" style="color:#34d399">94 Score</span>
+        </button>
+        <button class="tab-btn" onclick="switchTab('tab-custody', this)">
+          <span>📍 Transfer Workflow & Holds</span>
+          <span class="tab-count" style="color:#fb7185">Held</span>
+        </button>
+        <button class="tab-btn" onclick="switchTab('tab-documents', this)">
+          <span>📁 Official Documents</span>
+          <span class="tab-count">6 Links</span>
+        </button>
+      </div>
+      <div class="tabs-side-meta">
+        <span>Verified Ford OEM Ingestion · Updated Today 07:15 AM</span>
+      </div>
+    </nav>
+
+    <!-- ========================================================= -->
+    <!-- TIER 3: DEEP CANVAS (ZERO DUPLICATE DATA)                 -->
+    <!-- ========================================================= -->
+    <main class="vdp-canvas">
+
+      <!-- TAB 1: FACTORY BUILD SHEET & PACKAGES (NO DUPLICATE SPECS) -->
+      <section id="tab-build" class="tab-panel active">
+        <div class="build-sheet-grid">
+          
+          <!-- Factory Option Line-Items -->
+          <div class="panel-card">
+            <div class="panel-card-head">
+              <span>Itemized Factory Packages & Option Codes</span>
+              <span style="color:#34d399; font-family:ui-monospace,monospace;">Total Options Added: $8,495</span>
+            </div>
+            <table class="table-build">
+              <thead>
+                <tr>
+                  <th style="width: 70px;">Code</th>
+                  <th>Option / Package Name & Build Details</th>
+                  <th class="price-col">MSRP</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="code-pill">502A</span></td>
+                  <td>
+                    <strong style="color:#fff;">Equipment Group 502A High (Lariat Series)</strong>
+                    <div class="spec-detail-list">
+                      • B&O Unleashed 18-Speaker Audio System · Wireless Charging Pad · 360-Degree Camera Package · Heated Steering Wheel · Heated & Ventilated Front 10-Way Buckets · Heated 2nd Row
+                    </div>
+                  </td>
+                  <td class="price-col">$4,805</td>
+                </tr>
+                <tr>
+                  <td><span class="code-pill">53A</span></td>
+                  <td>
+                    <strong style="color:#fff;">Max Trailer Tow Package</strong>
+                    <div class="spec-detail-list">
+                      • 36-Gallon Extended Range Fuel Tank · 3.55 Electronic-Locking Rear Axle · Integrated Trailer Brake Controller · Pro Trailer Backup Assist · Class IV Receiver Hitch
+                    </div>
+                  </td>
+                  <td class="price-col">$1,995</td>
+                </tr>
+                <tr>
+                  <td><span class="code-pill">43V</span></td>
+                  <td>
+                    <strong style="color:#fff;">Twin Panel Panoramic Moonroof</strong>
+                    <div class="spec-detail-list">
+                      • Power Front Sliding Glass with One-Touch Open/Close · Fixed Rear Skylight · Power Interior Sunshade
+                    </div>
+                  </td>
+                  <td class="price-col">$1,495</td>
+                </tr>
+                <tr>
+                  <td><span class="code-pill">55F</span></td>
+                  <td>
+                    <strong style="color:#fff;">FX4 Off-Road Package</strong>
+                    <div class="spec-detail-list">
+                      • Off-Road Tuned Front Shocks · Monotube Rear Shocks · Underbody Skid Plates (Fuel Tank, Transfer Case, Front Diff) · Rock Crawl Terrain Management Mode · Hill Descent Control
+                    </div>
+                  </td>
+                  <td class="price-col">$1,095</td>
+                </tr>
+                <tr>
+                  <td><span class="code-pill">96W</span></td>
+                  <td>
+                    <strong style="color:#fff;">ToughBed Spray-In Bedliner</strong>
+                    <div class="spec-detail-list">
+                      • Factory High-Pressure Polyurea Spray-On Bed Coating with Embossed Ford Oval
+                    </div>
+                  </td>
+                  <td class="price-col">$595</td>
+                </tr>
+                <tr>
+                  <td><span class="code-pill" style="color:var(--ink-muted); border-color:var(--border-main);">Std</span></td>
+                  <td>
+                    <strong style="color:#fff;">Ford Co-Pilot360 Assist 2.0</strong>
+                    <div class="spec-detail-list">
+                      • Intelligent Adaptive Cruise Control with Stop-and-Go · Lane Centering Assist · Evasive Steering Assist · Speed Sign Recognition
+                    </div>
+                  </td>
+                  <td class="price-col" style="color:var(--ink-muted); font-style:italic;">Included</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pricing Stack + Dealer Notes -->
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <div class="panel-card">
+              <div class="panel-card-head">
+                <span>Window Sticker Financials</span>
+                <span>USD</span>
+              </div>
+              <div style="padding:12px; display:flex; flex-direction:column; gap:6px;">
+                <div class="vitals-row"><span class="vitals-k">Base MSRP:</span><span class="vitals-v mono">$50,505</span></div>
+                <div class="vitals-row"><span class="vitals-k">Total Options:</span><span class="vitals-v mono">+$8,495</span></div>
+                <div class="vitals-row"><span class="vitals-k">Destination & Delivery:</span><span class="vitals-v mono">+$1,795</span></div>
+                <div style="border-bottom:1px solid var(--border-main); margin:4px 0;"></div>
+                <div class="vitals-row"><span class="vitals-k" style="font-weight:700; color:#fff;">Total Window Sticker:</span><span class="vitals-v mono" style="font-size:14px;">$60,795</span></div>
+                <div class="vitals-row"><span class="vitals-k" style="color:#34d399;">Internet Sale Price:</span><span class="vitals-v mono" style="font-size:15px; color:#34d399;">$52,000</span></div>
+              </div>
+            </div>
+
+            <div class="panel-card" style="flex:1;">
+              <div class="panel-card-head">
+                <span>Dealership Merchandising Description</span>
+              </div>
+              <div class="comments-box">
+                One-owner local lease return in pristine Agate Black Metallic. Loaded with the 502A High Package, twin panel roof, and max tow. Fully inspected and reconditioned by our Ford certified technicians. Clean AutoCheck with zero accidents.
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- TAB 2: HISTORY, WARRANTY & RECALLS -->
+      <section id="tab-history" class="tab-panel">
+        <div class="history-grid">
+
+          <!-- AutoCheck 6-Point Audit Table -->
+          <div class="panel-card">
+            <div class="panel-card-head">
+              <span>AutoCheck History Verification Audit</span>
+              <span style="color:#34d399; font-weight:700;">Score 94 · Range (88 - 95)</span>
+            </div>
+            <table class="table-build">
+              <thead>
+                <tr>
+                  <th>Audit Checkpoint</th>
+                  <th>Verified Finding</th>
+                  <th>Documented Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Title Brands</strong></td>
+                  <td style="color:#34d399; font-weight:700;">Clean Title</td>
+                  <td style="color:var(--ink-secondary);">Verified clear of salvage, rebuilt, fire, flood, hail, or lemon brands.</td>
+                </tr>
+                <tr>
+                  <td><strong>Ownership</strong></td>
+                  <td style="color:#34d399; font-weight:700;">1-Owner</td>
+                  <td style="color:var(--ink-secondary);">Personal Lease in SE Michigan · Zero commercial, rental, or fleet history.</td>
+                </tr>
+                <tr>
+                  <td><strong>Accidents</strong></td>
+                  <td style="color:#34d399; font-weight:700;">0 Reported</td>
+                  <td style="color:var(--ink-secondary);">Zero collision, structural, or airbag deployment records found.</td>
+                </tr>
+                <tr>
+                  <td><strong>Odometer</strong></td>
+                  <td style="color:#34d399; font-weight:700;">24,150 Mi</td>
+                  <td style="color:var(--ink-secondary);">Verified consistent odometer progression on 08/25/2026.</td>
+                </tr>
+                <tr>
+                  <td><strong>Service History</strong></td>
+                  <td style="color:#34d399; font-weight:700;">14 Records</td>
+                  <td style="color:var(--ink-secondary);">Complete routine service history logged at authorized Ford service facilities.</td>
+                </tr>
+                <tr>
+                  <td><strong>Open Recalls</strong></td>
+                  <td style="color:#fbbf24; font-weight:700;">1 Open FSA</td>
+                  <td style="color:var(--ink-secondary);">FSA 23S35 (Wiring harness inspection). Parts in stock; ready for service bay.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Remaining Factory Warranty Countdown -->
+          <div class="panel-card">
+            <div class="panel-card-head">
+              <span>Factory Warranty & CPO Coverage Balance</span>
+              <span style="color:var(--arc-cyan);">In-Service: 04/18/2023</span>
+            </div>
+            <div class="warranty-meter-card">
+              
+              <!-- Bumper to Bumper -->
+              <div class="warranty-track">
+                <div class="warranty-track-header">
+                  <strong>Bumper-to-Bumper Warranty (3yr / 36,000 mi)</strong>
+                  <span style="color:#34d399; font-weight:700;">19 Months / 11,850 Miles Left</span>
+                </div>
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill" style="width: 53%; background: linear-gradient(90deg, #10b981, #2ed3e6);"></div>
+                </div>
+                <small style="color:var(--ink-muted);">Estimated Factory Expiration: April 2026 or 36,000 miles</small>
+              </div>
+
+              <!-- Powertrain -->
+              <div class="warranty-track">
+                <div class="warranty-track-header">
+                  <strong>Powertrain Limited Warranty (5yr / 60,000 mi)</strong>
+                  <span style="color:#34d399; font-weight:700;">43 Months / 35,850 Miles Left</span>
+                </div>
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill" style="width: 71%; background: linear-gradient(90deg, #3b82f6, #8b5cf6);"></div>
+                </div>
+                <small style="color:var(--ink-muted);">Estimated Factory Expiration: April 2028 or 60,000 miles</small>
+              </div>
+
+              <!-- CPO Coverage -->
+              <div class="warranty-track" style="background:rgba(245, 158, 11, 0.08); border:1px solid rgba(245, 158, 11, 0.25); padding:10px; border-radius:6px;">
+                <div class="warranty-track-header">
+                  <strong style="color:#fcd34d;">✨ Ford Gold Certified Pre-Owned Warranty</strong>
+                  <span style="color:#fcd34d; font-weight:700;">Active Coverage</span>
+                </div>
+                <p style="font-size:11.5px; color:var(--ink-secondary); margin-top:4px;">
+                  Includes 12-Month / 12,000-Mile Comprehensive Limited Warranty Coverage plus 7-Year / 100,000-Mile Powertrain Warranty starting from original in-service date. 24/7 Roadside Assistance included.
+                </p>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- TAB 3: STREAMLINED TRANSFER WORKFLOW & HOLDS -->
+      <section id="tab-custody" class="tab-panel">
+        
+        <!-- Streamlined 4-Step Stepper -->
+        <div class="transfer-stepper">
+          <div class="step-box completed">
+            <span class="step-num" style="color:#34d399;">Step 1 · Completed</span>
+            <span class="step-title">Request Submitted</span>
+            <span class="step-desc">Salesperson requested car for customer appointment.</span>
+          </div>
+          <div class="step-box current">
+            <span class="step-num">Step 2 · Action Required</span>
+            <span class="step-title">Manager Approval</span>
+            <span class="step-desc">Howell Manager confirms availability &amp; approves move.</span>
+          </div>
+          <div class="step-box">
+            <span class="step-num">Step 3 · Physical Custody</span>
+            <span class="step-title">At Requesting Store</span>
+            <span class="step-desc">Vehicle arrives at requesting store for showing.</span>
+          </div>
+          <div class="step-box">
+            <span class="step-num">Step 4 · Disposition</span>
+            <span class="step-title">Sold or Return</span>
+            <span class="step-desc">Marked Sold or returned back to Howell home lot.</span>
+          </div>
+        </div>
+
+        <div class="history-grid">
+          
+          <!-- Active Hold Evidence Card -->
+          <div class="panel-card">
+            <div class="panel-card-head">
+              <span>DealerMail Hold Status &amp; Customer Queue</span>
+              <span class="badge badge-red">Primary Active</span>
+            </div>
+            <div style="padding:14px; display:flex; flex-direction:column; gap:8px;">
+              <div class="vitals-row"><span class="vitals-k">Holding Salesperson:</span><span class="vitals-v">Joe Salesman (Howell)</span></div>
+              <div class="vitals-row"><span class="vitals-k">Hold Placed:</span><span class="vitals-v mono">09/14/2026 11:20 AM (48 hrs active)</span></div>
+              <div class="vitals-row"><span class="vitals-k">Target Delivery Date:</span><span class="vitals-v" style="color:#fb7185; font-weight:700;">TODAY (09/16/2026)</span></div>
+              <div class="vitals-row"><span class="vitals-k">Customer Note / Ref:</span><span class="vitals-v">Appt scheduled 2:00 PM today</span></div>
+              <div style="border-bottom:1px solid var(--border-main); margin:4px 0;"></div>
+              <div class="vitals-row"><span class="vitals-k">Backup Hold #1:</span><span class="vitals-v" style="color:#fbbf24;">Bob Miller (Fowlerville Store)</span></div>
+              <div class="vitals-row"><span class="vitals-k">Auto-Release Rule:</span><span class="vitals-v" style="color:var(--ink-muted);">Auto-flags if past delivery date without manager note</span></div>
+            </div>
+          </div>
+
+          <!-- Movement History Audit Trail -->
+          <div class="panel-card">
+            <div class="panel-card-head">
+              <span>Physical Movement &amp; Custody Audit</span>
+              <span>100% Verified</span>
+            </div>
+            <table class="table-build">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Event</th>
+                  <th>Location / Store</th>
+                  <th>Actor</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="mono" style="font-size:11px; color:var(--ink-muted);">09/16 07:15 AM</td>
+                  <td><strong>Physical Lot Audit</strong></td>
+                  <td style="color:#34d399;">Howell Lot (Row 4, Spot 14)</td>
+                  <td>Lot Inventory Scan</td>
+                </tr>
+                <tr>
+                  <td class="mono" style="font-size:11px; color:var(--ink-muted);">09/10 02:40 PM</td>
+                  <td><strong>Service Safety Passed</strong></td>
+                  <td>Howell Service Dept</td>
+                  <td>Tech #402 (RO 8821)</td>
+                </tr>
+                <tr>
+                  <td class="mono" style="font-size:11px; color:var(--ink-muted);">09/02 09:15 AM</td>
+                  <td><strong>Intake from Transport</strong></td>
+                  <td>Howell Home Store</td>
+                  <td>Inventory Intake</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- TAB 4: OFFICIAL DOCUMENTS -->
+      <section id="tab-documents" class="tab-panel">
+        <div class="docs-matrix">
+          
+          <a class="doc-card" href="#" onclick="showToast('Opening original Window Sticker PDF...')">
+            <div class="doc-card-head">
+              <div class="doc-brand"><img src="/resource-brands/ford.svg" onerror="this.style.display='none'" /> Factory Window Sticker</div>
+              <span class="badge badge-green">Verified PDF</span>
+            </div>
+            <p class="doc-desc">Official OEM Monroney window sticker with original base pricing, package options, and paint codes.</p>
+            <span class="doc-action-label">Open Sticker PDF ↗</span>
+          </a>
+
+          <a class="doc-card" href="#" onclick="showToast('Opening AutoCheck Report...')">
+            <div class="doc-card-head">
+              <div class="doc-brand"><img src="/resource-brands/autocheck.svg" onerror="this.style.display='none'" /> AutoCheck Report</div>
+              <span class="badge badge-green">Score: 94</span>
+            </div>
+            <p class="doc-desc">Experian vehicle history report confirming 1-owner title, zero accidents, and verified mileage.</p>
+            <span class="doc-action-label">View Live Report ↗</span>
+          </a>
+
+          <a class="doc-card" href="#" onclick="showToast('Connecting to Ford OASIS...')">
+            <div class="doc-card-head">
+              <div class="doc-brand"><img src="/resource-brands/ford.svg" onerror="this.style.display='none'" /> Ford OASIS Portal</div>
+              <span class="badge badge-amber">1 Open Recall</span>
+            </div>
+            <p class="doc-desc">Real-time Ford factory service database checking open field service actions and warranty claims history.</p>
+            <span class="doc-action-label">Launch OASIS ↗</span>
+          </a>
+
+          <a class="doc-card" href="#" onclick="showToast('Opening DealerMail CRM Handoff...')">
+            <div class="doc-card-head">
+              <div class="doc-brand">DealerMail CRM</div>
+              <span class="badge badge-red">Hold Active</span>
+            </div>
+            <p class="doc-desc">Direct jump into DealerMail CRM lead record to manage holds, customer deposits, or deal paperwork.</p>
+            <span class="doc-action-label">DealerMail Handoff ↗</span>
+          </a>
+
+          <a class="doc-card" href="#" onclick="showToast('Opening Live Web Listing...')">
+            <div class="doc-card-head">
+              <div class="doc-brand">DealerOn Website</div>
+              <span class="badge badge-green">Live Online</span>
+            </div>
+            <p class="doc-desc">Public consumer vehicle display page on the dealership website with photo gallery and e-price.</p>
+            <span class="doc-action-label">View Public VDP ↗</span>
+          </a>
+
+          <a class="doc-card" href="#" onclick="showToast('Opening vAuto Appraisal...')">
+            <div class="doc-card-head">
+              <div class="doc-brand"><img src="/resource-brands/vauto.svg" onerror="this.style.display='none'" /> vAuto Profile</div>
+              <span class="badge badge-cyan">Inventory Match</span>
+            </div>
+            <p class="doc-desc">vAuto factory equipment matching and market pricing analytics benchmarked against Southeast Michigan.</p>
+            <span class="doc-action-label">Open vAuto ↗</span>
+          </a>
+
+        </div>
+      </section>
+
+    </main>
+
+  </div>
+
+  <div id="toast">Copied to clipboard!</div>
+
+  <script>
+    function switchTab(tabId, el) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      el.classList.add('active');
+      const panel = document.getElementById(tabId);
+      if (panel) panel.classList.add('active');
+    }
+
+    function swapPhoto(imgEl) {
+      document.querySelectorAll('.thumb-strip img').forEach(t => t.classList.remove('active'));
+      imgEl.classList.add('active');
+      document.getElementById('heroPhoto').src = imgEl.src;
+    }
+
+    function copyText(text) {
+      navigator.clipboard.writeText(text);
+      showToast('Copied ' + text + ' to clipboard!');
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2200);
+    }
+  </script>
+
+</body>
+</html>
