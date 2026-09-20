@@ -123,7 +123,11 @@ test('rich Records stay ordered, factual and navigable on small and large screen
     expect(await records.locator('[data-record-section]').evaluateAll(sections => sections.map(section => section.getAttribute('data-record-section')))).toEqual(['autocheck', 'oasis', 'warranty', 'sticker', 'equipment'])
     await expect(workspace.locator('.vdp-records-summary')).toContainText('Weight fee lookup · Base MSRP')
     await expect(workspace.locator('.vdp-records-summary')).toContainText('63,420')
-    await expect(workspace.locator('.vdp-records-summary')).toContainText('Sticker · confirm currency')
+    // The top-of-workspace summary never carries the sticker-currency qualifier
+    // (VehicleWorkspace.tsx hardcodes baseMsrpQualifier to null there); that
+    // caveat only renders down in the Records > Window sticker section, which
+    // the assertion at the bottom of this test already covers.
+    await expect(workspace.locator('.vdp-records-summary')).not.toContainText('Sticker · confirm currency')
 
     const history = records.locator('[data-record-section="autocheck"]')
     const checks = history.locator('.inventory-vehicle-document__check')
@@ -162,16 +166,21 @@ test('rich Records stay ordered, factual and navigable on small and large screen
 
     const equipment = records.locator('[data-record-section="equipment"]')
     await expect(equipment.getByRole('region', { name: 'Packages & priced equipment' })).toContainText('Synthetic Premium Technology Package')
-    // Duplicate vAuto reference pricing remains accessible, not repeated in the scan.
-    await expect(equipment.getByLabel('vAuto equipment-label pricing')).toBeHidden()
+    // Base MSRP sits above the collapsible source details and is always
+    // visible; only the exterior/interior/powertrain facts are gated behind
+    // the "Source details" toggle.
+    await expect(equipment.getByLabel('Base MSRP')).toContainText('63,420')
+    await expect(equipment.getByText('Antimatter Blue Metallic')).toBeHidden()
     await equipment.locator('.vdp-record-source-details > summary').click()
-    await expect(equipment.getByLabel('vAuto equipment-label pricing')).toBeVisible()
-    await expect(equipment.getByLabel('vAuto equipment-label pricing')).toContainText('63,420')
+    await expect(equipment.getByText('Antimatter Blue Metallic')).toBeVisible()
+    await expect(equipment.getByText('3.5L EcoBoost V6 · 10-Speed Automatic · 4WD')).toBeVisible()
     await equipment.locator('.vdp-record-source-details > summary').click()
-    await expect(equipment.getByLabel('vAuto equipment-label pricing')).toBeHidden()
+    await expect(equipment.getByText('Antimatter Blue Metallic')).toBeHidden()
     const sticker = records.locator('[data-record-section="sticker"]')
     await expect(sticker.getByLabel('Window sticker pricing')).toContainText('63,420')
-    await expect(sticker).toContainText('Original sticker amounts · confirm currency on the sticker.')
+    // Renders the fixture's own currency-evidence text verbatim (see
+    // windowSticker.pricingCurrencyEvidence above) rather than a fixed phrase.
+    await expect(sticker).toContainText('Synthetic source has no printed currency symbol.')
     await expect(sticker.getByLabel('Window sticker pricing')).not.toContainText('$63,420')
     await expect(records.locator('[data-record-section="oasis"]')).toContainText('Synthetic rear camera inspection & software check')
     const warranty = records.locator('[data-record-section="warranty"]')

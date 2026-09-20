@@ -54,15 +54,21 @@ test('role and store previews preserve the working location and expose only the 
   expect(roleOptions.join(' ')).not.toMatch(/Transport coordinator|Driver|Porter/)
   await page.keyboard.press('Escape')
 
+  // DEMO-L01 (not DEMO-F02) for the cross-store checks below: ui-readability.spec.ts
+  // deliberately seeds DEMO-F02 with an open transfer via beforeAll so /transfers
+  // has something to render, and with the shared webServer that seed can land
+  // before or after this file's own reads across the parallel desktop/mobile
+  // runs. DEMO-L01 stays untouched by every other spec, so its "no open move"
+  // state is stable regardless of run order.
   await setRole('Salesperson')
-  let row = await search('DEMO-F02')
+  let row = await search('DEMO-L01')
   await expect(row.getByRole('button', { name: 'Request to Ford Detroit' })).toBeVisible()
   await expect((await search('DEMO-D01')).getByRole('button')).toHaveCount(0)
 
   await setRole('Store manager')
   row = await search('DEMO-D01')
   await expect(row.getByRole('button', { name: 'Move vehicle' })).toBeVisible()
-  row = await search('DEMO-F02')
+  row = await search('DEMO-L01')
   await expect(row.getByRole('button', { name: 'Request to Ford Detroit' })).toBeVisible()
 
   await setRole('Group manager')
