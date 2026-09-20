@@ -190,15 +190,15 @@ function returnTimingLabel(record: TransferRecord): string {
 // Rows written before the move-copy pass keep their stored wording. Shorten
 // those legacy sentences into the same phrases new rows already use, so one
 // action reads the same in the queue, the tracker and the history.
-function compactNextAction(value?: string): string {
+function compactNextAction(value: string | undefined, { homeStore, destination }: { homeStore?: string; destination?: string } = {}): string {
   const action = value?.trim() || 'No next step recorded'
   if (/requesting manager confirms availability and release/i.test(action)) return 'Approve, then call the home store'
   if (/(?:contact|calls?) .*used-car manager/i.test(action)) return 'Call the home store, record the answer'
   if (/home-store.*availability.*release/i.test(action)) return 'Record the home store’s answer'
-  if (/confirm.*returned home|confirm home receipt|home manager confirms receipt/i.test(action)) return 'Confirm the vehicle is back home'
+  if (/confirm.*returned home|confirm home receipt|home manager confirms receipt/i.test(action)) return homeStore ? `Confirm the vehicle is back at ${homeStore}` : 'Confirm the vehicle is back home'
   if (/record call for a driver|request.*driver|calls stacey for a driver|asks its manager or coordinator for a driver/i.test(action)) return 'Ask for a driver'
   if (/work the vehicle or start its return/i.test(action)) return 'Show the vehicle, then start its return'
-  if (/confirm arrival at requesting store/i.test(action)) return 'Confirm the vehicle arrived'
+  if (/confirm arrival at requesting store/i.test(action)) return destination ? `Confirm the vehicle arrived at ${destination}` : 'Confirm the vehicle arrived'
   if (/record customer showing or vehicle outcome|record an outcome or return the vehicle/i.test(action)) return 'Record the showing outcome'
   if (/assigned driver picks up vehicle/i.test(action)) return 'Collect the vehicle and confirm you have it'
   if (/close movement workflow/i.test(action)) return 'Close the move'
@@ -657,7 +657,7 @@ export function TransfersPage() {
                       </span>
                       <span className="move-row-next">
                         <span className="transfer-list-stage">{simpleRecord ? compactRequestStatus(record.requestStatus, true) : `Step ${step} of 5 · ${compactRequestStatus(record.requestStatus)}`}</span>
-                        <span className="transfer-next"><small>Next</small><strong>{compactNextAction(record.nextAction)}</strong></span>
+                        <span className="transfer-next"><small>Next</small><strong>{compactNextAction(record.nextAction, { homeStore: record.homeStore, destination: record.destination })}</strong></span>
                         <span className="transfer-list-owner-row"><span>{record.nextActionOwner || 'Responsible person not recorded'}</span><span className={dueTone}>{dueLabel(detail)}</span></span>
                         {issueLabel ? <span className="transfer-list-alert"><CircleAlert aria-hidden="true" />{issueLabel}</span> : record.returnRequired && away.isAway ? <span className="transfer-list-return">{returnTimingLabel(record)}</span> : null}
                       </span>

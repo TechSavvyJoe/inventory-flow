@@ -675,6 +675,13 @@ describe('transfer workspace v3 layout', () => {
     expect(screen.getByRole('button', { name: /2025 Ford F-150 1/ })).toHaveTextContent('NextConfirm the vehicle is back at Howell');
   });
 
+  it('reads a legacy stored next step with the same store name a new row carries', () => {
+    const data = bootstrap(1);
+    data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', currentLocation: 'In transit', nextAction: 'Home manager confirms receipt' };
+    renderPage(data);
+    expect(screen.getByRole('button', { name: /2025 Ford F-150 1/ })).toHaveTextContent('NextConfirm the vehicle is back at Howell');
+  });
+
   it('refreshes same-ID move details after an event without cancelling the current read', async () => {
     const data = bootstrap(1);
     data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', requestStatus: 'requested', allowedActions: ['approve'], privateEvidence: undefined, nextAction: 'Check availability and approve' };
@@ -976,7 +983,7 @@ describe('transfer workspace v3 layout', () => {
     render(<TransferTracker transfer={detail([])} mode="page" onAction={vi.fn()} />);
 
     expect(screen.queryByRole('contentinfo', { name: 'Available move actions' })).not.toBeInTheDocument();
-    expect(screen.getByText('Confirm the vehicle is back home')).toBeInTheDocument();
+    expect(screen.getByText('Confirm the vehicle is back at Howell')).toBeInTheDocument();
     expect(screen.getByText('Return in transit')).toBeInTheDocument();
   });
 

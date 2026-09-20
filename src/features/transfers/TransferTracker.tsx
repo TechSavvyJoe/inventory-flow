@@ -92,14 +92,14 @@ function actionHint(kind: TransferActionKind) {
 
 // Keep these in step with compactNextAction in TransfersPage: the same stored
 // sentence must read the same in the tracker and in the queue.
-function compactActionLabel(value: string): string {
+function compactActionLabel(value: string, { homeStore, destination }: { homeStore?: string; destination?: string } = {}): string {
   if (/requesting manager confirms availability and release/i.test(value)) return 'Approve, then call the home store';
   if (/(?:contact|calls?) .*used-car manager/i.test(value)) return 'Call the home store, record the answer';
   if (/home-store.*availability.*release/i.test(value)) return 'Record the home store’s answer';
-  if (/confirm.*returned home|confirm home receipt|home manager confirms receipt/i.test(value)) return 'Confirm the vehicle is back home';
+  if (/confirm.*returned home|confirm home receipt|home manager confirms receipt/i.test(value)) return homeStore ? `Confirm the vehicle is back at ${homeStore}` : 'Confirm the vehicle is back home';
   if (/record call for a driver|request.*driver|calls stacey for a driver|asks its manager or coordinator for a driver/i.test(value)) return 'Ask for a driver';
   if (/work the vehicle or start its return/i.test(value)) return 'Show the vehicle, then start its return';
-  if (/confirm arrival at requesting store/i.test(value)) return 'Confirm the vehicle arrived';
+  if (/confirm arrival at requesting store/i.test(value)) return destination ? `Confirm the vehicle arrived at ${destination}` : 'Confirm the vehicle arrived';
   if (/record customer showing or vehicle outcome|record an outcome or return the vehicle/i.test(value)) return 'Record the showing outcome';
   if (/assigned driver picks up vehicle/i.test(value)) return 'Collect the vehicle and confirm you have it';
   if (/close movement workflow/i.test(value)) return 'Close the move';
@@ -211,7 +211,7 @@ export function TransferTracker({
       <section className={`mif-action-console is-${action.sla}`} aria-label="Next step">
         <div className="mif-action-console__copy">
           <span>Next step</span>
-          <strong title={action.label}>{compactActionLabel(action.label)}</strong>
+          <strong title={action.label}>{compactActionLabel(action.label, { homeStore: vehicle.homeStore, destination: transfer.destination ?? transfer.requestingStore })}</strong>
           <small>Owner: {action.ownerLabel ?? 'Not assigned'}{action.ownerRole ? ` · ${action.ownerRole}` : ''}</small>
         </div>
         <div className="mif-action-console__due">
