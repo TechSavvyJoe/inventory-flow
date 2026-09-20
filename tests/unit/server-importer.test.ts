@@ -279,7 +279,7 @@ describe('verified daily source importer', () => {
       )
       const snapshot = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
       const history = releasedHistoryFor({
-        vin: '2C4RC1BG3SR504341',
+        vin: 'TESTDATASYN000009',
         stockNumber: 'LEGACY1',
         storeName: 'Howell',
         storeCode: 'H',
@@ -307,7 +307,7 @@ describe('verified daily source importer', () => {
       const snapshot = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
       const current = snapshot.completeDealerMailUsedInventory.rows[0]
       const history = releasedHistoryFor({
-        vin: '2C4RC1BG3SR504341',
+        vin: 'TESTDATASYN000009',
         stockNumber: current.stockNumber,
         storeName: current.storeName,
         storeCode: current.storeCode,
@@ -426,7 +426,7 @@ describe('verified daily source importer', () => {
       const unheld = source.completeDealerMailUsedInventory.rows.find((row) => !heldVins.has(row.vin))
       const canonical = releasedHistoryFor(unheld)
       const legacy = releasedHistoryFor({
-        vin: '2C4RC1BG3SR504341',
+        vin: 'TESTDATASYN000009',
         stockNumber: 'LEGACY1',
         storeName: 'Howell',
         storeCode: 'H',
@@ -605,7 +605,7 @@ describe('verified daily source importer', () => {
   })
 
   it('merges only a photo cache bound to the exact release hash, VIN, and listing URL', () => {
-    const vin = '1FMCU0GD6JUC18203'
+    const vin = 'TESTDATASYN000005'
     const snapshotSha256 = 'A'.repeat(64)
     const listingUrl = `https://www.bobmaxeyfordhowell.com/used-Howell-test-${vin}`
     const photoUrl = `https://www.bobmaxeyfordhowell.com/inventoryphotos/11801/${vin.toLowerCase()}/ip/1.jpg`
@@ -661,7 +661,7 @@ describe('verified daily source importer', () => {
   })
 
   it('merges VIN-validated AutoCheck and window-sticker facts from the v2 resource cache', () => {
-    const vin = '1FMCU0GD6JUC18203'
+    const vin = 'TESTDATASYN000005'
     const snapshotSha256 = 'C'.repeat(64)
     const listingUrl = `https://www.bobmaxeyfordhowell.com/used-Howell-test-${vin}`
     const cache = {
@@ -763,7 +763,7 @@ describe('verified daily source importer', () => {
           vehicles: {
             [vin]: {
               ...cache.vehicles[vin],
-              autoCheckReport: { ...cache.vehicles[vin].autoCheckReport, validated_vin: '2LMPJ8LR3HBL46607' },
+              autoCheckReport: { ...cache.vehicles[vin].autoCheckReport, validated_vin: 'TESTDATASYN000007' },
             },
           },
         },
@@ -774,7 +774,7 @@ describe('verified daily source importer', () => {
   })
 
   it('validates exact-VIN factory equipment independently from public listings', () => {
-    const vin = '1GCUDEED9RZ144878'
+    const vin = 'TESTDATASYN000008'
     const enrichment = {
       schemaVersion: 'inventory-flow-vin-document-enrichment-v1',
       generatedAt: '2026-08-30T14:00:00Z',
@@ -832,7 +832,7 @@ describe('verified daily source importer', () => {
     expect(() => validateVinDocumentEnrichment(mislabeled)).toThrow(/not an original window sticker/i)
 
     const mismatchedVin = structuredClone(enrichment)
-    mismatchedVin.recordsByVin[vin].vin = '2LMPJ8LR3HBL46607'
+    mismatchedVin.recordsByVin[vin].vin = 'TESTDATASYN000007'
     expect(() => validateVinDocumentEnrichment(mismatchedVin)).toThrow(/does not match/i)
 
     const unsupportedField = structuredClone(enrichment)
@@ -964,7 +964,7 @@ describe('verified daily source importer', () => {
   })
 
   it('permits a separately VIN-validated official AutoCheck record but creates no default link', () => {
-    const vin = '1GCUDEED9RZ144878'
+    const vin = 'TESTDATASYN000008'
     const record = {
       schemaVersion: 'inventory-flow-vin-document-enrichment-v1',
       recordsByVin: {
@@ -993,10 +993,10 @@ describe('verified daily source importer', () => {
     unsafe.recordsByVin[vin].autoCheckReport.url = `https://evil.example/report/${vin}`
     expect(() => validateVinDocumentEnrichment(unsafe)).toThrow(/approved official host/i)
     const confused = structuredClone(record)
-    confused.recordsByVin[vin].autoCheckReport.url = `https://www.autocheck.com/report?vin=2LMPJ8LR3HBL46607&note=${vin}`
+    confused.recordsByVin[vin].autoCheckReport.url = `https://www.autocheck.com/report?vin=TESTDATASYN000007&note=${vin}`
     expect(() => validateVinDocumentEnrichment(confused)).toThrow(/exact-VIN route/i)
     const mismatch = structuredClone(record)
-    mismatch.recordsByVin[vin].autoCheckReport.validatedVin = '2LMPJ8LR3HBL46607'
+    mismatch.recordsByVin[vin].autoCheckReport.validatedVin = 'TESTDATASYN000007'
     expect(() => validateVinDocumentEnrichment(mismatch)).toThrow(/exact-VIN/i)
   })
 

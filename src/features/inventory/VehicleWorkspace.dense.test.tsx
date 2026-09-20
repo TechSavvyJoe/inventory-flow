@@ -12,8 +12,8 @@ afterEach(() => {
 
 function vehicle(): InventoryVehicle {
   return {
-    id: '1FTFW1E86HFA48871',
-    vin: '1FTFW1E86HFA48871',
+    id: 'TESTDATASYN000002',
+    vin: 'TESTDATASYN000002',
     stockNumber: 'W5863Q',
     year: 2017,
     make: 'Ford',
@@ -155,7 +155,7 @@ describe('focused vehicle workspace', () => {
     expect(document.querySelectorAll('main')).toHaveLength(1);
     expect(screen.getAllByRole('heading', { name: '2017 Ford F-150 Lariat' })).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Copy stock number: W5863Q' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Copy VIN: 1FTFW1E86HFA48871' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Copy VIN: TESTDATASYN000002' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Back to inventory' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Close vehicle details' })).toBeVisible();
     expect(document.querySelector('.inventory-workspace-backdrop')).toHaveAttribute('aria-hidden', 'true');
@@ -340,8 +340,8 @@ describe('focused vehicle workspace', () => {
     const unit = vehicle();
     unit.serviceReadiness = { vin: unit.vin, status: 'needs_service' } as NonNullable<InventoryVehicle['serviceReadiness']>;
     const { rerender } = render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
-    expect(screen.getByRole('link', { name: 'Start service' })).toHaveAttribute('href', '/service?vin=1FTFW1E86HFA48871&action=in_service');
-    expect(screen.getByRole('link', { name: 'Mark Ready' })).toHaveAttribute('href', '/service?vin=1FTFW1E86HFA48871&action=serviced');
+    expect(screen.getByRole('link', { name: 'Start service' })).toHaveAttribute('href', '/service?vin=TESTDATASYN000002&action=in_service');
+    expect(screen.getByRole('link', { name: 'Mark Ready' })).toHaveAttribute('href', '/service?vin=TESTDATASYN000002&action=serviced');
     rerender(<VehicleWorkspace vehicle={{ ...unit, serviceReadiness: undefined }} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     expect(screen.getByRole('link', { name: 'Mark Ready' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Service: Waiting for service' })).toBeVisible();
@@ -466,8 +466,8 @@ describe('focused vehicle workspace', () => {
     try {
       const first = vehicle();
       const second = vehicle();
-      second.id = '1FTFW1E86HFA48872';
-      second.vin = '1FTFW1E86HFA48872';
+      second.id = 'TESTDATASYN000003';
+      second.vin = 'TESTDATASYN000003';
       second.stockNumber = 'W5864Q';
       const { rerender } = render(
         <VehicleWorkspace

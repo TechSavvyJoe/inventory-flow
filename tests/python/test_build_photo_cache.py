@@ -21,7 +21,7 @@ class PhotoCacheBuilderTests(unittest.TestCase):
             root = Path(temporary)
             status_dir = root / "work" / "run-status"
             status_dir.mkdir(parents=True)
-            vin = "1FMCU0GD6JUC18203"
+            vin = "TESTDATASYN000005"
             snapshot_path = root / "2026-09-03-public-enriched.json"
             sticker = {"validated_vin": vin, "url": "https://www.bobmaxeyfordhowell.com/sticker.pdf", "dataState": "current", "totalMsrp": 56650, "originalMarket": "Canada", "pricingCurrency": "CAD", "pricingCurrencyEvidence": "Canadian original; no conversion"}
             snapshot = {"completed": True, "report_date": "2026-09-03", "vehicles": {vin: {"vin": vin, "store": "Howell", "listing_url": f"https://www.bobmaxeyfordhowell.com/used-test-{vin}", "photo_urls": [], "windowSticker": sticker}}}
@@ -43,10 +43,10 @@ class PhotoCacheBuilderTests(unittest.TestCase):
                 builder.build_photo_cache(root, "2026-09-03", reuse_snapshot_resources=True)
 
     def test_reuse_rejects_unvalidated_or_wrong_vin_documents(self) -> None:
-        stats = builder.verified_snapshot_resource_stats([{"vin": "1FMCU0GD6JUC18203", "store": "Howell", "windowSticker": None}])
+        stats = builder.verified_snapshot_resource_stats([{"vin": "TESTDATASYN000005", "store": "Howell", "windowSticker": None}])
         self.assertEqual(stats["Howell"]["window_stickers_parsed"], 0)
         with self.assertRaisesRegex(RuntimeError, "not exact-VIN validated"):
-            builder.verified_snapshot_resource_stats([{"vin": "1FMCU0GD6JUC18203", "store": "Howell", "windowSticker": {"validated_vin": "1FMCU0GD6JUC18204", "dataState": "current"}}])
+            builder.verified_snapshot_resource_stats([{"vin": "TESTDATASYN000005", "store": "Howell", "windowSticker": {"validated_vin": "TESTDATASYN000006", "dataState": "current"}}])
 
     def test_accepts_current_granular_public_validation_evidence(self) -> None:
         self.assertTrue(
@@ -100,7 +100,7 @@ class PhotoCacheBuilderTests(unittest.TestCase):
             status_dir = root / "work" / "run-status"
             snapshot_dir.mkdir(parents=True)
             status_dir.mkdir(parents=True)
-            vin = "1FMCU0GD6JUC18203"
+            vin = "TESTDATASYN000005"
             listing_url = f"https://www.bobmaxeyfordhowell.com/used-Howell-test-{vin}"
             snapshot_path = snapshot_dir / f"{report_date}.json"
             snapshot_path.write_text(
@@ -140,7 +140,7 @@ class PhotoCacheBuilderTests(unittest.TestCase):
             def fake_enrichment(records: list[dict[str, object]]) -> dict[str, dict[str, int]]:
                 records[0]["photo_urls"] = [
                     "https://www.bobmaxeyfordhowell.com/"
-                    "inventoryphotos/11801/1fmcu0gd6juc18203/ip/1.jpg"
+                    "inventoryphotos/11801/testdatasyn000005/ip/1.jpg"
                 ]
                 records[0]["photo_url_source"] = "Official VDP"
                 records[0]["autoCheckReport"] = {

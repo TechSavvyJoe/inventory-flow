@@ -4,13 +4,13 @@ import { publicChangeMatchesStore, scopePublicChanges } from './change-scope'
 
 function event(overrides: Partial<PublicChangeEvent> = {}): PublicChangeEvent {
   return {
-    id: '2026-08-29:price_change:1FMEE0RR5RLA48819',
+    id: '2026-08-29:price_change:TESTDATASYN000004',
     type: 'price_change',
     field: 'Listed price',
     valueType: 'money',
     reportDate: '2026-08-29',
     previousReportDate: '2026-08-28',
-    vin: '1FMEE0RR5RLA48819',
+    vin: 'TESTDATASYN000004',
     stockNumber: 'H1234',
     vehicleName: '2024 Ford Bronco Raptor',
     store: 'Howell',
@@ -24,7 +24,7 @@ function event(overrides: Partial<PublicChangeEvent> = {}): PublicChangeEvent {
 describe('Today inventory-change store scope', () => {
   it('shows a store transfer to both the prior and current physical stores', () => {
     const transfer = event({
-      id: '2026-08-29:store_transfer:1FMEE0RR5RLA48819',
+      id: '2026-08-29:store_transfer:TESTDATASYN000004',
       type: 'store_transfer',
       field: 'Source physical store',
       valueType: 'store',
@@ -47,7 +47,7 @@ describe('Today inventory-change store scope', () => {
 
   it('keeps one event in group scope while each affected home store can see it', () => {
     const transfer = event({
-      id: '2026-08-29:store_transfer:1FMEE0RR5RLA48819',
+      id: '2026-08-29:store_transfer:TESTDATASYN000004',
       type: 'store_transfer',
       field: 'Source physical store',
       valueType: 'store',
