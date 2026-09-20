@@ -39,7 +39,7 @@ All endpoints below use `GET`, `Accept: application/json`, and `Authorization: B
 | `/inventory` | `inventory.read` | Rich vehicle rows and cursor pagination |
 | `/vehicles/{vin}` | `inventory.read` | One rich vehicle and release metadata |
 | `/changes` | `changes.read` | Typed public change events and cursor pagination |
-| `/data-health` | `health.read` | Freshness and authorized visible vehicle count |
+| `/data-health` | `health.read` | Freshness, authorized visible vehicle count and the answering Worker's deployed version |
 | `/holds/summary` | `holds.aggregate.read` | Non-private counts for authorized public inventory by physical store |
 | `/manager-dispositions` | `inventory.read` | Manager-log sold/delivered evidence rows and cursor pagination |
 | `/capabilities` | Active authenticated integration grant | Plain JSON listing granted stores/scopes, limits and supported features |

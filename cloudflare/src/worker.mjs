@@ -22,6 +22,13 @@ const headers = {
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 }
 function json(status, data) { return new Response(JSON.stringify(data), {status,headers:{...headers,'Content-Type':'application/json; charset=utf-8'}}) }
+// The version_metadata binding is absent locally and in tests; report null
+// rather than throwing so health checks keep working without it configured.
+export function versionMetadata(env) {
+  const meta=env.CF_VERSION_METADATA
+  if(!meta) return null
+  return {versionId:meta.id??null,versionTag:meta.tag||null,versionTimestamp:meta.timestamp??null}
+}
 class HttpError extends Error { constructor(code, status = 400) { super(code); this.code = code; this.status = status } }
 function equal(a, b) { const left=encoder.encode(String(a??'')), right=encoder.encode(String(b??'')); return left.length === right.length && timingSafeEqual(left,right) }
 // decodeURIComponent throws URIError on a malformed escape such as '%E0%A4%A'.
@@ -304,7 +311,7 @@ export default {
         throw new HttpError('NOT_FOUND',404)
       }
       const context=await memberContext(await verifyAccess(request,env),env,request)
-      if(request.method==='GET' && url.pathname==='/api/health') return json(200,{ok:true,ready:Boolean(await currentRelease(env)),service:'inventory-flow-cloud'})
+      if(request.method==='GET' && url.pathname==='/api/health') return json(200,{ok:true,ready:Boolean(await currentRelease(env)),service:'inventory-flow-cloud',version:versionMetadata(env)})
       if(url.pathname.startsWith('/api/')) return await appApi(request,url,env,context)
       if(!['GET','HEAD'].includes(request.method)) throw new HttpError('METHOD_NOT_ALLOWED',405)
       if(!env.ASSETS) throw new HttpError('FRONTEND_NOT_DEPLOYED',503)

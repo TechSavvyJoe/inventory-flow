@@ -1,5 +1,5 @@
 import { authenticateIntegration, consumeIntegrationQuota, auditIntegrationAccess, IntegrationAccessError } from './integration-access.mjs'
-import { readReleaseWithIdentity, readJson } from './worker.mjs'
+import { readReleaseWithIdentity, readJson, versionMetadata } from './worker.mjs'
 import { loadD1Repository } from './repository.mjs'
 import { createInventoryServiceCore } from '../../server/service-core.mjs'
 import { createIntegrationReadService, IntegrationReadError } from '../../server/integrations/read-service.mjs'
@@ -115,7 +115,8 @@ export function createIntegrationWorker({
         }
         const query = route.query ? queryOf(url) : (noQuery(url), undefined)
         const service = await getReadService()
-        const data = route.method === 'capabilities' ? service.capabilities : service[route.method](route.vin ?? query)
+        const rawData = route.method === 'capabilities' ? service.capabilities : service[route.method](route.vin ?? query)
+        const data = route.method === 'health' ? { ...rawData, version: versionMetadata(env) } : rawData
         const serialized = JSON.stringify(data)
         if (encoder.encode(serialized).byteLength > MAX_RESPONSE) fail('RESPONSE_TOO_LARGE', 413)
         await audit(env, principal, { operation, status: 200, resultCount: resultCount(data) })

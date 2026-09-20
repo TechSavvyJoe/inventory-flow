@@ -45,6 +45,14 @@ describe('isolated shared data gateway', () => {
     const test = setup()
     expect((await test.worker.fetch(request(path), env)).status).toBe(200)
   })
+  it('reports null version metadata without the binding, and the mapped fields when it is present', async () => {
+    const test = setup()
+    const bare = await (await test.worker.fetch(request('/api/v1/data-health'), env)).json()
+    expect(bare.version).toBeNull()
+    const withVersion = { ...env, CF_VERSION_METADATA: { id: 'v1', tag: 'release-1', timestamp: '2026-09-19T00:00:00Z' } }
+    const tagged = await (await test.worker.fetch(request('/api/v1/data-health'), withVersion)).json()
+    expect(tagged.version).toEqual({ versionId: 'v1', versionTag: 'release-1', versionTimestamp: '2026-09-19T00:00:00Z' })
+  })
   it('serves only redacted manager dispositions and audits the dedicated operation', async () => {
     const test = setup()
     const result = await test.worker.fetch(request('/api/v1/manager-dispositions?store=Howell&delivered=true&review=false&limit=1'), env)
