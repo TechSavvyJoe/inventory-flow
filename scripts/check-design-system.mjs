@@ -6,6 +6,7 @@ const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const baseline = JSON.parse(
   await readFile(resolve(projectRoot, 'scripts/design-system-baseline.json'), 'utf8'),
 )
+const reportRequested = process.argv.includes('--report')
 
 async function collectCssFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true })
@@ -74,6 +75,25 @@ const totals = Object.values(measurements).reduce(
   }),
   { smallText: 0, rawColors: 0 },
 )
+
+/* `--report` says where the remaining legacy debt actually lives, so a burn-down pass
+   can start with the worst sheets instead of guessing. It only adds output: the checks,
+   the totals and the exit code are unchanged. */
+if (reportRequested) {
+  const offenders = Object.entries(measurements)
+    .map(([filePath, measurement]) => ({ filePath, ...measurement }))
+    .filter((entry) => entry.rawColors > 0 || entry.smallText > 0)
+    .sort((a, b) => b.rawColors - a.rawColors || b.smallText - a.smallText)
+
+  console.log('Design-system debt by file \u00b7 raw colors, then sub-12px declarations:')
+  for (const entry of offenders) {
+    const allowance = baseline.files[entry.filePath] ?? { smallText: 0, rawColors: 0 }
+    const colorDrift = entry.rawColors - allowance.rawColors
+    const textDrift = entry.smallText - allowance.smallText
+    const drift = colorDrift === 0 && textDrift === 0 ? '' : ` \u00b7 ${colorDrift} colors / ${textDrift} sub-12px vs baseline`
+    console.log(`- ${entry.filePath}: ${entry.rawColors} raw colors \u00b7 ${entry.smallText} sub-12px${drift}`)
+  }
+}
 
 if (failures.length) {
   console.error('Design-system regression check failed:')
