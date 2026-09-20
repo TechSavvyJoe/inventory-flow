@@ -2,7 +2,9 @@
 
 Use this before every production deploy of `inventory-ops-production` (app) and/or `inventory-flow-integrations` (integrations). Both Workers must ship from the **same commit**; do not deploy one ahead of the other except for an intentional rollback. Background on the current deployed state, prior version IDs, and known gaps is in [Shared-data deployment log](SHARED_DATA_DEPLOYMENT.md) — append to that log after every deploy covered by this checklist. Architecture context is in [Shared-data architecture](SHARED_DATA_ARCHITECTURE.md).
 
-Both `wrangler.jsonc` files now configure a [`version_metadata`](https://developers.cloudflare.com/workers/runtime-apis/bindings/version-metadata/) binding (`CF_VERSION_METADATA`), and `pnpm cloud:deploy` / `pnpm integrations:deploy` pass `--tag $(git rev-parse --short HEAD)`. Every future deployment therefore carries its source commit on the Cloudflare dashboard and in `/api/health` / `/api/v1/data-health`'s `version` field — the "no version_metadata binding configured" gap noted in the deployment log for earlier releases no longer applies going forward.
+Both `wrangler.jsonc` files now configure a [`version_metadata`](https://developers.cloudflare.com/workers/runtime-apis/bindings/version-metadata/) binding (`CF_VERSION_METADATA`), and `pnpm cloud:deploy` / `pnpm integrations:deploy` run `scripts/deploy-worker.mjs`, which resolves the git short SHA in node — not in the shell, because the deployment host is PowerShell — and passes it to `wrangler deploy --tag`. Every future deployment therefore carries its source commit on the Cloudflare dashboard and in `/api/health` / `/api/v1/data-health`'s `version` field — the "no version_metadata binding configured" gap noted in the deployment log for earlier releases no longer applies going forward.
+
+**A deploy from a dirty working tree is refused.** The tag would name a commit the deployed bundle does not match, so commit or set aside your changes first. `node scripts/deploy-worker.mjs app --allow-dirty` overrides it and tags the version `<sha>-dirty`; use that only for a deliberate hotfix, and record in the deployment log what the tree actually contained.
 
 ## Pre-deploy
 
@@ -25,6 +27,7 @@ Both `wrangler.jsonc` files now configure a [`version_metadata`](https://develop
   wrangler rollback <version-id> --config cloudflare/wrangler.jsonc
   wrangler rollback <version-id> --config cloudflare/integrations.wrangler.jsonc
   ```
+- [ ] `pnpm cloud:validate` passes. It is the offline release gate both runbooks require between build and deploy: it checks the Worker modules parse and applies every numbered migration to an in-memory SQLite database. It contacts nothing and is not covered by `pnpm check`.
 - [ ] On-call: this is a single-owner project - the person deploying is the on-call. Confirm you have time to watch the 15-minute post-deploy window before starting.
 
 ## Deploy
@@ -46,9 +49,9 @@ Both `wrangler.jsonc` files now configure a [`version_metadata`](https://develop
   - App: `GET /api/health` -> `version.versionId` matches the app Worker's new version ID from `wrangler deployments list`.
   - Integrations: `GET /api/v1/data-health` -> `version.versionId` matches the integrations Worker's new version ID.
   - A `version: null` here means the `version_metadata` binding isn't populated for that request (expected in local dev/tests) - investigate if it happens against the deployed Worker.
-- [ ] Run `node scripts/verify-integration-deployment.mjs runtime/integration-credentials/<probe-file>.json --expected runtime/integration-expected-release.json` using a **temporary** probe grant created for this deploy:
+- [ ] Run `node scripts/verify-integration-deployment.mjs runtime/integration-credentials/<probe-file>.json --expected runtime/integration-expected-release.json` using a **temporary** probe grant created for this deploy. The script drives `dataHealth`, `iterateInventory`, `vehicle`, `changes` and `holdSummary`, so the grant needs all four read scopes — a narrower grant fails the run at the `changes-and-holds` stage rather than proving anything about the deploy. Keep the label free of shell substitution; it is typed on a PowerShell host.
   ```sh
-  node scripts/manage-integration-client.mjs create --transport wrangler --confirm --owner-user-id joe-gallant --type api_token --label "Deploy verification $(date +%Y-%m-%d)" --scopes "inventory.read,health.read" --stores "Howell" --days 1 --secret-output runtime/integration-credentials/deploy-verify.json
+  node scripts/manage-integration-client.mjs create --transport wrangler --confirm --owner-user-id joe-gallant --type api_token --label "Deploy verification" --scopes "inventory.read,health.read,changes.read,holds.aggregate.read" --stores "Howell" --days 1 --secret-output runtime/integration-credentials/deploy-verify.json
   node scripts/verify-integration-deployment.mjs runtime/integration-credentials/deploy-verify.json
   node scripts/manage-integration-client.mjs revoke --transport wrangler --confirm --client-id <client-id-from-create-output>
   ```
