@@ -25,16 +25,16 @@ interface EventChoice {
 
 function outcomeChoices(status: string, manager: boolean): EventChoice[] {
   if (status === 'sale_confirmed') {
-    const choices: EventChoice[] = [{ value: 'delivery_confirmed', label: 'Delivery confirmed', help: 'Use only after an authorized manager has explicit delivery confirmation.' }]
-    if (manager) choices.push({ value: 'not_sold', label: 'Deal fell through — not sold', help: 'Reopens the return-to-home path for this vehicle.' })
+    const choices: EventChoice[] = [{ value: 'delivery_confirmed', label: 'Delivered — customer has the vehicle', help: 'Pick this only when a manager has explicit delivery confirmation.' }]
+    if (manager) choices.push({ value: 'not_sold', label: 'Deal fell through — not sold', help: 'The vehicle goes back on the return path home.' })
     return choices
   }
   const values: EventChoice[] = [
-    { value: 'customer_showing', label: 'Showing in progress', help: 'The customer outcome is still open.' },
-    { value: 'sale_outcome_pending', label: 'Decision / paperwork pending', help: 'A manager still needs to confirm the final outcome.' },
-    { value: 'not_sold', label: 'Shown — not sold', help: 'Starts the return-to-home workflow.' },
+    { value: 'customer_showing', label: 'Showing in progress', help: 'The customer has not decided yet.' },
+    { value: 'sale_outcome_pending', label: 'Decision or paperwork pending', help: 'A manager still has to confirm the outcome.' },
+    { value: 'not_sold', label: 'Shown — not sold', help: 'Starts the vehicle on its way back home.' },
   ]
-  if (manager) values.push({ value: 'sale_confirmed', label: 'Sold pending — manager confirmed', help: 'This still does not confirm delivery or final paperwork.' })
+  if (manager) values.push({ value: 'sale_confirmed', label: 'Sold pending — manager confirmed', help: 'This does not confirm delivery or final paperwork.' })
   return values
 }
 
@@ -109,13 +109,13 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
     : eventType === 'vehicle_departed' ? 'Mark vehicle collected'
     : simple && eventType === 'arrived' ? `Mark arrived at ${record.destination}`
     : simple && eventType === 'returned_home' ? 'Confirm back home'
-    : eventType === 'return_started' ? 'Start return to home store'
+    : eventType === 'return_started' ? `Start the return to ${record.homeStore}`
     : eventType === 'manager_reviewed'
     ? 'Approve at requesting store'
     : eventType === 'approved'
-      ? 'Record home-store release'
+      ? 'Record the home store’s release'
       : recordsHomeStoreDecision
-        ? 'Record home-store decline'
+        ? 'Record the home store’s decline'
         : transferActionLabels[action]
   const submitLabel = needsAvailabilityConfirmation ? 'Approve this move'
     : eventType === 'vehicle_departed' ? 'Mark collected'
@@ -123,17 +123,17 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
     : simple && eventType === 'returned_home' ? 'Confirm back home'
     : eventType === 'return_started' ? 'Start return'
     : isConditionIssue
-    ? 'Record issue'
+    ? 'Record the issue'
     : eventType === 'manager_reviewed'
       ? 'Approve request'
       : eventType === 'approved'
-        ? 'Record release grant'
+        ? 'Record the release'
         : recordsHomeStoreDecision
-          ? 'Record home-store decline'
+          ? 'Record the decline'
           : eventType === 'declined' || eventType === 'request_declined'
             ? 'Decline request'
         : eventType === 'returned_home'
-          ? 'Confirm home receipt'
+          ? 'Confirm back home'
           : eventType === 'return_requested'
             ? 'Schedule return'
             : 'Record update'
@@ -170,11 +170,11 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
       return
     }
     if (needsAssignee && !assignee.trim()) {
-      setError('Enter the assigned driver. If the porter or a salesperson is driving, record that manager-assigned person by name.')
+      setError('Name the assigned driver. If a porter or salesperson is driving, record that person by name.')
       return
     }
     if (needsAssignee && !dueAt) {
-      setError('Set the pickup or return target time so salespeople can see when the driver is coming.')
+      setError('Set a pickup or return time so sales can see when the driver is coming.')
       return
     }
     if (recordsHomeStoreDecision && !homeStoreManager.trim()) {
@@ -182,11 +182,11 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
       return
     }
     if (needsDecisionReason && !note.trim()) {
-      setError('Briefly record why the vehicle is not being released.')
+      setError('Say briefly why the vehicle is not being released.')
       return
     }
     if (isConditionIssue && !note.trim()) {
-      setError('Describe the condition or damage so the Home Store manager can review it before receipt.')
+      setError('Describe the condition or damage so the home-store manager can review it before the vehicle is back.')
       return
     }
     const recordedNote = isConditionIssue
@@ -212,7 +212,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
       onComplete?.(updated)
       onClose()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The movement update could not be recorded.')
+      setError(caught instanceof Error ? caught.message : 'That update could not be saved. Try again.')
     } finally {
       setSubmitting(false)
     }
@@ -236,12 +236,12 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
             <h2 id={titleId}>{actionTitle}</h2>
             <p id={descriptionId}>{detail.vehicle.vehicleLabel}</p>
           </div>
-          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close movement action"><X aria-hidden="true" /></button>
+          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close this update"><X aria-hidden="true" /></button>
         </header>
 
         {action === 'record-outcome' ? (
           <fieldset className="action-outcome-options">
-            <legend>Record only what is explicitly known</legend>
+            <legend>Record only what you know for certain</legend>
             {outcomes.map((choice) => (
               <label key={choice.value}>
                 <input type="radio" name="outcome" checked={outcome === choice.value} onChange={() => setOutcome(choice.value)} />
@@ -256,7 +256,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
             <input type="checkbox" checked={availabilityConfirmed} onChange={(event) => { setAvailabilityConfirmed(event.target.checked); setError(null) }} />
             <span>
               <strong>I checked with {record.homeStore}; this vehicle is available for this move.</strong>
-              <small>You are recording the availability check for {record.requestingStore}. The sales team can update the outcome or start the return when appropriate.</small>
+              <small>You are recording the availability check for {record.requestingStore}. Sales can then update the outcome or start the return.</small>
             </span>
           </label>
         ) : eventType === 'vehicle_departed' ? (
@@ -265,7 +265,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
             <span>Confirm the vehicle has left {record.homeStore} for {record.destination}. This starts the time-away clock.</span>
           </div>
         ) : simple && eventType === 'arrived' ? (
-          <div className="action-approval-sequence" role="note"><strong>Confirm arrival at {record.destination}</strong><span>Record this after the vehicle and keys have arrived. The next step is to update the showing or start its return.</span></div>
+          <div className="action-approval-sequence" role="note"><strong>Confirm arrival at {record.destination}</strong><span>Record this once the vehicle and keys have arrived. Next, update the showing outcome or start the return.</span></div>
         ) : simple && eventType === 'returned_home' ? (
           <div className="action-approval-sequence" role="note"><strong>Confirm {record.homeStore} received the vehicle</strong><span>Check the vehicle and keys are back at the home store. This completes the move and stops the time-away clock.</span></div>
         ) : eventType === 'return_started' ? (
@@ -275,7 +275,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
           </div>
         ) : eventType === 'manager_reviewed' ? (
           <div className="action-approval-sequence" role="note">
-            <strong>Stage 2 · Requesting-store approval</strong>
+            <strong>Step 2 · Requesting-store approval</strong>
             <span>
               Approve this request for {record.requestingStore}. This does not confirm availability or release.
               Next, the {record.requestingStore} manager must contact the {record.homeStore} used-car manager.
@@ -283,10 +283,10 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
           </div>
         ) : recordsHomeStoreDecision ? (
           <div className="action-approval-sequence" role="note">
-            <strong>Stage 3 · Home-store contact & release decision</strong>
+            <strong>Step 3 · Call the home store, record the answer</strong>
             <span>
               Record this only after the {record.requestingStore} manager contacted the {record.homeStore} used-car manager.
-              A driver can be assigned only after a release grant is recorded.
+              You can assign a driver only after the release is recorded.
             </span>
           </div>
         ) : null}
@@ -295,7 +295,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
           <label className="action-field">
             <span>Assigned driver</span>
             <input value={assignee} onChange={(event) => setAssignee(event.target.value)} placeholder="Driver name — other staff only if a manager assigns them" />
-            <small>For Howell requests, Stacey normally coordinates the driver. The porter may be assigned and uses the Porter role when driving.</small>
+            <small>For Howell moves, Stacey usually arranges the driver. A porter can be assigned and signs in as Porter to drive.</small>
           </label>
         ) : null}
 
@@ -327,7 +327,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
             </fieldset>
             <div className="action-home-manager-notice">
               <strong>{record.homeStore} manager acknowledgment</strong>
-              <span>Pending — the issue stays visible with the return until the Home Store confirms receipt.</span>
+              <span>Pending — the issue stays with the return until the home store confirms the vehicle is back.</span>
             </div>
           </div>
         ) : null}
@@ -341,23 +341,23 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
               placeholder={`Name or role at ${record.homeStore}`}
               autoComplete="off"
             />
-            <small>This records who gave the verbal grant or decline; the signed-in manager remains the recorder.</small>
+            <small>This records who gave the verbal answer · you stay the person who recorded it.</small>
           </label>
         ) : null}
 
         <label className="action-field">
-          <span>{isConditionIssue ? 'Condition / damage description' : needsHomeReleaseConfirmation ? 'Release conditions or pickup note' : recordsHomeStoreDecision ? 'Why the Home Store declined' : needsDecisionReason ? 'Decision reason' : eventType === 'driver_requested' ? 'Stacey / driver-request note' : 'Operational note'} <small>{isConditionIssue || needsDecisionReason ? 'required' : 'optional'}</small></span>
+          <span>{isConditionIssue ? 'Condition or damage description' : needsHomeReleaseConfirmation ? 'Release conditions or pickup note' : recordsHomeStoreDecision ? 'Why the home store declined' : needsDecisionReason ? 'Decision reason' : eventType === 'driver_requested' ? 'Driver request note' : 'Note'} <small>{isConditionIssue || needsDecisionReason ? 'required' : 'optional'}</small></span>
           <textarea
             value={note}
             onChange={(event) => setNote(event.target.value)}
             rows={3}
-            placeholder={isConditionIssue ? 'What was found, where on the vehicle, and when it was noticed?' : needsHomeReleaseConfirmation ? 'Keys, pickup window, or other release conditions' : recordsHomeStoreDecision ? `What the ${record.homeStore} manager declined or could not confirm` : eventType === 'driver_requested' ? 'After calling Stacey, add any pickup timing she needs' : 'What the next person needs to know'}
+            placeholder={isConditionIssue ? 'What was found, where on the vehicle, and when it was noticed?' : needsHomeReleaseConfirmation ? 'Keys, pickup window, or other release conditions' : recordsHomeStoreDecision ? `What the ${record.homeStore} manager declined or could not confirm` : eventType === 'driver_requested' ? 'Add any pickup timing the driver needs' : 'What the next person needs to know'}
           />
         </label>
 
         <div className="action-separation-note">
           <CheckCircle2 aria-hidden="true" />
-        <p>{simple ? 'This updates the internal vehicle move. It does not confirm a sale, customer delivery, or funding.' : 'This records one internal move event. It does not by itself confirm availability, sale, delivery, or funding.'}</p>
+        <p>{simple ? 'This updates the internal vehicle move. It does not confirm a sale, customer delivery, or funding.' : 'This records one internal move update. It does not by itself confirm availability, sale, delivery, or funding.'}</p>
         </div>
         {error ? <div className="action-error" role="alert"><AlertTriangle aria-hidden="true" />{error}</div> : null}
         <footer>

@@ -27,8 +27,8 @@ export function simpleTransferActionLabel(action: TransferActionKind, transfer?:
   if (action === 'confirm-arrival') return 'Mark arrived';
   if (action === 'schedule-return') return 'Start return';
   if (action === 'confirm-return') return 'Confirm back home';
-  if (action === 'record-outcome') return transfer && awaitingCustomerDelivery(transfer) ? 'Confirm delivery / update outcome' : 'Update showing / outcome';
-  if (action === 'mark-exception') return 'Report a location or timing issue';
+  if (action === 'record-outcome') return transfer && awaitingCustomerDelivery(transfer) ? 'Confirm delivery or update the outcome' : 'Update the showing outcome';
+  if (action === 'mark-exception') return 'Report a location issue';
   return transferActionLabels[action];
 }
 
@@ -86,7 +86,7 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
       <header className="simple-move-heading">
         {vehicle.imageUrl ? <img src={vehicle.imageUrl} alt="" /> : <span className="simple-move-photo-placeholder" aria-hidden="true"><CarFront size={32} /></span>}
         <div><span>Stock {vehicle.stock}</span><h2>{vehicle.vehicleLabel}</h2><small>{vehicle.vin}</small></div>
-        {onClose ? <button type="button" aria-label="Close movement detail" onClick={onClose}><X aria-hidden="true" size={20} /></button> : null}
+        {onClose ? <button type="button" aria-label="Close move details" onClick={onClose}><X aria-hidden="true" size={20} /></button> : null}
         <div className="move-vehicle-context">
           <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} />
         </div>
@@ -97,12 +97,12 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
       {transfer.exception || issue ? (
         <section className="simple-move-issue" role="status">
           <AlertTriangle aria-hidden="true" size={18} />
-          <div><strong>{transfer.exception?.label || 'Vehicle issue reported'}</strong><p>{transfer.exception?.detail || issue?.detail || 'Review the activity record before moving the vehicle.'}</p></div>
+          <div><strong>{transfer.exception?.label || 'Vehicle issue reported'}</strong><p>{transfer.exception?.detail || issue?.detail || 'Read the move history before moving the vehicle.'}</p></div>
         </section>
       ) : null}
 
-      <section className="simple-move-next" aria-label="Next move action">
-        <div><span>{terminal ? 'Request status' : 'Next step'}</span><h3>{terminal ? transfer.status.movement.code === 'returned-home-confirmed' ? 'Back home · move complete' : delivered ? 'Delivered · move complete' : humanizeStatusLabel(transfer.status.request.label) : transfer.nextAction.label}</h3>{!terminal ? <p>{transfer.nextAction.ownerLabel || `${transfer.requestingStore || target} manager`}{transfer.nextAction.dueAt ? ` · Needed ${formatDateTime(transfer.nextAction.dueAt)}` : ''}</p> : null}</div>
+      <section className="simple-move-next" aria-label="Next step">
+        <div><span>{terminal ? 'Move status' : 'Next step'}</span><h3>{terminal ? transfer.status.movement.code === 'returned-home-confirmed' ? 'Back home · move complete' : delivered ? 'Delivered · move complete' : humanizeStatusLabel(transfer.status.request.label) : transfer.nextAction.label}</h3>{!terminal ? <p>{transfer.nextAction.ownerLabel || `${transfer.requestingStore || target} manager`}{transfer.nextAction.dueAt ? ` · Needed ${formatDateTime(transfer.nextAction.dueAt)}` : ''}</p> : null}</div>
         {allowed.length && onAction ? <div className="simple-move-actions" aria-label="Available move actions">
           {primary ? <button type="button" className="mif-button mif-button--primary" onClick={() => takeAction(primary)}>{simpleTransferActionLabel(primary, transfer)}</button> : null}
           {additional.length ? <details className="simple-move-more"><summary>Other options <ChevronDown aria-hidden="true" size={16} /></summary><div>{additional.map(action => <button type="button" key={action} onClick={() => takeAction(action)}>{simpleTransferActionLabel(action, transfer)}</button>)}</div></details> : null}
@@ -134,11 +134,11 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
 
       <details className="simple-move-records">
         <summary>Hold and outcome details <ChevronDown aria-hidden="true" size={16} /></summary>
-        <dl><div><dt>Hold</dt><dd>{humanizeStatusLabel(transfer.status.dealerMail.label)}</dd></div><div><dt>Customer outcome</dt><dd>{humanizeStatusLabel(transfer.status.deal.label)}</dd></div><div><dt>Customer delivery</dt><dd>{humanizeStatusLabel(transfer.status.delivery.label)}</dd></div><div><dt>Movement</dt><dd>{humanizeStatusLabel(transfer.status.movement.label)}</dd></div></dl>
+        <dl><div><dt>Hold</dt><dd>{humanizeStatusLabel(transfer.status.dealerMail.label)}</dd></div><div><dt>Customer outcome</dt><dd>{humanizeStatusLabel(transfer.status.deal.label)}</dd></div><div><dt>Customer delivery</dt><dd>{humanizeStatusLabel(transfer.status.delivery.label)}</dd></div><div><dt>Where it is</dt><dd>{humanizeStatusLabel(transfer.status.movement.label)}</dd></div></dl>
         <p>A request or movement does not change a hold or confirm a sale, customer delivery, or funding.</p>
       </details>
       <details className="simple-move-records">
-        <summary>Activity history <span>{transfer.timeline.length} updates</span><ChevronDown aria-hidden="true" size={16} /></summary>
+        <summary>Move history <span>{transfer.timeline.length} updates</span><ChevronDown aria-hidden="true" size={16} /></summary>
         <TransferTimeline events={transfer.timeline} />
       </details>
     </article>

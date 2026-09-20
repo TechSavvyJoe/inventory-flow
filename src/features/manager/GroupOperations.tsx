@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import {
   formatDateTime,
+  humanizeStatusLabel,
   locationConfidenceLabel,
   slaLabel,
   TransferEmptyState,
@@ -311,12 +312,14 @@ export function GroupOperations({
     requestingStores: uniqueValues(records.map((record) => record.requestingStore)),
     custodians: uniqueValues(records.map((record) => record.custodianLabel)),
     salespeople: uniqueValues(records.map((record) => record.salespersonLabel)),
-    requestStatuses: uniqueValues(records.map((record) => record.status.request.label)),
+    // Request codes the adapter does not name fall through as stored
+    // snake_case; read them as words in the filter.
+    requestStatuses: uniqueValues(records.map((record) => humanizeStatusLabel(record.status.request.label))),
     movementStatuses: uniqueValues(records.map((record) => displayOperationalLabel(record.status.movement.label))),
     dealerMailStatuses: uniqueValues(records.map((record) => record.status.dealerMail.label)),
   }), [records]);
 
-  const labelToRequestCode = useMemo(() => new Map(records.map((record) => [record.status.request.label, record.status.request.code])), [records]);
+  const labelToRequestCode = useMemo(() => new Map(records.map((record) => [humanizeStatusLabel(record.status.request.label), record.status.request.code])), [records]);
   const labelToMovementCode = useMemo(() => new Map(records.map((record) => [displayOperationalLabel(record.status.movement.label), record.status.movement.code])), [records]);
   const labelToDealerMailCode = useMemo(() => new Map(records.map((record) => [record.status.dealerMail.label, record.status.dealerMail.code])), [records]);
 
@@ -619,9 +622,9 @@ export function GroupOperations({
             <FilterSelect label="Current location" onChange={(value) => patchFilters({ currentLocations: value ? [value] : [] })} value={filters.currentLocations[0] ?? ''} values={options.currentLocations} />
             <FilterSelect label="Requesting store" onChange={(value) => patchFilters({ requestingStores: value ? [value] : [] })} value={filters.requestingStores[0] ?? ''} values={options.requestingStores} />
             <FilterSelect
-              label="Request status"
+              label="Move status"
               onChange={(value) => patchFilters({ requestStatuses: value ? [labelToRequestCode.get(value) as RequestStatusCode] : [] })}
-              value={records.find((record) => filters.requestStatuses.includes(record.status.request.code))?.status.request.label ?? ''}
+              value={humanizeStatusLabel(records.find((record) => filters.requestStatuses.includes(record.status.request.code))?.status.request.label ?? '')}
               values={options.requestStatuses}
             />
             <FilterSelect

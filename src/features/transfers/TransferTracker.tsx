@@ -81,21 +81,29 @@ function TransferProgress({ transfer }: { transfer: TransferDetail }) {
 
 function actionHint(kind: TransferActionKind) {
   switch (kind) {
-    case 'report-condition': return 'Record condition or damage for Home Store manager review';
-    case 'mark-exception': return 'Record a location, timing, custody, or movement exception';
+    case 'report-condition': return 'Record condition or damage for the home-store manager to review';
+    case 'mark-exception': return 'Record a location, timing, or custody problem';
     case 'open-source': return 'Open the original dealership record in a new tab';
-    case 'schedule-return': return 'Set the return plan without changing deal or delivery status';
-    case 'confirm-return': return 'Confirm Home Store receipt without changing deal or delivery status';
+    case 'schedule-return': return 'Set the return plan · this does not change the sale or delivery';
+    case 'confirm-return': return 'Confirm the home store has it · this does not change the sale or delivery';
     default: return undefined;
   }
 }
 
-function compactActionLabel(value: string): string {
-  if (/requesting manager confirms availability and release/i.test(value)) return 'Requesting manager: approve, then contact Home Store';
-  if (/contact .*used-car manager.*release decision/i.test(value)) return 'Contact Home Store and record its decision';
-  if (/home-store.*availability.*release/i.test(value)) return 'Record the Home Store’s release decision';
-  if (/confirm.*returned home|confirm home receipt/i.test(value)) return 'Confirm home receipt';
-  if (/record call for a driver|request.*driver/i.test(value)) return 'Request a driver';
+// Keep these in step with compactNextAction in TransfersPage: the same stored
+// sentence must read the same in the tracker and in the queue.
+function compactActionLabel(value: string, { homeStore, destination }: { homeStore?: string; destination?: string } = {}): string {
+  if (/requesting manager confirms availability and release/i.test(value)) return 'Approve, then call the home store';
+  if (/(?:contact|calls?) .*used-car manager/i.test(value)) return 'Call the home store, record the answer';
+  if (/home-store.*availability.*release/i.test(value)) return 'Record the home store’s answer';
+  if (/confirm.*returned home|confirm home receipt|home manager confirms receipt/i.test(value)) return homeStore ? `Confirm the vehicle is back at ${homeStore}` : 'Confirm the vehicle is back home';
+  if (/record call for a driver|request.*driver|calls stacey for a driver|asks its manager or coordinator for a driver/i.test(value)) return 'Ask for a driver';
+  if (/work the vehicle or start its return/i.test(value)) return 'Show the vehicle, then start its return';
+  if (/confirm arrival at requesting store/i.test(value)) return destination ? `Confirm the vehicle arrived at ${destination}` : 'Confirm the vehicle arrived';
+  if (/record customer showing or vehicle outcome|record an outcome or return the vehicle/i.test(value)) return 'Record the showing outcome';
+  if (/assigned driver picks up vehicle/i.test(value)) return 'Collect the vehicle and confirm you have it';
+  if (/close movement workflow/i.test(value)) return 'Close the move';
+  if (/request return to home store|record when the vehicle starts its return/i.test(value)) return 'Start the return';
   return value;
 }
 
@@ -169,7 +177,7 @@ export function TransferTracker({
           </div>
         </div>
         {onClose ? (
-          <button aria-label="Close movement detail" className="mif-icon-button" onClick={onClose} type="button">
+          <button aria-label="Close move details" className="mif-icon-button" onClick={onClose} type="button">
             <X aria-hidden="true" size={20} strokeWidth={1.75} />
           </button>
         ) : null}
@@ -193,17 +201,17 @@ export function TransferTracker({
         <div className="mif-condition-banner" role="status">
           <Wrench aria-hidden="true" size={18} strokeWidth={1.75} />
           <div>
-            <strong>Vehicle issue reported — Home Store review required</strong>
+            <strong>Vehicle issue reported · home store review required</strong>
             <span>{latestConditionIssue.detail || 'Open the handoff history for the recorded condition details.'}</span>
             <small>Reported by {latestConditionIssue.actorLabel ?? 'staff'} · {formatDateTime(latestConditionIssue.occurredAt)}</small>
           </div>
         </div>
       ) : null}
 
-      <section className={`mif-action-console is-${action.sla}`} aria-label="Next move action">
+      <section className={`mif-action-console is-${action.sla}`} aria-label="Next step">
         <div className="mif-action-console__copy">
-          <span>Next action</span>
-          <strong title={action.label}>{compactActionLabel(action.label)}</strong>
+          <span>Next step</span>
+          <strong title={action.label}>{compactActionLabel(action.label, { homeStore: vehicle.homeStore, destination: transfer.destination ?? transfer.requestingStore })}</strong>
           <small>Owner: {action.ownerLabel ?? 'Not assigned'}{action.ownerRole ? ` · ${action.ownerRole}` : ''}</small>
         </div>
         <div className="mif-action-console__due">

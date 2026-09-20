@@ -444,13 +444,13 @@ export function canRequestVehicle(vehicle, access) {
 }
 
 export function requestBlockedReason(vehicle, access) {
-  if (!access) return 'Sign in to request vehicles.'
-  if (!['sales', 'manager', 'group_manager'].includes(access.role) || access.canCreateTransfer === false) return 'Your role cannot request or move vehicles.'
+  if (!access) return 'Sign in to move vehicles.'
+  if (!['sales', 'manager', 'group_manager'].includes(access.role) || access.canCreateTransfer === false) return 'Your role cannot move vehicles.'
   if (moveRequestBlocked(vehicle)) {
     if (vehicleMoveAction(vehicle, access) === 'direct') return null
     // Blocked without a visible move: a request this user may not see is
     // open somewhere. Name no store, actor or request — the server does not.
-    return vehicle.movement ? 'A move is already in progress.' : 'The app already has an open move request for this vehicle.'
+    return vehicle.movement ? 'A move is already in progress.' : 'This vehicle already has an open move request.'
   }
   if (access.role === 'sales' && vehicle.homeStore === access.store) return 'Ask your store manager to move this vehicle to another location.'
   return null

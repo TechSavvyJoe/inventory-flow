@@ -157,7 +157,7 @@ describe('Cloud Worker authentication boundary',()=>{
   it('does not query or disclose the employee directory until transfer authorization succeeds',async()=>{
     const prepare=vi.fn(()=>{throw new Error('The directory must not be queried')})
     const env={INVENTORY_DB:{prepare}}
-    const denied=new WorkflowError('Transfer request was not found',{status:404,code:'TRANSFER_NOT_FOUND'})
+    const denied=new WorkflowError('That vehicle move was not found',{status:404,code:'TRANSFER_NOT_FOUND'})
     await expect(prepareTransportAssignment(
       {type:'transport_assigned',assignee:'Alex Driver',dueAt:'2026-09-03T18:00:00Z'},env,
       ()=>{throw denied},

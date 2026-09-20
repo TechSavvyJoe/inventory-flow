@@ -195,7 +195,7 @@ describe('deal desk view model', () => {
     expect(receipt.movement).toBeNull()
     expect(receipt.moveRequestBlocked).toBe(true)
     expect(canRequestVehicle(receipt, sales)).toBe(false)
-    expect(requestBlockedReason(receipt, sales)).toBe('The app already has an open move request for this vehicle.')
+    expect(requestBlockedReason(receipt, sales)).toBe('This vehicle already has an open move request.')
     expect(requestBlockedReason(receipt, sales)).not.toMatch(/Lincoln|Howell|Fowlerville|transfer-/)
     // A source-only vehicle blocked the same way.
     const sourceRecord = base({ homeStore: 'Fowlerville', movement: { state: 'source_reported', label: 'Source-reported location', currentLocation: 'Fowlerville', locationConfidence: 'reported', newRequestBlocked: true } })

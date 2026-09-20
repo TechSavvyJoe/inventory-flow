@@ -187,13 +187,22 @@ function returnTimingLabel(record: TransferRecord): string {
   return 'Return required · date not set'
 }
 
-function compactNextAction(value?: string): string {
-  const action = value?.trim() || 'No next action recorded'
-  if (/requesting manager confirms availability and release/i.test(action)) return 'Requesting manager: approve, then contact Home Store'
-  if (/contact .*used-car manager.*release decision/i.test(action)) return 'Contact Home Store and record its decision'
-  if (/home-store.*availability.*release/i.test(action)) return 'Record the Home Store’s release decision'
-  if (/confirm.*returned home|confirm home receipt/i.test(action)) return 'Confirm home receipt'
-  if (/record call for a driver|request.*driver/i.test(action)) return 'Request a driver'
+// Rows written before the move-copy pass keep their stored wording. Shorten
+// those legacy sentences into the same phrases new rows already use, so one
+// action reads the same in the queue, the tracker and the history.
+function compactNextAction(value: string | undefined, { homeStore, destination }: { homeStore?: string; destination?: string } = {}): string {
+  const action = value?.trim() || 'No next step recorded'
+  if (/requesting manager confirms availability and release/i.test(action)) return 'Approve, then call the home store'
+  if (/(?:contact|calls?) .*used-car manager/i.test(action)) return 'Call the home store, record the answer'
+  if (/home-store.*availability.*release/i.test(action)) return 'Record the home store’s answer'
+  if (/confirm.*returned home|confirm home receipt|home manager confirms receipt/i.test(action)) return homeStore ? `Confirm the vehicle is back at ${homeStore}` : 'Confirm the vehicle is back home'
+  if (/record call for a driver|request.*driver|calls stacey for a driver|asks its manager or coordinator for a driver/i.test(action)) return 'Ask for a driver'
+  if (/work the vehicle or start its return/i.test(action)) return 'Show the vehicle, then start its return'
+  if (/confirm arrival at requesting store/i.test(action)) return destination ? `Confirm the vehicle arrived at ${destination}` : 'Confirm the vehicle arrived'
+  if (/record customer showing or vehicle outcome|record an outcome or return the vehicle/i.test(action)) return 'Record the showing outcome'
+  if (/assigned driver picks up vehicle/i.test(action)) return 'Collect the vehicle and confirm you have it'
+  if (/close movement workflow/i.test(action)) return 'Close the move'
+  if (/request return to home store|record when the vehicle starts its return/i.test(action)) return 'Start the return'
   return action
 }
 
@@ -201,8 +210,8 @@ function compactRequestStatus(value: string, simple = false): string {
   const status = normalizedStatus(value)
   if (simple) {
     if (status === 'closed') return 'Complete'
-    if (['requested', 'submitted', 'manager-reviewed', 'needs-information'].includes(status)) return 'Manager checking availability'
-    if (status === 'approved') return 'Approved — work vehicle or return'
+    if (['requested', 'submitted', 'manager-reviewed', 'needs-information'].includes(status)) return 'Waiting on manager approval'
+    if (status === 'approved') return 'Approved · show or return'
     if (['transport-assigned', 'pickup-scheduled'].includes(status)) return 'Ready to collect'
     if (['picked-up', 'in-transit'].includes(status)) return 'In transit'
     if (['arrived', 'customer-showing', 'sale-outcome-pending'].includes(status)) return 'At requesting store'
@@ -213,9 +222,9 @@ function compactRequestStatus(value: string, simple = false): string {
     return humanizeStatusLabel(value)
   }
   if (status === 'draft') return 'Request not submitted'
-  if (['requested', 'submitted'].includes(status)) return 'Requesting manager approval'
-  if (['manager-reviewed', 'needs-information'].includes(status)) return 'Contact Home Store · record decision'
-  if (status === 'approved') return 'Released · driver can be assigned'
+  if (['requested', 'submitted'].includes(status)) return 'Waiting on manager approval'
+  if (['manager-reviewed', 'needs-information'].includes(status)) return 'Call the home store · record the answer'
+  if (status === 'approved') return 'Released · assign a driver'
   if (status === 'driver-requested') return 'Driver requested'
   if (/transport-assigned|pickup-scheduled/.test(status)) return 'Driver assigned'
   if (/picked-up|in-transit/.test(status)) return 'In transit'
@@ -558,13 +567,13 @@ export function TransfersPage() {
           className="transfers-layout transfers-layout--master-detail"
           data-queue-size={filteredDetails.length}
         >
-          <aside className="transfer-list" aria-label="Movement requests">
+          <aside className="transfer-list" aria-label="Vehicle moves">
             <div className="transfer-list-toolbar">
               <label className="transfer-list-search">
                 <Search aria-hidden="true" />
                 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={simple ? 'Search stock, vehicle, salesperson, or store' : 'Search stock, VIN, vehicle, store, or driver'} aria-label="Search vehicle moves" />
               </label>
-              <div className="transfer-list-views" role="group" aria-label="Movement queue view">
+              <div className="transfer-list-views" role="group" aria-label="Move queue view">
                 {([
                   ['active', 'Active'],
                   ['needs-action', 'Your next steps'],
@@ -590,9 +599,9 @@ export function TransfersPage() {
                   {!simple ? <option value="at-requesting-store">At requesting store</option> : null}
                   {!simple ? <option value="driver-needed">Driver needed</option> : null}
                   <option value="moving">In transit</option>
-                  <option value="return-due">Return to follow up</option>
+                  <option value="return-due">Returns to follow up</option>
                   {!simple ? <option value="sold-pending">Sold pending · not delivered</option> : null}
-                  <option value="issues">Issue to review</option>
+                  <option value="issues">Issues to review</option>
                 </select>
               </label>
               <label className="transfer-list-sort" title="Sort vehicle moves">
@@ -648,7 +657,7 @@ export function TransfersPage() {
                       </span>
                       <span className="move-row-next">
                         <span className="transfer-list-stage">{simpleRecord ? compactRequestStatus(record.requestStatus, true) : `Step ${step} of 5 · ${compactRequestStatus(record.requestStatus)}`}</span>
-                        <span className="transfer-next"><small>Next</small><strong>{compactNextAction(record.nextAction)}</strong></span>
+                        <span className="transfer-next"><small>Next</small><strong>{compactNextAction(record.nextAction, { homeStore: record.homeStore, destination: record.destination })}</strong></span>
                         <span className="transfer-list-owner-row"><span>{record.nextActionOwner || 'Responsible person not recorded'}</span><span className={dueTone}>{dueLabel(detail)}</span></span>
                         {issueLabel ? <span className="transfer-list-alert"><CircleAlert aria-hidden="true" />{issueLabel}</span> : record.returnRequired && away.isAway ? <span className="transfer-list-return">{returnTimingLabel(record)}</span> : null}
                       </span>

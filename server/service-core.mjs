@@ -526,28 +526,28 @@ function simpleNextAction(row) {
   switch (row.status) {
     case 'requested':
     case 'manager_reviewed':
-      return { label: 'Your manager confirms availability and approves the request', owner: row.approval_owner || `${row.requesting_store_id} manager` }
+      return { label: 'Check the vehicle is free, then approve this move', owner: row.approval_owner || `${row.requesting_store_id} manager` }
     case 'approved':
     case 'transport_assigned':
     case 'picked_up':
     case 'in_transit':
-      return { label: 'Work the vehicle or start its return when it is done', owner: row.requested_by || `${row.requesting_store_id} salesperson` }
+      return { label: 'Show the vehicle, then start its return', owner: row.requested_by || `${row.requesting_store_id} sales` }
     case 'arrived':
     case 'customer_showing':
     case 'sale_outcome_pending':
-      return { label: 'Record an outcome or return the vehicle', owner: `${row.requesting_store_id} sales/manager` }
+      return { label: 'Record the showing outcome, or start the return', owner: `${row.requesting_store_id} sales` }
     case 'sale_confirmed':
-      return { label: 'Confirm the customer delivery, or record that the deal fell through', owner: `${row.requesting_store_id} manager` }
+      return { label: 'Confirm delivery, or record the deal fell through', owner: `${row.requesting_store_id} manager` }
     case 'delivery_confirmed':
-      return { label: 'Delivered — close the move', owner: `${row.requesting_store_id} manager` }
+      return { label: 'Close the move · the customer took delivery', owner: `${row.requesting_store_id} manager` }
     case 'not_sold':
     case 'return_requested':
     case 'return_assigned':
-      return { label: 'Record when the vehicle starts its return', owner: `${row.requesting_store_id} sales/manager` }
+      return { label: 'Start the return when the vehicle leaves', owner: `${row.requesting_store_id} sales` }
     case 'return_in_transit':
-      return { label: 'Confirm the vehicle is back at its home store', owner: `${row.home_store_id} manager` }
+      return { label: `Confirm the vehicle is back at ${row.home_store_id}`, owner: `${row.home_store_id} manager` }
     case 'returned_home':
-      return { label: 'Back at home store — move complete', owner: undefined }
+      return { label: `Move complete · back at ${row.home_store_id}`, owner: undefined }
     default:
       return { label: row.next_action, owner: cleanText(row.next_action_owner) }
   }
@@ -1415,9 +1415,9 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
         count: summary.returnOverdue,
         store: summary.store,
         relatedStores: [summary.store],
-        sourceLabel: 'Inventory Flow transfer ledger',
-        whyItMatters: 'A vehicle expected back at its Home Store has not been confirmed received.',
-        recommendedAction: 'Open Transfers, confirm current custody, assign the return, or record Home Store receipt.',
+        sourceLabel: 'Inventory Flow move ledger',
+        whyItMatters: 'A vehicle due back at its home store has not been confirmed received.',
+        recommendedAction: 'Open Vehicle moves, then assign the return or confirm the vehicle is back.',
         href: '/transfers',
       })
     }
@@ -1518,8 +1518,8 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
       relatedStores: [...new Set([row.home_store_id, row.requesting_store_id, row.destination_store_id])],
       owner: next.owner,
       dueAt: cleanText(row.due_at),
-      sourceLabel: 'Inventory Flow transfer ledger',
-      whyItMatters: 'This is the current app-owned handoff required to keep the vehicle request, movement, or return moving.',
+      sourceLabel: 'Inventory Flow move ledger',
+      whyItMatters: 'This is the next handoff Inventory Flow needs to keep the move going.',
       recommendedAction: next.label,
       href: `/transfers?id=${encodeURIComponent(row.id)}`,
       sourceId: row.id,
@@ -1993,7 +1993,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const state = snapshot(contextInput)
       const row = getTransferRow(database, id)
       if (!row || !transferVisible(row, state.context)) {
-        throw new WorkflowError('Transfer request was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
+        throw new WorkflowError('That vehicle move was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
       }
       return transferView(
         row,
@@ -2164,7 +2164,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const state = snapshot(contextInput)
       const current = getTransferRow(database, id)
       if (!current) {
-        throw new WorkflowError('Transfer request was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
+        throw new WorkflowError('That vehicle move was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
       }
       const events = getTransferEvents(database, id)
       const replay = idempotencyKey && events.find((event) => event.idempotency_key === idempotencyKey)
@@ -2214,7 +2214,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         }
       }
       if (!mutationAuthorized) {
-        throw new WorkflowError('Transfer request was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
+        throw new WorkflowError('That vehicle move was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
       }
       if (replay) {
         const legacyReplayAuthorized = !cleanText(replay.actor_user_id) &&

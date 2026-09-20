@@ -39,7 +39,7 @@ function transfer(index: number): TransferRecord {
     requestedAt: '2026-08-29T14:00:00.000Z',
     custodian: `Custodian ${index}`,
     transportAssignee: `Driver ${index}`,
-    nextAction: index === 1 ? 'Confirm home receipt' : 'Assign a driver',
+    nextAction: index === 1 ? 'Confirm the vehicle is back at Howell' : 'Assign a driver',
     nextActionOwner: `Manager ${index}`,
     dueAt: '2026-09-01T15:00:00.000Z',
     returnRequired: true,
@@ -249,7 +249,7 @@ describe('transfer workspace v3 layout', () => {
   it.each(['simple', 'advanced'] as const)('places the %s move action before records and secondary history', (workflowMode) => {
     const current = detail(['confirm-return']);
     const { container } = render(<TransferTracker transfer={{ ...current, workflowMode }} onAction={vi.fn()} vehicleLinks={<nav aria-label="Vehicle reference"><a href={`/inventory?scope=group&vin=${current.vehicle.vin}`}>Vehicle details</a><a href={`/inventory?scope=group&vin=${current.vehicle.vin}&tab=data`}>Records</a></nav>} />);
-    const action = screen.getByRole('region', { name: 'Next move action' });
+    const action = screen.getByRole('region', { name: 'Next step' });
     const references = screen.getByRole('navigation', { name: 'Vehicle reference' });
     expect(action.compareDocumentPosition(references)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(action).toHaveTextContent(current.nextAction.ownerLabel!);
@@ -344,7 +344,7 @@ describe('transfer workspace v3 layout', () => {
     expect(detailBar).toHaveTextContent('Vehicle move');
     expect(detailBar).toHaveTextContent('MOVE2');
     expect(detailBar).toHaveTextContent('Step 4 of 5');
-    expect(detailBar).toHaveTextContent('Released · driver can be assigned');
+    expect(detailBar).toHaveTextContent('Released · assign a driver');
     expect(within(detailBar as HTMLElement).getByRole('heading', { level: 1, name: 'Vehicle move' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: '2025 Ford F-150 2' })).toBeInTheDocument();
 
@@ -368,13 +368,13 @@ describe('transfer workspace v3 layout', () => {
     data.transfers.forEach(record => {
       record.workflowMode = 'simple';
       record.allowedActions = ['record-outcome', 'schedule-return', 'report-condition'];
-      record.nextAction = 'Work the vehicle or start its return when it is done';
+      record.nextAction = 'Show the vehicle, then start its return';
     });
     const { container } = renderPage(data);
     expect(container.querySelector('.simple-transfer-tracker')).toBeInTheDocument();
     expect(screen.queryByRole('list', { name: 'Inter-store request approval and movement progress' })).not.toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Driver needed' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Update showing / outcome' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Update the showing outcome' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Vehicle location and time away' })).toHaveTextContent('At home store');
     expect(screen.getByRole('button', { name: /My store Ford Detroit/ })).toHaveAttribute('aria-pressed', 'true');
     expect(container.querySelectorAll('.transfer-list-item')).toHaveLength(2);
@@ -406,11 +406,11 @@ describe('transfer workspace v3 layout', () => {
     const actions = screen.getByLabelText('Available move actions');
     expect(actions.querySelectorAll(':scope > button')).toHaveLength(1);
     expect(actions.querySelector('details')).not.toHaveAttribute('open');
-    expect(within(actions).getByRole('button', { name: 'Update showing / outcome' })).toBeInTheDocument();
+    expect(within(actions).getByRole('button', { name: 'Update the showing outcome' })).toBeInTheDocument();
     fireEvent.click(within(actions).getByText('Other options'));
     fireEvent.click(within(actions).getByRole('button', { name: 'Start return' }));
     expect(onAction).toHaveBeenCalledWith('schedule-return', expect.objectContaining({ id: 'transfer-return' }));
-    expect(within(actions).getByRole('button', { name: 'Report vehicle issue' })).toBeInTheDocument();
+    expect(within(actions).getByRole('button', { name: 'Report a vehicle issue' })).toBeInTheDocument();
   });
 
   it('labels a direct move with its recorded movement time instead of a false needed-by time', () => {
@@ -456,7 +456,7 @@ describe('transfer workspace v3 layout', () => {
       deal: { code: 'sold-pending', label: 'Sold pending — delivery not confirmed', tone: 'info' },
       delivery: { code: 'not-confirmed', label: 'Delivery not confirmed', tone: 'neutral' },
     };
-    sold.nextAction = { label: 'Confirm the customer delivery, or record that the deal fell through', ownerLabel: 'Howell manager', sla: 'on-track' };
+    sold.nextAction = { label: 'Confirm delivery, or record the deal fell through', ownerLabel: 'Howell manager', sla: 'on-track' };
     const onAction = vi.fn();
     render(<TransferTracker transfer={{ ...sold, workflowMode: 'simple' }} onAction={onAction} />);
     const progress = screen.getByRole('list', { name: 'Vehicle move progress' });
@@ -465,8 +465,8 @@ describe('transfer workspace v3 layout', () => {
     expect(within(progress).getByText('At destination').closest('li')).toHaveClass('is-complete');
     const summary = screen.getByRole('region', { name: 'Request and vehicle summary' });
     expect(within(summary).getByText('Paused while sold pending')).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Next move action' })).not.toHaveTextContent(/return/i);
-    fireEvent.click(within(screen.getByLabelText('Available move actions')).getByRole('button', { name: 'Confirm delivery / update outcome' }));
+    expect(screen.getByRole('region', { name: 'Next step' })).not.toHaveTextContent(/return/i);
+    fireEvent.click(within(screen.getByLabelText('Available move actions')).getByRole('button', { name: 'Confirm delivery or update the outcome' }));
     expect(onAction).toHaveBeenCalledWith('record-outcome', expect.objectContaining({ id: 'transfer-return' }));
   });
 
@@ -670,9 +670,16 @@ describe('transfer workspace v3 layout', () => {
 
   it('keeps the actual next step in the row while the vehicle is away', () => {
     const data = bootstrap(1);
-    data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', currentLocation: 'Ford Detroit', nextAction: 'Confirm home receipt' };
+    data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', currentLocation: 'Ford Detroit', nextAction: 'Confirm the vehicle is back at Howell' };
     renderPage(data);
-    expect(screen.getByRole('button', { name: /2025 Ford F-150 1/ })).toHaveTextContent('NextConfirm home receipt');
+    expect(screen.getByRole('button', { name: /2025 Ford F-150 1/ })).toHaveTextContent('NextConfirm the vehicle is back at Howell');
+  });
+
+  it('reads a legacy stored next step with the same store name a new row carries', () => {
+    const data = bootstrap(1);
+    data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', currentLocation: 'In transit', nextAction: 'Home manager confirms receipt' };
+    renderPage(data);
+    expect(screen.getByRole('button', { name: /2025 Ford F-150 1/ })).toHaveTextContent('NextConfirm the vehicle is back at Howell');
   });
 
   it('refreshes same-ID move details after an event without cancelling the current read', async () => {
@@ -686,19 +693,19 @@ describe('transfer workspace v3 layout', () => {
     expect(await screen.findByText('Previous private detail')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve this move' })).toBeInTheDocument();
 
-    const updated = { ...data.transfers[0], requestStatus: 'approved', allowedActions: ['record-outcome', 'schedule-return'], nextAction: 'Work the vehicle or start its return when it is done' };
+    const updated = { ...data.transfers[0], requestStatus: 'approved', allowedActions: ['record-outcome', 'schedule-return'], nextAction: 'Show the vehicle, then start its return' };
     const currentData = { ...data, transfers: [updated] };
     mocks.useAppData.mockReturnValue({ data: currentData, homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
     rerender(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
     expect(screen.queryByText('Previous private detail')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approve this move' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Update showing / outcome' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Update the showing outcome' })).toBeInTheDocument();
     expect(mocks.getTransfer).toHaveBeenCalledTimes(2);
     expect(mocks.getTransfer).toHaveBeenNthCalledWith(1, 'transfer-1', 'manager', 'Howell');
     expect(mocks.getTransfer).toHaveBeenNthCalledWith(2, 'transfer-1', 'manager', 'Howell');
     await act(async () => { resolveCurrent({ ...updated, privateEvidence: { requestReason: 'Current private detail' } }); });
     expect(screen.getByText('Current private detail')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Update showing / outcome' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Update the showing outcome' })).toBeInTheDocument();
   });
 
   it('does not abort a healthy detail request when an unchanged bootstrap response is replayed', async () => {
@@ -781,7 +788,7 @@ describe('transfer workspace v3 layout', () => {
     fireEvent.click(screen.getByRole('button', { name: /Completed\s*1/ }));
     expect(screen.getByRole('button', { name: /2025 Ford F-150 1/ })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Back home · move complete' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Close movement' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close the move' })).not.toBeInTheDocument();
   });
 
   it('shows one requesting-manager check and no second-store approval in a simple request', () => {
@@ -953,16 +960,16 @@ describe('transfer workspace v3 layout', () => {
     expect(outcome).toHaveTextContent('Delivery not confirmed');
     expect(outcome).toHaveTextContent('Return in transit');
     const actions = screen.getByRole('contentinfo', { name: 'Available move actions' });
-    expect(within(actions).getByRole('button', { name: 'Confirm home receipt' })).toBeInTheDocument();
-    expect(within(actions).getByRole('button', { name: 'Report vehicle issue' })).toBeInTheDocument();
+    expect(within(actions).getByRole('button', { name: 'Confirm back home' })).toBeInTheDocument();
+    expect(within(actions).getByRole('button', { name: 'Report a vehicle issue' })).toBeInTheDocument();
     expect(within(actions).getByText('More actions')).toBeInTheDocument();
 
     fireEvent.click(within(actions).getByText('More actions'));
     expect(within(actions).getByRole('button', { name: 'Schedule return' })).toBeInTheDocument();
     expect(within(actions).getByRole('button', { name: 'Open original record' })).toHaveAttribute('title', 'Open the original dealership record in a new tab');
 
-    fireEvent.click(within(actions).getByRole('button', { name: 'Report vehicle issue' }));
-    fireEvent.click(within(actions).getByRole('button', { name: 'Confirm home receipt' }));
+    fireEvent.click(within(actions).getByRole('button', { name: 'Report a vehicle issue' }));
+    fireEvent.click(within(actions).getByRole('button', { name: 'Confirm back home' }));
 
     expect(onAction).toHaveBeenNthCalledWith(1, 'report-condition', expect.objectContaining({ id: 'transfer-return' }));
     expect(onAction).toHaveBeenNthCalledWith(2, 'confirm-return', expect.objectContaining({ id: 'transfer-return' }));
@@ -976,7 +983,7 @@ describe('transfer workspace v3 layout', () => {
     render(<TransferTracker transfer={detail([])} mode="page" onAction={vi.fn()} />);
 
     expect(screen.queryByRole('contentinfo', { name: 'Available move actions' })).not.toBeInTheDocument();
-    expect(screen.getByText('Confirm home receipt')).toBeInTheDocument();
+    expect(screen.getByText('Confirm the vehicle is back at Howell')).toBeInTheDocument();
     expect(screen.getByText('Return in transit')).toBeInTheDocument();
   });
 
@@ -1011,7 +1018,7 @@ describe('transfer workspace v3 layout', () => {
     expect(progress).toHaveTextContent('Driver & move');
     expect(progress).toHaveTextContent('Outcome / return');
     expect(within(progress).getByText('Requesting manager').closest('li')).toHaveAttribute('aria-current', 'step');
-    expect(screen.getByText('Requesting manager: approve, then contact Home Store')).toBeInTheDocument();
+    expect(screen.getByText('Approve, then call the home store')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve request' })).toBeInTheDocument();
   });
 });
