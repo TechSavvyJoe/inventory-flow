@@ -42,7 +42,7 @@ function TaskActions({ item, vehicle, returnTo }: { item: AttentionItem; vehicle
   </div>
 }
 
-function TaskFollowUp({ item, role, homeStore, currentUser, onAction }: Pick<OperationsQueueProps, 'role' | 'homeStore' | 'currentUser' | 'onAction'> & { item: AttentionItem }) {
+function TaskFollowUp({ item, condition, role, homeStore, currentUser, onAction }: Pick<OperationsQueueProps, 'role' | 'homeStore' | 'currentUser' | 'onAction'> & { item: AttentionItem; condition?: string }) {
   const [note, setNote] = useState('')
   const [date, setDate] = useState('')
   const [busy, setBusy] = useState(false)
@@ -63,7 +63,7 @@ function TaskFollowUp({ item, role, homeStore, currentUser, onAction }: Pick<Ope
   const canDate = item.allowedActions.includes('set_follow_up')
   // Move progress is recorded on the move itself; closing a generic task is not a handoff.
   const canResolve = actionCategory(item) !== 'moves' && item.allowedActions.includes('resolve')
-  return <details className="action-follow-up"><summary>Follow-up &amp; history</summary><div className="action-follow-up-body">
+  return <details className="action-follow-up"><summary>Follow-up &amp; history{condition ? <span className="action-follow-up-condition"> · {condition}</span> : null}</summary><div className="action-follow-up-body">
     <p>{item.whyItMatters}</p>
     {canNote || canDate || canResolve || item.allowedActions.includes('reopen') ? <div className="action-follow-up-form">
       {canNote ? <label>Work note<textarea rows={2} value={note} onChange={event => setNote(event.target.value)} placeholder="What was confirmed, or what happens next?" /></label> : null}
@@ -121,6 +121,9 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
           <strong>{taskTitle(item)}</strong>
           <span>{[item.vehicleName || item.stockNumber, item.actionStore || item.store, item.informationalReason ? INFORMATIONAL_REASON_LABELS[item.informationalReason] : null].filter(Boolean).join(' · ')}</span>
           {item.href ? <Link to={withWorkspaceReturnPath(item.href, returnTo)}>{taskLinkLabel(item)}</Link> : null}
+          {/* Not this store's step, but still recordable when the server allows it: a
+              group manager or a related store can leave a note or a follow-up date. */}
+          {item.allowedActions.length ? <TaskFollowUp item={item} role={role} homeStore={homeStore} currentUser={currentUser} onAction={onAction}/> : null}
         </li>)}
       </ul>
     </details> : null}
@@ -130,6 +133,10 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
 function TaskRow({ row, vehicle, returnTo, reportDate, role, homeStore, currentUser, onAction }: Pick<OperationsQueueProps, 'role' | 'homeStore' | 'currentUser' | 'onAction' | 'reportDate'> & { row: ActionRow; vehicle?: VehicleRecord; returnTo: string }) {
   const { lead } = row
   const overdue = row.items.some(item => isTaskOverdue(item, reportDate))
+  // One row is one vehicle, but each condition keeps its own workflow record: a
+  // note about the hold has to land on the hold, not on the move that leads the
+  // row. Service status is recorded on the service page instead.
+  const followUps = row.items.filter(item => item.type !== 'service_pending')
   return <article role="listitem" className="action-row"><div className="action-row-content">
     <TaskVehicle item={lead} vehicle={vehicle}/>
     <div className="action-task"><strong>{taskTitle(lead)}</strong><p>{taskDescription(lead)}</p>
@@ -137,5 +144,5 @@ function TaskRow({ row, vehicle, returnTo, reportDate, role, homeStore, currentU
     </div>
     <div className="action-owner"><strong>{lead.assignedTo || lead.owner || 'Store manager'}</strong><span className={overdue ? 'workflow-overdue' : undefined}>{lead.followUpAt ? `Follow up ${formatDateTime(lead.followUpAt)}` : lead.dueAt ? `Due ${formatDate(lead.dueAt)}` : lead.status === 'resolved' ? 'Reviewed' : 'Next store review'}</span></div>
     <TaskActions item={lead} vehicle={vehicle} returnTo={returnTo}/>
-  </div>{lead.type !== 'service_pending' ? <TaskFollowUp item={lead} role={role} homeStore={homeStore} currentUser={currentUser} onAction={onAction}/> : null}</article>
+  </div>{followUps.map(item => <TaskFollowUp key={item.id} item={item} condition={followUps.length > 1 ? taskTitle(item) : undefined} role={role} homeStore={homeStore} currentUser={currentUser} onAction={onAction}/>)}</article>
 }

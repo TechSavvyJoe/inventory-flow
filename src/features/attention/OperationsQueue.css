@@ -39,3 +39,5 @@
 .action-also-list li strong { font-size: 15px; font-weight: 600; color: var(--ink-900); }
 .action-also-list li span { font-size: 13px; color: var(--ink-600); }
 .action-also-list li a { min-height: 44px; display: inline-flex; align-items: center; font-size: 14px; color: var(--blue-600); }
+.action-also-list li .action-follow-up { margin-left: 0; }
+.action-also-list li .action-follow-up summary { font-size: 13px; }

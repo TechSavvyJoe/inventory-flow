@@ -87,10 +87,51 @@ describe('Action center store workflow', () => {
     const row = within(screen.getByRole('list', { name: 'Attention items' })).getByRole('listitem')
     expect(row).toHaveTextContent('Follow up on the expected hold date')
     expect(row).toHaveTextContent('Also on this vehicle: Review the hold alert · Arrange service')
-    // The row keeps the most urgent condition's own next step and follow-up.
+    // The row keeps the most urgent condition's own next step.
     expect(within(row).getByRole('link', { name: 'Review hold' })).toBeInTheDocument()
-    expect(within(row).getByText('Follow-up & history')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('1 task')
+  })
+
+  it('keeps a follow-up record for every condition on a grouped row, not only the one that leads it', async () => {
+    const { onAction } = show([
+      task({ id: 'move', type: 'transfer_next_action', priority: 'urgent', label: 'Confirm vehicle arrival', href: '/transfers?id=synthetic-move', allowedActions: ['add_note'] }),
+      task({ id: 'hold', type: 'hold_alert', allowedActions: ['add_note', 'set_follow_up', 'resolve'] }),
+      task({ id: 'service', type: 'service_pending', priority: 'low', label: 'Arrange service', href: '/service?vin=TESTDATAHWELL0001', allowedActions: [] }),
+    ])
+    const row = within(screen.getByRole('list', { name: 'Attention items' })).getByRole('listitem')
+    const disclosures = row.querySelectorAll('details.action-follow-up')
+    // Service status is recorded on the service page, so it gets no disclosure.
+    expect(disclosures).toHaveLength(2)
+    expect(disclosures[0]).toHaveTextContent('Follow-up & history · Confirm vehicle arrival')
+    expect(disclosures[1]).toHaveTextContent('Follow-up & history · Review the hold alert')
+    fireEvent.click(within(disclosures[1] as HTMLElement).getByText('Follow-up & history'))
+    fireEvent.change(within(disclosures[1] as HTMLElement).getByLabelText('Work note'), { target: { value: 'Synthetic hold note.' } })
+    fireEvent.click(within(disclosures[1] as HTMLElement).getByRole('button', { name: 'Mark reviewed' }))
+    // The note lands on the hold's own record, not on the move that leads the row.
+    await waitFor(() => expect(onAction).toHaveBeenCalledWith('hold', expect.objectContaining({ type: 'resolve', note: 'Synthetic hold note.' })))
+    expect(onAction).not.toHaveBeenCalledWith('move', expect.anything())
+    // A single condition keeps the plain label.
+    cleanup()
+    show([task()])
+    expect(screen.getByText('Follow-up & history')).not.toHaveTextContent('·')
+  })
+
+  it('lets the viewer record on an informational entry when the server allows it', async () => {
+    const { onAction } = show([
+      task(),
+      task({ id: 'away-move', vin: 'TESTDATAFOWLER001', vehicleName: 'Synthetic Fowlerville move', type: 'transfer_next_action', store: 'Fowlerville', actionStore: 'Fowlerville', relatedStores: ['Howell', 'Fowlerville'], href: '/transfers?id=synthetic-away', actionability: 'informational', informationalReason: 'other_store', allowedActions: ['add_note'] }),
+      task({ id: 'lincoln-hold', vin: 'TESTDATALINCOLN01', vehicleName: 'Synthetic Lincoln hold', store: 'Lincoln', relatedStores: ['Howell'], actionability: 'informational', informationalReason: 'other_store', allowedActions: [] }),
+    ])
+    const also = screen.getByRole('list', { name: 'Also worth knowing' })
+    const [move, hold] = within(also).getAllByRole('listitem')
+    expect(within(move).getByText('Follow-up & history')).toBeInTheDocument()
+    expect(within(hold).queryByText('Follow-up & history')).not.toBeInTheDocument()
+    fireEvent.click(within(move).getByText('Follow-up & history'))
+    fireEvent.change(within(move).getByLabelText('Work note'), { target: { value: 'Synthetic driver arranged.' } })
+    fireEvent.click(within(move).getByRole('button', { name: 'Save follow-up' }))
+    await waitFor(() => expect(onAction).toHaveBeenCalledWith('away-move', expect.objectContaining({ type: 'add_note', note: 'Synthetic driver arranged.', store: 'Howell' })))
+    // Recording on it does not make it this store's task.
+    expect(screen.getByText('1 task')).toBeInTheDocument()
   })
 
   it('offers the actual next destination and keeps old start/acknowledge buttons out of the workflow', () => {

@@ -842,11 +842,14 @@ test('action center opens the exact task and inventory updates have their own pa
   // A task can include source-resource links in addition to its one primary
   // workflow link. Scope this assertion to the task action itself.
   await expect(row.locator('a.workflow-action')).toHaveCount(1)
-  await row.locator('summary').click()
-  await expect(row.getByLabel('Work note')).toBeVisible()
-  await row.getByLabel('Work note').fill('Synthetic task review for browser validation')
-  await row.getByRole('button', { name: 'Save follow-up' }).click()
-  await expect(row.getByRole('status')).toHaveText('Follow-up saved.')
+  // A row collapses one vehicle's conditions, and each condition keeps its own
+  // follow-up disclosure. Record against the leading condition's disclosure.
+  const followUp = row.locator('details.action-follow-up').first()
+  await followUp.locator('summary').click()
+  await expect(followUp.getByLabel('Work note')).toBeVisible()
+  await followUp.getByLabel('Work note').fill('Synthetic task review for browser validation')
+  await followUp.getByRole('button', { name: 'Save follow-up' }).click()
+  await expect(followUp.getByRole('status')).toHaveText('Follow-up saved.')
   await expectNoOverflow(page)
   await capture(page, testInfo, 'attention-follow-up')
   await settleApi(page)
