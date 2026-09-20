@@ -21,7 +21,7 @@ describe('OASIS action capture provenance', () => {
 
 function sourceVehicle(): VehicleRecord {
   return {
-    vin: '1FMUK8DHXTGB76992',
+    vin: 'TESTDATASYN000001',
     stockNumber: 'HT0529A',
     year: 2026,
     make: 'Ford',
@@ -45,14 +45,14 @@ function sourceVehicle(): VehicleRecord {
       locationConfidence: 'reported',
     },
     autoCheckReport: {
-      url: 'https://www.autocheck.com/report/1FMUK8DHXTGB76992',
+      url: 'https://www.autocheck.com/report/TESTDATASYN000001',
       dataState: 'current',
       score: 92,
       usage: 'Personal',
       checks: [{ label: 'Open recall check', status: 'No open recalls' }],
     },
     windowSticker: {
-      url: 'https://www.bobmaxeyfordhowell.com/window-sticker/1FMUK8DHXTGB76992.pdf',
+      url: 'https://www.bobmaxeyfordhowell.com/window-sticker/TESTDATASYN000001.pdf',
       dataState: 'current',
       equipmentGroup: 'Equipment Group 200A',
       options: ['Active Comfort Package'],

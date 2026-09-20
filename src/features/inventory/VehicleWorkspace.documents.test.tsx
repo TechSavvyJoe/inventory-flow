@@ -7,8 +7,8 @@ afterEach(cleanup);
 
 function vehicle(withDocuments = true): InventoryVehicle {
   return {
-    id: '1FMUK8DHXTGB76992',
-    vin: '1FMUK8DHXTGB76992',
+    id: 'TESTDATASYN000001',
+    vin: 'TESTDATASYN000001',
     stockNumber: 'HT0529A',
     year: 2026,
     make: 'Ford',
@@ -172,7 +172,7 @@ describe('vehicle document workspace', () => {
     expect(card.querySelector('details')).not.toBeVisible();
     expect(within(card).getByText('Mileage source: Entered dealer odometer')).not.toBeVisible();
     expect(within(card).getByRole('table', { name: 'Remaining factory warranty by coverage' })).toBeVisible();
-    expect(within(card).getByRole('link', { name: /Open OASIS coverage lookup/ })).toHaveAttribute('href', 'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=1FMUK8DHXTGB76992');
+    expect(within(card).getByRole('link', { name: /Open OASIS coverage lookup/ })).toHaveAttribute('href', 'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=TESTDATASYN000001');
     expect(within(card).getByRole('region', { name: 'AutoCheck estimate' })).not.toBeVisible();
     expect(within(card).getByRole('table', { name: 'Remaining factory warranty by coverage' })).not.toHaveTextContent('Ford source note');
     expect(within(card).getByRole('table', { name: 'AutoCheck warranty estimate', hidden: true })).not.toBeVisible();
@@ -385,7 +385,7 @@ describe('vehicle document workspace', () => {
     expect(within(panel).getByText('12 mi')).toBeInTheDocument();
     expect(within(panel).getByText('01/01/2029')).toBeInTheDocument();
     const oasisLink = within(panel).getByRole('link', { name: /Open Ford OASIS lookup for 2026 Ford Explorer Active/i });
-    expect(oasisLink).toHaveAttribute('href', 'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=1FMUK8DHXTGB76992');
+    expect(oasisLink).toHaveAttribute('href', 'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=TESTDATASYN000001');
     expect(oasisLink).toHaveAttribute('data-read-only', 'true');
   });
 

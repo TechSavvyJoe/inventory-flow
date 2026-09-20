@@ -628,8 +628,8 @@ describe('modern inventory result access', () => {
   it('keeps Ford-only dealer tools off non-Ford inventory rows', () => {
     const nonFordVehicle = {
       ...heldMovingVehicle(),
-      id: '1GCUDEED9RZ144878',
-      vin: '1GCUDEED9RZ144878',
+      id: 'TESTDATASYN000008',
+      vin: 'TESTDATASYN000008',
       make: 'Chevrolet',
       model: 'Silverado 1500',
     };

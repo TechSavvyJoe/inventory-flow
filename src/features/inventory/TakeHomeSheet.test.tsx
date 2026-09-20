@@ -8,8 +8,8 @@ afterEach(cleanup);
 
 function vehicle(): InventoryVehicle {
   return {
-    id: '1FMUK8DHXTGB76992',
-    vin: '1FMUK8DHXTGB76992',
+    id: 'TESTDATASYN000001',
+    vin: 'TESTDATASYN000001',
     stockNumber: 'HT0529A',
     year: 2026,
     make: 'Ford',
