@@ -79,8 +79,10 @@ export function isActionable(item: AttentionItem) {
 }
 
 /**
- * Every condition the Action center shows, actionable or not. Source health is
- * included so nothing is silently dropped; the queue groups it instead.
+ * Every condition the payload carries, classified for this viewer. Source
+ * health is returned too, so the badge and the page read the same list; the
+ * Action center page then leaves it to its own source notice rather than
+ * listing it as a queue entry.
  */
 export function actionCenterItems(data: BootstrapData, viewer: ActionViewer): AttentionItem[] {
   const items = data.attention.map(item => item.vin && item.href?.startsWith('/inventory')

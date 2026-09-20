@@ -39,12 +39,13 @@ describe('Action center page and shared navigation count', () => {
     expect(screen.getByRole('button', { name: /Service\s*4/ })).toBeInTheDocument()
     expect(screen.queryByText('Synthetic source_freshness')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Service status/ })).toHaveTextContent('3 waiting for service · 1 in service')
-    const also = screen.getByRole('list', { name: 'Also worth knowing' })
-    expect(within(also).getAllByRole('listitem')).toHaveLength(1)
-    expect(also).toHaveTextContent('Check source health before promising a vehicle')
+    // Source health is the page notice's job, so it never pads the group either.
+    expect(screen.queryByRole('list', { name: 'Also worth knowing' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
     expect(tasks()).toHaveLength(5)
-    expect(within(screen.getByRole('list', { name: 'Also worth knowing' })).getAllByRole('listitem')).toHaveLength(3)
+    const also = screen.getByRole('list', { name: 'Also worth knowing' })
+    expect(within(also).getAllByRole('listitem')).toHaveLength(2)
+    expect(also).not.toHaveTextContent('Check source health before promising a vehicle')
   })
 
   it('keeps a service task visible to the vehicle home store while the service-store association is pending', () => {
@@ -98,11 +99,13 @@ describe('Action center page and shared navigation count', () => {
     expect(tasks()).toHaveLength(4)
   })
 
-  it('communicates delayed sources without turning source health into an employee task', () => {
+  it('communicates delayed sources once, as the page notice, never as an employee task', () => {
     const fixture = data(); fixture.meta.dealerMailFreshness = 'stale_unverified'; mocked.context.data = fixture
     show()
+    expect(screen.getByText(/Some inventory details need review/)).toHaveClass('workflow-notice')
     expect(screen.queryByText(/source data|inventory details may be out of date/i)).not.toBeInTheDocument()
     expect(screen.queryByText('Synthetic source_freshness')).not.toBeInTheDocument()
+    expect(screen.queryByText('Check source health before promising a vehicle')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /All tasks\s*5/ })).toBeInTheDocument()
   })
 
