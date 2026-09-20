@@ -100,4 +100,12 @@ describe('synthetic extension preview image server', () => {
     expect(module.headers['content-type']).toContain('text/javascript')
     expect(module.body.toString()).toContain('syntheticPreviewPhotos')
   })
+
+  it('redirects the bare root and /index.html to the side panel instead of 404ing', async () => {
+    for (const path of ['/', '/index.html']) {
+      const response = await get(path)
+      expect(response.status).toBe(302)
+      expect(response.headers.location).toBe('/sidepanel/index.html')
+    }
+  })
 })
