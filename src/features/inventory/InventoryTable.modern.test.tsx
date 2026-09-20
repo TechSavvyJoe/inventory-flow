@@ -625,6 +625,21 @@ describe('modern inventory result access', () => {
     expect(within(vehicleHeader).getByRole('button', { name: /Stock, descending, primary sort/i })).toHaveAttribute('data-sort-direction', 'desc');
   });
 
+  it('reads a recall chip tooltip in US miles when the OASIS description prints kilometres', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.fordOasis = {
+      dataState: 'current',
+      capturedAt: '2026-09-11T14:00:00Z',
+      openActionsCaptured: true,
+      openFieldServiceActions: [{ code: '24S12', description: 'Inspect rear axle before 100,000 km' }],
+      warrantyCoverages: [],
+      extendedCoverageExpirations: [],
+    };
+    render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+    const chip = screen.getByRole('button', { name: /1 open Ford recall or field service action/ });
+    expect(chip).toHaveAttribute('title', '24S12 — Inspect rear axle before 62,137 mi (100,000 km in the source)');
+  });
+
   it('keeps Ford-only dealer tools off non-Ford inventory rows', () => {
     const nonFordVehicle = {
       ...heldMovingVehicle(),

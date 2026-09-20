@@ -1,3 +1,4 @@
+import { sourceDistanceText } from "../../lib/source-distance";
 import type { InventoryVehicle } from "./types";
 
 export type EquipmentCategory =
@@ -84,7 +85,8 @@ export function publishedEquipment(vehicle: InventoryVehicle): PublishedEquipmen
   const byKey = new Map<string, PublishedEquipmentItem>();
 
   for (const candidate of candidateItems(vehicle)) {
-    const label = candidate.label?.replace(/\s+/g, " ").trim();
+    // A factory or vAuto label can print a metric consumption or range figure.
+    const label = candidate.label ? sourceDistanceText(candidate.label.replace(/\s+/g, " ").trim()) : undefined;
     if (!label) continue;
     const key = normalizedEquipmentKey(label);
     if (!key) continue;
@@ -103,7 +105,7 @@ export function publishedEquipment(vehicle: InventoryVehicle): PublishedEquipmen
   return [...byKey.values()].sort((left, right) => {
     if (left.standout !== right.standout) return left.standout ? -1 : 1;
     const sourceDifference = SOURCE_STRENGTH[right.source] - SOURCE_STRENGTH[left.source];
-    return sourceDifference || left.label.localeCompare(right.label, undefined, { numeric: true });
+    return sourceDifference || left.label.localeCompare(right.label, "en-US", { numeric: true });
   });
 }
 

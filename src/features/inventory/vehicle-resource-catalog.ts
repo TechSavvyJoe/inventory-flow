@@ -1,5 +1,6 @@
 import { getDemoWindowSticker } from '../../lib/demo-documents';
 import { sourceDisplayText } from '../../lib/source-text';
+import { sourceDistanceText } from '../../lib/source-distance';
 import type { AutoCheckResource, FactoryEquipmentResource, FordOasisResource, WindowStickerResource, VehicleWorkspaceTab } from './types';
 import { formatDate, formatNumber, formatStickerMoney } from './inventory-utils';
 import { fordInvoiceUrl, fordOasisUrl, officialVehicleDocumentUrl, vautoFactoryEquipmentUrl } from './vehicle-document-utils';
@@ -50,6 +51,17 @@ export interface VehicleResource {
 
 function text(value?: string | null): string | null {
   return value?.trim().replace(/\s+/g, ' ') || null;
+}
+
+/**
+ * Source prose that can state a distance. Canadian stickers, OASIS factory
+ * terms and AutoCheck detail text may print kilometres; staff read miles, so
+ * the US figure leads and the source figure follows it. Applied once, where
+ * the raw field enters a fact, so a converted string is never re-converted.
+ */
+function factText(value?: string | null): string | null {
+  const normalized = text(value);
+  return normalized === null ? null : sourceDistanceText(normalized);
 }
 
 function present(values: Array<string | null | undefined>, limit = Infinity): string[] {
@@ -119,7 +131,7 @@ function historyCheckFacts(history?: VehicleResourceVehicle['autoCheckReport']) 
     .map((check, index) => ({
       priority: checkPriority(check), index,
       compact: historyCheckSummary(check, history),
-      full: `${text(check.label)}: ${join([check.status, check.detail])}`,
+      full: factText(`${text(check.label)}: ${join([check.status, check.detail])}`) ?? '',
       summary: historyCheckSummary(check, history),
     })).sort((a, b) => a.priority - b.priority || a.index - b.index);
 }
@@ -139,7 +151,7 @@ function historyCheckSummary(check: HistoryCheck, history?: VehicleResourceVehic
   const status = text(check.status);
   const genericStatus = /^(?:no issues?|no problems?|clear|normal)$/i.test(status ?? '');
   const value = join([genericStatus && detail ? null : status, detail]);
-  return value ? `${label}: ${value}` : '';
+  return value ? factText(`${label}: ${value}`) ?? '' : '';
 }
 
 function equipmentIdentity(value?: string | null): string {
@@ -154,7 +166,7 @@ function stickerSummaryOptions(sticker?: VehicleResourceVehicle['windowSticker']
 }
 
 function importantItems(values: string[]): string[] {
-  const items = present(values);
+  const items = present(values).map(item => sourceDistanceText(item));
   const important = /360|camera|adaptive cruise|blind spot|blis\b|heated|ventilated|cooled|leather|tow|trailer|moonroof|sunroof|panoramic|power liftgate|navigation|remote start/i;
   return [...items.filter(item => important.test(item)), ...items.filter(item => !important.test(item))];
 }
@@ -175,11 +187,11 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
     numeric(sticker?.totalMsrp) ? `${formatStickerMoney(sticker.totalMsrp, sticker!)} MSRP` : null,
     sticker?.equipmentGroup,
     ...importantItems(sticker?.options ?? []).slice(0, 2),
-    join([sticker?.engine, sticker?.transmission]),
+    join([factText(sticker?.engine), factText(sticker?.transmission)]),
     ...importantItems(sticker?.options ?? []).slice(2, 3),
     join([sticker?.exteriorColor ? `Exterior ${sticker.exteriorColor}` : null, sticker?.interiorColor ? `Interior ${sticker.interiorColor}` : null]),
     ...importantItems(sticker?.standardEquipment ?? []).slice(0, 2),
-    sticker?.warranty?.[0] ? `Printed warranty: ${sticker.warranty[0]}` : null,
+    sticker?.warranty?.[0] ? `Printed warranty: ${factText(sticker.warranty[0])}` : null,
   ]);
   const stickerSummary = demoSticker ? stickerFacts : present([
     join([numeric(sticker?.totalMsrp) ? `${formatStickerMoney(sticker.totalMsrp, sticker!)} MSRP` : null, sticker?.equipmentGroup]),
@@ -205,7 +217,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   const checks = historyCheckFacts(history);
   const scoreRange = numeric(history?.scoreRangeLow) && numeric(history?.scoreRangeHigh) && history.scoreRangeLow <= history.scoreRangeHigh ? `${history.scoreRangeLow}–${history.scoreRangeHigh}` : undefined;
   const historyScore = numeric(history?.score) ? `Score ${formatNumber(history.score)}${scoreRange ? ` · ${scoreRange} range` : ''}` : null;
-  const ownership = join([numeric(history?.ownerCount) ? `${formatNumber(history.ownerCount)} ${history.ownerCount === 1 ? 'owner' : 'owners'}` : null, history?.usage]);
+  const ownership = join([numeric(history?.ownerCount) ? `${formatNumber(history.ownerCount)} ${history.ownerCount === 1 ? 'owner' : 'owners'}` : null, factText(history?.usage)]);
   const odometer = numeric(history?.lastReportedOdometer) ? `Last reported ${formatNumber(history.lastReportedOdometer)} mi${text(history.lastReportedOdometerDate) ? ` · ${formatDate(history.lastReportedOdometerDate)}` : ''}` : null;
   const historyFacts = present([
     historyScore,
@@ -243,7 +255,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
     ...(equipment?.sections ?? []).flatMap(section => section.items.map(item => item.label)),
     ...(equipment?.packages ?? []).flatMap(pkg => pkg.features ?? []),
   ]);
-  const powertrain = join([equipment?.engine, equipment?.transmission, equipment?.drivetrain]);
+  const powertrain = join([factText(equipment?.engine), factText(equipment?.transmission), equipment?.drivetrain]);
   const equipmentFacts = present([
     ...packages.slice(0, 2), ...equipmentItems.slice(0, 4), powertrain,
     numeric(equipment?.totalMsrp) ? `${formatNumber(equipment.totalMsrp)} MSRP` : null,
@@ -260,8 +272,8 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   if (fordFamily) {
     const oasis = vehicle.fordOasis;
     const oasisHref = fordOasisUrl(vehicle.vin);
-    const actions = present((oasis?.openFieldServiceActions ?? []).map(action => join([action.code, sourceDisplayText(action.description)])));
-    const coverages = present((oasis?.warrantyCoverages ?? []).map(coverage => join([coverage.type, sourceDisplayText(coverage.description)])));
+    const actions = present((oasis?.openFieldServiceActions ?? []).map(action => join([action.code, factText(sourceDisplayText(action.description))])));
+    const coverages = present((oasis?.warrantyCoverages ?? []).map(coverage => join([coverage.type, factText(sourceDisplayText(coverage.description))])));
     // Adapters can supply default empty arrays. A dated, complete source capture
     // is required before an empty action list can be described as a zero result.
     const capturedEmptyActions = hasCapturedOasisActionResult(oasis) && oasis?.openFieldServiceActions?.length === 0;
@@ -272,7 +284,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
       warrantyStart, buildDate,
       ...coverages.map(coverage => `Coverage: ${coverage}`),
       capturedEmptyActions ? 'No open Ford actions' : null,
-      ...(oasis?.extendedCoverageExpirations ?? []).map(expiration => `Extended coverage: ${expiration}`),
+      ...(oasis?.extendedCoverageExpirations ?? []).map(expiration => `Extended coverage: ${factText(expiration)}`),
       numeric(oasis?.monthsInService) ? `${formatNumber(oasis.monthsInService)} months in service` : null,
       numeric(oasis?.saleMileage) ? `${formatNumber(oasis.saleMileage)} mi at sale` : null,
     ]);

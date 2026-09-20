@@ -1,5 +1,6 @@
 import { serviceStatusLabel, serviceWorkflowStatus } from "../../lib/service-readiness";
 import { sourceDisplayText } from "../../lib/source-text";
+import { sourceDistanceText } from "../../lib/source-distance";
 import { vehiclePhotoFullSources } from "../../lib/vehicle-photos";
 import {
   useEffect,
@@ -133,11 +134,11 @@ function historyCheckResult(check: NonNullable<NonNullable<InventoryVehicle["aut
   const detail = sourceDisplayText(check.detail).trim();
   const reading = detail.match(/^Last reported odometer:\s*([\d,]+)(?:\s*(?:mi|miles))?(?:\s*\(([^)]+)\))?\.?$/i);
   if (/odometer/i.test(check.label) && reading && Number(reading[1].replaceAll(",", "")) === report?.lastReportedOdometer
-    && (!reading[2] || Boolean(report?.lastReportedOdometerDate && formatDate(reading[2]) === formatDate(report.lastReportedOdometerDate)))) return status || "See odometer above";
+    && (!reading[2] || Boolean(report?.lastReportedOdometerDate && formatDate(reading[2]) === formatDate(report.lastReportedOdometerDate)))) return sourceDistanceText(status) || "See odometer above";
   if (/no cpo info available|not reported|not available/i.test(status) && !detail) return "Not reported";
-  if (!detail || detail.toLowerCase() === status.toLowerCase()) return status || "Not reported";
-  if (/^no issue$/i.test(status) || /^records available$/i.test(status) && /^\d+ service records?(?:\(s\))?(?: reported)?\.?$/i.test(detail) || detail.toLowerCase().includes(status.toLowerCase())) return detail;
-  return [status, detail].filter(Boolean).join(" · ");
+  if (!detail || detail.toLowerCase() === status.toLowerCase()) return sourceDistanceText(status) || "Not reported";
+  if (/^no issue$/i.test(status) || /^records available$/i.test(status) && /^\d+ service records?(?:\(s\))?(?: reported)?\.?$/i.test(detail) || detail.toLowerCase().includes(status.toLowerCase())) return sourceDistanceText(detail);
+  return sourceDistanceText([status, detail].filter(Boolean).join(" · "));
 }
 
 function serviceRecordSummary(report: NonNullable<InventoryVehicle["autoCheckReport"]>): string | null {
@@ -688,8 +689,8 @@ function CapturedWarrantyTable({ coverages, label }: { coverages: WarrantyCheckC
     <thead><tr><th scope="col">Coverage</th><th scope="col">Term</th><th scope="col">Miles left</th><th scope="col">Time left</th><th scope="col">Status</th></tr></thead>
     <tbody>{coverages.map((coverage, index) => <tr key={`${coverage.type}-${index}`} data-status={coverage.status}>
       <th scope="row">{coverage.type}</th>
-      <td data-label="Term">{coverage.termText}</td>
-      <td data-label="Miles left">{coverage.remainingMilesText}</td>
+      <td data-label="Term">{sourceDistanceText(coverage.termText)}</td>
+      <td data-label="Miles left">{sourceDistanceText(coverage.remainingMilesText)}</td>
       <td data-label="Time left">{coverage.remainingTimeText}</td>
       <td data-label="Status"><span className={`inventory-warranty-pill inventory-warranty-pill--${coverage.status === "ACTIVE" ? "active" : coverage.status === "EXPIRED" ? "expired" : "unknown"}`}>{coverage.status === "ACTIVE" ? "Active" : coverage.status === "EXPIRED" ? "Expired" : "N/A"}</span></td>
     </tr>)}</tbody>
@@ -738,7 +739,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
       : null;
   const autoCheckFacts = autoCheck
     ? [
-        autoCheck.usage ? { label: "Vehicle use", value: autoCheck.usage } : null,
+        autoCheck.usage ? { label: "Vehicle use", value: sourceDistanceText(autoCheck.usage) } : null,
         autoCheck.ownerCount != null ? {
           label: "Owners reported",
           value: `${autoCheck.ownerCount} owner${autoCheck.ownerCount === 1 ? "" : "s"}`,
@@ -754,7 +755,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
         autoCheck.lastReportedOdometer == null && autoCheck.lastReportedOdometerDate ? {
           label: "Last odometer report date", value: formatDate(autoCheck.lastReportedOdometerDate),
         } : null,
-        autoCheck.vehicleClass ? { label: "Vehicle class", value: autoCheck.vehicleClass } : null,
+        autoCheck.vehicleClass ? { label: "Vehicle class", value: sourceDistanceText(autoCheck.vehicleClass) } : null,
         autoCheck.assemblyCountry ? { label: "Assembly country", value: autoCheck.assemblyCountry } : null,
         autoCheck.estimatedInServiceDate ? {
           label: "Estimated in-service date",
@@ -768,7 +769,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
         sticker.exteriorColor ? { label: "Exterior", value: sticker.exteriorColor } : null,
         sticker.interiorColor ? { label: "Interior", value: sticker.interiorColor } : null,
         sticker.engine || sticker.transmission
-          ? { label: "Powertrain", value: [sticker.engine, sticker.transmission].filter(Boolean).join(" · ") }
+          ? { label: "Powertrain", value: sourceDistanceText([sticker.engine, sticker.transmission].filter(Boolean).join(" · ")) }
           : null,
       ].filter(Boolean) as Array<{ label: string; value: string }>
     : [];
@@ -779,11 +780,11 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
         factoryEquipment.engine || factoryEquipment.transmission || factoryEquipment.drivetrain
           ? {
               label: "Powertrain",
-              value: [
+              value: sourceDistanceText([
                 factoryEquipment.engine,
                 factoryEquipment.transmission,
                 factoryEquipment.drivetrain,
-              ].filter(Boolean).join(" · "),
+              ].filter(Boolean).join(" · ")),
             }
           : null,
       ].filter(Boolean) as Array<{ label: string; value: string }>
@@ -810,7 +811,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
           <dl className="vdp-history-summary" aria-label="AutoCheck summary">
             {autoCheck.score != null || autoCheckScoreRange ? <Fact label="AutoCheck score" emphasize>{autoCheck.score ?? "Not reported"}{autoCheckScoreRange ? <small>Typical {autoCheckScoreRange}</small> : null}</Fact> : null}
             {autoCheck.ownerCount != null ? <Fact label="Owners">{autoCheck.ownerCount}</Fact> : null}
-            {autoCheck.usage ? <Fact label="Vehicle use">{autoCheck.usage}</Fact> : null}
+            {autoCheck.usage ? <Fact label="Vehicle use">{sourceDistanceText(autoCheck.usage)}</Fact> : null}
             {serviceRecordSummary(autoCheck) ? <Fact label="Service records">{serviceRecordSummary(autoCheck)}</Fact> : null}
             {autoCheck.lastReportedOdometer != null ? <Fact label="Last odometer">{formatMileage(autoCheck.lastReportedOdometer)}{autoCheck.lastReportedOdometerDate ? <small>{formatDate(autoCheck.lastReportedOdometerDate)}</small> : null}</Fact> : null}
           </dl>
@@ -849,7 +850,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
           <RecordSourceDetails>
             <p>{autoCheck.reportRunAt ? `Report run ${formatDateTime(autoCheck.reportRunAt)}` : "Report run time not captured"}</p>
             <dl className="inventory-vehicle-document__facts">{autoCheckFacts.map(fact => <Fact label={fact.label} key={fact.label}>{fact.value}</Fact>)}</dl>
-            {autoCheck.checks?.length ? <ul aria-label="Original AutoCheck findings">{autoCheck.checks.map((check, index) => <li key={index}><strong>{check.label}</strong> · {[check.status, check.detail].filter(Boolean).map(sourceDisplayText).join(" · ") || "Not reported"}</li>)}</ul> : null}
+            {autoCheck.checks?.length ? <ul aria-label="Original AutoCheck findings">{autoCheck.checks.map((check, index) => <li key={index}><strong>{check.label}</strong> · {sourceDistanceText([check.status, check.detail].filter(Boolean).map(sourceDisplayText).join(" · ")) || "Not reported"}</li>)}</ul> : null}
           </RecordSourceDetails>
           {!autoCheckFacts.length && !autoCheck.checks?.length && autoCheck.score == null && !autoCheckScoreRange ? (
             <p className="inventory-vehicle-document__empty">No AutoCheck history details are available.{autoCheckUrl ? " Open the report for details." : ""}</p>
@@ -903,7 +904,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
               {fordOasis.openFieldServiceActions.map((action) => (
                 <li key={action.code}>
                   <b>{action.code}</b>
-                  <span>{sourceDisplayText(action.description) || "Details unavailable"}</span>
+                  <span>{sourceDistanceText(sourceDisplayText(action.description)) || "Details unavailable"}</span>
                 </li>
               ))}
             </ul>
@@ -925,7 +926,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                     <span>
                       <strong>{coverage.type}</strong>
                     </span>
-                    {coverage.description ? <small>{sourceDisplayText(coverage.description)}</small> : null}
+                    {coverage.description ? <small>{sourceDistanceText(sourceDisplayText(coverage.description))}</small> : null}
                   </li>
                 ))}
               </ul>
@@ -938,7 +939,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                 {fordOasis.extendedCoverageExpirations.map((expiration, index) => (
                   <li key={`${expiration}-${index}`}>
                     <span>
-                      <strong>{expiration}</strong>
+                      <strong>{sourceDistanceText(expiration)}</strong>
                     </span>
                   </li>
                 ))}
@@ -1045,7 +1046,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
               <ul aria-label="Factory options">
                 {sticker.options.map((option, index) => (
                   <li key={`${option}-${index}`}>
-                    <span>{option}</span>
+                    <span>{sourceDistanceText(option)}</span>
                   </li>
                 ))}
               </ul>
@@ -1060,7 +1061,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                     <ul>
                       {sticker.standardEquipment.map((item, index) => (
                         <li key={`${item}-${index}`}>
-                          <span>{item}</span>
+                          <span>{sourceDistanceText(item)}</span>
                         </li>
                       ))}
                     </ul>
@@ -1069,7 +1070,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                 {sticker.warranty?.length ? (
                   <section aria-label="Factory warranty">
                     <h4>Factory warranty</h4>
-                    <ul>{sticker.warranty.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul>
+                    <ul>{sticker.warranty.map((item, index) => <li key={`${item}-${index}`}>{sourceDistanceText(item)}</li>)}</ul>
                   </section>
                 ) : null}
               </div>
@@ -1385,7 +1386,7 @@ function sourceConfirmedEquipment(vehicle: InventoryVehicle): SourceEquipmentIte
     return 2;
   };
   return [...byText.values()].sort((left, right) =>
-    sourcePriority(left) - sourcePriority(right) || left.text.localeCompare(right.text, undefined, { numeric: true }),
+    sourcePriority(left) - sourcePriority(right) || left.text.localeCompare(right.text, "en-US", { numeric: true }),
   );
 }
 
@@ -1410,7 +1411,7 @@ function LegacySourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle
     sticker?.vehicleDescription ? { label: "Sticker vehicle", value: sticker.vehicleDescription } : null,
     sticker?.equipmentGroup ? { label: "Sticker equipment group", value: sticker.equipmentGroup } : null,
     sticker?.engine || sticker?.transmission
-      ? { label: "Sticker powertrain", value: [sticker.engine, sticker.transmission].filter(Boolean).join(" · ") }
+      ? { label: "Sticker powertrain", value: sourceDistanceText([sticker.engine, sticker.transmission].filter(Boolean).join(" · ")) }
       : null,
     sticker?.exteriorColor || sticker?.interiorColor
       ? { label: "Sticker colors", value: [sticker.exteriorColor, sticker.interiorColor].filter(Boolean).join(" · ") }
@@ -1420,7 +1421,7 @@ function LegacySourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle
     factoryEquipment?.engine || factoryEquipment?.transmission || factoryEquipment?.drivetrain
       ? {
           label: "VIN profile powertrain",
-          value: [factoryEquipment.engine, factoryEquipment.transmission, factoryEquipment.drivetrain].filter(Boolean).join(" · "),
+          value: sourceDistanceText([factoryEquipment.engine, factoryEquipment.transmission, factoryEquipment.drivetrain].filter(Boolean).join(" · ")),
         }
       : null,
     factoryEquipment?.totalMsrp != null ? { label: "VIN profile reference MSRP", value: formatReferencePrice(factoryEquipment.totalMsrp) } : null,
@@ -1810,7 +1811,7 @@ function SourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle }) {
       ? { label: "Equipment group", value: sticker.equipmentGroup, source: "Original window sticker" }
       : null,
     sticker?.engine || sticker?.transmission
-      ? { label: "Sticker powertrain", value: [sticker.engine, sticker.transmission].filter(Boolean).join(" · "), source: "Original window sticker" }
+      ? { label: "Sticker powertrain", value: sourceDistanceText([sticker.engine, sticker.transmission].filter(Boolean).join(" · ")), source: "Original window sticker" }
       : null,
     sticker?.exteriorColor
       ? { label: "Exterior", value: sticker.exteriorColor, source: "Original window sticker" }
@@ -2071,7 +2072,7 @@ function OverviewDetails({
       label: "AutoCheck owners",
       value: `${autoCheck.ownerCount} reported`,
     } : null,
-    autoCheck?.usage ? { label: "AutoCheck vehicle use", value: autoCheck.usage } : null,
+    autoCheck?.usage ? { label: "AutoCheck vehicle use", value: sourceDistanceText(autoCheck.usage) } : null,
     autoCheck?.lastReportedOdometer != null ? {
       label: "AutoCheck odometer",
       value: `${formatMileage(autoCheck.lastReportedOdometer)}${autoCheck.lastReportedOdometerDate ? ` · ${formatDate(autoCheck.lastReportedOdometerDate)}` : ""}`,

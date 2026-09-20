@@ -175,6 +175,6 @@ export function rank(index, query) {
   matches.sort((left, right) =>
     right.score - left.score ||
     left.order - right.order ||
-    left.vehicle.stockNumber.localeCompare(right.vehicle.stockNumber, undefined, { numeric: true }))
+    left.vehicle.stockNumber.localeCompare(right.vehicle.stockNumber, 'en-US', { numeric: true }))
   return matches.map(({ order: _order, ...match }) => match)
 }

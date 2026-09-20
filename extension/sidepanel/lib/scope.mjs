@@ -34,5 +34,5 @@ export function groupMatchesByStore(matches, workingStore) {
   }
   const order = [workingStore, ...STORES].filter(Boolean)
   const priority = (store) => { const index = order.indexOf(store); return index < 0 ? order.length : index }
-  return [...groups.entries()].sort(([a], [b]) => priority(a) - priority(b) || a.localeCompare(b)).map(([store, items]) => ({ store, matches: items }))
+  return [...groups.entries()].sort(([a], [b]) => priority(a) - priority(b) || a.localeCompare(b, 'en-US')).map(([store, items]) => ({ store, matches: items }))
 }

@@ -31,6 +31,7 @@ import {
 } from "./vehicle-document-utils";
 import { compactEquipmentScanLabel, publishedEquipment, standoutEquipment } from "./vehicle-feature-utils";
 import { useInventoryDisclosure } from "./useInventoryDisclosure";
+import { sourceDistanceText } from "../../lib/source-distance";
 import { vehiclePhotoDisplaySources } from "../../lib/vehicle-photos";
 import type {
   InventorySortKey,
@@ -388,13 +389,13 @@ function compactInventoryDate(value: string | null | undefined): string | null {
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
   if (dateOnly) {
     const [, year, month, day] = dateOnly;
-    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(
+    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(
       new Date(Number(year), Number(month) - 1, Number(day)),
     );
   }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(parsed);
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(parsed);
 }
 
 function vehiclePhotoCount(vehicle: InventoryVehicle): number {
@@ -462,7 +463,7 @@ function RecallChip({ vehicle, onSelectVehicle }: { vehicle: InventoryVehicle; o
       data-inventory-vehicle-trigger={vehicle.id}
       data-open-recall-count={count}
       aria-label={`${openRecallSummary(vehicle)} for ${vehicleDisplayName(vehicle)}; open vehicle records`}
-      title={actions.map((action) => [action.code, action.description].filter(Boolean).join(" — ")).join("; ")}
+      title={sourceDistanceText(actions.map((action) => [action.code, action.description].filter(Boolean).join(" — ")).join("; "))}
       onClick={(event) => {
         event.stopPropagation();
         event.currentTarget.focus({ preventScroll: true });

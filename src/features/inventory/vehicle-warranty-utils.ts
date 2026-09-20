@@ -11,6 +11,8 @@
 //
 // Keep this file in step with extension/sidepanel/lib/warranty.mjs.
 
+import { sourceDistanceText } from "../../lib/source-distance"
+
 export type WarrantyTerm = readonly [months: number, miles: number]
 
 export interface MakeWarrantyTerms {
@@ -240,7 +242,8 @@ export function warrantyOutlook(input: WarrantyInput, { now = Date.now() }: { no
     mileage,
     electrified,
     coverages,
-    stickerWarranty: (input.stickerWarranty ?? []).filter(Boolean),
+    // A Canadian sticker prints its terms in kilometres; staff read miles.
+    stickerWarranty: (input.stickerWarranty ?? []).filter(Boolean).map(sourceDistanceText),
     verify,
   }
 }

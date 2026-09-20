@@ -142,6 +142,11 @@ export function parseAutoCheckInServiceDate(html) {
 
 // ── Ford OASIS: warranty start date, months in service, printed coverage terms ──
 // "3 years / 36,000 Miles (whichever occurs first)" -> 36 months / 36000 miles.
+// A Canadian-market row prints its term in kilometres ("60 months / 100,000
+// Kilometres"); the grammar accepts it, and the computed limit is expressed
+// in miles so the remaining figure compares against the listed odometer in
+// the same unit. The printed description itself is carried through verbatim.
+const MILES_PER_KILOMETRE = 0.621371
 export function termFromOasisDescription(description) {
   const d = String(description || '')
   const out = {}
@@ -149,10 +154,12 @@ export function termFromOasisDescription(description) {
   const months = d.match(/(\d+)\s*months?/i)
   if (years) out.termMonths = Number(years[1]) * 12
   else if (months) out.termMonths = Number(months[1])
-  if (/unlimited\s*miles/i.test(d)) out.unlimitedMiles = true
+  if (/unlimited\s*(?:miles|kilomet(?:re|er)s?)/i.test(d)) out.unlimitedMiles = true
   else {
     const miles = d.match(/([\d,]{3,})\s*miles/i)
+    const kilometres = miles ? null : d.match(/([\d,]{3,})\s*kilomet(?:re|er)s?/i)
     if (miles) out.termMiles = Number(miles[1].replace(/,/g, ''))
+    else if (kilometres) out.termMiles = Math.round(Number(kilometres[1].replace(/,/g, '')) * MILES_PER_KILOMETRE)
   }
   return out
 }

@@ -191,6 +191,24 @@ describe('extension resource summaries', () => {
     expect(oasis.sourceNote).toMatch(/Open-action result not captured.*Saved report/)
   })
 
+  it('shows every captured source distance in US miles and keeps the source figure', () => {
+    const sticker = source({ windowSticker: { dataState: 'current', url: stickerUrl, originalMarket: 'Canada', warranty: ['5 years / 100,000 km powertrain'], options: ['Combined 9.8 L/100 km'] } }, 'window-sticker')
+    expect(sticker.facts).toContain('Printed warranty: 5 years / 62,137 mi powertrain (100,000 km in the source)')
+    expect(sticker.facts).toContain('Combined 24 mpg (9.8 L/100 km in the source)')
+
+    const history = source({ autoCheckReport: { dataState: 'current', url: historyUrl, usage: 'Personal · 148 000 km reported', checks: [{ label: 'Odometer check', detail: 'Last reported odometer: 148,000 km' }] } }, 'autocheck')
+    expect(history.facts.join(' ')).toContain('91,963 mi')
+    expect(history.facts.join(' ')).not.toMatch(/\d\s*km\b(?! in the source)/)
+
+    const oasis = source({ fordOasis: { dataState: 'current', capturedAt: '2026-09-10', warrantyCoverages: [{ type: 'Powertrain', description: '60 months/100,000 km' }], extendedCoverageExpirations: ['ESP to 160,000 km'] } }, 'oasis')
+    expect(oasis.facts).toContain('Recorded coverage: Powertrain · 60 months/62,137 mi (100,000 km in the source)')
+    expect(oasis.facts).toContain('Extended coverage: ESP to 99,419 mi (160,000 km in the source)')
+
+    const metric = source({ warrantyCheck: { dataState: 'current', mileageEntered: 30000, fordOasis: { warrantyStartDate: '08/30/2024', monthsInService: 24, coverages: [{ ...coverage, termText: '60 months / 100,000 km', remainingMilesText: '40,000 km' }] } } }, 'oasis')
+    expect(metric.facts.join(' ')).toContain('60 months / 62,137 mi (100,000 km in the source)')
+    expect(metric.facts.join(' ')).toContain('24,855 mi (40,000 km in the source) remaining miles')
+  })
+
   it('never turns synthetic MSRP into a fabricated original document or adds Ford lookup to another make', () => {
     expect(resourceSummaries(panel({ msrp: 64000 }), { now }).find((item) => item.id === 'window-sticker')).toBeUndefined()
     expect(resourceSummaries(panel({ make: 'Toyota' }), { now })).toEqual([])
