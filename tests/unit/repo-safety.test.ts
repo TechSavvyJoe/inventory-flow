@@ -70,12 +70,16 @@ describe('repository safety gate', () => {
     const backupNames = [
       'scripts/publish.ps1.bak-20260912',
       'scripts/launcher.ps1.chrome-backup',
-      'scripts/publish-backup.ps1',
       'scripts/publish.bak.ps1',
       'scripts/publish.ps1.bak.txt',
-      'scripts/publish.bak-2026-09-12',
+      'scripts/publish.ps1.bak-2026-09-12',
+      'config/settings.json.orig',
+      'cloudflare/wrangler.jsonc.old',
     ]
-    for (const name of backupNames) writeFileSync(path.join(root, ...name.split('/')), '# old\n')
+    for (const name of backupNames) {
+      mkdirSync(path.dirname(path.join(root, ...name.split('/'))), { recursive: true })
+      writeFileSync(path.join(root, ...name.split('/')), '# old\n')
+    }
     const result = inspectRepository(root)
     expect(result.findings).toEqual(
       expect.arrayContaining(
@@ -87,7 +91,12 @@ describe('repository safety gate', () => {
   it('leaves ordinary names that merely contain a marker word alone', () => {
     const root = temporaryRepository()
     mkdirSync(path.join(root, 'scripts'), { recursive: true })
-    for (const name of ['threshold.ts', 'gold.json', 'backup-plan.md', 'scripts/back-up-notes.md']) {
+    // Documentation about backups and scripts that perform backups are not backup copies.
+    for (const name of [
+      'threshold.ts', 'gold.json', 'backup-plan.md', 'scripts/back-up-notes.md',
+      'docs/cloud-backup-plan.md', 'docs/database_backup_strategy.md', 'scripts/db-backup.mjs', 'src/x.older.ts', 'src/x.saved.json',
+    ]) {
+      mkdirSync(path.dirname(path.join(root, ...name.split('/'))), { recursive: true })
       writeFileSync(path.join(root, ...name.split('/')), 'notes\n')
     }
     expect(inspectRepository(root).findings).toEqual([])
@@ -99,6 +108,10 @@ describe('repository safety gate', () => {
     // contain the literal path and trip the gate when it scans this file.
     const hostSpecificPath = ['C:', '\\Users\\', 'Someone', '\\AppData\\Local\\app.log'].join('')
     writeFileSync(path.join(root, 'NOTES.md'), `Log lives at ${hostSpecificPath}\n`)
+    // Forward and mixed separators still name the account and are caught too.
+    writeFileSync(path.join(root, 'SLASHES.md'), `Log lives at ${['C:', '/Users/', 'Someone', '/AppData/Local/app.log'].join('')}\n`)
+    writeFileSync(path.join(root, 'MIXED.md'), `Log lives at ${['C:', '\\Users/', 'Someone', '\\AppData'].join('')}\n`)
+    writeFileSync(path.join(root, 'FIXTURE.md'), `Fixture path ${['C:', '/Users/', 'Synthetic', '/Documents/report.json'].join('')}\n`)
     writeFileSync(
       path.join(root, 'SAFE.md'),
       'Log lives at %USERPROFILE%\\AppData\\Local\\app.log\n',
@@ -107,10 +120,12 @@ describe('repository safety gate', () => {
     expect(result.findings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ file: 'NOTES.md', reason: expect.stringMatching(/host-specific Windows user-profile path/) }),
+        expect.objectContaining({ file: 'SLASHES.md', reason: expect.stringMatching(/host-specific Windows user-profile path/) }),
+        expect.objectContaining({ file: 'MIXED.md', reason: expect.stringMatching(/host-specific Windows user-profile path/) }),
       ]),
     )
-    expect(result.findings).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ file: 'SAFE.md' })]),
-    )
+    for (const file of ['SAFE.md', 'FIXTURE.md']) {
+      expect(result.findings).not.toEqual(expect.arrayContaining([expect.objectContaining({ file })]))
+    }
   })
 })
