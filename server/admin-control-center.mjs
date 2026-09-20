@@ -31,7 +31,7 @@ const TRANSFER_AUDIT_ACTIVITY = Object.freeze({
   sale_outcome_pending: 'Decision or paperwork pending',
   sale_confirmed: 'Sale recorded',
   delivery_confirmed: 'Delivery confirmed',
-  not_sold: 'Shown · not sold',
+  not_sold: 'Vehicle not sold',
   return_requested: 'Vehicle return requested',
   return_assigned: 'Return driver assigned',
   return_in_transit: 'Vehicle returning home',

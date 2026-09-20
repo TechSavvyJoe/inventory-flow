@@ -425,6 +425,26 @@ describe('simple manager-led vehicle moves', () => {
     const returning = service.appendTransferEvent(id, { type: 'return_started', dueAt: '2026-09-01T15:00:00Z' }, sales, 'sold-pending-return').record
     expect(returning).toMatchObject({ requestStatus: 'return_in_transit', currentLocation: 'In transit' })
     expect(unwound.events.map((event) => event.type)).toEqual(['requested', 'request_approved', 'sale_confirmed', 'not_sold'])
+    expect(unwound.events.at(-1).label).toBe('Deal fell through · not sold')
+  })
+
+  it('names a not-sold outcome by what it ended: a showing or a sold-pending deal', () => {
+    const { service, id, tick } = harness()
+    approve(service, id)
+    tick()
+    service.appendTransferEvent(id, { type: 'customer_showing' }, sales, 'label-showing')
+    tick()
+    const shown = service.appendTransferEvent(id, { type: 'not_sold' }, sales, 'label-shown-not-sold').record
+    expect(shown.events.at(-1)).toMatchObject({ type: 'not_sold', label: 'Shown · not sold' })
+
+    const second = emptyHarness()
+    const other = second.service.createTransfer({ ...request, vin: 'TESTDATAHWELL0002' }, sales, 'label-second-request').record.id
+    approve(second.service, other)
+    second.tick()
+    second.service.appendTransferEvent(other, { type: 'sale_confirmed' }, manager, 'label-sold-pending')
+    second.tick()
+    const fellThrough = second.service.appendTransferEvent(other, { type: 'not_sold' }, manager, 'label-deal-fell-through').record
+    expect(fellThrough.events.at(-1)).toMatchObject({ type: 'not_sold', label: 'Deal fell through · not sold' })
   })
 
   it('finishes a delivered vehicle at the destination with no return step', () => {

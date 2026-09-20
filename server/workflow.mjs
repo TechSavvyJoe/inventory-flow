@@ -832,7 +832,11 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
     eventType,
     label: eventType === 'returned_home' && context.workflowMode === 'simple'
       ? 'Home store confirmed the vehicle is back · move complete'
-      : EVENT_LABELS[eventType],
+      // The same event unwinds a sold-pending deal or closes a plain showing;
+      // the history row names which one happened.
+      : eventType === 'not_sold' && current.status === 'sale_confirmed'
+        ? 'Deal fell through · not sold'
+        : EVENT_LABELS[eventType],
     actor,
     actorUserId: context.userId,
     actorRole: context.authenticatedRole || context.role,
