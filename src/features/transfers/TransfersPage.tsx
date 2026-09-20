@@ -366,9 +366,9 @@ export function TransfersPage() {
       if (queueSort === 'recent') {
         return dateScore(right.record.requestedAt, 0) - dateScore(left.record.requestedAt, 0)
       }
-      if (queueSort === 'stock') return left.record.stockNumber.localeCompare(right.record.stockNumber, undefined, { numeric: true })
+      if (queueSort === 'stock') return left.record.stockNumber.localeCompare(right.record.stockNumber, 'en-US', { numeric: true })
       if (queueSort === 'route') {
-        return `${left.record.homeStore}|${left.record.destination}`.localeCompare(`${right.record.homeStore}|${right.record.destination}`)
+        return `${left.record.homeStore}|${left.record.destination}`.localeCompare(`${right.record.homeStore}|${right.record.destination}`, 'en-US')
       }
       const leftIssue = transferIssueLabel(left.detail) ? 1 : 0
       const rightIssue = transferIssueLabel(right.detail) ? 1 : 0

@@ -1386,7 +1386,7 @@ function sourceConfirmedEquipment(vehicle: InventoryVehicle): SourceEquipmentIte
     return 2;
   };
   return [...byText.values()].sort((left, right) =>
-    sourcePriority(left) - sourcePriority(right) || left.text.localeCompare(right.text, undefined, { numeric: true }),
+    sourcePriority(left) - sourcePriority(right) || left.text.localeCompare(right.text, "en-US", { numeric: true }),
   );
 }
 

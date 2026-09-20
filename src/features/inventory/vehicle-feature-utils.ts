@@ -105,7 +105,7 @@ export function publishedEquipment(vehicle: InventoryVehicle): PublishedEquipmen
   return [...byKey.values()].sort((left, right) => {
     if (left.standout !== right.standout) return left.standout ? -1 : 1;
     const sourceDifference = SOURCE_STRENGTH[right.source] - SOURCE_STRENGTH[left.source];
-    return sourceDifference || left.label.localeCompare(right.label, undefined, { numeric: true });
+    return sourceDifference || left.label.localeCompare(right.label, "en-US", { numeric: true });
   });
 }
 

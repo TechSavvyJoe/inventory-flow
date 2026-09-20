@@ -47,7 +47,7 @@ export function InventoryUpdatesPage() {
   const totals = detailCertified ? { new: scoped.filter(event => event.type === 'new_arrival').length, price: scoped.filter(event => event.type === 'price_change').length, other: scoped.filter(event => belongsToView(event, 'other')).length } : { new: data.meta.publicChangeCounts.newArrival, price: data.meta.publicChangeCounts.priceChange, other: certifiedTotal - data.meta.publicChangeCounts.newArrival - data.meta.publicChangeCounts.priceChange - data.meta.publicChangeCounts.removed - data.meta.publicChangeCounts.websiteStatusChange }
   const visible = detailCertified ? scoped.filter(event => belongsToView(event, view) && (view !== 'other' || otherType === 'all' || event.type === otherType) && [event.vehicleName, event.stockNumber, event.vin, event.store].join(' ').toLowerCase().includes(query.trim().toLowerCase())).sort((a, b) => {
     if (view === 'price') return (Number(a.afterValue) - Number(a.beforeValue)) - (Number(b.afterValue) - Number(b.beforeValue))
-    return a.vehicleName.localeCompare(b.vehicleName)
+    return a.vehicleName.localeCompare(b.vehicleName, 'en-US')
   }) : []
   function selectView(next: UpdateView) { const nextParams = new URLSearchParams(params); nextParams.set('view', next); setParams(nextParams) }
   return <section className="workflow-page inventory-updates-page">

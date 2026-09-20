@@ -99,7 +99,7 @@ function createFilters(initial?: Partial<ManagerFilters>): ManagerFilters {
 }
 
 function uniqueValues(values: Array<string | undefined>): string[] {
-  return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b));
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b, 'en-US'));
 }
 
 function displayOperationalLabel(value: string): string {
@@ -131,7 +131,7 @@ function compareNullable(a?: string | number, b?: string | number): number {
   if (b === undefined || b === '') return -1;
   return typeof a === 'number' && typeof b === 'number'
     ? a - b
-    : String(a).localeCompare(String(b), undefined, { numeric: true });
+    : String(a).localeCompare(String(b), 'en-US', { numeric: true });
 }
 
 function sortValue(record: GroupOperationRecord, field: ManagerSortField): string | number | undefined {
@@ -330,7 +330,7 @@ export function GroupOperations({
         const compared = compareNullable(sortValue(left, rule.field), sortValue(right, rule.field));
         if (compared !== 0) return rule.direction === 'asc' ? compared : -compared;
       }
-      return left.vehicle.stock.localeCompare(right.vehicle.stock, undefined, { numeric: true });
+      return left.vehicle.stock.localeCompare(right.vehicle.stock, 'en-US', { numeric: true });
     });
   }, [filters, nowMs, records, sortRules, summaryQueue]);
 

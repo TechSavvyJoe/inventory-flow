@@ -64,7 +64,7 @@ export function publishedEquipment(vehicle) {
   }
   return [...byKey.values()].sort((left, right) => {
     if (left.standout !== right.standout) return left.standout ? -1 : 1
-    return (SOURCE_STRENGTH[right.source] - SOURCE_STRENGTH[left.source]) || left.label.localeCompare(right.label, undefined, { numeric: true })
+    return (SOURCE_STRENGTH[right.source] - SOURCE_STRENGTH[left.source]) || left.label.localeCompare(right.label, 'en-US', { numeric: true })
   })
 }
 

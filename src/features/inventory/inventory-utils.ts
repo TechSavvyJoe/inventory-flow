@@ -497,7 +497,7 @@ export function sortVehicles(
       const comparison =
         typeof leftValue === "number" && typeof rightValue === "number"
           ? leftValue - rightValue
-          : String(leftValue).localeCompare(String(rightValue), undefined, {
+          : String(leftValue).localeCompare(String(rightValue), "en-US", {
               numeric: true,
               sensitivity: "base",
             });

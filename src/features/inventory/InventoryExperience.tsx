@@ -87,7 +87,7 @@ function uniqueStores(homeStore: InventoryStore, vehicles: InventoryVehicle[], g
   return [...stores.values()].sort((left, right) => {
     if (left.id === homeStore.id) return -1;
     if (right.id === homeStore.id) return 1;
-    return left.name.localeCompare(right.name);
+    return left.name.localeCompare(right.name, "en-US");
   });
 }
 
