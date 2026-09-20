@@ -7,7 +7,11 @@ import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { accessHeaders, publicationEndpoint, cloudReleaseFrom, encryptBundle, base64Key, publishEnvelope } from './publish-cloud-release.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
-const COUNT_FIELDS = ['publicRowCount', 'dealerMailRowCount', 'dealerMailVinReconciledCount', 'dealerMailVinReviewCount', 'heldVinCount', 'activeHoldRecordCount', 'backupCount', 'deletedHoldRecordCount', 'resourceRecordCount', 'managerDispositionRecordCount', 'managerSoldRecordCount', 'managerDeliveredRecordCount', 'managerDispositionReviewCount', 'activeInventoryCount', 'managerDeliveredExclusionCount', 'managerPendingCarryoverCount', 'managerPendingIdentityReviewCount', 'vehicleCount']
+// The optional Ford OASIS and warranty channels are degradable: a deployed
+// Worker whose validator drops one still reports a ready release. Verifying
+// their counts keeps a silently degraded publication from being recorded as
+// published_and_verified with exactContent: true.
+const COUNT_FIELDS = ['publicRowCount', 'dealerMailRowCount', 'dealerMailVinReconciledCount', 'dealerMailVinReviewCount', 'heldVinCount', 'activeHoldRecordCount', 'backupCount', 'deletedHoldRecordCount', 'resourceRecordCount', 'fordOasisRecordCount', 'warrantyCheckRecordCount', 'managerDispositionRecordCount', 'managerSoldRecordCount', 'managerDeliveredRecordCount', 'managerDispositionReviewCount', 'activeInventoryCount', 'managerDeliveredExclusionCount', 'managerPendingCarryoverCount', 'managerPendingIdentityReviewCount', 'vehicleCount']
 const STORES = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
 export function reportDate(now = new Date()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now).map(part => [part.type, part.value]))

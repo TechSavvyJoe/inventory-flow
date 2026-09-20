@@ -39,6 +39,17 @@ describe('Service readiness workspace', () => {
     expect(mocked.update).not.toHaveBeenCalled()
   })
 
+  it('keeps the vehicle references readable when service detail fails to load', async () => {
+    mocked.get.mockRejectedValue(new Error('Service status is unavailable.'))
+    show('/service?vin=TESTDATAHWELL0001')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Service status is unavailable.')
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Service decision facts')).toHaveTextContent('Howell')
+    expect(screen.getByRole('link', { name: 'Vehicle details' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0001')
+    expect(screen.getByRole('link', { name: 'Records' })).toBeInTheDocument()
+    expect(screen.queryByText('Current state')).not.toBeInTheDocument()
+  })
+
   it('shows only actually saved Ford service actions and never treats them as a service-status update', async () => {
     const vehicle = record('in_service')
     vehicle.fordOasis = { openFieldServiceActions: [{ code: 'SYN-24', description: 'Synthetic action' }] }

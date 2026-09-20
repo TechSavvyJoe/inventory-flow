@@ -181,7 +181,14 @@ describe('AppShell account and update controls', () => {
     expect(within(primary).getByRole('link', { name: 'Control center' })).toHaveAttribute('aria-current', 'page')
     expect(within(mobile).getByRole('link', { name: 'Control center' })).toHaveAttribute('aria-current', 'page')
     expect(within(mobile).getByRole('link', { name: 'Service' })).toHaveAttribute('href', '/service')
-    expect(within(mobile).queryByRole('button', { name: 'More app controls' })).not.toBeInTheDocument()
+    // The rail omits Action center and Inventory updates for this role, so the
+    // utility menu is the only phone route to them.
+    expect(within(mobile).queryByRole('link', { name: 'Actions' })).not.toBeInTheDocument()
+    expect(within(mobile).queryByRole('link', { name: 'Updates' })).not.toBeInTheDocument()
+    fireEvent.click(within(mobile).getByRole('button', { name: 'More app controls' }))
+    const utility = screen.getByRole('dialog', { name: 'Account and app controls' })
+    expect(within(utility).getByRole('link', { name: /Action center/ })).toHaveAttribute('href', '/attention')
+    expect(within(utility).getByRole('link', { name: /Inventory updates/ })).toHaveAttribute('href', '/updates')
     unmount()
 
     useAppDataMock.mockReturnValue(baseContext)
@@ -192,7 +199,12 @@ describe('AppShell account and update controls', () => {
     )
 
     expect(within(screen.getByRole('navigation', { name: 'Primary' })).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
-    expect(within(screen.getByRole('navigation', { name: 'Mobile primary' })).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
+    const storeMobile = screen.getByRole('navigation', { name: 'Mobile primary' })
+    expect(within(storeMobile).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
+    fireEvent.click(within(storeMobile).getByRole('button', { name: 'More app controls' }))
+    const storeUtility = screen.getByRole('dialog', { name: 'Account and app controls' })
+    expect(within(storeUtility).getByRole('link', { name: /Service status/ })).toHaveAttribute('href', '/service')
+    expect(within(storeUtility).queryByRole('link', { name: /Action center/ })).not.toBeInTheDocument()
   })
 
   it('moves focus to the main content after client-side route changes without moving focus on initial load', async () => {
