@@ -98,6 +98,29 @@ describe('GroupOperations manager table', () => {
     expect(onSelectTransfer).toHaveBeenCalledWith(record);
   });
 
+  it('names the request lane filter as move status and reads stored codes as words', () => {
+    const fellThrough = {
+      ...record,
+      id: 'transfer-2',
+      vehicle: { ...record.vehicle, stock: 'MGR200', vin: 'TESTDATAMGR00002' },
+      status: { ...record.status, request: { code: 'submitted', label: 'not_sold', tone: 'neutral' } },
+    } as GroupOperationRecord;
+    render(
+      <GroupOperations
+        currentUserId="manager-one"
+        homeStore="Howell"
+        now="2026-08-31T13:00:00.000Z"
+        onSelectTransfer={vi.fn()}
+        records={[record, fellThrough]}
+        storeOptions={[{ value: 'Howell', label: 'Howell' }]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const moveStatus = screen.getByRole('combobox', { name: 'Move status' });
+    expect(screen.queryByRole('combobox', { name: 'Request status' })).not.toBeInTheDocument();
+    expect(within(moveStatus).getAllByRole('option').map((option) => option.textContent)).toEqual(['All', 'Approval requested', 'Not sold']);
+  });
+
   it('filters from a summary card, exposes its selected state, and can clear the queue', () => {
     const pickupRecord: GroupOperationRecord = {
       ...record,

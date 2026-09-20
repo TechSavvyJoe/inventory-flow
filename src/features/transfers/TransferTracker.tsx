@@ -201,7 +201,7 @@ export function TransferTracker({
         <div className="mif-condition-banner" role="status">
           <Wrench aria-hidden="true" size={18} strokeWidth={1.75} />
           <div>
-            <strong>Vehicle issue reported — Home Store review required</strong>
+            <strong>Vehicle issue reported · home store review required</strong>
             <span>{latestConditionIssue.detail || 'Open the handoff history for the recorded condition details.'}</span>
             <small>Reported by {latestConditionIssue.actorLabel ?? 'staff'} · {formatDateTime(latestConditionIssue.occurredAt)}</small>
           </div>
@@ -210,7 +210,7 @@ export function TransferTracker({
 
       <section className={`mif-action-console is-${action.sla}`} aria-label="Next step">
         <div className="mif-action-console__copy">
-          <span>Next action</span>
+          <span>Next step</span>
           <strong title={action.label}>{compactActionLabel(action.label)}</strong>
           <small>Owner: {action.ownerLabel ?? 'Not assigned'}{action.ownerRole ? ` · ${action.ownerRole}` : ''}</small>
         </div>

@@ -346,7 +346,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
         ) : null}
 
         <label className="action-field">
-          <span>{isConditionIssue ? 'Condition / damage description' : needsHomeReleaseConfirmation ? 'Release conditions or pickup note' : recordsHomeStoreDecision ? 'Why the Home Store declined' : needsDecisionReason ? 'Decision reason' : eventType === 'driver_requested' ? 'Driver request note' : 'Note'} <small>{isConditionIssue || needsDecisionReason ? 'required' : 'optional'}</small></span>
+          <span>{isConditionIssue ? 'Condition or damage description' : needsHomeReleaseConfirmation ? 'Release conditions or pickup note' : recordsHomeStoreDecision ? 'Why the home store declined' : needsDecisionReason ? 'Decision reason' : eventType === 'driver_requested' ? 'Driver request note' : 'Note'} <small>{isConditionIssue || needsDecisionReason ? 'required' : 'optional'}</small></span>
           <textarea
             value={note}
             onChange={(event) => setNote(event.target.value)}

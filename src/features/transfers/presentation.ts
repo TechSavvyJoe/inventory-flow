@@ -12,7 +12,7 @@ export const transferActionLabels: Record<TransferActionKind, string> = {
   'edit-request': 'Edit request',
   'request-driver': 'Request driver',
   'assign-transport': 'Assign driver',
-  'confirm-pickup': 'Confirm pickup',
+  'confirm-pickup': 'Mark vehicle collected',
   'confirm-arrival': 'Confirm arrival',
   'record-outcome': 'Record outcome',
   'schedule-return': 'Schedule return',
