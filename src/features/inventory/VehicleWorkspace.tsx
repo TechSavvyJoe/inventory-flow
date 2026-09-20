@@ -755,7 +755,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
         autoCheck.lastReportedOdometer == null && autoCheck.lastReportedOdometerDate ? {
           label: "Last odometer report date", value: formatDate(autoCheck.lastReportedOdometerDate),
         } : null,
-        autoCheck.vehicleClass ? { label: "Vehicle class", value: autoCheck.vehicleClass } : null,
+        autoCheck.vehicleClass ? { label: "Vehicle class", value: sourceDistanceText(autoCheck.vehicleClass) } : null,
         autoCheck.assemblyCountry ? { label: "Assembly country", value: autoCheck.assemblyCountry } : null,
         autoCheck.estimatedInServiceDate ? {
           label: "Estimated in-service date",
@@ -769,7 +769,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
         sticker.exteriorColor ? { label: "Exterior", value: sticker.exteriorColor } : null,
         sticker.interiorColor ? { label: "Interior", value: sticker.interiorColor } : null,
         sticker.engine || sticker.transmission
-          ? { label: "Powertrain", value: [sticker.engine, sticker.transmission].filter(Boolean).join(" · ") }
+          ? { label: "Powertrain", value: sourceDistanceText([sticker.engine, sticker.transmission].filter(Boolean).join(" · ")) }
           : null,
       ].filter(Boolean) as Array<{ label: string; value: string }>
     : [];
@@ -780,11 +780,11 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
         factoryEquipment.engine || factoryEquipment.transmission || factoryEquipment.drivetrain
           ? {
               label: "Powertrain",
-              value: [
+              value: sourceDistanceText([
                 factoryEquipment.engine,
                 factoryEquipment.transmission,
                 factoryEquipment.drivetrain,
-              ].filter(Boolean).join(" · "),
+              ].filter(Boolean).join(" · ")),
             }
           : null,
       ].filter(Boolean) as Array<{ label: string; value: string }>
@@ -1046,7 +1046,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
               <ul aria-label="Factory options">
                 {sticker.options.map((option, index) => (
                   <li key={`${option}-${index}`}>
-                    <span>{option}</span>
+                    <span>{sourceDistanceText(option)}</span>
                   </li>
                 ))}
               </ul>
@@ -1411,7 +1411,7 @@ function LegacySourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle
     sticker?.vehicleDescription ? { label: "Sticker vehicle", value: sticker.vehicleDescription } : null,
     sticker?.equipmentGroup ? { label: "Sticker equipment group", value: sticker.equipmentGroup } : null,
     sticker?.engine || sticker?.transmission
-      ? { label: "Sticker powertrain", value: [sticker.engine, sticker.transmission].filter(Boolean).join(" · ") }
+      ? { label: "Sticker powertrain", value: sourceDistanceText([sticker.engine, sticker.transmission].filter(Boolean).join(" · ")) }
       : null,
     sticker?.exteriorColor || sticker?.interiorColor
       ? { label: "Sticker colors", value: [sticker.exteriorColor, sticker.interiorColor].filter(Boolean).join(" · ") }
@@ -1421,7 +1421,7 @@ function LegacySourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle
     factoryEquipment?.engine || factoryEquipment?.transmission || factoryEquipment?.drivetrain
       ? {
           label: "VIN profile powertrain",
-          value: [factoryEquipment.engine, factoryEquipment.transmission, factoryEquipment.drivetrain].filter(Boolean).join(" · "),
+          value: sourceDistanceText([factoryEquipment.engine, factoryEquipment.transmission, factoryEquipment.drivetrain].filter(Boolean).join(" · ")),
         }
       : null,
     factoryEquipment?.totalMsrp != null ? { label: "VIN profile reference MSRP", value: formatReferencePrice(factoryEquipment.totalMsrp) } : null,
@@ -1811,7 +1811,7 @@ function SourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle }) {
       ? { label: "Equipment group", value: sticker.equipmentGroup, source: "Original window sticker" }
       : null,
     sticker?.engine || sticker?.transmission
-      ? { label: "Sticker powertrain", value: [sticker.engine, sticker.transmission].filter(Boolean).join(" · "), source: "Original window sticker" }
+      ? { label: "Sticker powertrain", value: sourceDistanceText([sticker.engine, sticker.transmission].filter(Boolean).join(" · ")), source: "Original window sticker" }
       : null,
     sticker?.exteriorColor
       ? { label: "Exterior", value: sticker.exteriorColor, source: "Original window sticker" }

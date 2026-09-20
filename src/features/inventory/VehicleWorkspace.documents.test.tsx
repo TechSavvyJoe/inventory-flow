@@ -183,8 +183,8 @@ describe('vehicle document workspace', () => {
     const coverage = { type: 'Powertrain', termText: '60 months / 100,000 km', remainingMilesText: '40,000 km', remainingTimeText: '4 years', status: 'ACTIVE' as const };
     metric.warrantyCheck = { dataState: 'current', capturedAt: '2026-09-12T15:00:00.000Z', mileageEntered: 2052, fordOasis: { warrantyStartDate: '01-June-2026', monthsInService: 3, coverages: [coverage] }, autoCheck: null };
     metric.fordOasis = { dataState: 'current', capturedAt: '2026-09-11T14:00:00Z', openActionsCaptured: true, openFieldServiceActions: [], warrantyCoverages: [{ type: 'Powertrain', description: '60 months/100,000 km' }], extendedCoverageExpirations: ['ESP to 160,000 km'] };
-    metric.windowSticker = { dataState: 'current', originalMarket: 'Canada', warranty: ['3 years / 60,000 km'], standardEquipment: ['Combined 9.8 L/100 km'] };
-    metric.autoCheckReport = { dataState: 'current', usage: 'Personal · 148 000 km reported', checks: [{ label: 'Odometer check', status: 'Records found', detail: 'Highest reading 148,000 km' }] };
+    metric.windowSticker = { dataState: 'current', originalMarket: 'Canada', engine: '2.0L EcoBoost · 9.8 L/100 km', warranty: ['3 years / 60,000 km'], standardEquipment: ['Combined 9.8 L/100 km'], options: ['Extended range tank — 900 km'] };
+    metric.autoCheckReport = { dataState: 'current', usage: 'Personal · 148 000 km reported', vehicleClass: 'Light truck · 3,500 km rated', checks: [{ label: 'Odometer check', status: 'Records found', detail: 'Highest reading 148,000 km' }] };
     render(<VehicleWorkspace vehicle={metric} homeStore={metric.location.homeStore} onClose={vi.fn()} initialTab="data" />);
     const panel = screen.getByRole('region', { name: 'Vehicle documents' });
     const table = within(panel).getByRole('table', { name: 'Remaining factory warranty by coverage' });
@@ -196,6 +196,9 @@ describe('vehicle document workspace', () => {
     expect(panel).toHaveTextContent('Combined 24 mpg (9.8 L/100 km in the source)');
     expect(panel).toHaveTextContent('Personal · 91,963 mi reported (148,000 km in the source)');
     expect(panel).toHaveTextContent('Highest reading 91,963 mi (148,000 km in the source)');
+    expect(panel).toHaveTextContent('Extended range tank — 559 mi (900 km in the source)');
+    expect(panel).toHaveTextContent('2.0L EcoBoost · 24 mpg (9.8 L/100 km in the source)');
+    expect(panel).toHaveTextContent('Light truck · 2,175 mi rated (3,500 km in the source)');
     // The only kilometre figures left are the source evidence in the qualifiers.
     expect((panel.textContent ?? '').replace(/\([^)]* in the source\)/g, '')).not.toMatch(/\d[\d,.\s]*(?:km|kilomet)/i);
   });

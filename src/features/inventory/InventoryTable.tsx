@@ -31,6 +31,7 @@ import {
 } from "./vehicle-document-utils";
 import { compactEquipmentScanLabel, publishedEquipment, standoutEquipment } from "./vehicle-feature-utils";
 import { useInventoryDisclosure } from "./useInventoryDisclosure";
+import { sourceDistanceText } from "../../lib/source-distance";
 import { vehiclePhotoDisplaySources } from "../../lib/vehicle-photos";
 import type {
   InventorySortKey,
@@ -462,7 +463,7 @@ function RecallChip({ vehicle, onSelectVehicle }: { vehicle: InventoryVehicle; o
       data-inventory-vehicle-trigger={vehicle.id}
       data-open-recall-count={count}
       aria-label={`${openRecallSummary(vehicle)} for ${vehicleDisplayName(vehicle)}; open vehicle records`}
-      title={actions.map((action) => [action.code, action.description].filter(Boolean).join(" — ")).join("; ")}
+      title={sourceDistanceText(actions.map((action) => [action.code, action.description].filter(Boolean).join(" — ")).join("; "))}
       onClick={(event) => {
         event.stopPropagation();
         event.currentTarget.focus({ preventScroll: true });
