@@ -515,6 +515,16 @@ export interface AttentionEvent {
   note?: string
 }
 
+/** Whether the signed-in store and role can take this item's next step today. */
+export type AttentionActionability = 'actionable' | 'informational'
+
+/** Why an item is only worth knowing about, used to group the collapsed list. */
+export type AttentionInformationalReason =
+  | 'source_health'
+  | 'public_listing'
+  | 'other_store'
+  | 'role_scope'
+
 export interface AttentionItem {
   id: string
   severity: 'info' | 'warning' | 'critical'
@@ -524,6 +534,10 @@ export interface AttentionItem {
   vehicleName?: string
   stockNumber?: string
   store?: StoreName
+  /** The store that owns the next step, when it differs from the listed store. */
+  actionStore?: StoreName
+  actionability?: AttentionActionability
+  informationalReason?: AttentionInformationalReason | null
   owner?: string
   dueAt?: string
   href?: string
