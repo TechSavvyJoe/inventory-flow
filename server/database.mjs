@@ -560,8 +560,11 @@ export function getTransferRow(database, id) {
 }
 
 export function getTransferEvents(database, transferId) {
+  // Two events recorded in the same millisecond (a request and its approval
+  // in one action) must come back in the order they were appended; the
+  // random UUID id is no tiebreak, rowid is.
   return database
-    .prepare('SELECT * FROM transfer_events WHERE transfer_request_id = ? ORDER BY occurred_at, created_at, id')
+    .prepare('SELECT * FROM transfer_events WHERE transfer_request_id = ? ORDER BY occurred_at, created_at, rowid')
     .all(transferId)
 }
 

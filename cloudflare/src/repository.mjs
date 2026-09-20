@@ -271,8 +271,10 @@ export const d1SnapshotRepository = Object.freeze({
   },
   getTransferRow(database, id) { return clone(database.transfers.find((row) => row.id === id) ?? null) },
   getTransferEvents(database, id) {
+    // Input order is SQLite rowid order and stable sort preserves insertion
+    // order when multiple events have exactly the same timestamps.
     return [...(transferEventsById(database).get(id) ?? [])]
-      .sort((a, b) => compare(a.occurred_at, b.occurred_at) || compare(a.created_at, b.created_at) || compare(a.id, b.id)).map(clone)
+      .sort((a, b) => compare(a.occurred_at, b.occurred_at) || compare(a.created_at, b.created_at)).map(clone)
   },
   insertTransferRequest(database, request, initialEvent) {
     const existing = request.idempotencyKey && database.transfers.find((row) => row.idempotency_key === request.idempotencyKey)
@@ -367,7 +369,7 @@ export async function loadD1Repository(d1, release, options = {}) {
   const statements = [
     'SELECT revision FROM cloud_app_revision WHERE id = 1',
     'SELECT * FROM transfer_requests ORDER BY updated_at DESC, id',
-    'SELECT * FROM transfer_events ORDER BY occurred_at, created_at, id',
+    'SELECT * FROM transfer_events ORDER BY occurred_at, created_at, rowid',
     'SELECT * FROM attention_work_items ORDER BY updated_at DESC, attention_key',
     'SELECT * FROM attention_events ORDER BY occurred_at, created_at, rowid',
     'SELECT * FROM home_assignments WHERE effective_to IS NULL ORDER BY effective_from DESC',
