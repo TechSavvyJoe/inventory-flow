@@ -6,6 +6,7 @@ import {
   isCompleteWarrantyRecord,
   oasisWarrantyBlock,
   parseOasis,
+  termFromOasisDescription,
 } from '../../scripts/capture-warranty.mjs'
 import {
   containsForeignOasisText,
@@ -63,6 +64,35 @@ describe('Ford OASIS warranty capture boundary', () => {
     const block = oasisWarrantyBlock(parsed, 10_000)
     expect(block.coverages[0]).toMatchObject({ termMonths: 36, termMiles: 36_000, status: 'EXPIRED' })
     expect(block.coverages[1]).toMatchObject({ termMonths: 60, termMiles: 60_000, remainingMiles: 50_000 })
+  })
+
+  it('computes a kilometre term in miles and carries the printed description through verbatim', () => {
+    expect(termFromOasisDescription('60 months / 100,000 Kilometres (whichever occurs first)')).toEqual({ termMonths: 60, termMiles: 62_137 })
+    expect(termFromOasisDescription('5 years / 100,000 kilometers')).toEqual({ termMonths: 60, termMiles: 62_137 })
+    expect(termFromOasisDescription('5 years / Unlimited kilometres')).toEqual({ termMonths: 60, unlimitedMiles: true })
+    expect(termFromOasisDescription('3 years / 36,000 Miles (whichever occurs first)')).toEqual({ termMonths: 36, termMiles: 36_000 })
+
+    const metricHtml = `<html><body>
+      OASIS RESULT VIN: ${vin}
+      WARRANTY START DATE: 01-Jan-2023 MONTHS IN SERVICE: 36 SALE MILEAGE: 0
+      WARRANTY COVERAGE
+      COVERAGE TYPE: Powertrain COVERAGE DESCRIPTION: 60 months / 100,000 Kilometres (whichever occurs first)
+      COVERAGE TYPE: Corrosion Perforation COVERAGE DESCRIPTION: 5 years / Unlimited kilometres
+      MARKETING MESSAGES
+      GENERAL WARRANTY INFORMATION
+    </body></html>`
+    const block = oasisWarrantyBlock(parseOasis(metricHtml, vin), 10_000)
+    expect(block.coverages[0]).toMatchObject({
+      type: 'Powertrain',
+      termText: '60 months / 100,000 Kilometres (whichever occurs first)',
+      termMonths: 60,
+      termMiles: 62_137,
+      remainingMiles: 52_137,
+      remainingMilesText: '52,137 miles left',
+      status: 'ACTIVE',
+    })
+    expect(block.coverages[1]).toMatchObject({ type: 'Corrosion Perforation', unlimitedMiles: true, remainingMilesText: 'Unlimited miles left', status: 'ACTIVE' })
+    expect(JSON.stringify(block)).not.toMatch(/\d\s*(?:km|kilomet)(?!res \(whichever)/i)
   })
 })
 
