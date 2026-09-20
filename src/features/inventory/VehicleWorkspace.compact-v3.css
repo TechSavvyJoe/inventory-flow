@@ -9,7 +9,7 @@
   --v3-muted: #627488;
   --v3-border: #d5dee7;
   --v3-border-strong: #bdcad6;
-  --v3-surface: #fff;
+  --v3-surface: var(--ifx-neutral-0);
   --v3-surface-soft: #f6f8fa;
   --v3-radius: 7px;
   color: var(--v3-ink);
@@ -27,7 +27,7 @@
     overflow: hidden;
     border: 1px solid #c7d3dd;
     border-radius: 6px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-no-hold__header {
@@ -49,7 +49,7 @@
     border: 1px solid #cbd7e1;
     border-radius: 5px;
     color: #315875;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-no-hold__heading {
@@ -184,7 +184,7 @@
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail .inventory-dealermail-actions__preflight {
     border-color: #d2dde6;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail .inventory-dealermail-actions__grid {
@@ -201,7 +201,7 @@
     border-radius: 5px;
     color: #243f56;
     box-shadow: 0 1px 1px rgb(18 40 60 / 4%);
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail :is(
@@ -286,7 +286,7 @@
   min-height: 44px;
   padding: 4px 8px 4px 14px;
   border-bottom-color: var(--v3-border);
-  background: #fff;
+  background: var(--ifx-neutral-0);
   backdrop-filter: none;
 }
 
@@ -315,7 +315,7 @@
   max-height: 250px;
   grid-template-columns: 280px minmax(0, 1fr);
   border-bottom: 1px solid var(--v3-border-strong);
-  background: #fff;
+  background: var(--ifx-neutral-0);
 }
 
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-hero::after,
@@ -377,7 +377,7 @@
 }
 
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-gallery--cinematic .inventory-workspace-gallery__thumbnails button.is-active {
-  border-color: #fff;
+  border-color: var(--ifx-neutral-0);
   box-shadow: 0 0 0 1px var(--v3-accent);
 }
 
@@ -388,13 +388,13 @@
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-hero__summary {
   min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
-  background: #fff;
+  background: var(--ifx-neutral-0);
 }
 
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-hero__summary .inventory-workspace-identity {
   padding: 11px 14px 9px;
   border-bottom-color: var(--v3-border);
-  background: #fff;
+  background: var(--ifx-neutral-0);
 }
 
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-identity__title {
@@ -552,7 +552,7 @@
   overflow-x: auto;
   padding: 4px 10px;
   border-top: 1px solid var(--v3-border);
-  background: #fff;
+  background: var(--ifx-neutral-0);
   scrollbar-width: none;
 }
 
@@ -574,7 +574,7 @@
   border-color: #c5d0da;
   border-radius: 5px;
   color: #294b68;
-  background: #fff;
+  background: var(--ifx-neutral-0);
   box-shadow: none;
   font-size: 9px;
 }
@@ -588,7 +588,7 @@
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-v3-toolbar .inventory-button--primary,
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-v3-toolbar .inventory-button--primary:hover {
   border-color: var(--v3-accent) !important;
-  color: #fff !important;
+  color: var(--ifx-neutral-0) !important;
   background: var(--v3-accent) !important;
   box-shadow: none !important;
 }
@@ -614,7 +614,7 @@
   border: 1px solid #c5d0da;
   border-radius: 5px;
   color: #294b68;
-  background: #fff;
+  background: var(--ifx-neutral-0);
   font-size: 9px;
   font-weight: 770;
   list-style: none;
@@ -641,7 +641,7 @@
   padding: 0 11px;
   border-top: 0;
   border-bottom: 1px solid var(--v3-border-strong);
-  background: #fff;
+  background: var(--ifx-neutral-0);
   backdrop-filter: none;
 }
 
@@ -664,7 +664,7 @@
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-tabs--dense button[aria-selected="true"] {
   border-color: var(--v3-accent);
   color: var(--v3-accent-strong);
-  background: #fff;
+  background: var(--ifx-neutral-0);
   box-shadow: none;
 }
 
@@ -675,7 +675,7 @@
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-panel {
   border: 1px solid var(--v3-border);
   border-radius: var(--v3-radius);
-  background: #fff;
+  background: var(--ifx-neutral-0);
   box-shadow: 0 3px 12px rgb(17 45 72 / 5%);
 }
 
@@ -719,7 +719,7 @@
   padding: 10px;
   border: 1px solid var(--v3-border);
   border-radius: var(--v3-radius);
-  background: #fff;
+  background: var(--ifx-neutral-0);
   box-shadow: 0 3px 12px rgb(17 45 72 / 4%);
 }
 
@@ -789,7 +789,7 @@
   border-right: 1px solid #e4e9ee;
   border-bottom: 1px solid #e4e9ee;
   border-radius: 0;
-  background: #fff;
+  background: var(--ifx-neutral-0);
 }
 
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-intelligence__features {
@@ -869,7 +869,7 @@
   border: 0;
   border-bottom: 1px solid #e5e9ed;
   border-radius: 0;
-  background: #fff;
+  background: var(--ifx-neutral-0);
 }
 
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-recent-changes__list .inventory-timeline__icon {
@@ -901,7 +901,7 @@
   border-right: 1px solid #e0e6eb;
   border-bottom: 1px solid #e0e6eb;
   border-radius: 0;
-  background: #fff;
+  background: var(--ifx-neutral-0);
   text-align: left;
 }
 
@@ -1151,7 +1151,7 @@
     padding: 5px 7px;
     border: 1px solid var(--v3-border);
     border-radius: 5px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-v3-toolbar {
@@ -1244,7 +1244,7 @@
   border: 1px solid #b8c8d5;
   border-radius: 5px;
   color: #25465f;
-  background: #fff;
+  background: var(--ifx-neutral-0);
   font: inherit;
   font-size: 9.5px;
   font-weight: 820;
@@ -1521,7 +1521,7 @@
     padding: 4px 6px;
     border-color: #c9d6e1;
     color: #5e7081;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     font-size: 9px;
     line-height: 1.2;
   }
@@ -1558,12 +1558,12 @@
     gap: 5px;
     padding: 4px 5px;
     border-radius: 4px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail .inventory-dealermail-action--compact:hover {
     border-color: #6f98bd;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail .inventory-dealermail-action--compact .inventory-dealermail-action__icon {
@@ -1588,12 +1588,12 @@
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail .inventory-dealermail-action--primary {
     border-color: var(--v3-accent);
-    color: #fff;
+    color: var(--ifx-neutral-0);
     background: var(--v3-accent);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail .inventory-dealermail-action--primary .inventory-dealermail-action__icon {
-    color: #fff;
+    color: var(--ifx-neutral-0);
     background: rgb(255 255 255 / 13%);
   }
 
@@ -1757,7 +1757,7 @@
     border-left: 3px solid #6b88a4;
     border-top-width: 1px;
     border-radius: 4px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-equipment-group--safety { border-left-color: #1f8a5a; }
@@ -1809,7 +1809,7 @@
     border: 0;
     border-bottom: 1px solid #edf1f4;
     border-radius: 0;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-equipment-group li > svg {
@@ -1917,7 +1917,7 @@
     margin: 0;
     padding: 6px;
     border: 1px solid #dce4ea;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     font-size: 9.5px;
     line-height: 1.35;
   }
@@ -2224,14 +2224,14 @@
   .inventory-workspace.inventory-workspace--compact-v3 {
     --mobile-edge: 14px;
     color: #102a43;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-topbar {
     min-height: 44px;
     padding: 0 5px 0 var(--mobile-edge);
     border-bottom: 1px solid #d8e0e8;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-topbar > span {
@@ -2253,7 +2253,7 @@
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-scroll--dense {
     overflow-x: hidden;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     scrollbar-gutter: auto;
   }
 
@@ -2269,7 +2269,7 @@
     gap: 10px;
     padding: 8px var(--mobile-edge);
     border-bottom: 1px solid #d8e0e8;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-mobile-context__media {
@@ -2357,7 +2357,7 @@
     max-height: none;
     display: grid;
     grid-template-columns: 1fr;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3[data-active-section="overview"] .inventory-workspace-gallery--cinematic {
@@ -2389,7 +2389,7 @@
     align-items: stretch;
     border-bottom: 1px solid #d8e0e8;
     color: #526a80;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     font-size: 10.5px;
   }
 
@@ -2452,7 +2452,7 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     border-bottom: 1px solid #cfd9e2;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-mobile-actions > :is(a, button, details) {
@@ -2475,7 +2475,7 @@
     padding: 4px 5px;
     border: 0;
     color: #0b5fb5;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     font: inherit;
     font-size: 12px;
     font-weight: 780;
@@ -2511,7 +2511,7 @@
     padding: 5px;
     border: 1px solid #cbd6df;
     border-radius: 8px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     box-shadow: 0 12px 28px rgb(18 45 70 / 18%);
   }
 
@@ -2523,7 +2523,7 @@
     border: 0;
     border-bottom: 1px solid #e3e8ed;
     color: #173c61;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     font: inherit;
     font-size: 12.5px;
     font-weight: 720;
@@ -2539,7 +2539,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) 72px;
     border-bottom: 1px solid #cfd9e2;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-tabs--dense {
@@ -2589,7 +2589,7 @@
     padding: 0 5px;
     border-bottom: 2px solid transparent;
     color: #5d7185;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     font-size: 11.5px;
     font-weight: 740;
     list-style: none;
@@ -2620,7 +2620,7 @@
     padding: 5px;
     border: 1px solid #cbd6df;
     border-radius: 8px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     box-shadow: 0 12px 28px rgb(18 45 70 / 18%);
     list-style: none;
   }
@@ -2632,7 +2632,7 @@
     border: 0;
     border-bottom: 1px solid #e2e8ed;
     color: #173c61;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     font: inherit;
     font-size: 12.5px;
     font-weight: 720;
@@ -2641,7 +2641,7 @@
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-tab-panels {
     margin: 0;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-panel,
@@ -2649,7 +2649,7 @@
     overflow: visible;
     border: 0;
     border-radius: 0;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     box-shadow: none;
   }
 
@@ -2695,7 +2695,7 @@
     padding: 0;
     border: 0;
     border-radius: 0;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     box-shadow: none;
   }
 
@@ -2752,7 +2752,7 @@
     border: 0;
     border-bottom: 1px solid #edf1f4;
     border-radius: 0;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-hold-evidence__facts .inventory-workspace-fact:nth-child(even) {
@@ -2819,7 +2819,7 @@
     border: 0;
     border-top: 1px solid #cfd9e2;
     border-radius: 0;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     box-shadow: none;
   }
 
@@ -2865,7 +2865,7 @@
     border-bottom: 1px solid #d7e0e7;
     border-radius: 0;
     color: #173c61;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     box-shadow: none;
   }
 
@@ -2905,7 +2905,7 @@
     border-bottom: 1px solid #d7e0e7;
     border-radius: 0;
     color: #607488;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     font-size: 10.5px;
   }
 
@@ -2943,7 +2943,7 @@
     padding: 10px 0 0;
     border: 0;
     color: #607488;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     font-size: 10.5px;
   }
 
@@ -2986,7 +2986,7 @@
     padding: 0 2px 0 8px;
     border: 0;
     color: #0b5fb5;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     font-size: 12.5px;
   }
 
@@ -3044,14 +3044,14 @@
     border: 0;
     border-bottom: 1px solid #cfd9e2;
     border-radius: 0;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-equipment-group > header {
     min-height: 42px;
     padding: 10px 0 5px;
     border: 0;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-equipment-group > header h4 {
@@ -3082,7 +3082,7 @@
     border: 0;
     border-radius: 0;
     color: #294963;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-equipment-group li > svg {
@@ -3114,7 +3114,7 @@
     margin: 0;
     padding: 10px 0;
     color: #607488;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     font-size: 11px;
   }
 
@@ -3129,7 +3129,7 @@
     border: 0;
     border-top: 1px solid #cfd9e2;
     border-radius: 0;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-equipment-specs::before {
@@ -3233,7 +3233,7 @@
     border-radius: 5px;
     color: #243f56;
     box-shadow: 0 1px 1px rgb(18 40 60 / 4%);
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail :is(

@@ -27,7 +27,7 @@
     min-height: 360px;
     border-color: #c8d4df;
     border-radius: 10px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     box-shadow: 0 6px 18px rgb(15 38 59 / 7%);
     scrollbar-gutter: stable;
     overscroll-behavior: contain;
@@ -59,7 +59,7 @@
     padding: 7px 11px;
     border-bottom: 1px solid #bdcbd7;
     color: #29455c;
-    background: #edf3f7;
+    background: var(--ifx-neutral-100);
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0;
@@ -144,7 +144,7 @@
     height: 18px;
     padding-inline: 4px;
     border-radius: 9px;
-    color: #fff;
+    color: var(--ifx-neutral-0);
     background: #174e7e;
     font-size: 11px;
     font-weight: 700;
@@ -164,7 +164,7 @@
     padding: 10px 11px;
     border-bottom: 1px solid #dbe3ea;
     color: #1b3449;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     font-size: 12px;
     font-weight: 500;
     line-height: 1.3;
@@ -174,7 +174,7 @@
   .inventory-experience--modern .inventory-table.inventory-table--workbench-v5 tbody td:first-child,
   .inventory-experience--modern .inventory-table.inventory-table--workbench-v5 tbody td:last-child {
     z-index: 3;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-experience--modern .inventory-table.inventory-table--workbench-v5 tbody td:first-child {
@@ -566,21 +566,21 @@
 
   .inventory-experience--modern .inventory-table.inventory-table--workbench-v5 .inventory-row-open {
     border: 1px solid #0b5594;
-    color: #fff;
+    color: var(--ifx-neutral-0);
     background: #0b5594;
     box-shadow: 0 2px 5px rgb(4 58 104 / 16%);
   }
 
   .inventory-experience--modern .inventory-table.inventory-table--workbench-v5 .inventory-row-open:hover {
     border-color: #074579;
-    color: #fff;
+    color: var(--ifx-neutral-0);
     background: #074f89;
   }
 
   .inventory-experience--modern .inventory-table.inventory-table--workbench-v5 .inventory-row-dealermail {
     border: 1px solid #b9c9d6;
     color: #174e78;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-experience--modern .inventory-table.inventory-table--workbench-v5 .inventory-row-dealermail:hover {
@@ -591,7 +591,7 @@
   .inventory-experience--modern .inventory-table.inventory-table--workbench-v5 .inventory-row-more__trigger {
     border: 1px solid #b9c9d6;
     color: #425d72;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-experience--modern .inventory-table.inventory-table--workbench-v5 .inventory-row-action-label {
@@ -772,7 +772,7 @@
   .inventory-experience--modern .inventory-table.inventory-table--workbench-v5 tbody td:first-child,
   .inventory-experience--modern .inventory-table.inventory-table--workbench-v5 tbody td:last-child {
     z-index: 3;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-experience--modern .inventory-table.inventory-table--workbench-v5 thead th:first-child,
@@ -853,7 +853,7 @@
     min-height: 26px;
     opacity: 0;
     border: 1px solid #c8d6e0;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     box-shadow: 0 2px 7px rgb(17 47 70 / 12%);
     transform: translateY(-50%);
   }
@@ -1448,7 +1448,7 @@ textarea:focus-visible {
 
   .inventory-experience--modern .inventory-table--compact-v3 .inventory-row-dealermail {
     color: #063d76;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-experience--modern .inventory-table--compact-v3 :is(
@@ -1580,7 +1580,7 @@ textarea:focus-visible {
     padding: 8px;
     border: 1px solid #c8d5df;
     border-radius: 10px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     box-shadow: 0 14px 34px rgb(13 38 61 / 18%);
   }
 
@@ -1893,7 +1893,7 @@ textarea:focus-visible {
 
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail .inventory-dealermail-action--primary {
   border-color: var(--store-accent-strong, #0759bd);
-  color: #fff;
+  color: var(--ifx-neutral-0);
   background: var(--store-accent-strong, #0759bd);
   box-shadow: 0 6px 14px color-mix(in srgb, var(--store-accent-strong, #0759bd) 24%, transparent);
 }
@@ -1904,7 +1904,7 @@ textarea:focus-visible {
   .inventory-dealermail-action__copy small,
   .inventory-dealermail-action__external
 ) {
-  color: #fff;
+  color: var(--ifx-neutral-0);
 }
 
 .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail .inventory-dealermail-action--primary .inventory-dealermail-action__icon {
@@ -3142,7 +3142,7 @@ textarea:focus-visible {
     justify-content: center;
     gap: 6px;
     padding-inline: 10px;
-    color: #fff;
+    color: var(--ifx-neutral-0);
     border: 1px solid #07599f;
     border-radius: 7px;
     background: linear-gradient(180deg, #0b69b8 0%, #07599f 100%);
@@ -3152,7 +3152,7 @@ textarea:focus-visible {
   }
 
   .inventory-experience--modern .inventory-table--workbench-v5 .inventory-row-open:hover {
-    color: #fff;
+    color: var(--ifx-neutral-0);
     border-color: #064b86;
     background: linear-gradient(180deg, #075fa9 0%, #064b86 100%);
   }
@@ -3178,7 +3178,7 @@ textarea:focus-visible {
     color: #3f5d73;
     border: 1px solid #b7c9d7;
     border-radius: 7px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-experience--modern .inventory-table--workbench-v5 .inventory-row-more__label {
@@ -3369,13 +3369,13 @@ textarea:focus-visible {
 
   .inventory-experience--modern .inventory-table--compact-v3 .inventory-row-open {
     border-color: #07599f;
-    color: #fff;
+    color: var(--ifx-neutral-0);
     background: #07599f;
   }
 
   .inventory-experience--modern .inventory-table--compact-v3 .inventory-row-open:hover {
     border-color: #064a85;
-    color: #fff;
+    color: var(--ifx-neutral-0);
     background: #064a85;
   }
 
@@ -3389,7 +3389,7 @@ textarea:focus-visible {
     width: 38px;
     padding: 0;
     color: #405b71;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-experience--modern .inventory-table--compact-v3 .inventory-row-more__label {
@@ -3409,7 +3409,7 @@ textarea:focus-visible {
     overflow: hidden;
     border: 1px solid #ccd9e3;
     border-radius: 11px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     box-shadow: 0 5px 18px rgb(18 45 68 / 6%);
   }
 
@@ -3472,7 +3472,7 @@ textarea:focus-visible {
     min-width: 0;
     border: 1px solid #ccd9e3;
     border-radius: 11px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     box-shadow: 0 5px 18px rgb(18 45 68 / 6%);
   }
 
@@ -3507,7 +3507,7 @@ textarea:focus-visible {
     padding: 15px;
     border: 1px solid #bfcfdb;
     border-radius: 11px;
-    background: linear-gradient(180deg, #f7fafc 0, #fff 64px);
+    background: linear-gradient(180deg, #f7fafc 0, var(--ifx-neutral-0) 64px);
     box-shadow: 0 7px 22px rgb(18 45 68 / 8%);
   }
 
@@ -3548,7 +3548,7 @@ textarea:focus-visible {
     padding: 10px 11px;
     border: 1px solid #d3dee6;
     border-radius: 8px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail .inventory-dealermail-actions__preflight > strong {
@@ -3577,7 +3577,7 @@ textarea:focus-visible {
     grid-column: 1 / -1;
     min-height: 62px;
     border-color: var(--store-accent-strong, #0759bd) !important;
-    color: #fff !important;
+    color: var(--ifx-neutral-0) !important;
     background: var(--store-accent-strong, #0759bd) !important;
     box-shadow: 0 7px 18px color-mix(in srgb, var(--store-accent-strong, #0759bd) 24%, transparent) !important;
   }
@@ -3588,7 +3588,7 @@ textarea:focus-visible {
     .inventory-dealermail-action__copy small,
     .inventory-dealermail-action__external
   ) {
-    color: #fff !important;
+    color: var(--ifx-neutral-0) !important;
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail .inventory-dealermail-action[data-dealermail-intent='view-inventory'] .inventory-dealermail-action__icon {
@@ -3650,7 +3650,7 @@ textarea:focus-visible {
     overflow: hidden;
     border: 1px solid #cbd8e2;
     border-radius: 11px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
     box-shadow: 0 5px 18px rgb(18 45 68 / 6%);
   }
 
@@ -4168,7 +4168,7 @@ textarea:focus-visible {
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail .inventory-dealermail-action--primary .inventory-dealermail-action__copy strong {
-    color: #fff;
+    color: var(--ifx-neutral-0);
   }
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-dealermail-rail .inventory-dealermail-action--primary .inventory-dealermail-action__copy small {
@@ -4216,7 +4216,7 @@ textarea:focus-visible {
     padding-inline: 9px;
     border: 1px solid #ccd7e0;
     border-radius: 7px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-experience--modern .inventory-toolbar--modern .inventory-sort-composer > summary > span {
@@ -4789,7 +4789,7 @@ textarea:focus-visible {
     padding: 2px;
     border: 1px solid #c7d3de;
     border-radius: 7px;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-experience--modern .inventory-grid-density button {
@@ -4807,11 +4807,11 @@ textarea:focus-visible {
 
   .inventory-experience--modern .inventory-grid-density button:hover {
     color: #173e5d;
-    background: #edf3f7;
+    background: var(--ifx-neutral-100);
   }
 
   .inventory-experience--modern .inventory-grid-density button.is-active {
-    color: #fff;
+    color: var(--ifx-neutral-0);
     background: #174f7f;
   }
 
@@ -4964,7 +4964,7 @@ textarea:focus-visible {
 
   .inventory-experience--modern .inventory-grid-shell .inventory-table.inventory-table--workbench-v5 .inventory-row-open {
     border: 1px solid #0b5594;
-    color: #fff;
+    color: var(--ifx-neutral-0);
     background: #0b5594;
   }
 
@@ -4972,7 +4972,7 @@ textarea:focus-visible {
   .inventory-experience--modern .inventory-grid-shell .inventory-table.inventory-table--workbench-v5 .inventory-row-more__trigger {
     border: 1px solid #b9c9d6;
     color: #174e78;
-    background: #fff;
+    background: var(--ifx-neutral-0);
   }
 
   .inventory-experience--modern .inventory-grid-shell[data-density="compact"] .inventory-table.inventory-table--workbench-v5 {
