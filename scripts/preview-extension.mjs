@@ -1,6 +1,8 @@
 // Serves the side panel as a plain page for design review and screenshots:
 //   pnpm dev:demo   (in another terminal)
 //   pnpm extension:preview  ->  http://127.0.0.1:4177/sidepanel/index.html
+// "/" and "/index.html" 302-redirect to /sidepanel/index.html so the server
+// root is never a bare directory listing or a 404.
 // /api/* is proxied to the synthetic demo API so the page is same-origin and
 // needs no extension APIs. Never point this at the production host.
 import { createServer, request as httpRequest } from 'node:http'
@@ -34,6 +36,7 @@ export function createExtensionPreviewServer({ demoApiPort = Number(process.env.
     return
   }
   if (!['GET', 'HEAD'].includes(req.method)) { res.writeHead(405, { allow: 'GET, HEAD' }); res.end(); return }
+  if (pathname === '/' || pathname === '/index.html') { res.writeHead(302, { location: '/sidepanel/index.html' }); res.end(); return }
   let file
   if (pathname.startsWith('/demo-vehicles')) {
     // Fixed, reviewed synthetic assets only. Never expose public/, a parent
