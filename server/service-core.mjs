@@ -1399,8 +1399,15 @@ const TRANSPORT_ONLY_ROLES = Object.freeze(['driver', 'porter'])
 /**
  * Whether the signed-in viewer can take this item's next step today. The rule is
  * deliberately narrow: the step has to belong to the viewer's own store and be
- * something their role performs. Group managers are not exempt, because an item
- * another store owns is still that store's next step, not theirs.
+ * something their role performs.
+ *
+ * Actionability stays tied to the viewer's working location for every role,
+ * group managers included: an item another store owns is still that store's
+ * next step, not theirs, so it never enters their badge. That is a separate
+ * question from `allowedActions`, which may still let a group manager or a
+ * related store record a note or a follow-up on an item that is not theirs to
+ * take. The Action center shows both: the badge counts actionability, the
+ * follow-up controls follow allowedActions.
  */
 function attentionActionability(item, context) {
   const informational = (reason) => ({ actionability: 'informational', informationalReason: reason })

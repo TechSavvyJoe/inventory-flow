@@ -34,7 +34,7 @@ const INFORMATIONAL_TYPES: Record<string, AttentionInformationalReason> = {
 export const INFORMATIONAL_REASON_LABELS: Record<AttentionInformationalReason, string> = {
   source_health: 'Source health',
   public_listing: 'Website listing',
-  other_store: 'Another store’s next step',
+  other_store: "Another store's next step",
   role_scope: 'Handled by another role',
 }
 

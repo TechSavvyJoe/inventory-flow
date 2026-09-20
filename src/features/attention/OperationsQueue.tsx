@@ -99,6 +99,10 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
   // Everything a store cannot act on today stays reachable but collapsed, so the
   // queue above it only ever counts work this store and role can actually take.
   const alsoWorthKnowing = statusItems.filter(item => !isActionable(item) && matchesSearch(item))
+  // A tab counts the rows it will show: one per vehicle with a condition in that
+  // category. A vehicle with a hold and a service step is one row under "All
+  // tasks" and one row under each of "Hold follow-ups" and "Service", so the
+  // category figures can add up to more than "All tasks" by design.
   const categoryCounts = (key: ActionCategory) => groupByVehicle(taskItems.filter(item => key === 'all' || actionCategory(item) === key)).length
   const vehicleMap = useMemo(() => new Map(vehicles.map(vehicle => [vehicle.vin, vehicle])), [vehicles])
   return <section className="action-queue" aria-label="Store action queue">

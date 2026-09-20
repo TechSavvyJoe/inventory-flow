@@ -77,7 +77,7 @@ describe('Action center store workflow', () => {
     const also = screen.getByRole('list', { name: 'Also worth knowing' })
     const entries = within(also).getAllByRole('listitem')
     expect(entries).toHaveLength(2)
-    expect(entries[0]).toHaveTextContent('Synthetic Fowlerville move · Fowlerville · Another store’s next step')
+    expect(entries[0]).toHaveTextContent("Synthetic Fowlerville move · Fowlerville · Another store's next step")
     expect(entries[1]).toHaveTextContent('Source health')
     expect(within(entries[0]).getByRole('link', { name: 'Open move' })).toHaveAttribute('href', '/transfers?id=synthetic-away')
   })
