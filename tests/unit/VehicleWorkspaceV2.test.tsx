@@ -29,6 +29,10 @@ describe('Premium vehicle workspace shares the operational record', () => {
   })
   it('shows the latest Ford service dates, inspection, and work summary without implying availability', () => {
     const vehicle = premiumVehicle({
+      autoCheckReport: {
+        dataState: 'current', score: 92, ownerCount: 1,
+        recentInspection: { date: '2026-09-10', types: ['Vehicle Inspected'] },
+      },
       fordOasis: {
         dataState: 'current', openFieldServiceActions: [], openActionsCaptured: true,
         warrantyCoverages: [], extendedCoverageExpirations: [],
@@ -54,6 +58,7 @@ describe('Premium vehicle workspace shares the operational record', () => {
     expect(panel).toHaveTextContent('09/11/2026')
     expect(panel).toHaveTextContent('Certified Blue Oval inspection')
     expect(panel).toHaveTextContent('Oil and filter service')
+    expect(panel).not.toHaveTextContent('AutoCheck inspection')
     expect(panel).toHaveTextContent('Records don’t confirm availability')
   })
   it('shows the AutoCheck inspection date and type in the visible history summary', () => {

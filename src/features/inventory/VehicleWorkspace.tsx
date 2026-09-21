@@ -592,6 +592,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const sticker = vehicle.windowSticker;
   const factoryEquipment = vehicle.factoryEquipment;
   const fordOasis = vehicle.fordOasis;
+  const fordFamily = /^(ford|lincoln)$/i.test(vehicle.make.trim());
   const warrantyCheck = vehicle.warrantyCheck ?? null;
   const inService = resolveVehicleInService(vehicle);
   // Captured OASIS coverage takes precedence; estimates stay a fallback only.
@@ -605,8 +606,8 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const autoCheckUrl = officialVehicleDocumentUrl(autoCheck?.url, "autocheck", vehicle.publicListing.listingUrl);
   const stickerUrl = officialVehicleDocumentUrl(sticker?.url, "window-sticker", vehicle.publicListing.listingUrl);
   const factoryEquipmentUrl = vautoFactoryEquipmentUrl(factoryEquipment?.url);
-  const oasisUrl = /^(ford|lincoln)$/i.test(vehicle.make.trim()) ? fordOasisUrl(vehicle.vin) : null;
-  const serviceHistoryUrl = /^(ford|lincoln)$/i.test(vehicle.make.trim()) ? fordServiceHistoryUrl(vehicle.vin) : null;
+  const oasisUrl = fordFamily ? fordOasisUrl(vehicle.vin) : null;
+  const serviceHistoryUrl = fordFamily ? fordServiceHistoryUrl(vehicle.vin) : null;
   const serviceHistory = fordOasis?.serviceHistory ?? null;
   const latestService = serviceHistory?.latestRepairOrder ?? null;
   const recentInspection = serviceHistory?.recentInspection ?? null;
@@ -629,7 +630,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
     autoCheck?.scoreRangeLow != null && autoCheck.scoreRangeHigh != null
       ? `${autoCheck.scoreRangeLow}–${autoCheck.scoreRangeHigh}`
       : null;
-  const autoCheckInspection = autoCheck?.recentInspection ?? null;
+  const autoCheckInspection = fordFamily ? null : autoCheck?.recentInspection ?? null;
   const autoCheckHighlights = autoCheck?.checks?.filter(isPrimaryAutoCheckFinding) ?? [];
   const autoCheckOtherChecks = autoCheck?.checks?.filter(check => !autoCheckHighlights.includes(check)) ?? [];
   const autoCheckFacts = autoCheck

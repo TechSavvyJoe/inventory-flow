@@ -316,8 +316,11 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   const historyScore = numeric(history?.score) ? `Score ${formatNumber(history.score)}${scoreRange ? ` · ${scoreRange} range` : ''}` : null;
   const ownership = join([numeric(history?.ownerCount) ? `${formatNumber(history.ownerCount)} ${history.ownerCount === 1 ? 'owner' : 'owners'}` : null, factText(history?.usage)]);
   const odometer = numeric(history?.lastReportedOdometer) ? `Last reported ${formatNumber(history.lastReportedOdometer)} mi${text(history.lastReportedOdometerDate) ? ` · ${formatDate(history.lastReportedOdometerDate)}` : ''}` : null;
-  const inspectionDate = text(history?.recentInspection?.date);
-  const inspectionTypes = present(history?.recentInspection?.types ?? [], 4);
+  // Ford and Lincoln readiness comes from the Ford service-history channel.
+  // Keep their ordinary AutoCheck report, but do not present a competing
+  // AutoCheck inspection signal beside the authoritative Ford dates.
+  const inspectionDate = fordFamily ? null : text(history?.recentInspection?.date);
+  const inspectionTypes = fordFamily ? [] : present(history?.recentInspection?.types ?? [], 4);
   const inspection = inspectionDate && inspectionTypes.length ? `AutoCheck inspection ${formatDate(inspectionDate)} · ${inspectionTypes.join(' · ')}` : null;
   const historyFacts = present([
     historyScore,
