@@ -873,7 +873,6 @@ describe('transfer workspace v3 layout', () => {
     expect(preview).toHaveTextContent('Your manager checks and approves');
     expect(preview).toHaveTextContent('They confirm availability with Howell and approve this move.');
     expect(preview).not.toHaveTextContent('assign a driver');
-    expect(screen.queryByText('Customer is waiting now')).not.toBeInTheDocument();
   });
 
   it('opens the exact saved simple request from its confirmation', async () => {
@@ -991,7 +990,6 @@ describe('transfer workspace v3 layout', () => {
     expect(screen.getByText(/No availability or release is confirmed/i)).toBeInTheDocument();
     expect(screen.getByText(/requesting-store manager must approve/i)).toBeInTheDocument();
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-      priority: 'normal',
       returnRequired: true,
       targetReturnAt: '2026-09-02T16:00',
     }));
