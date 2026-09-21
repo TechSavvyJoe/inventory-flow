@@ -74,7 +74,10 @@ if (!refresh && existsSync(outPath)) {
 // A resumed same-day capture must follow the newest public snapshot. If a VIN
 // disappeared since an earlier partial pass, do not retain or refetch it.
 const currentVins = new Set(worklist.map((item) => item.vin))
-out.records = out.records.filter((record) => currentVins.has(record?.vin))
+const completeResults = new Set(['OK', 'NO_HISTORY'])
+// A failed or incomplete same-day row is not completion. Drop it before a
+// resumed pass so the VIN is retried and the file remains one-record-per-VIN.
+out.records = out.records.filter((record) => currentVins.has(record?.vin) && completeResults.has(record?.result))
 const done = new Set(out.records.map((record) => record.vin))
 const queue = worklist.filter((item) => !done.has(item.vin)).slice(0, max)
 const save = () => writeFileSync(outPath, JSON.stringify(out, null, 2) + '\n')
@@ -108,11 +111,22 @@ for (const item of queue) {
   if (Date.now() - startedAt > budgetMs) { stoppedReason = 'BUDGET_EXHAUSTED'; break }
   const checkedAt = new Date().toISOString()
   try {
-    const response = await fetchInTab(context.page, HISTORY_URL(item.vin), { timeoutMs: 45000 })
+    let response
+    let index
+    // Ford PTS occasionally serves the vehicle that was previously selected
+    // in the shared session. The parser binds every page to the requested VIN;
+    // retry a mismatch with a cache-buster instead of attaching it incorrectly.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const requestUrl = `${HISTORY_URL(item.vin)}&inventoryFlowRequest=${Date.now()}-${attempt}`
+      response = await fetchInTab(context.page, requestUrl, { timeoutMs: 45000 })
+      if (response.status === 0 || response.error || /login\.microsoftonline\.com/i.test(response.finalUrl || '')) break
+      index = parseServiceHistoryIndex(response.text, item.vin)
+      if (index.state !== 'vin_mismatch') break
+      await sleep(250 * (attempt + 1))
+    }
     if (response.status === 0 || response.error || /login\.microsoftonline\.com/i.test(response.finalUrl || '')) {
       sessionStatus = 'session_expired'; stoppedReason = 'SESSION_EXPIRED'; break
     }
-    const index = parseServiceHistoryIndex(response.text, item.vin)
     if (index.state === 'session_expired') { sessionStatus = 'session_expired'; stoppedReason = 'SESSION_EXPIRED'; break }
     if (index.state !== 'ok') {
       out.records.push({ vin: item.vin, checkedAt, result: 'ERROR', dataState: 'incomplete', historyCaptured: false, error: index.state })
