@@ -147,6 +147,31 @@ describe('page-session mutation retries', () => {
     expect(keyAt(7)).toBe(keyAt(0))
   })
 
+  it('sends direct-move intent, destination, and movement time but not client-controlled identity', async () => {
+    fetchMock.mockImplementation(async () => json())
+    await api.createTransfer({
+      vin: input.vin,
+      intent: 'direct',
+      requestingStore: input.requestingStore,
+      destinationStore: 'Ford Detroit',
+      requestedBy: input.requestedBy,
+      movedAt: '2026-09-02T16:00:00.000Z',
+      reason: input.reason,
+      customerAppointment: input.customerAppointment,
+      returnRequired: input.returnRequired,
+      priority: input.priority,
+    }, 'manager', 'Howell')
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body))
+    expect(body).toMatchObject({
+      vin: input.vin,
+      intent: 'direct',
+      destinationStore: 'Ford Detroit',
+      movedAt: '2026-09-02T16:00:00.000Z',
+    })
+    expect(body).not.toHaveProperty('requestedBy')
+    expect(body).not.toHaveProperty('requestingStore')
+  })
+
   it('keeps uncertain retry memory bounded and expires old idle actions', async () => {
     let now = 1000
     vi.spyOn(Date, 'now').mockImplementation(() => now)
@@ -334,6 +359,78 @@ describe('Access sign-in and response handling', () => {
     fetchMock.mockResolvedValue(new Response('{"id":"synthetic"}', { headers: { 'Content-Type': 'application/vnd.inventory+json' } }))
     await expect(api.getTransfer('synthetic', 'sales', 'Howell')).resolves.toMatchObject({ id: 'synthetic' })
     expect(keyAt(0)).toBeNull()
-    expect(new Headers(fetchMock.mock.calls[0][1]?.headers).get('x-inventory-demo-role')).toBe('sales')
+    const headers = new Headers(fetchMock.mock.calls[0][1]?.headers)
+    expect(headers.get('x-inventory-demo-role')).toBe('sales')
+    expect(headers.get('x-inventory-preview-role')).toBe('sales')
+    expect(headers.get('x-inventory-demo-store')).toBe('Howell')
+    expect(headers.get('x-inventory-preview-store')).toBe('Howell')
   })
+})
+
+describe('session access and confirmed writes', () => {
+  it.each([401, 403] as const)('reports HTTP %i with request context so the workspace can purge protected records', async (status) => {
+    const { subscribeAccessFailures } = await import('../../src/lib/apiSession')
+    const listener = vi.fn()
+    const unsubscribe = subscribeAccessFailures(listener)
+    try {
+      fetchMock.mockResolvedValueOnce(json({ error: 'Access changed' }, status))
+      await expect(api.getVehicle('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS', 'manager', 'Lincoln')).rejects.toMatchObject({ status })
+      expect(listener).toHaveBeenCalledWith(expect.objectContaining({ status, role: 'manager', store: 'Lincoln' }))
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('invalidates access as soon as forbidden headers arrive even if its response body stalls', async () => {
+    const { subscribeAccessFailures } = await import('../../src/lib/apiSession')
+    const listener = vi.fn()
+    const unsubscribe = subscribeAccessFailures(listener)
+    let finish!: (body: unknown) => void
+    const response = json({ error: 'Access changed' }, 403)
+    vi.spyOn(response, 'json').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    fetchMock.mockResolvedValueOnce(response)
+    const pending = api.getVehicle('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS', 'sales', 'Howell')
+    const outcome = expect(pending).rejects.toMatchObject({ status: 403 })
+    await vi.waitFor(() => expect(listener).toHaveBeenCalledOnce())
+    finish({ error: 'Access changed' })
+    await outcome
+    unsubscribe()
+  })
+
+  it('advances the mutation revision only after a confirmed successful save', async () => {
+    const { confirmedMutationRevision } = await import('../../src/lib/apiSession')
+    const before = confirmedMutationRevision()
+    fetchMock.mockRejectedValueOnce(new TypeError('Offline')).mockResolvedValueOnce(json())
+    await expect(create()).rejects.toThrow('Offline')
+    expect(confirmedMutationRevision()).toBe(before)
+    await create()
+    expect(confirmedMutationRevision()).toBe(before + 1)
+  })
+
+  it('passes caller cancellation through the bootstrap body read', async () => {
+    const controller = new AbortController()
+    fetchMock.mockImplementationOnce((_input, options) => new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true })
+    }))
+    const pending = api.getBootstrap('Howell', 'manager', controller.signal)
+    const outcome = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    controller.abort()
+    await outcome
+  })
+
+  it('does not invalidate the current workspace for a request from an earlier access generation', async () => {
+    const { invalidateApiAccess, subscribeAccessFailures } = await import('../../src/lib/apiSession')
+    const listener = vi.fn()
+    const unsubscribe = subscribeAccessFailures(listener)
+    let finish!: (response: Response) => void
+    fetchMock.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = api.getVehicle('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS', 'manager', 'Howell')
+    const outcome = expect(pending).rejects.toMatchObject({ status: 401 })
+    invalidateApiAccess()
+    finish(json({ error: 'Old session' }, 401))
+    await outcome
+    expect(listener).not.toHaveBeenCalled()
+    unsubscribe()
+  })
+
 })

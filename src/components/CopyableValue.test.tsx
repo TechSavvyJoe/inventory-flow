@@ -58,14 +58,14 @@ describe("CopyableValue", () => {
       configurable: true,
       value: execCommand,
     });
-    render(<CopyableValue label="VIN" text="1FTFW1E86HFA48871" />);
-    fireEvent.click(screen.getByRole("button", { name: "Copy VIN: 1FTFW1E86HFA48871" }));
+    render(<CopyableValue label="VIN" text="TESTDATASYN000002" />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy VIN: TESTDATASYN000002" }));
 
     await waitFor(() => {
       expect(execCommand).toHaveBeenCalledWith("copy");
       expect(screen.getByRole("status")).toHaveTextContent("VIN copied");
     });
-    expect(selectedText).toBe("1FTFW1E86HFA48871");
+    expect(selectedText).toBe("TESTDATASYN000002");
   });
 
   it("announces failure without copying surrounding or hidden content", async () => {

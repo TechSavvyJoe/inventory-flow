@@ -31,7 +31,7 @@ describe('vautoFactoryEquipmentUrl', () => {
 })
 
 describe('officialVehicleDocumentUrl', () => {
-  const listing = 'https://www.bobmaxeyfordhowell.com/used-Howell-test-1FMUK8DHXTGB76992'
+  const listing = 'https://www.bobmaxeyfordhowell.com/used-Howell-test-TESTDATASYN000001'
 
   it('accepts only exact official AutoCheck routes on the vehicle website', () => {
     const valid = 'https://www.bobmaxeyfordhowell.com/autocheck.aspx?sv=vehicle-token&ac=report-token'

@@ -61,6 +61,20 @@ afterEach(() => {
 })
 
 describe('manager-friendly inventory UI', () => {
+  it('restores local query edits on return but honors a fresh explicit search for the same text', () => {
+    const props = { homeStore: { id: 'Howell', name: 'Howell' }, vehicles: [vehicle(1), vehicle(2)], metrics: { publicUnits: 2, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }, searchPersistenceKey: 'synthetic:search:user', initialQuery: 'HT0001', queryRequestKey: 'first-request' };
+    let page = render(<InventoryExperience {...props} />);
+    const query = () => screen.getByRole('combobox', { name: /Search inventory/i });
+    fireEvent.change(query(), { target: { value: 'HT0002' } });
+    expect(query()).toHaveValue('HT0002');
+    page.unmount();
+    page = render(<InventoryExperience {...props} />);
+    expect(query()).toHaveValue('HT0002');
+    page.unmount();
+    render(<InventoryExperience {...props} queryRequestKey="second-request" />);
+    expect(query()).toHaveValue('HT0001');
+  });
+
   it.each([
     ['unknown', 'Waiting for service'], ['needs_service', 'Waiting for service'],
     ['in_service', 'In service'], ['serviced', 'Ready'],
@@ -141,17 +155,17 @@ describe('manager-friendly inventory UI', () => {
     expect(within(rowsSelect).getAllByRole('option').map((option) => option.textContent)).toEqual([
       '10', '15', '20', '25', '50', '100',
     ])
-    // Paging counts vehicles, independently of their visible source-resource strip.
+    // Paging counts vehicles, independently of their passive source scan.
     expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(10)
-    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-resource-row')).toHaveLength(10)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-scan-row')).toHaveLength(10)
 
     fireEvent.change(rowsSelect, { target: { value: '20' } })
     expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(20)
-    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-resource-row')).toHaveLength(20)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-scan-row')).toHaveLength(20)
     expect(screen.getByText('Showing 1–20 of 28')).toBeInTheDocument()
     fireEvent.change(rowsSelect, { target: { value: '100' } })
     expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(28)
-    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-resource-row')).toHaveLength(28)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-scan-row')).toHaveLength(28)
     expect(screen.getByText('Showing 1–28 of 28')).toBeInTheDocument()
   })
 
@@ -167,7 +181,7 @@ describe('manager-friendly inventory UI', () => {
       />,
     )
 
-    expect(screen.getAllByText('Held · Alex M.').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Held by Alex M.').length).toBeGreaterThan(0)
     expect(screen.getAllByText('No current hold').length).toBeGreaterThan(0)
     expect(screen.queryByText(/DealerOn/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Public listing/i)).not.toBeInTheDocument()
@@ -201,7 +215,7 @@ describe('manager-friendly inventory UI', () => {
     const panel = openDealerMailTools()
     const action = within(panel).getByRole('button', { name: 'Open DealerMail & copy stock' })
     expect(within(panel).getAllByRole('button')).toHaveLength(1)
-    expect(panel).toHaveTextContent('the vehicle is not selected automatically')
+    expect(panel).toHaveTextContent('Paste the stock number into DealerMail')
     expect(panel.querySelector('dl')).toHaveTextContent(current.stockNumber)
     expect(panel.querySelector('dl')).toHaveTextContent(current.vin)
     fireEvent.click(action)
@@ -236,8 +250,8 @@ describe('manager-friendly inventory UI', () => {
     render(<VehicleWorkspace vehicle={current} homeStore={{ id: 'Howell', name: 'Howell' }} onClose={vi.fn()} />)
     const panel = openDealerMailTools()
     expect(within(panel).getAllByRole('button')).toHaveLength(1)
-    expect(within(panel).getByRole('note')).toHaveTextContent('Hold status is not confirmed')
-    expect(panel).toHaveTextContent('Verify the live DealerMail record before acting')
+    expect(within(panel).getByRole('note')).toHaveTextContent('Confirm the current hold before acting')
+    expect(panel).toHaveTextContent('Confirm the current hold before acting')
   })
 
   it('shows stale hold evidence as last verified without implying a current hold or availability', () => {
@@ -267,16 +281,12 @@ describe('manager-friendly inventory UI', () => {
       />,
     )
 
-    expect(screen.getByText('Last verified primary hold')).toBeInTheDocument()
-    expect(screen.getAllByText('Current state unverified — confirm in DealerMail').length).toBeGreaterThan(0)
-    expect(within(screen.getByRole('tabpanel', { name: 'Holds & moves' })).getByText('Last verified salesperson')).toBeInTheDocument()
-    expect(screen.getByText('Last verified customer / reason')).toBeInTheDocument()
-    expect(screen.getByText('Last verified comments & alerts')).toBeInTheDocument()
-    expect(document.querySelector('.inventory-hold-evidence__stale-note')).toHaveTextContent('does not confirm a current hold, release, sale, delivery, or availability')
+    expect(screen.getByRole('tabpanel', { name: 'Holds & moves' })).toBeInTheDocument()
+    expect(document.querySelector('.inventory-hold-evidence__stale-note')).toHaveTextContent('Review this hold before updating availability or delivery.')
     expect(screen.queryByText('No current DealerMail hold found')).not.toBeInTheDocument()
   })
 
-  it('keeps the complete public scan provenance available in the vehicle details without cluttering the table', () => {
+  it('keeps public-scan provenance out of the vehicle workspace', () => {
     const scannedVehicle = vehicle(20)
     scannedVehicle.dataStatus = 'Current public inventory'
     scannedVehicle.location.sourceReportedStore = { id: 'howell-public', name: 'Howell' }
@@ -302,20 +312,9 @@ describe('manager-friendly inventory UI', () => {
     )
 
     fireEvent.click(screen.getByRole('tab', { name: 'Records' }))
-    const technicalDetails = screen.getByText('Technical & source details').closest('details')!
-    expect(technicalDetails).not.toHaveAttribute('open')
-    fireEvent.click(within(technicalDetails).getByText('Technical & source details'))
-    expect(technicalDetails).toHaveAttribute('open')
-    const disclosure = screen.getByText('Additional record details').closest('summary')
-    expect(disclosure).not.toBeNull()
-    fireEvent.click(disclosure!)
-    const sourceFields = screen.getByRole('group', { name: 'Additional vehicle record details' })
-    expect(within(sourceFields).getByText('Current public inventory')).toBeInTheDocument()
-    expect(within(sourceFields).getAllByText('Bob Maxey Ford of Howell')).toHaveLength(2)
-    expect(within(sourceFields).getByText('21521')).toBeInTheDocument()
-    expect(within(sourceFields).getByText('Howell, Ford Detroit')).toBeInTheDocument()
-    expect(within(sourceFields).getByText('123456')).toBeInTheDocument()
-    expect(within(sourceFields).getByText('Aug 27, 2026')).toBeInTheDocument()
+    expect(screen.queryByText('Technical & source details')).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Additional vehicle record details' })).not.toBeInTheDocument()
+    expect(screen.queryByText('123456')).not.toBeInTheDocument()
   })
 
   it('shows a safe link and manual guidance when navigation throws and clipboard is denied', async () => {
@@ -389,7 +388,7 @@ describe('manager-friendly inventory UI', () => {
     expect(screen.getByRole('region', { name: 'Location & movement' })).toBeVisible()
   })
 
-  it('opens exact official document links from the row and presents parsed facts progressively', () => {
+  it('opens exact official links in the records inspector and preserves complete parsed facts in the workspace', () => {
     const onSelectVehicle = vi.fn()
     const documentedVehicle = vehicle(13)
     documentedVehicle.autoCheckReport = {
@@ -418,13 +417,19 @@ describe('manager-friendly inventory UI', () => {
         onSelectVehicle={onSelectVehicle}
       />,
     )
-    // Branded source links are visible in the row; opening one never selects the vehicle.
-    const row = document.querySelector('.inv-desk-resource-row') as HTMLElement
-    const autoCheckRowLink = within(row).getByRole('link', { name: /open AutoCheck history for VIN/i })
-    const stickerRowLink = within(row).getByRole('link', { name: /open sticker for VIN/i })
-    expect(autoCheckRowLink).toHaveAttribute('href', documentedVehicle.autoCheckReport.url)
-    expect(stickerRowLink).toHaveAttribute('href', documentedVehicle.windowSticker.url)
-    fireEvent.click(autoCheckRowLink)
+    // One Records action shows source highlights and exact document links
+    // without opening the full workspace or expanding the comparison rows.
+    const row = document.querySelector('.inv-desk-row') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: /Open vehicle records/ }))
+    const inspector = screen.getByRole('dialog', { name: /records$/i })
+    expect(within(inspector).getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(inspector).getByText('92')).toBeVisible()
+    expect(within(inspector).getByText('200A')).toBeVisible()
+    const autoCheckLink = within(inspector).getByRole('link', { name: /open AutoCheck history for VIN/i })
+    const stickerLink = within(inspector).getByRole('link', { name: /open sticker for VIN/i })
+    expect(autoCheckLink).toHaveAttribute('href', documentedVehicle.autoCheckReport.url)
+    expect(stickerLink).toHaveAttribute('href', documentedVehicle.windowSticker.url)
+    fireEvent.click(autoCheckLink)
     expect(onSelectVehicle).not.toHaveBeenCalled()
     table.unmount()
 
@@ -440,7 +445,7 @@ describe('manager-friendly inventory UI', () => {
     expect(within(documents).getByText('Typical 89–94')).toBeVisible()
     expect(within(documents).getByText('200A')).toBeInTheDocument()
     expect(within(documents).getByText('49,480')).toBeVisible()
-    expect(within(documents).getByText('Original sticker amounts · confirm currency on the sticker.')).toBeVisible()
+    expect(within(documents).queryByText('Original sticker amounts · confirm currency on the sticker.')).not.toBeInTheDocument()
     expect(within(documents).queryByText('$49,480')).not.toBeInTheDocument()
     expect(within(documents).getByRole('heading', { name: 'Full factory equipment & warranty' })).toBeVisible()
     expect(within(documents).getByText('Functional: Rear view camera')).toBeInTheDocument()
@@ -462,7 +467,7 @@ describe('manager-friendly inventory UI', () => {
     )
     const documents = openRecordDetails()
     expect(within(documents).getByRole('link', { name: /open autocheck report/i })).toBeInTheDocument()
-    expect(within(documents).getByText(/No AutoCheck history facts were captured/i)).toBeInTheDocument()
+    expect(within(documents).getByText(/No AutoCheck history details are available/i)).toBeInTheDocument()
     expect(within(documents).queryByText('Not published')).not.toBeInTheDocument()
     expect(within(documents).queryByText(/factory window sticker/i)).not.toBeInTheDocument()
   })

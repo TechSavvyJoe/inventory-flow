@@ -4,7 +4,11 @@ import {
   hasInventorySearchRequest,
   inventorySearchAccessContext,
   readInventorySearchRequest,
+  readWorkspaceReturnPath,
   stripLegacyInventorySearchQuery,
+  vehicleWorkspacePath,
+  withWorkspaceReturnPath,
+  workspaceReturnLabel,
 } from './inventory-navigation'
 
 describe('private inventory search navigation', () => {
@@ -54,5 +58,38 @@ describe('private inventory search navigation', () => {
     expect(stripLegacyInventorySearchQuery('?scope=home&q=%2420%2C988&sort=price')).toBe(
       '?scope=home&sort=price',
     )
+  })
+
+  it('returns a vehicle workspace to the exact originating workflow page', () => {
+    const returnTo = '/service?vin=TESTDATAHWELL0001'
+    expect(vehicleWorkspacePath('TESTDATAHWELL0001', { tab: 'data', returnTo })).toBe(
+      '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0001',
+    )
+    expect(withWorkspaceReturnPath('/inventory?scope=group&vin=TESTDATAHWELL0001&tab=hold', '/attention')).toBe(
+      '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=hold&returnTo=%2Fattention',
+    )
+  })
+
+  it('accepts only same-app workspace return paths', () => {
+    expect(readWorkspaceReturnPath('/service?vin=TESTDATAHWELL0001')).toBe('/service?vin=TESTDATAHWELL0001')
+    expect(readWorkspaceReturnPath('https://example.test')).toBeNull()
+    expect(readWorkspaceReturnPath('//example.test')).toBeNull()
+  })
+
+  it('preserves context through service and move actions and names the actual return destination', () => {
+    expect(withWorkspaceReturnPath('/service?vin=TESTDATAHWELL0001', '/inventory?vin=TESTDATAHWELL0001')).toBe('/service?vin=TESTDATAHWELL0001&returnTo=%2Finventory%3Fvin%3DTESTDATAHWELL0001')
+    expect(withWorkspaceReturnPath('/transfers?id=synthetic-move', '/attention')).toBe('/transfers?id=synthetic-move&returnTo=%2Fattention')
+    expect(workspaceReturnLabel('/inventory?vin=TESTDATAHWELL0001')).toBe('Back to vehicle')
+    expect(workspaceReturnLabel('/attention')).toBe('Back to Action center')
+    expect(workspaceReturnLabel('/transfers?id=synthetic-move')).toBe('Back to move')
+    expect(workspaceReturnLabel('/service?vin=TESTDATAHWELL0001')).toBe('Back to service')
+    expect(withWorkspaceReturnPath('/service', '//example.test')).toBe('/service')
+    expect(withWorkspaceReturnPath('https://example.test', '/inventory')).toBe('https://example.test')
+  })
+
+  it('rejects backslashes browsers can reinterpret as a protocol-relative redirect', () => {
+    expect(readWorkspaceReturnPath('/\\evil.example')).toBeNull()
+    expect(readWorkspaceReturnPath('//evil.example')).toBeNull()
+    expect(readWorkspaceReturnPath('/inventory?scope=group')).toBe('/inventory?scope=group')
   })
 })

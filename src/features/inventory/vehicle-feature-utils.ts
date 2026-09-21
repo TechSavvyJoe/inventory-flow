@@ -1,3 +1,4 @@
+import { sourceDistanceText } from "../../lib/source-distance";
 import type { InventoryVehicle } from "./types";
 
 export type EquipmentCategory =
@@ -67,7 +68,9 @@ function candidateItems(vehicle: InventoryVehicle): Array<{ label: string; sourc
   const factoryEquipment = vehicle.factoryEquipment;
   return [
     ...(sticker?.equipmentGroup ? [{ label: sticker.equipmentGroup, source: "factory-equipment-group" as const }] : []),
+    ...(sticker?.equipmentGroupContents ?? []).map((label) => ({ label, source: "factory-equipment-group" as const })),
     ...(sticker?.options ?? []).map((label) => ({ label, source: "factory-option" as const })),
+    ...(sticker?.equipmentGroupContents ?? []).map((label) => ({ label, source: 'factory-equipment-group' as const })),
     ...(sticker?.standardEquipment ?? []).map((label) => ({ label, source: "factory-standard-equipment" as const })),
     ...(factoryEquipment?.packages ?? []).flatMap((item) => [
       { label: [item.name, item.code ? `(${item.code})` : null].filter(Boolean).join(" "), source: "vauto-equipment-package" as const },
@@ -84,7 +87,8 @@ export function publishedEquipment(vehicle: InventoryVehicle): PublishedEquipmen
   const byKey = new Map<string, PublishedEquipmentItem>();
 
   for (const candidate of candidateItems(vehicle)) {
-    const label = candidate.label?.replace(/\s+/g, " ").trim();
+    // A factory or vAuto label can print a metric consumption or range figure.
+    const label = candidate.label ? sourceDistanceText(candidate.label.replace(/\s+/g, " ").trim()) : undefined;
     if (!label) continue;
     const key = normalizedEquipmentKey(label);
     if (!key) continue;
@@ -103,7 +107,7 @@ export function publishedEquipment(vehicle: InventoryVehicle): PublishedEquipmen
   return [...byKey.values()].sort((left, right) => {
     if (left.standout !== right.standout) return left.standout ? -1 : 1;
     const sourceDifference = SOURCE_STRENGTH[right.source] - SOURCE_STRENGTH[left.source];
-    return sourceDifference || left.label.localeCompare(right.label, undefined, { numeric: true });
+    return sourceDifference || left.label.localeCompare(right.label, "en-US", { numeric: true });
   });
 }
 
@@ -118,7 +122,10 @@ export function standoutEquipment(vehicle: InventoryVehicle, limit = 4): Publish
  * short name without ellipsizing or hiding text inside the scan row.
  */
 export function compactEquipmentScanLabel(label: string): string {
-  const value = label.replace(/\s+/g, " ").trim();
+  const value = label.replace(/\s+/g, " ").trim()
+    .replace(/\s+(?:[·|]\s*)?((?:USD|CAD)\s*\$?[\d,]+(?:\.\d{2})?|\$[\d,]+(?:\.\d{2})?|NO\s*CHARGE)$/i, '')
+    .replace(/\s*\([A-Z0-9-]+\)$/, '')
+    .replace(/\s*[·|]\s*[A-Z]{2,}-[A-Z0-9-]+$/, '');
   if (!value || value.length <= 64) return value;
 
   const equipmentGroup = value.match(/\bequipment\s+group\s+([a-z0-9-]+)/i);

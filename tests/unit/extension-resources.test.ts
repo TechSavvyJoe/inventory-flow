@@ -59,7 +59,7 @@ describe('extension resource summaries', () => {
     }
     const vehicle = panel({ fordOasis })
     const oasis = resourceSummaries(vehicle, { now }).find((item) => item.id === 'oasis')
-    expect(oasis.compactFacts[0]).toBe('Open FSA TEST-26A · REAR AXLE ▴ & HUB')
+    expect(oasis.compactFacts).toEqual(['At least 1 captured actions · result incomplete', 'Open FSA TEST-26A · REAR AXLE ▴ & HUB'])
     expect(oasis.facts).toContain('Recorded coverage: Powertrain · 5 years & 60,000 miles')
     expect(vehicle.documents.fordOasis.openFieldServiceActions[0].description).toBe('REAR AXLE &#x25B4; &amp; HUB')
     expect(fordOasis.warrantyCoverages[0].description).toBe('5 years &amp; 60,000 miles')
@@ -71,8 +71,8 @@ describe('extension resource summaries', () => {
     expect(summary.compactFacts).toEqual(['Title: Salvage brand reported', 'Odometer: Odometer discrepancy reported'])
     expect(summary.facts).toContain('1 owner · Personal')
     expect(summary.facts).toContain('Accident: No accidents reported')
-    expect(summary.facts).toContain('Last reported 12,450 mi · Sep 9')
-    expect(summary.sourceNote).toBe('Report run Sep 10')
+    expect(summary.facts).toContain('Last reported 12,450 mi · 09/09/2026')
+    expect(summary.sourceNote).toBe('Report run 09/10/2026')
     expect(summary.sourceKind).toBe('Saved data')
   })
 
@@ -94,6 +94,23 @@ describe('extension resource summaries', () => {
       { label: 'Odometer', status: 'No issue reported', detail: 'No odometer discrepancies reported' },
     ] } })
     expect(vehicle.documents.autoCheck.checks.map((check) => check.tone)).toEqual(['clear', 'clear'])
+  })
+  it.each([
+    'No accidents or damage reported',
+    'No major accidents or structural damage reported',
+    'No salvage, flood or odometer discrepancies reported',
+  ])('keeps a compound negated AutoCheck phrase clear: %s', (detail) => {
+    // autoCheckTone already reads the compound phrase as clear in a status;
+    // the detail tone must not contradict it by matching the trailing subject.
+    const vehicle = panel({ autoCheckReport: { checks: [{ label: 'Accident', status: 'No issues reported', detail }] } })
+    expect(vehicle.documents.autoCheck.checks[0].tone).toBe('clear')
+  })
+  it.each([
+    'No accidents reported, 1 damage record found',
+    'No accidents and 2 damage records',
+  ])('still reviews a partly negated finding that names a real record: %s', (detail) => {
+    const vehicle = panel({ autoCheckReport: { checks: [{ label: 'Accident', status: 'No issues reported', detail }] } })
+    expect(vehicle.documents.autoCheck.checks[0].tone).toBe('review')
   })
   it('does not downgrade an adverse status when additional detail is missing', () => {
     const vehicle = panel({ autoCheckReport: { checks: [{ label: 'Title', status: 'Salvage brand reported', detail: 'Additional details not captured' }] } })
@@ -128,7 +145,7 @@ describe('extension resource summaries', () => {
   })
 
   it('retains partial, stale, unknown and source failure notes apart from facts', () => {
-    expect(source({ autoCheckReport: { score: 91, dataState: 'stale_unverified', reportRunAt: '2026-09-10' } }, 'autocheck').sourceNote).toBe('Saved report · refresh at source · Report run Sep 10')
+    expect(source({ autoCheckReport: { score: 91, dataState: 'stale_unverified', reportRunAt: '2026-09-10' } }, 'autocheck').sourceNote).toBe('Saved report · refresh at source · Report run 09/10/2026')
     expect(source({ windowSticker: { totalMsrp: 50000, dataState: 'incomplete', sourceMessage: 'Pricing only', failureReason: 'Options unreadable' } }, 'window-sticker').sourceNote).toBe('Partial captured record · Pricing only · Options unreadable')
     expect(source({ autoCheckReport: { dataState: 'unknown' } }, 'autocheck').sourceNote).toMatch(/Source status unknown/)
     expect(source({ autoCheckReport: { score: 91, reportRunAt: '2030-01-01' } }, 'autocheck').sourceNote).toMatch(/Future source date/)
@@ -147,7 +164,7 @@ describe('extension resource summaries', () => {
     const lookup = source({}, 'oasis')
     expect(lookup).toMatchObject({ hasCapturedData: false, facts: [], compactFacts: ['DealerConnection sign-in'], sourceKind: 'Dealer lookup', sourceNote: 'No OASIS report details captured' })
     const captured = source({ fordOasis: { capturedAt: '2026-09-10', warrantyStartDate: '08/29/2024', buildDate: '08/01/2024', openFieldServiceActions: [{ code: '24S00', description: 'Synthetic software update' }], warrantyCoverages: [{ type: 'Powertrain', description: '60 months / 60,000 miles' }], extendedCoverageExpirations: ['Synthetic ESP ends 08/29/2029'], monthsInService: 24, saleMileage: 18 } }, 'oasis')
-    expect(captured.compactFacts).toEqual(['Open FSA 24S00 · Synthetic software update', 'Warranty start 08/29/2024'])
+    expect(captured.compactFacts).toEqual(['At least 1 captured actions · result incomplete', 'Open FSA 24S00 · Synthetic software update'])
     expect(captured.facts).toContain('Extended coverage: Synthetic ESP ends 08/29/2029')
     expect(captured.facts).toContain('18 mi at sale')
     expect(captured.hasCapturedData).toBe(true)
@@ -172,6 +189,24 @@ describe('extension resource summaries', () => {
     expect(history.sourceNote).toMatch(/estimate, not OASIS coverage.*Saved report.*30,000 mi entered/)
     expect(oasis.facts.join(' ')).toContain('Captured warranty: Powertrain')
     expect(oasis.sourceNote).toMatch(/Open-action result not captured.*Saved report/)
+  })
+
+  it('shows every captured source distance in US miles and keeps the source figure', () => {
+    const sticker = source({ windowSticker: { dataState: 'current', url: stickerUrl, originalMarket: 'Canada', warranty: ['5 years / 100,000 km powertrain'], options: ['Combined 9.8 L/100 km'] } }, 'window-sticker')
+    expect(sticker.facts).toContain('Printed warranty: 5 years / 62,137 mi powertrain (100,000 km in the source)')
+    expect(sticker.facts).toContain('Combined 24 mpg (9.8 L/100 km in the source)')
+
+    const history = source({ autoCheckReport: { dataState: 'current', url: historyUrl, usage: 'Personal · 148 000 km reported', checks: [{ label: 'Odometer check', detail: 'Last reported odometer: 148,000 km' }] } }, 'autocheck')
+    expect(history.facts.join(' ')).toContain('91,963 mi')
+    expect(history.facts.join(' ')).not.toMatch(/\d\s*km\b(?! in the source)/)
+
+    const oasis = source({ fordOasis: { dataState: 'current', capturedAt: '2026-09-10', warrantyCoverages: [{ type: 'Powertrain', description: '60 months/100,000 km' }], extendedCoverageExpirations: ['ESP to 160,000 km'] } }, 'oasis')
+    expect(oasis.facts).toContain('Recorded coverage: Powertrain · 60 months/62,137 mi (100,000 km in the source)')
+    expect(oasis.facts).toContain('Extended coverage: ESP to 99,419 mi (160,000 km in the source)')
+
+    const metric = source({ warrantyCheck: { dataState: 'current', mileageEntered: 30000, fordOasis: { warrantyStartDate: '08/30/2024', monthsInService: 24, coverages: [{ ...coverage, termText: '60 months / 100,000 km', remainingMilesText: '40,000 km' }] } } }, 'oasis')
+    expect(metric.facts.join(' ')).toContain('60 months / 62,137 mi (100,000 km in the source)')
+    expect(metric.facts.join(' ')).toContain('24,855 mi (40,000 km in the source) remaining miles')
   })
 
   it('never turns synthetic MSRP into a fabricated original document or adds Ford lookup to another make', () => {

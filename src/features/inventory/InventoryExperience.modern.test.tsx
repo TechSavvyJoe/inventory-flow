@@ -137,6 +137,21 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getAllByRole('button', { name: new RegExp(`Open vehicle details for ${target.year} ${target.make} ${target.model}`, 'i') })[0]).toBeVisible();
   });
 
+  it('clears a query-only empty state instead of leaving the search active', () => {
+    render(
+      <InventoryExperience
+        homeStore={homeStore}
+        vehicles={[vehicle(1)]}
+        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
+      />,
+    );
+    const search = screen.getByRole('combobox', { name: 'Search inventory' });
+    fireEvent.change(search, { target: { value: 'missing vehicle' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(search).toHaveValue('');
+    expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument();
+  });
+
   it('labels home scope accurately and only exposes a location filter for all locations', () => {
     render(
       <InventoryExperience

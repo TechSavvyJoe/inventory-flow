@@ -19,13 +19,13 @@ describe('interactive DealerMail and Ford document destinations', () => {
   })
 
   it('builds exact-VIN read-only Invoice and OASIS destinations', () => {
-    const invoice = fordInvoiceUrl('2lmpj8j91lbl11561')
-    const oasis = fordOasisUrl('2lmpj8j91lbl11561')
+    const invoice = fordInvoiceUrl('testdatasyn000010')
+    const oasis = fordOasisUrl('testdatasyn000010')
 
     expect(invoice).toContain('fordvisions.dealerconnection.com/vinv/GetInvoice.aspx')
-    expect(invoice).toContain('v=2LMPJ8J91LBL11561')
+    expect(invoice).toContain('v=TESTDATASYN000010')
     expect(oasis).toBe(
-      'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=2LMPJ8J91LBL11561',
+      'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=TESTDATASYN000010',
     )
   })
 

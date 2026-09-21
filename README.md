@@ -10,9 +10,9 @@ The app reads only completed, dated public-inventory and DealerMail snapshots na
 
 [Open Inventory Flow](https://inventory-ops.joegallant.me). Hosting no longer depends on a running PC tunnel. Access is explicitly allowlisted; employee roles and stores are enforced by the server, not selected by the browser. GitHub Pages is not used for live data.
 
-The authorized Windows host still performs source collection and publishes only completed, validated releases. If a scan or upload fails, the hosted app retains its last verified release. See the [Cloudflare runbook](docs/CLOUDFLARE_PRIVATE_RELEASE_RUNBOOK.md) for deployment, daily publishing, security boundaries, and remaining pilot acceptance checks.
+The authorized Windows host still performs source collection and publishes only completed, validated releases. If a scan or upload fails, the hosted app retains its last verified release. See the [Cloudflare runbook](docs/CLOUDFLARE_PRIVATE_RELEASE_RUNBOOK.md) for deployment, daily publishing, security boundaries, and remaining pilot acceptance checks. Before shipping a Worker deploy, run through the [deploy checklist](docs/DEPLOY_CHECKLIST.md).
 
-The default move workflow is deliberately simple: a salesperson requests another store's vehicle; their own store's manager checks availability with the Home Store and records one approval. There is no second in-app approval or driver/dispatch assignment. Staff record actual collection, arrival, return start, and Home Store receipt; receipt completes the move. Home/away/visiting/all-store views show location and time away without granting access to private transfer details. Public listings, holds, CDK, and office-processing signals remain separate read-only evidence and never establish a sale, delivery, funding, or physical custody. The earlier advanced workflow is retained for a later rollout, not required in the everyday interface; see the [phased roadmap](docs/ADVANCED_WORKFLOW_ROADMAP.md).
+The default move workflow is deliberately simple: a salesperson requests another store's vehicle; their own store's manager checks availability with the Home Store and records one approval. There is no second in-app approval, driver/dispatch assignment, collection, or destination-arrival checklist. Sales can record the outcome or start the return; a Home Store manager records the only physical handoff that closes the move: receipt back home. Home/away/visiting/all-store views show location and time away without granting access to private transfer details. Public listings, holds, CDK, and office-processing signals remain separate read-only evidence and never establish a sale, delivery, funding, or physical custody. The earlier advanced workflow is retained for a later rollout, not required in the everyday interface; see the [phased roadmap](docs/ADVANCED_WORKFLOW_ROADMAP.md).
 
 The inventory screen opens on the signed-in employee's Home Store, can expand to all four stores, and includes quick views for no current hold found, current holds, and vehicles being moved. Salespeople and managers can open the exact DealerMail hold owner/customer or reason, salesperson, comments, alerts, expected date, and backup records. Transport-only roles receive logistics without those customer-sensitive hold details. “No current hold found” always means confirm with the Home Store; it is not an availability promise.
 
@@ -22,13 +22,31 @@ The Today screen turns the daily report into an action layer. It opens on the em
 
 Design and implementation notes are in [Brand architecture](docs/BRAND_ARCHITECTURE.md), [Store brand assets](docs/BRAND_ASSETS.md), [Today and change center](docs/CHANGE_CENTER.md), and [Fidelity and interaction QA](docs/FIDELITY_QA.md).
 
+## Release 1.3.0: consistent workspaces and mobile reliability
+
+The default inventory, vehicle, move, and service screens use the established
+V1 layout and shared workflow components. A session-only vehicle shortlist and
+an optional service Board add useful views without changing operational rules.
+Shortlists and in-memory view state clear when access changes; customer notes
+are never written to browser storage.
+
+Transient refresh failures retain the last verified workspace with a retry
+action. Authentication failures clear protected data. Detail loading, temporary
+failure, and missing-record states are explicit, and unsaved forms warn before
+navigation. Shared app and companion tokens keep typography, colors, and touch
+controls consistent across narrow phones, landscape, tablets, and desktop.
+
+Browser acceptance uses Chromium, Firefox, and WebKit, including narrow and
+iPhone/Android emulation. Physical-device and live employee acceptance remain
+separate checks; see the [release validation record](docs/RELEASE_1_3_0.md).
+
 ## Release 1.2.1: focused workflows and vehicle records
 
 Vehicle moves, Action center, inventory updates, and service prioritize the
 task, responsible person, timing, and next action. Unrelated provider panels
 are replaced by explicit **Vehicle details** and **Records** links.
 
-On the site and companion, **Weight fee lookup · Base MSRP** means the original
+On the site and companion, **Base MSRP** means the original
 base MSRP used for registration lookup, not a calculated fee. Original sticker
 pricing takes priority; an informational vAuto fallback is explicitly labeled.
 Unknown currency is never assumed to be USD.
@@ -52,7 +70,7 @@ in-service dates do not prove reconditioning completion. See
 [Service readiness](docs/SERVICE_READINESS.md).
 
 The account menu's **Download companion extension** action provides the matching
-1.2.1 Chrome package. Extract it and load the folder containing `manifest.json`
+1.3.0 Chrome package. Extract it and load the folder containing `manifest.json`
 through Chrome's Extensions page, or reload the existing unpacked extension
 after updating its files. This is a private unpacked release, not a Chrome Web
 Store automatic update. See [Companion installation](extension/README.md).

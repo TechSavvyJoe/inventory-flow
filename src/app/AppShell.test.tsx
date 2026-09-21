@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Link, MemoryRouter } from 'react-router-dom'
+import { Link, MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { AppShell } from './AppShell'
 
 const { useAppDataMock } = vi.hoisted(() => ({ useAppDataMock: vi.fn() }))
@@ -39,6 +39,30 @@ describe('AppShell account and update controls', () => {
     vi.clearAllMocks()
   })
 
+  it('counts only the work this store and role can take in the Action center badge', () => {
+    const context = useAppDataMock()
+    const hold = { id: 'synthetic-hold', type: 'hold_alert', severity: 'warning', status: 'open', priority: 'high', label: 'Synthetic hold alert', vin: 'TESTDATAHWELL0001', store: 'Howell', actionability: 'actionable', allowedActions: [], events: [] }
+    const awayMove = { ...hold, id: 'synthetic-move', type: 'transfer_next_action', vin: 'TESTDATAFOWLER001', store: 'Fowlerville', actionStore: 'Fowlerville', relatedStores: ['Howell', 'Fowlerville'], actionability: 'informational', informationalReason: 'other_store' }
+    const feeds = { ...hold, id: 'synthetic-feeds', type: 'source_freshness', vin: undefined, store: undefined, actionability: 'informational', informationalReason: 'source_health' }
+    // The same vehicle carries a hold and an unrecorded service status: one row.
+    const vehicles = [{ vin: 'TESTDATAHWELL0001', stockNumber: 'SYN-H01', vehicleName: 'Synthetic Ford H01', homeStore: 'Howell', serviceReadiness: { status: 'needs_service', store: 'Howell', canManage: true } }]
+    useAppDataMock.mockReturnValue({ ...context, role: 'manager', data: { ...context.data, attention: [hold, awayMove, feeds], vehicles } })
+
+    render(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory</p></AppShell></MemoryRouter>)
+    expect(screen.getAllByLabelText('1 items need attention today').length).toBeGreaterThan(0)
+  })
+
+  it('hides the Action center badge when nothing is this store and role to do', () => {
+    const context = useAppDataMock()
+    const feeds = { id: 'synthetic-feeds', type: 'source_freshness', severity: 'critical', status: 'open', priority: 'urgent', label: 'Synthetic feed health', actionability: 'informational', informationalReason: 'source_health', allowedActions: [], events: [] }
+    // A salesperson cannot record a service status, so it is never their badge.
+    const vehicles = [{ vin: 'TESTDATAHWELL0001', stockNumber: 'SYN-H01', vehicleName: 'Synthetic Ford H01', homeStore: 'Howell', serviceReadiness: { status: 'needs_service', store: 'Howell', canManage: false } }]
+    useAppDataMock.mockReturnValue({ ...context, role: 'sales', data: { ...context.data, attention: [feeds], vehicles } })
+
+    render(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory</p></AppShell></MemoryRouter>)
+    expect(screen.queryByLabelText(/items need attention today/)).not.toBeInTheDocument()
+  })
+
   it('shows the effective test role and a direct return to the authenticated Group manager role', () => {
     const context = useAppDataMock()
     useAppDataMock.mockReturnValue({ ...context, data: { ...context.data, access: { role: 'sales', authenticatedRole: 'group_manager', canPreviewRoles: true, rolePreviewActive: true } } })
@@ -47,7 +71,22 @@ describe('AppShell account and update controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Return to Group manager' }))
     expect(context.setRole).toHaveBeenCalledWith('group_manager')
     fireEvent.click(screen.getByRole('button', { name: 'Open account and app controls' }))
-    expect(screen.getByLabelText('Preview role')).toHaveValue('sales')
+    const preview = screen.getByLabelText('Preview role')
+    expect(preview).toHaveValue('sales')
+    expect(within(preview).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Salesperson', 'Store manager', 'Group manager',
+    ])
+  })
+
+  it('lets a verified group manager change working stores', () => {
+    const context = useAppDataMock()
+    useAppDataMock.mockReturnValue({ ...context, data: { ...context.data, access: { role: 'group_manager', store: 'Howell', canPreviewStores: true } } })
+    const { unmount } = render(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory</p></AppShell></MemoryRouter>)
+    const groupStore = screen.getByRole('combobox', { name: 'Working location' })
+    expect(groupStore).toBeEnabled()
+    fireEvent.change(groupStore, { target: { value: 'Ford Detroit' } })
+    expect(context.setHomeStore).toHaveBeenCalledWith('Ford Detroit')
+    unmount()
   })
 
   it('portals the modal outside the app shell, isolates the page, and restores opener focus', async () => {
@@ -166,7 +205,14 @@ describe('AppShell account and update controls', () => {
     expect(within(primary).getByRole('link', { name: 'Control center' })).toHaveAttribute('aria-current', 'page')
     expect(within(mobile).getByRole('link', { name: 'Control center' })).toHaveAttribute('aria-current', 'page')
     expect(within(mobile).getByRole('link', { name: 'Service' })).toHaveAttribute('href', '/service')
-    expect(within(mobile).queryByRole('button', { name: 'More app controls' })).not.toBeInTheDocument()
+    // The rail omits Action center and Inventory updates for this role, so the
+    // utility menu is the only phone route to them.
+    expect(within(mobile).queryByRole('link', { name: 'Actions' })).not.toBeInTheDocument()
+    expect(within(mobile).queryByRole('link', { name: 'Updates' })).not.toBeInTheDocument()
+    fireEvent.click(within(mobile).getByRole('button', { name: 'More app controls' }))
+    const utility = screen.getByRole('dialog', { name: 'Account and app controls' })
+    expect(within(utility).getByRole('link', { name: /Action center/ })).toHaveAttribute('href', '/attention')
+    expect(within(utility).getByRole('link', { name: /Inventory updates/ })).toHaveAttribute('href', '/updates')
     unmount()
 
     useAppDataMock.mockReturnValue(baseContext)
@@ -177,13 +223,22 @@ describe('AppShell account and update controls', () => {
     )
 
     expect(within(screen.getByRole('navigation', { name: 'Primary' })).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
-    expect(within(screen.getByRole('navigation', { name: 'Mobile primary' })).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
+    const storeMobile = screen.getByRole('navigation', { name: 'Mobile primary' })
+    expect(within(storeMobile).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
+    fireEvent.click(within(storeMobile).getByRole('button', { name: 'More app controls' }))
+    const storeUtility = screen.getByRole('dialog', { name: 'Account and app controls' })
+    expect(within(storeUtility).getByRole('link', { name: /Service status/ })).toHaveAttribute('href', '/service')
+    expect(within(storeUtility).queryByRole('link', { name: /Action center/ })).not.toBeInTheDocument()
   })
 
-  it('moves focus to the main content after client-side route changes without moving focus on initial load', async () => {
+  it.each([
+    ['/manager', '/transfers?id=move-1'],
+    ['/transfers?id=move-1', '/transfers?id=move-2'],
+    ['/transfers?id=move-1', '/transfers?id=move-1#history'],
+  ])('moves focus after the URL changes from %s to %s without moving focus on initial load', async (initialUrl, nextUrl) => {
     render(
-      <MemoryRouter initialEntries={['/manager']}>
-        <AppShell><Link to="/transfers?id=move-1">Open transfer record</Link></AppShell>
+      <MemoryRouter initialEntries={[initialUrl]}>
+        <AppShell><Link to={nextUrl}>Open transfer record</Link></AppShell>
       </MemoryRouter>,
     )
 
@@ -195,6 +250,33 @@ describe('AppShell account and update controls', () => {
     fireEvent.click(routeLink)
 
     await waitFor(() => expect(main).toHaveFocus())
+  })
+
+  it('keeps an edited input focused while a search request is consumed with a same-URL state replacement', async () => {
+    function SearchRequestWorkspace() {
+      const location = useLocation()
+      const navigate = useNavigate()
+      return <>
+        <input aria-label="Inventory query" defaultValue="DEMO-H01" />
+        <button type="button" onClick={() => navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, { replace: true, state: null })}>Consume search request</button>
+        <output aria-label="Search request state">{location.state === null ? 'Consumed' : 'Pending'}</output>
+      </>
+    }
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/inventory', search: '?scope=home', hash: '#results', state: { inventorySearchRequest: { query: 'DEMO-H01' } } }]}>
+        <AppShell><SearchRequestWorkspace /></AppShell>
+      </MemoryRouter>,
+    )
+    const input = screen.getByRole('textbox', { name: 'Inventory query' })
+    input.focus()
+    fireEvent.change(input, { target: { value: 'DEMO-H02' } })
+    // Dispatch only the cleanup action, preserving the focus a user owns
+    // while InventoryPage consumes transient navigation state.
+    fireEvent.click(screen.getByRole('button', { name: 'Consume search request' }))
+    await waitFor(() => expect(screen.getByLabelText('Search request state')).toHaveTextContent('Consumed'))
+    expect(input).toHaveFocus()
+    expect(input).toHaveValue('DEMO-H02')
+    expect(screen.getByRole('main')).not.toHaveFocus()
   })
 
   it('does not take focus from an active modal when the location changes', async () => {

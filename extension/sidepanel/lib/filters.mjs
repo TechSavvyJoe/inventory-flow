@@ -51,7 +51,7 @@ function tally(vehicles, read) {
     entry.count += 1
     counts.set(key, entry)
   }
-  return [...counts.values()].sort((left, right) => right.count - left.count || left.value.localeCompare(right.value))
+  return [...counts.values()].sort((left, right) => right.count - left.count || left.value.localeCompare(right.value, 'en-US'))
 }
 
 /** Distinct values with counts, so the sheet only offers choices that exist. */
@@ -113,7 +113,7 @@ const compare = (read, direction) => (left, right) => {
 }
 const asc = (read) => compare(read, 1)
 const desc = (read) => compare(read, -1)
-const byName = (left, right) => left.vehicle.name.localeCompare(right.vehicle.name) || left.vehicle.stockNumber.localeCompare(right.vehicle.stockNumber, undefined, { numeric: true })
+const byName = (left, right) => left.vehicle.name.localeCompare(right.vehicle.name, 'en-US') || left.vehicle.stockNumber.localeCompare(right.vehicle.stockNumber, 'en-US', { numeric: true })
 
 export function sortMatches(matches, sortId, { hasQuery = false } = {}) {
   const comparators = {

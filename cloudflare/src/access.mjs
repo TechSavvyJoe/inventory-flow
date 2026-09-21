@@ -45,17 +45,23 @@ export async function memberContext(claims, env, request) {
   if (!row || !roles.includes(row.role) || !stores.includes(row.home_store) || !validIdentity(row.name) || !validIdentity(row.user_id)) {
     throw new AccessError('EMPLOYEE_NOT_AUTHORIZED',403)
   }
-  // A preview can only narrow a freshly verified group manager membership.
-  // Neither JWT role claims nor browser headers grant the underlying authority.
+  // Preview context is available only after a freshly verified group-manager
+  // membership. Neither JWT role claims nor browser headers grant authority.
   const canPreviewRoles = row.role === 'group_manager'
+  const canPreviewStores = row.role === 'group_manager'
   const previewRole = canPreviewRoles ? request?.headers.get('x-inventory-preview-role') : null
+  const previewStore = canPreviewStores ? request?.headers.get('x-inventory-preview-store') : null
   if (previewRole && !roles.includes(previewRole)) throw new AccessError('INVALID_PREVIEW_ROLE', 400)
+  if (previewStore && !stores.includes(previewStore)) throw new AccessError('INVALID_PREVIEW_STORE', 400)
   const effectiveRole = previewRole || row.role
+  const effectiveStore = previewStore || row.home_store
   return {
     role: effectiveRole,
     authenticatedRole: row.role,
     rolePreviewActive: effectiveRole !== row.role,
-    store: row.home_store,
+    store: effectiveStore,
+    authenticatedStore: row.home_store,
+    storePreviewActive: effectiveStore !== row.home_store,
     user: row.name,
     userId: row.user_id,
     allowLegacyTransportAssignmentByName:
@@ -65,5 +71,6 @@ export async function memberContext(claims, env, request) {
     identityMode: 'trusted_proxy',
     authenticated: true,
     canPreviewRoles,
+    canPreviewStores,
   }
 }

@@ -7,6 +7,7 @@ import {
   getTransferEvents,
   getTransferRow,
   insertTransferRequest,
+  supersedeTransferRequest,
   listAttentionWorkflowRows,
   listTransferRows,
   upsertAttentionWorkflow,
@@ -15,7 +16,7 @@ import {
   insertServiceEvent,
 } from './repository-dispatch.mjs'
 import { buildServiceReadinessEvent, serviceReadinessView } from './service-readiness.mjs'
-import { allowedAttentionActions, buildAttentionMutation, canSeePersistedAssignee } from './attention-workflow.mjs'
+import { allowedAttentionActions, buildAttentionMutation, canSeePersistedAssignee, isTransportItem } from './attention-workflow.mjs'
 import { assertAdminOverviewAccess, buildAdminOverview } from './admin-control-center.mjs'
 import { STORE_NAMES } from './constants.mjs'
 import { normalizePublicChangeCounts } from './public-change-counts.mjs'
@@ -25,6 +26,11 @@ import { allowedEventTypes, buildTransferEvent, buildTransferRequest, roleContex
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/
 const TERMINAL_TRANSFER_STATES = new Set(['declined', 'canceled', 'closed'])
 const RETURN_COMPLETE_STATES = new Set(['returned_home', 'closed'])
+// A sold-pending vehicle is waiting on its customer delivery, not on a trip
+// home, so its return clock is paused until a manager records the deal fell
+// through (not_sold) and the return path reopens.
+const RETURN_PAUSED_STATES = new Set(['sale_confirmed', 'delivery_confirmed'])
+const SIMPLE_DESTINATION_CUSTODY_EVENTS = new Set(['customer_showing', 'sale_outcome_pending', 'sale_confirmed', 'not_sold'])
 const ACTIVE_TRANSPORT_ASSIGNMENT_STATES = new Set([
   'transport_assigned',
   'picked_up',
@@ -45,6 +51,61 @@ function parseJson(value, fallback = null) {
 function cleanText(value) {
   const text = String(value ?? '').trim()
   return text || undefined
+}
+
+function normalizedTimestamp(value) {
+  if (value === undefined || value === null || value === '') return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.valueOf()) ? undefined : parsed.toISOString()
+}
+
+function transferEventLocationBefore(replay, current, events) {
+  let location = current.home_store_id
+  const replayIndex = events.findIndex((event) => event.id === replay.id)
+  if (replayIndex < 0) return undefined
+  for (const event of events.slice(0, replayIndex)) {
+    const recordsPhysicalLocation = [
+      'direct_move_recorded', 'vehicle_departed', 'picked_up', 'in_transit', 'arrived',
+      'return_started', 'return_in_transit', 'returned_home',
+    ].includes(event.event_type) ||
+      (SIMPLE_DESTINATION_CUSTODY_EVENTS.has(event.event_type) && event.to_location_id === current.destination_store_id)
+    if (recordsPhysicalLocation && cleanText(event.to_location_id)) location = cleanText(event.to_location_id)
+  }
+  return location
+}
+
+function transferEventReplayPayloadMatches(replay, input, context, current, events) {
+  const expectedOccurredAt = normalizedTimestamp(input?.occurredAt)
+  if (expectedOccurredAt === undefined) return false
+  if (expectedOccurredAt !== null && replay.occurred_at !== expectedOccurredAt) return false
+  // An omitted occurredAt is replayable only when the original event used its
+  // server creation time. This distinguishes an explicit historical timestamp.
+  if (expectedOccurredAt === null && replay.occurred_at !== replay.created_at) return false
+  if ((replay.note ?? null) !== (cleanText(input?.note) ?? null)) return false
+  if ((replay.expected_arrival_at ?? null) !== normalizedTimestamp(input?.dueAt)) return false
+  if ((replay.driver_or_porter ?? null) !== (cleanText(input?.assignee) ?? null)) return false
+  if ((replay.driver_or_porter_user_id ?? null) !== (cleanText(input?.assigneeUserId) ?? null)) return false
+  if (Object.hasOwn(input ?? {}, 'fromLocation')) {
+    const inputFrom = cleanText(input.fromLocation) ?? null
+    // Starting a simple return before an explicit arrival proves destination
+    // custody. The immutable audit stores that canonical physical origin, but
+    // the browser retry contains the location displayed before the action.
+    // Reconstruct that pre-event value so a lost-response retry is stable.
+    const expectedInputFrom = context.workflowMode === 'simple' &&
+      replay.event_type === 'return_started' && replay.to_location_id === 'In transit'
+      ? transferEventLocationBefore(replay, current, events)
+      : replay.from_location_id
+    if ((expectedInputFrom ?? null) !== inputFrom) return false
+  }
+  if (Object.hasOwn(input ?? {}, 'toLocation') &&
+      (replay.to_location_id ?? null) !== (cleanText(input.toLocation) ?? null)) return false
+  if (Object.hasOwn(input ?? {}, 'homeStoreManager') &&
+      (replay.confirmed_by ?? null) !== (cleanText(input.homeStoreManager) ?? null)) return false
+  if (replay.event_type === 'request_approved' && input?.availabilityConfirmed !== true) return false
+  if (input?.actor && input.actor !== context.user) return false
+  if (input?.actorRole && input.actorRole !== context.role) return false
+  if (input?.store && input.store !== context.store) return false
+  return true
 }
 
 function finiteNumber(value) {
@@ -187,10 +248,29 @@ function primaryAndBackups(holdRecord) {
   return { active, primary, backups }
 }
 
+function loanerSignal(messages) {
+  const alert = (messages.alerts ?? []).find((item) => {
+    const text = cleanText(item?.alertTextRaw ?? item?.textRaw ?? item?.bodyTextRaw)
+    return /\b(?:LCTP|FCTP|loaner)\b/i.test(text)
+  })
+  const rawAlert = cleanText(alert?.alertTextRaw ?? alert?.textRaw ?? alert?.bodyTextRaw)
+  if (!rawAlert) return null
+  const program = /\bFCTP\b/i.test(rawAlert) ? 'FCTP' : /\bLCTP\b/i.test(rawAlert) ? 'LCTP' : 'Loaner'
+  const dateMatch = rawAlert.match(/\b(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/)
+  return {
+    active: true,
+    program,
+    label: program === 'Loaner' ? 'Current loaner' : `Current loaner ${program}`,
+    serviceDate: dateMatch ? dateMatch[1] : null,
+    rawAlert,
+  }
+}
+
 function holdSummary(source, context, freshness, { includePrivate = false } = {}) {
   const holdRecord = source.holdRecord
   const crmRecord = source.crmRecord
   const messages = dealerMailMessages(source)
+  const loaner = loanerSignal(messages)
   const messageCounts = {
     commentsCount: messages.comments.reduce((count, group) => count + (Array.isArray(group?.rows) ? group.rows.length : 0), 0),
     alertsCount: messages.alerts.length,
@@ -200,11 +280,20 @@ function holdSummary(source, context, freshness, { includePrivate = false } = {}
       state: holdRecord ? 'stale' : crmRecord ? 'stale' : 'unknown',
       label: holdRecord ? 'Last verified hold — confirm in DealerMail' : 'Hold status stale — confirm in DealerMail',
       backupCount: holdRecord ? primaryAndBackups(holdRecord).backups.length : 0,
+      loaner,
       ...messageCounts,
     }
   }
-  if (!crmRecord) return { state: 'unknown', label: 'Not found in current CRM inventory', backupCount: 0 }
-  if (!holdRecord) return { state: 'none_observed', label: 'No hold observed in verified CRM snapshot', backupCount: 0, ...messageCounts }
+  if (!crmRecord) return { state: 'unknown', label: 'Not found in current CRM inventory', backupCount: 0, loaner }
+  if (!holdRecord) {
+    return {
+      state: 'none_observed',
+      label: loaner?.active ? loaner.label : 'No hold observed in verified CRM snapshot',
+      backupCount: 0,
+      loaner,
+      ...messageCounts,
+    }
+  }
 
   const { primary, backups } = primaryAndBackups(holdRecord)
   const summary = {
@@ -212,6 +301,7 @@ function holdSummary(source, context, freshness, { includePrivate = false } = {}
     label: backups.length ? `Primary hold + ${backups.length} backup${backups.length === 1 ? '' : 's'}` : 'Primary hold',
     backupCount: backups.length,
     expectedDate: cleanText(primary?.expectedDeliveryDateRaw),
+    loaner,
     ...messageCounts,
   }
   if (!['driver', 'porter', 'coordinator'].includes(context.role)) summary.primarySalesperson = cleanText(primary?.salespersonRaw)
@@ -395,6 +485,7 @@ function allowedUiActions(row, context) {
       if (simple && ['sales', 'manager'].includes(context.role)) {
         events.delete('arrived')
         events.delete('return_started')
+        for (const eventType of SIMPLE_DESTINATION_CUSTODY_EVENTS) events.delete(eventType)
       }
     }
     if (!homeStoreAction) events.delete('returned_home')
@@ -408,8 +499,11 @@ function allowedUiActions(row, context) {
   add('decline', events.has(simple ? 'request_declined' : 'declined'))
   add('request-driver', !simple && events.has('driver_requested'))
   add('assign-transport', !simple && (events.has('transport_assigned') || events.has('return_assigned')))
-  add('confirm-pickup', simple ? events.has('vehicle_departed') : events.has('picked_up') || events.has('return_in_transit'))
-  add('confirm-arrival', events.has('arrived'))
+  // Collection and destination-arrival were not reliably recorded by the two
+  // stores. Keep historical evidence read-only, but do not make either one an
+  // everyday manager task or a gate to the outcome/return workflow.
+  add('confirm-pickup', !simple && (events.has('picked_up') || events.has('return_in_transit')))
+  add('confirm-arrival', !simple && events.has('arrived'))
   add(
     'record-outcome',
     ['customer_showing', 'sale_outcome_pending', 'sale_confirmed', 'delivery_confirmed', 'not_sold'].some((event) =>
@@ -432,28 +526,45 @@ function simpleNextAction(row) {
   switch (row.status) {
     case 'requested':
     case 'manager_reviewed':
-      return { label: 'Your manager confirms availability and approves the request', owner: row.approval_owner || `${row.requesting_store_id} manager` }
+      return { label: 'Check the vehicle is free, then approve this move', owner: row.approval_owner || `${row.requesting_store_id} manager` }
     case 'approved':
     case 'transport_assigned':
-      return { label: 'Record when the vehicle leaves its home store', owner: row.requested_by || `${row.requesting_store_id} salesperson` }
     case 'picked_up':
     case 'in_transit':
-      return { label: 'Confirm arrival at requesting store', owner: `${row.requesting_store_id} sales/manager` }
+      return { label: 'Show the vehicle, then start its return', owner: row.requested_by || `${row.requesting_store_id} sales` }
     case 'arrived':
     case 'customer_showing':
     case 'sale_outcome_pending':
-      return { label: 'Record an outcome or return the vehicle', owner: `${row.requesting_store_id} sales/manager` }
+      return { label: 'Record the showing outcome, or start the return', owner: `${row.requesting_store_id} sales` }
+    case 'sale_confirmed':
+      return { label: 'Confirm delivery, or record the deal fell through', owner: `${row.requesting_store_id} manager` }
+    case 'delivery_confirmed':
+      return { label: 'Close the move · the customer took delivery', owner: `${row.requesting_store_id} manager` }
     case 'not_sold':
     case 'return_requested':
     case 'return_assigned':
-      return { label: 'Record when the vehicle starts its return', owner: `${row.requesting_store_id} sales/manager` }
+      return { label: 'Start the return when the vehicle leaves', owner: `${row.requesting_store_id} sales` }
     case 'return_in_transit':
-      return { label: 'Confirm the vehicle is back at its home store', owner: `${row.home_store_id} manager` }
+      return { label: `Confirm the vehicle is back at ${row.home_store_id}`, owner: `${row.home_store_id} manager` }
     case 'returned_home':
-      return { label: 'Back at home store — move complete', owner: undefined }
+      return { label: `Move complete · back at ${row.home_store_id}`, owner: undefined }
     default:
       return { label: row.next_action, owner: cleanText(row.next_action_owner) }
   }
+}
+
+/**
+ * Which store owns a move's current next step. The persisted next-action owner
+ * names a person, a driver or a coordinator, never a store, so the queue reads
+ * the movement instead: only a return already travelling or received is the
+ * Home Store's to confirm. Everything else sits with the requesting store.
+ */
+function transferNextActionStore(row) {
+  const returning = ['return_in_transit', 'returned_home']
+  if (returning.includes(row.movement_status) || returning.includes(row.status)) {
+    return cleanText(row.home_store_id)
+  }
+  return cleanText(row.destination_store_id) || cleanText(row.requesting_store_id)
 }
 
 function transferView(row, events, source, context, dealerMailFreshness, { includePrivate = false } = {}) {
@@ -507,22 +618,30 @@ function movementDepartureAt(row, events) {
   if (!row || !isActiveTransfer(row) || !row.current_location_id || row.current_location_id === row.home_store_id ||
       ['unknown', 'conflicting'].includes(row.location_confidence) ||
       ![...STORE_NAMES, 'In transit'].includes(row.current_location_id)) return undefined
-  // Reset only on a recorded physical home receipt. A request, approval, note,
-  // ETA or customer outcome cannot start or reset the time-away clock.
+  // Reset only on a recorded physical home receipt. In the simplified flow,
+  // a destination-tagged outcome (or return beginning at that destination) is
+  // the first reliable proof that the vehicle is away when pickup/arrival were
+  // intentionally omitted.
   const dated = events.map((event) => ({ event, time: Date.parse(event.occurred_at) })).filter(({ time }) => Number.isFinite(time))
   const lastReceipt = Math.max(-Infinity, ...dated.filter(({ event }) => event.event_type === 'returned_home').map(({ time }) => time))
-  const departed = dated.filter(({ event, time }) => time > lastReceipt &&
-    ['vehicle_departed', 'picked_up', 'in_transit'].includes(event.event_type)).sort((a, b) => a.time - b.time)[0]
+  const departed = dated.filter(({ event, time }) => time > lastReceipt && (
+    ['direct_move_recorded', 'vehicle_departed', 'picked_up', 'in_transit'].includes(event.event_type) ||
+    (SIMPLE_DESTINATION_CUSTODY_EVENTS.has(event.event_type) && event.to_location_id === row.destination_store_id) ||
+    (event.event_type === 'return_started' && event.from_location_id === row.destination_store_id)
+  )).sort((a, b) => a.time - b.time)[0]
   return departed ? new Date(departed.time).toISOString() : undefined
 }
 
 function physicalLocationAuthority(rows, database) {
-  const physicalEvents = new Set(['vehicle_departed', 'picked_up', 'in_transit', 'arrived', 'return_started', 'return_in_transit', 'returned_home'])
+  const physicalEvents = new Set(['direct_move_recorded', 'vehicle_departed', 'picked_up', 'in_transit', 'arrived', 'return_started', 'return_in_transit', 'returned_home'])
   // A later request or note is not a physical move. Completed receipts remain
   // evidence even though the simple workflow closes in that same transaction.
   const evidence = rows.map((row) => {
     const events = getTransferEvents(database, row.id)
-    const physical = events.filter((event) => physicalEvents.has(event.event_type) && Number.isFinite(Date.parse(event.occurred_at)))
+    const physical = events.filter((event) => (
+      physicalEvents.has(event.event_type) ||
+      (SIMPLE_DESTINATION_CUSTODY_EVENTS.has(event.event_type) && event.to_location_id === row.destination_store_id)
+    ) && Number.isFinite(Date.parse(event.occurred_at)))
     return { row, events, time: Math.max(-Infinity, ...physical.map((event) => Date.parse(event.occurred_at))) }
   }).filter(({ time }) => Number.isFinite(time)).sort((a, b) => b.time - a.time || a.row.id.localeCompare(b.row.id))
   if (evidence.length) {
@@ -615,12 +734,61 @@ const PUBLIC_PHOTO_HOSTS = new Set([
   'www.bobmaxeylincoln.com',
 ])
 
+const DEALERON_PHOTO_ACCOUNT_BY_HOST = Object.freeze({
+  'www.bobmaxeyfordhowell.com': '23482',
+  'www.bobmaxeyfordinfowlerville.com': '14236',
+  'www.bobmaxeyford.com': '11801',
+  'www.bobmaxeylincoln.com': '11803',
+})
+
+const PUBLIC_PHOTO_HOST_BY_STORE = Object.freeze({
+  Howell: 'www.bobmaxeyfordhowell.com',
+  Fowlerville: 'www.bobmaxeyfordinfowlerville.com',
+  'Ford Detroit': 'www.bobmaxeyford.com',
+  Lincoln: 'www.bobmaxeylincoln.com',
+})
+
+function publicListingHost(publicRecord) {
+  const configuredHost = PUBLIC_PHOTO_HOST_BY_STORE[publicRecord?.store]
+  if (configuredHost && PUBLIC_PHOTO_HOSTS.has(configuredHost)) return configuredHost
+  const listing = cleanText(publicRecord?.listing_url)
+  if (!listing) return null
+  try {
+    const url = new URL(listing)
+    const host = url.hostname.toLowerCase()
+    return PUBLIC_PHOTO_HOSTS.has(host) ? host : null
+  } catch {
+    return null
+  }
+}
+
+function directMoveInitial(row, database) {
+  if (!row) return null
+  return getTransferEvents(database, row.id).find((event) => event.event_type === 'direct_move_recorded') ?? null
+}
+
+function inferredDealerOnPhotoUrls(publicRecord, vin) {
+  const count = positiveInteger(publicRecord?.photo_count)
+  if (!count) return []
+  const host = publicListingHost(publicRecord)
+  const account = host ? DEALERON_PHOTO_ACCOUNT_BY_HOST[host] : null
+  if (!account) return []
+  const lowerVin = vin.toLowerCase()
+  const cappedCount = Math.min(count, 100)
+  return Array.from({ length: cappedCount }, (_, index) =>
+    `https://${host}/inventoryphotos/${account}/${lowerVin}/ip/${index + 1}.jpg`)
+}
+
 function publicPhotoUrls(publicRecord) {
   if (!publicRecord) return []
   const vin = cleanText(publicRecord.vin)?.toLowerCase()
   if (!vin) return []
   const storedGallery = Array.isArray(publicRecord.photo_urls) ? publicRecord.photo_urls : []
-  const candidates = storedGallery.length ? storedGallery : [publicRecord.photo_preview_url]
+  const candidates = storedGallery.length
+    ? storedGallery
+    : cleanText(publicRecord.photo_preview_url)
+      ? [publicRecord.photo_preview_url]
+      : inferredDealerOnPhotoUrls(publicRecord, vin)
   const urls = []
   const seen = new Set()
   for (const value of candidates) {
@@ -679,6 +847,10 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
       visibleTransferRows.find(blocksNewSimpleRequest) ?? null)
     : visibleTransferRows.find(isActiveTransfer) ?? null
   const activeEvents = active ? getTransferEvents(meta.database, active.id) : []
+  const blockingTransferRows = transferRows.filter(blocksNewSimpleRequest)
+  const activeDirect = blockingTransferRows.length === 1 && directMoveInitial(blockingTransferRows[0], meta.database)
+    ? blockingTransferRows[0]
+    : null
   const activeTransferView = active
     ? transferView(active, activeEvents, source, context, meta.dealerMailFreshness, { includePrivate: false })
     : null
@@ -707,6 +879,10 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     // fact the 409 message already states. Absent in advanced mode, where
     // createTransfer never evaluates the single-active rule.
     ...(simple && context.canCreateTransfer ? { newRequestBlocked: newRequestBlocked(transferRows, context.workflowMode) } : {}),
+    ...(simple && activeDirect && !location?.conflicting &&
+      (context.role === 'group_manager' || (context.role === 'manager' && context.store === activeDirect.home_store_id))
+      ? { canDirectReroute: true }
+      : {}),
   }
   const reportDate = meta.reportDate
   const name = vehicleName(source)
@@ -1151,6 +1327,7 @@ function storeSummaries(vehicles, holdRows, transferRows, now) {
         row.return_due_at &&
         new Date(row.return_due_at) < now &&
         !RETURN_COMPLETE_STATES.has(row.status) &&
+        !RETURN_PAUSED_STATES.has(row.status) &&
         !RETURN_COMPLETE_STATES.has(row.movement_status),
     ).length
     const sourceConflicts = vehicles.filter(
@@ -1205,6 +1382,47 @@ function versionedAttentionId(baseId, evidence) {
   return `${baseId}-${fingerprint}`
 }
 
+/**
+ * Conditions that describe the group's data rather than one store's next step.
+ * They stay in the Action center so nothing is hidden, but they never enter the
+ * navigation badge: a badge that counts source health and website pricing gaps
+ * alongside real handoffs stops telling anyone whether they have work to do.
+ */
+const INFORMATIONAL_ATTENTION_TYPES = Object.freeze({
+  source_freshness: 'source_health',
+  missing_price: 'public_listing',
+})
+
+/** Roles that only ever act on vehicle movement, never on hold or sold-board review. */
+const TRANSPORT_ONLY_ROLES = Object.freeze(['driver', 'porter'])
+
+/**
+ * Whether the signed-in viewer can take this item's next step today. The rule is
+ * deliberately narrow: the step has to belong to the viewer's own store and be
+ * something their role performs.
+ *
+ * Actionability stays tied to the viewer's working location for every role,
+ * group managers included: an item another store owns is still that store's
+ * next step, not theirs, so it never enters their badge. That is a separate
+ * question from `allowedActions`, which may still let a group manager or a
+ * related store record a note or a follow-up on an item that is not theirs to
+ * take. The Action center shows both: the badge counts actionability, the
+ * follow-up controls follow allowedActions.
+ */
+function attentionActionability(item, context) {
+  const informational = (reason) => ({ actionability: 'informational', informationalReason: reason })
+  if (Object.hasOwn(INFORMATIONAL_ATTENTION_TYPES, item.type)) {
+    return informational(INFORMATIONAL_ATTENTION_TYPES[item.type])
+  }
+  const owningStore = cleanText(item.actionStore) || cleanText(item.store)
+  if (!owningStore || owningStore !== context.store) return informational('other_store')
+  if (!isTransportItem(item) && TRANSPORT_ONLY_ROLES.includes(context.role)) return informational('role_scope')
+  if (item.type === 'manager_pending_identity_review' && !['manager', 'group_manager'].includes(context.role)) {
+    return informational('role_scope')
+  }
+  return { actionability: 'actionable', informationalReason: null }
+}
+
 function mergeAttentionWorkflow(database, items, context) {
   const workflows = new Map(listAttentionWorkflowRows(database).map((row) => [row.attention_key, row]))
   return items.map((item) => {
@@ -1222,6 +1440,7 @@ function mergeAttentionWorkflow(database, items, context) {
       events: workflow ? getAttentionEvents(database, item.id).map((event) => attentionEventView(event, { includeNotes: context.canViewPrivateEvidence })) : [],
     }
     record.allowedActions = allowedAttentionActions(record, context)
+    Object.assign(record, attentionActionability(record, context))
     return record
   })
 }
@@ -1252,9 +1471,9 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
         count: summary.returnOverdue,
         store: summary.store,
         relatedStores: [summary.store],
-        sourceLabel: 'Inventory Flow transfer ledger',
-        whyItMatters: 'A vehicle expected back at its Home Store has not been confirmed received.',
-        recommendedAction: 'Open Transfers, confirm current custody, assign the return, or record Home Store receipt.',
+        sourceLabel: 'Inventory Flow move ledger',
+        whyItMatters: 'A vehicle due back at its home store has not been confirmed received.',
+        recommendedAction: 'Open Vehicle moves, then assign the return or confirm the vehicle is back.',
         href: '/transfers',
       })
     }
@@ -1352,11 +1571,12 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
       stockNumber: row.stock_at_request,
       vin: row.vin,
       store: row.requesting_store_id,
+      actionStore: transferNextActionStore(row),
       relatedStores: [...new Set([row.home_store_id, row.requesting_store_id, row.destination_store_id])],
       owner: next.owner,
       dueAt: cleanText(row.due_at),
-      sourceLabel: 'Inventory Flow transfer ledger',
-      whyItMatters: 'This is the current app-owned handoff required to keep the vehicle request, movement, or return moving.',
+      sourceLabel: 'Inventory Flow move ledger',
+      whyItMatters: 'This is the next handoff Inventory Flow needs to keep the move going.',
       recommendedAction: next.label,
       href: `/transfers?id=${encodeURIComponent(row.id)}`,
       sourceId: row.id,
@@ -1830,7 +2050,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const state = snapshot(contextInput)
       const row = getTransferRow(database, id)
       if (!row || !transferVisible(row, state.context)) {
-        throw new WorkflowError('Transfer request was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
+        throw new WorkflowError('That vehicle move was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
       }
       return transferView(
         row,
@@ -1846,26 +2066,146 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const state = snapshot(contextInput)
       const vin = normalizedVin(input?.vin)
       const source = state.indexes.vins.has(vin) ? sourceVehicle(state.indexes, vin) : null
-      const location = workflowMode === 'simple' ? physicalLocationAuthority(state.transfersByVin.get(vin) ?? [], database) : null
+      const replayKey = String(idempotencyKey ?? '').trim()
+      const replayCandidate = replayKey
+        ? state.allTransferRows.find((row) => row.idempotency_key === replayKey)
+        : null
+      const vinRows = state.transfersByVin.get(vin) ?? []
+      const directIntent = String(input?.intent ?? '').trim().toLowerCase() === 'direct'
+      if (replayCandidate) {
+        const conflict = () => {
+          throw new WorkflowError('This request key belongs to another request', { status: 409, code: 'IDEMPOTENCY_CONFLICT' })
+        }
+        if (replayCandidate.vin !== vin) conflict()
+        const initial = getTransferEvents(database, replayCandidate.id).find((event) =>
+          ['requested', 'direct_move_recorded'].includes(event.event_type))
+        if (!initial) conflict()
+        const replayInput = directIntent && !input?.movedAt && initial.occurred_at === replayCandidate.requested_at
+          ? { ...input, movedAt: initial.occurred_at }
+          : input
+        let replayBuild
+        try {
+          replayBuild = buildTransferRequest({
+            input: { ...replayInput, vin },
+            vehicle: {
+              vin,
+              homeAssignment: { home_store_id: replayCandidate.home_store_id },
+              movementHomeStore: replayCandidate.home_store_id,
+              movementCurrentLocation: initial.from_location_id,
+              publicRecord: {
+                vehicle_name: replayCandidate.vehicle_name_at_request,
+                stock_number: replayCandidate.stock_at_request,
+              },
+            },
+            context: state.context,
+            idempotencyKey,
+            now: new Date(replayCandidate.requested_at),
+          })
+        } catch {
+          conflict()
+        }
+        const sameActor = state.context.userId
+          ? initial.actor_user_id === state.context.userId
+          : !cleanText(initial.actor_user_id) && initial.actor === state.context.user
+        const sameMutation =
+          replayCandidate.requested_by === replayBuild.request.requestedBy &&
+          (replayCandidate.needed_by ?? null) === (replayBuild.request.neededBy ?? null) &&
+          replayCandidate.reason === replayBuild.request.reason &&
+          (replayCandidate.customer_reference ?? null) === (replayBuild.request.customerReference ?? null) &&
+          Boolean(replayCandidate.customer_appointment) === replayBuild.request.customerAppointment &&
+          (replayCandidate.approval_owner ?? null) === (replayBuild.request.approvalOwner ?? null) &&
+          replayCandidate.priority === replayBuild.request.priority &&
+          Boolean(replayCandidate.return_required) === replayBuild.request.returnRequired &&
+          (replayCandidate.return_due_at ?? null) === (replayBuild.request.returnDueAt ?? null) &&
+          (initial.event_type !== 'direct_move_recorded' || initial.occurred_at === replayBuild.initialEvent.occurredAt)
+        if (replayCandidate.requesting_store_id !== replayBuild.request.requestingStoreId ||
+            replayCandidate.destination_store_id !== replayBuild.request.destinationStoreId ||
+            initial.event_type !== replayBuild.initialEvent.eventType ||
+            initial.store_id !== state.context.store ||
+            !sameActor || initial.actor_role !== state.context.authenticatedRole ||
+            !sameMutation) conflict()
+        return { record: this.getTransfer(replayCandidate.id, contextInput), created: false }
+      }
+
+      const location = (workflowMode === 'simple' || directIntent) ? physicalLocationAuthority(vinRows, database) : null
+      const requestBlocked = newRequestBlocked(vinRows, workflowMode)
+      const blockingRows = workflowMode === 'simple' ? vinRows.filter(blocksNewSimpleRequest) : []
+      const activeDirect = blockingRows.length === 1 && directMoveInitial(blockingRows[0], database)
+        ? blockingRows[0]
+        : null
+      const canSupersedeDirect = Boolean(directIntent && activeDirect &&
+        (state.context.role === 'group_manager' ||
+          (state.context.role === 'manager' && state.context.store === activeDirect.home_store_id)))
       const built = buildTransferRequest({
         input: { ...input, vin },
-        vehicle: source && location && !location.conflicting ? { ...source, movementHomeStore: location.row.home_store_id } : source,
+        vehicle: source
+          ? {
+              ...source,
+              existingMoveBlocked: requestBlocked,
+              ...(location && !location.conflicting ? {
+                movementHomeStore: location.row.home_store_id,
+                movementCurrentLocation: location.row.current_location_id,
+              } : {}),
+            }
+          : source,
         context: state.context,
         idempotencyKey,
         now: state.currentNow,
       })
-      const replay = built.request.idempotencyKey && state.allTransferRows.find((row) => row.idempotency_key === built.request.idempotencyKey)
-      if (replay) {
-        const initial = getTransferEvents(database, replay.id).find((event) => event.event_type === 'requested')
-        const sameActor = state.context.userId
-          ? initial?.actor_user_id === state.context.userId
-          : !cleanText(initial?.actor_user_id) && initial?.actor === state.context.user
-        if (replay.vin !== vin || replay.requesting_store_id !== state.context.store || !sameActor || initial?.actor_role !== state.context.role) {
-          throw new WorkflowError('This request key belongs to another request', { status: 409, code: 'IDEMPOTENCY_CONFLICT' })
+      if (built.initialEvent.eventType === 'direct_move_recorded' && (!requestBlocked || canSupersedeDirect)) {
+        if (location?.conflicting) {
+          throw new WorkflowError('The vehicle location has conflicting physical records and must be resolved before moving it', {
+            status: 409,
+            code: 'LOCATION_CONFLICT',
+          })
         }
-        return { record: this.getTransfer(replay.id, contextInput), created: false }
+        const movedTime = Date.parse(built.initialEvent.occurredAt)
+        if (Number.isFinite(location?.time) && movedTime <= location.time) {
+          throw new WorkflowError('movedAt must be later than the latest recorded physical location update', {
+            status: 409,
+            code: 'MOVE_CHRONOLOGY_CONFLICT',
+            details: { latestPhysicalAt: new Date(location.time).toISOString() },
+          })
+        }
       }
-      if (newRequestBlocked(state.transfersByVin.get(vin) ?? [], workflowMode)) {
+      if (requestBlocked) {
+        if (canSupersedeDirect) {
+          if (location?.row.current_location_id === built.request.destinationStoreId) {
+            throw new WorkflowError('Destination store must be different from the vehicle current location', {
+              details: {
+                currentLocation: location.row.current_location_id,
+                destinationStore: built.request.destinationStoreId,
+              },
+            })
+          }
+          built.request.enforceSingleActive = true
+          const supersedeEvent = {
+            eventType: 'direct_move_superseded',
+            label: 'Direct move superseded by a new destination',
+            actor: state.context.user,
+            actorUserId: state.context.userId,
+            actorRole: state.context.authenticatedRole,
+            storeId: state.context.store,
+            fromLocationId: location?.row.current_location_id || activeDirect.current_location_id,
+            toLocationId: built.request.destinationStoreId,
+            occurredAt: built.initialEvent.occurredAt,
+            confirmedBy: state.context.user,
+            note: null,
+            createdAt: state.currentNow.toISOString(),
+            idempotencyKey: built.request.idempotencyKey
+              ? `${built.request.idempotencyKey}:supersede:${activeDirect.id}`
+              : null,
+          }
+          const result = supersedeTransferRequest(
+            database,
+            activeDirect.id,
+            activeDirect.updated_at,
+            supersedeEvent,
+            built.request,
+            built.initialEvent,
+          )
+          return { record: this.getTransfer(result.row.id, contextInput), created: result.created }
+        }
         // Do not reveal another store's private request identity or details.
         throw new WorkflowError('This vehicle already has an open move request. Review its location and ask your manager before starting another.', {
           status: 409, code: 'ACTIVE_TRANSFER_EXISTS',
@@ -1881,7 +2221,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const state = snapshot(contextInput)
       const current = getTransferRow(database, id)
       if (!current) {
-        throw new WorkflowError('Transfer request was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
+        throw new WorkflowError('That vehicle move was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
       }
       const events = getTransferEvents(database, id)
       const replay = idempotencyKey && events.find((event) => event.idempotency_key === idempotencyKey)
@@ -1895,13 +2235,17 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
           { includePrivate: state.context.canViewPrivateEvidence },
         )
       const replayType = String(input?.type ?? '').trim().toLowerCase()
+      const replayPayloadMatches = replay
+        ? transferEventReplayPayloadMatches(replay, input, state.context, current, events)
+        : false
       const stableReplayActor = replay && cleanText(replay.actor_user_id)
       const stableReplayAuthorized = Boolean(
         stableReplayActor &&
         state.context.userId &&
         stableReplayActor === state.context.userId &&
-        replay.actor_role === state.context.role &&
-        replay.event_type === replayType,
+        replay.actor_role === state.context.authenticatedRole &&
+        replay.event_type === replayType &&
+        replayPayloadMatches,
       )
       const mutationAuthorized = transferMutationAuthorized(current, state.context)
       if (stableReplayAuthorized && mutationAuthorized) return { record: recordView(current), created: false }
@@ -1927,14 +2271,15 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         }
       }
       if (!mutationAuthorized) {
-        throw new WorkflowError('Transfer request was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
+        throw new WorkflowError('That vehicle move was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
       }
       if (replay) {
         const legacyReplayAuthorized = !cleanText(replay.actor_user_id) &&
           !state.context.userId &&
           replay.actor === state.context.user &&
-          replay.actor_role === state.context.role &&
-          replay.event_type === replayType
+          replay.actor_role === state.context.authenticatedRole &&
+          replay.event_type === replayType &&
+          replayPayloadMatches
         if (!legacyReplayAuthorized) {
           throw new WorkflowError('This action key belongs to another action', { status: 409, code: 'IDEMPOTENCY_CONFLICT' })
         }

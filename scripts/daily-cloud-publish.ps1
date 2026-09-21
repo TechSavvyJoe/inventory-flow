@@ -1,8 +1,9 @@
 ﻿# Daily Inventory Flow photo sync + Cloudflare publish.
 #
-# Runs unattended under Windows Task Scheduler as JoeGallant on dt-4094, so the
-# DPAPI (current-user scoped) secret bundle decrypts without a prompt and without
-# an AI session in the loop. Deterministic: no classifier, no approval gate.
+# Runs unattended under Windows Task Scheduler as the automation account on the
+# automation PC, so the DPAPI (current-user scoped) secret bundle decrypts
+# without a prompt and without an AI session in the loop. Deterministic: no
+# classifier, no approval gate.
 #
 # Secret VALUES are never written to the log, stdout, or any file. Only key NAMES
 # and structural counts are logged.
@@ -90,18 +91,21 @@ function Update-IntegrationExpectedMetadata {
 
   if ($Receipt.status -ne 'published_and_verified' -or
       $Receipt.bundleSha256 -notmatch '^[a-fA-F0-9]{64}$' -or
-      -not $Receipt.counts -or
-      -not $Receipt.counts.publicStoreCounts) {
+      -not $Receipt.counts) {
     throw 'VERIFIED_RECEIPT_METADATA_INVALID'
   }
 
+  $sourceCounts = if ($Receipt.counts.activeStoreCounts) { $Receipt.counts.activeStoreCounts } else { $Receipt.counts.publicStoreCounts }
+  $sourceTotal = if ($null -ne $Receipt.counts.activeInventoryCount) { $Receipt.counts.activeInventoryCount } else { $Receipt.counts.publicRowCount }
+  if (-not $sourceCounts) { throw 'VERIFIED_RECEIPT_METADATA_INVALID' }
+
   $stores = [ordered]@{}
   foreach ($store in @('Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln')) {
-    $value = $Receipt.counts.publicStoreCounts.$store
+    $value = $sourceCounts.$store
     if ($null -eq $value -or [int64]$value -lt 0) { throw 'VERIFIED_RECEIPT_STORE_COUNTS_INVALID' }
     $stores[$store] = [int64]$value
   }
-  $total = [int64]$Receipt.counts.publicRowCount
+  $total = [int64]$sourceTotal
   if (($stores.Values | Measure-Object -Sum).Sum -ne $total -or $total -le 0) {
     throw 'VERIFIED_RECEIPT_STORE_COUNTS_INVALID'
   }
@@ -197,14 +201,23 @@ function Complete-VerifiedPublicationState {
     throw 'RUN_MANIFEST_NOT_COMPLETE_AFTER_PUBLISH'
   }
 
-  $manifest.latest_pointers_advanced = $true
-  $manifest.cloudflare_publish = [ordered]@{
+  if ($manifest.PSObject.Properties.Name -contains 'latest_pointers_advanced') {
+    $manifest.latest_pointers_advanced = $true
+  } else {
+    $manifest | Add-Member -NotePropertyName latest_pointers_advanced -NotePropertyValue $true
+  }
+  $cloudflarePublish = [ordered]@{
     attempted = $true
     status = 'published_and_verified'
     receipt_path = (Join-Path $LogDir ("{0}.json" -f $Date))
     bundle_sha256 = [string]$Receipt.bundleSha256
     verified_at = [string]$Receipt.verifiedAt
     publisher = 'BobMaxey-InventoryFlow-DailyPublish'
+  }
+  if ($manifest.PSObject.Properties.Name -contains 'cloudflare_publish') {
+    $manifest.cloudflare_publish = $cloudflarePublish
+  } else {
+    $manifest | Add-Member -NotePropertyName cloudflare_publish -NotePropertyValue $cloudflarePublish
   }
   $temporary = "$manifestPath.tmp"
   $json = $manifest | ConvertTo-Json -Depth 32

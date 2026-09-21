@@ -43,7 +43,7 @@ Editing the repository on another computer does **not** update or install the ex
 
 ### Frequently used vehicle facts
 
-Overview and Records show two bordered shortcuts: **Weight fee lookup · Base MSRP** for registration lookup, and **Warranty in-service**. The weight-fee shortcut uses original sticker base MSRP, not a separate fee line or total MSRP; its fallback is explicitly marked **vAuto reference** with unknown currency preserved. OASIS is identified when it supplies the warranty date; AutoCheck dates are marked as estimates. Missing values say **Not captured**. Inventory date remains in Overview's full vehicle details. Records has named jump buttons, and **View saved details** opens the matching provider section with visible keyboard focus.
+Overview and Records show two bordered shortcuts: **Base MSRP** for registration lookup, and **Warranty in-service**. Base MSRP uses the original sticker price, not a separate fee line or total MSRP; its fallback is marked **reference** with unknown currency preserved. OASIS is identified when it supplies the warranty date; AutoCheck dates are marked as estimates. Missing values say **Not captured**. Inventory date remains in Overview's full vehicle details. Records has named jump buttons, and **View saved details** opens the matching provider section with visible keyboard focus.
 
 ### Original in-service date and remaining factory warranty
 

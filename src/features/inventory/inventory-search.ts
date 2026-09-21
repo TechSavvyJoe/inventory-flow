@@ -145,6 +145,9 @@ export function buildInventorySearchEntry(vehicle: InventoryVehicle): InventoryS
     { label: "Transport assignee", value: vehicle.location.transportAssignee, priority: 16 },
     { label: "Website status", value: vehicle.publicListing.websiteStatus, priority: 12 },
     { label: "DealerMail hold", value: vehicle.dealerMail.conciseState, priority: 22 },
+    { label: "DealerMail loaner", value: vehicle.dealerMail.loaner?.label, priority: 23 },
+    { label: "DealerMail loaner", value: vehicle.dealerMail.loaner?.serviceDate, priority: 21 },
+    { label: "DealerMail loaner", value: vehicle.dealerMail.loaner?.rawAlert, priority: 21 },
     { label: "Hold position", value: vehicle.dealerMail.position, priority: 20 },
     { label: "Movement", value: vehicle.movement?.state, priority: 20 },
     { label: "Movement", value: vehicle.movement?.requestStatus, priority: 18 },
@@ -308,6 +311,17 @@ function scoreTerm(field: InventorySearchIndexedField, term: SearchTerm): number
   return bestDistance <= threshold ? 70 - bestDistance * 12 + field.priority : -1;
 }
 
+/**
+ * Applies the inventory search engine's token, punctuation, and typo matching
+ * to an explicit set of fields from another authorized view.
+ */
+export function searchFieldsMatch(query: string, values: readonly unknown[]): boolean {
+  if (!query.trim()) return true;
+  const fields: InventorySearchIndexedField[] = [];
+  for (const value of values) addField(fields, { label: "Search", value });
+  return parseTerms(query).every((term) => fields.some((field) => scoreTerm(field, term) >= 0));
+}
+
 function scoreEntry(entry: InventorySearchIndexEntry, query: string): InventorySearchMatch | null {
   const terms = parseTerms(query);
   if (terms.length === 0) return { vehicle: entry.vehicle, score: 0, matchedLabels: [] };
@@ -348,7 +362,7 @@ export function rankInventorySearch(
   matches.sort((left, right) =>
     right.score - left.score ||
     left.order - right.order ||
-    left.vehicle.stockNumber.localeCompare(right.vehicle.stockNumber, undefined, { numeric: true }),
+    left.vehicle.stockNumber.localeCompare(right.vehicle.stockNumber, "en-US", { numeric: true }),
   );
   return matches.slice(0, Math.max(0, limit)).map(({ order: _order, ...match }) => match);
 }

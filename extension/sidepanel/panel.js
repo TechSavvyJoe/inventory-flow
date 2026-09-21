@@ -1,12 +1,12 @@
-import { ROLES, STALE_AFTER_MS, STORES, WORKSPACES, workspaceFor } from './lib/config.mjs'
+import { ROLE_PICKER_ROLES, STALE_AFTER_MS, STORES, WORKSPACES, workspaceFor } from './lib/config.mjs'
 import { PanelApiError, fetchBootstrap, fetchVehicle } from './lib/api.mjs'
-import { buildPanelData, canRequestVehicle, copyFields, dealSheetText, mergeDetail, requestBlockedReason, roleLabel, toPanelVehicle } from './lib/model.mjs'
+import { buildPanelData, copyFields, dealSheetText, mergeDetail, requestBlockedReason, roleLabel, toPanelVehicle, vehicleMoveAction } from './lib/model.mjs'
 import { buildEntry, buildIndex, rank } from './lib/search.mjs'
-import { SOURCE_LABELS } from './lib/equipment.mjs'
 import { EMPTY_FILTERS, SORTS, activeFilterCount, applyFilters, describeFilters, filterOptions, normalizeFilters, sortMatches } from './lib/filters.mjs'
 import { groupMatchesByStore, resolveStoreScope, scopeCounts, scopeMatches } from './lib/scope.mjs'
 import { compareVehicles } from './lib/compare.mjs'
-import { certifiedTerms, warrantyOutlook } from './lib/warranty.mjs'
+import { certifiedTerms, vehicleInServiceSource, warrantyOutlook } from './lib/warranty.mjs'
+import { sourceDistanceText } from './lib/source-distance.mjs'
 import { brandFor } from './lib/brand.mjs'
 import * as links from './lib/links.mjs'
 import * as fmt from './lib/format.mjs'
@@ -308,16 +308,20 @@ function locationNode(vehicle) {
 
 function locationTitle(vehicle) {
   const loc = vehicle.location
-  if (loc.provenance === 'app-confirmed') return `App-confirmed${loc.confirmedAt ? ` ${fmt.formatDateTime(loc.confirmedAt)}` : ''}${loc.custodian ? ` · ${loc.custodian}` : ''}`
-  if (loc.provenance === 'source-reported') return 'Source-reported store — not a physical confirmation'
-  return 'No current location evidence'
+  return fmt.joinFacts([loc.label, loc.custodian]) || 'Location needs review'
 }
 
 function holdPill(vehicle, { long = false } = {}) {
   const hold = vehicle.hold
   const tone = hold.tone === 'held' ? 'pill-held' : hold.tone === 'clear' ? '' : 'pill-moving'
-  const label = long ? hold.label : hold.tone === 'held' ? (hold.position === 'backup' ? 'Held · backup' : hold.position === 'multiple' ? `Held · ${hold.backupCount + 1}` : 'Held') : hold.tone === 'clear' ? 'No hold found' : 'Hold unverified'
-  return el('span', { class: `pill ${tone}`.trim(), title: hold.label }, hold.tone === 'held' ? icon('lock') : null, label)
+  const primary = hold.canViewEvidence ? hold.evidence.find((item) => item.position === 'primary') ?? hold.evidence[0] : null
+  const label = hold.tone === 'held'
+    ? primary?.salesperson ? `Held by ${primary.salesperson}`
+      : hold.position === 'backup' ? 'Held · backup'
+        : hold.position === 'multiple' ? `Held · ${hold.backupCount + 1}`
+          : long ? hold.label : 'Held'
+    : hold.tone === 'clear' ? 'No hold found' : 'Hold unverified'
+  return el('span', { class: `pill ${tone}`.trim(), title: fmt.joinFacts([hold.label, primary?.salesperson ? `Held by ${primary.salesperson}` : null]) }, hold.tone === 'held' ? icon('lock') : null, label)
 }
 
 function movementPill(vehicle) {
@@ -329,7 +333,8 @@ function movementPill(vehicle) {
 function certifiedBadge(vehicle, { size = 'sm' } = {}) {
   if (!vehicle.certifiedProgram) return null
   const program = vehicle.certifiedProgram
-  return el('span', { class: `cert cert-${size} ${program.brand ? `cert-${program.brand}` : ''}`.trim(), title: `${program.name} — separate from any factory warranty still running` }, icon('badge-check'), size === 'sm' ? 'Certified' : program.name)
+  const logo = program.brand === 'ford' ? '../resource-brands/ford-blue-certified.svg' : program.brand === 'lincoln' ? '../resource-brands/lincoln-certified.png' : null
+  return el('span', { class: `cert cert-${size} ${program.brand ? `cert-${program.brand} cert-logo` : ''}`.trim(), title: `${program.name} — separate from any factory warranty still running` }, logo ? el('img', { src: logo, alt: program.name }) : icon('badge-check'), program.brand === 'lincoln' ? null : program.short)
 }
 
 function rowThumb(vehicle) {
@@ -358,7 +363,7 @@ function renderRow(match, position) {
   const config = fmt.joinFacts([vehicle.exteriorColor, vehicle.daysListed !== null ? `${fmt.formatNumber(vehicle.daysListed)} days listed` : null])
   const powertrain = fmt.joinFacts([vehicle.engine, vehicle.drivetrain])
   const primaryHold = vehicle.hold.canViewEvidence ? vehicle.hold.evidence[0] : null
-  const holdDetail = vehicle.hold.hasActiveHold === true ? fmt.joinFacts([primaryHold?.salesperson, primaryHold?.expectedDate ? `Expected ${fmt.formatDate(primaryHold.expectedDate)}` : null, vehicle.hold.backupCount ? `${vehicle.hold.backupCount} backup${vehicle.hold.backupCount === 1 ? '' : 's'}` : null]) : null
+  const holdDetail = vehicle.hold.hasActiveHold === true ? fmt.joinFacts([primaryHold?.salesperson ? `Held by ${primaryHold.salesperson}` : null, primaryHold?.expectedDate ? `Expected ${fmt.formatDate(primaryHold.expectedDate)}` : null, vehicle.hold.backupCount ? `${vehicle.hold.backupCount} backup${vehicle.hold.backupCount === 1 ? '' : 's'}` : null]) : null
   return el('li', {
     class: `row ${position === state.activeIndex ? 'is-active' : ''} ${inCompare ? 'is-compared' : ''}`.trim(), role: 'option', id: `row-${vehicle.vin}`,
     'aria-selected': String(position === state.activeIndex), dataset: { vin: vehicle.vin, index: String(position) },
@@ -374,7 +379,7 @@ function renderRow(match, position) {
     ),
     inCompare ? el('span', { class: 'row-cmp', title: 'In the compare set' }, icon('columns', { size: 13 })) : icon('chevron-right', { size: 14 }),
     el('span', { class: 'row-operations' },
-      el('span', { class: 'row-status' }, el('strong', { class: 'row-store', text: vehicle.homeStore }), holdPill(vehicle), servicePill(vehicle)),
+      el('span', { class: 'row-status' }, el('strong', { class: 'row-store', text: vehicle.homeStore }), certifiedBadge(vehicle), holdPill(vehicle), servicePill(vehicle)),
       vehicle.movement ? el('span', { class: 'row-movement' }, movementPill(vehicle), vehicle.movement.destination ? el('span', { text: `To ${vehicle.movement.destination}` }) : null) : null,
       holdDetail ? el('span', { class: 'row-spec row-hold-detail', text: holdDetail, title: holdDetail }) : null,
       vehicle.location.store !== vehicle.homeStore || vehicle.location.provenance === 'app-confirmed' || vehicle.location.conflict ? locationNode(vehicle) : null,
@@ -387,12 +392,12 @@ function renderRow(match, position) {
 }
 
 function importantSourceNote(note) {
-  return note && /stale|saved report|partial|refresh|unknown|unavailable|future|unrecognized|not captured/i.test(note)
+  return /saved|partial|incomplete|refresh|stale|unavailable|unknown|unrecognized|future|not captured/i.test(note ?? '')
 }
 
 function sourceNoteLabel(note) {
   if (/saved report/i.test(note)) return 'Saved report'
-  if (/partial/i.test(note)) return 'Partial'
+  if (/partial|incomplete/i.test(note)) return 'Partial'
   if (/refresh/i.test(note)) return 'Refresh'
   if (/stale/i.test(note)) return 'Older capture'
   if (/unavailable/i.test(note)) return 'Unavailable'
@@ -405,12 +410,11 @@ function scanFact(resource) {
   const [primary, ...remaining] = resource.compactFacts
   const full = [primary, ...remaining].filter(Boolean).join(' · ')
   if (!primary) return null
-  // The scan list surfaces the highest-priority captured fact for each source.
-  // The full facts stay available in the vehicle's Records tab; retaining them
-  // as visually hidden text also gives assistive technology the same context.
+  // Keep both decision facts visible: the second line often holds a history
+  // check or installed equipment that would otherwise require opening a VIN.
   return el('span', { class: 'row-doc-facts', title: full },
     el('span', { text: primary }),
-    remaining.length ? el('span', { class: 'visually-hidden', text: ` · ${remaining.join(' · ')}` }) : null,
+    ...remaining.map(text => el('span', { class: 'row-doc-secondary', text })),
   )
 }
 
@@ -428,7 +432,7 @@ function rowDocumentFacts(vehicle) {
   if (!prioritized.length) return null
   // Listbox options keep one coherent keyboard action: open this vehicle.
   // Originals and saved-record actions are separate controls in its detail view.
-  return el('span', { class: 'row-documents', 'aria-label': 'Captured report highlights. Open the vehicle for complete records and source links.' }, ...prioritized.map(resource =>
+  return el('span', { class: 'row-documents', 'aria-label': 'Vehicle record highlights. Open the vehicle for complete details.' }, ...prioritized.map(resource =>
     el('span', { class: 'row-doc-summary', dataset: { resource: resource.id } },
       el('span', { class: 'row-doc-provider' }, resource.brand ? resourceBrand(resource.brand, 'row-doc-brand') : icon('file-text'), resource.brand === 'autocheck' || resource.brand === 'vauto' ? null : el('b', { text: resource.id === 'oasis' ? 'OASIS' : 'Sticker' }), sourceNoteBadge(resource.sourceNote)),
       el('span', { class: 'row-doc-content' }, scanFact(resource)),
@@ -572,10 +576,10 @@ function renderFreshness() {
     state.workspace.demo ? el('span', { class: 'demo-disclosure', text: 'Demo · synthetic records & illustrations' }) : '',
     el('span', { class: `dot ${state.error ? 'is-off' : problem ? 'is-stale' : ''}`.trim() }),
     `${fmt.formatReportDate(meta.reportDate)} release`,
-    problem ? ` · ${meta.dealerMailFreshness !== 'current' ? 'DealerMail ' + meta.dealerMailFreshness : 'public ' + meta.publicFreshness}` : '',
-    ` · ${state.loading ? 'refreshing…' : `checked ${fmt.formatRelative(state.fetchedAt)}`}${stale && !state.loading ? ' · stale' : ''}`,
+    problem ? ' · review needed' : '',
+    ` · ${state.loading ? 'refreshing…' : `checked ${fmt.formatRelative(state.fetchedAt)}`}${stale && !state.loading ? ' · update needed' : ''}`,
   )
-  ui.freshText.title = `Source completed ${fmt.formatDateTime(meta.completedAt)} · public ${meta.publicFreshness} · DealerMail ${meta.dealerMailFreshness}`
+  ui.freshText.title = 'Inventory status'
 }
 
 /* Compare set ----------------------------------------------------------- */
@@ -728,29 +732,30 @@ function signal({ tone, iconName, label, value, sub, onClick, title }) {
 function statusGrid(vehicle) {
   const hold = vehicle.hold, loc = vehicle.location, move = vehicle.movement, listing = vehicle.listing
   const primary = hold.evidence[0]
-  const holdValue = hold.tone === 'held' ? (hold.position === 'backup' ? 'Backup hold' : hold.position === 'multiple' ? `${hold.backupCount + 1} holds` : 'On hold') : hold.tone === 'clear' ? 'No hold found' : 'Not verified'
+  const holdValue = hold.tone === 'held' ? (primary?.salesperson ? `Held by ${primary.salesperson}` : hold.position === 'backup' ? 'Backup hold' : hold.position === 'multiple' ? `${hold.backupCount + 1} holds` : 'On hold') : hold.tone === 'clear' ? 'No hold found' : 'Not verified'
   const holdSub = hold.tone === 'held'
-    ? fmt.joinFacts([primary?.salesperson, primary?.expectedDate ? `exp. ${fmt.formatDate(primary.expectedDate)}` : null]) || (hold.canViewEvidence ? 'DealerMail hold' : 'Details restricted')
-    : hold.tone === 'clear' ? 'Not an availability promise' : `DealerMail snapshot ${hold.dataState}`
+    ? fmt.joinFacts([primary?.expectedDate ? `Expected ${fmt.formatDate(primary.expectedDate)}` : null, hold.backupCount ? `${hold.backupCount} backup${hold.backupCount === 1 ? '' : 's'}` : null]) || (hold.canViewEvidence ? 'DealerMail hold' : 'Details restricted')
+    : hold.tone === 'clear' ? 'Confirm before promising' : 'Needs review'
   const flags = fmt.joinFacts([listing.dealerOn.inStock === true ? 'in stock' : listing.dealerOn.inStock === false ? 'not in stock' : null, listing.dealerOn.inTransit === true ? 'in transit' : null, listing.dealerOn.inProduction === true ? 'in production' : null])
   return el('div', { class: 'sig-grid' },
-    signal({ tone: hold.tone === 'held' ? 'held' : hold.tone === 'clear' ? 'clear' : 'unverified', iconName: hold.tone === 'held' ? 'lock' : 'mail', label: 'DealerMail', value: holdValue, sub: holdSub, onClick: () => switchTab('hold'), title: hold.label }),
-    signal({ tone: loc.conflict ? 'alert' : loc.provenance === 'app-confirmed' ? 'confirmed' : loc.provenance === 'source-reported' ? 'neutral' : 'unverified', iconName: 'pin', label: 'Location', value: loc.label, sub: loc.provenance === 'app-confirmed' ? `App-confirmed${loc.confirmedAt ? ` ${fmt.formatRelative(loc.confirmedAt)}` : ''}` : loc.provenance === 'source-reported' ? 'Source-reported' : 'No evidence', onClick: () => switchTab('hold'), title: locationTitle(vehicle) }),
+    signal({ tone: hold.tone === 'held' ? 'held' : hold.tone === 'clear' ? 'clear' : 'unverified', iconName: hold.tone === 'held' ? 'lock' : 'mail', label: 'Hold', value: holdValue, sub: holdSub, onClick: () => switchTab('hold'), title: hold.label }),
+    signal({ tone: loc.conflict ? 'alert' : loc.provenance === 'app-confirmed' ? 'confirmed' : loc.provenance === 'source-reported' ? 'neutral' : 'unverified', iconName: 'pin', label: 'Location', value: loc.label, sub: loc.conflict ? 'Needs confirmation' : 'Vehicle location', onClick: () => switchTab('hold'), title: locationTitle(vehicle) }),
     signal({ tone: move ? (move.overdue ? 'alert' : 'moving') : 'neutral', iconName: 'truck', label: 'Movement', value: move ? humanize(move.label ?? move.state) ?? 'Move in progress' : 'No move', sub: move ? fmt.joinFacts([move.nextAction, move.dueAt ? `${move.overdue ? 'overdue' : 'due'} ${fmt.formatRelative(move.dueAt)}` : null]) || humanize(move.requestStatus) : 'Nothing in Inventory Flow', onClick: () => switchTab('hold') }),
-    signal({ tone: listing.isListed === true ? 'confirmed' : listing.isListed === false ? 'alert' : 'unverified', iconName: 'globe', label: 'Public listing', value: listing.isListed === true ? 'Listed' : listing.isListed === false ? 'Not listed' : 'Unknown', sub: flags || listing.websiteStatus || `Public snapshot ${listing.dataState}`, onClick: () => switchTab('records') }),
+    signal({ tone: listing.isListed === true ? 'confirmed' : listing.isListed === false ? 'alert' : 'unverified', iconName: 'globe', label: 'Listing', value: listing.isListed === true ? 'Listed' : listing.isListed === false ? 'Not listed' : 'Review', sub: flags || listing.websiteStatus || 'Listing status', onClick: () => switchTab('records') }),
   )
 }
 
 function dock(vehicle) {
   const origin = appOrigin()
   const access = state.data?.access
-  const allowed = canRequestVehicle(vehicle, access)
+  const moveAction = vehicleMoveAction(vehicle, access)
   const blocked = requestBlockedReason(vehicle, access)
   const hasMove = Boolean(vehicle.movement?.transferId)
-  const primary = el('div', { class: 'dock-primary' },
+  const canReroute = hasMove && moveAction === 'direct'
+  const primary = el('div', { class: `dock-primary${canReroute ? ' has-reroute' : ''}` },
     el('button', { type: 'button', class: 'btn btn-primary', onclick: () => openUrl(links.inventorySearchUrl(origin, vehicle.stockNumber)) }, 'Open in app', icon('external')),
-    hasMove ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.trackMovementUrl(origin, { transferId: vehicle.movement.transferId, vin: vehicle.vin })) }, 'View move', icon('arrow-right'))
-      : allowed ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.requestVehicleUrl(origin, vehicle.vin)) }, 'Request move', icon('arrow-right')) : null,
+    hasMove ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.trackMovementUrl(origin, { transferId: vehicle.movement.transferId, vin: vehicle.vin })) }, 'View move', icon('arrow-right')) : null,
+    moveAction ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.requestVehicleUrl(origin, vehicle.vin, moveAction)) }, canReroute ? 'Move again' : moveAction === 'direct' ? 'Move vehicle' : 'Request vehicle', icon('arrow-right')) : null,
   )
   const utils = el('nav', { class: 'd-utilities', 'aria-label': 'Vehicle utilities' },
     chip('Deal sheet', 'copy', (button) => copy(dealSheetText(vehicle, (field) => fieldText(field, vehicle)), 'Deal sheet', button), { title: 'Copy every identifying and pricing fact as text' }),
@@ -848,7 +853,7 @@ function docTile({ title, sub, iconName, url, onOpen, disabledText, score, brand
   const available = Boolean(url) || Boolean(onOpen)
   const accessibleTitle = brand === 'autocheck' ? 'AutoCheck history' : brand === 'vauto' ? 'vAuto equipment label' : title
   return el('button', {
-    type: 'button', class: `doc ${available ? '' : 'is-off'} ${brand ? `doc-${brand}` : ''}`.trim(), disabled: !available, title: available ? `${onOpen ? 'View captured' : 'Open'} ${accessibleTitle}` : disabledText ?? `${accessibleTitle} not published`, 'aria-label': `${available ? onOpen ? 'View captured' : 'Open' : 'Unavailable:'} ${accessibleTitle}`,
+    type: 'button', class: `doc ${available ? '' : 'is-off'} ${brand ? `doc-${brand}` : ''}`.trim(), disabled: !available, title: available ? `${onOpen ? 'View details' : 'Open'} ${accessibleTitle}` : disabledText ?? `${accessibleTitle} unavailable`, 'aria-label': `${available ? onOpen ? 'View details' : 'Open' : 'Unavailable:'} ${accessibleTitle}`,
     onclick: () => (onOpen ? onOpen() : openUrl(url)),
   },
     brand ? resourceBrand(brand) : score !== null && score !== undefined ? el('span', { class: 'doc-score num', text: String(score) }) : el('span', { class: 'doc-icon' }, icon(iconName, { size: 16 })),
@@ -857,28 +862,113 @@ function docTile({ title, sub, iconName, url, onOpen, disabledText, score, brand
   )
 }
 
+function documentSummaryFacts(resource, vehicle) {
+  const docs = vehicle.documents ?? {}
+  if (resource.id === 'window-sticker' || resource.id === 'vauto') {
+    const isLabel = resource.id === 'vauto'
+    const sticker = isLabel ? docs.factoryEquipment : docs.windowSticker
+    const rows = []
+    if (sticker?.totalMsrp !== null && sticker?.totalMsrp !== undefined) rows.push([isLabel ? 'Reference MSRP' : 'MSRP', isLabel ? fmt.formatReferencePrice(sticker.totalMsrp) : fmt.formatStickerMoney(sticker.totalMsrp, sticker)])
+    if (sticker?.equipmentGroup) rows.push(['Equipment group', sourceDistanceText(sticker.equipmentGroup)])
+    if (!isLabel && typeof sticker?.equipmentGroupPrice === 'number') rows.push(['Group price', fmt.formatStickerMoney(sticker.equipmentGroupPrice, sticker)])
+    const capturedOptions = isLabel ? [
+      ...(sticker?.packages ?? []).flatMap(pkg => [{ text: fmt.joinFacts([pkg.name, pkg.code]), price: pkg.price }, ...(pkg.features ?? []).map(text => ({ text: `· ${text}`, child: true }))]),
+      ...(sticker?.sections ?? []).flatMap(section => section.items.map(item => ({ text: item.label, price: item.price }))),
+    ] : (sticker?.options ?? []).map(text => ({ text }))
+    const optionRows = capturedOptions.filter(item => item.text).map(item => {
+      const text = sourceDistanceText(item.text)
+      const priced = /^(.*?)\s+(?:[·|]\s*)?((?:USD|CAD)\s*\$?[\d,]+(?:\.\d{2})?|\$[\d,]+(?:\.\d{2})?|NO\s*CHARGE)$/i.exec(text)
+      const price = isLabel && typeof item.price === 'number' && Number.isFinite(item.price) ? fmt.formatReferencePrice(item.price) : priced?.[2]
+      const child = item.child || /^(?:[•·.]|[-–—])(?:\s+|(?=[A-Za-z]))|^\.\d+(?:[./"'–—-]|\s)/.test(text)
+      const raw = isLabel && price ? `${text} · ${price}` : text
+      return el('li', { class: `doc-sticker-option${child ? ' doc-sticker-option--child' : ''}`, title: raw, 'aria-label': raw },
+        el('span', { text: priced ? priced[1] : text }),
+        price ? el('strong', { class: 'doc-sticker-price', text: price }) : null,
+      )
+    })
+    return el('div', { class: 'doc-summary-facts' },
+      rows.length ? el('dl', { class: 'doc-fact-ledger' }, ...rows.map(([label, value]) => el('div', { class: 'doc-fact' }, el('dt', { text: label }), el('dd', { text: value })))) : null,
+      !isLabel && sticker?.equipmentGroupContents?.length ? el('section', { class: 'doc-options' }, el('h4', { text: 'Included in equipment group' }), el('ul', { class: 'doc-sticker-options' }, ...sticker.equipmentGroupContents.map(text => el('li', { class: 'doc-sticker-option', text: sourceDistanceText(text) })))) : null,
+      optionRows.length ? el('section', { class: 'doc-options' }, el('h4', { text: isLabel ? 'Captured equipment & packages' : Array.isArray(sticker?.equipmentGroupContents) ? 'Optional equipment & packages' : 'Captured equipment' }), el('ul', { class: 'doc-sticker-options' }, ...optionRows)) : null,
+    )
+  }
+
+  const factory = docs.factoryEquipment
+  const powertrain = factory ? fmt.joinFacts([factory.engine, factory.transmission, factory.drivetrain]) : null
+  const packages = new Set((factory?.packages ?? []).map(pkg => fmt.joinFacts([pkg.name, pkg.code])))
+  const featureNames = new Set([
+    ...(factory?.sections ?? []).flatMap(section => section.items.map(item => sourceDistanceText(item.label))),
+    ...(factory?.packages ?? []).flatMap(pkg => pkg.features.map(sourceDistanceText)),
+  ])
+  const rows = []
+  const packageRows = []
+  const features = []
+  for (const fact of resource.facts) {
+    // The shared vehicle facts already show the authoritative in-service date
+    // and specifications. Full captured source records remain on Records.
+    if (/^(Estimated warranty start|Warranty start|Vehicle class:|Assembly:)/.test(fact)) continue
+    if (resource.id === 'vauto' && (fact === powertrain || /^Exterior /.test(fact) || /reference MSRP/.test(fact))) continue
+    if (resource.id === 'vauto' && featureNames.has(fact)) { features.push(fact); continue }
+    let label = resource.id === 'vauto' ? 'Equipment' : resource.id === 'window-sticker' ? 'Equipment' : 'Report'
+    let value = fact
+    const prefix = /^(Score|Last reported|Estimated warranty start|Open FSA|Warranty start|Built|Released|Recorded coverage:|Extended coverage:|Printed warranty:|Vehicle class:|Assembly:|Warranty estimate:|Captured warranty:)\s*(.*)$/.exec(fact)
+    if (prefix) {
+      label = ({ 'Last reported': 'Odometer', 'Estimated warranty start': 'In-service · estimate', 'Built': 'Build date', 'Released': 'Release date' })[prefix[1]] ?? prefix[1].replace(/:$/, '')
+      value = prefix[2]
+    } else if (resource.id === 'autocheck' && fact.includes(':')) {
+      const separator = fact.indexOf(':'); label = fact.slice(0, separator); value = fact.slice(separator + 1).trim()
+    } else if (resource.id === 'autocheck' && /owners?\b/.test(fact)) label = 'Owners / use'
+    else if (resource.id === 'autocheck' && fact === docs.autoCheck?.usage) label = 'Use'
+    else if (/reference MSRP| MSRP$/.test(fact)) label = 'MSRP'
+    else if (/^Exterior /.test(fact)) label = 'Colors'
+    else if (packages.has(fact) && resource.id === 'vauto') label = 'Package'
+    else if (resource.id === 'window-sticker' && fact === docs.windowSticker?.equipmentGroup) label = 'Group'
+    else if (resource.id === 'oasis' && /^0 open Ford actions/.test(fact)) label = 'Open actions'
+    else if (/months in service at capture/.test(fact)) label = 'In service'
+    else if (/mi at sale/.test(fact)) label = 'Sale mileage'
+    ;(label === 'Package' ? packageRows : rows).push(el('div', { class: `doc-fact${label === 'Open FSA' ? ' doc-fact--warning' : ''}` }, el('dt', { text: label }), el('dd', { text: value })))
+  }
+  return el('div', { class: 'doc-summary-facts' },
+    packageRows.length ? el('dl', { class: 'doc-fact-ledger' }, ...packageRows) : null,
+    features.length ? el('ul', { class: 'doc-equipment-list', 'aria-label': 'Captured equipment' }, ...features.map(text => el('li', { text }))) : null,
+    rows.length ? el('dl', { class: 'doc-fact-ledger' }, ...rows) : null,
+  )
+}
+
 function documentsGrid(vehicle) {
-  const resources = resourceSummaries(vehicle).filter(resource => resource.id !== 'invoice')
-  const cards = resources.map(resource => {
+  const sourceResources = resourceSummaries(vehicle)
+  const sticker = sourceResources.find(resource => resource.id === 'window-sticker')
+  const equipment = sourceResources.find(resource => resource.id === 'vauto')
+  const usableSticker = vehicle.documents.windowSticker?.dataState !== 'unavailable' && (vehicle.documents.windowSticker?.options?.length || vehicle.documents.windowSticker?.equipmentGroup || vehicle.documents.windowSticker?.equipmentGroupContents?.length)
+  const selectedEquipment = usableSticker && sticker?.hasCapturedData
+    ? sticker : equipment?.hasCapturedData && vehicle.documents.factoryEquipment?.dataState !== 'unavailable' ? equipment : sticker ?? equipment
+  const resources = sourceResources.filter(resource => !['window-sticker', 'vauto'].includes(resource.id) || resource === selectedEquipment)
+  const cards = resources.filter(resource => resource.hasCapturedData).map(resource => {
     const captured = resource.hasCapturedData
     const accessibleTitle = resource.id === 'autocheck' ? 'AutoCheck history' : resource.id === 'vauto' ? 'vAuto equipment label' : resource.title
-    const label = captured ? `View captured ${accessibleTitle}` : resource.url ? `Open ${resource.title}` : `${resource.title}: no details captured`
+    const label = captured ? `View ${accessibleTitle}` : resource.url ? `Open ${resource.title}` : `${resource.title}: details unavailable`
     return el('section', { class: 'doc-summary', dataset: { resource: resource.id }, 'aria-label': `${resource.title} summary` },
       el('button', { type: 'button', class: `doc doc-summary-heading${resource.brand ? ` doc-${resource.brand}` : ''}`, disabled: !captured && !resource.url, 'aria-label': label,
         onclick: () => captured ? openRecord(resource.id) : openUrl(resource.url) },
         resource.brand ? resourceBrand(resource.brand) : icon('file-text'),
-        el('span', { class: 'doc-body' }, el('strong', { text: resource.title }), el('small', { text: captured ? 'View saved details' : resource.sourceKind })),
+        el('span', { class: 'doc-body' }, el('strong', { text: ['window-sticker', 'vauto'].includes(resource.id) ? 'Sticker & equipment' : resource.title })),
         icon(captured ? 'arrow-right' : 'external', { size: 14 })),
-      resource.facts.length ? el('ul', { class: 'doc-summary-facts' }, ...resource.facts.slice(0, 5).map(fact => el('li', { text: fact }))) : null,
+      resource.id === 'vauto' ? el('p', { class: 'doc-source-note', text: 'vAuto equipment label · not an original window sticker' }) : null,
+      resource.facts.length ? documentSummaryFacts(resource, vehicle) : null,
+      resource.id === 'vauto' && sticker?.url ? el('button', { type: 'button', class: 'doc-source-supplement', onclick: () => openUrl(sticker.url) }, 'Open window sticker', icon('external', { size: 14 })) : null,
       resource.sourceNote ? el('p', { class: 'doc-source-note', text: resource.sourceNote }) : null,
-      captured && resource.url ? el('button', { type: 'button', class: 'doc-source-open', 'aria-label': `Open ${resource.sourceKind.toLowerCase()} for ${resource.title}`, onclick: () => openUrl(resource.url) }, resource.sourceKind === 'Dealer lookup' ? `Open ${resource.title} lookup` : resource.sourceKind === 'Source document' ? 'Open source document' : 'Open original source', icon('external', { size: 14 })) : null,
+      captured && resource.url ? el('button', { type: 'button', class: 'doc-source-open', 'aria-label': `Open ${resource.title} for ${vehicle.stockNumber}`, onclick: () => openUrl(resource.url) }, 'Open document', icon('external', { size: 14 })) : null,
     )
   })
-  return el('section', { class: 'document-summaries', 'aria-label': 'Documents and captured report details' },
-    el('h3', { class: 'card-title', text: 'Documents & report details' }),
-    el('div', { class: 'doc-grid doc-grid--summaries' }, ...cards),
+  return el('section', { class: 'document-summaries', 'aria-label': 'Vehicle documents and records' },
+    el('h3', { class: 'card-title', text: 'Documents & records' }),
+    cards.length ? el('div', { class: 'doc-grid doc-grid--summaries' }, ...cards) : null,
     el('div', { class: 'doc-grid doc-grid--utilities' },
-      vehicle.links.invoice ? docTile({ title: 'Ford invoice', sub: 'Dealer lookup · sign-in required', iconName: 'receipt', url: vehicle.links.invoice, brand: 'ford' }) : null,
+      ...resources.filter(resource => !resource.hasCapturedData).map(resource => docTile({
+        title: resource.title, sub: resource.sourceKind === 'Dealer lookup' ? 'Dealer lookup' : 'Open document',
+        iconName: resource.id === 'invoice' ? 'receipt' : 'file-text', url: resource.url,
+        disabledText: 'No captured details', brand: resource.brand,
+      })),
       vehicle.listing.url ? docTile({ title: 'Listing', sub: 'Open dealer website', iconName: 'globe', url: vehicle.listing.url }) : null),
   )
 }
@@ -926,7 +1016,6 @@ function coverageRow(item) {
 function warrantyCard(vehicle) {
   const miles = state.odometer.has(vehicle.vin) ? state.odometer.get(vehicle.vin) : vehicle.mileage
   const outlook = warrantyOutlook({ ...vehicle, mileage: miles })
-  const recordedOasisStart = vehicle.documents.fordOasis?.warrantyStartDate ?? vehicle.documents.warrantyCheck?.fordOasis?.warrantyStartDate
   const rerender = () => { const next = warrantyCard(vehicle); card.replaceWith(next); next.querySelector('.warr-odo')?.focus() }
   const input = el('input', {
     class: 'warr-odo num', type: 'number', inputmode: 'numeric', min: '0', step: '100', placeholder: 'miles', 'aria-label': 'Odometer now', value: miles === null || miles === undefined ? '' : String(miles),
@@ -937,13 +1026,13 @@ function warrantyCard(vehicle) {
     outlook.program ? el('small', { class: 'card-sub', text: outlook.program }) : el('small', { class: 'card-sub', text: `No terms on file for ${vehicle.make || 'this make'}` }),
   )
   const facts = el('div', { class: 'warr-facts' },
-    el('div', { class: 'warr-fact' }, el('small', { text: 'Estimated warranty start' }), el('strong', { text: outlook.inService.date ? fmt.formatDate(outlook.inService.date) : 'Not on the report' }), outlook.inService.date ? el('span', { text: 'AutoCheck estimate' }) : el('span', { text: 'Needed to date the coverage' })),
+    el('div', { class: 'warr-fact' }, el('small', { text: outlook.inService.estimated ? 'Estimated warranty start' : 'Warranty start · OASIS' }), el('strong', { text: outlook.inService.date ? fmt.formatDate(outlook.inService.date) : 'Not on the report' }), outlook.inService.date ? el('span', { text: outlook.inService.source }) : el('span', { text: 'Needed to date the coverage' })),
     el('div', { class: 'warr-fact' }, el('label', {}, el('small', { text: 'Odometer now' }), input), el('span', { text: 'Edit to recalculate' })),
   )
   const cert = vehicle.certifiedProgram ? certifiedTerms(vehicle.certifiedProgram.store) : null
   const card = el('section', { class: 'card warr' },
     head,
-    recordedOasisStart ? el('div', { class: 'doc-source-note' }, el('p', { text: `OASIS recorded warranty start: ${fmt.formatDate(recordedOasisStart)}. The calculator below uses the AutoCheck estimate; use the captured OASIS record for Ford warranty details.` }), el('button', { type: 'button', class: 'doc-source-open', onclick: () => switchTab('records') }, 'View captured OASIS', icon('arrow-right', { size: 14 }))) : null,
+
     facts,
     outlook.coverages.length ? el('div', { class: 'warr-rows' }, ...outlook.coverages.map(coverageRow)) : null,
     outlook.stickerWarranty.length ? el('div', { class: 'warr-sticker' }, el('b', { text: 'Printed on the original window sticker' }), el('ul', {}, ...outlook.stickerWarranty.map((text) => el('li', { text })))) : null,
@@ -952,7 +1041,7 @@ function warrantyCard(vehicle) {
       el('ul', { class: 'warr-terms' }, ...cert.terms.map((term) => el('li', { text: term }))),
       el('p', { class: 'd-caption', text: cert.note }),
     ) : null,
-    el('p', { class: 'd-caption' }, icon('calendar', { size: 12 }), ' Warranty runs from the first retail sale, not the model year. ', outlook.verify.source === 'oasis' ? 'OASIS shows the exact warranty start date for Ford and Lincoln VINs — use it over this estimate.' : 'The AutoCheck report shows the sale and registration dates and has its own remaining-warranty calculator at the bottom.'),
+    el('p', { class: 'd-caption' }, icon('calendar', { size: 12 }), ' Warranty runs from the first retail sale, not the model year. ', outlook.verify.source === 'oasis' ? 'A captured OASIS warranty start date takes priority; otherwise the date is an AutoCheck estimate. Coverage calculations remain estimates.' : 'The AutoCheck report shows the sale and registration dates and has its own remaining-warranty calculator at the bottom.'),
     outlook.verify.url ? el('button', { type: 'button', class: 'btn btn-sm', onclick: () => openUrl(outlook.verify.url) }, icon(outlook.verify.source === 'oasis' ? 'wrench' : 'shield', { size: 13 }), outlook.verify.source === 'oasis' ? 'Open OASIS' : 'Open AutoCheck report', icon('external', { size: 12 })) : null,
   )
   return card
@@ -965,7 +1054,7 @@ function highlights(vehicle) {
   const items = (standout.length ? standout : vehicle.equipment.byCategory.flatMap((group) => group.items).slice(0, 6))
   return el('section', { class: 'card' },
     el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, icon('sparkles', { size: 13 }), 'Stands out'), el('button', { type: 'button', class: 'link-btn', onclick: () => switchTab('equipment') }, `All ${fmt.formatNumber(total)}`, icon('chevron-right', { size: 12 }))),
-    el('div', { class: 'd-features' }, ...items.map((item) => el('span', { class: `d-feature ${item.standout ? 'is-standout' : ''}`.trim(), title: SOURCE_LABELS[item.source], text: item.label }))),
+    el('div', { class: 'd-features' }, ...items.map((item) => el('span', { class: `d-feature ${item.standout ? 'is-standout' : ''}`.trim(), text: item.label }))),
   )
 }
 
@@ -984,17 +1073,15 @@ function specsCard(vehicle) {
 
 function frequentFacts(vehicle) {
   const docs = vehicle.documents
-  const oasisStart = docs.fordOasis?.warrantyStartDate ?? docs.warrantyCheck?.fordOasis?.warrantyStartDate
-  const estimatedStart = docs.autoCheck?.inServiceDate ?? docs.warrantyCheck?.autoCheck?.inServiceDate
+  const start = vehicleInServiceSource(vehicle)
   const stickerBase = docs.windowSticker?.basePrice
   const labelBase = docs.factoryEquipment?.basePrice
   const hasStickerBase = stickerBase !== null && stickerBase !== undefined
   const hasLabelBase = labelBase !== null && labelBase !== undefined
-  const baseLookup = fact('Weight fee lookup · Base MSRP', hasStickerBase ? fmt.formatStickerMoney(stickerBase, docs.windowSticker) : hasLabelBase ? fmt.formatReferencePrice(labelBase) : 'Not captured')
-  if (!hasStickerBase && hasLabelBase) baseLookup.append(el('small', { class: 'd-fact-source', text: 'vAuto reference' }))
+  const baseLookup = fact(hasStickerBase ? 'Base MSRP' : hasLabelBase ? 'Base MSRP · reference' : 'Base MSRP', hasStickerBase ? fmt.formatStickerMoney(stickerBase, docs.windowSticker) : hasLabelBase ? fmt.formatReferencePrice(labelBase) : '—')
   return el('section', { class: 'detail-frequent-facts', 'aria-label': 'Frequently used vehicle facts' },
     baseLookup,
-    fact(oasisStart ? 'Warranty in-service · OASIS' : estimatedStart ? 'Warranty in-service · estimate' : 'Warranty in-service', oasisStart || estimatedStart ? fmt.formatDate(oasisStart || estimatedStart) : 'Not captured'),
+    fact(start.source === 'OASIS' ? 'Warranty in-service · OASIS' : start.raw ? 'Warranty in-service · estimate' : 'Warranty in-service', start.raw ? fmt.formatDate(start.raw) : '—'),
   )
 }
 
@@ -1003,7 +1090,7 @@ function overviewTab(vehicle) {
     el('h3', { text: 'Specifications' }),
     kv([['Engine', vehicle.engine], ['Drive', vehicle.drivetrain], ['Exterior', vehicle.exteriorColor], ['Interior', vehicle.interiorColor], ['MSRP', vehicle.msrp !== null ? fmt.formatMoney(vehicle.msrp) : null], ['Fuel', vehicle.fuelType]]))
   const fullSpecifications = el('section', { class: 'detail-specification detail-full-specs' }, el('h3', { text: 'Vehicle details' }),
-    kv([['Stock', vehicle.stockNumber], ['VIN', vehicle.vin], ['Transmission', vehicle.transmission], ['Body', vehicle.bodyStyle], ['Vehicle class', vehicle.documents.autoCheck?.vehicleClass], ['Location', fmt.joinFacts([vehicle.location.label, vehicle.location.provenance])], ['Model code', vehicle.specs.modelCode], ['Inventory date', vehicle.specs.inventoryDate ? fmt.formatDate(vehicle.specs.inventoryDate) : null], ['Under MSRP', vehicle.savings ? fmt.formatMoney(vehicle.savings) : null], ['Fuel economy', vehicle.specs.mpgCity !== null || vehicle.specs.mpgHighway !== null ? `${vehicle.specs.mpgCity ?? '—'} city / ${vehicle.specs.mpgHighway ?? '—'} highway` : null]]))
+    kv([['Stock', vehicle.stockNumber], ['VIN', vehicle.vin], ['Transmission', vehicle.transmission], ['Body', vehicle.bodyStyle], ['Vehicle class', vehicle.documents.autoCheck?.vehicleClass], ['Location', vehicle.location.label], ['Model code', vehicle.specs.modelCode], ['Inventory date', vehicle.specs.inventoryDate ? fmt.formatDate(vehicle.specs.inventoryDate) : null], ['Under MSRP', vehicle.savings ? fmt.formatMoney(vehicle.savings) : null], ['Fuel economy', vehicle.specs.mpgCity !== null || vehicle.specs.mpgHighway !== null ? `${vehicle.specs.mpgCity ?? '—'} city / ${vehicle.specs.mpgHighway ?? '—'} highway` : null]]))
   const calculator = el('section', { class: 'detail-calculator' }, el('button', { type: 'button', class: 'detail-calculator-toggle', 'aria-expanded': 'false', onclick: (event) => {
     const expanded = event.currentTarget.getAttribute('aria-expanded') === 'true'
     event.currentTarget.setAttribute('aria-expanded', String(!expanded))
@@ -1014,7 +1101,7 @@ function overviewTab(vehicle) {
 }
 
 function readOnlyNote() {
-  return el('p', { class: 'd-freshness', text: 'Documents are reference sources, not availability signals. They do not confirm condition, a hold, custody, sale, delivery or price.' })
+  return el('p', { class: 'd-freshness', text: 'Confirm availability with the home store before promising this vehicle.' })
 }
 
 /* Hold & custody tab */
@@ -1023,7 +1110,7 @@ function holdTab(vehicle) {
   const primary = hold.evidence.find((item) => item.position === 'primary')
   const headline = hold.tone === 'held'
     ? fmt.joinFacts([hold.position === 'backup' ? 'Backup hold' : hold.position === 'multiple' ? `${hold.backupCount + 1} holds` : 'Primary hold', primary?.salesperson])
-    : hold.tone === 'clear' ? 'No current DealerMail hold found' : 'Hold status not verified'
+    : hold.tone === 'clear' ? 'No active hold' : 'Hold status needs review'
   const facts = hold.tone === 'held' ? kv([
     ['Placed', primary?.holdDate ? fmt.formatDate(primary.holdDate) : null],
     ['Expected', primary?.expectedDate ? fmt.formatDate(primary.expectedDate) : null],
@@ -1052,17 +1139,17 @@ function holdTab(vehicle) {
     chip('Open in app', 'external', () => openUrl(links.inventorySearchUrl(appOrigin(), vehicle.stockNumber))),
   )
   const holdCard = el('section', { class: `card hold-card is-${hold.tone}` },
-    el('div', { class: 'hold-head' }, el('span', { class: 'hold-icon' }, icon(hold.tone === 'held' ? 'lock' : hold.tone === 'clear' ? 'check' : 'help', { size: 16 })), el('div', {}, el('strong', { text: headline }), el('small', { text: hold.tone === 'held' ? hold.label : `DealerMail snapshot ${hold.dataState}` }))),
+    el('div', { class: 'hold-head' }, el('span', { class: 'hold-icon' }, icon(hold.tone === 'held' ? 'lock' : hold.tone === 'clear' ? 'check' : 'help', { size: 16 })), el('div', {}, el('strong', { text: headline }), el('small', { text: hold.tone === 'held' ? 'Review hold details' : 'Confirm before promising' }))),
     facts, ...backups, ...status, ...messages,
-    el('p', { class: 'd-caption', text: hold.tone === 'clear' ? 'A clean snapshot is not an availability promise. Confirm with the store before committing to a customer.' : hold.tone === 'held' ? 'A hold is a DealerMail signal — separate from the public listing and from where the vehicle physically is.' : 'The DealerMail snapshot is not current, so hold state cannot be verified from here.' }),
+    el('p', { class: 'd-caption', text: 'Confirm availability and vehicle location with the home store before committing to a customer.' }),
     actions,
   )
 
   const loc = vehicle.location
   const locSection = section('Location', [
-    line('pin', loc.label, loc.provenance === 'app-confirmed' ? `app-confirmed${loc.confirmedAt ? ` ${fmt.formatDateTime(loc.confirmedAt)}` : ''}` : loc.provenance === 'source-reported' ? 'source-reported' : 'no evidence'),
+    line('pin', loc.label, 'Vehicle location'),
     loc.custodian ? line('car', null, `With ${loc.custodian}`) : null,
-    loc.conflict ? el('p', { class: 'd-caption d-caption-warn', text: 'Sources disagree about where this vehicle is. Treat the location as unconfirmed.' }) : null,
+    loc.conflict ? el('p', { class: 'd-caption d-caption-warn', text: 'Location needs confirmation with the home store.' }) : null,
     loc.store && loc.store !== vehicle.homeStore ? el('p', { class: 'd-caption', text: `Away from its home store, ${vehicle.homeStore}.` }) : null,
   ], { iconName: 'pin' })
 
@@ -1070,20 +1157,19 @@ function holdTab(vehicle) {
   const moveSection = section('Movement', move
     ? [
       line('truck', humanize(move.label ?? move.state) ?? 'Move in progress', humanize(move.requestStatus)),
-      move.withheld ? el('p', { class: 'd-caption', text: 'Move details are limited to the stores involved; the location and status above are still the app\'s own record.' }) : null,
-      kv([['Next', fmt.joinFacts([move.nextAction, move.nextActionOwner])], ['To', move.destination], [move.overdue ? 'Overdue' : 'Due', move.dueAt ? fmt.formatDateTime(move.dueAt) : null], ['Transport', move.transportAssignee], ['Requested by', move.requestingStore]]),
+      move.withheld ? el('p', { class: 'd-caption', text: 'Move details are limited to the stores involved.' }) : null,
+      kv([['Next', fmt.joinFacts([move.nextAction, move.nextActionOwner])], ['To', move.destination], [move.overdue ? 'Overdue' : 'Due', move.dueAt ? fmt.formatDateTime(move.dueAt) : null], ['Transport', move.transportAssignee]]),
       move.transferId ? el('div', { class: 'dock-utils' }, chip('View vehicle move', 'truck', () => openUrl(links.trackMovementUrl(appOrigin(), { transferId: move.transferId, vin: vehicle.vin })))) : null,
     ]
-    : [el('p', { class: 'd-caption', text: 'No move request in Inventory Flow for this vehicle.' })], { iconName: 'truck', pill: move ? el('span', { class: `pill ${move.overdue ? 'pill-alert' : 'pill-moving'}`, text: move.overdue ? 'Overdue' : 'Active' }) : null })
+    : [el('p', { class: 'd-caption', text: 'No active vehicle move.' })], { iconName: 'truck', pill: move ? el('span', { class: `pill ${move.overdue ? 'pill-alert' : 'pill-moving'}`, text: move.overdue ? 'Overdue' : 'Active' }) : null })
 
   const managerSection = vehicle.managerLog ? section('Manager log', [
     line('file', vehicle.managerLog.soldLabel, vehicle.managerLog.deliveryLabel),
     vehicle.managerLog.deliveryDate ? line('check', null, `Delivered ${fmt.formatDate(vehicle.managerLog.deliveryDate)}`) : null,
-    vehicle.managerLog.dataState !== 'current' ? el('p', { class: 'd-caption d-caption-warn', text: `The manager-log source is ${vehicle.managerLog.dataState}. Treat this as last known, not current.` }) : null,
-    el('p', { class: 'd-caption', text: `Manager-supplied evidence from ${vehicle.managerLog.sourceStore}, shown separately from listing, hold and location.` }),
+    vehicle.managerLog.dataState !== 'current' ? el('p', { class: 'd-caption d-caption-warn', text: 'Review this manager update before relying on it.' }) : null,
   ], { iconName: 'file', pill: vehicle.managerLog.dataState !== 'current' ? el('span', { class: 'pill pill-moving', text: 'Not current' }) : null }) : null
 
-  return [holdCard, locSection, moveSection, managerSection, el('p', { class: 'd-freshness', text: 'Listing, hold, movement and location are separate facts; none implies another.' })]
+  return [holdCard, locSection, moveSection, managerSection]
 }
 
 /* Equipment tab */
@@ -1092,17 +1178,15 @@ function equipmentTab(vehicle) {
   const total = groups.reduce((sum, group) => sum + group.items.length, 0)
   const docs = vehicle.documents
   const children = []
-  const sourcesUsed = [...new Set(groups.flatMap((group) => group.items.map((item) => item.source)))]
   children.push(el('div', { class: 'card-head eq-head' },
     el('h3', { class: 'card-title' }, icon('list', { size: 13 }), `${fmt.formatNumber(total)} published item${total === 1 ? '' : 's'}`),
     total ? el('button', { type: 'button', class: 'btn btn-sm', onclick: (event) => copy(groups.map((group) => `${group.label}\n${group.items.map((item) => `• ${item.label}`).join('\n')}`).join('\n\n'), 'Equipment list', event.currentTarget) }, icon('copy', { size: 13 }), 'Copy list') : null,
   ))
-  if (sourcesUsed.length) children.push(el('p', { class: 'd-caption eq-sources' }, ...sourcesUsed.map((source) => el('span', { class: `src-dot src-${source}`, title: SOURCE_LABELS[source] }, el('i'), SOURCE_LABELS[source]))))
   if (docs.factoryEquipment?.packages.length) {
     children.push(el('section', { class: 'card' },
       el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, icon('layers', { size: 13 }), 'Packages on the equipment label'), docs.factoryEquipment.url ? el('button', { type: 'button', class: 'link-btn', onclick: () => openUrl(docs.factoryEquipment.url) }, 'Open label', icon('external', { size: 12 })) : null),
       ...docs.factoryEquipment.packages.map((pkg) => el('div', { class: 'pkg' },
-        el('div', { class: 'pkg-head' }, el('b', { text: pkg.name }), pkg.code ? el('code', { text: pkg.code }) : null, pkg.price !== null ? el('span', { class: 'num', text: `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(pkg.price)} · currency not captured` }) : null),
+        el('div', { class: 'pkg-head' }, el('b', { text: pkg.name }), pkg.code ? el('code', { text: pkg.code }) : null, pkg.price !== null ? el('span', { class: 'num', text: fmt.formatReferencePrice(pkg.price) }) : null),
         pkg.features.length ? el('div', { class: 'd-features' }, ...pkg.features.map((feature) => el('span', { class: 'd-feature', text: feature }))) : null,
       )),
     ))
@@ -1111,13 +1195,12 @@ function equipmentTab(vehicle) {
   groups.forEach((group) => {
     const details = el('section', { class: 'eq-group eq-ledger', 'aria-label': group.label },
       el('h3', {}, el('span', { text: group.label }), el('b', { class: 'num', text: fmt.formatNumber(group.items.length) })),
-      el('ul', { class: 'eq-list' }, ...group.items.map((item) => el('li', { class: `eq-item ${item.standout ? 'is-standout' : ''}`.trim(), title: SOURCE_LABELS[item.source] }, el('i', { class: `src-dot src-${item.source}` }), el('span', { text: item.label })))),
+      el('ul', { class: 'eq-list' }, ...group.items.map((item) => el('li', { class: `eq-item ${item.standout ? 'is-standout' : ''}`.trim() }, el('span', { text: item.label })))),
     )
     children.push(details)
   })
-  if (!total) children.push(el('p', { class: 'd-caption', text: 'No equipment was published for this vehicle by the website, the equipment label or a captured sticker.' }))
-  if (docs.factoryEquipment?.disclaimer) children.push(el('p', { class: 'd-freshness', text: docs.factoryEquipment.disclaimer }))
-  else children.push(el('p', { class: 'd-freshness', text: 'The vAuto equipment label is informational, not the original window sticker. Confirm installed equipment on the vehicle.' }))
+  if (!total) children.push(el('p', { class: 'd-caption', text: 'No equipment details are available for this vehicle.' }))
+  else children.push(el('p', { class: 'd-freshness', text: 'Confirm installed equipment on the vehicle.' }))
   return children
 }
 
@@ -1129,7 +1212,7 @@ function historyMetrics(ac) {
   return el('div', { class: 'history-metrics', 'aria-label': 'Vehicle history summary' },
     metric('Score', ac.score !== null ? String(ac.score) : null, ac.rangeLow !== null && ac.rangeHigh !== null ? `Typical ${ac.rangeLow}–${ac.rangeHigh}` : null),
     metric('Owners', ac.ownerCount !== null ? `${ac.ownerCount} reported` : null),
-    metric('Use', ac.usage),
+    metric('Use', sourceDistanceText(ac.usage) || null),
     metric('Service records', serviceCountSources.length ? fmt.joinFacts(serviceCountSources) : service ? service.detail || service.status : null),
     metric('Last odometer', ac.lastReportedOdometer !== null ? fmt.formatMileage(ac.lastReportedOdometer) : null, ac.lastReportedOdometerDate ? fmt.formatDate(ac.lastReportedOdometerDate) : null),
   )
@@ -1139,7 +1222,7 @@ function historyCheck(check) {
   const iconName = /accident|damage/i.test(check.label) ? 'car' : /odometer/i.test(check.label) ? 'gauge' : /service/i.test(check.label) ? 'wrench' : /recall/i.test(check.label) ? 'alert' : /insurance|title/i.test(check.label) ? 'shield' : /cpo|certif/i.test(check.label) ? 'award' : 'file-text'
   return el('div', { class: `check is-${check.tone}` },
     el('span', { class: 'history-check-icon' }, icon(iconName, { size: 19 })),
-    el('span', { class: 'history-check-copy' }, el('b', { text: check.label }), el('small', { text: fmt.joinFacts([check.status, check.detail]) || 'Not reported' })),
+    el('span', { class: 'history-check-copy' }, el('b', { text: check.label }), el('small', { text: sourceDistanceText(fmt.joinFacts([check.status, check.detail])) || 'Not reported' })),
     icon(check.tone === 'clear' ? 'check' : check.tone === 'review' ? 'alert' : 'minus', { size: 15, className: 'history-check-status' }),
   )
 }
@@ -1148,14 +1231,14 @@ function recordsTab(vehicle) {
   const docs = vehicle.documents
   const ac = docs.autoCheck
   const children = []
-  const resourceNotes = new Map(resourceSummaries(vehicle).map((resource) => [resource.id, resource.sourceNote]))
   const recordHead = (title, { brand, iconName = 'file-text', url, action, missing, dataState } = {}) => el('div', { class: 'rec-heading' },
-    el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, brand ? resourceBrand(brand, 'record-brand') : icon(iconName, { size: 16 }), title), dataState ? el('span', { class: `rec-state ${dataState === 'current' ? '' : 'is-warning'}`, text: dataState === 'current' ? 'Captured data' : `${humanize(dataState)} data` }) : null),
-    url ? el('button', { type: 'button', class: 'rec-source', 'aria-label': `${action} for ${vehicle.stockNumber}`, onclick: () => openUrl(url) }, brand === 'autocheck' ? 'Open report' : brand === 'ford' ? 'Open OASIS' : brand === 'vauto' ? 'Open equipment' : /sticker/i.test(action) ? 'Open sticker' : 'Open source', icon('external', { size: 14 })) : missing ? el('p', { class: 'rec-source-missing', text: missing }) : null,
+    el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, brand ? resourceBrand(brand, 'record-brand') : icon(iconName, { size: 16 }), title)),
+    url ? el('button', { type: 'button', class: 'rec-source', 'aria-label': `${action} for ${vehicle.stockNumber}`, onclick: () => openUrl(url) }, brand === 'autocheck' ? 'Open report' : brand === 'ford' ? 'Open OASIS' : brand === 'vauto' ? 'Open equipment' : /sticker/i.test(action) ? 'Open sticker' : 'Open details', icon('external', { size: 14 })) : missing ? el('p', { class: 'rec-source-missing', text: 'Details unavailable' }) : null,
   )
   const recordSection = (title, content) => el('section', { class: 'rec-section', 'aria-label': title }, el('h4', { text: title }), ...content.filter(Boolean))
-  const recordList = (title, items) => items?.length ? recordSection(title, [el('ul', { class: 'rec-list' }, ...items.map((text) => el('li', { text })))]) : null
-  const sourceNote = (source, id) => resourceNotes.get(id) || fmt.joinFacts([source?.sourceMessage, source?.failureReason])
+  // Source lines can print a distance in kilometres; staff read miles.
+  const recordList = (title, items) => items?.length ? recordSection(title, [el('ul', { class: 'rec-list' }, ...items.map((text) => el('li', { text: sourceDistanceText(text) })))]) : null
+  const sourceNote = () => null
   const note = (text) => text ? el('p', { class: 'rec-note', text }) : null
   const hasNumber = (value) => typeof value === 'number' && Number.isFinite(value)
   const referencePrice = (value) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(value)
@@ -1165,43 +1248,43 @@ function recordsTab(vehicle) {
   }
   if (ac) {
     const facts = kv([
-      ['Warranty start (est.)', ac.inServiceDate ? fmt.formatDate(ac.inServiceDate) : null],
-      ['Class', ac.vehicleClass], ['Assembly', ac.assemblyCountry], ['Report run', ac.reportRunAt ? fmt.formatDateTime(ac.reportRunAt) : null],
+      ['Warranty start', ac.inServiceDate ? fmt.formatDate(ac.inServiceDate) : null],
+      ['Class', sourceDistanceText(ac.vehicleClass) || null], ['Assembly', ac.assemblyCountry],
     ])
     facts?.classList.add('rec-metadata')
     children.push(el('section', { class: 'card rec rec-autocheck', dataset: { record: 'autocheck' }, tabindex: '-1' },
-      recordHead('History', { brand: 'autocheck', url: ac.url, action: 'Open original AutoCheck report', missing: 'Original AutoCheck report link not captured.', dataState: ac.dataState }),
+      recordHead('History', { brand: 'autocheck', url: ac.url, action: 'Open AutoCheck report', missing: 'AutoCheck report unavailable.', dataState: ac.dataState }),
       note(sourceNote(ac, 'autocheck')),
       historyMetrics(ac),
       facts,
-      ac.checks.length ? el('div', { class: 'checks', 'aria-label': 'History checks' }, ...ac.checks.map(historyCheck)) : el('p', { class: 'rec-empty', text: 'History checks not reported. Open the source report for details.' }),
+      ac.checks.length ? el('div', { class: 'checks', 'aria-label': 'History checks' }, ...ac.checks.map(historyCheck)) : el('p', { class: 'rec-empty', text: 'No history details are available.' }),
     ))
   }
   const sticker = docs.windowSticker
   if (sticker) {
     children.push(el('section', { class: 'card rec', dataset: { record: 'window-sticker' }, tabindex: '-1' },
-      recordHead('Original window sticker', { url: sticker.url, action: 'Open original window sticker', missing: 'Original window sticker link not captured.', dataState: sticker.dataState }),
+      recordHead('Window sticker', { url: sticker.url, action: 'Open window sticker', missing: 'Window sticker unavailable.', dataState: sticker.dataState }),
       note(sourceNote(sticker, 'window-sticker')),
       sticker.vehicleDescription ? el('p', { class: 'd-caption', text: sticker.vehicleDescription }) : null,
       recordPrices([['Base MSRP', sticker.basePrice], ['Options', sticker.totalOptions], ['Destination & delivery', sticker.destinationCharge], ['Total MSRP', sticker.totalMsrp]], (value) => fmt.formatStickerMoney(value, sticker)),
-      sticker.originalMarket || sticker.pricingCurrency ? el('p', { class: 'd-caption', text: fmt.joinFacts([sticker.originalMarket ? `${sticker.originalMarket} market` : null, sticker.pricingCurrency ? `priced in ${sticker.pricingCurrency}` : null, sticker.currencyEvidence]) }) : null,
-      kv([['Equipment group', sticker.equipmentGroup], ['Engine', sticker.engine], ['Transmission', sticker.transmission], ['Exterior', sticker.exteriorColor], ['Interior', sticker.interiorColor]]),
+      sticker.equipmentGroupContents?.length ? el('section', {}, el('h4', { text: 'Equipment group contents' }), ...sticker.equipmentGroupContents.map(text => el('p', { text }))) : null,
+      kv([['Group price', typeof sticker.equipmentGroupPrice === 'number' ? fmt.formatStickerMoney(sticker.equipmentGroupPrice, sticker) : null], ['Equipment group', sticker.equipmentGroup], ['Engine', sourceDistanceText(sticker.engine)], ['Transmission', sourceDistanceText(sticker.transmission)], ['Exterior', sticker.exteriorColor], ['Interior', sticker.interiorColor]]),
       recordList('Factory options', sticker.options),
       recordList('Standard equipment', sticker.standardEquipment),
       recordList('Warranty printed on sticker', sticker.warranty),
-      note('Original document prices retain their printed currency. Sticker warranty terms are not confirmation of remaining coverage.'),
+      note('Review the window sticker for full configuration and warranty terms.'),
     ))
   }
   const label = docs.factoryEquipment
   if (label) {
     children.push(el('section', { class: 'card rec', dataset: { record: 'vauto' }, tabindex: '-1' },
-      recordHead('Equipment label', { brand: 'vauto', url: label.url, action: 'Open vAuto source document', missing: 'vAuto source document link not captured.', dataState: label.dataState }),
-      note(fmt.joinFacts([label.sourceLabel, sourceNote(label, 'vauto')])),
+      recordHead('Equipment', { brand: 'vauto', url: label.url, action: 'Open equipment details', missing: 'Equipment details unavailable.', dataState: label.dataState }),
+      note(sourceNote(label, 'vauto')),
       note(label.vehicleDescription),
-      [label.basePrice, label.totalOptions, label.destinationCharge, label.totalMsrp, ...label.packages.map((pkg) => pkg.price), ...label.sections.flatMap((group) => group.items.map((item) => item.price))].some(hasNumber) ? note('Reference label prices · currency not captured. Verify the currency on the source document; these values are not converted.') : null,
+      [label.basePrice, label.totalOptions, label.destinationCharge, label.totalMsrp, ...label.packages.map((pkg) => pkg.price), ...label.sections.flatMap((group) => group.items.map((item) => item.price))].some(hasNumber) ? note('Reference pricing') : null,
       el('div', { class: 'rec-metadata' }, recordPrices([['Base MSRP', label.basePrice], ['Options', label.totalOptions], ['Destination & delivery', label.destinationCharge], ['Total MSRP (reference)', label.totalMsrp]], referencePrice)),
       kv([['Engine', label.engine], ['Transmission', label.transmission], ['Drivetrain', label.drivetrain], ['Exterior', label.exteriorColor], ['Interior', label.interiorColor]]),
-      [...label.packages.map((pkg) => pkg.price), ...label.sections.flatMap((group) => group.items.map((item) => item.price))].some(hasNumber) ? el('p', { class: 'rec-price-context', text: 'Reference prices · currency not captured' }) : null,
+      [...label.packages.map((pkg) => pkg.price), ...label.sections.flatMap((group) => group.items.map((item) => item.price))].some(hasNumber) ? el('p', { class: 'rec-price-context', text: 'Reference pricing' }) : null,
       label.packages.length ? recordSection('Equipment packages', label.packages.map((pkg) => el('div', { class: 'rec-package' },
         el('div', { class: 'rec-line' }, el('b', { text: fmt.joinFacts([pkg.name, pkg.code]) }), hasNumber(pkg.price) ? el('span', { class: 'num', text: referencePrice(pkg.price) }) : null),
         pkg.features.length ? el('ul', { class: 'rec-list' }, ...pkg.features.map((text) => el('li', { text }))) : null,
@@ -1212,32 +1295,31 @@ function recordsTab(vehicle) {
   }
   const oasis = docs.fordOasis
   if (oasis || vehicle.links.oasis) children.push(el('section', { class: 'card rec rec-oasis', dataset: { record: 'oasis' }, tabindex: '-1' },
-    recordHead('OASIS & warranty', { brand: 'ford', url: vehicle.links.oasis, action: 'Open OASIS dealer lookup', missing: 'OASIS dealer lookup unavailable for this VIN.', dataState: oasis?.dataState }),
-    note('Dealer lookup · Ford sign-in may be required. The lookup opens Ford’s tool, not a saved report.'),
-    oasis ? note(fmt.joinFacts([oasis.sourceLabel, sourceNote(oasis, 'oasis')])) : note('No OASIS report details were captured. Open the dealer lookup to check this vehicle.'),
+    recordHead('OASIS & warranty', { brand: 'ford', url: vehicle.links.oasis, action: 'Open OASIS', missing: 'OASIS unavailable for this VIN.', dataState: oasis?.dataState }),
+    oasis ? note(sourceNote(oasis, 'oasis')) : note('Open OASIS to check this vehicle.'),
     oasis ? kv([
       ['Vehicle', oasis.vehicleDescription], ['Series', oasis.versionSeries],
       ['Warranty start', oasis.warrantyStartDate ? fmt.formatDate(oasis.warrantyStartDate) : null],
       ['Build date', oasis.buildDate ? fmt.formatDate(oasis.buildDate) : null], ['Release date', oasis.releaseDate ? fmt.formatDate(oasis.releaseDate) : null],
       ['Months in service', hasNumber(oasis.monthsInService) ? String(oasis.monthsInService) : null], ['Sale mileage', hasNumber(oasis.saleMileage) ? fmt.formatMileage(oasis.saleMileage) : null],
     ]) : null,
-    oasis?.openFieldServiceActions.length ? recordSection('Open Ford service actions', [el('ul', { class: 'rec-list oasis-actions' }, ...oasis.openFieldServiceActions.map((item) => el('li', {}, icon('alert', { size: 17 }), el('span', {}, item.code ? el('b', { text: item.code }) : null, item.code && item.description ? ' · ' : '', sourceDisplayText(item.description)))))]) : el('p', { class: 'rec-empty', text: 'Verify current actions in OASIS.' }),
-    oasis?.warrantyCoverages.length ? recordSection('Ford warranty coverages', [el('ul', { class: 'rec-list' }, ...oasis.warrantyCoverages.map((item) => el('li', {}, el('b', { text: item.type }), item.description ? ` · ${sourceDisplayText(item.description)}` : '')))]) : null,
-    recordList('Extended coverage expirations', oasis?.extendedCoverageExpirations),
+    oasis?.openFieldServiceActions.length ? recordSection(oasis.openActionsCaptured === false ? `At least ${oasis.openFieldServiceActions.length} captured actions · result incomplete` : 'Open Ford service actions', [el('ul', { class: 'rec-list oasis-actions' }, ...oasis.openFieldServiceActions.map((item) => el('li', {}, icon('alert', { size: 17 }), el('span', {}, item.code ? el('b', { text: item.code }) : null, item.code && item.description ? ' · ' : '', sourceDistanceText(sourceDisplayText(item.description))))))]) : el('p', { class: 'rec-empty', text: 'Verify current actions in OASIS.' }),
+    oasis?.warrantyCoverages.length ? recordSection('Ford warranty coverages', [el('ul', { class: 'rec-list' }, ...oasis.warrantyCoverages.map((item) => el('li', {}, el('b', { text: item.type }), item.description ? ` · ${sourceDistanceText(sourceDisplayText(item.description))}` : '')))]) : null,
+    recordList('Extended coverage expirations', oasis?.extendedCoverageExpirations?.map(value => fmt.formatSourceDateText(value))),
   ))
   const warranty = docs.warrantyCheck
   const coverageBlock = (title, block) => block?.coverages.length ? recordSection(title, [
     kv([['Warranty start', block.warrantyStartDate ? fmt.formatDate(block.warrantyStartDate) : null], ['In service (estimate)', block.inServiceDate ? fmt.formatDate(block.inServiceDate) : null], ['Months in service', hasNumber(block.monthsInService) ? String(block.monthsInService) : hasNumber(block.inServiceAgeMonths) ? String(block.inServiceAgeMonths) : null], ['AutoCheck default mileage', hasNumber(block.defaultMileage) ? fmt.formatMileage(block.defaultMileage) : null]]),
-    ...block.coverages.map((coverage) => el('div', { class: 'rec-coverage' }, el('div', { class: 'rec-line' }, el('b', { text: coverage.type }), el('span', { text: `Captured: ${coverage.status}` })),
-      kv([['Printed term', coverage.termText], ['Remaining time', coverage.remainingTimeText], ['Remaining miles', coverage.remainingMilesText]]), note(coverage.note))),
+    ...block.coverages.map((coverage) => el('div', { class: 'rec-coverage' }, el('div', { class: 'rec-line' }, el('b', { text: coverage.type }), el('span', { text: coverage.status })),
+      kv([['Printed term', sourceDistanceText(coverage.termText)], ['Remaining time', coverage.remainingTimeText], ['Remaining miles', sourceDistanceText(coverage.remainingMilesText)]]), note(coverage.note))),
   ]) : null
   if (warranty && (warranty.fordOasis || warranty.autoCheck)) children.push(el('section', { class: 'card rec rec-warranty', dataset: { record: 'warranty' }, tabindex: '-1' },
-    recordHead('Captured warranty check', { iconName: 'shield', dataState: warranty.dataState, url: warranty.fordOasis ? vehicle.links.oasis : ac?.url, action: warranty.fordOasis ? 'Open OASIS coverage lookup' : 'Open original AutoCheck report', missing: warranty.fordOasis ? 'OASIS dealer lookup unavailable for this VIN.' : 'Original AutoCheck report link not captured.' }),
-    note(fmt.joinFacts([warranty.sourceLabel, sourceNote(warranty, warranty.fordOasis ? 'oasis' : 'autocheck')])),
-    kv([['Figured at', hasNumber(warranty.mileageEntered) ? fmt.formatMileage(warranty.mileageEntered) : null], ['Mileage source', warranty.mileageSource]]),
+    recordHead('Warranty check', { iconName: 'shield', dataState: warranty.dataState, url: warranty.fordOasis ? vehicle.links.oasis : ac?.url, action: warranty.fordOasis ? 'Open OASIS' : 'Open AutoCheck report', missing: 'Warranty details unavailable.' }),
+    note(sourceNote(warranty, warranty.fordOasis ? 'oasis' : 'autocheck')),
+    kv([['Mileage', hasNumber(warranty.mileageEntered) ? fmt.formatMileage(warranty.mileageEntered) : null]]),
     coverageBlock('Ford OASIS coverage', warranty.fordOasis),
     coverageBlock('AutoCheck warranty estimate', warranty.autoCheck),
-    note(warranty.fordOasis ? 'Ford OASIS is the primary factory-coverage source. Any AutoCheck estimate is separate reference evidence. Verify current coverage with the store.' : 'AutoCheck warranty figures are estimates at the captured mileage, not manufacturer confirmation. Verify current coverage with the store.'),
+    note('Verify current coverage with the store before quoting a customer.'),
   ))
   const scan = vehicle.publicScan
   const listing = vehicle.listing
@@ -1246,12 +1328,10 @@ function recordsTab(vehicle) {
     el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, icon('globe', { size: 13 }), 'Public listing'), listing.isListed === true ? el('span', { class: 'pill pill-blue', text: 'Public' }) : null),
     kv([
       ['Status', listing.isListed === true ? 'Listed publicly' : listing.isListed === false ? 'Not publicly listed' : 'Unknown'],
-      ['Website', listing.websiteStatus], ['DealerOn', flags],
-      ['First seen', scan?.firstSeen ? fmt.formatDate(scan.firstSeen) : null], ['Last seen', scan?.lastSeen ? fmt.formatDate(scan.lastSeen) : null],
-      ['Sources', scan?.sourceCount !== null && scan?.sourceCount !== undefined ? String(scan.sourceCount) : null],
+      ['Website', listing.websiteStatus],
       ['Photos', vehicle.specs.photoCount !== null ? String(vehicle.specs.photoCount) : null],
     ]),
-    el('p', { class: 'd-caption', text: listing.dataState === 'current' ? 'Website flags are source flags, not readiness, sale or delivery evidence.' : `The public snapshot is ${listing.dataState}.` }),
+    el('p', { class: 'd-caption', text: 'Confirm availability and location with the store before promising this vehicle.' }),
     listing.url ? el('div', { class: 'dock-utils' }, chip('Open listing', 'external', () => openUrl(listing.url))) : null,
   ))
   if (vehicle.dealerComments) {
@@ -1264,27 +1344,16 @@ function recordsTab(vehicle) {
     ))
   }
   if (vehicle.changeSummary) children.push(section('Last change', [line('history', null, vehicle.changeSummary)], { iconName: 'history' }))
-  if (!ac && !sticker && !label) children.push(el('p', { class: 'd-caption', text: 'No AutoCheck report, window sticker or equipment label was captured for this vehicle.' }))
-  children.push(el('p', { class: 'd-freshness', text: `From the ${fmt.formatReportDate(state.data.meta.reportDate)} release · public ${state.data.meta.publicFreshness} · DealerMail ${state.data.meta.dealerMailFreshness}. Reference documents only: they do not confirm condition, availability, sale or delivery.` }))
+  if (!ac && !sticker && !label) children.push(el('p', { class: 'd-caption', text: 'No vehicle records are available.' }))
   const recordOrder = ['autocheck', 'oasis', 'warranty', 'window-sticker', 'vauto']
   children.sort((left, right) => {
     const leftIndex = recordOrder.indexOf(left?.dataset?.record)
     const rightIndex = recordOrder.indexOf(right?.dataset?.record)
     return (leftIndex < 0 ? recordOrder.length : leftIndex) - (rightIndex < 0 ? recordOrder.length : rightIndex)
   })
-  for (const record of children.filter((node) => node?.classList?.contains('rec'))) {
-    const metadata = [...record.querySelectorAll('.rec-note, .rec-source-missing, .rec-metadata, .rec-state')]
-    if (!metadata.length) continue
-    const needsSourceCheck = metadata.some((node) => /stale|future|unrecognized|unavailable|partial|incomplete/i.test(node.textContent))
-    const details = el('details', { class: 'rec-source-details' }, el('summary', {}, icon('chevron-down', { size: 14 }), needsSourceCheck ? 'Source details · Check source' : 'Source details'))
-    for (const node of metadata) details.append(node)
-    record.append(details)
-  }
-  const releaseNote = children.find((node) => node?.classList?.contains('d-freshness'))
-  if (releaseNote) children[children.indexOf(releaseNote)] = el('details', { class: 'rec-source-details record-release-details' }, el('summary', {}, icon('chevron-down', { size: 14 }), 'Release details'), releaseNote)
   const labels = { autocheck: 'AutoCheck', 'window-sticker': 'Sticker', vauto: 'Equipment', oasis: 'OASIS & warranty', warranty: 'Warranty check' }
   const records = children.filter((node) => node?.dataset?.record)
-  if (records.length) children.unshift(el('nav', { class: 'record-jumps', 'aria-label': 'Jump to captured record' }, ...records.map((node) => el('button', { type: 'button', class: 'btn', onclick: () => openRecord(node.dataset.record) }, labels[node.dataset.record]))))
+  if (records.length) children.unshift(el('nav', { class: 'record-jumps', 'aria-label': 'Jump to vehicle record' }, ...records.map((node) => el('button', { type: 'button', class: 'btn', onclick: () => openRecord(node.dataset.record) }, labels[node.dataset.record]))))
   children.unshift(frequentFacts(vehicle))
   return children
 }
@@ -1453,7 +1522,7 @@ function renderCompare() {
     rows,
     onlyOn.length ? el('section', { class: 'card' }, el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, icon('sparkles', { size: 13 }), 'Equipment differences')),
       ...onlyOn.map((entry) => el('div', { class: 'cmp-only' }, el('b', { text: `Only on ${entry.vehicle.stockNumber}` }), el('ul', { class: 'cmp-equipment-list' }, ...entry.items.map((label) => el('li', { text: label })))))) : null,
-    el('p', { class: 'd-freshness', text: 'Hold, location and listing are the current snapshot for each vehicle; equipment comes from the website, the equipment label and any captured sticker.' }),
+    el('p', { class: 'd-freshness', text: 'Confirm availability, location, and installed equipment with the store before promising a vehicle.' }),
   )
   ui.compare.scrollTop = previousScroll
 }
@@ -1493,8 +1562,10 @@ function renderSheet() {
       el('p', { class: 'field-help', text: s.workspace === 'demo' ? 'The local demo is synthetic training data from pnpm dev:demo — never live inventory.' : 'Production uses your Cloudflare Access sign-in for Inventory Flow.' })))
   }
   if (state.workspace.demo) {
+    const demoRole = select(ROLE_PICKER_ROLES, s.demoRole, (nextRole) => updateSettings({ demoRole: nextRole }, { reload: true }), roleLabel)
+    if (!ROLE_PICKER_ROLES.includes(s.demoRole)) demoRole.prepend(el('option', { value: s.demoRole, selected: true, disabled: true, text: `${roleLabel(s.demoRole)} · Legacy` }))
     ui.sheetBody.append(
-      el('div', { class: 'field' }, el('label', { class: 'field-label', for: 'demo-role', text: 'Demo role' }), Object.assign(select(ROLES, s.demoRole, (demoRole) => updateSettings({ demoRole }, { reload: true }), roleLabel), { id: 'demo-role' })),
+      el('div', { class: 'field' }, el('label', { class: 'field-label', for: 'demo-role', text: 'Demo role' }), Object.assign(demoRole, { id: 'demo-role' })),
       el('div', { class: 'field' }, el('label', { class: 'field-label', for: 'demo-store', text: 'Demo store' }), Object.assign(select(STORES, s.demoStore, (demoStore) => updateSettings({ demoStore }, { reload: true })), { id: 'demo-store' })),
     )
   }

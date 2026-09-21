@@ -6,6 +6,7 @@ import {
   isCompleteWarrantyRecord,
   oasisWarrantyBlock,
   parseOasis,
+  termFromOasisDescription,
 } from '../../scripts/capture-warranty.mjs'
 import {
   containsForeignOasisText,
@@ -18,13 +19,13 @@ const vin = '1FMCU9G66PUA12345'
 function oasisHtml(responseVin = vin) {
   return `<html><body>
     OASIS RESULT VIN: ${responseVin}
-    WARRANTY START DATE: 09-June-2023 MONTHS IN SERVICE: 38 SALE MILEAGE: 3
+    WARRANTY START DATE: 01-Jan-2023 MONTHS IN SERVICE: 36 SALE MILEAGE: 0
     WARRANTY COVERAGE
     COVERAGE TYPE: Bumper-to-Bumper COVERAGE DESCRIPTION: 3 years / 36,000 Miles (whichever occurs first)
     COVERAGE TYPE: Powertrain COVERAGE DESCRIPTION: 5 years / 60,000 Miles (whichever occurs first)
-    EXTENDED COVERAGES OWNER NAME: Private Person PREMIUMCARE DEDUCTIBLE $100 01/16/2029
+    EXTENDED COVERAGES OWNER NAME: Synthetic Owner EXTENDED SERVICE PLAN DEDUCTIBLE $100 01/01/2029
     COVERAGE TYPE: Safety Restraint COVERAGE DESCRIPTION: 8 years / 100,000 Miles (whichever occurs first)
-    OUTSTANDING FIELD SERVICE ACTIONS 24N08 Customer Satisfaction Program
+    OUTSTANDING FIELD SERVICE ACTIONS 00T01 Customer Satisfaction Program
     GENERAL WARRANTY INFORMATION
   </body></html>`
 }
@@ -33,15 +34,15 @@ describe('Ford OASIS warranty capture boundary', () => {
   it('binds the response to the requested VIN and keeps only factory coverage rows', () => {
     const parsed = parseOasis(oasisHtml(), vin)
     expect(parsed).toMatchObject({
-      warrantyStartDate: '09-June-2023',
-      monthsInService: 38,
-      saleMileage: 3,
-      openFieldServiceActionCodes: ['24N08'],
+      warrantyStartDate: '01-Jan-2023',
+      monthsInService: 36,
+      saleMileage: 0,
+      openFieldServiceActionCodes: ['00T01'],
     })
     expect(parsed.coverages.map((row) => row.type)).toEqual(['Bumper-to-Bumper', 'Powertrain'])
-    expect(JSON.stringify(parsed)).not.toMatch(/Private Person|PREMIUMCARE|DEDUCTIBLE|01\/16\/2029|Safety Restraint|8 years/)
+    expect(JSON.stringify(parsed)).not.toMatch(/Synthetic Owner|EXTENDED SERVICE PLAN|DEDUCTIBLE|01\/01\/2029|Safety Restraint|8 years/)
     expect(parseOasis(oasisHtml('1FMCU9G66PUA54321'), vin)).toBeNull()
-    expect(parseOasis(`OASIS RESULT VIN: ${vin} WARRANTY START DATE: 09-June-2023 MONTHS IN SERVICE: 38`, vin)).toBeNull()
+    expect(parseOasis(`OASIS RESULT VIN: ${vin} WARRANTY START DATE: 01-Jan-2023 MONTHS IN SERVICE: 36`, vin)).toBeNull()
   })
 
   it('classifies no-record separately and refuses an unbound no-record page', () => {
@@ -64,13 +65,42 @@ describe('Ford OASIS warranty capture boundary', () => {
     expect(block.coverages[0]).toMatchObject({ termMonths: 36, termMiles: 36_000, status: 'EXPIRED' })
     expect(block.coverages[1]).toMatchObject({ termMonths: 60, termMiles: 60_000, remainingMiles: 50_000 })
   })
+
+  it('computes a kilometre term in miles and carries the printed description through verbatim', () => {
+    expect(termFromOasisDescription('60 months / 100,000 Kilometres (whichever occurs first)')).toEqual({ termMonths: 60, termMiles: 62_137 })
+    expect(termFromOasisDescription('5 years / 100,000 kilometers')).toEqual({ termMonths: 60, termMiles: 62_137 })
+    expect(termFromOasisDescription('5 years / Unlimited kilometres')).toEqual({ termMonths: 60, unlimitedMiles: true })
+    expect(termFromOasisDescription('3 years / 36,000 Miles (whichever occurs first)')).toEqual({ termMonths: 36, termMiles: 36_000 })
+
+    const metricHtml = `<html><body>
+      OASIS RESULT VIN: ${vin}
+      WARRANTY START DATE: 01-Jan-2023 MONTHS IN SERVICE: 36 SALE MILEAGE: 0
+      WARRANTY COVERAGE
+      COVERAGE TYPE: Powertrain COVERAGE DESCRIPTION: 60 months / 100,000 Kilometres (whichever occurs first)
+      COVERAGE TYPE: Corrosion Perforation COVERAGE DESCRIPTION: 5 years / Unlimited kilometres
+      MARKETING MESSAGES
+      GENERAL WARRANTY INFORMATION
+    </body></html>`
+    const block = oasisWarrantyBlock(parseOasis(metricHtml, vin), 10_000)
+    expect(block.coverages[0]).toMatchObject({
+      type: 'Powertrain',
+      termText: '60 months / 100,000 Kilometres (whichever occurs first)',
+      termMonths: 60,
+      termMiles: 62_137,
+      remainingMiles: 52_137,
+      remainingMilesText: '52,137 miles left',
+      status: 'ACTIVE',
+    })
+    expect(block.coverages[1]).toMatchObject({ type: 'Corrosion Perforation', unlimitedMiles: true, remainingMilesText: 'Unlimited miles left', status: 'ACTIVE' })
+    expect(JSON.stringify(block)).not.toMatch(/\d\s*(?:km|kilomet)(?!res \(whichever)/i)
+  })
 })
 
 describe('shared OASIS grammar', () => {
   it('accepts printed Ford dates and terms while rejecting plan or identity text', () => {
-    expect(isOasisDate('09-June-2023')).toBe(true)
-    expect(isOasisDate('01/16/2029')).toBe(true)
-    expect(isOasisDate('2029-01-16')).toBe(false)
+    expect(isOasisDate('01-June-2023')).toBe(true)
+    expect(isOasisDate('01/01/2029')).toBe(true)
+    expect(isOasisDate('2029-01-01')).toBe(false)
     expect(factoryTermText('5 years / Unlimited miles')).toBe('5 years / Unlimited miles')
     expect(isFactoryCoverageRow('Powertrain', '5 years / 60,000 Miles (whichever occurs first)')).toBe(true)
     expect(isFactoryCoverageRow('PremiumCARE', '8 years / 100,000 Miles')).toBe(false)

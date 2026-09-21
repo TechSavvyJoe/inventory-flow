@@ -1,86 +1,106 @@
-/* Compact scan cards are isolated from the desktop table and retired card themes. */
-.if-srp-mobile-list .if-srp-mobile-row--scan { padding: 10px; }
+/* A composed scan row: identity, operational band, evidence, then actions. */
+.if-srp-mobile-list .if-srp-mobile-row--scan {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-strong);
+  box-shadow: none;
+  scroll-margin-top: calc(64px + env(safe-area-inset-top, 0px));
+}
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__open {
-  grid-template-columns: 96px minmax(0, 1fr);
-  grid-template-rows: 72px auto;
-  gap: 3px 10px;
+  grid-template-columns: 102px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 4px 10px;
   align-items: start;
 }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-vehicle-visual {
-  grid-column: 1; grid-row: 1; width: 96px; height: 72px;
+  grid-column: 1; grid-row: 1; width: 102px; height: 78px;
+  border-radius: 4px; background:var(--surface-muted);
 }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-vehicle-visual img { object-fit:contain; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__main {
-  grid-column: 2; grid-row: 1 / 3; align-self: start; display: block;
+  grid-column: 2; grid-row: 1; align-self: start; display: block; min-width:0;
 }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__title {
-  display: flex; align-items:start; gap:4px; overflow: visible; white-space: normal; text-overflow: clip;
+  display: flex; align-items: start; justify-content:space-between; gap:4px;
+  overflow: visible; white-space: normal; text-overflow: clip;
 }
 .if-srp-mobile-list .inventory-mobile-open-indicator { flex-shrink:0; margin-top:3px; color:var(--blue-700); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__title strong {
-  font-size: 17px; line-height: 1.25; overflow: visible; white-space: normal; overflow-wrap: anywhere;
+  color:var(--ink-900); font:700 16px/1.25 var(--font-app);
+  overflow:visible; white-space:normal; overflow-wrap:anywhere;
 }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation {
-  display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; margin-top: 3px;
+  display:flex; align-items:baseline; flex-wrap:wrap; gap:2px 8px; margin-top:5px;
 }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation > b { font-size: 18px; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation > span { font-size: 14px; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__specification {
-  margin-top: 3px; font-size: 14px; line-height: 1.4;
-}
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation > b { color:var(--navy-900); font:700 19px/1.2 var(--font-app); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation > span { color:var(--ink-600); font:400 13px/1.3 var(--font-app); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__specification { margin-top:4px; color:var(--ink-700); font:400 13px/1.35 var(--font-app); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__identity {
-  grid-column: 1; grid-row: 2; margin: 0; font-size: 14px; line-height: 1.4;
+  grid-column:1 / -1; grid-row:2; display:flex; flex-wrap:wrap; align-items:center;
+  gap:4px 10px; min-height:24px; margin:0; color:var(--ink-600); font:400 12px/1.3 var(--font-app);
 }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__identity > .vehicle-certified-badge { padding-left:10px; border-left:1px solid var(--border-strong); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__identity .vehicle-certified-badge--ford > img { height:28px; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__signals {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 10px; margin-top: 4px;
+  display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:stretch;
+  gap:0; margin:4px 0; padding:0 8px; border-radius:4px; background:var(--surface-soft);
 }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold {
-  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
-  min-height: 44px; gap: 0; padding: 2px 0;
+  display:flex; flex-direction:row; flex-wrap:wrap; align-content:center; align-items:center; justify-content:flex-start;
+  min-height:44px; gap:0 4px; padding:4px 8px 4px 0; color:var(--ink-900); font:400 13px/1.3 var(--font-app);
 }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold > strong { font-weight: 600; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold > span { font-size: 14px; line-height: 1.4; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold--hold > span { color: var(--amber); }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold--unknown > span { color: var(--red); }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-service-link {
-  min-height: 44px; justify-self: stretch; padding: 2px 0; line-height: 1.4;
-}
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold > strong { font:600 13px/1.3 var(--font-app); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold > span { font:400 13px/1.3 var(--font-app); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold > .inventory-mobile-hold__separator { color:var(--ink-500); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold--hold > span:not(.inventory-mobile-hold__separator) { color:color-mix(in srgb,var(--amber) 85%,var(--ink-900)); font-weight:600; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold--unknown > span:not(.inventory-mobile-hold__separator) { color:var(--red); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-service { grid-column:2; grid-row:1; display:flex; align-items:center; gap:5px; min-width:0; padding-left:8px; border-left:1px solid var(--border); color:var(--ink-700); font:500 12px/1.3 var(--font-app); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-service-link { min-width:0; min-height:44px; padding:4px 0; font:500 13px/1.3 var(--font-app); line-height:1.3; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-service-link > span { font:inherit; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-service-link--needs_service { color:color-mix(in srgb,var(--amber) 85%,var(--ink-900)); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-location {
-  display: flex; align-items: center; gap: 5px; margin: 0; padding: 0;
-  font: 400 14px/1.4 var(--font-app); color: var(--ink-600);
+  grid-column:1 / -1; display:flex; align-items:center; gap:5px; margin:0; padding:0 0 5px;
+  color:var(--ink-600); font:400 12px/1.35 var(--font-app);
 }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-update--movement { color: var(--blue-700); }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-update--warning { color: var(--red); }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-location > svg { flex-shrink: 0; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-recall-chip { min-height: 44px; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__resources {
-  display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 0;
-}
-.if-srp-mobile-list .if-srp-mobile-row--scan .vehicle-resources--inline {
-  display:grid; flex:1 1 auto; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; min-width:0;
-}
-/* Keep the two highest-priority available sources; Records exposes every source.
-   Controls are removed from layout/tab order, never clipped offscreen. */
-.if-srp-mobile-list .if-srp-mobile-row--scan .vehicle-resource-inline-item:nth-child(n+3) { display:none; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .vehicle-resource-inline { flex-shrink: 0; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .vehicle-resource-inline[data-resource="vauto"] .vehicle-resource-inline-label { display:none; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .vehicle-resource-inline-item { max-width:none; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__actions { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; margin-top:6px; align-items:center; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__resources { margin-top:4px; border-block:1px solid var(--border-strong); padding-block:4px; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .vehicle-resource-inline-item + .vehicle-resource-inline-item { border-left:1px solid var(--border-strong); padding-left:8px; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .vehicle-resource-inline-facts { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .vehicle-resource-source-note { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-update--movement { color:var(--blue-700); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-update--warning { color:var(--red); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-location > svg { flex-shrink:0; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-manager-disposition { grid-column:1 / -1; padding-bottom:5px; }
+.if-srp-mobile-list .inventory-mobile-row__equipment { margin:0 0 4px; }
+.if-srp-mobile-list .inventory-mobile-row__equipment > span { margin-right:6px; color:var(--ink-600); font:500 12px/1.3 var(--font-app); }
+.if-srp-mobile-list .inventory-mobile-row__equipment > p { display:inline; margin:0; color:var(--ink-700); font:400 13px/1.3 var(--font-app); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__footer { display:flex; flex-direction:column; align-items:stretch; gap:4px; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__resources { display:block; min-width:0; margin:0; padding:4px 0; border-block:1px solid var(--border); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; margin:0; align-items:stretch; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__actions .inv-desk-actions { display:contents; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__actions .inv-desk-action { padding-inline:4px; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__actions [data-row-action="listing"] { margin:0; padding-inline:0; gap:4px; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-actions { margin-top: 0; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action { min-height: 44px; }
-@media (max-width: 360px) {
-  /* At a true 320px phone, reclaim four safe horizontal pixels for the two
-     source summaries. This keeps their 14px evidence readable without
-     reducing the 44px actions or hiding a document fact. */
-  .if-srp-mobile-list .if-srp-mobile-row--scan { padding-inline: 8px; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action {
+  min-height:44px; height:44px; margin:0; padding:4px; border:1px solid transparent; border-radius:4px;
+  color:var(--blue-700); background:transparent; font:600 13px/1.25 var(--font-app); text-decoration:none;
 }
-@media (min-width: 761px) {
-  .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__signals { display: grid; }
-  .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__resources { flex: 0 1 340px; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action:hover { background:var(--blue-050); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action--records {
+  gap:5px; border-color:var(--navy-900); color:var(--surface); background:var(--navy-900);
 }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action--records:is(:hover,:focus-visible,:active,[aria-expanded="true"]) { border-color:var(--blue-700); color:var(--surface); background:var(--blue-700); }
+.if-srp-mobile-list .inv-desk-action--records > svg { flex-shrink:0; transition:transform .16s ease; }
+.if-srp-mobile-list .inv-desk-action--records > svg.is-expanded { transform:rotate(180deg); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__actions [data-row-action="listing"] { margin:0; padding-inline:0; gap:3px; }
+.if-srp-mobile-list .inventory-mobile-records { --records-toolbar-top:calc(var(--top-height, 56px) + var(--safe-top, 0px)); grid-column:1 / -1; min-width:0; margin-top:8px; border-top:1px solid var(--border-strong); }
+.if-srp-mobile-list .inventory-mobile-records > header {
+  display:flex; justify-content:space-between; align-items:center; gap:8px; padding:4px 0;
+  border-bottom:1px solid var(--border); color:var(--ink-900); font:600 14px/1.3 var(--font-app);
+}
+.if-srp-mobile-list .inventory-mobile-records > header > div { min-width:0; }
+.if-srp-mobile-list .inventory-mobile-records > header small { display:block; margin-top:2px; color:var(--ink-600); font:400 12px/1.3 var(--font-app); }
+.if-srp-mobile-list .inventory-mobile-records > header > button { flex-shrink:0; max-width:115px; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-records__close { width:100%; margin-top:8px; border-color:var(--border-strong); background:var(--surface-soft); }
+@media (max-width:360px) {
+  .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__open { grid-template-columns:92px minmax(0,1fr); gap-inline:8px; }
+  .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-vehicle-visual { width:92px; height:76px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .if-srp-mobile-list .inv-desk-action--records > svg { transition:none; }
+}
+
+
+.if-srp-mobile-list .inventory-mobile-row__identity > .inventory-records-launch { margin-left:auto; min-height:44px; }
+.if-srp-mobile-list .inventory-mobile-row__identity { margin-top:4px; }

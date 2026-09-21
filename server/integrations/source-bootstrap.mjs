@@ -22,7 +22,8 @@ function parsedAutoCheck(value) {
 function parsedSticker(value) {
   if (!isObject(value)) return null
   return {
-    ...pick(value, ['dataState', 'originalMarket', 'pricingCurrency', 'pricingCurrencyEvidence', 'vehicleDescription', 'equipmentGroup', 'basePrice', 'totalOptions', 'destinationCharge', 'totalMsrp', 'exteriorColor', 'interiorColor', 'engine', 'transmission']),
+    ...pick(value, ['dataState', 'originalMarket', 'pricingCurrency', 'pricingCurrencyEvidence', 'vehicleDescription', 'equipmentGroup', 'equipmentGroupPrice', 'basePrice', 'totalOptions', 'destinationCharge', 'totalMsrp', 'exteriorColor', 'interiorColor', 'engine', 'transmission']),
+    ...(Array.isArray(value.equipmentGroupContents) ? { equipmentGroupContents: strings(value.equipmentGroupContents) } : {}),
     options: strings(value.options), standardEquipment: strings(value.standardEquipment), warranty: strings(value.warranty),
   }
 }
@@ -40,6 +41,8 @@ function parsedFordOasis(value) {
   if (!isObject(value)) return null
   return {
     ...pick(value, ['dataState', 'capturedAt', 'vehicleDescription', 'versionSeries', 'buildDate', 'warrantyStartDate', 'releaseDate', 'monthsInService', 'saleMileage']),
+    ...Object.fromEntries(['bodyStyle', 'driveType', 'paintColor', 'paintCode', 'engine', 'engineCalibration', 'transmission', 'axleRatio', 'axleCode', 'grossVehicleWeight', 'wheelSize', 'tire', 'syncVersion', 'fuelType'].map(key => [key, text(value[key])?.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').slice(0, 160) ?? null])),
+    openActionsCaptured: value.openActionsCaptured === true && Array.isArray(value.openFieldServiceActions),
     openFieldServiceActions: list(value.openFieldServiceActions).filter(isObject).map(item => pick(item, ['code', 'description'])),
     warrantyCoverages: list(value.warrantyCoverages).filter(isObject).map(item => pick(item, ['type', 'description'])),
     extendedCoverageExpirations: strings(value.extendedCoverageExpirations),

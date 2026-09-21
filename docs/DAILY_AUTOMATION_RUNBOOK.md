@@ -1,4 +1,4 @@
-# Daily automation runbook (dt-4094)
+# Daily automation runbook (the automation PC)
 
 Set up 09/11/2026, rewritten 09/14/2026 after the browser moved to Comet, the
 capture steps became scripted, and the multi-service keeper became a Windows task. Companion to
@@ -19,14 +19,14 @@ stay ISO on purpose (the pipeline matches on them).
 
 The Claude and Codex tasks never publish. The publish is a production deploy and is
 refused inside unattended AI sessions, so it lives in a Windows task that has no
-such gate and runs as JoeGallant (which is what lets the DPAPI secret bundle
+such gate and runs as the automation account (which is what lets the DPAPI secret bundle
 decrypt). The Claude task only *verifies* the publish by reading the receipt and
 the Windows task's log, and may `Start-ScheduledTask` it once if the manifest
 completed after the last scheduled slot.
 
 ## Windows scheduled tasks
 
-All three are registered for JoeGallant with logon type **Interactive**: they
+All three are registered for the automation account with logon type **Interactive**: they
 run while Joe is logged on (a locked screen is fine; a full log-off or a reboot
 to the login screen is not). To run logged-off, open Task Scheduler, tick
 *Run whether user is logged on or not*, and enter the Windows password. DPAPI
@@ -104,17 +104,16 @@ Cloudflare runbook's lock rules.
   3-ID allowlist, and Microsoft Edge is locked down identically, so the Claude
   in Chrome extension cannot be installed in ANY Chrome or Edge profile here.
   Comet is Chromium with no policy key at all, so extensions install normally.
-  The old Chrome launcher is kept as
-  `scripts\start-automation-browser.ps1.chrome-backup`; do not switch back.
+  The old Chrome launcher has been removed from the repo; do not switch back.
 - Purpose: a browser Joe never works in, so nothing he does during the day
   (closing tabs, restarting his own Comet, logging out of sites) can disturb
   the sessions the pipeline depends on. It has its own cookies, saved logins and
   extensions.
 
 State as of 09/12/2026: the Claude in Chrome extension is installed in that
-profile and the browser is registered to Joe's Claude account as
-**"Work PC Automation Browser"**, deviceId
-`daa0cb94-de65-423f-815f-e1e365b200ed`. The daily task selects it by that
+profile and the browser is registered to Joe's Claude account as **"Work PC
+Automation Browser"**, deviceId `<automation-browser-device-id>` (a placeholder
+the operator fills in with the real deviceId). The daily task selects it by that
 deviceId and never acts in any other connected browser (the others are Joe's
 personal ones, two of them on a Mac). DealerMail, vAuto/Provision and FMCDealer
 are signed in inside it; Comet holds those credentials in this profile's own
@@ -130,7 +129,7 @@ device.
 
 ### BobMaxey-DealerMailKeeper
 
-- Action: `C:\Users\JoeGallant\AppData\Local\OpenClaw\deps\portable-node\node.exe scripts\keep-dealermail-alive.mjs --workspace-root <reporting-workspace>`
+- Action: `%USERPROFILE%\AppData\Local\OpenClaw\deps\portable-node\node.exe scripts\keep-dealermail-alive.mjs --workspace-root <reporting-workspace>`
   (cwd `apps\inventory-ops`). The explicit workspace protects snapshots and
   status files when the app folder is reached through a Windows junction.
 - Trigger: registered 09/12/2026 11:50 as a one-shot that repeats every 10 min
@@ -183,7 +182,7 @@ manifest warnings. In order:
 | Step | What it does | Notes |
 |---|---|---|
 | 0 Idempotency | If `work\app-feed-status\{date}.json` is already `published_and_verified`, message Joe the counts and stop. | |
-| 1 Browser | `list_connected_browsers`, then `select_browser` deviceId `daa0cb94-...` ("Work PC Automation Browser"). If absent, run `start-automation-browser.ps1`, wait 60 s, retry once; if still absent, skip every browser step (3, 3.7, 3.8, 7) and still finish 2/4/5. | Never picks another browser, never uses Chrome. |
+| 1 Browser | `list_connected_browsers`, then `select_browser` deviceId `<automation-browser-device-id>` ("Work PC Automation Browser"). If absent, run `start-automation-browser.ps1`, wait 60 s, retry once; if still absent, skip every browser step (3, 3.7, 3.8, 7) and still finish 2/4/5. | Never picks another browser, never uses Chrome. |
 | 2 Public inventory + resource enrichment | Produces `snapshots\{date}-public.json` and the base workbook. AutoCheck, photos and window stickers come from the dealer VDP/API feeds. | Ford placeholder PDFs ("not yet been released") are labelled `not_released_by_ford`, not failures. |
 | 2.5 Vehicle Resources | `python work\add_resources_sheet.py --report-date {date}` | Run, do not edit. |
 | 3 DealerMail capture | `node apps\inventory-ops\scripts\capture-dealermail.mjs run {date} --budget-ms 900000` performs the complete read-only grid, exclude-holds, live-holds, detail, comment/alert and CDK capture over localhost CDP and writes the five raw files the existing builder consumes. | Never submits, holds, releases or comments. `SESSION_EXPIRED` is detected from DealerMail's actual `Session Ended` signature, not a password field. |
@@ -270,7 +269,7 @@ why and exits 2, touching nothing. Each pointer is backed up first as
 
 | Path | Change |
 |---|---|
-| `apps\inventory-ops\scripts\start-automation-browser.ps1` | Rewritten for Comet (see the task above); adds `--remote-debugging-port=9222`. Old version kept as `.chrome-backup`. |
+| `apps\inventory-ops\scripts\start-automation-browser.ps1` | Rewritten for Comet (see the task above); adds `--remote-debugging-port=9222`. Old version removed from the repo. |
 | `apps\inventory-ops\scripts\keep-dealermail-alive.mjs` | NEW. Durable DealerMail keeper: one credentialed grid fetch inside the authenticated Comet tab over CDP on 127.0.0.1:9222, every 10 min from the Windows task; writes `dealermail-keeper.json` + `.log`; exit 1 = `SESSION_EXPIRED`/`ERROR`. Reads no credentials. |
 | `apps\inventory-ops\scripts\dryrun_manager_disposition_check.mjs` | NEW. Dry-run oracle: loads the release through the REAL importer (manifest gate + the exact manifest-bound `*-operational.json` loader), builds the same cloud bundle `publish-cloud-release.mjs` builds, runs the real `validateReleaseBundle`, prints the manager-disposition counts. `node scripts\dryrun_manager_disposition_check.mjs [date]`. Never publishes. |
 | `work\build_v2_snapshot.mjs` | Now takes the report date as argv[2] (was hardcoded to 09/11). Builds the v2 DealerMail snapshot from the three raw captures and validates it with the real `importer.mjs validateDealerMailSnapshot()`. Its data paths are relative to the cwd: **run it from `work\`**. |
@@ -286,9 +285,10 @@ why and exits 2, touching nothing. Each pointer is backed up first as
 | `work\advance_latest_pointer.py` | NEW. See "Baseline pointers" above. |
 
 Git: only `apps\inventory-ops` is a repository; `work\` is not under version
-control. As of this writing the Comet launcher edit, `keep-dealermail-alive.mjs`,
-`dryrun_manager_disposition_check.mjs` and the `.chrome-backup` are uncommitted
-there - commit them when convenient so a `git checkout .` cannot wipe them.
+control. The old Chrome launcher has been removed from the repository, and as
+of this writing the Comet launcher edit, `keep-dealermail-alive.mjs` and
+`dryrun_manager_disposition_check.mjs` are uncommitted there - commit them when
+convenient so a `git checkout .` cannot wipe them.
 
 ## Known data facts (verified 09/12/2026)
 
@@ -313,20 +313,20 @@ there - commit them when convenient so a `git checkout .` cannot wipe them.
 - AutoCheck is already fully captured through the dealer VDPs (226 of 226 on
   09/12) via `publicRecord`. No further AutoCheck work is needed. DealerMail's
   own AUTOCHECK button opens whatever report is loaded in the dealership's
-  shared seat, not the row's VIN (tested: clicked the 2023 Escape, got a 2020
-  F-150) - not safe to automate.
+  shared seat, not the row's VIN (tested: clicked one row and got an unrelated
+  vehicle's report) - not safe to automate.
 - `resourceRecord.autoCheckReport.url` must be a canonical `autocheck.com`
   report link and `factoryEquipment.url` must be an `assets.cai-media-management.com`
   image. Dealer-hosted proxy links never pass, by design. Do not widen either
   validator; those two `resourceRecord` fields are a separate, narrower channel
   from `publicRecord`.
-- Stock SGL02594 (2025 Aviator Reserve): feed MSRP $29,995 is a DealerOn error;
+- One 2025 Aviator Reserve: feed MSRP $29,995 is a DealerOn error;
   sticker MSRP is $78,630. Preserved and flagged in Data Quality, not corrected.
 - ~40 Ford stickers overstate *Total Options* by the package discount. Base
   price and total MSRP are correct as printed. Left alone at Joe's request.
-- The 09/12 published workbook is the 13-sheet build (hash
-  `827257C6...`); the Ford OASIS and Ford Invoice sheets were written after
-  that publish and first ship with the next run.
+- The 09/12 published workbook is the 13-sheet build (the hash recorded in
+  the publish receipt); the Ford OASIS and Ford Invoice sheets were written
+  after that publish and first ship with the next run.
 
 ## vAuto / Provision factory equipment (STEP 3.95 of the daily task, and Step 1.4 of the publish)
 
@@ -375,7 +375,7 @@ Two sources, in priority order:
    browser, no clicking, no login - the report URL is already in the public snapshot.
 
 **Why OASIS wins for Ford/Lincoln:** AutoCheck's term table is generic. On
-3FMCR9BN0SRE88025 it lists Basic as *60 months*, so it reports 45 months left; Ford's
+one 2024 Escape it lists Basic as *60 months*, so it reports 45 months left; Ford's
 actual bumper-to-bumper is 3yr/36k, so the true figure is **22 months**. Miles agree
 (both cap at 36,000) but time does not. Quoting the AutoCheck number on a Ford would
 overstate coverage by two years. Ford and Lincoln factory coverage transfers to the
@@ -431,7 +431,7 @@ FMCDealer tab over CDP. Builds `work\\oasis-vin-worklist-{date}.json` and writes
 category and expiration date only - no owner name is ever parsed or stored.
 
 **Parsing.** Once tags are stripped, a value runs straight into the next label
-("...SERIES 10 PAINT COLOR: ..."). A lookahead for "next ALL-CAPS run + colon" does NOT
+("...SERIES 00 PAINT COLOR: ..."). A lookahead for "next ALL-CAPS run + colon" does NOT
 work: the caps class must allow spaces, so it bridges across the value and matches a colon
 much further on - that truncated `2022 F-SUPER DUTY` to `2022` and `Oxford White WB C/C` to
 `Oxford`. The script scans the known label set and takes each value as the text between its
@@ -470,12 +470,12 @@ the browser - that costs the logins.
 ## The baseline pointer survives a locked `latest.json`
 
 `advance_latest_pointer.py` used `os.replace`, which needs delete rights on the destination.
-Something local on dt-4094 keeps an open handle on `work\\inventory-history\\latest.json`
+Something local on the automation PC keeps an open handle on `work\\inventory-history\\latest.json`
 that permits WRITES but blocks the delete a rename implies, so `os.replace` raised
 `PermissionError/WinError 5` while the file was perfectly writable. That blocked the 09/14
 advance even though the publish had succeeded, which would have left the next day's Daily
 Changes diffing against a stale snapshot. (The workspace is NOT in a OneDrive sync root -
-`Documents` is redirected, but this tree lives in the non-redirected `C:\\Users\\JoeGallant\\Documents`
+`Documents` is redirected, but this tree lives in the non-redirected `%USERPROFILE%\\Documents`
 with no reparse point - so the holder is one of the local agents, not OneDrive.)
 It now falls back to writing the bytes in place. Not atomic, but the temp file is byte-verified
 against the source first and the existing post-write check re-verifies the pointer's date key
@@ -519,8 +519,8 @@ feed, despite what the old comment claimed. The CRM and the public DealerOn feed
 can be sold in the CRM before it leaves the website, or be entered before it is published.
 
 `final_check12.py` asserted `dealermail_rows == master_rows` exactly. On 09/14/2026 an ordinary
-three-VIN skew (1FTER4FH6MLD87772 and 5LM5J7XC9SGL02594 public but not in the CRM,
-2FMPK4K9XGBC64506 in the CRM but no longer public) made that fatal and blocked the publish,
+three-VIN skew (two VINs public but not in the CRM and one in the CRM but no
+longer public) made that fatal and blocked the publish,
 while both captures had passed their own validators. It now prints `crm_public_drift:` and
 fails only beyond `max(5, 2% of master)` - a real capture failure rather than operational skew.
 Tighten the tolerance if the two systems are ever expected to agree exactly.

@@ -2317,7 +2317,8 @@
         "additionalProperties": false,
         "required": [
           "data",
-          "meta"
+          "meta",
+          "version"
         ],
         "properties": {
           "data": {
@@ -2325,6 +2326,45 @@
           },
           "meta": {
             "$ref": "#/components/schemas/Meta"
+          },
+          "version": {
+            "$ref": "#/components/schemas/WorkerVersion"
+          }
+        }
+      },
+      "WorkerVersion": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "description": "Cloudflare version metadata of the Worker that answered, read from its version_metadata binding. Null when the binding is not configured (local development and tests). Identifies the deployed code, never the freshness of the data it serves.",
+        "additionalProperties": false,
+        "required": [
+          "versionId",
+          "versionTag",
+          "versionTimestamp"
+        ],
+        "properties": {
+          "versionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Cloudflare Worker version id, as listed by wrangler deployments list."
+          },
+          "versionTag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tag passed to wrangler deploy --tag; the repository deploy scripts use the source git short SHA."
+          },
+          "versionTimestamp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the version was created, as reported by Cloudflare."
           }
         }
       },

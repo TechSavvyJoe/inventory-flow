@@ -24,7 +24,7 @@ function fixture() {
     hold: { state: 'multiple', backupCount: 1, customerOrReason: PRIVATE, primarySalesperson: PRIVATE, raw: { notes: PRIVATE } },
     movement: { state: 'arrived', currentLocation: 'Lincoln', destination: 'Lincoln', locationConfidence: 'verified', departedAt: '2026-09-08T12:00:00Z', lastConfirmedAt: '2026-09-09T12:00:00Z', notes: PRIVATE, actor: PRIVATE, newRequestBlocked: true },
     autoCheckReport: { dataState: 'current', score: 90, checks: [{ label: 'Accident', status: 'No issue reported', detail: 'No accident reported', raw: PRIVATE }], url: PRIVATE, raw: PRIVATE },
-    windowSticker: { dataState: 'current', equipmentGroup: '302A', options: ['TRAILER TOW PACKAGE'], standardEquipment: ['SYNC 4'], warranty: ['3YR/36000'], raw: PRIVATE, url: PRIVATE },
+    windowSticker: { dataState: 'current', equipmentGroup: '302A', equipmentGroupContents: ['Synthetic included camera'], equipmentGroupPrice: 0, options: ['TRAILER TOW PACKAGE'], standardEquipment: ['SYNC 4'], warranty: ['3YR/36000'], raw: PRIVATE, url: PRIVATE },
     factoryEquipment: { dataState: 'current', packages: [{ name: 'FX4', code: '55A', price: 1095, features: ['Hill descent'], raw: PRIVATE }], sections: [{ name: 'Safety', items: [{ label: 'Lane keeping', price: 0, raw: PRIVATE }], raw: PRIVATE }], raw: PRIVATE, url: PRIVATE },
     fordOasis: { dataState: 'current', capturedAt: '2026-09-09T12:00:00Z', vehicleDescription: '2024 Ford F-150', versionSeries: 'F-150', buildDate: '2024-01-01', warrantyStartDate: '2024-02-01', releaseDate: '2024-01-05', monthsInService: 31, saleMileage: 10, openFieldServiceActions: [{ code: '24B01', description: 'Field service action', raw: PRIVATE }], warrantyCoverages: [{ type: 'Basic', description: '36 months / 36,000 miles', raw: PRIVATE }], extendedCoverageExpirations: ['2029-02-01'], raw: PRIVATE },
     warrantyCheck: { dataState: 'current', capturedAt: '2026-09-09T12:00:00Z', mileageEntered: 2052, mileageSource: 'Public listing', autoCheck: { inServiceDate: '2024-02-01', inServiceAgeMonths: 31, defaultMileage: 12000, coverages: [{ type: 'Basic', termText: '36 months / 36,000 miles', remainingMilesText: '33,948 miles', remainingTimeText: '5 months', status: 'estimated', note: PRIVATE, raw: PRIVATE }] }, raw: PRIVATE },
@@ -45,6 +45,39 @@ function read(bootstrap) {
 }
 
 describe('integration public-source bootstrap', () => {
+  it('preserves only bounded technical OASIS text through bootstrap and resource projections', () => {
+    const { bootstrap, release } = fixture()
+    const technicalFields = {
+      bodyStyle: 'CREW CAB', driveType: '4X4', paintColor: 'SYNTHETIC WHITE', paintCode: 'YZ',
+      engine: '3.5L V6', engineCalibration: 'DEMO-CAL', transmission: '10 SPEED',
+      axleRatio: '3.73', axleCode: 'EL', grossVehicleWeight: '7,400 LB', wheelSize: '20 IN',
+      tire: '275/60R20', syncVersion: 'SYNC 4', fuelType: 'GASOLINE',
+    }
+    Object.assign(bootstrap.vehicles[0].fordOasis, technicalFields, { ownerName: PRIVATE, customer: { name: PRIVATE } })
+    const projected = integrationBootstrapFromSource(bootstrap, release)
+    expect(projected.vehicles[0].fordOasis).toMatchObject(technicalFields)
+    expect(read(projected).vehicleResources(VIN).data.fordOasis).toMatchObject(technicalFields)
+    expect(JSON.stringify(projected.vehicles[0].fordOasis)).not.toContain(PRIVATE)
+    expect(JSON.stringify(read(projected).vehicleResources(VIN))).not.toContain(PRIVATE)
+
+    Object.assign(bootstrap.vehicles[0].fordOasis, { engine: { ownerName: PRIVATE }, axleRatio: 3.73, engineCalibration: `DEMO\u0000${'X'.repeat(180)}` })
+    const sanitized = integrationBootstrapFromSource(bootstrap, release)
+    for (const resource of [sanitized.vehicles[0].fordOasis, read(sanitized).vehicleResources(VIN).data.fordOasis]) {
+      expect(resource.engine).toBeNull()
+      expect(resource.axleRatio).toBeNull()
+      expect(resource.engineCalibration).toBe(`DEMO${'X'.repeat(156)}`)
+      expect(JSON.stringify(resource)).not.toContain(PRIVATE)
+    }
+  })
+  it.each([undefined, false, true])('preserves explicit OASIS action evidence through both projections: %s', (flag) => {
+    const { bootstrap, release } = fixture()
+    bootstrap.vehicles[0].fordOasis.openFieldServiceActions = []
+    bootstrap.vehicles[0].fordOasis.openActionsCaptured = flag
+    const projected = integrationBootstrapFromSource(bootstrap, release)
+    expect(projected.vehicles[0].fordOasis.openActionsCaptured).toBe(flag === true)
+    expect(read(projected).vehicleResources(VIN).data.fordOasis).toMatchObject({ openFieldServiceActions: [], openActionsCaptured: flag === true })
+  })
+
   it('replaces app/CRM fallback fields with exact public values and source physical store', () => {
     const { bootstrap, release } = fixture()
     const result = integrationBootstrapFromSource(bootstrap, release)
@@ -83,6 +116,8 @@ describe('integration public-source bootstrap', () => {
     expect(result.managerDispositions).toEqual([{ stockNumber: '0001PUBLIC', vin: VIN, vehicleName: '2024 Ford F-150 XLT', soldManagerLog: true, deliveredManagerLog: true, deliveryDate: '2026-09-09', confidence: 'high', sourceStore: 'Howell', sourcePeriod: '2026-09', matchMethod: 'vin', matchStatus: 'matched', physicalStore: 'Howell', reviewRequired: false }])
     expect(result.meta.managerDispositionCoveredSourceStores).toEqual(['Howell'])
     expect(result.vehicles[0].windowSticker.options).toEqual(['TRAILER TOW PACKAGE'])
+    expect(result.vehicles[0].windowSticker.equipmentGroupContents).toEqual(['Synthetic included camera'])
+    expect(result.vehicles[0].windowSticker.equipmentGroupPrice).toBe(0)
     expect(result.vehicles[0].factoryEquipment.sections[0].items).toEqual([{ label: 'Lane keeping', price: 0 }])
     expect(result.vehicles[0].fordOasis.openFieldServiceActions).toEqual([{ code: '24B01', description: 'Field service action' }])
     expect(result.vehicles[0].warrantyCheck.autoCheck.coverages[0]).toMatchObject({ type: 'Basic', status: 'estimated' })

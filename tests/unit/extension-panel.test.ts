@@ -58,7 +58,7 @@ describe('extension working-store workflow and identity reset', () => {
     expect(api.vehicle).not.toHaveBeenCalled()
   })
 
-  it('uses a compact scan line while retaining the full captured-source context', async () => {
+  it('shows both captured decision facts directly in the inventory row', async () => {
     const record = {...vehicle(), autoCheckReport:{ dataState:'stale', score:91, ownerCount:1, checks:[{ label:'Title', status:'No title brands found' }, { label:'Odometer', status:'No issue found' }] }}
     api.bootstrap.mockResolvedValue({...bootstrap(),vehicles:[record]})
     await import('../../extension/sidepanel/panel.js')
@@ -66,11 +66,13 @@ describe('extension working-store workflow and identity reset', () => {
     const documents = document.querySelector('.row-documents')
     const summary = documents.querySelector('[data-resource="autocheck"]')
     const fact = summary.querySelector('.row-doc-facts')
-    expect(documents.getAttribute('aria-label')).toContain('complete records and source links')
+    expect(documents.getAttribute('aria-label')).toContain('complete details')
     expect(fact.querySelector(':scope > span:not(.visually-hidden)').textContent).toContain('Score 91')
     expect(fact.title).toContain('Title: No title brands found')
     expect(fact.textContent).toContain('Title: No title brands found')
-    expect(summary.querySelector('.row-doc-note').getAttribute('aria-label')).toContain('Saved report · refresh at source')
+    expect(fact.querySelector('.row-doc-secondary').textContent).toContain('Title: No title brands found')
+    expect(fact.querySelector('.visually-hidden')).toBeNull()
+    expect(summary.querySelector('.row-doc-note').getAttribute('aria-label')).toContain('refresh at source')
   })
 
   it('keeps source-open actions separate from captured detail navigation', async () => {
@@ -123,8 +125,8 @@ describe('extension working-store workflow and identity reset', () => {
     await vi.waitFor(()=>expect(document.querySelector('.detail-calculator-toggle')).not.toBeNull())
     document.querySelector('.detail-calculator-toggle').click()
     await waitForText('#detail','Factory warranty estimate')
-    expect(document.querySelector('.warr').textContent).toContain('OASIS recorded warranty start:')
-    expect(document.querySelector('.warr').textContent).toContain('calculator below uses the AutoCheck estimate')
+    expect(document.querySelector('.warr').textContent).toContain('Warranty start · OASIS')
+    expect(document.querySelector('.warr').textContent.match(/03\/14\/2024/g)).toHaveLength(1)
   })
 
   it('uses authentic provider assets and retains captured report facts without substituting CARFAX', async () => {
@@ -140,7 +142,7 @@ describe('extension working-store workflow and identity reset', () => {
     await vi.waitFor(() => expect(document.querySelector('.doc-autocheck img')).not.toBeNull())
     expect(document.querySelector('.doc-autocheck img')?.getAttribute('src')).toBe('../resource-brands/autocheck.svg')
     expect(document.querySelector('.doc-vauto img')?.getAttribute('src')).toBe('../resource-brands/vauto.svg')
-    expect(document.querySelector('.doc-autocheck')?.getAttribute('aria-label')).toBe('View captured AutoCheck history')
+    expect(document.querySelector('.doc-autocheck')?.getAttribute('aria-label')).toBe('View AutoCheck history')
     expect(document.querySelector('.doc-autocheck')?.disabled).toBe(false)
     document.querySelector('.doc-autocheck').click()
     expect(document.querySelector('#tab-records')?.getAttribute('aria-selected')).toBe('true')
@@ -213,6 +215,56 @@ describe('extension working-store workflow and identity reset', () => {
     expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:4173/updates?view=new')
     document.querySelector('#workspace-links [aria-label="Price changes (opens in app)"]').click()
     expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:4173/updates?view=price')
+  })
+
+  it('opens a direct move for a manager viewing inventory owned by their store', async () => {
+    const { openUrl } = await import('../../extension/sidepanel/lib/host.mjs')
+    api.bootstrap.mockResolvedValue(bootstrap('Howell', 'manager'))
+    await import('../../extension/sidepanel/panel.js')
+    await waitForText('#rows', 'DEMO-H01')
+    document.querySelector('#row-TESTDATAHWELL0001').click()
+    await waitForText('.dock-primary', 'Move vehicle')
+    document.querySelector('.dock-primary button:last-child').click()
+    expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:4173/transfers/new?vin=TESTDATAHWELL0001&intent=direct')
+  })
+
+  it('opens an inbound request for a salesperson viewing another store\'s vehicle', async () => {
+    const { openUrl } = await import('../../extension/sidepanel/lib/host.mjs')
+    api.bootstrap.mockResolvedValue(bootstrap('Howell', 'sales'))
+    await import('../../extension/sidepanel/panel.js')
+    await waitForText('#rows', 'DEMO-H01')
+    document.querySelector('#expand-stores button').click()
+    document.querySelector('#row-TESTDATALNCN00001').click()
+    await waitForText('.dock-primary', 'Request vehicle')
+    document.querySelector('.dock-primary button:last-child').click()
+    expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:4173/transfers/new?vin=TESTDATALNCN00001&intent=request')
+  })
+
+  it('keeps View move and adds Move again for a server-authorized active direct move', async () => {
+    const { openUrl } = await import('../../extension/sidepanel/lib/host.mjs')
+    const reroutable = {
+      ...vehicle(),
+      movement: {
+        transferId: 'direct-move-1',
+        state: 'at_requesting_store',
+        currentLocation: 'Ford Detroit',
+        locationConfidence: 'verified',
+        newRequestBlocked: true,
+        canDirectReroute: true,
+      },
+    }
+    api.bootstrap.mockResolvedValue({ ...bootstrap('Howell', 'group_manager'), vehicles: [reroutable] })
+    api.vehicle.mockResolvedValue(reroutable)
+    await import('../../extension/sidepanel/panel.js')
+    await waitForText('#rows', 'DEMO-H01')
+    document.querySelector('#row-TESTDATAHWELL0001').click()
+    await waitForText('.dock-primary', 'Move again')
+    const dock = document.querySelector('.dock-primary')
+    expect(dock.textContent).toContain('View move')
+    dock.querySelectorAll('button')[1].click()
+    expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:4173/transfers?id=direct-move-1')
+    dock.querySelectorAll('button')[2].click()
+    expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:4173/transfers/new?vin=TESTDATAHWELL0001&intent=direct')
   })
 
   it('keeps Held local, expands explicitly, then returns to the working store with the query intact', async () => {

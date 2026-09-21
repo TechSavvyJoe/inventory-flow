@@ -135,6 +135,8 @@ describe('AdminPage read-only overview', () => {
     expect(within(feedTable).getByText('No issues')).toBeInTheDocument()
     expect(within(feedTable).getByText('No issue detail reported')).toBeInTheDocument()
     expect(within(feedTable).getByText('248')).toBeInTheDocument()
+    expect(within(feedTable).queryByRole('link', { name: /feed status/i })).not.toBeInTheDocument()
+    expect(within(feedTable).getAllByRole('columnheader')).toHaveLength(5)
 
     const auditTable = screen.getByRole('table', { name: 'Recent read-only audit activity' })
     expect(within(auditTable).getByText('Service started')).toBeInTheDocument()

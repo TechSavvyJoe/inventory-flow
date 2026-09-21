@@ -11,7 +11,7 @@ export function getDemoWindowSticker(vehicle: { vin: string; imageUrl?: string |
   if (!photo || ![vehicle.imageUrl, ...(vehicle.imageUrls ?? [])].includes(`/demo-vehicles/${photo}.png`)) return null
   return {
     url: `/demo-documents/window-sticker.html?vehicle=${encodeURIComponent(vehicle.vin)}`,
-    previewUrl: vehicle.vin === 'TESTDATAHWELL0001' ? '/demo-documents/window-sticker-preview.png' : undefined,
+    previewUrl: `/demo-documents/window-sticker-${vehicle.vin}.png`,
     label: 'Demo window sticker' as const,
   }
 }

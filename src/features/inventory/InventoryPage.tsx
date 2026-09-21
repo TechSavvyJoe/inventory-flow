@@ -1,33 +1,45 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useWorkspaceState } from '../../lib/workspace-memory'
+import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus'
+import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { groupStores, inventoryMetrics, inventoryStore, toInventoryVehicle } from '../../app/adapters'
 import { SourceWarning } from '../../components/SourceWarning'
-import { getVehicle } from '../../lib/api'
+import { ApiError, getVehicle } from '../../lib/api'
 import type { VehicleRecord } from '../../types'
-import type { InventoryScope, InventoryVehicle, VehicleWorkspaceTab } from './types'
+import type { InventoryExperienceProps, InventoryScope, InventoryVehicle, VehicleWorkspaceTab } from './types'
 import { InventoryExperience } from './InventoryExperience'
-import { canRequestVehicleMove, movementTrackingPath, transferByVin } from './inventory-utils'
+import { canRequestVehicleMove, movementTrackingPath, transferByVin, vehicleMoveAction } from './inventory-utils'
 import {
   hasInventorySearchRequest,
   inventorySearchAccessContext,
+  readWorkspaceReturnPath,
   readInventorySearchRequest,
   stripLegacyInventorySearchQuery,
+  currentWorkspaceReturnPath,
+  withWorkspaceReturnPath,
+  workspaceReturnLabel,
 } from './inventory-navigation'
 
 
-export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
+export function InventoryPage({ homeMode = false, experienceComponent: Experience = InventoryExperience }: { homeMode?: boolean; experienceComponent?: ComponentType<InventoryExperienceProps> }) {
   const { data, homeStore, role, currentUser } = useAppData()
   const [params] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const [scope, setScope] = useState<InventoryScope>('home')
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null)
-  const [vehicleDetails, setVehicleDetails] = useState<Record<string, VehicleRecord>>({})
-  const requestedScope: InventoryScope = params.get('scope') === 'group' ? 'group' : 'home'
   const accessContext = inventorySearchAccessContext(role, homeStore, currentUser)
+  const [scope, setScope] = useWorkspaceState<InventoryScope>(accessContext, 'inventory.scope', 'home')
+  const [vehicleDetails, setVehicleDetails] = useState<{ context: string; source: typeof data; records: Record<string, VehicleRecord> }>({ context: accessContext, source: data, records: {} })
+  const [detailRequest, setDetailRequest] = useState<{ key: string; state: VehicleDetailLoadState }>({ key: '', state: 'loading' })
+  const [detailRetry, setDetailRetry] = useState(0)
+  const requestedScope: InventoryScope = params.has('scope') ? params.get('scope') === 'group' ? 'group' : 'home' : scope
+  const nextSelectionScope = useRef(requestedScope)
+  nextSelectionScope.current = requestedScope
   const requestedVin = params.get('vin')?.trim().toUpperCase() || null
-  const openedLinkRef = useRef('')
+  // A vehicle is a navigable workspace. The URL owns selection so browser
+  // Back/Forward cannot resurrect a selection remembered by an earlier visit.
+  const selectedVehicleId = requestedVin && data?.vehicles.some(vehicle => vehicle.vin === requestedVin) ? requestedVin : null
+  const workspaceReturnPath = readWorkspaceReturnPath(params.get('returnTo'))
   const previousAccessContextRef = useRef(accessContext)
   const navigationRequest = readInventorySearchRequest(location.state, accessContext)
   const legacyQuery =
@@ -35,33 +47,33 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
       ? (params.get('q') || '').trim()
       : null
   const incomingQuery = navigationRequest?.query ?? legacyQuery
-  const [rememberedSearch, setRememberedSearch] = useState(() => ({
+  const [rememberedSearch, setRememberedSearch] = useWorkspaceState(accessContext, 'inventory.navigationSearch', () => ({
     accessContext,
     query: incomingQuery ?? '',
+    requestKey: incomingQuery !== null ? location.key : 'initial',
   }))
+  const queryRequestKey = incomingQuery !== null ? location.key : rememberedSearch.requestKey
   const query =
     incomingQuery ?? (rememberedSearch.accessContext === accessContext ? rememberedSearch.query : '')
-  const detailContext = `${accessContext}:${requestedScope}:${query}`
-  const previousDetailContextRef = useRef(detailContext)
 
   const vehicles = useMemo(() => {
     if (!data) return []
     const transfers = transferByVin(data.transfers)
     return data.vehicles.map((vehicle) => {
-      const cachedDetail = vehicleDetails[vehicle.vin]
+      const cachedDetail = vehicleDetails.context === accessContext && vehicleDetails.source === data ? vehicleDetails.records[vehicle.vin] : undefined
       // Service is live operational data: do not let an earlier detail fetch
       // mask a manager's newer update delivered by the bootstrap refresh.
       const detailed = cachedDetail ? { ...cachedDetail, serviceReadiness: vehicle.serviceReadiness } : vehicle
       return toInventoryVehicle(detailed, data, transfers.get(vehicle.vin))
     })
-  }, [data, vehicleDetails])
+  }, [accessContext, data, vehicleDetails])
 
   useEffect(() => {
     const contextChanged = previousAccessContextRef.current !== accessContext
     if (contextChanged) {
-      setRememberedSearch({ accessContext, query: '' })
+      setRememberedSearch({ accessContext, query: '', requestKey: 'initial' })
     } else if (incomingQuery !== null) {
-      setRememberedSearch({ accessContext, query: incomingQuery })
+      setRememberedSearch({ accessContext, query: incomingQuery, requestKey: location.key })
     }
 
     if (params.has('q') || hasInventorySearchRequest(location.state)) {
@@ -76,61 +88,89 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
     }
 
     previousAccessContextRef.current = accessContext
-  }, [accessContext, incomingQuery, location.hash, location.pathname, location.search, location.state, navigate, params])
-
-  useEffect(() => {
-    if (previousDetailContextRef.current === detailContext) return
-    previousDetailContextRef.current = detailContext
-    setVehicleDetails({})
-    setSelectedVehicleId(null)
-  }, [detailContext])
+  }, [accessContext, incomingQuery, location.key, location.hash, location.pathname, location.search, location.state, navigate, params])
 
   useEffect(() => {
     setScope(requestedScope)
-  }, [query, requestedScope])
+  }, [requestedScope, setScope])
 
+  const detailKey = `${accessContext}:${selectedVehicleId ?? ''}`
+  const activeDetail = vehicleDetails.context === accessContext && vehicleDetails.source === data && selectedVehicleId ? vehicleDetails.records[selectedVehicleId] : undefined
   useEffect(() => {
-    const key = `${accessContext}:${location.key}`
-    if (!requestedVin || !data || openedLinkRef.current === key) return
-    if (data.vehicles.some(vehicle => vehicle.vin === requestedVin)) {
-      openedLinkRef.current = key
-      setSelectedVehicleId(requestedVin)
-    }
-  }, [accessContext, data, location.key, requestedVin])
-
-  useEffect(() => {
-    if (!selectedVehicleId || vehicleDetails[selectedVehicleId]) return
+    if (!selectedVehicleId || !data || activeDetail) return
     let canceled = false
-    void getVehicle(selectedVehicleId, role, homeStore)
-      .then((detail) => {
-        if (!canceled) setVehicleDetails((current) => ({ ...current, [detail.vin]: detail }))
+    const controller = new AbortController()
+    setDetailRequest({ key: detailKey, state: 'loading' })
+    void getVehicle(selectedVehicleId, role, homeStore, controller.signal)
+      .then(detail => {
+        if (canceled) return
+        if (detail.vin !== selectedVehicleId) { setDetailRequest({ key: detailKey, state: 'failed' }); return }
+        setVehicleDetails(current => ({ context: accessContext, source: data, records: { ...(current.context === accessContext && current.source === data ? current.records : {}), [detail.vin]: detail } }))
+        setDetailRequest({ key: detailKey, state: 'ready' })
       })
-      .catch(() => {
-        // Keep the privacy-safe list summary visible if the detail request is unavailable.
+      .catch(error => {
+        if (!canceled) setDetailRequest({ key: detailKey, state: error instanceof ApiError && [401, 403, 404].includes(error.status) ? 'unavailable' : 'failed' })
       })
-    return () => {
-      canceled = true
-    }
-  }, [accessContext, homeStore, role, selectedVehicleId, vehicleDetails])
+    return () => { canceled = true; controller.abort() }
+  }, [detailKey, selectedVehicleId, data, activeDetail, role, homeStore, detailRetry])
 
   if (!data) return null
 
   const store = inventoryStore(homeStore)
 
+  function selectVehicle(id: string | null) {
+    if (id === selectedVehicleId) return
+    if (id && !data?.vehicles.some(vehicle => vehicle.vin === id)) return
+    if (!id && workspaceReturnPath) {
+      navigate(workspaceReturnPath, { replace: true })
+      return
+    }
+    const next = new URLSearchParams(params)
+    next.delete('q')
+    next.delete('tab')
+    if (id) {
+      next.set('vin', id)
+      next.set('scope', nextSelectionScope.current)
+    } else {
+      next.delete('vin')
+    }
+    // Opening from a list adds one Back destination. Switching or explicitly
+    // closing a vehicle replaces that detail entry, avoiding stale detail
+    // entries when staff work through several vehicles in the same workspace.
+    navigate({ pathname: location.pathname, search: next.toString(), hash: location.hash }, { replace: Boolean(requestedVin) })
+  }
+
+  function changeScope(nextScope: InventoryScope) {
+    // Predictive search can switch to all locations and select its result in
+    // the same event, before the router has rendered the new scope.
+    nextSelectionScope.current = nextScope
+    const next = new URLSearchParams(params)
+    next.set('scope', nextScope)
+    next.delete('vin')
+    next.delete('tab')
+    next.delete('q')
+    navigate({ pathname: location.pathname, search: next.toString(), hash: location.hash }, { replace: true })
+  }
+
   function requestVehicle(vehicle: InventoryVehicle) {
-    navigate(`/transfers/new?vin=${encodeURIComponent(vehicle.vin)}`)
+    navigate(withWorkspaceReturnPath(`/transfers/new?vin=${encodeURIComponent(vehicle.vin)}&intent=request`, currentWorkspaceReturnPath(location)))
+  }
+
+  function moveVehicle(vehicle: InventoryVehicle, intent: 'request' | 'direct') {
+    const returnTo = `${location.pathname}${location.search}`
+    navigate(`/transfers/new?vin=${encodeURIComponent(vehicle.vin)}&intent=${intent}&returnTo=${encodeURIComponent(returnTo)}`)
   }
 
   function trackMovement(vehicle: InventoryVehicle) {
     const path = movementTrackingPath(vehicle)
     if (path) {
-      navigate(path)
+      navigate(withWorkspaceReturnPath(path, currentWorkspaceReturnPath(location)))
       return
     }
     // The transfer is withheld from this role or store. Keep the user on the
     // vehicle: its Location & movement section shows the custody facts the
     // server did publish, whereas the moves page has no record to select.
-    setSelectedVehicleId(vehicle.id)
+    selectVehicle(vehicle.id)
   }
 
   function openListing(vehicle: InventoryVehicle) {
@@ -142,31 +182,32 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   return (
     <section className={`inventory-page${homeMode ? ' inventory-home-mode' : ''}`}>
       <SourceWarning meta={data.meta} />
-      <InventoryExperience
-        key={`${accessContext}-${query}-${homeMode ? 'home' : 'inventory'}`}
+      {requestedVin && !data.vehicles.some(vehicle => vehicle.vin === requestedVin) ? <div className="source-warning" role="status">This vehicle record is unavailable in your current inventory. Search the inventory or return to your previous workspace.</div> : null}
+      <Experience
+        key={`${accessContext}-${queryRequestKey}-${homeMode ? 'home' : 'inventory'}`}
         homeStore={store}
         vehicles={vehicles}
+        detailState={activeDetail ? 'ready' : detailRequest.key === detailKey ? detailRequest.state : 'loading'}
+        onRetryDetail={() => setDetailRetry(value => value + 1)}
+        returnLabel={workspaceReturnLabel(workspaceReturnPath)}
         metrics={inventoryMetrics(data, homeStore)}
         groupStores={groupStores(data, homeStore)}
         title={`${homeStore} inventory`}
         initialScope={requestedScope}
-        scope={scope}
+        scope={requestedScope}
         initialQuery={query}
+        queryRequestKey={queryRequestKey}
         initialWorkspaceTab={(['overview', 'equipment', 'movement', 'hold', 'timeline', 'data'] as VehicleWorkspaceTab[]).find(tab => tab === params.get('tab')) ?? 'overview'}
         searchPersistenceKey={accessContext}
         selectedVehicleId={selectedVehicleId}
-        onSelectedVehicleChange={(id) => {
-          setSelectedVehicleId(id)
-          if (!id && requestedVin) {
-            const next = new URLSearchParams(params); next.delete('vin'); next.delete('tab')
-            navigate({ pathname: location.pathname, search: next.toString() }, { replace: true })
-          }
-        }}
+        onSelectedVehicleChange={selectVehicle}
         pageSize={25}
         canRequestVehicle={(vehicle) => canRequestVehicleMove(vehicle, role, store.id)}
-        onScopeChange={setScope}
-        onGroupStoreSelect={() => setScope('group')}
+        moveActionFor={(vehicle) => vehicleMoveAction(vehicle, role, store)}
+        onScopeChange={changeScope}
+        onGroupStoreSelect={() => changeScope('group')}
         onRequestVehicle={requestVehicle}
+        onMoveVehicle={moveVehicle}
         onTrackMovement={trackMovement}
         onOpenListing={openListing}
         onOpenSourceRecord={(vehicle, source) => {

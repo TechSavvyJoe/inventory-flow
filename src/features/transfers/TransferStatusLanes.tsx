@@ -23,9 +23,9 @@ const laneDefinitions = [
   { key: 'delivery', label: 'Delivery', Icon: BadgeCheck },
   { key: 'dealerMail', label: 'Hold list', Icon: MailCheck },
   { key: 'publicListing', label: 'Website listing', Icon: Globe2 },
-  { key: 'dealerOnInStock', label: 'Website feed · at dealership', Icon: Truck },
-  { key: 'dealerOnInTransit', label: 'Website feed · in transit', Icon: Truck },
-  { key: 'dealerOnInProduction', label: 'Website feed · in production', Icon: Truck },
+  { key: 'dealerOnInStock', label: 'At dealership', Icon: Truck },
+  { key: 'dealerOnInTransit', label: 'In transit', Icon: Truck },
+  { key: 'dealerOnInProduction', label: 'In production', Icon: Truck },
   { key: 'cdk', label: 'CDK', Icon: Truck },
 ] as const;
 

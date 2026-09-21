@@ -18,14 +18,19 @@ const SIGNALS: Array<{
   pattern: RegExp
   label: string
   shortLabel: string
+  /** Recognised so it never falls through to a generic badge, but not shown. */
+  hidden?: boolean
 }> = [
   { kind: 'new_arrival', pattern: /\bnew\s+arrival\b/i, label: 'New arrival', shortLabel: 'New today' },
   { kind: 'price_change', pattern: /\bprice\s+(?:change|changed)\b/i, label: 'Price changed', shortLabel: 'Price changed' },
   {
+    // Website status is listing noise for store staff; it confirms nothing
+    // about a sale, delivery, hold, or location.
     kind: 'website_status_change',
     pattern: /\b(?:website\s+)?status\s+(?:change|changed)\b/i,
     label: 'Website status changed',
     shortLabel: 'Status changed',
+    hidden: true,
   },
   { kind: 'mileage_change', pattern: /\bmileage\s+(?:change|changed)\b/i, label: 'Mileage changed', shortLabel: 'Mileage changed' },
   { kind: 'stock_correction', pattern: /\bstock\s+(?:correction|corrected|change|changed)\b/i, label: 'Stock corrected', shortLabel: 'Stock corrected' },
@@ -36,8 +41,10 @@ export function vehicleChangeSignals(summary?: string | null): VehicleChangeSign
   const text = String(summary ?? '').trim()
   if (!text || /^no\s+change$/i.test(text)) return []
 
-  const signals = SIGNALS.filter((signal) => signal.pattern.test(text)).map(({ pattern: _pattern, ...signal }) => signal)
+  const matched = SIGNALS.filter((signal) => signal.pattern.test(text))
+  const signals = matched.filter((signal) => !signal.hidden).map(({ pattern: _pattern, hidden: _hidden, ...signal }) => signal)
   if (signals.length) return signals
+  if (matched.length) return []
   return [{ kind: 'other', label: 'Inventory updated', shortLabel: 'Updated' }]
 }
 

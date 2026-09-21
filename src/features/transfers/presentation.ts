@@ -1,3 +1,4 @@
+import { displayDate } from '../../lib/date-display';
 import type {
   LocationConfidence,
   SlaState,
@@ -7,21 +8,21 @@ import type {
 
 export const transferActionLabels: Record<TransferActionKind, string> = {
   'review-request': 'Approve request',
-  approve: 'Record home-store release',
+  approve: 'Record the home store’s release',
   decline: 'Decline request',
   'edit-request': 'Edit request',
   'request-driver': 'Request driver',
   'assign-transport': 'Assign driver',
-  'confirm-pickup': 'Confirm pickup',
+  'confirm-pickup': 'Mark vehicle collected',
   'confirm-arrival': 'Confirm arrival',
   'record-outcome': 'Record outcome',
   'schedule-return': 'Schedule return',
-  'confirm-return': 'Confirm home receipt',
-  'mark-exception': 'Report exception',
-  'report-condition': 'Report vehicle issue',
+  'confirm-return': 'Confirm back home',
+  'mark-exception': 'Report a location issue',
+  'report-condition': 'Report a vehicle issue',
   escalate: 'Escalate',
   'open-source': 'Open original record',
-  close: 'Close movement',
+  close: 'Close the move',
 };
 
 export const primaryTransferActions = new Set<TransferActionKind>([
@@ -55,7 +56,7 @@ export function slaLabel(sla: SlaState): string {
     case 'overdue':
       return 'Overdue';
     case 'breached':
-      return 'SLA breached';
+      return 'Well past due';
     default:
       return 'No due time';
   }
@@ -77,13 +78,5 @@ export function locationConfidenceLabel(confidence: LocationConfidence): string 
 }
 
 export function formatDateTime(value?: string): string {
-  if (!value) return 'Not set';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(parsed);
+  return value ? displayDate(value, { time: true, timeZone: 'America/New_York' }) : 'Not set';
 }

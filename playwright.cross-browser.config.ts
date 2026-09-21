@@ -1,10 +1,9 @@
-import path from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
 
 /** Isolated acceptance suite: fabricated data only; never reuses a live server. */
 export default defineConfig({
   testDir: './tests/e2e/cross-browser',
-  outputDir: path.resolve('../../work/qa/cross-browser-acceptance'),
+  outputDir: process.env.CI ? 'test-results/cross-browser' : '/tmp/inventory-flow-qa/cross-browser',
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -33,7 +32,11 @@ export default defineConfig({
     },
   ],
   projects: [
-    { name: 'chromium-desktop', use: { ...devices['Desktop Chrome'], channel: 'chrome', viewport: { width: 1440, height: 900 } } },
+    { name: 'chromium-desktop', use: { ...devices['Desktop Chrome'], channel: process.env.PLAYWRIGHT_BUNDLED_CHROMIUM ? undefined : 'chrome', viewport: { width: 1440, height: 900 } } },
+    { name: 'chromium-android', use: { ...devices['Pixel 7'], browserName: 'chromium' } },
+    { name: 'firefox-desktop', use: { ...devices['Desktop Firefox'], viewport: { width: 1440, height: 900 } } },
+    // Firefox narrow viewport checks layout; it does not emulate an Android device.
+    { name: 'firefox-narrow', testMatch: '**/mobile-premium.spec.ts', use: { ...devices['Desktop Firefox'], viewport: { width: 390, height: 844 } } },
     { name: 'webkit-desktop', use: { ...devices['Desktop Safari'], viewport: { width: 1440, height: 900 } } },
     // Playwright WebKit with an iPhone viewport; this is not a physical iPhone.
     { name: 'webkit-mobile', use: { ...devices['iPhone 13'], viewport: { width: 390, height: 844 } } },

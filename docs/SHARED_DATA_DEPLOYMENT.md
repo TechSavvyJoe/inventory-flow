@@ -10,6 +10,44 @@ Post-deploy verification (read-only, credential-scoped to a 24-hour temporary pr
 
 Of the 21 merged commits, roughly a third are observable anonymously right now (contract/schema shape, error codes, the URIError→400 fix's guard existing in source), a third require an authenticated Access session or a specific data condition to exercise live (manager-log coverage, a real 429, transfer-workflow fixes), and the rest are test-infrastructure-only or publish-host-only changes with no live-traffic surface at all. This is expected for a merge of this size, not a gap introduced by rushing.
 
+## Deployments — September 14 to 19, 2026
+
+Recorded on September 19 from `wrangler deployments list` for both Workers plus a symbol-level comparison of the served app bundle against git. None of these versions carries a commit reference (no `version_metadata` binding is configured), so provenance remains git history plus this note.
+
+**App Worker `inventory-ops-production`.** Six deployments on September 16 and four on September 19, listed with the complete version IDs `wrangler rollback` takes as its positional argument:
+
+| Created (UTC) | App Worker version |
+|---|---|
+| 2026-09-16 02:24 | `c20ca5d8-3eff-4ea6-bae4-014f6f2669ae` |
+| 2026-09-16 02:40 | `4b8d8e33-fa82-4d00-b404-38692bc6c983` |
+| 2026-09-16 02:43 | `977f948b-4172-4444-849e-dde606fc3799` |
+| 2026-09-16 13:51 | `0531217c-7eb5-4985-a05d-9a9107076f4f` |
+| 2026-09-16 15:31 | `e80657ba-752f-4a19-8c0f-7d72ad289e51` |
+| 2026-09-16 19:26 | `b514d98a-aa97-41c4-b8e1-1f2da71a45af` |
+| 2026-09-19 15:50 | `8ecdbea0-ce07-4017-b1b7-503c09cda0dc` |
+| 2026-09-19 16:48 | `45d14f01-5aa1-49f3-9bf9-eb7dd0c040af` |
+| 2026-09-19 16:54 | `88023fd7-5867-417b-a425-a022422fd72c` |
+| 2026-09-19 17:01 | `09ecac9e-21aa-4e0e-957e-196531c34798` (current) |
+ `main` has had no commit since `563712c` (release 1.2.1, merged 2026-09-16T00:34Z), so the later September 16 deployments and all four September 19 deployments were built from the open branch `codex/manager-workflow-polish` (PR #13). The current version `09ecac9e-21aa-4e0e-957e-196531c34798` matches that branch's head `15d9365`. Production therefore runs unmerged code until PR #13 merges or the Worker is rolled back; because no version records its commit, pick a rollback target only after confirming its content. To redeploy from a known commit, follow the full sequence in `docs/CLOUDFLARE_PRIVATE_RELEASE_RUNBOOK.md` — check out the commit, run `pnpm check` (which builds `dist/`), then `pnpm cloud:validate`, then `pnpm cloud:deploy` — never `pnpm cloud:deploy` alone, which only runs `wrangler deploy` and would upload whatever `../dist` a previous checkout left behind.
+
+**Integrations Worker `inventory-flow-integrations`.** Deployed three times on September 14 and three times on September 15:
+
+| Created (UTC) | Integrations Worker version |
+|---|---|
+| 2026-09-14 17:41 | `7fef7634-2ba3-4077-b821-d1687bab101c` |
+| 2026-09-14 19:04 | `5dbec8ad-d65a-4fcd-99f2-bd229bfc52b3` |
+| 2026-09-14 21:42 | `4776a35c-c61a-41ac-b71d-dc6552d1f20f` |
+| 2026-09-15 14:45 | `aa51f742-5021-40d7-9c2f-02e95b85052b` |
+| 2026-09-15 14:49 | `c86d1ab7-7ceb-458c-a3df-86838a88625d` |
+| 2026-09-15 14:51 | `9d0ac26c-6dfd-46d9-a33a-4c69c9e74885` (current) |
+ The current version `9d0ac26c-6dfd-46d9-a33a-4c69c9e74885` predates every release 1.2.0/1.2.1 commit that touches the modules it bundles (`server/service-core.mjs`, `cloudflare/src/worker.mjs`, `repository.mjs`, `release-validation.mjs`) and the integration read expansion in `d61a5f4`, committed five minutes after that deploy. Treat it as stale: redeploy it from the same commit as the app Worker at the next app deployment (the same `pnpm check` → `pnpm cloud:validate` sequence, then `pnpm integrations:deploy`), then run `node scripts/verify-integration-deployment.mjs` as described under the activation gates.
+
+**Migrations.** The live D1 database carries the tables introduced by `0007`–`0009`, applied as single files (the `d1_migrations` table stays empty by design). Release 1.2.1 requires `0009_membership_admin.sql`.
+
+**Follow-ups.** Merge or roll back PR #13; redeploy the integrations Worker from the merged commit; record every future deployment here with its version ID and source commit, and consider a `version_metadata` binding in both `wrangler.jsonc` files so Cloudflare carries the commit itself.
+
+**Update — September 19, 2026.** Both `wrangler.jsonc` files now bind `CF_VERSION_METADATA`, and `pnpm cloud:deploy` / `pnpm integrations:deploy` tag each version with the source git short SHA through `scripts/deploy-worker.mjs` (a dirty tree is refused). The "no version_metadata binding is configured" statements above describe the versions listed in this section and stay true of them; every version deployed from this change onward carries its commit on the Cloudflare dashboard and, for an authenticated caller, in the `version` field of `/api/health` and `/api/v1/data-health`. Those versions are still not deployed — nothing in this note claims a deploy happened. Use [Deploy checklist](DEPLOY_CHECKLIST.md) for the next one.
+
 ## Current status — September 10, 2026
 
 **Live API, access restrictions and OAuth discovery verified; hosted-client connections pending:** after the owner's explicit approval of Workers Paid and acceptance of its checkout Terms of Service/Privacy Policy and recurring-usage agreement, Cloudflare confirmed the purchase and active subscription. Workers Paid is a $5/month account-wide minimum plus applicable usage, not a fixed $5 total bill. Only the separate integration Worker was deployed, version `54c9b37a-58e6-432f-b71b-9b21aacf2383`; remote settings confirm the approved `limits.cpu_ms=1000` and both integration flags enabled. Actual Claude/ChatGPT sign-in remains pending; live scope/store/revocation probes and the existing app's post-deployment comparison passed.

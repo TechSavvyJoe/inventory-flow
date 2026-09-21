@@ -35,7 +35,7 @@ An imported store mismatch creates an exception; it never silently moves or reas
 ### Requesting-store manager
 
 - Reviews the salesperson's need and priority.
-- Contacts the vehicle's Home Store used-car manager to ask whether it is available and can be released.
+- Calls the vehicle's Home Store used-car manager to ask whether it is free and can be released.
 - Records the explicit Home Store answer, including the answering manager and time; a website listing or DealerMail hold is never a substitute.
 - Accepts custody responsibility.
 - Owns the outcome update and return plan after arrival.
@@ -45,25 +45,25 @@ An imported store mismatch creates an exception; it never silently moves or reas
 - Confirms physical presence and conflicting commitments.
 - Confirms released, not available, or needs more information.
 - Defines the release window and any authorized exception to the standard no-sale return rule.
-- Accepts the vehicle back before the movement closes.
+- Confirms the vehicle is back before the move closes.
 
 ### Transport coordinator
 
-- For Howell requests, Stacey normally coordinates drivers after release. The salesperson will usually call Stacey to say a driver is needed.
+- For Howell requests, Stacey normally assigns drivers after release. The salesperson usually asks Stacey for a driver.
 - At other stores, the requesting manager or assigned coordinator arranges the driver.
 - Records the assigned driver, pickup/arrival target, route, and return leg.
 - Resolves missed pickup/arrival and transport exceptions.
 
 ### Driver
 
-- Records checkout, arrival, odometer, fuel, keys, condition, and custody handoff.
+- Marks the vehicle collected and arrived, and records odometer, fuel, keys, condition, and the custody handoff.
 - Sees logistics only, not unnecessary customer information.
 - Cannot change hold, deal, delivery, or CDK status.
 
 ### Porter
 
 - Is not a default transport step or routine assignment.
-- May be assigned to drive only when a manager specifically requests it, then confirms pickup, transit, and arrival like an assigned driver.
+- May be assigned to drive only when a manager specifically requests it, then marks the vehicle collected, in transit, and arrived like an assigned driver.
 - Sees only the assigned logistics work and does not gain hold, deal, delivery, or CDK authority.
 
 ### Group manager
@@ -87,13 +87,13 @@ At Home Store — Reported → Home Store Release Confirmed → Pickup Scheduled
 
 Exception states: Authorized Other Location, Location Stale, Location Conflicting, Location Unknown, Missed ETA, Damage/Key Exception.
 
-Only one active physical movement may control a VIN. Other interest is queued for manager resolution.
+Only one active move may control a VIN. Other interest is queued for manager resolution.
 
 ### Customer / deal
 
 No Outcome → Appointment Scheduled → Customer Show → Still Working / Not Sold / Deal in Progress / Sold Pending / Deal Canceled
 
-Sold Pending never closes the movement and is not delivery confirmation.
+Sold Pending never closes the move and is not delivery confirmation. Only a manager can record that the deal fell through, which puts the vehicle back on the return path.
 
 ### DealerMail
 
@@ -120,12 +120,12 @@ Raw CDK evidence, office processing, and paperwork completion remain separate re
 1. **Discover**: salesperson searches their store first and expands to the group when needed.
 2. **Confirm**: show Home Store, operational location, source location, location freshness, holds, and competing movements.
 3. **Ask own manager**: the salesperson sends the vehicle, needed time, short reason, and customer-waiting flag to their own manager.
-4. **Confirm with Home Store**: the requesting manager contacts the Home Store used-car manager and records the explicit release answer.
-5. **Dispatch**: for Howell, the salesperson usually calls Stacey and Stacey assigns the driver and timing. Elsewhere the requesting manager or coordinator handles it. A porter appears only when a manager specifically requests that assignment.
-6. **Checkout**: releasing and accepting custodians record keys, odometer, fuel, condition, and timestamp.
-7. **Arrival**: destination confirms location and custody; both managers and salesperson are notified.
-8. **Outcome**: salesperson/manager explicitly records shown/not sold, deal in progress, sold pending, or another operational result.
-9. **Return or complete**: not-sold creates a return task owned by the requesting-store manager; Stacey normally coordinates the Howell return driver. Sold pending stays open. Only explicit Home Store receipt or explicit delivery confirmation allows the movement to close.
+4. **Call the Home Store, record the answer**: the requesting manager calls the Home Store used-car manager and records the explicit release answer.
+5. **Ask for a driver**: for Howell, the salesperson usually asks Stacey, who assigns the driver and pickup time. Elsewhere the requesting manager or coordinator assigns the driver. A porter appears only when a manager specifically requests that assignment.
+6. **Collect the vehicle**: the driver marks the vehicle collected; releasing and accepting custodians record keys, odometer, fuel, condition, and time.
+7. **Confirm the vehicle arrived**: the destination confirms the vehicle arrived at the requesting store and who has it; both managers and the salesperson are notified.
+8. **Record the showing outcome**: sales or the manager explicitly records showing in progress, shown · not sold, decision or paperwork pending, or sold pending.
+9. **Start the return, or close the move**: shown · not sold starts the return, owned by the requesting-store manager; Stacey normally assigns the Howell return driver. Sold pending stays open until the manager confirms delivery or records the deal fell through. Only the Home Store confirming the vehicle is back, or explicit delivery confirmation, lets the move close.
 
 ## Starting service levels
 
@@ -133,26 +133,26 @@ These should become configurable store/business-hour rules.
 
 - Customer waiting: acknowledge in 10 minutes; decide in 20.
 - Standard same-day request: acknowledge in 30 minutes; decide in 60.
-- Assign pickup within 30 minutes after Home Store release confirmation.
+- Assign a driver within 30 minutes after the Home Store release is recorded.
 - Missed pickup/arrival: warning at due time; escalation after 30 minutes.
 - Record outcome within 30 minutes after the appointment, or two business hours after arrival.
 - Not sold: assign return within 30 minutes.
 - Return departure within two business hours when practical; otherwise require an exact next-business-day manager commitment.
 - Off-site vehicle: daily location/custody confirmation.
 - Sold pending: daily manager review until delivered, canceled, returned, or reassigned.
-- Unknown location, damage, or missing keys: immediate critical escalation and block new releases or dispatches.
+- Unknown location, damage, or missing keys: immediate critical escalation and block new releases or driver assignments.
 
-Every active record has exactly one **Next Action Owner** and **Due By** time.
+Every active move has exactly one **next step** owner and **due** time.
 
 ## Notifications
 
 - Request submitted → requesting-store manager first.
-- Home Store release confirmed/declined → requester, requesting manager, and Home Store used-car manager.
+- Home Store release recorded or declined → requester, requesting manager, and Home Store used-car manager.
 - Driver assigned → driver, requester, and both managers.
-- Checkout/arrival → both managers and salesperson.
+- Vehicle collected or arrived → both managers and salesperson.
 - ETA missed → custodian and transport coordinator.
 - Outcome overdue → salesperson and requesting manager.
-- Not sold → requesting-store manager; Stacey also receives the task for a Howell return.
+- Shown · not sold, or deal fell through → requesting-store manager; Stacey also receives the task for a Howell return.
 - Past-due return → custodian and both managers; group manager after the configured grace period.
 - Unknown location/damage/missing key → group-level critical notification.
 

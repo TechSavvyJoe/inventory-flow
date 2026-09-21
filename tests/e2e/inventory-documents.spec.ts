@@ -38,22 +38,25 @@ test('inventory search opens the VIN-specific premium document workspace', async
   await expect(dialog).toBeVisible()
   await dialog.getByRole('tab', { name: 'Records', exact: true }).click()
   const documents = dialog.getByRole('region', { name: 'Vehicle documents' })
-  // Synthetic AutoCheck score and range, then the informational factory
-  // equipment profile with its reference MSRP and priced package.
+  // Synthetic AutoCheck score and range, followed by concise equipment
+  // highlights with the complete record still one click away.
   await expect(documents.getByLabel('AutoCheck summary').locator('dd').first()).toContainText('91')
   await expect(documents.getByText('Typical 86–93', { exact: true })).toBeVisible()
-  await expect(documents.getByText('History checks')).toBeVisible()
+  await expect(documents.getByText('More history checks', { exact: false })).toBeVisible()
   await documents.getByRole('navigation', { name: 'Record sections' }).getByRole('button', { name: 'Equipment', exact: true }).click()
-  await expect(documents.getByText(/Informational equipment label—not an original window sticker\./)).toBeVisible()
   const profile = documents.locator('[data-document-kind="vauto-factory-equipment"]')
-  await expect(profile.getByText('68,420', { exact: true })).toBeHidden()
-  await profile.locator('.vdp-record-source-details > summary').click()
-  await expect(profile.getByText('68,420', { exact: true })).toBeVisible()
-  await expect(profile.getByText(/Reference amounts only · currency not captured/)).toBeVisible()
+  await expect(profile.getByText(/Informational equipment label—not an original window sticker\./)).toHaveCount(0)
+  // The demo record carries equipment facts and a disclaimer, so the source
+  // disclosure renders — collapsed, with nothing of it on screen but its summary.
+  await expect(profile.locator('.vdp-record-source-details')).toHaveCount(1)
+  await expect(profile.locator('.vdp-record-source-details > div')).toBeHidden()
   const packages = documents.locator('section.vdp-record-section[aria-label="Packages & priced equipment"]')
   await expect(packages).toBeVisible()
-  await expect(packages.getByText('Synthetic Premium Technology Package')).toBeVisible()
-  await expect(packages.getByText('3,005', { exact: true })).toBeVisible()
+  await expect(packages.getByText('Max Trailer Tow Package (DEMO-1)', { exact: true })).toBeVisible()
+  await expect(packages).not.toContainText('$3,005')
+  await documents.getByRole('navigation', { name: 'Record sections' }).getByRole('button', { name: 'Window sticker', exact: true }).click()
+  const sticker = documents.getByRole('region', { name: 'Window sticker', exact: true })
+  await expect(sticker.getByText('Total options', { exact: true }).locator('..')).toContainText('$3,005')
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
   expect(overflow).toBe(false)

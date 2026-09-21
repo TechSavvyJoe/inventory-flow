@@ -12,8 +12,8 @@ afterEach(() => {
 
 function vehicle(): InventoryVehicle {
   return {
-    id: '1FTFW1E86HFA48871',
-    vin: '1FTFW1E86HFA48871',
+    id: 'TESTDATASYN000002',
+    vin: 'TESTDATASYN000002',
     stockNumber: 'W5863Q',
     year: 2017,
     make: 'Ford',
@@ -77,17 +77,48 @@ function vehicle(): InventoryVehicle {
 }
 
 describe('focused vehicle workspace', () => {
+  it('keeps one short reference-fact group beside vehicle details and before equipment', () => {
+    const unit = vehicle();
+    unit.windowSticker = {dataState:'current',basePrice:42500,pricingCurrency:'USD'};
+    unit.fordOasis = {dataState:'current',warrantyStartDate:'2024-08-14',openFieldServiceActions:[],warrantyCoverages:[],extendedCoverageExpirations:[]};
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}/>);
+    const overview = screen.getByRole('tabpanel',{name:'Overview'});
+    const reference = within(overview).getByRole('region',{name:'Frequently used vehicle facts'});
+    const specifications = within(overview).getByRole('region',{name:'Vehicle specifications'});
+    const equipment = within(overview).getByRole('region',{name:'Key equipment'});
+    expect(reference.parentElement).toHaveClass('vdp-focus-vehicle-context');
+    expect(reference.compareDocumentPosition(equipment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(reference).getAllByRole('term').map(node=>node.textContent)).toEqual(['In-service','Base MSRP','Inventory date']);
+    expect(within(reference).getByText('08/14/2024')).toBeVisible();
+    expect(within(reference).getByText('$42,500')).toBeVisible();
+    expect(within(reference).getByText('08/29/2026')).toBeVisible();
+    expect(reference).not.toHaveTextContent('USD');
+    for (const label of ['In-service','Base MSRP','Inventory date']) {
+      expect(within(overview).getAllByText(label,{selector:'dt'})).toHaveLength(1);
+      expect(within(specifications).queryByText(label,{selector:'dt'})).not.toBeInTheDocument();
+    }
+  });
+
+  it.each(['2024-08-14','14-AUG-2024','08/14/2024'])('formats the operational loaner service date numerically: %s', serviceDate => {
+    const unit = vehicle();
+    unit.dealerMail.loaner = {active:true,program:'FCTP',label:'Loaner FCTP',serviceDate};
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}/>);
+    const operations = screen.getByRole('region',{name:'Vehicle operational summary'});
+    expect(within(operations).getByText('Loaner FCTP · 08/14/2024')).toBeVisible();
+    expect(unit.dealerMail.loaner.serviceDate).toBe(serviceDate);
+  });
+
   it('does not turn a literal fee or total MSRP into the base-MSRP lookup when base is missing', async () => {
     const unit = vehicle();
     unit.windowSticker = {dataState:'current',totalMsrp:50560,pricingCurrency:'USD',options:['WEIGHT FEE — $123.45']};
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     const facts=screen.getByRole('region',{name:'Frequently used vehicle facts'});
-    const lookup=within(facts).getByText('Weight fee lookup · Base MSRP',{selector:'dt'}).parentElement!;
-    expect(lookup).toHaveTextContent('Not captured');
+    const lookup=within(facts).getByText('Base MSRP',{selector:'dt'}).parentElement!;
+    expect(lookup).toHaveTextContent('—');
     expect(lookup).not.toHaveTextContent(/123\.45|50,560|USD|\$/);
     expect(within(facts).queryByText('Weight fee',{selector:'dt'})).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('tab',{name:'Records'}));
-    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Weight fee lookup · Base MSRPNot captured');
+    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Base MSRP—');
     expect(screen.getByRole('list',{name:'Factory options'})).toHaveTextContent('WEIGHT FEE — $123.45');
   });
 
@@ -97,9 +128,9 @@ describe('focused vehicle workspace', () => {
     unit.factoryEquipment={dataState:'current',isOriginalWindowSticker:false,basePrice:39999};
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     const facts=screen.getByRole('region',{name:'Frequently used vehicle facts'});
-    const lookup=within(facts).getByText('Weight fee lookup · Base MSRP',{selector:'dt'}).parentElement!;
+    const lookup=within(facts).getByText('Base MSRP',{selector:'dt'}).parentElement!;
     expect(lookup).toHaveTextContent('42,500.5');
-    expect(lookup).toHaveTextContent('Sticker · confirm currency');
+    expect(lookup).not.toHaveTextContent('Sticker · confirm currency');
     expect(lookup).not.toHaveTextContent(/USD|CAD|\$|39,999/);
     expect(unit.windowSticker.basePrice).toBe(42500.5);
   });
@@ -110,19 +141,17 @@ describe('focused vehicle workspace', () => {
     unit.factoryEquipment = { dataState: 'current', isOriginalWindowSticker: false, basePrice: 31234.5, totalMsrp: 35432, sections: [{ name: 'Fees', items: [{ label: 'Weight fee', price: 123.45 }] }] };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
-    expect(facts).toHaveTextContent('Weight fee lookup · Base MSRP31,234.5');
-    expect(facts).toHaveTextContent('vAuto reference · confirm on sticker');
+    expect(facts).toHaveTextContent('Base MSRP31,234.5');
+    expect(facts).not.toHaveTextContent('vAuto reference · confirm on sticker');
     expect(within(facts).queryByText('Weight fee', {selector:'dt'})).not.toBeInTheDocument();
     expect(facts).not.toHaveTextContent('123.45');
     expect(facts).not.toHaveTextContent(/CAD|USD|\$/);
     await userEvent.click(screen.getByRole('tab', { name: 'Records' }));
     const profile = document.querySelector('[data-document-kind="vauto-factory-equipment"]')!;
-    expect(within(profile as HTMLElement).getByText('35,432')).not.toBeVisible();
-    fireEvent.click(within(profile as HTMLElement).getByText('Source details'));
-    expect(within(profile as HTMLElement).getByText('35,432')).toBeVisible();
-    expect(profile).toHaveTextContent('Reference amounts only · currency not captured');
-    expect(profile).toHaveTextContent('123.45');
-    expect(profile).toHaveTextContent('Verify installed equipment and the currency of any reference prices.');
+    expect(within(profile as HTMLElement).queryByText('35,432')).not.toBeInTheDocument();
+    expect(within(profile as HTMLElement).queryByText('Source details')).not.toBeInTheDocument();
+    expect(profile).toHaveTextContent('Weight fee');
+    expect(profile).not.toHaveTextContent('currency not captured');
     expect(profile).not.toHaveTextContent(/CAD|USD|\$/);
   });
 
@@ -133,13 +162,13 @@ describe('focused vehicle workspace', () => {
     unit.autoCheckReport = { dataState: 'current', estimatedInServiceDate: '2023-05-12' };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
-    expect(facts).toHaveTextContent('Weight fee lookup · Base MSRPCAD 45,000');
+    expect(facts).toHaveTextContent('Base MSRPCAD 45,000');
     expect(facts).not.toHaveTextContent('31,234');
-    expect(within(facts).getAllByText('Weight fee lookup · Base MSRP')).toHaveLength(1);
-    expect(facts).toHaveTextContent('In-service · AutoCheck estimateMay 12, 2023');
+    expect(within(facts).getAllByText('Base MSRP')).toHaveLength(1);
+    expect(facts).toHaveTextContent('Est. in-service05/12/2023AutoCheck');
     await userEvent.click(screen.getByRole('tab', { name: 'Records' }));
-    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('In-service · AutoCheck estimateMay 12, 2023');
-    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Weight fee lookup · Base MSRPCAD 45,000');
+    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('In-service · AutoCheck estimate05/12/2023');
+    expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Base MSRPCAD 45,000');
   });
 
   it('prefers captured OASIS in-service date over AutoCheck estimates', () => {
@@ -148,7 +177,7 @@ describe('focused vehicle workspace', () => {
     unit.autoCheckReport = { dataState: 'current', estimatedInServiceDate: '2023-05-12' };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
-    expect(facts).toHaveTextContent('Warranty in-service · OASISMay 13, 2023');
+    expect(facts).toHaveTextContent('In-service05/13/2023OASIS');
     expect(facts).not.toHaveTextContent('estimate');
   });
 
@@ -157,7 +186,7 @@ describe('focused vehicle workspace', () => {
     expect(document.querySelectorAll('main')).toHaveLength(1);
     expect(screen.getAllByRole('heading', { name: '2017 Ford F-150 Lariat' })).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Copy stock number: W5863Q' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Copy VIN: 1FTFW1E86HFA48871' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Copy VIN: TESTDATASYN000002' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Back to inventory' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Close vehicle details' })).toBeVisible();
     expect(document.querySelector('.inventory-workspace-backdrop')).toHaveAttribute('aria-hidden', 'true');
@@ -190,7 +219,8 @@ describe('focused vehicle workspace', () => {
     for (const value of ['3.5L V6 EcoBoost', 'SuperCrew 4x4', '10-Speed Automatic', '4WD', '123,328 mi']) expect(specs).toHaveTextContent(value);
     expect(screen.getByText('$20,988')).toBeVisible();
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
-    expect(operations).toHaveTextContent('Held · Jamie Howell');
+    expect(operations).toHaveTextContent('Hold statusHeld');
+    expect(operations).toHaveTextContent('Held byJamie Howell');
     expect(operations).toHaveTextContent('Jamie Howell');
     expect(operations).not.toHaveTextContent(/sold|delivered|CDK/);
   });
@@ -207,12 +237,13 @@ describe('focused vehicle workspace', () => {
     ]);
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
     const hold = within(operations).getByText('Hold status').closest('.inventory-workspace-fact')!;
-    expect(hold).toHaveTextContent('Held · Jamie Howell');
+    expect(hold).toHaveTextContent('Held');
+    expect(within(operations).getByText('Held by').closest('.inventory-workspace-fact')).toHaveTextContent('Jamie Howell');
     expect(hold.querySelector('.vdp-focus-mobile-backup')).toHaveTextContent('2 backup holds');
-    for (const label of ['Backup holds', 'Service status']) {
+    for (const label of ['Backup holds']) {
       expect(within(operations).getByText(label).closest('.inventory-workspace-fact')).toHaveClass('vdp-focus-desktop-field');
     }
-    expect(screen.getByRole('link', { name: 'Service: Waiting for service' })).toBeVisible();
+    expect(document.querySelector('.vdp-focus-service-fact')).toHaveTextContent('ServiceWaiting for service');
   });
 
   it('renders only the selected pane and resets scroll without moving the header or navigation', async () => {
@@ -286,6 +317,45 @@ describe('focused vehicle workspace', () => {
     expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(moving);
   });
 
+  it('shows a manager direct-move label and preserves the selected intent', async () => {
+    const user = userEvent.setup();
+    const unit = vehicle();
+    const onMoveVehicle = vi.fn();
+    render(
+      <VehicleWorkspace
+        vehicle={unit}
+        homeStore={unit.location.homeStore}
+        moveAction={{ intent: 'direct', label: 'Move to another store', shortLabel: 'Move' }}
+        onMoveVehicle={onMoveVehicle}
+        onClose={vi.fn()}
+      />,
+    );
+    await user.click(within(screen.getByRole('region', { name: 'Vehicle operational summary' })).getByRole('button', { name: 'Move to another store' }));
+    expect(onMoveVehicle).toHaveBeenCalledExactlyOnceWith(unit, 'direct');
+  });
+
+  it('preserves Track beside Move again for an authorized active direct move', async () => {
+    const user = userEvent.setup();
+    const unit = { ...vehicle(), movement: { state: 'arrived', requestId: 'direct-move-1', canDirectReroute: true } };
+    const onMoveVehicle = vi.fn();
+    const onTrackMovement = vi.fn();
+    render(
+      <VehicleWorkspace
+        vehicle={unit}
+        homeStore={unit.location.homeStore}
+        moveAction={{ intent: 'direct', label: 'Move again', shortLabel: 'Move again' }}
+        onMoveVehicle={onMoveVehicle}
+        onTrackMovement={onTrackMovement}
+        onClose={vi.fn()}
+      />,
+    );
+    const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
+    await user.click(within(operations).getByRole('button', { name: 'Track movement' }));
+    await user.click(within(operations).getByRole('button', { name: 'Move again' }));
+    expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(unit);
+    expect(onMoveVehicle).toHaveBeenCalledExactlyOnceWith(unit, 'direct');
+  });
+
   it('never renders customer evidence for a restricted role even inside the selected hold pane', () => {
     const unit = vehicle();
     unit.dealerMail = { ...unit.dealerMail, canViewEvidence: false, canManageHold: false };
@@ -303,14 +373,14 @@ describe('focused vehicle workspace', () => {
     const unit = vehicle();
     unit.serviceReadiness = { vin: unit.vin, status: 'needs_service' } as NonNullable<InventoryVehicle['serviceReadiness']>;
     const { rerender } = render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
-    expect(screen.getByRole('link', { name: 'Start service' })).toHaveAttribute('href', '/service?vin=1FTFW1E86HFA48871&action=in_service');
-    expect(screen.getByRole('link', { name: 'Mark Ready' })).toHaveAttribute('href', '/service?vin=1FTFW1E86HFA48871&action=serviced');
+    expect(screen.getByRole('link', { name: 'Start service' })).toHaveAttribute('href', '/service?vin=TESTDATASYN000002&action=in_service');
+    expect(screen.getByRole('link', { name: 'Mark Ready' })).toHaveAttribute('href', '/service?vin=TESTDATASYN000002&action=serviced');
     rerender(<VehicleWorkspace vehicle={{ ...unit, serviceReadiness: undefined }} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     expect(screen.getByRole('link', { name: 'Mark Ready' })).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Service: Waiting for service' })).toBeVisible();
+    expect(document.querySelector('.vdp-focus-service-fact')).toHaveTextContent('ServiceWaiting for service');
   });
 
-  it('keeps every captured equipment item with provenance and a simple show-all button', async () => {
+  it('keeps every equipment item reachable without repeated source labels or tooltips', async () => {
     const user = userEvent.setup(); const unit = vehicle();
     unit.features = ['Blind Spot Information System', 'Lane Keeping Assist', 'Automatic Emergency Braking', 'Rear Cross Traffic Alert', 'Surround View Camera', 'Driver Alert System', 'Traffic Sign Recognition'];
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} initialTab="equipment" onClose={vi.fn()} />);
@@ -319,19 +389,97 @@ describe('focused vehicle workspace', () => {
     expect(last).not.toBeVisible();
     await user.click(within(equipment).getByRole('button', { name: 'Show all 7 items' }));
     expect(last).toBeVisible();
-    expect(last).toHaveAttribute('title', 'Source: Published vehicle listing');
+    expect(last).not.toHaveAttribute('title');
+    expect(equipment.querySelector('.inventory-workspace-equipment-item-source')).toBeNull();
     expect(within(equipment).queryAllByRole('button', { name: /copy/i })).toHaveLength(0);
     expect(equipment).not.toHaveTextContent('Equipment Group 502A');
   });
 
-  it('labels VIN profiles and original stickers as separate configuration evidence', async () => {
+  it('keeps captured group contents in highlights, the finder and separate full records', async () => {
+    const user=userEvent.setup();const unit=vehicle();
+    unit.windowSticker={dataState:'current',pricingCurrency:'USD',equipmentGroup:'Equipment Group 302A',equipmentGroupPrice:4770,equipmentGroupContents:['Heated seats','Remote start'],options:['Bed Utility Package (68L) USD 635.00']};
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}/>);
+    expect(within(screen.getByRole('region',{name:'Key equipment'})).getByText('Heated seats')).toBeVisible();
+    await user.click(screen.getByRole('tab',{name:'Equipment'}));
+    const finder=screen.getByRole('region',{name:'Equipment & packages'});
+    expect(within(finder).getByText('Heated seats')).toBeVisible();
+    expect(within(finder).getByText('Remote start')).toBeVisible();
+    expect(within(finder).getByText('$4,770')).toBeVisible();
+    await user.click(screen.getByRole('tab',{name:'Records'}));
+    const included=screen.getByRole('list',{name:'Equipment group contents'});
+    expect(included).toHaveTextContent('Heated seatsRemote start');
+    expect(included).not.toHaveTextContent('Bed Utility');
+    expect(screen.getByRole('list',{name:'Factory options'})).toHaveTextContent('Bed Utility Package (68L) $635.00');
+    expect(screen.getByText('Equipment group price',{selector:'dt'}).parentElement).toHaveTextContent('$4,770');
+  });
+
+  it('puts complete vehicle specifications first in Equipment with distinct color and powertrain facts', () => {
+    const unit = vehicle();
+    unit.modelCode = 'DEMO-CODE';
+    unit.mpgCity = 18;
+    unit.mpgHighway = 24;
+    unit.features = ['Heated seats'];
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} initialTab="equipment" onClose={vi.fn()}/>);
+    const equipment = screen.getByRole('tabpanel',{name:'Equipment'});
+    const specifications = within(equipment).getByRole('region',{name:'Complete vehicle specifications'});
+    expect(within(equipment).getAllByRole('heading')[0]).toHaveTextContent('Specifications');
+    for (const [label, value] of [
+      ['Mileage', '123,328 mi'], ['Age', '2 days'], ['Engine', '3.5L V6 EcoBoost'],
+      ['Drive', '4WD'], ['Transmission', '10-Speed Automatic'], ['Body', 'SuperCrew 4x4'],
+      ['Trim', 'Lariat'], ['Exterior', 'Black'], ['Interior', 'Black Leather'],
+      ['Fuel', 'Gasoline'], ['MSRP', '$50,560'], ['Inventory date', '08/29/2026'],
+      ['Model code', 'DEMO-CODE'], ['MPG city / hwy', '18 / 24'],
+    ]) {
+      const fact = within(specifications).getByText(label, {selector:'dt'}).closest('div')!;
+      expect(within(fact).getByText(value, {selector:'dd'})).toBeVisible();
+    }
+    expect(within(equipment).getByRole('region',{name:'Equipment & packages'})).toHaveTextContent('Heated seats');
+  });
+
+  it('searches raw equipment codes, filters categories, and resets to every category without losing source variants', async () => {
     const user = userEvent.setup(); const unit = vehicle();
-    unit.factoryEquipment = { dataState: 'current', isOriginalWindowSticker: false, vehicleDescription: '2017 Ford F-150 Lariat SuperCrew 4x4', packages: [{ name: 'Safety Package', code: 'PQB' }] };
-    const { rerender } = render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} initialTab="equipment" onClose={vi.fn()} />);
-    await user.click(screen.getByText('Original build details', { selector: 'summary span' }));
-    expect(screen.getByRole('heading', { name: 'VIN equipment profile' })).toBeVisible();
-    rerender(<VehicleWorkspace vehicle={{ ...unit, windowSticker: { dataState: 'current', equipmentGroup: 'Equipment Group 502A' } }} homeStore={unit.location.homeStore} initialTab="equipment" onClose={vi.fn()} />);
-    expect(screen.getByRole('heading', { name: 'VIN-linked configuration sources' })).toBeVisible();
+    unit.features = ['Max Trailer Tow Package', 'Heated seats', 'Heated seats (trial)', 'Wireless charging'];
+    unit.windowSticker = {dataState:'current',options:['Max Trailer Tow Package (DEMO-1) USD 1,100.50', 'BlueCruise 90-day trial', '.TAILGATE STEP']};
+    unit.factoryEquipment = {dataState:'current',isOriginalWindowSticker:false,packages:[{name:'Max Trailer Tow Package',code:'DEMO-2',price:1250.75}]};
+    const original = JSON.stringify(unit);
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} initialTab="equipment" onClose={vi.fn()}/>);
+    const finder = screen.getByRole('region',{name:'Equipment & packages'});
+    const categories = within(finder).getByRole('navigation',{name:'Equipment categories'});
+    const allEquipment = within(categories).getByRole('button',{name:'All equipment, 7 items'});
+    const comfort = within(categories).getByRole('button',{name:'Comfort, 2 items'});
+    expect(within(categories).getByRole('button',{name:'Safety & assist, 1 item'})).toBeVisible();
+    expect(allEquipment).toHaveAttribute('aria-pressed','true');
+    expect(comfort).toHaveAttribute('aria-pressed','false');
+    expect(within(finder).getAllByText('Max Trailer Tow Package')).toHaveLength(2);
+    expect(within(finder).getByText('Heated seats')).toBeVisible();
+    expect(within(finder).getByText('Heated seats (trial)')).toBeVisible();
+    expect(within(finder).getByText('TAILGATE STEP')).toBeVisible();
+    expect(within(finder).getByText('$1,100.50')).toBeVisible();
+    const search = within(finder).getByRole('searchbox',{name:'Search equipment, packages, or codes'});
+    await user.type(search,'tOW DEMO-1');
+    expect(within(finder).getAllByText('Max Trailer Tow Package')).toHaveLength(1);
+    expect(within(finder).queryByText('Heated seats')).not.toBeInTheDocument();
+    await user.click(within(finder).getByRole('button',{name:'Clear'}));
+    expect(search).toHaveValue('');
+    expect(allEquipment).toHaveAttribute('aria-pressed','true');
+    await user.click(comfort);
+    expect(comfort).toHaveAttribute('aria-pressed','true');
+    expect(allEquipment).toHaveAttribute('aria-pressed','false');
+    expect(within(finder).getByText('Heated seats')).toBeVisible();
+    expect(within(finder).getByText('Heated seats (trial)')).toBeVisible();
+    expect(within(finder).queryByText('Max Trailer Tow Package')).not.toBeInTheDocument();
+    await user.type(search,'absent feature');
+    expect(within(finder).getByText('No matching equipment')).toBeVisible();
+    expect(comfort).toHaveAttribute('aria-pressed','true');
+    await user.click(within(finder).getByRole('button',{name:'Show all equipment'}));
+    expect(search).toHaveValue('');
+    expect(allEquipment).toHaveAttribute('aria-pressed','true');
+    expect(comfort).toHaveAttribute('aria-pressed','false');
+    for(const category of ['Packages','Safety & assist','Comfort','Technology','Towing & utility']) expect(within(finder).getByRole('heading',{name:category})).toBeVisible();
+    expect(JSON.stringify(unit)).toBe(original);
+    await user.click(screen.getByRole('tab',{name:'Records'}));
+    expect(screen.getByRole('list',{name:'Factory options'})).toHaveTextContent('Max Trailer Tow Package (DEMO-1) $1,100.50');
+    expect(screen.getByRole('list',{name:'Factory options'})).toHaveTextContent('.TAILGATE STEP');
   });
 
   it('shows unheld alerts without fabricating a primary hold', () => {
@@ -340,7 +488,7 @@ describe('focused vehicle workspace', () => {
     unit.dealerMailEvidence = { dataState: 'current', comments: [], alerts: [{ text: 'Synthetic vehicle alert', author: 'Manager' }], history: [] };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} initialTab="hold" onClose={vi.fn()} />);
     expect(screen.getByText('Synthetic vehicle alert')).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'No current DealerMail hold found' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'No active hold' })).toBeVisible();
     expect(screen.queryByText('Primary hold', { exact: true })).not.toBeInTheDocument();
   });
 
@@ -429,8 +577,8 @@ describe('focused vehicle workspace', () => {
     try {
       const first = vehicle();
       const second = vehicle();
-      second.id = '1FTFW1E86HFA48872';
-      second.vin = '1FTFW1E86HFA48872';
+      second.id = 'TESTDATASYN000003';
+      second.vin = 'TESTDATASYN000003';
       second.stockNumber = 'W5864Q';
       const { rerender } = render(
         <VehicleWorkspace

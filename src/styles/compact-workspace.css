@@ -23,7 +23,7 @@
   #root .app-shell .nav-link { flex-direction:column; justify-content:center; gap:5px; padding:8px 3px; min-height:66px; text-align:center; }
   #root .app-shell .nav-link .nav-label { width:auto; max-width:92px; height:auto; opacity:1; transform:none; pointer-events:auto; overflow:visible; font-size:13px; }
   #root .app-shell .nav-count { position:absolute; top:4px; right:4px; min-width:20px; margin:0; }
-  #root .app-shell .top-bar { padding-inline:14px; gap:10px; }
+  #root .app-shell .top-bar { padding-left:max(14px,var(--safe-left)); padding-right:max(14px,var(--safe-right)); gap:10px; }
 }
 #inventory-results-workspace.if-srp .inventory-experience__content { padding:16px; }
 .if-srp-heading-grid { display:grid; gap:10px; margin-bottom:10px; }
@@ -92,7 +92,37 @@
   #inventory-results-workspace.if-srp .inventory-pagination--modern > div > button { width:44px; min-width:44px; min-height:44px; margin:0; }
 }
 @media(max-width:360px) {
+  #inventory-results-workspace.if-srp .if-srp-service-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #inventory-results-workspace.if-srp .if-srp-service-filters > button { flex-direction:row; justify-content:space-between; height:44px; min-height:44px; padding-inline:8px; }
   #inventory-results-workspace.if-srp .if-srp-scope > button { padding-inline:6px; }
   #inventory-results-workspace.if-srp .if-srp-quickviews > button,
   #inventory-results-workspace.if-srp .if-srp-tools .inv-btn { padding-inline:5px; }
+}
+
+/* Landscape phones share the compact tablet shell but still need notch space. */
+@media (min-width: 761px) and (max-width: 880px) {
+  #root .app-shell main.app-main { padding-left: max(16px, var(--safe-left)); padding-right: max(16px, var(--safe-right)); }
+}
+
+/* Phone inventory surfaces reach the viewport edge. Keep breathing room on
+   controls and card contents, rather than stacking shell and surface gutters. */
+@media (max-width:880px) {
+  #root .app-shell main.app-main:has(> .inventory-page) { padding-inline:0; }
+  #root #inventory-results-workspace.if-srp .inventory-experience__content { padding:8px 0 16px; }
+  #root #inventory-results-workspace.if-srp :is(.if-srp-heading-grid,.if-srp-controls,.inventory-pagination) {
+    padding-left:max(10px,var(--safe-left));
+    padding-right:max(10px,var(--safe-right));
+  }
+  #root .app-main:has(> .inventory-page) > :is(.synthetic-preview-notice,.role-preview-banner) {
+    margin-inline:0;
+    padding-left:max(10px,var(--safe-left));
+    padding-right:max(10px,var(--safe-right));
+    border-radius:0;
+  }
+  #root #inventory-results-workspace .if-srp-mobile-list { border-inline:0; border-radius:0; }
+  #root #inventory-results-workspace .if-srp-mobile-row--scan {
+    padding-left:max(10px,var(--safe-left));
+    padding-right:max(10px,var(--safe-right));
+    border-radius:0;
+  }
 }

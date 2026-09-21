@@ -23,6 +23,6 @@ describe('service status shared across inventory and vehicle details', () => {
 
   it('shows an actual manager completion date when one exists', () => {
     render(<ServiceStatusLink vin="TESTDATAHWELL0001" detailed service={{ status: 'serviced', completedAt: '2026-08-30' } as ServiceReadiness} />)
-    expect(screen.getByRole('link')).toHaveTextContent('Ready · 2026-08-30')
+    expect(screen.getByRole('link')).toHaveTextContent('Ready · 08/30/2026')
   })
 })

@@ -120,6 +120,20 @@ function fordOasisResource(
     sourceLabel: cleanOptionalText(fordOasis.sourceLabel),
     vehicleDescription: cleanOptionalText(fordOasis.vehicleDescription),
     versionSeries: cleanOptionalText(fordOasis.versionSeries),
+    bodyStyle: cleanOptionalText(fordOasis.bodyStyle),
+    driveType: cleanOptionalText(fordOasis.driveType),
+    paintColor: cleanOptionalText(fordOasis.paintColor),
+    paintCode: cleanOptionalText(fordOasis.paintCode),
+    engine: cleanOptionalText(fordOasis.engine),
+    engineCalibration: cleanOptionalText(fordOasis.engineCalibration),
+    transmission: cleanOptionalText(fordOasis.transmission),
+    axleRatio: cleanOptionalText(fordOasis.axleRatio),
+    axleCode: cleanOptionalText(fordOasis.axleCode),
+    grossVehicleWeight: cleanOptionalText(fordOasis.grossVehicleWeight),
+    wheelSize: cleanOptionalText(fordOasis.wheelSize),
+    tire: cleanOptionalText(fordOasis.tire),
+    syncVersion: cleanOptionalText(fordOasis.syncVersion),
+    fuelType: cleanOptionalText(fordOasis.fuelType),
     // Dates stay exactly as OASIS printed them; they are not reformatted.
     buildDate: cleanOptionalText(fordOasis.buildDate),
     warrantyStartDate: cleanOptionalText(fordOasis.warrantyStartDate),
@@ -330,20 +344,26 @@ function publicChangeValue(event: PublicChangeEvent, value: string | number | nu
 
 function publicChangeTitle(type: PublicChangeEvent['type']): string {
   const labels: Record<PublicChangeEvent['type'], string> = {
-    new_arrival: 'New public-inventory arrival',
+    new_arrival: 'Added to inventory',
     removed: 'Removed from public release',
-    price_change: 'Listed price changed',
-    mileage_change: 'Published mileage changed',
+    price_change: 'Price changed',
+    mileage_change: 'Mileage updated',
     website_status_change: 'Website Status changed',
     stock_correction: 'Stock number corrected',
-    store_transfer: 'Source physical store changed',
+    store_transfer: 'Store changed',
   }
   return labels[type]
 }
 
+// Website listing state (appeared, left, or changed status online) is not an
+// activity anyone acts on from a vehicle record; it confirms nothing about a
+// sale, delivery, hold, or location. Only changes to the vehicle's own facts
+// belong in its activity.
+const HIDDEN_TIMELINE_CHANGE_TYPES: ReadonlySet<PublicChangeEvent['type']> = new Set(['new_arrival', 'removed', 'website_status_change'])
+
 function timelineFromPublicChanges(data: BootstrapData, vin: string): VehicleTimelineEvent[] {
   return (data.publicChanges ?? [])
-    .filter((event) => event.vin === vin)
+    .filter((event) => event.vin === vin && !HIDDEN_TIMELINE_CHANGE_TYPES.has(event.type))
     .map((event) => ({
       id: event.id,
       occurredAt: `${event.reportDate}T12:00:00`,
@@ -562,6 +582,7 @@ export function toInventoryVehicle(
             ? 1
             : 0,
       conciseState: vehicle.hold.label,
+      loaner: vehicle.hold.loaner ?? null,
       canViewEvidence: vehicle.hold.canViewEvidence === true,
       canManageHold: vehicle.hold.canManage === true,
       redactionReason: vehicle.hold.canViewEvidence === true ? null : 'Exact DealerMail evidence is restricted for this role.',
@@ -603,6 +624,7 @@ export function toInventoryVehicle(
             Boolean(openJoined?.dueAt && new Date(openJoined.dueAt).getTime() < Date.now()),
           custodian: vehicle.movement.currentCustodian || openJoined?.custodian || null,
           transportAssignee: vehicle.movement.transportAssignee || openJoined?.transportAssignee || null,
+          canDirectReroute: vehicle.movement.canDirectReroute === true,
         }
       : null,
     // The server's own createTransfer decision (service-core vehicleView,

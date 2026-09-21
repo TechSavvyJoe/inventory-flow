@@ -23,11 +23,11 @@ function vehicle(vin: string, overrides: Record<string, unknown> = {}) {
 
 describe('public inventory change events', () => {
   it('emits arrivals, removals, price/status corrections, and a single store-transfer event', () => {
-    const unchangedVin = '1FMEE0RR5RLA48819'
-    const changedVin = '1FMSK8KH2PGA07081'
-    const transferVin = '1FMUK8DHXTGB76992'
-    const removedVin = '2FMPK4J91RBB19499'
-    const arrivalVin = '1FMSK8DH8RGA57726'
+    const unchangedVin = 'TESTDATASYN000004'
+    const changedVin = 'TESTDATASYN000011'
+    const transferVin = 'TESTDATASYN000001'
+    const removedVin = 'TESTDATASYN000013'
+    const arrivalVin = 'TESTDATASYN000012'
     const previousSnapshot = {
       report_date: '2026-08-28',
       vehicles: {
@@ -78,7 +78,7 @@ describe('public inventory change events', () => {
   })
 
   it('treats missing numeric sentinels as missing and does not manufacture a change', () => {
-    const vin = '1FMEE0RR5RLA48819'
+    const vin = 'TESTDATASYN000004'
     const events = buildPublicChangeEvents({
       previousSnapshot: {
         report_date: '2026-08-28',

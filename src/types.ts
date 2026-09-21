@@ -95,6 +95,9 @@ export interface WindowStickerRecord {
   dataState?: SourceFreshness
   vehicleDescription?: string | null
   equipmentGroup?: string | null
+  /** Present only when equipment-group membership was explicitly captured. */
+  equipmentGroupContents?: string[]
+  equipmentGroupPrice?: number | null
   basePrice?: number | null
   totalOptions?: number | null
   destinationCharge?: number | null
@@ -171,6 +174,20 @@ export interface FordOasisRecord {
   sourceLabel?: string | null
   vehicleDescription?: string | null
   versionSeries?: string | null
+  bodyStyle?: string | null
+  driveType?: string | null
+  paintColor?: string | null
+  paintCode?: string | null
+  engine?: string | null
+  engineCalibration?: string | null
+  transmission?: string | null
+  axleRatio?: string | null
+  axleCode?: string | null
+  grossVehicleWeight?: string | null
+  wheelSize?: string | null
+  tire?: string | null
+  syncVersion?: string | null
+  fuelType?: string | null
   buildDate?: string | null
   warrantyStartDate?: string | null
   releaseDate?: string | null
@@ -241,6 +258,13 @@ export interface HoldSummary {
   reason?: string
   commentsCount?: number
   alertsCount?: number
+  loaner?: {
+    active: boolean
+    program?: string | null
+    label: string
+    serviceDate?: string | null
+    rawAlert?: string | null
+  } | null
 }
 
 export interface DealerMailEvidenceMessage {
@@ -322,7 +346,8 @@ export interface MovementSummary {
    * cross-store rule, role checks) can still refuse a POST before this rule
    * is evaluated; `false` is about the ledger, not a promise of acceptance.
    */
-  newRequestBlocked?: boolean
+    newRequestBlocked?: boolean
+    canDirectReroute?: boolean
 }
 
 export interface PublicScanAuditRecord {
@@ -507,6 +532,16 @@ export interface AttentionEvent {
   note?: string
 }
 
+/** Whether the signed-in store and role can take this item's next step today. */
+export type AttentionActionability = 'actionable' | 'informational'
+
+/** Why an item is only worth knowing about, used to group the collapsed list. */
+export type AttentionInformationalReason =
+  | 'source_health'
+  | 'public_listing'
+  | 'other_store'
+  | 'role_scope'
+
 export interface AttentionItem {
   id: string
   severity: 'info' | 'warning' | 'critical'
@@ -516,6 +551,10 @@ export interface AttentionItem {
   vehicleName?: string
   stockNumber?: string
   store?: StoreName
+  /** The store that owns the next step, when it differs from the listed store. */
+  actionStore?: StoreName
+  actionability?: AttentionActionability
+  informationalReason?: AttentionInformationalReason | null
   owner?: string
   dueAt?: string
   href?: string
@@ -579,8 +618,11 @@ export interface BootstrapData {
     role: UserRole
     store: StoreName
     authenticatedRole?: UserRole
+    authenticatedStore?: StoreName
     canPreviewRoles?: boolean
+    canPreviewStores?: boolean
     rolePreviewActive?: boolean
+    storePreviewActive?: boolean
     canViewPrivateEvidence: boolean
     canCreateTransfer: boolean
   }
@@ -594,11 +636,10 @@ export interface BootstrapData {
   publicChanges?: PublicChangeEvent[]
 }
 
-export interface TransferRequestInput {
+interface TransferRequestInputBase {
   vin: string
   requestingStore: StoreName
   requestedBy: string
-  neededBy: string
   reason: string
   customerReference?: string
   customerAppointment: boolean
@@ -607,6 +648,21 @@ export interface TransferRequestInput {
   priority: TransferRecord['priority']
   approvalOwner?: string
 }
+
+export type TransferRequestInput = TransferRequestInputBase & (
+  | {
+      intent?: 'request'
+      destinationStore?: StoreName
+      neededBy: string
+      movedAt?: never
+    }
+  | {
+      intent: 'direct'
+      destinationStore: StoreName
+      movedAt?: string
+      neededBy?: never
+    }
+)
 
 export interface TransferEventInput {
   type: string

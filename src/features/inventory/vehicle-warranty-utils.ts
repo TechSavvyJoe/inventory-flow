@@ -11,6 +11,8 @@
 //
 // Keep this file in step with extension/sidepanel/lib/warranty.mjs.
 
+import { sourceDistanceText } from "../../lib/source-distance"
+
 export type WarrantyTerm = readonly [months: number, miles: number]
 
 export interface MakeWarrantyTerms {
@@ -240,7 +242,8 @@ export function warrantyOutlook(input: WarrantyInput, { now = Date.now() }: { no
     mileage,
     electrified,
     coverages,
-    stickerWarranty: (input.stickerWarranty ?? []).filter(Boolean),
+    // A Canadian sticker prints its terms in kilometres; staff read miles.
+    stickerWarranty: (input.stickerWarranty ?? []).filter(Boolean).map(sourceDistanceText),
     verify,
   }
 }
@@ -259,17 +262,14 @@ export function warrantySummary(outlook: WarrantyOutlook): string | null {
 
 export interface CertifiedTerms {
   name: string
-  brand: "ford" | "lincoln"
+  brand: "ford" | "lincoln" | "generic"
   terms: string[]
   note: string
 }
 
-/**
- * What the dealership's certification adds. Bob Maxey is a Ford–Lincoln group:
- * the Ford stores certify under Ford Blue Advantage and the Lincoln store under
- * Lincoln Certified Pre-Owned. The feed only carries a boolean, so both tiers
- * are listed and the inspection sheet settles which one applies. Any factory
- * warranty still running on the vehicle is separate from this.
+/** Dealer-confirmed policy: certified vehicles at the three Ford stores are
+ * Blue Certified. Lincoln's specific tier remains a source-paperwork fact.
+ * Certification remains separate from the vehicle's factory warranty.
  */
 export function certifiedTerms(homeStore: string | null | undefined): CertifiedTerms {
   if (String(homeStore ?? "").trim() === "Lincoln") {
@@ -283,13 +283,15 @@ export function certifiedTerms(homeStore: string | null | undefined): CertifiedT
       note: "The feed only says certified; the inspection sheet shows the tier. Separate from any factory warranty still running on the vehicle — confirm the paperwork with the store.",
     }
   }
+  if (!["Howell", "Fowlerville", "Ford Detroit"].includes(String(homeStore ?? "").trim())) {
+    return { name: "Certified pre-owned", brand: "generic", terms: [], note: "Confirm certification coverage with the selling store." }
+  }
   return {
-    name: "Ford Blue Advantage",
+    name: "Ford Blue Certified",
     brand: "ford",
     terms: [
       "Blue Certified: Ford and non-Ford vehicles up to 10 model years / 150,000 mi, 139-point inspection, 90 day / 4,000 mi comprehensive limited warranty",
-      "Gold Certified: Ford vehicles up to 6 model years / 80,000 mi, 172-point inspection, 12 mo / 12,000 mi comprehensive plus 7 yr / 100,000 mi powertrain from the original warranty start date",
     ],
-    note: "The feed only says certified; the inspection sheet shows the tier. Separate from any factory warranty still running on the vehicle — confirm the paperwork with the store.",
+    note: "Separate from any factory warranty still running on the vehicle. Confirm the certified purchase date and coverage paperwork with the store.",
   }
 }

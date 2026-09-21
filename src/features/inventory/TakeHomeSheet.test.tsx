@@ -8,8 +8,8 @@ afterEach(cleanup);
 
 function vehicle(): InventoryVehicle {
   return {
-    id: '1FMUK8DHXTGB76992',
-    vin: '1FMUK8DHXTGB76992',
+    id: 'TESTDATASYN000001',
+    vin: 'TESTDATASYN000001',
     stockNumber: 'HT0529A',
     year: 2026,
     make: 'Ford',
@@ -44,7 +44,7 @@ describe('take-home sheet', () => {
   it('carries only published, customer-facing facts', () => {
     const model = takeHomeModel(vehicle());
     expect(model).toMatchObject({ store: 'Howell', storeName: 'Bob Maxey Ford of Howell', stockNumber: 'HT0529A', price: 42810, msrp: 49480, savings: 6670, mileage: 2052 });
-    expect(model.certified?.name).toBe('Ford Blue Advantage');
+    expect(model.certified?.name).toBe('Ford Blue Certified');
     expect(model.history).toBe('AutoCheck score 92 · 1 owner reported');
     const serialized = JSON.stringify(model);
     for (const forbidden of ['Demo Salesperson', 'Customer appointment', 'Fowlerville', 'Demo Driver', 'transfer-1', 'in_transit', 'Mark arrived', '2024-03-14', 'inService', 'Bumper-to-bumper']) {

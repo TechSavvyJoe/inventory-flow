@@ -42,6 +42,13 @@ function contractGaps(value, schema, path = '') {
   return gaps
 }
 
+// The Worker, not the read service, attaches the Cloudflare version metadata to
+// the health response, so the contract has to be walked against the composed
+// body a consumer actually receives.
+function healthResponse(api, version) {
+  return { ...api.health(), version }
+}
+
 function service() {
   const vehicle = {
     vin: vinFor(1), stockNumber: '0001TEST', year: 2024, make: 'Ford', model: 'F-150', trim: 'XLT', vehicleName: '2024 Ford F-150 XLT',
@@ -99,7 +106,7 @@ describe('published integration contract', () => {
     ['inventory', api => api.inventory(), 'InventoryPage'],
     ['vehicle detail', api => api.vehicle(vinFor(1)), 'VehicleResponse'],
     ['changes', api => api.changes(), 'ChangesPage'],
-    ['data health', api => api.health(), 'HealthResponse'],
+    ['data health', api => healthResponse(api, null), 'HealthResponse'],
     ['hold summary', api => api.holdSummary(), 'HoldSummaryResponse'],
     ['manager dispositions', api => api.managerDispositions(), 'ManagerDispositionsPage'],
   ])('describes every field the %s response actually returns', (_label, call, schemaName) => {
@@ -113,5 +120,13 @@ describe('published integration contract', () => {
 
   it('describes the capabilities document a consumer negotiates against', () => {
     expect(contractGaps(service().capabilities, spec.components.schemas.Capabilities)).toEqual([])
+  })
+
+  it('describes the deployed-version field the health response carries', () => {
+    // version identifies the Worker build that answered, never the freshness of
+    // the release it served, and it is null wherever the binding is absent.
+    const version = { versionId: 'bf2d0d3a-0000-4000-8000-000000000000', versionTag: 'abc1234', versionTimestamp: '2026-09-19T00:00:00Z' }
+    expect(contractGaps(healthResponse(service(), version), spec.components.schemas.HealthResponse)).toEqual([])
+    expect(workerSource).toContain("version: versionMetadata(env)")
   })
 })

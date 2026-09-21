@@ -396,12 +396,131 @@ function autoCheckReport() {
 
 const heldVins = new Set(['TESTDATAHWELL0001', 'TESTDATALNCN00001'])
 
+// Rich source coverage is opt-in for the local demonstration. Keep the default
+// recovery/test release unchanged, including its single resource record.
+function demoResources(vehicle) {
+  const features = vehicle.features.split(' | ')
+  const packages = features.filter((feature) => /package|pack |bundle/i.test(feature))
+  const equipment = features.filter((feature) => !packages.includes(feature))
+  const truck = /crew/i.test(vehicle.body)
+  // These fabricated option lines exercise the structure of a dense sticker:
+  // priced packages, included child items and explicit no-charge equipment.
+  // DEMO identifiers and the document warning keep them distinct from a real
+  // manufacturer's configuration; the five amounts sum to the demo's $3,005.
+  const additionalOptions = truck
+    ? ['Bed utility package · DEMO-BED · USD 1,100.00', '.Tailgate step', '.Bed illumination', 'Cargo tie-down kit · DEMO-CARGO · USD 500.00', 'Trailer camera preparation · DEMO-TOW · USD 600.00', 'Running boards · DEMO-STEP · USD 550.00', 'All-weather floor liners · DEMO-FLOOR · USD 255.00', 'Rear-seat charging · DEMO-USB · NO CHARGE']
+    : ['Cargo organization package · DEMO-CARGO · USD 1,100.00', '.Adjustable cargo dividers', '.Cargo storage tray', 'Roof crossbars · DEMO-ROOF · USD 500.00', 'All-weather floor liners · DEMO-FLOOR · USD 600.00', 'Rear-seat charging · DEMO-USB · USD 550.00', 'Illuminated entry · DEMO-ENTRY · USD 255.00', 'Cargo-area protection · DEMO-LINER · NO CHARGE']
+  const selectedOptions = additionalOptions
+  const description = `${vehicle.year} ${vehicle.make} ${vehicle.model} ${vehicle.trim}`
+  const inServiceDate = `${vehicle.year}-03-14`
+  const disclaimer = 'Synthetic demonstration only: all equipment, pricing, history, and coverage facts are fabricated. Never use for a customer or vehicle decision.'
+  const factory = {
+    ...factoryEquipment(vehicle),
+    sourceLabel: 'Synthetic vAuto equipment demonstration',
+    packages: packages.map((name, index) => ({ name, code: `DEMO-${index + 1}`, features: [] })),
+    sections: [{ name: 'Synthetic vehicle equipment', items: equipment.map((label) => ({ label })) }],
+    disclaimer,
+  }
+  return {
+    factoryEquipment: factory,
+    autoCheckReport: {
+      ...autoCheckReport(),
+      lastReportedOdometer: vehicle.mileage,
+      estimatedInServiceDate: inServiceDate,
+      vehicleClass: `Synthetic ${vehicle.body}`,
+      checks: [
+        { label: 'State title brand', status: 'Clean', detail: 'Synthetic result' },
+        { label: 'Auction brand / issues', status: 'No issue', detail: 'Synthetic result' },
+        { label: 'Accident / damage', status: 'No issue', detail: 'No accidents or damage reported · Synthetic result' },
+        { label: 'Open recall check', status: 'No open recalls', detail: 'Synthetic report result' },
+        { label: 'Insurance loss / transfer', status: 'No issue', detail: 'Synthetic result' },
+        { label: 'Odometer check', status: 'No issue', detail: 'Synthetic result' },
+        { label: 'Certified pre-owned', status: 'No CPO info available', detail: 'Synthetic report result' },
+        { label: 'Service / repair', status: 'No issue', detail: '5 service records reported · Synthetic example' },
+        { label: 'Additional history', status: 'Events reported', detail: 'Corrected title · Synthetic example' },
+      ],
+    },
+    ...(['DEMO-H01', 'DEMO-H02'].includes(vehicle.stock) ? {
+      warrantyCheck: {
+        dataState: 'current', capturedAt: '2026-08-30T09:15:00-04:00',
+        sourceLabel: 'Synthetic warranty check — fabricated training results, not operational',
+        mileageEntered: vehicle.mileage, mileageSource: 'Synthetic inventory mileage',
+        fordOasis: {
+          warrantyStartDate: inServiceDate, monthsInService: (2026 - vehicle.year) * 12 + 5,
+          coverages: [{
+            type: 'Bumper to Bumper', termText: '3 YRS / 36000 MILES',
+            status: vehicle.stock === 'DEMO-H01' ? 'ACTIVE' : 'EXPIRED',
+            remainingMilesText: `${Math.max(0, 36000 - vehicle.mileage).toLocaleString('en-US')} miles`,
+            remainingTimeText: vehicle.stock === 'DEMO-H01' ? '7 months' : 'Expired by time',
+            note: 'Synthetic example only; fabricated status and terms. Verify the actual source before any decision.',
+          }, {
+            type: 'Powertrain', termText: '5 YRS / 60000 MILES', status: 'ACTIVE',
+            remainingMilesText: `${Math.max(0, 60000 - vehicle.mileage).toLocaleString('en-US')} miles`,
+            remainingTimeText: `${60 - ((2026 - vehicle.year) * 12 + 5)} months`,
+            note: 'Synthetic example only; condition and exclusions require source verification.',
+          }],
+        },
+      },
+    } : {}),
+    windowSticker: {
+      dataState: 'current',
+      sourceMessage: disclaimer,
+      originalMarket: 'United States',
+      pricingCurrency: 'USD',
+      pricingCurrencyEvidence: 'Fabricated USD pricing for demonstration only',
+      vehicleDescription: description,
+      equipmentGroup: `Synthetic ${vehicle.trim} equipment · DEMO-GRP`,
+      equipmentGroupContents: features,
+      basePrice: factory.basePrice,
+      totalOptions: factory.totalOptions,
+      destinationCharge: factory.destinationCharge,
+      totalMsrp: vehicle.msrp,
+      exteriorColor: vehicle.exterior,
+      interiorColor: vehicle.interior,
+      engine: vehicle.engine,
+      transmission: vehicle.transmission,
+      options: selectedOptions,
+      standardEquipment: ['Power door locks', 'Automatic headlamps', 'Tire pressure monitoring', 'Rearview camera'],
+      warranty: ['Synthetic sample: consult the actual manufacturer coverage record'],
+    },
+    ...(['Ford', 'Lincoln'].includes(vehicle.make) ? {
+      fordOasis: {
+        dataState: 'current',
+        capturedAt: '2026-08-30T09:10:00-04:00',
+        sourceLabel: 'Synthetic OASIS demonstration — fabricated, not operational',
+        vehicleDescription: description,
+        versionSeries: vehicle.trim,
+        ...(['DEMO-H01', 'DEMO-H02'].includes(vehicle.stock) ? {
+          engine: vehicle.engine, transmission: vehicle.transmission, driveType: vehicle.drivetrain,
+          bodyStyle: vehicle.body, paintColor: vehicle.exterior, fuelType: 'Gasoline',
+          engineCalibration: `DEMO-CAL-${vehicle.stock}`, axleCode: `DEMO-AXLE-${vehicle.stock}`,
+          axleRatio: 'Synthetic ratio reference', tire: 'Synthetic tire specification',
+          wheelSize: 'Synthetic wheel specification', grossVehicleWeight: 'Synthetic weight reference',
+          syncVersion: 'DEMO-SYNC', paintCode: 'DEMO-PAINT',
+        } : {}),
+        buildDate: `${vehicle.year}-01-15`,
+        releaseDate: `${vehicle.year}-02-01`,
+        warrantyStartDate: inServiceDate,
+        monthsInService: (2026 - vehicle.year) * 12 + 5,
+        saleMileage: 12,
+        openActionsCaptured: true,
+        openFieldServiceActions: vehicle.stock === 'DEMO-H02'
+          ? [{ code: '26N99', description: 'Synthetic non-recall service campaign: demonstration software inspection only' }]
+          : [],
+        warrantyCoverages: [{ type: 'Synthetic coverage sample', description: 'Fabricated coverage record; verify actual terms before any vehicle decision' }],
+        extendedCoverageExpirations: [],
+      },
+    } : {}),
+  }
+}
+
 function releaseTemplate(includeDemoChanges = false) {
   const records = VEHICLES.map((vehicle) => {
     const held = heldVins.has(vehicle.vin)
+    const { windowSticker, ...resources } = includeDemoChanges ? demoResources(vehicle) : {}
     return {
       vin: vehicle.vin,
-      publicRecord: publicRecord(vehicle),
+      publicRecord: { ...publicRecord(vehicle), ...(windowSticker ? { windowSticker } : {}) },
       crmRecord: crmRecord(vehicle, held),
       holdRecord: held ? holdRecord(vehicle, { backup: vehicle.vin === 'TESTDATAHWELL0001' }) : null,
       cdkRecord: held
@@ -417,7 +536,7 @@ function releaseTemplate(includeDemoChanges = false) {
           }
         : null,
       resourceRecord:
-        vehicle.vin === 'TESTDATAHWELL0001'
+        includeDemoChanges ? resources : vehicle.vin === 'TESTDATAHWELL0001'
           ? { factoryEquipment: factoryEquipment(vehicle), autoCheckReport: autoCheckReport() }
           : null,
     }

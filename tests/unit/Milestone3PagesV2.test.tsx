@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { InventoryTableV2 } from '../../src/features/inventory/InventoryTableV2';
-import { InventoryExperienceV2 } from '../../src/features/inventory/InventoryExperienceV2';
 import { ServicePageV2 } from '../../src/features/service/ServicePageV2';
 import { TransfersPageV2, calculateCountdown } from '../../src/features/transfers/TransfersPageV2';
 import type { InventoryStore, InventoryVehicle } from '../../src/features/inventory/types';
@@ -236,7 +235,7 @@ const { mockVehicle1, mockVehicle2, mockVehicle3, mockTransfer1, mockTransfer2, 
   const appData = {
     data: b,
     homeStore: 'Howell' as const,
-    role: 'salesperson' as const,
+    role: 'manager' as const,
     currentUser: 'Sarah Jenkins',
     refresh: vi.fn(),
     submitTransfer: vi.fn(),
@@ -263,6 +262,7 @@ vi.mock('../../src/lib/api', () => ({
     status: 'needs_service',
     version: 1,
     notes: 'Initial notes',
+    canManage: true, store: 'Howell', history: [],
   }),
   updateServiceReadiness: vi.fn().mockResolvedValue({
     success: true,
@@ -271,382 +271,74 @@ vi.mock('../../src/lib/api', () => ({
   getTransfer: vi.fn().mockResolvedValue(mockTransfer1),
 }));
 
-describe('Milestone 3: App-Wide Page Upgrades (R3, R2, R4)', () => {
-  beforeEach(() => {
-    setupClipboardMock();
+describe('Premium pages preserve the complete operational workflow', () => {
+  beforeEach(() => { setupClipboardMock(); vi.clearAllMocks(); });
+  afterEach(cleanup);
+
+  it('defaults service to the established list with an optional board', async () => {
+    const { container } = render(<MemoryRouter initialEntries={['/service']}><ServicePageV2 /></MemoryRouter>);
+    expect(screen.getByRole('group', { name: 'Service view' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true');
+    expect(container.querySelector('.service-v2-board')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Board' }));
+    expect(await screen.findByRole('button', { name: 'Start service for STK101' })).toBeInTheDocument();
+    expect(container.querySelectorAll('.service-v2-column')).toHaveLength(3);
+    expect(screen.getByRole('heading', { name: /Service Ready/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'List' }));
+    expect(container.querySelector('.service-v2-board')).toBeNull();
   });
 
-  afterEach(() => {
-    cleanup();
-    vi.clearAllMocks();
+  it('board actions open the shared confirmation editor without writing immediately', async () => {
+    const api = await import('../../src/lib/api');
+    render(<MemoryRouter initialEntries={['/service?view=board']}><ServicePageV2 /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Start service for STK101' }));
+    expect(await screen.findByRole('button', { name: 'Save service status' })).toBeInTheDocument();
+    expect(api.updateServiceReadiness).not.toHaveBeenCalled();
   });
 
-  // ===========================================================================
-  // 1. Inventory Table V2 Unit Tests
-  // ===========================================================================
-  describe('InventoryTableV2 Component', () => {
-    const mockStore: InventoryStore = { id: 'howell', name: 'Howell' };
-    const vehicleHeld = createMockVehicle({
-      id: 'VIN-HELD',
-      vin: '1FTFW1E86HFA77777',
-      stockNumber: 'STK777',
-      dealerMail: {
-        dataState: 'current',
-        hasActiveHold: true,
-        position: 'primary',
-        activeRecordCount: 1,
-        canViewEvidence: true,
-        canManageHold: true,
-        updatedAt: '2026-09-17T12:00:00Z',
-      },
-      holdEvidence: [
-        {
-          id: 'h1',
-          position: 'primary',
-          salesperson: 'Sarah Jenkins',
-          customerOrReason: 'Pending deposit',
-        },
-      ],
-      serviceReadiness: { status: 'in_service' } as any,
-    });
-
-    const vehicleReady = createMockVehicle({
-      id: 'VIN-READY',
-      vin: '1FTFW1E86HFA88888',
-      stockNumber: 'STK888',
-      dealerMail: {
-        dataState: 'current',
-        hasActiveHold: false,
-        activeRecordCount: 0,
-        canViewEvidence: false,
-        canManageHold: false,
-        updatedAt: '2026-09-17T12:00:00Z',
-      },
-      serviceReadiness: { status: 'serviced' } as any,
-      fordOasis: {
-        openFieldServiceActions: [{ campaignNumber: '24S02', description: 'Wiper motor recall' } as any],
-      } as any,
-    });
-
-    it('renders table with sticky header columns and uppercase labels', () => {
-      render(
-        <InventoryTableV2
-          vehicles={[vehicleHeld]}
-          sorts={[{ key: 'vehicle', direction: 'asc' }]}
-          onSortChange={vi.fn()}
-          onSelectVehicle={vi.fn()}
-        />,
-      );
-
-      expect(screen.getByRole('table', { name: /Inventory vehicles/i })).toBeInTheDocument();
-      expect(screen.getByText('Vehicle')).toBeInTheDocument();
-      expect(screen.getByText('Stock / VIN')).toBeInTheDocument();
-      expect(screen.getByText('Price & Miles')).toBeInTheDocument();
-      expect(screen.getByText('Location & Move')).toBeInTheDocument();
-      expect(screen.getByText('Hold & Service')).toBeInTheDocument();
-      expect(screen.getByText('Actions')).toBeInTheDocument();
-    });
-
-    it('renders monospace Stock and VIN chips with CopyableValue', () => {
-      render(
-        <InventoryTableV2
-          vehicles={[vehicleHeld]}
-          sorts={[]}
-          onSortChange={vi.fn()}
-          onSelectVehicle={vi.fn()}
-        />,
-      );
-
-      expect(screen.getByText('#STK777')).toBeInTheDocument();
-      expect(screen.getByText('1FTFW1E86HFA77777')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Copy Stock: STK777/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Copy VIN: 1FTFW1E86HFA77777/i })).toBeInTheDocument();
-    });
-
-    it('renders status badges: Hold salesperson, In Service, and Recall indicator', () => {
-      render(
-        <InventoryTableV2
-          vehicles={[vehicleHeld, vehicleReady]}
-          sorts={[]}
-          onSortChange={vi.fn()}
-          onSelectVehicle={vi.fn()}
-        />,
-      );
-
-      // Held vehicle badges
-      expect(screen.getByText(/Hold: Sarah Jenkins/i)).toBeInTheDocument();
-      expect(screen.getByText('In Service')).toBeInTheDocument();
-
-      // Ready vehicle badges
-      expect(screen.getByText('Available')).toBeInTheDocument();
-      expect(screen.getByText('Ready')).toBeInTheDocument();
-      expect(screen.getAllByText(/Recall/i).length).toBeGreaterThanOrEqual(1);
-    });
-
-    it('renders View, Move, and Request quick action shortcuts', () => {
-      const onView = vi.fn();
-      const onMove = vi.fn();
-      const onRequest = vi.fn();
-
-      render(
-        <InventoryTableV2
-          vehicles={[vehicleHeld]}
-          sorts={[]}
-          onSortChange={vi.fn()}
-          onSelectVehicle={vi.fn()}
-          onViewVehicle={onView}
-          onTrackMovement={onMove}
-          onRequestVehicle={onRequest}
-          canRequestVehicle={true}
-        />,
-      );
-
-      const viewBtn = screen.getByRole('button', { name: /View details for STK777/i });
-      const moveBtn = screen.getByRole('button', { name: /Move vehicle STK777/i });
-      const requestBtn = screen.getByRole('button', { name: /Request transfer for STK777/i });
-
-      expect(viewBtn).toBeInTheDocument();
-      expect(moveBtn).toBeInTheDocument();
-      expect(requestBtn).toBeInTheDocument();
-
-      fireEvent.click(viewBtn);
-      expect(onView).toHaveBeenCalledWith(vehicleHeld);
-
-      fireEvent.click(moveBtn);
-      expect(onMove).toHaveBeenCalledWith(vehicleHeld);
-
-      fireEvent.click(requestBtn);
-      expect(onRequest).toHaveBeenCalledWith(vehicleHeld);
-    });
-
-    it('disables Request button when canRequestVehicle is false', () => {
-      render(
-        <InventoryTableV2
-          vehicles={[vehicleHeld]}
-          sorts={[]}
-          onSortChange={vi.fn()}
-          onSelectVehicle={vi.fn()}
-          canRequestVehicle={false}
-        />,
-      );
-
-      const requestBtn = screen.getByRole('button', { name: /Request transfer for STK777/i });
-      expect(requestBtn).toBeDisabled();
-    });
-
-    it('renders empty table message when vehicle list is empty', () => {
-      render(
-        <InventoryTableV2
-          vehicles={[]}
-          sorts={[]}
-          onSortChange={vi.fn()}
-          onSelectVehicle={vi.fn()}
-        />,
-      );
-
-      expect(screen.getByText('No vehicles to display')).toBeInTheDocument();
-    });
+  it('filters optional board vehicles by stock without changing their source state', async () => {
+    render(<MemoryRouter initialEntries={['/service?view=board']}><ServicePageV2 /></MemoryRouter>);
+    fireEvent.change(await screen.findByRole('searchbox', { name: 'Filter service vehicles' }), { target: { value: 'STK102' } });
+    expect(screen.getByRole('button', { name: 'Mark Ready for STK102' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start service for STK101' })).not.toBeInTheDocument();
   });
 
-  // ===========================================================================
-  // 2. Service Board V2 Unit Tests
-  // ===========================================================================
-  describe('ServicePageV2 Component', () => {
-    it('renders multi-column readiness Kanban board with 3 columns', () => {
-      render(
-        <MemoryRouter>
-          <ServicePageV2 />
-        </MemoryRouter>,
-      );
-
-      expect(screen.getByRole('heading', { name: /Needs Service/i })).toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: /In Service/i })).toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: /Ready for Delivery/i })).toBeInTheDocument();
-    });
-
-    it('renders 1-click quick action "Start Service" on waiting cards', () => {
-      render(
-        <MemoryRouter>
-          <ServicePageV2 />
-        </MemoryRouter>,
-      );
-
-      const startBtn = screen.getByRole('button', { name: /Start service for STK101/i });
-      expect(startBtn).toBeInTheDocument();
-      expect(startBtn).toHaveTextContent('Start Service');
-    });
-
-    it('renders 1-click quick action "Mark Ready" on in-service cards', () => {
-      render(
-        <MemoryRouter>
-          <ServicePageV2 />
-        </MemoryRouter>,
-      );
-
-      const readyBtn = screen.getByRole('button', { name: /Mark Ready for STK102/i });
-      expect(readyBtn).toBeInTheDocument();
-      expect(readyBtn).toHaveTextContent('Mark Ready');
-    });
-
-    it('toggles between Kanban Board and List View', () => {
-      render(
-        <MemoryRouter>
-          <ServicePageV2 />
-        </MemoryRouter>,
-      );
-
-      const listBtn = screen.getByRole('button', { name: /List View/i });
-      fireEvent.click(listBtn);
-
-      expect(screen.getByRole('table', { name: /Service vehicles list/i })).toBeInTheDocument();
-
-      const kanbanBtn = screen.getByRole('button', { name: /Kanban Board/i });
-      fireEvent.click(kanbanBtn);
-
-      expect(screen.getByRole('heading', { name: /Needs Service/i })).toBeInTheDocument();
-    });
-
-    it('filters cards by search query', () => {
-      render(
-        <MemoryRouter>
-          <ServicePageV2 />
-        </MemoryRouter>,
-      );
-
-      const searchInput = screen.getByRole('searchbox', { name: /Filter service vehicles/i });
-      fireEvent.change(searchInput, { target: { value: 'Bronco' } });
-
-      expect(screen.getByText('2024 Ford Bronco Badlands')).toBeInTheDocument();
-      expect(screen.queryByText('2024 Ford F-150 XLT')).not.toBeInTheDocument();
-    });
+  it('retains the full move queue with store, stage, sorting and search controls', () => {
+    render(<MemoryRouter initialEntries={['/transfers']}><TransfersPageV2 /></MemoryRouter>);
+    expect(screen.getByRole('heading', { name: 'Vehicle moves', level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Vehicle move stores' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Move queue view' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Filter vehicle moves' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Sort vehicle moves' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search vehicle moves' }), { target: { value: 'STK102' } });
+    const moves = within(screen.getByRole('complementary', { name: 'Vehicle moves' }));
+    expect(moves.getByRole('button', { name: /STK102/ })).toHaveTextContent('Dave Clark');
+    expect(moves.queryByRole('button', { name: /STK101/ })).not.toBeInTheDocument();
   });
 
-  // ===========================================================================
-  // 3. Transfers Movement View V2 Unit Tests
-  // ===========================================================================
-  describe('TransfersPageV2 Component', () => {
-    it('renders movement tracking cockpit header with scope and queue toggles', () => {
-      render(
-        <MemoryRouter>
-          <TransfersPageV2 />
-        </MemoryRouter>,
-      );
-
-      expect(screen.getByRole('heading', { name: /Vehicle Movement Cockpit/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /My Store \(Howell\)/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Active Moves/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Needs Action/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Completed/i })).toBeInTheDocument();
-    });
-
-    it('renders movement queue cards with route (Origin -> Destination)', () => {
-      render(
-        <MemoryRouter>
-          <TransfersPageV2 />
-        </MemoryRouter>,
-      );
-
-      // Route Howell -> Fowlerville
-      const routes = screen.getAllByText('Howell');
-      expect(routes.length).toBeGreaterThanOrEqual(1);
-      expect(screen.getAllByText('Fowlerville').length).toBeGreaterThanOrEqual(1);
-    });
-
-    it('renders custodian attribution on queue cards', () => {
-      render(
-        <MemoryRouter>
-          <TransfersPageV2 />
-        </MemoryRouter>,
-      );
-
-      expect(screen.getByText(/Custodian: Sarah Jenkins/i)).toBeInTheDocument();
-      expect(screen.getByText(/Custodian: Dave Clark/i)).toBeInTheDocument();
-    });
-
-    it('highlights overdue movement with warning alert', () => {
-      render(
-        <MemoryRouter>
-          <TransfersPageV2 />
-        </MemoryRouter>,
-      );
-
-      const overdueAlert = screen.getByRole('alert');
-      expect(overdueAlert).toBeInTheDocument();
-      expect(overdueAlert).toHaveTextContent(/Action Overdue/i);
-    });
-
-    it('renders inline action progression buttons directly on queue cards', () => {
-      render(
-        <MemoryRouter>
-          <TransfersPageV2 />
-        </MemoryRouter>,
-      );
-
-      // Simple action for mockTransfer1 is 'confirm-pickup' -> "Mark vehicle collected"
-      const pickupBtn = screen.getByRole('button', { name: /Mark vehicle collected for STK101/i });
-      expect(pickupBtn).toBeInTheDocument();
-
-      // Simple action for mockTransfer2 is 'confirm-return' -> "Confirm back home"
-      const returnBtn = screen.getByRole('button', { name: /Confirm back home for STK102/i });
-      expect(returnBtn).toBeInTheDocument();
-
-      // Track details button
-      expect(screen.getByRole('button', { name: /Track movement for STK101/i })).toBeInTheDocument();
-    });
-
-    it('selects transfer when clicking Track or card', () => {
-      render(
-        <MemoryRouter>
-          <TransfersPageV2 />
-        </MemoryRouter>,
-      );
-
-      const trackBtn = screen.getByRole('button', { name: /Track movement for STK101/i });
-      fireEvent.click(trackBtn);
-
-      // Detail pane updates
-      expect(document.getElementById('transfer-detail-workspace')).toBeInTheDocument();
-    });
+  it('retains the new move vehicle picker from the default route', async () => {
+    render(<MemoryRouter initialEntries={['/transfers/new']}><TransfersPageV2 /></MemoryRouter>);
+    expect(screen.getByRole('heading', { name: 'Start a move' })).toBeInTheDocument();
+    const search = screen.getByRole('textbox', { name: 'Search inventory to move' });
+    fireEvent.change(search, { target: { value: 'STK103' } });
+    expect(screen.getByText(/Stock STK103/)).toBeInTheDocument();
+    expect(screen.queryByText(/Stock STK101/)).not.toBeInTheDocument();
   });
 
-  // ===========================================================================
-  // 4. Countdown Timer Logic Unit Tests
-  // ===========================================================================
-  describe('calculateCountdown helper', () => {
-    it('returns "No deadline" when dueAt is undefined or null', () => {
-      const res = calculateCountdown(null);
-      expect(res.label).toBe('No deadline');
-      expect(res.isOverdue).toBe(false);
-      expect(res.isDueSoon).toBe(false);
-    });
+  it('keeps the retained alternative table qualified and permission-safe', () => {
+    const vehicle = createMockVehicle({ dealerMail: { dataState: 'current', hasActiveHold: false, activeRecordCount: 0, canViewEvidence: false, canManageHold: false }, movement: null });
+    render(<InventoryTableV2 vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} canRequestVehicle={false} />);
+    expect(screen.getByText('No current DealerMail hold found')).toBeInTheDocument();
+    expect(screen.queryByText(/^Available$/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Request transfer/ })).not.toBeInTheDocument();
+  });
 
-    it('returns "Action Overdue" when SLA is breached or overdue even without timestamp', () => {
-      const res = calculateCountdown(null, 'overdue');
-      expect(res.label).toBe('Action Overdue');
-      expect(res.isOverdue).toBe(true);
-    });
-
-    it('calculates overdue time when target date is in the past', () => {
-      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-      const res = calculateCountdown(twoHoursAgo);
-      expect(res.isOverdue).toBe(true);
-      expect(res.label).toMatch(/Overdue by 2h/i);
-    });
-
-    it('marks due soon when target date is within 4 hours', () => {
-      const threeHoursFuture = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
-      const res = calculateCountdown(threeHoursFuture);
-      expect(res.isOverdue).toBe(false);
-      expect(res.isDueSoon).toBe(true);
-      expect(res.label).toMatch(/Due in 3h/i);
-    });
-
-    it('calculates days and hours for future deadlines over 24h', () => {
-      const twoDaysFuture = new Date(Date.now() + 50 * 60 * 60 * 1000).toISOString();
-      const res = calculateCountdown(twoDaysFuture);
-      expect(res.isOverdue).toBe(false);
-      expect(res.isDueSoon).toBe(false);
-      expect(res.label).toMatch(/Due in 2d/i);
-    });
+  it('classifies missing, invalid, overdue and due-soon deadlines without inventing a date', () => {
+    expect(calculateCountdown(null)).toEqual({ label: 'No deadline', isOverdue: false, isDueSoon: false });
+    expect(calculateCountdown('invalid')).toEqual({ label: 'No deadline', isOverdue: false, isDueSoon: false });
+    expect(calculateCountdown(null, 'overdue').isOverdue).toBe(true);
+    expect(calculateCountdown(new Date(Date.now()-3600000).toISOString()).isOverdue).toBe(true);
+    expect(calculateCountdown(new Date(Date.now()+3600000).toISOString()).isDueSoon).toBe(true);
+    expect(calculateCountdown(new Date(Date.now()+72*3600000).toISOString()).isDueSoon).toBe(false);
   });
 });

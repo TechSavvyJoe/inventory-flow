@@ -67,10 +67,10 @@ export function WarrantyOutlook({ vehicle }: { vehicle: InventoryVehicle }) {
 
       <dl className="inventory-vehicle-document__metrics inventory-warranty__metrics" aria-label="In-service date">
         <div className="inventory-workspace-fact inventory-workspace-fact--emphasized">
-          <dt>Original in-service</dt>
+          <dt>{outlook.inService.date ? "Est. original in-service" : "Original in-service"}</dt>
           <dd>
-            {outlook.inService.date ? formatDate(outlook.inService.date) : "Not on the captured report"}
-            {outlook.inService.date ? <small> AutoCheck estimate</small> : null}
+            {outlook.inService.date ? formatDate(outlook.inService.date) : "Not available"}
+            {outlook.inService.date && outlook.inService.source ? <small>{outlook.inService.source}</small> : null}
           </dd>
         </div>
         <div className="inventory-workspace-fact">

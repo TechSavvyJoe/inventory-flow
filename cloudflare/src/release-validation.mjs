@@ -630,6 +630,7 @@ function validateManagerDisposition(release, normalizedVehicles, reportDate) {
 
 function activeInventoryMembership(publicByVin, managerDispositionOverlay) {
   const activeVins = new Set(publicByVin.keys())
+  const activeStoreCounts = Object.create(null)
   let managerDeliveredExclusionCount = 0
   let managerPendingCarryoverCount = 0
   let managerPendingIdentityReviewCount = 0
@@ -651,8 +652,13 @@ function activeInventoryMembership(publicByVin, managerDispositionOverlay) {
       }
     }
   }
+  for (const vin of activeVins) {
+    const store = publicByVin.get(vin)?.store
+    if (typeof store === 'string' && store) activeStoreCounts[store] = (activeStoreCounts[store] ?? 0) + 1
+  }
   return {
     activeInventoryCount: activeVins.size,
+    activeStoreCounts,
     managerDeliveredExclusionCount,
     managerPendingCarryoverCount,
     managerPendingIdentityReviewCount,

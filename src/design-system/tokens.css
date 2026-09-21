@@ -97,14 +97,34 @@
   --ifx-elevation-action: 0 6px 16px rgb(53 70 219 / 22%), inset 0 1px rgb(255 255 255 / 20%);
 
   --ifx-motion-instant: 70ms;
-  --ifx-motion-fast: 140ms;
-  --ifx-motion-standard: 220ms;
+  --ifx-motion-fast: var(--motion-fast);
+  --ifx-motion-standard: var(--motion-standard);
   --ifx-motion-deliberate: 360ms;
   --ifx-motion-scene: 600ms;
-  --ifx-ease-standard: cubic-bezier(0.2, 0.78, 0.2, 1);
-  --ifx-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
-  --ifx-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ifx-ease-standard: var(--motion-ease);
+  --ifx-ease-enter: var(--motion-enter);
+  --ifx-ease-exit: var(--motion-exit);
   --ifx-ease-tactile: cubic-bezier(0.22, 0.9, 0.3, 1);
+
+  /* Operational defaults also serve standalone V2 pages and portal contents. */
+  --v10-ink: var(--ink-900);
+  --v10-ink-strong: var(--navy-900);
+  --v10-support: var(--ink-600);
+  --v10-muted: var(--ink-500);
+  --v10-border: var(--border);
+  --v10-border-strong: var(--border-strong);
+  --v10-border-soft: var(--surface-muted);
+  --v10-surface: var(--surface);
+  --v10-surface-subtle: var(--surface-soft);
+  --v10-surface-header: var(--surface-muted);
+  --v10-surface-active: var(--blue-050);
+  --v10-blue: var(--blue-600);
+  --v10-blue-strong: var(--blue-700);
+  --v10-brand: var(--blue-600);
+  --v10-red: var(--red);
+  --v10-warning: var(--amber);
+  --v10-warning-text: var(--amber);
+  --v10-warning-bg: var(--amber-bg);
 
   /* Skin variables may change by OEM. They cannot recolor the product mark. */
   --ifx-oem-accent: #4c5eff;

@@ -1,4 +1,4 @@
-/* Simple rollout: one manager decision, physical location updates, one action area. */
+/* Simple rollout: one manager decision, outcome/return follow-through, one action area. */
 #root .simple-transfer-tracker {
   display: grid;
   gap: 12px;
@@ -16,14 +16,18 @@
 #root .simple-move-heading > img, #root .simple-move-photo-placeholder { width: 96px; height: 72px; flex: 0 0 96px; border-radius: 5px; object-fit: cover; }
 #root .simple-move-photo-placeholder { display: grid; place-items: center; background: var(--ifx-neutral-100); color: var(--ifx-neutral-600); }
 #root .simple-move-heading > .simple-move-photo-placeholder { display: grid; place-items: center; }
-#root .simple-move-heading > div { flex: 1; min-width: 0; }
+#root .simple-move-heading > .simple-move-identity { flex: 1; min-width: 0; }
 #root .simple-move-heading h2 { color: var(--ifx-neutral-900); font-size: 20px; font-weight: 700; line-height: 1.3; }
-#root .simple-move-heading :is(span,small) { display: block; color: var(--ifx-neutral-700); font-size: 13px; line-height: 1.5; }
+#root .simple-move-heading > .move-vehicle-context { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:4px 12px; padding-top:4px; border-top:1px solid var(--ifx-neutral-200); }
+#root .simple-move-identifiers { display:flex; flex-wrap:wrap; gap:4px 18px; }
+#root .simple-move-identifiers > div { display:flex; align-items:center; gap:6px; min-width:0; }
+#root .simple-move-identifiers dt { color:var(--ifx-neutral-700); font-size:12px; }
+#root .simple-move-identifiers dd { font-size:13px; font-weight:600; }
 #root .simple-move-heading > button { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border: 1px solid var(--ifx-neutral-300); border-radius: 5px; background: var(--ifx-neutral-0); color: var(--ifx-neutral-800); }
 #root .simple-move-route { display: flex; align-items: center; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--ifx-neutral-300); color: var(--ifx-neutral-900); font-size: 15px; font-weight: 600; }
 #root .simple-move-route span { display: grid; gap: 2px; }
 #root .simple-move-route small { color: var(--ifx-neutral-700); font-size: 12px; font-weight: 400; }
-#root .simple-move-progress { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; margin: 0; padding: 0 0 16px; border-bottom: 1px solid var(--ifx-neutral-300); list-style: none; }
+#root .simple-move-progress { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin: 0; padding: 0 0 16px; border-bottom: 1px solid var(--ifx-neutral-300); list-style: none; }
 #root .simple-move-progress li { display: grid; justify-items: center; gap: 6px; color: var(--ifx-neutral-700); }
 #root .simple-move-progress li > span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--ifx-neutral-300); border-radius: 50%; font-size: 12px; }
 #root .simple-move-progress li strong { font-size: 12px; font-weight: 500; }
@@ -39,7 +43,7 @@
 #root .simple-move-location small { font-size: 13px; color: var(--ifx-neutral-700); }
 #root .simple-move-next { display: grid; gap: 10px; padding: 12px; border: 0; border-left: 3px solid var(--ifx-info); border-radius: 5px; background: var(--ifx-info-surface); }
 #root .simple-move-next > div > span { display: block; margin-bottom: 4px; font-size: 14px; color: var(--ifx-neutral-700); }
-#root .simple-move-next h3 { font-size: 17px; line-height: 1.45; font-weight: 600; }
+#root .simple-move-next h3 { color:var(--navy-900); font-size: 17px; line-height: 1.45; font-weight: 700; }
 #root .simple-move-next p { margin-top: 4px; color: var(--ifx-neutral-700); font-size: 14px; }
 #root .simple-move-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 #root .simple-move-actions .mif-button { min-height: 44px; padding: 10px 14px; border-radius: 5px; box-shadow: none; white-space: normal; }
@@ -49,15 +53,15 @@
 #root .simple-move-more button { min-height: 44px; padding: 8px 10px; text-align: left; border: 0; border-radius: 4px; background: transparent; color: var(--ifx-neutral-800); cursor: pointer; }
 #root .simple-move-more button:hover { background: var(--ifx-info-surface); }
 #root .simple-move-details { min-width: 0; }
-#root .simple-move-details h3 { margin-bottom: 12px; font-size: 16px; font-weight: 600; }
+#root .simple-move-details h3 { margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border-strong); color:var(--navy-900); font-size:16px; font-weight:700; }
 #root .simple-transfer-tracker dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px 24px; }
 #root .simple-transfer-tracker dl > div { min-width: 0; }
-#root .simple-transfer-tracker dt { margin-bottom: 3px; color: var(--ifx-neutral-700); font-size: 14px; }
+#root .simple-transfer-tracker dt { font-weight:600; margin-bottom: 3px; color: var(--ifx-neutral-700); font-size: 14px; }
 #root .simple-transfer-tracker dd { color: var(--ifx-neutral-900); font-size: 15px; overflow-wrap: anywhere; }
 #root .simple-transfer-tracker .simple-move-secondary { color: var(--ifx-neutral-700); font-size: 13px; }
 #root .simple-move-reason { grid-column: 1 / -1; }
 #root .simple-move-records { padding: 12px 0; border-top: 1px solid var(--ifx-neutral-300); }
-#root .simple-move-records > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; color: var(--ifx-neutral-800); list-style: none; cursor: pointer; }
+#root .simple-move-records > summary { font-weight:600; display: flex; align-items: center; gap: 8px; min-height: 44px; color: var(--ifx-neutral-800); list-style: none; cursor: pointer; }
 #root .simple-move-records > summary > svg { margin-left: auto; }
 #root .simple-move-records > summary > span { font-size: 13px; font-weight: 400; color: var(--ifx-neutral-700); }
 #root .simple-move-records > :not(summary) { margin-top: 16px; }
@@ -86,7 +90,7 @@
 #root .vehicle-location-results > p { margin: 8px 0 14px; color: var(--ifx-neutral-700); font-size: 13px; }
 #root .vehicle-location-results table { width: 100%; table-layout: fixed; border-collapse: collapse; }
 #root .vehicle-location-results :is(th,td) { padding: 10px 12px; border-bottom: 1px solid var(--ifx-neutral-200); text-align: left; vertical-align: top; font-size: 14px; }
-#root .vehicle-location-results th { color: var(--ifx-neutral-700); background: var(--ifx-neutral-50); font-weight: 600; }
+#root .vehicle-location-results th { color: var(--ifx-neutral-700); background: var(--ifx-neutral-50); font-weight: 700; }
 #root .vehicle-location-results :is(th,td):first-child { width: 40%; }
 #root .vehicle-location-results td span { display: flex; align-items: center; gap: 6px; }
 #root .vehicle-location-results td small { display: block; margin-top: 3px; font-size: 13px; color: var(--ifx-neutral-700); }
@@ -127,3 +131,8 @@
   #root .vehicle-location-results td[data-label]::before { content: attr(data-label); display: block; color: var(--ifx-neutral-700); font-size: 13px; }
   #root .vehicle-location-results footer { flex-wrap: wrap; gap: 8px; }
 }
+
+#root .simple-move-heading > button:hover, #root .simple-move-more > summary:hover { background:var(--blue-050); border-color:var(--blue-600); color:var(--navy-900); }
+#root .simple-move-records > summary:hover { color:var(--blue-700); text-decoration:underline; text-underline-offset:3px; }
+#root .vehicle-location-results tbody tr:hover { background:var(--surface-soft); }
+#root .vehicle-location-results a:focus-visible { outline:2px solid var(--focus); outline-offset:3px; }

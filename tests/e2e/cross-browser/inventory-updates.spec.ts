@@ -3,7 +3,7 @@ import type { BootstrapData, PublicChangeEvent, VehicleRecord } from '../../../s
 
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 // This config owns isolated synthetic servers. Only their bootstrap response is altered.
-test('inventory updates separate store-scoped arrivals, exact price changes, and removed listings', async ({ page }, testInfo) => {
+test('inventory updates separate store-scoped arrivals and exact price changes, and leave website listing status out', async ({ page }, testInfo) => {
   const homeNewVin = 'TESTDATAHWELL0001'
   const homePriceVin = 'TESTDATAHWELL0002'
   const awayNewVin = 'TESTDATAFWELL0001'
@@ -79,28 +79,26 @@ test('inventory updates separate store-scoped arrivals, exact price changes, and
 
   await tabs.getByRole('button', { name: /Other updates/ }).click()
   const other = page.getByRole('list', { name: 'Other updates results' })
-  await expect(other.getByRole('listitem')).toHaveCount(2)
-  await expect(other).toContainText('18,920 mi → 19,020 mi')
-  await page.getByLabel('Other update type').selectOption('removed')
   await expect(other.getByRole('listitem')).toHaveCount(1)
-  const removed = other.getByRole('listitem').filter({ hasText: removedVin })
-  await expect(removed).toContainText('Listing removed')
-  await expect(removed).toContainText('No current listing')
-  await expect(removed.getByRole('link')).toHaveCount(0)
+  await expect(other).toContainText('18,920 mi → 19,020 mi')
+  // Website listing state is clutter for store staff: removed listings and
+  // online status changes never appear, in the list or as a type to pick.
+  await expect(other).not.toContainText(removedVin)
+  await expect(page.getByLabel('Other update type').locator('option')).toHaveText(['All other updates', 'Mileage updated', 'Stock number corrected', 'Listed store changed'])
   await page.getByText('About this update', { exact: true }).click()
-  await expect(page.getByText('Changes compare completed public inventory snapshots.', { exact: false })).toContainText('A removed listing does not confirm a sale, delivery, hold release, or physical departure.')
-  await page.screenshot({ path: testInfo.outputPath('updates-removed-listing.png'), fullPage: false })
+  await expect(page.getByText('Changes compare completed public inventory snapshots.', { exact: false })).toContainText('Website listing status and removed listings are left out')
+  await page.screenshot({ path: testInfo.outputPath('updates-other.png'), fullPage: false })
   const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.width + 1)
 
-  await page.getByLabel('Other update type').selectOption('all')
   await scope.getByRole('button', { name: 'All stores', exact: true }).click()
-  await expect(other.getByRole('listitem')).toHaveCount(3)
-  await expect(other).toContainText('Online status changed')
+  await expect(other.getByRole('listitem')).toHaveCount(1)
+  await expect(other).not.toContainText('Online status changed')
+  await expect(other).not.toContainText('Listing removed')
   await tabs.getByRole('button', { name: /Price changes/ }).click()
   const current = page.getByRole('list', { name: 'Price changes results' }).getByRole('listitem').filter({ hasText: homePriceVin })
-  await expect(current.getByRole('link', { name: 'Open vehicle' })).toHaveAttribute('href', `/inventory?scope=group&vin=${homePriceVin}`)
-  await current.getByRole('link', { name: 'Open vehicle' }).click()
+  await expect(current.getByRole('link', { name: 'Vehicle details' })).toHaveAttribute('href', new RegExp(`^/inventory\\?scope=group&vin=${homePriceVin}&returnTo=`))
+  await current.getByRole('link', { name: 'Vehicle details' }).click()
   await expect(page).toHaveURL(new RegExp(`/inventory\\?scope=group&vin=${homePriceVin}`))
   await expect(page.getByRole('dialog')).toBeVisible()
   await expect(page.getByRole('dialog')).toContainText(homePriceVin)

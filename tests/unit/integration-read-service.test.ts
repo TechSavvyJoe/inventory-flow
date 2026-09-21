@@ -23,7 +23,7 @@ function row(index = 1, physicalStore = 'Howell') {
     privateEvidence: { primary: { customerOrReason: PRIVATE }, comments: [{ text: PRIVATE }], alerts: [{ text: PRIVATE }], cdk: { result: PRIVATE } }, searchText: PRIVATE, changeSummary: PRIVATE, dataStatus: PRIVATE, raw: { secret: PRIVATE },
     publicScan: { locationCity: 'Howell', genericColor: 'White', firstSeen: '2026-09-01', lastSeen: '2026-09-09', dealerLocationId: 21521, vehicleId: 222, sourceCount: 4, sourceSites: [PRIVATE], dealerName: PRIVATE, raw: PRIVATE },
     autoCheckReport: { url: `https://www.autocheck.com/report?token=${PRIVATE}`, dataState: 'current', reportRunAt: '2026-09-09T12:00:00Z', score: 95, scoreRangeLow: 85, scoreRangeHigh: 96, usage: 'Personal', ownerCount: 2, lastReportedOdometer: 2050, lastReportedOdometerDate: '2026-09-01', vehicleClass: 'Truck', assemblyCountry: 'United States', estimatedInServiceDate: '2024-01-01', checks: [{ label: 'Accident check', status: 'No issue reported', detail: 'No accident reported by source', raw: PRIVATE }], raw: PRIVATE },
-    windowSticker: { url: `https://windowsticker.example/private/${PRIVATE}`, dataState: 'current', originalMarket: 'USA', pricingCurrency: 'USD', pricingCurrencyEvidence: 'US original label', sourceMessage: PRIVATE, failureReason: PRIVATE, vehicleDescription: '2024 F-150 XLT', equipmentGroup: '302A', basePrice: 50000, totalOptions: 11000, destinationCharge: 2000, totalMsrp: 63000, exteriorColor: 'Oxford White', interiorColor: 'Black', engine: '3.5L EcoBoost', transmission: '10-speed', options: ['EQUIPMENT GROUP 302A', 'TRAILER TOW PACKAGE'], standardEquipment: ['PRE-COLLISION ASSIST'], warranty: ['3YR/36,000 BUMPER / BUMPER'], raw: PRIVATE },
+    windowSticker: { url: `https://windowsticker.example/private/${PRIVATE}`, dataState: 'current', originalMarket: 'USA', pricingCurrency: 'USD', pricingCurrencyEvidence: 'US original label', sourceMessage: PRIVATE, failureReason: PRIVATE, vehicleDescription: '2024 F-150 XLT', equipmentGroup: '302A', equipmentGroupContents: ['Synthetic included camera'], equipmentGroupPrice: 1250.75, basePrice: 50000, totalOptions: 11000, destinationCharge: 2000, totalMsrp: 63000, exteriorColor: 'Oxford White', interiorColor: 'Black', engine: '3.5L EcoBoost', transmission: '10-speed', options: ['EQUIPMENT GROUP 302A', 'TRAILER TOW PACKAGE'], standardEquipment: ['PRE-COLLISION ASSIST'], warranty: ['3YR/36,000 BUMPER / BUMPER'], raw: PRIVATE },
     factoryEquipment: { url: `https://example.com/${PRIVATE}`, sourceLabel: PRIVATE, disclaimer: PRIVATE, dataState: 'current', capturedAt: '2026-09-09T12:00:00Z', vehicleDescription: '2024 F-150', basePrice: 50000, totalOptions: 11000, destinationCharge: 2000, totalMsrp: 63000, exteriorColor: 'Oxford White', interiorColor: 'Black', engine: '3.5L EcoBoost', transmission: '10-speed', drivetrain: '4WD', packages: [{ name: 'FX4 OFF-ROAD PACKAGE', code: '55A', price: 1095, features: ['Hill Descent Control'], raw: PRIVATE }], sections: [{ name: 'Safety', items: [{ label: 'Lane-Keeping System', price: 0, raw: PRIVATE }], raw: PRIVATE }], isOriginalWindowSticker: true, raw: PRIVATE },
     fordOasis: { dataState: 'current', capturedAt: '2026-09-09T12:00:00Z', vehicleDescription: '2024 Ford F-150 XLT', versionSeries: 'F-150', buildDate: '2024-01-01', warrantyStartDate: '2024-02-01', releaseDate: '2024-01-05', monthsInService: 31, saleMileage: 15, openFieldServiceActions: [{ code: '24B01', description: 'Field service action' }], warrantyCoverages: [{ type: 'Basic', description: '36 months / 36,000 miles' }], extendedCoverageExpirations: ['2029-02-01'], raw: PRIVATE },
     warrantyCheck: { dataState: 'current', capturedAt: '2026-09-09T12:00:00Z', mileageEntered: 2052, mileageSource: 'Public listing', autoCheck: { inServiceDate: '2024-02-01', inServiceAgeMonths: 31, defaultMileage: 12000, coverages: [{ type: 'Basic', termText: '36 months / 36,000 miles', termMonths: 36, termMiles: 36000, remainingMiles: 33948, remainingMonths: 5, remainingMilesText: '33,948 miles', remainingTimeText: '5 months', status: 'estimated', note: PRIVATE }] }, raw: PRIVATE },
@@ -55,6 +55,13 @@ function service(data = fixture(), who = principal, opts = {}) {
 function errorOf(fn: () => unknown) { try { fn() } catch (error) { return { status: error.status, code: error.code, message: error.message } } throw new Error('Expected failure') }
 
 describe('shared integration read service', () => {
+  it.each([undefined, false, true])('does not infer confirmed-zero OASIS actions from a legacy array: %s', (flag) => {
+    const data = fixture()
+    data.vehicles[0].fordOasis.openFieldServiceActions = []
+    data.vehicles[0].fordOasis.openActionsCaptured = flag
+    expect(service(data).vehicleResources(vinFor(1)).data.fordOasis).toMatchObject({ openFieldServiceActions: [], openActionsCaptured: flag === true })
+  })
+
   it('paginates in Workers without relying on a global Node Buffer', () => {
     vi.stubGlobal('Buffer', undefined)
     try {
@@ -67,6 +74,8 @@ describe('shared integration read service', () => {
     const api = service()
     const data = api.vehicle(vinFor(1)).data
     expect(data.windowSticker.options).toEqual(['EQUIPMENT GROUP 302A', 'TRAILER TOW PACKAGE'])
+    expect(data.windowSticker.equipmentGroupContents).toEqual(['Synthetic included camera'])
+    expect(data.windowSticker.equipmentGroupPrice).toBe(1250.75)
     expect(data.factoryEquipment.packages[0]).toEqual({ name: 'FX4 OFF-ROAD PACKAGE', code: '55A', price: 1095, features: ['Hill Descent Control'] })
     expect(data.factoryEquipment.sections[0].items[0]).toEqual({ label: 'Lane-Keeping System', price: 0 })
     expect(data.factoryEquipment.isOriginalWindowSticker).toBe(false)

@@ -85,7 +85,7 @@ html {
    --inventory-blue token. Give these important source actions a literal,
    high-contrast fallback so their white labels can never disappear on a
    transparent background. */
-.inventory-workspace .inventory-vehicle-document__link {
+.inventory-workspace:not(.inventory-workspace--focused) .inventory-vehicle-document__link {
   min-height: 42px !important;
   border-color: #075ca8 !important;
   color: #fff !important;
@@ -97,7 +97,7 @@ html {
   box-shadow: none !important;
 }
 
-.inventory-workspace .inventory-vehicle-document__link:hover {
+.inventory-workspace:not(.inventory-workspace--focused) .inventory-vehicle-document__link:hover {
   border-color: #064b88 !important;
   color: #fff !important;
   background: #064f91 !important;

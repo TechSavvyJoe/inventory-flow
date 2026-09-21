@@ -193,13 +193,14 @@ describe('Cloudflare Admin Control Center route', () => {
   it('returns server-owned preview metadata, applies the effective role to data and writes, and restores admin access', async () => {
     const { database, env } = harness()
     const jwt = await token('group@example.invalid')
-    const preview = { headers: { 'x-inventory-preview-role': 'driver' } }
+    const preview = { headers: { 'x-inventory-preview-role': 'driver', 'x-inventory-preview-store': 'Ford Detroit' } }
     const response = await worker.fetch(request('/api/bootstrap?role=group_manager&store=Howell', jwt, preview), env)
     expect(response.status).toBe(200)
     const bootstrap = await response.json()
     expect(bootstrap.access).toMatchObject({
       role: 'driver', authenticatedRole: 'group_manager', canPreviewRoles: true, rolePreviewActive: true,
-      store: 'Lincoln', canViewPrivateEvidence: false, canCreateTransfer: false,
+      store: 'Ford Detroit', authenticatedStore: 'Lincoln', canPreviewStores: true, storePreviewActive: true,
+      canViewPrivateEvidence: false, canCreateTransfer: false,
     })
     expect(bootstrap.vehicles.every(vehicle => vehicle.hold.canViewEvidence === false)).toBe(true)
     expect((await worker.fetch(request('/api/admin/overview', jwt, preview), env)).status).toBe(403)
@@ -210,7 +211,10 @@ describe('Cloudflare Admin Control Center route', () => {
     expect(deniedWrite.status).toBe(403)
     expect(database.prepare('SELECT COUNT(*) AS n FROM vehicle_service_events').get().n).toBe(0)
     const restored = await worker.fetch(request('/api/bootstrap', jwt), env)
-    expect((await restored.json()).access).toMatchObject({ role: 'group_manager', authenticatedRole: 'group_manager', canPreviewRoles: true, rolePreviewActive: false })
+    expect((await restored.json()).access).toMatchObject({
+      role: 'group_manager', authenticatedRole: 'group_manager', canPreviewRoles: true, rolePreviewActive: false,
+      store: 'Lincoln', authenticatedStore: 'Lincoln', canPreviewStores: true, storePreviewActive: false,
+    })
     expect((await worker.fetch(request('/api/admin/overview', jwt), env)).status).toBe(200)
   })
 })

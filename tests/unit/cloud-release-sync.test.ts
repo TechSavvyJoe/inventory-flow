@@ -35,6 +35,14 @@ describe('verified daily cloud publication',()=>{
     expect(()=>verifyPublishedRelease({...data,readiness:{...data.readiness,ready:false}})).toThrow('CLOUD_NOT_READY')
     expect(()=>verifyPublishedRelease({...data,readiness:{...data.readiness,reportDate:'2026-08-29'}})).toThrow('CLOUD_DATE_MISMATCH')
   })
+  it('verifies the optional resource channel counts and records them on the receipt',()=>{
+    const data=fixture()
+    // A deployed Worker that dropped one optional channel still reports ready.
+    for(const field of ['fordOasisRecordCount','warrantyCheckRecordCount']){
+      expect(()=>verifyPublishedRelease({...data,status:{...data.status,metadata:{...data.expected,[field]:999}}})).toThrow('CLOUD_COUNT_MISMATCH')
+      expect(verifyPublishedRelease(data)[field]).toBe(data.expected[field])
+    }
+  })
   it('rejects stale or incomplete sources before any network call',async()=>{
     const {bundle}=fixture()
     const fetchImpl=()=>{throw Error('Should not call network')}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { vehicleResourceCatalog, type VehicleResource, type VehicleResourceVehicle } from './vehicle-resource-catalog';
+import { vehicleOverviewResources, vehicleResourceCatalog, type VehicleResource, type VehicleResourceVehicle } from './vehicle-resource-catalog';
 
 const vehicle = (fields: Partial<VehicleResourceVehicle> = {}): VehicleResourceVehicle => ({
   vin: '1FTFW1E84RKF12345', make: 'Ford', model: 'F-150', year: 2024, ...fields,
@@ -19,7 +19,7 @@ describe('rich vehicle resource catalog', () => {
     expect(history.hasCapturedData).toBe(true);
     expect(history.facts.join(' ')).not.toMatch(/clean|no accidents|no damage|clear/i);
     const sticker = resource({ windowSticker: { dataState: 'current', totalMsrp: 0, pricingCurrency: 'USD' } }, 'window-sticker');
-    expect(sticker.facts[0]).toMatch(/^USD\s0 MSRP$/);
+    expect(sticker.facts[0]).toMatch(/^\$0 MSRP$/);
   });
 
   it('does not treat missing, empty, or non-finite history facts as captured checks', () => {
@@ -29,7 +29,7 @@ describe('rich vehicle resource catalog', () => {
     expect(history.facts).toEqual([]);
     expect(history.compactFacts).toEqual([]);
     expect(history.score).toBeUndefined();
-    expect(history.sourceNote).toBe('Partial captured record · No report details captured');
+    expect(history.sourceNote).toBe('Partial captured record');
   });
 
   it('prioritizes captured title and odometer hazards over a high score or a clear accident result', () => {
@@ -41,7 +41,7 @@ describe('rich vehicle resource catalog', () => {
     expect(history.compactFacts).toEqual(['Title check: Salvage brand reported', 'Odometer check: Odometer discrepancy reported']);
     expect(history.facts[0]).toBe('Score 91');
     expect(history.facts).toContain('Accident check: No accidents reported');
-    expect(history.sourceNote).toBe('Saved report · refresh at source · Report run Aug 30, 2026');
+    expect(history.sourceNote).toBe('Saved report · refresh at source · Report run 08/30/2026');
     expect(history.facts.join(' ')).not.toMatch(/refresh at source|Report run/);
   });
 
@@ -62,7 +62,7 @@ describe('rich vehicle resource catalog', () => {
     expect(history.compactFacts[0]).toBe('Accident check: 1 record reported');
     expect(history.compactFacts[1]).toBe('1 owner · Rental');
     expect(history.facts).toContain('1 owner · Rental');
-    expect(history.facts).toContain('Last reported 12,450 mi · Aug 29, 2026');
+    expect(history.facts).toContain('Last reported 12,450 mi · 08/29/2026');
     expect(history.facts).toContain('Title check: No title brands found');
   });
 
@@ -70,9 +70,24 @@ describe('rich vehicle resource catalog', () => {
     const sticker = resource({ windowSticker: { dataState:'current', totalMsrp:68420, pricingCurrency:'CAD', equipmentGroup:'502A', options:['Trailer Tow Package','Heated front seats','Trailer Tow Package'], engine:'3.5L EcoBoost V6', transmission:'10-speed automatic', warranty:['3 years / 60,000 km'] } }, 'window-sticker');
     expect(sticker.compactFacts).toEqual([expect.stringMatching(/^CAD\s68,420 MSRP · 502A$/), 'Trailer Tow Package · Heated front seats']);
     expect(sticker.facts).toContain('3.5L EcoBoost V6 · 10-speed automatic');
-    expect(sticker.facts).toContain('Printed warranty: 3 years / 60,000 km');
+    expect(sticker.facts).toContain('Printed warranty: 3 years / 37,282 mi (60,000 km in the source)');
     expect(sticker.facts.filter(fact => fact === 'Trailer Tow Package')).toHaveLength(1);
     expect(sticker.facts.join(' ')).not.toContain('captured options');
+  });
+
+  it('shows every source distance in US miles and keeps the source figure as evidence', () => {
+    const sticker = resource({ windowSticker: { dataState:'current', warranty:['5 years / 100,000 km powertrain'], options:['Combined 9.8 L/100 km'] } }, 'window-sticker');
+    expect(sticker.facts).toContain('Printed warranty: 5 years / 62,137 mi powertrain (100,000 km in the source)');
+    expect(sticker.facts).toContain('Combined 24 mpg (9.8 L/100 km in the source)');
+    expect(sticker.facts.join(' ')).not.toMatch(/\d\s*km\b(?! in the source)/);
+
+    const history = resource({ autoCheckReport: { dataState:'current', usage:'Personal · 148 000 km reported', checks:[{ label:'Odometer check', detail:'Last reported odometer: 148,000 km' }] } }, 'autocheck');
+    expect(history.facts).toContain('Personal · 91,963 mi reported (148,000 km in the source)');
+    expect(history.facts).toContain('Odometer check: Last reported odometer: 91,963 mi (148,000 km in the source)');
+
+    const oasis = resource({ make:'Ford', fordOasis: { dataState:'current', warrantyCoverages:[{ type:'Powertrain', description:'60 months/100,000 km' }], extendedCoverageExpirations:['ESP to 160,000 km'] } }, 'oasis');
+    expect(oasis.facts).toContain('Coverage: Powertrain · 60 months/62,137 mi (100,000 km in the source)');
+    expect(oasis.facts).toContain('Extended coverage: ESP to 99,419 mi (160,000 km in the source)');
   });
 
   it('deduplicates an equipment group in summaries without deleting the priced source option', () => {
@@ -91,7 +106,7 @@ describe('rich vehicle resource catalog', () => {
       {label:'Service',status:'4 records reported'},
       {label:'Odometer Check',status:'No Issue',detail:'Last reported odometer: 9,192 (09/10/2026)'},
     ]}},'autocheck');
-    expect(history.summaryFacts).toEqual(['State Title Brand: Clean','Accident / Damage: No Accidents or Damage Reported','1 owner · Lease','Service: 4 records reported','Odometer Check: No Issue','Last reported 9,192 mi · Sep 10, 2026']);
+    expect(history.summaryFacts).toEqual(['State Title Brand: Clean','Accident / Damage: No Accidents or Damage Reported','1 owner · Lease','Service: 4 records reported','Odometer Check: No Issue','Last reported 9,192 mi · 09/10/2026']);
     expect(history.summaryFacts!.join(' ').match(/9,192/g)).toHaveLength(1);
     expect(history.facts).toContain('Odometer Check: No Issue · Last reported odometer: 9,192 (09/10/2026)');
   });
@@ -107,8 +122,8 @@ describe('rich vehicle resource catalog', () => {
 
   it('places relevant OASIS actions, warranty start and coverage ahead of build metadata', () => {
     const oasis=resource({fordOasis:{dataState:'current',capturedAt:'2026-09-01',warrantyStartDate:'08-AUG-2023',buildDate:'01-JUL-2023',openFieldServiceActions:[{code:'TEST-24N',description:'Synthetic inspection'}],warrantyCoverages:[{type:'Powertrain',description:'5 years / 60,000 miles'}]}},'oasis');
-    expect(oasis.summaryFacts).toEqual(['Open FSA TEST-24N · Synthetic inspection','Warranty start 08-AUG-2023','Recorded coverage: Powertrain · 5 years / 60,000 miles']);
-    expect(oasis.facts).toContain('Built 01-JUL-2023');
+    expect(oasis.summaryFacts).toEqual(['Open FSA TEST-24N · Synthetic inspection','Warranty start 08/08/2023','Coverage: Powertrain · 5 years / 60,000 miles']);
+    expect(oasis.facts).toContain('Built 07/01/2023');
   });
 
   it('keeps unavailable sticker context separate from source facts and preserves URL guards', () => {
@@ -122,18 +137,18 @@ describe('rich vehicle resource catalog', () => {
 
   it('uses named vAuto packages and important captured items rather than counts', () => {
     const equipment = resource({ factoryEquipment: { dataState:'stale_unverified', capturedAt:'2026-08-28', isOriginalWindowSticker:false, engine:'2.0L', drivetrain:'AWD', packages:[{name:'Technology Package',code:'66T',features:['360-degree camera']}], sections:[{name:'Equipment',items:[{label:'Floor mats'},{label:'Adaptive cruise control'},{label:'360-degree camera'},{label:'Adaptive cruise control'}]}] } }, 'vauto');
-    expect(equipment.compactFacts).toEqual(['Technology Package · 66T', 'Adaptive cruise control · 360-degree camera']);
+    expect(equipment.compactFacts).toEqual(['Technology Package · 66T', 'Adaptive cruise control']);
     expect(equipment.facts).toContain('2.0L · AWD');
     expect(equipment.facts.filter(fact => fact === 'Adaptive cruise control')).toHaveLength(1);
-    expect(equipment.sourceNote).toBe('Informational · not an original sticker · Saved report · refresh at source · Captured Aug 28, 2026');
+    expect(equipment.sourceNote).toBe('Saved report · refresh at source · Captured 08/28/2026');
   });
 
   it('puts actual open OASIS codes and descriptions first while retaining exact coverage/date evidence', () => {
     const oasis = resource({ fordOasis:{dataState:'current',capturedAt:'2026-08-30',warrantyStartDate:'14-MAR-2024',buildDate:'20-FEB-2024',openFieldServiceActions:[{code:'DEMO-24A',description:'Synthetic camera inspection'}],warrantyCoverages:[{type:'Powertrain',description:'5 years / 60,000 miles'}],monthsInService:0,saleMileage:0} }, 'oasis');
-    expect(oasis.compactFacts).toEqual(['Open FSA DEMO-24A · Synthetic camera inspection','Warranty start 14-MAR-2024']);
-    expect(oasis.facts).toContain('Built 20-FEB-2024');
-    expect(oasis.facts).toContain('Recorded coverage: Powertrain · 5 years / 60,000 miles');
-    expect(oasis.facts).toContain('0 months in service at capture');
+    expect(oasis.compactFacts).toEqual(['Open FSA DEMO-24A · Synthetic camera inspection', 'Warranty start 03/14/2024']);
+    expect(oasis.facts).toContain('Built 02/20/2024');
+    expect(oasis.facts).toContain('Coverage: Powertrain · 5 years / 60,000 miles');
+    expect(oasis.facts).toContain('0 months in service');
     expect(oasis.facts).toContain('0 mi at sale');
     expect(oasis.facts.join(' ')).not.toMatch(/active coverage|verified today/i);
   });
@@ -146,7 +161,7 @@ describe('rich vehicle resource catalog', () => {
     };
     const oasis = resource({ fordOasis }, 'oasis');
     expect(oasis.compactFacts[0]).toBe('Open FSA TEST-26A · REAR AXLE ▴ & HUB');
-    expect(oasis.facts).toContain('Recorded coverage: Powertrain · 5 years & 60,000 miles');
+    expect(oasis.facts).toContain('Coverage: Powertrain · 5 years & 60,000 miles');
     expect(fordOasis.openFieldServiceActions[0].description).toBe('REAR AXLE &#x25B4; &amp; HUB');
     expect(fordOasis.warrantyCoverages[0].description).toBe('5 years &amp; 60,000 miles');
   });
@@ -155,23 +170,23 @@ describe('rich vehicle resource catalog', () => {
     const oasis = resource({fordOasis:{dataState:state,openFieldServiceActions:[],warrantyCoverages:[]}},'oasis');
     expect(oasis.hasCapturedData).toBe(false);
     expect(oasis.facts).toEqual([]);
-    expect(oasis.compactFacts).toEqual(['DealerConnection sign-in']);
-    expect(oasis.sourceNote).toContain('No OASIS report details captured');
+    expect(oasis.compactFacts).toEqual([]);
+    expect(oasis.sourceNote).toBe(state === 'incomplete' ? 'Partial captured record' : state === 'unknown' ? 'Source status unknown' : null);
   });
 
   it('reports zero only from a complete dated OASIS capture, never as current safety or availability', () => {
     const oasis = resource({fordOasis:{dataState:'stale',capturedAt:'2026-08-30',openActionsCaptured:true,openFieldServiceActions:[]}},'oasis');
-    expect(oasis.facts).toEqual(['0 open Ford actions in captured report']);
-    expect(oasis.sourceNote).toBe('Saved report · refresh at source · Captured Aug 30, 2026');
+    expect(oasis.facts).toEqual(['No open Ford actions']);
+    expect(oasis.sourceNote).toBe('Saved report · refresh at source · Captured 08/30/2026');
     const partial = resource({fordOasis:{dataState:'incomplete',capturedAt:'2026-08-30',warrantyStartDate:'14-MAR-2024',openFieldServiceActions:[]}},'oasis');
-    expect(partial.facts).toEqual(['Warranty start 14-MAR-2024']);
-    expect(partial.sourceNote).toContain('Open-action result not captured');
+    expect(partial.facts).toEqual(['Warranty start 03/14/2024']);
+    expect(partial.sourceNote).toBe('Partial captured record · Captured 08/30/2026');
   });
 
   it.each([undefined, false])('does not treat a legacy or default empty action array with flag %s as a captured zero', openActionsCaptured => {
     const oasis = resource({fordOasis:{dataState:'current',capturedAt:'2026-08-30',warrantyStartDate:'14-MAR-2024',openFieldServiceActions:[],openActionsCaptured}},'oasis');
     expect(oasis.facts.join(' ')).not.toContain('0 open');
-    expect(oasis.sourceNote).toContain('Open-action result not captured');
+    expect(oasis.sourceNote).toBe('Captured 08/30/2026');
   });
 
   it.each(['9999-01-01', 'not a date', '2026-02-30'])('does not promote the %s capture timestamp into a zero action result', capturedAt => {
@@ -179,7 +194,6 @@ describe('rich vehicle resource catalog', () => {
     expect(oasis.hasCapturedData).toBe(false);
     expect(oasis.facts).toEqual([]);
     expect(oasis.sourceNote).toMatch(/Future source date|Unrecognized source date/);
-    expect(oasis.sourceNote).not.toContain('Captured ');
   });
 
   it('does not display a reversed score range as a source comparison', () => {
@@ -193,7 +207,27 @@ describe('rich vehicle resource catalog', () => {
     expect(sticker.demo).toBe(true);
     expect(sticker.brand).toBeNull();
     expect(sticker.sourceNote).toBe('Synthetic sample · not an original');
-    expect(sticker.compactFacts).toEqual(['F-150 Lariat',expect.stringMatching(/^USD\s68,420 MSRP$/)]);
+    expect(sticker.compactFacts).toEqual(['F-150 Lariat',expect.stringMatching(/^\$68,420 MSRP$/)]);
     expect(sticker.href).toBe('/demo-documents/window-sticker.html?vehicle=TESTDATAHWELL0001');
+  });
+});
+
+
+describe('combined sticker and equipment source fidelity', () => {
+  it('keeps fractional and zero prices and repeated children associated with each package', () => {
+    const combined = vehicleOverviewResources(vehicle({ factoryEquipment: {
+      dataState: 'current', isOriginalWindowSticker: false, totalMsrp: 55000.50,
+      packages: [
+        { name: 'Package A', code: 'PKG-A', price: 1250.75, features: ['Shared feature'] },
+        { name: 'Package B', code: 'PKG-B', price: 0, features: ['Shared feature'] },
+      ],
+      sections: [{ name: 'Options', items: [{ label: 'Exact option', price: 199.95 }] }],
+    } }))[0];
+    expect(combined.stickerDetails?.msrp).toBe('55,000.5');
+    expect(combined.stickerDetails?.optionLines).toEqual([
+      'Package A · PKG-A · Price 1,250.75', '. Shared feature',
+      'Package B · PKG-B · Price 0', '. Shared feature', 'Exact option · Price 199.95',
+    ]);
+    expect(combined.equipmentContext).toContain('currency not captured');
   });
 });

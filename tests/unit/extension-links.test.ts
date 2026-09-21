@@ -22,6 +22,7 @@ describe('deal desk links', () => {
 
   it('deep-links into the app\'s own request, tracking and search screens', () => {
     expect(requestVehicleUrl(origin, 'TESTDATAHWELL0001')).toBe(`${origin}/transfers/new?vin=TESTDATAHWELL0001`)
+    expect(requestVehicleUrl(origin, 'TESTDATAHWELL0001', 'direct')).toBe(`${origin}/transfers/new?vin=TESTDATAHWELL0001&intent=direct`)
     expect(trackMovementUrl(origin, { transferId: 'abc 1', vin: 'X' })).toBe(`${origin}/transfers?id=abc+1`)
     expect(trackMovementUrl(origin, { vin: 'TESTDATAHWELL0001' })).toBe(`${origin}/transfers?vin=TESTDATAHWELL0001`)
     expect(inventorySearchUrl(origin, 'DEMO-H01')).toBe(`${origin}/inventory?q=DEMO-H01`)

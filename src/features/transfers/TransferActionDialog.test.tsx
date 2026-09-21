@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TransferRecord } from '../../types'
 import { TransferActionDialog } from './TransferActionDialog'
@@ -116,6 +117,20 @@ describe('TransferActionDialog modal accessibility', () => {
     document.body.style.removeProperty('overscroll-behavior')
   })
 
+  it('lets only a manager record that a confirmed sale fell through', () => {
+    const sold = { ...record, requestStatus: 'sale_confirmed', dealStatus: 'sold_pending', workflowMode: 'simple' as const }
+    const { unmount } = render(<TransferActionDialog action="record-outcome" record={sold} detail={detail} onClose={vi.fn()} />)
+    expect(screen.getByRole('radio', { name: /Delivered — customer has the vehicle/ })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /Deal fell through — not sold/ })).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /Shown — not sold/ })).not.toBeInTheDocument()
+    unmount()
+
+    mocks.useAppData.mockReturnValue({ addTransferEvent: mocks.addTransferEvent, homeStore: 'Howell', role: 'sales' })
+    render(<TransferActionDialog action="record-outcome" record={sold} detail={detail} onClose={vi.fn()} />)
+    expect(screen.getByRole('radio', { name: /Delivered — customer has the vehicle/ })).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: /Deal fell through/ })).not.toBeInTheDocument()
+  })
+
   it('opens as a named modal, isolates the app background, and places focus reliably', async () => {
     document.body.style.setProperty('overflow', 'auto')
     const { container } = render(<DialogHarness />)
@@ -123,22 +138,22 @@ describe('TransferActionDialog modal accessibility', () => {
     opener.focus()
     fireEvent.click(opener)
 
-    const dialog = screen.getByRole('dialog', { name: 'Record home-store release' })
+    const dialog = screen.getByRole('dialog', { name: 'Record the home store’s release' })
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     expect(dialog).toHaveAccessibleDescription(record.vehicleName)
     expect(container).toHaveAttribute('inert')
     expect(container).toHaveAttribute('aria-hidden', 'true')
     expect(document.body.style.overflow).toBe('hidden')
     expect(document.body.style.overscrollBehavior).toBe('none')
-    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Close movement action' })).toHaveFocus())
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Close this update' })).toHaveFocus())
   })
 
   it('contains forward and reverse Tab navigation inside the dialog', async () => {
     render(<DialogHarness />)
     fireEvent.click(screen.getByRole('button', { name: 'Open movement action' }))
     const dialog = screen.getByRole('dialog')
-    const first = within(dialog).getByRole('button', { name: 'Close movement action' })
-    const last = within(dialog).getByRole('button', { name: 'Record release grant' })
+    const first = within(dialog).getByRole('button', { name: 'Close this update' })
+    const last = within(dialog).getByRole('button', { name: 'Record the release' })
 
     await waitFor(() => expect(first).toHaveFocus())
     last.focus()
@@ -154,7 +169,7 @@ describe('TransferActionDialog modal accessibility', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open movement action' }))
 
     const dialog = screen.getByRole('dialog', { name: 'Approve at requesting store' })
-    expect(dialog).toHaveTextContent('Stage 2 · Requesting-store approval')
+    expect(dialog).toHaveTextContent('Step 2 · Requesting-store approval')
     expect(dialog).toHaveTextContent('This does not confirm availability or release')
     expect(dialog).toHaveTextContent('Ford Detroit manager must contact the Howell used-car manager')
     expect(within(dialog).getByRole('button', { name: 'Approve request' })).toBeEnabled()
@@ -165,10 +180,10 @@ describe('TransferActionDialog modal accessibility', () => {
     render(<DialogHarness />)
     fireEvent.click(screen.getByRole('button', { name: 'Open movement action' }))
 
-    const dialog = screen.getByRole('dialog', { name: 'Record home-store release' })
-    expect(dialog).toHaveTextContent('Stage 3 · Home-store contact & release decision')
-    expect(dialog).toHaveTextContent('A driver can be assigned only after a release grant is recorded')
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Record release grant' }))
+    const dialog = screen.getByRole('dialog', { name: 'Record the home store’s release' })
+    expect(dialog).toHaveTextContent('Step 3 · Call the home store, record the answer')
+    expect(dialog).toHaveTextContent('You can assign a driver only after the release is recorded')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Record the release' }))
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Enter the Howell manager who gave the release decision')
 
     fireEvent.change(within(dialog).getByLabelText(/Home-store manager contacted/i), {
@@ -177,7 +192,7 @@ describe('TransferActionDialog modal accessibility', () => {
     fireEvent.change(within(dialog).getByLabelText(/Release conditions or pickup note/i), {
       target: { value: 'Release confirmed; keys at desk.' },
     })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Record release grant' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Record the release' }))
 
     await waitFor(() => expect(mocks.addTransferEvent).toHaveBeenCalledWith(
       record.id,
@@ -244,10 +259,60 @@ describe('TransferActionDialog modal accessibility', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open movement action' }))
     const dialog = screen.getByRole('dialog')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Decline request' }))
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Briefly record why')
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Say briefly why')
     expect(mocks.addTransferEvent).not.toHaveBeenCalled()
     fireEvent.change(within(dialog).getByLabelText(/Decision reason/), { target: { value: 'Vehicle needed at its home store.' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Decline request' }))
     await waitFor(() => expect(mocks.addTransferEvent).toHaveBeenCalledWith(record.id, expect.objectContaining({ type: 'request_declined', note: 'Vehicle needed at its home store.' })))
   })
+
+  it('protects condition severity and drive-safety edits even before a note is entered', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const close = vi.fn()
+    render(<TransferActionDialog action="report-condition" record={record} detail={detail} onClose={close} />)
+    fireEvent.change(screen.getByLabelText(/Issue severity/), { target: { value: 'do-not-drive' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(close).not.toHaveBeenCalled()
+    expect(screen.getByLabelText(/Issue severity/)).toHaveValue('do-not-drive')
+    fireEvent.change(screen.getByLabelText(/Issue severity/), { target: { value: 'needs-review' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'No' }))
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    expect(confirm).toHaveBeenCalledTimes(2)
+    expect(close).not.toHaveBeenCalled()
+    confirm.mockReturnValue(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Close this update' }))
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('navigates to the confirmed saved move without asking to discard its submitted note', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    mocks.addTransferEvent.mockResolvedValue(record)
+    function SaveAndNavigate() {
+      const navigate = useNavigate()
+      return <TransferActionDialog action="decline" record={{ ...record, workflowMode: 'simple' }} detail={detail} onClose={vi.fn()} onComplete={() => navigate('/saved')} />
+    }
+    render(<MemoryRouter initialEntries={['/update']}><Routes><Route path="/update" element={<SaveAndNavigate />} /><Route path="/saved" element={<p>Saved move workspace</p>} /></Routes></MemoryRouter>)
+    fireEvent.change(screen.getByLabelText(/Decision reason/), { target: { value: 'Synthetic reason for declining.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Decline request' }))
+    expect(await screen.findByText('Saved move workspace')).toBeInTheDocument()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(mocks.addTransferEvent).toHaveBeenCalledOnce()
+  })
+
+  it('does not reopen a departed movement workspace when its submitted update finishes', async () => {
+    let finish!: (value: TransferRecord) => void
+    mocks.addTransferEvent.mockImplementation(() => new Promise<TransferRecord>(resolve => { finish = resolve }))
+    const complete = vi.fn()
+    const close = vi.fn()
+    const page = render(<TransferActionDialog action="decline" record={{ ...record, workflowMode: 'simple' }} detail={detail} onClose={close} onComplete={complete} />)
+    fireEvent.change(screen.getByLabelText(/Decision reason/), { target: { value: 'Synthetic reason.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Decline request' }))
+    expect(mocks.addTransferEvent).toHaveBeenCalledOnce()
+    page.unmount()
+    await act(async () => finish(record))
+    expect(complete).not.toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
+  })
+
 })

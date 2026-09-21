@@ -3,6 +3,7 @@ import {
   buildInventorySearchIndex,
   foldInventorySearchText,
   rankInventorySearch,
+  searchFieldsMatch,
 } from "./inventory-search";
 import type { InventoryVehicle } from "./types";
 
@@ -35,6 +36,11 @@ function vehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
 }
 
 describe("predictive inventory search", () => {
+  it("reuses token and typo matching across explicit view fields", () => {
+    expect(searchFieldsMatch("ford howel", ["2024 Ford Explorer", "Howell"])).toBe(true);
+    expect(searchFieldsMatch("ford lincoln", ["2024 Ford Explorer", "Howell"])).toBe(false);
+  });
+
   it("folds model punctuation and formatted numeric values", () => {
     const index = buildInventorySearchIndex([vehicle()]);
     expect(foldInventorySearchText("F-150")).toBe("f150");

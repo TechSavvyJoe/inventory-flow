@@ -23,26 +23,48 @@ const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/
 // the source wrote is the day shown.
 function parseDate(value) {
   if (!value) return null
-  const dateOnly = DATE_ONLY.exec(String(value).trim())
-  if (dateOnly) return { date: new Date(Date.UTC(+dateOnly[1], +dateOnly[2] - 1, +dateOnly[3])), dateOnly: true }
+  const raw = String(value).trim()
+  const iso = DATE_ONLY.exec(raw)
+  const us = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.exec(raw)
+  const oasis = /^(\d{1,2})[- ]([A-Za-z]{3,9})[- ](\d{4})$/.exec(raw)
+  const written = /^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})$/.exec(raw)
+  if (iso || us || oasis || written) {
+    const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
+    const monthName = (oasis?.[2] ?? written?.[1] ?? '').toLowerCase()
+    const year = Number(iso?.[1] ?? us?.[3] ?? oasis?.[3] ?? written?.[3])
+    const month = iso ? Number(iso[2]) : us ? Number(us[1]) : months.findIndex(name => monthName === name || monthName === name.slice(0, 3) || (name === 'september' && monthName === 'sept')) + 1
+    const day = Number(iso?.[3] ?? us?.[2] ?? oasis?.[1] ?? written?.[2])
+    const date = new Date(Date.UTC(year, month - 1, day))
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null
+    return { date, dateOnly: true }
+  }
+  const timestampDate = /^(\d{4}-\d{2}-\d{2})[T ]/.exec(raw)
+  if (timestampDate && !parseDate(timestampDate[1])) return null
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? null : { date, dateOnly: false }
 }
 
-/** "Aug 30" within the current year; "Mar 14, 2024" for any other year, so warranty and in-service dates are never ambiguous. */
+/** Display calendar dates consistently, including the full year. */
 export function formatDate(value, now = Date.now()) {
+  void now
   const parsed = parseDate(value)
   if (!parsed) return '—'
-  const year = parsed.dateOnly ? parsed.date.getUTCFullYear() : parsed.date.getFullYear()
-  const sameYear = year === new Date(now).getFullYear()
-  return parsed.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }), ...(parsed.dateOnly ? { timeZone: 'UTC' } : {}) })
+  return parsed.date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', ...(parsed.dateOnly ? { timeZone: 'UTC' } : {}) })
+}
+
+/** Preserve source qualifiers around a printed date, including unknown text. */
+export function formatSourceDateText(value) {
+  return String(value ?? '').replace(/\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}-[A-Za-z]{3,9}-\d{4}|\d{1,2}\/\d{1,2}\/\d{4})\b/g, token => {
+    const formatted = formatDate(token)
+    return formatted === '—' ? token : formatted
+  })
 }
 
 export function formatDateTime(value) {
   const parsed = parseDate(value)
   if (!parsed) return '—'
   if (parsed.dateOnly) return formatDate(value)
-  return parsed.date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return parsed.date.toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
 export function formatRelative(value, now = Date.now()) {
@@ -59,11 +81,9 @@ export function formatRelative(value, now = Date.now()) {
 }
 
 export function formatReportDate(value) {
-  // Report dates are calendar days; render them in a fixed zone so "Aug 30"
-  // never shifts to Aug 29 for a user west of the source.
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value ?? ''))
-  if (!match) return '—'
-  return new Date(Date.UTC(+match[1], +match[2] - 1, +match[3])).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+  // Report dates are source calendar days, independent of browser timezone.
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(String(value ?? ''))
+  return match ? formatDate(match[1]) : '—'
 }
 
 /** Original document prices keep their own currency; they are never converted. */
@@ -71,9 +91,9 @@ export function formatStickerMoney(value, sticker = {}) {
   if (!finite(value)) return '—'
   const currency = String(sticker.pricingCurrency ?? '').trim().toUpperCase()
   if (/^[A-Z]{3}$/.test(currency)) {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency, currencyDisplay: 'code', maximumFractionDigits: 0 }).format(value)
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency, currencyDisplay: currency === 'USD' ? 'symbol' : 'code', minimumFractionDigits: 0, maximumFractionDigits: 20 }).format(value)
   }
-  return `${integer.format(value)} (original sticker currency; verify)`
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(value)} (original sticker currency; verify)`
 }
 
 export function joinFacts(parts, separator = ' · ') {

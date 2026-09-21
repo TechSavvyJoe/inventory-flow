@@ -87,6 +87,177 @@ function normalizeDataset(dataset) {
 }
 
 describe('D1 shared operational repository', () => {
+  it('commits a direct move and its physical audit as one cloud transaction', async () => {
+    const d1 = fakeD1()
+    const release = buildSyntheticRelease()
+    const manager = { role: 'manager', store: 'Howell', user: 'Synthetic home manager', userId: 'manager-2' }
+    const movedAt = new Date(SYNTHETIC_NOW.getTime() - 24 * 60 * 60 * 1000).toISOString()
+    const input = {
+      vin: 'TESTDATAHWELL0002', intent: 'direct', destinationStore: 'Ford Detroit', movedAt,
+      reason: 'Synthetic customer showing', returnRequired: true,
+    }
+    const cold = async () => {
+      const store = await loadD1Repository(d1, release)
+      return { ...store, service: createInventoryServiceCore({ database: store.database, repository: store.repository, now: () => SYNTHETIC_NOW }) }
+    }
+
+    const first = await cold()
+    const created = first.service.createTransfer(input, manager, 'simple-cloud-direct')
+    expect(created.record).toMatchObject({
+      requestStatus: 'arrived', movementStatus: 'at_requesting_store',
+      homeStore: 'Howell', destination: 'Ford Detroit', currentLocation: 'Ford Detroit',
+      lastConfirmedAt: movedAt, locationConfidence: 'verified',
+    })
+    expect(d1.sqlite.prepare('SELECT COUNT(*) AS n FROM transfer_requests').get().n).toBe(0)
+    expect(d1.sqlite.prepare('SELECT COUNT(*) AS n FROM transfer_events').get().n).toBe(0)
+    await first.commit()
+    expect(d1.sqlite.prepare('SELECT COUNT(*) AS n FROM transfer_requests').get().n).toBe(1)
+    expect(d1.sqlite.prepare('SELECT COUNT(*) AS n FROM transfer_events').get().n).toBe(1)
+    expect(d1.sqlite.prepare('SELECT status, movement_status, current_location_id FROM transfer_requests').get()).toEqual({
+      status: 'arrived', movement_status: 'at_requesting_store', current_location_id: 'Ford Detroit',
+    })
+    expect(d1.sqlite.prepare('SELECT event_type, store_id, from_location_id, to_location_id, occurred_at FROM transfer_events').get()).toEqual({
+      event_type: 'direct_move_recorded', store_id: 'Howell', from_location_id: 'Howell', to_location_id: 'Ford Detroit', occurred_at: movedAt,
+    })
+
+    const restored = await cold()
+    expect(restored.service.getTransfer(created.record.id, manager).events).toHaveLength(1)
+    expect(restored.service.createTransfer(input, manager, 'simple-cloud-direct')).toMatchObject({ created: false, record: { id: created.record.id } })
+    expect((await restored.commit()).committed).toBe(false)
+  })
+
+  it('commits a direct reroute by superseding the old cloud row in the same transaction', async () => {
+    const d1 = fakeD1()
+    const release = buildSyntheticRelease()
+    const manager = { role: 'manager', store: 'Howell', user: 'Synthetic home manager', userId: 'manager-2' }
+    const cold = async () => {
+      const store = await loadD1Repository(d1, release)
+      return { ...store, service: createInventoryServiceCore({ database: store.database, repository: store.repository, now: () => SYNTHETIC_NOW }) }
+    }
+    const firstInput = {
+      vin: 'TESTDATAHWELL0002', intent: 'direct', destinationStore: 'Ford Detroit',
+      movedAt: '2026-08-30T11:00:00Z', reason: 'Synthetic first destination', returnRequired: true,
+    }
+    const first = await cold()
+    const original = first.service.createTransfer(firstInput, manager, 'cloud-reroute-a').record
+    first.service.appendTransferEvent(original.id, {
+      type: 'note_added', note: 'Backdated passive note before the direct physical event',
+      occurredAt: '2026-08-30T10:00:00Z',
+    }, manager, 'cloud-reroute-backdated-note')
+    await first.commit()
+
+    const reroute = await cold()
+    const replacement = reroute.service.createTransfer({
+      ...firstInput, destinationStore: 'Lincoln', movedAt: '2026-08-30T12:00:00Z', reason: 'Synthetic corrected destination',
+    }, manager, 'cloud-reroute-b').record
+    expect(replacement.events[0]).toMatchObject({ fromLocation: 'Ford Detroit', toLocation: 'Lincoln' })
+    expect(d1.sqlite.prepare('SELECT status FROM transfer_requests WHERE id=?').get(original.id).status).toBe('arrived')
+    expect(d1.sqlite.prepare('SELECT COUNT(*) AS n FROM transfer_requests').get().n).toBe(1)
+    await reroute.commit()
+
+    expect(d1.sqlite.prepare('SELECT status FROM transfer_requests WHERE id=?').get(original.id).status).toBe('canceled')
+    expect(d1.sqlite.prepare('SELECT status, current_location_id FROM transfer_requests WHERE id=?').get(replacement.id))
+      .toEqual({ status: 'arrived', current_location_id: 'Lincoln' })
+    expect(d1.sqlite.prepare("SELECT event_type, from_location_id, to_location_id FROM transfer_events WHERE transfer_request_id=? AND event_type='direct_move_superseded'").get(original.id))
+      .toEqual({ event_type: 'direct_move_superseded', from_location_id: 'Ford Detroit', to_location_id: 'Lincoln' })
+    expect(d1.sqlite.prepare("SELECT COUNT(*) AS n FROM transfer_requests WHERE status NOT IN ('declined','canceled','closed')").get().n).toBe(1)
+
+    const replay = await cold()
+    expect(replay.service.createTransfer(firstInput, manager, 'cloud-reroute-a'))
+      .toMatchObject({ created: false, record: { id: original.id } })
+    expect((await replay.commit()).committed).toBe(false)
+  })
+
+  it('rejects a backdated cloud direct move and audits a later move from the last physical store', async () => {
+    const d1 = fakeD1()
+    const release = buildSyntheticRelease()
+    const sales = { role: 'sales', store: 'Fowlerville', user: 'Synthetic salesperson', userId: 'sales-1' }
+    const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic requesting manager', userId: 'manager-1' }
+    const homeManager = { role: 'manager', store: 'Howell', user: 'Synthetic home manager', userId: 'manager-2' }
+    let clock = new Date(SYNTHETIC_NOW)
+    const tick = () => { clock = new Date(clock.getTime() + 60_000) }
+    const cold = async () => {
+      const store = await loadD1Repository(d1, release)
+      return { ...store, service: createInventoryServiceCore({ database: store.database, repository: store.repository, now: () => clock }) }
+    }
+
+    const trip = await cold()
+    const requested = trip.service.createTransfer({
+      vin: 'TESTDATAHWELL0001', neededBy: requestAt, reason: 'Synthetic prior showing', returnRequired: true,
+    }, sales, 'prior-cloud-request').record
+    trip.service.appendTransferEvent(requested.id, { type: 'request_approved', availabilityConfirmed: true }, manager, 'prior-cloud-approval')
+    tick()
+    trip.service.appendTransferEvent(requested.id, { type: 'vehicle_departed' }, sales, 'prior-cloud-departure')
+    tick()
+    const arrived = trip.service.appendTransferEvent(requested.id, { type: 'arrived' }, sales, 'prior-cloud-arrival').record
+    const latestPhysicalAt = arrived.events.at(-1).occurredAt
+    await trip.commit()
+    d1.sqlite.prepare("UPDATE transfer_requests SET status='canceled', closed_at=? WHERE id=?").run(latestPhysicalAt, requested.id)
+    tick()
+
+    const direct = {
+      vin: requested.vin, intent: 'direct', destinationStore: 'Ford Detroit', movedAt: latestPhysicalAt,
+      reason: 'Synthetic corrected movement', returnRequired: true,
+    }
+    const stale = await cold()
+    expect(() => stale.service.createTransfer(direct, homeManager, 'backdated-cloud-direct'))
+      .toThrowError(expect.objectContaining({ code: 'MOVE_CHRONOLOGY_CONFLICT' }))
+    expect((await stale.commit()).committed).toBe(false)
+    expect(d1.sqlite.prepare("SELECT COUNT(*) AS n FROM transfer_events WHERE event_type='direct_move_recorded'").get().n).toBe(0)
+
+    const movedAt = clock.toISOString()
+    const current = await cold()
+    const moved = current.service.createTransfer({
+      ...direct, destinationStore: 'Howell', movedAt,
+    }, homeManager, 'later-cloud-direct').record
+    expect(moved).toMatchObject({ homeStore: 'Howell', currentLocation: 'Howell', requestStatus: 'arrived', lastConfirmedAt: movedAt })
+    expect(moved.events).toContainEqual(expect.objectContaining({
+      type: 'direct_move_recorded', fromLocation: 'Fowlerville', toLocation: 'Howell', occurredAt: movedAt,
+    }))
+    await current.commit()
+    expect(d1.sqlite.prepare("SELECT from_location_id, to_location_id, occurred_at FROM transfer_events WHERE event_type='direct_move_recorded'").get()).toEqual({
+      from_location_id: 'Fowlerville', to_location_id: 'Howell', occurred_at: movedAt,
+    })
+  })
+
+  it('preserves a terminal in-transit origin in a cold cloud direct correction', async () => {
+    const d1 = fakeD1()
+    const release = buildSyntheticRelease()
+    const sales = { role: 'sales', store: 'Fowlerville', user: 'Synthetic salesperson', userId: 'sales-1' }
+    const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic requesting manager', userId: 'manager-1' }
+    const group = { role: 'group_manager', store: 'Howell', user: 'Synthetic group manager', userId: 'group-1' }
+    let clock = new Date(SYNTHETIC_NOW)
+    const cold = async () => {
+      const store = await loadD1Repository(d1, release)
+      return { ...store, service: createInventoryServiceCore({ database: store.database, repository: store.repository, now: () => clock }) }
+    }
+
+    const prior = await cold()
+    const requested = prior.service.createTransfer({
+      vin: 'TESTDATAHWELL0001', neededBy: requestAt, reason: 'Synthetic prior transit', returnRequired: true,
+    }, sales, 'cloud-transit-request').record
+    prior.service.appendTransferEvent(requested.id, { type: 'request_approved', availabilityConfirmed: true }, manager, 'cloud-transit-approval')
+    clock = new Date(clock.getTime() + 60_000)
+    const departed = prior.service.appendTransferEvent(requested.id, { type: 'vehicle_departed' }, sales, 'cloud-transit-departure').record
+    const departedAt = departed.events.at(-1).occurredAt
+    await prior.commit()
+    d1.sqlite.prepare("UPDATE transfer_requests SET status='canceled', closed_at=? WHERE id=?").run(departedAt, requested.id)
+    clock = new Date(clock.getTime() + 60_000)
+
+    const correction = await cold()
+    const movedAt = clock.toISOString()
+    const moved = correction.service.createTransfer({
+      vin: requested.vin, intent: 'direct', destinationStore: 'Howell', movedAt,
+      reason: 'Synthetic terminal transit correction', returnRequired: true,
+    }, group, 'cloud-transit-direct').record
+    expect(moved.events[0]).toMatchObject({
+      type: 'direct_move_recorded', fromLocation: 'In transit', toLocation: 'Howell', occurredAt: movedAt,
+    })
+    await correction.commit()
+    expect(d1.sqlite.prepare("SELECT from_location_id, to_location_id FROM transfer_events WHERE event_type='direct_move_recorded'").get())
+      .toEqual({ from_location_id: 'In transit', to_location_id: 'Howell' })
+  })
+
   it('does not allow two concurrent simple requests for one VIN after the losing writer reloads', async () => {
     const d1 = fakeD1()
     const release = buildSyntheticRelease()
@@ -124,19 +295,18 @@ describe('D1 shared operational repository', () => {
     const created = first.service.createTransfer({ vin: 'TESTDATAHWELL0001', neededBy: requestAt, reason: 'Synthetic request', returnRequired: true }, sales, 'simple-cloud-request')
     await first.commit()
     const id = created.record.id
-    for (const [event, context, status] of [
-      [{ type: 'request_approved', availabilityConfirmed: true }, manager, 'approved'],
-      [{ type: 'vehicle_departed' }, sales, 'picked_up'],
-      [{ type: 'arrived' }, sales, 'arrived'],
-      [{ type: 'return_started' }, sales, 'return_in_transit'],
-      [{ type: 'returned_home' }, home, 'closed'],
+    for (const [event, context, status, dealStatus] of [
+      [{ type: 'request_approved', availabilityConfirmed: true }, manager, 'approved', 'not_confirmed'],
+      [{ type: 'customer_showing' }, sales, 'customer_showing', 'customer_showing'],
+      [{ type: 'return_started' }, sales, 'return_in_transit', 'customer_showing'],
+      [{ type: 'returned_home' }, home, 'closed', 'customer_showing'],
     ]) {
       const current = await cold()
       expect(current.service.getTransfer(id, context).workflowMode).toBe('simple')
       const mutation = current.service.appendTransferEvent(id, event, context, `simple-cloud-${event.type}`)
       expect(mutation.record.requestStatus).toBe(status)
       expect(mutation.record.deliveryStatus).toBe('not_confirmed')
-      expect(mutation.record.dealStatus).toBe('not_confirmed')
+      expect(mutation.record.dealStatus).toBe(dealStatus)
       await current.commit()
       const restored = await cold()
       expect(restored.service.getTransfer(id, context).requestStatus).toBe(status)
@@ -146,7 +316,10 @@ describe('D1 shared operational repository', () => {
     const final = await cold()
     const complete = final.service.getTransfer(id, home)
     expect(complete.currentLocation).toBe('Howell')
-    expect(complete.events).toHaveLength(6)
+    expect(complete.events).toHaveLength(5)
+    expect(complete.events.map((event) => event.type).sort()).toEqual([
+      'requested', 'request_approved', 'customer_showing', 'return_started', 'returned_home',
+    ].sort())
     expect(d1.sqlite.prepare('SELECT COUNT(*) AS n FROM transfer_events WHERE event_type IN (?, ?, ?)').get('manager_reviewed', 'transport_assigned', 'return_assigned').n).toBe(0)
     expect(d1.sqlite.prepare('SELECT COUNT(*) AS n FROM public_vehicle_snapshots').get().n).toBe(0)
   })

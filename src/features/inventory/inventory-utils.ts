@@ -1,3 +1,4 @@
+import { displayDate } from "../../lib/date-display";
 import type { TransferRecord } from "../../types";
 import { serviceWorkflowStatus } from "../../lib/service-readiness";
 import type {
@@ -6,6 +7,7 @@ import type {
   InventorySort,
   InventorySortKey,
   InventoryStore,
+  InventoryMoveAction,
   InventoryVehicle,
   SourceDataState,
   WindowStickerResource,
@@ -39,19 +41,6 @@ const integerFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
-
-const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
 export function formatMoney(value?: number | null): string {
   return typeof value === "number" && Number.isFinite(value)
     ? moneyFormatter.format(value)
@@ -63,9 +52,9 @@ export function formatStickerMoney(value: number | null | undefined, sticker: Pi
   if (typeof value !== "number" || !Number.isFinite(value)) return "Not published";
   const currency = sticker.pricingCurrency?.trim().toUpperCase();
   if (currency && /^[A-Z]{3}$/.test(currency)) {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 0 }).format(value);
+    return new Intl.NumberFormat("en-US", { style: "currency", currency, currencyDisplay: currency === "USD" ? "symbol" : "code", minimumFractionDigits: 0, maximumFractionDigits: 20 }).format(value);
   }
-  return `${integerFormatter.format(value)} (original sticker currency; verify)`;
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 20 }).format(value)} (original sticker currency; verify)`;
 }
 
 export function formatMileage(value?: number | null): string {
@@ -81,21 +70,14 @@ export function formatNumber(value?: number | null): string {
 }
 
 export function formatDate(value?: string | null): string {
-  if (!value) return "Not recorded";
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  const parsed = dateOnly
-    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
-    : new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : dateFormatter.format(parsed);
+  return value ? displayDate(value) : "Not recorded";
 }
 
 export function formatDateTime(value?: string | null): string {
-  if (!value) return "Not recorded";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : dateTimeFormatter.format(parsed);
+  return value ? displayDate(value, { time: true }) : "Not recorded";
 }
 
-export function vehicleDisplayName(vehicle: InventoryVehicle): string {
+export function vehicleDisplayName(vehicle: Partial<Pick<InventoryVehicle, "vehicleName" | "year" | "make" | "model" | "trim">>): string {
   const supplied = vehicle.vehicleName?.trim();
   if (supplied) return supplied;
   return [vehicle.year, vehicle.make, vehicle.model, vehicle.trim]
@@ -200,6 +182,47 @@ export function canRequestVehicleMove(
   );
 }
 
+/**
+ * Resolve the single creation action that belongs on the SRP and VDP.
+ * Salespeople request another store's vehicle. Store managers may also send
+ * their own inventory directly, while group managers may directly move any
+ * vehicle. An open ledger entry remains a Track action and is handled by the
+ * caller before this resolver is used.
+ */
+export function vehicleMoveAction(
+  vehicle: InventoryVehicle,
+  role: string,
+  workingStore: InventoryStore,
+): InventoryMoveAction | null {
+  const belongsToWorkingStore = sameStore(vehicle.location.homeStore, workingStore);
+
+  if (isMoveRequestBlocked(vehicle)) {
+    // A blocking direct move is not a dead end for the people who own its
+    // location decision. The server still verifies that the active row is a
+    // direct move and atomically supersedes it; this flag only makes that
+    // authorized path reachable without taking Track away.
+    if (vehicle.movement?.canDirectReroute === true && (role === "group_manager" || (role === "manager" && belongsToWorkingStore))) {
+      return { intent: "direct", label: "Move again", shortLabel: "Move again" };
+    }
+    return null;
+  }
+
+  if (role === "group_manager") {
+    return { intent: "direct", label: "Move vehicle", shortLabel: "Move" };
+  }
+  if (role === "manager" && belongsToWorkingStore) {
+    return { intent: "direct", label: "Move to another store", shortLabel: "Move" };
+  }
+  if (["sales", "manager"].includes(role) && !belongsToWorkingStore) {
+    return {
+      intent: "request",
+      label: `Request to ${workingStore.name}`,
+      shortLabel: "Request",
+    };
+  }
+  return null;
+}
+
 export function sourceStateLabel(state: SourceDataState): string {
   switch (state) {
     case "current":
@@ -225,6 +248,9 @@ export function publicListingLabel(vehicle: InventoryVehicle): string {
 
 export function dealerMailHoldLabel(signal: DealerMailHoldSignal): string {
   if (signal.dataState !== "current") return "Hold status not verified";
+  if (signal.loaner?.active) {
+    return signal.loaner.serviceDate ? `${signal.loaner.label} · ${signal.loaner.serviceDate}` : signal.loaner.label;
+  }
   if (signal.hasActiveHold === true) {
     if (signal.conciseState?.trim()) return signal.conciseState;
     if (signal.position === "backup") return "DealerMail backup hold";
@@ -452,7 +478,7 @@ export function sortVehicles(
       const comparison =
         typeof leftValue === "number" && typeof rightValue === "number"
           ? leftValue - rightValue
-          : String(leftValue).localeCompare(String(rightValue), undefined, {
+          : String(leftValue).localeCompare(String(rightValue), "en-US", {
               numeric: true,
               sensitivity: "base",
             });

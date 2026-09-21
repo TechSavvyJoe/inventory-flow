@@ -1,3 +1,4 @@
+import { apiAccessGeneration, recordConfirmedMutation, reportAccessFailure } from './apiSession'
 import type {
   AttentionEventInput,
   AttentionItem,
@@ -75,6 +76,7 @@ async function beginMutation(path: string, body: RequestInit['body'], headers: H
     headers.get('x-inventory-demo-store'),
     headers.get('x-inventory-demo-user'),
     headers.get('x-inventory-preview-role'),
+    headers.get('x-inventory-preview-store'),
   ])
   let registration = mutationRegistrations.get(fingerprint)
   if (!registration) {
@@ -124,6 +126,7 @@ type RequestTiming = {
 }
 
 async function request<T>(path: string, options: RequestInit = {}, timing: RequestTiming = {}): Promise<T> {
+  const accessGeneration = apiAccessGeneration()
   const headers = new Headers(options.headers)
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   const mutation = options.method?.toUpperCase() === 'POST'
@@ -163,7 +166,11 @@ async function request<T>(path: string, options: RequestInit = {}, timing: Reque
     const isSignIn = isSignInResponse(response)
     if (response.status === 401 || isSignIn || (response.ok && !isJson)) {
       confirmed = response.status === 401 || isSignIn
+      reportAccessFailure({ status: 401, role: headers.get('x-inventory-preview-role') as UserRole | null, store: headers.get('x-inventory-preview-store') as StoreName | null, message: SIGN_IN_MESSAGE }, accessGeneration)
       throw new ApiError(SIGN_IN_MESSAGE, 401)
+    }
+    if (response.status === 403) {
+      reportAccessFailure({ status: 403, role: headers.get('x-inventory-preview-role') as UserRole | null, store: headers.get('x-inventory-preview-store') as StoreName | null, message: 'Your account does not have access to this workspace. Reload to check your current access.' }, accessGeneration)
     }
     if (!response.ok) {
       confirmed = response.status >= 400 && response.status < 500 && ![408, 425, 429].includes(response.status)
@@ -187,6 +194,7 @@ async function request<T>(path: string, options: RequestInit = {}, timing: Reque
       throw new ApiError('The server response could not be read. Please try again.', 502)
     }
     confirmed = true
+    if (mutation) recordConfirmedMutation(accessGeneration)
     return payload
   } finally {
     clearTimeout(timeout)
@@ -205,23 +213,25 @@ function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, s
     'x-inventory-demo-role': role,
     // Production honors this only for a server-authenticated group manager.
     'x-inventory-preview-role': role,
+    'x-inventory-preview-store': store,
     'x-inventory-demo-store': store,
     'x-inventory-demo-user': import.meta.env.VITE_DEMO_USER_NAME || 'Joe Gallant',
   }
 }
 
-export function getBootstrap(homeStore: StoreName, role: UserRole): Promise<BootstrapData> {
+export function getBootstrap(homeStore: StoreName, role: UserRole, signal?: AbortSignal): Promise<BootstrapData> {
   const params = new URLSearchParams({ homeStore, role })
   return request<BootstrapData>(
     `/api/bootstrap?${params}`,
-    { headers: demoIdentityHeaders(role, homeStore) },
+    { headers: demoIdentityHeaders(role, homeStore), signal },
     { bodyTimeoutMs: BOOTSTRAP_BODY_TIMEOUT_MS },
   )
 }
 
-export function getVehicle(vin: string, role: UserRole, store: StoreName): Promise<VehicleRecord> {
+export function getVehicle(vin: string, role: UserRole, store: StoreName, signal?: AbortSignal): Promise<VehicleRecord> {
   return request<VehicleRecord>(`/api/vehicles/${encodeURIComponent(vin)}`, {
     headers: demoIdentityHeaders(role, store),
+    signal,
   })
 }
 

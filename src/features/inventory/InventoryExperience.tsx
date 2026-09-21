@@ -1,3 +1,4 @@
+import { useWorkspaceState, useWorkspaceScroll } from "../../lib/workspace-memory";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import {
   ArrowDown,
@@ -87,7 +88,7 @@ function uniqueStores(homeStore: InventoryStore, vehicles: InventoryVehicle[], g
   return [...stores.values()].sort((left, right) => {
     if (left.id === homeStore.id) return -1;
     if (right.id === homeStore.id) return 1;
-    return left.name.localeCompare(right.name);
+    return left.name.localeCompare(right.name, "en-US");
   });
 }
 
@@ -355,12 +356,16 @@ function matchesQuickView(vehicle: InventoryVehicle, quickView: QuickView): bool
 export function InventoryExperience(props: InventoryExperienceProps) {
   const {
     homeStore,
-    vehicles,
+    vehicles: allVehicles,
+    TableComponent = InventoryTable,
+    WorkspaceComponent = VehicleWorkspace,
+    toolbarAccessory, footerAccessory, vehicleFilter, detailState, onRetryDetail, returnLabel,
     groupStores,
     title = `${homeStore.name} inventory`,
     initialScope = "home",
     scope: controlledScope,
     initialQuery = "",
+    queryRequestKey,
     searchPersistenceKey,
     initialFilters,
     initialSorts = DEFAULT_INVENTORY_SORTS,
@@ -369,34 +374,38 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     initialWorkspaceTab = "overview",
     pageSize = 10,
     canRequestVehicle = false,
+    moveActionFor,
     onScopeChange,
     onViewStateChange,
     onSelectedVehicleChange,
     onGroupStoreSelect,
     onViewVehicle,
     onRequestVehicle,
+    onMoveVehicle,
     onTrackMovement,
     onOpenListing,
     onOpenSourceRecord,
     className,
   } = props;
 
-  const [internalScope, setInternalScope] = useState<InventoryScope>(initialScope);
+  const vehicles = useMemo(() => vehicleFilter ? allVehicles.filter(vehicleFilter) : allVehicles, [allVehicles, vehicleFilter]);
+  useWorkspaceScroll(searchPersistenceKey, "inventory");
+  const [internalScope, setInternalScope] = useWorkspaceState<InventoryScope>(searchPersistenceKey, "inventory.scope", initialScope);
   const scope = controlledScope ?? internalScope;
-  const [query, setQuery] = useState(initialQuery);
+  const [query, setQuery] = useWorkspaceState(searchPersistenceKey, `inventory.query:${queryRequestKey ?? initialQuery}`, initialQuery);
   const filterContext = `inventory-service:v1:${searchPersistenceKey || "session"}:${homeStore.id}`;
   const contextFilters = () => ({ ...DEFAULT_INVENTORY_FILTERS, ...initialFilters, serviceReadiness: initialServiceFilter(filterContext, initialFilters?.serviceReadiness) });
-  const [filterState, setFilterState] = useState<{ context: string; value: InventoryFilters }>(() => ({ context: filterContext, value: contextFilters() }));
+  const [filterState, setFilterState] = useWorkspaceState<{ context: string; value: InventoryFilters }>(searchPersistenceKey, "inventory.filters", () => ({ context: filterContext, value: contextFilters() }));
   const fallbackFilters = useMemo(contextFilters, [filterContext, initialFilters]);
   const filters: InventoryFilters = filterState.context === filterContext ? filterState.value : fallbackFilters;
   const setFilters = (next: SetStateAction<InventoryFilters>) => setFilterState(current => ({ context: filterContext, value: typeof next === "function" ? next(current.context === filterContext ? current.value : contextFilters()) : next }));
-  const [sorts, setSorts] = useState<InventorySort[]>(initialSorts);
+  const [sorts, setSorts] = useWorkspaceState<InventorySort[]>(searchPersistenceKey, "inventory.sorts", initialSorts);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [quickView, setQuickView] = useState<QuickView>("all");
-  const [rowsPerPage, setRowsPerPage] = useState(() => initialRowsPerPage(pageSize));
-  const [page, setPage] = useState(1);
-  const [internalSelectedVehicleId, setInternalSelectedVehicleId] = useState<string | null>(defaultSelectedVehicleId);
-  const [workspaceInitialTab, setWorkspaceInitialTab] = useState<VehicleWorkspaceTab>(initialWorkspaceTab);
+  const [quickView, setQuickView] = useWorkspaceState<QuickView>(searchPersistenceKey, "inventory.quickView", "all");
+  const [rowsPerPage, setRowsPerPage] = useWorkspaceState(searchPersistenceKey, "inventory.pageSize", () => initialRowsPerPage(pageSize));
+  const [page, setPage] = useWorkspaceState(searchPersistenceKey, "inventory.page", 1);
+  const [internalSelectedVehicleId, setInternalSelectedVehicleId] = useWorkspaceState<string | null>(searchPersistenceKey, "inventory.selection", defaultSelectedVehicleId);
+  const [workspaceInitialTab, setWorkspaceInitialTab] = useWorkspaceState<VehicleWorkspaceTab>(searchPersistenceKey, "inventory.tab", initialWorkspaceTab);
   const selectedVehicleId = controlledSelectedVehicleId !== undefined ? controlledSelectedVehicleId : internalSelectedVehicleId;
   const filterPanelId = useId();
   const backgroundRef = useRef<HTMLDivElement>(null);
@@ -510,13 +519,15 @@ export function InventoryExperience(props: InventoryExperienceProps) {
   const safePage = Math.min(page, totalPages);
   const pageStart = (safePage - 1) * rowsPerPage;
   const pageVehicles = scopedVehicles.slice(pageStart, pageStart + rowsPerPage);
-  const selectedVehicle = selectedVehicleId ? vehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null : null;
+  // List-only filters must not discard an already open, still-authorized record.
+  const selectedVehicle = selectedVehicleId ? allVehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null : null;
   const filterCount = activeFilterCount(filters) + (quickView === "all" ? 0 : 1);
   const selectedServiceLabel = SERVICE_FILTERS.find(([value]) => value === filters.serviceReadiness && value !== "all")?.[1];
   const secondaryViewLabel = quickView === "no-hold" ? "No current hold" : quickView === "new" ? "New today" : quickView === "price" ? "Price changed" : null;
   const canRequestSelected = selectedVehicle
     ? typeof canRequestVehicle === "function" ? canRequestVehicle(selectedVehicle) : canRequestVehicle
     : false;
+  const selectedMoveAction = selectedVehicle ? moveActionFor?.(selectedVehicle) ?? null : null;
 
   const closeVehicleWorkspace = () => {
     if (selectedVehicleId) {
@@ -560,7 +571,12 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     return () => window.cancelAnimationFrame(frame);
   }, [selectedVehicleId]);
 
-  useEffect(() => setPage(1), [filters, query, quickView, rowsPerPage, scope, sorts]);
+  const resultKey = JSON.stringify([filters, query, quickView, rowsPerPage, scope, sorts]);
+  const previousResultKey = useRef(resultKey);
+  useEffect(() => {
+    if (previousResultKey.current !== resultKey) setPage(1);
+    previousResultKey.current = resultKey;
+  }, [resultKey, setPage]);
   useEffect(() => setWorkspaceInitialTab(initialWorkspaceTab), [initialWorkspaceTab]);
   useEffect(() => onViewStateChange?.({ scope, query, filters, sorts }), [filters, onViewStateChange, query, scope, sorts]);
   useEffect(() => {
@@ -573,6 +589,10 @@ export function InventoryExperience(props: InventoryExperienceProps) {
   const clearFilters = () => {
     setFilters({ ...DEFAULT_INVENTORY_FILTERS });
     setQuickView("all");
+  };
+  const clearEmptyState = () => {
+    setQuery("");
+    clearFilters();
   };
   const returnToFilterTrigger = () => window.requestAnimationFrame(() => filterTriggerRef.current?.focus({ preventScroll: true }));
   const closeFilters = () => {
@@ -633,6 +653,7 @@ export function InventoryExperience(props: InventoryExperienceProps) {
           </div>
 
           <div className="if-srp-tools">
+            {toolbarAccessory}
             <div className="inventory-toolbar__left">
               <button ref={filterTriggerRef} type="button" className={`inventory-filter-button inv-btn inv-btn--secondary${filtersOpen ? " is-active" : ""}`} onClick={() => setFiltersOpen((open) => !open)} aria-expanded={filtersOpen} aria-controls={`${filterPanelId} ${filterPanelId}-service`}>
                 <Filter size={16} strokeWidth={1.8} aria-hidden="true" /> Filters {filterCount > 0 ? <span className="inv-btn__count">{filterCount}</span> : null}
@@ -667,14 +688,16 @@ export function InventoryExperience(props: InventoryExperienceProps) {
         <div className="inventory-results-surface">
           {pageVehicles.length ? (
             <>
-              <InventoryTable
+              <TableComponent
                 vehicles={pageVehicles}
                 selectedVehicleId={selectedVehicleId}
                 sorts={sorts}
                 onSortChange={setSorts}
                 onSelectVehicle={openVehicleWorkspace}
                 canRequestVehicle={canRequestVehicle}
+                moveActionFor={moveActionFor}
                 onRequestVehicle={onRequestVehicle}
+                onMoveVehicle={onMoveVehicle}
                 onTrackMovement={onTrackMovement}
                 onOpenListing={onOpenListing}
                 onOpenSourceRecord={openSourceRecord}
@@ -685,7 +708,9 @@ export function InventoryExperience(props: InventoryExperienceProps) {
                 onSelectVehicle={openVehicleWorkspace}
                 onOpenSourceRecord={openSourceRecord}
                 canRequestVehicle={canRequestVehicle}
+                moveActionFor={moveActionFor}
                 onRequestVehicle={onRequestVehicle}
+                onMoveVehicle={onMoveVehicle}
                 onTrackMovement={onTrackMovement}
                 onOpenListing={onOpenListing}
               />
@@ -696,7 +721,7 @@ export function InventoryExperience(props: InventoryExperienceProps) {
               <h2>No matching vehicles</h2>
               <p>Clear a filter or look across all locations.</p>
               <div>
-                <button type="button" className="inventory-button inv-btn inv-btn--secondary" onClick={clearFilters}>Clear filters</button>
+                <button type="button" className="inventory-button inv-btn inv-btn--secondary" onClick={query.trim() ? clearEmptyState : clearFilters}>{query.trim() ? filterCount > 0 ? "Clear search and filters" : "Clear search" : "Clear filters"}</button>
                 {scope === "home" ? <button type="button" className="inventory-button inventory-button--primary inv-btn inv-btn--primary" onClick={() => setScope("group")}>View all locations</button> : null}
               </div>
             </div>
@@ -731,16 +756,22 @@ export function InventoryExperience(props: InventoryExperienceProps) {
         ) : null}
       </div>
 
+      {footerAccessory}
       {selectedVehicle ? (
-        <VehicleWorkspace
+        <WorkspaceComponent
           vehicle={selectedVehicle}
+          detailState={detailState}
+          returnLabel={returnLabel}
+          onRetryDetail={onRetryDetail}
           initialTab={workspaceInitialTab}
           homeStore={homeStore}
           canRequestVehicle={canRequestSelected}
+          moveAction={selectedMoveAction}
           returnFocusRef={workspaceReturnFocusRef}
           onClose={closeVehicleWorkspace}
           onViewVehicle={onViewVehicle}
           onRequestVehicle={onRequestVehicle}
+          onMoveVehicle={onMoveVehicle}
           onTrackMovement={onTrackMovement}
           onOpenListing={onOpenListing}
           onOpenSourceRecord={onOpenSourceRecord}

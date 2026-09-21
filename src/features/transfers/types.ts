@@ -170,6 +170,7 @@ export interface TransferTimelineEvent {
   title: string;
   occurredAt: string;
   location?: string;
+  fromLocation?: string;
   actorLabel?: string;
   actorRole?: string;
   custodianLabel?: string;
@@ -185,6 +186,7 @@ export interface TransferVehicleSummary {
   vehicleLabel: string;
   trimLabel?: string;
   imageUrl?: string;
+  imageUrls?: string[];
   homeStore: StoreName;
   currentLocation: LocationSnapshot;
   listedPriceLabel?: string;
@@ -248,10 +250,13 @@ export type TransferReasonCode =
 
 export interface TransferRequestDraft {
   vin: string;
+  intent?: 'request' | 'direct';
   requestingStore: string;
+  destinationStore?: string;
   requesterId: string;
   managerApproverId: string;
   neededBy: string;
+  movedAt?: string;
   customerAppointmentAt?: string;
   customerReference?: string;
   reasonCode: TransferReasonCode;

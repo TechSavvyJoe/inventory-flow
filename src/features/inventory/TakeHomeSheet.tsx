@@ -1,10 +1,11 @@
+import { CertifiedBadge } from "../../components/CertifiedBadge";
 import { useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { BadgeCheck, ImageOff, Printer, X } from "lucide-react";
+import { ImageOff, Printer, X } from "lucide-react";
 import { STORE_BRANDING } from "../../app/storeBranding";
 import type { StoreName } from "../../types";
 import { useContainedFocus } from "../../lib/useContainedFocus";
-import { formatMileage, formatMoney, vehicleDisplayName } from "./inventory-utils";
+import { formatDate, formatMileage, formatMoney, vehicleDisplayName } from "./inventory-utils";
 import { publishedEquipment, standoutEquipment } from "./vehicle-feature-utils";
 import { certifiedTerms } from "./vehicle-warranty-utils";
 import type { InventoryVehicle } from "./types";
@@ -92,7 +93,7 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
           {model.descriptor ? <p>{model.descriptor}</p> : null}
         </div>
         {model.certified ? (
-          <span className="th-cert"><BadgeCheck size={14} strokeWidth={2} aria-hidden="true" />{model.certified.name}</span>
+          <span className="th-cert th-cert--logo"><CertifiedBadge certified homeStore={model.store} /></span>
         ) : null}
       </section>
       <section className={`th-hero${heroPhoto ? "" : " is-empty"}`}>
@@ -153,7 +154,7 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
         </section>
       ) : null}
       <footer className="th-foot">
-        <span>Prepared {now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} · {model.storeName}{model.storeSite ? ` · ${model.storeSite}` : ""}</span>
+        <span>Prepared {formatDate(now.toISOString())} · {model.storeName}{model.storeSite ? ` · ${model.storeSite}` : ""}</span>
         <span>Price excludes tax, title, license and dealer fees. Vehicle information is believed accurate but not guaranteed; confirm equipment, mileage and availability with the dealership before purchase.</span>
       </footer>
     </article>

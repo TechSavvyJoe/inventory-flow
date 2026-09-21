@@ -6,6 +6,7 @@ import {
   formatStickerMoney,
   resolveCurrentLocation,
   sortVehicles,
+  vehicleMoveAction,
   vehicleMatchesFilters,
   vehicleMatchesQuery,
 } from "./inventory-utils";
@@ -48,6 +49,28 @@ function vehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
 }
 
 describe("inventory source-safe selectors", () => {
+  it("chooses request versus direct move from role and vehicle ownership", () => {
+    const howell = { id: "howell", name: "Howell" };
+    const own = vehicle();
+    const other = vehicle({ location: { ...own.location, homeStore: { id: "lincoln", name: "Lincoln" } } });
+
+    expect(vehicleMoveAction(own, "manager", howell)).toMatchObject({ intent: "direct", label: "Move to another store" });
+    expect(vehicleMoveAction(other, "manager", howell)).toMatchObject({ intent: "request", label: "Request to Howell" });
+    expect(vehicleMoveAction(own, "sales", howell)).toBeNull();
+    expect(vehicleMoveAction(other, "sales", howell)).toMatchObject({ intent: "request", label: "Request to Howell" });
+    expect(vehicleMoveAction(own, "group_manager", howell)).toMatchObject({ intent: "direct" });
+    expect(vehicleMoveAction(other, "group_manager", howell)).toMatchObject({ intent: "direct" });
+    expect(vehicleMoveAction(vehicle({ moveRequestBlocked: true }), "group_manager", howell)).toBeNull();
+    const reroutable = vehicle({
+      moveRequestBlocked: true,
+      movement: { state: 'arrived', requestId: 'direct-move-1', canDirectReroute: true },
+    });
+    expect(vehicleMoveAction(reroutable, "group_manager", howell)).toMatchObject({ intent: "direct", label: "Move again" });
+    expect(vehicleMoveAction(reroutable, "manager", howell)).toMatchObject({ intent: "direct", label: "Move again" });
+    expect(vehicleMoveAction(reroutable, "sales", howell)).toBeNull();
+    expect(vehicleMoveAction({ ...reroutable, location: { ...reroutable.location, homeStore: { id: 'lincoln', name: 'Lincoln' } } }, "manager", howell)).toBeNull();
+  });
+
   it("keeps existing inventory and legacy unknown records waiting until Ready is explicit", () => {
     const base = vehicle();
     expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: "serviced" })).toBe(false);
@@ -70,7 +93,12 @@ describe("inventory source-safe selectors", () => {
   it("labels original sticker currency without converting or changing public listing prices", () => {
     expect(formatStickerMoney(56650, { pricingCurrency: "CAD", originalMarket: "Canada" })).toMatch(/CAD\s56,650/);
     expect(formatStickerMoney(49924, {})).toBe("49,924 (original sticker currency; verify)");
-    expect(formatStickerMoney(49480, { pricingCurrency: "USD" })).toMatch(/USD\s49,480/);
+    expect(formatStickerMoney(1250.75, { pricingCurrency: "USD" })).toBe("$1,250.75");
+    expect(formatStickerMoney(0, { pricingCurrency: "USD" })).toBe("$0");
+    expect(formatStickerMoney(1250.75, { pricingCurrency: "CAD" })).toMatch(/CAD\s1,250.75/);
+    expect(formatStickerMoney(1250.75, {})).toBe("1,250.75 (original sticker currency; verify)");
+    expect(formatStickerMoney(0, {})).toBe("0 (original sticker currency; verify)");
+    expect(formatStickerMoney(49480, { pricingCurrency: "USD" })).toBe("$49,480");
     expect(formatMoney(21999)).toBe("$21,999");
   });
 

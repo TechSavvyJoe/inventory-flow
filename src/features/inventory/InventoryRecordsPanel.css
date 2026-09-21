@@ -1,0 +1,77 @@
+.inventory-records-panel {
+  position:fixed; top:var(--inventory-records-top,88px); right:16px; bottom:16px; z-index:210;
+  display:flex; flex-direction:column; width:min(600px,45vw); min-width:0; overflow:hidden;
+  border:1px solid var(--border-strong); border-radius:9px; background:var(--surface); color:var(--ink-900);
+  box-shadow:var(--ifx-elevation-3); font:400 14px/1.4 var(--font-app); animation:none;
+}
+.inventory-records-panel, .inventory-records-panel * { box-sizing:border-box; }
+.inventory-records-panel :is(button,a) { font-family:inherit; -webkit-tap-highlight-color:transparent; }
+.inventory-records-panel button { cursor:pointer; }
+.inventory-records-panel :is(button,a):focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+.inventory-records-panel__header { flex:none; padding:8px 16px 0; border-bottom:1px solid var(--border); }
+.inventory-records-panel__heading { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:36px; color:var(--navy-900); font-weight:600; }
+.inventory-records-panel__heading > span { font-size:12px; }
+.inventory-records-panel__heading > button { display:flex; align-items:center; justify-content:center; width:36px; height:36px; margin-right:-8px; padding:0; border:0; border-radius:5px; background:transparent; color:var(--ink-600); }
+.inventory-records-panel__heading > button:hover { background:var(--surface-muted); color:var(--navy-900); }
+.inventory-records-panel__header h2 { margin:3px 0 6px; color:var(--navy-900); font:650 18px/1.3 var(--font-app); overflow-wrap:anywhere; }
+.inventory-records-panel__identity { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 12px; color:var(--ink-600); font-size:12px; }
+.inventory-records-panel__identity strong { margin-left:3px; color:var(--ink-700); font-weight:500; }
+.inventory-records-panel__identity > b { color:var(--navy-900); font:700 17px/1.3 var(--font-app); font-variant-numeric:tabular-nums; }
+.inventory-records-panel__vehicles { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:9px; padding:5px 0; border-top:1px solid var(--border); }
+.inventory-records-panel__vehicles > button { display:inline-flex; align-items:center; justify-content:center; gap:3px; min-height:34px; padding:4px 0; border:0; border-radius:4px; background:transparent; color:var(--blue-700); font:600 12px/1.3 var(--font-app); }
+.inventory-records-panel__vehicles > button:disabled { color:var(--ink-500); opacity:.55; cursor:default; }
+.inventory-records-panel__vehicles > span { color:var(--ink-600); font-size:12px; font-variant-numeric:tabular-nums; }
+.inventory-records-panel__content { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; padding:0 16px 12px; scrollbar-gutter:stable; scroll-behavior:auto; }
+.inventory-records-panel__footer { flex:none; display:flex; justify-content:flex-end; padding:7px 16px; border-top:1px solid var(--border); background:var(--surface); }
+.inventory-records-panel__footer > button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:36px; padding:6px 0; border:0; border-radius:4px; background:transparent; color:var(--blue-700); font:600 14px/1.3 var(--font-app); }
+.inventory-records-panel__footer > button:hover { text-decoration:underline; text-underline-offset:3px; }
+.inventory-records-panel__empty { display:grid; justify-items:start; gap:8px; padding:24px 0; color:var(--ink-600); }
+.inventory-records-panel__empty > svg { color:var(--blue-700); }
+.inventory-records-panel__empty > strong { color:var(--navy-900); font-size:15px; }
+.inventory-records-panel__empty > p { margin:0; font-size:13px; }
+
+/* Preview content follows the inspector width, not the underlying desktop viewport. */
+.inventory-records-panel .vehicle-resource-preview-toolbar { gap:0 14px; padding:0; }
+.inventory-records-panel .vehicle-resource-preview-selectors { flex:1 1 auto; flex-wrap:wrap; gap:0 15px; }
+.inventory-records-panel .vehicle-resources--preview .vehicle-resource-summary__toggle { flex:0 1 auto; min-height:42px; padding:8px 0; border:0; border-bottom:2px solid transparent; border-radius:0; background:transparent; color:var(--ink-600); font-size:13px; }
+.inventory-records-panel .vehicle-resources--preview .vehicle-resource-summary__toggle > svg { display:none; }
+.inventory-records-panel .vehicle-resources--preview .vehicle-resource-summary__toggle:hover { color:var(--blue-700); }
+.inventory-records-panel .vehicle-resources--preview .vehicle-resource-summary__toggle:is([aria-expanded=true],[aria-pressed=true]) { border-bottom-color:var(--blue-700); background:transparent; color:var(--navy-900); }
+.inventory-records-panel .vehicle-resources--preview .vehicle-resource-lookups { gap:0 12px; margin-left:auto; }
+.inventory-records-panel .vehicle-resources--preview .vehicle-resource-lookups .vehicle-resource-summary__source { min-height:36px; font-size:12px; }
+.inventory-records-panel .vehicle-resources--preview.is-overview .vehicle-resource-summaries { display:block; }
+.inventory-records-panel .vehicle-resources--preview .vehicle-resource-summary { margin:0; padding:10px 0 12px; border-top:1px solid var(--border); }
+.inventory-records-panel .vehicle-resources--preview .vehicle-resource-summary:first-child { border-top:0; }
+.inventory-records-panel .vehicle-resources--preview .vehicle-resource-summary__source { min-height:32px; font-size:13px; }
+.inventory-records-panel .vehicle-resource-summary__heading { margin:0 0 3px; }
+.inventory-records-panel .vehicle-resource-summary__fields { display:grid; grid-template-columns:minmax(0,1fr); gap:0; }
+.inventory-records-panel .vehicle-resource-summary__fields > div { display:grid; grid-template-columns:minmax(84px,.8fr) minmax(0,1.8fr); gap:4px 12px; padding:6px 0; }
+.inventory-records-panel .vehicle-resource-summary__fields > div dt { margin:0; }
+.inventory-records-panel .vehicle-resource-summary__fields > .is-section { display:block; }
+.inventory-records-panel .vehicle-resource-summary__fields > .is-section dt { margin-bottom:5px; }
+.inventory-records-panel .vehicle-resource-summary__fields > .is-section dd > ul { display:block; }
+.inventory-records-panel .vehicle-resource-summary__fields > .is-section dd li + li { margin-top:5px; padding-top:5px; border-top:1px solid var(--border); }
+.inventory-records-panel .vehicle-resource-sticker:has(> .vehicle-resource-sticker__group) { display:block; }
+.inventory-records-panel .vehicle-resource-sticker:has(> .vehicle-resource-sticker__group) > .vehicle-resource-sticker__optional { margin-top:10px; padding:0; border:0; }
+.inventory-records-panel .vehicle-resource-sticker__options { grid-template-columns:minmax(0,1fr); }
+.inventory-records-panel .vehicle-resource-source-note { font-size:12px; }
+
+.inventory-records-backdrop { position:fixed; inset:0; z-index:209; background:color-mix(in srgb,var(--navy-900) 25%,transparent); }
+@media (max-width:760px) {
+  .inventory-records-panel { top:64px; right:0; bottom:0; width:100%; max-width:none; border-width:1px 0 0; border-radius:12px 12px 0 0; padding-bottom:env(safe-area-inset-bottom,0px); }
+  .inventory-records-panel__header { padding-inline:14px; }
+  .inventory-records-panel__heading { min-height:40px; }
+  .inventory-records-panel__heading > button { width:44px; height:44px; }
+  .inventory-records-panel__header h2 { font-size:17px; }
+  .inventory-records-panel__vehicles { margin-top:7px; padding:0; }
+  .inventory-records-panel__vehicles > button { min-height:44px; }
+  .inventory-records-panel__content { padding-inline:14px; scrollbar-gutter:auto; }
+  .inventory-records-panel__footer { padding:4px 14px; }
+  .inventory-records-panel__footer > button { min-height:44px; }
+  .inventory-records-panel .vehicle-resource-preview-selectors { gap:0 13px; }
+  .inventory-records-panel .vehicle-resources--preview .vehicle-resource-summary__toggle { min-height:44px; }
+  .inventory-records-panel .vehicle-resources--preview .vehicle-resource-summary__source { min-height:44px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .inventory-records-panel, .inventory-records-panel * { animation:none; transition:none; scroll-behavior:auto; }
+}

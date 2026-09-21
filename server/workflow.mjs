@@ -7,6 +7,9 @@ export const HOLD_EVIDENCE_ROLES = new Set(['sales', 'manager', 'group_manager']
 
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/
 const PRIORITIES = new Set(['low', 'normal', 'high', 'urgent'])
+const TRANSFER_INTENTS = new Set(['request', 'direct'])
+const DIRECT_MOVE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
+const DIRECT_MOVE_FUTURE_TOLERANCE_MS = 5 * 60 * 1000
 const PASSIVE_EVENTS = new Set(['note_added', 'eta_updated', 'driver_requested', 'condition_issue', 'location_exception', 'escalated'])
 const ACTIVE_ONLY_PASSIVE_EVENTS = new Set(['driver_requested', 'condition_issue', 'location_exception', 'escalated'])
 const TRANSPORT_ASSIGNMENT_EVENTS = new Set(['transport_assigned', 'return_assigned'])
@@ -22,9 +25,16 @@ const SIMPLE_EVENT_STATUS = Object.freeze({
 const SIMPLE_EVENT_FROM = Object.freeze({
   request_approved: new Set(['requested', 'manager_reviewed']),
   request_declined: new Set(['requested', 'manager_reviewed']),
+  // Retained only so a previously released integration can finish its saved
+  // audit trail. The everyday interface no longer presents this as a step.
   vehicle_departed: new Set(['approved', 'transport_assigned']),
-  return_started: new Set(['arrived', 'customer_showing', 'sale_outcome_pending', 'not_sold', 'return_requested', 'return_assigned']),
+  // An approved move can be worked or returned without requiring a separate
+  // collection and arrival acknowledgement from two different managers.
+  return_started: new Set(['approved', 'transport_assigned', 'picked_up', 'in_transit', 'arrived', 'customer_showing', 'sale_outcome_pending', 'not_sold', 'return_requested', 'return_assigned']),
 })
+const SIMPLE_OUTCOME_EVENTS = new Set(['customer_showing', 'sale_outcome_pending', 'sale_confirmed', 'not_sold'])
+const SIMPLE_OUTCOME_FROM = new Set(['approved', 'transport_assigned', 'picked_up', 'in_transit', 'arrived'])
+const SIMPLE_PRE_DESTINATION_STATES = new Set(['approved', 'transport_assigned', 'picked_up', 'in_transit'])
 
 export const TRANSITION_MAP = Object.freeze({
   requested: new Set(['manager_reviewed', 'declined', 'canceled']),
@@ -36,7 +46,9 @@ export const TRANSITION_MAP = Object.freeze({
   arrived: new Set(['customer_showing', 'sale_outcome_pending', 'sale_confirmed', 'not_sold', 'return_requested']),
   customer_showing: new Set(['sale_outcome_pending', 'sale_confirmed', 'not_sold', 'return_requested']),
   sale_outcome_pending: new Set(['sale_confirmed', 'not_sold', 'return_requested']),
-  sale_confirmed: new Set(['delivery_confirmed']),
+  // A sold-pending vehicle waits for its customer delivery; the return path
+  // reopens only when a manager records that the deal fell through.
+  sale_confirmed: new Set(['delivery_confirmed', 'not_sold']),
   delivery_confirmed: new Set(['closed']),
   not_sold: new Set(['return_requested']),
   return_requested: new Set(['return_assigned']),
@@ -49,35 +61,36 @@ export const TRANSITION_MAP = Object.freeze({
 })
 
 const EVENT_LABELS = Object.freeze({
-  requested: 'Vehicle requested',
-  request_approved: 'Requesting-store manager approved and confirmed availability for this move',
+  requested: 'Move requested',
+  direct_move_recorded: 'Vehicle moved to destination store',
+  request_approved: 'Requesting-store manager approved the move and confirmed the vehicle was free',
   request_declined: 'Requesting-store manager declined the request',
-  vehicle_departed: 'Vehicle left the home store',
+  vehicle_departed: 'Vehicle collected from the home store',
   return_started: 'Vehicle returning to the home store',
-  manager_reviewed: 'Requesting-store manager approved; home-store call required',
-  approved: 'Home-store availability and release confirmed',
+  manager_reviewed: 'Requesting-store manager approved · home store still to call',
+  approved: 'Home store confirmed the vehicle is free and released it',
   declined: 'Request declined',
   canceled: 'Request canceled',
-  transport_assigned: 'Transport assigned',
-  picked_up: 'Vehicle picked up',
+  transport_assigned: 'Driver assigned',
+  picked_up: 'Vehicle collected',
   in_transit: 'Vehicle in transit',
   arrived: 'Vehicle arrived at requesting store',
-  customer_showing: 'Customer showing in progress',
-  sale_outcome_pending: 'Sale outcome pending confirmation',
+  customer_showing: 'Showing in progress',
+  sale_outcome_pending: 'Decision or paperwork pending',
   sale_confirmed: 'Sold pending recorded in Inventory Flow',
   delivery_confirmed: 'Delivery explicitly confirmed in Inventory Flow',
-  not_sold: 'Vehicle not sold',
+  not_sold: 'Shown · not sold',
   return_requested: 'Return to home store requested',
-  return_assigned: 'Return transport assigned',
+  return_assigned: 'Return driver assigned',
   return_in_transit: 'Vehicle returning to home store',
-  returned_home: 'Home store receipt confirmed',
-  closed: 'Transfer workflow closed',
-  note_added: 'Operational note added',
+  returned_home: 'Home store confirmed the vehicle is back',
+  closed: 'Move closed',
+  note_added: 'Note added',
   eta_updated: 'Due time updated',
-  driver_requested: 'Driver coordination requested',
-  location_exception: 'Location exception recorded',
+  driver_requested: 'Driver requested',
+  location_exception: 'Location issue reported',
   condition_issue: 'Vehicle condition issue reported',
-  escalated: 'Transfer escalated for manager attention',
+  escalated: 'Move escalated for manager attention',
 })
 
 const EVENT_ROLE_RULES = Object.freeze({
@@ -169,7 +182,15 @@ function isoTimestamp(value, field, { required = false } = {}) {
   return parsed.toISOString()
 }
 
-export function roleContext({ role, store, user, userId, allowLegacyTransportAssignmentByName = false } = {}) {
+export function roleContext({
+  role,
+  store,
+  user,
+  userId,
+  authenticatedRole,
+  authenticatedStore,
+  allowLegacyTransportAssignmentByName = false,
+} = {}) {
   if (!USER_ROLES.includes(role)) {
     throw new WorkflowError('A valid authenticated role is required', {
       status: 401,
@@ -184,6 +205,22 @@ export function roleContext({ role, store, user, userId, allowLegacyTransportAss
       details: { field: 'store' },
     })
   }
+  const authorityRole = authenticatedRole ?? role
+  if (!USER_ROLES.includes(authorityRole) || (authorityRole !== role && authorityRole !== 'group_manager')) {
+    throw new WorkflowError('A valid authenticated authority role is required', {
+      status: 401,
+      code: 'AUTH_CONTEXT_INVALID',
+      details: { field: 'authenticatedRole' },
+    })
+  }
+  const authorityStore = authenticatedStore ?? store
+  if (!STORE_NAMES.includes(authorityStore) || (authorityStore !== store && authorityRole !== 'group_manager')) {
+    throw new WorkflowError('A valid authenticated authority store is required', {
+      status: 401,
+      code: 'AUTH_CONTEXT_INVALID',
+      details: { field: 'authenticatedStore' },
+    })
+  }
   const normalizedUser = String(user ?? '').trim()
   if (!normalizedUser) {
     throw new WorkflowError('An authenticated user is required', {
@@ -196,6 +233,8 @@ export function roleContext({ role, store, user, userId, allowLegacyTransportAss
   return {
     role,
     store,
+    authenticatedRole: authorityRole,
+    authenticatedStore: authorityStore,
     user: normalizedUser,
     userId: normalizedUserId,
     allowLegacyTransportAssignmentByName: allowLegacyTransportAssignmentByName === true,
@@ -217,8 +256,13 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
     })
   }
 
-  const requestingStoreId = context.store
-  if (input.requestingStore && storeName(input.requestingStore, 'requestingStore') !== requestingStoreId) {
+  const intent = String(input?.intent ?? 'request').trim().toLowerCase()
+  if (!TRANSFER_INTENTS.has(intent)) {
+    throw new WorkflowError('intent must be request or direct', { details: { field: 'intent' } })
+  }
+  const direct = intent === 'direct'
+  const actorStoreId = context.store
+  if (input.requestingStore && storeName(input.requestingStore, 'requestingStore') !== actorStoreId) {
     throw new WorkflowError('requestingStore must match the active store context', {
       status: 403,
       code: 'STORE_MISMATCH',
@@ -226,9 +270,55 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
   }
   const sourceStore = vehicle.homeAssignment?.home_store_id || vehicle.movementHomeStore || vehicle.publicRecord?.store || vehicle.crmRecord?.storeName
   const homeStoreId = storeName(sourceStore, 'homeStore')
-  if (requestingStoreId === homeStoreId) {
-    throw new WorkflowError('A cross-store request must use a different requesting store', {
-      details: { homeStore: homeStoreId, requestingStore: requestingStoreId },
+  const authoritativeMovementLocation = String(
+    vehicle.movementCurrentLocation || vehicle.movementCurrentStore || '',
+  ).trim()
+  if (direct && authoritativeMovementLocation &&
+      !STORE_NAMES.includes(authoritativeMovementLocation) && authoritativeMovementLocation !== 'In transit') {
+    throw new WorkflowError('The vehicle current location must be resolved before it can be moved directly', {
+      status: 409,
+      code: 'LOCATION_CONFLICT',
+      details: { currentLocation: authoritativeMovementLocation },
+    })
+  }
+  const directOriginStoreId = direct && authoritativeMovementLocation
+    ? authoritativeMovementLocation
+    : homeStoreId
+  const destinationStoreId = direct
+    ? storeName(input.destinationStore, 'destinationStore')
+    : actorStoreId
+  if (!direct && input.destinationStore && storeName(input.destinationStore, 'destinationStore') !== actorStoreId) {
+    throw new WorkflowError('Move requests can only bring a vehicle into the active store', {
+      status: 403,
+      code: 'STORE_MISMATCH',
+    })
+  }
+  if (destinationStoreId === (direct ? directOriginStoreId : homeStoreId) &&
+      !(direct && vehicle.existingMoveBlocked)) {
+    throw new WorkflowError(direct
+      ? 'Destination store must be different from the vehicle current location'
+      : 'A cross-store request must use a different requesting store', {
+      details: {
+        homeStore: homeStoreId,
+        ...(direct ? { currentLocation: directOriginStoreId } : {}),
+        destinationStore: destinationStoreId,
+      },
+    })
+  }
+  if (direct && !PRIVILEGED_ROLES.has(context.role)) {
+    throw new WorkflowError('Only a manager can directly move a vehicle', { status: 403, code: 'FORBIDDEN' })
+  }
+  if (direct && context.role === 'manager' && actorStoreId !== homeStoreId) {
+    throw new WorkflowError('A store manager can only directly move a vehicle owned by their store', {
+      status: 403,
+      code: 'WRONG_STORE_ROLE',
+      details: { homeStore: homeStoreId, managerStore: actorStoreId },
+    })
+  }
+  if (!direct && !['sales', 'manager'].includes(context.role)) {
+    throw new WorkflowError('Only salespeople and store managers can create move requests', {
+      status: 403,
+      code: 'FORBIDDEN',
     })
   }
 
@@ -239,12 +329,33 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
       code: 'ACTOR_MISMATCH',
     })
   }
-  const neededBy = isoTimestamp(input.neededBy, 'neededBy', { required: true })
+  const neededBy = isoTimestamp(input.neededBy, 'neededBy', { required: !direct })
   const returnDueAt = isoTimestamp(input.returnDueAt, 'returnDueAt')
   const reason = requiredText(input.reason, 'reason', 1000)
   const customerReference = optionalText(input.customerReference, 'customerReference', 500)
   const priority = PRIORITIES.has(input.priority) ? input.priority : 'normal'
   const requestedAt = now.toISOString()
+  const movedAt = direct ? (isoTimestamp(input.movedAt, 'movedAt') || requestedAt) : null
+  if (direct) {
+    const movedTime = Date.parse(movedAt)
+    const nowTime = now.valueOf()
+    if (movedTime > nowTime + DIRECT_MOVE_FUTURE_TOLERANCE_MS) {
+      throw new WorkflowError('movedAt cannot be materially in the future', {
+        details: { field: 'movedAt', futureToleranceMinutes: 5 },
+      })
+    }
+    if (movedTime < nowTime - DIRECT_MOVE_MAX_AGE_MS) {
+      throw new WorkflowError('movedAt cannot be more than 90 days ago', {
+        details: { field: 'movedAt', maximumBackdateDays: 90 },
+      })
+    }
+  }
+  const returnBoundary = direct ? movedAt : neededBy
+  if (returnDueAt && returnBoundary && Date.parse(returnDueAt) <= Date.parse(returnBoundary)) {
+    throw new WorkflowError(`returnDueAt must be later than ${direct ? 'movedAt' : 'neededBy'}`, {
+      details: { field: 'returnDueAt', after: direct ? 'movedAt' : 'neededBy' },
+    })
+  }
   const vehicleName = String(
     vehicle.publicRecord?.vehicle_name ||
       [vehicle.crmRecord?.yearRaw, vehicle.crmRecord?.makeRaw, vehicle.crmRecord?.modelRaw, vehicle.crmRecord?.seriesRaw]
@@ -252,7 +363,8 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
         .join(' '),
   ).trim()
   const stockAtRequest = String(vehicle.publicRecord?.stock_number || vehicle.crmRecord?.stockNumber || '').trim()
-  const approvalOwner = optionalText(input.approvalOwner, 'approvalOwner', 160) || `${requestingStoreId} manager`
+  const requestingStoreId = destinationStoreId
+  const approvalOwner = direct ? null : (optionalText(input.approvalOwner, 'approvalOwner', 160) || `${requestingStoreId} manager`)
   const id = randomUUID()
 
   const request = {
@@ -271,30 +383,27 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
     customerReference,
     customerAppointment: Boolean(input.customerAppointment),
     approvalOwner,
-    approvedBy: null,
+    approvedBy: direct ? requestedBy : null,
     priority,
-    status: 'requested',
-    movementStatus: 'at_home',
+    status: direct ? 'arrived' : 'requested',
+    movementStatus: direct ? 'at_requesting_store' : 'at_home',
     dealStatus: 'not_confirmed',
     deliveryStatus: 'not_confirmed',
-    currentLocationId: homeStoreId,
+    currentLocationId: direct ? destinationStoreId : homeStoreId,
     currentCustodian: null,
     transportAssignee: null,
     transportAssigneeUserId: null,
-    nextAction: 'Requesting-store manager reviews and approves the request',
-    nextActionOwner: approvalOwner,
-    dueAt: neededBy,
+    nextAction: direct ? 'Record the showing outcome, or start the return' : 'Check the vehicle is free, then approve this move',
+    nextActionOwner: direct ? `${destinationStoreId} sales` : approvalOwner,
+    dueAt: direct ? returnDueAt : neededBy,
     returnRequired: input.returnRequired !== false,
     returnDueAt,
-    // A request is an operational intent, not a sighting. A home assignment
-    // says which store is accountable for the vehicle (recorded above as
-    // homeStoreConfirmed); it does not confirm where the vehicle physically
-    // is, and the requester is at another store and has not seen it. The
-    // confirmation clock and 'verified' confidence begin only with the first
-    // physical event — departed, picked up, arrived, returned — which the
-    // event handlers below stamp themselves.
-    lastConfirmedAt: null,
-    locationConfidence: 'reported',
+    // A standard request is operational intent, not a sighting. A direct move
+    // is different: the authorized manager is explicitly recording the
+    // destination and movement time, so that physical event starts the
+    // confirmation clock immediately.
+    lastConfirmedAt: direct ? movedAt : null,
+    locationConfidence: direct ? 'verified' : 'reported',
     closedAt: null,
     createdAt: requestedAt,
     updatedAt: requestedAt,
@@ -303,31 +412,33 @@ export function buildTransferRequest({ input, vehicle, context, idempotencyKey, 
 
   const initialEvent = {
     id: randomUUID(),
-    eventType: 'requested',
-    label: EVENT_LABELS.requested,
+    eventType: direct ? 'direct_move_recorded' : 'requested',
+    label: direct ? EVENT_LABELS.direct_move_recorded : EVENT_LABELS.requested,
     actor: requestedBy,
     actorUserId: context.userId,
-    actorRole: context.role,
-    storeId: requestingStoreId,
-    fromLocationId: homeStoreId,
+    actorRole: context.authenticatedRole || context.role,
+    storeId: actorStoreId,
+    fromLocationId: direct ? directOriginStoreId : homeStoreId,
     toLocationId: requestingStoreId,
-    occurredAt: requestedAt,
+    occurredAt: direct ? movedAt : requestedAt,
     note: null,
     createdAt: requestedAt,
-    idempotencyKey: request.idempotencyKey ? `${request.idempotencyKey}:requested` : null,
+    idempotencyKey: request.idempotencyKey ? `${request.idempotencyKey}:${direct ? 'direct_move_recorded' : 'requested'}` : null,
   }
 
   return { request, initialEvent }
 }
 
 function eventRoleAllowed(eventType, role, workflowMode) {
+  // Existing simple-ledger rows may retain an old arrival entry. Keep that
+  // historical reconciliation path valid without exposing it as a new UI step.
   if (workflowMode === 'simple' && eventType === 'arrived' && role === 'sales') return true
   return EVENT_ROLE_RULES[eventType]?.has(role) === true
 }
 
 function requireEventPermission(eventType, role, workflowMode) {
   const allowed = EVENT_ROLE_RULES[eventType]
-  if (!allowed) throw new WorkflowError('Unsupported transfer event type', { details: { eventType } })
+  if (!allowed) throw new WorkflowError('Unsupported move event type', { details: { eventType } })
   if (!eventRoleAllowed(eventType, role, workflowMode)) {
     throw new WorkflowError(`Role ${role} cannot record ${eventType}`, {
       status: 403,
@@ -337,10 +448,16 @@ function requireEventPermission(eventType, role, workflowMode) {
   }
 }
 
+// A manager confirmed the sale; only a manager may record that it fell through.
+function saleUnwindRestricted(currentStatus, eventType, role) {
+  return eventType === 'not_sold' && currentStatus === 'sale_confirmed' && !PRIVILEGED_ROLES.has(role)
+}
+
 function transitionAllowed(currentStatus, eventType, workflowMode = 'advanced') {
   if (Object.hasOwn(SIMPLE_EVENT_FROM, eventType)) {
     return workflowMode === 'simple' && SIMPLE_EVENT_FROM[eventType].has(currentStatus)
   }
+  if (workflowMode === 'simple' && SIMPLE_OUTCOME_EVENTS.has(eventType) && SIMPLE_OUTCOME_FROM.has(currentStatus)) return true
   if (eventType === 'driver_requested') return currentStatus === 'approved'
   if (ACTIVE_ONLY_PASSIVE_EVENTS.has(eventType) && ['declined', 'canceled', 'closed'].includes(currentStatus)) return false
   if (PASSIVE_EVENTS.has(eventType)) return true
@@ -354,9 +471,15 @@ export function allowedEventTypes(currentStatus, role, workflowMode = 'advanced'
     for (const [event, states] of Object.entries(SIMPLE_EVENT_FROM)) {
       if (states.has(currentStatus)) candidates.add(event)
     }
+    if (SIMPLE_OUTCOME_FROM.has(currentStatus)) {
+      for (const event of SIMPLE_OUTCOME_EVENTS) candidates.add(event)
+    }
   }
   return [...candidates].filter(
-    (eventType) => eventRoleAllowed(eventType, role, workflowMode) && transitionAllowed(currentStatus, eventType, workflowMode),
+    (eventType) =>
+      eventRoleAllowed(eventType, role, workflowMode) &&
+      transitionAllowed(currentStatus, eventType, workflowMode) &&
+      !saleUnwindRestricted(currentStatus, eventType, role),
   )
 }
 
@@ -375,8 +498,8 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'request_approved':
       Object.assign(patch, {
         approved_by: actor,
-        next_action: 'Record when the vehicle leaves its home store',
-        next_action_owner: current.requested_by || `${destination} salesperson`,
+        next_action: 'Show the vehicle, then start its return',
+        next_action_owner: current.requested_by || `${destination} sales`,
       })
       break
     case 'vehicle_departed':
@@ -384,8 +507,8 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'picked_up',
         current_location_id: 'In transit',
         current_custodian: null,
-        next_action: 'Confirm arrival at requesting store',
-        next_action_owner: `${destination} sales/manager`,
+        next_action: `Confirm the vehicle arrived at ${destination}`,
+        next_action_owner: `${destination} sales`,
         last_confirmed_at: occurredAt,
         location_confidence: 'verified',
       })
@@ -395,7 +518,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'return_in_transit',
         current_location_id: 'In transit',
         current_custodian: null,
-        next_action: 'Confirm the vehicle is back at its home store',
+        next_action: `Confirm the vehicle is back at ${home}`,
         next_action_owner: `${home} manager`,
         due_at: dueAt || current.return_due_at,
         return_due_at: dueAt || current.return_due_at,
@@ -405,7 +528,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
       break
     case 'manager_reviewed':
       Object.assign(patch, {
-        next_action: `Requesting-store manager calls ${home} used-car manager and records the release decision`,
+        next_action: `Call the ${home} used-car manager and record the answer`,
         next_action_owner: current.approval_owner || `${destination} manager`,
         last_confirmed_at: occurredAt,
       })
@@ -413,8 +536,8 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'approved':
       Object.assign(patch, {
         approved_by: actor,
-        next_action: destination === 'Howell' ? 'Salesperson calls Stacey for a driver' : 'Requesting store asks its manager or coordinator for a driver',
-        next_action_owner: current.requested_by || `${destination} salesperson`,
+        next_action: destination === 'Howell' ? 'Ask Stacey for a driver' : 'Ask your manager or coordinator for a driver',
+        next_action_owner: current.requested_by || `${destination} sales`,
         last_confirmed_at: occurredAt,
       })
       break
@@ -429,8 +552,8 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
       })
       break
     case 'transport_assigned':
-      if (!assignee) throw new WorkflowError('assignee is required when transport is assigned')
-      if (!dueAt) throw new WorkflowError('dueAt is required so the requesting team can see the pickup target')
+      if (!assignee) throw new WorkflowError('Name the assigned driver so staff know who has the vehicle.')
+      if (!dueAt) throw new WorkflowError('Set a pickup time so the requesting store knows when the driver is coming.')
       if (context.userId && !assigneeUserId) {
         throw new WorkflowError('A verified transport assignee identity is required', {
           code: 'ASSIGNEE_IDENTITY_REQUIRED',
@@ -440,7 +563,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'transport_assigned',
         transport_assignee: assignee,
         transport_assignee_user_id: assigneeUserId,
-        next_action: 'Assigned driver picks up vehicle and confirms custody',
+        next_action: 'Collect the vehicle and confirm you have it',
         next_action_owner: assignee,
         due_at: dueAt,
       })
@@ -451,7 +574,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: eventType,
         current_location_id: 'In transit',
         current_custodian: assignee || current.transport_assignee || actor,
-        next_action: 'Confirm arrival at requesting store',
+        next_action: `Confirm the vehicle arrived at ${destination}`,
         next_action_owner: assignee || current.transport_assignee || actor,
         last_confirmed_at: occurredAt,
         location_confidence: 'verified',
@@ -462,8 +585,8 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'at_requesting_store',
         current_location_id: destination,
         current_custodian: actor,
-        next_action: 'Record customer showing or vehicle outcome',
-        next_action_owner: `${destination} sales/manager`,
+        next_action: 'Record the showing outcome',
+        next_action_owner: `${destination} sales`,
         last_confirmed_at: occurredAt,
         location_confidence: 'verified',
       })
@@ -471,7 +594,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'customer_showing':
       Object.assign(patch, {
         deal_status: 'customer_showing',
-        next_action: 'Record sale outcome',
+        next_action: 'Record the sale outcome',
         next_action_owner: actor,
         last_confirmed_at: occurredAt,
       })
@@ -479,7 +602,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'sale_outcome_pending':
       Object.assign(patch, {
         deal_status: 'pending_confirmation',
-        next_action: 'Manager confirms sale or starts return',
+        next_action: 'Confirm the sale, or start the return',
         next_action_owner: `${destination} manager`,
         last_confirmed_at: occurredAt,
       })
@@ -487,7 +610,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'sale_confirmed':
       Object.assign(patch, {
         deal_status: 'sold_pending',
-        next_action: 'Confirm delivery separately before closing the movement workflow',
+        next_action: 'Confirm delivery, or record the deal fell through',
         next_action_owner: `${destination} manager`,
         last_confirmed_at: occurredAt,
       })
@@ -495,7 +618,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'delivery_confirmed':
       Object.assign(patch, {
         delivery_status: 'delivery_confirmed',
-        next_action: 'Close movement workflow',
+        next_action: 'Close the move',
         next_action_owner: `${destination} manager`,
         last_confirmed_at: occurredAt,
       })
@@ -503,7 +626,10 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'not_sold':
       Object.assign(patch, {
         deal_status: 'not_sold',
-        next_action: 'Request return to home store',
+        // A deal that fell through after a sold-pending record leaves no
+        // delivery behind; the row must not keep reading as sold.
+        delivery_status: 'not_confirmed',
+        next_action: `Start the return to ${home}`,
         next_action_owner: `${destination} manager`,
         last_confirmed_at: occurredAt,
       })
@@ -511,15 +637,15 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'return_requested':
       Object.assign(patch, {
         movement_status: 'return_requested',
-        next_action: destination === 'Howell' ? 'Stacey coordinates the return driver' : 'Requesting store assigns the return driver',
+        next_action: destination === 'Howell' ? 'Ask Stacey for a return driver' : 'Assign the return driver',
         next_action_owner: destination === 'Howell' ? 'Stacey (Howell transport coordinator)' : `${destination} manager`,
         due_at: dueAt || current.return_due_at,
         last_confirmed_at: occurredAt,
       })
       break
     case 'return_assigned':
-      if (!assignee) throw new WorkflowError('assignee is required when return transport is assigned')
-      if (!dueAt) throw new WorkflowError('dueAt is required so the Home Store can see the return target')
+      if (!assignee) throw new WorkflowError('Name the return driver so staff know who has the vehicle.')
+      if (!dueAt) throw new WorkflowError('Set a return time so the home store knows when to expect the vehicle.')
       if (context.userId && !assigneeUserId) {
         throw new WorkflowError('A verified transport assignee identity is required', {
           code: 'ASSIGNEE_IDENTITY_REQUIRED',
@@ -529,7 +655,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'return_assigned',
         transport_assignee: assignee,
         transport_assignee_user_id: assigneeUserId,
-        next_action: 'Return vehicle to home store',
+        next_action: `Drive the vehicle back to ${home}`,
         next_action_owner: assignee,
         due_at: dueAt,
       })
@@ -539,7 +665,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'return_in_transit',
         current_location_id: 'In transit',
         current_custodian: assignee || current.transport_assignee || actor,
-        next_action: 'Home manager confirms receipt',
+        next_action: `Confirm the vehicle is back at ${home}`,
         next_action_owner: `${home} manager`,
         last_confirmed_at: occurredAt,
         location_confidence: 'verified',
@@ -551,7 +677,7 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
         movement_status: 'returned_home',
         current_location_id: home,
         current_custodian: `${home} manager`,
-        next_action: context.workflowMode === 'simple' ? 'No further action' : 'Close movement workflow',
+        next_action: context.workflowMode === 'simple' ? 'No further action' : 'Close the move',
         next_action_owner: context.workflowMode === 'simple' ? null : `${home} manager`,
         last_confirmed_at: occurredAt,
         location_confidence: 'verified',
@@ -566,12 +692,12 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
       })
       break
     case 'eta_updated':
-      if (!dueAt) throw new WorkflowError('dueAt is required for an ETA update')
+      if (!dueAt) throw new WorkflowError('Set the new due time before saving this update.')
       Object.assign(patch, { due_at: dueAt })
       break
     case 'driver_requested':
       Object.assign(patch, {
-        next_action: destination === 'Howell' ? 'Stacey assigns the driver and pickup time' : 'Requesting manager or coordinator assigns the driver',
+        next_action: 'Assign a driver and a pickup time',
         next_action_owner: destination === 'Howell' ? 'Stacey (Howell transport coordinator)' : `${destination} manager`,
       })
       break
@@ -581,16 +707,33 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
     case 'escalated':
       break
     default:
-      throw new WorkflowError('Unsupported transfer event type', { details: { eventType } })
+      throw new WorkflowError('Unsupported move event type', { details: { eventType } })
+  }
+
+  // The simplified UI deliberately removed the unreliable pickup/arrival
+  // chores. A destination-side outcome is therefore authoritative proof that
+  // the vehicle reached the requesting store when no earlier arrival exists.
+  if (context.workflowMode === 'simple' && SIMPLE_OUTCOME_EVENTS.has(eventType) &&
+      SIMPLE_PRE_DESTINATION_STATES.has(current.status)) {
+    Object.assign(patch, {
+      movement_status: 'at_requesting_store',
+      current_location_id: destination,
+      current_custodian: actor,
+      last_confirmed_at: occurredAt,
+      location_confidence: 'verified',
+    })
   }
 
   return patch
 }
 
 export function buildTransferEvent({ current, input, context, idempotencyKey, now = new Date() }) {
-  if (!current) throw new WorkflowError('Transfer request was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
+  if (!current) throw new WorkflowError('That vehicle move was not found', { status: 404, code: 'TRANSFER_NOT_FOUND' })
   const eventType = requiredText(input?.type, 'type', 60).toLowerCase()
   requireEventPermission(eventType, context.role, context.workflowMode)
+  if (saleUnwindRestricted(current.status, eventType, context.role)) {
+    throw new WorkflowError('Only a manager can record that a confirmed sale fell through', { status: 403, code: 'FORBIDDEN' })
+  }
   const groupOverride = context.role === 'group_manager'
   const recordsHomeStoreDecision =
     eventType === 'approved' || (eventType === 'declined' && current.status === 'manager_reviewed')
@@ -621,7 +764,8 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
     }
     requiredText(input?.note, 'decline reason', 1000)
   }
-  if (context.workflowMode === 'simple' && ['arrived', 'return_started'].includes(eventType) &&
+  if (context.workflowMode === 'simple' &&
+      (['arrived', 'return_started'].includes(eventType) || SIMPLE_OUTCOME_EVENTS.has(eventType)) &&
       ['sales', 'manager'].includes(context.role) && context.store !== current.requesting_store_id) {
     throw new WorkflowError('The requesting store must confirm this location update', { status: 403, code: 'WRONG_STORE_ROLE' })
   }
@@ -660,6 +804,18 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
   }
   const occurredAt = isoTimestamp(input.occurredAt, 'occurredAt') || now.toISOString()
   const storeId = storeName(context.store, 'store')
+  const simpleOutcomeEstablishesDestination = context.workflowMode === 'simple' &&
+    SIMPLE_OUTCOME_EVENTS.has(eventType) && SIMPLE_PRE_DESTINATION_STATES.has(current.status)
+  const simpleReturnEstablishesDestination = context.workflowMode === 'simple' &&
+    eventType === 'return_started' && SIMPLE_PRE_DESTINATION_STATES.has(current.status)
+  if (context.workflowMode === 'simple' && Object.hasOwn(SIMPLE_EVENT_STATUS, eventType) &&
+      Object.hasOwn(input, 'fromLocation') &&
+      optionalText(input.fromLocation, 'fromLocation', 120) !== current.current_location_id) {
+    throw new WorkflowError('fromLocation must match the current vehicle location shown for this move', {
+      status: 409,
+      code: 'LOCATION_MISMATCH',
+    })
+  }
   if (input.store && storeName(input.store, 'store') !== storeId) {
     throw new WorkflowError('store must match the active store context', {
       status: 403,
@@ -675,20 +831,28 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
     id: randomUUID(),
     eventType,
     label: eventType === 'returned_home' && context.workflowMode === 'simple'
-      ? 'Home store receipt confirmed; movement completed'
-      : EVENT_LABELS[eventType],
+      ? 'Home store confirmed the vehicle is back · move complete'
+      // The same event unwinds a sold-pending deal or closes a plain showing;
+      // the history row names which one happened.
+      : eventType === 'not_sold' && current.status === 'sale_confirmed'
+        ? 'Deal fell through · not sold'
+        : EVENT_LABELS[eventType],
     actor,
     actorUserId: context.userId,
-    actorRole: context.role,
+    actorRole: context.authenticatedRole || context.role,
     storeId,
-    fromLocationId: Object.hasOwn(SIMPLE_EVENT_STATUS, eventType)
-      ? current.current_location_id
-      : optionalText(input.fromLocation, 'fromLocation', 120) || current.current_location_id,
-    toLocationId: ['vehicle_departed', 'return_started'].includes(eventType)
-      ? 'In transit'
-      : ['request_approved', 'request_declined'].includes(eventType)
+    fromLocationId: simpleReturnEstablishesDestination
+      ? current.destination_store_id
+      : Object.hasOwn(SIMPLE_EVENT_STATUS, eventType)
         ? current.current_location_id
-        : optionalText(input.toLocation, 'toLocation', 120),
+        : optionalText(input.fromLocation, 'fromLocation', 120) || current.current_location_id,
+    toLocationId: simpleOutcomeEstablishesDestination
+      ? current.destination_store_id
+      : ['vehicle_departed', 'return_started'].includes(eventType)
+        ? 'In transit'
+        : ['request_approved', 'request_declined'].includes(eventType)
+          ? current.current_location_id
+          : optionalText(input.toLocation, 'toLocation', 120),
     driverOrPorter: Object.hasOwn(SIMPLE_EVENT_STATUS, eventType) ? null : optionalText(input.assignee, 'assignee', 160),
     driverOrPorterUserId: TRANSPORT_ASSIGNMENT_EVENTS.has(eventType)
       ? optionalIdentity(input.assigneeUserId, 'assigneeUserId')

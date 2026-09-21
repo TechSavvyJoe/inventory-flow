@@ -4,6 +4,23 @@ import type { BootstrapData, VehicleRecord } from '../types';
 import { toInventoryVehicle } from './adapters';
 
 describe('OASIS action capture provenance', () => {
+  it('keeps optional technical OASIS facts source-specific without deriving missing values from listing specs', () => {
+    const record = sourceVehicle();
+    const technicalFields = {
+      bodyStyle: 'CREW CAB', driveType: '4X4', paintColor: 'SYNTHETIC WHITE', paintCode: 'YZ',
+      engine: '3.5L V6', engineCalibration: 'DEMO-CAL', transmission: '10 SPEED',
+      axleRatio: '3.73', axleCode: 'EL', grossVehicleWeight: '7,400 LB', wheelSize: '20 IN',
+      tire: '275/60R20', syncVersion: 'SYNC 4', fuelType: 'GASOLINE',
+    };
+    record.fordOasis = { dataState: 'current', capturedAt: '2026-08-30T08:00:00Z', ...technicalFields };
+    const original = JSON.stringify(record);
+    expect(toInventoryVehicle(record, sourceData()).fordOasis).toMatchObject(technicalFields);
+    expect(JSON.stringify(record)).toBe(original);
+    record.engine = 'Listing-only engine';
+    record.fordOasis.engine = null;
+    record.fordOasis.engineCalibration = '  ';
+    expect(toInventoryVehicle(record, sourceData()).fordOasis).toMatchObject({ engine: null, engineCalibration: null });
+  });
   it.each([undefined, false, true])('preserves capture flag %s independently of normalized empty arrays', openActionsCaptured => {
     const record = sourceVehicle();
     record.fordOasis = { dataState: 'current', capturedAt: '2026-08-30T08:00:00Z', openFieldServiceActions: [], openActionsCaptured };
@@ -21,7 +38,7 @@ describe('OASIS action capture provenance', () => {
 
 function sourceVehicle(): VehicleRecord {
   return {
-    vin: '1FMUK8DHXTGB76992',
+    vin: 'TESTDATASYN000001',
     stockNumber: 'HT0529A',
     year: 2026,
     make: 'Ford',
@@ -45,14 +62,14 @@ function sourceVehicle(): VehicleRecord {
       locationConfidence: 'reported',
     },
     autoCheckReport: {
-      url: 'https://www.autocheck.com/report/1FMUK8DHXTGB76992',
+      url: 'https://www.autocheck.com/report/TESTDATASYN000001',
       dataState: 'current',
       score: 92,
       usage: 'Personal',
       checks: [{ label: 'Open recall check', status: 'No open recalls' }],
     },
     windowSticker: {
-      url: 'https://www.bobmaxeyfordhowell.com/window-sticker/1FMUK8DHXTGB76992.pdf',
+      url: 'https://www.bobmaxeyfordhowell.com/window-sticker/TESTDATASYN000001.pdf',
       dataState: 'current',
       equipmentGroup: 'Equipment Group 200A',
       options: ['Active Comfort Package'],

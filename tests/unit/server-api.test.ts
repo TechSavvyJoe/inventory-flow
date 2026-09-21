@@ -92,6 +92,32 @@ async function postAttentionEvent(
   return { response, body: await response.json() }
 }
 
+it('keeps SRP thumbnails available when the release has photo count but no cached URL list', async () => {
+  const { baseUrl, release } = await harness((draft) => {
+    const source = draft.vehicles.find((record) => record.publicRecord?.store === 'Howell')
+    if (!source?.publicRecord) throw new Error('Synthetic fixture is missing a Howell public vehicle')
+    source.publicRecord.photo_count = 3
+    source.publicRecord.photo_urls = []
+    source.publicRecord.photo_preview_url = ''
+  })
+  const source = release.vehicles.find((record) => record.publicRecord?.store === 'Howell')!
+  const response = await fetch(`${baseUrl}/api/bootstrap`, {
+    headers: roleHeaders('manager', 'Howell', 'Thumbnail QA'),
+  })
+  expect(response.status).toBe(200)
+  const body = await response.json()
+  const vehicle = body.vehicles.find((item) => item.vin === source.vin)
+  expect(vehicle?.photoCount).toBe(3)
+  expect(vehicle?.imageUrl).toBe(
+    `https://www.bobmaxeyfordhowell.com/inventoryphotos/23482/${source.vin.toLowerCase()}/ip/1.jpg`,
+  )
+  expect(vehicle?.imageUrls).toEqual([
+    `https://www.bobmaxeyfordhowell.com/inventoryphotos/23482/${source.vin.toLowerCase()}/ip/1.jpg`,
+    `https://www.bobmaxeyfordhowell.com/inventoryphotos/23482/${source.vin.toLowerCase()}/ip/2.jpg`,
+    `https://www.bobmaxeyfordhowell.com/inventoryphotos/23482/${source.vin.toLowerCase()}/ip/3.jpg`,
+  ])
+})
+
 async function createSalesRequest(baseUrl: string, vehicle: { vin: string }, salesperson = 'Fowlerville Salesperson') {
   const response = await fetch(`${baseUrl}/api/transfers`, {
     method: 'POST',
@@ -855,6 +881,62 @@ describe('Inventory Flow API', () => {
     expect(unrelatedAfterMovement.status).toBe(404)
   })
 
+  it('authorizes and persists direct moves from the trusted role and store context', async () => {
+    const { baseUrl, database } = await harness()
+    const bootstrap = await fetch(`${baseUrl}/api/bootstrap`, {
+      headers: roleHeaders('group_manager', 'Howell', 'Synthetic group manager'),
+    }).then((response) => response.json())
+    const howellVehicles = bootstrap.vehicles.filter((row: { homeStore: string }) => row.homeStore === 'Howell')
+    const fowlervilleVehicle = bootstrap.vehicles.find((row: { homeStore: string }) => row.homeStore === 'Fowlerville')
+    expect(howellVehicles.length).toBeGreaterThanOrEqual(2)
+    expect(fowlervilleVehicle).toBeTruthy()
+    const movedAt = '2026-08-29T22:00:00.000Z'
+    const body = (vin: string, destinationStore = 'Ford Detroit') => JSON.stringify({
+      vin, intent: 'direct', destinationStore, movedAt,
+      reason: 'Synthetic customer showing', returnRequired: true,
+    })
+
+    const salesAttempt = await fetch(`${baseUrl}/api/transfers`, {
+      method: 'POST', headers: roleHeaders('sales', 'Howell', 'Synthetic salesperson'),
+      body: body(howellVehicles[0].vin),
+    })
+    expect(salesAttempt.status).toBe(403)
+    expect((await salesAttempt.json()).code).toBe('FORBIDDEN')
+
+    const otherStoreManager = await fetch(`${baseUrl}/api/transfers`, {
+      method: 'POST', headers: roleHeaders('manager', 'Fowlerville', 'Synthetic Fowlerville manager'),
+      body: body(howellVehicles[0].vin),
+    })
+    expect(otherStoreManager.status).toBe(403)
+    expect((await otherStoreManager.json()).code).toBe('WRONG_STORE_ROLE')
+
+    const managerMove = await fetch(`${baseUrl}/api/transfers`, {
+      method: 'POST', headers: roleHeaders('manager', 'Howell', 'Synthetic Howell manager'),
+      body: body(howellVehicles[0].vin),
+    })
+    expect(managerMove.status).toBe(201)
+    const moved = await managerMove.json()
+    expect(moved).toMatchObject({
+      homeStore: 'Howell', requestingStore: 'Ford Detroit', destination: 'Ford Detroit',
+      requestStatus: 'arrived', movementStatus: 'at_requesting_store', currentLocation: 'Ford Detroit',
+      locationConfidence: 'verified', lastConfirmedAt: movedAt,
+    })
+    expect(moved.events).toContainEqual(expect.objectContaining({
+      type: 'direct_move_recorded', actor: 'Synthetic Howell manager', store: 'Howell',
+      fromLocation: 'Howell', toLocation: 'Ford Detroit', occurredAt: movedAt,
+    }))
+
+    const groupMove = await fetch(`${baseUrl}/api/transfers`, {
+      method: 'POST', headers: roleHeaders('group_manager', 'Howell', 'Synthetic group manager'),
+      body: body(fowlervilleVehicle.vin, 'Lincoln'),
+    })
+    expect(groupMove.status).toBe(201)
+    expect(await groupMove.json()).toMatchObject({ homeStore: 'Fowlerville', currentLocation: 'Lincoln', requestStatus: 'arrived' })
+
+    expect(database.prepare("SELECT COUNT(*) AS n FROM transfer_requests WHERE status='arrived' AND movement_status='at_requesting_store'").get().n).toBe(2)
+    expect(database.prepare("SELECT COUNT(*) AS n FROM transfer_events WHERE event_type='direct_move_recorded'").get().n).toBe(2)
+  })
+
   it('enforces manager review, release evidence, driver coordination, and porter handoffs', async () => {
     const { baseUrl, database } = await harness()
     const bootstrap = await fetch(`${baseUrl}/api/bootstrap?homeStore=Fowlerville&role=sales`).then((response) => response.json())
@@ -892,7 +974,7 @@ describe('Inventory Flow API', () => {
     expect(createdResponse.status).toBe(201)
     expect(created.requestStatus).toBe('requested')
     expect(created.requestedBy).toBe('Fowlerville Salesperson')
-    expect(created.nextAction).toBe('Requesting-store manager reviews and approves the request')
+    expect(created.nextAction).toBe('Check the vehicle is free, then approve this move')
     expect(created.events).toHaveLength(1)
     expect(created.allowedActions).not.toContain('review-request')
 
@@ -948,7 +1030,7 @@ describe('Inventory Flow API', () => {
     expect(review.response.status).toBe(201)
     expect(review.body.requestStatus).toBe('manager_reviewed')
     expect(review.body.nextAction).toBe(
-      'Requesting-store manager calls Howell used-car manager and records the release decision',
+      'Call the Howell used-car manager and record the answer',
     )
     expect(database.prepare('SELECT COUNT(*) AS count FROM transfer_events').get().count).toBe(2)
 
@@ -1003,7 +1085,7 @@ describe('Inventory Flow API', () => {
     )
     expect(driverRequested.response.status).toBe(201)
     expect(driverRequested.body.requestStatus).toBe('approved')
-    expect(driverRequested.body.nextAction).toContain('assigns the driver')
+    expect(driverRequested.body.nextAction).toContain('Assign a driver')
 
     const missingAssignee = await postEvent(
       baseUrl,
@@ -1012,7 +1094,7 @@ describe('Inventory Flow API', () => {
       { type: 'transport_assigned', dueAt: '2026-08-30T13:30:00-04:00' },
     )
     expect(missingAssignee.response.status).toBe(422)
-    expect(missingAssignee.body.error).toContain('assignee is required')
+    expect(missingAssignee.body.error).toContain('Name the assigned driver')
 
     const missingDue = await postEvent(
       baseUrl,
@@ -1021,7 +1103,7 @@ describe('Inventory Flow API', () => {
       { type: 'transport_assigned', assignee: 'Porter One' },
     )
     expect(missingDue.response.status).toBe(422)
-    expect(missingDue.body.error).toContain('dueAt is required')
+    expect(missingDue.body.error).toContain('Set a pickup time')
 
     const dueAt = '2026-08-30T13:30:00-04:00'
     const assigned = await postEvent(
@@ -1199,7 +1281,7 @@ describe('Inventory Flow API', () => {
     expect(initial).toMatchObject({
       status: 'open',
       priority: 'high',
-      sourceLabel: 'Inventory Flow transfer ledger',
+      sourceLabel: 'Inventory Flow move ledger',
       events: [],
     })
     expect(initial.allowedActions).toEqual(expect.arrayContaining(['acknowledge', 'assign', 'resolve']))

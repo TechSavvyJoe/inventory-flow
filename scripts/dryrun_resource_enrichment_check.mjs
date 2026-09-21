@@ -1,6 +1,6 @@
 // Resource-channel dry-run oracle: exercises the REAL validators end-to-end on
 // apps/inventory-ops/data/vin-document-enrichment.json.
-//   1. importer.mjs validateVinDocumentEnrichment() on the file itself
+//   1. importer.mjs validateVinDocumentEnrichmentForPublish() on the file itself
 //   2. loadLatestCompletedRelease() (same importer path the publisher uses) for the
 //      expected report date, then cloudReleaseFrom() + cloudflare validateReleaseBundle()
 //   Prints resourceRecordCount and exits non-zero on any failure. Never publishes.
@@ -10,7 +10,7 @@
 import path from 'node:path'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { loadLatestCompletedRelease, validateVinDocumentEnrichment } from '../server/importer.mjs'
+import { loadLatestCompletedRelease, validateVinDocumentEnrichmentForPublish } from '../server/importer.mjs'
 import { cloudReleaseFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
@@ -31,12 +31,21 @@ async function main() {
   const out = { report_date: REPORT_DATE, workspaceRoot: WORKSPACE_ROOT, enrichmentPath: ENRICHMENT_PATH }
   let failed = false
 
-  // 1. the enrichment file on its own, through the importer's validator
+  // 1. the enrichment file on its own, through the importer's validator.
+  // Publish mode, not strict mode: the production importer drops only the
+  // offending optional Ford channel and keeps the rest of the release. Running
+  // the strict validator here would abort the whole daily publication with
+  // RESOURCE_ENRICHMENT_INVALID before that degradation path could run, so the
+  // rejections are reported as warnings instead of failing the dry run.
   try {
     const raw = JSON.parse(readFileSync(ENRICHMENT_PATH, 'utf8'))
-    const validated = validateVinDocumentEnrichment(raw)
+    const rejections = []
+    const validated = validateVinDocumentEnrichmentForPublish(raw, {
+      onResourceRejected: ({ vin, channel, reason }) => rejections.push({ vin, channel, reason }),
+    })
     const records = Object.values(validated.recordsByVin)
     out.validateVinDocumentEnrichment_ok = true
+    out.validateVinDocumentEnrichment_rejections = rejections
     out.validateVinDocumentEnrichment_summary = {
       ...validated.metadata,
       withCaiUrl: records.filter((record) => typeof record.factoryEquipment?.url === 'string').length,

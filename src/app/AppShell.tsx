@@ -65,6 +65,16 @@ const ROLE_LABELS: Record<UserRole, string> = {
   driver: 'Driver',
 }
 
+const ROLE_PREVIEW_OPTIONS: UserRole[] = ['sales', 'manager', 'group_manager']
+
+// The bottom rail holds four destinations plus More. Whatever it leaves out has
+// no other link on a phone, so the utility menu carries it with its page help.
+const MOBILE_UTILITY_HINTS: Partial<Record<NavigationItemId, string>> = {
+  today: 'The next step for your store, in one place',
+  updates: 'New arrivals and price changes for your inventory',
+  service: 'Waiting, in service, and completed work',
+}
+
 const NAV_STORAGE_KEY = 'maxey-inventory-flow:expanded-navigation-v3'
 
 function readStoredNavigationState() {
@@ -100,17 +110,23 @@ export function AppShell({ children }: { children: ReactNode }) {
   const previousHomeStoreRef = useRef(homeStore)
   const navigate = useNavigate()
   const location = useLocation()
-  const previousLocationKeyRef = useRef(location.key)
+  const routeUrl = `${location.pathname}${location.search}${location.hash}`
+  const previousRouteUrlRef = useRef(routeUrl)
   const isInventoryRoute = location.pathname === '/' || location.pathname.startsWith('/inventory')
-  const attentionCount = openStoreActionCount(data, homeStore)
+  const attentionCount = openStoreActionCount(data, { store: homeStore, role })
   const storeBrand = STORE_BRANDING[homeStore]
   const canSeeManager = role === 'manager' || role === 'group_manager'
   const canSeeAdmin = role === 'group_manager'
   const desktopNavigationItems = canSeeAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS
-  const mobileNavigationItems = canSeeAdmin
-    ? [ADMIN_NAV_ITEM, NAV_ITEMS[0], NAV_ITEMS[1], NAV_ITEMS[4]]
-    : NAV_ITEMS.filter((item) => item.id !== 'service')
+  const mobileNavigationIds: NavigationItemId[] = canSeeAdmin
+    ? ['admin', 'inventory', 'moves', 'service']
+    : ['inventory', 'moves', 'today', 'updates']
+  const mobileNavigationItems = [ADMIN_NAV_ITEM, ...NAV_ITEMS]
+    .filter((item) => mobileNavigationIds.includes(item.id))
+    .sort((left, right) => mobileNavigationIds.indexOf(left.id) - mobileNavigationIds.indexOf(right.id))
+  const mobileUtilityItems = NAV_ITEMS.filter((item) => !mobileNavigationIds.includes(item.id))
   const rolePreviewEnabled = data?.access?.canPreviewRoles === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
+  const storePreviewEnabled = data?.access?.canPreviewStores === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
   const productionRolePreview = data?.access?.rolePreviewActive === true
   const freshnessState = !data
     ? 'unknown'
@@ -164,15 +180,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [searchAccessContext])
 
   useEffect(() => {
-    if (previousLocationKeyRef.current === location.key) return
-    previousLocationKeyRef.current = location.key
+    // Consuming a private search request replaces router state at the same
+    // URL. It must not steal focus from someone already editing that search.
+    if (previousRouteUrlRef.current === routeUrl) return
+    previousRouteUrlRef.current = routeUrl
 
     // Leave focus ownership with an active modal. Route-level dialogs restore
     // focus to their own opener when they close.
     if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
 
     mainContentRef.current?.focus({ preventScroll: true })
-  }, [location.key])
+  }, [routeUrl])
 
   function handleSearch(event: FormEvent) {
     event.preventDefault()
@@ -259,7 +277,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span>
             <small>Preview role</small>
             <select value={role} onChange={(event) => setRole(event.target.value as UserRole)}>
-              {Object.entries(ROLE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              {ROLE_PREVIEW_OPTIONS.map((value) => <option key={value} value={value}>{ROLE_LABELS[value]}</option>)}
             </select>
           </span>
           <ChevronDown aria-hidden="true" />
@@ -268,7 +286,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {import.meta.env.PROD && <a className="utility-service-link" href="/downloads/inventory-flow-deal-desk.zip" download="inventory-flow-deal-desk.zip"><Download aria-hidden="true"/><span><strong>Download companion extension</strong><small>Extract the ZIP, then load or reload it in Chrome extensions.</small></span><ChevronRight aria-hidden="true"/></a>}
 
-        <NavLink className="utility-service-link" to="/service" onClick={() => setUtilityOpen(false)}><Wrench aria-hidden="true"/><span><strong>Service status</strong><small>Waiting, in service, and completed work</small></span><ChevronRight aria-hidden="true"/></NavLink>
+        {mobileUtilityItems.map(({ id, to, label, icon: Icon }) => (
+          <NavLink key={id} className="utility-service-link" to={to} onClick={() => setUtilityOpen(false)}><Icon aria-hidden="true"/><span><strong>{label}</strong><small>{MOBILE_UTILITY_HINTS[id]}</small></span><ChevronRight aria-hidden="true"/></NavLink>
+        ))}
 
         {canSeeManager ? (
           <NavLink className="utility-manager-link" to="/manager" onClick={() => setUtilityOpen(false)}>
@@ -335,11 +355,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="store-select-wrap">
                 <select
                   value={homeStore}
+                  disabled={!storePreviewEnabled}
                   onChange={(event) => {
                     const nextStore = event.target.value as StoreName
                     runInterfaceTransition(() => setHomeStore(nextStore), 'oem')
                   }}
                   aria-label="Working location"
+                  title={storePreviewEnabled ? 'Change the working location' : `Your account is assigned to ${homeStore}`}
                 >
                   {STORE_NAMES.map((store) => <option key={store}>{store}</option>)}
                 </select>
@@ -424,7 +446,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </NavLink>
           )
         })}
-        {canSeeAdmin ? null : <button
+        <button
           type="button"
           className={utilityOpen ? 'is-active' : ''}
           aria-label="More app controls"
@@ -435,7 +457,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         >
           <Ellipsis aria-hidden="true" />
           <span>More</span>
-        </button>}
+        </button>
       </nav>
 
     </div>

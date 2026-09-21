@@ -43,3 +43,59 @@ jobs:
 
       - name: Build production bundle
         run: pnpm build
+
+      - name: Validate cloud release and recovery contracts
+        run: |
+          pnpm cloud:validate
+          node scripts/run-recovery-drill.mjs
+          python3 -m unittest discover -s tests/python
+
+  e2e:
+    runs-on: ubuntu-latest
+    # The release gate runs the standard desktop/mobile suite and then the
+    # isolated Chromium, Firefox, and WebKit acceptance suite. Twenty minutes
+    # was sized for Chromium alone and cut off the final suite on GitHub-hosted
+    # runners before it could report a result.
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install browser engines
+        run: pnpm exec playwright install --with-deps chromium webkit firefox
+
+      - name: Run browser end-to-end tests
+        # Playwright starts dedicated synthetic servers on 4473/4474;
+        # acceptance uses its own fresh 4273/4274 ledger.
+        env:
+          PLAYWRIGHT_BUNDLED_CHROMIUM: '1'
+        run: pnpm test:e2e --project=desktop --project=mobile
+
+      - name: Run mobile and cross-browser acceptance
+        env:
+          PLAYWRIGHT_BUNDLED_CHROMIUM: '1'
+        run: pnpm exec playwright test --config playwright.cross-browser.config.ts
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

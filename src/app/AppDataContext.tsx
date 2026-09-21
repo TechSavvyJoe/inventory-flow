@@ -9,6 +9,10 @@ import {
   type ReactNode,
 } from 'react'
 import { appendAttentionEvent, appendTransferEvent, createTransfer, getBootstrap } from '../lib/api'
+import { apiAccessGeneration, confirmedMutationRevision, invalidateApiAccess, subscribeAccessFailures } from '../lib/apiSession'
+import { clearWorkspaceMemory } from '../lib/workspace-memory'
+import { confirmUnsavedWork } from '../lib/useUnsavedChanges'
+import { clearCustomerShortlist } from '../features/inventory/useCustomerShortlist'
 import {
   STORE_NAMES,
   type AttentionEventInput,
@@ -25,6 +29,9 @@ interface AppDataContextValue {
   data: BootstrapData | null
   loading: boolean
   error: string | null
+  accessErrorStatus: 401 | 403 | null
+  lastCheckedAt: string | null
+  savedChangesPending: boolean
   homeStore: StoreName
   setHomeStore: (store: StoreName) => void
   role: UserRole
@@ -43,6 +50,35 @@ interface BootstrapState {
   data: BootstrapData | null
   loading: boolean
   error: string | null
+  accessErrorStatus: 401 | 403 | null
+  lastCheckedAt: string | null
+  savedChangesPending: boolean
+}
+
+interface BootstrapRequest {
+  accessContext: string
+  mutationRevision: number
+  controller: AbortController
+  promise: Promise<void>
+}
+
+const FOREGROUND_REFRESH_MS = 60_000
+
+function clearClientWorkspace() {
+  invalidateApiAccess()
+  clearWorkspaceMemory()
+  clearCustomerShortlist()
+}
+
+function emptyBootstrap(accessContext: string): BootstrapState {
+  return { accessContext, data: null, loading: true, error: null, accessErrorStatus: null, lastCheckedAt: null, savedChangesPending: false }
+}
+
+function accessFailureStatus(caught: unknown): 401 | 403 | null {
+  if (caught && typeof caught === 'object' && 'status' in caught) {
+    if (caught.status === 401 || caught.status === 403) return caught.status
+  }
+  return null
 }
 
 // `readHomeStore`/`readRole` run inside `useState` initializers, i.e. during
@@ -74,7 +110,10 @@ function readHomeStore(): StoreName {
 
 function readRole(): UserRole {
   const stored = readStorage('maxey-role')
-  return stored === 'sales' || stored === 'coordinator' || stored === 'porter' || stored === 'driver' || stored === 'group_manager' || stored === 'manager'
+  // Only the three customer-facing roles remain selectable. Legacy transport
+  // memberships are still honored when the server returns one, but an old
+  // preview saved in this browser must not silently restore a removed option.
+  return stored === 'sales' || stored === 'group_manager' || stored === 'manager'
     ? stored
     : 'manager'
 }
@@ -85,95 +124,180 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const accessContext = `${role}:${homeStore}`
   const latestAccessContextRef = useRef(accessContext)
   const requestSequenceRef = useRef(0)
-  const [bootstrapState, setBootstrapState] = useState<BootstrapState>(() => ({
-    accessContext,
-    data: null,
-    loading: true,
-    error: null,
-  }))
+  const inFlightRef = useRef<BootstrapRequest | null>(null)
+  const lastAttemptRef = useRef(0)
+  const accessErrorRef = useRef<401 | 403 | null>(null)
+  const knownUserRef = useRef<string | null>(null)
+  const lastSyncedMutationRef = useRef(confirmedMutationRevision())
+  const [bootstrapState, setBootstrapState] = useState<BootstrapState>(() => emptyBootstrap(accessContext))
   latestAccessContextRef.current = accessContext
   const stateMatchesAccessContext = bootstrapState.accessContext === accessContext
   const data = stateMatchesAccessContext ? bootstrapState.data : null
   const loading = stateMatchesAccessContext ? bootstrapState.loading : true
   const error = stateMatchesAccessContext ? bootstrapState.error : null
+  const accessErrorStatus = stateMatchesAccessContext ? bootstrapState.accessErrorStatus : null
+  const lastCheckedAt = stateMatchesAccessContext ? bootstrapState.lastCheckedAt : null
+  const savedChangesPending = stateMatchesAccessContext && bootstrapState.savedChangesPending
 
-  const refresh = useCallback(async () => {
-    const requestId = ++requestSequenceRef.current
-    setBootstrapState((current) => ({
-      accessContext,
-      data: current.accessContext === accessContext ? current.data : null,
-      loading: true,
-      error: null,
-    }))
-    try {
-      const nextData = await getBootstrap(homeStore, role)
-      if (requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return
-      const authenticatedRole = nextData.access?.role ?? role
-      const authenticatedStore = nextData.access?.store ?? homeStore
-      if (authenticatedRole !== role || authenticatedStore !== homeStore) {
-        const authenticatedContext = `${authenticatedRole}:${authenticatedStore}`
-        writeStorage('maxey-role', authenticatedRole)
-        writeStorage('maxey-home-store', authenticatedStore)
-        latestAccessContextRef.current = authenticatedContext
-        setRoleState(authenticatedRole)
-        setHomeStoreState(authenticatedStore)
-        setBootstrapState({ accessContext: authenticatedContext, data: nextData, loading: false, error: null })
-        return
-      }
-      setBootstrapState({ accessContext, data: nextData, loading: false, error: null })
-    } catch (caught) {
-      if (requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return
-      setBootstrapState({
-        accessContext,
-        data: null,
-        loading: false,
-        error: caught instanceof Error ? caught.message : 'Unable to load the current inventory data.',
-      })
+  const cancelRead = useCallback(() => {
+    requestSequenceRef.current += 1
+    inFlightRef.current?.controller.abort()
+    inFlightRef.current = null
+  }, [])
+
+  const clearAccess = useCallback((context: string, status: 401 | 403, message: string) => {
+    if (latestAccessContextRef.current !== context) return
+    cancelRead()
+    clearClientWorkspace()
+    knownUserRef.current = null
+    accessErrorRef.current = status
+    setBootstrapState({ ...emptyBootstrap(context), loading: false, error: message, accessErrorStatus: status })
+  }, [cancelRead])
+
+  useEffect(() => subscribeAccessFailures((failure) => {
+    const context = latestAccessContextRef.current
+    // A rejected request from a previous role/store must not log out the new
+    // workspace. Null identity headers are conservative session-wide failures.
+    if (failure.role && failure.store && context !== `${failure.role}:${failure.store}`) return
+    clearAccess(context, failure.status, failure.message)
+  }), [clearAccess])
+
+  const refreshBootstrap = useCallback((afterMutation = false): Promise<void> => {
+    if (latestAccessContextRef.current !== accessContext || accessErrorRef.current) return Promise.resolve()
+    const mutationRevision = confirmedMutationRevision()
+    const pending = inFlightRef.current
+    if (!afterMutation && pending?.accessContext === accessContext && pending.mutationRevision === mutationRevision) {
+      return pending.promise
     }
-  }, [accessContext, homeStore, role])
+    cancelRead()
+    const requestId = requestSequenceRef.current
+    const controller = new AbortController()
+    lastAttemptRef.current = Date.now()
+    setBootstrapState((current) => ({
+      ...(current.accessContext === accessContext ? current : emptyBootstrap(accessContext)),
+      loading: true,
+      error: current.accessContext === accessContext && current.data ? current.error : null,
+      accessErrorStatus: null,
+      savedChangesPending: afterMutation || mutationRevision !== lastSyncedMutationRef.current || current.savedChangesPending,
+    }))
+    const promise = (async () => {
+      try {
+        const nextData = await getBootstrap(homeStore, role, controller.signal)
+        if (requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return
+        const nextUser = nextData.access?.user ?? null
+        if (knownUserRef.current !== nextUser) clearClientWorkspace()
+        knownUserRef.current = nextUser
+        const authenticatedRole = nextData.access?.role ?? role
+        const authenticatedStore = nextData.access?.store ?? homeStore
+        const authenticatedContext = `${authenticatedRole}:${authenticatedStore}`
+        if (authenticatedRole !== role || authenticatedStore !== homeStore) {
+          writeStorage('maxey-role', authenticatedRole)
+          writeStorage('maxey-home-store', authenticatedStore)
+          latestAccessContextRef.current = authenticatedContext
+          setRoleState(authenticatedRole)
+          setHomeStoreState(authenticatedStore)
+        }
+        lastSyncedMutationRef.current = mutationRevision
+        setBootstrapState({
+          accessContext: authenticatedContext, data: nextData, loading: false, error: null,
+          accessErrorStatus: null, lastCheckedAt: new Date().toISOString(), savedChangesPending: false,
+        })
+      } catch (caught) {
+        if (controller.signal.aborted || requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return
+        const message = caught instanceof Error ? caught.message : 'Unable to load the current inventory data.'
+        const status = accessFailureStatus(caught)
+        if (status) {
+          clearAccess(accessContext, status, message)
+          return
+        }
+        // Transient failures never turn a known successful save into a failed
+        // action or discard the last authenticated in-memory workspace.
+        setBootstrapState((current) => ({
+          ...(current.accessContext === accessContext ? current : emptyBootstrap(accessContext)),
+          loading: false, error: message,
+        }))
+      } finally {
+        if (inFlightRef.current?.controller === controller) inFlightRef.current = null
+      }
+    })()
+    inFlightRef.current = { accessContext, mutationRevision, controller, promise }
+    return promise
+  }, [accessContext, cancelRead, clearAccess, homeStore, role])
+
+  const refresh = useCallback(() => refreshBootstrap(), [refreshBootstrap])
 
   useEffect(() => {
+    clearClientWorkspace()
     void refresh()
+    return () => { cancelRead(); clearClientWorkspace() }
+  }, [cancelRead, refresh])
+
+  useEffect(() => {
+    const refreshForeground = () => {
+      if (document.visibilityState !== 'visible' || accessErrorRef.current || Date.now() - lastAttemptRef.current < FOREGROUND_REFRESH_MS) return
+      void refresh()
+    }
+    window.addEventListener('focus', refreshForeground)
+    window.addEventListener('online', refreshForeground)
+    document.addEventListener('visibilitychange', refreshForeground)
+    const timer = window.setInterval(refreshForeground, FOREGROUND_REFRESH_MS)
     return () => {
-      requestSequenceRef.current += 1
+      window.removeEventListener('focus', refreshForeground)
+      window.removeEventListener('online', refreshForeground)
+      document.removeEventListener('visibilitychange', refreshForeground)
+      window.clearInterval(timer)
     }
   }, [refresh])
 
   const setHomeStore = useCallback((store: StoreName) => {
+    if (store === homeStore || !confirmUnsavedWork()) return
+    cancelRead()
+    clearClientWorkspace()
+    accessErrorRef.current = null
+    latestAccessContextRef.current = `${role}:${store}`
     writeStorage('maxey-home-store', store)
     setHomeStoreState(store)
-  }, [])
+    setBootstrapState(emptyBootstrap(`${role}:${store}`))
+  }, [cancelRead, homeStore, role])
 
   const setRole = useCallback((nextRole: UserRole) => {
+    if (nextRole === role || !confirmUnsavedWork()) return
+    cancelRead()
+    clearClientWorkspace()
+    accessErrorRef.current = null
+    latestAccessContextRef.current = `${nextRole}:${homeStore}`
     writeStorage('maxey-role', nextRole)
     setRoleState(nextRole)
-  }, [])
+    setBootstrapState(emptyBootstrap(`${nextRole}:${homeStore}`))
+  }, [cancelRead, homeStore, role])
+
+  const completeMutation = useCallback(async <T,>(operation: () => Promise<T>): Promise<T> => {
+    const context = accessContext
+    const generation = apiAccessGeneration()
+    try {
+      const result = await operation()
+      if (latestAccessContextRef.current === context && generation === apiAccessGeneration()) await refreshBootstrap(true)
+      return result
+    } catch (caught) {
+      const status = accessFailureStatus(caught)
+      if (status && generation === apiAccessGeneration()) clearAccess(context, status, caught instanceof Error ? caught.message : 'Your access could not be verified. Reload this page.')
+      throw caught
+    }
+  }, [accessContext, clearAccess, refreshBootstrap])
 
   const submitTransfer = useCallback(
-    async (input: TransferRequestInput) => {
-      const created = await createTransfer(input, role, homeStore)
-      await refresh()
-      return created
-    },
-    [homeStore, refresh, role],
+    (input: TransferRequestInput) => completeMutation(() => createTransfer(input, role, homeStore)),
+    [completeMutation, homeStore, role],
   )
 
   const addTransferEvent = useCallback(
-    async (transferId: string, input: TransferEventInput) => {
-      const updated = await appendTransferEvent(transferId, input, role, homeStore)
-      await refresh()
-      return updated
-    },
-    [homeStore, refresh, role],
+    (transferId: string, input: TransferEventInput) => completeMutation(() => appendTransferEvent(transferId, input, role, homeStore)),
+    [completeMutation, homeStore, role],
   )
 
   const addAttentionEvent = useCallback(
-    async (attentionId: string, input: AttentionEventInput) => {
-      const updated = await appendAttentionEvent(attentionId, input, role, homeStore)
-      await refresh()
-      return updated
-    },
-    [homeStore, refresh, role],
+    (attentionId: string, input: AttentionEventInput) => completeMutation(() => appendAttentionEvent(attentionId, input, role, homeStore)),
+    [completeMutation, homeStore, role],
   )
 
   const value = useMemo<AppDataContextValue>(
@@ -181,6 +305,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       data,
       loading,
       error,
+      accessErrorStatus,
+      lastCheckedAt,
+      savedChangesPending,
       homeStore,
       setHomeStore,
       role,
@@ -191,7 +318,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       addTransferEvent,
       addAttentionEvent,
     }),
-    [data, loading, error, homeStore, setHomeStore, role, setRole, refresh, submitTransfer, addTransferEvent, addAttentionEvent],
+    [data, loading, error, accessErrorStatus, lastCheckedAt, savedChangesPending, homeStore, setHomeStore, role, setRole, refresh, submitTransfer, addTransferEvent, addAttentionEvent],
   )
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>

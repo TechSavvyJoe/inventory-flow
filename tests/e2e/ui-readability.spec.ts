@@ -173,14 +173,13 @@ async function collectContrastViolations(page: Page) {
 // A route with nothing to render passes these checks vacuously. Seed the one
 // record that makes /transfers show its tracker, timeline and status lanes,
 // so the check measures the text a dealership user actually sees.
-test.beforeAll(async ({ request }) => {
+test.beforeAll(async ({ request, baseURL }) => {
   const response = await request.post('/api/transfers', {
-    headers: { 'x-inventory-demo-role': 'manager', 'x-inventory-demo-store': 'Howell', 'x-inventory-demo-user': 'Synthetic readability manager', origin: 'http://127.0.0.1:4173', 'idempotency-key': 'synthetic-readability-seed' },
+    headers: { 'x-inventory-demo-role': 'manager', 'x-inventory-demo-store': 'Howell', 'x-inventory-demo-user': 'Synthetic readability manager', origin: new URL(baseURL!).origin, 'idempotency-key': 'synthetic-readability-seed' },
     data: { vin: 'TESTDATAFWELL0002', neededBy: '2026-08-31T16:00:00Z', returnDueAt: '2026-09-01T16:00:00Z', reason: 'Synthetic readability seed', returnRequired: true },
   })
-  // With `reuseExistingServer`, an earlier run (or a developer's own demo
-  // session) may already hold an open move for this vehicle; that is the
-  // state this seed exists to guarantee, so it counts as success.
+  // Both projects use the isolated synthetic ledger. The other viewport
+  // project may already have created this same idempotent demonstration move.
   const body = await response.text()
   expect(response.ok() || body.includes('ACTIVE_TRANSFER_EXISTS'), body).toBe(true)
 })

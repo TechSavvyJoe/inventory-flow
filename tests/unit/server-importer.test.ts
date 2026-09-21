@@ -279,7 +279,7 @@ describe('verified daily source importer', () => {
       )
       const snapshot = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
       const history = releasedHistoryFor({
-        vin: '2C4RC1BG3SR504341',
+        vin: 'TESTDATASYN000009',
         stockNumber: 'LEGACY1',
         storeName: 'Howell',
         storeCode: 'H',
@@ -307,7 +307,7 @@ describe('verified daily source importer', () => {
       const snapshot = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
       const current = snapshot.completeDealerMailUsedInventory.rows[0]
       const history = releasedHistoryFor({
-        vin: '2C4RC1BG3SR504341',
+        vin: 'TESTDATASYN000009',
         stockNumber: current.stockNumber,
         storeName: current.storeName,
         storeCode: current.storeCode,
@@ -426,7 +426,7 @@ describe('verified daily source importer', () => {
       const unheld = source.completeDealerMailUsedInventory.rows.find((row) => !heldVins.has(row.vin))
       const canonical = releasedHistoryFor(unheld)
       const legacy = releasedHistoryFor({
-        vin: '2C4RC1BG3SR504341',
+        vin: 'TESTDATASYN000009',
         stockNumber: 'LEGACY1',
         storeName: 'Howell',
         storeCode: 'H',
@@ -605,7 +605,7 @@ describe('verified daily source importer', () => {
   })
 
   it('merges only a photo cache bound to the exact release hash, VIN, and listing URL', () => {
-    const vin = '1FMCU0GD6JUC18203'
+    const vin = 'TESTDATASYN000005'
     const snapshotSha256 = 'A'.repeat(64)
     const listingUrl = `https://www.bobmaxeyfordhowell.com/used-Howell-test-${vin}`
     const photoUrl = `https://www.bobmaxeyfordhowell.com/inventoryphotos/11801/${vin.toLowerCase()}/ip/1.jpg`
@@ -661,7 +661,7 @@ describe('verified daily source importer', () => {
   })
 
   it('merges VIN-validated AutoCheck and window-sticker facts from the v2 resource cache', () => {
-    const vin = '1FMCU0GD6JUC18203'
+    const vin = 'TESTDATASYN000005'
     const snapshotSha256 = 'C'.repeat(64)
     const listingUrl = `https://www.bobmaxeyfordhowell.com/used-Howell-test-${vin}`
     const cache = {
@@ -707,6 +707,7 @@ describe('verified daily source importer', () => {
             validated_vin: vin,
             vehicleDescription: '2025 ESCAPE ST-LINE AWD',
             equipmentGroup: '300A',
+            equipmentGroupContents: ['Synthetic included feature'], equipmentGroupPrice: 1250.75,
             basePrice: 32585,
             totalOptions: 995,
             destinationCharge: 1495,
@@ -733,6 +734,7 @@ describe('verified daily source importer', () => {
       publicSnapshotSha256: snapshotSha256,
     })
 
+    expect(merged.recordsByVin[vin].windowSticker).toMatchObject({ equipmentGroupContents: ['Synthetic included feature'], equipmentGroupPrice: 1250.75 })
     expect(merged.recordsByVin[vin].autoCheckReport).toMatchObject({
       score: 91,
       ownerCount: 2,
@@ -763,7 +765,7 @@ describe('verified daily source importer', () => {
           vehicles: {
             [vin]: {
               ...cache.vehicles[vin],
-              autoCheckReport: { ...cache.vehicles[vin].autoCheckReport, validated_vin: '2LMPJ8LR3HBL46607' },
+              autoCheckReport: { ...cache.vehicles[vin].autoCheckReport, validated_vin: 'TESTDATASYN000007' },
             },
           },
         },
@@ -774,7 +776,7 @@ describe('verified daily source importer', () => {
   })
 
   it('validates exact-VIN factory equipment independently from public listings', () => {
-    const vin = '1GCUDEED9RZ144878'
+    const vin = 'TESTDATASYN000008'
     const enrichment = {
       schemaVersion: 'inventory-flow-vin-document-enrichment-v1',
       generatedAt: '2026-08-30T14:00:00Z',
@@ -832,16 +834,20 @@ describe('verified daily source importer', () => {
     expect(() => validateVinDocumentEnrichment(mislabeled)).toThrow(/not an original window sticker/i)
 
     const mismatchedVin = structuredClone(enrichment)
-    mismatchedVin.recordsByVin[vin].vin = '2LMPJ8LR3HBL46607'
+    mismatchedVin.recordsByVin[vin].vin = 'TESTDATASYN000007'
     expect(() => validateVinDocumentEnrichment(mismatchedVin)).toThrow(/does not match/i)
 
     const unsupportedField = structuredClone(enrichment)
     unsupportedField.recordsByVin[vin].factoryEquipment.unverifiedClaim = 'clean history'
     expect(() => validateVinDocumentEnrichment(unsupportedField)).toThrow(/unsupported fields/i)
+
+    const misplacedGroupPrice = structuredClone(enrichment)
+    misplacedGroupPrice.recordsByVin[vin].factoryEquipment.equipmentGroupPrice = 1250
+    expect(() => validateVinDocumentEnrichment(misplacedGroupPrice)).toThrow(/unsupported fields/i)
   })
 
   it('validates read-only Ford OASIS recall and warranty facts as an independent VIN resource', () => {
-    const vin = '1FMCU9GN3PUA06249'
+    const vin = 'TESTDATAHWELL0007'
     const enrichment = {
       schemaVersion: 'inventory-flow-vin-document-enrichment-v1',
       generatedAt: '2026-09-12T15:00:00Z',
@@ -850,18 +856,19 @@ describe('verified daily source importer', () => {
           vin,
           fordOasis: {
             dataState: 'current',
-            capturedAt: '2026-09-12T14:52:37.597Z',
+            capturedAt: '2026-09-01T00:00:00.000Z',
             sourceLabel: 'Ford OASIS vehicle report (FMCDealer read-only capture)',
-            vehicleDescription: '2023 Escape',
-            versionSeries: 'SERIES 10',
-            buildDate: '11-May-2023',
-            warrantyStartDate: '09-June-2023',
-            releaseDate: '12-May-2023',
-            monthsInService: 38,
-            saleMileage: 3,
-            openFieldServiceActions: [{ code: '24N08', description: 'DRIVERS SIDE SEAT BUCKLE REPLACEMENT' }],
+            vehicleDescription: '2023 Synthetic SUV',
+            versionSeries: 'SERIES 00',
+            buildDate: '01-Jan-2023',
+            warrantyStartDate: '01-Jan-2023',
+            releaseDate: '01-Jan-2023',
+            monthsInService: 36,
+            saleMileage: 0,
+            openActionsCaptured: true,
+            openFieldServiceActions: [{ code: '00T01', description: 'Synthetic field service action' }],
             warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain', description: '' }],
-            extendedCoverageExpirations: ['01/16/2029'],
+            extendedCoverageExpirations: ['01/01/2029'],
           },
         },
       },
@@ -873,19 +880,19 @@ describe('verified daily source importer', () => {
       vin,
       fordOasis: {
         dataState: 'current',
-        capturedAt: '2026-09-12T14:52:37.597Z',
+        capturedAt: '2026-09-01T00:00:00.000Z',
         sourceLabel: 'Ford OASIS vehicle report (FMCDealer read-only capture)',
-        vehicleDescription: '2023 Escape',
-        versionSeries: 'SERIES 10',
-        buildDate: '11-May-2023',
-        warrantyStartDate: '09-June-2023',
-        releaseDate: '12-May-2023',
-        monthsInService: 38,
-        saleMileage: 3,
+        vehicleDescription: '2023 Synthetic SUV',
+        versionSeries: 'SERIES 00',
+        buildDate: '01-Jan-2023',
+        warrantyStartDate: '01-Jan-2023',
+        releaseDate: '01-Jan-2023',
+        monthsInService: 36,
+        saleMileage: 0,
         openActionsCaptured: true,
-        openFieldServiceActions: [{ code: '24N08', description: 'DRIVERS SIDE SEAT BUCKLE REPLACEMENT' }],
+        openFieldServiceActions: [{ code: '00T01', description: 'Synthetic field service action' }],
         warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain' }],
-        extendedCoverageExpirations: ['01/16/2029'],
+        extendedCoverageExpirations: ['01/01/2029'],
       },
     })
     expect(validated.metadata).toMatchObject({
@@ -903,6 +910,7 @@ describe('verified daily source importer', () => {
     expect(withoutNumbers).not.toHaveProperty('saleMileage')
 
     const missingActions = structuredClone(enrichment)
+    delete missingActions.recordsByVin[vin].fordOasis.openActionsCaptured
     delete missingActions.recordsByVin[vin].fordOasis.openFieldServiceActions
     const unconfirmedActions = validateVinDocumentEnrichment(missingActions).recordsByVin[vin].fordOasis
     expect(unconfirmedActions).toMatchObject({ openFieldServiceActions: [], openActionsCaptured: false })
@@ -911,13 +919,44 @@ describe('verified daily source importer', () => {
     const capturedEmpty = structuredClone(enrichment)
     capturedEmpty.recordsByVin[vin].fordOasis.openFieldServiceActions = []
     expect(validateVinDocumentEnrichment(capturedEmpty).recordsByVin[vin].fordOasis).toMatchObject({ openFieldServiceActions: [], openActionsCaptured: true })
+    const legacyEmpty = structuredClone(capturedEmpty)
+    delete legacyEmpty.recordsByVin[vin].fordOasis.openActionsCaptured
+    expect(validateVinDocumentEnrichment(legacyEmpty).recordsByVin[vin].fordOasis).toMatchObject({ openFieldServiceActions: [], openActionsCaptured: false })
     const invalidCapture = structuredClone(enrichment)
     delete invalidCapture.recordsByVin[vin].fordOasis.openFieldServiceActions
     invalidCapture.recordsByVin[vin].fordOasis.openActionsCaptured = true
     expect(() => validateVinDocumentEnrichment(invalidCapture)).toThrow(/requires an explicit array/i)
 
+    const technicalFields = {
+      bodyStyle: 'CREW CAB', driveType: '4X4', paintColor: 'SYNTHETIC WHITE', paintCode: 'YZ',
+      engine: '3.5L V6', engineCalibration: 'DEMO-CAL', transmission: '10 SPEED',
+      axleRatio: '3.73', axleCode: 'EL', grossVehicleWeight: '7,400 LB', wheelSize: '20 IN',
+      tire: '275/60R20', syncVersion: 'SYNC 4', fuelType: 'GASOLINE',
+    }
+    const technical = structuredClone(enrichment)
+    Object.assign(technical.recordsByVin[vin].fordOasis, technicalFields)
+    expect(validateVinDocumentEnrichment(technical).recordsByVin[vin].fordOasis).toMatchObject(technicalFields)
+    expect(validateVinDocumentEnrichmentForPublish(technical).recordsByVin[vin].fordOasis).toMatchObject(technicalFields)
+    for (const key of Object.keys(technicalFields)) {
+      const overlong = structuredClone(technical)
+      overlong.recordsByVin[vin].fordOasis[key] = 'x'.repeat(161)
+      expect(() => validateVinDocumentEnrichment(overlong)).toThrow(/safe text limit/i)
+      const badType = structuredClone(technical)
+      badType.recordsByVin[vin].fordOasis[key] = { ownerName: 'Synthetic owner' }
+      expect(() => validateVinDocumentEnrichment(badType)).toThrow(/must be text/i)
+      const foreignText = structuredClone(technical)
+      foreignText.recordsByVin[vin].fordOasis[key] = 'Owner name: Synthetic owner'
+      expect(() => validateVinDocumentEnrichment(foreignText)).toThrow(/non-vehicle material/i)
+    }
+    const absentTechnical = structuredClone(technical)
+    absentTechnical.recordsByVin[vin].fordOasis.engine = null
+    absentTechnical.recordsByVin[vin].fordOasis.engineCalibration = ''
+    const absentResult = validateVinDocumentEnrichment(absentTechnical).recordsByVin[vin].fordOasis
+    expect(absentResult).not.toHaveProperty('engine')
+    expect(absentResult).not.toHaveProperty('engineCalibration')
+
     const unsupportedField = structuredClone(enrichment)
-    unsupportedField.recordsByVin[vin].fordOasis.engineCalibration = 'PCTCCRNA'
+    unsupportedField.recordsByVin[vin].fordOasis.rawReport = 'Unstructured source text'
     expect(() => validateVinDocumentEnrichment(unsupportedField)).toThrow(/unsupported fields/i)
 
     // Owner identity never enters the release, even when a capture leaks it.
@@ -940,10 +979,10 @@ describe('verified daily source importer', () => {
     badCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: 'RECALL-1', description: 'Not an FSA code' }]
     expect(() => validateVinDocumentEnrichment(badCode)).toThrow(/not a valid FSA code/i)
     const lowercaseCode = structuredClone(enrichment)
-    lowercaseCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: '24n08' }]
+    lowercaseCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: '00t01' }]
     expect(() => validateVinDocumentEnrichment(lowercaseCode)).toThrow(/not a valid FSA code/i)
     const duplicateCode = structuredClone(enrichment)
-    duplicateCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: '24N08' }, { code: '24N08' }]
+    duplicateCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: '00T01' }, { code: '00T01' }]
     expect(() => validateVinDocumentEnrichment(duplicateCode)).toThrow(/duplicate code/i)
 
     const missingCapture = structuredClone(enrichment)
@@ -964,7 +1003,7 @@ describe('verified daily source importer', () => {
   })
 
   it('permits a separately VIN-validated official AutoCheck record but creates no default link', () => {
-    const vin = '1GCUDEED9RZ144878'
+    const vin = 'TESTDATASYN000008'
     const record = {
       schemaVersion: 'inventory-flow-vin-document-enrichment-v1',
       recordsByVin: {
@@ -993,10 +1032,10 @@ describe('verified daily source importer', () => {
     unsafe.recordsByVin[vin].autoCheckReport.url = `https://evil.example/report/${vin}`
     expect(() => validateVinDocumentEnrichment(unsafe)).toThrow(/approved official host/i)
     const confused = structuredClone(record)
-    confused.recordsByVin[vin].autoCheckReport.url = `https://www.autocheck.com/report?vin=2LMPJ8LR3HBL46607&note=${vin}`
+    confused.recordsByVin[vin].autoCheckReport.url = `https://www.autocheck.com/report?vin=TESTDATASYN000007&note=${vin}`
     expect(() => validateVinDocumentEnrichment(confused)).toThrow(/exact-VIN route/i)
     const mismatch = structuredClone(record)
-    mismatch.recordsByVin[vin].autoCheckReport.validatedVin = '2LMPJ8LR3HBL46607'
+    mismatch.recordsByVin[vin].autoCheckReport.validatedVin = 'TESTDATASYN000007'
     expect(() => validateVinDocumentEnrichment(mismatch)).toThrow(/exact-VIN/i)
   })
 

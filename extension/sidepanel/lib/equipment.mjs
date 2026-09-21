@@ -2,6 +2,8 @@
 // from the strongest source wins (factory sticker > vAuto label > website
 // listing), grouped into the same categories the app uses, standouts first.
 
+import { sourceDistanceText } from './source-distance.mjs'
+
 export const CATEGORY_LABELS = Object.freeze({
   packages: 'Packages & special equipment',
   'driver-assistance': 'Driver assistance & safety',
@@ -38,6 +40,7 @@ function candidates(vehicle) {
   return [
     ...(sticker?.equipmentGroup ? [{ label: sticker.equipmentGroup, source: 'factory-equipment-group' }] : []),
     ...(sticker?.options ?? []).map((label) => ({ label, source: 'factory-option' })),
+    ...(sticker?.equipmentGroupContents ?? []).map((label) => ({ label, source: 'factory-equipment-group' })),
     ...(sticker?.standardEquipment ?? []).map((label) => ({ label, source: 'factory-standard-equipment' })),
     ...(factory?.packages ?? []).flatMap((item) => [
       { label: [item.name, item.code ? `(${item.code})` : null].filter(Boolean).join(' '), source: 'vauto-equipment-package' },
@@ -51,7 +54,8 @@ function candidates(vehicle) {
 export function publishedEquipment(vehicle) {
   const byKey = new Map()
   for (const candidate of candidates(vehicle)) {
-    const label = String(candidate.label ?? '').replace(/\s+/g, ' ').trim()
+    // A factory or vAuto label can print a metric consumption or range figure.
+    const label = sourceDistanceText(String(candidate.label ?? '').replace(/\s+/g, ' ').trim())
     if (!label) continue
     const key = equipmentKey(label)
     if (!key) continue
@@ -61,7 +65,7 @@ export function publishedEquipment(vehicle) {
   }
   return [...byKey.values()].sort((left, right) => {
     if (left.standout !== right.standout) return left.standout ? -1 : 1
-    return (SOURCE_STRENGTH[right.source] - SOURCE_STRENGTH[left.source]) || left.label.localeCompare(right.label, undefined, { numeric: true })
+    return (SOURCE_STRENGTH[right.source] - SOURCE_STRENGTH[left.source]) || left.label.localeCompare(right.label, 'en-US', { numeric: true })
   })
 }
 

@@ -102,9 +102,10 @@ function sticker(value) {
   if (!value || typeof value !== 'object') return null
   return {
     dataState: freshness(value.dataState), originalMarket: text(value.originalMarket), pricingCurrency: text(value.pricingCurrency),
-    pricingCurrencyEvidence: text(value.pricingCurrencyEvidence), vehicleDescription: text(value.vehicleDescription), equipmentGroup: text(value.equipmentGroup),
+    pricingCurrencyEvidence: text(value.pricingCurrencyEvidence), vehicleDescription: text(value.vehicleDescription), equipmentGroup: text(value.equipmentGroup), equipmentGroupPrice: number(value.equipmentGroupPrice),
     basePrice: number(value.basePrice, { positive: true }), totalOptions: number(value.totalOptions), destinationCharge: number(value.destinationCharge), totalMsrp: number(value.totalMsrp, { positive: true }),
     exteriorColor: text(value.exteriorColor), interiorColor: text(value.interiorColor), engine: text(value.engine), transmission: text(value.transmission),
+    ...(Array.isArray(value.equipmentGroupContents) ? { equipmentGroupContents: strings(value.equipmentGroupContents) } : {}),
     options: strings(value.options), standardEquipment: strings(value.standardEquipment), warranty: strings(value.warranty),
     isOriginalWindowSticker: true,
   }
@@ -128,7 +129,12 @@ function fordOasis(value) {
   return {
     dataState: freshness(value.dataState), capturedAt: text(value.capturedAt), vehicleDescription: text(value.vehicleDescription),
     versionSeries: text(value.versionSeries), buildDate: text(value.buildDate), warrantyStartDate: text(value.warrantyStartDate),
+    bodyStyle: text(value.bodyStyle, 160), driveType: text(value.driveType, 160), paintColor: text(value.paintColor, 160), paintCode: text(value.paintCode, 160),
+    engine: text(value.engine, 160), engineCalibration: text(value.engineCalibration, 160), transmission: text(value.transmission, 160),
+    axleRatio: text(value.axleRatio, 160), axleCode: text(value.axleCode, 160), grossVehicleWeight: text(value.grossVehicleWeight, 160),
+    wheelSize: text(value.wheelSize, 160), tire: text(value.tire, 160), syncVersion: text(value.syncVersion, 160), fuelType: text(value.fuelType, 160),
     releaseDate: text(value.releaseDate), monthsInService: number(value.monthsInService, { integer: true }), saleMileage: number(value.saleMileage),
+    openActionsCaptured: value.openActionsCaptured === true && Array.isArray(value.openFieldServiceActions),
     openFieldServiceActions: array(value.openFieldServiceActions).slice(0, 60).map(item => ({ code: text(item?.code, 20), description: text(item?.description, 300) })),
     warrantyCoverages: array(value.warrantyCoverages).slice(0, 20).map(item => ({ type: text(item?.type, 120), description: text(item?.description, 300) })),
     extendedCoverageExpirations: strings(value.extendedCoverageExpirations).slice(0, 10),
