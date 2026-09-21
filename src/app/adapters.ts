@@ -292,15 +292,12 @@ function officialDocumentSearchText(
     ...(fordOasis?.extendedCoverageExpirations ?? []),
     fordOasis ? 'Ford OASIS' : null,
     fordOasis?.openFieldServiceActions.length ? `${fordOasis.openFieldServiceActions.length} open recalls field service actions` : null,
-    warrantyCheck?.sourceLabel,
-    warrantyCheck?.mileageSource,
+    // Search only on vehicle-specific warranty facts. Coverage names, printed
+    // terms, source labels, and Active/Expired statuses repeat across the lot
+    // and make predictive search return nearly every vehicle.
     warrantyCheck?.autoCheck?.inServiceDate,
     warrantyCheck?.fordOasis?.warrantyStartDate,
     warrantyCheck?.fordOasis?.monthsInService != null ? `${warrantyCheck.fordOasis.monthsInService} months in service` : null,
-    ...[...(warrantyCheck?.autoCheck?.coverages ?? []), ...(warrantyCheck?.fordOasis?.coverages ?? [])].flatMap(
-      (coverage) => [coverage.type, coverage.termText, coverage.remainingMilesText, coverage.remainingTimeText, coverage.status, coverage.note],
-    ),
-    warrantyCheck ? 'warranty check coverage' : null,
   ].filter((value) => value !== null && value !== undefined && String(value).trim() !== '').join(' | ')
 }
 

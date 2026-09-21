@@ -195,6 +195,38 @@ describe('official document adapter', () => {
     expect(rankInventorySearch(index, 'Empty section')).toHaveLength(0);
   });
 
+  it('indexes vehicle-specific warranty facts without turning generic coverage terms into lot-wide matches', () => {
+    const coverage = {
+      type: 'Bumper-to-Bumper',
+      termText: '36 months / 36,000 miles',
+      termMonths: 36,
+      termMiles: 36000,
+      remainingMiles: 33948,
+      remainingMonths: 22,
+      remainingMilesText: 'No miles left',
+      remainingTimeText: 'No time left',
+      status: 'EXPIRED' as const,
+    };
+    const record = sourceVehicle();
+    record.warrantyCheck = {
+      dataState: 'current',
+      capturedAt: '2026-09-12T15:00:00Z',
+      sourceLabel: 'Warranty check',
+      mileageEntered: 2052,
+      mileageSource: 'listed odometer',
+      autoCheck: { inServiceDate: '2024-03-14', inServiceAgeMonths: 30, coverages: [coverage] },
+      fordOasis: { warrantyStartDate: '14-March-2024', monthsInService: 30, coverages: [coverage] },
+    };
+
+    const index = buildInventorySearchIndex([toInventoryVehicle(record, sourceData())]);
+
+    expect(rankInventorySearch(index, '2024-03-14')).toHaveLength(1);
+    expect(rankInventorySearch(index, '14-March-2024')).toHaveLength(1);
+    for (const generic of ['expired', '36,000', '36000', 'Bumper-to-Bumper', 'No time left', 'listed odometer', 'warranty check coverage']) {
+      expect(rankInventorySearch(index, generic)).toEqual([]);
+    }
+  });
+
   it('uses public snapshot freshness when a resource has no separate freshness value', () => {
     const record = sourceVehicle();
     delete record.autoCheckReport?.dataState;
