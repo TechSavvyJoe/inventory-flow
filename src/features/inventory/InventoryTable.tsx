@@ -522,7 +522,7 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord }: {
       title={holdStatus.detail} onClick={event => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); if (canOpenDealerMail) onOpenSourceRecord?.(vehicle, "dealermail"); else onSelectVehicle(vehicle, "hold"); }}>
       <span className="inv-desk-hold__dot" aria-hidden="true" /><span>{holdStatus.label}</span>
     </button>
-    <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} />
+    <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed />
     {holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
     {vehicle.managerDisposition ? <small className="inv-desk-disposition" data-state={vehicle.managerDisposition.dataState}>{vehicle.managerDisposition.soldLabel} · {vehicle.managerDisposition.deliveryLabel}</small> : null}
     <RecallChip vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
@@ -898,7 +898,7 @@ export function InventoryMobileList({
               {recordsAction(vehicle)}
             </div>
             <div className="inventory-mobile-row__signals" aria-label="Operational vehicle signals">
-              <div className="inventory-mobile-service"><span aria-hidden="true">Service</span><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} /></div>
+              <div className="inventory-mobile-service"><span aria-hidden="true">Service</span><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed /></div>
                 <button
                   type="button"
                   className={`inventory-mobile-hold inventory-mobile-hold--${holdStatus.tone}`}

@@ -107,6 +107,34 @@ describe('manager service readiness ledger', () => {
     expect(serviceReadinessView(vehicle, { status: 'needs_service', version: 1, actor: manager.user }, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'manager_updated', readinessEvidence: null })
   })
 
+  it('uses only a current post-intake Ford service-history inspection to mark Ford and Lincoln inventory Ready', () => {
+    const serviceHistory = {
+      dataState: 'current', historyCaptured: true,
+      recentInspection: {
+        openDate: '08/14/2026', closeDate: '09/11/2026',
+        inspection: { status: 'confirmed', type: 'Certified Blue Oval inspection' },
+      },
+    }
+    const vehicle = {
+      vin: VIN, homeStore: 'Howell', make: 'Ford', inventoryDate: '2026-08-13',
+      fordOasis: { serviceHistory },
+    }
+    expect(serviceReadinessView(vehicle, null, manager)).toMatchObject({
+      status: 'serviced', readinessBasis: 'ford_service_history_inspection',
+      serviceEnteredAt: '2026-08-14', completedAt: '2026-09-11',
+      readinessEvidence: {
+        source: 'ford_service_history', inspectionDate: '2026-09-11',
+        inServiceDate: '2026-08-14', readyDate: '2026-09-11',
+        types: ['Certified Blue Oval inspection'],
+      },
+    })
+    expect(serviceReadinessView({ ...vehicle, make: 'Lincoln' }, null, manager)).toMatchObject({ status: 'serviced', readinessBasis: 'ford_service_history_inspection' })
+    expect(serviceReadinessView({ ...vehicle, make: 'Cadillac' }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
+    expect(serviceReadinessView({ ...vehicle, inventoryDate: '2026-08-15' }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
+    expect(serviceReadinessView({ ...vehicle, fordOasis: { serviceHistory: { ...serviceHistory, dataState: 'stale' } } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
+    expect(serviceReadinessView(vehicle, { status: 'needs_service', version: 1, actor: manager.user }, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'manager_updated', readinessEvidence: null })
+  })
+
   it.each(['needs_service', 'in_service', 'serviced'])('preserves the manager %s state over feed arrival and baseline signals', (status) => {
     const row = { status, version: 3, service_entered_at: status === 'needs_service' ? null : '2026-08-28', completed_at: status === 'serviced' ? '2026-08-30' : null, actor: manager.user }
     expect(serviceReadinessView({ vin: VIN, homeStore: 'Howell', serviceIntake: { first_arrival_date: '2026-08-30' } }, row, manager)).toMatchObject({

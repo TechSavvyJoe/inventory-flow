@@ -36,12 +36,13 @@ const rawVehicles = JSON.parse(readFileSync(snapshotPath, 'utf8')).vehicles || {
 const vehicles = Array.isArray(rawVehicles)
   ? Object.fromEntries(rawVehicles.filter((item) => item?.vin).map((item) => [String(item.vin).toUpperCase(), item]))
   : rawVehicles
-let worklist = Object.entries(vehicles)
+const fullWorklist = Object.entries(vehicles)
   .filter(([, vehicle]) => FORD_MAKES.has(String(vehicle.make || '').toUpperCase()))
   .map(([vin, vehicle]) => ({ vin: vin.toUpperCase(), stock: vehicle.stock || vehicle.stockNumber || '', make: String(vehicle.make || '').toUpperCase() }))
   .sort((a, b) => a.vin.localeCompare(b.vin))
+let worklist = fullWorklist
 if (requestedVin) {
-  const selected = worklist.find((item) => item.vin === requestedVin)
+  const selected = fullWorklist.find((item) => item.vin === requestedVin)
   if (!selected) throw new Error(`VIN ${requestedVin} is not a Ford/Lincoln vehicle in the ${reportDate} public snapshot`)
   worklist = [selected]
 }
@@ -65,7 +66,9 @@ let out = {
   privacyNote: 'Only VIN-bound repair-order dates, odometer, parts, labor operations, and deterministic service summaries are retained. No customer or owner data is collected.',
   records: [],
 }
-if (!refresh && existsSync(outPath)) {
+// A targeted refresh replaces only that VIN. Retain every other completed
+// same-day record so a one-VIN proof cannot erase the full daily capture.
+if ((!refresh || requestedVin) && existsSync(outPath)) {
   try {
     const previous = JSON.parse(readFileSync(outPath, 'utf8'))
     if (Array.isArray(previous.records)) out.records = previous.records
@@ -73,11 +76,12 @@ if (!refresh && existsSync(outPath)) {
 }
 // A resumed same-day capture must follow the newest public snapshot. If a VIN
 // disappeared since an earlier partial pass, do not retain or refetch it.
-const currentVins = new Set(worklist.map((item) => item.vin))
+const currentVins = new Set(fullWorklist.map((item) => item.vin))
 const completeResults = new Set(['OK', 'NO_HISTORY'])
 // A failed or incomplete same-day row is not completion. Drop it before a
 // resumed pass so the VIN is retried and the file remains one-record-per-VIN.
 out.records = out.records.filter((record) => currentVins.has(record?.vin) && completeResults.has(record?.result))
+if (requestedVin && refresh) out.records = out.records.filter((record) => record.vin !== requestedVin)
 const done = new Set(out.records.map((record) => record.vin))
 const queue = worklist.filter((item) => !done.has(item.vin)).slice(0, max)
 const save = () => writeFileSync(outPath, JSON.stringify(out, null, 2) + '\n')
@@ -206,8 +210,11 @@ for (const item of queue) {
 
 save()
 try { context?.page?.close() } catch {}
+const resultByVin = new Map(out.records.map((record) => [record.vin, record]))
+const complete = worklist.every((item) => completeResults.has(resultByVin.get(item.vin)?.result)) && !stoppedReason
 console.log(JSON.stringify({
   sessionStatus,
+  complete,
   records: out.records.length,
   worklist: worklist.length,
   tally,
@@ -215,4 +222,4 @@ console.log(JSON.stringify({
   seconds: Math.round((Date.now() - startedAt) / 1000),
   out: outPath,
 }))
-process.exit(stoppedReason === 'SESSION_EXPIRED' ? 1 : 0)
+process.exit(complete ? 0 : 1)

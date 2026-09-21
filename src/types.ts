@@ -418,7 +418,7 @@ export type ServiceReadinessStatus = ServiceWorkflowStatus | 'unknown'
 export interface ServiceReadiness {
   vin: string
   status: ServiceReadinessStatus
-  readinessBasis?: 'unconfirmed' | 'existing_inventory' | 'new_arrival' | 'manager_updated' | 'legacy_review' | 'autocheck_post_intake_inspection'
+  readinessBasis?: 'unconfirmed' | 'existing_inventory' | 'new_arrival' | 'manager_updated' | 'legacy_review' | 'autocheck_post_intake_inspection' | 'ford_service_history_inspection'
   version: number
   serviceEnteredAt: string | null
   completedAt: string | null
@@ -429,11 +429,17 @@ export interface ServiceReadiness {
   store: StoreName | null
   canManage: boolean
   /** Read-only source evidence; never creates a manager service event. */
-  readinessEvidence?: {
+  readinessEvidence?: ({
     source: 'autocheck'
     inspectionDate: string
     types: string[]
-  } | null
+  } | {
+    source: 'ford_service_history'
+    inspectionDate: string
+    types: string[]
+    inServiceDate: string
+    readyDate: string
+  }) | null
   notes?: string | null
 }
 

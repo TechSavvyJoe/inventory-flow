@@ -629,6 +629,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
     autoCheck?.scoreRangeLow != null && autoCheck.scoreRangeHigh != null
       ? `${autoCheck.scoreRangeLow}–${autoCheck.scoreRangeHigh}`
       : null;
+  const autoCheckInspection = autoCheck?.recentInspection ?? null;
   const autoCheckHighlights = autoCheck?.checks?.filter(isPrimaryAutoCheckFinding) ?? [];
   const autoCheckOtherChecks = autoCheck?.checks?.filter(check => !autoCheckHighlights.includes(check)) ?? [];
   const autoCheckFacts = autoCheck
@@ -648,6 +649,10 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
         } : null,
         autoCheck.lastReportedOdometer == null && autoCheck.lastReportedOdometerDate ? {
           label: "Last odometer report date", value: formatDate(autoCheck.lastReportedOdometerDate),
+        } : null,
+        autoCheckInspection ? {
+          label: "Recent inspection",
+          value: `${formatDate(autoCheckInspection.date)} · ${autoCheckInspection.types.map(sourceDistanceText).join(" · ")}`,
         } : null,
         autoCheck.vehicleClass ? { label: "Vehicle class", value: sourceDistanceText(autoCheck.vehicleClass) } : null,
         autoCheck.assemblyCountry ? { label: "Assembly country", value: autoCheck.assemblyCountry } : null,
@@ -708,6 +713,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             {autoCheck.ownerCount != null ? <Fact label="Owners">{autoCheck.ownerCount}</Fact> : null}
             {autoCheck.usage ? <Fact label="Vehicle use">{sourceDistanceText(autoCheck.usage)}</Fact> : null}
             {autoCheck.lastReportedOdometer != null ? <Fact label="Last odometer">{formatMileage(autoCheck.lastReportedOdometer)}{autoCheck.lastReportedOdometerDate ? <small>{formatDate(autoCheck.lastReportedOdometerDate)}</small> : null}</Fact> : null}
+            {autoCheckInspection ? <Fact label="Recent inspection">{formatDate(autoCheckInspection.date)}<small>{autoCheckInspection.types.map(sourceDistanceText).join(" · ")}</small></Fact> : null}
           </dl>
           {autoCheckHighlights.length ? <AutoCheckFindings checks={autoCheckHighlights} report={autoCheck} label="AutoCheck at-a-glance results" /> : null}
           {autoCheckOtherChecks.length ? <details className="vdp-record-source-details vdp-history-more">

@@ -56,6 +56,28 @@ describe('Premium vehicle workspace shares the operational record', () => {
     expect(panel).toHaveTextContent('Oil and filter service')
     expect(panel).toHaveTextContent('Records don’t confirm availability')
   })
+  it('shows the AutoCheck inspection date and type in the visible history summary', () => {
+    const vehicle = premiumVehicle({
+      make: 'Cadillac',
+      autoCheckReport: {
+        dataState: 'current', score: 91, ownerCount: 1,
+        recentInspection: { date: '2026-09-10', types: ['Vehicle Inspected', 'Multiple Point Vehicle Inspection'] },
+      },
+      serviceReadiness: {
+        vin: 'TESTDATAPREMIUM01', status: 'serviced', version: 0, serviceEnteredAt: null, completedAt: '2026-09-10',
+        updatedAt: null, updatedBy: null, updatedByRole: null, updatedAtStore: null, store: 'Howell', canManage: false,
+        readinessBasis: 'autocheck_post_intake_inspection',
+        readinessEvidence: { source: 'autocheck', inspectionDate: '2026-09-10', types: ['Vehicle Inspected', 'Multiple Point Vehicle Inspection'] },
+      },
+    })
+    showPremiumVehicle(vehicle)
+    expect(screen.getByRole('link', { name: 'Service: Ready' })).toHaveTextContent('AutoCheck inspected 09/10/2026')
+    fireEvent.click(screen.getByRole('tab', { name: 'Records' }))
+    const panel = screen.getByRole('tabpanel', { name: 'Records' })
+    expect(panel).toHaveTextContent('Recent inspection')
+    expect(panel).toHaveTextContent('09/10/2026')
+    expect(panel).toHaveTextContent('Vehicle Inspected · Multiple Point Vehicle Inspection')
+  })
   it('keeps a verified empty Ford history in Waiting for service without adding an empty record card', () => {
     const vehicle = premiumVehicle({
       fordOasis: {

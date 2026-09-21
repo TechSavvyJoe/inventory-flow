@@ -109,6 +109,23 @@ describe('modern inventory result access', () => {
       expect(row).toHaveTextContent('Held by Alex Morgan');
       expect(row).toHaveTextContent('In transit outbound');
     });
+
+    it('shows the readiness source and dates in the inventory row', () => {
+      const vehicle = heldMovingVehicle();
+      vehicle.serviceReadiness = {
+        vin: vehicle.vin, status: 'serviced', readinessBasis: 'ford_service_history_inspection', version: 0,
+        serviceEnteredAt: '2026-08-14', completedAt: '2026-09-11', updatedAt: null, updatedBy: null,
+        updatedByRole: null, updatedAtStore: null, store: 'Howell', canManage: false,
+        readinessEvidence: {
+          source: 'ford_service_history', inspectionDate: '2026-09-11', inServiceDate: '2026-08-14', readyDate: '2026-09-11', types: ['Certified Blue Oval inspection'],
+        },
+      };
+      if (layout === 'desktop') render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+      else render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} />);
+      const row = layout === 'desktop' ? document.querySelector('tr.inv-desk-row') as HTMLElement : screen.getByRole('article');
+      expect(within(row).getByRole('link', { name: `Ready. Open service status for VIN ${vehicle.vin}` }))
+        .toHaveTextContent('Ready · Ford service 08/14/2026 · ready 09/11/2026');
+    });
   });
 
   it('keeps existing inventory without service metadata waiting until manager confirmation', () => {

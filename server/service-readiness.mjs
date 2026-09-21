@@ -25,19 +25,44 @@ function isoDay(value) {
   return Number.isNaN(date.valueOf()) || date.toISOString().slice(0, 10) !== value ? null : value
 }
 
+function oasisDay(value) {
+  if (typeof value !== 'string') return null
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value.trim())
+  if (!match) return null
+  const [, month, day, year] = match
+  return isoDay(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`)
+}
+
+function intakeDay(vehicle) {
+  // The durable first-arrival ledger wins when available. Inventory date is a
+  // legacy fallback for units that predate that ledger.
+  return isoDay(vehicle.serviceIntake?.first_arrival_date) ?? isoDay(vehicle.inventoryDate)
+}
+
 function autoCheckReadinessEvidence(vehicle) {
   if (/^(ford|lincoln)$/i.test(String(vehicle.make ?? '').trim())) return null
   const report = vehicle.autoCheckReport
   if (report?.dataState !== 'current') return null
-  // The durable first-arrival ledger wins when available. Inventory date is a
-  // legacy fallback for units that predate that ledger.
-  const intakeDate = isoDay(vehicle.serviceIntake?.first_arrival_date) ?? isoDay(vehicle.inventoryDate)
+  const intakeDate = intakeDay(vehicle)
   const inspectionDate = isoDay(report.recentInspection?.date)
   const types = Array.isArray(report.recentInspection?.types)
     ? report.recentInspection.types.filter((value) => AUTOCHECK_INSPECTION_TYPES.has(value)).slice(0, 8)
     : []
   if (!intakeDate || !inspectionDate || inspectionDate < intakeDate || !types.length) return null
   return { source: 'autocheck', inspectionDate, types }
+}
+
+function fordServiceReadinessEvidence(vehicle) {
+  if (!/^(ford|lincoln)$/i.test(String(vehicle.make ?? '').trim())) return null
+  const history = vehicle.fordOasis?.serviceHistory
+  const inspection = history?.recentInspection
+  if (history?.dataState !== 'current' || history.historyCaptured !== true || inspection?.inspection?.status !== 'confirmed') return null
+  const intakeDate = intakeDay(vehicle)
+  const inServiceDate = oasisDay(inspection.openDate)
+  const readyDate = oasisDay(inspection.closeDate)
+  const inspectionType = typeof inspection.inspection.type === 'string' ? inspection.inspection.type.trim() : ''
+  if (!intakeDate || !inServiceDate || !readyDate || inServiceDate < intakeDate || readyDate < inServiceDate || !inspectionType) return null
+  return { source: 'ford_service_history', inspectionDate: readyDate, inServiceDate, readyDate, types: [inspectionType] }
 }
 
 export function serviceStore(vehicle) {
@@ -53,18 +78,22 @@ export function serviceReadinessView(vehicle, row, context, { includeNotes = fal
   const store = serviceStore(vehicle)
   const canManage = context.role === 'group_manager' || (context.role === 'manager' && store === context.store)
   const recordedStatus = SERVICE_STATUSES.includes(row?.status) ? row.status : null
-  // A current, exact-VIN AutoCheck inspection after intake is useful evidence
-  // for non-Ford inventory. It never replaces a manager's recorded decision.
-  const readinessEvidence = recordedStatus ? null : autoCheckReadinessEvidence(vehicle)
+  // A current, exact-VIN inspection after intake is useful readiness evidence.
+  // It never replaces a manager's recorded decision.
+  const readinessEvidence = recordedStatus ? null : (fordServiceReadinessEvidence(vehicle) ?? autoCheckReadinessEvidence(vehicle))
+  const readinessBasis = readinessEvidence?.source === 'ford_service_history'
+    ? 'ford_service_history_inspection'
+    : readinessEvidence ? 'autocheck_post_intake_inspection' : row ? 'legacy_review' : vehicle.serviceIntake ? 'new_arrival' : 'unconfirmed'
   return {
     vin: vehicle.vin,
     // Being listed, having no hold, or having an old warranty start date does
     // not establish that this vehicle finished the store's current service work.
     // Unconfirmed inventory shares the Waiting queue until a manager records it.
     status: recordedStatus ?? (readinessEvidence ? 'serviced' : 'needs_service'),
-    readinessBasis: recordedStatus ? 'manager_updated' : readinessEvidence ? 'autocheck_post_intake_inspection' : row ? 'legacy_review' : vehicle.serviceIntake ? 'new_arrival' : 'unconfirmed',
+    readinessBasis: recordedStatus ? 'manager_updated' : readinessBasis,
     version: row?.version ?? 0,
-    serviceEnteredAt: row?.service_entered_at ?? null, completedAt: row?.completed_at ?? readinessEvidence?.inspectionDate ?? null,
+    serviceEnteredAt: row?.service_entered_at ?? readinessEvidence?.inServiceDate ?? null,
+    completedAt: row?.completed_at ?? readinessEvidence?.readyDate ?? readinessEvidence?.inspectionDate ?? null,
     updatedAt: row?.updated_at ?? null, updatedBy: row?.actor ?? null,
     updatedByRole: row?.actor_role ?? null, updatedAtStore: row?.store_id ?? null,
     store, canManage, readinessEvidence,
