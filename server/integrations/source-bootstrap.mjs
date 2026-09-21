@@ -13,9 +13,13 @@ const strings = value => list(value).filter(item => typeof item === 'string')
 
 function parsedAutoCheck(value) {
   if (!isObject(value)) return null
+  const recentInspection = isObject(value.recentInspection) ? {
+    date: text(value.recentInspection.date), types: strings(value.recentInspection.types).slice(0, 8),
+  } : null
   return {
     ...pick(value, ['dataState', 'reportRunAt', 'score', 'scoreRangeLow', 'scoreRangeHigh', 'usage', 'ownerCount', 'lastReportedOdometer', 'lastReportedOdometerDate', 'vehicleClass', 'assemblyCountry', 'estimatedInServiceDate']),
     checks: list(value.checks).filter(isObject).map(check => pick(check, ['label', 'status', 'detail'])),
+    ...(recentInspection?.date && recentInspection.types.length ? { recentInspection } : {}),
   }
 }
 

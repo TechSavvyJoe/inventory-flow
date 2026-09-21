@@ -316,10 +316,13 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   const historyScore = numeric(history?.score) ? `Score ${formatNumber(history.score)}${scoreRange ? ` · ${scoreRange} range` : ''}` : null;
   const ownership = join([numeric(history?.ownerCount) ? `${formatNumber(history.ownerCount)} ${history.ownerCount === 1 ? 'owner' : 'owners'}` : null, factText(history?.usage)]);
   const odometer = numeric(history?.lastReportedOdometer) ? `Last reported ${formatNumber(history.lastReportedOdometer)} mi${text(history.lastReportedOdometerDate) ? ` · ${formatDate(history.lastReportedOdometerDate)}` : ''}` : null;
+  const inspectionDate = text(history?.recentInspection?.date);
+  const inspectionTypes = present(history?.recentInspection?.types ?? [], 4);
+  const inspection = inspectionDate && inspectionTypes.length ? `AutoCheck inspection ${formatDate(inspectionDate)} · ${inspectionTypes.join(' · ')}` : null;
   const historyFacts = present([
     historyScore,
     ...checks.filter(check => check.priority <= 1).map(check => check.full),
-    ownership, odometer,
+    inspection, ownership, odometer,
     ...checks.filter(check => check.priority > 1).map(check => check.full),
     history?.estimatedInServiceDate ? `Estimated warranty start ${formatDate(history.estimatedInServiceDate)}` : null,
   ]);
@@ -334,6 +337,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
     summaryFacts: present([
       ...checks.filter(check => check.priority <= 1).map(check => check.summary),
       ...checks.filter(check => check.priority > 1 && /title|accident|damage/i.test(check.summary)).map(check => check.summary),
+      inspection,
       ownership,
       ...checks.filter(check => /service/i.test(check.summary) && check.priority > 1).map(check => check.summary),
       ...checks.filter(check => /odometer/i.test(check.summary) && check.priority > 1).map(check => check.summary),
@@ -346,6 +350,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
       ...recordRows([
         { label: 'Owners / use', values: [numeric(history?.ownerCount) ? `${formatNumber(history.ownerCount)} ${history.ownerCount === 1 ? 'owner' : 'owners'}` : null], detail: factText(history?.usage) },
         { label: 'Last odometer', values: [numeric(history?.lastReportedOdometer) ? `${formatNumber(history.lastReportedOdometer)} mi` : null], detail: text(history?.lastReportedOdometerDate) ? formatDate(history!.lastReportedOdometerDate!) : null },
+        { label: 'Recent inspection', values: [inspectionDate ? formatDate(inspectionDate) : null], detail: inspectionTypes.join(' · ') },
         { label: 'Est. in-service', values: [inService.source === 'autocheck' && inService.date ? formatDate(inService.date) : null] },
       ]),
       ...checks.filter(check => check.priority > 1 && !/title|accident|damage/i.test(check.row.label)).map(check => check.row),
@@ -355,6 +360,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
     scanFacts: present([
       join([numeric(history?.score) ? `Score ${formatNumber(history.score)}` : null, numeric(history?.ownerCount) ? `${formatNumber(history.ownerCount)} ${history.ownerCount === 1 ? 'owner' : 'owners'}` : null]),
       demoSticker ? scanCheckText?.replace(/\s*·\s*Synthetic (?:example|result)$/i, '') : scanCheckText,
+      inspectionDate ? `Inspected ${formatDate(inspectionDate)}` : null,
       odometer,
     ]),
     href: historyHref, target: 'data', action: 'Open history', dataAction: 'View AutoCheck data', hasCapturedData: historyFacts.length > 0,

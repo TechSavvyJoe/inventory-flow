@@ -88,6 +88,25 @@ describe('manager service readiness ledger', () => {
     })
   })
 
+  it('uses only a current post-intake AutoCheck inspection to mark non-Ford inventory Ready', () => {
+    const vehicle = {
+      vin: VIN, homeStore: 'Howell', make: 'Cadillac', inventoryDate: '2026-08-30',
+      autoCheckReport: {
+        dataState: 'current',
+        recentInspection: { date: '2026-08-30', types: ['Multiple Point Vehicle Inspection'] },
+      },
+    }
+    expect(serviceReadinessView(vehicle, null, manager)).toMatchObject({
+      status: 'serviced', readinessBasis: 'autocheck_post_intake_inspection', completedAt: '2026-08-30',
+      readinessEvidence: { source: 'autocheck', inspectionDate: '2026-08-30', types: ['Multiple Point Vehicle Inspection'] },
+    })
+    expect(serviceReadinessView({ ...vehicle, make: 'Ford' }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
+    expect(serviceReadinessView({ ...vehicle, autoCheckReport: { dataState: 'stale', recentInspection: vehicle.autoCheckReport.recentInspection } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
+    expect(serviceReadinessView({ ...vehicle, autoCheckReport: { dataState: 'current', recentInspection: { date: '2026-08-29', types: ['Vehicle Inspected'] } } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
+    expect(serviceReadinessView({ ...vehicle, inventoryDate: '2026-08-01', serviceIntake: { first_arrival_date: '2026-08-31' } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'new_arrival' })
+    expect(serviceReadinessView(vehicle, { status: 'needs_service', version: 1, actor: manager.user }, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'manager_updated', readinessEvidence: null })
+  })
+
   it.each(['needs_service', 'in_service', 'serviced'])('preserves the manager %s state over feed arrival and baseline signals', (status) => {
     const row = { status, version: 3, service_entered_at: status === 'needs_service' ? null : '2026-08-28', completed_at: status === 'serviced' ? '2026-08-30' : null, actor: manager.user }
     expect(serviceReadinessView({ vin: VIN, homeStore: 'Howell', serviceIntake: { first_arrival_date: '2026-08-30' } }, row, manager)).toMatchObject({

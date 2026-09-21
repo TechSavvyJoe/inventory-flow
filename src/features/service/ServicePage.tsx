@@ -26,7 +26,7 @@ const STATUS_HELP: Record<ServiceReadinessStatus, string> = {
   unknown: 'Service status has not been confirmed. A manager can check each vehicle and record the result.',
   needs_service: 'Vehicles waiting for service or still needing a manager service review. Ready is never assumed.',
   in_service: 'Service has started. Record completion when the work is finished.',
-  serviced: 'Ready inventory confirmed by a manager. Completion dates appear when service work was recorded; holds still apply.',
+  serviced: 'Ready from a manager-recorded completion or a qualifying AutoCheck inspection after intake. Holds still apply.',
 }
 const EMPTY_TITLES: Record<ServiceReadinessStatus, string> = {
   unknown: 'No vehicles need a service review', needs_service: 'No vehicles waiting for service',

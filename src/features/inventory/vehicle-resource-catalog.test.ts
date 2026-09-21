@@ -111,6 +111,15 @@ describe('rich vehicle resource catalog', () => {
     expect(history.facts).toContain('Odometer Check: No Issue · Last reported odometer: 9,192 (09/10/2026)');
   });
 
+  it('shows only the dated generic AutoCheck inspection evidence, never its location or provider detail', () => {
+    const history = resource({ autoCheckReport: {
+      dataState: 'current', recentInspection: { date: '2026-09-10', types: ['Vehicle Inspected', 'Multiple Point Vehicle Inspection'] },
+    } }, 'autocheck');
+    expect(history.facts).toContain('AutoCheck inspection 09/10/2026 · Vehicle Inspected · Multiple Point Vehicle Inspection');
+    expect(history.summaryRows).toContainEqual({ label: 'Recent inspection', values: ['09/10/2026'], detail: 'Vehicle Inspected · Multiple Point Vehicle Inspection' });
+    expect(history.scanFacts).toContain('Inspected 09/10/2026');
+  });
+
   it('never deduplicates a different historical odometer or suppresses its discrepancy warning', () => {
     const history = resource({autoCheckReport:{dataState:'current',lastReportedOdometer:9192,checks:[{label:'Odometer',status:'No Issue',detail:'Odometer discrepancy reported; Last reported odometer: 100,000 (09/01/2026)'}]}},'autocheck');
     expect(history.summaryFacts![0]).toContain('Odometer discrepancy reported');

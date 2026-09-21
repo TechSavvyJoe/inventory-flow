@@ -447,6 +447,27 @@ function boundedStringArray(value, label, { limit = 120, itemMax = 500 } = {}) {
   return result
 }
 
+const AUTOCHECK_INSPECTION_TYPES = new Set([
+  'Vehicle Serviced or Inspected',
+  'Multiple Point Vehicle Inspection',
+  'Multi-Point Vehicle Inspection',
+  'Certified Pre-Owned Inspection',
+  'Pre-Purchase Inspection',
+  'Safety Inspection',
+  'Vehicle Inspected',
+])
+
+function validatedAutoCheckRecentInspection(value, vin, label = 'AutoCheck') {
+  if (value === undefined || value === null) return undefined
+  assertValid(isPlainObject(value), `${label} recent inspection must be an object`, { vin })
+  assertOnlyKeys(value, new Set(['date', 'types']), `${label} recent inspection`, { vin })
+  const date = optionalBoundedText(value.date, `${label} recent inspection date`, { max: 10 })
+  assertValid(date && /^\d{4}-\d{2}-\d{2}$/.test(date) && new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) === date, `${label} recent inspection date must be an ISO day`, { vin })
+  const types = boundedStringArray(value.types, `${label} recent inspection types`, { limit: 8, itemMax: 80 })
+  assertValid(types.length > 0 && types.every((type) => AUTOCHECK_INSPECTION_TYPES.has(type)), `${label} recent inspection type is not an approved generic inspection label`, { vin })
+  return { date, types }
+}
+
 function validatedAutoCheckReport(value, vin, publicRecord) {
   if (value === undefined || value === null) return undefined
   assertValid(isPlainObject(value), 'AutoCheck cache record must be an object', { vin })
@@ -492,6 +513,8 @@ function validatedAutoCheckReport(value, vin, publicRecord) {
     if (number !== undefined) result[key] = number
   }
   if (normalizedChecks.length) result.checks = normalizedChecks
+  const recentInspection = validatedAutoCheckRecentInspection(value.recentInspection, vin)
+  if (recentInspection) result.recentInspection = recentInspection
   return result
 }
 
@@ -718,6 +741,7 @@ function validatedExternalAutoCheck(value, vin) {
       'assemblyCountry',
       'estimatedInServiceDate',
       'checks',
+      'recentInspection',
     ]),
     'External AutoCheck record',
     { vin },
@@ -771,6 +795,8 @@ function validatedExternalAutoCheck(value, vin) {
       return row
     })
   }
+  const recentInspection = validatedAutoCheckRecentInspection(value.recentInspection, vin, 'External AutoCheck')
+  if (recentInspection) result.recentInspection = recentInspection
   return result
 }
 

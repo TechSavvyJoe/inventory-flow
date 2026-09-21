@@ -8,6 +8,38 @@ export const SERVICE_EVENT_COLUMNS = Object.freeze([
   'updated_at', 'actor', 'actor_user_id', 'actor_role', 'store_id', 'input_hash', 'idempotency_key',
 ])
 
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
+const AUTOCHECK_INSPECTION_TYPES = new Set([
+  'Vehicle Serviced or Inspected',
+  'Multiple Point Vehicle Inspection',
+  'Multi-Point Vehicle Inspection',
+  'Certified Pre-Owned Inspection',
+  'Pre-Purchase Inspection',
+  'Safety Inspection',
+  'Vehicle Inspected',
+])
+
+function isoDay(value) {
+  if (typeof value !== 'string' || !ISO_DAY.test(value)) return null
+  const date = new Date(`${value}T12:00:00Z`)
+  return Number.isNaN(date.valueOf()) || date.toISOString().slice(0, 10) !== value ? null : value
+}
+
+function autoCheckReadinessEvidence(vehicle) {
+  if (/^(ford|lincoln)$/i.test(String(vehicle.make ?? '').trim())) return null
+  const report = vehicle.autoCheckReport
+  if (report?.dataState !== 'current') return null
+  // The durable first-arrival ledger wins when available. Inventory date is a
+  // legacy fallback for units that predate that ledger.
+  const intakeDate = isoDay(vehicle.serviceIntake?.first_arrival_date) ?? isoDay(vehicle.inventoryDate)
+  const inspectionDate = isoDay(report.recentInspection?.date)
+  const types = Array.isArray(report.recentInspection?.types)
+    ? report.recentInspection.types.filter((value) => AUTOCHECK_INSPECTION_TYPES.has(value)).slice(0, 8)
+    : []
+  if (!intakeDate || !inspectionDate || inspectionDate < intakeDate || !types.length) return null
+  return { source: 'autocheck', inspectionDate, types }
+}
+
 export function serviceStore(vehicle) {
   if (vehicle.movement?.locationConfidence === 'verified' && STORE_NAMES.includes(vehicle.movement.currentLocation)) {
     return vehicle.movement.currentLocation
@@ -21,18 +53,21 @@ export function serviceReadinessView(vehicle, row, context, { includeNotes = fal
   const store = serviceStore(vehicle)
   const canManage = context.role === 'group_manager' || (context.role === 'manager' && store === context.store)
   const recordedStatus = SERVICE_STATUSES.includes(row?.status) ? row.status : null
+  // A current, exact-VIN AutoCheck inspection after intake is useful evidence
+  // for non-Ford inventory. It never replaces a manager's recorded decision.
+  const readinessEvidence = recordedStatus ? null : autoCheckReadinessEvidence(vehicle)
   return {
     vin: vehicle.vin,
     // Being listed, having no hold, or having an old warranty start date does
     // not establish that this vehicle finished the store's current service work.
     // Unconfirmed inventory shares the Waiting queue until a manager records it.
-    status: recordedStatus ?? 'needs_service',
-    readinessBasis: row ? (recordedStatus ? 'manager_updated' : 'legacy_review') : vehicle.serviceIntake ? 'new_arrival' : 'unconfirmed',
+    status: recordedStatus ?? (readinessEvidence ? 'serviced' : 'needs_service'),
+    readinessBasis: recordedStatus ? 'manager_updated' : readinessEvidence ? 'autocheck_post_intake_inspection' : row ? 'legacy_review' : vehicle.serviceIntake ? 'new_arrival' : 'unconfirmed',
     version: row?.version ?? 0,
-    serviceEnteredAt: row?.service_entered_at ?? null, completedAt: row?.completed_at ?? null,
+    serviceEnteredAt: row?.service_entered_at ?? null, completedAt: row?.completed_at ?? readinessEvidence?.inspectionDate ?? null,
     updatedAt: row?.updated_at ?? null, updatedBy: row?.actor ?? null,
     updatedByRole: row?.actor_role ?? null, updatedAtStore: row?.store_id ?? null,
-    store, canManage,
+    store, canManage, readinessEvidence,
     ...(includeNotes && context.canViewPrivateEvidence ? { notes: row?.notes ?? null } : {}),
   }
 }

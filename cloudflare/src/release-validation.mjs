@@ -217,7 +217,7 @@ function validateExternalAutoCheck(value, vin) {
   onlyKeys(value, new Set([
     'dataState', 'url', 'sourceLabel', 'capturedAt', 'reportRunAt', 'score', 'scoreRangeLow',
     'scoreRangeHigh', 'usage', 'ownerCount', 'lastReportedOdometer', 'lastReportedOdometerDate',
-    'vehicleClass', 'assemblyCountry', 'estimatedInServiceDate', 'checks',
+    'vehicleClass', 'assemblyCountry', 'estimatedInServiceDate', 'checks', 'recentInspection',
   ]), 'external AutoCheck record')
   ensure(RESOURCE_DATA_STATES.has(value.dataState), 'external AutoCheck data state is invalid')
   ensure(canonicalExternalAutoCheckUrl(value.url, vin), 'external AutoCheck URL is not an approved exact-VIN HTTPS resource')
@@ -239,7 +239,33 @@ function validateExternalAutoCheck(value, vin) {
     optionalText(check.status, 'external AutoCheck check status', 200)
     optionalText(check.detail, 'external AutoCheck check detail', 500)
   }
+  if (value.recentInspection !== undefined && value.recentInspection !== null) validateAutoCheckRecentInspection(value.recentInspection)
   return { factoryEquipment: 0, externalAutoCheck: 1 }
+}
+
+const AUTOCHECK_INSPECTION_TYPES = new Set([
+  'Vehicle Serviced or Inspected',
+  'Multiple Point Vehicle Inspection',
+  'Multi-Point Vehicle Inspection',
+  'Certified Pre-Owned Inspection',
+  'Pre-Purchase Inspection',
+  'Safety Inspection',
+  'Vehicle Inspected',
+])
+
+function validateAutoCheckRecentInspection(value) {
+  ensure(object(value), 'external AutoCheck recent inspection must be an object')
+  onlyKeys(value, new Set(['date', 'types']), 'external AutoCheck recent inspection')
+  const date = optionalText(value.date, 'external AutoCheck recent inspection date', 10)
+  ensure(date && /^\d{4}-\d{2}-\d{2}$/.test(date) && new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) === date, 'external AutoCheck recent inspection date must be an ISO day')
+  ensure(Array.isArray(value.types) && value.types.length > 0 && value.types.length <= 8, 'external AutoCheck recent inspection types must be a bounded array')
+  const seen = new Set()
+  for (const item of value.types) {
+    const type = optionalText(item, 'external AutoCheck recent inspection type', 80)
+    ensure(type && AUTOCHECK_INSPECTION_TYPES.has(type), 'external AutoCheck recent inspection type is not an approved generic inspection label')
+    ensure(!seen.has(type), 'external AutoCheck recent inspection types contain a duplicate item')
+    seen.add(type)
+  }
 }
 
 const SERVICE_HISTORY_DATE_PATTERN = /^(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])\/\d{4}$/

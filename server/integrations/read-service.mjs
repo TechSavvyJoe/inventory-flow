@@ -87,6 +87,9 @@ function photoUrl(value, vin) {
 
 function autoCheck(value) {
   if (!value || typeof value !== 'object') return null
+  const recentInspection = value.recentInspection && typeof value.recentInspection === 'object' && !Array.isArray(value.recentInspection)
+    ? { date: text(value.recentInspection.date), types: array(value.recentInspection.types).map(text).filter(Boolean).slice(0, 8) }
+    : null
   return {
     dataState: freshness(value.dataState),
     reportRunAt: text(value.reportRunAt),
@@ -95,6 +98,7 @@ function autoCheck(value) {
     lastReportedOdometer: number(value.lastReportedOdometer), lastReportedOdometerDate: text(value.lastReportedOdometerDate),
     vehicleClass: text(value.vehicleClass), assemblyCountry: text(value.assemblyCountry), estimatedInServiceDate: text(value.estimatedInServiceDate),
     checks: array(value.checks).slice(0, 2000).map(check => ({ label: text(check?.label), status: text(check?.status), detail: text(check?.detail) })),
+    ...(recentInspection?.date && recentInspection.types.length ? { recentInspection } : {}),
   }
 }
 

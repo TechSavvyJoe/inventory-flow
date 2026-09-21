@@ -77,6 +77,11 @@ export interface AutoCheckReportRecord {
   vehicleClass?: string | null
   assemblyCountry?: string | null
   estimatedInServiceDate?: string | null
+  /** Latest generic inspection event from the exact-VIN AutoCheck report. */
+  recentInspection?: {
+    date: string
+    types: string[]
+  } | null
   checks?: Array<{
     label: string
     status?: string | null
@@ -413,7 +418,7 @@ export type ServiceReadinessStatus = ServiceWorkflowStatus | 'unknown'
 export interface ServiceReadiness {
   vin: string
   status: ServiceReadinessStatus
-  readinessBasis?: 'unconfirmed' | 'existing_inventory' | 'new_arrival' | 'manager_updated' | 'legacy_review'
+  readinessBasis?: 'unconfirmed' | 'existing_inventory' | 'new_arrival' | 'manager_updated' | 'legacy_review' | 'autocheck_post_intake_inspection'
   version: number
   serviceEnteredAt: string | null
   completedAt: string | null
@@ -423,6 +428,12 @@ export interface ServiceReadiness {
   updatedAtStore: StoreName | null
   store: StoreName | null
   canManage: boolean
+  /** Read-only source evidence; never creates a manager service event. */
+  readinessEvidence?: {
+    source: 'autocheck'
+    inspectionDate: string
+    types: string[]
+  } | null
   notes?: string | null
 }
 

@@ -693,6 +693,7 @@ describe('verified daily source importer', () => {
             scoreRangeHigh: 92,
             usage: 'Personal',
             ownerCount: 2,
+            recentInspection: { date: '2026-08-30', types: ['Vehicle Inspected'] },
             lastReportedOdometer: 12345,
             lastReportedOdometerDate: '2026-02-03',
             vehicleClass: 'CUV - Small',
@@ -738,6 +739,7 @@ describe('verified daily source importer', () => {
     expect(merged.recordsByVin[vin].autoCheckReport).toMatchObject({
       score: 91,
       ownerCount: 2,
+      recentInspection: { date: '2026-08-30', types: ['Vehicle Inspected'] },
       dataState: 'current',
     })
     expect(merged.recordsByVin[vin].autoCheckReport.validated_vin).toBeUndefined()

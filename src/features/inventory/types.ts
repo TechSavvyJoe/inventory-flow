@@ -73,6 +73,10 @@ export interface AutoCheckResource {
   vehicleClass?: string | null;
   assemblyCountry?: string | null;
   estimatedInServiceDate?: string | null;
+  recentInspection?: {
+    date: string;
+    types: string[];
+  } | null;
   checks?: Array<{
     label: string;
     status?: string | null;
