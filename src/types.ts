@@ -164,6 +164,48 @@ export interface FordOasisWarrantyCoverageRecord {
   description?: string | null
 }
 
+export interface FordServiceHistoryInspectionRecord {
+  status: 'confirmed' | 'not_identified'
+  type?: string | null
+}
+
+export interface FordServiceHistoryPartRecord {
+  description: string
+  quantity?: number | null
+  partNumber?: string | null
+}
+
+export interface FordServiceHistoryLaborRecord {
+  code: string
+  description: string
+}
+
+export interface FordServiceRepairOrderRecord {
+  repairOrderNumber: string
+  dealerCode: string
+  openDate: string
+  closeDate: string
+  odometer?: number | null
+  detailComplete: boolean
+  inspection: FordServiceHistoryInspectionRecord
+  parts: FordServiceHistoryPartRecord[]
+  laborOperations: FordServiceHistoryLaborRecord[]
+  services: string[]
+  summary?: string | null
+}
+
+export interface FordServiceHistoryRecord {
+  dataState: SourceFreshness
+  checkedAt: string
+  sourceLabel?: string | null
+  historyCaptured: boolean
+  repairOrderCount: number
+  detailScanCount: number
+  inspectionSearchStatus: 'confirmed' | 'not_identified' | 'incomplete'
+  latestRepairOrder?: FordServiceRepairOrderRecord | null
+  recentInspection?: FordServiceRepairOrderRecord | null
+}
+
 /**
  * Read-only Ford OASIS vehicle report facts for the exact VIN. Dates are the
  * strings OASIS printed and are never re-parsed. No owner data is carried.
@@ -198,6 +240,7 @@ export interface FordOasisRecord {
   openActionsCaptured?: boolean
   warrantyCoverages?: FordOasisWarrantyCoverageRecord[]
   extendedCoverageExpirations?: string[]
+  serviceHistory?: FordServiceHistoryRecord | null
 }
 
 export type WarrantyCheckCoverageStatus = 'ACTIVE' | 'EXPIRED' | 'N/A'

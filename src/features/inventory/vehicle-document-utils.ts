@@ -19,6 +19,8 @@ const FORD_INVOICE_BASE_URL =
   "https://fordvisions.dealerconnection.com/vinv/GetInvoice.aspx";
 const FORD_OASIS_BASE_URL =
   "https://www.fordtechservice.dealerconnection.com/oasis/Index";
+const FORD_SERVICE_HISTORY_BASE_URL =
+  "https://www.fordtechservice.dealerconnection.com/VehicleService/Index";
 
 export type VehicleDocumentKind = "autocheck" | "window-sticker";
 export type AutoCheckResultTone = "clear" | "review" | "unknown";
@@ -66,6 +68,15 @@ export function fordOasisUrl(vinValue: string | null | undefined): string | null
   if (!vin) return null;
   const url = new URL(FORD_OASIS_BASE_URL);
   url.searchParams.set("vin", vin);
+  return url.href;
+}
+
+/** Opens the read-only Ford PTS Retail Service Repair History for an exact VIN. */
+export function fordServiceHistoryUrl(vinValue: string | null | undefined): string | null {
+  const vin = normalizedVin(vinValue);
+  if (!vin) return null;
+  const url = new URL(FORD_SERVICE_HISTORY_BASE_URL);
+  url.searchParams.set("VIN", vin);
   return url.href;
 }
 

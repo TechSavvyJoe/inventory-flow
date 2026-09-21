@@ -56,6 +56,9 @@
 #inventory-vehicle-workspace .inventory-vehicle-document__recalls small { margin-top:2px; font-size:12px; }
 #inventory-vehicle-workspace .inventory-vehicle-document__recall-list li { padding:7px 0; }
 #inventory-vehicle-workspace .inventory-vehicle-document--oasis .vdp-record-section ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 16px; }
+#inventory-vehicle-workspace .vdp-service-history-facts { margin:0 0 10px; }
+#inventory-vehicle-workspace .vdp-service-history-summary { margin:0 0 8px; color:var(--v10-ink); font-weight:600; }
+#inventory-vehicle-workspace .vdp-service-history-inspection { margin:8px 0 0; padding:8px 10px; border-left:3px solid var(--ifx-success); background:var(--ifx-success-surface); color:var(--v10-ink); }
 #inventory-vehicle-workspace .vdp-record-equipment-groups { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
 #inventory-vehicle-workspace .inventory-vehicle-document--sticker .vdp-record-section > ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 16px; }
 #inventory-vehicle-workspace .vdp-record-source-details { margin:0; border-top:1px solid var(--v10-border-soft); }

@@ -780,6 +780,115 @@ const OASIS_VEHICLE_TEXT_FIELDS = [
   'syncVersion', 'fuelType',
 ]
 
+const SERVICE_HISTORY_DATE_PATTERN = /^(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])\/\d{4}$/
+const SERVICE_HISTORY_SEARCH_STATES = new Set(['confirmed', 'not_identified', 'incomplete'])
+const SERVICE_HISTORY_INSPECTION_STATES = new Set(['confirmed', 'not_identified'])
+
+function validatedServiceHistoryInspection(value, vin, label) {
+  assertValid(value && typeof value === 'object' && !Array.isArray(value), `${label} inspection is required`, { vin })
+  assertOnlyKeys(value, new Set(['status', 'type']), `${label} inspection`, { vin })
+  const status = optionalBoundedText(value.status, `${label} inspection status`, { max: 40 })
+  assertValid(SERVICE_HISTORY_INSPECTION_STATES.has(status), `${label} inspection status is invalid`, { vin })
+  const result = { status }
+  const type = optionalBoundedText(value.type, `${label} inspection type`, { max: 160 })
+  assertValid(status !== 'confirmed' || type, `${label} confirmed inspection requires a type`, { vin })
+  assertValid(!type || !containsForeignOasisText(type), `${label} inspection type contains identity material`, { vin })
+  if (type) result.type = type
+  return result
+}
+
+function validatedServiceRepairOrder(value, vin, label) {
+  assertValid(value && typeof value === 'object' && !Array.isArray(value), `${label} must be an object`, { vin })
+  assertOnlyKeys(value, new Set([
+    'repairOrderNumber', 'dealerCode', 'openDate', 'closeDate', 'odometer', 'detailComplete',
+    'inspection', 'parts', 'laborOperations', 'services', 'summary',
+  ]), label, { vin })
+  const repairOrderNumber = optionalBoundedText(value.repairOrderNumber, `${label} number`, { max: 24 })
+  const dealerCode = optionalBoundedText(value.dealerCode, `${label} dealer code`, { max: 12 })
+  const openDate = optionalBoundedText(value.openDate, `${label} open date`, { max: 20 })
+  const closeDate = optionalBoundedText(value.closeDate, `${label} close date`, { max: 20 })
+  assertValid(/^\d{1,24}$/.test(repairOrderNumber || ''), `${label} number is invalid`, { vin })
+  assertValid(/^[A-Z0-9]{1,12}$/.test(dealerCode || ''), `${label} dealer code is invalid`, { vin })
+  assertValid(SERVICE_HISTORY_DATE_PATTERN.test(openDate || ''), `${label} open date is invalid`, { vin })
+  assertValid(SERVICE_HISTORY_DATE_PATTERN.test(closeDate || ''), `${label} close date is invalid`, { vin })
+  assertValid(typeof value.detailComplete === 'boolean', `${label} detailComplete must be a boolean`, { vin })
+  const result = { repairOrderNumber, dealerCode, openDate, closeDate, detailComplete: value.detailComplete }
+  const odometer = optionalBoundedInteger(value.odometer, `${label} odometer`, { min: 0, max: 20_000_000 })
+  if (odometer !== undefined) result.odometer = odometer
+  result.inspection = validatedServiceHistoryInspection(value.inspection, vin, label)
+
+  const parts = value.parts ?? []
+  assertValid(Array.isArray(parts) && parts.length <= 80, `${label} parts must be a bounded array`, { vin })
+  result.parts = parts.map((part) => {
+    assertOnlyKeys(part, new Set(['description', 'quantity', 'partNumber']), `${label} part`, { vin })
+    const description = optionalBoundedText(part.description, `${label} part description`, { max: 300 })
+    assertValid(description && !containsForeignOasisText(description), `${label} part description is invalid`, { vin })
+    const row = { description }
+    const quantity = optionalBoundedInteger(part.quantity, `${label} part quantity`, { min: 0, max: 999 })
+    const partNumber = optionalBoundedText(part.partNumber, `${label} part number`, { max: 120 })
+    if (quantity !== undefined) row.quantity = quantity
+    if (partNumber) row.partNumber = partNumber
+    return row
+  })
+
+  const labor = value.laborOperations ?? []
+  assertValid(Array.isArray(labor) && labor.length <= 80, `${label} labor operations must be a bounded array`, { vin })
+  result.laborOperations = labor.map((operation) => {
+    assertOnlyKeys(operation, new Set(['code', 'description']), `${label} labor operation`, { vin })
+    const code = optionalBoundedText(operation.code, `${label} labor code`, { max: 40 })
+    const description = optionalBoundedText(operation.description, `${label} labor description`, { max: 500 })
+    assertValid(code && /^[A-Z0-9./-]{1,40}$/i.test(code), `${label} labor code is invalid`, { vin })
+    assertValid(description && !containsForeignOasisText(description), `${label} labor description is invalid`, { vin })
+    return { code, description }
+  })
+
+  const services = value.services ?? []
+  assertValid(Array.isArray(services) && services.length <= 20, `${label} services must be a bounded array`, { vin })
+  result.services = services.map((service) => {
+    const text = optionalBoundedText(service, `${label} service`, { max: 160 })
+    assertValid(text && !containsForeignOasisText(text), `${label} service is invalid`, { vin })
+    return text
+  })
+  const summary = optionalBoundedText(value.summary, `${label} summary`, { max: 1000 })
+  assertValid(!summary || !containsForeignOasisText(summary), `${label} summary contains identity material`, { vin })
+  if (summary) result.summary = summary
+  return result
+}
+
+function validatedServiceHistory(value, vin) {
+  assertValid(value && typeof value === 'object' && !Array.isArray(value), 'Ford service history must be an object', { vin })
+  assertOnlyKeys(value, new Set([
+    'dataState', 'checkedAt', 'sourceLabel', 'historyCaptured', 'repairOrderCount', 'detailScanCount',
+    'inspectionSearchStatus', 'latestRepairOrder', 'recentInspection',
+  ]), 'Ford service history', { vin })
+  assertValid(RESOURCE_DATA_STATES.has(value.dataState), 'Ford service history data state is invalid', { vin })
+  const checkedAt = optionalIsoTimestamp(value.checkedAt, 'Ford service history checkedAt')
+  assertValid(checkedAt, 'Ford service history checkedAt is required', { vin })
+  assertValid(typeof value.historyCaptured === 'boolean', 'Ford service history historyCaptured must be a boolean', { vin })
+  const repairOrderCount = optionalBoundedInteger(value.repairOrderCount, 'Ford service history repairOrderCount', { min: 0, max: 20_000 })
+  const detailScanCount = optionalBoundedInteger(value.detailScanCount, 'Ford service history detailScanCount', { min: 0, max: 20 })
+  assertValid(repairOrderCount !== undefined && detailScanCount !== undefined, 'Ford service history counts are required', { vin })
+  const inspectionSearchStatus = optionalBoundedText(value.inspectionSearchStatus, 'Ford service history inspectionSearchStatus', { max: 40 })
+  assertValid(SERVICE_HISTORY_SEARCH_STATES.has(inspectionSearchStatus), 'Ford service history inspection search status is invalid', { vin })
+  const result = {
+    dataState: value.dataState,
+    checkedAt,
+    historyCaptured: value.historyCaptured,
+    repairOrderCount,
+    detailScanCount,
+    inspectionSearchStatus,
+  }
+  const sourceLabel = optionalBoundedText(value.sourceLabel, 'Ford service history sourceLabel', { max: 160 })
+  if (sourceLabel) result.sourceLabel = sourceLabel
+  if (value.latestRepairOrder != null) result.latestRepairOrder = validatedServiceRepairOrder(value.latestRepairOrder, vin, 'Latest Ford repair order')
+  assertValid(repairOrderCount === 0 || result.latestRepairOrder, 'Ford service history with repair orders requires the latest repair order', { vin })
+  if (value.recentInspection != null) {
+    result.recentInspection = validatedServiceRepairOrder(value.recentInspection, vin, 'Recent Ford inspection repair order')
+    assertValid(result.recentInspection.inspection.status === 'confirmed', 'Recent Ford inspection repair order must contain confirmed inspection evidence', { vin })
+  }
+  return result
+}
+
 /**
  * Ford OASIS vehicle report facts captured read-only from FMCDealer for an
  * exact VIN. Dates stay exactly as OASIS prints them. The capture never
@@ -804,6 +913,7 @@ function validatedFordOasis(value, vin) {
       'openActionsCaptured',
       'warrantyCoverages',
       'extendedCoverageExpirations',
+      'serviceHistory',
     ]),
     'Ford OASIS record',
     { vin },
@@ -902,6 +1012,7 @@ function validatedFordOasis(value, vin) {
     assertValid(text && isOasisDate(text), 'Ford OASIS extended coverage expiration is not a recognized OASIS date', { vin })
     return text
   })
+  if (value.serviceHistory != null) result.serviceHistory = validatedServiceHistory(value.serviceHistory, vin)
   return result
 }
 

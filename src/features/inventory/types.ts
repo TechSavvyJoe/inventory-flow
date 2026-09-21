@@ -159,6 +159,49 @@ export interface FordOasisWarrantyCoverage {
   description?: string | null;
 }
 
+export interface FordServiceHistoryInspection {
+  status: "confirmed" | "not_identified";
+  type?: string | null;
+}
+
+export interface FordServiceHistoryPart {
+  description: string;
+  quantity?: number | null;
+  partNumber?: string | null;
+}
+
+export interface FordServiceHistoryLabor {
+  code: string;
+  description: string;
+}
+
+export interface FordServiceRepairOrder {
+  repairOrderNumber: string;
+  dealerCode: string;
+  openDate: string;
+  closeDate: string;
+  odometer?: number | null;
+  detailComplete: boolean;
+  inspection: FordServiceHistoryInspection;
+  parts: FordServiceHistoryPart[];
+  laborOperations: FordServiceHistoryLabor[];
+  services: string[];
+  summary?: string | null;
+}
+
+export interface FordServiceHistory {
+  /** Raw API records may still carry the release spelling before adapter normalization. */
+  dataState: SourceDataState | "stale_unverified" | "unknown";
+  checkedAt: string;
+  sourceLabel?: string | null;
+  historyCaptured: boolean;
+  repairOrderCount: number;
+  detailScanCount: number;
+  inspectionSearchStatus: "confirmed" | "not_identified" | "incomplete";
+  latestRepairOrder?: FordServiceRepairOrder | null;
+  recentInspection?: FordServiceRepairOrder | null;
+}
+
 /**
  * Read-only Ford OASIS vehicle report facts. Dates are shown exactly as OASIS
  * printed them. Open field service actions are reference evidence and never a
@@ -193,6 +236,7 @@ export interface FordOasisResource {
   openActionsCaptured?: boolean;
   warrantyCoverages: FordOasisWarrantyCoverage[];
   extendedCoverageExpirations: string[];
+  serviceHistory?: FordServiceHistory | null;
 }
 
 export type WarrantyCheckCoverageStatus = "ACTIVE" | "EXPIRED" | "N/A";

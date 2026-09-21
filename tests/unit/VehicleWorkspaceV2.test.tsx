@@ -27,6 +27,35 @@ describe('Premium vehicle workspace shares the operational record', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Records' }))
     expect(screen.getByRole('tabpanel', { name: 'Records' })).toHaveTextContent('Records don’t confirm availability')
   })
+  it('shows the latest Ford service dates, inspection, and work summary without implying availability', () => {
+    const vehicle = premiumVehicle({
+      fordOasis: {
+        dataState: 'current', openFieldServiceActions: [], openActionsCaptured: true,
+        warrantyCoverages: [], extendedCoverageExpirations: [],
+        serviceHistory: {
+          dataState: 'current', checkedAt: '2026-09-21T20:20:00.000Z', historyCaptured: true,
+          repairOrderCount: 3, detailScanCount: 1, inspectionSearchStatus: 'confirmed',
+          latestRepairOrder: {
+            repairOrderNumber: '0000000000317147', dealerCode: '07317', openDate: '08/14/2026', closeDate: '09/11/2026', odometer: 121110,
+            detailComplete: true, inspection: { status: 'confirmed', type: 'Certified Blue Oval inspection' },
+            parts: [], laborOperations: [], services: ['Oil and filter service', 'Wiper blades'],
+            summary: 'Certified Blue Oval inspection; oil and filter service; wiper blades.',
+          },
+        },
+      },
+    })
+    showPremiumVehicle(vehicle)
+    fireEvent.click(screen.getByRole('tab', { name: 'Records' }))
+    const panel = screen.getByRole('tabpanel', { name: 'Records' })
+    expect(panel).toHaveTextContent('Latest Ford dealer service')
+    expect(panel).toHaveTextContent('In service')
+    expect(panel).toHaveTextContent('08/14/2026')
+    expect(panel).toHaveTextContent('Ready')
+    expect(panel).toHaveTextContent('09/11/2026')
+    expect(panel).toHaveTextContent('Certified Blue Oval inspection')
+    expect(panel).toHaveTextContent('Oil and filter service')
+    expect(panel).toHaveTextContent('Records don’t confirm availability')
+  })
   it('keeps direct move actions connected to the supplied authorized intent', () => {
     const move = vi.fn()
     const vehicle = premiumVehicle()

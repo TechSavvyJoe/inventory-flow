@@ -73,6 +73,7 @@ import {
   autoCheckResultTone,
   fordInvoiceUrl,
   fordOasisUrl,
+  fordServiceHistoryUrl,
   officialVehicleDocumentUrl,
   vautoFactoryEquipmentUrl,
 } from "./vehicle-document-utils";
@@ -605,6 +606,10 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const stickerUrl = officialVehicleDocumentUrl(sticker?.url, "window-sticker", vehicle.publicListing.listingUrl);
   const factoryEquipmentUrl = vautoFactoryEquipmentUrl(factoryEquipment?.url);
   const oasisUrl = /^(ford|lincoln)$/i.test(vehicle.make.trim()) ? fordOasisUrl(vehicle.vin) : null;
+  const serviceHistoryUrl = /^(ford|lincoln)$/i.test(vehicle.make.trim()) ? fordServiceHistoryUrl(vehicle.vin) : null;
+  const serviceHistory = fordOasis?.serviceHistory ?? null;
+  const latestService = serviceHistory?.latestRepairOrder ?? null;
+  const recentInspection = serviceHistory?.recentInspection ?? null;
   const openRecallCount = fordOasis?.openFieldServiceActions.length ?? 0;
   const hasCapturedRecallResult = hasCapturedOasisActionResult(fordOasis);
   // Format captured calendar dates consistently without deriving coverage eligibility.
@@ -769,6 +774,48 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             </ul>
           ) : null}
 
+          {serviceHistory ? (
+            <CapturedRecordSection
+              title="Latest Ford dealer service"
+              count={serviceHistory.repairOrderCount ? countLabel(serviceHistory.repairOrderCount, "repair order") : "No repair orders"}
+            >
+              {latestService ? <>
+                <dl className="inventory-vehicle-document__facts vdp-service-history-facts">
+                  <Fact label="In service">{formatDate(latestService.openDate)}</Fact>
+                  <Fact label="Ready">{formatDate(latestService.closeDate)}</Fact>
+                  {latestService.odometer != null ? <Fact label="Odometer">{formatMileage(latestService.odometer)}</Fact> : null}
+                  <Fact label="Inspection">
+                    {latestService.inspection.status === "confirmed"
+                      ? latestService.inspection.type || "Inspection confirmed"
+                      : serviceHistory.inspectionSearchStatus === "incomplete"
+                        ? "Inspection check incomplete"
+                        : `Not identified in ${countLabel(serviceHistory.detailScanCount, "recent repair order")} checked`}
+                  </Fact>
+                </dl>
+                {latestService.summary ? <p className="vdp-service-history-summary">{sourceDistanceText(sourceDisplayText(latestService.summary))}</p> : null}
+                {latestService.services.length ? <ul aria-label="Latest Ford service work summary">
+                  {latestService.services.map((service) => <li key={service}><span><strong>{service}</strong></span></li>)}
+                </ul> : null}
+                {recentInspection && recentInspection.repairOrderNumber !== latestService.repairOrderNumber ? (
+                  <p className="vdp-service-history-inspection">
+                    <strong>{recentInspection.inspection.type || "Inspection confirmed"}</strong>
+                    {` · ${formatDate(recentInspection.openDate)} to ${formatDate(recentInspection.closeDate)}`}
+                  </p>
+                ) : null}
+              </> : (
+                <p className="inventory-vehicle-document__empty">
+                  {serviceHistory.historyCaptured ? "No Ford dealer repair orders were found for this VIN." : "Ford service history could not be verified."}
+                </p>
+              )}
+              <RecordSourceAction
+                href={serviceHistoryUrl}
+                label="Open Ford service history"
+                accessibleLabel={`Open Ford retail service repair history for ${vehicleDisplayName(vehicle)} in a new tab`}
+                unavailableLabel="Ford service history unavailable"
+              />
+            </CapturedRecordSection>
+          ) : null}
+
           {fordOasisFacts.length ? (
             <dl className="inventory-vehicle-document__facts">
               {fordOasisFacts.map((fact) => (
@@ -806,7 +853,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             </CapturedRecordSection>
           ) : null}
 
-          {!fordOasisFacts.length && !openRecallCount && !fordOasis.warrantyCoverages.length && !fordOasis.extendedCoverageExpirations.length ? (
+          {!fordOasisFacts.length && !openRecallCount && !fordOasis.warrantyCoverages.length && !fordOasis.extendedCoverageExpirations.length && !serviceHistory ? (
             <p className="inventory-vehicle-document__empty">No OASIS details are available. Open OASIS for the current report.</p>
           ) : null}
           <RecordSourceDetails><p>{fordOasis.capturedAt ? `Captured ${formatDateTime(fordOasis.capturedAt)}. ` : ""}Dealer login may be required. The lookup opens OASIS for this VIN; it is not a saved copy of the report.</p></RecordSourceDetails>

@@ -149,6 +149,18 @@ function fordOasisFixture() {
     openFieldServiceActions: [{ code: '00T01', description: 'Synthetic field service action' }],
     warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain' }],
     extendedCoverageExpirations: ['01/01/2029'],
+    serviceHistory: {
+      dataState: 'current', checkedAt: '2026-09-12T16:00:00.000Z', historyCaptured: true,
+      repairOrderCount: 1, detailScanCount: 1, inspectionSearchStatus: 'confirmed',
+      latestRepairOrder: {
+        repairOrderNumber: '0000000000317147', dealerCode: '07317', openDate: '08/14/2026', closeDate: '09/11/2026', odometer: 121110,
+        detailComplete: true, inspection: { status: 'confirmed', type: 'Certified Blue Oval inspection' },
+        parts: [{ description: 'BLADE ASY - WIPER', quantity: 1, partNumber: 'FT4Z-17528-BA' }],
+        laborOperations: [{ code: 'CPOUCI', description: 'UCI car inspection with Certified Blue Oval inspection' }],
+        services: ['Certified Blue Oval inspection', 'Wiper blades'],
+        summary: 'Certified Blue Oval inspection; Wiper blades.',
+      },
+    },
   }
 }
 
@@ -470,6 +482,10 @@ describe('portable cloud release validation', () => {
     const ownerName = structuredClone(bundle)
     ownerName.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.ownerName = 'Jane Example'
     expect(() => validateReleaseBundle(ownerName)).toThrow(/Ford OASIS record contains unsupported fields/)
+
+    const serviceOwnerName = structuredClone(bundle)
+    serviceOwnerName.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.serviceHistory.latestRepairOrder.customerName = 'Jane Example'
+    expect(() => validateReleaseBundle(serviceOwnerName)).toThrow(/Latest Ford repair order contains unsupported fields/)
 
     const badCode = structuredClone(bundle)
     badCode.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.openFieldServiceActions = [{ code: 'RECALL-1' }]

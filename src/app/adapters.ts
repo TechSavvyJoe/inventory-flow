@@ -99,6 +99,39 @@ function factoryEquipmentResource(
   }
 }
 
+function fordServiceRepairOrder(value: NonNullable<NonNullable<VehicleRecord['fordOasis']>['serviceHistory']>['latestRepairOrder']) {
+  if (!value) return null
+  const repairOrderNumber = cleanOptionalText(value.repairOrderNumber)
+  const dealerCode = cleanOptionalText(value.dealerCode)
+  const openDate = cleanOptionalText(value.openDate)
+  const closeDate = cleanOptionalText(value.closeDate)
+  if (!repairOrderNumber || !dealerCode || !openDate || !closeDate) return null
+  const inspectionStatus: 'confirmed' | 'not_identified' = value.inspection?.status === 'confirmed' ? 'confirmed' : 'not_identified'
+  return {
+    repairOrderNumber,
+    dealerCode,
+    openDate,
+    closeDate,
+    odometer: cleanOptionalNumber(value.odometer),
+    detailComplete: value.detailComplete === true,
+    inspection: {
+      status: inspectionStatus,
+      type: inspectionStatus === 'confirmed' ? cleanOptionalText(value.inspection?.type) : null,
+    },
+    parts: (value.parts ?? []).flatMap((part) => {
+      const description = cleanOptionalText(part?.description)
+      return description ? [{ description, quantity: cleanOptionalNumber(part.quantity), partNumber: cleanOptionalText(part.partNumber) }] : []
+    }),
+    laborOperations: (value.laborOperations ?? []).flatMap((operation) => {
+      const code = cleanOptionalText(operation?.code)
+      const description = cleanOptionalText(operation?.description)
+      return code && description ? [{ code, description }] : []
+    }),
+    services: cleanTextList(value.services),
+    summary: cleanOptionalText(value.summary),
+  }
+}
+
 function fordOasisResource(
   fordOasis: VehicleRecord['fordOasis'],
   fallbackState: SourceDataState,
@@ -113,6 +146,25 @@ function fordOasisResource(
     const type = cleanOptionalText(coverage?.type)
     return type ? [{ type, description: cleanOptionalText(coverage.description) }] : []
   })
+  const serviceHistory = fordOasis.serviceHistory
+    ? (() => {
+        const checkedAt = cleanOptionalText(fordOasis.serviceHistory?.checkedAt)
+        const repairOrderCount = cleanOptionalNumber(fordOasis.serviceHistory?.repairOrderCount)
+        const detailScanCount = cleanOptionalNumber(fordOasis.serviceHistory?.detailScanCount)
+        if (!checkedAt || repairOrderCount === null || detailScanCount === null) return null
+        return {
+          dataState: resourceDataState(fordOasis.serviceHistory.dataState, fallbackState),
+          checkedAt,
+          sourceLabel: cleanOptionalText(fordOasis.serviceHistory.sourceLabel),
+          historyCaptured: fordOasis.serviceHistory.historyCaptured === true,
+          repairOrderCount,
+          detailScanCount,
+          inspectionSearchStatus: fordOasis.serviceHistory.inspectionSearchStatus,
+          latestRepairOrder: fordServiceRepairOrder(fordOasis.serviceHistory.latestRepairOrder),
+          recentInspection: fordServiceRepairOrder(fordOasis.serviceHistory.recentInspection),
+        }
+      })()
+    : null
 
   return {
     dataState: resourceDataState(fordOasis.dataState, fallbackState),
@@ -145,6 +197,7 @@ function fordOasisResource(
       && openFieldServiceActions.length === fordOasis.openFieldServiceActions.length,
     warrantyCoverages,
     extendedCoverageExpirations: cleanTextList(fordOasis.extendedCoverageExpirations),
+    serviceHistory,
   }
 }
 
@@ -290,6 +343,15 @@ function officialDocumentSearchText(
     ...(fordOasis?.openFieldServiceActions ?? []).flatMap((action) => [action.code, action.description]),
     ...(fordOasis?.warrantyCoverages ?? []).flatMap((coverage) => [coverage.type, coverage.description]),
     ...(fordOasis?.extendedCoverageExpirations ?? []),
+    fordOasis?.serviceHistory?.latestRepairOrder?.openDate,
+    fordOasis?.serviceHistory?.latestRepairOrder?.closeDate,
+    fordOasis?.serviceHistory?.latestRepairOrder?.odometer,
+    fordOasis?.serviceHistory?.latestRepairOrder?.inspection.type,
+    fordOasis?.serviceHistory?.latestRepairOrder?.summary,
+    ...(fordOasis?.serviceHistory?.latestRepairOrder?.services ?? []),
+    ...(fordOasis?.serviceHistory?.latestRepairOrder?.laborOperations ?? []).flatMap((operation) => [operation.code, operation.description]),
+    ...(fordOasis?.serviceHistory?.latestRepairOrder?.parts ?? []).flatMap((part) => [part.description, part.partNumber]),
+    fordOasis?.serviceHistory?.recentInspection?.inspection.type,
     fordOasis ? 'Ford OASIS' : null,
     fordOasis?.openFieldServiceActions.length ? `${fordOasis.openFieldServiceActions.length} open recalls field service actions` : null,
     // Search only on vehicle-specific warranty facts. Coverage names, printed

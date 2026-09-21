@@ -242,6 +242,88 @@ function validateExternalAutoCheck(value, vin) {
   return { factoryEquipment: 0, externalAutoCheck: 1 }
 }
 
+const SERVICE_HISTORY_DATE_PATTERN = /^(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])\/\d{4}$/
+const SERVICE_HISTORY_SEARCH_STATES = new Set(['confirmed', 'not_identified', 'incomplete'])
+const SERVICE_HISTORY_INSPECTION_STATES = new Set(['confirmed', 'not_identified'])
+
+function validateServiceHistoryInspection(value, label) {
+  ensure(value && typeof value === 'object' && !Array.isArray(value), `${label} inspection is required`)
+  onlyKeys(value, new Set(['status', 'type']), `${label} inspection`)
+  const status = optionalText(value.status, `${label} inspection status`, 40)
+  ensure(SERVICE_HISTORY_INSPECTION_STATES.has(status), `${label} inspection status is invalid`)
+  const type = optionalText(value.type, `${label} inspection type`, 160)
+  ensure(status !== 'confirmed' || type, `${label} confirmed inspection requires a type`)
+  ensure(!type || !containsForeignOasisText(type), `${label} inspection type contains identity material`)
+}
+
+function validateServiceRepairOrder(value, label) {
+  ensure(value && typeof value === 'object' && !Array.isArray(value), `${label} must be an object`)
+  onlyKeys(value, new Set([
+    'repairOrderNumber', 'dealerCode', 'openDate', 'closeDate', 'odometer', 'detailComplete',
+    'inspection', 'parts', 'laborOperations', 'services', 'summary',
+  ]), label)
+  const number = optionalText(value.repairOrderNumber, `${label} number`, 24)
+  const dealerCode = optionalText(value.dealerCode, `${label} dealer code`, 12)
+  const openDate = optionalText(value.openDate, `${label} open date`, 20)
+  const closeDate = optionalText(value.closeDate, `${label} close date`, 20)
+  ensure(/^\d{1,24}$/.test(number || ''), `${label} number is invalid`)
+  ensure(/^[A-Z0-9]{1,12}$/.test(dealerCode || ''), `${label} dealer code is invalid`)
+  ensure(SERVICE_HISTORY_DATE_PATTERN.test(openDate || ''), `${label} open date is invalid`)
+  ensure(SERVICE_HISTORY_DATE_PATTERN.test(closeDate || ''), `${label} close date is invalid`)
+  ensure(typeof value.detailComplete === 'boolean', `${label} detailComplete must be a boolean`)
+  optionalInteger(value.odometer, `${label} odometer`, 0, 20_000_000)
+  validateServiceHistoryInspection(value.inspection, label)
+  const parts = value.parts ?? []
+  ensure(Array.isArray(parts) && parts.length <= 80, `${label} parts must be a bounded array`)
+  for (const part of parts) {
+    onlyKeys(part, new Set(['description', 'quantity', 'partNumber']), `${label} part`)
+    const description = optionalText(part.description, `${label} part description`, 300)
+    ensure(description && !containsForeignOasisText(description), `${label} part description is invalid`)
+    optionalInteger(part.quantity, `${label} part quantity`, 0, 999)
+    optionalText(part.partNumber, `${label} part number`, 120)
+  }
+  const labor = value.laborOperations ?? []
+  ensure(Array.isArray(labor) && labor.length <= 80, `${label} labor operations must be a bounded array`)
+  for (const operation of labor) {
+    onlyKeys(operation, new Set(['code', 'description']), `${label} labor operation`)
+    const code = optionalText(operation.code, `${label} labor code`, 40)
+    const description = optionalText(operation.description, `${label} labor description`, 500)
+    ensure(code && /^[A-Z0-9./-]{1,40}$/i.test(code), `${label} labor code is invalid`)
+    ensure(description && !containsForeignOasisText(description), `${label} labor description is invalid`)
+  }
+  const services = value.services ?? []
+  ensure(Array.isArray(services) && services.length <= 20, `${label} services must be a bounded array`)
+  for (const service of services) {
+    const text = optionalText(service, `${label} service`, 160)
+    ensure(text && !containsForeignOasisText(text), `${label} service is invalid`)
+  }
+  const summary = optionalText(value.summary, `${label} summary`, 1000)
+  ensure(!summary || !containsForeignOasisText(summary), `${label} summary contains identity material`)
+}
+
+function validateServiceHistory(value) {
+  ensure(value && typeof value === 'object' && !Array.isArray(value), 'Ford service history must be an object')
+  onlyKeys(value, new Set([
+    'dataState', 'checkedAt', 'sourceLabel', 'historyCaptured', 'repairOrderCount', 'detailScanCount',
+    'inspectionSearchStatus', 'latestRepairOrder', 'recentInspection',
+  ]), 'Ford service history')
+  ensure(RESOURCE_DATA_STATES.has(value.dataState), 'Ford service history data state is invalid')
+  ensure(optionalTimestamp(value.checkedAt, 'Ford service history checkedAt'), 'Ford service history checkedAt is required')
+  ensure(typeof value.historyCaptured === 'boolean', 'Ford service history historyCaptured must be a boolean')
+  const count = optionalInteger(value.repairOrderCount, 'Ford service history repairOrderCount', 0, 20_000)
+  ensure(count !== undefined, 'Ford service history repairOrderCount is required')
+  ensure(optionalInteger(value.detailScanCount, 'Ford service history detailScanCount', 0, 20) !== undefined, 'Ford service history detailScanCount is required')
+  const searchStatus = optionalText(value.inspectionSearchStatus, 'Ford service history inspectionSearchStatus', 40)
+  ensure(SERVICE_HISTORY_SEARCH_STATES.has(searchStatus), 'Ford service history inspection search status is invalid')
+  optionalText(value.sourceLabel, 'Ford service history sourceLabel', 160)
+  if (value.latestRepairOrder != null) validateServiceRepairOrder(value.latestRepairOrder, 'Latest Ford repair order')
+  ensure(count === 0 || value.latestRepairOrder, 'Ford service history with repair orders requires the latest repair order')
+  if (value.recentInspection != null) {
+    validateServiceRepairOrder(value.recentInspection, 'Recent Ford inspection repair order')
+    ensure(value.recentInspection.inspection?.status === 'confirmed', 'Recent Ford inspection repair order must contain confirmed inspection evidence')
+  }
+}
+
 // Ford OASIS vehicle report facts captured read-only from FMCDealer for an
 // exact VIN. Dates are validated as bounded printed text, never re-parsed. The
 // allow-list mirrors validatedFordOasis() in server/importer.mjs; prior-owner
@@ -250,7 +332,7 @@ function validateFordOasis(value, vin) {
   onlyKeys(value, new Set([
     'dataState', 'capturedAt', 'sourceLabel', 'vehicleDescription', 'versionSeries', 'buildDate',
     'warrantyStartDate', 'releaseDate', 'monthsInService', 'saleMileage', 'openFieldServiceActions',
-    'warrantyCoverages', 'extendedCoverageExpirations', 'openActionsCaptured',
+    'warrantyCoverages', 'extendedCoverageExpirations', 'openActionsCaptured', 'serviceHistory',
   ]), 'Ford OASIS record')
   ensure(RESOURCE_DATA_STATES.has(value.dataState), 'Ford OASIS data state is invalid')
   ensure(optionalTimestamp(value.capturedAt, 'Ford OASIS capturedAt'), 'Ford OASIS capturedAt is required')
@@ -296,6 +378,7 @@ function validateFordOasis(value, vin) {
     const date = optionalText(item, 'Ford OASIS extended coverage expiration', 40)
     ensure(date && isOasisDate(date), 'Ford OASIS extended coverage expiration is not a recognized OASIS date')
   }
+  if (value.serviceHistory != null) validateServiceHistory(value.serviceHistory)
   return { factoryEquipment: 0, externalAutoCheck: 0, fordOasis: 1, warrantyCheck: 0 }
 }
 

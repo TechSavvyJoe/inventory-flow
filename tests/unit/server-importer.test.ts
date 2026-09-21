@@ -869,6 +869,28 @@ describe('verified daily source importer', () => {
             openFieldServiceActions: [{ code: '00T01', description: 'Synthetic field service action' }],
             warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain', description: '' }],
             extendedCoverageExpirations: ['01/01/2029'],
+            serviceHistory: {
+              dataState: 'current',
+              checkedAt: '2026-09-12T16:00:00.000Z',
+              sourceLabel: 'Ford PTS Retail Service Repair History (read-only; no customer data)',
+              historyCaptured: true,
+              repairOrderCount: 2,
+              detailScanCount: 2,
+              inspectionSearchStatus: 'confirmed',
+              latestRepairOrder: {
+                repairOrderNumber: '0000000000317147', dealerCode: '07317', openDate: '08/14/2026', closeDate: '09/11/2026', odometer: 121110,
+                detailComplete: true, inspection: { status: 'confirmed', type: 'Certified Blue Oval inspection' },
+                parts: [{ description: 'BLADE ASY - WIPER', quantity: 1, partNumber: 'FT4Z-17528-BA' }],
+                laborOperations: [{ code: 'CPOUCI', description: 'UCI car inspection with Certified Blue Oval inspection' }],
+                services: ['Certified Blue Oval inspection', 'Wiper blades'],
+                summary: 'Certified Blue Oval inspection; Wiper blades.',
+              },
+              recentInspection: {
+                repairOrderNumber: '0000000000317147', dealerCode: '07317', openDate: '08/14/2026', closeDate: '09/11/2026', odometer: 121110,
+                detailComplete: true, inspection: { status: 'confirmed', type: 'Certified Blue Oval inspection' },
+                parts: [], laborOperations: [], services: ['Certified Blue Oval inspection'],
+              },
+            },
           },
         },
       },
@@ -893,6 +915,7 @@ describe('verified daily source importer', () => {
         openFieldServiceActions: [{ code: '00T01', description: 'Synthetic field service action' }],
         warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain' }],
         extendedCoverageExpirations: ['01/01/2029'],
+        serviceHistory: enrichment.recordsByVin[vin].fordOasis.serviceHistory,
       },
     })
     expect(validated.metadata).toMatchObject({
@@ -974,6 +997,12 @@ describe('verified daily source importer', () => {
     const coverageOwner = structuredClone(enrichment)
     coverageOwner.recordsByVin[vin].fordOasis.warrantyCoverages[0].customerName = 'Jane Example'
     expect(() => validateVinDocumentEnrichment(coverageOwner)).toThrow(/unsupported fields/i)
+    const serviceOwner = structuredClone(enrichment)
+    serviceOwner.recordsByVin[vin].fordOasis.serviceHistory.latestRepairOrder.customerName = 'Jane Example'
+    expect(() => validateVinDocumentEnrichment(serviceOwner)).toThrow(/unsupported fields/i)
+    const serviceLaborOwner = structuredClone(enrichment)
+    serviceLaborOwner.recordsByVin[vin].fordOasis.serviceHistory.latestRepairOrder.laborOperations[0].description = 'Owner name: Jane Example'
+    expect(() => validateVinDocumentEnrichment(serviceLaborOwner)).toThrow(/identity material|invalid/i)
 
     const badCode = structuredClone(enrichment)
     badCode.recordsByVin[vin].fordOasis.openFieldServiceActions = [{ code: 'RECALL-1', description: 'Not an FSA code' }]

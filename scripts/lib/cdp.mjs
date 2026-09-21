@@ -135,11 +135,23 @@ export async function closeOwnedTab(context) {
 
 // Credentialed fetch performed by the page itself. Text responses come back as text; binary
 // responses (PDF) come back base64. Never logs the body.
-export async function fetchInTab(page, url, { binary = false, headers = {}, timeoutMs = 60000 } = {}) {
+export async function fetchInTab(page, url, {
+  binary = false,
+  headers = {},
+  timeoutMs = 60000,
+  method = 'GET',
+  body = null,
+} = {}) {
+  const requestMethod = String(method || 'GET').toUpperCase()
+  if (!['GET', 'POST'].includes(requestMethod)) throw new Error(`UNSUPPORTED_FETCH_METHOD_${requestMethod}`)
   const expr = `(async () => {
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), ${timeoutMs});
     try {
-      const r = await fetch(${JSON.stringify(url)}, { credentials: 'include', cache: 'no-store', redirect: 'follow', signal: ctl.signal, headers: ${JSON.stringify(headers)} });
+      const r = await fetch(${JSON.stringify(url)}, {
+        credentials: 'include', cache: 'no-store', redirect: 'follow', signal: ctl.signal,
+        method: ${JSON.stringify(requestMethod)}, headers: ${JSON.stringify(headers)},
+        body: ${body == null ? 'undefined' : JSON.stringify(String(body))}
+      });
       const ct = r.headers.get('content-type') || '';
       const finalUrl = r.url;
       if (${binary ? 'true' : 'false'} && r.ok && !/text\\/html/i.test(ct)) {
