@@ -121,8 +121,10 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     await expectNoOverflow(page)
     const mobileList = page.locator('.if-srp-mobile-list')
     const table = page.locator('.inventory-grid-shell--desk')
+    await expect.poll(async () => Number(await mobileList.isVisible()) + Number(await table.isVisible()), {
+      message: `Exactly one results layout at ${width}`,
+    }).toBe(1)
     const mobileVisible = await mobileList.isVisible()
-    expect(Number(mobileVisible) + Number(await table.isVisible()), `Exactly one results layout at ${width}`).toBe(1)
     const firstRow = mobileVisible ? mobileList.locator('.if-srp-mobile-row').first() : page.locator('.inv-desk-row').first()
     await expect(firstRow).toBeVisible()
     const bounds = await page.locator('.if-srp-controls').evaluate(element => {

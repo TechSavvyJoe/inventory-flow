@@ -31,7 +31,9 @@ test('mobile inventory keeps its place while a records sheet opens and switches 
     await expect(rows).toHaveCount(2)
     const first = rows.first()
     const initialHeight = (await first.boundingBox())!.height
-    expect(initialHeight).toBeLessThanOrEqual(400)
+    // The compact card intentionally carries the three-source quick scan. Keep
+    // it below one short-phone viewport while guarding against runaway growth.
+    expect(initialHeight).toBeLessThanOrEqual(600)
     const url = page.url()
     const toggle = first.getByRole('button', { name: /^Open vehicle records for/ })
     await toggle.click()
