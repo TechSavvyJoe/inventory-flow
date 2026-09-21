@@ -90,9 +90,12 @@ test('a group manager can record a completed direct store move without pickup or
   await vehicle.getByRole('button', { name: 'Move vehicle' }).click()
 
   await page.getByLabel('Destination store').selectOption(destination)
-  // The synthetic demo has a deliberately fixed clock, so submit a matching
-  // local timestamp instead of the browser's real current time.
-  await page.getByLabel('Moved at').fill('2026-08-30T10:00:01')
+  // A datetime-local value is interpreted in the browser's timezone. Use the
+  // form's rendered floor so the direct move stays valid on both local
+  // Eastern-time workstations and UTC CI runners.
+  const movedAt = page.getByLabel('Moved at')
+  await expect(movedAt).toHaveAttribute('min', /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
+  await movedAt.fill((await movedAt.getAttribute('min'))!)
   await page.getByLabel('Why is it moving?').fill('Synthetic customer showing for direct-move browser verification')
   await page.getByRole('button', { name: `Move to ${destination}` }).click()
 
