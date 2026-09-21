@@ -110,7 +110,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const previousHomeStoreRef = useRef(homeStore)
   const navigate = useNavigate()
   const location = useLocation()
-  const previousLocationKeyRef = useRef(location.key)
+  const routeUrl = `${location.pathname}${location.search}${location.hash}`
+  const previousRouteUrlRef = useRef(routeUrl)
   const isInventoryRoute = location.pathname === '/' || location.pathname.startsWith('/inventory')
   const attentionCount = openStoreActionCount(data, { store: homeStore, role })
   const storeBrand = STORE_BRANDING[homeStore]
@@ -179,15 +180,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [searchAccessContext])
 
   useEffect(() => {
-    if (previousLocationKeyRef.current === location.key) return
-    previousLocationKeyRef.current = location.key
+    // Consuming a private search request replaces router state at the same
+    // URL. It must not steal focus from someone already editing that search.
+    if (previousRouteUrlRef.current === routeUrl) return
+    previousRouteUrlRef.current = routeUrl
 
     // Leave focus ownership with an active modal. Route-level dialogs restore
     // focus to their own opener when they close.
     if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
 
     mainContentRef.current?.focus({ preventScroll: true })
-  }, [location.key])
+  }, [routeUrl])
 
   function handleSearch(event: FormEvent) {
     event.preventDefault()

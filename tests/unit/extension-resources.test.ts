@@ -59,7 +59,7 @@ describe('extension resource summaries', () => {
     }
     const vehicle = panel({ fordOasis })
     const oasis = resourceSummaries(vehicle, { now }).find((item) => item.id === 'oasis')
-    expect(oasis.compactFacts[0]).toBe('Open FSA TEST-26A · REAR AXLE ▴ & HUB')
+    expect(oasis.compactFacts).toEqual(['At least 1 captured actions · result incomplete', 'Open FSA TEST-26A · REAR AXLE ▴ & HUB'])
     expect(oasis.facts).toContain('Recorded coverage: Powertrain · 5 years & 60,000 miles')
     expect(vehicle.documents.fordOasis.openFieldServiceActions[0].description).toBe('REAR AXLE &#x25B4; &amp; HUB')
     expect(fordOasis.warrantyCoverages[0].description).toBe('5 years &amp; 60,000 miles')
@@ -71,8 +71,8 @@ describe('extension resource summaries', () => {
     expect(summary.compactFacts).toEqual(['Title: Salvage brand reported', 'Odometer: Odometer discrepancy reported'])
     expect(summary.facts).toContain('1 owner · Personal')
     expect(summary.facts).toContain('Accident: No accidents reported')
-    expect(summary.facts).toContain('Last reported 12,450 mi · Sep 9')
-    expect(summary.sourceNote).toBe('Report run Sep 10')
+    expect(summary.facts).toContain('Last reported 12,450 mi · 09/09/2026')
+    expect(summary.sourceNote).toBe('Report run 09/10/2026')
     expect(summary.sourceKind).toBe('Saved data')
   })
 
@@ -145,7 +145,7 @@ describe('extension resource summaries', () => {
   })
 
   it('retains partial, stale, unknown and source failure notes apart from facts', () => {
-    expect(source({ autoCheckReport: { score: 91, dataState: 'stale_unverified', reportRunAt: '2026-09-10' } }, 'autocheck').sourceNote).toBe('Saved report · refresh at source · Report run Sep 10')
+    expect(source({ autoCheckReport: { score: 91, dataState: 'stale_unverified', reportRunAt: '2026-09-10' } }, 'autocheck').sourceNote).toBe('Saved report · refresh at source · Report run 09/10/2026')
     expect(source({ windowSticker: { totalMsrp: 50000, dataState: 'incomplete', sourceMessage: 'Pricing only', failureReason: 'Options unreadable' } }, 'window-sticker').sourceNote).toBe('Partial captured record · Pricing only · Options unreadable')
     expect(source({ autoCheckReport: { dataState: 'unknown' } }, 'autocheck').sourceNote).toMatch(/Source status unknown/)
     expect(source({ autoCheckReport: { score: 91, reportRunAt: '2030-01-01' } }, 'autocheck').sourceNote).toMatch(/Future source date/)
@@ -164,7 +164,7 @@ describe('extension resource summaries', () => {
     const lookup = source({}, 'oasis')
     expect(lookup).toMatchObject({ hasCapturedData: false, facts: [], compactFacts: ['DealerConnection sign-in'], sourceKind: 'Dealer lookup', sourceNote: 'No OASIS report details captured' })
     const captured = source({ fordOasis: { capturedAt: '2026-09-10', warrantyStartDate: '08/29/2024', buildDate: '08/01/2024', openFieldServiceActions: [{ code: '24S00', description: 'Synthetic software update' }], warrantyCoverages: [{ type: 'Powertrain', description: '60 months / 60,000 miles' }], extendedCoverageExpirations: ['Synthetic ESP ends 08/29/2029'], monthsInService: 24, saleMileage: 18 } }, 'oasis')
-    expect(captured.compactFacts).toEqual(['Open FSA 24S00 · Synthetic software update', 'Warranty start 08/29/2024'])
+    expect(captured.compactFacts).toEqual(['At least 1 captured actions · result incomplete', 'Open FSA 24S00 · Synthetic software update'])
     expect(captured.facts).toContain('Extended coverage: Synthetic ESP ends 08/29/2029')
     expect(captured.facts).toContain('18 mi at sale')
     expect(captured.hasCapturedData).toBe(true)

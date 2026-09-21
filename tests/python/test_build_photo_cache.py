@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,7 +14,20 @@ SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "build_photo_cac
 SPEC = importlib.util.spec_from_file_location("build_photo_cache", SCRIPT_PATH)
 assert SPEC and SPEC.loader
 builder = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(builder)
+# SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
+# The reporting-host extractor is an external dependency. These cache-contract
+# tests must never import a developer's reporting workspace or use its network.
+extractor = types.ModuleType("inventory_report")
+extractor.STORE_ORDER = ("Howell", "Fowlerville", "Ford Detroit", "Lincoln")
+
+
+def reject_unmocked_extraction(*args, **kwargs):
+    raise AssertionError("Synthetic cache tests must mock network extraction")
+
+
+extractor.enrich_vehicle_resources_from_vdps = reject_unmocked_extraction
+with patch.dict(sys.modules, {"inventory_report": extractor}):
+    SPEC.loader.exec_module(builder)
 
 
 class PhotoCacheBuilderTests(unittest.TestCase):

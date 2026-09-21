@@ -40,6 +40,7 @@ function candidates(vehicle) {
   return [
     ...(sticker?.equipmentGroup ? [{ label: sticker.equipmentGroup, source: 'factory-equipment-group' }] : []),
     ...(sticker?.options ?? []).map((label) => ({ label, source: 'factory-option' })),
+    ...(sticker?.equipmentGroupContents ?? []).map((label) => ({ label, source: 'factory-equipment-group' })),
     ...(sticker?.standardEquipment ?? []).map((label) => ({ label, source: 'factory-standard-equipment' })),
     ...(factory?.packages ?? []).flatMap((item) => [
       { label: [item.name, item.code ? `(${item.code})` : null].filter(Boolean).join(' '), source: 'vauto-equipment-package' },

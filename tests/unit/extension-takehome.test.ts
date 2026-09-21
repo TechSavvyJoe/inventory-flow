@@ -23,7 +23,7 @@ describe('take-home sheet model', () => {
     const model = takeHomeModel(vehicle, vehicle.photos)
     expect(model).toMatchObject({ store: 'Howell', storeName: 'Bob Maxey Ford of Howell', storeSite: 'bobmaxeyfordhowell.com', name: '2024 Ford F-150 Lariat', stockNumber: 'DEMO-H01', price: 51800, msrp: 68420, savings: 16620, mileage: 12450 })
     expect(model.brand.src).toBe('../brands/bob-maxey-ford.png')
-    expect(model.certified.name).toBe('Ford Blue Advantage')
+    expect(model.certified.name).toBe('Ford Blue Certified')
     expect(model.photos).toEqual(['https://www.bobmaxeyfordhowell.com/photos/1.jpg'])
     expect(model.specs.map(([label]) => label)).toEqual(['Body', 'Drivetrain', 'Engine', 'Transmission', 'Fuel', 'Fuel economy', 'Exterior', 'Interior'])
     expect(model.highlights).toContain('BlueCruise')

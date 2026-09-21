@@ -1,3 +1,5 @@
+import { useUnsavedChanges } from '../../lib/useUnsavedChanges'
+import { useWorkspaceLifetime } from '../../lib/useWorkspaceLifetime'
 import { useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertTriangle, ArrowRight, CheckCircle2, X } from 'lucide-react'
@@ -97,6 +99,9 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
   const [safeToDrive, setSafeToDrive] = useState<'yes' | 'no' | 'unknown'>('unknown')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const captureWorkspace = useWorkspaceLifetime(`${currentUser}:${role}:${homeStore}:${record.id}:${action}`)
+  const { confirmDiscard, markSaved } = useUnsavedChanges(Boolean(note.trim() || assignee || dueAt || homeStoreManager || availabilityConfirmed || outcome !== (outcomes[0]?.value ?? '') || conditionSeverity !== 'needs-review' || safeToDrive !== 'unknown'), { saving: submitting })
+  const close = () => { if (confirmDiscard()) onClose() }
   const eventType = eventForAction(action, record.requestStatus, outcome, simple)
   const needsAvailabilityConfirmation = eventType === 'request_approved'
   const needsAssignee = eventType === 'transport_assigned' || eventType === 'return_assigned'
@@ -159,7 +164,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
     containerRef: dialogRef,
     initialFocusRef: closeButtonRef,
     returnFocusRef,
-    onEscape: onClose,
+    onEscape: close,
   })
 
   async function submit(event: FormEvent) {
@@ -194,6 +199,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
       : note.trim() || undefined
     setSubmitting(true)
     setError(null)
+    const isCurrentWorkspace = captureWorkspace()
     try {
       const updated = await addTransferEvent(record.id, {
         type: eventType,
@@ -209,18 +215,21 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
         dueAt: dueAt || undefined,
         assignee: assignee.trim() || undefined,
       })
+      if (!isCurrentWorkspace()) return
+      markSaved()
       onComplete?.(updated)
       onClose()
     } catch (caught) {
+      if (!isCurrentWorkspace()) return
       setError(caught instanceof Error ? caught.message : 'That update could not be saved. Try again.')
     } finally {
-      setSubmitting(false)
+      if (isCurrentWorkspace()) setSubmitting(false)
     }
   }
 
   const dialog = (
     <div className="transfer-action-layer">
-      <div className="transfer-action-scrim" onClick={onClose} aria-hidden="true" />
+      <div className="transfer-action-scrim" onClick={close} aria-hidden="true" />
       <form
         ref={dialogRef}
         className={`transfer-action-dialog${simple ? ' move-action-simple' : ''}`}
@@ -236,7 +245,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
             <h2 id={titleId}>{actionTitle}</h2>
             <p id={descriptionId}>{detail.vehicle.vehicleLabel}</p>
           </div>
-          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Close this update"><X aria-hidden="true" /></button>
+          <button ref={closeButtonRef} type="button" onClick={close} aria-label="Close this update"><X aria-hidden="true" /></button>
         </header>
 
         {action === 'record-outcome' ? (
@@ -361,7 +370,7 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
         </div>
         {error ? <div className="action-error" role="alert"><AlertTriangle aria-hidden="true" />{error}</div> : null}
         <footer>
-          <button className="mif-button mif-button--secondary" type="button" onClick={onClose}>Cancel</button>
+          <button className="mif-button mif-button--secondary" type="button" onClick={close}>Cancel</button>
           <button className="mif-button mif-button--primary" type="submit" disabled={submitting || !eventType}>
             {submitting ? 'Recording…' : submitLabel} <ArrowRight aria-hidden="true" />
           </button>

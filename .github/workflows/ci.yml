@@ -44,6 +44,12 @@ jobs:
       - name: Build production bundle
         run: pnpm build
 
+      - name: Validate cloud release and recovery contracts
+        run: |
+          pnpm cloud:validate
+          node scripts/run-recovery-drill.mjs
+          python3 -m unittest discover -s tests/python
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -65,19 +71,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install the Chromium browser
-        # Only Chromium: both Playwright projects are Chromium-engine, and the
-        # bundled build is version-pinned so a Google Chrome release cannot break
-        # CI on its own. PLAYWRIGHT_BUNDLED_CHROMIUM below drops the local
-        # `chrome` channel to match.
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Install browser engines
+        run: pnpm exec playwright install --with-deps chromium webkit firefox
 
       - name: Run browser end-to-end tests
-        # playwright.config.ts starts `pnpm dev:demo` itself and waits for
-        # 127.0.0.1:4173, so the synthetic demo servers need no separate step.
+        # Playwright starts dedicated synthetic servers on 4473/4474;
+        # acceptance uses its own fresh 4273/4274 ledger.
         env:
           PLAYWRIGHT_BUNDLED_CHROMIUM: '1'
         run: pnpm test:e2e --project=desktop --project=mobile
+
+      - name: Run mobile and cross-browser acceptance
+        env:
+          PLAYWRIGHT_BUNDLED_CHROMIUM: '1'
+        run: pnpm exec playwright test --config playwright.cross-browser.config.ts
 
       - name: Upload the Playwright report
         if: failure()

@@ -34,13 +34,25 @@ test('move route, owner and next action precede optional vehicle records', async
 test('service actions appear before secondary facts without sales provider panels', async ({ page }) => {
   await page.goto('/service?vin=TESTDATAHWELL0002')
   const actions = page.getByRole('group', { name: 'Service actions' })
-  await expect(actions.getByRole('button', { name: 'Start service' })).toBeVisible()
-  await expect(page.getByText('Current state')).toContainText('Waiting for service')
+  await expect(actions.getByRole('button', { name: 'In service', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Recorded service status' })).toContainText('Waiting for service')
   const action = await actions.boundingBox()
   const facts = await page.getByLabel('Service decision facts').boundingBox()
   expect(action!.y + action!.height).toBeLessThanOrEqual(facts!.y)
-  expect(action!.y + action!.height).toBeLessThan((page.viewportSize()?.height ?? 900) - 60)
+  // The photo and configuration can extend beyond a short phone's first
+  // screen. Scrolling must expose full-size actions clear of fixed app chrome.
+  await actions.evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }))
+  const button = await actions.getByRole('button', { name: 'In service', exact: true }).boundingBox()
+  const header = await page.getByRole('banner').boundingBox()
+  const mobileNavigation = await page.getByRole('navigation', { name: 'Mobile primary', includeHidden: true }).boundingBox()
+  expect(button!.height).toBeGreaterThanOrEqual(44)
+  expect(button!.y).toBeGreaterThanOrEqual(header!.y + header!.height)
+  expect(button!.y + button!.height).toBeLessThanOrEqual(mobileNavigation?.y ?? page.viewportSize()!.height)
   await expect(page.getByRole('link', { name: 'Records', exact: true })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0002&tab=data&returnTo=%2Fservice%3Fvin%3DTESTDATAHWELL0002')
+  await actions.getByRole('button', { name: 'In service', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Start service', exact: true })).toBeVisible()
+  await expect(page.getByLabel('Date entered service')).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expectFocusedLayout(page)
 })
 
@@ -50,7 +62,8 @@ test('action cards expose owner, due and the task destination with explicit reco
   await expect(first.locator('.action-owner')).toContainText('Demo Salesperson')
   await expect(first.getByRole('link', { name: 'Review hold' })).toBeVisible()
   await expect(first.getByRole('link', { name: 'Records', exact: true })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data&returnTo=%2Fattention')
-  await expect(first.locator('.action-vehicle')).not.toContainText('$51,800')
+  await expect(first.locator('.action-vehicle')).toContainText('$51,800 · 12,450 mi')
+  await expect(first.getByRole('button', { name: 'Copy VIN: TESTDATAHWELL0001', exact: true })).toBeVisible()
   await expectFocusedLayout(page)
 })
 

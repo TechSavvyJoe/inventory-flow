@@ -183,53 +183,22 @@ describe('Challenger Layout & Accessibility Suite', () => {
       expect(cssContent).toMatch(/\.inventory-search-popover\s*\{[^}]*z-index\s*:\s*50/s)
     })
 
-    it('renders controls bar with predictive search and quick-view filter pills', () => {
-      const { container } = render(
-        <InventoryExperienceV2
-          homeStore={mockHomeStore}
-          vehicles={mockVehicles}
-          metrics={mockMetrics}
-        />
-      )
-
-      const controlsBar = container.querySelector('.inv-v2-controls-bar')
-      expect(controlsBar).not.toBeNull()
-
-      const searchWrapper = controlsBar?.querySelector('.inv-v2-search-wrapper')
-      expect(searchWrapper).not.toBeNull()
-
-      const pillsGroup = controlsBar?.querySelector('.inv-v2-pills-group')
-      expect(pillsGroup).not.toBeNull()
-
-      const pills = pillsGroup?.querySelectorAll('button')
-      expect(pills?.length).toBe(5)
-
-      // Default active pill is "All Vehicles"
-      const allPill = screen.getByRole('button', { name: 'All Vehicles' })
-      expect(allPill.classList.contains('is-active')).toBe(true)
-      expect(allPill.getAttribute('aria-pressed')).toBe('true')
+    it('renders shared predictive search, filters and sort controls', () => {
+      render(<InventoryExperienceV2 homeStore={mockHomeStore} vehicles={mockVehicles} metrics={mockMetrics} />)
+      expect(screen.getByRole('combobox', { name: 'Search inventory' })).toBeInTheDocument()
+      expect(screen.getByRole('group', { name: 'Inventory quick filters' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^All: / })).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByRole('button', { name: /Sort inventory/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Filters/ })).toBeInTheDocument()
     })
 
-    it('switching filter pills updates active state cleanly', () => {
-      render(
-        <InventoryExperienceV2
-          homeStore={mockHomeStore}
-          vehicles={mockVehicles}
-          metrics={mockMetrics}
-        />
-      )
-
-      const noHoldPill = screen.getByRole('button', { name: 'No Hold' })
-      expect(noHoldPill.getAttribute('aria-pressed')).toBe('false')
-
-      fireEvent.click(noHoldPill)
-
-      expect(noHoldPill.getAttribute('aria-pressed')).toBe('true')
-      expect(noHoldPill.classList.contains('is-active')).toBe(true)
-
-      const allPill = screen.getByRole('button', { name: 'All Vehicles' })
-      expect(allPill.getAttribute('aria-pressed')).toBe('false')
-      expect(allPill.classList.contains('is-active')).toBe(false)
+    it('switching quick filters updates their accessible pressed states', () => {
+      render(<InventoryExperienceV2 homeStore={mockHomeStore} vehicles={mockVehicles} metrics={mockMetrics} />)
+      const held = screen.getByRole('button', { name: /^Held: / })
+      expect(held).toHaveAttribute('aria-pressed', 'false')
+      fireEvent.click(held)
+      expect(held).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.getByRole('button', { name: /^All: / })).toHaveAttribute('aria-pressed', 'false')
     })
 
     it('verifies search popover does not cause document flow shift when activated', () => {
@@ -241,7 +210,7 @@ describe('Challenger Layout & Accessibility Suite', () => {
         />
       )
 
-      const searchInput = screen.getByRole('combobox')
+      const searchInput = screen.getByRole('combobox', { name: 'Search inventory' })
 
       // Type to open popover
       fireEvent.change(searchInput, { target: { value: 'Ford' } })

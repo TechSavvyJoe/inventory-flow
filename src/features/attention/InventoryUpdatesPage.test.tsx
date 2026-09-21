@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BootstrapData, PublicChangeCounts, PublicChangeEvent, VehicleRecord } from '../../types'
@@ -29,6 +30,28 @@ function show(path = '/updates?view=new') { return render(<MemoryRouter initialE
 beforeEach(() => { mocked.context = { data: fixture(), homeStore: 'Howell' } })
 
 describe('Inventory updates workspace', () => {
+  it('remembers search and scope after opening another workspace and clears them for another identity', () => {
+    mocked.context.currentUser = 'Synthetic Manager One';
+    const first = show();
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search inventory updates' }), { target: { value: 'new-lincoln' } });
+    first.unmount();
+    const second = show();
+    expect(screen.getByRole('textbox', { name: 'Search inventory updates' })).toHaveValue('new-lincoln');
+    expect(screen.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true');
+    second.unmount();
+    mocked.context.currentUser = 'Synthetic Manager Two';
+    show();
+    expect(screen.getByRole('textbox', { name: 'Search inventory updates' })).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Howell' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('keeps an explicit return path when an arrival needs service review', () => {
+    show('/updates?view=new');
+    const service = screen.getByRole('link', { name: 'Service' });
+    expect(new URL(service.getAttribute('href')!, 'https://inventory.invalid').searchParams.get('returnTo')).toBe('/updates?view=new');
+  });
+
   it('opens new arrivals directly, starts at the employee store, and keeps all three category counts scoped', () => {
     show()
     expect(screen.getByRole('button', { name: /New arrivals\s*1/ })).toHaveAttribute('aria-pressed', 'true')
@@ -43,10 +66,37 @@ describe('Inventory updates workspace', () => {
     expect(results.querySelector('.workflow-resource-row')).toBeNull()
     expect(results).not.toHaveTextContent('Synthetic engine')
     expect(screen.queryByText('Synthetic new-lincoln')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search inventory updates' }), { target: { value: 'Synthetic' } })
+    expect(screen.getAllByRole('option')).toHaveLength(1)
+    expect(screen.getByRole('option')).toHaveTextContent('Synthetic new-home')
     fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
     expect(screen.getByRole('button', { name: /New arrivals\s*2/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Price changes\s*3/ })).toBeInTheDocument()
     expect(within(results).getAllByRole('listitem')).toHaveLength(2)
+    expect(screen.getAllByRole('option')).toHaveLength(2)
+  })
+
+  it('matches reordered terms across fields and selects a suggestion without leaving the filtered workspace', async () => {
+    const user = userEvent.setup()
+    show('/updates?view=price')
+    const search = screen.getByRole('textbox', { name: 'Search inventory updates' })
+    const results = screen.getByRole('list', { name: 'Price changes results' })
+    await user.type(search, 'Howell down Synthetic')
+    expect(within(results).getAllByRole('listitem')).toHaveLength(1)
+    expect(results).toHaveTextContent('Synthetic price-down')
+    expect(screen.getAllByRole('option')).toHaveLength(1)
+    expect(screen.getByRole('option')).toHaveTextContent('SYN-price-down · Howell')
+    await user.keyboard('{ArrowDown}{Enter}')
+    expect(search).toHaveValue('SYN-price-down')
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Current route')).toHaveTextContent('/updates?view=price')
+    expect(screen.getByRole('button', { name: 'Howell' })).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('button', { name: 'Clear update search' }))
+    expect(search).toHaveValue('')
+    const rows = within(results).getAllByRole('listitem')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toHaveTextContent('Down $3,000')
+    expect(rows[1]).toHaveTextContent('Up $1,000')
   })
 
   it('uses exact comparison prices, shows the signed change, and sorts reductions before increases', () => {
@@ -94,6 +144,10 @@ describe('Inventory updates workspace', () => {
     const results = screen.getByRole('list', { name: 'Other updates results' })
     expect(within(results).getAllByRole('listitem')).toHaveLength(1)
     expect(results).toHaveTextContent('Howell → Fowlerville')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search inventory updates' }), { target: { value: 'Synthetic' } })
+    const suggestions = screen.getByRole('listbox', { name: 'Search inventory updates suggestions' })
+    expect(within(suggestions).getAllByRole('option')).toHaveLength(1)
+    expect(suggestions).toHaveTextContent('Synthetic store')
     fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
     expect(within(results).getAllByRole('listitem')).toHaveLength(1)
   })
@@ -108,6 +162,8 @@ describe('Inventory updates workspace', () => {
     expect(screen.getByRole('button', { name: /Price changes\s*3/ })).toBeInTheDocument()
     expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
     expect(screen.getByText('Vehicle details are unavailable for this comparison')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search inventory updates' }), { target: { value: 'Synthetic' } })
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
   })
 
   it('rejects detail whose category totals differ even when the overall event count matches', () => {

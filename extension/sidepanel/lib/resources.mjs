@@ -1,4 +1,4 @@
-import { formatDate, formatNumber, formatStickerMoney } from './format.mjs'
+import { formatDate, formatSourceDateText, formatNumber, formatStickerMoney } from './format.mjs'
 import { sourceDisplayText } from './source-text.mjs'
 import { sourceDistanceText } from './source-distance.mjs'
 
@@ -115,7 +115,7 @@ export function resourceSummaries(vehicle, { now = Date.now() } = {}) {
   const stickerPowertrain = join([fact(sticker?.engine), fact(sticker?.transmission)])
   const stickerFacts = present([
     numeric(sticker?.totalMsrp) ? `${formatStickerMoney(sticker.totalMsrp, sticker)} MSRP` : null,
-    sticker?.equipmentGroup, ...options.slice(0, 2), stickerPowertrain, ...options.slice(2),
+    sticker?.equipmentGroup, ...entries(sticker?.equipmentGroupContents), ...options.slice(0, 2), stickerPowertrain, ...options.slice(2),
     join([sticker?.exteriorColor ? `Exterior ${sticker.exteriorColor}` : null, sticker?.interiorColor ? `Interior ${sticker.interiorColor}` : null]),
     ...importantItems(entries(sticker?.standardEquipment)),
     ...entries(sticker?.warranty).map((line) => `Printed warranty: ${fact(line)}`),
@@ -184,22 +184,23 @@ export function resourceSummaries(vehicle, { now = Date.now() } = {}) {
     const actions = present(entries(oasis?.openFieldServiceActions).map((action) => join([action.code, fact(sourceDisplayText(action.description))])))
     const coverages = present(entries(oasis?.warrantyCoverages).map((coverage) => join([coverage.type, fact(sourceDisplayText(coverage.description))])))
     const capturedEmpty = capturedOasisActionsAreEmpty(oasis, { now })
-    const warrantyStart = clean(oasis?.warrantyStartDate) ? `Warranty start ${oasis.warrantyStartDate}` : clean(warranty?.fordOasis?.warrantyStartDate) ? `Warranty start ${warranty.fordOasis.warrantyStartDate}` : null
-    const buildDate = clean(oasis?.buildDate) ? `Built ${oasis.buildDate}` : null
+    const warrantyStart = clean(oasis?.warrantyStartDate) ? `Warranty start ${formatDate(oasis.warrantyStartDate, now)}` : clean(warranty?.fordOasis?.warrantyStartDate) ? `Warranty start ${formatDate(warranty.fordOasis.warrantyStartDate, now)}` : null
+    const buildDate = clean(oasis?.buildDate) ? `Built ${formatDate(oasis.buildDate, now)}` : null
     const oasisFacts = present([
       ...actions.map((action) => `Open FSA ${action}`), warrantyStart, buildDate,
       ...coverages.map((coverage) => `Recorded coverage: ${coverage}`),
       capturedEmpty ? '0 open Ford actions in captured report' : null,
-      ...entries(oasis?.extendedCoverageExpirations).map((expiration) => `Extended coverage: ${fact(expiration)}`),
+      ...entries(oasis?.extendedCoverageExpirations).map((expiration) => `Extended coverage: ${fact(formatSourceDateText(expiration))}`),
       numeric(oasis?.monthsInService) ? `${formatNumber(oasis.monthsInService)} months in service at capture` : null,
       numeric(oasis?.saleMileage) ? `${formatNumber(oasis.saleMileage)} mi at sale` : null,
-      clean(oasis?.releaseDate) ? `Released ${oasis.releaseDate}` : null,
+      clean(oasis?.releaseDate) ? `Released ${formatDate(oasis.releaseDate, now)}` : null,
       ...coverageFacts(warranty?.fordOasis),
     ])
     if (vehicle.links?.oasis || oasis || warranty?.fordOasis) result.push({
       id: 'oasis', title: 'Ford OASIS', brand: 'ford', facts: oasisFacts,
-      compactFacts: present([actions[0] ? `Open FSA ${actions[0]}` : null, warrantyStart, coverages[0] ? `Recorded coverage: ${coverages[0]}` : null, capturedEmpty ? '0 open Ford actions in captured report' : null, buildDate, ...oasisFacts, !oasisFacts.length ? 'DealerConnection sign-in' : null], 2),
+      compactFacts: present([actions.length && oasis?.openActionsCaptured === false ? `At least ${actions.length} captured actions · result incomplete` : null, actions[0] ? `Open FSA ${actions[0]}` : null, warrantyStart, coverages[0] ? `Recorded coverage: ${coverages[0]}` : null, capturedEmpty ? '0 open Ford actions in captured report' : null, buildDate, ...oasisFacts, !oasisFacts.length ? 'DealerConnection sign-in' : null], 2),
       sourceNote: join([
+        actions.length && oasis?.openActionsCaptured === false ? `At least ${actions.length} captured actions · result incomplete` : null,
         sourceNote(oasis, oasisFacts.length > 0, { date: oasis?.capturedAt, missing: 'No OASIS report details captured', now }),
         oasisFacts.length > 0 && !actions.length && !capturedEmpty ? 'Open-action result not captured' : null,
         warranty?.fordOasis ? join([sourceNote(warranty, true, { date: warranty.capturedAt, dateLabel: 'Warranty captured', now }), numeric(warranty.mileageEntered) ? `At ${formatNumber(warranty.mileageEntered)} mi entered` : null]) : null,

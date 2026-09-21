@@ -93,7 +93,12 @@ describe("inventory source-safe selectors", () => {
   it("labels original sticker currency without converting or changing public listing prices", () => {
     expect(formatStickerMoney(56650, { pricingCurrency: "CAD", originalMarket: "Canada" })).toMatch(/CAD\s56,650/);
     expect(formatStickerMoney(49924, {})).toBe("49,924 (original sticker currency; verify)");
-    expect(formatStickerMoney(49480, { pricingCurrency: "USD" })).toMatch(/USD\s49,480/);
+    expect(formatStickerMoney(1250.75, { pricingCurrency: "USD" })).toBe("$1,250.75");
+    expect(formatStickerMoney(0, { pricingCurrency: "USD" })).toBe("$0");
+    expect(formatStickerMoney(1250.75, { pricingCurrency: "CAD" })).toMatch(/CAD\s1,250.75/);
+    expect(formatStickerMoney(1250.75, {})).toBe("1,250.75 (original sticker currency; verify)");
+    expect(formatStickerMoney(0, {})).toBe("0 (original sticker currency; verify)");
+    expect(formatStickerMoney(49480, { pricingCurrency: "USD" })).toBe("$49,480");
     expect(formatMoney(21999)).toBe("$21,999");
   });
 

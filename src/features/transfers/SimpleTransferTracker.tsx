@@ -5,6 +5,7 @@ import { formatDateTime, humanizeStatusLabel, locationConfidenceLabel, transferA
 import { awayFromHomeSummary } from './moveSummary';
 import { TransferTimeline } from './TransferTimeline';
 import { ServiceStatusLink } from '../inventory/ServiceStatusLink';
+import { CopyableValue } from '../../components/CopyableValue';
 import './transfer-simple.css';
 import './transfer-vehicle-context.css';
 
@@ -85,9 +86,16 @@ export function SimpleTransferTracker({ transfer, onAction, onClose, vehicleLink
     <article className={`mif-transfer-feature simple-transfer-tracker simple-transfer-tracker--${mode}`}>
       <header className="simple-move-heading">
         {vehicle.imageUrl ? <img src={vehicle.imageUrl} alt="" /> : <span className="simple-move-photo-placeholder" aria-hidden="true"><CarFront size={32} /></span>}
-        <div><span>Stock {vehicle.stock}</span><h2>{vehicle.vehicleLabel}</h2><small>{vehicle.vin}</small></div>
+        <div className="simple-move-identity"><h2>{vehicle.vehicleLabel}</h2>
+          <p className="move-vehicle-value">{[vehicle.listedPriceLabel, vehicle.mileageLabel].filter(Boolean).join(' · ')}</p>
+          <p className="move-vehicle-specs">{[vehicle.engine, vehicle.drivetrain, vehicle.exteriorColor].filter(Boolean).join(' · ')}</p>
+        </div>
         {onClose ? <button type="button" aria-label="Close move details" onClick={onClose}><X aria-hidden="true" size={20} /></button> : null}
         <div className="move-vehicle-context">
+          <dl className="simple-move-identifiers">
+            <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stock} /></dd></div>
+            <div><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} /></dd></div>
+          </dl>
           <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} />
         </div>
       </header>

@@ -1,3 +1,4 @@
+import { displayDate } from "../../lib/date-display";
 import type { TransferRecord } from "../../types";
 import { serviceWorkflowStatus } from "../../lib/service-readiness";
 import type {
@@ -40,19 +41,6 @@ const integerFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
-
-const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
 export function formatMoney(value?: number | null): string {
   return typeof value === "number" && Number.isFinite(value)
     ? moneyFormatter.format(value)
@@ -64,9 +52,9 @@ export function formatStickerMoney(value: number | null | undefined, sticker: Pi
   if (typeof value !== "number" || !Number.isFinite(value)) return "Not published";
   const currency = sticker.pricingCurrency?.trim().toUpperCase();
   if (currency && /^[A-Z]{3}$/.test(currency)) {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency, currencyDisplay: "code", maximumFractionDigits: 0 }).format(value);
+    return new Intl.NumberFormat("en-US", { style: "currency", currency, currencyDisplay: currency === "USD" ? "symbol" : "code", minimumFractionDigits: 0, maximumFractionDigits: 20 }).format(value);
   }
-  return `${integerFormatter.format(value)} (original sticker currency; verify)`;
+  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 20 }).format(value)} (original sticker currency; verify)`;
 }
 
 export function formatMileage(value?: number | null): string {
@@ -82,21 +70,14 @@ export function formatNumber(value?: number | null): string {
 }
 
 export function formatDate(value?: string | null): string {
-  if (!value) return "Not recorded";
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  const parsed = dateOnly
-    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
-    : new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : dateFormatter.format(parsed);
+  return value ? displayDate(value) : "Not recorded";
 }
 
 export function formatDateTime(value?: string | null): string {
-  if (!value) return "Not recorded";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : dateTimeFormatter.format(parsed);
+  return value ? displayDate(value, { time: true }) : "Not recorded";
 }
 
-export function vehicleDisplayName(vehicle: InventoryVehicle): string {
+export function vehicleDisplayName(vehicle: Partial<Pick<InventoryVehicle, "vehicleName" | "year" | "make" | "model" | "trim">>): string {
   const supplied = vehicle.vehicleName?.trim();
   if (supplied) return supplied;
   return [vehicle.year, vehicle.make, vehicle.model, vehicle.trim]

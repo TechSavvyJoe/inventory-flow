@@ -8,3 +8,6 @@
   #root .app-shell .mobile-bottom-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 .synthetic-preview-notice { margin:0 0 12px; padding:8px 12px; font-size:14px; color:var(--ifx-neutral-700); background:var(--ifx-neutral-100); border-left:3px solid var(--ifx-info); }
+@media (max-width:760px) {
+  .synthetic-preview-notice { margin-bottom:8px; padding:5px 8px; font-size:12px; line-height:18px; }
+}

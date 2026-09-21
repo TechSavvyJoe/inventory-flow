@@ -35,11 +35,11 @@
 
   /* Side padding stays at 14px: the transfers layout bleeds 12px into it. */
   #root .app-shell main.app-main {
-    padding: 8px 14px 20px;
+    padding: 8px max(14px, var(--safe-right)) 20px max(14px, var(--safe-left));
   }
 
   #root .app-shell .mobile-bottom-nav :is(a, button) {
-    min-height: 0;
+    min-height: 44px;
     gap: 2px;
     font-size: 12px;
   }

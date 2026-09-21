@@ -1,3 +1,5 @@
+import { useUnsavedChanges } from '../../lib/useUnsavedChanges';
+import { useWorkspaceLifetime } from '../../lib/useWorkspaceLifetime';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import {
   ArrowRight,
@@ -156,6 +158,10 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
   const [errors, setErrors] = useState<Partial<Record<keyof TransferRequestDraft, string>>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [edited, setEdited] = useState(false);
+  const captureWorkspace = useWorkspaceLifetime(JSON.stringify([vehicle?.vin, intent, props.defaultRequestingStore, props.defaultDestinationStore, props.defaultRequesterId, props.defaultManagerApproverId]));
+  const { confirmDiscard, markSaved } = useUnsavedChanges(edited && !submitted, { saving: submitting });
+  const cancel = () => { if (confirmDiscard()) onCancel?.(); };
   const [submittedRequestId, setSubmittedRequestId] = useState<string | undefined>();
   const [submitError, setSubmitError] = useState<string | undefined>();
   const selectedRequester = requesters.find((option) => option.value === draft.requesterId);
@@ -165,8 +171,10 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
 
   useEffect(() => {
     setDraft(createInitialDraft(vehicle, props));
+    setEdited(false);
     setErrors({});
     setSubmitted(false);
+    setSubmitting(false);
     setSubmittedRequestId(undefined);
     setSubmitError(undefined);
   }, [
@@ -179,6 +187,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
   ]);
 
   function updateDraft(patch: Partial<TransferRequestDraft>) {
+    setEdited(true);
     setDraft((current) => {
       const next = { ...current, ...patch, vin: vehicle?.vin ?? current.vin };
       onDraftChange?.(next);
@@ -194,7 +203,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!vehicle || disabled) return;
+    if (!vehicle || disabled || submitting) return;
     const nextDraft = { ...draft, vin: vehicle.vin };
     const nextErrors = validateDraft(nextDraft, vehicle);
     setErrors(nextErrors);
@@ -208,14 +217,18 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
 
     setSubmitting(true);
     setSubmitError(undefined);
+    const isCurrentWorkspace = captureWorkspace();
     try {
       const result = await onSubmit(nextDraft);
+      if (!isCurrentWorkspace()) return;
       setSubmittedRequestId(result?.requestId);
+      markSaved();
       setSubmitted(true);
     } catch (error) {
+      if (!isCurrentWorkspace()) return;
       setSubmitError(error instanceof Error ? error.message : 'The request could not be submitted.');
     } finally {
-      setSubmitting(false);
+      if (isCurrentWorkspace()) setSubmitting(false);
     }
   }
 
@@ -226,7 +239,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
         <h1>Select a vehicle to move</h1>
         <p>Choose the stock number or VIN, then record where the vehicle is going.</p>
         {onCancel ? (
-          <button className="mif-button mif-button--primary" onClick={onCancel} type="button">
+          <button className="mif-button mif-button--primary" onClick={cancel} type="button">
             Choose vehicle in Inventory
           </button>
         ) : null}
@@ -247,7 +260,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
               : `No availability or release is confirmed. Your requesting-store manager must approve the request and contact the ${vehicle.homeStore} manager.`}
         </p>
         {submittedRequestId && onViewRequest ? <button className="mif-button mif-button--primary" onClick={() => onViewRequest(submittedRequestId)} type="button">View this move <ArrowRight aria-hidden="true" size={18} /></button> : onCancel ? (
-          <button className="mif-button mif-button--primary" onClick={onCancel} type="button">
+          <button className="mif-button mif-button--primary" onClick={cancel} type="button">
             Done
           </button>
         ) : null}
@@ -272,15 +285,15 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
           </div>
         </div>
         {onCancel ? (
-          <button aria-label="Close request workspace" className="mif-icon-button" onClick={onCancel} type="button">
+          <button aria-label="Close request workspace" className="mif-icon-button" onClick={cancel} type="button">
             <X aria-hidden="true" size={20} strokeWidth={1.75} />
           </button>
         ) : null}
       </header>
 
-      {simple ? <p className="move-request-current-location"><MapPin aria-hidden="true" size={16}/><strong>{vehicle.currentLocation.label}</strong><span>{locationConfidenceLabel(vehicle.currentLocation.confidence)}</span></p> : null}
+      {simple && !direct ? <p className="move-request-current-location"><MapPin aria-hidden="true" size={16}/><strong>{vehicle.currentLocation.label}</strong><span>{locationConfidenceLabel(vehicle.currentLocation.confidence)}</span></p> : null}
 
-      {simple ? <div className="move-request-route"><span><small>From</small><strong>{direct ? vehicle.currentLocation.label || vehicle.homeStore : vehicle.homeStore}</strong></span><ArrowRight aria-hidden="true" size={20} /><span><small>{direct ? 'To' : 'To your store'}</small><strong>{direct ? selectedDestination?.label || draft.destinationStore || 'Choose destination' : selectedStore?.label || draft.requestingStore}</strong></span><p>{direct ? `Recorded by ${selectedRequester?.label || 'you'}` : `Requested by ${selectedRequester?.label || 'you'} · Reviewed by ${selectedManager?.label || `${draft.requestingStore} manager`}`}</p></div> : <div className="mif-request-source-strip">
+      {simple ? <div className="move-request-route"><span><small>From</small><strong>{direct ? vehicle.currentLocation.label || vehicle.homeStore : vehicle.homeStore}</strong>{direct ? <small>{locationConfidenceLabel(vehicle.currentLocation.confidence)}</small> : null}</span><ArrowRight aria-hidden="true" size={20} /><span><small>{direct ? 'To' : 'To your store'}</small><strong>{direct ? selectedDestination?.label || draft.destinationStore || 'Choose destination' : selectedStore?.label || draft.requestingStore}</strong></span><p>{direct ? `Recorded by ${selectedRequester?.label || 'you'}` : `Requested by ${selectedRequester?.label || 'you'} · Reviewed by ${selectedManager?.label || `${draft.requestingStore} manager`}`}</p></div> : <div className="mif-request-source-strip">
         <div>
           <Store aria-hidden="true" size={16} strokeWidth={1.75} />
           <span>Home Store</span>
@@ -322,7 +335,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
               <select
                 aria-describedby={errors.destinationStore ? `${formId}-destination-error` : undefined}
                 aria-invalid={Boolean(errors.destinationStore)}
-                disabled={disabled}
+                disabled={disabled || submitting}
                 onChange={(event) => updateDraft({ destinationStore: event.target.value })}
                 value={draft.destinationStore || ''}
               >
@@ -373,7 +386,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
               <input
                 aria-describedby={direct ? errors.movedAt ? `${formId}-moved-at-error` : undefined : errors.neededBy ? `${formId}-needed-by-error` : undefined}
                 aria-invalid={direct ? Boolean(errors.movedAt) : Boolean(errors.neededBy)}
-                disabled={disabled}
+                disabled={disabled || submitting}
                 onChange={(event) => updateDraft(direct ? { movedAt: event.target.value } : { neededBy: event.target.value })}
                 min={direct && confirmedLocationFloor(vehicle) !== null ? localDateTimeValue(new Date(confirmedLocationFloor(vehicle)!)) : undefined}
                 step={direct ? 1 : 60}
@@ -387,7 +400,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
             <label className="mif-field">
               <span>Reason</span>
               <select
-                disabled={disabled}
+                disabled={disabled || submitting}
                 onChange={(event) => updateDraft({ reasonCode: event.target.value as TransferReasonCode })}
                 value={draft.reasonCode}
               >
@@ -400,7 +413,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
             <label className="mif-check-field">
               <input
                 checked={draft.priority === 'urgent'}
-                disabled={disabled}
+                disabled={disabled || submitting}
                 onChange={(event) => updateDraft({ priority: event.target.checked ? 'urgent' : 'normal' })}
                 type="checkbox"
               />
@@ -412,7 +425,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
               <textarea
                 aria-describedby={errors.reasonDetail ? `${formId}-reason-detail-error` : undefined}
                 aria-invalid={Boolean(errors.reasonDetail)}
-                disabled={disabled}
+                disabled={disabled || submitting}
                 onChange={(event) => updateDraft({ reasonDetail: event.target.value })}
                 placeholder={direct ? 'Example: Detroit picked it up for a customer showing' : 'A short note for your manager'}
                 rows={3}
@@ -426,7 +439,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
               <label className="mif-field">
                 <span>Customer or CRM reference <small>Optional · manager access only</small></span>
                 <input
-                  disabled={disabled}
+                  disabled={disabled || submitting}
                   onChange={(event) => updateDraft({ customerReference: event.target.value })}
                   placeholder="CRM number or short reference"
                   type="text"
@@ -438,7 +451,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
                 <input
                   aria-describedby={errors.targetReturnAt ? `${formId}-return-error` : undefined}
                   aria-invalid={Boolean(errors.targetReturnAt)}
-                  disabled={disabled}
+                  disabled={disabled || submitting}
                   min={(direct ? draft.movedAt : draft.neededBy) || undefined}
                   onChange={(event) => updateDraft({ targetReturnAt: event.target.value })}
                   type="datetime-local"
@@ -509,7 +522,7 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
 
         <footer className="mif-request-actions">
           {onCancel ? (
-            <button className="mif-button mif-button--secondary" disabled={submitting} onClick={onCancel} type="button">
+            <button className="mif-button mif-button--secondary" disabled={submitting} onClick={cancel} type="button">
               Cancel
             </button>
           ) : null}

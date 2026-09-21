@@ -90,12 +90,27 @@ export function vehicleWorkspacePath(
 }
 
 export function withWorkspaceReturnPath(path: string, returnTo?: string): string {
-  if (!returnTo || !path.startsWith('/inventory')) return path
+  if (!readWorkspaceReturnPath(returnTo ?? null) || !readWorkspaceReturnPath(path)) return path
   const [pathAndSearch, hash = ''] = path.split('#', 2)
   const [pathname, rawSearch = ''] = pathAndSearch.split('?', 2)
   const params = new URLSearchParams(rawSearch)
-  params.set('returnTo', returnTo)
+  params.set('returnTo', returnTo!)
   return `${pathname}?${params.toString()}${hash ? `#${hash}` : ''}`
+}
+
+export function workspaceReturnLabel(path: string | null, fallback = 'Back to inventory'): string {
+  const safe = readWorkspaceReturnPath(path)
+  if (!safe) return fallback
+  const url = new URL(safe, 'https://inventory.invalid')
+  if (url.pathname === '/inventory' || url.pathname === '/') return url.searchParams.has('vin') ? 'Back to vehicle' : 'Back to inventory'
+  if (url.pathname === '/service') return 'Back to service'
+  if (url.pathname === '/transfers/new') return 'Back to move form'
+  if (url.pathname === '/transfers') return url.searchParams.has('id') ? 'Back to move' : 'Back to vehicle moves'
+  if (url.pathname === '/attention') return 'Back to Action center'
+  if (url.pathname === '/updates') return 'Back to inventory updates'
+  if (url.pathname === '/manager') return 'Back to group operations'
+  if (url.pathname === '/admin') return 'Back to Control center'
+  return fallback
 }
 
 // The destination is created by this app. Refuse protocol-relative or external

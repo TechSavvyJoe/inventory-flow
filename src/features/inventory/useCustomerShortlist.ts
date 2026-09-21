@@ -1,10 +1,6 @@
-import { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import type { InventoryVehicle } from "./types";
 
-/* ─── Storage key ──────────────────────────────────────────────── */
-const STORAGE_KEY = "inventory:customer-shortlist";
-
-/* ─── Shortlist entry (lightweight snapshot) ───────────────────── */
 export interface ShortlistEntry {
   id: string;
   vin: string;
@@ -13,109 +9,90 @@ export interface ShortlistEntry {
   price: number | null;
   imageUrl: string | null;
   exteriorColor: string | null;
-  addedAt: number; // epoch ms
+  addedAt: number;
 }
 
-/* ─── External store (shared singleton) ────────────────────────── */
-let listeners: Set<() => void> = new Set();
-let cache: ShortlistEntry[] | null = null;
-
-function readStore(): ShortlistEntry[] {
-  if (cache) return cache;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    cache = raw ? (JSON.parse(raw) as ShortlistEntry[]) : [];
-  } catch {
-    cache = [];
-  }
-  return cache;
-}
-
-function writeStore(entries: ShortlistEntry[]) {
-  cache = entries;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-  } catch {
-    /* quota exceeded – keep in-memory */
-  }
-  listeners.forEach((fn) => fn());
-}
-
-function subscribe(listener: () => void) {
+// Browser memory only. Selection belongs to the authenticated user, role and
+// store; no vehicle snapshot or customer interest is restored from localStorage.
+const EMPTY: ShortlistEntry[] = [];
+let activeContext = "";
+let entries: ShortlistEntry[] = EMPTY;
+const listeners = new Set<() => void>();
+const subscribe = (listener: () => void) => {
   listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  return () => { listeners.delete(listener); };
+};
+function publish(next: ShortlistEntry[]) {
+  entries = next;
+  listeners.forEach(listener => listener());
 }
-
-function getSnapshot(): ShortlistEntry[] {
-  return readStore();
+export function clearCustomerShortlist() {
+  activeContext = "";
+  publish(EMPTY);
 }
-
-/* ─── Helpers ──────────────────────────────────────────────────── */
-function vehicleToEntry(vehicle: InventoryVehicle): ShortlistEntry {
+function vehicleEntry(vehicle: InventoryVehicle, addedAt = Date.now()): ShortlistEntry {
   return {
-    id: vehicle.id,
-    vin: vehicle.vin,
-    stockNumber: vehicle.stockNumber,
+    id: vehicle.id, vin: vehicle.vin, stockNumber: vehicle.stockNumber,
     displayName: `${vehicle.year} ${vehicle.make} ${vehicle.model}`.trim(),
-    price: vehicle.price ?? null,
-    imageUrl: vehicle.imageUrl || vehicle.imageUrls?.[0] || null,
-    exteriorColor: vehicle.exteriorColor || null,
-    addedAt: Date.now(),
+    price: vehicle.price ?? null, imageUrl: vehicle.imageUrl || vehicle.imageUrls?.[0] || null,
+    exteriorColor: vehicle.exteriorColor || null, addedAt,
   };
 }
 
-/* ─── Hook ─────────────────────────────────────────────────────── */
-export function useCustomerShortlist() {
-  const entries = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-
-  const ids = useMemo(() => new Set(entries.map((e) => e.id)), [entries]);
-
-  const isShortlisted = useCallback(
-    (vehicleOrId: InventoryVehicle | string): boolean => {
-      const id = typeof vehicleOrId === "string" ? vehicleOrId : vehicleOrId.id;
-      return ids.has(id);
-    },
-    [ids],
-  );
-
-  const toggle = useCallback(
-    (vehicle: InventoryVehicle) => {
-      const current = readStore();
-      const existing = current.findIndex((e) => e.id === vehicle.id);
-      if (existing >= 0) {
-        writeStore(current.filter((_, i) => i !== existing));
-      } else {
-        writeStore([...current, vehicleToEntry(vehicle)]);
-      }
-    },
-    [],
-  );
-
-  const add = useCallback((vehicle: InventoryVehicle) => {
-    const current = readStore();
-    if (current.some((e) => e.id === vehicle.id)) return;
-    writeStore([...current, vehicleToEntry(vehicle)]);
-  }, []);
-
-  const remove = useCallback((vehicleId: string) => {
-    writeStore(readStore().filter((e) => e.id !== vehicleId));
-  }, []);
-
-  const clear = useCallback(() => {
-    writeStore([]);
-  }, []);
-
-  return { entries, ids, isShortlisted, toggle, add, remove, clear, count: entries.length } as const;
+export interface ShortlistContextValue {
+  context: string;
+  entries: ShortlistEntry[];
+  ids: Set<string>;
+  count: number;
+  isShortlisted: (vehicle: InventoryVehicle | string) => boolean;
+  toggle: (vehicle: InventoryVehicle) => void;
+  add: (vehicle: InventoryVehicle) => void;
+  remove: (id: string) => void;
+  clear: () => void;
 }
-
-/* ─── Context (optional, for deep prop-drilling avoidance) ───── */
-export type ShortlistContextValue = ReturnType<typeof useCustomerShortlist>;
 export const ShortlistContext = createContext<ShortlistContextValue | null>(null);
 
+export function useCustomerShortlist(accessContext?: string, authorizedVehicles?: InventoryVehicle[]): ShortlistContextValue {
+  const inherited = useContext(ShortlistContext);
+  const context = accessContext ?? inherited?.context ?? "standalone";
+  if (activeContext !== context) {
+    activeContext = context;
+    entries = EMPTY;
+  }
+  const snapshot = useCallback(() => activeContext === context ? entries : EMPTY, [context]);
+  const stored = useSyncExternalStore(subscribe, snapshot, () => EMPTY);
+  const visible = useMemo(() => {
+    if (!authorizedVehicles) return stored;
+    const vehicles = new Map(authorizedVehicles.map(vehicle => [vehicle.id, vehicle]));
+    return stored.flatMap(entry => {
+      const vehicle = vehicles.get(entry.id);
+      return vehicle ? [vehicleEntry(vehicle, entry.addedAt)] : [];
+    });
+  }, [authorizedVehicles, stored]);
+  // Prune gone/withheld vehicles and refresh prices from the current projection.
+  useEffect(() => {
+    if (activeContext === context && authorizedVehicles && JSON.stringify(visible) !== JSON.stringify(stored)) publish(visible);
+  }, [authorizedVehicles, context, stored, visible]);
+  const ids = useMemo(() => new Set(visible.map(entry => entry.id)), [visible]);
+  const isShortlisted = useCallback((vehicle: InventoryVehicle | string) => ids.has(typeof vehicle === "string" ? vehicle : vehicle.id), [ids]);
+  const toggle = useCallback((vehicle: InventoryVehicle) => {
+    if (activeContext !== context) return;
+    publish(entries.some(entry => entry.id === vehicle.id)
+      ? entries.filter(entry => entry.id !== vehicle.id)
+      : [...entries, vehicleEntry(vehicle)]);
+  }, [context]);
+  const add = useCallback((vehicle: InventoryVehicle) => {
+    if (activeContext === context && !entries.some(entry => entry.id === vehicle.id)) publish([...entries, vehicleEntry(vehicle)]);
+  }, [context]);
+  const remove = useCallback((id: string) => {
+    if (activeContext === context) publish(entries.filter(entry => entry.id !== id));
+  }, [context]);
+  const clear = useCallback(() => { if (activeContext === context) publish(EMPTY); }, [context]);
+  return inherited ?? { context, entries: visible, ids, count: visible.length, isShortlisted, toggle, add, remove, clear };
+}
+
 export function useShortlistContext(): ShortlistContextValue {
-  const ctx = useContext(ShortlistContext);
-  if (!ctx) throw new Error("useShortlistContext must be used within a ShortlistContext.Provider");
-  return ctx;
+  const value = useContext(ShortlistContext);
+  if (!value) throw new Error("useShortlistContext must be used within a ShortlistContext.Provider");
+  return value;
 }

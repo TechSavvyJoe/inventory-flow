@@ -707,6 +707,7 @@ describe('verified daily source importer', () => {
             validated_vin: vin,
             vehicleDescription: '2025 ESCAPE ST-LINE AWD',
             equipmentGroup: '300A',
+            equipmentGroupContents: ['Synthetic included feature'], equipmentGroupPrice: 1250.75,
             basePrice: 32585,
             totalOptions: 995,
             destinationCharge: 1495,
@@ -733,6 +734,7 @@ describe('verified daily source importer', () => {
       publicSnapshotSha256: snapshotSha256,
     })
 
+    expect(merged.recordsByVin[vin].windowSticker).toMatchObject({ equipmentGroupContents: ['Synthetic included feature'], equipmentGroupPrice: 1250.75 })
     expect(merged.recordsByVin[vin].autoCheckReport).toMatchObject({
       score: 91,
       ownerCount: 2,
@@ -838,6 +840,10 @@ describe('verified daily source importer', () => {
     const unsupportedField = structuredClone(enrichment)
     unsupportedField.recordsByVin[vin].factoryEquipment.unverifiedClaim = 'clean history'
     expect(() => validateVinDocumentEnrichment(unsupportedField)).toThrow(/unsupported fields/i)
+
+    const misplacedGroupPrice = structuredClone(enrichment)
+    misplacedGroupPrice.recordsByVin[vin].factoryEquipment.equipmentGroupPrice = 1250
+    expect(() => validateVinDocumentEnrichment(misplacedGroupPrice)).toThrow(/unsupported fields/i)
   })
 
   it('validates read-only Ford OASIS recall and warranty facts as an independent VIN resource', () => {
@@ -859,6 +865,7 @@ describe('verified daily source importer', () => {
             releaseDate: '01-Jan-2023',
             monthsInService: 36,
             saleMileage: 0,
+            openActionsCaptured: true,
             openFieldServiceActions: [{ code: '00T01', description: 'Synthetic field service action' }],
             warrantyCoverages: [{ type: 'Bumper-to-Bumper' }, { type: 'Powertrain', description: '' }],
             extendedCoverageExpirations: ['01/01/2029'],
@@ -903,6 +910,7 @@ describe('verified daily source importer', () => {
     expect(withoutNumbers).not.toHaveProperty('saleMileage')
 
     const missingActions = structuredClone(enrichment)
+    delete missingActions.recordsByVin[vin].fordOasis.openActionsCaptured
     delete missingActions.recordsByVin[vin].fordOasis.openFieldServiceActions
     const unconfirmedActions = validateVinDocumentEnrichment(missingActions).recordsByVin[vin].fordOasis
     expect(unconfirmedActions).toMatchObject({ openFieldServiceActions: [], openActionsCaptured: false })
@@ -911,13 +919,44 @@ describe('verified daily source importer', () => {
     const capturedEmpty = structuredClone(enrichment)
     capturedEmpty.recordsByVin[vin].fordOasis.openFieldServiceActions = []
     expect(validateVinDocumentEnrichment(capturedEmpty).recordsByVin[vin].fordOasis).toMatchObject({ openFieldServiceActions: [], openActionsCaptured: true })
+    const legacyEmpty = structuredClone(capturedEmpty)
+    delete legacyEmpty.recordsByVin[vin].fordOasis.openActionsCaptured
+    expect(validateVinDocumentEnrichment(legacyEmpty).recordsByVin[vin].fordOasis).toMatchObject({ openFieldServiceActions: [], openActionsCaptured: false })
     const invalidCapture = structuredClone(enrichment)
     delete invalidCapture.recordsByVin[vin].fordOasis.openFieldServiceActions
     invalidCapture.recordsByVin[vin].fordOasis.openActionsCaptured = true
     expect(() => validateVinDocumentEnrichment(invalidCapture)).toThrow(/requires an explicit array/i)
 
+    const technicalFields = {
+      bodyStyle: 'CREW CAB', driveType: '4X4', paintColor: 'SYNTHETIC WHITE', paintCode: 'YZ',
+      engine: '3.5L V6', engineCalibration: 'DEMO-CAL', transmission: '10 SPEED',
+      axleRatio: '3.73', axleCode: 'EL', grossVehicleWeight: '7,400 LB', wheelSize: '20 IN',
+      tire: '275/60R20', syncVersion: 'SYNC 4', fuelType: 'GASOLINE',
+    }
+    const technical = structuredClone(enrichment)
+    Object.assign(technical.recordsByVin[vin].fordOasis, technicalFields)
+    expect(validateVinDocumentEnrichment(technical).recordsByVin[vin].fordOasis).toMatchObject(technicalFields)
+    expect(validateVinDocumentEnrichmentForPublish(technical).recordsByVin[vin].fordOasis).toMatchObject(technicalFields)
+    for (const key of Object.keys(technicalFields)) {
+      const overlong = structuredClone(technical)
+      overlong.recordsByVin[vin].fordOasis[key] = 'x'.repeat(161)
+      expect(() => validateVinDocumentEnrichment(overlong)).toThrow(/safe text limit/i)
+      const badType = structuredClone(technical)
+      badType.recordsByVin[vin].fordOasis[key] = { ownerName: 'Synthetic owner' }
+      expect(() => validateVinDocumentEnrichment(badType)).toThrow(/must be text/i)
+      const foreignText = structuredClone(technical)
+      foreignText.recordsByVin[vin].fordOasis[key] = 'Owner name: Synthetic owner'
+      expect(() => validateVinDocumentEnrichment(foreignText)).toThrow(/non-vehicle material/i)
+    }
+    const absentTechnical = structuredClone(technical)
+    absentTechnical.recordsByVin[vin].fordOasis.engine = null
+    absentTechnical.recordsByVin[vin].fordOasis.engineCalibration = ''
+    const absentResult = validateVinDocumentEnrichment(absentTechnical).recordsByVin[vin].fordOasis
+    expect(absentResult).not.toHaveProperty('engine')
+    expect(absentResult).not.toHaveProperty('engineCalibration')
+
     const unsupportedField = structuredClone(enrichment)
-    unsupportedField.recordsByVin[vin].fordOasis.engineCalibration = 'PCTCCRNA'
+    unsupportedField.recordsByVin[vin].fordOasis.rawReport = 'Unstructured source text'
     expect(() => validateVinDocumentEnrichment(unsupportedField)).toThrow(/unsupported fields/i)
 
     // Owner identity never enters the release, even when a capture leaks it.

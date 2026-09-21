@@ -14,6 +14,6 @@ describe('humanizeStatusLabel', () => {
 
 describe('formatDateTime', () => {
   it('uses the dealership timezone instead of the machine timezone', () => {
-    expect(formatDateTime('2026-09-18T21:30:00.000Z')).toBe('Sep 18, 5:30 PM');
+    expect(formatDateTime('2026-09-18T21:30:00.000Z')).toBe('09/18/2026, 5:30 PM');
   });
 });

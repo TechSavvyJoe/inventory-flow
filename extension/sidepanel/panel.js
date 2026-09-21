@@ -5,7 +5,7 @@ import { buildEntry, buildIndex, rank } from './lib/search.mjs'
 import { EMPTY_FILTERS, SORTS, activeFilterCount, applyFilters, describeFilters, filterOptions, normalizeFilters, sortMatches } from './lib/filters.mjs'
 import { groupMatchesByStore, resolveStoreScope, scopeCounts, scopeMatches } from './lib/scope.mjs'
 import { compareVehicles } from './lib/compare.mjs'
-import { certifiedTerms, warrantyOutlook } from './lib/warranty.mjs'
+import { certifiedTerms, vehicleInServiceSource, warrantyOutlook } from './lib/warranty.mjs'
 import { sourceDistanceText } from './lib/source-distance.mjs'
 import { brandFor } from './lib/brand.mjs'
 import * as links from './lib/links.mjs'
@@ -327,7 +327,8 @@ function movementPill(vehicle) {
 function certifiedBadge(vehicle, { size = 'sm' } = {}) {
   if (!vehicle.certifiedProgram) return null
   const program = vehicle.certifiedProgram
-  return el('span', { class: `cert cert-${size} ${program.brand ? `cert-${program.brand}` : ''}`.trim(), title: `${program.name} — separate from any factory warranty still running` }, icon('badge-check'), size === 'sm' ? 'Certified' : program.name)
+  const logo = program.brand === 'ford' ? '../resource-brands/ford-blue-certified.svg' : program.brand === 'lincoln' ? '../resource-brands/lincoln-certified.png' : null
+  return el('span', { class: `cert cert-${size} ${program.brand ? `cert-${program.brand} cert-logo` : ''}`.trim(), title: `${program.name} — separate from any factory warranty still running` }, logo ? el('img', { src: logo, alt: program.name }) : icon('badge-check'), program.brand === 'lincoln' ? null : program.short)
 }
 
 function rowThumb(vehicle) {
@@ -372,7 +373,7 @@ function renderRow(match, position) {
     ),
     inCompare ? el('span', { class: 'row-cmp', title: 'In the compare set' }, icon('columns', { size: 13 })) : icon('chevron-right', { size: 14 }),
     el('span', { class: 'row-operations' },
-      el('span', { class: 'row-status' }, el('strong', { class: 'row-store', text: vehicle.homeStore }), holdPill(vehicle), servicePill(vehicle)),
+      el('span', { class: 'row-status' }, el('strong', { class: 'row-store', text: vehicle.homeStore }), certifiedBadge(vehicle), holdPill(vehicle), servicePill(vehicle)),
       vehicle.movement ? el('span', { class: 'row-movement' }, movementPill(vehicle), vehicle.movement.destination ? el('span', { text: `To ${vehicle.movement.destination}` }) : null) : null,
       holdDetail ? el('span', { class: 'row-spec row-hold-detail', text: holdDetail, title: holdDetail }) : null,
       vehicle.location.store !== vehicle.homeStore || vehicle.location.provenance === 'app-confirmed' || vehicle.location.conflict ? locationNode(vehicle) : null,
@@ -385,13 +386,12 @@ function renderRow(match, position) {
 }
 
 function importantSourceNote(note) {
-  void note
-  return false
+  return /saved|partial|incomplete|refresh|stale|unavailable|unknown|unrecognized|future|not captured/i.test(note ?? '')
 }
 
 function sourceNoteLabel(note) {
   if (/saved report/i.test(note)) return 'Saved report'
-  if (/partial/i.test(note)) return 'Partial'
+  if (/partial|incomplete/i.test(note)) return 'Partial'
   if (/refresh/i.test(note)) return 'Refresh'
   if (/stale/i.test(note)) return 'Older capture'
   if (/unavailable/i.test(note)) return 'Unavailable'
@@ -404,12 +404,11 @@ function scanFact(resource) {
   const [primary, ...remaining] = resource.compactFacts
   const full = [primary, ...remaining].filter(Boolean).join(' · ')
   if (!primary) return null
-  // The scan list surfaces the highest-priority captured fact for each source.
-  // The full facts stay available in the vehicle's Records tab; retaining them
-  // as visually hidden text also gives assistive technology the same context.
+  // Keep both decision facts visible: the second line often holds a history
+  // check or installed equipment that would otherwise require opening a VIN.
   return el('span', { class: 'row-doc-facts', title: full },
     el('span', { text: primary }),
-    remaining.length ? el('span', { class: 'visually-hidden', text: ` · ${remaining.join(' · ')}` }) : null,
+    ...remaining.map(text => el('span', { class: 'row-doc-secondary', text })),
   )
 }
 
@@ -857,9 +856,88 @@ function docTile({ title, sub, iconName, url, onOpen, disabledText, score, brand
   )
 }
 
+function documentSummaryFacts(resource, vehicle) {
+  const docs = vehicle.documents ?? {}
+  if (resource.id === 'window-sticker' || resource.id === 'vauto') {
+    const isLabel = resource.id === 'vauto'
+    const sticker = isLabel ? docs.factoryEquipment : docs.windowSticker
+    const rows = []
+    if (sticker?.totalMsrp !== null && sticker?.totalMsrp !== undefined) rows.push([isLabel ? 'Reference MSRP' : 'MSRP', isLabel ? fmt.formatReferencePrice(sticker.totalMsrp) : fmt.formatStickerMoney(sticker.totalMsrp, sticker)])
+    if (sticker?.equipmentGroup) rows.push(['Equipment group', sourceDistanceText(sticker.equipmentGroup)])
+    if (!isLabel && typeof sticker?.equipmentGroupPrice === 'number') rows.push(['Group price', fmt.formatStickerMoney(sticker.equipmentGroupPrice, sticker)])
+    const capturedOptions = isLabel ? [
+      ...(sticker?.packages ?? []).flatMap(pkg => [{ text: fmt.joinFacts([pkg.name, pkg.code]), price: pkg.price }, ...(pkg.features ?? []).map(text => ({ text: `· ${text}`, child: true }))]),
+      ...(sticker?.sections ?? []).flatMap(section => section.items.map(item => ({ text: item.label, price: item.price }))),
+    ] : (sticker?.options ?? []).map(text => ({ text }))
+    const optionRows = capturedOptions.filter(item => item.text).map(item => {
+      const text = sourceDistanceText(item.text)
+      const priced = /^(.*?)\s+(?:[·|]\s*)?((?:USD|CAD)\s*\$?[\d,]+(?:\.\d{2})?|\$[\d,]+(?:\.\d{2})?|NO\s*CHARGE)$/i.exec(text)
+      const price = isLabel && typeof item.price === 'number' && Number.isFinite(item.price) ? fmt.formatReferencePrice(item.price) : priced?.[2]
+      const child = item.child || /^(?:[•·.]|[-–—])(?:\s+|(?=[A-Za-z]))|^\.\d+(?:[./"'–—-]|\s)/.test(text)
+      const raw = isLabel && price ? `${text} · ${price}` : text
+      return el('li', { class: `doc-sticker-option${child ? ' doc-sticker-option--child' : ''}`, title: raw, 'aria-label': raw },
+        el('span', { text: priced ? priced[1] : text }),
+        price ? el('strong', { class: 'doc-sticker-price', text: price }) : null,
+      )
+    })
+    return el('div', { class: 'doc-summary-facts' },
+      rows.length ? el('dl', { class: 'doc-fact-ledger' }, ...rows.map(([label, value]) => el('div', { class: 'doc-fact' }, el('dt', { text: label }), el('dd', { text: value })))) : null,
+      !isLabel && sticker?.equipmentGroupContents?.length ? el('section', { class: 'doc-options' }, el('h4', { text: 'Included in equipment group' }), el('ul', { class: 'doc-sticker-options' }, ...sticker.equipmentGroupContents.map(text => el('li', { class: 'doc-sticker-option', text: sourceDistanceText(text) })))) : null,
+      optionRows.length ? el('section', { class: 'doc-options' }, el('h4', { text: isLabel ? 'Captured equipment & packages' : Array.isArray(sticker?.equipmentGroupContents) ? 'Optional equipment & packages' : 'Captured equipment' }), el('ul', { class: 'doc-sticker-options' }, ...optionRows)) : null,
+    )
+  }
+
+  const factory = docs.factoryEquipment
+  const powertrain = factory ? fmt.joinFacts([factory.engine, factory.transmission, factory.drivetrain]) : null
+  const packages = new Set((factory?.packages ?? []).map(pkg => fmt.joinFacts([pkg.name, pkg.code])))
+  const featureNames = new Set([
+    ...(factory?.sections ?? []).flatMap(section => section.items.map(item => sourceDistanceText(item.label))),
+    ...(factory?.packages ?? []).flatMap(pkg => pkg.features.map(sourceDistanceText)),
+  ])
+  const rows = []
+  const packageRows = []
+  const features = []
+  for (const fact of resource.facts) {
+    // The shared vehicle facts already show the authoritative in-service date
+    // and specifications. Full captured source records remain on Records.
+    if (/^(Estimated warranty start|Warranty start|Vehicle class:|Assembly:)/.test(fact)) continue
+    if (resource.id === 'vauto' && (fact === powertrain || /^Exterior /.test(fact) || /reference MSRP/.test(fact))) continue
+    if (resource.id === 'vauto' && featureNames.has(fact)) { features.push(fact); continue }
+    let label = resource.id === 'vauto' ? 'Equipment' : resource.id === 'window-sticker' ? 'Equipment' : 'Report'
+    let value = fact
+    const prefix = /^(Score|Last reported|Estimated warranty start|Open FSA|Warranty start|Built|Released|Recorded coverage:|Extended coverage:|Printed warranty:|Vehicle class:|Assembly:|Warranty estimate:|Captured warranty:)\s*(.*)$/.exec(fact)
+    if (prefix) {
+      label = ({ 'Last reported': 'Odometer', 'Estimated warranty start': 'In-service · estimate', 'Built': 'Build date', 'Released': 'Release date' })[prefix[1]] ?? prefix[1].replace(/:$/, '')
+      value = prefix[2]
+    } else if (resource.id === 'autocheck' && fact.includes(':')) {
+      const separator = fact.indexOf(':'); label = fact.slice(0, separator); value = fact.slice(separator + 1).trim()
+    } else if (resource.id === 'autocheck' && /owners?\b/.test(fact)) label = 'Owners / use'
+    else if (resource.id === 'autocheck' && fact === docs.autoCheck?.usage) label = 'Use'
+    else if (/reference MSRP| MSRP$/.test(fact)) label = 'MSRP'
+    else if (/^Exterior /.test(fact)) label = 'Colors'
+    else if (packages.has(fact) && resource.id === 'vauto') label = 'Package'
+    else if (resource.id === 'window-sticker' && fact === docs.windowSticker?.equipmentGroup) label = 'Group'
+    else if (resource.id === 'oasis' && /^0 open Ford actions/.test(fact)) label = 'Open actions'
+    else if (/months in service at capture/.test(fact)) label = 'In service'
+    else if (/mi at sale/.test(fact)) label = 'Sale mileage'
+    ;(label === 'Package' ? packageRows : rows).push(el('div', { class: `doc-fact${label === 'Open FSA' ? ' doc-fact--warning' : ''}` }, el('dt', { text: label }), el('dd', { text: value })))
+  }
+  return el('div', { class: 'doc-summary-facts' },
+    packageRows.length ? el('dl', { class: 'doc-fact-ledger' }, ...packageRows) : null,
+    features.length ? el('ul', { class: 'doc-equipment-list', 'aria-label': 'Captured equipment' }, ...features.map(text => el('li', { text }))) : null,
+    rows.length ? el('dl', { class: 'doc-fact-ledger' }, ...rows) : null,
+  )
+}
+
 function documentsGrid(vehicle) {
-  const resources = resourceSummaries(vehicle).filter(resource => resource.id !== 'invoice')
-  const cards = resources.map(resource => {
+  const sourceResources = resourceSummaries(vehicle)
+  const sticker = sourceResources.find(resource => resource.id === 'window-sticker')
+  const equipment = sourceResources.find(resource => resource.id === 'vauto')
+  const usableSticker = vehicle.documents.windowSticker?.dataState !== 'unavailable' && (vehicle.documents.windowSticker?.options?.length || vehicle.documents.windowSticker?.equipmentGroup || vehicle.documents.windowSticker?.equipmentGroupContents?.length)
+  const selectedEquipment = usableSticker && sticker?.hasCapturedData
+    ? sticker : equipment?.hasCapturedData && vehicle.documents.factoryEquipment?.dataState !== 'unavailable' ? equipment : sticker ?? equipment
+  const resources = sourceResources.filter(resource => !['window-sticker', 'vauto'].includes(resource.id) || resource === selectedEquipment)
+  const cards = resources.filter(resource => resource.hasCapturedData).map(resource => {
     const captured = resource.hasCapturedData
     const accessibleTitle = resource.id === 'autocheck' ? 'AutoCheck history' : resource.id === 'vauto' ? 'vAuto equipment label' : resource.title
     const label = captured ? `View ${accessibleTitle}` : resource.url ? `Open ${resource.title}` : `${resource.title}: details unavailable`
@@ -867,17 +945,24 @@ function documentsGrid(vehicle) {
       el('button', { type: 'button', class: `doc doc-summary-heading${resource.brand ? ` doc-${resource.brand}` : ''}`, disabled: !captured && !resource.url, 'aria-label': label,
         onclick: () => captured ? openRecord(resource.id) : openUrl(resource.url) },
         resource.brand ? resourceBrand(resource.brand) : icon('file-text'),
-        el('span', { class: 'doc-body' }, el('strong', { text: resource.title }), el('small', { text: captured ? 'View details' : 'Open document' })),
+        el('span', { class: 'doc-body' }, el('strong', { text: ['window-sticker', 'vauto'].includes(resource.id) ? 'Sticker & equipment' : resource.title })),
         icon(captured ? 'arrow-right' : 'external', { size: 14 })),
-      resource.facts.length ? el('ul', { class: 'doc-summary-facts' }, ...resource.facts.slice(0, 3).map(fact => el('li', { text: fact }))) : null,
+      resource.id === 'vauto' ? el('p', { class: 'doc-source-note', text: 'vAuto equipment label · not an original window sticker' }) : null,
+      resource.facts.length ? documentSummaryFacts(resource, vehicle) : null,
+      resource.id === 'vauto' && sticker?.url ? el('button', { type: 'button', class: 'doc-source-supplement', onclick: () => openUrl(sticker.url) }, 'Open window sticker', icon('external', { size: 14 })) : null,
+      resource.sourceNote ? el('p', { class: 'doc-source-note', text: resource.sourceNote }) : null,
       captured && resource.url ? el('button', { type: 'button', class: 'doc-source-open', 'aria-label': `Open ${resource.title} for ${vehicle.stockNumber}`, onclick: () => openUrl(resource.url) }, 'Open document', icon('external', { size: 14 })) : null,
     )
   })
   return el('section', { class: 'document-summaries', 'aria-label': 'Vehicle documents and records' },
     el('h3', { class: 'card-title', text: 'Documents & records' }),
-    el('div', { class: 'doc-grid doc-grid--summaries' }, ...cards),
+    cards.length ? el('div', { class: 'doc-grid doc-grid--summaries' }, ...cards) : null,
     el('div', { class: 'doc-grid doc-grid--utilities' },
-      vehicle.links.invoice ? docTile({ title: 'Ford invoice', sub: 'Open invoice', iconName: 'receipt', url: vehicle.links.invoice, brand: 'ford' }) : null,
+      ...resources.filter(resource => !resource.hasCapturedData).map(resource => docTile({
+        title: resource.title, sub: resource.sourceKind === 'Dealer lookup' ? 'Dealer lookup' : 'Open document',
+        iconName: resource.id === 'invoice' ? 'receipt' : 'file-text', url: resource.url,
+        disabledText: 'No captured details', brand: resource.brand,
+      })),
       vehicle.listing.url ? docTile({ title: 'Listing', sub: 'Open dealer website', iconName: 'globe', url: vehicle.listing.url }) : null),
   )
 }
@@ -925,7 +1010,6 @@ function coverageRow(item) {
 function warrantyCard(vehicle) {
   const miles = state.odometer.has(vehicle.vin) ? state.odometer.get(vehicle.vin) : vehicle.mileage
   const outlook = warrantyOutlook({ ...vehicle, mileage: miles })
-  const recordedOasisStart = vehicle.documents.fordOasis?.warrantyStartDate ?? vehicle.documents.warrantyCheck?.fordOasis?.warrantyStartDate
   const rerender = () => { const next = warrantyCard(vehicle); card.replaceWith(next); next.querySelector('.warr-odo')?.focus() }
   const input = el('input', {
     class: 'warr-odo num', type: 'number', inputmode: 'numeric', min: '0', step: '100', placeholder: 'miles', 'aria-label': 'Odometer now', value: miles === null || miles === undefined ? '' : String(miles),
@@ -936,13 +1020,13 @@ function warrantyCard(vehicle) {
     outlook.program ? el('small', { class: 'card-sub', text: outlook.program }) : el('small', { class: 'card-sub', text: `No terms on file for ${vehicle.make || 'this make'}` }),
   )
   const facts = el('div', { class: 'warr-facts' },
-    el('div', { class: 'warr-fact' }, el('small', { text: 'Estimated warranty start' }), el('strong', { text: outlook.inService.date ? fmt.formatDate(outlook.inService.date) : 'Not on the report' }), outlook.inService.date ? el('span', { text: 'AutoCheck estimate' }) : el('span', { text: 'Needed to date the coverage' })),
+    el('div', { class: 'warr-fact' }, el('small', { text: outlook.inService.estimated ? 'Estimated warranty start' : 'Warranty start · OASIS' }), el('strong', { text: outlook.inService.date ? fmt.formatDate(outlook.inService.date) : 'Not on the report' }), outlook.inService.date ? el('span', { text: outlook.inService.source }) : el('span', { text: 'Needed to date the coverage' })),
     el('div', { class: 'warr-fact' }, el('label', {}, el('small', { text: 'Odometer now' }), input), el('span', { text: 'Edit to recalculate' })),
   )
   const cert = vehicle.certifiedProgram ? certifiedTerms(vehicle.certifiedProgram.store) : null
   const card = el('section', { class: 'card warr' },
     head,
-    recordedOasisStart ? el('div', { class: 'doc-source-note' }, el('p', { text: `Warranty in-service date: ${fmt.formatDate(recordedOasisStart)}.` }), el('button', { type: 'button', class: 'doc-source-open', onclick: () => switchTab('records') }, 'View warranty details', icon('arrow-right', { size: 14 }))) : null,
+
     facts,
     outlook.coverages.length ? el('div', { class: 'warr-rows' }, ...outlook.coverages.map(coverageRow)) : null,
     outlook.stickerWarranty.length ? el('div', { class: 'warr-sticker' }, el('b', { text: 'Printed on the original window sticker' }), el('ul', {}, ...outlook.stickerWarranty.map((text) => el('li', { text })))) : null,
@@ -951,7 +1035,7 @@ function warrantyCard(vehicle) {
       el('ul', { class: 'warr-terms' }, ...cert.terms.map((term) => el('li', { text: term }))),
       el('p', { class: 'd-caption', text: cert.note }),
     ) : null,
-    el('p', { class: 'd-caption' }, icon('calendar', { size: 12 }), ' Warranty runs from the first retail sale, not the model year. ', outlook.verify.source === 'oasis' ? 'OASIS shows the exact warranty start date for Ford and Lincoln VINs — use it over this estimate.' : 'The AutoCheck report shows the sale and registration dates and has its own remaining-warranty calculator at the bottom.'),
+    el('p', { class: 'd-caption' }, icon('calendar', { size: 12 }), ' Warranty runs from the first retail sale, not the model year. ', outlook.verify.source === 'oasis' ? 'A captured OASIS warranty start date takes priority; otherwise the date is an AutoCheck estimate. Coverage calculations remain estimates.' : 'The AutoCheck report shows the sale and registration dates and has its own remaining-warranty calculator at the bottom.'),
     outlook.verify.url ? el('button', { type: 'button', class: 'btn btn-sm', onclick: () => openUrl(outlook.verify.url) }, icon(outlook.verify.source === 'oasis' ? 'wrench' : 'shield', { size: 13 }), outlook.verify.source === 'oasis' ? 'Open OASIS' : 'Open AutoCheck report', icon('external', { size: 12 })) : null,
   )
   return card
@@ -983,8 +1067,7 @@ function specsCard(vehicle) {
 
 function frequentFacts(vehicle) {
   const docs = vehicle.documents
-  const oasisStart = docs.fordOasis?.warrantyStartDate ?? docs.warrantyCheck?.fordOasis?.warrantyStartDate
-  const estimatedStart = docs.autoCheck?.inServiceDate ?? docs.warrantyCheck?.autoCheck?.inServiceDate
+  const start = vehicleInServiceSource(vehicle)
   const stickerBase = docs.windowSticker?.basePrice
   const labelBase = docs.factoryEquipment?.basePrice
   const hasStickerBase = stickerBase !== null && stickerBase !== undefined
@@ -992,7 +1075,7 @@ function frequentFacts(vehicle) {
   const baseLookup = fact('Weight fee lookup · Base MSRP', hasStickerBase ? fmt.formatStickerMoney(stickerBase, docs.windowSticker) : hasLabelBase ? fmt.formatReferencePrice(labelBase) : '—')
   return el('section', { class: 'detail-frequent-facts', 'aria-label': 'Frequently used vehicle facts' },
     baseLookup,
-    fact(oasisStart ? 'Warranty in-service · OASIS' : estimatedStart ? 'Warranty in-service · estimate' : 'Warranty in-service', oasisStart || estimatedStart ? fmt.formatDate(oasisStart || estimatedStart) : '—'),
+    fact(start.source === 'OASIS' ? 'Warranty in-service · OASIS' : start.raw ? 'Warranty in-service · estimate' : 'Warranty in-service', start.raw ? fmt.formatDate(start.raw) : '—'),
   )
 }
 
@@ -1178,7 +1261,8 @@ function recordsTab(vehicle) {
       note(sourceNote(sticker, 'window-sticker')),
       sticker.vehicleDescription ? el('p', { class: 'd-caption', text: sticker.vehicleDescription }) : null,
       recordPrices([['Base MSRP', sticker.basePrice], ['Options', sticker.totalOptions], ['Destination & delivery', sticker.destinationCharge], ['Total MSRP', sticker.totalMsrp]], (value) => fmt.formatStickerMoney(value, sticker)),
-      kv([['Equipment group', sticker.equipmentGroup], ['Engine', sourceDistanceText(sticker.engine)], ['Transmission', sourceDistanceText(sticker.transmission)], ['Exterior', sticker.exteriorColor], ['Interior', sticker.interiorColor]]),
+      sticker.equipmentGroupContents?.length ? el('section', {}, el('h4', { text: 'Equipment group contents' }), ...sticker.equipmentGroupContents.map(text => el('p', { text }))) : null,
+      kv([['Group price', typeof sticker.equipmentGroupPrice === 'number' ? fmt.formatStickerMoney(sticker.equipmentGroupPrice, sticker) : null], ['Equipment group', sticker.equipmentGroup], ['Engine', sourceDistanceText(sticker.engine)], ['Transmission', sourceDistanceText(sticker.transmission)], ['Exterior', sticker.exteriorColor], ['Interior', sticker.interiorColor]]),
       recordList('Factory options', sticker.options),
       recordList('Standard equipment', sticker.standardEquipment),
       recordList('Warranty printed on sticker', sticker.warranty),
@@ -1213,9 +1297,9 @@ function recordsTab(vehicle) {
       ['Build date', oasis.buildDate ? fmt.formatDate(oasis.buildDate) : null], ['Release date', oasis.releaseDate ? fmt.formatDate(oasis.releaseDate) : null],
       ['Months in service', hasNumber(oasis.monthsInService) ? String(oasis.monthsInService) : null], ['Sale mileage', hasNumber(oasis.saleMileage) ? fmt.formatMileage(oasis.saleMileage) : null],
     ]) : null,
-    oasis?.openFieldServiceActions.length ? recordSection('Open Ford service actions', [el('ul', { class: 'rec-list oasis-actions' }, ...oasis.openFieldServiceActions.map((item) => el('li', {}, icon('alert', { size: 17 }), el('span', {}, item.code ? el('b', { text: item.code }) : null, item.code && item.description ? ' · ' : '', sourceDistanceText(sourceDisplayText(item.description))))))]) : el('p', { class: 'rec-empty', text: 'Verify current actions in OASIS.' }),
+    oasis?.openFieldServiceActions.length ? recordSection(oasis.openActionsCaptured === false ? `At least ${oasis.openFieldServiceActions.length} captured actions · result incomplete` : 'Open Ford service actions', [el('ul', { class: 'rec-list oasis-actions' }, ...oasis.openFieldServiceActions.map((item) => el('li', {}, icon('alert', { size: 17 }), el('span', {}, item.code ? el('b', { text: item.code }) : null, item.code && item.description ? ' · ' : '', sourceDistanceText(sourceDisplayText(item.description))))))]) : el('p', { class: 'rec-empty', text: 'Verify current actions in OASIS.' }),
     oasis?.warrantyCoverages.length ? recordSection('Ford warranty coverages', [el('ul', { class: 'rec-list' }, ...oasis.warrantyCoverages.map((item) => el('li', {}, el('b', { text: item.type }), item.description ? ` · ${sourceDistanceText(sourceDisplayText(item.description))}` : '')))]) : null,
-    recordList('Extended coverage expirations', oasis?.extendedCoverageExpirations),
+    recordList('Extended coverage expirations', oasis?.extendedCoverageExpirations?.map(value => fmt.formatSourceDateText(value))),
   ))
   const warranty = docs.warrantyCheck
   const coverageBlock = (title, block) => block?.coverages.length ? recordSection(title, [

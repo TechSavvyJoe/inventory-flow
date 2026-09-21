@@ -143,105 +143,37 @@ describe('Adversarial Challenger 1: Table Grid Layout & Alignment', () => {
       expect(copyVinBtn).toBeInTheDocument();
     });
 
-    it('renders all 4 action buttons in actions column when shortlist is enabled', () => {
-      const onShortlist = vi.fn();
-      const onView = vi.fn();
-      const onMove = vi.fn();
-      const onRequest = vi.fn();
-
-      const testVehicle = createMockVehicle({
-        id: 'FOUR-ACTIONS-VIN',
-        stockNumber: 'ACT444',
-      });
-
-      render(
-        <InventoryTableV2
-          vehicles={[testVehicle]}
-          sorts={mockSorts}
-          onSortChange={vi.fn()}
-          onSelectVehicle={vi.fn()}
-          onToggleShortlist={onShortlist}
-          isShortlisted={() => false}
-          onViewVehicle={onView}
-          onTrackMovement={onMove}
-          onRequestVehicle={onRequest}
-          canRequestVehicle={true}
-        />
-      );
-
-      const actionsCell = document.querySelector('.inventory-table-v2-td--actions');
-      expect(actionsCell).not.toBeNull();
-
-      const innerWrapper = actionsCell?.querySelector('.inv-v2-actions-cell');
-      expect(innerWrapper).not.toBeNull();
-
-      // Verify exactly 4 buttons inside the actions cell
-      const buttons = innerWrapper?.querySelectorAll('button');
-      expect(buttons?.length).toBe(4);
-
-      // Button 1: Shortlist
-      const shortlistBtn = screen.getByRole('button', { name: /Add ACT444 to shortlist/i });
-      expect(shortlistBtn).toBeInTheDocument();
-      fireEvent.click(shortlistBtn);
-      expect(onShortlist).toHaveBeenCalledWith(testVehicle);
-
-      // Button 2: View
-      const viewBtn = screen.getByRole('button', { name: /View details for ACT444/i });
-      expect(viewBtn).toBeInTheDocument();
-      fireEvent.click(viewBtn);
-      expect(onView).toHaveBeenCalledWith(testVehicle);
-
-      // Button 3: Move
-      const moveBtn = screen.getByRole('button', { name: /Move vehicle ACT444/i });
-      expect(moveBtn).toBeInTheDocument();
-      fireEvent.click(moveBtn);
-      expect(onMove).toHaveBeenCalledWith(testVehicle);
-
-      // Button 4: Request
-      const requestBtn = screen.getByRole('button', { name: /Request transfer for ACT444/i });
-      expect(requestBtn).toBeInTheDocument();
-      expect(requestBtn).not.toBeDisabled();
-      fireEvent.click(requestBtn);
-      expect(onRequest).toHaveBeenCalledWith(testVehicle);
+    it('keeps shortlist, records, service and authorized direct move controls independent', () => {
+      const vehicle = createMockVehicle({ id: 'ACTION-SYNTHETIC', stockNumber: 'ACT444', movement: null });
+      const shortlist = vi.fn(), view = vi.fn(), move = vi.fn();
+      render(<InventoryTableV2 vehicles={[vehicle]} sorts={mockSorts} onSortChange={vi.fn()} onSelectVehicle={view}
+        onToggleShortlist={shortlist} isShortlisted={() => false} onMoveVehicle={move}
+        moveActionFor={() => ({ intent: 'direct', label: 'Move vehicle', shortLabel: 'Move' })} />);
+      fireEvent.click(screen.getByRole('button', { name: /Add ACT444 to shortlist/ }));
+      expect(shortlist).toHaveBeenCalledWith(vehicle);
+      fireEvent.click(screen.getByRole('button', { name: /Open vehicle details/ }));
+      expect(view).toHaveBeenCalledWith(vehicle);
+      fireEvent.click(screen.getByRole('button', { name: /Open vehicle records/ }));
+      expect(view).toHaveBeenCalledWith(vehicle, 'data');
+      fireEvent.click(screen.getByRole('button', { name: /Move vehicle/ }));
+      expect(move).toHaveBeenCalledWith(vehicle, 'direct');
+      expect(screen.getByRole('link', { name: /Open service status/ })).toHaveAttribute('href', expect.stringContaining(vehicle.vin));
     });
 
-    it('disables Request action button while keeping other 3 buttons fully operational when canRequestVehicle is false', () => {
-      const onShortlist = vi.fn();
-      const onView = vi.fn();
-      const onMove = vi.fn();
-      const onRequest = vi.fn();
-
-      const testVehicle = createMockVehicle({
-        id: 'CANNOT-REQUEST-VIN',
-        stockNumber: 'NOREQ1',
-      });
-
-      render(
-        <InventoryTableV2
-          vehicles={[testVehicle]}
-          sorts={mockSorts}
-          onSortChange={vi.fn()}
-          onSelectVehicle={vi.fn()}
-          onToggleShortlist={onShortlist}
-          isShortlisted={() => true}
-          onViewVehicle={onView}
-          onTrackMovement={onMove}
-          onRequestVehicle={onRequest}
-          canRequestVehicle={false}
-        />
-      );
-
-      const requestBtn = screen.getByRole('button', { name: /Request transfer for NOREQ1/i });
-      expect(requestBtn).toBeDisabled();
-      fireEvent.click(requestBtn);
-      expect(onRequest).not.toHaveBeenCalled();
-
-      // Shortlist is active and clickable
-      const shortlistBtn = screen.getByRole('button', { name: /Remove NOREQ1 from shortlist/i });
-      expect(shortlistBtn).toHaveAttribute('aria-pressed', 'true');
-      fireEvent.click(shortlistBtn);
-      expect(onShortlist).toHaveBeenCalledWith(testVehicle);
+    it('omits unauthorized move requests while retaining useful read-only controls', () => {
+      const vehicle = createMockVehicle({ id: 'NO-REQUEST-SYNTHETIC', stockNumber: 'NOREQ1', movement: null });
+      const shortlist = vi.fn(), request = vi.fn();
+      render(<InventoryTableV2 vehicles={[vehicle]} sorts={mockSorts} onSortChange={vi.fn()} onSelectVehicle={vi.fn()}
+        onToggleShortlist={shortlist} isShortlisted={() => true} onRequestVehicle={request} canRequestVehicle={false} />);
+      expect(screen.queryByRole('button', { name: /Request vehicle/ })).not.toBeInTheDocument();
+      expect(request).not.toHaveBeenCalled();
+      const button = screen.getByRole('button', { name: /Remove NOREQ1 from shortlist/ });
+      expect(button).toHaveAttribute('aria-pressed', 'true');
+      fireEvent.click(button);
+      expect(shortlist).toHaveBeenCalledWith(vehicle);
+      expect(screen.getByRole('button', { name: /Open vehicle records/ })).toBeEnabled();
     });
+
   });
 
   // ---------------------------------------------------------------------------

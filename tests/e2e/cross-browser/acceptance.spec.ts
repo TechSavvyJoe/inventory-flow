@@ -49,7 +49,7 @@ async function switchLocationAndSettle(page: Page, homeStore: string) {
 }
 
 const test = base.extend<{ runtimeHealth: void }>({
-  runtimeHealth: [async ({ page }, use, testInfo) => {
+  runtimeHealth: [async ({ page, browserName }, use, testInfo) => {
     const errors: string[] = []
     const pending = new Map<object, string>()
     inFlight.set(page, pending)
@@ -70,6 +70,9 @@ const test = base.extend<{ runtimeHealth: void }>({
     })
     page.on('pageerror', error => errors.push(error.message))
     page.on('console', message => {
+      // WebKit ignores this progressive-enhancement viewport key. Keep every
+      // other warning/error, including page errors, in the health assertion.
+      if (browserName === 'webkit' && message.text() === 'Viewport argument key "interactive-widget" not recognized and ignored.') return
       if (['error', 'warning'].includes(message.type())) errors.push(message.text())
     })
     await use()
@@ -408,10 +411,21 @@ test('five-column comparison uses each row for a clear photo and high-value scan
       expect(element.scrollHeight, `${width}px ${element.selector} not vertically clipped`).toBeLessThanOrEqual(element.clientHeight + 1)
     }
     expect(dimensions.rowHeight, `${width}px row keeps scroll density`).toBeGreaterThanOrEqual(84)
-    // The comparison keeps the vehicle photo, service status, and a readable
-    // one-line equipment cue together. Full factory text is in Records/source
-    // rather than inflating this scan row with a copied sticker paragraph.
-    expect(dimensions.rowHeight, `${width}px row keeps scroll density with service status`).toBeLessThanOrEqual(120)
+    // The scan now includes stock/mileage/VIN copy ledgers, multiple equipment
+    // cues and three action rows with 44px targets. Preserve those useful facts
+    // within the reviewed 190px density budget rather than shrinking controls.
+    expect(dimensions.rowHeight, `${width}px row keeps the expanded scan compact`).toBeLessThanOrEqual(190)
+    for (const name of ['Copy stock number: DEMO-H01', 'Copy mileage: 12450', 'Copy VIN: TESTDATAHWELL0001']) {
+      await expect(main.getByRole('button', { name, exact: true })).toBeVisible()
+    }
+    const actionTargets = main.locator('td[data-column="actions"] .inv-desk-actions').locator('button, a')
+    expect(await actionTargets.count()).toBeGreaterThan(0)
+    for (const target of await actionTargets.all()) {
+      await expect(target).toBeVisible()
+      const box = await target.boundingBox()
+      expect(box!.height, `${width}px action target height`).toBeGreaterThanOrEqual(44)
+      expect(box!.width, `${width}px action target width`).toBeGreaterThanOrEqual(44)
+    }
     expect(dimensions.photo.width, `${width}px photo is no longer a tiny thumbnail`).toBeGreaterThanOrEqual(84)
     expect(dimensions.photo.height, `${width}px photo is no longer a tiny thumbnail`).toBeGreaterThanOrEqual(63)
     // The supplied listing imagery is 3:2; keeping that native presentation
@@ -421,7 +435,7 @@ test('five-column comparison uses each row for a clear photo and high-value scan
     expect(dimensions.image.naturalHeight).toBeGreaterThan(dimensions.photo.height * 2)
     const equipment = main.locator('td[data-column="configuration"] .inv-desk-equipment')
     await expect(equipment).toBeVisible()
-    await expect(equipment).toContainText('Group 302A')
+    await expect(equipment).toContainText('302A')
     await expect(equipment).toContainText(/\+\d+ more/)
     const region = await page.locator('.if-srp-table-wrap').evaluate(element => ({ width: element.clientWidth, contentWidth: element.scrollWidth, height: element.clientHeight, contentHeight: element.scrollHeight }))
     expect(region.contentHeight).toBeLessThanOrEqual(region.height + 2)
@@ -491,42 +505,48 @@ test('phone cards show exact equipment and document facts with direct detail act
   // contract to that exact actionable control, then scope its card.
   const detailsTrigger = page.getByRole('button', { name: /Open details for 2024 Ford F-150 Lariat, stock DEMO-H01, VIN TESTDATAHWELL0001/ })
   const card = detailsTrigger.locator('xpath=ancestor::article[contains(@class, "if-srp-mobile-row")]')
-  const history = card.locator('[data-resource-kind="autocheck"]')
-  const sticker = card.locator('[data-resource-kind="window-sticker"]')
+  const expandedRecords = page.getByRole('dialog', {name:'2024 Ford F-150 Lariat records',exact:true})
+  const history = expandedRecords.locator('[data-resource-kind="autocheck"]')
+  const sticker = expandedRecords.locator('[data-resource-kind="window-sticker"]')
   const recordsTrigger = card.getByRole('button', { name: /Open vehicle records for 2024 Ford F-150/ })
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 })
     await page.evaluate(async () => { await document.fonts.ready; window.scrollTo(0, 0) })
     await expect(card).toBeVisible()
-    await expect(history.locator('.vehicle-resource-inline-facts')).toContainText('Score 95 · 2 owners')
-    // Currency-aware source facts deliberately lead the compact SRP scan;
-    // verify both the exact MSRP and package context without coupling the
-    // acceptance contract to presentation order or a dollar-sign locale.
-    const stickerFacts = sticker.locator('.vehicle-resource-inline-facts')
-    await expect(stickerFacts).toContainText('USD 59,650 MSRP')
-    await expect(stickerFacts).toContainText('Equipment Group 302A')
-    await expect(history.getByRole('link', { name: /Open AutoCheck history for VIN TESTDATAHWELL0001/ })).toHaveAttribute('target', '_blank')
-    await expect(sticker.getByRole('link', { name: /Open sticker for VIN TESTDATAHWELL0001/ })).toHaveAttribute('target', '_blank')
-    // Phone scan cards intentionally surface the two highest-priority sources;
-    // remaining Records evidence is still in the DOM but removed from layout.
-    // Measure only rendered facts rather than treating an intentionally hidden
-    // third resource as a zero-width mobile regression.
-    const visibleFacts = card.locator('.vehicle-resource-inline-facts:visible')
-    await expect(visibleFacts).toHaveCount(2)
-    const fields = await visibleFacts.evaluateAll(elements => elements.map(element => ({
-      width: element.clientWidth, scrollWidth: element.scrollWidth,
-      height: element.clientHeight, scrollHeight: element.scrollHeight,
-      size: parseFloat(getComputedStyle(element).fontSize),
-    })))
-    for (const field of fields) {
-      expect(field.size, `${width}px equipment and document facts stay readable`).toBeGreaterThanOrEqual(12)
-      expect(field.width, `${width}px facts have usable line width`).toBeGreaterThan(120)
-      expect(field.scrollWidth).toBeLessThanOrEqual(field.width + 1)
-      expect(field.scrollHeight).toBeLessThanOrEqual(field.height + 1)
+    await expect(card.locator('.vehicle-resource-scan[data-resource-kind="autocheck"]')).toContainText('Score 95 · 2 owners')
+    await recordsTrigger.click()
+    await expect(expandedRecords).toBeVisible()
+    // Only the selected source occupies the full-width preview pane.
+    for (const source of ['history', 'equipment'] as const) {
+      await expandedRecords.getByRole('button', { name: `Expand ${source} details`, exact: true }).click()
+      if (source === 'history') {
+        await expect(history.locator('.vehicle-resource-summary__fields > .is-score')).toContainText('95')
+        await expect(history).toContainText('2 owners')
+        await expect(history.getByRole('link', { name: /Open AutoCheck history for VIN TESTDATAHWELL0001/ })).toHaveAttribute('target', '_blank')
+      } else {
+        await expect(sticker).toContainText('$59,650')
+        await expect(sticker).toContainText('Equipment Group 302A')
+        await expect(sticker.getByRole('link', { name: /Open sticker for VIN TESTDATAHWELL0001/ })).toHaveAttribute('target', '_blank')
+      }
+      const visibleFacts = expandedRecords.locator('.vehicle-resource-summary__body:visible')
+      await expect(visibleFacts).toHaveCount(1)
+      const fields = await visibleFacts.evaluateAll(elements => elements.map(element => ({
+        width: element.clientWidth, scrollWidth: element.scrollWidth,
+        height: element.clientHeight, scrollHeight: element.scrollHeight,
+        size: parseFloat(getComputedStyle(element).fontSize),
+      })))
+      for (const field of fields) {
+        expect(field.size, `${width}px equipment and document facts stay readable`).toBeGreaterThanOrEqual(12)
+        expect(field.width, `${width}px facts have usable line width`).toBeGreaterThan(120)
+        expect(field.scrollWidth).toBeLessThanOrEqual(field.width + 1)
+        expect(field.scrollHeight).toBeLessThanOrEqual(field.height + 1)
+      }
     }
     await expectNoOverflow(page)
     await capture(page, testInfo, `phone-document-rich-${width}`)
 
+    await expandedRecords.getByRole('button', {name:'Close records',exact:true}).click()
+    await expect(recordsTrigger).toBeFocused()
     await detailsTrigger.click()
     const dialog = page.getByRole('dialog')
     await dialog.getByRole('tab', { name: 'Equipment', exact: true }).click()
@@ -537,6 +557,7 @@ test('phone cards show exact equipment and document facts with direct detail act
     await expect(detailsTrigger).toBeFocused()
 
     await recordsTrigger.click()
+    await expandedRecords.getByRole('button', { name: 'Full vehicle', exact: true }).click()
     await expect(dialog.getByRole('tab', { name: 'Records', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(dialog.getByRole('tabpanel', { name: 'Records', exact: true })).toContainText('AutoCheck vehicle history')
     await expectNoOverflow(page)
@@ -620,14 +641,15 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   const metrics = dialog.locator('.vdp-focus-specs')
   await expect(metrics).toContainText('12,450 mi')
   const header = dialog.locator('.vdp-focus-header')
-  const navigation = dialog.getByRole('tablist', { name: 'Vehicle workspace sections' })
+  const navigation = dialog.locator('.vdp-focus-navigation')
   const headerBox = await header.boundingBox()
   const navigationBox = await navigation.boundingBox()
   expect(headerBox!.y + headerBox!.height).toBeLessThanOrEqual(navigationBox!.y + 1)
   await expect(dialog.getByRole('toolbar', { name: 'Vehicle actions' })).toBeVisible()
   const status = dialog.getByRole('region', { name: 'Vehicle operational summary' })
   await expect(status).toContainText('Location')
-  await expect(status).toContainText('Service status')
+  await expect(dialog.getByRole('link', { name: 'Service: Ready', exact: true })).toBeVisible()
+  await expect(status.getByRole('link', { name: 'Service history', exact: true })).toBeVisible()
   const statusOverflow = await status.evaluate(element => [...element.querySelectorAll<HTMLElement>('button,a')].map(control => ({
     clientHeight: control.clientHeight, scrollHeight: control.scrollHeight,
     clientWidth: control.clientWidth, scrollWidth: control.scrollWidth,
@@ -657,13 +679,15 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
     const launch = panel.querySelector<HTMLElement>('.inventory-dealermail-handoff__launch')!
     const panelBox = panel.getBoundingClientRect()
     const headingBox = heading.getBoundingClientRect()
+    const guidanceBox = panel.querySelector('header')!.getBoundingClientRect()
     const launchBox = launch.getBoundingClientRect()
     const style = getComputedStyle(panel)
     return {
       borderTop: parseFloat(style.borderTopWidth),
       paddingTop: parseFloat(style.paddingTop),
       headingOffset: headingBox.top - panelBox.top,
-      actionOffset: launchBox.top - headingBox.top,
+      actionClearance: Math.max(launchBox.top - guidanceBox.bottom, guidanceBox.top - launchBox.bottom, launchBox.left - guidanceBox.right, guidanceBox.left - launchBox.right),
+      targetWidth: launchBox.width, targetHeight: launchBox.height,
     }
   })
   // The current VDP intentionally uses a borderless handoff rail. If a card
@@ -671,7 +695,10 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   // heading and primary action visually distinct.
   if (handoffLayout.borderTop >= 1) expect(handoffLayout.paddingTop, 'Bordered handoff clears its heading').toBeGreaterThanOrEqual(14)
   else expect(handoffLayout.headingOffset, 'Borderless handoff begins within its rail').toBeGreaterThanOrEqual(0)
-  expect(handoffLayout.actionOffset, 'Handoff action clears its heading and guidance').toBeGreaterThanOrEqual(56)
+  // Desktop places the action beside guidance; phones stack it underneath.
+  expect(handoffLayout.actionClearance, 'Handoff action does not overlap heading or guidance').toBeGreaterThanOrEqual(0)
+  expect(handoffLayout.targetWidth).toBeGreaterThanOrEqual(44)
+  expect(handoffLayout.targetHeight).toBeGreaterThanOrEqual(44)
   const launchContrast = await launch.evaluate(button => {
     const style = getComputedStyle(button)
     const luminance = (color: string) => {
@@ -690,7 +717,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
     const { left, right } = element.getBoundingClientRect()
     return { left, right, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }
   }))
-  expect(Math.abs(identifiers[0].left - identifiers[1].left), 'Stock and VIN values align').toBeLessThanOrEqual(1)
+  // Each identifier must fit its responsive column; desktop places these side by side.
   for (const identifier of identifiers) expect(identifier.scrollWidth).toBeLessThanOrEqual(identifier.clientWidth + 1)
   await expectNoOverflow(page)
   await capture(page, testInfo, 'dealermail-handoff')
@@ -705,27 +732,37 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   const currentNavigationBox = await navigation.boundingBox()
   expect(equipmentBox!.y - currentNavigationBox!.y - currentNavigationBox!.height, 'Equipment starts immediately below navigation').toBeLessThanOrEqual(26)
   await expect(equipment).toContainText('Equipment & packages')
-  const showAll = equipment.getByRole('button', { name: /Show all \d+ items/ }).first()
-  await expect(showAll).toBeVisible()
-  const listId = await showAll.getAttribute('aria-controls')
-  expect(listId).toBeTruthy()
-  const equipmentItems = equipment.locator(`[id="${listId}"] li`)
-  const itemsBefore = await equipmentItems.filter({ visible: true }).count()
+  const equipmentItems = equipment.locator('.inventory-workspace-equipment-group > ul > li')
   const totalItems = await equipmentItems.count()
-  await showAll.click()
-  expect(totalItems).toBeGreaterThan(itemsBefore)
+  expect(totalItems).toBeGreaterThan(0)
+  // Categories of five or fewer are already complete; expand only categories
+  // with additional captured items, then verify the whole ledger is visible.
+  for (const showAll of await equipment.getByRole('button', { name: /Show all \d+ items/ }).all()) {
+    const listId = await showAll.getAttribute('aria-controls')
+    expect(listId).toBeTruthy()
+    const categoryItems = equipment.locator(`[id="${listId}"] li`)
+    expect(await categoryItems.count()).toBeGreaterThan(await categoryItems.filter({ visible: true }).count())
+    await showAll.click()
+  }
   await expect(equipmentItems.filter({ visible: true })).toHaveCount(totalItems)
+  const equipmentSearch = equipment.getByRole('searchbox', { name: 'Search equipment, packages, or codes' })
+  await equipmentSearch.fill('Max Trailer Tow')
+  await expect(equipmentItems).toHaveCount(1)
+  await expect(equipmentItems).toContainText('Max Trailer Tow Package')
+  await equipment.getByRole('button', { name: 'Clear', exact: true }).click()
+  await expect(equipmentItems).toHaveCount(totalItems)
   await expect(equipment).toContainText('Max Trailer Tow Package')
-  await expect(equipment.locator('.inventory-workspace-equipment-group > ul > li > svg')).toHaveCount(0)
+  for (const icon of await equipment.locator('.inventory-workspace-equipment-group > ul > li > svg').all()) await expect(icon).toHaveAttribute('aria-hidden', 'true')
   await expectNoOverflow(page)
   await capture(page, testInfo, 'vehicle-equipment')
 
   await dialog.getByRole('tab', { name: 'Records' }).click()
   const records = dialog.getByRole('tabpanel', { name: 'Records' })
   await expect(records).toBeVisible()
-  await expect(records.locator('.vdp-focus-technical')).not.toHaveAttribute('open')
-  await expect(records.getByText('Vehicle records', { exact: true })).toBeVisible()
-  const technicalSummary = records.locator('.vdp-focus-technical > summary')
+  const sourceDetails = records.locator('.vdp-record-source-details').filter({ has: page.locator('summary', { hasText: /^Source details$/ }) }).first()
+  await expect(sourceDetails).not.toHaveAttribute('open')
+  await expect(records.getByRole('region', { name: 'Vehicle documents', exact: true })).toBeVisible()
+  const technicalSummary = sourceDetails.locator('summary')
   await dialog.getByRole('button', { name: 'Close vehicle details' }).focus()
   let reachedTechnical = false
   for (let step = 0; step < 70; step += 1) {
@@ -733,11 +770,11 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
     reachedTechnical = await technicalSummary.evaluate(element => element === document.activeElement)
     if (reachedTechnical) break
   }
-  expect(reachedTechnical, 'Keyboard can reach technical details without escaping the dialog').toBe(true)
+  expect(reachedTechnical, 'Keyboard can reach source details without escaping the dialog').toBe(true)
   await page.keyboard.press('Enter')
-  await expect(records.locator('.vdp-focus-technical')).toHaveAttribute('open')
+  await expect(sourceDetails).toHaveAttribute('open')
   await page.keyboard.press('Enter')
-  await expect(records.locator('.vdp-focus-technical')).not.toHaveAttribute('open')
+  await expect(sourceDetails).not.toHaveAttribute('open')
   await dialog.getByRole('tab', { name: 'Records' }).click()
   await expectNoOverflow(page)
   await capture(page, testInfo, 'vehicle-records')
@@ -748,7 +785,8 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
     // Captured facts remain useful when an adapter did not retain the original
     // provider URL. The VDP must state that boundary rather than inventing a
     // destination; source-link behavior is covered with a URL-bearing fixture.
-    await expect(records.getByText('Original AutoCheck report link not captured', { exact: true })).toBeVisible()
+    await expect(records.getByRole('status', { name: 'AutoCheck report unavailable', exact: true })).toBeVisible()
+    await expect(records.locator('[data-document-kind="autocheck"]')).toHaveAttribute('data-link-state', 'unavailable')
   }
 
   const originalViewport = page.viewportSize()!
@@ -813,9 +851,11 @@ test('vehicle moves search, queue filters, and request entry are usable', async 
   // the authoritative endpoint rather than only the bootstrap fallback.
   await settleApi(page)
   await page.goto('/transfers')
-  await page.getByRole('button', { name: 'Request a vehicle', exact: true }).click()
-  await expect(page).toHaveURL(/\/inventory/)
-  await expect(page.getByRole('heading', { name: 'Howell inventory' })).toBeVisible()
+  await page.getByRole('button', { name: 'Start a vehicle move', exact: true }).click()
+  await expect(page).toHaveURL(/\/transfers\/new/)
+  await expect(page.getByRole('heading', { name: 'Start a move', exact: true })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Search inventory to move' })).toBeVisible()
+  await expectNoOverflow(page)
 })
 
 test('action center opens the exact task and inventory updates have their own page', async ({ page }, testInfo) => {
@@ -892,14 +932,15 @@ test('simple moves use one manager decision and physical location updates throug
   await capture(page, testInfo, 'simple-approval')
   await dialog.getByRole('button', { name: 'Approve this move', exact: true }).click()
   await expect(dialog).toHaveCount(0)
-  await tracker.getByRole('button', { name: 'Mark vehicle collected', exact: true }).click()
+  // Approval confirms availability, not physical arrival. Recording a showing
+  // confirms the vehicle is now at the requesting store in the simple workflow.
+  await expect(tracker.getByRole('button', { name: /Mark vehicle collected|Mark arrived/ })).toHaveCount(0)
+  await expect(tracker.getByRole('region', { name: 'Vehicle location and time away' })).toContainText('Fowlerville')
+  await tracker.getByRole('button', { name: 'Update the showing outcome', exact: true }).click()
   dialog = page.getByRole('dialog')
-  await dialog.getByRole('button', { name: 'Mark collected', exact: true }).click()
+  await dialog.getByRole('radio', { name: /Showing in progress/ }).check()
+  await dialog.getByRole('button', { name: 'Record update', exact: true }).click()
   await expect(dialog).toHaveCount(0)
-  await expect(tracker.getByRole('region', { name: 'Vehicle location and time away' })).toContainText('In transit')
-  await tracker.getByRole('button', { name: 'Mark arrived', exact: true }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Mark arrived', exact: true }).click()
-  await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(tracker.getByRole('region', { name: 'Vehicle location and time away' })).toContainText('Howell')
   await expectNoOverflow(page)
   await capture(page, testInfo, 'simple-arrived')
@@ -922,7 +963,9 @@ test('simple moves use one manager decision and physical location updates throug
   await tracker.getByRole('button', { name: 'Start return', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Start return', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
-  await page.getByLabel('Working location', { exact: true }).selectOption('Fowlerville')
+  await expect(tracker.getByRole('region', { name: 'Vehicle location and time away' })).toContainText('In transit')
+  await expect(tracker.getByRole('button', { name: 'Confirm back home', exact: true })).toHaveCount(0)
+  await switchLocationAndSettle(page, 'Fowlerville')
   await tracker.getByRole('button', { name: 'Confirm back home', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: 'Confirm back home', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)

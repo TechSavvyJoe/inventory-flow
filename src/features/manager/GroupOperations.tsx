@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react';
+import { useWorkspaceState } from '../../lib/workspace-memory';
+import { PredictiveSearchInput } from '../../components/PredictiveSearchInput';
+import { searchFieldsMatch } from '../inventory/inventory-search';
+import { CopyableValue } from '../../components/CopyableValue';
 import {
   AlertTriangle,
   ArrowDownAZ,
-  ArrowRight,
   Bookmark,
   CheckCircle2,
   ChevronDown,
@@ -13,10 +16,7 @@ import {
   MapPin,
   Plus,
   RotateCcw,
-  Search,
-  SlidersHorizontal,
   Truck,
-  UserRound,
   X,
 } from 'lucide-react';
 import {
@@ -49,6 +49,7 @@ export interface GroupOperationsProps {
   storeOptions: StoreFilterOption[];
   homeStore?: StoreName;
   currentUserId?: string;
+  persistenceContext?: string;
   savedViews?: SavedManagerView[];
   initialFilters?: Partial<ManagerFilters>;
   initialSortRules?: ManagerSortRule[];
@@ -160,10 +161,8 @@ function sortValue(record: GroupOperationRecord, field: ManagerSortField): strin
   }
 }
 
-function recordMatches(record: GroupOperationRecord, filters: ManagerFilters, nowMs: number): boolean {
-  const normalizedQuery = filters.query.trim().toLocaleLowerCase();
-  if (normalizedQuery) {
-    const haystack = [
+function recordSearchFields(record: GroupOperationRecord) {
+  return [
       record.vehicle.stock,
       record.vehicle.vin,
       record.vehicle.vehicleLabel,
@@ -188,9 +187,11 @@ function recordMatches(record: GroupOperationRecord, filters: ManagerFilters, no
       record.nextAction.label,
       record.nextAction.ownerLabel,
       record.exception?.label,
-    ].filter(Boolean).join(' ').toLocaleLowerCase();
-    if (!haystack.includes(normalizedQuery)) return false;
-  }
+    ];
+}
+
+function recordMatches(record: GroupOperationRecord, filters: ManagerFilters, nowMs: number): boolean {
+  if (!searchFieldsMatch(filters.query, recordSearchFields(record))) return false;
 
   if (filters.homeStores.length && !filters.homeStores.includes(record.vehicle.homeStore)) return false;
   if (filters.currentLocations.length && !filters.currentLocations.includes(record.vehicle.currentLocation.label)) return false;
@@ -203,7 +204,8 @@ function recordMatches(record: GroupOperationRecord, filters: ManagerFilters, no
   if (filters.custodians.length && (!record.custodianLabel || !filters.custodians.includes(record.custodianLabel))) return false;
   if (filters.salespeople.length && (!record.salespersonLabel || !filters.salespeople.includes(record.salespersonLabel))) return false;
   if (filters.slaStates.length && !filters.slaStates.includes(record.nextAction.sla)) return false;
-  if (filters.nextActionOwnerIds.length && (!record.nextAction.ownerId || !filters.nextActionOwnerIds.includes(record.nextAction.ownerId))) return false;
+  const ownerIdentity = record.nextAction.ownerId || record.nextAction.ownerLabel;
+  if (filters.nextActionOwnerIds.length && !filters.nextActionOwnerIds.some(owner => owner.trim().toLowerCase() === ownerIdentity?.trim().toLowerCase())) return false;
   if (filters.exceptionOnly && !record.exception) return false;
   return matchesDueWindow(record, filters.dueWindow, nowMs);
 }
@@ -260,6 +262,7 @@ export function GroupOperations({
   storeOptions,
   homeStore,
   currentUserId,
+  persistenceContext,
   savedViews = [],
   initialFilters,
   initialSortRules = [{ field: 'dueAt', direction: 'asc' }],
@@ -275,10 +278,10 @@ export function GroupOperations({
   onAction,
   onCreateRequest,
 }: GroupOperationsProps) {
-  const [filters, setFilters] = useState<ManagerFilters>(() => createFilters(initialFilters));
-  const [sortRules, setSortRules] = useState<ManagerSortRule[]>(initialSortRules);
-  const [systemView, setSystemView] = useState<SystemView>('group');
-  const [summaryQueue, setSummaryQueue] = useState<SummaryQueue | null>(null);
+  const [filters, setFilters] = useWorkspaceState<ManagerFilters>(persistenceContext, 'manager.filters', () => createFilters(initialFilters));
+  const [sortRules, setSortRules] = useWorkspaceState<ManagerSortRule[]>(persistenceContext, 'manager.sort', initialSortRules);
+  const [systemView, setSystemView] = useWorkspaceState<SystemView>(persistenceContext, 'manager.view', 'group');
+  const [summaryQueue, setSummaryQueue] = useWorkspaceState<SummaryQueue | null>(persistenceContext, 'manager.summary', null);
   const [selectedIdInternal, setSelectedIdInternal] = useState<string | null>(selectedTransferId ?? null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
@@ -470,28 +473,18 @@ export function GroupOperations({
         <header className="mif-manager-heading">
           <div>
             <h1>Group operations</h1>
-            <p>Review approvals, coordinate store-to-store moves, and resolve overdue work.</p>
+            <p>Approvals, overdue work, and vehicle location.</p>
           </div>
-          <div className="mif-system-views" aria-label="Manager quick views">
-            {([
-              ['my-store', 'My store'],
-              ['group', 'Group'],
-              ['needs-me', 'Needs me'],
-              ['overdue', 'Overdue'],
-              ['exceptions', 'Exceptions'],
-            ] as Array<[SystemView, string]>).map(([value, label]) => (
-              <button
-                aria-pressed={systemView === value}
-                className={systemView === value ? 'is-active' : ''}
-                disabled={(value === 'my-store' && !homeStore) || (value === 'needs-me' && !currentUserId)}
-                key={value}
-                onClick={() => applySystemView(value)}
-                type="button"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <label className="mif-manager-view">
+            <span>View</span>
+            <select aria-label="Manager quick views" value={systemView} onChange={(event) => applySystemView(event.target.value as SystemView)}>
+              <option value="my-store" disabled={!homeStore}>My store</option>
+              <option value="group">Group</option>
+              <option value="needs-me" disabled={!currentUserId}>Needs me</option>
+              <option value="overdue">Overdue</option>
+              <option value="exceptions">Exceptions</option>
+            </select>
+          </label>
         </header>
 
         {sourceWarning ? (
@@ -501,6 +494,8 @@ export function GroupOperations({
           </div>
         ) : null}
 
+        <details className="mif-manager-queues">
+          <summary>Work queues <span>{summaryQueue ? metrics.find((metric) => metric.id === summaryQueue)?.label : `${records.length} ${records.length === 1 ? 'movement' : 'movements'} · 6 queues`}</span></summary>
         <div className="mif-operation-metrics" aria-label="Manager work queues">
           {metrics.map(({ id, label, Icon, count, overdue, tone }) => (
             <button
@@ -514,26 +509,21 @@ export function GroupOperations({
               <Icon aria-hidden="true" className={`is-${tone}`} size={24} strokeWidth={1.75} />
               <span className="mif-operation-metric__label">{label}</span>
               <strong>{count}</strong>
-              <small className={overdue ? 'is-overdue' : ''}>{overdue ? `${overdue} overdue` : 'No overdue items'}</small>
-              <span className="mif-operation-metric__action">
-                {summaryQueue === id ? 'Showing queue' : 'View queue'}
-                <ChevronRight aria-hidden="true" size={14} strokeWidth={2} />
-              </span>
+              {overdue > 0 ? <small className="is-overdue">{overdue} overdue</small> : null}
             </button>
           ))}
         </div>
 
+        </details>
+
         <div className="mif-manager-toolbar">
-          <label className="mif-manager-search">
-            <Search aria-hidden="true" size={18} strokeWidth={1.75} />
-            <span className="mif-visually-hidden">Search movements</span>
-            <input
-              onChange={(event) => patchFilters({ query: event.target.value })}
-              placeholder="Search stock, VIN, vehicle, store, person, or status"
-              type="search"
-              value={filters.query}
-            />
-          </label>
+          <PredictiveSearchInput className="mif-manager-search" inputType="search" ariaLabel="Search movements" clearLabel="Clear movement search" placeholder="Stock, VIN, vehicle…" value={filters.query} onChange={(query) => patchFilters({ query })} candidates={records.map(record => ({ id: record.id, label: record.vehicle.vehicleLabel, detail: `#${record.vehicle.stock} · ${record.vehicle.homeStore}`, value: record.vehicle.stock, searchValues: recordSearchFields(record) }))} />
+        </div>
+        <div className="mif-manager-resultbar">
+          <div className="mif-manager-resultbar__scope">
+            <span><strong>{visibleRecords.length}</strong> of {records.length} movements</span>
+          </div>
+          <div className="mif-manager-result-actions">
           <button aria-expanded={filtersOpen} className="mif-manager-toolbutton" onClick={() => setFiltersOpen((open) => !open)} type="button">
             <Filter aria-hidden="true" size={17} strokeWidth={1.75} />
             Filters
@@ -557,6 +547,7 @@ export function GroupOperations({
             <ArrowDownAZ aria-hidden="true" size={17} strokeWidth={1.75} />
             Sort {sortRules.length > 1 ? `(${sortRules.length})` : ''}
           </button>
+          </div>
         </div>
 
         {saveViewOpen && onSaveView ? (
@@ -662,18 +653,7 @@ export function GroupOperations({
           </div>
         ) : null}
 
-        <div className="mif-manager-resultbar">
-          <div className="mif-manager-resultbar__scope">
-            <span><strong>{visibleRecords.length}</strong> of {records.length} movements</span>
-            {summaryQueue ? (
-              <button aria-label="Clear summary queue" onClick={() => setSummaryQueue(null)} type="button">
-                {metrics.find((metric) => metric.id === summaryQueue)?.label}
-                <X aria-hidden="true" size={13} />
-              </button>
-            ) : null}
-          </div>
-          <span><SlidersHorizontal aria-hidden="true" size={14} strokeWidth={1.75} /> {sortRules.map((rule) => `${sortFieldLabels[rule.field]} ${rule.direction === 'asc' ? '↑' : '↓'}`).join(' · ')}</span>
-        </div>
+        {summaryQueue ? <div className="mif-manager-active-queue"><button aria-label="Clear summary queue" onClick={() => setSummaryQueue(null)} type="button">{metrics.find((metric) => metric.id === summaryQueue)?.label}<X aria-hidden="true" size={13} /></button></div> : null}
 
         {loading ? (
           <div className="mif-manager-loading" aria-live="polite"><Clock3 aria-hidden="true" size={20} /> Loading operations…</div>
@@ -697,17 +677,15 @@ export function GroupOperations({
                   <col className="mif-operations-table__col--workflow" />
                   <col className="mif-operations-table__col--ownership" />
                   <col className="mif-operations-table__col--timing" />
-                  <col className="mif-operations-table__col--exception" />
                   <col className="mif-operations-table__col--action" />
                 </colgroup>
                 <thead>
                   <tr>
                     <th>Vehicle / priority</th>
-                    <th>Where it is going</th>
+                    <th>Location / destination</th>
                     <th>Current step</th>
                     <th>Who acts next</th>
                     <th>When</th>
-                    <th>Issue</th>
                     <th>Review</th>
                   </tr>
                 </thead>
@@ -733,17 +711,20 @@ export function GroupOperations({
                             <strong>{record.vehicle.vehicleLabel}</strong>
                             <span className={`mif-priority is-${record.priority ?? 'normal'}`}>{record.priority ?? 'normal'}</span>
                           </span>
-                          <span>{record.vehicle.stock} · {record.vehicle.vin}</span>
+                          <CopyableValue className="mif-manager-vehicle-id" compact label="stock number" text={record.vehicle.stock} />
+                          <CopyableValue className="mif-manager-vehicle-id" compact label="VIN" text={record.vehicle.vin} />
                         </td>
                         <td className="mif-manager-route-cell">
-                          <span className="mif-route-cells">
-                            <b>{record.vehicle.homeStore}</b><ArrowRight size={13} /><b>{record.vehicle.currentLocation.label}</b><ArrowRight size={13} /><b>{record.destination ?? record.requestingStore ?? 'Not set'}</b>
-                          </span>
+                          <span className="mif-route-cells">Current · <b>{record.vehicle.currentLocation.label}</b></span>
+                          <small>Last confirmed · {formatDateTime(record.vehicle.currentLocation.confirmedAt)} · {locationConfidenceLabel(record.vehicle.currentLocation.confidence)}</small>
                           <span>Requesting store · {record.requestingStore ?? 'Not set'}</span>
+                          <span>Home store · {record.vehicle.homeStore}</span>
+                          {record.destination && record.destination !== record.requestingStore ? <span>Destination · {record.destination}</span> : null}
                         </td>
                         <td className="mif-manager-workflow-cell">
                           <strong>{displayOperationalLabel(record.status.movement.label)}</strong>
                           <span>{record.status.request.label}</span>
+                          {record.exception ? <span className={`mif-exception-cell is-${record.exception.severity}`}><AlertTriangle size={14} />{record.exception.label}</span> : null}
                         </td>
                         <td className="mif-manager-ownership-cell">
                           <strong>{record.nextAction.ownerLabel ?? 'Not assigned'}</strong>
@@ -753,9 +734,7 @@ export function GroupOperations({
                         <td className="mif-manager-timing-cell">
                           <strong>{formatDateTime(record.nextAction.dueAt)}</strong>
                           <span className={`mif-sla-label is-${record.nextAction.sla}`}>{slaLabel(record.nextAction.sla)}</span>
-                          <small>Last confirmed · {formatDateTime(record.vehicle.currentLocation.confirmedAt)} · {locationConfidenceLabel(record.vehicle.currentLocation.confidence)}</small>
                         </td>
-                        <td className="mif-manager-exception-cell">{record.exception ? <span className={`mif-exception-cell is-${record.exception.severity}`}><AlertTriangle size={14} />{record.exception.label}</span> : <span className="mif-exception-cell is-clear">No exception</span>}</td>
                         <td className="mif-manager-review-cell"><button aria-label={`Review ${record.vehicle.stock}`} className="mif-manager-review-button" onClick={(event) => { event.stopPropagation(); selectRecord(record); }} type="button"><span>Review</span><ChevronRight size={16} /></button></td>
                       </tr>
                     );
@@ -768,10 +747,11 @@ export function GroupOperations({
               {visibleRecords.map((record) => (
                 <button className={record.id === selectedId ? 'is-selected' : ''} key={record.id} onClick={() => selectRecord(record)} type="button">
                   <span className="mif-mobile-row-top"><b>{record.vehicle.vehicleLabel}</b><span className={`mif-priority is-${record.priority ?? 'normal'}`}>{record.priority ?? 'normal'}</span></span>
-                  <span>{record.vehicle.stock} · {record.vehicle.homeStore} → {record.vehicle.currentLocation.label}</span>
+                  <span>{record.vehicle.stock} · Home store: {record.vehicle.homeStore}</span>
+                  <span className="mif-mobile-location-facts"><span>Current<strong>{record.vehicle.currentLocation.label}</strong></span><span>Requested<strong>{record.requestingStore ?? 'Not set'}</strong></span></span>
+                  {record.destination && record.destination !== record.requestingStore ? <span>Destination: {record.destination}</span> : null}
                   <span className="mif-mobile-row-stage"><Truck size={15} /> {displayOperationalLabel(record.status.movement.label)}</span>
-                  <span className={`mif-mobile-row-due is-${record.nextAction.sla}`}><Clock3 size={15} /> {record.nextAction.label} · {formatDateTime(record.nextAction.dueAt)}</span>
-                  <span><UserRound size={15} /> {record.nextAction.ownerLabel ?? 'Owner not assigned'}</span>
+                  <span className={`mif-mobile-next-action is-${record.nextAction.sla}`}><strong>Next · {record.nextAction.label}</strong><span>{formatDateTime(record.nextAction.dueAt)} · {record.nextAction.ownerLabel ?? 'Owner not assigned'}</span></span>
                   {record.exception ? <span className="mif-mobile-row-exception"><AlertTriangle size={15} /> {record.exception.label}</span> : null}
                   <span className="mif-mobile-row-action">Review movement <ChevronRight aria-hidden="true" size={16} /></span>
                 </button>

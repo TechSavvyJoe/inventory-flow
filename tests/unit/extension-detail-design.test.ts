@@ -43,12 +43,150 @@ async function boot(records = [record()]) {
 }
 
 describe('companion concept vehicle workspace', () => {
+  it('preserves ordered sticker option rows, explicit children and original price tokens', async () => {
+    const options = ['Synthetic Equipment Group $1,200.00', '• Synthetic camera package', '. Connected navigation — 1-year trial', 'Synthetic transmission NO CHARGE', 'Synthetic radio trial 90 days', 'Synthetic radio trial 90 days', 'Paint code 2024']
+    await boot([{ ...record(), windowSticker: { pricingCurrency: 'CAD', totalMsrp: 45000, options } }])
+    const sticker = document.querySelector('.doc-summary[data-resource="window-sticker"]')
+    const rows = [...sticker.querySelectorAll('.doc-sticker-option')]
+    expect(rows).toHaveLength(options.length)
+    expect(rows.map(row => row.textContent)).toEqual(['Synthetic Equipment Group$1,200.00', '• Synthetic camera package', '. Connected navigation — 1-year trial', 'Synthetic transmissionNO CHARGE', 'Synthetic radio trial 90 days', 'Synthetic radio trial 90 days', 'Paint code 2024'])
+    expect(rows.filter(row => row.classList.contains('doc-sticker-option--child'))).toHaveLength(2)
+    expect([...sticker.querySelectorAll('.doc-sticker-price')].map(node => node.textContent)).toEqual(['$1,200.00', 'NO CHARGE'])
+  })
+  it('recognizes explicit source currency and dot-prefixed items without treating decimals as children', async () => {
+    const options = ['Synthetic package · USD 1,100.00', 'Synthetic roof CAD $900.00', '.TAILGATE STEP', '.275/60R20 BSW ALL-TERRAIN', '.5L engine notation', 'Synthetic option NO CHARGE', '.20\" GLOSS BLACK PAINTED ALUM', '.3.5L V6 ECOBOOST', '.20-inch wheels', '.20 inch wheels']
+    await boot([{ ...record(), windowSticker: { options } }])
+    const rows = [...document.querySelectorAll('.doc-summary[data-resource="window-sticker"] .doc-sticker-option')]
+    expect(rows.map(row => row.getAttribute('aria-label'))).toEqual(options)
+    expect(rows.map(row => row.title)).toEqual(options)
+    expect(rows[0].querySelector('.doc-sticker-price').textContent).toBe('USD 1,100.00')
+    expect(rows[1].querySelector('.doc-sticker-price').textContent).toBe('CAD $900.00')
+    expect(rows[2].classList.contains('doc-sticker-option--child')).toBe(true)
+    expect(rows[3].classList.contains('doc-sticker-option--child')).toBe(true)
+    expect(rows[4].classList.contains('doc-sticker-option--child')).toBe(false)
+    expect(rows[4].textContent).toBe('.5L engine notation')
+    expect(rows[5].querySelector('.doc-sticker-price').textContent).toBe('NO CHARGE')
+    for (const row of rows.slice(6)) expect(row.classList.contains('doc-sticker-option--child')).toBe(true)
+  })
+  it('uses one attributed equipment-label fallback when the sticker has no parsed options', async () => {
+    await boot([{ ...record(), windowSticker: { dataState: 'current', url: 'https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker?sv=synthetic&make=Ford&vehicleType=U', totalMsrp: 45000 }, factoryEquipment: { dataState: 'stale', packages: [{ name: 'Synthetic towing package', features: ['Synthetic trailer camera'] }] } }])
+    expect(document.querySelectorAll('.doc-summary[data-resource="window-sticker"]')).toHaveLength(0)
+    const summary = document.querySelector('.doc-summary[data-resource="vauto"]')
+    expect(summary.textContent).toContain('Sticker & equipment')
+    expect(summary.textContent).toContain('vAuto equipment label · not an original window sticker')
+    expect(summary.textContent).toContain('Synthetic trailer camera')
+    expect(summary.textContent).toContain('Saved report')
+    expect(summary.textContent).not.toContain('45,000')
+    expect(summary.querySelector('.doc-source-supplement').textContent).toContain('Open window sticker')
+    document.querySelector('#tab-records').click()
+    expect(document.querySelector('[data-record="window-sticker"]')).not.toBeNull()
+    expect(document.querySelector('[data-record="vauto"]')).not.toBeNull()
+  })
+  it('keeps explicit equipment-group contents separate from optional equipment', async () => {
+    await boot([{ ...record(), windowSticker: { pricingCurrency: 'CAD', equipmentGroup: 'DEMO-GROUP', equipmentGroupPrice: 1250.75, equipmentGroupContents: ['Synthetic included camera'], options: ['Synthetic optional roof NO CHARGE'] } }])
+    const summary = document.querySelector('.doc-summary[data-resource="window-sticker"]')
+    const sections = [...summary.querySelectorAll('.doc-options')]
+    expect(sections[0].textContent).toBe('Included in equipment groupSynthetic included camera')
+    expect(sections[1].textContent).toContain('Optional equipment & packagesSynthetic optional roof')
+    expect(sections[1].textContent).not.toContain('Synthetic included camera')
+    expect(summary.textContent.replace(/\u00a0/g, ' ')).toContain('CAD 1,250.75')
+  })
+  it('prefers official equipment-group contents over the informational vAuto fallback', async () => {
+    await boot([{ ...record(), windowSticker: { pricingCurrency: 'USD', equipmentGroupPrice: 1250.75, equipmentGroupContents: ['Synthetic included camera'] }, factoryEquipment: { dataState: 'current', packages: [{ name: 'Synthetic fallback package', features: ['Synthetic fallback feature'] }] } }])
+    const summary = document.querySelector('.doc-summary[data-resource="window-sticker"]')
+    expect(summary).not.toBeNull()
+    expect(summary.textContent).toContain('Synthetic included camera')
+    expect(summary.textContent.replace(/\u00a0/g, ' ')).toContain('$1,250.75')
+    expect(document.querySelector('.doc-summary[data-resource="vauto"]')).toBeNull()
+  })
+  it('retains exact vAuto option prices and repeated package children without inventing currency', async () => {
+    await boot([{ ...record(), factoryEquipment: { dataState: 'current', packages: [{ name: 'Package A', price: 1200.75, features: ['Shared feature'] }, { name: 'Package B', price: 0, features: ['Shared feature'] }], sections: [{ name: 'Options', items: [{ label: 'Optional paint', price: 495.25 }] }] } }])
+    const summary = document.querySelector('.doc-summary[data-resource="vauto"]')
+    expect([...summary.querySelectorAll('.doc-sticker-price')].map(node => node.textContent)).toEqual(['1,200.75 · currency not captured', '0 · currency not captured', '495.25 · currency not captured'])
+    expect([...summary.querySelectorAll('.doc-sticker-option--child')].map(node => node.textContent)).toEqual(['· Shared feature', '· Shared feature'])
+  })
+  it('shows original certification artwork only for the confirmed home-store program', async () => {
+    await boot([{ ...record(), certified: true }])
+    expect(document.querySelector('.detail-home .cert img').getAttribute('src')).toBe('../resource-brands/ford-blue-certified.svg')
+    expect(document.querySelector('.detail-home .cert img').getAttribute('alt')).toBe('Ford Blue Certified')
+  })
+  it('qualifies partially captured positive OASIS results in Overview and Records', async () => {
+    await boot([{ ...record(), fordOasis: { dataState: 'current', capturedAt: '2026-08-30T09:00:00Z', openActionsCaptured: false, openFieldServiceActions: [{ code: '26N99', description: 'Synthetic campaign only after confirming condition' }] } }])
+    const summary = document.querySelector('.doc-summary[data-resource="oasis"]')
+    expect(summary.textContent).toContain('At least 1 captured actions · result incomplete')
+    expect(summary.textContent).toContain('only after confirming condition')
+    document.querySelector('#tab-records').click()
+    expect(document.querySelector('[data-record="oasis"]').textContent).toContain('At least 1 captured actions · result incomplete')
+  })
+  it('keeps all OASIS coverage types, release date and conditional actions in Overview', async () => {
+    const actions = Array.from({ length: 4 }, (_, index) => ({ code: `26N0${index}`, description: `Synthetic program ${index + 1}: applies only if inspection confirms condition` }))
+    const coverages = ['Basic', 'Powertrain', 'Restraint', 'Corrosion', 'Emissions', 'Extended'].map(type => ({ type, description: `Synthetic ${type} captured terms` }))
+    await boot([{ ...record(), fordOasis: { dataState: 'current', capturedAt: '2026-08-30T09:00:00Z', warrantyStartDate: '2024-03-14', releaseDate: '2024-02-01', openActionsCaptured: true, openFieldServiceActions: actions, warrantyCoverages: coverages } }])
+    const summary = document.querySelector('.doc-summary[data-resource="oasis"]')
+    for (const action of actions) expect(summary.textContent).toContain(`${action.code} · ${action.description}`)
+    for (const coverage of coverages) expect(summary.textContent).toContain(coverage.description)
+    expect(summary.textContent).toContain('Release date02/01/2024')
+    expect(summary.textContent).not.toContain('Warranty start')
+    expect(summary.textContent).not.toMatch(/4 recalls/i)
+  })
+  it('shows every captured AutoCheck category and its qualifiers without inferring clean results', async () => {
+    const checks = [
+      { label: 'State title', status: 'No brands reported' },
+      { label: 'Auction brand', status: 'No brands reported' },
+      { label: 'Accident / damage', status: 'No accidents reported' },
+      { label: 'Open recall', status: 'No information available' },
+      { label: 'Insurance loss', status: 'No information available' },
+      { label: 'Odometer', status: 'No discrepancy reported' },
+      { label: 'Certified pre-owned', status: 'No information available' },
+      { label: 'Service', status: '5 records' },
+      { label: 'Additional history', status: 'EVENT REPORTED', detail: 'Corrected title' },
+    ]
+    await boot([{ ...record(), autoCheckReport: { dataState: 'incomplete', reportRunAt: '2026-08-30T09:05:00Z', checks } }])
+    const summary = document.querySelector('.doc-summary[data-resource="autocheck"]')
+    for (const check of checks) {
+      const row = [...summary.querySelectorAll('.doc-fact')].find(row => row.querySelector('dt').textContent === check.label)
+      expect(row?.querySelector('dd').textContent).toContain(check.status)
+      if (check.detail) expect(row?.querySelector('dd').textContent).toContain(check.detail)
+    }
+    expect(summary.textContent).toContain('Partial captured record')
+    expect(summary.textContent).toContain('Report run')
+    expect(summary.textContent).toContain('08/30/2026')
+    expect(summary.textContent).not.toContain('Certified pre-ownedClean')
+  })
+
+  it('labels captured report facts and retains warnings, equipment and late source fields', async () => {
+    await boot([{ ...record(),
+      autoCheckReport: { dataState: 'stale', score: 91, scoreRangeLow: 86, scoreRangeHigh: 93, ownerCount: 2, usage: 'Personal use', lastReportedOdometer: 12345, lastReportedOdometerDate: '2026-08-29', estimatedInServiceDate: '2024-03-14', checks: [{ label: 'Accident check', status: 'Review', detail: 'Damage reported' }, { label: 'Title check', status: 'No title brands reported' }] },
+      factoryEquipment: { engine: 'Synthetic V6', transmission: 'Automatic', drivetrain: '4WD', packages: [{ name: 'Synthetic Tow Package', features: ['Trailer brake controller'] }], sections: [{ name: 'Comfort', items: [{ label: 'Heated seats' }] }] },
+      windowSticker: { pricingCurrency: 'CAD', totalMsrp: 45600, equipmentGroup: 'Synthetic group', options: ['Synthetic Tow Package', 'Synthetic roof option'], standardEquipment: ['Base steering wheel'], warranty: ['Synthetic warranty terms'] },
+      fordOasis: { dataState: 'current', capturedAt: '2026-08-30T09:00:00Z', warrantyStartDate: '2024-03-14', openActionsCaptured: true, openFieldServiceActions: [{ code: '26N99', description: 'Synthetic non-recall campaign' }], warrantyCoverages: [{ type: 'Synthetic coverage', description: 'Verify source terms' }] },
+    }])
+    const history = document.querySelector('.doc-summary[data-resource="autocheck"]')
+    expect([...history.querySelectorAll('dt')].map(node => node.textContent)).toEqual(expect.arrayContaining(['Score', 'Accident check', 'Title check', 'Owners / use', 'Odometer']))
+    expect(history.textContent).toContain('91 · 86–93 range')
+    expect(history.textContent).toContain('Damage reported')
+    expect(history.textContent).not.toContain('03/14/2024')
+    expect(history.textContent).toContain('Saved report · refresh at source')
+    expect(document.querySelector('.doc-summary[data-resource="vauto"]')).toBeNull()
+    const sticker = document.querySelector('.doc-summary[data-resource="window-sticker"]')
+    expect(sticker.textContent.replace(/\s+/g, ' ')).toContain('CAD 45,600')
+    expect([...sticker.querySelectorAll('h4')].map(node => node.textContent)).toEqual(['Captured equipment'])
+    expect(sticker.textContent).toContain('Synthetic Tow Package')
+    expect(sticker.textContent).toContain('Synthetic roof option')
+    expect(sticker.textContent).not.toContain('Base steering wheel')
+    expect(sticker.textContent).not.toContain('Synthetic warranty terms')
+    const oasis = document.querySelector('.doc-summary[data-resource="oasis"]')
+    expect(oasis.querySelector('.doc-fact--warning').textContent).toContain('26N99 · Synthetic non-recall campaign')
+    expect(oasis.textContent).toContain('Recorded coverage')
+    expect(oasis.textContent).toContain('Verify source terms')
+  })
+
   it('uses original base MSRP for the single weight-fee lookup shortcut on Overview and Records', async () => {
     const vehicle = { ...record(), inventoryDate: '2026-09-12', autoCheckReport: { estimatedInServiceDate: '2024-01-01' }, fordOasis: { warrantyStartDate: '2024-04-10' }, windowSticker: { basePrice: 42500, pricingCurrency: 'CAD', options: ['WEIGHT FEE — CAD 100'] } }
     await boot([vehicle])
     const facts = () => document.querySelector('.detail-frequent-facts').textContent.replace(/\s+/g, ' ')
     expect(facts()).toContain('Warranty in-service · OASIS')
-    expect(facts()).toContain('Apr 10, 2024')
+    expect(facts()).toContain('04/10/2024')
     expect(facts()).toContain('CAD 42,500')
     expect(facts()).toContain('Weight fee lookup · Base MSRP')
     expect(facts()).not.toContain('WEIGHT FEE — CAD 100')
@@ -62,10 +200,10 @@ describe('companion concept vehicle workspace', () => {
     expect(document.activeElement.dataset.record).toBe('window-sticker')
   })
   it('qualifies an in-service date that only AutoCheck estimated', async () => {
-    await boot([{ ...record(), autoCheckReport: { estimatedInServiceDate: '2024-01-01' } }])
+    await boot([{ ...record(), make: 'Chevrolet', autoCheckReport: { estimatedInServiceDate: '2024-01-01' } }])
     const facts = document.querySelector('.detail-frequent-facts').textContent.replace(/\s+/g, ' ')
     expect(facts).toContain('Warranty in-service · estimate')
-    expect(facts).toContain('Jan 1, 2024')
+    expect(facts).toContain('01/01/2024')
     expect(facts).not.toContain('OASIS')
   })
   it('does not attribute equipment-label prices to a sticker missing its base price', async () => {

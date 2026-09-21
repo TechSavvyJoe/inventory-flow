@@ -158,7 +158,7 @@ describe('extension compact shell regressions', () => {
     const row = document.querySelector('#row-TESTDATAHWELL0001')
     expect(row.querySelector('.row-documents')).toBeNull()
     expect(row.querySelector('.row-workflow-summary').textContent).toContain('Confirm synthetic arrival')
-    expect(row.querySelector('.row-workflow-summary').textContent).toContain('Due Sep 18')
+    expect(row.querySelector('.row-workflow-summary').textContent).toContain('Due 09/18/2026')
     expect(row.querySelector('.row-workflow-summary').textContent).toContain('Vehicle details')
     expect(row.querySelector('.row-workflow-summary a, .row-workflow-summary button')).toBeNull()
     expect(api.vehicle).not.toHaveBeenCalled()

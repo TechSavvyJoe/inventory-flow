@@ -1,4 +1,5 @@
-import type { RefObject } from "react";
+import type { ComponentType, ReactNode, RefObject } from "react";
+import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus';
 import type { DealerMailEvidenceMessage, DealerMailHistoryRecord, ServiceReadiness, ServiceReadinessStatus } from "../../types";
 
 export type InventoryScope = "home" | "group";
@@ -89,6 +90,9 @@ export interface WindowStickerResource {
   url?: string | null;
   vehicleDescription?: string | null;
   equipmentGroup?: string | null;
+  /** Present only when equipment-group membership was explicitly captured. */
+  equipmentGroupContents?: string[];
+  equipmentGroupPrice?: number | null;
   basePrice?: number | null;
   totalOptions?: number | null;
   destinationCharge?: number | null;
@@ -166,6 +170,20 @@ export interface FordOasisResource {
   sourceLabel?: string | null;
   vehicleDescription?: string | null;
   versionSeries?: string | null;
+  bodyStyle?: string | null;
+  driveType?: string | null;
+  paintColor?: string | null;
+  paintCode?: string | null;
+  engine?: string | null;
+  engineCalibration?: string | null;
+  transmission?: string | null;
+  axleRatio?: string | null;
+  axleCode?: string | null;
+  grossVehicleWeight?: string | null;
+  wheelSize?: string | null;
+  tire?: string | null;
+  syncVersion?: string | null;
+  fuelType?: string | null;
   buildDate?: string | null;
   warrantyStartDate?: string | null;
   releaseDate?: string | null;
@@ -476,6 +494,14 @@ export interface InventoryMoveAction {
 }
 
 export interface InventoryExperienceProps {
+  TableComponent?: ComponentType<InventoryTableProps>;
+  WorkspaceComponent?: ComponentType<VehicleWorkspaceProps>;
+  toolbarAccessory?: ReactNode;
+  returnLabel?: string;
+  footerAccessory?: ReactNode;
+  vehicleFilter?: (vehicle: InventoryVehicle) => boolean;
+  detailState?: VehicleDetailLoadState;
+  onRetryDetail?: () => void;
   homeStore: InventoryStore;
   vehicles: InventoryVehicle[];
   metrics: InventoryDecisionMetrics;
@@ -484,6 +510,8 @@ export interface InventoryExperienceProps {
   initialScope?: InventoryScope;
   scope?: InventoryScope;
   initialQuery?: string;
+  /** A fresh explicit search must override prior local edits to the same text. */
+  queryRequestKey?: string;
   /** Separates session-only recent searches by the current signed-in/preview context. */
   searchPersistenceKey?: string;
   initialFilters?: Partial<InventoryFilters>;
@@ -536,6 +564,10 @@ export interface InventoryTableProps {
 }
 
 export interface VehicleWorkspaceProps {
+  workspaceAccessory?: ReactNode;
+  returnLabel?: string;
+  detailState?: VehicleDetailLoadState;
+  onRetryDetail?: () => void;
   vehicle: InventoryVehicle;
   homeStore: InventoryStore;
   canRequestVehicle?: boolean;

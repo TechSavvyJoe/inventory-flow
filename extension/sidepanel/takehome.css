@@ -100,3 +100,6 @@ img { max-width: 100%; display: block; }
   .th-cert { max-width: 100%; white-space: normal; }
   .th-mono { overflow-wrap: anywhere; }
 }
+
+.th-cert img { display:block; width:auto; height:24pt; object-fit:contain; }
+.th-cert-lincoln img { width:120pt; height:27pt; }

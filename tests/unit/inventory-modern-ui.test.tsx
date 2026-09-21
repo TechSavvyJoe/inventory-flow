@@ -61,6 +61,20 @@ afterEach(() => {
 })
 
 describe('manager-friendly inventory UI', () => {
+  it('restores local query edits on return but honors a fresh explicit search for the same text', () => {
+    const props = { homeStore: { id: 'Howell', name: 'Howell' }, vehicles: [vehicle(1), vehicle(2)], metrics: { publicUnits: 2, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }, searchPersistenceKey: 'synthetic:search:user', initialQuery: 'HT0001', queryRequestKey: 'first-request' };
+    let page = render(<InventoryExperience {...props} />);
+    const query = () => screen.getByRole('combobox', { name: /Search inventory/i });
+    fireEvent.change(query(), { target: { value: 'HT0002' } });
+    expect(query()).toHaveValue('HT0002');
+    page.unmount();
+    page = render(<InventoryExperience {...props} />);
+    expect(query()).toHaveValue('HT0002');
+    page.unmount();
+    render(<InventoryExperience {...props} queryRequestKey="second-request" />);
+    expect(query()).toHaveValue('HT0001');
+  });
+
   it.each([
     ['unknown', 'Waiting for service'], ['needs_service', 'Waiting for service'],
     ['in_service', 'In service'], ['serviced', 'Ready'],
@@ -141,17 +155,17 @@ describe('manager-friendly inventory UI', () => {
     expect(within(rowsSelect).getAllByRole('option').map((option) => option.textContent)).toEqual([
       '10', '15', '20', '25', '50', '100',
     ])
-    // Paging counts vehicles, independently of their visible source-resource strip.
+    // Paging counts vehicles, independently of their passive source scan.
     expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(10)
-    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-resource-row')).toHaveLength(10)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-scan-row')).toHaveLength(10)
 
     fireEvent.change(rowsSelect, { target: { value: '20' } })
     expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(20)
-    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-resource-row')).toHaveLength(20)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-scan-row')).toHaveLength(20)
     expect(screen.getByText('Showing 1–20 of 28')).toBeInTheDocument()
     fireEvent.change(rowsSelect, { target: { value: '100' } })
     expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(28)
-    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-resource-row')).toHaveLength(28)
+    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-scan-row')).toHaveLength(28)
     expect(screen.getByText('Showing 1–28 of 28')).toBeInTheDocument()
   })
 
@@ -374,7 +388,7 @@ describe('manager-friendly inventory UI', () => {
     expect(screen.getByRole('region', { name: 'Location & movement' })).toBeVisible()
   })
 
-  it('opens exact official document links from the row and presents parsed facts progressively', () => {
+  it('opens exact official links in the records inspector and preserves complete parsed facts in the workspace', () => {
     const onSelectVehicle = vi.fn()
     const documentedVehicle = vehicle(13)
     documentedVehicle.autoCheckReport = {
@@ -403,13 +417,19 @@ describe('manager-friendly inventory UI', () => {
         onSelectVehicle={onSelectVehicle}
       />,
     )
-    // Branded source links are visible in the row; opening one never selects the vehicle.
-    const row = document.querySelector('.inv-desk-resource-row') as HTMLElement
-    const autoCheckRowLink = within(row).getByRole('link', { name: /open AutoCheck history for VIN/i })
-    const stickerRowLink = within(row).getByRole('link', { name: /open sticker for VIN/i })
-    expect(autoCheckRowLink).toHaveAttribute('href', documentedVehicle.autoCheckReport.url)
-    expect(stickerRowLink).toHaveAttribute('href', documentedVehicle.windowSticker.url)
-    fireEvent.click(autoCheckRowLink)
+    // One Records action shows source highlights and exact document links
+    // without opening the full workspace or expanding the comparison rows.
+    const row = document.querySelector('.inv-desk-row') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: /Open vehicle records/ }))
+    const inspector = screen.getByRole('dialog', { name: /records$/i })
+    expect(within(inspector).getByRole('button', { name: 'Overview' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(inspector).getByText('92')).toBeVisible()
+    expect(within(inspector).getByText('200A')).toBeVisible()
+    const autoCheckLink = within(inspector).getByRole('link', { name: /open AutoCheck history for VIN/i })
+    const stickerLink = within(inspector).getByRole('link', { name: /open sticker for VIN/i })
+    expect(autoCheckLink).toHaveAttribute('href', documentedVehicle.autoCheckReport.url)
+    expect(stickerLink).toHaveAttribute('href', documentedVehicle.windowSticker.url)
+    fireEvent.click(autoCheckLink)
     expect(onSelectVehicle).not.toHaveBeenCalled()
     table.unmount()
 

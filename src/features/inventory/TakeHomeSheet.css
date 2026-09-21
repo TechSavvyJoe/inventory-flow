@@ -89,3 +89,6 @@ body.takehome-open { overflow: hidden; }
   .th { width: 8.5in; height: 11in; min-height: 0; box-shadow: none; overflow: hidden; page-break-after: avoid; }
   .th-cert, .th-price-main, .th-chips li, .th-equipment li::before { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+.th-cert.th-cert--logo { padding: 0; background: none; color: var(--ink-700); }
+.th-cert--logo .vehicle-certified-badge > img { height: 34px; max-width: 130px; }

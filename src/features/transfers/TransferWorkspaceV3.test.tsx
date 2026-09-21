@@ -190,7 +190,7 @@ function LocationProbe() {
   return <output data-testid="router-location">{`${location.pathname}${location.search}`}</output>;
 }
 
-function renderPage(data: BootstrapData, initialEntry = '/transfers', contextOverrides: Record<string, unknown> = {}) {
+function renderPage(data: BootstrapData, initialEntry = '/transfers', contextOverrides: Record<string, unknown> = {}, withLocation = false) {
   const submitTransfer = vi.fn().mockResolvedValue({ id: 'created-move-1' });
   mocks.useAppData.mockReturnValue({
     data,
@@ -203,7 +203,7 @@ function renderPage(data: BootstrapData, initialEntry = '/transfers', contextOve
   mocks.getTransfer.mockImplementation((id: string) =>
     Promise.resolve(data.transfers.find((item) => item.id === id)),
   );
-  return { ...render(<MemoryRouter initialEntries={[initialEntry]}><TransfersPage /></MemoryRouter>), submitTransfer };
+  return { ...render(<MemoryRouter initialEntries={[initialEntry]}><TransfersPage />{withLocation ? <LocationProbe /> : null}</MemoryRouter>), submitTransfer };
 }
 
 afterEach(() => cleanup());
@@ -212,6 +212,69 @@ describe('transfer workspace v3 layout', () => {
   beforeEach(() => {
     mocks.getTransfer.mockReset();
     mocks.useAppData.mockReset();
+  });
+
+  it('returns to the original task with a named link from a selected move', () => {
+    const origin = '/attention?queue=service';
+    renderPage(bootstrap(2), `/transfers?id=transfer-1&returnTo=${encodeURIComponent(origin)}`, {}, true);
+    const back = screen.getByRole('link', { name: 'Back to Action center' });
+    expect(back).toHaveAttribute('href', origin);
+    fireEvent.click(back);
+    expect(screen.getByTestId('router-location')).toHaveTextContent(origin);
+  });
+
+  it('keeps search, store scope and sorting when returning from a move to its queue', () => {
+    renderPage(bootstrap(4), '/transfers', {}, true);
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search vehicle moves' }), { target: { value: 'MOVE2' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort vehicle moves' }), { target: { value: 'stock' } });
+    fireEvent.click(screen.getByRole('button', { name: /MOVE2.*Assign a driver/ }));
+    expect(screen.getByTestId('router-location')).toHaveTextContent('returnTo=%2Ftransfers');
+    fireEvent.click(screen.getByRole('link', { name: 'Back to vehicle moves' }));
+    expect(screen.getByRole('textbox', { name: 'Search vehicle moves' })).toHaveValue('MOVE2');
+    expect(screen.getByRole('combobox', { name: 'Sort vehicle moves' })).toHaveValue('stock');
+    expect(screen.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('resets an empty persisted move view while preserving its sort', () => {
+    renderPage(bootstrap(4));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort vehicle moves' }), { target: { value: 'stock' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search vehicle moves' }), { target: { value: 'missing vehicle' } });
+    fireEvent.click(screen.getByRole('button', { name: /Completed/ }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter vehicle moves' }), { target: { value: 'issues' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset view' }));
+    expect(screen.getByRole('textbox', { name: 'Search vehicle moves' })).toHaveValue('');
+    expect(screen.getByRole('button', { name: /Active/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('combobox', { name: 'Filter vehicle moves' })).toHaveValue('all');
+    expect(screen.getByRole('combobox', { name: 'Sort vehicle moves' })).toHaveValue('stock');
+  });
+
+  it('matches the move picker across vehicle and store fields and clears the query', () => {
+    const data = bootstrap(0);
+    data.vehicles = [inventoryVehicle('Howell')];
+    renderPage(data, '/transfers/new', { role: 'group_manager' });
+    const search = screen.getByRole('textbox', { name: 'Search inventory to move' });
+    fireEvent.change(search, { target: { value: 'Bronco Howell' } });
+    expect(screen.getAllByText('2023 Ford Bronco Outer Banks')).toHaveLength(2);
+    fireEvent.change(search, { target: { value: 'missing vehicle' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear vehicle search' }));
+    expect(search).toHaveValue('');
+  });
+
+  it('preserves the originating vehicle through the new-move picker and cancel', () => {
+    const origin = '/inventory?scope=group&vin=TESTDATAOWNSTORE1&tab=hold';
+    const data = bootstrap(0);
+    data.vehicles = [inventoryVehicle('Howell')];
+    renderPage(data, `/transfers/new?returnTo=${encodeURIComponent(origin)}`, { role: 'group_manager' }, true);
+    fireEvent.click(screen.getByRole('button', { name: 'Move vehicle' }));
+    expect(screen.getByTestId('router-location')).toHaveTextContent(`returnTo=${encodeURIComponent(origin)}`);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByTestId('router-location')).toHaveTextContent(origin);
+  });
+
+  it('refuses an external return destination when tracking a move', () => {
+    renderPage(bootstrap(2), '/transfers?id=transfer-1&returnTo=%2F%2Fevil.example');
+    expect(screen.getByRole('link', { name: 'Back to vehicle moves' })).toHaveAttribute('href', '/transfers');
   });
 
   it.each([
@@ -239,8 +302,14 @@ describe('transfer workspace v3 layout', () => {
     expect(link).toHaveAttribute('href', `/service?vin=${source.vin}`);
     expect(link).toHaveTextContent(label);
     expect(link.closest('header')).toHaveClass('simple-move-heading');
-    expect(link.closest('header')).not.toHaveTextContent('$51,800');
-    expect(link.closest('header')).not.toHaveTextContent('Synthetic 3.5L engine');
+    const header = link.closest('header') as HTMLElement;
+    expect(header).toHaveTextContent('$51,800');
+    expect(header).toHaveTextContent('12,450 mi');
+    expect(header).toHaveTextContent('Synthetic 3.5L engine');
+    expect(header).toHaveTextContent('4WD');
+    expect(header).toHaveTextContent('Synthetic blue');
+    expect(within(header).getByRole('button', { name: 'Copy stock number: ' + source.stockNumber })).toBeVisible();
+    expect(within(header).getByRole('button', { name: 'Copy VIN: ' + source.vin })).toBeVisible();
     expect(screen.getByRole('region', { name: 'Vehicle location and time away' })).toHaveTextContent('Ford Detroit');
     expect(screen.getByRole('button', { name: 'Confirm back home' })).toBeVisible();
     expect(onAction).not.toHaveBeenCalled();
@@ -429,7 +498,7 @@ describe('transfer workspace v3 layout', () => {
     const summary = screen.getByRole('region', { name: 'Request and vehicle summary' });
     expect(within(summary).getByText('Move details')).toBeInTheDocument();
     expect(within(summary).getByText('Moved at')).toBeInTheDocument();
-    expect(within(summary).getByText('Sep 18, 5:30 PM')).toBeInTheDocument();
+    expect(within(summary).getByText('09/18/2026, 5:30 PM')).toBeInTheDocument();
     expect(within(summary).queryByText('Needed by')).not.toBeInTheDocument();
     expect(within(summary).queryByText('Requesting-store manager')).not.toBeInTheDocument();
     const progress = screen.getByRole('list', { name: 'Vehicle move progress' });
@@ -814,6 +883,46 @@ describe('transfer workspace v3 layout', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ask my manager' }));
     fireEvent.click(await screen.findByRole('button', { name: 'View this move' }));
     expect(onViewRequest).toHaveBeenCalledWith('saved-move-123');
+  });
+
+  it('keeps an edited move request when Cancel is declined and protects browser refresh', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const onCancel = vi.fn();
+    render(<TransferRequestWorkspace workflowMode="simple" vehicle={detail([]).vehicle} stores={[{ value: 'Ford Detroit', label: 'Ford Detroit' }]} requesters={[{ value: 'sales', label: 'Demo Sales' }]} managerApprovers={[{ value: 'manager', label: 'Ford Detroit manager' }]} defaultRequestingStore="Ford Detroit" defaultRequesterId="sales" defaultManagerApproverId="manager" onSubmit={vi.fn()} onCancel={onCancel} />);
+    fireEvent.change(screen.getByLabelText('What do you need?'), { target: { value: 'Synthetic appointment note' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('What do you need?')).toHaveValue('Synthetic appointment note');
+    const refresh = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(refresh);
+    expect(refresh.defaultPrevented).toBe(true);
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
+
+  it('protects a submitted move request until the server confirms the save', async () => {
+    let finish!: (value: { requestId: string }) => void;
+    const onSubmit = vi.fn(() => new Promise<{ requestId: string }>(resolve => { finish = resolve; }));
+    render(<TransferRequestWorkspace workflowMode="simple" vehicle={detail([]).vehicle} stores={[{ value: 'Ford Detroit', label: 'Ford Detroit' }]} requesters={[{ value: 'sales', label: 'Demo Sales' }]} managerApprovers={[{ value: 'manager', label: 'Ford Detroit manager' }]} defaultRequestingStore="Ford Detroit" defaultRequesterId="sales" defaultManagerApproverId="manager" onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByLabelText('Needed by'), { target: { value: '2026-09-15T10:00' } });
+    fireEvent.change(screen.getByLabelText('What do you need?'), { target: { value: 'Synthetic customer visit' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ask my manager' }));
+    expect(onSubmit).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText('What do you need?')).toBeDisabled();
+    expect(screen.getByLabelText('Needed by')).toBeDisabled();
+    fireEvent.submit(screen.getByLabelText('What do you need?').closest('form')!);
+    expect(onSubmit).toHaveBeenCalledOnce();
+    const pending = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(pending);
+    expect(pending.defaultPrevented).toBe(true);
+    await act(async () => finish({ requestId: 'confirmed-move' }));
+    expect(screen.getByRole('heading', { name: 'Request sent to your manager' })).toBeInTheDocument();
+    const saved = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(saved);
+    expect(saved.defaultPrevented).toBe(false);
   });
 
   it('filters sold-pending separately from delivery and sorts by an operational route', () => {

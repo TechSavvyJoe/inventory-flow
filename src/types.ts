@@ -95,6 +95,9 @@ export interface WindowStickerRecord {
   dataState?: SourceFreshness
   vehicleDescription?: string | null
   equipmentGroup?: string | null
+  /** Present only when equipment-group membership was explicitly captured. */
+  equipmentGroupContents?: string[]
+  equipmentGroupPrice?: number | null
   basePrice?: number | null
   totalOptions?: number | null
   destinationCharge?: number | null
@@ -171,6 +174,20 @@ export interface FordOasisRecord {
   sourceLabel?: string | null
   vehicleDescription?: string | null
   versionSeries?: string | null
+  bodyStyle?: string | null
+  driveType?: string | null
+  paintColor?: string | null
+  paintCode?: string | null
+  engine?: string | null
+  engineCalibration?: string | null
+  transmission?: string | null
+  axleRatio?: string | null
+  axleCode?: string | null
+  grossVehicleWeight?: string | null
+  wheelSize?: string | null
+  tire?: string | null
+  syncVersion?: string | null
+  fuelType?: string | null
   buildDate?: string | null
   warrantyStartDate?: string | null
   releaseDate?: string | null

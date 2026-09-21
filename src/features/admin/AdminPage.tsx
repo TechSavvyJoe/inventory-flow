@@ -12,7 +12,7 @@ import {
   Store,
   Users,
 } from 'lucide-react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { STORE_BRANDING } from '../../app/storeBranding'
 import { formatDateTime, formatNumber } from '../../lib/format'
@@ -250,7 +250,6 @@ function FeedSection({ feeds }: { feeds: AdminFeed[] }) {
               <th scope="col">Last successful update</th>
               <th scope="col">Vehicle count</th>
               <th scope="col">Issue summary</th>
-              <th scope="col"><span className="visually-hidden">Record link</span></th>
             </tr>
           </thead>
           <tbody>
@@ -263,15 +262,10 @@ function FeedSection({ feeds }: { feeds: AdminFeed[] }) {
                   <td><time dateTime={feed.lastSuccessfulAt ?? undefined}>{timestampLabel(feed.lastSuccessfulAt, 'Not recorded')}</time></td>
                   <td data-numeric>{feed.vehicleCount == null ? 'Not reported' : formatNumber(feed.vehicleCount)}</td>
                   <td>{feed.issueSummary || (feed.status === 'current' ? 'No issues' : 'No issue detail reported')}</td>
-                  <td>
-                    <a className="admin-row-link" href={`#${rowId}`} aria-label={`Link to ${feed.store} feed status`}>
-                      View <ArrowRight aria-hidden="true" />
-                    </a>
-                  </td>
                 </tr>
               )
             }) : (
-              <tr><td className="admin-empty-cell" colSpan={6}>No store feed records are available yet.</td></tr>
+              <tr><td className="admin-empty-cell" colSpan={5}>No store feed records are available yet.</td></tr>
             )}
           </tbody>
         </table>
@@ -386,6 +380,9 @@ function AuditSection({ audit }: { audit: AdminAuditEntry[] }) {
 }
 
 export function AdminPage() {
+  const { hash } = useLocation()
+  const activeSection = ['#admin-people', '#admin-feeds', '#admin-audit'].includes(hash) ? hash : '#admin-overview'
+  const sectionLink = (section: string) => ({ href: section, className: activeSection === section ? 'is-active' : undefined, 'aria-current': activeSection === section ? 'location' as const : undefined })
   const { homeStore, role } = useAppData()
   const accessContext = `${role}:${homeStore}`
   const [attempt, setAttempt] = useState(0)
@@ -461,10 +458,10 @@ export function AdminPage() {
       </section>
 
       <nav className="admin-tabs" aria-label="Control center sections">
-        <a className="is-active" href="#admin-overview" aria-current="location">Overview</a>
-        <a href="#admin-people"><span className="admin-tab__desktop-copy">People &amp; access</span><span className="admin-tab__mobile-copy">People</span></a>
-        <a href="#admin-feeds"><span className="admin-tab__desktop-copy">Feed health</span><span className="admin-tab__mobile-copy">Feeds</span></a>
-        <a href="#admin-audit"><span className="admin-tab__desktop-copy">Audit log</span><span className="admin-tab__mobile-copy">Audit</span></a>
+        <a {...sectionLink("#admin-overview")}>Overview</a>
+        <a {...sectionLink("#admin-people")}><span className="admin-tab__desktop-copy">People &amp; access</span><span className="admin-tab__mobile-copy">People</span></a>
+        <a {...sectionLink("#admin-feeds")}><span className="admin-tab__desktop-copy">Feed health</span><span className="admin-tab__mobile-copy">Feeds</span></a>
+        <a {...sectionLink("#admin-audit")}><span className="admin-tab__desktop-copy">Audit log</span><span className="admin-tab__mobile-copy">Audit</span></a>
       </nav>
 
       <p className="admin-readonly-note">

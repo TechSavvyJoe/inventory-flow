@@ -22,9 +22,12 @@ describe('Action center store workflow', () => {
     const vehicle = { vin: 'TESTDATAHWELL0001', vehicleName: 'Synthetic Ford H01', stockNumber: 'SYN-H01', homeStore: 'Howell', listedPrice: 31900, mileage: 18920, daysListed: 27, exteriorColor: 'Synthetic gray', engine: '2.0L synthetic engine', drivetrain: '4WD', sourceReportedLocation: 'Howell', movement: { currentLocation: 'Howell', locationConfidence: 'reported' }, serviceReadiness: { status: 'needs_service' } } as VehicleRecord
     show([task()], vi.fn(), [vehicle])
     const row = screen.getByRole('listitem')
-    expect(row).not.toHaveTextContent('$31,900')
+    expect(row).toHaveTextContent('$31,900')
     expect(row).not.toHaveTextContent('Synthetic engine')
-    expect(row).toHaveTextContent('Howell managerDue Sep 13, 2026')
+    expect(row).toHaveTextContent('Howell managerDue 09/13/2026')
+    expect(within(row).getByRole('button', { name: 'Copy VIN: TESTDATAHWELL0001' })).toBeVisible()
+    expect(within(row).getByRole('button', { name: 'Copy stock number: SYN-H01' })).toBeVisible()
+    expect(row).toHaveTextContent('18,920 mi')
     expect(row).toHaveTextContent('Waiting for service · Reported at Howell')
     expect(row).not.toHaveTextContent('Confirmed at Howell')
     expect(within(row).getByRole('link', { name: 'Vehicle details' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&returnTo=%2F')
@@ -39,9 +42,9 @@ describe('Action center store workflow', () => {
     show([task({ type: 'service_pending', href: '/service?vin=TESTDATAHWELL0001' })], vi.fn(), [vehicle])
     const row = screen.getByRole('listitem')
     expect(row).toHaveTextContent('18,920 mi · 27 days listed')
-    expect(row).not.toHaveTextContent('$31,900')
+    expect(row).toHaveTextContent('$31,900')
     expect(row).not.toHaveTextContent('Synthetic engine')
-    expect(within(row).getByRole('link', { name: 'Update service' })).toHaveAttribute('href', '/service?vin=TESTDATAHWELL0001')
+    expect(within(row).getByRole('link', { name: 'Update service' })).toHaveAttribute('href', '/service?vin=TESTDATAHWELL0001&returnTo=%2F')
   })
 
   it('does not invent a price, service state or specs for store-level tasks with no vehicle record', () => {
@@ -79,14 +82,27 @@ describe('Action center store workflow', () => {
     expect(entries).toHaveLength(2)
     expect(entries[0]).toHaveTextContent("Synthetic Fowlerville move · Fowlerville · Another store's next step")
     expect(entries[1]).toHaveTextContent('Source health')
-    expect(within(entries[0]).getByRole('link', { name: 'Open move' })).toHaveAttribute('href', '/transfers?id=synthetic-away')
+    expect(within(entries[0]).getByRole('link', { name: 'Open move' })).toHaveAttribute('href', '/transfers?id=synthetic-away&returnTo=%2F')
   })
 
-  it('collapses one vehicle into a single row that names its other conditions', () => {
+  it('describes informational-only search matches without calling them tasks', () => {
+    show([
+      task(),
+      task({ id: 'away-move', vin: 'TESTDATAFOWLER001', vehicleName: 'Synthetic Fowlerville move', type: 'transfer_next_action', store: 'Fowlerville', actionStore: 'Fowlerville', relatedStores: ['Howell'], actionability: 'informational', informationalReason: 'other_store' }),
+    ])
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search work queue' }), { target: { value: 'Fowlerville move' } })
+    expect(screen.getByRole('heading', { name: 'No actionable tasks match this view' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('0 tasks · 1 informational')
+    expect(screen.getByRole('list', { name: 'Also worth knowing' })).toHaveTextContent('Synthetic Fowlerville move')
+  })
+
+  it('keeps separate work directly accessible from a compact grouped row', () => {
     show([task(), task({ id: 'also-alert', type: 'hold_alert', priority: 'low' }), task({ id: 'also-service', type: 'service_pending', priority: 'low', label: 'Arrange service', href: '/service?vin=TESTDATAHWELL0001' })])
     const row = within(screen.getByRole('list', { name: 'Attention items' })).getByRole('listitem')
     expect(row).toHaveTextContent('Follow up on the expected hold date')
-    expect(row).toHaveTextContent('Also on this vehicle: Review the hold alert · Arrange service')
+    expect(within(row).getByRole('link', { name: 'Update service' })).toHaveAttribute('href', '/service?vin=TESTDATAHWELL0001&returnTo=%2F')
+    expect(row).not.toHaveTextContent('Also on this vehicle:')
+    expect(row).not.toHaveTextContent('Read the hold alert and confirm the next step with the salesperson.')
     // The row keeps the most urgent condition's own next step.
     expect(within(row).getByRole('link', { name: 'Review hold' })).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('1 task')
@@ -137,7 +153,7 @@ describe('Action center store workflow', () => {
   it('offers the actual next destination and keeps old start/acknowledge buttons out of the workflow', () => {
     const move = task({ type: 'transfer_next_action', href: '/transfers?id=synthetic-move', allowedActions: ['acknowledge', 'start', 'resolve', 'add_note'] })
     show([move])
-    expect(screen.getByRole('link', { name: 'Open move' })).toHaveAttribute('href', '/transfers?id=synthetic-move')
+    expect(screen.getByRole('link', { name: 'Open move' })).toHaveAttribute('href', '/transfers?id=synthetic-move&returnTo=%2F')
     expect(screen.queryByRole('button', { name: /Start|Acknowledge/i })).not.toBeInTheDocument()
     expandFollowUp()
     expect(screen.queryByRole('button', { name: 'Mark reviewed' })).not.toBeInTheDocument()
@@ -197,7 +213,7 @@ describe('Action center store workflow', () => {
 
   it('routes pending service directly to its record without offering generic review completion', () => {
     show([task({ type: 'service_pending', href: '/service?vin=TESTDATAHWELL0001', allowedActions: [] })])
-    expect(screen.getByRole('link', { name: 'Update service' })).toHaveAttribute('href', '/service?vin=TESTDATAHWELL0001')
+    expect(screen.getByRole('link', { name: 'Update service' })).toHaveAttribute('href', '/service?vin=TESTDATAHWELL0001&returnTo=%2F')
     expect(screen.queryByText('Follow-up & history')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Mark reviewed' })).not.toBeInTheDocument()
   })

@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { toTransferDetail } from '../../app/transferAdapters'
+import { useWorkspaceScroll } from '../../lib/workspace-memory'
+import { currentWorkspaceReturnPath, withWorkspaceReturnPath } from '../inventory/inventory-navigation'
 import { SourceWarning } from '../../components/SourceWarning'
 import type { TransferRecord } from '../../types'
 import { TransferActionDialog, type TransferActionKind, type TransferDetail } from '../transfers'
@@ -14,8 +16,11 @@ const SAVED_VIEWS: SavedManagerView[] = [
 ]
 
 export function ManagerPage() {
-  const { data, homeStore, role } = useAppData()
+  const { data, homeStore, role, currentUser } = useAppData()
   const navigate = useNavigate()
+  const location = useLocation()
+  const accessContext = `${currentUser}:${role}:${homeStore}`
+  useWorkspaceScroll(accessContext, 'manager')
   const [pendingAction, setPendingAction] = useState<{ action: TransferActionKind; detail: TransferDetail; record: TransferRecord } | null>(null)
 
   const records = useMemo<GroupOperationRecord[]>(() => {
@@ -48,13 +53,14 @@ export function ManagerPage() {
         records={records}
         storeOptions={data.stores.map((store) => ({ value: store.store, label: store.store }))}
         homeStore={homeStore}
-        currentUserId="joe-gallant"
+        currentUserId={currentUser}
+        persistenceContext={accessContext}
         savedViews={SAVED_VIEWS}
         sourceWarning={sourceIsCurrent ? undefined : data.meta.warnings[0] || 'One or more source snapshots are not current.'}
         onAction={handleAction}
-        onCreateRequest={() => navigate('/inventory')}
+        onCreateRequest={() => navigate(withWorkspaceReturnPath('/transfers/new', currentWorkspaceReturnPath(location)))}
         onSelectTransfer={(transfer) => {
-          if (transfer) navigate(`/transfers?id=${encodeURIComponent(transfer.id)}`)
+          if (transfer) navigate(withWorkspaceReturnPath(`/transfers?id=${encodeURIComponent(transfer.id)}`, currentWorkspaceReturnPath(location)))
         }}
       />
       {pendingAction ? <TransferActionDialog {...pendingAction} onClose={() => setPendingAction(null)} /> : null}

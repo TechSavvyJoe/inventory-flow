@@ -1,24 +1,31 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { equipmentFinderItems } from "./vehicle-equipment";
+import { CertifiedBadge } from "../../components/CertifiedBadge";
+import { WorkspaceLink } from "../../components/WorkspaceLink";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
   CarFront,
   ChevronRight,
+  ChevronDown,
   CircleHelp,
   ClipboardCheck,
   ExternalLink,
+  FileText,
   ListFilter,
   Truck,
   UserRound,
 } from "lucide-react";
 import { CopyableValue } from "../../components/CopyableValue";
 import { ServiceStatusLink } from "./ServiceStatusLink";
+import { InventoryRecordsPanel } from "./InventoryRecordsPanel";
 import { VehicleResourceCards } from "./VehicleResourceCards";
-import { vehicleResourceCatalog } from "./vehicle-resource-catalog";
+import { oasisActionLabel, vehicleResourceCatalog } from "./vehicle-resource-catalog";
 import {
   formatMileage,
   formatMoney,
+  formatDate,
   resolveCurrentLocation,
   SORT_LABELS,
   updateMultiSort,
@@ -385,17 +392,7 @@ export function vehicleMovementStatus(vehicle: InventoryVehicle): OperationalSta
 }
 
 function compactInventoryDate(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-  if (dateOnly) {
-    const [, year, month, day] = dateOnly;
-    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(
-      new Date(Number(year), Number(month) - 1, Number(day)),
-    );
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(parsed);
+  return value ? formatDate(value) : null;
 }
 
 function vehiclePhotoCount(vehicle: InventoryVehicle): number {
@@ -412,7 +409,8 @@ function humanizeStatusLabel(label: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function DeskVehicleCell({ vehicle, onSelectVehicle }: {
+function DeskVehicleCell({ vehicle, onSelectVehicle, recordsAction }: {
+  recordsAction?: ReactNode;
   vehicle: InventoryVehicle;
   onSelectVehicle: InventoryTableProps["onSelectVehicle"];
 }) {
@@ -428,16 +426,20 @@ function DeskVehicleCell({ vehicle, onSelectVehicle }: {
       </span>
       <div className="inv-desk-vehicle__body">
         <span className="inv-desk-vehicle__title"><strong title={name}>{title}</strong></span>
-        <span className="inv-desk-vehicle__ids">
-          <span className="inv-desk-id"><span className="inv-desk-id__label">Stock</span><CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy" />{vehicle.certified ? <span className="inv-desk-certified" title="Certified pre-owned">Certified</span> : null}</span>
-          <span className="inv-desk-id"><span className="inv-desk-id__label">VIN</span><CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy" /></span>
-        </span>
+        <div className="inv-desk-vehicle__links"><CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name} />{recordsAction}</div>
         {change ? <button type="button" className={`inv-desk-change inv-desk-change--${change.kind}`} data-row-action="history" data-inventory-vehicle-trigger={vehicle.id}
           aria-label={`View change history for ${name}: ${change.shortLabel}`} title={vehicle.changeSummary || change.label}
           onClick={(event) => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, "timeline"); }}>
           {change.shortLabel}
         </button> : null}
       </div>
+      <dl className="inv-desk-vehicle__facts">
+        <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy" /></dd></div>
+        <div><dt>Mileage</dt><dd>{typeof vehicle.mileage === "number" && Number.isFinite(vehicle.mileage)
+          ? <CopyableValue compact label="mileage" text={String(vehicle.mileage)} className="inv-desk-copy">{formatMileage(vehicle.mileage)}</CopyableValue>
+          : formatMileage(vehicle.mileage)}</dd></div>
+        <div className="inv-desk-vehicle__vin"><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy" /></dd></div>
+      </dl>
     </div>
   );
 }
@@ -448,7 +450,7 @@ function openRecallCount(vehicle: InventoryVehicle): number {
 
 function openRecallSummary(vehicle: InventoryVehicle): string | null {
   const count = openRecallCount(vehicle);
-  return count ? `${count} open Ford recall${count === 1 ? "" : "s"} or field service action${count === 1 ? "" : "s"}` : null;
+  return count ? oasisActionLabel(vehicle.fordOasis) : null;
 }
 
 /** Ford OASIS open field service actions. Reference evidence only; never an availability signal. */
@@ -471,7 +473,7 @@ function RecallChip({ vehicle, onSelectVehicle }: { vehicle: InventoryVehicle; o
       }}
     >
       <AlertTriangle size={13} strokeWidth={2} aria-hidden="true" />
-      <strong>Recalls: {count}</strong>
+      <strong>Captured actions: {count}</strong>
     </button>
   );
 }
@@ -483,7 +485,6 @@ function DeskPriceCell({ vehicle }: { vehicle: InventoryVehicle }) {
   const inventoryDate = compactInventoryDate(vehicle.inventoryDate);
   return <div className={`inv-desk-price${hasPrice ? "" : " is-unavailable"}`}>
     <strong>{formatMoney(vehicle.price)}</strong>
-    <span>{formatMileage(vehicle.mileage)}</span>
     <span title={inventoryDate ? `Inventory date ${inventoryDate}` : undefined}>{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : "Age unavailable"}</span>
     {hasMsrp ? <small title={under ? `${formatMoney(under)} under MSRP` : undefined}>MSRP {formatMoney(vehicle.msrp)}</small> : null}
   </div>;
@@ -544,8 +545,17 @@ function DeskEquipmentCell({ vehicle, onSelectVehicle }: {
     ?? published.find((item) => compactEquipmentScanLabel(item.label).length <= 42)
     ?? standout[0]
     ?? published[0];
-  const chips = [scanHeadline];
-  const remaining = published.length - chips.length;
+  const seenLabels = new Set<string>();
+  const chips = [scanHeadline, ...published.filter(item => /\bpackage\b/i.test(item.label)), ...standout, ...published]
+    .filter(item => {
+      // A package repeated by vAuto with its option code is the same scan cue.
+      const label = compactEquipmentScanLabel(item.label).replace(/\s*\([A-Z0-9-]+\)$/, '').toLocaleLowerCase();
+      if (seenLabels.has(label)) return false;
+      seenLabels.add(label);
+      return true;
+    }).slice(0, 3);
+  const equipmentCount = equipmentFinderItems(vehicle).length;
+  const remaining = Math.max(0, equipmentCount - chips.length);
   const preview = published.slice(0, 6).map((item) => item.label).join(" · ");
   return (
     <button
@@ -553,8 +563,8 @@ function DeskEquipmentCell({ vehicle, onSelectVehicle }: {
       className="inv-desk-equipment"
       data-row-action="equipment"
       data-inventory-vehicle-trigger={vehicle.id}
-      aria-label={`View all ${published.length} equipment items for ${vehicleDisplayName(vehicle)}`}
-      title={published.length > 6 ? `${preview} · +${published.length - 6} more` : preview}
+      aria-label={`View all ${equipmentCount} equipment items for ${vehicleDisplayName(vehicle)}`}
+      title={equipmentCount > 6 ? `${preview} · +${equipmentCount - 6} more` : preview}
       onClick={(event) => {
         stopRowSelection(event);
         event.currentTarget.focus({ preventScroll: true });
@@ -562,7 +572,7 @@ function DeskEquipmentCell({ vehicle, onSelectVehicle }: {
       }}
     >
       {chips.map((item) => (
-        <span className="inv-desk-equipment__item" key={`${item.source}:${item.label}`}>{item.source === "factory-equipment-group" && !/\bequipment\s+group\b/i.test(item.label) ? `Group ${item.label}` : compactEquipmentScanLabel(item.label)}</span>
+        <span className="inv-desk-equipment__item" key={`${item.source}:${item.label}`}>{compactEquipmentScanLabel(item.label)}</span>
       ))}
       {remaining > 0 ? <span className="inv-desk-equipment__more">+{remaining} more</span> : null}
     </button>
@@ -593,10 +603,12 @@ interface DeskRowActionsProps extends Pick<
 > {
   vehicle: InventoryVehicle;
   variant?: "desktop" | "mobile";
+  hideRecords?: boolean;
+  recordsDisclosure?: { expanded: boolean; controls: string; onToggle: () => void };
 }
 
-function DeskRowActions({
-  vehicle, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onSelectVehicle, variant = "desktop",
+export function DeskRowActions({
+  vehicle, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onSelectVehicle, variant = "desktop", recordsDisclosure, hideRecords = false,
 }: DeskRowActionsProps) {
   const name = vehicleDisplayName(vehicle);
   const listingUrl = vehicle.publicListing.listingUrl?.trim() || null;
@@ -612,21 +624,23 @@ function DeskRowActions({
         onClick={() => onSelectVehicle(vehicle)} aria-label={`Open vehicle details for ${name}`} title="Open vehicle">
         Details
       </button> : null}
-      <button type="button" className="inv-desk-action" data-row-action="records"
+      {!hideRecords ? <button type="button" className={`inv-desk-action${recordsDisclosure ? " inv-desk-action--records" : ""}`} data-row-action="records"
+        aria-expanded={recordsDisclosure?.expanded} aria-controls={recordsDisclosure?.controls}
         onClick={(event) => {
           event.currentTarget.focus({ preventScroll: true });
-          onSelectVehicle(vehicle, "data");
+          if (recordsDisclosure) recordsDisclosure.onToggle();
+          else onSelectVehicle(vehicle, "data");
         }} aria-label={`Open vehicle records for ${name}`} title="Open vehicle records">
-        Records
-      </button>
+        Records{recordsDisclosure ? <ChevronDown size={14} aria-hidden="true" className={recordsDisclosure.expanded ? "is-expanded" : undefined}/> : null}
+      </button> : null}
       {variant === "desktop" ? <button type="button" className="inv-desk-action" data-row-action="holds"
         onClick={() => onSelectVehicle(vehicle, "hold")} aria-label={`Open hold and movement details for ${name}`} title="Open hold and movement details">
         Hold
       </button> : null}
-      <a className="inv-desk-action" data-row-action="service" href={`/service?vin=${encodeURIComponent(vehicle.vin)}`}
+      <WorkspaceLink className="inv-desk-action" data-row-action="service" preserveOrigin to={`/service?vin=${encodeURIComponent(vehicle.vin)}`}
         aria-label={`Open service status for ${name}`} title="Open service status">
         Service
-      </a>
+      </WorkspaceLink>
       {canTrack ? <button type="button" className="inv-desk-action" data-row-action="track-movement"
         onClick={() => onTrackMovement?.(vehicle)} aria-label={`Track movement for ${name}`} title="Track movement">Track</button> : null}
       {canCreateMove ? <button type="button" className="inv-desk-action"
@@ -700,6 +714,14 @@ export function InventoryTable({
   onOpenListing,
   onOpenSourceRecord,
 }: InventoryTableProps) {
+  const [expandedVehicleId, setExpandedVehicleId] = useState<string | null>(null);
+  const recordsTriggerRef = useRef<HTMLElement | null>(null);
+  const recordsVehicle = vehicles.find(vehicle => vehicle.id === expandedVehicleId);
+  const recordsAction = (vehicle: InventoryVehicle) => <button type="button" className="inventory-records-launch" data-row-action="records" data-inventory-vehicle-trigger={vehicle.id}
+    aria-label={`Open vehicle records for ${vehicleDisplayName(vehicle)}`} aria-haspopup="dialog" aria-expanded={expandedVehicleId === vehicle.id}
+    onClick={event => { event.stopPropagation(); event.currentTarget.focus({preventScroll:true}); recordsTriggerRef.current = event.currentTarget; setExpandedVehicleId(vehicle.id); }}>
+    <FileText size={15} aria-hidden="true"/>Records<ChevronRight size={14} aria-hidden="true"/>
+  </button>;
   return (
     <section
       className="inventory-grid-shell--desk if-srp-grid"
@@ -719,10 +741,10 @@ export function InventoryTable({
           <thead>
             <tr>
               <SortHeader label="Vehicle" column="vehicle"
-                options={[...VEHICLE_SORT_OPTIONS, ...STOCK_SORT_OPTIONS, ...EVIDENCE_SORT_OPTIONS]}
+                options={[...VEHICLE_SORT_OPTIONS, ...STOCK_SORT_OPTIONS, ...MILEAGE_SORT_OPTIONS, ...EVIDENCE_SORT_OPTIONS]}
                 sorts={sorts} onSortChange={onSortChange} />
-              <SortHeader label="Price & mileage" column="price"
-                options={[...PRICE_SORT_OPTIONS, ...MILEAGE_SORT_OPTIONS, ...AGE_SORT_OPTIONS]}
+              <SortHeader label="Price & age" column="price"
+                options={[...PRICE_SORT_OPTIONS, ...AGE_SORT_OPTIONS]}
                 sorts={sorts} onSortChange={onSortChange} />
               <SortHeader label="Configuration" column="configuration"
                 options={EQUIPMENT_SORT_OPTIONS}
@@ -751,7 +773,7 @@ export function InventoryTable({
                   onClick={() => onSelectVehicle(vehicle)}
                 >
                   <td className="inv-desk-td inv-desk-td--vehicle" data-column="vehicle">
-                    <DeskVehicleCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
+                    <DeskVehicleCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} recordsAction={recordsAction(vehicle)} />
                   </td>
                   <td className="inv-desk-td inv-desk-td--num" data-column="price">
                     <DeskPriceCell vehicle={vehicle} />
@@ -773,12 +795,13 @@ export function InventoryTable({
                       onTrackMovement={onTrackMovement}
                       onOpenListing={onOpenListing}
                       onOpenSourceRecord={onOpenSourceRecord}
+                      hideRecords
                     />
                   </td>
                 </tr>
-                {hasResources ? <tr className={`inv-desk-resource-row${selected ? " is-selected" : ""}`}>
+                {hasResources ? <tr className={`inv-desk-scan-row${selected ? " is-selected" : ""}`}>
                   <td colSpan={5}>
-                    <VehicleResourceCards vehicle={vehicle} variant="inline" onOpenSection={(target) => onSelectVehicle(vehicle, target)} />
+                    <VehicleResourceCards vehicle={vehicle} variant="scan" />
                   </td>
                 </tr> : null}
                 </Fragment>
@@ -787,6 +810,14 @@ export function InventoryTable({
           </tbody>
         </table>
       </div>
+      {recordsVehicle ? <InventoryRecordsPanel vehicle={recordsVehicle} vehicles={vehicles} onVehicleChange={setExpandedVehicleId} onClose={() => setExpandedVehicleId(null)} onOpenWorkspace={vehicle => {
+        setExpandedVehicleId(null);
+        window.requestAnimationFrame(() => {
+          const launcher = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-row-action="records"]')).find(button => button.dataset.inventoryVehicleTrigger === vehicle.id && button.getClientRects().length > 0);
+          launcher?.focus({preventScroll:true});
+          onSelectVehicle(vehicle, "data");
+        });
+      }} returnFocusRef={recordsTriggerRef}/> : null}
     </section>
   );
 }
@@ -803,6 +834,14 @@ export function InventoryMobileList({
   onTrackMovement,
   onOpenListing,
 }: Pick<InventoryTableProps, "vehicles" | "selectedVehicleId" | "onSelectVehicle" | "onOpenSourceRecord" | "canRequestVehicle" | "moveActionFor" | "onRequestVehicle" | "onMoveVehicle" | "onTrackMovement" | "onOpenListing">) {
+  const [expandedVehicleId, setExpandedVehicleId] = useState<string | null>(null);
+  const recordsTriggerRef = useRef<HTMLElement | null>(null);
+  const recordsVehicle = vehicles.find(vehicle => vehicle.id === expandedVehicleId);
+  const recordsAction = (vehicle: InventoryVehicle) => <button type="button" className="inventory-records-launch" data-row-action="records" data-inventory-vehicle-trigger={vehicle.id}
+    aria-label={`Open vehicle records for ${vehicleDisplayName(vehicle)}`} aria-haspopup="dialog" aria-expanded={expandedVehicleId === vehicle.id}
+    onClick={event => { event.stopPropagation(); event.currentTarget.focus({preventScroll:true}); recordsTriggerRef.current = event.currentTarget; setExpandedVehicleId(vehicle.id); }}>
+    <FileText size={15} aria-hidden="true"/>Records<ChevronRight size={14} aria-hidden="true"/>
+  </button>;
   return (
     <div className="if-srp-mobile-list" aria-label="Inventory results">
       {vehicles.map((vehicle) => {
@@ -819,6 +858,7 @@ export function InventoryMobileList({
         const holdToolsAvailable = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
         const hasDocumentEvidence = Object.values(mobileDocumentAvailability(vehicle)).some(Boolean);
         const compactHoldLabel = holdStatus.tone === "hold" ? "Held" : holdStatus.label;
+        const equipmentCues = [...new Set(standoutEquipment(vehicle, 6).filter(item => item.source !== "factory-equipment-group").map(item => compactEquipmentScanLabel(item.label)))].slice(0, 3);
         return (
           <article
             className={`if-srp-mobile-row if-srp-mobile-row--scan${vehicle.id === selectedVehicleId ? " is-selected" : ""}`}
@@ -848,12 +888,14 @@ export function InventoryMobileList({
                 </span>
                 <small className="inventory-mobile-row__specification" title={specification}>{specification}</small>
               </span>
-              <span className="inventory-mobile-row__identity">
-                <span title={`Stock ${vehicle.stockNumber}${vehicle.certified ? " · Certified pre-owned" : ""}`}>{vehicle.stockNumber}</span>
-              </span>
             </button>
+            <div className="inventory-mobile-row__identity">
+              <span title={`Stock ${vehicle.stockNumber}`}>{vehicle.stockNumber}</span>
+              <CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name}/>
+              {recordsAction(vehicle)}
+            </div>
             <div className="inventory-mobile-row__signals" aria-label="Operational vehicle signals">
-              <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} />
+              <div className="inventory-mobile-service"><span aria-hidden="true">Service</span><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} /></div>
                 <button
                   type="button"
                   className={`inventory-mobile-hold inventory-mobile-hold--${holdStatus.tone}`}
@@ -872,7 +914,7 @@ export function InventoryMobileList({
                     ? `Open DealerMail hold tools for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}`
                     : `Open hold details for ${name}`}
                 >
-                  <strong>{currentLocation.label}</strong>
+                  <strong>{currentLocation.label}</strong><span aria-hidden="true" className="inventory-mobile-hold__separator">·</span>
                   <span>{compactHoldLabel}</span>
                 </button>
                 {vehicle.managerDisposition ? (
@@ -888,21 +930,31 @@ export function InventoryMobileList({
                   <Truck size={14} strokeWidth={1.9} aria-hidden="true" />
                   <span>{humanizeStatusLabel(operationalUpdate)}</span>
                 </p> : null}
-                <RecallChip vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
             </div>
+            {equipmentCues.length ? <div className="inventory-mobile-row__equipment"><span>Equipment</span><p>{equipmentCues.join(" · ")}</p></div> : null}
             <div className="inventory-mobile-row__footer">
-            <div className="inventory-mobile-row__resources">
-              <VehicleResourceCards vehicle={vehicle} variant="inline" onOpenSection={(target) => onSelectVehicle(vehicle, target)} />
-            </div>
             <div className="inventory-mobile-row__actions">
             <DeskRowActions vehicle={vehicle} variant="mobile" onSelectVehicle={onSelectVehicle} onOpenSourceRecord={onOpenSourceRecord}
+              hideRecords
               canRequestVehicle={canRequestVehicle} moveActionFor={moveActionFor} onRequestVehicle={onRequestVehicle} onMoveVehicle={onMoveVehicle}
               onTrackMovement={onTrackMovement} onOpenListing={onOpenListing} />
             </div>
+            <div className="inventory-mobile-row__resources">
+              <VehicleResourceCards vehicle={vehicle} variant="scan" />
+            </div>
+
             </div>
           </article>
         );
       })}
+      {recordsVehicle ? <InventoryRecordsPanel vehicle={recordsVehicle} vehicles={vehicles} onVehicleChange={setExpandedVehicleId} onClose={() => setExpandedVehicleId(null)} onOpenWorkspace={vehicle => {
+        setExpandedVehicleId(null);
+        window.requestAnimationFrame(() => {
+          const launcher = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-row-action="records"]')).find(button => button.dataset.inventoryVehicleTrigger === vehicle.id && button.getClientRects().length > 0);
+          launcher?.focus({preventScroll:true});
+          onSelectVehicle(vehicle, "data");
+        });
+      }} returnFocusRef={recordsTriggerRef}/> : null}
     </div>
   );
 }

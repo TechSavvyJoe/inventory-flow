@@ -1,0 +1,50 @@
+/* Shared operational tokens for Inventory Flow and its unbundled companion.
+   The app imports this source directly; the extension ships it unchanged. */
+:root {
+  --font-app: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --navy-950: #041e38;
+  --navy-900: #062a4d;
+  --navy-800: #083a69;
+  --blue-700: #064b9f;
+  --blue-600: #0759bd;
+  --blue-500: #0b67d1;
+  --blue-100: #dbeeff;
+  --blue-050: #edf5ff;
+  --ink-900: #102238;
+  --ink-700: #34485e;
+  --ink-600: #536579;
+  --ink-500: #617287;
+  --border: #dce4ed;
+  --border-strong: #c8d4e1;
+  --surface: #ffffff;
+  --surface-soft: #f5f8fb;
+  --surface-muted: #eef3f8;
+  --green: #147a3d;
+  --green-bg: #e9f7ee;
+  --amber: #b85b00;
+  --amber-bg: #fff4e6;
+  --red: #c93434;
+  --red-bg: #fff0f0;
+  --violet: #7655d8;
+  --violet-bg: #f1edff;
+  --neutral: #5f7083;
+  --focus: #4c96ea;
+  --shadow-drawer: 0 16px 42px rgb(26 55 87 / 16%);
+  --shadow-panel: 0 8px 28px rgb(19 48 78 / 7%);
+  --radius-control: 8px;
+  --radius-panel: 10px;
+  --control-target: 44px;
+  --motion-fast: 140ms;
+  --motion-standard: 220ms;
+  --motion-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-exit: cubic-bezier(0.4, 0, 1, 1);
+  --motion-ease: cubic-bezier(0.2, 0.78, 0.2, 1);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --motion-fast: 0.01ms; --motion-standard: 0.01ms; }
+}

@@ -4,33 +4,37 @@ import { AppDataProvider, useAppData } from './app/AppDataContext'
 import { AppShell } from './app/AppShell'
 import { AdminPage, AttentionPage, InventoryPage, InventoryUpdatesPage, ServicePage, ManagerPage, preloadRoute, TransfersPage } from './app/routeModules'
 import { ErrorState } from './components/ErrorState'
+import { WorkspaceRefreshStatus } from './components/WorkspaceRefreshStatus'
 import { LoadingState } from './components/LoadingState'
 import { RouteLoadBoundary } from './components/RouteLoadBoundary'
 import { RouteLoadingState } from './components/RouteLoadingState'
 import './styles/pages.css'
 
 function AppRoutes() {
-  const { data, loading, error, refresh, role, homeStore, currentUser } = useAppData()
+  const { data, loading, error, accessErrorStatus, lastCheckedAt, savedChangesPending, refresh, role, homeStore, currentUser } = useAppData()
   if (loading && !data) return <LoadingState />
-  if (error && !data) return <ErrorState message={error} retry={() => void refresh()} />
+  if (error && !data) return <ErrorState message={error} accessStatus={accessErrorStatus} retry={() => void refresh()} />
 
   return (
-    <RouteLoadBoundary>
-      <Suspense fallback={<RouteLoadingState />}>
-        <Routes>
-          <Route path="/" element={<InventoryPage homeMode />} />
-          <Route path="/inventory" element={<InventoryPage />} />
-          <Route path="/transfers" element={<TransfersPage />} />
-          <Route path="/transfers/new" element={<TransfersPage />} />
-          <Route path="/attention" element={<AttentionPage />} />
-          <Route path="/updates" element={<InventoryUpdatesPage key={`${currentUser}:${role}:${homeStore}`} />} />
-          <Route path="/service" element={<ServicePage key={`${currentUser}:${role}:${homeStore}`} />} />
-          <Route path="/manager" element={role === 'manager' || role === 'group_manager' ? <ManagerPage /> : <Navigate to="/attention" replace />} />
-          <Route path="/admin" element={role === 'group_manager' ? <AdminPage /> : <Navigate to="/attention" replace />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Suspense>
-    </RouteLoadBoundary>
+    <>
+      {error && data && <WorkspaceRefreshStatus error={error} loading={loading} lastCheckedAt={lastCheckedAt} savedChangesPending={savedChangesPending} retry={() => void refresh()} />}
+      <RouteLoadBoundary key={`${currentUser}:${role}:${homeStore}`}>
+        <Suspense fallback={<RouteLoadingState />}>
+          <Routes>
+            <Route path="/" element={<InventoryPage homeMode />} />
+            <Route path="/inventory" element={<InventoryPage />} />
+            <Route path="/transfers" element={<TransfersPage />} />
+            <Route path="/transfers/new" element={<TransfersPage />} />
+            <Route path="/attention" element={<AttentionPage />} />
+            <Route path="/updates" element={<InventoryUpdatesPage key={`${currentUser}:${role}:${homeStore}`} />} />
+            <Route path="/service" element={<ServicePage key={`${currentUser}:${role}:${homeStore}`} />} />
+            <Route path="/manager" element={role === 'manager' || role === 'group_manager' ? <ManagerPage /> : <Navigate to="/attention" replace />} />
+            <Route path="/admin" element={role === 'group_manager' ? <AdminPage /> : <Navigate to="/attention" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
+      </RouteLoadBoundary>
+    </>
   )
 }
 

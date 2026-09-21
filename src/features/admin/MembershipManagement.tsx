@@ -4,6 +4,8 @@ import { getMembershipDirectory, saveMembershipAccess } from '../../lib/api'
 import { formatDateTime } from '../../lib/format'
 import { STORE_NAMES, type StoreName, type UserRole } from '../../types'
 import type { ManagedMember, MembershipDirectory, MembershipInput } from './types'
+import { useUnsavedChanges } from '../../lib/useUnsavedChanges'
+import { useWorkspaceLifetime } from '../../lib/useWorkspaceLifetime'
 
 const ROLE_LABELS: Record<UserRole, string> = { sales: 'Salesperson', manager: 'Store manager', group_manager: 'Group manager', coordinator: 'Transport coordinator', porter: 'Porter', driver: 'Driver' }
 const ASSIGNABLE_ROLES: UserRole[] = ['sales', 'manager', 'group_manager']
@@ -17,6 +19,10 @@ const ROLE_HELP: Record<UserRole, string> = {
 }
 
 export function MembershipManagement({ role, store, onSaved }: { role: UserRole; store: StoreName; onSaved: () => void }) {
+  return <MembershipEditor key={`${role}:${store}`} role={role} store={store} onSaved={onSaved} />
+}
+
+function MembershipEditor({ role, store, onSaved }: { role: UserRole; store: StoreName; onSaved: () => void }) {
   const [directory, setDirectory] = useState<MembershipDirectory | null>(null)
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [query, setQuery] = useState('')
@@ -25,11 +31,12 @@ export function MembershipManagement({ role, store, onSaved }: { role: UserRole;
   const [draft, setDraft] = useState<MembershipInput | null>(null)
   const [saving, setSaving] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
+  const initialDraft = useRef('')
+  const captureWorkspace = useWorkspaceLifetime(`${role}:${store}`)
+  const { confirmDiscard, markSaved } = useUnsavedChanges(Boolean(draft && JSON.stringify(draft) !== initialDraft.current), { saving })
   const saveButtonRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     const controller = new AbortController()
-    abortRef.current = controller
     setError('')
     void getMembershipDirectory(role, store, controller.signal).then(value => {
       if (!controller.signal.aborted) setDirectory(value)
@@ -45,9 +52,11 @@ export function MembershipManagement({ role, store, onSaved }: { role: UserRole;
   }, [draft?.id, Boolean(draft)])
 
   function edit(member?: ManagedMember) {
-    if (!directory) return
+    if (!directory || saving || !confirmDiscard()) return
     setError(''); setNotice('')
-    setDraft({ ...(member ?? { email: '', name: '', role: 'sales', homeStore: store, enabled: true }), reason: '', expectedRevision: directory.revision })
+    const next = { ...(member ?? { email: '', name: '', role: 'sales' as const, homeStore: store, enabled: true }), reason: '', expectedRevision: directory.revision }
+    initialDraft.current = JSON.stringify(next)
+    setDraft(next)
   }
   function change<K extends keyof MembershipInput>(key: K, value: MembershipInput[K]) {
     setDraft(current => current ? { ...current, [key]: value } : current)
@@ -55,17 +64,19 @@ export function MembershipManagement({ role, store, onSaved }: { role: UserRole;
   async function save(event: FormEvent) {
     event.preventDefault()
     if (!draft || saving) return
+    const isCurrentWorkspace = captureWorkspace()
     setSaving(true); setError('')
     try {
       await saveMembershipAccess(draft, role, store)
-      if (abortRef.current?.signal.aborted) return
+      if (!isCurrentWorkspace()) return
+      markSaved()
       setNotice(`${draft.name}'s access was saved.`)
       setDraft(null)
       setLoadAttempt(value => value + 1)
       onSaved()
     } catch (cause) {
-      if (!abortRef.current?.signal.aborted) setError(cause instanceof Error ? cause.message : 'Access could not be saved.')
-    } finally { setSaving(false) }
+      if (isCurrentWorkspace()) setError(cause instanceof Error ? cause.message : 'Access could not be saved.')
+    } finally { if (isCurrentWorkspace()) setSaving(false) }
   }
   const filtered = directory?.members.filter(member => `${member.name} ${member.email} ${ROLE_LABELS[member.role]} ${member.homeStore}`.toLowerCase().includes(query.toLowerCase())) ?? []
   const self = draft?.id === directory?.currentUserId
@@ -77,12 +88,12 @@ export function MembershipManagement({ role, store, onSaved }: { role: UserRole;
     </header>
     <div className="admin-member-toolbar">
       <label className="admin-member-search"><Search size={16} /><input aria-label="Search employees" value={query} onChange={event => setQuery(event.target.value)} placeholder="Name, email, role, or store" /></label>
-      <button className="admin-secondary-button" type="button" disabled={saving} onClick={() => { setDraft(null); setLoadAttempt(value => value + 1) }}><RefreshCw size={15} /> Reload</button>
+      <button className="admin-secondary-button" type="button" disabled={saving} onClick={() => { if (confirmDiscard()) { setDraft(null); setLoadAttempt(value => value + 1) } }}><RefreshCw size={15} /> Reload</button>
     </div>
     {notice && <p className="admin-save-notice" role="status"><Check size={16} />{notice}</p>}
     {error && <p className="admin-save-error" role="alert">{error}</p>}
     {draft && <form className="admin-member-form" ref={formRef} onSubmit={event => void save(event)}>
-      <header><h3>{draft.id ? `Edit ${directory?.members.find(member => member.id === draft.id)?.name}` : 'Add employee'}</h3><button type="button" className="admin-secondary-button" disabled={saving} aria-label="Cancel employee changes" onClick={() => setDraft(null)}><X size={16} /> Cancel</button></header>
+      <header><h3>{draft.id ? `Edit ${directory?.members.find(member => member.id === draft.id)?.name}` : 'Add employee'}</h3><button type="button" className="admin-secondary-button" disabled={saving} aria-label="Cancel employee changes" onClick={() => { if (confirmDiscard()) setDraft(null) }}><X size={16} /> Cancel</button></header>
       <div className="admin-member-fields">
         <label>Full name<input required maxLength={160} value={draft.name} disabled={saving} onChange={event => change('name', event.target.value)} /></label>
         <label>Sign-in email<input aria-label="Sign-in email" required type="email" maxLength={254} value={draft.email} disabled={saving || Boolean(draft.id)} onChange={event => change('email', event.target.value)} />{draft.id && <small>Email stays tied to this employee's history.</small>}</label>

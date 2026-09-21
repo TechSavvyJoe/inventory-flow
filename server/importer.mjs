@@ -520,10 +520,11 @@ function validatedWindowSticker(value, vin, publicRecord) {
     const text = optionalBoundedText(value[key], `Window sticker ${key}`, { max })
     if (text) result[key] = text
   }
-  for (const key of ['basePrice', 'totalOptions', 'destinationCharge', 'totalMsrp']) {
+  for (const key of ['basePrice', 'totalOptions', 'destinationCharge', 'totalMsrp', 'equipmentGroupPrice']) {
     const number = optionalBoundedNumber(value[key], `Window sticker ${key}`)
     if (number !== undefined) result[key] = number
   }
+  if (value.equipmentGroupContents !== undefined) result.equipmentGroupContents = boundedStringArray(value.equipmentGroupContents, 'Window sticker equipment group contents', { limit: 60 })
   const options = boundedStringArray(value.options, 'Window sticker options', { limit: 60 })
   const standardEquipment = boundedStringArray(value.standardEquipment, 'Window sticker standard equipment')
   const warranty = boundedStringArray(value.warranty, 'Window sticker warranty', { limit: 20 })
@@ -773,6 +774,12 @@ function validatedExternalAutoCheck(value, vin) {
   return result
 }
 
+const OASIS_VEHICLE_TEXT_FIELDS = [
+  'bodyStyle', 'driveType', 'paintColor', 'paintCode', 'engine', 'engineCalibration',
+  'transmission', 'axleRatio', 'axleCode', 'grossVehicleWeight', 'wheelSize', 'tire',
+  'syncVersion', 'fuelType',
+]
+
 /**
  * Ford OASIS vehicle report facts captured read-only from FMCDealer for an
  * exact VIN. Dates stay exactly as OASIS prints them. The capture never
@@ -787,6 +794,7 @@ function validatedFordOasis(value, vin) {
       'sourceLabel',
       'vehicleDescription',
       'versionSeries',
+      ...OASIS_VEHICLE_TEXT_FIELDS,
       'buildDate',
       'warrantyStartDate',
       'releaseDate',
@@ -809,6 +817,7 @@ function validatedFordOasis(value, vin) {
     ['sourceLabel', 160],
     ['vehicleDescription', 160],
     ['versionSeries', 120],
+    ...OASIS_VEHICLE_TEXT_FIELDS.map(key => [key, 160]),
     ['buildDate', 40],
     ['warrantyStartDate', 40],
     ['releaseDate', 40],
@@ -818,8 +827,8 @@ function validatedFordOasis(value, vin) {
     if (text && ['buildDate', 'warrantyStartDate', 'releaseDate'].includes(key)) {
       assertValid(isOasisDate(text), `Ford OASIS ${key} is not a recognized OASIS date`, { vin })
     }
-    if (text && key === 'vehicleDescription') {
-      assertValid(!containsForeignOasisText(text), 'Ford OASIS vehicleDescription contains non-vehicle material', { vin })
+    if (text && (key === 'vehicleDescription' || OASIS_VEHICLE_TEXT_FIELDS.includes(key))) {
+      assertValid(!containsForeignOasisText(text), `Ford OASIS ${key} contains non-vehicle material`, { vin })
     }
     if (text) result[key] = text
   }
@@ -835,9 +844,9 @@ function validatedFordOasis(value, vin) {
   const actions = value.openFieldServiceActions ?? []
   assertValid(value.openActionsCaptured === undefined || typeof value.openActionsCaptured === 'boolean', 'Ford OASIS action capture flag must be a boolean', { vin })
   assertValid(value.openActionsCaptured !== true || Array.isArray(value.openFieldServiceActions), 'Ford OASIS captured action result requires an explicit array', { vin })
-  // A normalized default [] is not evidence of a zero result. Preserve an
-  // explicit false flag if this record is validated again after normalization.
-  result.openActionsCaptured = value.openActionsCaptured ?? Array.isArray(value.openFieldServiceActions)
+  // A normalized default [] is not evidence of a zero result. Only an explicit
+  // capture flag confirms completeness; legacy empty arrays stay unconfirmed.
+  result.openActionsCaptured = value.openActionsCaptured === true
   assertValid(
     Array.isArray(actions) && actions.length <= 60,
     'Ford OASIS open field service actions must be a bounded array',

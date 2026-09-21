@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TransferRecord } from '../../types'
 import { TransferActionDialog } from './TransferActionDialog'
@@ -264,4 +265,54 @@ describe('TransferActionDialog modal accessibility', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Decline request' }))
     await waitFor(() => expect(mocks.addTransferEvent).toHaveBeenCalledWith(record.id, expect.objectContaining({ type: 'request_declined', note: 'Vehicle needed at its home store.' })))
   })
+
+  it('protects condition severity and drive-safety edits even before a note is entered', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const close = vi.fn()
+    render(<TransferActionDialog action="report-condition" record={record} detail={detail} onClose={close} />)
+    fireEvent.change(screen.getByLabelText(/Issue severity/), { target: { value: 'do-not-drive' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(close).not.toHaveBeenCalled()
+    expect(screen.getByLabelText(/Issue severity/)).toHaveValue('do-not-drive')
+    fireEvent.change(screen.getByLabelText(/Issue severity/), { target: { value: 'needs-review' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'No' }))
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    expect(confirm).toHaveBeenCalledTimes(2)
+    expect(close).not.toHaveBeenCalled()
+    confirm.mockReturnValue(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Close this update' }))
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('navigates to the confirmed saved move without asking to discard its submitted note', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    mocks.addTransferEvent.mockResolvedValue(record)
+    function SaveAndNavigate() {
+      const navigate = useNavigate()
+      return <TransferActionDialog action="decline" record={{ ...record, workflowMode: 'simple' }} detail={detail} onClose={vi.fn()} onComplete={() => navigate('/saved')} />
+    }
+    render(<MemoryRouter initialEntries={['/update']}><Routes><Route path="/update" element={<SaveAndNavigate />} /><Route path="/saved" element={<p>Saved move workspace</p>} /></Routes></MemoryRouter>)
+    fireEvent.change(screen.getByLabelText(/Decision reason/), { target: { value: 'Synthetic reason for declining.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Decline request' }))
+    expect(await screen.findByText('Saved move workspace')).toBeInTheDocument()
+    expect(confirm).not.toHaveBeenCalled()
+    expect(mocks.addTransferEvent).toHaveBeenCalledOnce()
+  })
+
+  it('does not reopen a departed movement workspace when its submitted update finishes', async () => {
+    let finish!: (value: TransferRecord) => void
+    mocks.addTransferEvent.mockImplementation(() => new Promise<TransferRecord>(resolve => { finish = resolve }))
+    const complete = vi.fn()
+    const close = vi.fn()
+    const page = render(<TransferActionDialog action="decline" record={{ ...record, workflowMode: 'simple' }} detail={detail} onClose={close} onComplete={complete} />)
+    fireEvent.change(screen.getByLabelText(/Decision reason/), { target: { value: 'Synthetic reason.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Decline request' }))
+    expect(mocks.addTransferEvent).toHaveBeenCalledOnce()
+    page.unmount()
+    await act(async () => finish(record))
+    expect(complete).not.toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
+  })
+
 })

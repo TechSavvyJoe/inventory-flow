@@ -2,12 +2,13 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AttentionItem, BootstrapData, ServiceReadinessStatus, StoreName, VehicleRecord } from '../../types'
+import { clearWorkspaceMemory } from '../../lib/workspace-memory'
 import { AttentionPage } from './AttentionPage'
 import { actionCenterItems, isActionable, openStoreActionCount } from './action-center'
 
 const mocked = vi.hoisted(() => ({ context: {} as Record<string, unknown>, action: vi.fn() }))
 vi.mock('../../app/AppDataContext', () => ({ useAppData: () => mocked.context }))
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
 function task(type: string, store: StoreName = 'Howell'): AttentionItem {
   return { id: `synthetic-${type}-${store}`, type, store, severity: 'warning', status: 'open', priority: 'normal', label: `Synthetic ${type}`, vehicleName: `Synthetic ${store} hold`, stockNumber: 'SYN-H01', vin: 'TESTDATAHWELL0001', href: '/inventory?q=old-stock', allowedActions: [], events: [] }
 }
@@ -20,7 +21,7 @@ function data(): BootstrapData {
   return { attention: [{ ...task('source_freshness'), store: undefined, vin: undefined }, task('past_expected_hold'), task('hold_alert', 'Lincoln')], vehicles: [vehicle(undefined), vehicle('unknown', 'Howell', '2'), vehicle('needs_service', 'Howell', '3'), vehicle('in_service', 'Howell', '4'), vehicle('serviced', 'Howell', '5'), vehicle('needs_service', 'Lincoln', '6')], meta: { reportDate: '2026-09-14', publicFreshness: 'current', dealerMailFreshness: 'current' } } as BootstrapData
 }
 const howellManager = { store: 'Howell' as StoreName, role: 'manager' as const }
-beforeEach(() => { vi.clearAllMocks(); mocked.context = { data: data(), homeStore: 'Howell', role: 'manager', currentUser: 'Synthetic Manager', addAttentionEvent: mocked.action } })
+beforeEach(() => { clearWorkspaceMemory(); vi.clearAllMocks(); mocked.context = { data: data(), homeStore: 'Howell', role: 'manager', currentUser: 'Synthetic Manager', addAttentionEvent: mocked.action } })
 function show() { return render(<MemoryRouter><AttentionPage/></MemoryRouter>) }
 function tasks() { return within(screen.getByRole('list', { name: 'Attention items' })).getAllByRole('listitem') }
 
@@ -85,7 +86,8 @@ describe('Action center page and shared navigation count', () => {
     expect(openStoreActionCount(fixture, howellManager)).toBe(5)
     show()
     const held = tasks().find(row => within(row).queryByText('Follow up on the expected hold date'))!
-    expect(held).toHaveTextContent('Also on this vehicle: Review the hold alert · Arrange service')
+    expect(within(held).getByRole('link', { name: 'Update service' })).toHaveAttribute('href', expect.stringContaining('/service?vin=TESTDATAHWELL0001'))
+    expect(held).not.toHaveTextContent('Also on this vehicle:')
   })
 
   it('uses an exact VIN link and keeps resolved tasks out of the open navigation count', () => {
@@ -118,4 +120,28 @@ describe('Action center page and shared navigation count', () => {
     expect(tasks()).toHaveLength(2)
     expect(screen.queryByText('Synthetic Service 3')).not.toBeInTheDocument()
   })
+
+  it('protects an unfinished follow-up when a filter would remove its row', () => {
+    const fixture = data()
+    fixture.attention = [{ ...task('past_expected_hold'), allowedActions: ['add_note'] }]
+    fixture.vehicles = []
+    mocked.context.data = fixture
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    show()
+    fireEvent.click(screen.getByText('Follow-up & history'))
+    fireEvent.change(screen.getByLabelText('Work note'), { target: { value: 'Unfinished handoff note' } })
+    const serviceFilter = screen.getByRole('button', { name: /^Service\s*0$/ })
+    fireEvent.click(serviceFilter)
+    expect(serviceFilter).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByLabelText('Work note')).toHaveValue('Unfinished handoff note')
+    fireEvent.change(screen.getByLabelText('Search work queue'), { target: { value: 'No match' } })
+    expect(screen.getByLabelText('Search work queue')).toHaveValue('')
+    expect(mocked.action).not.toHaveBeenCalled()
+    confirm.mockReturnValue(true)
+    fireEvent.click(serviceFilter)
+    expect(serviceFilter).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByLabelText('Work note')).not.toBeInTheDocument()
+    expect(confirm).toHaveBeenCalledTimes(3)
+  })
+
 })

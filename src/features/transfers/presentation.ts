@@ -1,3 +1,4 @@
+import { displayDate } from '../../lib/date-display';
 import type {
   LocationConfidence,
   SlaState,
@@ -77,14 +78,5 @@ export function locationConfidenceLabel(confidence: LocationConfidence): string 
 }
 
 export function formatDateTime(value?: string): string {
-  if (!value) return 'Not set';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(parsed);
+  return value ? displayDate(value, { time: true, timeZone: 'America/New_York' }) : 'Not set';
 }

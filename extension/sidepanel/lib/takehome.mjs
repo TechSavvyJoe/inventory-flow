@@ -59,7 +59,7 @@ export function renderTakeHome(model, { now = new Date() } = {}) {
     ),
     el('section', { class: 'th-title' },
       el('div', {}, el('h1', { text: model.name }), model.descriptor ? el('p', { text: model.descriptor }) : null),
-      model.certified ? el('span', { class: 'th-cert' }, icon('badge-check', { size: 14 }), model.certified.name) : null,
+      model.certified ? el('span', { class: `th-cert th-cert-${model.certified.brand ?? 'generic'}` }, model.certified.brand ? el('img', { src: `../resource-brands/${model.certified.brand === 'ford' ? 'ford-blue-certified.svg' : 'lincoln-certified.png'}`, alt: model.certified.name }) : icon('badge-check', { size: 14 }), model.certified.brand === 'lincoln' ? null : model.certified.name) : null,
     ),
     el('section', { class: `th-hero ${heroPhoto ? '' : 'is-empty'}`.trim() },
       el('div', { class: 'th-photos' },
@@ -85,7 +85,7 @@ export function renderTakeHome(model, { now = new Date() } = {}) {
     model.certified ? el('section', { class: 'th-block th-cert-block' }, el('h2', { text: model.certified.name }), el('ul', { class: 'th-terms' }, ...model.certified.terms.map((term) => el('li', { text: term })))) : null,
     el('footer', { class: 'th-foot' },
       listing ? el('a', { class: 'th-listing-link', href: listing, target: '_blank', rel: 'noopener noreferrer' }, 'View vehicle listing', icon('external', { size: 14 })) : null,
-      el('span', { text: `Prepared ${now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} · ${model.storeName}${site ? ` · ${site}` : ''}` }),
+      el('span', { text: `Prepared ${fmt.formatDate(now)} · ${model.storeName}${site ? ` · ${site}` : ''}` }),
       el('span', { text: 'Price excludes tax, title, license and dealer fees. Vehicle information is believed accurate but not guaranteed; confirm equipment, mileage and availability with the dealership before purchase.' }),
     ),
   )

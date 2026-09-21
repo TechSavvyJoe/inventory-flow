@@ -35,9 +35,10 @@ describe('vehicle-warranty-utils', () => {
 
   it('names the store certification, which is separate from factory coverage', () => {
     expect(certifiedTerms('Lincoln').name).toBe('Lincoln Certified Pre-Owned')
-    expect(certifiedTerms('Howell').name).toBe('Ford Blue Advantage')
+    expect(certifiedTerms('Howell').name).toBe('Ford Blue Certified')
     expect(certifiedTerms('Ford Detroit').terms.join(' ')).toMatch(/Blue Certified: .*139-point/)
-    expect(certifiedTerms('Ford Detroit').terms.join(' ')).toMatch(/Gold Certified: .*172-point/)
+    expect(certifiedTerms('Ford Detroit').terms.join(' ')).not.toMatch(/Gold Certified/)
+    expect(certifiedTerms('Unknown').brand).toBe('generic')
   })
 
   it('applies the terms that were in force for the model year', () => {

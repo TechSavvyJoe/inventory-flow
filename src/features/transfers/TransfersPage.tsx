@@ -1,3 +1,4 @@
+import { useWorkspaceState, useWorkspaceScroll } from '../../lib/workspace-memory'
 import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowDownUp,
@@ -10,12 +11,12 @@ import {
   ListFilter,
   MapPin,
   Plus,
-  Search,
 } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { toTransferDetail, toTransferVehicle } from '../../app/transferAdapters'
 import { SourceWarning } from '../../components/SourceWarning'
+import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
 import { getTransfer } from '../../lib/api'
 import { vehiclePhotoDisplaySources } from '../../lib/vehicle-photos'
 import type { BootstrapData, StoreName, TransferRecord, UserRole } from '../../types'
@@ -29,7 +30,8 @@ import { awayFromHomeSummary } from './moveSummary'
 import { selectRequestedTransfer } from './transfer-selection'
 import { VehicleLocationOverview } from './VehicleLocationOverview'
 import { simpleTransferActions } from './SimpleTransferTracker'
-import { currentWorkspaceReturnPath, readWorkspaceReturnPath, vehicleWorkspacePath } from '../inventory/inventory-navigation'
+import { currentWorkspaceReturnPath, readWorkspaceReturnPath, vehicleWorkspacePath, withWorkspaceReturnPath, workspaceReturnLabel } from '../inventory/inventory-navigation'
+import { searchFieldsMatch } from '../inventory/inventory-search'
 import './transfers-page.css'
 import './transfer-workspace-v3.css'
 import './transfer-workspace-v4.css'
@@ -299,13 +301,19 @@ export function TransfersPage() {
   const location = useLocation()
   const [params] = useSearchParams()
   const [pendingAction, setPendingAction] = useState<{ action: TransferActionKind; detail: TransferDetail; record: TransferRecord } | null>(null)
-  const [query, setQuery] = useState('')
-  const [requestQuery, setRequestQuery] = useState('')
-  const [queueView, setQueueView] = useState<TransferQueueView>('active')
-  const [queueFilter, setQueueFilter] = useState<TransferQueueFilter>('all')
-  const [storeScope, setStoreScope] = useState<'home' | 'group'>('home')
-  const [queueSort, setQueueSort] = useState<TransferQueueSort>('urgency')
+  const accessContext = `${currentUser}:${role}:${homeStore}`
   const requestMode = location.pathname.endsWith('/new')
+  const origin = readWorkspaceReturnPath(params.get('returnTo'))
+  const safeReturnTo = origin ?? '/transfers'
+  const currentPath = currentWorkspaceReturnPath(location)
+  const movePath = (path: string) => withWorkspaceReturnPath(path, origin ?? currentPath)
+  useWorkspaceScroll(accessContext, requestMode ? 'transfers.new' : params.has('id') || params.has('vin') ? 'transfers.detail' : 'transfers.queue')
+  const [query, setQuery] = useWorkspaceState(accessContext, 'transfers.query', '')
+  const [requestQuery, setRequestQuery] = useWorkspaceState(accessContext, 'transfers.vehicle-query', '')
+  const [queueView, setQueueView] = useWorkspaceState<TransferQueueView>(accessContext, 'transfers.view', 'active')
+  const [queueFilter, setQueueFilter] = useWorkspaceState<TransferQueueFilter>(accessContext, 'transfers.filter', 'all')
+  const [storeScope, setStoreScope] = useWorkspaceState<'home' | 'group'>(accessContext, 'transfers.scope', 'home')
+  const [queueSort, setQueueSort] = useWorkspaceState<TransferQueueSort>(accessContext, 'transfers.sort', 'urgency')
 
   const details = useMemo(() => {
     if (!data) return []
@@ -321,7 +329,6 @@ export function TransfersPage() {
 
   const requestedId = params.get('id')
   const requestedVin = params.get('vin')?.toUpperCase()
-  const normalizedQuery = query.trim().toLowerCase()
   const scopedDetails = details.filter(({ record }) => storeScope === 'group' ||
     [record.homeStore, record.requestingStore, record.currentLocation, record.destination].includes(homeStore))
   const filteredDetails = scopedDetails
@@ -347,8 +354,7 @@ export function TransfersPage() {
       if (queueFilter === 'return-due' && !needsReturnAttention(record)) return false
       if (queueFilter === 'sold-pending' && !isSoldPendingNotDelivered(record)) return false
       if (queueFilter === 'issues' && !transferIssueLabel(detail)) return false
-      if (!normalizedQuery) return true
-      return [
+      return searchFieldsMatch(query, [
         record.stockNumber,
         record.vin,
         record.vehicleName,
@@ -366,7 +372,7 @@ export function TransfersPage() {
         record.deliveryStatus,
         record.movementStatus,
         detail.requestReason,
-      ].some((value) => value?.toLowerCase().includes(normalizedQuery))
+      ])
     })
     .sort((left, right) => {
       if (queueSort === 'needed-by') {
@@ -411,26 +417,20 @@ export function TransfersPage() {
   }
 
   if (requestMode) {
-    const safeReturnTo = readWorkspaceReturnPath(params.get('returnTo')) ?? '/transfers'
 
     if (!requestedVin) {
-      const normalizedVehicleQuery = requestQuery.trim().toLowerCase()
       const activeByVin = new Map(data.transfers.filter(record => !isTerminalTransfer(record)).map(record => [record.vin, record]))
       const candidates = data.vehicles
         .filter(vehicle => creationIntentFor(vehicle, role, homeStore))
-        .filter(vehicle => !normalizedVehicleQuery || [vehicle.stockNumber, vehicle.vin, vehicle.vehicleName, vehicle.homeStore]
-          .some(value => value?.toLowerCase().includes(normalizedVehicleQuery)))
+        .filter(vehicle => searchFieldsMatch(requestQuery, [vehicle.stockNumber, vehicle.vin, vehicle.vehicleName, vehicle.homeStore]))
         .slice(0, 30)
       return <section className="transfer-request-page move-vehicle-picker-page">
         <SourceWarning meta={data.meta} />
         <header className="move-picker-heading">
           <div><span>Vehicle moves</span><h1>Start a move</h1><p>Search by stock, VIN, or vehicle. The next step matches your role and the vehicle’s home store.</p></div>
-          <button type="button" className="mif-icon-button" aria-label="Close vehicle picker" onClick={() => navigate('/transfers')}><ArrowLeft aria-hidden="true" /></button>
+          <button type="button" className="mif-icon-button" aria-label="Close vehicle picker" onClick={() => navigate(safeReturnTo)}><ArrowLeft aria-hidden="true" /></button>
         </header>
-        <label className="move-picker-search">
-          <Search aria-hidden="true" />
-          <input autoFocus value={requestQuery} onChange={event => setRequestQuery(event.target.value)} placeholder="Search stock, VIN, or vehicle" aria-label="Search inventory to move" />
-        </label>
+        <PredictiveSearchInput className="move-picker-search" autoFocus value={requestQuery} onChange={setRequestQuery} ariaLabel="Search inventory to move" clearLabel="Clear vehicle search" placeholder="Search stock, VIN, or vehicle" candidates={candidates.map(vehicle => ({ id: vehicle.vin, label: vehicle.vehicleName, detail: `#${vehicle.stockNumber} · ${vehicle.homeStore}`, value: vehicle.stockNumber, searchValues: [vehicle.stockNumber, vehicle.vin, vehicle.vehicleName, vehicle.homeStore] }))} />
         <div className="move-picker-results" aria-live="polite">
           {candidates.map(vehicle => {
             const active = activeByVin.get(vehicle.vin)
@@ -441,13 +441,13 @@ export function TransfersPage() {
               <TransferListPhoto vehicle={summary} />
               <div><strong>{vehicle.vehicleName}</strong><span>Stock {vehicle.stockNumber} · {vehicle.homeStore}</span><small>{vehicle.vin}</small></div>
               {active ? <div className="move-picker-actions">
-                <button type="button" className="mif-button mif-button--secondary" onClick={() => navigate(`/transfers?id=${encodeURIComponent(active.id)}`)}>Track move</button>
-                {vehicle.movement?.canDirectReroute === true ? <button type="button" className="mif-button mif-button--primary" onClick={() => navigate(`/transfers/new?vin=${encodeURIComponent(vehicle.vin)}&intent=direct`)}>Move again</button> : null}
+                <button type="button" className="mif-button mif-button--secondary" onClick={() => navigate(movePath(`/transfers?id=${encodeURIComponent(active.id)}`))}>Track move</button>
+                {vehicle.movement?.canDirectReroute === true ? <button type="button" className="mif-button mif-button--primary" onClick={() => navigate(movePath(`/transfers/new?vin=${encodeURIComponent(vehicle.vin)}&intent=direct`))}>Move again</button> : null}
               </div>
-                : <button type="button" className="mif-button mif-button--primary" disabled={blocked} title={blocked ? 'Another move is already open for this vehicle.' : undefined} onClick={() => navigate(`/transfers/new?vin=${encodeURIComponent(vehicle.vin)}&intent=${intent}`)}>{blocked ? 'Move already open' : intent === 'direct' ? 'Move vehicle' : `Request to ${homeStore}`}</button>}
+                : <button type="button" className="mif-button mif-button--primary" disabled={blocked} title={blocked ? 'Another move is already open for this vehicle.' : undefined} onClick={() => navigate(movePath(`/transfers/new?vin=${encodeURIComponent(vehicle.vin)}&intent=${intent}`))}>{blocked ? 'Move already open' : intent === 'direct' ? 'Move vehicle' : `Request to ${homeStore}`}</button>}
             </article>
           })}
-          {!candidates.length ? <div className="move-picker-empty"><CarFront aria-hidden="true" /><strong>No matching vehicles</strong><p>Check the stock number or search across the vehicle name and VIN.</p></div> : null}
+          {!candidates.length ? <div className="move-picker-empty"><CarFront aria-hidden="true" /><strong>No matching vehicles</strong><p>Check the stock number or search across the vehicle name and VIN.</p>{requestQuery ? <button type="button" className="mif-button mif-button--secondary" onClick={() => setRequestQuery('')}>Clear search</button> : null}</div> : null}
         </div>
       </section>
     }
@@ -458,7 +458,7 @@ export function TransfersPage() {
         <CarFront aria-hidden="true" size={32} />
         <h1>This move is not available for your role</h1>
         <p>Salespeople request vehicles from another store. A store manager can directly move their own inventory, and a group manager can move inventory between any stores.</p>
-        <button type="button" className="mif-button mif-button--primary" onClick={() => navigate('/transfers/new')}>Choose another vehicle</button>
+        <button type="button" className="mif-button mif-button--primary" onClick={() => navigate(withWorkspaceReturnPath('/transfers/new', safeReturnTo))}>Choose another vehicle</button>
       </div></section>
     }
     const intent = permittedIntent ?? (params.get('intent') === 'direct' ? 'direct' : 'request')
@@ -496,7 +496,7 @@ export function TransfersPage() {
           defaultRequesterId="signed-in-user"
           defaultManagerApproverId={managerApprovers[0]?.value}
           onCancel={() => navigate(safeReturnTo)}
-          onViewRequest={(id) => navigate(`/transfers?id=${encodeURIComponent(id)}`)}
+          onViewRequest={(id) => navigate(withWorkspaceReturnPath(`/transfers?id=${encodeURIComponent(id)}`, safeReturnTo))}
           onSubmit={async (draft) => {
             const movedAt = intent === 'direct' ? localDateTimeToIso(draft.movedAt) : undefined
             const common = {
@@ -541,8 +541,9 @@ export function TransfersPage() {
         <div>
           <h1>Vehicle moves</h1>
           <p>See where each vehicle is, who is responsible, and what happens next.</p>
+          {(requestedId || requestedVin || origin) ? <Link className="mif-button mif-button--secondary" to={safeReturnTo}><ArrowLeft size={16} aria-hidden="true" />{workspaceReturnLabel(safeReturnTo, 'Back to vehicle moves')}</Link> : null}
         </div>
-        <button className="mif-button mif-button--primary transfer-header-create" type="button" aria-label="Start a vehicle move" onClick={() => navigate('/transfers/new')}>
+        <button className="mif-button mif-button--primary transfer-header-create" type="button" aria-label="Start a vehicle move" onClick={() => navigate(withWorkspaceReturnPath('/transfers/new', currentPath))}>
           <Plus aria-hidden="true" />
           Start a move
         </button>
@@ -569,17 +570,14 @@ export function TransfersPage() {
         >
           <aside className="transfer-list" aria-label="Vehicle moves">
             <div className="transfer-list-toolbar">
-              <label className="transfer-list-search">
-                <Search aria-hidden="true" />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={simple ? 'Search stock, vehicle, salesperson, or store' : 'Search stock, VIN, vehicle, store, or driver'} aria-label="Search vehicle moves" />
-              </label>
+              <PredictiveSearchInput className="transfer-list-search" value={query} onChange={setQuery} ariaLabel="Search vehicle moves" clearLabel="Clear move search" placeholder={simple ? 'Search stock, vehicle, salesperson, or store' : 'Search stock, VIN, vehicle, store, or driver'} candidates={filteredDetails.map(({ record, detail }) => ({ id: record.id, label: record.vehicleName, detail: `#${record.stockNumber} · ${record.currentLocation}`, value: record.stockNumber, searchValues: [record.stockNumber, record.vin, record.vehicleName, record.homeStore, record.requestingStore, record.currentLocation, record.destination, record.requestedBy, record.approvedBy, record.custodian, record.transportAssignee, record.nextAction, record.nextActionOwner, record.dealStatus, record.deliveryStatus, record.movementStatus, detail.requestReason] }))} />
               <div className="transfer-list-views" role="group" aria-label="Move queue view">
                 {([
                   ['active', 'Active'],
-                  ['needs-action', 'Your next steps'],
+                  ['needs-action', 'Needs me'],
                   ['history', 'Completed'],
                 ] as Array<[TransferQueueView, string]>).map(([value, label]) => (
-                  <button type="button" key={value} className={queueView === value ? 'is-active' : undefined} onClick={() => setQueueView(value)} aria-pressed={queueView === value}>
+                  <button type="button" key={value} aria-label={value === 'needs-action' ? `Your next steps, ${queueCounts[value]} moves` : undefined} className={queueView === value ? 'is-active' : undefined} onClick={() => setQueueView(value)} aria-pressed={queueView === value}>
                     {label}<span>{queueCounts[value]}</span>
                   </button>
                 ))}
@@ -639,7 +637,7 @@ export function TransfersPage() {
                     type="button"
                     key={record.id}
                     className={`transfer-list-item${isSelected ? ' is-selected' : ''}`}
-                    onClick={() => navigate(`/transfers?id=${encodeURIComponent(record.id)}`)}
+                    onClick={() => navigate(movePath(`/transfers?id=${encodeURIComponent(record.id)}`))}
                     aria-current={isSelected ? 'true' : undefined}
                     aria-controls="transfer-detail-workspace"
                   >
@@ -666,13 +664,13 @@ export function TransfersPage() {
                   </button>
                 )
               })}
-              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores or clear the search and stage filter.' : 'Clear the search or choose a different stage.'}</p></div> : null}
+              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores or reset this view.' : 'Reset the view to show active moves.'}</p>{query || queueView !== 'active' || queueFilter !== 'all' ? <button type="button" onClick={() => { setQuery(''); setQueueView('active'); setQueueFilter('all') }}>Reset view</button> : null}</div> : null}
             </div>
           </aside>
           <div className="transfer-detail-surface" id="transfer-detail-workspace">
             {(requestedId || requestedVin) && selected ? (
               <header className="transfer-mobile-detail-bar">
-                <button type="button" onClick={() => navigate('/transfers')} aria-label="Back to vehicle moves">
+                <button type="button" onClick={() => navigate(safeReturnTo)} aria-label={workspaceReturnLabel(safeReturnTo, 'Back to vehicle moves')}>
                   <ArrowLeft aria-hidden="true" />
                 </button>
                 <span>
@@ -694,7 +692,7 @@ export function TransfersPage() {
           onClose={() => setPendingAction(null)}
           onComplete={(updated) => {
             if (isTerminalTransfer(updated)) setQueueView('history')
-            navigate(`/transfers?id=${encodeURIComponent(updated.id)}`)
+            navigate(withWorkspaceReturnPath(`/transfers?id=${encodeURIComponent(updated.id)}`, origin ?? undefined))
           }}
         />
       ) : null}

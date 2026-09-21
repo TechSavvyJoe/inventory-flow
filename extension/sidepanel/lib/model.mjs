@@ -194,17 +194,14 @@ function isListed(record) {
   return record.listingUrl ? true : null
 }
 
-/**
- * Certification follows the store, not the make: Bob Maxey's Ford stores
- * certify under Ford Blue Advantage (Fords and non-Fords; Blue or Gold tier)
- * and the Lincoln store under Lincoln Certified Pre-Owned (Select or
- * Signature). The feed only says certified; certifiedTerms() in warranty.mjs
- * lists the tiers. Any factory warranty still running is separate.
+/** Dealer-confirmed policy: certified vehicles at the three Ford stores are Blue Certified.
+ * Certification follows the home store, including non-Ford makes; unknown stores stay generic.
  */
 export function certifiedProgram(homeStore) {
   const store = String(homeStore ?? '').trim()
   if (store === 'Lincoln') return { name: 'Lincoln Certified Pre-Owned', short: 'Lincoln Certified', brand: 'lincoln', store }
-  return { name: 'Ford Blue Advantage', short: 'Blue Advantage', brand: 'ford', store }
+  if (['Howell', 'Fowlerville', 'Ford Detroit'].includes(store)) return { name: 'Ford Blue Certified', short: 'Blue Certified', brand: 'ford', store }
+  return { name: 'Certified', short: 'Certified', brand: null, store }
 }
 
 const documentState = (value, fallback) => value === 'stale' ? 'stale' : value === 'unknown' ? 'unknown' : value ? dataState(value) : fallback
@@ -262,7 +259,8 @@ function documentsFor(record, publicState, dealerMailState) {
         url: windowStickerUrl(sticker.url, record.listingUrl), dataState: documentState(sticker.dataState, publicState),
         basePrice: number(sticker.basePrice), totalOptions: number(sticker.totalOptions), destinationCharge: number(sticker.destinationCharge), totalMsrp: number(sticker.totalMsrp),
         pricingCurrency: text(sticker.pricingCurrency), originalMarket: text(sticker.originalMarket), currencyEvidence: text(sticker.pricingCurrencyEvidence),
-        vehicleDescription: text(sticker.vehicleDescription), equipmentGroup: text(sticker.equipmentGroup),
+        vehicleDescription: text(sticker.vehicleDescription), equipmentGroup: text(sticker.equipmentGroup), equipmentGroupPrice: number(sticker.equipmentGroupPrice),
+        ...(Array.isArray(sticker.equipmentGroupContents) ? { equipmentGroupContents: list(sticker.equipmentGroupContents) } : {}),
         engine: text(sticker.engine), transmission: text(sticker.transmission), exteriorColor: text(sticker.exteriorColor), interiorColor: text(sticker.interiorColor),
         sourceMessage: text(sticker.sourceMessage), failureReason: text(sticker.failureReason),
         options: list(sticker.options), standardEquipment: list(sticker.standardEquipment), warranty: list(sticker.warranty),
@@ -478,7 +476,7 @@ export function copyFields(vehicle) {
     { key: 'destination', label: 'Destination & delivery', value: destination.value, kind: 'money', from: destination.from },
     { key: 'stickerTotal', label: total.from === 'label' ? 'Equipment label total MSRP' : 'Sticker total MSRP', value: total.value, kind: 'money', from: total.from },
     { key: 'mileage', label: 'Miles', value: vehicle.mileage, kind: 'mileage' },
-    { key: 'inService', label: 'Warranty start (est.)', value: vehicle.warranty?.inService.date ?? null, kind: 'date' },
+    { key: 'inService', label: vehicle.warranty?.inService.estimated ? 'Warranty start (est.)' : 'Warranty start (OASIS)', value: vehicle.warranty?.inService.date ?? null, kind: 'date' },
     { key: 'exterior', label: 'Exterior', value: vehicle.exteriorColor, kind: 'text' },
     { key: 'interior', label: 'Interior', value: vehicle.interiorColor, kind: 'text' },
     { key: 'engine', label: 'Engine', value: vehicle.engine, kind: 'text' },

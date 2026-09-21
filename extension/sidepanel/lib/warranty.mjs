@@ -84,6 +84,15 @@ export function warrantyMakeKey(make) {
   return MAKE_ALIASES[key] ?? key
 }
 
+export function vehicleInServiceSource(vehicle) {
+  const docs = vehicle.documents ?? {}
+  const firstDate = (...values) => values.find(value => typeof value === 'string' && value.trim())?.trim()
+  const oasis = firstDate(docs.fordOasis?.warrantyStartDate, docs.warrantyCheck?.fordOasis?.warrantyStartDate)
+  const estimate = firstDate(docs.autoCheck?.inServiceDate, docs.warrantyCheck?.autoCheck?.inServiceDate)
+  const raw = oasis || estimate || null
+  return { raw, source: oasis ? 'OASIS' : estimate ? 'AutoCheck estimate' : null, estimated: !oasis }
+}
+
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/
 const US_DATE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/
 
@@ -145,7 +154,8 @@ export function warrantyOutlook(vehicle, { now = Date.now() } = {}) {
   const make = warrantyMakeKey(vehicle.make)
   const terms = warrantyTermsFor(vehicle.make, vehicle.year)
   const fordFamily = make === 'ford' || make === 'lincoln'
-  const raw = vehicle.documents?.autoCheck?.inServiceDate ?? null
+  const start = vehicleInServiceSource(vehicle)
+  const raw = start.raw
   const inService = parseServiceDate(raw)
   const mileage = typeof vehicle.mileage === 'number' && Number.isFinite(vehicle.mileage) ? vehicle.mileage : null
   const electrified = isElectrified(vehicle.fuelType, vehicle.engine)
@@ -171,7 +181,7 @@ export function warrantyOutlook(vehicle, { now = Date.now() } = {}) {
     make,
     program: terms ? `${vehicle.make} new-vehicle limited warranty` : null,
     termsKnown: Boolean(terms),
-    inService: { date: inService ? isoDay(inService) : null, raw, source: raw ? 'AutoCheck estimate' : null, estimated: true },
+    inService: { date: inService ? isoDay(inService) : null, ...start },
     asOf: isoDay(asOf),
     mileage,
     electrified,
@@ -202,15 +212,17 @@ export function certifiedTerms(store) {
       note: 'The feed only says certified; the inspection sheet shows the tier. Separate from any factory warranty still running on the vehicle — confirm the paperwork with the store.',
     }
   }
+  if (!['Howell', 'Fowlerville', 'Ford Detroit'].includes(String(store ?? '').trim())) {
+    return { name: 'Certified', short: 'Certified', brand: null, terms: [], note: 'Confirm the certification program and coverage with the store.' }
+  }
   return {
-    name: 'Ford Blue Advantage',
-    short: 'Blue Advantage certified',
+    name: 'Ford Blue Certified',
+    short: 'Blue Certified',
     brand: 'ford',
     terms: [
       'Blue Certified: Ford and non-Ford vehicles up to 10 model years / 150,000 mi, 139-point inspection, 90 day / 4,000 mi comprehensive limited warranty',
-      'Gold Certified: Ford vehicles up to 6 model years / 80,000 mi, 172-point inspection, 12 mo / 12,000 mi comprehensive plus 7 yr / 100,000 mi powertrain from the original warranty start date',
     ],
-    note: 'The feed only says certified; the inspection sheet shows the tier. Separate from any factory warranty still running on the vehicle — confirm the paperwork with the store.',
+    note: 'Dealer-confirmed Blue Certified program. Separate from any factory warranty still running on the vehicle — confirm the paperwork with the store.',
   }
 }
 

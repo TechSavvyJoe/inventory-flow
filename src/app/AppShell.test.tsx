@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Link, MemoryRouter } from 'react-router-dom'
+import { Link, MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { AppShell } from './AppShell'
 
 const { useAppDataMock } = vi.hoisted(() => ({ useAppDataMock: vi.fn() }))
@@ -231,10 +231,14 @@ describe('AppShell account and update controls', () => {
     expect(within(storeUtility).queryByRole('link', { name: /Action center/ })).not.toBeInTheDocument()
   })
 
-  it('moves focus to the main content after client-side route changes without moving focus on initial load', async () => {
+  it.each([
+    ['/manager', '/transfers?id=move-1'],
+    ['/transfers?id=move-1', '/transfers?id=move-2'],
+    ['/transfers?id=move-1', '/transfers?id=move-1#history'],
+  ])('moves focus after the URL changes from %s to %s without moving focus on initial load', async (initialUrl, nextUrl) => {
     render(
-      <MemoryRouter initialEntries={['/manager']}>
-        <AppShell><Link to="/transfers?id=move-1">Open transfer record</Link></AppShell>
+      <MemoryRouter initialEntries={[initialUrl]}>
+        <AppShell><Link to={nextUrl}>Open transfer record</Link></AppShell>
       </MemoryRouter>,
     )
 
@@ -246,6 +250,33 @@ describe('AppShell account and update controls', () => {
     fireEvent.click(routeLink)
 
     await waitFor(() => expect(main).toHaveFocus())
+  })
+
+  it('keeps an edited input focused while a search request is consumed with a same-URL state replacement', async () => {
+    function SearchRequestWorkspace() {
+      const location = useLocation()
+      const navigate = useNavigate()
+      return <>
+        <input aria-label="Inventory query" defaultValue="DEMO-H01" />
+        <button type="button" onClick={() => navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, { replace: true, state: null })}>Consume search request</button>
+        <output aria-label="Search request state">{location.state === null ? 'Consumed' : 'Pending'}</output>
+      </>
+    }
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/inventory', search: '?scope=home', hash: '#results', state: { inventorySearchRequest: { query: 'DEMO-H01' } } }]}>
+        <AppShell><SearchRequestWorkspace /></AppShell>
+      </MemoryRouter>,
+    )
+    const input = screen.getByRole('textbox', { name: 'Inventory query' })
+    input.focus()
+    fireEvent.change(input, { target: { value: 'DEMO-H02' } })
+    // Dispatch only the cleanup action, preserving the focus a user owns
+    // while InventoryPage consumes transient navigation state.
+    fireEvent.click(screen.getByRole('button', { name: 'Consume search request' }))
+    await waitFor(() => expect(screen.getByLabelText('Search request state')).toHaveTextContent('Consumed'))
+    expect(input).toHaveFocus()
+    expect(input).toHaveValue('DEMO-H02')
+    expect(screen.getByRole('main')).not.toHaveFocus()
   })
 
   it('does not take focus from an active modal when the location changes', async () => {

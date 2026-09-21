@@ -1,7 +1,12 @@
+import { EQUIPMENT_CATEGORIES, EQUIPMENT_SOURCE_LABELS, equipmentDisplayParts, sourceConfirmedEquipment, equipmentFinderItems, type EquipmentCategoryId, type SourceEquipmentItem, type EquipmentFinderItem } from "./vehicle-equipment";
+import { CertifiedBadge } from "../../components/CertifiedBadge";
+import { ServiceStatusLink } from "./ServiceStatusLink";
+import { WorkspaceLink } from "../../components/WorkspaceLink";
+import { VehicleDetailStatus } from "../../components/VehicleDetailStatus";
 import { serviceStatusLabel, serviceWorkflowStatus } from "../../lib/service-readiness";
 import { sourceDisplayText } from "../../lib/source-text";
 import { sourceDistanceText } from "../../lib/source-distance";
-import { vehiclePhotoFullSources } from "../../lib/vehicle-photos";
+import { VehicleGallery } from "./VehicleGallery";
 import {
   useEffect,
   useLayoutEffect,
@@ -33,7 +38,6 @@ import {
   Gauge,
   Globe2,
   History,
-  ImageOff,
   Info,
   MapPin,
   MessageSquare,
@@ -49,8 +53,9 @@ import {
 } from "lucide-react";
 import { CopyableValue } from "../../components/CopyableValue";
 import { DealerMailHandoff } from "./DealerMailHandoff";
-import { VehicleResourceCards } from "./VehicleResourceCards";
-import { hasCapturedOasisActionResult } from "./vehicle-resource-catalog";
+import { VehicleResourceCards, displaySourceMoney, stickerLineParts } from "./VehicleResourceCards";
+import { formatSourceDateText, hasCapturedOasisActionResult, oasisActionLabel } from "./vehicle-resource-catalog";
+import { resolveVehicleInService } from "./vehicle-in-service";
 import { FactoryStickerIcon } from "../../design-system/icons";
 import {
   formatDate,
@@ -71,7 +76,7 @@ import {
   officialVehicleDocumentUrl,
   vautoFactoryEquipmentUrl,
 } from "./vehicle-document-utils";
-import { standoutEquipment } from "./vehicle-feature-utils";
+import { publishedEquipment, standoutEquipment } from "./vehicle-feature-utils";
 import { warrantySummary, warrantyOutlook } from "./vehicle-warranty-utils";
 import { WarrantyOutlook } from "./WarrantyOutlook";
 import { TakeHomeSheet } from "./TakeHomeSheet";
@@ -115,7 +120,7 @@ function formatReferencePrice(value: number): string {
 function compactSourcePrice(value: number | null | undefined, sticker?: InventoryVehicle["windowSticker"]): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return sticker?.pricingCurrency
-    ? formatStickerMoney(value, sticker)
+    ? formatStickerMoney(value, sticker).replace(/^USD\s+/, '$')
     : new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
 }
 
@@ -141,12 +146,25 @@ function historyCheckResult(check: NonNullable<NonNullable<InventoryVehicle["aut
   return sourceDistanceText([status, detail].filter(Boolean).join(" · "));
 }
 
-function serviceRecordSummary(report: NonNullable<InventoryVehicle["autoCheckReport"]>): string | null {
-  const check = report.checks?.find(item => /service.*repair/i.test(item.label));
-  if (!check) return null;
-  const result = historyCheckResult(check);
-  const count = result.match(/\b(\d+)\s+service\s+record/i);
-  return count ? `${count[1]} record${Number(count[1]) === 1 ? "" : "s"} reported` : result;
+type HistoryCheck = NonNullable<NonNullable<InventoryVehicle["autoCheckReport"]>["checks"]>[number];
+
+function historyCheckTone(check: HistoryCheck) {
+  const odometerWarning = /odometer/i.test(check.label) && /discrepancy|rollback|not actual|exceeds mechanical|inconsistent/i.test(check.detail ?? "") && !/no (?:odometer )?(?:discrepancy|rollback|inconsistency)/i.test(check.detail ?? "");
+  const serviceCountOnly = /service.*repair/i.test(check.label) && /^records available$/i.test(check.status ?? "") && /^\d+ service records?(?:\(s\))?(?: reported)?\.?$/i.test(check.detail ?? "");
+  return odometerWarning ? "review" : serviceCountOnly ? "info" : /no cpo info available/i.test(check.status ?? "") ? "unknown" : autoCheckResultTone(check.status);
+}
+
+function AutoCheckFindings({ checks, report, label }: { checks: HistoryCheck[]; report: InventoryVehicle["autoCheckReport"]; label: string }) {
+  return <div className="inventory-vehicle-document__checks" aria-label={label}>
+    {checks.map((check, index) => {
+      const tone = historyCheckTone(check);
+      const Icon = tone === "clear" ? CheckCircle2 : tone === "review" ? AlertTriangle : tone === "info" ? Info : CircleHelp;
+      return <span className={`inventory-vehicle-document__check inventory-vehicle-document__check--${tone}`} key={`${check.label}-${index}`} data-result-tone={tone}>
+        <Icon size={15} strokeWidth={1.8} aria-hidden="true" />
+        <span><strong>{historyCheckLabel(check.label)}</strong><small>{historyCheckResult(check, report)}</small></span>
+      </span>;
+    })}
+  </div>;
 }
 
 function focusWorkspaceSection(target: HTMLElement | null) {
@@ -410,146 +428,6 @@ function FordOasisWordmark() {
   );
 }
 
-function VehicleGallery({ vehicle }: { vehicle: InventoryVehicle }) {
-  const suppliedImages = useMemo(() => {
-    return vehiclePhotoFullSources(vehicle);
-  }, [vehicle.imageUrl, vehicle.imageUrls]);
-  const [failedImages, setFailedImages] = useState<Set<string>>(() => new Set());
-  const [activeIndex, setActiveIndex] = useState(0);
-  const usableImages = suppliedImages.filter((url) => !failedImages.has(url));
-  const activeImage = usableImages[activeIndex] ?? null;
-  const displayName = vehicleDisplayName(vehicle);
-
-  useEffect(() => {
-    setFailedImages(new Set());
-    setActiveIndex(0);
-  }, [vehicle.id]);
-
-  useEffect(() => {
-    if (activeIndex >= usableImages.length) {
-      setActiveIndex(Math.max(0, usableImages.length - 1));
-    }
-  }, [activeIndex, usableImages.length]);
-
-  const moveGallery = (direction: -1 | 1) => {
-    if (usableImages.length < 2) return;
-    setActiveIndex(
-      (current) =>
-        (current + direction + usableImages.length) % usableImages.length,
-    );
-  };
-
-  const handleGalleryKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    moveGallery(event.key === "ArrowLeft" ? -1 : 1);
-  };
-
-  const markImageFailed = (url: string) => {
-    setFailedImages((current) => new Set(current).add(url));
-  };
-
-  if (!activeImage) {
-    return (
-      <section
-        className="inventory-workspace-gallery inventory-workspace-gallery--empty"
-        aria-label="Vehicle photos"
-        data-photo-state="empty"
-      >
-        <div className="inventory-workspace-gallery__placeholder">
-          <ImageOff size={24} strokeWidth={1.6} aria-hidden="true" />
-          <strong>Photos are not available</strong>
-          <span>
-            {vehicle.photoCount
-              ? `${vehicle.photoCount} photos reported by the inventory source`
-              : "No photo URLs were supplied"}
-          </span>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section
-      className="inventory-workspace-gallery"
-      aria-label={`Photos of ${displayName}`}
-      tabIndex={0}
-      onKeyDown={handleGalleryKeyDown}
-      data-photo-state="available"
-      data-photo-count={usableImages.length}
-    >
-      <div className="inventory-workspace-gallery__stage">
-        <img
-          key={activeImage}
-          src={activeImage}
-          alt={activeImage.startsWith('/demo-vehicles/') ? `${displayName}, AI-generated demo illustration` : `${displayName}, photo ${activeIndex + 1}`}
-          referrerPolicy="no-referrer"
-          onError={() => markImageFailed(activeImage)}
-        />
-        {activeImage.startsWith('/demo-vehicles/') && <span className="vdp-demo-photo"><span className="vdp-demo-photo-full">Demo illustration</span><span className="vdp-demo-photo-short">Demo</span></span>}
-        <span className="inventory-workspace-gallery__count" aria-live="polite">
-          {activeIndex + 1} / {usableImages.length}
-        </span>
-        {usableImages.length > 1 ? (
-          <>
-            <button
-              type="button"
-              className="inventory-workspace-gallery__previous"
-              onClick={() => moveGallery(-1)}
-              aria-label="Show previous vehicle photo"
-            >
-              <ChevronLeft
-                size={22}
-                strokeWidth={1.8}
-                aria-hidden="true"
-              />
-            </button>
-            <button
-              type="button"
-              className="inventory-workspace-gallery__next"
-              onClick={() => moveGallery(1)}
-              aria-label="Show next vehicle photo"
-            >
-              <ChevronRight
-                size={22}
-                strokeWidth={1.8}
-                aria-hidden="true"
-              />
-            </button>
-          </>
-        ) : null}
-      </div>
-      {usableImages.length > 1 ? (
-        <div
-          className="inventory-workspace-gallery__thumbnails"
-          aria-label="Choose a vehicle photo"
-        >
-          {usableImages.map((url, index) => (
-            <button
-              type="button"
-              className={index === activeIndex ? "is-active" : undefined}
-              aria-label={`Show vehicle photo ${index + 1}`}
-              aria-current={index === activeIndex ? "true" : undefined}
-              onClick={() => setActiveIndex(index)}
-              key={url}
-            >
-              <img
-                src={url}
-                alt=""
-                loading="lazy"
-                referrerPolicy="no-referrer"
-                onError={() => markImageFailed(url)}
-              />
-            </button>
-          ))}
-        </div>
-      ) : null}
-      <span className="inventory-workspace-gallery__keyboard-hint">
-        Use left and right arrow keys to browse photos
-      </span>
-    </section>
-  );
-}
 
 function HoldEvidenceRecord({
   evidence,
@@ -704,16 +582,14 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const factoryEquipment = vehicle.factoryEquipment;
   const fordOasis = vehicle.fordOasis;
   const warrantyCheck = vehicle.warrantyCheck ?? null;
-  // Ford/Lincoln coverage comes from Ford's own OASIS record; AutoCheck is Experian's
-  // estimate and is the only source for off-brand trades. When both exist the OASIS
-  // table leads and the AutoCheck figures stay visible underneath for comparison.
-  const warrantyPrimary = warrantyCheck?.fordOasis ?? warrantyCheck?.autoCheck ?? null;
-  const warrantyPrimaryIsOasis = Boolean(warrantyCheck?.fordOasis);
-  const warrantySecondary = warrantyPrimaryIsOasis ? warrantyCheck?.autoCheck ?? null : null;
-  const warranty = warrantyOutlook({ make: vehicle.make, year: vehicle.year, fuelType: vehicle.fuelType, engine: vehicle.engine, mileage: vehicle.mileage, inServiceDate: autoCheck?.estimatedInServiceDate ?? null, stickerWarranty: sticker?.warranty ?? [] });
+  const inService = resolveVehicleInService(vehicle);
+  // Captured OASIS coverage takes precedence; estimates stay a fallback only.
+  const warrantyPrimaryIsOasis = inService.source === "oasis";
+  const warrantyPrimary = warrantyPrimaryIsOasis ? warrantyCheck?.fordOasis ?? null : warrantyCheck?.autoCheck ?? null;
+  const warranty = warrantyOutlook({ make: vehicle.make, year: vehicle.year, fuelType: vehicle.fuelType, engine: vehicle.engine, mileage: vehicle.mileage, inServiceDate: inService.source === "autocheck" ? inService.date : null, stickerWarranty: sticker?.warranty ?? [] });
   // The generic outlook is a fallback for records that predate the captured warranty channel.
   // Never show both versions of the same estimate on one vehicle.
-  const showWarranty = !warrantyCheck && Boolean(autoCheck || sticker || factoryEquipment) && (warranty.termsKnown || Boolean(warranty.inService.date));
+  const showWarranty = inService.source !== "oasis" && !warrantyCheck && Boolean(autoCheck || sticker || factoryEquipment) && (warranty.termsKnown || Boolean(warranty.inService.date));
   if (!autoCheck && !sticker && !factoryEquipment && !fordOasis && !warrantyCheck && !showWarranty) return null;
   const autoCheckUrl = officialVehicleDocumentUrl(autoCheck?.url, "autocheck", vehicle.publicListing.listingUrl);
   const stickerUrl = officialVehicleDocumentUrl(sticker?.url, "window-sticker", vehicle.publicListing.listingUrl);
@@ -721,12 +597,12 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const oasisUrl = /^(ford|lincoln)$/i.test(vehicle.make.trim()) ? fordOasisUrl(vehicle.vin) : null;
   const openRecallCount = fordOasis?.openFieldServiceActions.length ?? 0;
   const hasCapturedRecallResult = hasCapturedOasisActionResult(fordOasis);
-  // OASIS dates are Ford's printed strings; they are shown exactly as captured.
+  // Format captured calendar dates consistently without deriving coverage eligibility.
   const fordOasisFacts = fordOasis
     ? [
-        fordOasis.warrantyStartDate ? { label: "Warranty start", value: fordOasis.warrantyStartDate } : null,
-        fordOasis.buildDate ? { label: "Build date", value: fordOasis.buildDate } : null,
-        fordOasis.releaseDate ? { label: "Release date", value: fordOasis.releaseDate } : null,
+        fordOasis.warrantyStartDate ? { label: "Warranty start", value: formatDate(fordOasis.warrantyStartDate) } : null,
+        fordOasis.buildDate ? { label: "Build date", value: formatDate(fordOasis.buildDate) } : null,
+        fordOasis.releaseDate ? { label: "Release date", value: formatDate(fordOasis.releaseDate) } : null,
         fordOasis.monthsInService != null
           ? { label: "Months in service", value: countLabel(fordOasis.monthsInService, "month") }
           : null,
@@ -737,6 +613,8 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
     autoCheck?.scoreRangeLow != null && autoCheck.scoreRangeHigh != null
       ? `${autoCheck.scoreRangeLow}–${autoCheck.scoreRangeHigh}`
       : null;
+  const autoCheckHighlights = autoCheck?.checks?.filter(check => /^(?:state title brand|accident \/ damage)$/i.test(check.label.trim()) || historyCheckTone(check) === "review") ?? [];
+  const autoCheckOtherChecks = autoCheck?.checks?.filter(check => !autoCheckHighlights.includes(check)) ?? [];
   const autoCheckFacts = autoCheck
     ? [
         autoCheck.usage ? { label: "Vehicle use", value: sourceDistanceText(autoCheck.usage) } : null,
@@ -757,7 +635,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
         } : null,
         autoCheck.vehicleClass ? { label: "Vehicle class", value: sourceDistanceText(autoCheck.vehicleClass) } : null,
         autoCheck.assemblyCountry ? { label: "Assembly country", value: autoCheck.assemblyCountry } : null,
-        autoCheck.estimatedInServiceDate ? {
+        inService.source !== "oasis" && autoCheck.estimatedInServiceDate ? {
           label: "Estimated in-service date",
           value: formatDate(autoCheck.estimatedInServiceDate),
         } : null,
@@ -766,6 +644,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const stickerFacts = sticker
     ? [
         sticker.equipmentGroup ? { label: "Equipment group", value: sticker.equipmentGroup } : null,
+        sticker.equipmentGroupPrice != null ? { label: "Equipment group price", value: displaySourceMoney(formatStickerMoney(sticker.equipmentGroupPrice, sticker)) } : null,
         sticker.exteriorColor ? { label: "Exterior", value: sticker.exteriorColor } : null,
         sticker.interiorColor ? { label: "Interior", value: sticker.interiorColor } : null,
         sticker.engine || sticker.transmission
@@ -811,42 +690,12 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
           <dl className="vdp-history-summary" aria-label="AutoCheck summary">
             {autoCheck.score != null || autoCheckScoreRange ? <Fact label="AutoCheck score" emphasize>{autoCheck.score ?? "Not reported"}{autoCheckScoreRange ? <small>Typical {autoCheckScoreRange}</small> : null}</Fact> : null}
             {autoCheck.ownerCount != null ? <Fact label="Owners">{autoCheck.ownerCount}</Fact> : null}
-            {autoCheck.usage ? <Fact label="Vehicle use">{sourceDistanceText(autoCheck.usage)}</Fact> : null}
-            {serviceRecordSummary(autoCheck) ? <Fact label="Service records">{serviceRecordSummary(autoCheck)}</Fact> : null}
-            {autoCheck.lastReportedOdometer != null ? <Fact label="Last odometer">{formatMileage(autoCheck.lastReportedOdometer)}{autoCheck.lastReportedOdometerDate ? <small>{formatDate(autoCheck.lastReportedOdometerDate)}</small> : null}</Fact> : null}
           </dl>
-          {autoCheck.checks?.length ? (
-            <CapturedRecordSection title="History checks" count={countLabel(autoCheck.checks.length, "check")}>
-              <div className="inventory-vehicle-document__checks" aria-label="AutoCheck at-a-glance results">
-                {autoCheck.checks.map((check, index) => {
-                  const odometerWarning = /odometer/i.test(check.label) && /discrepancy|rollback|not actual|exceeds mechanical|inconsistent/i.test(check.detail ?? "") && !/no (?:odometer )?(?:discrepancy|rollback|inconsistency)/i.test(check.detail ?? "");
-                  const serviceCountOnly = /service.*repair/i.test(check.label) && /^records available$/i.test(check.status ?? "") && /^\d+ service records?(?:\(s\))?(?: reported)?\.?$/i.test(check.detail ?? "");
-                  const tone = odometerWarning ? "review" : serviceCountOnly ? "info" : /no cpo info available/i.test(check.status ?? "") ? "unknown" : autoCheckResultTone(check.status);
-                  return (
-                    <span
-                      className={`inventory-vehicle-document__check inventory-vehicle-document__check--${tone}`}
-                      key={`${check.label}-${index}`}
-                      data-result-tone={tone}
-                    >
-                      {tone === "clear" ? (
-                        <CheckCircle2 size={15} strokeWidth={1.8} aria-hidden="true" />
-                      ) : tone === "review" ? (
-                        <AlertTriangle size={15} strokeWidth={1.8} aria-hidden="true" />
-                      ) : tone === "info" ? (
-                        <Info size={15} strokeWidth={1.8} aria-hidden="true" />
-                      ) : (
-                        <CircleHelp size={15} strokeWidth={1.8} aria-hidden="true" />
-                      )}
-                      <span>
-                        <strong>{historyCheckLabel(check.label)}</strong>
-                        <small>{historyCheckResult(check, autoCheck)}</small>
-                      </span>
-                    </span>
-                  );
-                })}
-              </div>
-            </CapturedRecordSection>
-          ) : null}
+          {autoCheckHighlights.length ? <AutoCheckFindings checks={autoCheckHighlights} report={autoCheck} label="AutoCheck at-a-glance results" /> : null}
+          {autoCheckOtherChecks.length ? <details className="vdp-record-source-details vdp-history-more">
+            <summary><span>More history checks <small>{autoCheckOtherChecks.length}</small></span><ChevronDown size={14} aria-hidden="true" /></summary>
+            <AutoCheckFindings checks={autoCheckOtherChecks} report={autoCheck} label="Additional AutoCheck results" />
+          </details> : null}
           <RecordSourceDetails>
             <p>{autoCheck.reportRunAt ? `Report run ${formatDateTime(autoCheck.reportRunAt)}` : "Report run time not captured"}</p>
             <dl className="inventory-vehicle-document__facts">{autoCheckFacts.map(fact => <Fact label={fact.label} key={fact.label}>{fact.value}</Fact>)}</dl>
@@ -879,7 +728,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
           <div
             className={`inventory-vehicle-document__recalls inventory-vehicle-document__recalls--${openRecallCount ? "open" : hasCapturedRecallResult ? "clear" : "unknown"}`}
             role="status"
-            aria-label="Open recalls and field service actions"
+            aria-label="Open field service actions"
             data-open-recall-count={openRecallCount}
           >
             {openRecallCount ? (
@@ -889,9 +738,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             ) : <CircleHelp size={18} strokeWidth={1.9} aria-hidden="true" />}
             <span>
               <strong>
-                {openRecallCount
-                  ? countLabel(openRecallCount, "open recall / field service action", "open recalls / field service actions")
-                  : hasCapturedRecallResult ? "No open recalls or field service actions listed" : "No recall or field service action details are available"}
+                {oasisActionLabel(fordOasis)}
               </strong>
               <small>
                 Confirm current action status in OASIS before scheduling repairs.
@@ -939,7 +786,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                 {fordOasis.extendedCoverageExpirations.map((expiration, index) => (
                   <li key={`${expiration}-${index}`}>
                     <span>
-                      <strong>{sourceDistanceText(expiration)}</strong>
+                      <strong>{sourceDistanceText(formatSourceDateText(expiration))}</strong>
                     </span>
                   </li>
                 ))}
@@ -971,9 +818,9 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
 
           <dl className="inventory-vehicle-document__facts">
             {warrantyPrimaryIsOasis && warrantyCheck.fordOasis ? (
-              <Fact label="In service">{warrantyCheck.fordOasis.warrantyStartDate}</Fact>
+              <Fact label="In service">{formatDate(warrantyCheck.fordOasis.warrantyStartDate)}</Fact>
             ) : warrantyCheck.autoCheck?.inServiceDate ? (
-              <Fact label="In service (est.)">{warrantyCheck.autoCheck.inServiceDate}</Fact>
+              <Fact label="In service (est.)">{formatDate(warrantyCheck.autoCheck.inServiceDate)}</Fact>
             ) : null}
             {warrantyPrimaryIsOasis && warrantyCheck.fordOasis ? (
               <Fact label="Months in service">{countLabel(warrantyCheck.fordOasis.monthsInService, "month")}</Fact>
@@ -986,20 +833,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
 
           <CapturedWarrantyTable coverages={warrantyPrimary.coverages} label="Remaining factory warranty by coverage" />
 
-          {warrantyCheck.mileageSource || warrantySecondary ? <RecordSourceDetails>
-          {warrantyCheck.mileageSource ? <p>Mileage source: {warrantyCheck.mileageSource}</p> : null}
-          {warrantySecondary ? (
-            <CapturedRecordSection title="AutoCheck estimate" count={countLabel(warrantySecondary.coverages.length, "coverage type")}>
-              <p>Experian estimate for comparison; the Ford OASIS factory record above takes precedence.</p>
-              <dl className="inventory-vehicle-document__facts">
-                {warrantySecondary.inServiceDate ? <Fact label="In service (est.)">{warrantySecondary.inServiceDate}</Fact> : null}
-                {warrantySecondary.inServiceAgeMonths != null ? <Fact label="Months in service (est.)">{countLabel(warrantySecondary.inServiceAgeMonths, "month")}</Fact> : null}
-                {warrantySecondary.defaultMileage != null ? <Fact label="AutoCheck default mileage">{formatMileage(warrantySecondary.defaultMileage)}</Fact> : null}
-              </dl>
-              <CapturedWarrantyTable coverages={warrantySecondary.coverages} label="AutoCheck warranty estimate" />
-            </CapturedRecordSection>
-          ) : null}
-          </RecordSourceDetails> : null}
+          {warrantyCheck.mileageSource ? <RecordSourceDetails><p>Mileage source: {warrantyCheck.mileageSource}</p></RecordSourceDetails> : null}
 
           <p className="inventory-vehicle-document__empty">
             {warrantyPrimaryIsOasis
@@ -1041,12 +875,15 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
               ))}
             </dl>
           ) : null}
+          {sticker.equipmentGroupContents?.length ? <CapturedRecordSection title="Equipment group contents" count={countLabel(sticker.equipmentGroupContents.length, "included item")}>
+            <ul aria-label="Equipment group contents">{sticker.equipmentGroupContents.map((item,index) => <li key={index}>{item}</li>)}</ul>
+          </CapturedRecordSection> : null}
           {sticker.options?.length ? (
             <CapturedRecordSection title="Factory options" count={countLabel(sticker.options.length, "published item")}>
               <ul aria-label="Factory options">
                 {sticker.options.map((option, index) => (
                   <li key={`${option}-${index}`}>
-                    <span>{sourceDistanceText(option)}</span>
+                    <span>{sourceDistanceText(option).replace(/\bUSD\s*\$?(?=\d)/gi, "$")}</span>
                   </li>
                 ))}
               </ul>
@@ -1231,162 +1068,6 @@ function VehicleDetails({ vehicle }: { vehicle: InventoryVehicle }) {
         </details>
       ) : null}
     </div>
-  );
-}
-
-type EquipmentCategoryId =
-  | "safety"
-  | "towing"
-  | "comfort"
-  | "technology"
-  | "packages"
-  | "upgrades"
-  | "other";
-
-type EquipmentEvidenceSource =
-  | "inventory-feature"
-  | "factory-option"
-  | "factory-standard"
-  | "equipment-group"
-  | "vauto-package"
-  | "vauto-informational";
-
-interface SourceEquipmentItem {
-  text: string;
-  category: EquipmentCategoryId;
-  sources: EquipmentEvidenceSource[];
-  sourceSections: string[];
-  price?: number | null;
-}
-
-interface EquipmentDisplayParts {
-  label: string;
-  sourceSection?: string;
-}
-
-const EQUIPMENT_CATEGORIES: Array<{ id: EquipmentCategoryId; label: string }> = [
-  { id: "packages", label: "Packages & special series" },
-  { id: "safety", label: "Safety & driver assist" },
-  { id: "comfort", label: "Comfort" },
-  { id: "technology", label: "Technology" },
-  { id: "towing", label: "Towing & utility" },
-  { id: "upgrades", label: "Standout upgrades" },
-  { id: "other", label: "Other published equipment" },
-];
-
-const EQUIPMENT_SOURCE_LABELS: Record<EquipmentEvidenceSource, string> = {
-  "inventory-feature": "Published vehicle listing",
-  "factory-option": "Original window sticker · Option",
-  "factory-standard": "Original window sticker · Standard",
-  "equipment-group": "Original window sticker · Equipment group",
-  "vauto-package": "VIN equipment profile · Package",
-  "vauto-informational": "VIN equipment profile",
-};
-
-const EQUIPMENT_SOURCE_SECTIONS = new Map<string, string>([
-  ["exterior", "Exterior"],
-  ["interior", "Interior"],
-  ["functional", "Functional"],
-  ["safety/security", "Safety & security"],
-  ["safety & security", "Safety & security"],
-  ["mechanical", "Mechanical"],
-  ["technology", "Technology"],
-  ["comfort", "Comfort"],
-  ["comfort & convenience", "Comfort & convenience"],
-  ["powertrain", "Powertrain"],
-  ["towing", "Towing"],
-  ["other", "Other"],
-]);
-
-function equipmentDisplayParts(text: string): EquipmentDisplayParts {
-  const match = text.match(/^([^:]{2,32}):\s*(.+)$/);
-  if (!match) return { label: text };
-  const sourceSection = EQUIPMENT_SOURCE_SECTIONS.get(match[1].trim().toLocaleLowerCase());
-  if (!sourceSection) return { label: text };
-  return { label: match[2].trim(), sourceSection };
-}
-
-function equipmentCategory(text: string): EquipmentCategoryId {
-  const value = text.toLowerCase();
-  if (/package|equipment group|edition|special series|appearance|fx4|tremor|raptor|king ranch|platinum|lariat|off[- ]road/.test(value)) {
-    return "packages";
-  }
-  if (/tow|trailer|hitch|payload|truck bed|bedliner|bed liner|tailgate|tonneau|cargo|boxlink|pro power|utility/.test(value)) {
-    return "towing";
-  }
-  if (/blind|lane|collision|cruise|camera|park|brak|airbag|safety|co-pilot|copilot|pro\s*pilot|propilot|bluecruise|super\s+cruise|cross[- ](?:traffic|path)|surround\s+(?:view|vision)|driver\s+(?:alert|attention|monitoring)|drowsy|traffic\s+sign|intelli\s*beam|high[- ]beam|pedestrian|assist|pre-collision|honda sensing|toyota safety sense/.test(value)) {
-    return "safety";
-  }
-  if (/heated|cooled|ventilated|leather|seat|climate|moonroof|sunroof|steering wheel|massage|memory|lumbar/.test(value)) {
-    return "comfort";
-  }
-  if (/navigation|sync|bluetooth|audio|speaker|b&o|touchscreen|wireless|apple carplay|android auto|satellite|connected|remote start|keyless|usb|wi-fi|wifi/.test(value)) {
-    return "technology";
-  }
-  if (/wheel|tire|running board|step bar|premium|performance|sport|engine|axle|suspension|exhaust|lighting|led/.test(value)) {
-    return "upgrades";
-  }
-  return "other";
-}
-
-function sourceConfirmedEquipment(vehicle: InventoryVehicle): SourceEquipmentItem[] {
-  const byText = new Map<string, SourceEquipmentItem>();
-  const add = (
-    text: string | null | undefined,
-    source: EquipmentEvidenceSource,
-    metadata: {
-      category?: EquipmentCategoryId;
-      price?: number | null;
-      sourceSection?: string | null;
-    } = {},
-  ) => {
-    const clean = text?.trim();
-    if (!clean) return;
-    const key = clean.toLocaleLowerCase();
-    const display = equipmentDisplayParts(clean);
-    const sourceSection = metadata.sourceSection?.trim() || display.sourceSection;
-    const existing = byText.get(key);
-    if (existing) {
-      if (!existing.sources.includes(source)) existing.sources.push(source);
-      if (sourceSection && !existing.sourceSections.includes(sourceSection)) existing.sourceSections.push(sourceSection);
-      if (existing.price == null && metadata.price != null) existing.price = metadata.price;
-      if (metadata.category) existing.category = metadata.category;
-      return;
-    }
-    byText.set(key, {
-      text: clean,
-      category: metadata.category ?? equipmentCategory(clean),
-      sources: [source],
-      sourceSections: sourceSection ? [sourceSection] : [],
-      price: metadata.price,
-    });
-  };
-
-  vehicle.features?.forEach((item) => add(item, "inventory-feature"));
-  add(vehicle.windowSticker?.equipmentGroup, "equipment-group", { category: "packages" });
-  vehicle.windowSticker?.options?.forEach((item) => add(item, "factory-option"));
-  vehicle.windowSticker?.standardEquipment?.forEach((item) => add(item, "factory-standard"));
-  vehicle.factoryEquipment?.packages?.forEach((item) => {
-    add(
-      [item.name, item.code ? `(${item.code})` : null].filter(Boolean).join(" "),
-      "vauto-package",
-      { category: "packages", price: item.price, sourceSection: "Packages" },
-    );
-    item.features?.forEach((feature) => add(feature, "vauto-informational", { sourceSection: item.name }));
-  });
-  vehicle.factoryEquipment?.sections?.forEach((section) => {
-    section.items.forEach((item) => add(item.label, "vauto-informational", {
-      price: item.price,
-      sourceSection: section.name,
-    }));
-  });
-  const sourcePriority = (item: SourceEquipmentItem) => {
-    if (item.sources.some((source) => ["factory-option", "factory-standard", "equipment-group"].includes(source))) return 0;
-    if (item.sources.some((source) => source.startsWith("vauto-"))) return 1;
-    return 2;
-  };
-  return [...byText.values()].sort((left, right) =>
-    sourcePriority(left) - sourcePriority(right) || left.text.localeCompare(right.text, "en-US", { numeric: true }),
   );
 }
 
@@ -1707,293 +1388,90 @@ function equipmentCategoryIcon(category: EquipmentCategoryId): ReactNode {
   }
 }
 
-function EquipmentLedgerGroup({
-  category,
-  items,
-  vehicleId,
-}: {
-  category: (typeof EQUIPMENT_CATEGORIES)[number];
-  items: SourceEquipmentItem[];
-  vehicleId: string;
+const EQUIPMENT_FINDER_LABELS: Record<EquipmentCategoryId, string> = {
+  packages: "Packages", safety: "Safety & assist", comfort: "Comfort", technology: "Technology",
+  towing: "Towing & utility", upgrades: "Upgrades", other: "Other equipment",
+};
+function EquipmentLedgerGroup({ category, items, vehicleId, showAll = false }: {
+  category: (typeof EQUIPMENT_CATEGORIES)[number]; items: EquipmentFinderItem[]; vehicleId: string; showAll?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const previewCount = 5;
-  const hasMore = items.length > previewCount;
-
-  useEffect(() => setExpanded(false), [vehicleId, category.id]);
-
-  return (
-    <section
-      className={`inventory-workspace-equipment-group inventory-workspace-equipment-group--${category.id}`}
-      id={`inventory-equipment-section-${category.id}`}
-      aria-labelledby={`inventory-equipment-group-${category.id}`}
-      data-equipment-category={category.id}
-      tabIndex={-1}
-    >
-      <header>
-        <span className="inventory-workspace-equipment-group__title">
-          {equipmentCategoryIcon(category.id)}
-          <span>
-            <h4 id={`inventory-equipment-group-${category.id}`}>{category.label}</h4>
-            <small>{countLabel(items.length, "documented item", "documented items")}</small>
-          </span>
-        </span>
-        <b aria-hidden="true">{items.length}</b>
-      </header>
-      <ul id={`inventory-equipment-list-${category.id}`}>
-        {items.map((item, index) => {
-          const display = equipmentDisplayParts(item.text);
-          const sourceLabel = equipmentEvidenceLabel(item);
-          const sourceSections = [...new Set([
-            ...(display.sourceSection ? [display.sourceSection] : []),
-            ...item.sourceSections,
-          ])];
-          const factoryDocumented = item.sources.some((source) =>
-            ["factory-option", "factory-standard", "equipment-group"].includes(source),
-          );
-          const profileDocumented = item.sources.some((source) => source.startsWith("vauto-"));
-
-          return (
-            <li
-              key={`${category.id}-${item.text}`}
-              title={`Source: ${sourceLabel}${sourceSections.length ? ` · Section: ${sourceSections.join(" / ")}` : ""}${display.sourceSection ? ` · Exact published label: ${item.text}` : ""}`}
-              data-evidence-strength={factoryDocumented ? "factory-document" : profileDocumented ? "vin-profile" : "published-listing"}
-              hidden={!expanded && index >= previewCount}
-            >
-              <span className="inventory-workspace-equipment-item__copy">
-                <strong aria-hidden={display.sourceSection ? "true" : undefined}>{display.label}</strong>
-                {display.sourceSection ? <span className="inventory-sr-only">{item.text}</span> : null}
-                <small className="inventory-workspace-equipment-item-source">
-                  {sourceLabel}{sourceSections.length ? ` · ${sourceSections.join(" / ")}` : ""}
-                </small>
-              </span>
-              <span className="inventory-workspace-equipment-item__value">
-                {item.price != null ? formatReferencePrice(item.price) : factoryDocumented ? "Included" : "Published"}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-      {hasMore ? (
-        <button
-          type="button"
-          className="inventory-workspace-equipment-group__toggle"
-          aria-expanded={expanded}
-          aria-controls={`inventory-equipment-list-${category.id}`}
-          onClick={() => setExpanded((current) => !current)}
-        >
-          {expanded ? "Show fewer" : `Show all ${items.length} items`}
-          <ChevronDown size={15} strokeWidth={1.9} aria-hidden="true" />
-        </button>
-      ) : null}
-    </section>
-  );
+  const hasMore = items.length > previewCount && !showAll;
+  const isPackage = category.id === "packages";
+  useEffect(() => setExpanded(false), [vehicleId, category.id, showAll]);
+  return <section className={`inventory-workspace-equipment-group inventory-workspace-equipment-group--${category.id}`}
+    id={`inventory-equipment-section-${category.id}`} aria-labelledby={`inventory-equipment-group-${category.id}`}
+    data-equipment-category={category.id} tabIndex={-1}>
+    <header>
+      <span className="inventory-workspace-equipment-group__icon">{equipmentCategoryIcon(category.id)}</span>
+      <h4 id={`inventory-equipment-group-${category.id}`}>{EQUIPMENT_FINDER_LABELS[category.id]}</h4>
+      <b aria-label={`${items.length} items`}>{items.length}</b>
+    </header>
+    <ul id={`inventory-equipment-list-${category.id}`}>
+      {items.map((item,index) => <li key={item.text} className={item.display.price ? "has-price" : undefined} hidden={!expanded && !showAll && index >= previewCount}>
+        {!isPackage ? <Check size={14} strokeWidth={1.8} className="inventory-workspace-equipment-item__mark" aria-hidden="true" /> : null}
+        <span className="inventory-workspace-equipment-item__copy"><strong>{item.display.label}</strong>{item.display.code ? <small className="inventory-workspace-equipment-item-code">Code {item.display.code}</small> : null}</span>
+        {item.display.price ? <span className="inventory-workspace-equipment-item__value">{displaySourceMoney(item.display.price)}</span> : null}
+      </li>)}
+    </ul>
+    {hasMore ? <button type="button" className="inventory-workspace-equipment-group__toggle" aria-expanded={expanded}
+      aria-controls={`inventory-equipment-list-${category.id}`} onClick={() => setExpanded(current => !current)}>
+      {expanded ? "Show fewer" : `Show all ${items.length} items`}<ChevronDown size={15} aria-hidden="true"/>
+    </button> : null}
+  </section>;
 }
 
 function SourceConfirmedEquipment({ vehicle }: { vehicle: InventoryVehicle }) {
-  const items = sourceConfirmedEquipment(vehicle);
-  const sticker = vehicle.windowSticker;
-  const profile = vehicle.factoryEquipment;
-  const factoryDocumentedCount = items.filter((item) =>
-    item.sources.some((source) => ["factory-option", "factory-standard", "equipment-group"].includes(source)),
-  ).length;
-  const profileDocumentedCount = items.filter((item) =>
-    item.sources.some((source) => source.startsWith("vauto-")),
-  ).length;
-  const listingCoverageCount = items.filter((item) => item.sources.includes("inventory-feature")).length;
-  const exactSourceCount = factoryDocumentedCount + profileDocumentedCount;
-  const configurationHeading = "Vehicle configuration";
-  const configurationFacts = [
-    sticker?.vehicleDescription
-      ? { label: "Sticker vehicle", value: sticker.vehicleDescription, source: "Original window sticker" }
-      : null,
-    sticker?.equipmentGroup
-      ? { label: "Equipment group", value: sticker.equipmentGroup, source: "Original window sticker" }
-      : null,
-    sticker?.engine || sticker?.transmission
-      ? { label: "Sticker powertrain", value: sourceDistanceText([sticker.engine, sticker.transmission].filter(Boolean).join(" · ")), source: "Original window sticker" }
-      : null,
-    sticker?.exteriorColor
-      ? { label: "Exterior", value: sticker.exteriorColor, source: "Original window sticker" }
-      : null,
-    sticker?.interiorColor
-      ? { label: "Interior", value: sticker.interiorColor, source: "Original window sticker" }
-      : null,
-    sticker?.totalMsrp != null
-      ? { label: "Original MSRP", value: formatStickerMoney(sticker.totalMsrp, sticker), source: "Original window sticker" }
-      : null,
-    profile?.vehicleDescription
-      ? { label: "Profile vehicle", value: profile.vehicleDescription, source: "VIN equipment profile" }
-      : null,
-    profile?.engine || profile?.transmission || profile?.drivetrain
-      ? { label: "Profile powertrain", value: [profile.engine, profile.transmission, profile.drivetrain].filter(Boolean).join(" · "), source: "VIN equipment profile" }
-      : null,
-    profile?.exteriorColor
-      ? { label: "Profile exterior", value: profile.exteriorColor, source: "VIN equipment profile" }
-      : null,
-    profile?.interiorColor
-      ? { label: "Profile interior", value: profile.interiorColor, source: "VIN equipment profile" }
-      : null,
-    profile?.totalMsrp != null
-      ? { label: "Reference MSRP", value: formatReferencePrice(profile.totalMsrp), source: "VIN equipment profile" }
-      : null,
-  ].filter(Boolean) as Array<{ label: string; value: string; source: string }>;
-
-  return (
-    <section
-      className="inventory-workspace-equipment-evidence inventory-workspace-equipment-evidence--v10"
-      id="inventory-equipment-all"
-      aria-labelledby="inventory-workspace-equipment-evidence-title"
-      data-content-state={items.length ? "available" : "not-published"}
-      data-evidence-scope="vin-linked-published-only"
-    >
-      <header className="inventory-workspace-equipment-evidence__header">
-        <span>
-          <ShieldCheck size={20} strokeWidth={1.8} aria-hidden="true" />
-          <span>
-            <strong id="inventory-workspace-equipment-evidence-title">Equipment &amp; packages</strong>
-            <small>{items.length ? `${items.length} equipment items, organized for quick customer questions` : "No equipment details available"}</small>
-          </span>
-        </span>
-      </header>
-
-      <div className="inventory-workspace-equipment-source-summary" data-source-depth={exactSourceCount ? "detailed" : "listing-only"}>
-        <span>
-          <strong>{exactSourceCount ? "Vehicle equipment details are available" : "Equipment details are limited"}</strong>
-          <small>
-            {exactSourceCount
-              ? `${items.length} details organized below.`
-              : `${listingCoverageCount} listed item${listingCoverageCount === 1 ? "" : "s"}; verify installed equipment on the vehicle.`}
-          </small>
-        </span>
+  const items = useMemo(() => equipmentFinderItems(vehicle), [vehicle]);
+  const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<EquipmentCategoryId | "all">("all");
+  useEffect(() => { setQuery(""); setCategoryFilter("all"); }, [vehicle.id]);
+  const tokens = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const filtered = items.filter(item => (categoryFilter === "all" || item.category === categoryFilter) && tokens.every(token => item.searchText.includes(token)));
+  const active = Boolean(tokens.length || categoryFilter !== "all");
+  const clear = () => { setQuery(""); setCategoryFilter("all"); };
+  return <section className="inventory-workspace-equipment-evidence inventory-workspace-equipment-evidence--v10"
+    id="inventory-equipment-all" aria-labelledby="inventory-workspace-equipment-evidence-title"
+    data-content-state={items.length ? "available" : "not-published"} data-evidence-scope="vin-linked-published-only">
+    <header className="inventory-workspace-equipment-evidence__header">
+      <h3 id="inventory-workspace-equipment-evidence-title">Equipment &amp; packages</h3>
+      {items.length ? <p className="inventory-equipment-finder__count" role="status" aria-live="polite">{active ? `${filtered.length} of ${items.length}` : items.length} equipment items</p> : null}
+    </header>
+    {items.length ? <>
+      <div className="inventory-equipment-finder">
+        <label className="inventory-equipment-finder__search"><FileSearch size={18} strokeWidth={1.8} aria-hidden="true"/><input type="search" value={query} onChange={event => setQuery(event.target.value)} aria-label="Search equipment, packages, or codes" placeholder="Search equipment, packages, or codes"/></label>
+        {active ? <button type="button" onClick={clear}>Clear</button> : null}
       </div>
-
-      {configurationFacts.length ? (
-        <details
-          className="inventory-workspace-factory-configuration inventory-workspace-factory-configuration--v10"
-          id="inventory-equipment-configuration"
-          aria-labelledby="inventory-build-details-label"
-          tabIndex={-1}
-          key={vehicle.id}
-        >
-          <summary>
-            <span id="inventory-build-details-label">Vehicle configuration</span>
-            <ChevronDown size={17} strokeWidth={1.8} aria-hidden="true" />
-          </summary>
-          <header>
-            <span>
-              <h4 id="inventory-factory-configuration-title">{configurationHeading}</h4>
-              <small>Configuration details for this vehicle.</small>
-            </span>
-          </header>
-          <dl>
-            {configurationFacts.map((fact, index) => (
-              <div className="inventory-workspace-configuration-fact" key={`${fact.label}-${fact.value}-${index}`}>
-                <dt>{fact.label}</dt>
-                <dd>{fact.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </details>
-      ) : null}
-
-      {items.length ? (
-        <div className="inventory-workspace-equipment-evidence__groups" aria-label="Equipment organized by category">
-          {EQUIPMENT_CATEGORIES.map((category) => {
-            const grouped = items.filter((item) => item.category === category.id);
-            if (!grouped.length) return null;
-            return (
-              <EquipmentLedgerGroup
-                category={category}
-                items={grouped}
-                vehicleId={vehicle.id}
-                key={`${vehicle.id}-${category.id}`}
-              />
-            );
-          })}
+      <div className="inventory-equipment-layout">
+        <EquipmentCategoryIndex items={items} selectedCategory={categoryFilter} onSelectCategory={setCategoryFilter} />
+        <div className="inventory-equipment-results" id="inventory-equipment-results">
+          {filtered.length ? <div className="inventory-workspace-equipment-evidence__groups" aria-label="Equipment organized by category">
+            {EQUIPMENT_CATEGORIES.map(category => { const grouped = filtered.filter(item => item.category === category.id); return grouped.length ? <EquipmentLedgerGroup category={category} items={grouped} vehicleId={vehicle.id} showAll={active} key={category.id}/> : null; })}
+          </div> : <div className="inventory-equipment-finder__empty"><FileSearch size={24} strokeWidth={1.6} aria-hidden="true"/><strong>No matching equipment</strong><p>Try another feature, package name, or source code.</p><button type="button" onClick={clear}>Show all equipment</button></div>}
         </div>
-      ) : (
-        <div className="inventory-workspace-equipment-evidence__empty" role="status">
-          <CircleHelp size={20} strokeWidth={1.75} aria-hidden="true" />
-          <span>
-            <strong>Equipment not published for this VIN</strong>
-            <small>No equipment details are available for this vehicle.</small>
-          </span>
-        </div>
-      )}
-
-      <details className="inventory-workspace-equipment-evidence__method">
-        <summary>
-          <CircleHelp size={15} strokeWidth={1.8} aria-hidden="true" />
-          Equipment notes
-          <ChevronDown size={15} strokeWidth={1.8} aria-hidden="true" />
-        </summary>
-        <p className="inventory-workspace-equipment-evidence__note">
-          Confirm installed equipment and current condition on the vehicle before making commitments to a customer.
-        </p>
-      </details>
-    </section>
-  );
+      </div>
+    </> : <p className="inventory-workspace-equipment-evidence__empty" role="status">No equipment details are available for this vehicle.</p>}
+  </section>;
 }
 
-function EquipmentCategoryIndex({ vehicle }: { vehicle: InventoryVehicle }) {
-  const items = sourceConfirmedEquipment(vehicle);
-  const hasConfiguration = Boolean(
-    vehicle.windowSticker?.vehicleDescription ||
-    vehicle.windowSticker?.equipmentGroup ||
-    vehicle.windowSticker?.engine ||
-    vehicle.windowSticker?.transmission ||
-    vehicle.windowSticker?.exteriorColor ||
-    vehicle.windowSticker?.interiorColor ||
-    vehicle.windowSticker?.totalMsrp != null ||
-    vehicle.factoryEquipment?.vehicleDescription ||
-    vehicle.factoryEquipment?.engine ||
-    vehicle.factoryEquipment?.transmission ||
-    vehicle.factoryEquipment?.drivetrain ||
-    vehicle.factoryEquipment?.exteriorColor ||
-    vehicle.factoryEquipment?.interiorColor ||
-    vehicle.factoryEquipment?.totalMsrp != null
-  );
-  const entries = [
-    ...(hasConfiguration
-      ? [{ id: "inventory-equipment-configuration", label: "Original build details", count: null }]
-      : []),
-    ...EQUIPMENT_CATEGORIES.map((category) => ({
-      id: `inventory-equipment-section-${category.id}`,
-      label: category.label,
-      count: items.filter((item) => item.category === category.id).length,
-    })).filter((entry) => entry.count > 0),
-  ];
-
-  if (!entries.length) return null;
-
-  return (
-    <nav className="inventory-workspace-equipment-index inventory-workspace-equipment-index--v10" aria-label="Equipment sections on this vehicle">
-      <header>
-        <strong>Browse equipment</strong>
-        <small>{countLabel(items.length, "VIN-linked item", "VIN-linked items")}</small>
-      </header>
-      <div>
-        {entries.map((entry) => (
-          <button
-            type="button"
-            aria-label={`Jump to ${entry.label}${entry.count == null ? "" : `, ${entry.count} item${entry.count === 1 ? "" : "s"}`}`}
-            onClick={() => {
-              const target = document.getElementById(entry.id);
-              if (!target) return;
-              if (target instanceof HTMLDetailsElement) target.open = true;
-              focusWorkspaceSection(target);
-            }}
-            key={entry.id}
-          >
-            <span>{entry.label}</span>
-            {entry.count != null ? <b>{entry.count}</b> : null}
-          </button>
-        ))}
-      </div>
-      <p>Original names are preserved. Verify installed equipment and current condition with the vehicle.</p>
-    </nav>
-  );
+function EquipmentCategoryIndex({ items, selectedCategory, onSelectCategory }: {
+  items: EquipmentFinderItem[];
+  selectedCategory: EquipmentCategoryId | "all";
+  onSelectCategory: (category: EquipmentCategoryId | "all") => void;
+}) {
+  return <nav className="inventory-equipment-category-index" aria-label="Equipment categories">
+    <button type="button" aria-label={`All equipment, ${items.length} ${items.length === 1 ? "item" : "items"}`} aria-pressed={selectedCategory === "all"} aria-controls="inventory-equipment-results" onClick={() => onSelectCategory("all")}>
+      <FileText size={17} strokeWidth={1.8} aria-hidden="true"/><span>All equipment</span><b>{items.length}</b>
+    </button>
+    {EQUIPMENT_CATEGORIES.map(category => {
+      const count = items.filter(item => item.category === category.id).length;
+      return count ? <button type="button" aria-label={`${EQUIPMENT_FINDER_LABELS[category.id]}, ${count} ${count === 1 ? "item" : "items"}`} aria-pressed={selectedCategory === category.id} aria-controls="inventory-equipment-results"
+        onClick={() => onSelectCategory(category.id)} key={category.id}>
+        {equipmentCategoryIcon(category.id)}<span>{EQUIPMENT_FINDER_LABELS[category.id]}</span><b>{count}</b>
+      </button> : null;
+    })}
+  </nav>;
 }
 
 function VehicleIntelligence({ vehicle }: { vehicle: InventoryVehicle }) {
@@ -2058,7 +1536,8 @@ function OverviewDetails({
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const autoCheck = vehicle.autoCheckReport;
   const sticker = vehicle.windowSticker;
-  const warrantyLine = warrantySummary(warrantyOutlook({ make: vehicle.make, year: vehicle.year, fuelType: vehicle.fuelType, engine: vehicle.engine, mileage: vehicle.mileage, inServiceDate: autoCheck?.estimatedInServiceDate ?? null }));
+  const inService = resolveVehicleInService(vehicle);
+  const warrantyLine = inService.source === "oasis" ? null : warrantySummary(warrantyOutlook({ make: vehicle.make, year: vehicle.year, fuelType: vehicle.fuelType, engine: vehicle.engine, mileage: vehicle.mileage, inServiceDate: inService.date }));
   const autoCheckScoreRange =
     autoCheck?.scoreRangeLow != null && autoCheck.scoreRangeHigh != null
       ? `${autoCheck.scoreRangeLow}–${autoCheck.scoreRangeHigh}`
@@ -2087,9 +1566,9 @@ function OverviewDetails({
       label: "Sticker standard equipment",
       value: `${sticker.standardEquipment.length} published`,
     } : null,
-    autoCheck?.estimatedInServiceDate ? {
-      label: "In service (AutoCheck est.)",
-      value: formatDate(autoCheck.estimatedInServiceDate),
+    inService.date ? {
+      label: inService.label,
+      value: formatDate(inService.date),
     } : null,
     warrantyLine ? { label: "Factory warranty left", value: warrantyLine } : null,
     autoCheck?.assemblyCountry ? { label: "AutoCheck assembly", value: autoCheck.assemblyCountry } : null,
@@ -2680,7 +2159,7 @@ function DataDetails({
 }
 
 export function VehicleWorkspace({
-  vehicle, canRequestVehicle = false, moveAction, initialTab = "overview", returnFocusRef,
+  vehicle, canRequestVehicle = false, moveAction, initialTab = "overview", returnFocusRef, returnLabel = "Back to inventory", detailState, onRetryDetail, workspaceAccessory,
   onClose, onViewVehicle, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord,
 }: VehicleWorkspaceProps) {
   const [activeTarget, setActiveTarget] = useState<WorkspaceSectionId>(initialTab);
@@ -2709,7 +2188,7 @@ export function VehicleWorkspace({
     (canViewHoldEvidence ? vehicle.holdEvidence?.length : null) ?? 0;
   const loanerLabel = vehicle.dealerMail.loaner?.active
     ? vehicle.dealerMail.loaner.serviceDate
-      ? `${vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"} · ${vehicle.dealerMail.loaner.serviceDate}`
+      ? `${vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"} · ${formatDate(vehicle.dealerMail.loaner.serviceDate)}`
       : vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"
     : null;
   const holdLabel = !holdCurrent ? "Hold status unverified"
@@ -2723,32 +2202,50 @@ export function VehicleWorkspace({
     : humanizeWorkflowValue(vehicle.movement?.state) || humanizeWorkflowValue(vehicle.movement?.requestStatus) || "No tracked move";
   const serviceStatus = serviceWorkflowStatus(vehicle.serviceReadiness);
   const serviceHref = `/service?vin=${encodeURIComponent(vehicle.vin)}`;
-  const oasisInServiceDate = vehicle.fordOasis?.warrantyStartDate
-    || vehicle.warrantyCheck?.fordOasis?.warrantyStartDate;
-  const warrantyInServiceDate = oasisInServiceDate
-    || vehicle.autoCheckReport?.estimatedInServiceDate
-    || vehicle.warrantyCheck?.autoCheck?.inServiceDate
-    || null;
-  const warrantyInServiceLabel = oasisInServiceDate
-    ? "Warranty in-service · OASIS"
-    : warrantyInServiceDate
-      ? "In-service · AutoCheck estimate"
-      : "Warranty in-service";
+  const { date: warrantyInServiceDate, label: warrantyInServiceLabel, source: warrantyInServiceSource } = resolveVehicleInService(vehicle);
   const hasStickerBase = vehicle.windowSticker?.basePrice != null;
-  const baseMsrpLabel = "Weight fee lookup · Base MSRP";
+  const baseMsrpLabel = "Base MSRP";
   const baseMsrpDisplay = hasStickerBase
     ? compactSourcePrice(vehicle.windowSticker!.basePrice, vehicle.windowSticker!)
     : vehicle.factoryEquipment?.basePrice != null ? compactSourcePrice(vehicle.factoryEquipment.basePrice) : "—";
   const baseMsrpQualifier = null;
   const recordsNeedReview = [vehicle.publicListing.dataState, vehicle.dealerOn.dataState, vehicle.dealerMail.dataState]
     .some((state) => state !== "current");
-  const keyEquipment = standoutEquipment(vehicle, 5);
+  const equipmentLabels = new Set<string>();
+  const keyEquipment = [...standoutEquipment(vehicle, 12), ...publishedEquipment(vehicle)].flatMap(item => {
+    // Keep scan labels concise; exact prices, source codes and child markers
+    // remain on their original sticker/Records lines.
+    let label = item.label.replace(/\s+(?:[·|]\s*)?((?:USD|CAD)\s*\$?[\d,]+(?:\.\d{2})?|\$[\d,]+(?:\.\d{2})?|NO\s*CHARGE)$/i, '')
+      .replace(/\s*\([A-Z0-9-]+\)$/, '')
+      .replace(/\s*[·|]\s*[A-Z]{2,}-[A-Z0-9-]+$/, '');
+    if (/^(?:[•·.]|[-–—])(?:\s+|(?=[A-Za-z]))|^\.\d+(?:[./"'–—-]|\s)/.test(label)) label = label.slice(1).trimStart();
+    const identity = label.toLocaleLowerCase();
+    if (!label || equipmentLabels.has(identity)) return [];
+    equipmentLabels.add(identity);
+    return [{ ...item, label }];
+  }).slice(0, 12);
   const specifications = [
     ["Mileage", formatMileage(vehicle.mileage)],
     ["Days listed", vehicle.daysListed != null ? `${vehicle.daysListed} days` : null],
     ["Engine", vehicle.engine], ["Drivetrain", vehicle.drivetrain],
     ["Transmission", vehicle.transmission], ["Body style", vehicle.bodyStyle || vehicle.bodyType],
     ["Exterior / interior", [vehicle.exteriorColor, vehicle.interiorColor].filter(Boolean).join(" / ")],
+  ].filter((fact) => Boolean(fact[1]));
+  const equipmentSpecifications = [
+    ["Mileage", formatMileage(vehicle.mileage)],
+    ["Age", vehicle.daysListed != null ? `${vehicle.daysListed} days` : null],
+    ["Engine", vehicle.engine],
+    ["Drive", vehicle.drivetrain],
+    ["Transmission", vehicle.transmission],
+    ["Body", vehicle.bodyStyle || vehicle.bodyType],
+    ["Trim", vehicle.trim],
+    ["Exterior", vehicle.exteriorColor],
+    ["Interior", vehicle.interiorColor],
+    ["Fuel", vehicle.fuelType],
+    ["MSRP", vehicle.msrp != null ? formatMoney(vehicle.msrp) : null],
+    ["Inventory date", vehicle.inventoryDate ? formatDate(vehicle.inventoryDate) : null],
+    ["Model code", vehicle.modelCode],
+    ["MPG city / hwy", vehicle.mpgCity != null || vehicle.mpgHighway != null ? `${vehicle.mpgCity ?? "—"} / ${vehicle.mpgHighway ?? "—"}` : null],
   ].filter((fact) => Boolean(fact[1]));
   const mobileSpecificationLines = [
     [formatMileage(vehicle.mileage), vehicle.daysListed != null ? `${vehicle.daysListed} days` : null].filter(Boolean).join(" · "),
@@ -2765,7 +2262,7 @@ export function VehicleWorkspace({
   const canCreateMovement = Boolean(resolvedMoveAction && (onMoveVehicle || onRequestVehicle) && (!canTrackMovement || moveAction));
   const movementAction = <>
     {canTrackMovement ? <button type="button" onClick={() => onTrackMovement?.(vehicle)} data-action="track-movement"><Truck size={18} aria-hidden="true" />Track movement</button> : null}
-    {canCreateMovement && resolvedMoveAction ? <button type="button" onClick={() => onMoveVehicle ? onMoveVehicle(vehicle, resolvedMoveAction.intent) : onRequestVehicle?.(vehicle)} data-action={resolvedMoveAction.intent === "direct" ? "move-vehicle" : "request-vehicle"}><ArrowLeftRight size={18} aria-hidden="true" />{resolvedMoveAction.label}</button> : null}
+    {canCreateMovement && resolvedMoveAction ? <button type="button" onClick={() => onMoveVehicle ? onMoveVehicle(vehicle, resolvedMoveAction.intent) : onRequestVehicle?.(vehicle)} aria-label={resolvedMoveAction.label} title={resolvedMoveAction.label} data-action={resolvedMoveAction.intent === "direct" ? "move-vehicle" : "request-vehicle"}><ArrowLeftRight size={18} aria-hidden="true" />{resolvedMoveAction.shortLabel}</button> : null}
   </>;
 
   function openAndFocusSection(target: WorkspaceSectionId) {
@@ -2819,7 +2316,7 @@ export function VehicleWorkspace({
         ref={workspaceRef} role="dialog" aria-modal="true" aria-label={displayName + " vehicle workspace"} tabIndex={-1}
         data-active-section={activePage} data-active-target={activeTarget}>
         <header className="vdp-focus-header">
-          <button type="button" className="vdp-focus-back" onClick={onClose} aria-label="Back to inventory"><ChevronLeft size={20} aria-hidden="true" /><span>Back to inventory</span></button>
+          <button type="button" className="vdp-focus-back" onClick={onClose} aria-label={returnLabel}><ChevronLeft size={20} aria-hidden="true" /><span>{returnLabel}</span></button>
           <div className="vdp-focus-identity"><h2 id="inventory-workspace-title">{displayName}</h2><strong>{formatMoney(vehicle.price)}</strong></div>
           <dl className="vdp-focus-identifiers">
             <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} /></dd></div>
@@ -2835,18 +2332,34 @@ export function VehicleWorkspace({
               onKeyDown={event => onSectionKeyDown(event, index)}
               onClick={() => openAndFocusSection(section.id)} key={section.id}>{section.label}</button>)}
           </div>
-          <a className={"vdp-focus-service vdp-focus-service--" + serviceStatus} href={serviceHref}>Service: {serviceStatusLabel(vehicle.serviceReadiness)}</a>
+          <div className="vdp-focus-service"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} labelPrefix="Service" /></div>
         </div>
         <div className="vdp-focus-scroll" ref={scrollRef}>
+          <VehicleDetailStatus state={detailState} onRetry={onRetryDetail} />
           <WorkspacePanel id="overview" label="Overview" active={activePage === "overview"}>
             <div className="vdp-focus-overview">
+              <div className="vdp-focus-vehicle-context">
               <div className="vdp-focus-photo"><VehicleGallery vehicle={vehicle} /></div>
               <section className="vdp-focus-specs" aria-label="Vehicle specifications">
                 <h3>Vehicle details</h3>
-                <dl className="vdp-focus-desktop-specs">{specifications.map(([label, value]) => <Fact key={label} label={label!}>{value}</Fact>)}</dl>
+                <dl className="vdp-focus-desktop-specs">
+                  {specifications.map(([label, value]) => <Fact key={label} label={label!} className={label === "Exterior / interior" ? "vdp-focus-spec-wide" : undefined}>{label === "Mileage" && vehicle.mileage != null ? <CopyableValue compact label="mileage" text={String(vehicle.mileage)}>{value}</CopyableValue> : value}</Fact>)}
+                  {vehicle.fuelType ? <Fact label="Fuel">{vehicle.fuelType}</Fact> : null}
+                </dl>
                 <div className="vdp-focus-mobile-specs">{mobileSpecificationLines.map((line, index) => <p key={index}>{line}</p>)}</div>
-                <p className="vdp-focus-listing">{vehicle.location.homeStore.name} · {vehicle.publicListing.dataState !== "current" ? "Listing unverified" : vehicle.publicListing.isListed ? "Listed online" : "Not listed online"}{vehicle.certified ? " · Certified" : ""}</p>
+                <p className="vdp-focus-listing">{vehicle.location.homeStore.name} · {vehicle.publicListing.dataState !== "current" ? "Listing unverified" : vehicle.publicListing.isListed ? "Listed online" : "Not listed online"}{vehicle.certified ? <> · <CertifiedBadge certified homeStore={vehicle.location.homeStore.name} /></> : null}</p>
+
               </section>
+              <section className="vdp-focus-keyfacts" aria-label="Frequently used vehicle facts"><dl>
+                <Fact label={warrantyInServiceSource === "autocheck" ? "Est. in-service" : "In-service"}><span className="vdp-focus-reference-date">{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</span>{warrantyInServiceSource ? <small>{warrantyInServiceSource === "oasis" ? "OASIS" : "AutoCheck"}</small> : null}</Fact>
+                <Fact label="Base MSRP"><span className="vdp-focus-reference-value">{baseMsrpDisplay}</span>{baseMsrpQualifier ? <small>{baseMsrpQualifier}</small> : null}</Fact>
+                <Fact label="Inventory date"><span className="vdp-focus-reference-date">{vehicle.inventoryDate ? formatDate(vehicle.inventoryDate) : "—"}</span></Fact>
+              </dl></section>
+            <section className="vdp-focus-highlights" aria-label="Key equipment">
+              <div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
+              {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
+            </section>
+              </div>
               <section className="vdp-focus-operations" aria-label="Vehicle operational summary">
                 <h3>Operations</h3>
                 <dl>
@@ -2855,58 +2368,53 @@ export function VehicleWorkspace({
                   {!holdCurrent && primaryHold?.salesperson ? <Fact label="Salesperson">{primaryHold.salesperson}</Fact> : null}
                   {primaryHold?.expectedDeliveryDate ? <Fact label="Expected">{formatDate(primaryHold.expectedDeliveryDate)}</Fact> : null}
                   {holdCount > 1 ? <Fact label="Backup holds" className="vdp-focus-desktop-field">{holdCount - 1}</Fact> : null}
-                  <Fact label="Service status" className="vdp-focus-desktop-field"><span className={"vdp-focus-service-text--" + serviceStatus}>{serviceStatusLabel(vehicle.serviceReadiness)}</span></Fact>
+                  <Fact label="Service" className="vdp-focus-service-fact"><span className={"vdp-focus-service-text--" + serviceStatus}>{serviceStatusLabel(vehicle.serviceReadiness)}</span></Fact>
                 </dl>
                 <div className="vdp-focus-actions">
                   {movementAction}
                   <button type="button" onClick={canManageDealerMail ? focusDealerMailActions : () => openAndFocusSection("hold")}
                     data-action={canManageDealerMail ? "dealermail-tools" : "hold-details"}><MessageSquare size={18} aria-hidden="true" />{canManageDealerMail ? "DealerMail tools" : "View hold status"}</button>
-                  {serviceStatus === "needs_service" ? <a href={serviceHref + "&action=in_service"}>Start service</a> : null}
-                  {serviceStatus !== "serviced" ? <a href={serviceHref + "&action=serviced"}>Mark Ready</a> : <a href={serviceHref}>Service history</a>}
+                  {serviceStatus === "needs_service" ? <WorkspaceLink to={serviceHref + "&action=in_service"} preserveOrigin>Start service</WorkspaceLink> : null}
+                  {serviceStatus !== "serviced" ? <WorkspaceLink to={serviceHref + "&action=serviced"} preserveOrigin>Mark Ready</WorkspaceLink> : <WorkspaceLink to={serviceHref} preserveOrigin>Service history</WorkspaceLink>}
                 </div>
-                <p className="vdp-focus-note">Confirm with the home store before promising availability.</p>
+                {hasMovement ? <div className="vdp-focus-next-action"><strong>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div> : null}
               </section>
-            </div>
-            <section className="vdp-focus-keyfacts" aria-label="Frequently used vehicle facts">
-              <Fact label={warrantyInServiceLabel}>{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</Fact>
-              <Fact label={baseMsrpLabel}>{baseMsrpDisplay}{baseMsrpQualifier ? <small>{baseMsrpQualifier}</small> : null}</Fact>
-              <Fact label="Inventory date">{vehicle.inventoryDate ? formatDate(vehicle.inventoryDate) : "—"}</Fact>
-            </section>
-            <div className="vdp-focus-highlights">
-              <section aria-label="Key equipment"><div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
-                {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
-              </section>
-              <section aria-label="Hold and move summary"><div className="vdp-focus-section-heading"><h3>Hold &amp; move summary</h3><button type="button" onClick={() => openAndFocusSection("hold")}>View details <ChevronRight size={16} aria-hidden="true" /></button></div>
-                <p><strong>{hasMovement ? movementLabel : holdLabel}</strong></p>
-                <p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Confirm the hold and vehicle location with the home store."}</p>
-              </section>
+
             </div>
             <section className="vdp-focus-resources" aria-label="Documents and vehicle records">
-              <h3>Documents &amp; vehicle records</h3>
-              <VehicleResourceCards vehicle={vehicle} variant="cards" onOpenSection={openAndFocusSection} />
+              <div className="vdp-focus-section-heading"><h3>Documents &amp; vehicle records</h3><button type="button" onClick={() => openAndFocusSection("data")}>Full records <ChevronRight size={16} aria-hidden="true" /></button></div>
+              <VehicleResourceCards vehicle={vehicle} variant="summary" summaryLimit={6} hideInServiceDate onOpenSection={openAndFocusSection} />
             </section>
+
+
             {vehicle.managerDisposition ? <p className="vdp-focus-warning"><ClipboardCheck size={16} aria-hidden="true" /><strong>Manager log: {vehicle.managerDisposition.soldLabel}</strong> · {vehicle.managerDisposition.deliveryLabel}{vehicle.managerDisposition.deliveryDate ? ` · ${formatDate(vehicle.managerDisposition.deliveryDate)}` : ""}<small>Independent of listing, hold, CDK, and location.</small></p> : null}
             {openRecallCount ? <button type="button" className="vdp-focus-warning" onClick={() => openAndFocusSection("data")}
-              aria-label={`${countLabel(openRecallCount, "open Ford recall or field service action", "open Ford recalls or field service actions")}; review vehicle records`}><AlertTriangle size={16} aria-hidden="true" />{countLabel(openRecallCount, "open recall")} · Review vehicle records</button> : null}
+              aria-label={`${oasisActionLabel(vehicle.fordOasis)}; review vehicle records`}><AlertTriangle size={16} aria-hidden="true" />{oasisActionLabel(vehicle.fordOasis)} · Review vehicle records</button> : null}
             {recordsNeedReview ? <button type="button" className="vdp-focus-warning" onClick={() => openAndFocusSection("data")}><AlertTriangle size={16} aria-hidden="true" />Some vehicle information needs review.</button> : null}
           </WorkspacePanel>
           <WorkspacePanel id="equipment" label="Equipment" active={activePage === "equipment"}>
-            <EquipmentCategoryIndex vehicle={vehicle} />
+            <section className="vdp-equipment-specifications" aria-label="Complete vehicle specifications">
+              <h3><Gauge size={17} strokeWidth={1.8} aria-hidden="true"/>Specifications</h3>
+              <dl className="vdp-focus-extra-specs">{equipmentSpecifications.map(([label, value]) => <Fact key={label} label={label!} className={label === "Model code" ? "vdp-spec-model-code" : undefined}>{value}</Fact>)}</dl>
+            </section>
             <SourceConfirmedEquipment vehicle={vehicle} />
-            <section className="vdp-focus-description" aria-label="Vehicle description"><h3>Description</h3><p>{vehicle.dealerComments || "No vehicle description was published."}</p></section>
-            <section aria-label="Complete vehicle specifications"><h3>Specifications</h3><dl className="vdp-focus-extra-specs">{specifications.map(([label, value]) => <Fact key={label} label={label!}>{value}</Fact>)}<Fact label="Fuel">{vehicle.fuelType || "Not published"}</Fact><Fact label="Listed MSRP">{vehicle.msrp != null ? formatMoney(vehicle.msrp) : "Not published"}</Fact><Fact label="Inventory date">{vehicle.inventoryDate ? formatDate(vehicle.inventoryDate) : "Not published"}</Fact></dl></section>
+            <details className="vdp-equipment-description" aria-label="Vehicle description">
+              <summary><FileText size={17} strokeWidth={1.8} aria-hidden="true"/><span>Description</span><ChevronDown size={16} aria-hidden="true"/></summary>
+              <p>{vehicle.dealerComments || "No vehicle description was published."}</p>
+            </details>
           </WorkspacePanel>
           <WorkspacePanel id="data" label="Records" active={activePage === "data"}>
             <dl className="vdp-records-summary"><Fact label={baseMsrpLabel}>{baseMsrpDisplay}{baseMsrpQualifier ? <small>{baseMsrpQualifier}</small> : null}</Fact><Fact label={warrantyInServiceLabel}>{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</Fact></dl>
             <VehicleDocuments vehicle={vehicle} />
             {!vehicle.autoCheckReport && !vehicle.windowSticker && !vehicle.factoryEquipment && !vehicle.fordOasis && !vehicle.warrantyCheck ? <div className="vdp-focus-empty"><h3>Vehicle records</h3><p>No vehicle records are available.</p></div> : null}
-            {openRecallCount ? <a className="vdp-focus-warning" href={oasisUrl ?? undefined} target="_blank" rel="noopener noreferrer">{countLabel(openRecallCount, "open Ford recall or field service action", "open Ford recalls or field service actions")} · Review OASIS</a> : null}
+            {openRecallCount ? <a className="vdp-focus-warning" href={oasisUrl ?? undefined} target="_blank" rel="noopener noreferrer">{oasisActionLabel(vehicle.fordOasis)} · Review OASIS</a> : null}
           </WorkspacePanel>
           <WorkspacePanel id="hold" label="Holds & moves" active={activePage === "hold"}>
             <div className="vdp-focus-section-heading"><h3>Holds &amp; moves</h3><div className="vdp-focus-actions">{movementAction}</div></div>
+            {canManageDealerMail ? <div className="vdp-focus-handoff"><DealerMailHandoff key={vehicle.id + "|" + vehicle.stockNumber + "|" + vehicle.vin} vehicle={vehicle} panelRef={dealerMailActionsRef} /></div> : null}
             <div className="vdp-focus-hold-grid inventory-workspace-hold-center" data-hold-state={vehicle.holdEvidence?.length ? "held" : "no-evidence"}>
               <div><HoldDetails vehicle={vehicle} /></div>
-              <div>{canManageDealerMail ? <DealerMailHandoff key={vehicle.id + "|" + vehicle.stockNumber + "|" + vehicle.vin} vehicle={vehicle} panelRef={dealerMailActionsRef} /> : null}
+              <div>
                 <section id="inventory-section-movement" tabIndex={-1} aria-labelledby="inventory-movement-heading" className="vdp-focus-movement"><h3 id="inventory-movement-heading">Location &amp; movement</h3><MovementDetails vehicle={vehicle} /></section>
               </div>
             </div>
@@ -2919,7 +2427,8 @@ export function VehicleWorkspace({
             {listingUrl ? onOpenListing ? <button type="button" onClick={() => onOpenListing(vehicle)} data-action="open-listing"><Globe2 size={18} aria-hidden="true" />Listing</button>
               : <a href={listingUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" data-action="open-listing" data-read-only="true"><Globe2 size={18} aria-hidden="true" />Listing</a> : null}
             {invoiceUrl ? <a href={invoiceUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" data-action="invoice" data-read-only="true"><FileText size={18} aria-hidden="true" />Invoice</a> : null}
-            <button type="button" onClick={() => setTakeHomeOpen(true)} data-action="take-home" ref={takeHomeButtonRef}><Printer size={18} aria-hidden="true" />Take-home page</button>
+            <button type="button" onClick={() => setTakeHomeOpen(true)} data-action="take-home" ref={takeHomeButtonRef} aria-label="Take-home page"><Printer size={18} aria-hidden="true" /><span>Take-home</span></button>
+            {workspaceAccessory ? <div className="vdp-focus-utilities">{workspaceAccessory}</div> : null}
             {onViewVehicle ? <button type="button" onClick={() => onViewVehicle(vehicle)} data-action="open-record">Full record</button> : null}
           </div>
         </footer>

@@ -26,7 +26,7 @@ export const flowTokens = {
       200: "#D8E3EA",
       300: "#BBCAD4",
       400: "#8EA2B0",
-      500: "#687D8C",
+      500: "#5B6F82",
       600: "#526778",
       700: "#354A5A",
       800: "#1D3343",
@@ -47,8 +47,8 @@ export const flowTokens = {
     },
   },
   font: {
-    display: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    text: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    display: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    text: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     mono: '"Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace',
     size: { xs: 12, sm: 13, md: 14, body: 15, lg: 16, xl: 19, h4: 23, h3: 30, h2: 36, h1: 48 },
     lineHeight: { tight: 1.1, title: 1.18, compact: 1.4, body: 1.55, relaxed: 1.65 },
@@ -56,7 +56,7 @@ export const flowTokens = {
     tracking: { tight: "-0.018em", title: "-0.012em", normal: "0", label: "0.008em", caps: "0.045em" },
   },
   space: { 0: 0, 0.5: 2, 1: 4, 1.5: 6, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 8: 32, 10: 40, 12: 48, 16: 64 },
-  radius: { xs: 6, sm: 10, md: 14, lg: 18, xl: 24, full: 999 },
+  radius: { xs: 5, sm: 8, md: 12, lg: 16, xl: 20, full: 999 },
   border: { hairline: 1, strong: 2 },
   elevation: {
     0: "none",

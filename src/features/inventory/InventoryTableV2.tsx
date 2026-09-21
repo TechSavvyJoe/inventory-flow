@@ -1,9 +1,12 @@
 import { memo, useMemo, type MouseEvent as ReactMouseEvent } from "react";
 import { ArrowDown, ArrowUp, CarFront, Heart, ShieldAlert } from "lucide-react";
 import { motion } from "framer-motion";
+import { DeskRowActions } from "./InventoryTable";
+import { serviceWorkflowStatus } from "../../lib/service-readiness";
 import { CopyableValue } from "../../components/CopyableValue";
 import {
   formatMileage,
+  dealerMailHoldLabel,
   formatMoney,
   resolveCurrentLocation,
   updateMultiSort,
@@ -105,12 +108,14 @@ function VehicleRow({
   onRequestVehicle,
   onViewVehicle,
   onToggleShortlist,
+  actions,
 }: {
   vehicle: InventoryVehicle;
   isSelected: boolean;
   canRequest: boolean;
   shortlisted: boolean;
-  onSelectVehicle: (vehicle: InventoryVehicle) => void;
+  onSelectVehicle: InventoryTableProps["onSelectVehicle"];
+  actions: Pick<InventoryTableProps, "moveActionFor" | "onMoveVehicle" | "onOpenListing" | "onOpenSourceRecord">;
   onTrackMovement?: (vehicle: InventoryVehicle) => void;
   onRequestVehicle?: (vehicle: InventoryVehicle) => void;
   onViewVehicle?: (vehicle: InventoryVehicle) => void;
@@ -125,9 +130,10 @@ function VehicleRow({
   );
 
   const holdSalesperson = vehicle.holdEvidence?.[0]?.salesperson;
-  const isHeld = Boolean(vehicle.dealerMail?.hasActiveHold);
+  const isHeld = vehicle.dealerMail.dataState === "current" && vehicle.dealerMail.hasActiveHold === true;
+  const holdLabel = dealerMailHoldLabel(vehicle.dealerMail);
 
-  const serviceStatus = vehicle.serviceReadiness?.status ?? "needs_service";
+  const serviceStatus = serviceWorkflowStatus(vehicle.serviceReadiness);
 
   const handleRowClick = () => {
     onSelectVehicle(vehicle);
@@ -154,6 +160,7 @@ function VehicleRow({
               type="button"
               className="inv-v2-title-btn"
               onClick={handleRowClick}
+              data-row-action="open-details" data-inventory-vehicle-trigger={vehicle.id}
               aria-label={`View ${vehicleDisplayName(vehicle)}`}
             >
               {vehicleDisplayName(vehicle)}
@@ -223,11 +230,11 @@ function VehicleRow({
         <div className="inv-v2-status-cell">
           {isHeld ? (
             <span className="inventory-v2-badge inventory-v2-badge--hold">
-              Hold{holdSalesperson ? `: ${holdSalesperson}` : ""}
+              {holdLabel}{holdSalesperson ? ` · ${holdSalesperson}` : ""}
             </span>
           ) : (
             <span className="inventory-v2-badge inventory-v2-badge--available">
-              Available
+              {holdLabel}
             </span>
           )}
 
@@ -247,7 +254,7 @@ function VehicleRow({
 
           {hasRecall ? (
             <span className="inventory-v2-badge inventory-v2-badge--recall">
-              <ShieldAlert size={12} aria-hidden="true" /> Recall
+              <ShieldAlert size={12} aria-hidden="true" /> Service action
             </span>
           ) : null}
         </div>
@@ -276,55 +283,9 @@ function VehicleRow({
               <Heart size={15} fill={shortlisted ? "currentColor" : "none"} />
             </motion.button>
           ) : null}
-          <motion.button
-            type="button"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="inv-v2-action-btn inv-v2-action-view"
-            onClick={() => {
-              onViewVehicle ? onViewVehicle(vehicle) : onSelectVehicle(vehicle);
-            }}
-            title="Open Vehicle Details"
-            aria-label={`View details for ${vehicle.stockNumber}`}
-          >
-            View
-          </motion.button>
+          <DeskRowActions vehicle={vehicle} {...actions} canRequestVehicle={canRequest}
+            onSelectVehicle={onSelectVehicle} onRequestVehicle={onRequestVehicle} onTrackMovement={onTrackMovement} />
 
-          <motion.button
-            type="button"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="inv-v2-action-btn inv-v2-action-move"
-            onClick={() => {
-              onTrackMovement ? onTrackMovement(vehicle) : onSelectVehicle(vehicle);
-            }}
-            title="Track or schedule vehicle movement"
-            aria-label={`Move vehicle ${vehicle.stockNumber}`}
-          >
-            Move
-          </motion.button>
-
-          <motion.button
-            type="button"
-            whileHover={canRequest ? { scale: 1.05 } : undefined}
-            whileTap={canRequest ? { scale: 0.95 } : undefined}
-            disabled={!canRequest}
-            className="inv-v2-action-btn inv-v2-action-request"
-            onClick={() => {
-              if (!canRequest) return;
-              onRequestVehicle
-                ? onRequestVehicle(vehicle)
-                : onSelectVehicle(vehicle);
-            }}
-            title={
-              canRequest
-                ? "Request vehicle transfer"
-                : "Transfer request not available"
-            }
-            aria-label={`Request transfer for ${vehicle.stockNumber}`}
-          >
-            Request
-          </motion.button>
         </div>
       </td>
     </tr>
@@ -343,6 +304,7 @@ export const InventoryTableV2 = memo(function InventoryTableV2({
   onViewVehicle,
   isShortlisted,
   onToggleShortlist,
+  moveActionFor, onMoveVehicle, onOpenListing, onOpenSourceRecord,
 }: InventoryTableV2Props) {
   return (
     <div className="inventory-table-v2-wrapper">
@@ -387,7 +349,7 @@ export const InventoryTableV2 = memo(function InventoryTableV2({
                 const canRequest =
                   typeof canRequestVehicle === "function"
                     ? canRequestVehicle(vehicle)
-                    : (canRequestVehicle ?? true);
+                    : (canRequestVehicle ?? false);
 
                 return (
                   <VehicleRow
@@ -404,6 +366,7 @@ export const InventoryTableV2 = memo(function InventoryTableV2({
                     onRequestVehicle={onRequestVehicle}
                     onViewVehicle={onViewVehicle}
                     onToggleShortlist={onToggleShortlist}
+                    actions={{ moveActionFor, onMoveVehicle, onOpenListing, onOpenSourceRecord }}
                   />
                 );
               })

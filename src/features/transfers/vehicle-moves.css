@@ -19,6 +19,8 @@
 #root .vehicle-moves-page .transfer-list-search { position: relative; display: flex; align-items: center; min-height: 44px; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; }
 #root .vehicle-moves-page .transfer-list-search svg { width: 18px; height: 18px; position: absolute; left: 12px; color: var(--ifx-neutral-700); }
 #root .vehicle-moves-page .transfer-list-search input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px 10px 39px; border: 0; background: transparent; color: var(--ifx-neutral-900); font-size: 14px; }
+#root .vehicle-moves-page .transfer-list-search button { display:grid; flex:0 0 44px; width:44px; height:44px; place-items:center; border:0; background:transparent; color:var(--ifx-neutral-700); }
+#root .vehicle-moves-page .transfer-list-search button svg { position:static; width:18px; height:18px; }
 #root .vehicle-moves-page .transfer-list-views { display: flex; gap: 14px; border-bottom: 1px solid var(--ifx-neutral-300); }
 #root .vehicle-moves-page .transfer-list-views button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 9px 2px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--ifx-neutral-700); font-size: 14px; font-weight: 600; cursor: pointer; }
 #root .vehicle-moves-page .transfer-list-views button.is-active { border-bottom-color: var(--ifx-info); color: var(--ifx-info); background: transparent; }
@@ -49,7 +51,7 @@
 #root .vehicle-moves-page .transfer-list-stage { padding: 0; background: transparent; color: var(--ifx-neutral-900); font-size: 13px; font-weight: 650; white-space: normal; }
 #root .vehicle-moves-page .transfer-next { display: block; padding: 0; border: 0; color: var(--ifx-neutral-700); font-size: 13px; }
 #root .vehicle-moves-page .transfer-next small { margin-right: 4px; font-size: 12px; }
-#root .vehicle-moves-page .transfer-next strong { font-size: 13px; font-weight: 400; }
+#root .vehicle-moves-page .transfer-next strong { color: var(--navy-900); font-size: 13px; font-weight: 600; }
 #root .vehicle-moves-page .transfer-list-owner-row { display: grid; gap: 2px; }
 #root .vehicle-moves-page .transfer-list-owner-row .is-overdue { color: var(--ifx-danger); }
 #root .vehicle-moves-page .transfer-list-alert { display: flex; align-items: center; gap: 5px; color: var(--ifx-warning); font-size: 13px; }
@@ -57,6 +59,7 @@
 #root .vehicle-moves-page .transfer-list-no-results { margin: 0; padding: 36px 20px; text-align: center; color: var(--ifx-neutral-700); font-size: 14px; }
 #root .vehicle-moves-page .transfer-list-no-results strong { color: var(--ifx-neutral-900); font-weight: 600; }
 #root .vehicle-moves-page .transfer-list-no-results p { margin: 7px 0 0; }
+#root .vehicle-moves-page .transfer-list-no-results button { min-height:44px; margin-top:14px; padding:0 14px; border:1px solid var(--ifx-neutral-300); border-radius:6px; background:var(--ifx-neutral-0); color:var(--ifx-info); font-weight:650; }
 #root .vehicle-moves-page .transfer-detail-surface { min-width: 0; height: auto; overflow: visible; border-left: 1px solid var(--ifx-neutral-300); }
 #root .vehicle-moves-page .transfer-mobile-detail-bar { display: none; }
 #root .move-location-disclosure { margin-top: 18px; border-top: 1px solid var(--ifx-neutral-300); }
@@ -77,6 +80,8 @@
 #root .move-picker-search:focus-within { border-color: var(--ifx-info); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ifx-info) 16%, transparent); }
 #root .move-picker-search svg { position: absolute; left: 14px; width: 19px; height: 19px; color: var(--ifx-neutral-700); pointer-events: none; }
 #root .move-picker-search input { width: 100%; min-width: 0; min-height: 48px; padding: 11px 14px 11px 43px; border: 0; outline: 0; background: transparent; color: var(--ifx-neutral-900); font: inherit; }
+#root .move-picker-search button { display:grid; flex:0 0 48px; width:48px; height:48px; place-items:center; border:0; background:transparent; color:var(--ifx-neutral-700); }
+#root .move-picker-search button svg { position:static; width:19px; height:19px; }
 #root .move-picker-results { overflow: hidden; border: 1px solid var(--ifx-neutral-300); border-radius: 8px; background: var(--ifx-neutral-0); }
 #root .move-picker-row { display: grid; grid-template-columns: 104px minmax(0, 1fr) auto; align-items: center; gap: 15px; min-height: 106px; padding: 14px 16px; border-bottom: 1px solid var(--ifx-neutral-300); }
 #root .move-picker-row:last-child { border-bottom: 0; }
@@ -93,16 +98,18 @@
 #root .move-picker-empty svg { width: 34px; height: 34px; color: var(--ifx-neutral-600); }
 #root .move-picker-empty strong { color: var(--ifx-neutral-900); font-size: 16px; }
 #root .move-picker-empty p { margin: 0; font-size: 13px; }
-#root .move-request-simple .mif-request-header { padding: 16px 20px; }
+#root .move-request-simple .mif-request-header { min-height: 0; padding: 14px 20px; gap: 12px; }
+#root .move-request-simple .mif-request-header .mif-vehicle-heading { grid-template-columns: 96px minmax(180px, 1fr) minmax(230px, .9fr); gap: 8px 14px; }
+#root .move-request-simple .mif-request-header .move-vehicle-context { grid-column: 3; grid-row: 1; padding-left: 16px; border-left: 1px solid var(--ifx-neutral-200); }
 #root .move-request-simple .mif-vehicle-heading img { width: 96px; height: 72px; object-fit: cover; }
-#root .move-request-route { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--ifx-neutral-300); }
+#root .move-request-route { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--ifx-neutral-300); }
 #root .move-request-route > span { display: grid; gap: 3px; }
 #root .move-request-route small { color: var(--ifx-neutral-700); font-size: 13px; }
 #root .move-request-route strong { color: var(--ifx-neutral-900); font-size: 16px; }
-#root .move-request-route p { flex-basis: 100%; margin: 2px 0 0; color: var(--ifx-neutral-700); font-size: 13px; }
+#root .move-request-route p { margin: 0 0 0 auto; color: var(--ifx-neutral-700); font-size: 13px; }
 #root .move-request-simple .mif-request-layout { padding: 20px; grid-template-columns: minmax(0,1.6fr) minmax(250px,1fr); gap: 24px; }
 #root .move-request-simple .mif-request-fields { padding: 0; border: 0; border-radius: 0; }
-#root .move-request-simple .mif-request-fields__heading p { color: var(--ifx-neutral-700); font-size: 14px; }
+#root .move-request-simple .mif-request-fields__heading p { color: var(--ifx-neutral-700); font-size: 14px; margin: 5px 0 14px; }
 #root .move-request-simple :is(.mif-field > span:first-child,.mif-readonly-field,.mif-check-field small,.mif-auto-return-rule span,.mif-accountability-list small,.mif-safety-note p) { font-size: 14px; }
 #root .move-request-simple :is(input,select,textarea,summary,button) { min-height: 44px; font-size: 14px; }
 #root .move-request-simple .mif-request-review { display: grid; align-content: start; gap: 16px; padding: 0 0 0 24px; border: 0; border-left: 1px solid var(--ifx-neutral-300); border-radius: 0; background: transparent; }
@@ -113,6 +120,7 @@
 #root .move-request-simple .mif-request-actions { padding-top: 0; }
 .move-action-simple .action-field > span { font-size: 14px; }
 .move-action-simple :is(input,select,textarea) { min-height: 44px; font-size: 15px; }
+.move-action-simple button { min-height: 44px; }
 .move-action-simple footer > button:first-child { flex: 0 0 auto; min-width: 80px; }
 .move-action-simple footer > button:last-child { flex: 1; }
 @media (max-width: 1380px) {
@@ -134,6 +142,9 @@
   #root .vehicle-moves-page .transfer-list-views button { font-size: 13px; }
   #root .vehicle-moves-page .transfer-list-views button span { font-size: 12px; }
   #root .move-request-simple .mif-request-layout { grid-template-columns: 1fr; }
+  #root .move-request-simple .mif-request-header .mif-vehicle-heading { grid-template-columns: 80px minmax(0, 1fr); }
+  #root .move-request-simple .mif-request-header .move-vehicle-context { grid-column: 1 / -1; grid-row: auto; border-left: 0; padding-left: 0; }
+  #root .move-request-simple .mif-request-header .mif-vehicle-heading > img { width: 80px; height: 60px; }
   #root .move-request-simple .mif-request-review { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--ifx-neutral-300); }
 }
 @media (max-width: 760px) {
@@ -145,16 +156,22 @@
   #root .move-picker-row > .mif-button,
   #root .move-picker-actions { grid-column: 1 / -1; width: 100%; }
   #root .move-picker-row > .mif-button { min-height: 44px; }
-  #root .vehicle-moves-page .transfers-page-header { align-items: flex-start; gap: 12px; }
-  #root .vehicle-moves-page .transfers-page-header h1 { font-size: 25px; }
+  #root .vehicle-moves-page .transfers-page-header { align-items: center; gap: 8px; margin-bottom: 8px; }
+  #root .vehicle-moves-page .transfers-page-header h1 { font-size: 22px; }
   #root .vehicle-moves-page .transfers-page-header p { display: none; }
-  #root .vehicle-moves-page .transfer-header-create { min-width: 0; padding: 8px 10px; font-size: 13px; }
+  #root .vehicle-moves-page .transfer-header-create { min-width: 0; padding: 8px; font-size: 14px; }
   #root .vehicle-moves-page .transfer-header-create svg { width: 17px; }
   #root .vehicle-moves-page .transfers-layout { display: block; }
-  #root .vehicle-moves-page .transfer-list-toolbar { padding: 12px; }
+  #root .vehicle-moves-page .transfer-list-toolbar { padding: 8px; gap: 6px; }
+  #root .move-store-scope { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+  #root .move-store-scope button { min-width: 0; padding-inline: 6px; }
+  #root .vehicle-moves-page .transfer-list-views { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1fr) minmax(0, 1.15fr); gap: 4px; }
+  #root .vehicle-moves-page .transfer-list-views button { min-width: 0; gap: 3px; padding-inline: 0; font-size: 14px; white-space: nowrap; }
+  #root .vehicle-moves-page .transfer-list-views button span { min-width: 16px; padding-inline: 2px; }
   #root .vehicle-moves-page .transfer-list-tools { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
   #root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) { grid-area: auto; width: 100%; }
-  #root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) select { position: static !important; inset: auto !important; width: 100% !important; height: auto !important; opacity: 1 !important; padding: 8px 25px 8px 33px !important; }
+  #root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) select { position: static !important; inset: auto !important; width: 100% !important; height: auto !important; opacity: 1 !important; padding: 8px 18px 8px 8px !important; font-size: 14px; }
+  #root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) > svg { display: none; }
   #root .vehicle-moves-page .transfer-list-count { grid-area: auto; grid-column: 1 / -1; order: 0; }
   #root .move-store-scope p { display: none; }
   #root .vehicle-moves-page .transfer-list-item { gap: 9px 12px; padding: 14px 12px; }
@@ -172,6 +189,33 @@
   #root .move-request-simple .mif-request-layout { padding: 16px 16px calc(88px + var(--mobile-bottom-height)); }
   #root .move-request-simple .mif-request-actions .mif-button:first-child { flex: 0 0 auto; min-width: 90px; }
   #root .move-request-simple .mif-request-actions .mif-button:last-child { flex: 1; }
-  #root .move-request-simple .mif-request-header { padding: 16px; }
-  #root .move-request-route { padding: 14px 16px; }
+  #root .move-request-simple .mif-request-header { padding: 12px 16px; gap: 6px; }
+  #root .move-request-simple .mif-request-header .mif-vehicle-heading { gap: 6px 10px; }
+  #root .move-request-simple .mif-vehicle-heading .move-vehicle-context { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; align-items: start; }
+  #root .move-request-simple .move-vehicle-context .inventory-service-link { grid-column: 2; grid-row: 1 / 3; max-width: 108px; align-self: center; }
+  #root .move-request-simple .move-vehicle-context .inventory-service-link span { white-space: normal; }
+  #root .move-request-simple .mif-vehicle-heading .move-vehicle-context p { font-size: 13px; line-height: 1.4; }
+  #root .move-request-route { padding: 10px 16px; gap: 8px 12px; }
+  #root .move-request-route p { font-size: 12px; }
+}
+
+@media (max-width: 360px) {
+  #root .move-request-simple .mif-request-header { padding-inline: 12px; }
+  #root .move-request-simple .mif-request-layout { padding-inline: 12px; }
+  #root .move-request-route { padding-inline: 12px; }
+  #root .move-request-simple .mif-request-header .mif-vehicle-heading { grid-template-columns: 66px minmax(0,1fr); }
+  #root .move-request-simple .mif-request-header .mif-vehicle-heading > img { width: 66px; height: 50px; }
+  #root .move-request-simple .mif-vehicle-heading .move-vehicle-context { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
+  #root .move-request-simple .move-vehicle-context .inventory-service-link { grid-column: 1; grid-row: auto; max-width: none; justify-self: start; }
+}
+
+@media (max-width: 700px) {
+  /* Keep the primary move action above the mobile navigation on short screens. */
+  #root .vehicle-moves-page .simple-transfer-tracker { gap: 8px; padding: 10px 12px; }
+  #root .vehicle-moves-page .simple-move-heading { gap: 8px 10px; }
+  #root .vehicle-moves-page .simple-move-heading h2 { font-size: 18px; }
+  #root .vehicle-moves-page .simple-move-identifiers { gap: 2px 12px; }
+  #root .vehicle-moves-page .simple-move-route { padding-bottom: 8px; }
+  #root .vehicle-moves-page .simple-move-next { gap: 8px; padding: 10px; }
+  #root .vehicle-moves-page .transfer-mobile-detail-bar { padding-block: 4px; }
 }

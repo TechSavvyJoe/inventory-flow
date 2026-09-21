@@ -1,15 +1,31 @@
 // @vitest-environment node
 // @ts-nocheck -- dependency-free ESM; synthetic fixtures only.
 import { describe, expect, it } from 'vitest'
-import { addMonthsUtc, certifiedTerms, parseServiceDate, warrantyOutlook, warrantySummary, warrantyTermsFor, wholeMonthsBetween } from '../../extension/sidepanel/lib/warranty.mjs'
+import { addMonthsUtc, certifiedTerms, parseServiceDate, warrantyOutlook, vehicleInServiceSource, warrantySummary, warrantyTermsFor, wholeMonthsBetween } from '../../extension/sidepanel/lib/warranty.mjs'
 
 const NOW = Date.UTC(2026, 8, 12) // 2026-09-12
 
 const vehicle = (overrides = {}) => ({
   make: 'Ford', fuelType: 'Gasoline', engine: '3.5L EcoBoost V6', mileage: 12450, vin: 'TESTDATAHWELL0001',
   links: { oasis: 'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=TESTDATAHWELL0001' },
-  documents: { autoCheck: { url: 'https://www.bobmaxeyfordhowell.com/autocheck.aspx?sv=a&ac=b', inServiceDate: '2024-03-14' }, windowSticker: null },
+  documents: { autoCheck: { url: 'https://www.bobmaxeyfordhowell.com/autocheck.aspx?sv=a&ac=b', inServiceDate: '2024-03-14' }, windowSticker: null, fordOasis: { warrantyStartDate: '2024-03-14' } },
   ...overrides,
+})
+
+describe('authoritative in-service source', () => {
+  it.each(['Ford', ' lInCoLn '])('prefers OASIS and uses the AutoCheck estimate when absent for %s', (make) => {
+    const documents = { autoCheck: { inServiceDate: '2023-01-01' }, fordOasis: { warrantyStartDate: '2024-03-14' } }
+    expect(vehicleInServiceSource({ make, documents })).toMatchObject({ raw: '2024-03-14', source: 'OASIS', estimated: false })
+    expect(vehicleInServiceSource({ make, documents: { autoCheck: documents.autoCheck } })).toMatchObject({ raw: '2023-01-01', source: 'AutoCheck estimate', estimated: true })
+    expect(warrantyOutlook(vehicle({ make, documents: { autoCheck: documents.autoCheck } }), { now: NOW }).inService.date).toBe('2023-01-01')
+  })
+  it('uses warranty-check dates after empty direct fields and keeps OASIS ahead of AutoCheck', () => {
+    expect(vehicleInServiceSource({ documents: { fordOasis: { warrantyStartDate: '  ' }, autoCheck: { inServiceDate: '2023-01-01' }, warrantyCheck: { fordOasis: { warrantyStartDate: '2024-03-14' } } } }).source).toBe('OASIS')
+    expect(vehicleInServiceSource({ make: 'Ford', documents: { warrantyCheck: { autoCheck: { inServiceDate: '2023-01-01' } } } })).toMatchObject({ raw: '2023-01-01', source: 'AutoCheck estimate' })
+  })
+  it('uses captured OASIS first regardless of make', () => {
+    expect(vehicleInServiceSource({ make: 'Chevrolet', documents: { autoCheck: { inServiceDate: '2023-01-01' }, fordOasis: { warrantyStartDate: '2024-03-14' } } })).toMatchObject({ raw: '2024-03-14', source: 'OASIS', estimated: false })
+  })
 })
 
 describe('in-service date parsing', () => {
@@ -32,7 +48,7 @@ describe('in-service date parsing', () => {
 describe('remaining factory coverage', () => {
   it('dates coverage from the in-service estimate and limits it by miles, whichever ends first', () => {
     const outlook = warrantyOutlook(vehicle(), { now: NOW })
-    expect(outlook.inService).toMatchObject({ date: '2024-03-14', source: 'AutoCheck estimate', estimated: true })
+    expect(outlook.inService).toMatchObject({ date: '2024-03-14', source: 'OASIS', estimated: false })
     const basic = outlook.coverages.find((item) => item.key === 'basic')
     expect(basic).toMatchObject({ termMonths: 36, termMiles: 36000, expiresOn: '2027-03-14', monthsRemaining: 6, milesRemaining: 23550, status: 'active', limitedBy: 'time' })
     const powertrain = outlook.coverages.find((item) => item.key === 'powertrain')
@@ -46,7 +62,7 @@ describe('remaining factory coverage', () => {
     const byMiles = warrantyOutlook(vehicle({ mileage: 40000 }), { now: NOW })
     expect(byMiles.coverages.find((item) => item.key === 'basic')).toMatchObject({ status: 'expired', limitedBy: 'miles', milesRemaining: 0 })
     expect(byMiles.coverages.find((item) => item.key === 'powertrain')).toMatchObject({ status: 'active', milesRemaining: 20000 })
-    const byTime = warrantyOutlook(vehicle({ documents: { autoCheck: { inServiceDate: '2021-01-10' } } }), { now: NOW })
+    const byTime = warrantyOutlook(vehicle({ documents: { fordOasis: { warrantyStartDate: '2021-01-10' } } }), { now: NOW })
     expect(byTime.coverages.find((item) => item.key === 'basic')).toMatchObject({ status: 'expired', limitedBy: 'time', monthsRemaining: 0 })
   })
 
@@ -82,12 +98,14 @@ describe('remaining factory coverage', () => {
 
 describe('dealership certification', () => {
   it('follows the store, not the make, and stays separate from factory coverage', () => {
-    expect(certifiedTerms('Howell')).toMatchObject({ name: 'Ford Blue Advantage', brand: 'ford' })
-    expect(certifiedTerms('Fowlerville').name).toBe('Ford Blue Advantage')
+    expect(certifiedTerms('Howell')).toMatchObject({ name: 'Ford Blue Certified', brand: 'ford' })
+    expect(certifiedTerms('Fowlerville').name).toBe('Ford Blue Certified')
     expect(certifiedTerms('Lincoln')).toMatchObject({ name: 'Lincoln Certified Pre-Owned', brand: 'lincoln' })
-    // Both tiers are listed because the feed only carries a boolean.
+    // The dealer confirmed Blue certification at all three Ford stores.
     expect(certifiedTerms('Howell').terms.join(' ')).toMatch(/Blue Certified: .*90 day \/ 4,000 mi/)
-    expect(certifiedTerms('Howell').terms.join(' ')).toMatch(/Gold Certified: .*7 yr \/ 100,000 mi powertrain from the original warranty start date/)
+    expect(certifiedTerms('Howell').terms.join(' ')).not.toContain('Gold Certified')
+    expect(certifiedTerms('Unknown').brand).toBeNull()
+    expect(certifiedTerms('Ford Detroit').name).toBe('Ford Blue Certified')
     expect(certifiedTerms('Lincoln').terms.join(' ')).toMatch(/Signature: .*6 yr \/ 100,000 mi/)
     expect(certifiedTerms('Howell').note).toMatch(/Separate from any factory warranty/)
   })

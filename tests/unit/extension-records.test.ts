@@ -115,7 +115,7 @@ describe('extension captured Records detail parity', () => {
   it('shows useful OASIS data with a direct lookup action', async () => {
     const detail = await openRecords()
     const oasis = detail.querySelector('.rec-oasis')
-    for (const text of ['Warranty start', 'Apr 10, 2024', 'Build date', 'Feb 2, 2024', 'TEST-26A', 'Synthetic service-action description', 'Synthetic Ford coverage term', 'Synthetic ESP expiration']) expect(oasis.textContent).toContain(text)
+    for (const text of ['Warranty start', '04/10/2024', 'Build date', '02/02/2024', 'TEST-26A', 'Synthetic service-action description', 'Synthetic Ford coverage term', 'Synthetic ESP expiration']) expect(oasis.textContent).toContain(text)
     expect(oasis.querySelector('.rec-source').textContent).toContain('Open OASIS')
     expect(oasis.querySelector('.rec-source').getAttribute('aria-label')).toContain('Open OASIS')
     expect(oasis.textContent).not.toContain('not a saved report')

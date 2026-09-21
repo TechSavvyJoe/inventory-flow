@@ -366,3 +366,71 @@ describe('Access sign-in and response handling', () => {
     expect(headers.get('x-inventory-preview-store')).toBe('Howell')
   })
 })
+
+describe('session access and confirmed writes', () => {
+  it.each([401, 403] as const)('reports HTTP %i with request context so the workspace can purge protected records', async (status) => {
+    const { subscribeAccessFailures } = await import('../../src/lib/apiSession')
+    const listener = vi.fn()
+    const unsubscribe = subscribeAccessFailures(listener)
+    try {
+      fetchMock.mockResolvedValueOnce(json({ error: 'Access changed' }, status))
+      await expect(api.getVehicle('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS', 'manager', 'Lincoln')).rejects.toMatchObject({ status })
+      expect(listener).toHaveBeenCalledWith(expect.objectContaining({ status, role: 'manager', store: 'Lincoln' }))
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('invalidates access as soon as forbidden headers arrive even if its response body stalls', async () => {
+    const { subscribeAccessFailures } = await import('../../src/lib/apiSession')
+    const listener = vi.fn()
+    const unsubscribe = subscribeAccessFailures(listener)
+    let finish!: (body: unknown) => void
+    const response = json({ error: 'Access changed' }, 403)
+    vi.spyOn(response, 'json').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    fetchMock.mockResolvedValueOnce(response)
+    const pending = api.getVehicle('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS', 'sales', 'Howell')
+    const outcome = expect(pending).rejects.toMatchObject({ status: 403 })
+    await vi.waitFor(() => expect(listener).toHaveBeenCalledOnce())
+    finish({ error: 'Access changed' })
+    await outcome
+    unsubscribe()
+  })
+
+  it('advances the mutation revision only after a confirmed successful save', async () => {
+    const { confirmedMutationRevision } = await import('../../src/lib/apiSession')
+    const before = confirmedMutationRevision()
+    fetchMock.mockRejectedValueOnce(new TypeError('Offline')).mockResolvedValueOnce(json())
+    await expect(create()).rejects.toThrow('Offline')
+    expect(confirmedMutationRevision()).toBe(before)
+    await create()
+    expect(confirmedMutationRevision()).toBe(before + 1)
+  })
+
+  it('passes caller cancellation through the bootstrap body read', async () => {
+    const controller = new AbortController()
+    fetchMock.mockImplementationOnce((_input, options) => new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true })
+    }))
+    const pending = api.getBootstrap('Howell', 'manager', controller.signal)
+    const outcome = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    controller.abort()
+    await outcome
+  })
+
+  it('does not invalidate the current workspace for a request from an earlier access generation', async () => {
+    const { invalidateApiAccess, subscribeAccessFailures } = await import('../../src/lib/apiSession')
+    const listener = vi.fn()
+    const unsubscribe = subscribeAccessFailures(listener)
+    let finish!: (response: Response) => void
+    fetchMock.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const pending = api.getVehicle('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS', 'manager', 'Howell')
+    const outcome = expect(pending).rejects.toMatchObject({ status: 401 })
+    invalidateApiAccess()
+    finish(json({ error: 'Old session' }, 401))
+    await outcome
+    expect(listener).not.toHaveBeenCalled()
+    unsubscribe()
+  })
+
+})

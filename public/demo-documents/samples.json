@@ -19,6 +19,31 @@
       "Heated and Ventilated Front Seats",
       "B&O Sound System"
     ],
+    "options": [
+      "Bed utility package · DEMO-BED · USD 1,100.00",
+      ".Tailgate step",
+      ".Bed illumination",
+      "Cargo tie-down kit · DEMO-CARGO · USD 500.00",
+      "Trailer camera preparation · DEMO-TOW · USD 600.00",
+      "Running boards · DEMO-STEP · USD 550.00",
+      "All-weather floor liners · DEMO-FLOOR · USD 255.00",
+      "Rear-seat charging · DEMO-USB · NO CHARGE"
+    ],
+    "standardEquipment": [
+      "Power door locks",
+      "Automatic headlamps",
+      "Tire pressure monitoring",
+      "Rearview camera"
+    ],
+    "equipmentGroup": "Synthetic Lariat equipment · DEMO-GRP",
+    "equipmentGroupContents": [
+      "Ford Co-Pilot360 Assist 2.0",
+      "360-Degree Camera",
+      "Adaptive Cruise Control",
+      "Max Trailer Tow Package",
+      "Heated and Ventilated Front Seats",
+      "B&O Sound System"
+    ],
     "pricing": {
       "base": 63420,
       "options": 3005,
@@ -45,7 +70,36 @@
       "Ford Co-Pilot360",
       "Class II Trailer Tow Package"
     ],
-    "pricing": null
+    "options": [
+      "Cargo organization package · DEMO-CARGO · USD 1,100.00",
+      ".Adjustable cargo dividers",
+      ".Cargo storage tray",
+      "Roof crossbars · DEMO-ROOF · USD 500.00",
+      "All-weather floor liners · DEMO-FLOOR · USD 600.00",
+      "Rear-seat charging · DEMO-USB · USD 550.00",
+      "Illuminated entry · DEMO-ENTRY · USD 255.00",
+      "Cargo-area protection · DEMO-LINER · NO CHARGE"
+    ],
+    "standardEquipment": [
+      "Power door locks",
+      "Automatic headlamps",
+      "Tire pressure monitoring",
+      "Rearview camera"
+    ],
+    "equipmentGroup": "Synthetic Badlands equipment · DEMO-GRP",
+    "equipmentGroupContents": [
+      "Badlands Package",
+      "Advanced 4x4",
+      "Trail Control",
+      "Heated Front Seats",
+      "Ford Co-Pilot360",
+      "Class II Trailer Tow Package"
+    ],
+    "pricing": {
+      "base": 35375,
+      "options": 3005,
+      "destination": 1995
+    }
   },
   "TESTDATAFWELL0001": {
     "vin": "TESTDATAFWELL0001",
@@ -67,7 +121,36 @@
       "Heated Steering Wheel",
       "Wireless Apple CarPlay"
     ],
-    "pricing": null
+    "options": [
+      "Cargo organization package · DEMO-CARGO · USD 1,100.00",
+      ".Adjustable cargo dividers",
+      ".Cargo storage tray",
+      "Roof crossbars · DEMO-ROOF · USD 500.00",
+      "All-weather floor liners · DEMO-FLOOR · USD 600.00",
+      "Rear-seat charging · DEMO-USB · USD 550.00",
+      "Illuminated entry · DEMO-ENTRY · USD 255.00",
+      "Cargo-area protection · DEMO-LINER · NO CHARGE"
+    ],
+    "standardEquipment": [
+      "Power door locks",
+      "Automatic headlamps",
+      "Tire pressure monitoring",
+      "Rearview camera"
+    ],
+    "equipmentGroup": "Synthetic ST-Line Select equipment · DEMO-GRP",
+    "equipmentGroupContents": [
+      "Tech Pack 2",
+      "360-Degree Camera",
+      "Adaptive Cruise Control",
+      "Panoramic Vista Roof",
+      "Heated Steering Wheel",
+      "Wireless Apple CarPlay"
+    ],
+    "pricing": {
+      "base": 36780,
+      "options": 3005,
+      "destination": 1995
+    }
   },
   "TESTDATAFWELL0002": {
     "vin": "TESTDATAFWELL0002",
@@ -89,7 +172,36 @@
       "Spray-In Bedliner",
       "B&O Sound System"
     ],
-    "pricing": null
+    "options": [
+      "Bed utility package · DEMO-BED · USD 1,100.00",
+      ".Tailgate step",
+      ".Bed illumination",
+      "Cargo tie-down kit · DEMO-CARGO · USD 500.00",
+      "Trailer camera preparation · DEMO-TOW · USD 600.00",
+      "Running boards · DEMO-STEP · USD 550.00",
+      "All-weather floor liners · DEMO-FLOOR · USD 255.00",
+      "Rear-seat charging · DEMO-USB · NO CHARGE"
+    ],
+    "standardEquipment": [
+      "Power door locks",
+      "Automatic headlamps",
+      "Tire pressure monitoring",
+      "Rearview camera"
+    ],
+    "equipmentGroup": "Synthetic Lariat equipment · DEMO-GRP",
+    "equipmentGroupContents": [
+      "Lariat Luxury Package",
+      "FX4 Off-Road Package",
+      "Ford Co-Pilot360",
+      "4K Tow Package",
+      "Spray-In Bedliner",
+      "B&O Sound System"
+    ],
+    "pricing": {
+      "base": 29260,
+      "options": 3005,
+      "destination": 1995
+    }
   },
   "TESTDATADETRT0001": {
     "vin": "TESTDATADETRT0001",
@@ -111,7 +223,36 @@
       "Twin-Panel Moonroof",
       "Class IV Trailer Tow Package"
     ],
-    "pricing": null
+    "options": [
+      "Cargo organization package · DEMO-CARGO · USD 1,100.00",
+      ".Adjustable cargo dividers",
+      ".Cargo storage tray",
+      "Roof crossbars · DEMO-ROOF · USD 500.00",
+      "All-weather floor liners · DEMO-FLOOR · USD 600.00",
+      "Rear-seat charging · DEMO-USB · USD 550.00",
+      "Illuminated entry · DEMO-ENTRY · USD 255.00",
+      "Cargo-area protection · DEMO-LINER · NO CHARGE"
+    ],
+    "standardEquipment": [
+      "Power door locks",
+      "Automatic headlamps",
+      "Tire pressure monitoring",
+      "Rearview camera"
+    ],
+    "equipmentGroup": "Synthetic Platinum equipment · DEMO-GRP",
+    "equipmentGroupContents": [
+      "Premium Technology Package",
+      "Active Park Assist 2.0",
+      "360-Degree Camera",
+      "Massaging Front Seats",
+      "Twin-Panel Moonroof",
+      "Class IV Trailer Tow Package"
+    ],
+    "pricing": {
+      "base": 53955,
+      "options": 3005,
+      "destination": 1995
+    }
   },
   "TESTDATADETRT0002": {
     "vin": "TESTDATADETRT0002",
@@ -133,7 +274,36 @@
       "HD Surround Vision",
       "Heated Front Seats"
     ],
-    "pricing": null
+    "options": [
+      "Bed utility package · DEMO-BED · USD 1,100.00",
+      ".Tailgate step",
+      ".Bed illumination",
+      "Cargo tie-down kit · DEMO-CARGO · USD 500.00",
+      "Trailer camera preparation · DEMO-TOW · USD 600.00",
+      "Running boards · DEMO-STEP · USD 550.00",
+      "All-weather floor liners · DEMO-FLOOR · USD 255.00",
+      "Rear-seat charging · DEMO-USB · NO CHARGE"
+    ],
+    "standardEquipment": [
+      "Power door locks",
+      "Automatic headlamps",
+      "Tire pressure monitoring",
+      "Rearview camera"
+    ],
+    "equipmentGroup": "Synthetic RST equipment · DEMO-GRP",
+    "equipmentGroupContents": [
+      "All Star Premium Package",
+      "Safety Package",
+      "Trailering Package",
+      "Blind Spot Monitoring",
+      "HD Surround Vision",
+      "Heated Front Seats"
+    ],
+    "pricing": {
+      "base": 52390,
+      "options": 3005,
+      "destination": 1995
+    }
   },
   "TESTDATALNCN00001": {
     "vin": "TESTDATALNCN00001",
@@ -155,7 +325,36 @@
       "Panoramic Vista Roof",
       "Phone As A Key"
     ],
-    "pricing": null
+    "options": [
+      "Cargo organization package · DEMO-CARGO · USD 1,100.00",
+      ".Adjustable cargo dividers",
+      ".Cargo storage tray",
+      "Roof crossbars · DEMO-ROOF · USD 500.00",
+      "All-weather floor liners · DEMO-FLOOR · USD 600.00",
+      "Rear-seat charging · DEMO-USB · USD 550.00",
+      "Illuminated entry · DEMO-ENTRY · USD 255.00",
+      "Cargo-area protection · DEMO-LINER · NO CHARGE"
+    ],
+    "standardEquipment": [
+      "Power door locks",
+      "Automatic headlamps",
+      "Tire pressure monitoring",
+      "Rearview camera"
+    ],
+    "equipmentGroup": "Synthetic Reserve equipment · DEMO-GRP",
+    "equipmentGroupContents": [
+      "Jet Appearance Package",
+      "Lincoln Co-Pilot360 2.2 Vision",
+      "Revel Ultima 3D Audio",
+      "24-Way Perfect Position Seats",
+      "Panoramic Vista Roof",
+      "Phone As A Key"
+    ],
+    "pricing": {
+      "base": 62125,
+      "options": 3005,
+      "destination": 1995
+    }
   },
   "TESTDATALNCN00002": {
     "vin": "TESTDATALNCN00002",
@@ -177,6 +376,35 @@
       "Hands-Free Liftgate",
       "Revel Audio"
     ],
-    "pricing": null
+    "options": [
+      "Cargo organization package · DEMO-CARGO · USD 1,100.00",
+      ".Adjustable cargo dividers",
+      ".Cargo storage tray",
+      "Roof crossbars · DEMO-ROOF · USD 500.00",
+      "All-weather floor liners · DEMO-FLOOR · USD 600.00",
+      "Rear-seat charging · DEMO-USB · USD 550.00",
+      "Illuminated entry · DEMO-ENTRY · USD 255.00",
+      "Cargo-area protection · DEMO-LINER · NO CHARGE"
+    ],
+    "standardEquipment": [
+      "Power door locks",
+      "Automatic headlamps",
+      "Tire pressure monitoring",
+      "Rearview camera"
+    ],
+    "equipmentGroup": "Synthetic Grand Touring equipment · DEMO-GRP",
+    "equipmentGroupContents": [
+      "Elements Technology Bundle",
+      "Lincoln Co-Pilot360 1.5 Plus",
+      "Head-Up Display",
+      "Panoramic Vista Roof",
+      "Hands-Free Liftgate",
+      "Revel Audio"
+    ],
+    "pricing": {
+      "base": 51530,
+      "options": 3005,
+      "destination": 1995
+    }
   }
 }

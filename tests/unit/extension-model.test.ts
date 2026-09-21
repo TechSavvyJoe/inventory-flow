@@ -239,7 +239,7 @@ describe('deal desk view model', () => {
 
 describe('deal desk v2 projections', () => {
   it('names the store certification, not a make program', () => {
-    expect(certifiedProgram('Howell')).toMatchObject({ name: 'Ford Blue Advantage', brand: 'ford' })
+    expect(certifiedProgram('Howell')).toMatchObject({ name: 'Ford Blue Certified', brand: 'ford' })
     expect(certifiedProgram('Lincoln')).toMatchObject({ name: 'Lincoln Certified Pre-Owned', brand: 'lincoln' })
     const chevyAtLincoln = base({ make: 'Chevrolet', homeStore: 'Lincoln', certified: true })
     expect(toPanelVehicle(chevyAtLincoln, data(chevyAtLincoln)).certifiedProgram.name).toBe('Lincoln Certified Pre-Owned')

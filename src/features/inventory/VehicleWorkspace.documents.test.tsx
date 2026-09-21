@@ -136,7 +136,8 @@ describe('vehicle document workspace', () => {
     const panel = screen.getByRole('region', { name: 'Vehicle documents' });
     const history = panel.querySelector('[data-document-kind="autocheck"]') as HTMLElement;
     const summary = within(history).getByLabelText('AutoCheck summary');
-    for (const value of ['Owners2', 'Personal / lease', '2,052 mi', 'May 23, 2026']) expect(summary).toHaveTextContent(value);
+    expect(summary).toHaveTextContent('Owners2');
+    for (const value of ['Personal / lease', '2,052 mi', '05/23/2026']) expect(history).toHaveTextContent(value);
     const checks = within(history).getByLabelText('AutoCheck at-a-glance results');
     expect(within(checks).getByText('History check 7')).toBeVisible();
     expect(within(checks).getByText('Captured result 7 · Source detail 7')).toBeVisible();
@@ -151,6 +152,32 @@ describe('vehicle document workspace', () => {
     expect(within(sticker).queryByText(/confirm currency/)).not.toBeInTheDocument();
   });
 
+  it('keeps important history findings visible and expands the remaining checks on demand', () => {
+    const complete = vehicle();
+    complete.autoCheckReport!.checks = [
+      { label: 'State title brand', status: 'Clean' },
+      { label: 'Accident / damage', status: 'No Issue', detail: 'No accidents or damage reported' },
+      { label: 'Open recall check', status: 'No open recalls' },
+      { label: 'Odometer check', status: 'No Issue' },
+      { label: 'Additional history', status: 'Events reported', detail: 'Corrected title' },
+    ];
+    render(<VehicleWorkspace vehicle={complete} homeStore={complete.location.homeStore} onClose={vi.fn()} initialTab="data" />);
+    const history = document.querySelector('[data-document-kind="autocheck"]') as HTMLElement;
+    const highlights = within(history).getByLabelText('AutoCheck at-a-glance results');
+    expect(within(highlights).getByText('Clean')).toBeVisible();
+    expect(within(highlights).getByText('No accidents or damage reported')).toBeVisible();
+    expect(within(highlights).getByText('Events reported · Corrected title')).toBeVisible();
+    const more = history.querySelector('.vdp-history-more') as HTMLDetailsElement;
+    expect(more.open).toBe(false);
+    const additional = within(history).getByLabelText('Additional AutoCheck results');
+    expect(within(additional).getByText('No open recalls')).not.toBeVisible();
+    // jsdom does not implement the native summary click default action.
+    more.open = true;
+    fireEvent(more, new Event('toggle'));
+    expect(within(additional).getByText('No open recalls')).toBeVisible();
+    expect(within(additional).getByText('Odometer')).toBeVisible();
+  });
+
   it('does not claim original links exist when only a failed capture is available', () => {
     const missing = vehicle(false);
     missing.autoCheckReport = { dataState: 'incomplete' };
@@ -163,7 +190,7 @@ describe('vehicle document workspace', () => {
     expect(within(panel).getAllByText('Document unavailable').length).toBeGreaterThan(0);
   });
 
-  it('shows captured OASIS coverage and the separate AutoCheck estimate with all supporting fields', () => {
+  it('shows captured OASIS coverage without a competing AutoCheck estimate', () => {
     const complete = vehicle(false);
     const coverage = { type: 'Powertrain', termText: '5 years / 60,000 miles', remainingMilesText: '57,948 miles', remainingTimeText: '4 years', status: 'ACTIVE' as const, note: 'Ford source note' };
     complete.warrantyCheck = { dataState: 'current', capturedAt: '2026-09-12T15:00:00.000Z', mileageEntered: 2052, mileageSource: 'Entered dealer odometer', fordOasis: { warrantyStartDate: '01-June-2026', monthsInService: 3, coverages: [coverage] }, autoCheck: { inServiceDate: '02-June-2026', inServiceAgeMonths: 2, defaultMileage: 2011, coverages: [{ ...coverage, status: 'EXPIRED', note: 'Experian source note', remainingTimeText: 'Expired by time' }] } };
@@ -173,9 +200,10 @@ describe('vehicle document workspace', () => {
     expect(within(card).getByText('Mileage source: Entered dealer odometer')).not.toBeVisible();
     expect(within(card).getByRole('table', { name: 'Remaining factory warranty by coverage' })).toBeVisible();
     expect(within(card).getByRole('link', { name: /Open OASIS coverage lookup/ })).toHaveAttribute('href', 'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=TESTDATASYN000001');
-    expect(within(card).getByRole('region', { name: 'AutoCheck estimate' })).not.toBeVisible();
+    expect(within(card).queryByRole('region', { name: 'AutoCheck estimate' })).not.toBeInTheDocument();
     expect(within(card).getByRole('table', { name: 'Remaining factory warranty by coverage' })).not.toHaveTextContent('Ford source note');
-    expect(within(card).getByRole('table', { name: 'AutoCheck warranty estimate', hidden: true })).not.toBeVisible();
+    expect(within(card).queryByRole('table', { name: 'AutoCheck warranty estimate', hidden: true })).not.toBeInTheDocument();
+    expect(complete.warrantyCheck.autoCheck!.inServiceDate).toBe('02-June-2026');
   });
 
   it('shows kilometre source text in US miles across the captured warranty, OASIS and sticker records', () => {
@@ -208,8 +236,8 @@ describe('vehicle document workspace', () => {
     incomplete.fordOasis = { dataState: 'incomplete', openFieldServiceActions: [], warrantyCoverages: [], extendedCoverageExpirations: [] };
     render(<VehicleWorkspace vehicle={incomplete} homeStore={incomplete.location.homeStore} onClose={vi.fn()} initialTab="data" />);
     const panel = screen.getByRole('region', { name: 'Vehicle documents' });
-    expect(within(panel).getByRole('status', { name: 'Open recalls and field service actions' })).toHaveTextContent('No recall or field service action details are available');
-    expect(within(panel).queryByText('No open recalls or field service actions listed')).not.toBeInTheDocument();
+    expect(within(panel).getByRole('status', { name: 'Open field service actions' })).toHaveTextContent('Service action result not captured');
+    expect(within(panel).queryByText('No open service actions listed')).not.toBeInTheDocument();
   });
 
   it.each([undefined, false])('keeps dated legacy/default empty OASIS actions with flag %s unconfirmed', openActionsCaptured => {
@@ -217,8 +245,8 @@ describe('vehicle document workspace', () => {
     legacy.fordOasis = { dataState: 'current', capturedAt: '2026-09-11T14:00:00Z', openActionsCaptured, openFieldServiceActions: [], warrantyCoverages: [], extendedCoverageExpirations: [] };
     render(<VehicleWorkspace vehicle={legacy} homeStore={legacy.location.homeStore} onClose={vi.fn()} initialTab="data" />);
     const panel = screen.getByRole('region', { name: 'Vehicle documents' });
-    expect(within(panel).getByRole('status', { name: 'Open recalls and field service actions' })).toHaveTextContent('No recall or field service action details are available');
-    expect(within(panel).queryByText('No open recalls or field service actions listed')).not.toBeInTheDocument();
+    expect(within(panel).getByRole('status', { name: 'Open field service actions' })).toHaveTextContent('Service action result not captured');
+    expect(within(panel).queryByText('No open service actions listed')).not.toBeInTheDocument();
   });
 
   it('keeps Canadian sticker pricing legible without source diagnostics', async () => {
@@ -384,8 +412,8 @@ describe('vehicle document workspace', () => {
       />,
     );
 
-    const flag = screen.getByRole('button', { name: /2 open Ford recalls or field service actions; review vehicle records/i });
-    expect(flag).toHaveTextContent('2 open recalls');
+    const flag = screen.getByRole('button', { name: /At least 2 open service actions · result incomplete; review vehicle records/i });
+    expect(flag).toHaveTextContent('2 open service actions');
 
     const panel = await openVehicleDocuments();
     expect(panel).not.toBeNull();
@@ -397,15 +425,15 @@ describe('vehicle document workspace', () => {
     expect(within(card as HTMLElement).getByRole('list', { name: 'Ford warranty coverages' })).toBeVisible();
     expect(within(card as HTMLElement).getByRole('list', { name: 'Extended service plan expirations' })).toBeVisible();
     expect(within(panel).getByText('Ford OASIS vehicle report')).toBeInTheDocument();
-    expect(within(panel).getByRole('status', { name: 'Open recalls and field service actions' })).toHaveTextContent(
-      '2 open recalls / field service actions',
+    expect(within(panel).getByRole('status', { name: 'Open field service actions' })).toHaveTextContent(
+      '2 open service actions',
     );
     const recallList = within(panel).getByRole('list', { name: 'Open field service action details' });
     expect(within(recallList).getByText('00T01')).toBeInTheDocument();
     expect(within(recallList).getByText('Synthetic field service action')).toBeInTheDocument();
     expect(within(recallList).getByText('25S66')).toBeInTheDocument();
-    expect(within(panel).getByText('01-June-2026')).toBeInTheDocument();
-    expect(within(panel).getByText('01-May-2026')).toBeInTheDocument();
+    expect(within(panel).getByText('06/01/2026')).toBeInTheDocument();
+    expect(within(panel).getByText('05/01/2026')).toBeInTheDocument();
     expect(within(panel).getByText('3 months')).toBeInTheDocument();
     expect(within(panel).getByText('12 mi')).toBeInTheDocument();
     expect(within(panel).getByText('01/01/2029')).toBeInTheDocument();
@@ -459,8 +487,8 @@ describe('vehicle document workspace', () => {
     const panel = await openVehicleDocuments();
     expect(panel).not.toBeNull();
     if (!panel) return;
-    expect(within(panel).getByRole('status', { name: 'Open recalls and field service actions' })).toHaveTextContent(
-      'No open recalls or field service actions listed',
+    expect(within(panel).getByRole('status', { name: 'Open field service actions' })).toHaveTextContent(
+      'No open service actions listed',
     );
     expect(within(panel).queryByRole('list', { name: 'Open field service action details' })).not.toBeInTheDocument();
     expect(within(panel).queryByText('Update delayed')).not.toBeInTheDocument();

@@ -4,21 +4,44 @@
 .action-vehicle .action-vehicle-readiness { color: var(--ink-600); }
 .action-queue .action-status-buttons { flex-shrink: 0; }
 .action-queue .action-status-buttons button { min-height: 44px; font-size: 14px; }
-.action-queue .action-list-head, .action-queue .action-row-content { grid-template-columns: minmax(260px, 1.3fr) minmax(190px, 1.1fr) minmax(145px, .7fr) 150px; gap: 16px; }
-.action-queue .action-row { padding-block: 12px 4px; }
+.action-queue .action-list-head, .action-queue .action-row-content { grid-template-columns: minmax(250px, 1.3fr) minmax(190px, 1.1fr) minmax(140px, .7fr) 176px; gap: 14px; }
+.action-queue .action-row { margin:0; padding:12px 12px 4px; border:0; border-bottom:1px solid var(--border); border-radius:0; }
+.action-queue .action-row:last-child { border-bottom:0; }
 .action-queue .workflow-vehicle small { font-size: 13px; }
 .action-queue .workflow-page-heading { margin-bottom:12px; }
 .action-queue .workflow-toolbar { margin:12px 0; }
-.action-queue .workflow-quick-actions { grid-template-columns:1fr; gap:0; }
-.action-queue .workflow-quick-actions a { min-height:44px; border:0; justify-content:flex-start; padding:6px 0; }
+.action-queue .workflow-quick-actions { grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+.action-queue .workflow-quick-actions a { min-height:44px; border:1px solid var(--border); justify-content:center; padding:6px; border-radius:6px; }
 .action-queue .action-task { padding-left:12px; border-left:3px solid var(--blue-600); }
 .action-queue .action-owner strong { font-weight:650; }
+.action-queue .action-follow-up { margin:4px 0 0; }
+.action-queue .action-follow-up > summary { font-size:13px; font-weight:600; }
+.action-queue .action-follow-up-body { max-width:none; padding:10px 12px 12px; border-top:1px solid var(--border); background:var(--surface-soft); }
+.action-queue .action-follow-up-form { grid-template-columns:minmax(220px,1fr) 230px auto; align-items:end; gap:8px 12px; }
+.action-queue .action-follow-up-form label { min-width:0; gap:4px; }
+.action-queue .action-follow-up-form :is(textarea,input) { display:block; min-height:44px; height:44px; margin:0; font:inherit; color:var(--ink-900); background:var(--surface); border-radius:6px; }
+.action-queue .action-follow-up-form textarea { resize:vertical; }
+.action-queue .action-follow-up-form .workflow-inline-actions { grid-column:auto; align-self:end; max-width:300px; }
+.action-queue .action-follow-up-form .workflow-inline-actions button { min-height:44px; padding:8px 12px; }
+.action-queue .action-follow-up-form > p { grid-column:1 / -1; margin:0; }
+.action-queue .action-history { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); list-style:none; gap:8px 16px; margin:12px 0 0; padding:10px 0 0; border-top:1px solid var(--border); }
+.action-queue .action-history li { min-width:0; }
+.action-queue .action-history li p { margin:3px 0 0; overflow-wrap:anywhere; }
+@media (max-width:1000px) {
+  .action-queue .action-follow-up-form { grid-template-columns:minmax(180px,1fr) 220px; }
+  .action-queue .action-follow-up-form .workflow-inline-actions { grid-column:1 / -1; max-width:none; }
+}
 @media (max-width: 1200px) {
   .action-queue .action-list-head, .action-queue .action-row-content { grid-template-columns: minmax(260px, 1.4fr) minmax(180px, 1fr) 140px; gap: 12px; }
 }
 @media (max-width: 760px) {
   .action-queue .action-row-content { grid-template-columns: 1fr auto; }
   .action-queue .action-status-buttons { width: auto; }
+  .action-queue .action-follow-up-body { padding:10px 8px; }
+  .action-queue .action-follow-up-form { grid-template-columns:minmax(0,1fr); }
+  .action-queue .action-follow-up-form .workflow-inline-actions { grid-column:1; }
+  .action-queue .action-history { grid-template-columns:minmax(0,1fr); }
+
   .action-queue .action-vehicle { gap: 12px; }
   .action-queue .action-vehicle > .workflow-photo { width: 88px; height: 66px; }
   .action-queue .workflow-page-heading p { display:none; }
@@ -26,10 +49,18 @@
   .action-queue .workflow-tabs button { flex-shrink:0; padding:8px; }
   .action-queue .workflow-quick-actions { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
   .action-queue .workflow-quick-actions a { justify-content:center; }
-  .action-queue .action-owner { grid-column:1/-1; }
+  .action-queue .action-owner { grid-column:1/-1; display:flex; flex-wrap:wrap; gap:4px 12px; }
   .action-queue .action-row-content > .action-next-steps { grid-column:1/-1; grid-row:4; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:center; gap:8px; }
 }
-.action-queue .action-task-conditions { margin: 4px 0 0; font-size: 13px; color: var(--ink-600); }
+@media (min-width:361px) and (max-width:760px) {
+  .action-queue .workflow-page-heading { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px; }
+  .action-queue .workflow-page-heading h1 { font-size:22px; }
+  .action-queue .workflow-scope { width:auto; }
+  .action-queue .workflow-scope button { flex:none; min-width:76px; padding-inline:8px; }
+}
+.action-queue .action-task-related { display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:2px; }
+.action-queue .action-task-related a { display:inline-flex; align-items:center; min-height:44px; color:var(--blue-700); font-size:13px; font-weight:600; text-decoration:none; }
+.action-queue .action-task-related a:hover { text-decoration:underline; }
 .action-also { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
 .action-also > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; color: var(--ink-900); cursor: pointer; }
 .action-also .action-also-count { min-width: 24px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: center; }
@@ -41,3 +72,7 @@
 .action-also-list > li > span { font-size: 13px; color: var(--ink-600); }
 .action-also-list > li > a { min-height: 44px; display: inline-flex; align-items: center; font-size: 14px; color: var(--blue-600); }
 .action-also-list > li > .action-follow-up { margin-left: 0; }
+
+.action-vehicle-identifiers { display:flex; flex-wrap:wrap; gap:0 8px; font-size:13px; }
+.action-vehicle-identifiers .copyable-value { min-width:0; max-width:100%; }
+.action-vehicle-identifiers .copyable-value__content { overflow-wrap:anywhere; }

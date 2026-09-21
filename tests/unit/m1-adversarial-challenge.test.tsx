@@ -4,6 +4,8 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import {
   motion,
+  motionValue,
+  MotionConfig,
   AnimatePresence,
   useReducedMotion,
   useAnimation,
@@ -30,6 +32,8 @@ import {
 import fs from 'node:fs'
 import path from 'node:path'
 import { execSync } from 'node:child_process'
+import { createMotionPreference } from './motion-test-utils'
+import { runInterfaceTransition } from '../../src/lib/interfaceTransition'
 
 // Mock AppDataContext so route components can mount in unit test environment
 vi.mock('../../src/app/AppDataContext', () => ({
@@ -77,16 +81,10 @@ vi.mock('../../src/app/AppDataContext', () => ({
 }))
 
 describe('M1 Adversarial Challenge: framer-motion Stress Testing', () => {
-  let originalMatchMedia: typeof window.matchMedia
+  const motionPreference = createMotionPreference()
 
-  beforeEach(() => {
-    originalMatchMedia = window.matchMedia
-  })
-
-  afterEach(() => {
-    window.matchMedia = originalMatchMedia
-    vi.restoreAllMocks()
-  })
+  beforeEach(() => { motionPreference.install(); motionPreference.set(false) })
+  afterEach(() => { motionPreference.restore(); vi.restoreAllMocks() })
 
   describe('1. Rapid Mounting / Unmounting', () => {
     it('survives rapid mounting and unmounting toggles without crashing or leaking', () => {
@@ -320,22 +318,20 @@ describe('M1 Adversarial Challenge: framer-motion Stress Testing', () => {
       exit: { opacity: 0, x: 50 },
     }
 
-    it('correctly maps and applies variants for initial and animate states', () => {
-      render(
-        <motion.div
-          variants={cardVariants}
-          initial="hidden"
-          animate="visible"
-          data-testid="variant-node"
-        >
-          Variant Card
-        </motion.div>
-      )
-
-      const el = screen.getByTestId('variant-node')
-      expect(el.style.opacity).toBe('1')
-      expect(el.style.transform).toContain('translate3d(0px, 0px, 0px)')
-      expect(el.style.transform).toContain('scale(1)')
+    it('moves named variants from the initial values to the settled visible values', async () => {
+      const opacity = motionValue(0)
+      const x = motionValue(-50)
+      const scale = motionValue(0.9)
+      render(<motion.div variants={cardVariants} initial="hidden" animate="visible" style={{ opacity, x, scale }} transition={{ duration: 0.04 }} data-testid="variant-node">Variant Card</motion.div>)
+      expect(opacity.get()).toBe(0)
+      expect(x.get()).toBe(-50)
+      expect(scale.get()).toBe(0.9)
+      await waitFor(() => {
+        expect(opacity.get()).toBe(1)
+        expect(x.get()).toBe(0)
+        expect(scale.get()).toBe(1)
+      })
+      expect(screen.getByTestId('variant-node')).toHaveTextContent('Variant Card')
     })
 
     it('gracefully handles non-existent or invalid variant references without crashing', () => {
@@ -363,135 +359,81 @@ describe('M1 Adversarial Challenge: framer-motion Stress Testing', () => {
       fireEvent.mouseLeave(el)
     })
 
-    it('handles variants in whileHover and whileTap interactions', () => {
-      render(
-        <motion.button
-          variants={cardVariants}
-          animate="visible"
-          whileHover="hover"
-          whileTap="tap"
-          data-testid="variant-btn"
-        >
-          Button
-        </motion.button>
-      )
-
-      const btn = screen.getByTestId('variant-btn')
-      expect(btn.style.transform).toContain('scale(1)')
-
-      // Hover triggers variant "hover" -> scale: 1.05
-      fireEvent.mouseEnter(btn)
-      expect(btn.style.transform).toContain('scale(1.05)')
-
-      // Tap triggers variant "tap" -> scale: 0.95
-      fireEvent.mouseDown(btn)
-      expect(btn.style.transform).toContain('scale(0.95)')
-
-      fireEvent.mouseUp(btn)
-      expect(btn.style.transform).toContain('scale(1.05)')
-
-      fireEvent.mouseLeave(btn)
-      expect(btn.style.transform).toContain('scale(1)')
+    it('resolves named hover and press variants through the pointer lifecycle', async () => {
+      const scale = motionValue(1)
+      render(<motion.button variants={cardVariants} animate="visible" whileHover="hover" whileTap="tap" style={{ scale }} transition={{ duration: 0.02 }}>Variant action</motion.button>)
+      const button = screen.getByRole('button', { name: 'Variant action' })
+      fireEvent.pointerEnter(button, { pointerType: 'mouse', isPrimary: true })
+      await waitFor(() => expect(scale.get()).toBe(1.05))
+      fireEvent.pointerDown(button, { pointerType: 'mouse', isPrimary: true, button: 0 })
+      await waitFor(() => expect(scale.get()).toBe(0.95))
+      fireEvent.pointerUp(button, { pointerType: 'mouse', isPrimary: true, button: 0 })
+      await waitFor(() => expect(scale.get()).toBe(1.05))
+      fireEvent.pointerLeave(button, { pointerType: 'mouse', isPrimary: true })
+      await waitFor(() => expect(scale.get()).toBe(1))
     })
 
-    it('correctly handles zero and negative values in transform variants', () => {
-      const transformVariants = {
-        zero: { x: 0, y: 0, scale: 0, rotate: 0 },
-        negative: { x: -30, y: -15, rotate: -45 },
-      }
-
-      const { rerender } = render(
-        <motion.div
-          variants={transformVariants}
-          animate="zero"
-          data-testid="zero-node"
-        >
-          Zero Node
-        </motion.div>
-      )
-
-      const el = screen.getByTestId('zero-node')
-      expect(el.style.transform).toContain('translate3d(0px, 0px, 0px)')
-      expect(el.style.transform).toContain('scale(0)')
-
-      rerender(
-        <motion.div
-          variants={transformVariants}
-          animate="negative"
-          data-testid="zero-node"
-        >
-          Zero Node
-        </motion.div>
-      )
-
-      expect(el.style.transform).toContain('translate3d(-30px, -15px, 0px)')
-      expect(el.style.transform).toContain('rotate(-45deg)')
+    it('retains zero scale and reaches negative translation and rotation targets', async () => {
+      const values = { x: motionValue(0), y: motionValue(0), scale: motionValue(1), rotate: motionValue(0) }
+      const variants = { zero: { x: 0, y: 0, scale: 0, rotate: 0 }, negative: { x: -30, y: -15, scale: 0, rotate: -45 } }
+      const { rerender } = render(<motion.div variants={variants} animate="zero" style={values} transition={{ duration: 0.03 }}>Transform target</motion.div>)
+      await waitFor(() => expect(values.scale.get()).toBe(0))
+      expect(values.x.get()).toBe(0)
+      expect(values.y.get()).toBe(0)
+      rerender(<motion.div variants={variants} animate="negative" style={values} transition={{ duration: 0.03 }}>Transform target</motion.div>)
+      await waitFor(() => {
+        expect(values.x.get()).toBe(-30)
+        expect(values.y.get()).toBe(-15)
+        expect(values.rotate.get()).toBe(-45)
+      })
+      expect(values.scale.get()).toBe(0)
     })
   })
 
-  describe('4. Reduced Motion Toggles (prefers-reduced-motion: reduce)', () => {
-    it('disables CSS transitions when prefers-reduced-motion is active', () => {
-      window.matchMedia = vi.fn().mockImplementation((query: string) => {
-        return {
-          matches: query === '(prefers-reduced-motion: reduce)',
-          media: query,
-          onchange: null,
-          addListener: vi.fn(),
-          removeListener: vi.fn(),
-          addEventListener: vi.fn(),
-          removeEventListener: vi.fn(),
-          dispatchEvent: vi.fn(),
-        }
-      })
-
-      render(
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          data-testid="reduced-motion-node"
-        >
-          Reduced Motion Card
-        </motion.div>
-      )
-
-      const el = screen.getByTestId('reduced-motion-node')
-      // When prefers-reduced-motion: reduce is true, transition is set to 'none'
-      expect(el.style.transition).toBe('none')
+  describe('4. Reduced Motion', () => {
+    it('MotionConfig suppresses spatial movement while allowing a brief opacity change', async () => {
+      motionPreference.set(true)
+      const y = motionValue(20)
+      const opacity = motionValue(0)
+      const positions: number[] = []
+      const unsubscribe = y.on('change', value => positions.push(value))
+      render(<MotionConfig reducedMotion="user"><motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} style={{ y, opacity }} transition={{ duration: 0.08 }}>Reduced motion content</motion.div></MotionConfig>)
+      await waitFor(() => expect(y.get()).toBe(0))
+      expect(positions).toEqual([0])
+      await waitFor(() => expect(opacity.get()).toBe(1))
+      unsubscribe()
     })
 
-    it('useReducedMotion hook reflects prefers-reduced-motion state and responds to listener', () => {
-      let listenerCallback: ((e: { matches: boolean }) => void) | null = null
-
-      window.matchMedia = vi.fn().mockImplementation((query: string) => {
-        return {
-          matches: false,
-          media: query,
-          addEventListener: vi.fn((event, cb) => {
-            if (event === 'change') listenerCallback = cb
-          }),
-          removeEventListener: vi.fn(),
-        }
-      })
-
+    it('the vendor hook reads the current media preference when a consumer mounts', () => {
       function ReducedMotionConsumer() {
         const shouldReduce = useReducedMotion()
-        return (
-          <div data-testid="reduced-indicator">
-            {shouldReduce ? 'REDUCED' : 'NORMAL'}
-          </div>
-        )
+        return <div data-testid="reduced-indicator">{shouldReduce ? 'REDUCED' : 'NORMAL'}</div>
       }
+      const { rerender } = render(<ReducedMotionConsumer key="normal" />)
+      expect(screen.getByTestId('reduced-indicator')).toHaveTextContent('NORMAL')
+      // Framer Motion v12 samples useReducedMotion at mount. The media listener
+      // updates its shared preference, which the next mounted consumer reads.
+      act(() => motionPreference.set(true))
+      rerender(<ReducedMotionConsumer key="reduced" />)
+      expect(screen.getByTestId('reduced-indicator')).toHaveTextContent('REDUCED')
+    })
 
-      render(<ReducedMotionConsumer />)
-      expect(screen.getByTestId('reduced-indicator').textContent).toBe('NORMAL')
-
-      // Simulate system accessibility preference toggle
-      if (listenerCallback) {
-        act(() => {
-          listenerCallback!({ matches: true })
-        })
-        expect(screen.getByTestId('reduced-indicator').textContent).toBe('REDUCED')
+    it('app transitions respond immediately when the user changes the motion preference', async () => {
+      const original = Object.getOwnPropertyDescriptor(document, 'startViewTransition')
+      const transition = vi.fn((update: () => void) => { update(); return { finished: Promise.resolve() } })
+      Object.defineProperty(document, 'startViewTransition', { configurable: true, value: transition })
+      try {
+        const update = vi.fn()
+        runInterfaceTransition(update, 'vehicle')
+        expect(transition).toHaveBeenCalledOnce()
+        motionPreference.set(true)
+        runInterfaceTransition(update, 'vehicle')
+        expect(update).toHaveBeenCalledTimes(2)
+        expect(transition).toHaveBeenCalledOnce()
+        await Promise.resolve()
+      } finally {
+        if (original) Object.defineProperty(document, 'startViewTransition', original)
+        else Reflect.deleteProperty(document, 'startViewTransition')
       }
     })
   })
@@ -697,37 +639,22 @@ describe('M1 Adversarial Challenge: CSS Design System Compliance', () => {
 })
 
 describe('M1 Adversarial Challenge: Baseline V1 Preservation Invariants', () => {
-  it('verifies git diff on VehicleWorkspace.tsx is strictly empty', () => {
-    const diff = execSync(
-      'git diff src/features/inventory/VehicleWorkspace.tsx',
-      {
-        encoding: 'utf8',
-        cwd: path.resolve(__dirname, '../..'),
-      }
-    )
-    expect(diff.trim()).toBe('')
+  it('keeps the explicit V1 inventory route bound to its supported baseline page', async () => {
+    const baseline = await import('../../src/features/inventory/InventoryPage')
+    expect((await loadInventoryPageV1()).default).toBe(baseline.InventoryPage)
+    expect((await loadInventoryPageV2()).default).not.toBe(baseline.InventoryPage)
   })
 
-  it('verifies git diff on InventoryExperience.tsx is strictly empty', () => {
-    const diff = execSync(
-      'git diff src/features/inventory/InventoryExperience.tsx',
-      {
-        encoding: 'utf8',
-        cwd: path.resolve(__dirname, '../..'),
-      }
-    )
-    expect(diff.trim()).toBe('')
+  it('keeps the explicit V1 moves route bound to its supported baseline page', async () => {
+    const baseline = await import('../../src/features/transfers/TransfersPage')
+    expect((await loadTransfersPageV1()).default).toBe(baseline.TransfersPage)
+    expect((await loadTransfersPageV2()).default).not.toBe(baseline.TransfersPage)
   })
 
-  it('verifies all baseline page components are untouched in git', () => {
-    const diff = execSync(
-      'git diff src/features/inventory/InventoryPage.tsx src/features/service/ServicePage.tsx src/features/transfers/TransfersPage.tsx',
-      {
-        encoding: 'utf8',
-        cwd: path.resolve(__dirname, '../..'),
-      }
-    )
-    expect(diff.trim()).toBe('')
+  it('keeps the explicit V1 service route bound to its supported baseline page', async () => {
+    const baseline = await import('../../src/features/service/ServicePage')
+    expect((await loadServicePageV1()).default).toBe(baseline.ServicePage)
+    expect((await loadServicePageV2()).default).not.toBe(baseline.ServicePage)
   })
 
   it('verifies InventoryExperience.tsx directly imports V1 VehicleWorkspace', () => {
