@@ -125,7 +125,7 @@ describe('source-backed vehicle resource cards', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('offers direct source actions in the scan without losing history warnings or selecting the containing vehicle', () => {
+  it('offers direct source actions with branded, basic scan facts without selecting the containing vehicle', () => {
     const vehicle = sources();
     vehicle.autoCheckReport = {...vehicle.autoCheckReport!,checks:[{label:'Open Recall Check',status:'Recall found',detail:'1 unrepaired recall'},{label:'Insurance Loss / Transfer',status:'Loss reported'}]};
     const onSelectResource = vi.fn();
@@ -144,8 +144,10 @@ describe('source-backed vehicle resource cards', () => {
     fireEvent.click(screen.getByRole('button',{name:'Show OASIS records'}));
     expect(onSelectResource).toHaveBeenLastCalledWith('oasis');
     expect(onRowClick).not.toHaveBeenCalled();
-    expect(screen.getByText('Recall found · 1 unrepaired recall')).toBeVisible();
-    expect(screen.getByText('Loss reported')).toBeVisible();
+    expect(screen.getByText('Open Recall Check: Recall found · 1 unrepaired recall')).toBeVisible();
+    expect(screen.queryByText('Loss reported')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-resource-kind="autocheck"] img')).toHaveAttribute('src','/resource-brands/autocheck.svg');
+    expect(document.querySelector('[data-resource-kind="window-sticker"] img')).toHaveAttribute('src','/resource-brands/ford.svg');
     page.rerender(<VehicleResourceCards vehicle={{...vehicle,windowSticker:null}} variant="scan" onSelectResource={onSelectResource}/>);
     fireEvent.click(screen.getByRole('button',{name:'Show equipment records'}));
     expect(onSelectResource).toHaveBeenLastCalledWith('vauto');
@@ -222,7 +224,7 @@ describe('source-backed vehicle resource cards', () => {
     expect(screen.getByText('06/20/2024')).toBeVisible();
   });
 
-  it('keeps every material history exception in the vehicle scan before selecting a report', () => {
+  it('keeps the vehicle scan to one useful history signal and leaves low-value events in Records', () => {
     const vehicle = sources();
     vehicle.autoCheckReport = {...vehicle.autoCheckReport!, dataState:'stale', checks:[
       {label:'Additional history',status:'Events reported',detail:'Corrected title'},
@@ -233,10 +235,10 @@ describe('source-backed vehicle resource cards', () => {
       {label:'Certified Pre-Owned',status:'No CPO info available'},
     ]};
     render(<VehicleResourceCards vehicle={vehicle} variant="scan"/>);
-    expect(screen.getAllByText('Corrected title')).toHaveLength(1);
-    expect(screen.getByText('Recall found · 1 unrepaired recall')).toBeVisible();
-    expect(screen.getByText('Loss reported')).toBeVisible();
+    expect(screen.queryByText('Corrected title')).not.toBeInTheDocument();
     expect(screen.getByText('Mileage discrepancy reported')).toBeVisible();
+    expect(screen.queryByText('Loss reported')).not.toBeInTheDocument();
+    expect(screen.queryByText('Open Recall Check: Recall found · 1 unrepaired recall')).not.toBeInTheDocument();
     expect(screen.getByText('Saved report · refresh at source')).toBeVisible();
     expect(screen.queryByText('5 service records reported')).not.toBeInTheDocument();
     expect(screen.queryByText('No CPO info available')).not.toBeInTheDocument();
@@ -356,13 +358,13 @@ describe('source-backed vehicle resource cards', () => {
     expect(screen.queryByText('Unavailable original option')).not.toBeInTheDocument();
   });
 
-  it('keeps mobile scan evidence brief without losing partial history/action warnings', () => {
+  it('keeps mobile scan evidence brief while retaining source status and service actions', () => {
     const vehicle = sources();
     vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, dataState: 'stale', checks: [{ label: 'Additional history', status: 'Events reported', detail: 'Corrected title' }] };
     vehicle.fordOasis = { ...vehicle.fordOasis!, openActionsCaptured: false, capturedAt: '2026-09-01', openFieldServiceActions: [{ code: '26X01', description: 'Replace only if required after dealer evaluation' }] };
     const page = render(<VehicleResourceCards vehicle={vehicle} variant="scan"/>);
     expect(screen.getByText('Score 91 · 1 owner')).toBeVisible();
-    expect(screen.getByText('Corrected title')).toBeVisible();
+    expect(screen.queryByText('Corrected title')).not.toBeInTheDocument();
     expect(screen.getByText('Saved report · refresh at source')).toBeVisible();
     expect(screen.getByText('At least 1 captured service action · result incomplete')).toBeVisible();
     expect(document.querySelector('.vehicle-resource-summary')).toBeNull();
@@ -469,7 +471,7 @@ describe('source-backed vehicle resource cards', () => {
     expect(screen.queryByText('$4,770')).not.toBeInTheDocument();
   });
 
-  it('keeps sticker options separate from standard equipment and vAuto-only packages', () => {
+  it('keeps sticker options and standard equipment visible without mixing in vAuto-only packages', () => {
     const vehicle = sources();
     vehicle.windowSticker = { ...vehicle.windowSticker!, options: ['Technology Package (55A) $1,995', '20-inch optional wheels'], standardEquipment: ['Standard radio'] };
     vehicle.factoryEquipment = { ...vehicle.factoryEquipment!, packages: [{ name: 'vAuto-only package' }] };
@@ -478,7 +480,8 @@ describe('source-backed vehicle resource cards', () => {
     const sticker = () => within(document.querySelector('[data-resource-kind="window-sticker"]') as HTMLElement);
     expect(sticker().getByRole('listitem', { name: 'Technology Package (55A) $1,995' })).toBeVisible();
     expect(sticker().getByText('20-inch optional wheels')).toBeVisible();
-    expect(sticker().queryByText('Standard radio')).not.toBeInTheDocument();
+    expect(sticker().getByText('Standard radio')).toBeVisible();
+    expect(sticker().getByRole('region', { name: 'Standard equipment' })).toBeVisible();
     expect(sticker().queryByText('vAuto-only package')).not.toBeInTheDocument();
     expect(document.querySelector('[data-resource-kind="vauto"]')).toBeNull();
     expect(vehicleResourceCatalog(vehicle).find(resource => resource.id === 'vauto')!.facts).toContain('vAuto-only package');

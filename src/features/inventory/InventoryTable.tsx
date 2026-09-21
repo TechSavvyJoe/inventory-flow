@@ -246,7 +246,7 @@ function SortHeader({ label, displayLabel, column, numeric = false, options, sor
   );
 }
 
-export function VehiclePhoto({ vehicle, className = "" }: { vehicle: InventoryVehicle; className?: string }) {
+export function VehiclePhoto({ vehicle, className = "", priority = true }: { vehicle: InventoryVehicle; className?: string; priority?: boolean }) {
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -296,11 +296,9 @@ export function VehiclePhoto({ vehicle, className = "" }: { vehicle: InventoryVe
         className={`${className}${loaded ? " is-loaded" : " is-loading"}`.trim()}
         src={src}
         alt={`${vehicleDisplayName(vehicle)} exterior`}
-        // The SRP is already paginated. Eagerly start the current page's small
-        // thumbnail requests so a manager does not have to scroll to a row or
-        // open the VDP before a valid dealer photo appears. The browser reuses
-        // the same URL for the desktop/mobile render paths and VDP gallery.
-        loading="eager"
+        // Start the visible rows immediately and let lower rows wait until the
+        // browser is ready. The VDP reuses the same URL from cache.
+        loading={priority ? "eager" : "lazy"}
         fetchPriority="low"
         decoding="async"
         referrerPolicy="no-referrer"
@@ -409,8 +407,9 @@ function humanizeStatusLabel(label: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function DeskVehicleCell({ vehicle, onSelectVehicle, recordsAction }: {
+function DeskVehicleCell({ vehicle, onSelectVehicle, recordsAction, priority }: {
   recordsAction?: ReactNode;
+  priority?: boolean;
   vehicle: InventoryVehicle;
   onSelectVehicle: InventoryTableProps["onSelectVehicle"];
 }) {
@@ -421,7 +420,7 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, recordsAction }: {
   return (
     <div className="inv-desk-vehicle">
       <span className="inv-desk-vehicle__photo">
-        <VehiclePhoto vehicle={vehicle} className="inv-desk-vehicle__img" />
+        <VehiclePhoto vehicle={vehicle} className="inv-desk-vehicle__img" priority={priority} />
         <PhotoCount vehicle={vehicle} />
       </span>
       <div className="inv-desk-vehicle__body">
@@ -758,13 +757,14 @@ export function InventoryTable({
             </tr>
           </thead>
           <tbody>
-            {vehicles.map((vehicle) => {
+            {vehicles.map((vehicle, index) => {
               const selected = vehicle.id === selectedVehicleId;
               const hasResources = vehicleResourceCatalog(vehicle).some((resource) => resource.href || resource.hasCapturedData);
+              const alternate = index % 2 === 1;
               return (
                 <Fragment key={vehicle.id}>
                 <tr
-                  className={`inv-desk-row${selected ? " is-selected" : ""}`}
+                  className={`inv-desk-row${selected ? " is-selected" : ""}${alternate ? " is-alternate" : ""}`}
                   data-has-resources={hasResources ? "true" : "false"}
                   data-stock-number={vehicle.stockNumber}
                   data-inventory-vehicle-trigger={vehicle.id}
@@ -773,7 +773,7 @@ export function InventoryTable({
                   onClick={() => onSelectVehicle(vehicle)}
                 >
                   <td className="inv-desk-td inv-desk-td--vehicle" data-column="vehicle">
-                    <DeskVehicleCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} recordsAction={recordsAction(vehicle)} />
+                    <DeskVehicleCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} recordsAction={recordsAction(vehicle)} priority={index < 4} />
                   </td>
                   <td className="inv-desk-td inv-desk-td--num" data-column="price">
                     <DeskPriceCell vehicle={vehicle} />
@@ -799,7 +799,7 @@ export function InventoryTable({
                     />
                   </td>
                 </tr>
-                {hasResources ? <tr className={`inv-desk-scan-row${selected ? " is-selected" : ""}`}>
+                {hasResources ? <tr className={`inv-desk-scan-row${selected ? " is-selected" : ""}${alternate ? " is-alternate" : ""}`}>
                   <td colSpan={5}>
                     <VehicleResourceCards vehicle={vehicle} variant="scan" />
                   </td>
@@ -844,7 +844,7 @@ export function InventoryMobileList({
   </button>;
   return (
     <div className="if-srp-mobile-list" aria-label="Inventory results">
-      {vehicles.map((vehicle) => {
+      {vehicles.map((vehicle, index) => {
         const name = vehicleDisplayName(vehicle);
         const recentChange = primaryVehicleChangeSignal(vehicle.changeSummary);
         const movementStatus = vehicleMovementStatus(vehicle);
@@ -879,7 +879,7 @@ export function InventoryMobileList({
               }}
               aria-label={vehicleAccessibleSummary(vehicle)}
             >
-              <span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} /><PhotoCount vehicle={vehicle} /></span>
+              <span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} priority={index < 2} /><PhotoCount vehicle={vehicle} /></span>
               <span className="inventory-mobile-row__main">
                 <span className="inventory-mobile-row__title">
                   <strong>{name}</strong>

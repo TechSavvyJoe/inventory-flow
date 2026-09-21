@@ -49,7 +49,24 @@ export interface VehicleResource {
   /** Structured overview fields; complete evidence remains in facts/Records. */
   summaryRows?: VehicleResourceSummaryRow[];
   /** Ordered sticker lines retain package contents and source price wording. */
-  stickerDetails?: { msrp?: string; equipmentGroup?: string; equipmentGroupContents?: string[]; equipmentGroupPrice?: string; optionLines: string[]; optionLabel?: string };
+  stickerDetails?: {
+    vehicleDescription?: string;
+    basePrice?: string;
+    totalOptions?: string;
+    destinationCharge?: string;
+    msrp?: string;
+    equipmentGroup?: string;
+    equipmentGroupContents?: string[];
+    equipmentGroupPrice?: string;
+    optionLines: string[];
+    optionLabel?: string;
+    exteriorColor?: string;
+    interiorColor?: string;
+    engine?: string;
+    transmission?: string;
+    standardEquipment?: string[];
+    warranty?: string[];
+  };
   equipmentContext?: string;
   alternateSticker?: { href: string; label: string };
   /** Two high-value, source-backed summaries for inventory results. */
@@ -258,13 +275,30 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
     facts: stickerFacts, compactFacts: stickerCompact,
     summaryFacts: stickerSummary,
     stickerDetails: capturedStickerFacts.length ? {
+      vehicleDescription: text(sticker?.vehicleDescription) ?? undefined,
+      basePrice: numeric(sticker?.basePrice) ? formatStickerMoney(sticker.basePrice, sticker!) : undefined,
+      totalOptions: numeric(sticker?.totalOptions) ? formatStickerMoney(sticker.totalOptions, sticker!) : undefined,
+      destinationCharge: numeric(sticker?.destinationCharge) ? formatStickerMoney(sticker.destinationCharge, sticker!) : undefined,
       msrp: numeric(sticker?.totalMsrp) ? formatStickerMoney(sticker.totalMsrp, sticker!) : undefined,
       equipmentGroup: text(sticker?.equipmentGroup) ?? undefined,
       equipmentGroupContents: groupContents,
       equipmentGroupPrice: numeric(sticker?.equipmentGroupPrice) ? formatStickerMoney(sticker.equipmentGroupPrice, sticker!) : undefined,
       optionLines: stickerOptionLines,
       optionLabel: groupContents !== undefined ? "Optional equipment" : "Captured equipment",
+      exteriorColor: text(sticker?.exteriorColor) ?? undefined,
+      interiorColor: text(sticker?.interiorColor) ?? undefined,
+      engine: factText(sticker?.engine) ?? undefined,
+      transmission: factText(sticker?.transmission) ?? undefined,
+      standardEquipment: present((sticker?.standardEquipment ?? []).map(item => factText(item))),
+      warranty: present((sticker?.warranty ?? []).map(item => factText(item))),
     } : undefined,
+    scanFacts: present([
+      join([
+        numeric(sticker?.totalMsrp) ? `${formatStickerMoney(sticker.totalMsrp, sticker!)} original MSRP` : null,
+        sticker?.equipmentGroup ? `Group ${sticker.equipmentGroup}` : null,
+      ]),
+      importantItems(sticker?.options ?? [])[0] ?? join([factText(sticker?.engine), factText(sticker?.transmission)]),
+    ], 2),
     sourceNote: demoSticker ? 'Synthetic sample · not an original' : join([sourceNote(sticker?.dataState, stickerFacts.length > 0), sticker?.sourceMessage, sticker?.failureReason]),
     href: stickerHref, target: 'data', action: demoSticker ? 'Open demo sticker' : 'Open sticker', dataAction: 'View sticker data', hasCapturedData: stickerFacts.length > 0,
     previewUrl: demoSticker?.previewUrl, demo: Boolean(demoSticker),
@@ -273,8 +307,9 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   const history = vehicle.autoCheckReport;
   const historyHref = officialVehicleDocumentUrl(history?.url, 'autocheck', listing);
   const checks = historyCheckFacts(history);
-  const scanChecks = checks.filter(check => check.priority <= 1 || /corrected title|events reported/i.test(check.full));
-  const scanCheck = scanChecks[0];
+  const scanCheck = checks.find(check => /accident|damage/i.test(check.row.label) && !/lien|corrected title/i.test(check.full))
+    ?? checks.find(check => /odometer|service|repair|recall/i.test(check.row.label) && !/lien|corrected title/i.test(check.full))
+    ?? checks.find(check => /salvage|rebuilt|flood|lemon|buyback|rollback|structural|total loss/i.test(check.full));
   const scanCheckText = scanCheck && /^(?:events reported|no issues?|no problems?|clear|normal)$/i.test(scanCheck.row.values[0] ?? '') && scanCheck.row.detail
     ? scanCheck.row.detail : scanCheck?.summary;
   const scoreRange = numeric(history?.scoreRangeLow) && numeric(history?.scoreRangeHigh) && history.scoreRangeLow <= history.scoreRangeHigh ? `${history.scoreRangeLow}–${history.scoreRangeHigh}` : undefined;
@@ -319,11 +354,8 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
     compactFacts: historyCompact.slice(0, 2), sourceNote: sourceNote(history?.dataState, true, history?.reportRunAt, 'Report run'),
     scanFacts: present([
       join([numeric(history?.score) ? `Score ${formatNumber(history.score)}` : null, numeric(history?.ownerCount) ? `${formatNumber(history.ownerCount)} ${history.ownerCount === 1 ? 'owner' : 'owners'}` : null]),
-      // The surrounding demo banner establishes provenance; keep the scan
-      // strip focused on the event while full Records retains the source text.
       demoSticker ? scanCheckText?.replace(/\s*·\s*Synthetic (?:example|result)$/i, '') : scanCheckText,
-      scanChecks.length > 1 ? `${scanChecks.length} history items to review in Records` : null,
-      inService.source === 'autocheck' && inService.date ? `Est. in-service ${formatDate(inService.date)}` : null,
+      odometer,
     ]),
     href: historyHref, target: 'data', action: 'Open history', dataAction: 'View AutoCheck data', hasCapturedData: historyFacts.length > 0,
     score: numeric(history?.score) ? { value: history.score, range: scoreRange } : undefined,
@@ -360,6 +392,10 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
       { label: 'MSRP', values: [numeric(equipment?.totalMsrp) && equipment.totalMsrp !== sticker?.totalMsrp ? formatNumber(equipment.totalMsrp) : null] },
     ]),
     compactFacts: present([packages[0], equipmentItems.find(item => !packages.some(pkg => equipmentIdentity(pkg) === equipmentIdentity(item))) ?? powertrain], 2),
+    scanFacts: present([
+      packages[0] ?? equipmentItems[0],
+      equipmentItems.find(item => item !== equipmentItems[0] && !packages.some(pkg => equipmentIdentity(pkg) === equipmentIdentity(item))) ?? powertrain,
+    ], 2),
     sourceNote: sourceNote(equipment?.dataState, true, equipment?.capturedAt),
     href: equipmentHref, target: 'equipment', action: 'Open equipment', dataAction: 'View equipment data', hasCapturedData: hasEquipment,
   });

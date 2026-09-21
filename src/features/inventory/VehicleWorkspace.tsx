@@ -154,6 +154,16 @@ function historyCheckTone(check: HistoryCheck) {
   return odometerWarning ? "review" : serviceCountOnly ? "info" : /no cpo info available/i.test(check.status ?? "") ? "unknown" : autoCheckResultTone(check.status);
 }
 
+function isPrimaryAutoCheckFinding(check: HistoryCheck) {
+  const label = check.label.trim();
+  const result = [check.status, check.detail].filter(Boolean).join(" · ");
+  if (/lien|corrected title/i.test(result)) return false;
+  if (/state title brand|title brand/i.test(label)) {
+    return historyCheckTone(check) === "clear" || /salvage|rebuilt|flood|lemon|buyback|structural|total loss/i.test(result);
+  }
+  return /accident|damage|service|repair|odometer|open recall/i.test(label) || historyCheckTone(check) === "review";
+}
+
 function AutoCheckFindings({ checks, report, label }: { checks: HistoryCheck[]; report: InventoryVehicle["autoCheckReport"]; label: string }) {
   return <div className="inventory-vehicle-document__checks" aria-label={label}>
     {checks.map((check, index) => {
@@ -613,7 +623,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
     autoCheck?.scoreRangeLow != null && autoCheck.scoreRangeHigh != null
       ? `${autoCheck.scoreRangeLow}–${autoCheck.scoreRangeHigh}`
       : null;
-  const autoCheckHighlights = autoCheck?.checks?.filter(check => /^(?:state title brand|accident \/ damage)$/i.test(check.label.trim()) || historyCheckTone(check) === "review") ?? [];
+  const autoCheckHighlights = autoCheck?.checks?.filter(isPrimaryAutoCheckFinding) ?? [];
   const autoCheckOtherChecks = autoCheck?.checks?.filter(check => !autoCheckHighlights.includes(check)) ?? [];
   const autoCheckFacts = autoCheck
     ? [
@@ -690,6 +700,8 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
           <dl className="vdp-history-summary" aria-label="AutoCheck summary">
             {autoCheck.score != null || autoCheckScoreRange ? <Fact label="AutoCheck score" emphasize>{autoCheck.score ?? "Not reported"}{autoCheckScoreRange ? <small>Typical {autoCheckScoreRange}</small> : null}</Fact> : null}
             {autoCheck.ownerCount != null ? <Fact label="Owners">{autoCheck.ownerCount}</Fact> : null}
+            {autoCheck.usage ? <Fact label="Vehicle use">{sourceDistanceText(autoCheck.usage)}</Fact> : null}
+            {autoCheck.lastReportedOdometer != null ? <Fact label="Last odometer">{formatMileage(autoCheck.lastReportedOdometer)}{autoCheck.lastReportedOdometerDate ? <small>{formatDate(autoCheck.lastReportedOdometerDate)}</small> : null}</Fact> : null}
           </dl>
           {autoCheckHighlights.length ? <AutoCheckFindings checks={autoCheckHighlights} report={autoCheck} label="AutoCheck at-a-glance results" /> : null}
           {autoCheckOtherChecks.length ? <details className="vdp-record-source-details vdp-history-more">

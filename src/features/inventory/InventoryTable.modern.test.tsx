@@ -447,7 +447,7 @@ describe('modern inventory result access', () => {
     const signals = document.querySelector('.vehicle-resources--scan');
     expect(signals).toHaveTextContent('2 owners');
     expect(signals).toHaveTextContent('Saved report · refresh at source');
-    expect(signals).not.toHaveTextContent(/CAD|USD/);
+    expect(signals).toHaveTextContent('CAD 52,995 original MSRP');
     expect(screen.getByRole('button', { name: /Open vehicle records/ })).toBeInTheDocument();
     expect(screen.queryByText('Floor mats')).not.toBeInTheDocument();
   });

@@ -1,8 +1,10 @@
+@keyframes inventory-records-panel-in { from { opacity:.75; transform:translateX(10px); } to { opacity:1; transform:translateX(0); } }
+@keyframes inventory-records-backdrop-in { from { opacity:0; } to { opacity:1; } }
 .inventory-records-panel {
   position:fixed; top:var(--inventory-records-top,88px); right:16px; bottom:16px; z-index:210;
   display:flex; flex-direction:column; width:min(600px,45vw); min-width:0; overflow:hidden;
   border:1px solid var(--border-strong); border-radius:9px; background:var(--surface); color:var(--ink-900);
-  box-shadow:var(--ifx-elevation-3); font:400 14px/1.4 var(--font-app); animation:none;
+  box-shadow:var(--ifx-elevation-3); font:400 14px/1.4 var(--font-app); animation:inventory-records-panel-in 170ms cubic-bezier(.2,.8,.2,1);
 }
 .inventory-records-panel, .inventory-records-panel * { box-sizing:border-box; }
 .inventory-records-panel :is(button,a) { font-family:inherit; -webkit-tap-highlight-color:transparent; }
@@ -56,7 +58,7 @@
 .inventory-records-panel .vehicle-resource-sticker__options { grid-template-columns:minmax(0,1fr); }
 .inventory-records-panel .vehicle-resource-source-note { font-size:12px; }
 
-.inventory-records-backdrop { position:fixed; inset:0; z-index:209; background:color-mix(in srgb,var(--navy-900) 25%,transparent); }
+.inventory-records-backdrop { position:fixed; inset:0; z-index:209; background:color-mix(in srgb,var(--navy-900) 25%,transparent); animation:inventory-records-backdrop-in 140ms ease-out; }
 @media (max-width:760px) {
   .inventory-records-panel { top:64px; right:0; bottom:0; width:100%; max-width:none; border-width:1px 0 0; border-radius:12px 12px 0 0; padding-bottom:env(safe-area-inset-bottom,0px); }
   .inventory-records-panel__header { padding-inline:14px; }
@@ -73,5 +75,5 @@
   .inventory-records-panel .vehicle-resources--preview .vehicle-resource-summary__source { min-height:44px; }
 }
 @media (prefers-reduced-motion:reduce) {
-  .inventory-records-panel, .inventory-records-panel * { animation:none; transition:none; scroll-behavior:auto; }
+  .inventory-records-panel,.inventory-records-backdrop, .inventory-records-panel * { animation:none; transition:none; scroll-behavior:auto; }
 }

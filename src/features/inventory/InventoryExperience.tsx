@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { InventoryPredictiveSearch } from "./InventoryPredictiveSearch";
 import { serviceWorkflowStatus } from "../../lib/service-readiness";
-import { runInterfaceTransition } from "../../lib/interfaceTransition";
 import { useModalBackgroundIsolation } from "../../lib/useModalBackgroundIsolation";
 import { InventoryMobileList, InventoryTable, inventorySortSummary } from "./InventoryTable";
 import { VehicleWorkspace } from "./VehicleWorkspace";
@@ -409,9 +408,11 @@ export function InventoryExperience(props: InventoryExperienceProps) {
   const selectedVehicleId = controlledSelectedVehicleId !== undefined ? controlledSelectedVehicleId : internalSelectedVehicleId;
   const filterPanelId = useId();
   const backgroundRef = useRef<HTMLDivElement>(null);
+  const resultsSurfaceRef = useRef<HTMLDivElement>(null);
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
   const workspaceReturnFocusRef = useRef<HTMLElement | null>(null);
   const pendingWorkspaceReturnFocusRef = useRef<{ vehicleId: string; trigger: HTMLElement | null } | null>(null);
+  const [compactResults, setCompactResults] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 760px)").matches);
   const stores = useMemo(() => uniqueStores(homeStore, vehicles, groupStores), [groupStores, homeStore, vehicles]);
   const groupVehicleCount = vehicles.length;
   const homeVehicleCount = useMemo(
@@ -425,16 +426,30 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     onScopeChange?.(next);
   };
   const setSelectedVehicleId = (next: string | null) => {
-    const updateSelection = () => {
-      if (controlledSelectedVehicleId === undefined) setInternalSelectedVehicleId(next);
-      onSelectedVehicleChange?.(next);
-    };
-    if (typeof window !== "undefined" && window.matchMedia?.("(max-width: 720px)").matches) {
-      updateSelection();
-      return;
-    }
-    runInterfaceTransition(updateSelection, "vehicle");
+    if (controlledSelectedVehicleId === undefined) setInternalSelectedVehicleId(next);
+    onSelectedVehicleChange?.(next);
   };
+
+  useLayoutEffect(() => {
+    const surface = resultsSurfaceRef.current;
+    if (!surface || typeof window === "undefined") return;
+    const media = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 760px)") : null;
+    const update = () => {
+      const width = surface.getBoundingClientRect().width;
+      const next = Boolean(media?.matches || width > 0 && width <= 1000);
+      setCompactResults(current => current === next ? current : next);
+    };
+    update();
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(update) : null;
+    observer?.observe(surface);
+    media?.addEventListener?.("change", update);
+    window.addEventListener("resize", update);
+    return () => {
+      observer?.disconnect();
+      media?.removeEventListener?.("change", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
 
   const visibleVehicleTrigger = (vehicleId: string) => {
     const triggers = Array.from(
@@ -685,9 +700,20 @@ export function InventoryExperience(props: InventoryExperienceProps) {
         </> : null}
         </div>
 
-        <div className="inventory-results-surface">
+        <div className="inventory-results-surface" ref={resultsSurfaceRef}>
           {pageVehicles.length ? (
-            <>
+            compactResults ? <InventoryMobileList
+              vehicles={pageVehicles}
+              selectedVehicleId={selectedVehicleId}
+              onSelectVehicle={openVehicleWorkspace}
+              onOpenSourceRecord={openSourceRecord}
+              canRequestVehicle={canRequestVehicle}
+              moveActionFor={moveActionFor}
+              onRequestVehicle={onRequestVehicle}
+              onMoveVehicle={onMoveVehicle}
+              onTrackMovement={onTrackMovement}
+              onOpenListing={onOpenListing}
+            /> :
               <TableComponent
                 vehicles={pageVehicles}
                 selectedVehicleId={selectedVehicleId}
@@ -702,19 +728,6 @@ export function InventoryExperience(props: InventoryExperienceProps) {
                 onOpenListing={onOpenListing}
                 onOpenSourceRecord={openSourceRecord}
               />
-              <InventoryMobileList
-                vehicles={pageVehicles}
-                selectedVehicleId={selectedVehicleId}
-                onSelectVehicle={openVehicleWorkspace}
-                onOpenSourceRecord={openSourceRecord}
-                canRequestVehicle={canRequestVehicle}
-                moveActionFor={moveActionFor}
-                onRequestVehicle={onRequestVehicle}
-                onMoveVehicle={onMoveVehicle}
-                onTrackMovement={onTrackMovement}
-                onOpenListing={onOpenListing}
-              />
-            </>
           ) : (
             <div className="inventory-empty-results">
               <Search size={28} strokeWidth={1.75} aria-hidden="true" />

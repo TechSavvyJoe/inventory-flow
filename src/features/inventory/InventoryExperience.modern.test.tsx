@@ -206,7 +206,7 @@ describe('vehicle workspace background isolation', () => {
   beforeEach(() => window.sessionStorage.clear());
 
   function openWorkspace() {
-    fireEvent.click(screen.getAllByRole('button', { name: /^Open details for 2024 Ford F-150/i })[0]);
+    fireEvent.click(screen.getByRole('button', { name: /^Open vehicle details for 2024 Ford F-150/i }));
     return screen.getByRole('dialog');
   }
 
@@ -245,7 +245,7 @@ describe('vehicle workspace background isolation', () => {
         metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
-    const trigger = screen.getAllByRole('button', { name: /^Open details for 2024 Ford F-150/i })[0];
+    const trigger = screen.getByRole('button', { name: /^Open vehicle details for 2024 Ford F-150/i });
     trigger.focus();
     fireEvent.click(trigger);
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -263,7 +263,7 @@ describe('vehicle workspace background isolation', () => {
         metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
-    const trigger = screen.getAllByRole('button', { name: /^Open details for 2024 Ford F-150/i })[0];
+    const trigger = screen.getByRole('button', { name: /^Open vehicle details for 2024 Ford F-150/i });
     trigger.focus();
     fireEvent.click(trigger);
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close vehicle details' }));

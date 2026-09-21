@@ -166,16 +166,17 @@ describe('vehicle document workspace', () => {
     const highlights = within(history).getByLabelText('AutoCheck at-a-glance results');
     expect(within(highlights).getByText('Clean')).toBeVisible();
     expect(within(highlights).getByText('No accidents or damage reported')).toBeVisible();
-    expect(within(highlights).getByText('Events reported · Corrected title')).toBeVisible();
+    expect(within(highlights).getByText('No open recalls')).toBeVisible();
+    expect(within(highlights).getByText('Odometer')).toBeVisible();
+    expect(within(highlights).queryByText('Events reported · Corrected title')).not.toBeInTheDocument();
     const more = history.querySelector('.vdp-history-more') as HTMLDetailsElement;
     expect(more.open).toBe(false);
     const additional = within(history).getByLabelText('Additional AutoCheck results');
-    expect(within(additional).getByText('No open recalls')).not.toBeVisible();
+    expect(within(additional).getByText('Events reported · Corrected title')).not.toBeVisible();
     // jsdom does not implement the native summary click default action.
     more.open = true;
     fireEvent(more, new Event('toggle'));
-    expect(within(additional).getByText('No open recalls')).toBeVisible();
-    expect(within(additional).getByText('Odometer')).toBeVisible();
+    expect(within(additional).getByText('Events reported · Corrected title')).toBeVisible();
   });
 
   it('does not claim original links exist when only a failed capture is available', () => {
