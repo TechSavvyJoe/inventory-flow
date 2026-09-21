@@ -56,6 +56,22 @@ describe('Premium vehicle workspace shares the operational record', () => {
     expect(panel).toHaveTextContent('Oil and filter service')
     expect(panel).toHaveTextContent('Records don’t confirm availability')
   })
+  it('keeps a verified empty Ford history in Waiting for service without adding an empty record card', () => {
+    const vehicle = premiumVehicle({
+      fordOasis: {
+        dataState: 'current', openFieldServiceActions: [], openActionsCaptured: true,
+        warrantyCoverages: [], extendedCoverageExpirations: [],
+        serviceHistory: {
+          dataState: 'current', checkedAt: '2026-09-21T20:20:00.000Z', historyCaptured: true,
+          repairOrderCount: 0, detailScanCount: 0, inspectionSearchStatus: 'not_identified',
+        },
+      },
+    })
+    showPremiumVehicle(vehicle)
+    expect(screen.getByRole('link', { name: 'Service: Waiting for service' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'Records' }))
+    expect(screen.getByRole('tabpanel', { name: 'Records' })).not.toHaveTextContent('Latest Ford dealer service')
+  })
   it('keeps direct move actions connected to the supplied authorized intent', () => {
     const move = vi.fn()
     const vehicle = premiumVehicle()

@@ -610,6 +610,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const serviceHistory = fordOasis?.serviceHistory ?? null;
   const latestService = serviceHistory?.latestRepairOrder ?? null;
   const recentInspection = serviceHistory?.recentInspection ?? null;
+  const showServiceHistory = Boolean(serviceHistory && (latestService || !serviceHistory.historyCaptured));
   const openRecallCount = fordOasis?.openFieldServiceActions.length ?? 0;
   const hasCapturedRecallResult = hasCapturedOasisActionResult(fordOasis);
   // Format captured calendar dates consistently without deriving coverage eligibility.
@@ -774,7 +775,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             </ul>
           ) : null}
 
-          {serviceHistory ? (
+          {serviceHistory && showServiceHistory ? (
             <CapturedRecordSection
               title="Latest Ford dealer service"
               count={serviceHistory.repairOrderCount ? countLabel(serviceHistory.repairOrderCount, "repair order") : "No repair orders"}
@@ -804,7 +805,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                 ) : null}
               </> : (
                 <p className="inventory-vehicle-document__empty">
-                  {serviceHistory.historyCaptured ? "No Ford dealer repair orders were found for this VIN." : "Ford service history could not be verified."}
+                  Ford service history could not be verified.
                 </p>
               )}
               <RecordSourceAction
@@ -853,7 +854,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             </CapturedRecordSection>
           ) : null}
 
-          {!fordOasisFacts.length && !openRecallCount && !fordOasis.warrantyCoverages.length && !fordOasis.extendedCoverageExpirations.length && !serviceHistory ? (
+          {!fordOasisFacts.length && !openRecallCount && !fordOasis.warrantyCoverages.length && !fordOasis.extendedCoverageExpirations.length && !showServiceHistory ? (
             <p className="inventory-vehicle-document__empty">No OASIS details are available. Open OASIS for the current report.</p>
           ) : null}
           <RecordSourceDetails><p>{fordOasis.capturedAt ? `Captured ${formatDateTime(fordOasis.capturedAt)}. ` : ""}Dealer login may be required. The lookup opens OASIS for this VIN; it is not a saved copy of the report.</p></RecordSourceDetails>
