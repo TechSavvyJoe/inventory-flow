@@ -203,7 +203,7 @@ async function advanceToArrival(baseUrl: string, vehicle: { vin: string }, suffi
 }
 
 describe('Inventory Flow API', () => {
-  it('uses the manager sold board to remove delivered VINs, retain pending VINs, and surface unresolved pending identities', async () => {
+  it('uses the manager sold board to remove delivered VINs without reviving off-market pending VINs', async () => {
     let deliveredVin = ''
     let pendingCurrentVin = ''
     const pendingCarryoverVin = '1FTFW1E50NFA99999'
@@ -225,8 +225,8 @@ describe('Inventory Flow API', () => {
         summary: { sold_records: 4, delivered_records: 1, sold_not_marked_delivered: 3 },
       }
       // The manager-only pending VIN is deliberately absent from public and CRM
-      // evidence. The redacted board projection is still allowed to keep it in
-      // the operational view until delivery is explicitly highlighted.
+      // evidence. It remains in the redacted audit projection but cannot be
+      // recreated as current inventory.
       release.managerDispositionOverlay = sanitizeManagerDispositionDocuments({
         documents: [{ expectedStore: 'Howell', data: source }],
         reportDate: release.reportDate,
@@ -237,17 +237,17 @@ describe('Inventory Flow API', () => {
     const bootstrap = await fetch(`${baseUrl}/api/bootstrap?homeStore=Howell&role=manager`).then((response) => response.json())
     expect(bootstrap.vehicles.some((vehicle) => vehicle.vin === deliveredVin)).toBe(false)
     expect(bootstrap.vehicles.some((vehicle) => vehicle.vin === pendingCurrentVin)).toBe(true)
-    expect(bootstrap.vehicles).toContainEqual(expect.objectContaining({
-      vin: pendingCarryoverVin,
-      stockNumber: 'PENDING-OUT',
-      publicStore: 'Howell',
-      dataStatus: expect.stringContaining('delivery pending'),
-    }))
+    expect(bootstrap.vehicles.some((vehicle) => vehicle.vin === pendingCarryoverVin)).toBe(false)
     expect(bootstrap.attention).toContainEqual(expect.objectContaining({
       type: 'manager_pending_identity_review',
       stockNumber: 'PENDING-NOVIN',
     }))
     expect(bootstrap.managerDispositions).toHaveLength(4)
+    expect(bootstrap.managerDispositions).toContainEqual(expect.objectContaining({
+      vin: pendingCarryoverVin,
+      stockNumber: 'PENDING-OUT',
+      matchStatus: 'not_in_current_release',
+    }))
 
     const delivered = await fetch(`${baseUrl}/api/vehicles/${deliveredVin}?homeStore=Howell&role=manager`, {
       headers: roleHeaders('manager', 'Howell', 'Howell Manager'),
@@ -415,7 +415,7 @@ describe('Inventory Flow API', () => {
     expect(health.sources.resources.rows).toBe(1)
   })
 
-  it('exposes and searches VIN-linked factory equipment for public and CRM-only vehicles', async () => {
+  it('exposes and searches VIN-linked factory equipment for public and current DealerMail-only vehicles', async () => {
     const { baseUrl, database } = await harness()
     const vin = 'TESTDATAHWELL0001'
     const crm = database.prepare('SELECT crm_store_id FROM crm_vehicle_snapshots WHERE vin = ?').get(vin)
@@ -446,8 +446,8 @@ describe('Inventory Flow API', () => {
 
     database.prepare('DELETE FROM public_vehicle_snapshots WHERE vin = ?').run(vin)
     const crmOnlyResponse = await fetch(
-      `${baseUrl}/api/vehicles?includeCrmOnly=true&q=${encodeURIComponent('Antimatter Blue Metallic')}&limit=10`,
-      { headers: roleHeaders('sales', crm.crm_store_id, 'CRM-only resource search') },
+      `${baseUrl}/api/vehicles?q=${encodeURIComponent('Antimatter Blue Metallic')}&limit=10`,
+      { headers: roleHeaders('sales', crm.crm_store_id, 'DealerMail-only resource search') },
     )
     const crmOnly = await crmOnlyResponse.json()
     expect(crmOnlyResponse.status).toBe(200)
@@ -455,7 +455,7 @@ describe('Inventory Flow API', () => {
       expect.arrayContaining([
         expect.objectContaining({
           vin,
-          publicListingState: 'Not publicly listed in verified release',
+          publicListingState: 'Pre-listing — current DealerMail record; public website listing not yet observed',
           factoryEquipment: expect.objectContaining({ totalMsrp: 68420 }),
         }),
       ]),
@@ -573,7 +573,7 @@ describe('Inventory Flow API', () => {
     expect(privateSearch.items[0].privateEvidence).toBeUndefined()
   })
 
-  it('keeps CRM-only held VINs in the safe Today hold-signal totals', async () => {
+  it('keeps current DealerMail-only held VINs visible and in the safe Today hold-signal totals', async () => {
     const { baseUrl, database } = await harness()
     const before = await fetch(`${baseUrl}/api/bootstrap?homeStore=Howell&role=sales`).then((response) => response.json())
     const held = database
@@ -583,7 +583,7 @@ describe('Inventory Flow API', () => {
     database.prepare('DELETE FROM public_vehicle_snapshots WHERE vin = ?').run(held.vin)
 
     const after = await fetch(`${baseUrl}/api/bootstrap?homeStore=Howell&role=sales`).then((response) => response.json())
-    expect(after.vehicles.some((vehicle: { vin: string }) => vehicle.vin === held.vin)).toBe(false)
+    expect(after.vehicles.some((vehicle: { vin: string }) => vehicle.vin === held.vin)).toBe(true)
     expect(after.holdSignals.find((row: { store: string }) => row.store === held.crm_store_id)).toEqual(
       before.holdSignals.find((row: { store: string }) => row.store === held.crm_store_id),
     )

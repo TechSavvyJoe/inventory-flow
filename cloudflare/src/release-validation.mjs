@@ -737,11 +737,14 @@ function validateManagerDisposition(release, normalizedVehicles, reportDate) {
   return summary
 }
 
-function activeInventoryMembership(publicByVin, managerDispositionOverlay) {
-  const activeVins = new Set(publicByVin.keys())
+function activeInventoryMembership(publicByVin, crmByVin, managerDispositionOverlay) {
+  // A current vehicle must be present in at least one current operational
+  // source. Public listings and DealerMail are complementary: a CRM-only row
+  // can be a just-arrived pre-listing vehicle, while a manager-log row alone
+  // is historical audit evidence and must not recreate off-market inventory.
+  const activeVins = new Set([...publicByVin.keys(), ...crmByVin.keys()])
   const activeStoreCounts = Object.create(null)
   let managerDeliveredExclusionCount = 0
-  let managerPendingCarryoverCount = 0
   let managerPendingIdentityReviewCount = 0
   for (const record of managerDispositionOverlay?.records ?? []) {
     const vin = typeof record?.vin === 'string' && VIN.test(record.vin) ? record.vin : null
@@ -751,25 +754,22 @@ function activeInventoryMembership(publicByVin, managerDispositionOverlay) {
       continue
     }
     if (record?.soldManagerLog === true && record?.deliveredManagerLog === false) {
-      if (vin) {
-        if (!activeVins.has(vin)) {
-          activeVins.add(vin)
-          managerPendingCarryoverCount += 1
-        }
-      } else {
+      if (!vin) {
         managerPendingIdentityReviewCount += 1
       }
     }
   }
   for (const vin of activeVins) {
-    const store = publicByVin.get(vin)?.store
+    const store = publicByVin.get(vin)?.store || crmByVin.get(vin)?.storeName
     if (typeof store === 'string' && store) activeStoreCounts[store] = (activeStoreCounts[store] ?? 0) + 1
   }
   return {
     activeInventoryCount: activeVins.size,
     activeStoreCounts,
     managerDeliveredExclusionCount,
-    managerPendingCarryoverCount,
+    // Kept for receipt compatibility. Pending manager records no longer carry
+    // a VIN back into active inventory after both current sources lose it.
+    managerPendingCarryoverCount: 0,
     managerPendingIdentityReviewCount,
   }
 }
@@ -974,7 +974,7 @@ export function validateReleaseBundle(bundle, {
     release.warnings = [...new Set(warnings)]
   }
   const managerDisposition = validateManagerDisposition(release, normalized, bundle.reportDate)
-  const activeMembership = activeInventoryMembership(publicData.byVin, release.managerDispositionOverlay)
+  const activeMembership = activeInventoryMembership(publicData.byVin, crm.byVin, release.managerDispositionOverlay)
   return {
     reportDate: bundle.reportDate,
     publicRowCount: publicData.byVin.size,

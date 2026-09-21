@@ -49,6 +49,41 @@ describe('portable inventory service core', () => {
     },
   )
 
+  it('keeps a current DealerMail-only arrival visible without reviving an off-market manager-log vehicle', () => {
+    const { database, portable } = harness()
+    const crmOnlyVin = 'TESTDATAHWELL0002'
+    const offMarketVin = '1FTFW1E50NFA00009'
+    database.prepare('DELETE FROM public_vehicle_snapshots WHERE vin = ?').run(crmOnlyVin)
+    const overlay = {
+      records: [{
+        stockNumber: 'OFFMARKET', vin: offMarketVin, vehicleName: null,
+        soldManagerLog: true, deliveredManagerLog: false, deliveryDate: null,
+        confidence: 'high', sourceStore: 'Howell', sourcePeriod: '2026-08',
+        matchMethod: 'vin', matchStatus: 'not_in_current_release', physicalStore: null,
+        reviewRequired: true, soldLabel: 'Sold — manager log',
+        deliveryLabel: 'Not marked delivered — manager log',
+      }],
+    }
+    database.prepare('UPDATE app_state SET value = ?, updated_at = ? WHERE key = ?').run(
+      JSON.stringify(overlay), SYNTHETIC_NOW.toISOString(), 'current_manager_disposition_overlay_json',
+    )
+    const context = { role: 'manager', store: 'Howell', user: 'Synthetic manager' }
+
+    const bootstrap = portable.bootstrap(context)
+    const crmOnly = bootstrap.vehicles.find((vehicle) => vehicle.vin === crmOnlyVin)
+    expect(crmOnly).toMatchObject({
+      dataStatus: 'Pre-listing — current DealerMail record; public website listing not yet observed',
+      publicListingState: 'Pre-listing — current DealerMail record; public website listing not yet observed',
+    })
+    expect(crmOnly.listingUrl).toBeUndefined()
+    expect(bootstrap.vehicles.some((vehicle) => vehicle.vin === offMarketVin)).toBe(false)
+    expect(portable.listVehicles({ limit: 100 }, context).items.some((vehicle) => vehicle.vin === offMarketVin)).toBe(false)
+    expect(() => portable.getVehicle(offMarketVin, context)).toThrowError(expect.objectContaining({ code: 'VEHICLE_NOT_FOUND' }))
+    expect(bootstrap.managerDispositions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ vin: offMarketVin, matchStatus: 'not_in_current_release' }),
+    ]))
+  })
+
   it.each([
     ['group manager outside the route', { role: 'group_manager', store: 'Lincoln', user: 'Group Manager' }, true],
     ['home-store manager', { role: 'manager', store: 'Howell', user: 'Howell Manager' }, true],

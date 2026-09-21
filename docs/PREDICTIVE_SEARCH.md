@@ -19,4 +19,4 @@ The server's `VehicleRecord.searchText` is copied to `InventoryVehicle.authorize
 
 This remains a local prototype boundary: role and Home Store are currently preview controls rather than claims from production authentication. A production release must derive user, role, store access, and search fields on the server from authenticated claims. Client-side role controls alone are not an authorization mechanism.
 
-CRM-only rows are intentionally not mixed into the default public-inventory browser or described as available. A future CRM-only search mode must be explicit, separately labeled `CRM only — no current public listing`, and keep CRM/public/hold/CDK states distinct.
+Current DealerMail-only rows are shown in the operational inventory browser as `Pre-listing — current DealerMail record; public website listing not yet observed`. They are never described as publicly available. A vehicle with neither a current public listing nor a current DealerMail record is not active inventory; manager-log rows remain audit evidence only. The shared REST API and MCP remain restricted to current public listings.

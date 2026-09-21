@@ -197,31 +197,27 @@ function buildIndexes(dataset) {
   const managerDispositionByVin = new Map(managerDispositionRecords
     .filter((row) => typeof row?.vin === 'string' && VIN_PATTERN.test(row.vin))
     .map((row) => [row.vin, row]))
-  const managerPendingVins = new Set(managerDispositionRecords
-    .filter((row) => row?.soldManagerLog === true && row?.deliveredManagerLog === false &&
-      typeof row?.vin === 'string' && VIN_PATTERN.test(row.vin))
-    .map((row) => row.vin))
   const managerDeliveredVins = new Set(managerDispositionRecords
     .filter((row) => row?.deliveredManagerLog === true &&
       typeof row?.vin === 'string' && VIN_PATTERN.test(row.vin) &&
       row?.matchStatus !== 'matched_vin_stock_review' && row?.matchStatus !== 'stock_ambiguous')
     .map((row) => row.vin))
-  // A highlighted sold-board row is explicit delivered evidence for active
-  // Inventory Flow membership. The original public and CRM source rows remain
-  // in the encrypted audit release; only the operational app view changes.
-  // Sold-but-unhighlighted VINs remain active even after a source removes them.
-  const vins = new Set([...publicByVin.keys(), ...crmByVin.keys(), ...managerPendingVins])
+  // Current inventory must be backed by a current public listing or current
+  // DealerMail record. The manager sold board is retained as redacted audit
+  // evidence, but it must never revive a vehicle that has left both sources.
+  // That keeps off-market sold/delivered units out of the app and API while
+  // allowing fresh DealerMail-only arrivals to remain visible as pre-listing.
+  const vins = new Set([...publicByVin.keys(), ...crmByVin.keys()])
   for (const vin of managerDeliveredVins) vins.delete(vin)
   return {
     publicByVin, crmByVin, holdByVin, resourceByVin, homeByVin,
     releasedHistoryByVin, managerDispositionOverlay, managerDispositionRecords,
-    managerDispositionByVin, managerPendingVins, managerDeliveredVins, vins,
+    managerDispositionByVin, managerDeliveredVins, vins,
   }
 }
 
-function managerPendingRecord(source) {
-  return source?.managerDispositionRecord?.soldManagerLog === true &&
-    source.managerDispositionRecord.deliveredManagerLog === false
+function currentInventoryRecord(source) {
+  return Boolean(source?.publicRecord || source?.crmRecord)
 }
 
 function sourceVehicle(indexes, vin) {
@@ -700,8 +696,7 @@ function movementSummary(source, activeTransfer, transfer, publicFreshness, even
       departedAt: movementDepartureAt(activeTransfer, events),
     }
   }
-  const sourceLocation = source.publicRecord?.store || source.crmRecord?.storeName ||
-    (managerPendingRecord(source) ? source.managerDispositionRecord?.sourceStore : null) || 'Unknown'
+  const sourceLocation = source.publicRecord?.store || source.crmRecord?.storeName || 'Unknown'
   return {
     state: 'source_reported',
     label: publicFreshness === 'current' ? 'Source-reported location' : 'Last verified source location',
@@ -720,9 +715,6 @@ function vehicleName(source) {
       .filter(Boolean)
       .join(' ') ||
     cleanText(source.managerDispositionRecord?.vehicleName) ||
-    (managerPendingRecord(source) && cleanText(source.managerDispositionRecord?.stockNumber)
-      ? `Vehicle ${cleanText(source.managerDispositionRecord.stockNumber)}`
-      : '') ||
     source.vin
   )
 }
@@ -833,8 +825,7 @@ function publicPhotoUrls(publicRecord) {
 function vehicleView(source, transferRows, context, meta, { includePrivate = false, includePublicScan = false } = {}) {
   const publicRecord = source.publicRecord
   const crmRecord = source.crmRecord
-  const publicStore = publicRecord?.store || crmRecord?.storeName ||
-    (managerPendingRecord(source) ? source.managerDispositionRecord?.sourceStore : null)
+  const publicStore = publicRecord?.store || crmRecord?.storeName
   if (!STORE_NAMES.includes(publicStore)) return null
   const visibleTransferRows = transferRows.filter((row) => transferVisible(row, context))
   const latest = visibleTransferRows[0] ?? null
@@ -944,7 +935,9 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     listedPrice: finiteNumber(publicRecord?.listed_price ?? crmRecord?.priceNumber),
     msrp: finiteNumber(publicRecord?.msrp),
     mileage: finiteNumber(publicRecord?.mileage ?? crmRecord?.mileageNumber),
-    daysListed: daysBetween(publicRecord?.inventory_date, reportDate),
+    daysListed: publicRecord
+      ? daysBetween(publicRecord.inventory_date, reportDate)
+      : finiteNumber(crmRecord?.inventoryAgeNumber),
     exteriorColor: cleanText(publicRecord?.exterior_color) || cleanText(crmRecord?.colorRaw),
     interiorColor: cleanText(publicRecord?.interior_color),
     bodyStyle: cleanText(publicRecord?.body_style) || cleanText(crmRecord?.bodyRaw),
@@ -969,12 +962,12 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     homeStoreConfirmed: Boolean(source.homeAssignment),
     crmStore: cleanText(crmRecord?.storeName),
     sourceReportedLocation: publicStore,
-    websiteStatus: publicRecord ? cleanText(publicRecord.availability) || 'Not provided' : 'Not publicly listed',
+    websiteStatus: publicRecord ? cleanText(publicRecord.availability) || 'Not provided' : 'Current DealerMail record — not publicly listed',
     publicListingState: publicRecord
       ? meta.publicFreshness === 'current'
         ? 'Listed publicly; availability not confirmed'
         : 'Last verified public listing — availability not confirmed'
-      : 'Not publicly listed in verified release',
+      : 'Pre-listing — current DealerMail record; public website listing not yet observed',
     dealerOn: {
       inStock: typeof publicRecord?.in_stock === 'boolean' ? publicRecord.in_stock : null,
       inTransit: typeof publicRecord?.in_transit === 'boolean' ? publicRecord.in_transit : null,
@@ -989,8 +982,9 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     hold,
     movement,
     changeSummary: cleanText(publicRecord?.change_summary),
-    dataStatus: cleanText(publicRecord?.data_status) || (crmRecord ? 'CRM only — no current public listing' :
-      managerPendingRecord(source) ? 'Manager sold board — delivery pending; not in current public or CRM inventory' : 'Unknown'),
+    dataStatus: cleanText(publicRecord?.data_status) || (crmRecord
+      ? 'Pre-listing — current DealerMail record; public website listing not yet observed'
+      : 'Unknown'),
     ...(includePublicScan && publicRecord ? { publicScan: publicScanAudit(publicRecord) } : {}),
     ...(autoCheckReport ? { autoCheckReport } : {}),
     ...(windowSticker ? { windowSticker } : {}),
@@ -1772,17 +1766,15 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
 
   function attentionFromSnapshot(state) {
     const vehicles = state.sources
-      .filter((source) => source.publicRecord || managerPendingRecord(source))
+      .filter(currentInventoryRecord)
       .map((source) => vehicleFromSnapshot(state, source))
       .filter(Boolean)
     sortVehicles(vehicles)
     const visibleTransferRows = state.allTransferRows.filter((row) => transferVisible(row, state.context))
     const stores = storeSummaries(vehicles, state.dataset.holdRows, visibleTransferRows, state.currentNow)
-    const crmOnlyVehicles = state.sources.filter((source) => !source.publicRecord && !managerPendingRecord(source))
-      .map((source) => vehicleFromSnapshot(state, source)).filter(Boolean)
     return attentionItems(
       state.meta,
-      [...vehicles, ...crmOnlyVehicles],
+      vehicles,
       stores,
       visibleTransferRows,
       database,
@@ -1829,7 +1821,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         })
       }
       const vehicles = state.sources
-        .filter((source) => source.publicRecord || managerPendingRecord(source))
+        .filter(currentInventoryRecord)
         .map((source) => vehicleFromSnapshot(state, source))
         .filter(Boolean)
       sortVehicles(vehicles)
@@ -1846,8 +1838,6 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         )
       })
       const stores = storeSummaries(vehicles, state.dataset.holdRows, visibleTransferRows, state.currentNow)
-      const crmOnlyVehicles = state.sources.filter((source) => !source.publicRecord && !managerPendingRecord(source))
-        .map((source) => vehicleFromSnapshot(state, source)).filter(Boolean)
       return {
         access: {
           user: state.context.user,
@@ -1867,7 +1857,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         })),
         attention: attentionItems(
           state.meta,
-          [...vehicles, ...crmOnlyVehicles],
+          vehicles,
           stores,
           visibleTransferRows,
           database,
@@ -1986,9 +1976,8 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
 
     listVehicles(query = {}, contextInput = {}) {
       const state = snapshot(contextInput)
-      const includeCrmOnly = query.includeCrmOnly === true || String(query.includeCrmOnly).toLowerCase() === 'true'
       let vehicles = state.sources
-        .filter((source) => source.publicRecord || managerPendingRecord(source) || includeCrmOnly)
+        .filter(currentInventoryRecord)
         .map((source) => ({
           vehicle: vehicleFromSnapshot(state, source),
           privateIndex: state.context.canViewPrivateEvidence ? privateSearchText(source) : '',

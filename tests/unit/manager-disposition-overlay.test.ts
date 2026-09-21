@@ -135,6 +135,11 @@ describe('strict manager disposition overlay', () => {
 
   it('binds the sanitized projection and all four counts into cloud validation', () => {
     const { bundle, source } = fixtures()
+    source.records.push({
+      stock_number: 'OFFMARKET-1', vin: '1FTFW1E50NFA00009', vehicle: 'off-market source text discarded',
+      sold_manager_log: true, delivered_manager_log: false, delivery_date: null, confidence: 'high',
+    })
+    source.summary = { sold_records: 4, delivered_records: 1, sold_not_marked_delivered: 3 }
     const overlay = sanitizeManagerDispositionDocuments({ documents: [{ expectedStore: 'Howell', data: source }], reportDate: bundle.reportDate, vehicles: bundle.release.vehicles })
     const rawHash = 'b'.repeat(64)
     bundle.release.managerDispositionOverlay = overlay
@@ -142,15 +147,15 @@ describe('strict manager disposition overlay', () => {
       type: 'manager_disposition_overlay', reportDate: bundle.reportDate, extractedAt: null,
       sha256: managerDispositionSha256(overlay), bytes: new TextEncoder().encode(canonicalManagerDispositionJson(overlay)).byteLength,
       schemaVersion: MANAGER_DISPOSITION_SCHEMA, status: 'current', staleReason: null, rowCount: overlay.summary.recordCount,
-      metadata: { classification: 'operational-redacted', cloudUploadAllowed: true, sourceCount: 1, sourceStores: ['Howell'], soldRecordCount: 3, deliveredRecordCount: 1, reviewRecordCount: 1, strippedFieldCount: 1, sanitizer: 'strict_allowlist_v1', boundSourceSha256: rawHash },
+      metadata: { classification: 'operational-redacted', cloudUploadAllowed: true, sourceCount: 1, sourceStores: ['Howell'], soldRecordCount: overlay.summary.soldRecordCount, deliveredRecordCount: overlay.summary.deliveredRecordCount, reviewRecordCount: overlay.summary.reviewRecordCount, strippedFieldCount: 1, sanitizer: 'strict_allowlist_v1', boundSourceSha256: rawHash },
     }
-    bundle.release.manifest.manager_disposition_overlay = { status: 'complete', classification: 'operational-redacted', source_type: 'manager-log', path: `local-file:${bundle.reportDate.slice(0, 7)}-howell-operational.json`, sha256: rawHash, source_store: 'Howell', source_period: bundle.reportDate.slice(0, 7), sold_records: 3, delivered_records: 1, sold_not_marked_delivered: 2, matched_current_public_vins: 2, unmatched_records: 1, conflicting_records: 0, review_records: 1, cloud_upload_allowed: true }
+    bundle.release.manifest.manager_disposition_overlay = { status: 'complete', classification: 'operational-redacted', source_type: 'manager-log', path: `local-file:${bundle.reportDate.slice(0, 7)}-howell-operational.json`, sha256: rawHash, source_store: 'Howell', source_period: bundle.reportDate.slice(0, 7), sold_records: overlay.summary.soldRecordCount, delivered_records: overlay.summary.deliveredRecordCount, sold_not_marked_delivered: overlay.summary.soldNotMarkedDeliveredCount, matched_current_public_vins: overlay.summary.matchedRecordCount, unmatched_records: overlay.summary.unmatchedRecordCount, conflicting_records: overlay.summary.conflictingRecordCount, review_records: overlay.summary.reviewRecordCount, cloud_upload_allowed: true }
     const validated = validateReleaseBundle(bundle)
     expect(validated).toMatchObject({
-      managerDispositionRecordCount: 3,
-      managerSoldRecordCount: 3,
+      managerDispositionRecordCount: 4,
+      managerSoldRecordCount: 4,
       managerDeliveredRecordCount: 1,
-      managerDispositionReviewCount: 1,
+      managerDispositionReviewCount: 2,
       managerDeliveredExclusionCount: 1,
       managerPendingCarryoverCount: 0,
       managerPendingIdentityReviewCount: 1,
