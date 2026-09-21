@@ -2,7 +2,7 @@
 .inventory-service-link svg { flex-shrink: 0; }
 .inventory-service-link:hover { text-decoration: underline; }
 .inventory-service-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
-.inventory-service-link--needs_service { color: var(--amber); }
+.inventory-service-link--needs_service { color: color-mix(in srgb,var(--amber) 85%,var(--ink-900)); }
 .inventory-service-link--in_service { color: var(--blue-700); }
 .inventory-service-link--serviced { color: var(--green); }
 .inventory-service-link.is-detailed { margin: 0; font-size: 14px; }
