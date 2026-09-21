@@ -28,6 +28,15 @@ describe('Ford PTS retail service-history parser', () => {
     expect(parseServiceHistoryIndex(html, '1FMCU9G66PUA12345').state).toBe('vin_mismatch')
   })
 
+  it('accepts Ford PTS empty history only when the exact no-data signature is present', () => {
+    expect(parseServiceHistoryIndex('<h2>Retail Service Repair History</h2><div>No data found.</div>', vin)).toEqual({
+      state: 'ok',
+      repairOrders: [],
+    })
+    expect(parseServiceHistoryIndex('<h2>Retail Service Repair History</h2>', vin).state).toBe('vin_mismatch')
+    expect(parseServiceHistoryIndex('<h2>Retail Service Repair History</h2><div>No data found.</div>1FMCU9G66PUA12345', vin).state).toBe('vin_mismatch')
+  })
+
   it('extracts inspection evidence, parts, labor, and a concise deterministic summary', () => {
     const html = `<div>Repair Order: <b>${order.repairOrderNumber}</b></div>
       <div>Repair Order Open Date: ${order.openDate} &nbsp; Repair Order Close Date: ${order.closeDate}</div>

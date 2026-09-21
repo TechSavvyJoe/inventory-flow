@@ -56,6 +56,12 @@ export function parseServiceHistoryIndex(html, expectedVin) {
   const source = String(html || '')
   if (/login\.microsoftonline\.com|type=["']?password/i.test(source)) return { state: 'session_expired' }
   const printedVin = source.match(VIN_PATTERN)?.[0]?.toUpperCase() ?? null
+  // Ford's genuine empty-state page says "No data found" but omits the VIN
+  // from the response body. The caller still binds the request/final URL to the
+  // expected VIN; a page containing any different VIN remains a hard mismatch.
+  if (!printedVin && /Retail Service Repair History/i.test(source) && /No data found/i.test(source)) {
+    return { state: 'ok', repairOrders: [] }
+  }
   if (!printedVin || printedVin !== String(expectedVin || '').toUpperCase()) return { state: 'vin_mismatch' }
 
   const table = tablesFrom(source).find((candidate) =>
