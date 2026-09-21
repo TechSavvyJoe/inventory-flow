@@ -54,7 +54,8 @@ exports/
 *.py[cod]
 
 # Local IDE and AI-agent state.
-.claude/settings.local.json
+.claude/
+.tmp-test/
 .codex/
 .idea/
 .vscode/
