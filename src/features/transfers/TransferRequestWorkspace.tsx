@@ -410,16 +410,6 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
               </select>
             </label>
 
-            <label className="mif-check-field">
-              <input
-                checked={draft.priority === 'urgent'}
-                disabled={disabled || submitting}
-                onChange={(event) => updateDraft({ priority: event.target.checked ? 'urgent' : 'normal' })}
-                type="checkbox"
-              />
-              <span><strong>Customer is waiting now</strong><small>Flags the request for immediate manager attention.</small></span>
-            </label>
-
             <label className="mif-field mif-field--wide">
               <span>{direct ? 'Why is it moving?' : 'What do you need?'}</span>
               <textarea
