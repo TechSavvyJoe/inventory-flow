@@ -425,6 +425,8 @@ describe('vehicle document workspace', () => {
     expect(within(card as HTMLElement).getByRole('list', { name: 'Ford warranty coverages' })).toBeVisible();
     expect(within(card as HTMLElement).getByRole('list', { name: 'Extended service plan expirations' })).toBeVisible();
     expect(within(panel).getByText('Ford OASIS vehicle report')).toBeInTheDocument();
+    const oasisMark = within(panel).getByRole('img', { name: 'Ford OASIS vehicle report' });
+    expect(oasisMark.querySelector('img')).toHaveAttribute('src', '/resource-brands/ford.svg');
     expect(within(panel).getByRole('status', { name: 'Open field service actions' })).toHaveTextContent(
       '2 open service actions',
     );

@@ -624,6 +624,7 @@ describe('source-backed vehicle resource cards', () => {
     expect(screen.queryByText(/CARFAX/)).not.toBeInTheDocument();
     expect(screen.queryByText('Ford invoice')).not.toBeInTheDocument();
     expect(document.querySelector('[data-resource="autocheck"] img')).toHaveAttribute('src','/resource-brands/autocheck.svg');
+    expect(document.querySelector('[data-resource="oasis"] img')).toHaveAttribute('src','/resource-brands/ford.svg');
     expect(document.querySelector('[data-resource="vauto"] img')).toHaveAttribute('src','/resource-brands/vauto.svg');
   });
 

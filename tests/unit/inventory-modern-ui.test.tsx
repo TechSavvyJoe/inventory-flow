@@ -181,7 +181,7 @@ describe('manager-friendly inventory UI', () => {
       />,
     )
 
-    expect(screen.getAllByText('Held · Alex M.').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Held by Alex M.').length).toBeGreaterThan(0)
     expect(screen.getAllByText('No current hold').length).toBeGreaterThan(0)
     expect(screen.queryByText(/DealerOn/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/Public listing/i)).not.toBeInTheDocument()

@@ -356,7 +356,7 @@ export function vehicleOperationalStatus(vehicle: InventoryVehicle): Operational
     const backupCount = Math.max(0, (vehicle.dealerMail.activeRecordCount ?? 1) - 1);
     const owner = primary?.salesperson?.trim();
     return {
-      label: owner ? `Held · ${owner}` : backupCount ? `Held · ${backupCount} backup${backupCount === 1 ? "" : "s"}` : "Held",
+      label: owner ? `Held by ${owner}` : backupCount ? `Held · ${backupCount} backup${backupCount === 1 ? "" : "s"}` : "Held",
       detail: primary?.customerOrReason || vehicle.dealerMail.conciseState || "Current hold",
       tone: "hold",
       icon: UserRound,
@@ -857,7 +857,10 @@ export function InventoryMobileList({
         const operationalUpdate = movementStatus?.label || (recentChange?.kind !== "other" ? recentChange?.shortLabel : null);
         const holdToolsAvailable = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
         const hasDocumentEvidence = Object.values(mobileDocumentAvailability(vehicle)).some(Boolean);
-        const compactHoldLabel = holdStatus.tone === "hold" ? "Held" : holdStatus.label;
+        // The holder is already role-redacted by vehicleOperationalStatus.
+        // Keep that useful context on the compact SRP instead of making staff
+        // open the vehicle just to see who owns the current hold.
+        const compactHoldLabel = holdStatus.label;
         const equipmentCues = [...new Set(standoutEquipment(vehicle, 6).filter(item => item.source !== "factory-equipment-group").map(item => compactEquipmentScanLabel(item.label)))].slice(0, 3);
         return (
           <article

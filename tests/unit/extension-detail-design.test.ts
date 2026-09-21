@@ -181,14 +181,14 @@ describe('companion concept vehicle workspace', () => {
     expect(oasis.textContent).toContain('Verify source terms')
   })
 
-  it('uses original base MSRP for the single weight-fee lookup shortcut on Overview and Records', async () => {
+  it('uses original base MSRP for the single pricing shortcut on Overview and Records', async () => {
     const vehicle = { ...record(), inventoryDate: '2026-09-12', autoCheckReport: { estimatedInServiceDate: '2024-01-01' }, fordOasis: { warrantyStartDate: '2024-04-10' }, windowSticker: { basePrice: 42500, pricingCurrency: 'CAD', options: ['WEIGHT FEE — CAD 100'] } }
     await boot([vehicle])
     const facts = () => document.querySelector('.detail-frequent-facts').textContent.replace(/\s+/g, ' ')
     expect(facts()).toContain('Warranty in-service · OASIS')
     expect(facts()).toContain('04/10/2024')
     expect(facts()).toContain('CAD 42,500')
-    expect(facts()).toContain('Weight fee lookup · Base MSRP')
+    expect(facts()).toContain('Base MSRP')
     expect(facts()).not.toContain('WEIGHT FEE — CAD 100')
     expect(document.querySelectorAll('.detail-frequent-facts .d-fact')).toHaveLength(2)
     expect(document.querySelector('.detail-full-specs').textContent).toContain('Inventory date')

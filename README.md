@@ -46,7 +46,7 @@ Vehicle moves, Action center, inventory updates, and service prioritize the
 task, responsible person, timing, and next action. Unrelated provider panels
 are replaced by explicit **Vehicle details** and **Records** links.
 
-On the site and companion, **Weight fee lookup · Base MSRP** means the original
+On the site and companion, **Base MSRP** means the original
 base MSRP used for registration lookup, not a calculated fee. Original sticker
 pricing takes priority; an informational vAuto fallback is explicitly labeled.
 Unknown currency is never assumed to be USD.

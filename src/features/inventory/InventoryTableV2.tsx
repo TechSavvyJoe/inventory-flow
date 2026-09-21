@@ -129,7 +129,10 @@ function VehicleRow({
       vehicle.fordOasis.openFieldServiceActions.length > 0,
   );
 
-  const holdSalesperson = vehicle.holdEvidence?.[0]?.salesperson;
+  const primaryHold = vehicle.dealerMail.canViewEvidence === true
+    ? vehicle.holdEvidence?.find((record) => record.position === "primary") ?? vehicle.holdEvidence?.[0]
+    : undefined;
+  const holdSalesperson = primaryHold?.salesperson?.trim();
   const isHeld = vehicle.dealerMail.dataState === "current" && vehicle.dealerMail.hasActiveHold === true;
   const holdLabel = dealerMailHoldLabel(vehicle.dealerMail);
 
@@ -230,7 +233,7 @@ function VehicleRow({
         <div className="inv-v2-status-cell">
           {isHeld ? (
             <span className="inventory-v2-badge inventory-v2-badge--hold">
-              {holdLabel}{holdSalesperson ? ` · ${holdSalesperson}` : ""}
+              {holdSalesperson ? `Held by ${holdSalesperson}` : holdLabel}
             </span>
           ) : (
             <span className="inventory-v2-badge inventory-v2-badge--available">

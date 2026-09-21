@@ -314,8 +314,14 @@ function locationTitle(vehicle) {
 function holdPill(vehicle, { long = false } = {}) {
   const hold = vehicle.hold
   const tone = hold.tone === 'held' ? 'pill-held' : hold.tone === 'clear' ? '' : 'pill-moving'
-  const label = long ? hold.label : hold.tone === 'held' ? (hold.position === 'backup' ? 'Held · backup' : hold.position === 'multiple' ? `Held · ${hold.backupCount + 1}` : 'Held') : hold.tone === 'clear' ? 'No hold found' : 'Hold unverified'
-  return el('span', { class: `pill ${tone}`.trim(), title: hold.label }, hold.tone === 'held' ? icon('lock') : null, label)
+  const primary = hold.canViewEvidence ? hold.evidence.find((item) => item.position === 'primary') ?? hold.evidence[0] : null
+  const label = hold.tone === 'held'
+    ? primary?.salesperson ? `Held by ${primary.salesperson}`
+      : hold.position === 'backup' ? 'Held · backup'
+        : hold.position === 'multiple' ? `Held · ${hold.backupCount + 1}`
+          : long ? hold.label : 'Held'
+    : hold.tone === 'clear' ? 'No hold found' : 'Hold unverified'
+  return el('span', { class: `pill ${tone}`.trim(), title: fmt.joinFacts([hold.label, primary?.salesperson ? `Held by ${primary.salesperson}` : null]) }, hold.tone === 'held' ? icon('lock') : null, label)
 }
 
 function movementPill(vehicle) {
@@ -357,7 +363,7 @@ function renderRow(match, position) {
   const config = fmt.joinFacts([vehicle.exteriorColor, vehicle.daysListed !== null ? `${fmt.formatNumber(vehicle.daysListed)} days listed` : null])
   const powertrain = fmt.joinFacts([vehicle.engine, vehicle.drivetrain])
   const primaryHold = vehicle.hold.canViewEvidence ? vehicle.hold.evidence[0] : null
-  const holdDetail = vehicle.hold.hasActiveHold === true ? fmt.joinFacts([primaryHold?.salesperson, primaryHold?.expectedDate ? `Expected ${fmt.formatDate(primaryHold.expectedDate)}` : null, vehicle.hold.backupCount ? `${vehicle.hold.backupCount} backup${vehicle.hold.backupCount === 1 ? '' : 's'}` : null]) : null
+  const holdDetail = vehicle.hold.hasActiveHold === true ? fmt.joinFacts([primaryHold?.salesperson ? `Held by ${primaryHold.salesperson}` : null, primaryHold?.expectedDate ? `Expected ${fmt.formatDate(primaryHold.expectedDate)}` : null, vehicle.hold.backupCount ? `${vehicle.hold.backupCount} backup${vehicle.hold.backupCount === 1 ? '' : 's'}` : null]) : null
   return el('li', {
     class: `row ${position === state.activeIndex ? 'is-active' : ''} ${inCompare ? 'is-compared' : ''}`.trim(), role: 'option', id: `row-${vehicle.vin}`,
     'aria-selected': String(position === state.activeIndex), dataset: { vin: vehicle.vin, index: String(position) },
@@ -726,9 +732,9 @@ function signal({ tone, iconName, label, value, sub, onClick, title }) {
 function statusGrid(vehicle) {
   const hold = vehicle.hold, loc = vehicle.location, move = vehicle.movement, listing = vehicle.listing
   const primary = hold.evidence[0]
-  const holdValue = hold.tone === 'held' ? (hold.position === 'backup' ? 'Backup hold' : hold.position === 'multiple' ? `${hold.backupCount + 1} holds` : 'On hold') : hold.tone === 'clear' ? 'No hold found' : 'Not verified'
+  const holdValue = hold.tone === 'held' ? (primary?.salesperson ? `Held by ${primary.salesperson}` : hold.position === 'backup' ? 'Backup hold' : hold.position === 'multiple' ? `${hold.backupCount + 1} holds` : 'On hold') : hold.tone === 'clear' ? 'No hold found' : 'Not verified'
   const holdSub = hold.tone === 'held'
-    ? fmt.joinFacts([primary?.salesperson, primary?.expectedDate ? `exp. ${fmt.formatDate(primary.expectedDate)}` : null]) || (hold.canViewEvidence ? 'DealerMail hold' : 'Details restricted')
+    ? fmt.joinFacts([primary?.expectedDate ? `Expected ${fmt.formatDate(primary.expectedDate)}` : null, hold.backupCount ? `${hold.backupCount} backup${hold.backupCount === 1 ? '' : 's'}` : null]) || (hold.canViewEvidence ? 'DealerMail hold' : 'Details restricted')
     : hold.tone === 'clear' ? 'Confirm before promising' : 'Needs review'
   const flags = fmt.joinFacts([listing.dealerOn.inStock === true ? 'in stock' : listing.dealerOn.inStock === false ? 'not in stock' : null, listing.dealerOn.inTransit === true ? 'in transit' : null, listing.dealerOn.inProduction === true ? 'in production' : null])
   return el('div', { class: 'sig-grid' },
@@ -1072,7 +1078,7 @@ function frequentFacts(vehicle) {
   const labelBase = docs.factoryEquipment?.basePrice
   const hasStickerBase = stickerBase !== null && stickerBase !== undefined
   const hasLabelBase = labelBase !== null && labelBase !== undefined
-  const baseLookup = fact('Weight fee lookup · Base MSRP', hasStickerBase ? fmt.formatStickerMoney(stickerBase, docs.windowSticker) : hasLabelBase ? fmt.formatReferencePrice(labelBase) : '—')
+  const baseLookup = fact(hasStickerBase ? 'Base MSRP' : hasLabelBase ? 'Base MSRP · reference' : 'Base MSRP', hasStickerBase ? fmt.formatStickerMoney(stickerBase, docs.windowSticker) : hasLabelBase ? fmt.formatReferencePrice(labelBase) : '—')
   return el('section', { class: 'detail-frequent-facts', 'aria-label': 'Frequently used vehicle facts' },
     baseLookup,
     fact(start.source === 'OASIS' ? 'Warranty in-service · OASIS' : start.raw ? 'Warranty in-service · estimate' : 'Warranty in-service', start.raw ? fmt.formatDate(start.raw) : '—'),

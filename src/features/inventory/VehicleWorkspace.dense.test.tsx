@@ -219,7 +219,8 @@ describe('focused vehicle workspace', () => {
     for (const value of ['3.5L V6 EcoBoost', 'SuperCrew 4x4', '10-Speed Automatic', '4WD', '123,328 mi']) expect(specs).toHaveTextContent(value);
     expect(screen.getByText('$20,988')).toBeVisible();
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
-    expect(operations).toHaveTextContent('Held · Jamie Howell');
+    expect(operations).toHaveTextContent('Hold statusHeld');
+    expect(operations).toHaveTextContent('Held byJamie Howell');
     expect(operations).toHaveTextContent('Jamie Howell');
     expect(operations).not.toHaveTextContent(/sold|delivered|CDK/);
   });
@@ -236,7 +237,8 @@ describe('focused vehicle workspace', () => {
     ]);
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
     const hold = within(operations).getByText('Hold status').closest('.inventory-workspace-fact')!;
-    expect(hold).toHaveTextContent('Held · Jamie Howell');
+    expect(hold).toHaveTextContent('Held');
+    expect(within(operations).getByText('Held by').closest('.inventory-workspace-fact')).toHaveTextContent('Jamie Howell');
     expect(hold.querySelector('.vdp-focus-mobile-backup')).toHaveTextContent('2 backup holds');
     for (const label of ['Backup holds']) {
       expect(within(operations).getByText(label).closest('.inventory-workspace-fact')).toHaveClass('vdp-focus-desktop-field');

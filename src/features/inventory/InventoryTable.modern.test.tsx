@@ -106,7 +106,7 @@ describe('modern inventory result access', () => {
       expect(link).toHaveAttribute('href', `/service?vin=${vehicle.vin}`);
       expect(link).toHaveTextContent(label);
       expect(link.closest('button')).toBeNull();
-      expect(row).toHaveTextContent(layout === 'desktop' ? 'Held · Alex Morgan' : 'Held');
+      expect(row).toHaveTextContent('Held by Alex Morgan');
       expect(row).toHaveTextContent('In transit outbound');
     });
   });
@@ -127,7 +127,7 @@ describe('modern inventory result access', () => {
       />,
     );
 
-    expect(screen.getByText('Held · Alex Morgan')).toBeInTheDocument();
+    expect(screen.getByText('Held by Alex Morgan')).toBeInTheDocument();
     expect(screen.getByText('In transit outbound')).toBeInTheDocument();
     expect(screen.getByText('MSRP $52,995')).toBeInTheDocument();
     expect(screen.getByText('MSRP $52,995')).toHaveAttribute('title', '$6,000 under MSRP');
@@ -138,7 +138,7 @@ describe('modern inventory result access', () => {
     expect(screen.getByRole('button', { name: /Open hold details for 2024 Ford F-150 XLT/i })).toBeInTheDocument();
     const row = screen.getByRole('button', { name: /Open vehicle details for 2024 Ford F-150 XLT/i }).closest('tr') as HTMLTableRowElement;
     expect(row).toHaveClass('inv-desk-row');
-    expect(row).toHaveTextContent('Held · Alex Morgan');
+    expect(row).toHaveTextContent('Held by Alex Morgan');
     expect(row).toHaveTextContent('Fowlerville');
     expect(row).toHaveTextContent('In transit outbound');
     expect(document.querySelector('.inventory-grid-shell--desk')).toBeInTheDocument();
@@ -410,14 +410,14 @@ describe('modern inventory result access', () => {
     expect(card).toHaveTextContent('H240512');
     expect(detailTarget).not.toHaveTextContent(vehicle.vin);
     expect(detailTarget).toHaveAccessibleName(expect.stringContaining(vehicle.vin));
-    expect(card).toHaveTextContent('Held');
+    expect(card).toHaveTextContent('Held by Alex Morgan');
     expect(card).toHaveTextContent('Fowlerville');
     expect(card).toHaveTextContent('In transit outbound');
     expect(detailTarget.querySelector('button')).toBeNull();
     fireEvent.click(detailTarget);
     expect(onSelectVehicle).toHaveBeenCalledExactlyOnceWith(vehicle);
     const hold = within(card).getByRole('button', { name: /Open DealerMail hold tools/ });
-    expect(hold).toHaveAttribute('title', expect.stringContaining('Held · Alex Morgan'));
+    expect(hold).toHaveAttribute('title', expect.stringContaining('Held by Alex Morgan'));
     fireEvent.click(hold);
     expect(onOpenSourceRecord).toHaveBeenCalledExactlyOnceWith(vehicle, 'dealermail');
     const records = within(card).getByRole('button', { name: /Open vehicle records/ });
