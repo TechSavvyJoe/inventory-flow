@@ -8,6 +8,7 @@ import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 const PRIVATE_HOSTNAME = 'inventory-ops.joegallant.me'
 const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/
 const MAX_PDF_BYTES = 8 * 1024 * 1024
+const APP_ROOT = path.resolve(import.meta.dirname, '..')
 let resolvedRoot
 
 function required(name, environment = process.env) {
@@ -78,7 +79,7 @@ export async function main(reportDate = process.argv[2]) {
   const root = workspaceRoot()
   const folder = path.join(root, 'work', 'invoice-history', reportDate)
   const parsed = JSON.parse(readFileSync(path.join(folder, 'parsed.json'), 'utf8'))
-  const enrichment = JSON.parse(readFileSync(path.join(root, 'data', 'vin-document-enrichment.json'), 'utf8'))
+  const enrichment = JSON.parse(readFileSync(path.join(APP_ROOT, 'data', 'vin-document-enrichment.json'), 'utf8'))
   if (parsed.reportDate !== reportDate) throw new Error('Ford invoice report date mismatch')
   const files = invoiceFiles({ parsed, enrichment, folder })
   let cursor = 0; let stored = 0; let alreadyStored = 0

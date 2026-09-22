@@ -9,6 +9,7 @@ import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/
 const FORD_MAKES = new Set(['FORD', 'LINC', 'LINCOLN'])
 const MAX_PDF_BYTES = 8 * 1024 * 1024
+const APP_ROOT = path.resolve(import.meta.dirname, '..')
 let resolvedRoot
 
 function workspaceRoot() {
@@ -70,7 +71,7 @@ export function mergeInvoiceMetadata({ enrichment, parsed, vehicles, pdfAvailabl
 export function main(reportDate = process.argv[2]) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate ?? '')) throw new Error('usage: merge-invoice-metadata.mjs <YYYY-MM-DD>')
   const root = workspaceRoot()
-  const enrichmentPath = path.join(root, 'data', 'vin-document-enrichment.json')
+  const enrichmentPath = path.join(APP_ROOT, 'data', 'vin-document-enrichment.json')
   const invoiceFolder = path.join(root, 'work', 'invoice-history', reportDate)
   const parsedPath = path.join(invoiceFolder, 'parsed.json')
   const enrichment = JSON.parse(readFileSync(enrichmentPath, 'utf8'))
