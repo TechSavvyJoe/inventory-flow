@@ -378,6 +378,10 @@ try {
     $enrichOut = $enrichRun.Output
     if ($enrichRun.ExitCode -ne 0) { Write-Log "resources: build FAILED: $($enrichOut.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_BUILD_FAILED' }
     Write-Log "resources: $($enrichOut.Trim())"
+    $serviceHistoryMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-ford-service-history.mjs', $date)
+    $serviceHistoryMergeOut = $serviceHistoryMergeRun.Output
+    if ($serviceHistoryMergeRun.ExitCode -ne 0) { Write-Log "resources: Ford service history merge FAILED: $($serviceHistoryMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_SERVICE_HISTORY_MERGE_FAILED' }
+    Write-Log "resources: $($serviceHistoryMergeOut.Trim())"
     $autoCheckMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-vauto-autocheck.mjs', $date)
     $autoCheckMergeOut = $autoCheckMergeRun.Output
     if ($autoCheckMergeRun.ExitCode -ne 0) { Write-Log "resources: AutoCheck merge FAILED: $($autoCheckMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_AUTOCHECK_MERGE_FAILED' }

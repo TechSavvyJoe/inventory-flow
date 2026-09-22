@@ -270,19 +270,22 @@ function runResourceBuild(reportDate, warnings, steps) {
     optional: true,
     label: 'VIN document enrichment builder',
   })
-  const autoCheckMerge = build.ok
-    ? run(NODE, ['scripts\\merge-vauto-autocheck.mjs', reportDate], { cwd: APP_ROOT, optional: true, label: 'vAuto AutoCheck fallback merge' })
+  const serviceHistoryMerge = build.ok
+    ? run(NODE, ['scripts\\merge-ford-service-history.mjs', reportDate], { cwd: APP_ROOT, optional: true, label: 'Ford service history merge' })
     : { ok: false, output: build.output }
-  const invoiceMerge = build.ok && autoCheckMerge.ok
+  const autoCheckMerge = build.ok && serviceHistoryMerge.ok
+    ? run(NODE, ['scripts\\merge-vauto-autocheck.mjs', reportDate], { cwd: APP_ROOT, optional: true, label: 'vAuto AutoCheck fallback merge' })
+    : { ok: false, output: serviceHistoryMerge.output }
+  const invoiceMerge = build.ok && serviceHistoryMerge.ok && autoCheckMerge.ok
     ? run(NODE, ['scripts\\merge-invoice-metadata.mjs', reportDate], { cwd: APP_ROOT, optional: true, label: 'Saved Ford invoice merge' })
     : { ok: false, output: autoCheckMerge.output }
-  const check = build.ok && autoCheckMerge.ok && invoiceMerge.ok ? validateCurrentResourceFile() : { ok: false, output: invoiceMerge.output }
-  if (!build.ok || !autoCheckMerge.ok || !invoiceMerge.ok || !check.ok) {
+  const check = build.ok && serviceHistoryMerge.ok && autoCheckMerge.ok && invoiceMerge.ok ? validateCurrentResourceFile() : { ok: false, output: invoiceMerge.output }
+  if (!build.ok || !serviceHistoryMerge.ok || !autoCheckMerge.ok || !invoiceMerge.ok || !check.ok) {
     warnings.push('Vehicle resource enrichment did not validate, so the release was not published.')
     steps.push({ name: 'resources', status: 'failed_blocking', detail: safeDetail(check.output) })
     return false
   }
-  steps.push({ name: 'resources', status: 'complete', detail: safeDetail(`${build.output} ${autoCheckMerge.output} ${invoiceMerge.output}`) })
+  steps.push({ name: 'resources', status: 'complete', detail: safeDetail(`${build.output} ${serviceHistoryMerge.output} ${autoCheckMerge.output} ${invoiceMerge.output}`) })
   return true
 }
 

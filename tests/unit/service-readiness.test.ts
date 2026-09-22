@@ -132,6 +132,7 @@ describe('manager service readiness ledger', () => {
       },
     })
     expect(serviceReadinessView({ ...vehicle, make: 'Lincoln' }, null, manager)).toMatchObject({ status: 'serviced', readinessBasis: 'ford_service_history_inspection' })
+    expect(serviceReadinessView({ ...vehicle, make: 'LINC' }, null, manager)).toMatchObject({ status: 'serviced', readinessBasis: 'ford_service_history_inspection' })
     expect(serviceReadinessView({ ...vehicle, make: 'Cadillac' }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
     expect(serviceReadinessView({ ...vehicle, inventoryDate: '2026-08-15' }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
     expect(serviceReadinessView({ ...vehicle, fordOasis: { serviceHistory: { ...serviceHistory, dataState: 'stale' } } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })

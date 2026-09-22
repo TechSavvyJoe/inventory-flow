@@ -40,7 +40,7 @@ function intakeDay(vehicle) {
 }
 
 function autoCheckReadinessEvidence(vehicle) {
-  if (/^(ford|lincoln)$/i.test(String(vehicle.make ?? '').trim())) return null
+  if (/^(ford|linc|lincoln)$/i.test(String(vehicle.make ?? '').trim())) return null
   const report = vehicle.autoCheckReport
   if (report?.dataState !== 'current') return null
   const intakeDate = intakeDay(vehicle)
@@ -53,7 +53,7 @@ function autoCheckReadinessEvidence(vehicle) {
 }
 
 function fordServiceReadinessEvidence(vehicle) {
-  if (!/^(ford|lincoln)$/i.test(String(vehicle.make ?? '').trim())) return null
+  if (!/^(ford|linc|lincoln)$/i.test(String(vehicle.make ?? '').trim())) return null
   const history = vehicle.fordOasis?.serviceHistory
   const inspection = history?.recentInspection
   if (history?.dataState !== 'current' || history.historyCaptured !== true || inspection?.inspection?.status !== 'confirmed') return null
