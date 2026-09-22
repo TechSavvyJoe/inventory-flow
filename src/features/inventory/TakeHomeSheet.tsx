@@ -64,7 +64,7 @@ export function takeHomeModel(vehicle: InventoryVehicle) {
     equipment,
     history,
     description: vehicle.dealerComments?.trim() || null,
-    listingUrl: vehicle.publicListing.listingUrl,
+    listingUrl: isHttps(vehicle.publicListing.listingUrl) ? vehicle.publicListing.listingUrl : null,
   };
 }
 
@@ -72,7 +72,7 @@ export type TakeHomeModel = ReturnType<typeof takeHomeModel>;
 
 export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeHomeModel; now?: Date }) {
   const heroPhoto = model.photos[0] ?? null;
-  const equipmentCap = model.description ? 27 : 36;
+  const equipmentCap = model.description ? 24 : 30;
   const hidden = Math.max(0, model.equipment.length - equipmentCap);
   return (
     <article className="th">
@@ -105,7 +105,7 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
           )}
           {model.photos.length > 1 ? (
             <div className="th-thumbs">
-              {model.photos.slice(1, 4).map((src) => <img key={src} src={src} alt="" referrerPolicy="no-referrer" />)}
+              {model.photos.slice(1, 3).map((src) => <img key={src} src={src} alt="" referrerPolicy="no-referrer" />)}
             </div>
           ) : null}
         </div>
@@ -144,16 +144,22 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
           </ul>
         </section>
       ) : null}
-      {model.description ? (
-        <section className="th-block"><h2>About this vehicle</h2><p className="th-desc">{model.description}</p></section>
-      ) : null}
-      {model.certified ? (
-        <section className="th-block th-cert-block">
-          <h2>{model.certified.name}</h2>
-          <ul className="th-terms">{model.certified.terms.map((term) => <li key={term}>{term}</li>)}</ul>
+      {model.description || model.certified ? (
+        <section className={`th-bottom-grid${model.description && model.certified ? "" : " is-single"}`}>
+          {model.description ? (
+            <div className="th-block"><h2>About this vehicle</h2><p className="th-desc">{model.description}</p></div>
+          ) : null}
+          {model.certified ? (
+            <div className="th-block th-cert-block">
+              <h2>{model.certified.name}</h2>
+              <ul className="th-terms">{model.certified.terms.map((term) => <li key={term}>{term}</li>)}</ul>
+              <p className="th-cert-note">{model.certified.note}</p>
+            </div>
+          ) : null}
         </section>
       ) : null}
       <footer className="th-foot">
+        {model.listingUrl ? <a className="th-listing-link" href={model.listingUrl} target="_blank" rel="noopener noreferrer">View full vehicle listing</a> : null}
         <span>Prepared {formatDate(now.toISOString())} · {model.storeName}{model.storeSite ? ` · ${model.storeSite}` : ""}</span>
         <span>Price excludes tax, title, license and dealer fees. Vehicle information is believed accurate but not guaranteed; confirm equipment, mileage and availability with the dealership before purchase.</span>
       </footer>

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VehicleWorkspace } from './VehicleWorkspace';
-import { takeHomeModel } from './TakeHomeSheet';
+import { TakeHomeSheetContent, takeHomeModel } from './TakeHomeSheet';
 import type { InventoryVehicle } from './types';
 
 afterEach(cleanup);
@@ -25,6 +25,7 @@ function vehicle(): InventoryVehicle {
     engine: '2.3L EcoBoost',
     transmission: '10-speed automatic',
     dealerComments: 'Synthetic description.',
+    features: ['Ford Co-Pilot360', 'Apple CarPlay', 'Heated front seats'],
     publicListing: { dataState: 'current', isListed: true, listingUrl: 'https://www.bobmaxeyfordhowell.com/used-Howell-2026-Ford-Explorer' },
     dealerOn: { dataState: 'current', inStock: true, inTransit: false, inProduction: false },
     dealerMail: { dataState: 'current', hasActiveHold: true, position: 'primary', canViewEvidence: true },
@@ -50,6 +51,21 @@ describe('take-home sheet', () => {
     for (const forbidden of ['Demo Salesperson', 'Customer appointment', 'Fowlerville', 'Demo Driver', 'transfer-1', 'in_transit', 'Mark arrived', '2024-03-14', 'inService', 'Bumper-to-bumper']) {
       expect(serialized).not.toContain(forbidden);
     }
+  });
+
+  it('keeps the printable customer surface compact and listing-safe', () => {
+    const model = takeHomeModel(vehicle());
+    const { container } = render(<TakeHomeSheetContent model={model} now={new Date('2026-09-22T12:00:00Z')} />);
+    expect(container.querySelector('.th-bottom-grid')).toBeInTheDocument();
+    expect(container.querySelector('.th-listing-link')).toHaveAttribute('href', vehicle().publicListing.listingUrl);
+    expect(container.querySelector('.th-cert-note')).toHaveTextContent('Separate from any factory warranty');
+    expect(container.querySelector('.th-equipment')).toBeInTheDocument();
+  });
+
+  it('does not render an unsafe listing URL into the customer sheet', () => {
+    const unsafe = { ...vehicle(), publicListing: { ...vehicle().publicListing, listingUrl: 'javascript:alert(1)' } };
+    const model = takeHomeModel(unsafe);
+    expect(model.listingUrl).toBeNull();
   });
 
   it('closes on Escape without closing the vehicle workspace beneath it', async () => {
