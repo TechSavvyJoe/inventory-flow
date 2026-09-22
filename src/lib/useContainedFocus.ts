@@ -99,10 +99,12 @@ export function useContainedFocus({
       }
     }
 
-    document.addEventListener('keydown', handleKeyDown)
+    // Capture keyboard dismissal before browser controls or portal descendants
+    // can stop propagation. This is especially important for WebKit dialogs.
+    document.addEventListener('keydown', handleKeyDown, true)
     return () => {
       window.cancelAnimationFrame(frame)
-      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('keydown', handleKeyDown, true)
       const target = returnFocusRef?.current ?? returnFocus
       // Restore synchronously when possible, then retry after the next paint.
       // WebKit can otherwise keep focus on a removed portal while a surrounding
