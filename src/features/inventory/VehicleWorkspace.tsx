@@ -616,6 +616,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const recentServiceOrders = serviceHistory?.recentRepairOrders?.length
     ? serviceHistory.recentRepairOrders
     : latestService ? [latestService] : [];
+  const documentedRecentServiceOrders = recentServiceOrders.filter((order) => order.services.length);
   const showServiceHistory = Boolean(serviceHistory && (latestService || !serviceHistory.historyCaptured));
   const openRecallCount = fordOasis?.openFieldServiceActions.length ?? 0;
   const hasCapturedRecallResult = hasCapturedOasisActionResult(fordOasis);
@@ -810,7 +811,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                         : `Not identified in ${countLabel(serviceHistory.detailScanCount, "recent repair order")} checked`}
                   </Fact>
                 </dl>
-                <p className="vdp-service-history-summary">{latestService.services.length ? latestService.services.map(sourceDistanceText).join(" · ") : "Dealer service visit recorded"}</p>
+                <p className="vdp-service-history-summary">{latestService.services.length ? latestService.services.map(sourceDistanceText).join(" · ") : "Ford did not supply itemized work for this visit."}</p>
                 {latestService.services.length ? <ul aria-label="Latest Ford service work summary">
                   {latestService.services.map((service) => <li key={service}><span><strong>{service}</strong></span></li>)}
                 </ul> : null}
@@ -820,11 +821,11 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                     {` · ${formatDate(recentInspection.openDate)} to ${formatDate(recentInspection.closeDate)}`}
                   </p>
                 ) : null}
-                {recentServiceOrders.length > 1 ? <section className="vdp-service-history-recent" aria-label="Recent Ford repair orders">
-                  <h4>Earlier recent service</h4>
-                  <ol>{recentServiceOrders.slice(1).map((order) => <li key={order.repairOrderNumber}>
+                {documentedRecentServiceOrders.filter((order) => order.repairOrderNumber !== latestService.repairOrderNumber).length ? <section className="vdp-service-history-recent" aria-label="Other documented Ford service">
+                  <h4>Other documented service</h4>
+                  <ol>{documentedRecentServiceOrders.filter((order) => order.repairOrderNumber !== latestService.repairOrderNumber).map((order) => <li key={order.repairOrderNumber}>
                     <div><strong>{formatDate(order.openDate)} to {formatDate(order.closeDate)}</strong>{order.odometer != null ? <span>{formatMileage(order.odometer)}</span> : null}</div>
-                    <p>{order.services.length ? order.services.map(sourceDistanceText).join(" · ") : "Dealer service visit recorded"}</p>
+                    <p>{order.services.map(sourceDistanceText).join(" · ")}</p>
                   </li>)}</ol>
                 </section> : null}
               </> : (

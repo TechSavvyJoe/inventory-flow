@@ -54,7 +54,6 @@ function serviceOutcome(service: string): string {
 }
 
 function visitSummary(services: string[]): string {
-  if (!services.length) return 'Dealer service visit recorded'
   const completed = services.map(serviceOutcome)
   const maintenance = completed.filter((item) => !/inspection/i.test(item))
   if (maintenance.length) return `Work completed: ${maintenance.join(' · ')}`
@@ -70,6 +69,15 @@ function FordVisit({ visit }: { visit: FordServiceHistoryVisitRecord }) {
     </header>
     <p>{visitSummary(services)}</p>
     {services.length ? <ul aria-label="Completed service items">{services.map((service) => <li key={service}>{serviceOutcome(service)}</li>)}</ul> : null}
+  </li>
+}
+
+function FordRecordedVisit({ visit }: { visit: FordServiceHistoryVisitRecord }) {
+  return <li className="service-source-order service-source-order--recorded">
+    <header>
+      <span className="service-source-order-date"><CalendarDays size={15} aria-hidden="true" /><strong>{formatDate(visit.openDate)}<span aria-hidden="true"> → </span>{formatDate(visit.closeDate)}</strong></span>
+      {visit.odometer != null ? <span><Gauge size={14} aria-hidden="true" />{formatMileage(visit.odometer)}</span> : null}
+    </header>
   </li>
 }
 
@@ -91,7 +99,9 @@ export function SourceServiceHistory({ vehicle, recordsHref }: { vehicle: Vehicl
   const fordFamily = /^(ford|lincoln|linc)$/i.test(String(vehicle.make || '').trim())
   const history = vehicle.fordOasis?.serviceHistory
   const visits = fordVisits(vehicle)
-  const [showEarlierVisits, setShowEarlierVisits] = useState(false)
+  const documentedVisits = visits.filter((visit) => visit.services?.length)
+  const recordedOnlyVisits = visits.filter((visit) => !visit.services?.length)
+  const [showRecordedVisits, setShowRecordedVisits] = useState(false)
   const autoCheck = vehicle.autoCheckReport
   const autoCheckService = serviceRecordText(vehicle)
   const autoCheckInspection = autoCheck?.recentInspection
@@ -106,18 +116,19 @@ export function SourceServiceHistory({ vehicle, recordsHref }: { vehicle: Vehicl
     {fordFamily ? <>
       {history ? <div className="service-source-history-summary">
         <strong>{history.repairOrderCount ? `${history.repairOrderCount} service visits reported` : 'No service visits reported'}</strong>
-        <span>{visits.filter((visit) => visit.services?.length).length ? `${visits.filter((visit) => visit.services?.length).length} visits with work documented` : 'Dealer repair timeline'}</span>
+        <span>{documentedVisits.length ? `${documentedVisits.length} visits with work documented` : recordedOnlyVisits.length ? 'Visit dates and mileage on file' : 'Ford repair history'}</span>
       </div> : <p className="service-source-history-empty">Ford has not reported a dealer service history for this vehicle.</p>}
       {visits.length ? <>
-        <ol className="service-source-orders">{visits.slice(0, 2).map((visit, index) => <FordVisit key={`${visit.openDate}-${visit.closeDate}-${visit.odometer ?? index}`} visit={visit} />)}</ol>
-        {visits.length > 2 ? <>
-          <button className="service-source-history-expand" type="button" aria-expanded={showEarlierVisits} onClick={() => setShowEarlierVisits((open) => !open)}>
+        {documentedVisits.length ? <ol className="service-source-orders">{documentedVisits.map((visit, index) => <FordVisit key={`${visit.openDate}-${visit.closeDate}-${visit.odometer ?? index}`} visit={visit} />)}</ol> : null}
+        {recordedOnlyVisits.length ? <>
+          <p className="service-source-history-recorded-note">Ford reported these visits with dates and mileage, but did not supply itemized work.</p>
+          <button className="service-source-history-expand" type="button" aria-expanded={showRecordedVisits} onClick={() => setShowRecordedVisits((open) => !open)}>
             <ClipboardCheck size={15} aria-hidden="true" />
-            <span>{showEarlierVisits ? 'Hide earlier visits' : `Show ${visits.length - 2} earlier service visits`}</span>
+            <span>{showRecordedVisits ? 'Hide additional visit dates' : `View ${recordedOnlyVisits.length} additional visit date${recordedOnlyVisits.length === 1 ? '' : 's'}`}</span>
             <ChevronDown size={16} aria-hidden="true" />
           </button>
-          <AnimatePresence initial={false}>{showEarlierVisits ? <motion.ol className="service-source-orders service-source-orders--earlier" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }}>
-            {visits.slice(2).map((visit, index) => <FordVisit key={`${visit.openDate}-${visit.closeDate}-${visit.odometer ?? index + 2}`} visit={visit} />)}
+          <AnimatePresence initial={false}>{showRecordedVisits ? <motion.ol className="service-source-orders service-source-orders--earlier" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }}>
+            {recordedOnlyVisits.map((visit, index) => <FordRecordedVisit key={`${visit.openDate}-${visit.closeDate}-${visit.odometer ?? index}`} visit={visit} />)}
           </motion.ol> : null}</AnimatePresence>
         </> : null}
       </> : null}

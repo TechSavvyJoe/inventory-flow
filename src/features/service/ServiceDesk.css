@@ -243,6 +243,8 @@
 .service-source-order>ul { display:flex; flex-wrap:wrap; gap:5px; list-style:none; margin:8px 0 0; padding:0; }
 .service-source-order>ul>li { padding:3px 6px; border-radius:3px; background:var(--ifx-info-surface); color:var(--navy-900); font-size:12px; line-height:1.35; }
 .service-source-order>p { margin:7px 0 0; color:var(--ink-900); font-size:12px; font-weight:650; line-height:1.45; }
+.service-source-order--recorded { padding:9px 0; }
+.service-source-history-recorded-note { margin:0; padding:10px 12px; border-top:1px solid var(--ifx-border-subtle); color:var(--ink-600); font-size:12px; line-height:1.45; }
 .service-source-history-expand { display:flex; align-items:center; justify-content:flex-start; gap:7px; width:100%; min-height:42px; margin:0; padding:8px 12px; border:0; border-bottom:1px solid var(--ifx-border-subtle); border-radius:0; background:var(--ifx-neutral-50); color:var(--ifx-info); font-size:13px; font-weight:650; text-align:left; }
 .service-source-history-expand svg:last-child { margin-left:auto; transition:transform .18s ease; }
 .service-source-history-expand[aria-expanded=true] svg:last-child { transform:rotate(180deg); }
