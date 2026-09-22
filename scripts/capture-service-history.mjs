@@ -63,6 +63,26 @@ let out = {
   privacyNote: 'Only VIN-bound repair-order dates, odometer, parts, labor operations, and deterministic service summaries are retained. No customer or owner data is collected.',
   records: [],
 }
+
+function priorVerifiedHistory(vin) {
+  const prior = priorByVin.get(vin)
+  return prior?.result === 'OK' && prior?.dataState === 'current' &&
+    prior?.historyCaptured === true && Number.isSafeInteger(prior?.repairOrderCount) &&
+    prior.repairOrderCount > 0
+    ? prior
+    : null
+}
+
+function preservePriorHistory(record) {
+  if (record?.result !== 'NO_HISTORY') return record
+  const prior = priorVerifiedHistory(record.vin)
+  if (!prior) return record
+  // A PTS empty response is not sufficient evidence to erase VIN-bound repair
+  // orders captured earlier. Keep the last verified history visible, but mark it
+  // stale so it cannot establish current service readiness.
+  return { ...prior, result: 'OK', dataState: 'stale_unverified' }
+}
+
 // A targeted refresh replaces only that VIN. Retain every other completed
 // same-day record so a one-VIN proof cannot erase the full daily capture.
 if ((!refresh || requestedVin) && existsSync(outPath)) {
@@ -77,7 +97,9 @@ const currentVins = new Set(fullWorklist.map((item) => item.vin))
 const completeResults = new Set(['OK', 'NO_HISTORY'])
 // A failed or incomplete same-day row is not completion. Drop it before a
 // resumed pass so the VIN is retried and the file remains one-record-per-VIN.
-out.records = out.records.filter((record) => currentVins.has(record?.vin) && completeResults.has(record?.result))
+out.records = out.records
+  .filter((record) => currentVins.has(record?.vin) && completeResults.has(record?.result))
+  .map(preservePriorHistory)
 if (requestedVin && refresh) out.records = out.records.filter((record) => record.vin !== requestedVin)
 const done = new Set(out.records.map((record) => record.vin))
 const queue = worklist.filter((item) => !done.has(item.vin)).slice(0, max)
@@ -95,7 +117,7 @@ function formBody(vin, repairOrderNumber) {
 let context = null
 let sessionStatus = 'not_started'
 let stoppedReason = null
-const tally = { OK: 0, NO_HISTORY: 0, INCOMPLETE: 0, ERROR: 0, DETAILS_FETCHED: 0, DETAILS_REUSED: 0 }
+const tally = { OK: 0, NO_HISTORY: 0, PRIOR_HISTORY_PRESERVED: 0, INCOMPLETE: 0, ERROR: 0, DETAILS_FETCHED: 0, DETAILS_REUSED: 0 }
 const startedAt = Date.now()
 if (queue.length) {
   context = await getOriginTab(ORIGIN, HISTORY_URL(queue[0].vin), { settleMs: 60000 }).catch(() => null)
@@ -122,7 +144,10 @@ for (const item of queue) {
       response = await fetchInTab(context.page, requestUrl, { timeoutMs: 45000 })
       if (response.status === 0 || response.error || /login\.microsoftonline\.com/i.test(response.finalUrl || '')) break
       index = parseServiceHistoryIndex(response.text, item.vin)
-      if (index.state !== 'vin_mismatch') break
+      // Empty pages have been observed transiently in the shared PTS session.
+      // Retry them just like a stale selected-vehicle page before recording a
+      // genuine zero-history result.
+      if (index.state !== 'vin_mismatch' && index.repairOrders?.length !== 0) break
       await sleep(250 * (attempt + 1))
     }
     if (response.status === 0 || response.error || /login\.microsoftonline\.com/i.test(response.finalUrl || '')) {
@@ -135,6 +160,12 @@ for (const item of queue) {
       continue
     }
     if (!index.repairOrders.length) {
+      const prior = priorVerifiedHistory(item.vin)
+      if (prior) {
+        out.records.push({ ...prior, result: 'OK', dataState: 'stale_unverified' })
+        sessionStatus = 'ok'; tally.PRIOR_HISTORY_PRESERVED++
+        continue
+      }
       out.records.push({
         vin: item.vin, checkedAt, result: 'NO_HISTORY', dataState: 'current', historyCaptured: true,
         repairOrderCount: 0, detailScanCount: 0, inspectionSearchStatus: 'not_identified', checkedRepairOrders: [],

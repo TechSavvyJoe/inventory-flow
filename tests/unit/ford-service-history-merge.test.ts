@@ -98,4 +98,27 @@ describe('Ford service-history merge', () => {
     expect(result.stats).toMatchObject({ attached: 0, staleRemoved: 1 })
     expect(enrichment.recordsByVin[fordVin].fordOasis.serviceHistory).toBeUndefined()
   })
+
+  it('retains prior verified history as stale when Ford returns a guarded fallback record', () => {
+    const enrichment = {
+      schemaVersion: 'inventory-flow-vin-document-enrichment-v1', generatedAt: '2026-09-20T10:00:00Z',
+      recordsByVin: {
+        [fordVin]: {
+          vin: fordVin,
+          fordOasis: {
+            dataState: 'current', capturedAt: '2026-09-21T19:00:00.000Z', openActionsCaptured: false,
+            openFieldServiceActions: [], warrantyCoverages: [], extendedCoverageExpirations: [],
+          },
+        },
+      },
+    }
+    mergeFordServiceHistory({
+      enrichment,
+      captures: { schema: 'bob-maxey-ford-service-history-v1', records: [capture(fordVin, { dataState: 'stale_unverified' })] },
+      vehicles: { [fordVin]: { make: 'Ford' } },
+    })
+    expect(enrichment.recordsByVin[fordVin].fordOasis.serviceHistory).toMatchObject({
+      dataState: 'stale_unverified', repairOrderCount: 2, historyCaptured: true,
+    })
+  })
 })

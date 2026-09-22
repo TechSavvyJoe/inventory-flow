@@ -13,6 +13,7 @@ const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/
 const FORD_MAKES = new Set(['FORD', 'LINC', 'LINCOLN'])
 const SOURCE_LABEL = 'Ford PTS Retail Service Repair History (read-only; no customer data)'
 const COMPLETE_RESULTS = new Set(['OK', 'NO_HISTORY'])
+const CAPTURE_DATA_STATES = new Set(['current', 'stale_unverified'])
 let resolvedRoot
 
 function workspaceRoot() {
@@ -73,13 +74,13 @@ function shapeRepairOrder(value) {
 }
 
 function usableCapture(record, vin) {
-  return record?.vin === vin && COMPLETE_RESULTS.has(record.result) && record.dataState === 'current' &&
+  return record?.vin === vin && COMPLETE_RESULTS.has(record.result) && CAPTURE_DATA_STATES.has(record.dataState) &&
     record.historyCaptured === true && typeof record.checkedAt === 'string' && Number.isFinite(Date.parse(record.checkedAt))
 }
 
 function shapeServiceHistory(record) {
   const history = {
-    dataState: 'current',
+    dataState: record.dataState,
     checkedAt: record.checkedAt,
     sourceLabel: SOURCE_LABEL,
     historyCaptured: true,
