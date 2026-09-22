@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
@@ -42,7 +42,7 @@ describe('source service history', () => {
     expect(screen.queryByText(/11\/10\/2025/)).not.toBeInTheDocument()
     expect(screen.getByText('Ford reported these visits by date and mileage; itemized work was not available from the source.')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'View 2 additional reported visits' }))
-    expect(screen.getByText(/11\/10\/2025/)).toBeVisible()
+    await waitFor(() => expect(screen.getByText(/11\/10\/2025/)).toBeVisible())
     expect(screen.queryByText('Dealer service visit recorded')).not.toBeInTheDocument()
     expect(screen.queryByText('123456')).not.toBeInTheDocument()
     expect(screen.queryByText('00001')).not.toBeInTheDocument()
