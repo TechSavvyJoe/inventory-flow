@@ -1,12 +1,12 @@
 import { CertifiedBadge } from "../../components/CertifiedBadge";
 import { useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { ImageOff, Printer, X } from "lucide-react";
+import { Check, Printer, X } from "lucide-react";
 import { STORE_BRANDING } from "../../app/storeBranding";
 import type { StoreName } from "../../types";
 import { useContainedFocus } from "../../lib/useContainedFocus";
 import { formatDate, formatMileage, formatMoney, vehicleDisplayName } from "./inventory-utils";
-import { compactEquipmentScanLabel, publishedEquipment } from "./vehicle-feature-utils";
+import { publishedEquipment } from "./vehicle-feature-utils";
 import { certifiedTerms } from "./vehicle-warranty-utils";
 import type { InventoryVehicle } from "./types";
 import "./TakeHomeSheet.css";
@@ -19,7 +19,12 @@ const STORE_DISPLAY: Record<string, { name: string; site: string }> = {
 };
 
 const isHttps = (value: string | null | undefined): value is string => typeof value === "string" && /^https:\/\//i.test(value);
-const customerEquipmentLabel = (value: string): string => compactEquipmentScanLabel(value).replace(/^[·|.]\s*/, "").trim();
+const customerEquipmentLabel = (value: string): string => value
+  .replace(/^[·|.]\s*/, "")
+  .replace(/\s+[·|]\s*(?:USD|CAD)\s*\$?[\d,]+(?:\.\d{2})?$/i, "")
+  .replace(/\s+[·|]\s*NO\s*CHARGE$/i, "")
+  .replace(/\s+[·|]\s*[A-Z]{2,}-[A-Z0-9-]+$/, "")
+  .trim();
 
 /**
  * Everything on the sheet is a published fact a customer could read on the
@@ -62,7 +67,7 @@ export function takeHomeModel(vehicle: InventoryVehicle) {
       ["Fuel economy", vehicle.mpgCity != null || vehicle.mpgHighway != null ? `${vehicle.mpgCity ?? "—"} city / ${vehicle.mpgHighway ?? "—"} hwy` : null],
       ["Exterior", vehicle.exteriorColor], ["Interior", vehicle.interiorColor],
     ] as Array<[string, string | null | undefined]>).filter((entry): entry is [string, string] => Boolean(entry[1])),
-    highlights: standout.length ? standout : equipment.slice(0, 8),
+    highlights: [...new Set([...standout, ...equipment])].slice(0, 8),
     equipment,
     history,
     description: vehicle.dealerComments?.trim() || null,
@@ -74,8 +79,9 @@ export type TakeHomeModel = ReturnType<typeof takeHomeModel>;
 
 export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeHomeModel; now?: Date }) {
   const heroPhoto = model.photos[0] ?? null;
-  const equipmentCap = model.description ? 24 : 30;
-  const hidden = Math.max(0, model.equipment.length - equipmentCap);
+  const equipmentCap = heroPhoto ? 18 : model.description ? 24 : 30;
+  const additionalEquipment = model.equipment.filter((label) => !model.highlights.includes(label));
+  const hidden = Math.max(0, additionalEquipment.length - equipmentCap);
   return (
     <article className="th">
       <header className="th-head">
@@ -94,33 +100,23 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
           <h1>{model.name}</h1>
           {model.descriptor ? <p>{model.descriptor}</p> : null}
         </div>
-        {model.certified ? (
-          <span className="th-cert th-cert--logo"><CertifiedBadge certified homeStore={model.store} /></span>
-        ) : null}
       </section>
-      <section className={`th-hero${heroPhoto ? "" : " is-empty"}`}>
-        <div className="th-photos">
+      <section className={`th-hero${heroPhoto ? " has-photo" : ""}`}>
           {heroPhoto ? (
             <img className="th-photo" src={heroPhoto} alt={model.name} referrerPolicy="no-referrer" />
-          ) : (
-            <div className="th-photo th-photo-empty"><ImageOff size={22} strokeWidth={1.7} aria-hidden="true" /><span>Photos available at the store</span></div>
-          )}
-          {model.photos.length > 1 ? (
-            <div className="th-thumbs">
-              {model.photos.slice(1, 3).map((src) => <img key={src} src={src} alt="" referrerPolicy="no-referrer" />)}
-            </div>
           ) : null}
-        </div>
         <dl className="th-price">
           <div className="th-price-main"><dt>Price</dt><dd>{model.price !== null ? formatMoney(model.price) : "Call for price"}</dd></div>
           {model.msrp !== null ? <div><dt>MSRP</dt><dd>{formatMoney(model.msrp)}</dd></div> : null}
           {model.savings ? <div className="th-save"><dt>Under MSRP</dt><dd>{formatMoney(model.savings)}</dd></div> : null}
+        </dl>
+      </section>
+      <dl className="th-identity">
           {model.mileage !== null ? <div><dt>Mileage</dt><dd>{formatMileage(model.mileage)}</dd></div> : null}
           <div><dt>Stock</dt><dd className="th-mono">{model.stockNumber}</dd></div>
           <div><dt>VIN</dt><dd className="th-mono">{model.vin}</dd></div>
           {model.history ? <div><dt>History</dt><dd>{model.history}</dd></div> : null}
-        </dl>
-      </section>
+      </dl>
       <section className="th-grid">
         <div className="th-block">
           <h2>Specifications</h2>
@@ -131,18 +127,18 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
         <div className="th-block">
           <h2>Highlights</h2>
           {model.highlights.length ? (
-            <ul className="th-chips">{model.highlights.map((label) => <li key={label}>{label}</li>)}</ul>
+            <ul className="th-chips">{model.highlights.map((label) => <li key={label}><Check size={14} strokeWidth={2.5} aria-hidden="true" /><span>{label}</span></li>)}</ul>
           ) : (
             <p className="th-muted">Ask us about the equipment on this vehicle.</p>
           )}
         </div>
       </section>
-      {model.equipment.length ? (
+      {additionalEquipment.length ? (
         <section className="th-block">
-          <h2>Equipment · {model.equipment.length}</h2>
+          <h2>Additional equipment</h2>
           <ul className="th-equipment">
-            {model.equipment.slice(0, equipmentCap).map((label) => <li key={label}>{label}</li>)}
-            {hidden ? <li className="th-muted">+ {hidden} more on the listing</li> : null}
+            {additionalEquipment.slice(0, equipmentCap).map((label) => <li key={label}>{label}</li>)}
+            {hidden ? <li className="th-muted">{hidden} additional items; ask the store for the complete equipment list.</li> : null}
           </ul>
         </section>
       ) : null}
@@ -153,9 +149,12 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
           ) : null}
           {model.certified ? (
             <div className="th-block th-cert-block">
+              <span className="th-cert th-cert--logo"><CertifiedBadge certified homeStore={model.store} /></span>
+              <div>
               <h2>{model.certified.name}</h2>
               <ul className="th-terms">{model.certified.terms.map((term) => <li key={term}>{term}</li>)}</ul>
               <p className="th-cert-note">{model.certified.note}</p>
+              </div>
             </div>
           ) : null}
         </section>

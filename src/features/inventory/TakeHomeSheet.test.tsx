@@ -59,13 +59,35 @@ describe('take-home sheet', () => {
     expect(container.querySelector('.th-bottom-grid')).toBeInTheDocument();
     expect(container.querySelector('.th-listing-link')).toHaveAttribute('href', vehicle().publicListing.listingUrl);
     expect(container.querySelector('.th-cert-note')).toHaveTextContent('Separate from any factory warranty');
-    expect(container.querySelector('.th-equipment')).toBeInTheDocument();
+    expect(screen.getAllByText('Apple CarPlay')).toHaveLength(1);
+    expect(container.querySelector('.th-photo')).not.toBeInTheDocument();
+    expect(container.querySelector('.th-identity')).toHaveTextContent('HT0529A');
+    expect(container.querySelector('.th-identity')).toHaveTextContent('TESTDATASYN000001');
+    expect(container.querySelector('.th-price')).toHaveTextContent('$42,810');
+  });
+
+  it('fills highlights without duplicating equipment and renders an available vehicle photo', () => {
+    const model = takeHomeModel({ ...vehicle(), imageUrl: 'https://example.com/vehicle.jpg', features: ['Adaptive cruise control', 'Heated front seats', 'Apple CarPlay'] });
+    const { container } = render(<TakeHomeSheetContent model={model} />);
+    expect(model.highlights).toHaveLength(3);
+    expect(container.querySelector('.th-photo')).toHaveAttribute('src', 'https://example.com/vehicle.jpg');
+    expect(container.querySelectorAll('.th-chips li')).toHaveLength(3);
+    expect(screen.getAllByText('Apple CarPlay')).toHaveLength(1);
   });
 
   it('does not render an unsafe listing URL into the customer sheet', () => {
     const unsafe = { ...vehicle(), publicListing: { ...vehicle().publicListing, listingUrl: 'javascript:alert(1)' } };
     const model = takeHomeModel(unsafe);
     expect(model.listingUrl).toBeNull();
+  });
+
+  it('preserves equipment qualifications and full customer notes without repeating highlights', () => {
+    const feature = 'Adaptive cruise control requires an active subscription after the included trial period';
+    const notes = 'Customer notes. '.repeat(40) + 'Delivery appointment to be confirmed.';
+    const model = takeHomeModel({ ...vehicle(), features: [feature], dealerComments: notes });
+    render(<TakeHomeSheetContent model={model} />);
+    expect(screen.getAllByText(feature)).toHaveLength(1);
+    expect(document.querySelector('.th-desc')?.textContent).toBe(notes);
   });
 
   it('closes on Escape without closing the vehicle workspace beneath it', async () => {
