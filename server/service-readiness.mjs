@@ -34,9 +34,14 @@ function oasisDay(value) {
 }
 
 function intakeDay(vehicle) {
-  // The durable first-arrival ledger wins when available. Inventory date is a
-  // legacy fallback for units that predate that ledger.
-  return isoDay(vehicle.serviceIntake?.first_arrival_date) ?? isoDay(vehicle.inventoryDate)
+  // A complete source capture can first observe a unit after the dealership
+  // listing already began. Use the earliest valid dealership-arrival evidence
+  // so a late import cannot invalidate a post-listing inspection.
+  const days = [
+    isoDay(vehicle.serviceIntake?.first_arrival_date),
+    isoDay(vehicle.inventoryDate),
+  ].filter(Boolean)
+  return days.sort()[0] ?? null
 }
 
 function autoCheckReadinessEvidence(vehicle) {

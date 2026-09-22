@@ -103,7 +103,11 @@ describe('manager service readiness ledger', () => {
     expect(serviceReadinessView({ ...vehicle, make: 'Ford' }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
     expect(serviceReadinessView({ ...vehicle, autoCheckReport: { dataState: 'stale', recentInspection: vehicle.autoCheckReport.recentInspection } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
     expect(serviceReadinessView({ ...vehicle, autoCheckReport: { dataState: 'current', recentInspection: { date: '2026-08-29', types: ['Vehicle Inspected'] } } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
-    expect(serviceReadinessView({ ...vehicle, inventoryDate: '2026-08-01', serviceIntake: { first_arrival_date: '2026-08-31' } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'new_arrival' })
+    expect(serviceReadinessView({ ...vehicle, inventoryDate: '2026-08-01', serviceIntake: { first_arrival_date: '2026-08-31' } }, null, manager)).toMatchObject({
+      status: 'serviced',
+      readinessBasis: 'autocheck_post_intake_inspection',
+      completedAt: '2026-08-30',
+    })
     expect(serviceReadinessView(vehicle, { status: 'needs_service', version: 1, actor: manager.user }, manager)).toMatchObject({
       status: 'needs_service', readinessBasis: 'manager_updated',
       readinessEvidence: { source: 'autocheck', inspectionDate: '2026-08-30' },
@@ -140,6 +144,47 @@ describe('manager service readiness ledger', () => {
       status: 'needs_service', readinessBasis: 'manager_updated',
       readinessEvidence: { source: 'ford_service_history', inServiceDate: '2026-08-14', readyDate: '2026-09-11' },
     })
+  })
+
+  it('uses the source listing date when first observation arrives after a completed Ford inspection', () => {
+    const vehicle = {
+      vin: VIN,
+      homeStore: 'Howell',
+      make: 'Ford',
+      inventoryDate: '2026-09-15',
+      serviceIntake: { first_arrival_date: '2026-09-22' },
+      fordOasis: {
+        serviceHistory: {
+          dataState: 'current',
+          historyCaptured: true,
+          recentInspection: {
+            openDate: '09/16/2026',
+            closeDate: '09/16/2026',
+            inspection: { status: 'confirmed', type: 'Certified Blue Oval inspection' },
+          },
+        },
+      },
+    }
+
+    expect(serviceReadinessView(vehicle, null, manager)).toMatchObject({
+      status: 'serviced',
+      readinessBasis: 'ford_service_history_inspection',
+      serviceEnteredAt: '2026-09-16',
+      completedAt: '2026-09-16',
+    })
+  })
+
+  it('preserves the earlier listing date when recording a late-observed arrival', () => {
+    const release = buildSyntheticRelease()
+    release.publicChangeEvents = [{ type: 'new_arrival', vin: VIN, reportDate: '2026-08-30' }]
+    const source = release.vehicles.find((vehicle) => vehicle.vin === VIN)
+    source.publicRecord.inventory_date = '2026-08-18'
+
+    expect(serviceIntakeRows(release, SYNTHETIC_NOW.toISOString())).toEqual([{
+      vin: VIN,
+      first_arrival_date: '2026-08-18',
+      observed_at: SYNTHETIC_NOW.toISOString(),
+    }])
   })
 
   it.each(['needs_service', 'in_service', 'serviced'])('preserves the manager %s state over feed arrival and baseline signals', (status) => {
