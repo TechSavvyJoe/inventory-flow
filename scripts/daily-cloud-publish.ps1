@@ -95,8 +95,10 @@ function Update-IntegrationExpectedMetadata {
     throw 'VERIFIED_RECEIPT_METADATA_INVALID'
   }
 
-  $sourceCounts = if ($Receipt.counts.activeStoreCounts) { $Receipt.counts.activeStoreCounts } else { $Receipt.counts.publicStoreCounts }
-  $sourceTotal = if ($null -ne $Receipt.counts.activeInventoryCount) { $Receipt.counts.activeInventoryCount } else { $Receipt.counts.publicRowCount }
+  # The external integration projection is intentionally public-only. The app's
+  # active inventory can also include DealerMail-only pre-listing vehicles.
+  $sourceCounts = $Receipt.counts.publicStoreCounts
+  $sourceTotal = $Receipt.counts.publicRowCount
   if (-not $sourceCounts) { throw 'VERIFIED_RECEIPT_METADATA_INVALID' }
 
   $stores = [ordered]@{}

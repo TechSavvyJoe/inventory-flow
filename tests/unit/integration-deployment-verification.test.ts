@@ -1,5 +1,6 @@
 // @ts-nocheck -- deployment verifier ESM; synthetic responses only, no credentials or live requests.
 // @vitest-environment node
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { oauthDiscovery, oauthReady, parseExpectedMetadata, reconcileExpectedMetadata, verificationPassed } from '../../scripts/verify-integration-deployment.mjs'
 
@@ -61,6 +62,18 @@ describe('integration deployment verification gates', () => {
   it('accepts omitted zero-count stores only when independent metadata expects zero', () => {
     const metadata = { ...expected, byStore: { Howell: 4, Fowlerville: 0, 'Ford Detroit': 0, Lincoln: 0 } }
     expect(reconcileExpectedMetadata({ ...metadata, byStore: { Howell: 4 } }, metadata).verified).toBe(true)
+  })
+
+  it('reconciles the public-only integration projection instead of the broader app inventory', () => {
+    const publisher = readFileSync(new URL('../../scripts/daily-cloud-publish.ps1', import.meta.url), 'utf8')
+    const expectedMetadata = publisher.slice(
+      publisher.indexOf('function Update-IntegrationExpectedMetadata'),
+      publisher.indexOf('function Assert-IntegrationDeployment'),
+    )
+    expect(expectedMetadata).toContain('$Receipt.counts.publicStoreCounts')
+    expect(expectedMetadata).toContain('$Receipt.counts.publicRowCount')
+    expect(expectedMetadata).not.toContain('activeStoreCounts')
+    expect(expectedMetadata).not.toContain('activeInventoryCount')
   })
 
   it('follows synthetic OAuth discovery without logging metadata payloads', async () => {
