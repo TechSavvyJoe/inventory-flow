@@ -48,11 +48,24 @@ export function useModalBackgroundIsolation({
     const bodyOverscrollPriority = document.body.style.getPropertyPriority("overscroll-behavior");
 
     background.setAttribute("inert", "");
-    background.setAttribute("aria-hidden", "true");
+    const focused = document.activeElement;
+    let hideFrame: number | null = null;
+    if (focused instanceof HTMLElement && background.contains(focused)) {
+      hideFrame = window.requestAnimationFrame(() => {
+        const currentFocus = document.activeElement;
+        if (currentFocus instanceof HTMLElement && background.contains(currentFocus)) {
+          currentFocus.blur();
+        }
+        background.setAttribute("aria-hidden", "true");
+      });
+    } else {
+      background.setAttribute("aria-hidden", "true");
+    }
     document.body.style.setProperty("overflow", "hidden");
     document.body.style.setProperty("overscroll-behavior", "none");
 
     return () => {
+      if (hideFrame !== null) window.cancelAnimationFrame(hideFrame);
       restoreAttribute(background, "inert", inert);
       restoreAttribute(background, "aria-hidden", ariaHidden);
 

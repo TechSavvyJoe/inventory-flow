@@ -1,5 +1,8 @@
 .inventory-service-link { display: inline-flex; align-items: center; gap: 5px; width: fit-content; max-width: 100%; min-height: 44px; padding: 0; border: 0; color: var(--ink-600); background: transparent; font-size: 14px; font-weight: 600; line-height: 18px; text-decoration: none; white-space: normal; }
 .inventory-service-link svg { flex-shrink: 0; }
+.inventory-service-link__content { display: grid; min-width: 0; gap: 1px; }
+.inventory-service-link__detail { display: flex; flex-wrap: wrap; gap: 0 8px; color: currentColor; font: 500 12px/15px var(--font-app); }
+.inventory-service-link__detail > span { white-space: nowrap; }
 .inventory-service-link:hover { text-decoration: underline; }
 .inventory-service-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .inventory-service-link--needs_service { color: color-mix(in srgb,var(--amber) 85%,var(--ink-900)); }

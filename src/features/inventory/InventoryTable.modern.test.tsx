@@ -124,7 +124,7 @@ describe('modern inventory result access', () => {
       else render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} />);
       const row = layout === 'desktop' ? document.querySelector('tr.inv-desk-row') as HTMLElement : screen.getByRole('article');
       expect(within(row).getByRole('link', { name: `Ready. Open service status for VIN ${vehicle.vin}` }))
-        .toHaveTextContent('Ready · Ford service 08/14/2026 · ready 09/11/2026');
+        .toHaveTextContent('ReadyStarted 08/14/2026Ready 09/11/2026');
     });
   });
 

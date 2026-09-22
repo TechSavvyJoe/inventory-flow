@@ -23,14 +23,14 @@ describe('service status shared across inventory and vehicle details', () => {
 
   it('shows an actual manager completion date when one exists', () => {
     render(<ServiceStatusLink vin="TESTDATAHWELL0001" detailed service={{ status: 'serviced', completedAt: '2026-08-30' } as ServiceReadiness} />)
-    expect(screen.getByRole('link')).toHaveTextContent('Ready · 08/30/2026')
+    expect(screen.getByRole('link')).toHaveTextContent('Ready08/30/2026')
   })
 
   it('identifies AutoCheck as the non-Ford readiness source', () => {
     render(<ServiceStatusLink vin="TESTDATAHWELL0001" detailed service={{
       status: 'serviced', readinessEvidence: { source: 'autocheck', inspectionDate: '2026-09-10', types: ['Vehicle Inspected'] },
     } as ServiceReadiness} />)
-    expect(screen.getByRole('link')).toHaveTextContent('Ready · AutoCheck inspected 09/10/2026')
+    expect(screen.getByRole('link')).toHaveTextContent('ReadyAutoCheck 09/10/2026')
     expect(screen.getByRole('link')).toHaveAttribute('title', expect.stringContaining('AutoCheck'))
   })
 
@@ -40,7 +40,7 @@ describe('service status shared across inventory and vehicle details', () => {
         source: 'ford_service_history', inspectionDate: '2026-09-11', inServiceDate: '2026-08-14', readyDate: '2026-09-11', types: ['Certified Blue Oval inspection'],
       },
     } as ServiceReadiness} />)
-    expect(screen.getByRole('link')).toHaveTextContent('Ready · Ford service 08/14/2026 · ready 09/11/2026')
+    expect(screen.getByRole('link')).toHaveTextContent('ReadyStarted 08/14/2026Ready 09/11/2026')
     expect(screen.getByRole('link')).toHaveAttribute('title', expect.stringContaining('Ford service-history'))
   })
 

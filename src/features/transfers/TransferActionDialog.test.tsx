@@ -142,7 +142,7 @@ describe('TransferActionDialog modal accessibility', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true')
     expect(dialog).toHaveAccessibleDescription(record.vehicleName)
     expect(container).toHaveAttribute('inert')
-    expect(container).toHaveAttribute('aria-hidden', 'true')
+    await waitFor(() => expect(container).toHaveAttribute('aria-hidden', 'true'))
     expect(document.body.style.overflow).toBe('hidden')
     expect(document.body.style.overscrollBehavior).toBe('none')
     await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Close this update' })).toHaveFocus())

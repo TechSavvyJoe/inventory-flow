@@ -112,7 +112,7 @@ describe('AppShell account and update controls', () => {
     expect(updateStatus).toHaveAttribute('aria-atomic', 'true')
     expect(updateStatus).toHaveAttribute('aria-busy', 'false')
     expect(shell).toHaveAttribute('inert', '')
-    expect(shell).toHaveAttribute('aria-hidden', 'true')
+    await waitFor(() => expect(shell).toHaveAttribute('aria-hidden', 'true'))
     expect(dialog).not.toHaveAttribute('inert')
     expect(document.body.style.overflow).toBe('hidden')
     expect(within(dialog).getAllByRole('button', { name: 'Close app controls' })).toHaveLength(1)

@@ -298,7 +298,7 @@ describe('vehicle workspace background isolation', () => {
     secondaryRects.mockRestore();
   });
 
-  it('locks scrolling, isolates only the page background, and restores prior inline state', () => {
+  it('moves focus out before hiding the page, locks scrolling, and restores prior inline state', async () => {
     document.body.style.setProperty('overflow', 'clip', 'important');
     document.body.style.setProperty('overscroll-behavior', 'contain');
     const { container } = render(
@@ -314,10 +314,14 @@ describe('vehicle workspace background isolation', () => {
     expect(background).toBeTruthy();
     background!.setAttribute('aria-hidden', 'false');
 
+    const opener = screen.getByRole('button', { name: /^Open vehicle details for 2024 Ford F-150/i });
+    opener.focus();
+    expect(opener).toHaveFocus();
     const dialog = openWorkspace();
 
     expect(background).toHaveAttribute('inert', '');
-    expect(background).toHaveAttribute('aria-hidden', 'true');
+    await waitFor(() => expect(background).toHaveAttribute('aria-hidden', 'true'));
+    expect(background).not.toContainElement(document.activeElement as HTMLElement);
     expect(dialog).not.toHaveAttribute('inert');
     expect(dialog).not.toHaveAttribute('aria-hidden', 'true');
     expect(experience).not.toHaveAttribute('inert');

@@ -76,7 +76,7 @@ describe('Premium vehicle workspace shares the operational record', () => {
       },
     })
     showPremiumVehicle(vehicle)
-    expect(screen.getByRole('link', { name: 'Service: Ready' })).toHaveTextContent('AutoCheck inspected 09/10/2026')
+    expect(screen.getByRole('link', { name: 'Service: Ready' })).toHaveTextContent('AutoCheck 09/10/2026')
     fireEvent.click(screen.getByRole('tab', { name: 'Records' }))
     const panel = screen.getByRole('tabpanel', { name: 'Records' })
     expect(panel).toHaveTextContent('Recent inspection')
