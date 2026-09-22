@@ -74,6 +74,7 @@ import {
   fordInvoiceUrl,
   fordOasisUrl,
   fordServiceHistoryUrl,
+  savedFordInvoiceUrl,
   officialVehicleDocumentUrl,
   vautoFactoryEquipmentUrl,
 } from "./vehicle-document-utils";
@@ -115,7 +116,7 @@ const WORKSPACE_SECTIONS: Array<{ id: WorkspacePageId; label: string }> = [
 const REDUCED_MOTION_MEDIA_QUERY = "(prefers-reduced-motion: reduce)";
 
 function formatReferencePrice(value: number): string {
-  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value)} · currency not captured`;
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value);
 }
 
 function compactSourcePrice(value: number | null | undefined, sticker?: InventoryVehicle["windowSticker"]): string {
@@ -604,6 +605,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const showWarranty = inService.source !== "oasis" && !warrantyCheck && Boolean(autoCheck || sticker || factoryEquipment) && (warranty.termsKnown || Boolean(warranty.inService.date));
   if (!autoCheck && !sticker && !factoryEquipment && !fordOasis && !warrantyCheck && !showWarranty) return null;
   const autoCheckUrl = officialVehicleDocumentUrl(autoCheck?.url, "autocheck", vehicle.publicListing.listingUrl);
+  const autoCheckViaVauto = autoCheck?.accessMethod === "vauto";
   const stickerUrl = officialVehicleDocumentUrl(sticker?.url, "window-sticker", vehicle.publicListing.listingUrl);
   const factoryEquipmentUrl = vautoFactoryEquipmentUrl(factoryEquipment?.url);
   const oasisUrl = fordFamily ? fordOasisUrl(vehicle.vin) : null;
@@ -666,7 +668,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const stickerFacts = sticker
     ? [
         sticker.equipmentGroup ? { label: "Equipment group", value: sticker.equipmentGroup } : null,
-        sticker.equipmentGroupPrice != null ? { label: "Equipment group price", value: displaySourceMoney(formatStickerMoney(sticker.equipmentGroupPrice, sticker)) } : null,
+        sticker.equipmentGroupPrice != null ? { label: "Equipment group price", value: compactSourcePrice(sticker.equipmentGroupPrice, sticker) } : null,
         sticker.exteriorColor ? { label: "Exterior", value: sticker.exteriorColor } : null,
         sticker.interiorColor ? { label: "Interior", value: sticker.interiorColor } : null,
         sticker.engine || sticker.transmission
@@ -697,17 +699,20 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
     { id: "autocheck", label: "AutoCheck", content: (autoCheck ? <article
           className="inventory-vehicle-document inventory-vehicle-document--autocheck"
           data-document-kind="autocheck"
-          data-link-state={autoCheckUrl ? "available" : "unavailable"}
+          data-link-state={autoCheckUrl ? "available" : autoCheckViaVauto ? "captured" : "unavailable"}
         >
           <header className="inventory-vehicle-document__heading">
             <AutoCheckWordmark />
             <span className="inventory-vehicle-document__title">
               <strong>AutoCheck vehicle history</strong>
+              <small>{autoCheckViaVauto ? "Captured through vAuto for this VIN" : "Dealership website report"}</small>
             </span>
             <DataState state={autoCheck.dataState} />
           </header>
 
-          <RecordSourceAction href={autoCheckUrl} label="Open report" accessibleLabel={`Open AutoCheck report for ${vehicleDisplayName(vehicle)} in a new tab`} unavailableLabel="AutoCheck report unavailable" />
+          {autoCheckViaVauto && !autoCheckUrl ? <div className="vdp-record-source-action">
+            <span className="inventory-vehicle-document__captured" role="status" aria-label="AutoCheck report facts captured through vAuto for this VIN"><CheckCircle2 size={16} aria-hidden="true" />Captured via vAuto</span>
+          </div> : <RecordSourceAction href={autoCheckUrl} label="Open report" accessibleLabel={`Open AutoCheck report for ${vehicleDisplayName(vehicle)} in a new tab`} unavailableLabel="AutoCheck report unavailable" />}
 
           <dl className="vdp-history-summary" aria-label="AutoCheck summary">
             {autoCheck.score != null || autoCheckScoreRange ? <Fact label="AutoCheck score" emphasize>{autoCheck.score ?? "Not reported"}{autoCheckScoreRange ? <small>Typical {autoCheckScoreRange}</small> : null}</Fact> : null}
@@ -722,6 +727,8 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             <AutoCheckFindings checks={autoCheckOtherChecks} report={autoCheck} label="Additional AutoCheck results" />
           </details> : null}
           <RecordSourceDetails>
+            {autoCheck.sourceLabel ? <p>{autoCheck.sourceLabel}</p> : null}
+            {autoCheck.capturedAt ? <p>Captured {formatDateTime(autoCheck.capturedAt)}</p> : null}
             <p>{autoCheck.reportRunAt ? `Report run ${formatDateTime(autoCheck.reportRunAt)}` : "Report run time not captured"}</p>
             <dl className="inventory-vehicle-document__facts">{autoCheckFacts.map(fact => <Fact label={fact.label} key={fact.label}>{fact.value}</Fact>)}</dl>
             {autoCheck.checks?.length ? <ul aria-label="Original AutoCheck findings">{autoCheck.checks.map((check, index) => <li key={index}><strong>{check.label}</strong> · {sourceDistanceText([check.status, check.detail].filter(Boolean).map(sourceDisplayText).join(" · ")) || "Not reported"}</li>)}</ul> : null}
@@ -926,12 +933,9 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
 
           <RecordSourceAction href={stickerUrl} label="Open sticker" accessibleLabel={`Open window sticker for ${vehicleDisplayName(vehicle)} in a new tab`} unavailableLabel="Window sticker unavailable" />
 
-          {sticker.totalMsrp != null || sticker.basePrice != null || sticker.totalOptions != null || sticker.destinationCharge != null ? (
+          {sticker.totalMsrp != null || sticker.basePrice != null ? (
             <dl className="inventory-vehicle-document__metrics inventory-vehicle-document__metrics--sticker" aria-label="Window sticker pricing">
-              {sticker.totalMsrp != null ? <Fact label="Sticker MSRP" emphasize>{compactSourcePrice(sticker.totalMsrp, sticker)}</Fact> : null}
-              {sticker.basePrice != null ? <Fact label="Base MSRP · lookup">{compactSourcePrice(sticker.basePrice, sticker)}</Fact> : null}
-              {sticker.totalOptions != null ? <Fact label="Total options">{compactSourcePrice(sticker.totalOptions, sticker)}</Fact> : null}
-              {sticker.destinationCharge != null ? <Fact label="Destination">{compactSourcePrice(sticker.destinationCharge, sticker)}</Fact> : null}
+              <Fact label={sticker.totalMsrp != null ? "Original MSRP" : "Base MSRP"} emphasize>{compactSourcePrice(sticker.totalMsrp ?? sticker.basePrice, sticker)}</Fact>
             </dl>
           ) : null}
 
@@ -984,8 +988,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             <p className="inventory-vehicle-document__empty">No window-sticker details are available for this vehicle.</p>
           ) : null}
           <RecordSourceDetails>
-            {sticker.originalMarket || sticker.pricingCurrencyEvidence ? <p>{[sticker.originalMarket ? `Original market: ${sticker.originalMarket}.` : null, sticker.pricingCurrencyEvidence].filter(Boolean).join(" ")}</p> : null}
-            {sticker.sourceMessage ? <p>{sticker.sourceMessage}</p> : null}
+            {sticker.originalMarket ? <p>{sticker.originalMarket} window sticker</p> : null}
             <p>Original factory equipment does not confirm current condition or installed equipment.</p>
           </RecordSourceDetails>
         </article> : null) },
@@ -2241,7 +2244,9 @@ export function VehicleWorkspace({
   const displayName = vehicleDisplayName(vehicle);
   const listingUrl = vehicle.publicListing.listingUrl;
   const supportsFordDealerTools = /^(ford|lincoln)$/i.test(vehicle.make.trim());
-  const invoiceUrl = supportsFordDealerTools ? fordInvoiceUrl(vehicle.vin) : null;
+  const invoiceUrl = supportsFordDealerTools
+    ? vehicle.fordInvoice?.available ? savedFordInvoiceUrl(vehicle.vin) : fordInvoiceUrl(vehicle.vin)
+    : null;
   const oasisUrl = supportsFordDealerTools ? fordOasisUrl(vehicle.vin) : null;
   const openRecallCount = vehicle.fordOasis?.openFieldServiceActions?.length ?? 0;
   const currentLocation = resolveCurrentLocation(vehicle);

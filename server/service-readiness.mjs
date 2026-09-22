@@ -79,8 +79,9 @@ export function serviceReadinessView(vehicle, row, context, { includeNotes = fal
   const canManage = context.role === 'group_manager' || (context.role === 'manager' && store === context.store)
   const recordedStatus = SERVICE_STATUSES.includes(row?.status) ? row.status : null
   // A current, exact-VIN inspection after intake is useful readiness evidence.
-  // It never replaces a manager's recorded decision.
-  const readinessEvidence = recordedStatus ? null : (fordServiceReadinessEvidence(vehicle) ?? autoCheckReadinessEvidence(vehicle))
+  // It never replaces a manager's recorded decision, but remains attached so
+  // the SRP and VDP can show the independent source and its dates.
+  const readinessEvidence = fordServiceReadinessEvidence(vehicle) ?? autoCheckReadinessEvidence(vehicle)
   const readinessBasis = readinessEvidence?.source === 'ford_service_history'
     ? 'ford_service_history_inspection'
     : readinessEvidence ? 'autocheck_post_intake_inspection' : row ? 'legacy_review' : vehicle.serviceIntake ? 'new_arrival' : 'unconfirmed'

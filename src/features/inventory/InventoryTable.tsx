@@ -664,8 +664,16 @@ export function DeskRowActions({
 }
 
 function mobileDocumentAvailability(vehicle: InventoryVehicle) {
+  const autoCheck = vehicle.autoCheckReport;
+  const hasCapturedAutoCheck = autoCheck?.accessMethod === "vauto" && Boolean(
+    autoCheck.score != null
+      || autoCheck.ownerCount != null
+      || autoCheck.reportRunAt
+      || autoCheck.recentInspection
+      || autoCheck.checks?.length,
+  );
   return {
-    autoCheck: Boolean(officialVehicleDocumentUrl(vehicle.autoCheckReport?.url, "autocheck", vehicle.publicListing.listingUrl)),
+    autoCheck: Boolean(officialVehicleDocumentUrl(autoCheck?.url, "autocheck", vehicle.publicListing.listingUrl) || hasCapturedAutoCheck),
     sticker: Boolean(officialVehicleDocumentUrl(vehicle.windowSticker?.url, "window-sticker", vehicle.publicListing.listingUrl)),
     factoryEquipment: Boolean(vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url)),
   };
@@ -692,7 +700,7 @@ export function vehicleAccessibleSummary(vehicle: InventoryVehicle): string {
     `Current location: ${location.label}`,
     movement ? `Movement: ${movement.label}` : null,
     change ? `Recent change: ${change.shortLabel}` : null,
-    officialVehicleDocumentUrl(vehicle.autoCheckReport?.url, "autocheck", vehicle.publicListing.listingUrl) ? "AutoCheck report available" : null,
+    mobileDocumentAvailability(vehicle).autoCheck ? "AutoCheck history available" : null,
     officialVehicleDocumentUrl(vehicle.windowSticker?.url, "window-sticker", vehicle.publicListing.listingUrl) ? "Window sticker available" : null,
     vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url) ? "vAuto informational equipment profile available" : null,
     openRecallSummary(vehicle),

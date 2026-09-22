@@ -9,10 +9,10 @@ export function ServiceStatusLink({ vin, service, detailed = false, labelPrefix 
   const status = serviceWorkflowStatus(service)
   const label = serviceStatusLabel(service)
   const StatusIcon = status === 'serviced' ? Check : Wrench
-  const autoCheckEvidence = service?.readinessEvidence?.source === 'autocheck' ? service.readinessEvidence : null
-  const fordEvidence = service?.readinessEvidence?.source === 'ford_service_history' ? service.readinessEvidence : null
-  const detail = detailed && autoCheckEvidence && status === 'serviced' ? ` · AutoCheck inspected ${formatDate(autoCheckEvidence.inspectionDate)}`
-    : detailed && fordEvidence && status === 'serviced' ? ` · Ford service ${formatDate(fordEvidence.inServiceDate)} · ready ${formatDate(fordEvidence.readyDate || fordEvidence.inspectionDate)}`
+  const autoCheckEvidence = status === 'serviced' && service?.readinessEvidence?.source === 'autocheck' ? service.readinessEvidence : null
+  const fordEvidence = status === 'serviced' && service?.readinessEvidence?.source === 'ford_service_history' ? service.readinessEvidence : null
+  const detail = detailed && autoCheckEvidence ? ` · AutoCheck inspected ${formatDate(autoCheckEvidence.inspectionDate)}`
+    : detailed && fordEvidence ? ` · Ford service ${formatDate(fordEvidence.inServiceDate)} · ready ${formatDate(fordEvidence.readyDate || fordEvidence.inspectionDate)}`
     : detailed && service?.completedAt && status === 'serviced' ? ` · ${formatDate(service.completedAt)}`
       : detailed && service?.serviceEnteredAt && status === 'in_service' ? ` · Since ${formatDate(service.serviceEnteredAt)}` : ''
   const title = autoCheckEvidence ? 'Ready from a qualifying AutoCheck post-intake inspection'

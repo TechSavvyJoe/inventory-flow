@@ -726,6 +726,7 @@ function validatedExternalAutoCheck(value, vin) {
     new Set([
       'validatedVin',
       'dataState',
+      'accessMethod',
       'url',
       'sourceLabel',
       'capturedAt',
@@ -750,11 +751,18 @@ function validatedExternalAutoCheck(value, vin) {
     vin,
   })
   assertValid(RESOURCE_DATA_STATES.has(value.dataState), 'External AutoCheck data state is invalid', { vin })
+  const accessMethod = optionalBoundedText(value.accessMethod, 'External AutoCheck access method', { max: 24 }) ?? 'official_url'
+  assertValid(['official_url', 'vauto'].includes(accessMethod), 'External AutoCheck access method is invalid', { vin })
   const url = canonicalExternalAutoCheckUrl(value.url, vin)
-  assertValid(url, 'External AutoCheck URL is not on an approved official host and exact-VIN route', { vin })
-  const result = { url, dataState: value.dataState }
+  if (accessMethod === 'vauto') {
+    assertValid(value.url === undefined || value.url === null, 'vAuto AutoCheck fallback must not carry a document URL', { vin })
+  } else {
+    assertValid(url, 'External AutoCheck URL is not on an approved official host and exact-VIN route', { vin })
+  }
+  const result = { ...(url ? { url } : {}), dataState: value.dataState, accessMethod }
   const sourceLabel = optionalBoundedText(value.sourceLabel, 'External AutoCheck source label', { max: 160 })
   const capturedAt = optionalIsoTimestamp(value.capturedAt, 'External AutoCheck capturedAt')
+  assertValid(accessMethod !== 'vauto' || (sourceLabel && capturedAt), 'vAuto AutoCheck fallback requires its source label and capture time', { vin })
   if (sourceLabel) result.sourceLabel = sourceLabel
   if (capturedAt) result.capturedAt = capturedAt
   const textFields = [
@@ -798,6 +806,17 @@ function validatedExternalAutoCheck(value, vin) {
   const recentInspection = validatedAutoCheckRecentInspection(value.recentInspection, vin, 'External AutoCheck')
   if (recentInspection) result.recentInspection = recentInspection
   return result
+}
+
+function validatedFordInvoice(value, vin) {
+  assertValid(isPlainObject(value), 'Ford invoice record must be an object', { vin })
+  assertOnlyKeys(value, new Set(['dataState', 'available', 'capturedAt', 'sourceLabel']), 'Ford invoice record', { vin })
+  assertValid(value.dataState === 'current', 'Ford invoice record must be current', { vin })
+  assertValid(value.available === true, 'Ford invoice record must confirm a saved document', { vin })
+  const capturedAt = optionalIsoTimestamp(value.capturedAt, 'Ford invoice capturedAt')
+  const sourceLabel = optionalBoundedText(value.sourceLabel, 'Ford invoice source label', { max: 160 })
+  assertValid(capturedAt && sourceLabel, 'Ford invoice record needs its capture time and source label', { vin })
+  return { dataState: 'current', available: true, capturedAt, sourceLabel }
 }
 
 const OASIS_VEHICLE_TEXT_FIELDS = [
@@ -1230,6 +1249,7 @@ function validateVinDocumentEnrichmentInternal(value, {
   const recordsByVin = {}
   let factoryEquipmentCount = 0
   let externalAutoCheckCount = 0
+  let fordInvoiceCount = 0
   let fordOasisCount = 0
   let warrantyCheckCount = 0
   for (const [rawVin, record] of entries) {
@@ -1239,7 +1259,7 @@ function validateVinDocumentEnrichmentInternal(value, {
     })
     assertOnlyKeys(
       record,
-      new Set(['vin', 'factoryEquipment', 'autoCheckReport', 'fordOasis', 'warrantyCheck']),
+      new Set(['vin', 'factoryEquipment', 'autoCheckReport', 'fordInvoice', 'fordOasis', 'warrantyCheck']),
       'VIN document enrichment record',
       { vin },
     )
@@ -1254,6 +1274,10 @@ function validateVinDocumentEnrichmentInternal(value, {
       record.autoCheckReport === undefined || record.autoCheckReport === null
         ? undefined
         : validatedExternalAutoCheck(record.autoCheckReport, vin)
+    const fordInvoice =
+      record.fordInvoice === undefined || record.fordInvoice === null
+        ? undefined
+        : validatedFordInvoice(record.fordInvoice, vin)
     let fordOasis
     let warrantyCheck
     let rejectedOptionalResource = false
@@ -1275,22 +1299,24 @@ function validateVinDocumentEnrichmentInternal(value, {
         onResourceRejected({ vin, channel: 'warrantyCheck', reason: String(error?.message ?? error).slice(0, 240) })
       }
     }
-    if (degradeOptionalResources && rejectedOptionalResource && !(factoryEquipment || autoCheckReport || fordOasis || warrantyCheck)) {
+    if (degradeOptionalResources && rejectedOptionalResource && !(factoryEquipment || autoCheckReport || fordInvoice || fordOasis || warrantyCheck)) {
       continue
     }
     assertValid(
-      factoryEquipment || autoCheckReport || fordOasis || warrantyCheck,
+      factoryEquipment || autoCheckReport || fordInvoice || fordOasis || warrantyCheck,
       'VIN document enrichment record contains no usable resource',
       { vin },
     )
     if (factoryEquipment) factoryEquipmentCount += 1
     if (autoCheckReport) externalAutoCheckCount += 1
+    if (fordInvoice) fordInvoiceCount += 1
     if (fordOasis) fordOasisCount += 1
     if (warrantyCheck) warrantyCheckCount += 1
     recordsByVin[vin] = {
       vin,
       ...(factoryEquipment ? { factoryEquipment } : {}),
       ...(autoCheckReport ? { autoCheckReport } : {}),
+      ...(fordInvoice ? { fordInvoice } : {}),
       ...(fordOasis ? { fordOasis } : {}),
       ...(warrantyCheck ? { warrantyCheck } : {}),
     }
@@ -1303,6 +1329,7 @@ function validateVinDocumentEnrichmentInternal(value, {
       recordCount: entries.length,
       factoryEquipmentCount,
       externalAutoCheckCount,
+      ...(fordInvoiceCount > 0 ? { fordInvoiceCount } : {}),
       // Emit fordOasisCount only when the Ford OASIS channel is actually in use.
       // A release with zero OASIS records stays byte-compatible with a Worker that
       // predates the channel (its metadata allow-list has no fordOasisCount key),

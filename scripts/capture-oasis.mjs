@@ -24,6 +24,7 @@
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { getOriginTab, fetchInTab, sleep, targets, PORT } from './lib/cdp.mjs'
+import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import { parseOasisFull } from './lib/oasis-parser.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
@@ -43,12 +44,7 @@ const budgetMs = num('--budget-ms', 1800000)
 const refresh = rest.includes('--refresh')
 
 // ---------------------------------------------------------------- worklist
-const snapPath = path.join(ROOT, 'work', 'inventory-history', 'snapshots', `${reportDate}-public.json`)
-if (!existsSync(snapPath)) { console.log(JSON.stringify({ error: `snapshot not found: ${snapPath}` })); process.exit(1) }
-const snapRaw = JSON.parse(readFileSync(snapPath, 'utf8')).vehicles || {}
-const vehicles = Array.isArray(snapRaw)
-  ? Object.fromEntries(snapRaw.filter(v => v && v.vin).map(v => [String(v.vin).toUpperCase(), v]))
-  : snapRaw
+const vehicles = loadDatedInventoryVehicles(ROOT, reportDate)
 
 const worklist = Object.entries(vehicles)
   .filter(([, v]) => FORD_MAKES.has(String(v.make || '').toUpperCase()))

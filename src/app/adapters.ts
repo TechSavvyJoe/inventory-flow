@@ -537,6 +537,14 @@ export function toInventoryVehicle(
   // freshness remains independent from public-listing freshness, including
   // for CRM-only vehicles that have no current public listing.
   const factoryEquipment = factoryEquipmentResource(vehicle.factoryEquipment, dealerMailState)
+  const fordInvoice = vehicle.fordInvoice?.available === true && vehicle.fordInvoice.capturedAt && vehicle.fordInvoice.sourceLabel
+    ? {
+        dataState: resourceDataState(vehicle.fordInvoice.dataState, dealerMailState),
+        available: true as const,
+        capturedAt: vehicle.fordInvoice.capturedAt,
+        sourceLabel: vehicle.fordInvoice.sourceLabel,
+      }
+    : null
   // Ford OASIS arrives through the same independent resources channel.
   const fordOasis = fordOasisResource(vehicle.fordOasis, dealerMailState)
   // The warranty check also rides the independent resources channel.
@@ -598,6 +606,7 @@ export function toInventoryVehicle(
         }
       : null,
     factoryEquipment,
+    fordInvoice,
     fordOasis,
     warrantyCheck,
     publicListing: {

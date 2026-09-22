@@ -66,6 +66,9 @@ export interface AutoCheckReportRecord {
   /** VIN-specific AutoCheck URL published by the dealership vehicle page. */
   url?: string | null
   dataState?: SourceFreshness
+  accessMethod?: 'official_url' | 'vauto' | null
+  sourceLabel?: string | null
+  capturedAt?: string | null
   reportRunAt?: string | null
   score?: number | null
   scoreRangeLow?: number | null
@@ -87,6 +90,13 @@ export interface AutoCheckReportRecord {
     status?: string | null
     detail?: string | null
   }>
+}
+
+export interface FordInvoiceRecord {
+  dataState: SourceFreshness
+  available: true
+  capturedAt: string
+  sourceLabel: string
 }
 
 export interface WindowStickerRecord {
@@ -505,6 +515,7 @@ export interface VehicleRecord {
   autoCheckReport?: AutoCheckReportRecord
   windowSticker?: WindowStickerRecord
   factoryEquipment?: FactoryEquipmentRecord
+  fordInvoice?: FordInvoiceRecord
   fordOasis?: FordOasisRecord
   warrantyCheck?: WarrantyCheckRecord
 }

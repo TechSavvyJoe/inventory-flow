@@ -134,6 +134,17 @@ function addExternalAutoCheck(bundle, url) {
   return vehicle
 }
 
+function addFordInvoice(bundle) {
+  const vehicle = bundle.release.vehicles.find((record) => record.resourceRecord)
+  vehicle.resourceRecord.fordInvoice = {
+    dataState: 'current', available: true, capturedAt: '2026-08-30T14:30:00Z', sourceLabel: 'Saved Ford factory invoice',
+  }
+  const run = bundle.release.sourceRuns.resources
+  run.metadata.fordInvoiceCount = 1
+  run.provenanceSha256 = resourceProvenanceSha256(run, bundle.release.vehicles)
+  return vehicle
+}
+
 function fordOasisFixture() {
   return {
     dataState: 'current',
@@ -242,6 +253,18 @@ function addWarrantyCheck(bundle, { replaceFactoryEquipment = false, mutate = nu
 }
 
 describe('portable cloud release validation', () => {
+  it('binds saved invoice availability to the resource source provenance', () => {
+    const bundle = completeBundle()
+    addFordInvoice(bundle)
+    expect(validateReleaseBundle(bundle)).toMatchObject({ resourceRecordCount: 1, fordInvoiceRecordCount: 1 })
+    const missingTime = structuredClone(bundle)
+    delete missingTime.release.vehicles.find((record) => record.resourceRecord).resourceRecord.fordInvoice.capturedAt
+    expect(() => validateReleaseBundle(missingTime)).toThrow(/capture time is required/i)
+    const undeclared = structuredClone(bundle)
+    undeclared.release.sourceRuns.resources.metadata.fordInvoiceCount = 0
+    expect(() => validateReleaseBundle(undeclared)).toThrow(/attached resource type counts exceed/i)
+  })
+
   it('binds remaining factory warranty figured at the vehicle odometer', () => {
     const bundle = completeBundle()
     addWarrantyCheck(bundle)
@@ -547,6 +570,27 @@ describe('portable cloud release validation', () => {
     const resourceVehicle = bundle.release.vehicles.find((vehicle) => vehicle.resourceRecord)
     addExternalAutoCheck(bundle, urlForVin(resourceVehicle.vin))
     expect(() => validateReleaseBundle(bundle)).toThrow(/approved exact-VIN HTTPS resource/)
+  })
+
+  it('accepts a source-labeled vAuto AutoCheck capture without inventing a report URL', () => {
+    const bundle = completeBundle()
+    const resourceVehicle = bundle.release.vehicles.find((vehicle) => vehicle.resourceRecord)
+    addExternalAutoCheck(bundle, `https://www.autocheck.com/report/${resourceVehicle.vin}`)
+    delete resourceVehicle.resourceRecord.autoCheckReport.url
+    Object.assign(resourceVehicle.resourceRecord.autoCheckReport, {
+      accessMethod: 'vauto',
+      capturedAt: '2026-09-21T20:45:00.000Z',
+      sourceLabel: 'Experian AutoCheck report captured through vAuto for this VIN',
+    })
+    bundle.release.sourceRuns.resources.provenanceSha256 = resourceProvenanceSha256(bundle.release.sourceRuns.resources, bundle.release.vehicles)
+    expect(validateReleaseBundle(bundle)).toMatchObject({ resourceRecordCount: 1 })
+
+    const missingCapture = structuredClone(bundle)
+    delete missingCapture.release.vehicles.find((vehicle) => vehicle.resourceRecord).resourceRecord.autoCheckReport.capturedAt
+    expect(() => validateReleaseBundle(missingCapture)).toThrow(/requires its source label and capture time/i)
+    const unsafeUrl = structuredClone(bundle)
+    unsafeUrl.release.vehicles.find((vehicle) => vehicle.resourceRecord).resourceRecord.autoCheckReport.url = `https://www.autocheck.com/report/${resourceVehicle.vin}`
+    expect(() => validateReleaseBundle(unsafeUrl)).toThrow(/must not carry a document URL/i)
   })
 
   it('independently derives counts while retaining primary, backup, deleted and full evidence records', () => {

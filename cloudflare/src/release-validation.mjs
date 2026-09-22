@@ -215,14 +215,18 @@ function validateFactoryEquipment(value, vin) {
 
 function validateExternalAutoCheck(value, vin) {
   onlyKeys(value, new Set([
-    'dataState', 'url', 'sourceLabel', 'capturedAt', 'reportRunAt', 'score', 'scoreRangeLow',
+    'dataState', 'accessMethod', 'url', 'sourceLabel', 'capturedAt', 'reportRunAt', 'score', 'scoreRangeLow',
     'scoreRangeHigh', 'usage', 'ownerCount', 'lastReportedOdometer', 'lastReportedOdometerDate',
     'vehicleClass', 'assemblyCountry', 'estimatedInServiceDate', 'checks', 'recentInspection',
   ]), 'external AutoCheck record')
   ensure(RESOURCE_DATA_STATES.has(value.dataState), 'external AutoCheck data state is invalid')
-  ensure(canonicalExternalAutoCheckUrl(value.url, vin), 'external AutoCheck URL is not an approved exact-VIN HTTPS resource')
-  optionalText(value.sourceLabel, 'external AutoCheck sourceLabel', 160)
-  optionalTimestamp(value.capturedAt, 'external AutoCheck capturedAt')
+  const accessMethod = optionalText(value.accessMethod, 'external AutoCheck accessMethod', 24) ?? 'official_url'
+  ensure(['official_url', 'vauto'].includes(accessMethod), 'external AutoCheck access method is invalid')
+  if (accessMethod === 'vauto') ensure(value.url === undefined || value.url === null, 'vAuto AutoCheck fallback must not carry a document URL')
+  else ensure(canonicalExternalAutoCheckUrl(value.url, vin), 'external AutoCheck URL is not an approved exact-VIN HTTPS resource')
+  const sourceLabel = optionalText(value.sourceLabel, 'external AutoCheck sourceLabel', 160)
+  const capturedAt = optionalTimestamp(value.capturedAt, 'external AutoCheck capturedAt')
+  ensure(accessMethod !== 'vauto' || (sourceLabel && capturedAt), 'vAuto AutoCheck fallback requires its source label and capture time')
   for (const [field, max] of [
     ['reportRunAt', 80], ['usage', 80], ['lastReportedOdometerDate', 20], ['vehicleClass', 160],
     ['assemblyCountry', 120], ['estimatedInServiceDate', 20],
@@ -477,6 +481,15 @@ function validateWarrantyCheck(value, vin) {
   return { factoryEquipment: 0, externalAutoCheck: 0, fordOasis: 0, warrantyCheck: 1 }
 }
 
+function validateFordInvoice(value, vin) {
+  onlyKeys(value, new Set(['dataState', 'available', 'capturedAt', 'sourceLabel']), 'Ford invoice record')
+  ensure(value.dataState === 'current', 'Ford invoice record must be current')
+  ensure(value.available === true, 'Ford invoice record must confirm a saved document')
+  ensure(Boolean(optionalTimestamp(value.capturedAt, 'Ford invoice capturedAt')), 'Ford invoice capture time is required')
+  ensure(Boolean(optionalText(value.sourceLabel, 'Ford invoice source label', 160)), 'Ford invoice source label is required')
+  return { fordInvoice: 1 }
+}
+
 function resourceRejectionReason(error) {
   return String(error?.message ?? error).replace(/^Invalid cloud release:\s*/i, '').slice(0, 240)
 }
@@ -485,9 +498,9 @@ function validateResourceRecord(value, vin, {
   degradeOptionalResources = false,
   onResourceRejected = () => {},
 } = {}) {
-  onlyKeys(value, new Set(['vin', 'factoryEquipment', 'autoCheckReport', 'fordOasis', 'warrantyCheck']), 'resource record')
+  onlyKeys(value, new Set(['vin', 'factoryEquipment', 'autoCheckReport', 'fordInvoice', 'fordOasis', 'warrantyCheck']), 'resource record')
   ensure(value.vin === vin && normalizedVin(value.vin) === vin, 'resource record VIN does not match its normalized vehicle')
-  let counts = { factoryEquipment: 0, externalAutoCheck: 0, fordOasis: 0, warrantyCheck: 0 }
+  let counts = { factoryEquipment: 0, externalAutoCheck: 0, fordInvoice: 0, fordOasis: 0, warrantyCheck: 0 }
   const rejected = []
   if (value.factoryEquipment !== undefined && value.factoryEquipment !== null) {
     const next = validateFactoryEquipment(value.factoryEquipment, vin)
@@ -496,6 +509,10 @@ function validateResourceRecord(value, vin, {
   if (value.autoCheckReport !== undefined && value.autoCheckReport !== null) {
     const next = validateExternalAutoCheck(value.autoCheckReport, vin)
     counts = { ...counts, externalAutoCheck: counts.externalAutoCheck + next.externalAutoCheck }
+  }
+  if (value.fordInvoice !== undefined && value.fordInvoice !== null) {
+    const next = validateFordInvoice(value.fordInvoice, vin)
+    counts = { ...counts, fordInvoice: counts.fordInvoice + next.fordInvoice }
   }
   if (value.fordOasis !== undefined && value.fordOasis !== null) {
     try {
@@ -519,7 +536,7 @@ function validateResourceRecord(value, vin, {
       onResourceRejected(rejection)
     }
   }
-  const usable = counts.factoryEquipment + counts.externalAutoCheck + counts.fordOasis + counts.warrantyCheck > 0
+  const usable = counts.factoryEquipment + counts.externalAutoCheck + counts.fordInvoice + counts.fordOasis + counts.warrantyCheck > 0
   ensure(usable || (degradeOptionalResources && rejected.length > 0), 'resource record contains no usable resource')
   return { counts, rejected, usable }
 }
@@ -538,7 +555,7 @@ function validateResourceRun(run, resourceRows, reportDate) {
 
   const metadata = run.metadata
   onlyKeys(metadata, new Set([
-    'status', 'generatedAt', 'recordCount', 'factoryEquipmentCount', 'externalAutoCheckCount', 'fordOasisCount',
+    'status', 'generatedAt', 'recordCount', 'factoryEquipmentCount', 'externalAutoCheckCount', 'fordInvoiceCount', 'fordOasisCount',
     'warrantyCheckCount', 'path', 'sha256', 'bytes', 'matchedVehicleCount', 'unmatchedRecordCount',
   ]), 'resources source metadata')
   ensure(metadata.status === 'matched', 'resources source metadata is not matched')
@@ -554,16 +571,18 @@ function validateResourceRun(run, resourceRows, reportDate) {
   ensure(matched === resourceRows.length && unmatched === recordCount - matched, 'resources matched/unmatched counts do not reconcile')
   const factoryCount = strictInteger(metadata.factoryEquipmentCount, 'factory-equipment source count')
   const autoCheckCount = strictInteger(metadata.externalAutoCheckCount, 'external AutoCheck source count')
+  const invoiceCount = metadata.fordInvoiceCount === undefined ? 0 : strictInteger(metadata.fordInvoiceCount, 'Ford invoice source count')
   // Releases published before the Ford OASIS channel existed carry no OASIS count.
   const oasisCount = metadata.fordOasisCount === undefined ? 0 : strictInteger(metadata.fordOasisCount, 'Ford OASIS source count')
   // Likewise, releases published before the warranty check channel carry no warranty count.
   const warrantyCount = metadata.warrantyCheckCount === undefined ? 0 : strictInteger(metadata.warrantyCheckCount, 'warranty check source count')
-  ensure(factoryCount <= recordCount && autoCheckCount <= recordCount && oasisCount <= recordCount && warrantyCount <= recordCount, 'resources type counts exceed the source record count')
+  ensure(factoryCount <= recordCount && autoCheckCount <= recordCount && invoiceCount <= recordCount && oasisCount <= recordCount && warrantyCount <= recordCount, 'resources type counts exceed the source record count')
   const attachedFactory = resourceRows.reduce((total, row) => total + row.counts.factoryEquipment, 0)
   const attachedAutoCheck = resourceRows.reduce((total, row) => total + row.counts.externalAutoCheck, 0)
+  const attachedInvoice = resourceRows.reduce((total, row) => total + row.counts.fordInvoice, 0)
   const attachedOasis = resourceRows.reduce((total, row) => total + row.counts.fordOasis, 0)
   const attachedWarranty = resourceRows.reduce((total, row) => total + row.counts.warrantyCheck, 0)
-  ensure(attachedFactory <= factoryCount && attachedAutoCheck <= autoCheckCount && attachedOasis <= oasisCount && attachedWarranty <= warrantyCount, 'attached resource type counts exceed validated source evidence')
+  ensure(attachedFactory <= factoryCount && attachedAutoCheck <= autoCheckCount && attachedInvoice <= invoiceCount && attachedOasis <= oasisCount && attachedWarranty <= warrantyCount, 'attached resource type counts exceed validated source evidence')
   ensure(HASH.test(String(run.provenanceSha256)), 'resources source provenance checksum is invalid')
   ensure(
     String(run.provenanceSha256).toLowerCase() === resourceProvenanceSha256(run, resourceRows),
@@ -956,6 +975,10 @@ export function validateReleaseBundle(bundle, {
         degradeOptionalResources,
         onResourceRejected,
       })
+      if (resourceValidation.counts.fordInvoice > 0) {
+        const make = String(record.publicRecord?.make ?? record.crmRecord?.makeRaw ?? '').trim().toUpperCase()
+        ensure(['FORD', 'LINC', 'LINCOLN'].includes(make), 'Ford invoice is attached to a non-Ford-family vehicle')
+      }
       resourceRows.push({ vin, resourceRecord: record.resourceRecord, record, ...resourceValidation })
     }
     seen.add(vin)
@@ -989,6 +1012,9 @@ export function validateReleaseBundle(bundle, {
     publicStoreCounts: publicData.counts,
     crmStoreCounts: crm.counts,
     resourceRecordCount: resourceRows.filter((row) => row.usable).length,
+    ...(resourceRows.some((row) => row.counts.fordInvoice > 0)
+      ? { fordInvoiceRecordCount: resourceRows.reduce((total, row) => total + row.counts.fordInvoice, 0) }
+      : {}),
     fordOasisRecordCount: resourceRows.reduce((total, row) => total + row.counts.fordOasis, 0),
     warrantyCheckRecordCount: resourceRows.reduce((total, row) => total + row.counts.warrantyCheck, 0),
     managerDispositionRecordCount: managerDisposition.recordCount,

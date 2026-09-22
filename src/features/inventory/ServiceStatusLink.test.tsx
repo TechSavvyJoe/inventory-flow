@@ -43,4 +43,16 @@ describe('service status shared across inventory and vehicle details', () => {
     expect(screen.getByRole('link')).toHaveTextContent('Ready · Ford service 08/14/2026 · ready 09/11/2026')
     expect(screen.getByRole('link')).toHaveAttribute('title', expect.stringContaining('Ford service-history'))
   })
+
+  it('does not present attached source evidence as Ready when a manager status says otherwise', () => {
+    render(<ServiceStatusLink vin="TESTDATAHWELL0001" detailed service={{
+      status: 'needs_service', readinessBasis: 'manager_updated', readinessEvidence: {
+        source: 'ford_service_history', inspectionDate: '2026-09-11', inServiceDate: '2026-08-14', readyDate: '2026-09-11', types: ['Certified Blue Oval inspection'],
+      },
+    } as ServiceReadiness} />)
+    const link = screen.getByRole('link')
+    expect(link).toHaveTextContent(/^Waiting for service$/)
+    expect(link).not.toHaveTextContent(/Ford service|ready 09\/11\/2026/i)
+    expect(link).toHaveAttribute('title', expect.stringContaining('service workflow'))
+  })
 })

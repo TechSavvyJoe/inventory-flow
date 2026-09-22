@@ -148,7 +148,9 @@ describe('vehicle document workspace', () => {
     expect(source.compareDocumentPosition(checks) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const sticker = panel.querySelector('[data-document-kind="window-sticker"]') as HTMLElement;
     expect(sticker.querySelector('details')).not.toBeVisible();
-    for (const value of ['Active Comfort Package', '20-inch wheels', 'Factory line one', 'Factory line two', '3 years / 36,000 miles', '42,585', '5,100', '1,795', '49,480']) expect(within(sticker).getByText(value)).toBeVisible();
+    for (const value of ['Active Comfort Package', '20-inch wheels', 'Factory line one', 'Factory line two', '3 years / 36,000 miles', '49,480']) expect(within(sticker).getByText(value)).toBeVisible();
+    expect(sticker).not.toHaveTextContent('5,100');
+    expect(sticker).not.toHaveTextContent('1,795');
     expect(within(sticker).queryByText(/confirm currency/)).not.toBeInTheDocument();
   });
 
@@ -187,8 +189,24 @@ describe('vehicle document workspace', () => {
     const panel = screen.getByRole('region', { name: 'Vehicle documents' });
     expect(within(panel).queryByRole('link', { name: /Open (AutoCheck report|window sticker)/ })).not.toBeInTheDocument();
     expect(within(panel).queryByText(/official.*link is available/i)).not.toBeInTheDocument();
-    expect(within(panel).getByText('The source did not publish a document for this VIN.')).not.toBeVisible();
+    expect(within(panel).queryByText('The source did not publish a document for this VIN.')).not.toBeInTheDocument();
     expect(within(panel).getAllByText('Document unavailable').length).toBeGreaterThan(0);
+  });
+
+  it('shows a vAuto history capture as available evidence without inventing a report link', () => {
+    const captured = vehicle(false);
+    captured.autoCheckReport = {
+      dataState: 'current', accessMethod: 'vauto', score: 91, ownerCount: 1,
+      sourceLabel: 'Experian AutoCheck report captured through vAuto for this VIN',
+      capturedAt: '2026-09-21T20:45:00.000Z', checks: [{ label: 'Accident / damage', status: 'No accidents reported' }],
+    };
+    render(<VehicleWorkspace vehicle={captured} homeStore={captured.location.homeStore} onClose={vi.fn()} initialTab="data" />);
+    const card = document.querySelector('[data-document-kind="autocheck"]') as HTMLElement;
+    expect(card).toHaveAttribute('data-link-state', 'captured');
+    expect(within(card).getByText('Captured via vAuto')).toBeVisible();
+    expect(within(card).queryByRole('link', { name: /Open AutoCheck report/ })).not.toBeInTheDocument();
+    expect(within(card).queryByText('Document unavailable')).not.toBeInTheDocument();
+    expect(card.querySelector('details')).not.toBeVisible();
   });
 
   it('shows captured OASIS coverage without a competing AutoCheck estimate', () => {
@@ -257,7 +275,8 @@ describe('vehicle document workspace', () => {
     const panel = await openVehicleDocuments();
     expect(panel).not.toBeNull();
     expect(within(panel!).getByText(/CAD\s49,480/)).toBeInTheDocument();
-    expect(within(panel!).getByText(/Original market: Canada/)).not.toBeVisible();
+    expect(within(panel!).getByText('Canada window sticker')).toBeInTheDocument();
+    expect(within(panel!).queryByText(/amounts retained without conversion/i)).not.toBeInTheDocument();
     expect(within(panel!).queryByText('$49,480')).not.toBeInTheDocument();
   });
 

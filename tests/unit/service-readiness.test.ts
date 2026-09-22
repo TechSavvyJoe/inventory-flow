@@ -104,7 +104,10 @@ describe('manager service readiness ledger', () => {
     expect(serviceReadinessView({ ...vehicle, autoCheckReport: { dataState: 'stale', recentInspection: vehicle.autoCheckReport.recentInspection } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
     expect(serviceReadinessView({ ...vehicle, autoCheckReport: { dataState: 'current', recentInspection: { date: '2026-08-29', types: ['Vehicle Inspected'] } } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
     expect(serviceReadinessView({ ...vehicle, inventoryDate: '2026-08-01', serviceIntake: { first_arrival_date: '2026-08-31' } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'new_arrival' })
-    expect(serviceReadinessView(vehicle, { status: 'needs_service', version: 1, actor: manager.user }, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'manager_updated', readinessEvidence: null })
+    expect(serviceReadinessView(vehicle, { status: 'needs_service', version: 1, actor: manager.user }, manager)).toMatchObject({
+      status: 'needs_service', readinessBasis: 'manager_updated',
+      readinessEvidence: { source: 'autocheck', inspectionDate: '2026-08-30' },
+    })
   })
 
   it('uses only a current post-intake Ford service-history inspection to mark Ford and Lincoln inventory Ready', () => {
@@ -132,7 +135,10 @@ describe('manager service readiness ledger', () => {
     expect(serviceReadinessView({ ...vehicle, make: 'Cadillac' }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
     expect(serviceReadinessView({ ...vehicle, inventoryDate: '2026-08-15' }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
     expect(serviceReadinessView({ ...vehicle, fordOasis: { serviceHistory: { ...serviceHistory, dataState: 'stale' } } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
-    expect(serviceReadinessView(vehicle, { status: 'needs_service', version: 1, actor: manager.user }, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'manager_updated', readinessEvidence: null })
+    expect(serviceReadinessView(vehicle, { status: 'needs_service', version: 1, actor: manager.user }, manager)).toMatchObject({
+      status: 'needs_service', readinessBasis: 'manager_updated',
+      readinessEvidence: { source: 'ford_service_history', inServiceDate: '2026-08-14', readyDate: '2026-09-11' },
+    })
   })
 
   it.each(['needs_service', 'in_service', 'serviced'])('preserves the manager %s state over feed arrival and baseline signals', (status) => {

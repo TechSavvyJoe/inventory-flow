@@ -893,10 +893,12 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
   const independentResourceState = (resource) =>
     meta.resourceFreshness === 'current' ? resource?.dataState : meta.resourceFreshness
   const independentAutoCheckReport = source.resourceRecord?.autoCheckReport
-  const autoCheckReport = independentAutoCheckReport
-    ? { ...independentAutoCheckReport, dataState: independentResourceState(independentAutoCheckReport) }
-    : publicRecord?.autoCheckReport
-      ? { ...publicRecord.autoCheckReport, dataState: publicVehicleResourceState(publicRecord.autoCheckReport) }
+  // The selling dealer's live website report is authoritative. vAuto is only
+  // the exact-VIN fallback for a current vehicle that is not listed online yet.
+  const autoCheckReport = publicRecord?.autoCheckReport
+    ? { ...publicRecord.autoCheckReport, dataState: publicVehicleResourceState(publicRecord.autoCheckReport) }
+    : independentAutoCheckReport
+      ? { ...independentAutoCheckReport, dataState: independentResourceState(independentAutoCheckReport) }
       : undefined
   const windowSticker = publicRecord?.windowSticker
     ? { ...publicRecord.windowSticker, dataState: publicVehicleResourceState(publicRecord.windowSticker) }
@@ -906,6 +908,13 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
         ...source.resourceRecord.factoryEquipment,
         dataState: independentResourceState(source.resourceRecord.factoryEquipment),
         isOriginalWindowSticker: false,
+      }
+    : undefined
+  const canViewFordInvoice = ['sales', 'manager', 'group_manager'].includes(context.authenticatedRole)
+  const fordInvoice = canViewFordInvoice && source.resourceRecord?.fordInvoice
+    ? {
+        ...source.resourceRecord.fordInvoice,
+        dataState: independentResourceState(source.resourceRecord.fordInvoice),
       }
     : undefined
   // Ford OASIS facts are read-only reference evidence from the resources
@@ -989,6 +998,7 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ...(autoCheckReport ? { autoCheckReport } : {}),
     ...(windowSticker ? { windowSticker } : {}),
     ...(factoryEquipment ? { factoryEquipment } : {}),
+    ...(fordInvoice ? { fordInvoice } : {}),
     ...(fordOasis ? { fordOasis } : {}),
     ...(warrantyCheck ? { warrantyCheck } : {}),
   }
@@ -1093,6 +1103,8 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ]),
     factoryEquipment?.disclaimer,
     factoryEquipment ? 'vAuto CAI informational equipment label not original Monroney window sticker' : null,
+    fordInvoice?.available ? 'Saved Ford factory invoice' : null,
+    fordInvoice?.capturedAt,
     fordOasis?.dataState,
     fordOasis?.sourceLabel,
     fordOasis?.vehicleDescription,
@@ -1145,6 +1157,7 @@ function mergedResourceCoverage(sources, enrichmentRows = 0) {
     autoCheck: 0,
     windowStickers: 0,
     factoryEquipment: 0,
+    fordInvoices: 0,
     fordOasis: 0,
     warrantyCheck: 0,
     enrichmentRows,
@@ -1155,9 +1168,10 @@ function mergedResourceCoverage(sources, enrichmentRows = 0) {
     const hasAutoCheck = Boolean(source.resourceRecord?.autoCheckReport || source.publicRecord?.autoCheckReport)
     const hasWindowSticker = Boolean(source.publicRecord?.windowSticker)
     const hasFactoryEquipment = Boolean(source.resourceRecord?.factoryEquipment)
+    const hasFordInvoice = Boolean(source.resourceRecord?.fordInvoice)
     const hasFordOasis = Boolean(source.resourceRecord?.fordOasis)
     const hasWarrantyCheck = Boolean(source.resourceRecord?.warrantyCheck)
-    if (hasPhotos || hasAutoCheck || hasWindowSticker || hasFactoryEquipment || hasFordOasis || hasWarrantyCheck) {
+    if (hasPhotos || hasAutoCheck || hasWindowSticker || hasFactoryEquipment || hasFordInvoice || hasFordOasis || hasWarrantyCheck) {
       coverage.vehicles += 1
     }
     if (hasPhotos) coverage.photos += 1
@@ -1165,6 +1179,7 @@ function mergedResourceCoverage(sources, enrichmentRows = 0) {
     if (hasAutoCheck) coverage.autoCheck += 1
     if (hasWindowSticker) coverage.windowStickers += 1
     if (hasFactoryEquipment) coverage.factoryEquipment += 1
+    if (hasFordInvoice) coverage.fordInvoices += 1
     if (hasFordOasis) coverage.fordOasis += 1
     if (hasWarrantyCheck) coverage.warrantyCheck += 1
   }

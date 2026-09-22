@@ -1,9 +1,9 @@
 import { getDemoWindowSticker } from '../../lib/demo-documents';
 import { sourceDisplayText } from '../../lib/source-text';
 import { sourceDistanceText } from '../../lib/source-distance';
-import type { AutoCheckResource, FactoryEquipmentResource, FordOasisResource, WindowStickerResource, VehicleWorkspaceTab } from './types';
+import type { AutoCheckResource, FactoryEquipmentResource, FordInvoiceResource, FordOasisResource, WindowStickerResource, VehicleWorkspaceTab } from './types';
 import { formatDate, formatNumber, formatStickerMoney } from './inventory-utils';
-import { fordInvoiceUrl, fordOasisUrl, officialVehicleDocumentUrl, vautoFactoryEquipmentUrl } from './vehicle-document-utils';
+import { fordInvoiceUrl, fordOasisUrl, officialVehicleDocumentUrl, savedFordInvoiceUrl, vautoFactoryEquipmentUrl } from './vehicle-document-utils';
 import { resolveVehicleInService, type VehicleInServiceInput } from './vehicle-in-service';
 
 type SourceRecord<T> = Omit<T, 'dataState'> & { dataState?: string };
@@ -28,6 +28,7 @@ export interface VehicleResourceVehicle {
   autoCheckReport?: SourceRecord<AutoCheckResource> | null;
   windowSticker?: SourceRecord<WindowStickerResource> | null;
   factoryEquipment?: SourceRecord<FactoryEquipmentResource> | null;
+  fordInvoice?: SourceRecord<FordInvoiceResource> | null;
   fordOasis?: SourceRecord<Partial<FordOasisResource>> | null;
   warrantyCheck?: VehicleInServiceInput['warrantyCheck'];
 }
@@ -299,7 +300,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
       ]),
       importantItems(sticker?.options ?? [])[0] ?? join([factText(sticker?.engine), factText(sticker?.transmission)]),
     ], 2),
-    sourceNote: demoSticker ? 'Synthetic sample · not an original' : join([sourceNote(sticker?.dataState, stickerFacts.length > 0), sticker?.sourceMessage, sticker?.failureReason]),
+    sourceNote: demoSticker ? 'Synthetic sample · not an original' : sourceNote(sticker?.dataState, stickerFacts.length > 0),
     href: stickerHref, target: 'data', action: demoSticker ? 'Open demo sticker' : 'Open sticker', dataAction: 'View sticker data', hasCapturedData: stickerFacts.length > 0,
     previewUrl: demoSticker?.previewUrl, demo: Boolean(demoSticker),
   });
@@ -360,7 +361,9 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
       ...checks.filter(check => check.priority > 1 && !/title|accident|damage/i.test(check.row.label)).map(check => check.row),
       ...(!numeric(history?.ownerCount) ? recordRows([{ label: 'Reported use', values: [factText(history?.usage)] }]) : []),
     ],
-    compactFacts: historyCompact.slice(0, 2), sourceNote: sourceNote(history?.dataState, true, history?.reportRunAt, 'Report run'),
+    compactFacts: historyCompact.slice(0, 2), sourceNote: history?.accessMethod === 'vauto'
+      ? join(['Captured through vAuto for this VIN', history.capturedAt ? `Captured ${formatDate(history.capturedAt)}` : null])
+      : sourceNote(history?.dataState, true, history?.reportRunAt, 'Report run'),
     scanFacts: present([
       join([numeric(history?.score) ? `Score ${formatNumber(history.score)}` : null, numeric(history?.ownerCount) ? `${formatNumber(history.ownerCount)} ${history.ownerCount === 1 ? 'owner' : 'owners'}` : null]),
       demoSticker ? scanCheckText?.replace(/\s*·\s*Synthetic (?:example|result)$/i, '') : scanCheckText,
@@ -452,10 +455,12 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
       sourceNote: sourceNote(oasis?.dataState, true, oasis?.capturedAt),
       href: oasisHref, target: 'data', action: 'Open OASIS', dataAction: 'View OASIS data', hasCapturedData: hasOasis,
     });
-    const invoiceHref = fordInvoiceUrl(vehicle.vin);
+    const savedInvoice = vehicle.fordInvoice?.available === true;
+    const invoiceHref = savedInvoice ? savedFordInvoiceUrl(vehicle.vin) : fordInvoiceUrl(vehicle.vin);
     if (invoiceHref) result.push({
-      id: 'invoice', title: 'Ford invoice', subtitle: 'Vehicle invoice', brand: 'ford', facts: [], compactFacts: [], sourceNote: null,
-      href: invoiceHref, target: 'data', action: 'Open invoice', dataAction: 'View invoice data', hasCapturedData: false,
+      id: 'invoice', title: 'Ford invoice', subtitle: savedInvoice ? 'Saved factory invoice' : 'Factory invoice', brand: 'ford', facts: [], compactFacts: [],
+      sourceNote: savedInvoice ? sourceNote(vehicle.fordInvoice?.dataState, true, vehicle.fordInvoice?.capturedAt, 'Saved') : null,
+      href: invoiceHref, target: 'data', action: savedInvoice ? 'Open saved invoice' : 'Open invoice', dataAction: 'View invoice data', hasCapturedData: false,
     });
   }
   return result;
@@ -482,7 +487,7 @@ export function vehicleOverviewResources(vehicle: VehicleResourceVehicle): Vehic
     // Repeated children belong to their respective packages; never deduplicate
     // this ordered source list or round a captured price to whole dollars.
     const optionLines = [...packageLines, ...(equipment?.sections ?? []).flatMap(section => section.items.map(item => join([item.label, numeric(item.price) ? `Price ${exactPrice(item.price)}` : null])))].filter((line): line is string => Boolean(line?.trim()));
-    selected = { ...selected, equipmentContext: 'vAuto equipment label · not an original window sticker · currency not captured',
+    selected = { ...selected, equipmentContext: 'vAuto equipment profile · not an original window sticker',
       stickerDetails: { msrp: numeric(equipment?.totalMsrp) ? exactPrice(equipment.totalMsrp) : undefined, optionLines, optionLabel: 'Packages & captured equipment' },
       alternateSticker: sticker?.href && vehicle.windowSticker?.dataState !== 'unavailable' ? { href: sticker.href, label: sticker.demo ? 'Demo sticker' : 'Window sticker' } : undefined,
     };

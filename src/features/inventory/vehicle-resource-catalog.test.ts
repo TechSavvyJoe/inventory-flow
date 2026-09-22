@@ -11,6 +11,16 @@ function resource(fields: Partial<VehicleResourceVehicle>, id: VehicleResource['
 }
 
 describe('rich vehicle resource catalog', () => {
+  it('uses the private saved invoice when the daily exact-VIN copy is available', () => {
+    const invoice = resource({ fordInvoice: {
+      dataState: 'current', available: true, capturedAt: '2026-09-21T20:45:00Z', sourceLabel: 'Saved Ford factory invoice',
+    } }, 'invoice');
+    expect(invoice.href).toBe('/api/vehicles/1FTFW1E84RKF12345/invoice');
+    expect(invoice.action).toBe('Open saved invoice');
+    expect(invoice.subtitle).toBe('Saved factory invoice');
+    expect(invoice.sourceNote).toContain('Saved 09/21/2026');
+  });
+
   it('retains explicit zero values without inventing a clean history check', () => {
     const history = resource({ autoCheckReport: { dataState: 'current', score: 0, ownerCount: 0, lastReportedOdometer: 0, checks: [] } }, 'autocheck');
     expect(history.score).toEqual({ value: 0, range: undefined });
@@ -171,7 +181,8 @@ describe('rich vehicle resource catalog', () => {
     expect(sticker.hasCapturedData).toBe(false);
     expect(sticker.facts).toEqual([]);
     expect(sticker.sourceNote).toContain('Source currently unavailable');
-    expect(sticker.sourceNote).toContain('Original not published for this VIN');
+    expect(sticker.sourceNote).not.toContain('Original not published for this VIN');
+    expect(sticker.sourceNote).not.toContain('Lookup returned no document');
   });
 
   it('uses named vAuto packages and important captured items rather than counts', () => {
@@ -267,6 +278,6 @@ describe('combined sticker and equipment source fidelity', () => {
       'Package A · PKG-A · Price 1,250.75', '. Shared feature',
       'Package B · PKG-B · Price 0', '. Shared feature', 'Exact option · Price 199.95',
     ]);
-    expect(combined.equipmentContext).toContain('currency not captured');
+    expect(combined.equipmentContext).toBe('vAuto equipment profile · not an original window sticker');
   });
 });

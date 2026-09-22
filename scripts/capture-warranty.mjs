@@ -23,6 +23,7 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { closeOwnedTab, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 import { factoryTermText, isFactoryCoverageRow, isOasisDate } from '../server/oasis-coverage-grammar.mjs'
 
@@ -278,11 +279,7 @@ export async function fetchAutoCheckHtml(url) {
 }
 
 function loadSnapshot(reportDate) {
-  const p = path.join(workspaceRoot(), 'work', 'inventory-history', 'snapshots', `${reportDate}-public.json`)
-  const snap = JSON.parse(readFileSync(p, 'utf8'))
-  let vehicles = snap.vehicles || {}
-  if (Array.isArray(vehicles)) vehicles = Object.fromEntries(vehicles.filter(v => v && v.vin).map(v => [String(v.vin).toUpperCase(), v]))
-  return vehicles
+  return loadDatedInventoryVehicles(workspaceRoot(), reportDate)
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -301,7 +298,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (!Number.isSafeInteger(max) || max < 1 || !Number.isSafeInteger(budgetMs) || budgetMs < 1) throw new Error('INVALID_CAPTURE_LIMIT')
   const vehicles = loadSnapshot(reportDate)
   if (onlyVin && (!/^[A-HJ-NPR-Z0-9]{17}$/.test(onlyVin) || !Object.hasOwn(vehicles, onlyVin))) {
-    throw new Error('REQUESTED_VIN_NOT_IN_DATED_PUBLIC_SNAPSHOT')
+    throw new Error('REQUESTED_VIN_NOT_IN_DATED_CURRENT_INVENTORY')
   }
 
   const outDir = path.join(workspaceRoot(), 'work', 'warranty-history')

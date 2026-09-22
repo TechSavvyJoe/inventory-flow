@@ -325,10 +325,7 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
           const rows = resource.id === 'autocheck' || resource.id === 'oasis' ? availableRows : availableRows?.slice(0, summaryLimit);
           const sticker = resource.stickerDetails;
           const stickerPricing = sticker ? ([
-            sticker.basePrice ? ['Base MSRP', sticker.basePrice] : null,
-            sticker.totalOptions ? ['Options', sticker.totalOptions] : null,
-            sticker.destinationCharge ? ['Destination', sticker.destinationCharge] : null,
-            sticker.msrp ? ['Total MSRP', sticker.msrp] : null,
+            sticker.msrp ? ['Original MSRP', sticker.msrp] : sticker.basePrice ? ['Base MSRP', sticker.basePrice] : null,
           ] as Array<[string, string] | null>).filter((entry): entry is [string, string] => Boolean(entry)) : [];
           const stickerVehicleFacts = sticker ? ([
             sticker.exteriorColor ? ['Exterior', sticker.exteriorColor] : null,

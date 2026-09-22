@@ -4,6 +4,7 @@ import {
   dealerMailInteractiveVehicleUrl,
   fordInvoiceUrl,
   fordOasisUrl,
+  savedFordInvoiceUrl,
 } from './vehicle-document-utils'
 
 describe('interactive DealerMail and Ford document destinations', () => {
@@ -24,6 +25,7 @@ describe('interactive DealerMail and Ford document destinations', () => {
 
     expect(invoice).toContain('fordvisions.dealerconnection.com/vinv/GetInvoice.aspx')
     expect(invoice).toContain('v=TESTDATASYN000010')
+    expect(savedFordInvoiceUrl('testdatasyn000010')).toBe('/api/vehicles/TESTDATASYN000010/invoice')
     expect(oasis).toBe(
       'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=TESTDATASYN000010',
     )
@@ -31,6 +33,7 @@ describe('interactive DealerMail and Ford document destinations', () => {
 
   it('rejects missing or invalid VINs', () => {
     expect(fordInvoiceUrl('')).toBeNull()
+    expect(savedFordInvoiceUrl('NOT-A-VIN')).toBeNull()
     expect(fordOasisUrl('NOT-A-VIN')).toBeNull()
   })
 })

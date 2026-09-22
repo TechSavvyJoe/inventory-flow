@@ -154,7 +154,7 @@ export function InventoryRecordsPanel({
   };
 
   return createPortal(<>
-    {mobile ? <div className="inventory-records-backdrop" aria-hidden="true" onClick={onClose} /> : null}
+    <div className={`inventory-records-backdrop${mobile ? "" : " inventory-records-backdrop--nonmodal"}`} aria-hidden="true" onClick={onClose} />
     <aside className="inventory-records-panel" ref={panelRef} role="dialog" aria-modal={mobile}
       aria-label={`${name} records`} tabIndex={-1} data-vehicle-id={vehicle.id}>
       <header className="inventory-records-panel__header">

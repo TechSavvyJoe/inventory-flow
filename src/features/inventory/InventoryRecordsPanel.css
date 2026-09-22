@@ -59,6 +59,7 @@
 .inventory-records-panel .vehicle-resource-source-note { font-size:12px; }
 
 .inventory-records-backdrop { position:fixed; inset:0; z-index:209; background:color-mix(in srgb,var(--navy-900) 25%,transparent); animation:inventory-records-backdrop-in 140ms ease-out; }
+.inventory-records-backdrop--nonmodal { background:transparent; }
 @media (max-width:760px) {
   .inventory-records-panel { top:64px; right:0; bottom:0; width:100%; max-width:none; border-width:1px 0 0; border-radius:12px 12px 0 0; padding-bottom:env(safe-area-inset-bottom,0px); }
   .inventory-records-panel__header { padding-inline:14px; }

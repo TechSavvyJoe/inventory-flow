@@ -336,6 +336,13 @@ try {
         } else {
           Write-Log "vauto: $($vautoOut.Trim())"
         }
+        $autoCheckRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\capture-vauto-autocheck.mjs', 'run', $date, '--budget-ms', '600000')
+        $autoCheckOut = $autoCheckRun.Output
+        if ($autoCheckRun.ExitCode -ne 0) {
+          Write-Log "vauto AutoCheck: fallback capture incomplete (exit $($autoCheckRun.ExitCode)) - continuing with prior exact-VIN captures: $($autoCheckOut.Trim())" 'WARN'
+        } else {
+          Write-Log "vauto AutoCheck: $($autoCheckOut.Trim())"
+        }
       } catch {
         Write-Log "vauto: skipped - $($_.Exception.Message)" 'WARN'
       }
@@ -371,6 +378,14 @@ try {
     $enrichOut = $enrichRun.Output
     if ($enrichRun.ExitCode -ne 0) { Write-Log "resources: build FAILED: $($enrichOut.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_BUILD_FAILED' }
     Write-Log "resources: $($enrichOut.Trim())"
+    $autoCheckMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-vauto-autocheck.mjs', $date)
+    $autoCheckMergeOut = $autoCheckMergeRun.Output
+    if ($autoCheckMergeRun.ExitCode -ne 0) { Write-Log "resources: AutoCheck merge FAILED: $($autoCheckMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_AUTOCHECK_MERGE_FAILED' }
+    Write-Log "resources: $($autoCheckMergeOut.Trim())"
+    $invoiceMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-invoice-metadata.mjs', $date)
+    $invoiceMergeOut = $invoiceMergeRun.Output
+    if ($invoiceMergeRun.ExitCode -ne 0) { Write-Log "resources: invoice merge FAILED: $($invoiceMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_INVOICE_MERGE_FAILED' }
+    Write-Log "resources: $($invoiceMergeOut.Trim())"
     Write-Log 'resources: validating against release validators'
     $enrichCheckRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\dryrun_resource_enrichment_check.mjs', $date)
     $enrichCheck = $enrichCheckRun.Output
@@ -390,6 +405,11 @@ try {
       Write-Log 'cloud publish did not report published_and_verified' 'ERROR'
       throw 'PUBLISH_NOT_VERIFIED'
     }
+    Write-Log 'invoice documents: publishing private saved copies'
+    $invoicePublishRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\publish-invoice-documents.mjs', $date)
+    $invoicePublishOut = $invoicePublishRun.Output
+    if ($invoicePublishRun.ExitCode -ne 0) { Write-Log "invoice documents FAILED: $($invoicePublishOut.Trim())" 'ERROR'; throw 'INVOICE_DOCUMENT_PUBLISH_FAILED' }
+    Write-Log "invoice documents: $($invoicePublishOut.Trim())"
     $verifiedReceipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
     Update-IntegrationExpectedMetadata -Receipt $verifiedReceipt
     Assert-IntegrationDeployment

@@ -408,11 +408,67 @@ describe('Inventory Flow API', () => {
       autoCheck: 1,
       windowStickers: 1,
       factoryEquipment: 1,
+      fordInvoices: 0,
       fordOasis: 0,
       warrantyCheck: 0,
       enrichmentRows: 1,
     })
     expect(health.sources.resources.rows).toBe(1)
+  })
+
+  it('keeps the dealership website AutoCheck report ahead of the vAuto fallback', async () => {
+    let vin = ''
+    let store = ''
+    const { baseUrl } = await harness((draft) => {
+      const source = draft.vehicles.find((record) => record.publicRecord)
+      if (!source?.publicRecord) throw new Error('Synthetic fixture has no public vehicle')
+      vin = source.vin
+      store = source.publicRecord.store
+      source.publicRecord.autoCheckReport = { dataState: 'current', score: 92, ownerCount: 1 }
+      source.resourceRecord = {
+        ...(source.resourceRecord ?? {}),
+        vin,
+        autoCheckReport: {
+          dataState: 'current', accessMethod: 'vauto', score: 71, ownerCount: 3,
+          sourceLabel: 'Experian AutoCheck report captured through vAuto for this VIN',
+          capturedAt: '2026-09-21T20:45:00.000Z',
+        },
+      }
+    })
+    const response = await fetch(`${baseUrl}/api/vehicles/${vin}`, { headers: roleHeaders('sales', store, 'Website-first AutoCheck test') })
+    expect(response.status).toBe(200)
+    expect((await response.json()).autoCheckReport).toMatchObject({ score: 92, ownerCount: 1 })
+  })
+
+  it('only advertises saved Ford invoices to roles allowed to open them', async () => {
+    let vin = ''
+    let store = ''
+    const { baseUrl } = await harness((draft) => {
+      const source = draft.vehicles.find((record) => record.publicRecord)
+      if (!source?.publicRecord) throw new Error('Synthetic fixture has no public vehicle')
+      vin = source.vin
+      store = source.publicRecord.store
+      source.resourceRecord = {
+        ...(source.resourceRecord ?? {}),
+        vin,
+        fordInvoice: {
+          dataState: 'current',
+          available: true,
+          capturedAt: '2026-09-21T20:45:00.000Z',
+          sourceLabel: 'Saved Ford factory invoice',
+        },
+      }
+    })
+
+    const sales = await fetch(`${baseUrl}/api/vehicles/${vin}`, {
+      headers: roleHeaders('sales', store, 'Saved invoice sales test'),
+    }).then((response) => response.json())
+    const porter = await fetch(`${baseUrl}/api/vehicles/${vin}`, {
+      headers: roleHeaders('porter', store, 'Saved invoice porter test'),
+    }).then((response) => response.json())
+
+    expect(sales.fordInvoice).toMatchObject({ available: true, sourceLabel: 'Saved Ford factory invoice' })
+    expect(porter.fordInvoice).toBeUndefined()
   })
 
   it('exposes and searches VIN-linked factory equipment for public and current DealerMail-only vehicles', async () => {

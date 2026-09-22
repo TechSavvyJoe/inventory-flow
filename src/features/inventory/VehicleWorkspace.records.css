@@ -23,6 +23,8 @@
 #inventory-vehicle-workspace .inventory-vehicle-document__heading .inventory-data-state--current { display:none; }
 #inventory-vehicle-workspace .inventory-vehicle-document__link { padding:7px 12px; white-space:normal; text-align:center; }
 #inventory-vehicle-workspace .inventory-vehicle-document__unavailable { min-height:0; margin:0; white-space:normal; overflow-wrap:anywhere; }
+#inventory-vehicle-workspace .inventory-vehicle-document__captured { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:36px; padding:7px 10px; border:1px solid color-mix(in srgb,var(--ifx-success) 45%,var(--v10-border)); border-radius:6px; background:var(--ifx-success-surface); color:var(--v10-ink); font-size:13px; font-weight:650; white-space:normal; text-align:center; }
+#inventory-vehicle-workspace .inventory-vehicle-document__captured svg { flex:none; color:var(--ifx-success); }
 #inventory-vehicle-workspace .vdp-history-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:0; padding:10px 0; border-top:1px solid var(--v10-border-soft); border-bottom:1px solid var(--v10-border-soft); }
 #inventory-vehicle-workspace .vdp-history-summary .inventory-workspace-fact { display:block; min-width:0; padding:0 12px; border:0; border-left:1px solid var(--v10-border); }
 #inventory-vehicle-workspace .vdp-history-summary .inventory-workspace-fact:first-child { border-left:0; padding-left:0; }

@@ -13,6 +13,8 @@ import { importLedger, LedgerImportError } from './ledger-import.mjs'
 const FORMAT = 'inventory-flow-private-release-v1'
 const LEDGER_FORMAT = 'inventory-flow-private-ledger-v1'
 const MAX_UPLOAD = 25 * 1024 * 1024
+const MAX_INVOICE_UPLOAD = 8 * 1024 * 1024
+const INVOICE_ROLES = new Set(['sales', 'manager', 'group_manager'])
 const RELEASE_VALIDATION = Symbol('inventory-flow-release-validation')
 const encoder = new TextEncoder()
 const decoder = new TextDecoder('utf-8', { fatal: true })
@@ -31,6 +33,7 @@ export function versionMetadata(env) {
 }
 class HttpError extends Error { constructor(code, status = 400) { super(code); this.code = code; this.status = status } }
 function equal(a, b) { const left=encoder.encode(String(a??'')), right=encoder.encode(String(b??'')); return left.length === right.length && timingSafeEqual(left,right) }
+function validTimestamp(value) {return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)&&Number.isFinite(Date.parse(value))}
 // decodeURIComponent throws URIError on a malformed escape such as '%E0%A4%A'.
 // That is a caller mistake, so it must answer 400 rather than falling through
 // to the unknown-error branch and being reported as a 500 INTERNAL_ERROR.
@@ -63,6 +66,68 @@ export async function readJson(request, limit) {
     return result
   } catch(error) { if(error instanceof HttpError) throw error; throw new HttpError('INVALID_JSON') }
   finally {reader.releaseLock()}
+}
+
+async function readBodyBytes(request, limit) {
+  if (Number(request.headers.get('content-length')) > limit) throw new HttpError('BODY_TOO_LARGE',413)
+  const reader=request.body?.getReader()
+  if(!reader) throw new HttpError('EMPTY_BODY')
+  let size=0; const chunks=[]
+  try {
+    while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit){await reader.cancel();throw new HttpError('BODY_TOO_LARGE',413)}chunks.push(value)}
+    const all=new Uint8Array(size);let offset=0
+    for(const chunk of chunks){all.set(chunk,offset);offset+=chunk.byteLength}
+    return all
+  } finally {reader.releaseLock()}
+}
+
+function invoiceObjectKey(reportDate, vin) {return `documents/invoices/${reportDate}/${vin}.pdf`}
+function invoiceVehicle(release, vin) {return release.vehicles?.find((vehicle)=>vehicle?.vin===vin)??null}
+function fordFamilyVehicle(vehicle) {
+  const make=String(vehicle?.publicRecord?.make??vehicle?.crmRecord?.makeRaw??'').trim().toUpperCase()
+  return ['FORD','LINC','LINCOLN'].includes(make)
+}
+function invoiceResource(vehicle) {
+  const value=vehicle?.resourceRecord?.fordInvoice
+  return value?.dataState==='current' && value.available===true && validTimestamp(value.capturedAt) ? value : null
+}
+
+export async function uploadInvoiceDocument(request, env, reportDate, vin) {
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(reportDate)||!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) throw new HttpError('INVALID_INVOICE_PATH')
+  if(request.headers.get('content-type')?.toLowerCase().split(';')[0].trim()!=='application/pdf') throw new HttpError('PDF_CONTENT_REQUIRED',415)
+  const release=await readRelease(env)
+  const vehicle=release.reportDate===reportDate?invoiceVehicle(release,vin):null
+  if(!vehicle||!fordFamilyVehicle(vehicle)||!invoiceResource(vehicle)) throw new HttpError('INVOICE_NOT_IN_CURRENT_RELEASE',404)
+  const pdf=await readBodyBytes(request,MAX_INVOICE_UPLOAD)
+  const prefix=String.fromCharCode(...pdf.subarray(0,5))
+  const tail=String.fromCharCode(...pdf.subarray(Math.max(0,pdf.length-2048)))
+  if(pdf.length<8||prefix!=='%PDF-'||!tail.includes('%%EOF')) throw new HttpError('INVALID_PDF')
+  const sha256=await digest(pdf)
+  const key=invoiceObjectKey(reportDate,vin)
+  const existing=await env.RELEASE_SNAPSHOTS.head(key)
+  if(existing?.customMetadata?.sha256===sha256&&existing?.customMetadata?.vin===vin&&existing?.customMetadata?.reportDate===reportDate&&
+    existing?.customMetadata?.capturedAt===invoiceResource(vehicle).capturedAt) {
+    return json(200,{status:'already_stored',reportDate,vin,sha256,bytes:pdf.byteLength})
+  }
+  await env.RELEASE_SNAPSHOTS.put(key,pdf,{httpMetadata:{contentType:'application/pdf'},customMetadata:{
+    reportDate,vin,sha256,capturedAt:invoiceResource(vehicle).capturedAt,
+  }})
+  return json(201,{status:'stored',reportDate,vin,sha256,bytes:pdf.byteLength})
+}
+
+export async function savedInvoiceResponse(env, release, vin, context) {
+  const authorityRole=context.authenticatedRole??context.role
+  if(!INVOICE_ROLES.has(authorityRole)) throw new AccessError('INVOICE_ACCESS_REQUIRED',403)
+  const vehicle=invoiceVehicle(release,vin)
+  const metadata=vehicle&&fordFamilyVehicle(vehicle)?invoiceResource(vehicle):null
+  if(!metadata) throw new HttpError('INVOICE_NOT_CAPTURED',404)
+  const object=await env.RELEASE_SNAPSHOTS.get(invoiceObjectKey(release.reportDate,vin))
+  if(!object||object.size>MAX_INVOICE_UPLOAD||object.httpMetadata?.contentType!=='application/pdf'||
+    object.customMetadata?.vin!==vin||object.customMetadata?.reportDate!==release.reportDate||object.customMetadata?.capturedAt!==metadata.capturedAt||
+    !/^[a-f0-9]{64}$/.test(object.customMetadata?.sha256??'')) throw new HttpError('INVOICE_ARTIFACT_UNAVAILABLE',503)
+  return new Response(object.body,{status:200,headers:{...headers,'Content-Type':'application/pdf',
+    'Content-Disposition':`inline; filename="${vin}-factory-invoice.pdf"`,'X-Inventory-Captured-At':metadata.capturedAt,
+  }})
 }
 
 const TRANSPORT_ASSIGNMENT_EVENTS = new Set(['transport_assigned', 'return_assigned'])
@@ -237,7 +302,7 @@ async function appApi(request,url,env,context) {
   const adminOverview=route==='/admin/overview'
   const adminMembersRoute=route==='/admin/members'
   if(adminOverview && !read) throw new HttpError('METHOD_NOT_ALLOWED',405)
-  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/service$/.test(route) || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
+  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/(?:service|invoice)$/.test(route) || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
   // The membership context was resolved from Access + D1 before this point.
   // Check it before reading the group directory or private release.
   if(adminOverview || adminMembersRoute) assertAdminOverviewAccess(context)
@@ -254,6 +319,7 @@ async function appApi(request,url,env,context) {
     : await saveMembership(env.INVENTORY_DB,input,context,idempotency))
   const adminMembers=adminOverview?await loadAdminMembers(env):null
   const release=await readRelease(env)
+  if(read && /^\/vehicles\/[^/]+\/invoice$/.test(route)) return savedInvoiceResponse(env,release,identifier,context)
   let resolvedAssignmentInput=null
   for(let attempt=0;attempt<3;attempt++) {
     const repo=await loadD1Repository(env.INVENTORY_DB,release)
@@ -304,6 +370,8 @@ export default {
       if(!env.PRIVATE_HOSTNAME || url.hostname!==env.PRIVATE_HOSTNAME) throw new AccessError('PRIVATE_HOST_REQUIRED',403)
       if(url.pathname.startsWith('/internal/')) {
         await publisher(request,env)
+        const invoiceMatch=/^\/internal\/invoices\/(\d{4}-\d{2}-\d{2})\/([A-HJ-NPR-Z0-9]{17})$/.exec(url.pathname)
+        if(request.method==='POST' && invoiceMatch) return await uploadInvoiceDocument(request,env,invoiceMatch[1],invoiceMatch[2])
         if(request.method==='POST' && url.pathname==='/internal/releases') return await publishRelease(request,env)
         if(request.method==='POST' && url.pathname==='/internal/ledger') return json(200,await importLedger(await decryptEnvelope(await readJson(request,MAX_UPLOAD),env,LEDGER_FORMAT),env))
         if(request.method==='GET' && url.pathname==='/internal/status') {const current=await currentRelease(env);return json(200,{ready:Boolean(current),reportDate:current?.report_date??null,bundleSha256:current?.bundle_sha256??null,metadata:current?JSON.parse(current.metadata_json):null})}

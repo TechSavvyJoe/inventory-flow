@@ -47,14 +47,14 @@ export function formatMoney(value?: number | null): string {
     : "Not published";
 }
 
-/** Original document prices retain their currency; they are never converted to the listing currency. */
+/** Original document prices retain an explicit source currency when one is available. */
 export function formatStickerMoney(value: number | null | undefined, sticker: Pick<WindowStickerResource, "pricingCurrency" | "originalMarket">): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "Not published";
   const currency = sticker.pricingCurrency?.trim().toUpperCase();
   if (currency && /^[A-Z]{3}$/.test(currency)) {
     return new Intl.NumberFormat("en-US", { style: "currency", currency, currencyDisplay: currency === "USD" ? "symbol" : "code", minimumFractionDigits: 0, maximumFractionDigits: 20 }).format(value);
   }
-  return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 20 }).format(value)} (original sticker currency; verify)`;
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 20 }).format(value);
 }
 
 export function formatMileage(value?: number | null): string {

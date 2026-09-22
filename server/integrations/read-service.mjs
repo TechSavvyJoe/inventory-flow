@@ -92,6 +92,8 @@ function autoCheck(value) {
     : null
   return {
     dataState: freshness(value.dataState),
+    accessMethod: ['official_url', 'vauto'].includes(value.accessMethod) ? value.accessMethod : null,
+    sourceLabel: text(value.sourceLabel), capturedAt: text(value.capturedAt),
     reportRunAt: text(value.reportRunAt),
     score: number(value.score), scoreRangeLow: number(value.scoreRangeLow), scoreRangeHigh: number(value.scoreRangeHigh),
     usage: text(value.usage), ownerCount: number(value.ownerCount, { integer: true }),

@@ -146,7 +146,7 @@ describe('extension resource summaries', () => {
 
   it('retains partial, stale, unknown and source failure notes apart from facts', () => {
     expect(source({ autoCheckReport: { score: 91, dataState: 'stale_unverified', reportRunAt: '2026-09-10' } }, 'autocheck').sourceNote).toBe('Saved report · refresh at source · Report run 09/10/2026')
-    expect(source({ windowSticker: { totalMsrp: 50000, dataState: 'incomplete', sourceMessage: 'Pricing only', failureReason: 'Options unreadable' } }, 'window-sticker').sourceNote).toBe('Partial captured record · Pricing only · Options unreadable')
+    expect(source({ windowSticker: { totalMsrp: 50000, dataState: 'incomplete', sourceMessage: 'Pricing only', failureReason: 'Options unreadable' } }, 'window-sticker').sourceNote).toBe('Partial captured record')
     expect(source({ autoCheckReport: { dataState: 'unknown' } }, 'autocheck').sourceNote).toMatch(/Source status unknown/)
     expect(source({ autoCheckReport: { score: 91, reportRunAt: '2030-01-01' } }, 'autocheck').sourceNote).toMatch(/Future source date/)
     expect(source({ autoCheckReport: { score: 91, reportRunAt: 'not a date' } }, 'autocheck').sourceNote).toMatch(/Unrecognized source date/)
@@ -156,7 +156,7 @@ describe('extension resource summaries', () => {
     const summary = source({ factoryEquipment: { url: equipmentUrl, packages: [{ name: 'Synthetic Premium Package', code: '302A' }], sections: [{ name: 'Safety', items: [{ label: 'Blind Spot Information System' }, { label: '360 camera' }] }], engine: '2.7L V6', drivetrain: '4WD', totalMsrp: 48000 } }, 'vauto')
     expect(summary.compactFacts).toEqual(['Synthetic Premium Package · 302A', 'Blind Spot Information System · 360 camera'])
     expect(summary.facts).toContain('2.7L V6 · 4WD')
-    expect(summary.facts).toContain('48,000 reference MSRP · currency not captured')
+    expect(summary.facts).toContain('48,000 reference MSRP')
     expect(summary).toMatchObject({ target: 'equipment', sourceKind: 'Source document', sourceNote: 'Informational · not an original sticker' })
   })
 

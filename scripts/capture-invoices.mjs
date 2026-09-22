@@ -18,6 +18,7 @@
 import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -35,12 +36,7 @@ const max = num('--max', Infinity)
 const budgetMs = num('--budget-ms', 1800000)
 const refresh = rest.includes('--refresh')
 
-const snapPath = path.join(ROOT, 'work', 'inventory-history', 'snapshots', `${reportDate}-public.json`)
-if (!existsSync(snapPath)) { console.log(JSON.stringify({ error: `snapshot not found: ${snapPath}` })); process.exit(1) }
-const raw = JSON.parse(readFileSync(snapPath, 'utf8')).vehicles || {}
-const vehicles = Array.isArray(raw)
-  ? Object.fromEntries(raw.filter(v => v && v.vin).map(v => [String(v.vin).toUpperCase(), v]))
-  : raw
+const vehicles = loadDatedInventoryVehicles(ROOT, reportDate)
 const vins = Object.entries(vehicles)
   .filter(([, v]) => FORD_MAKES.has(String(v.make || '').toUpperCase()))
   .map(([vin]) => vin).sort()

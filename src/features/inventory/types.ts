@@ -62,6 +62,9 @@ export interface ManagerDispositionSignal {
 export interface AutoCheckResource {
   dataState: SourceDataState;
   url?: string | null;
+  accessMethod?: 'official_url' | 'vauto' | null;
+  sourceLabel?: string | null;
+  capturedAt?: string | null;
   reportRunAt?: string | null;
   score?: number | null;
   scoreRangeLow?: number | null;
@@ -82,6 +85,13 @@ export interface AutoCheckResource {
     status?: string | null;
     detail?: string | null;
   }>;
+}
+
+export interface FordInvoiceResource {
+  dataState: SourceDataState;
+  available: true;
+  capturedAt: string;
+  sourceLabel: string;
 }
 
 export interface WindowStickerResource {
@@ -443,6 +453,7 @@ export interface InventoryVehicle {
   autoCheckReport?: AutoCheckResource | null;
   windowSticker?: WindowStickerResource | null;
   factoryEquipment?: FactoryEquipmentResource | null;
+  fordInvoice?: FordInvoiceResource | null;
   fordOasis?: FordOasisResource | null;
   warrantyCheck?: WarrantyCheckResource | null;
   publicListing: PublicListingSignal;

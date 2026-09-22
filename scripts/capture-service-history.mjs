@@ -4,6 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import {
   parseServiceHistoryDetails,
   parseServiceHistoryIndex,
@@ -30,12 +31,7 @@ const refresh = rest.includes('--refresh')
 const requestedVin = value('--vin').trim().toUpperCase()
 if (requestedVin && !/^[A-HJ-NPR-Z0-9]{17}$/.test(requestedVin)) throw new Error('--vin must be a valid 17-character VIN')
 
-const snapshotPath = path.join(ROOT, 'work', 'inventory-history', 'snapshots', `${reportDate}-public.json`)
-if (!existsSync(snapshotPath)) throw new Error(`snapshot not found: ${snapshotPath}`)
-const rawVehicles = JSON.parse(readFileSync(snapshotPath, 'utf8')).vehicles || {}
-const vehicles = Array.isArray(rawVehicles)
-  ? Object.fromEntries(rawVehicles.filter((item) => item?.vin).map((item) => [String(item.vin).toUpperCase(), item]))
-  : rawVehicles
+const vehicles = loadDatedInventoryVehicles(ROOT, reportDate)
 const fullWorklist = Object.entries(vehicles)
   .filter(([, vehicle]) => FORD_MAKES.has(String(vehicle.make || '').toUpperCase()))
   .map(([vin, vehicle]) => ({ vin: vin.toUpperCase(), stock: vehicle.stock || vehicle.stockNumber || '', make: String(vehicle.make || '').toUpperCase() }))
@@ -43,7 +39,7 @@ const fullWorklist = Object.entries(vehicles)
 let worklist = fullWorklist
 if (requestedVin) {
   const selected = fullWorklist.find((item) => item.vin === requestedVin)
-  if (!selected) throw new Error(`VIN ${requestedVin} is not a Ford/Lincoln vehicle in the ${reportDate} public snapshot`)
+  if (!selected) throw new Error(`VIN ${requestedVin} is not a Ford/Lincoln vehicle in the ${reportDate} current inventory`)
   worklist = [selected]
 }
 
@@ -74,7 +70,7 @@ if ((!refresh || requestedVin) && existsSync(outPath)) {
     if (Array.isArray(previous.records)) out.records = previous.records
   } catch {}
 }
-// A resumed same-day capture must follow the newest public snapshot. If a VIN
+// A resumed same-day capture must follow the newest current inventory. If a VIN
 // disappeared since an earlier partial pass, do not retain or refetch it.
 const currentVins = new Set(fullWorklist.map((item) => item.vin))
 const completeResults = new Set(['OK', 'NO_HISTORY'])

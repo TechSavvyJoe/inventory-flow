@@ -212,6 +212,14 @@ function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, ste
       warning: 'sign in to vAuto in the Work PC Automation Browser; vAuto factory-equipment data is incomplete for this run.',
     },
     {
+      name: 'vauto_autocheck_fallback',
+      command: NODE,
+      args: ['scripts\\capture-vauto-autocheck.mjs', 'run', reportDate, '--budget-ms', '600000'],
+      cwd: APP_ROOT,
+      expired: /SESSION_EXPIRED|session_expired/i,
+      warning: 'sign in to vAuto in the Work PC Automation Browser; AutoCheck fallback is incomplete for vehicles not yet listed online.',
+    },
+    {
       name: 'warranty',
       command: NODE,
       args: ['scripts\\capture-warranty.mjs', 'run', reportDate, '--budget-ms', '1800000'],
@@ -262,13 +270,19 @@ function runResourceBuild(reportDate, warnings, steps) {
     optional: true,
     label: 'VIN document enrichment builder',
   })
-  const check = build.ok ? validateCurrentResourceFile() : { ok: false, output: build.output }
-  if (!build.ok || !check.ok) {
+  const autoCheckMerge = build.ok
+    ? run(NODE, ['scripts\\merge-vauto-autocheck.mjs', reportDate], { cwd: APP_ROOT, optional: true, label: 'vAuto AutoCheck fallback merge' })
+    : { ok: false, output: build.output }
+  const invoiceMerge = build.ok && autoCheckMerge.ok
+    ? run(NODE, ['scripts\\merge-invoice-metadata.mjs', reportDate], { cwd: APP_ROOT, optional: true, label: 'Saved Ford invoice merge' })
+    : { ok: false, output: autoCheckMerge.output }
+  const check = build.ok && autoCheckMerge.ok && invoiceMerge.ok ? validateCurrentResourceFile() : { ok: false, output: invoiceMerge.output }
+  if (!build.ok || !autoCheckMerge.ok || !invoiceMerge.ok || !check.ok) {
     warnings.push('Vehicle resource enrichment did not validate, so the release was not published.')
     steps.push({ name: 'resources', status: 'failed_blocking', detail: safeDetail(check.output) })
     return false
   }
-  steps.push({ name: 'resources', status: 'complete', detail: safeDetail(build.output) })
+  steps.push({ name: 'resources', status: 'complete', detail: safeDetail(`${build.output} ${autoCheckMerge.output} ${invoiceMerge.output}`) })
   return true
 }
 
@@ -478,6 +492,10 @@ function formatStores(counts = {}) {
   return STORES.map((store) => `${store} ${counts[store] ?? 0}`).join(', ')
 }
 
+function exitCodeForResult(result) {
+  return result?.ok === false ? 1 : 0
+}
+
 async function runDaily(options) {
   const reportDate = options.date ?? todayInNewYork()
   const manifestPath = path.join(WORK_ROOT, 'run-status', `${reportDate}.json`)
@@ -499,7 +517,7 @@ async function runDaily(options) {
       releasePath,
       warnings: release.warnings ?? [],
     })
-    return { summary, validation, manifestPath, releasePath }
+    return { ok: true, summary, validation, manifestPath, releasePath }
   }
 
   if (!options.forcePublish && existsSync(receiptPath)) {
@@ -515,7 +533,7 @@ async function runDaily(options) {
         releasePath,
         warnings: release.warnings ?? [],
       })
-      return { summary, validation, manifestPath, releasePath }
+      return { ok: true, summary, validation, manifestPath, releasePath }
     }
   }
 
@@ -538,7 +556,7 @@ async function runDaily(options) {
     writeJson(manifestPath, incomplete)
     const summary = summarize({ reportDate, validation: {}, publishStatus: 'not_published_dealermail_incomplete', manifestPath, releasePath, warnings })
     writeJson(path.join(releaseDirectory, 'daily-summary.json'), { reportDate, status: 'not_published_dealermail_incomplete', summary })
-    return { summary, manifestPath, releasePath }
+    return { ok: false, failureCode: 'DEALERMAIL_INCOMPLETE', summary, manifestPath, releasePath }
   }
 
   runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps)
@@ -554,22 +572,31 @@ async function runDaily(options) {
     writeJson(manifestPath, manifest)
     const summary = summarize({ reportDate, validation: {}, publishStatus: 'not_published_resource_validation_failed', manifestPath, releasePath, warnings })
     writeJson(path.join(releaseDirectory, 'daily-summary.json'), { reportDate, status: 'not_published_resource_validation_failed', summary })
-    return { summary, manifestPath, releasePath }
+    return { ok: false, failureCode: 'RESOURCE_VALIDATION_FAILED', summary, manifestPath, releasePath }
   }
   manifest.validation_results = { ...manifest.validation_results, resource_enrichment_validated: true, passed: true }
   writeJson(manifestPath, manifest)
 
   const validation = buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath)
   let publishStatus = 'publish_skipped_by_flag'
+  let publishOk = true
   if (!options.noPublish) {
-    publishStatus = publish(reportDate, options.forcePublish, steps) ? 'published_or_already_verified' : 'publish_failed_last_verified_release_preserved'
+    publishOk = publish(reportDate, options.forcePublish, steps)
+    publishStatus = publishOk ? 'published_or_already_verified' : 'publish_failed_last_verified_release_preserved'
     manifest = readJson(manifestPath)
     manifest.daily_steps = steps
     writeJson(manifestPath, manifest)
   }
   const summary = summarize({ reportDate, validation, publishStatus, manifestPath, releasePath, warnings })
   writeJson(path.join(releaseDirectory, 'daily-summary.json'), { reportDate, status: publishStatus, summary, counts: validation, warnings })
-  return { summary, validation, manifestPath, releasePath }
+  return {
+    ok: publishOk,
+    failureCode: publishOk ? null : 'CLOUDFLARE_PUBLISH_FAILED',
+    summary,
+    validation,
+    manifestPath,
+    releasePath,
+  }
 }
 
 function printHelp() {
@@ -581,6 +608,7 @@ Excel workbook generation is intentionally outside this command.`)
 
 export const internals = {
   deriveManifest,
+  exitCodeForResult,
   formatStores,
   summarize,
   todayInNewYork,
@@ -593,6 +621,7 @@ if (process.argv[1] && path.basename(process.argv[1]).toLowerCase() === 'run-inv
   } else {
     runDaily(options).then((result) => {
       console.log(result.summary)
+      process.exitCode = exitCodeForResult(result)
     }).catch((error) => {
       console.error(`run-inventory-flow-daily failed: ${error.message}`)
       process.exitCode = 1

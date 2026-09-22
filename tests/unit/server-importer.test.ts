@@ -1068,6 +1068,42 @@ describe('verified daily source importer', () => {
     const mismatch = structuredClone(record)
     mismatch.recordsByVin[vin].autoCheckReport.validatedVin = 'TESTDATASYN000007'
     expect(() => validateVinDocumentEnrichment(mismatch)).toThrow(/exact-VIN/i)
+
+    const vauto = structuredClone(record)
+    delete vauto.recordsByVin[vin].autoCheckReport.url
+    vauto.recordsByVin[vin].autoCheckReport.accessMethod = 'vauto'
+    vauto.recordsByVin[vin].autoCheckReport.sourceLabel = 'Experian AutoCheck report captured through vAuto for this VIN'
+    expect(validateVinDocumentEnrichment(vauto).recordsByVin[vin].autoCheckReport).toMatchObject({
+      accessMethod: 'vauto',
+      capturedAt: '2026-08-30T14:00:00Z',
+      score: 92,
+    })
+    const vautoMissingCapture = structuredClone(vauto)
+    delete vautoMissingCapture.recordsByVin[vin].autoCheckReport.capturedAt
+    expect(() => validateVinDocumentEnrichment(vautoMissingCapture)).toThrow(/requires its source label and capture time/i)
+    const vautoWithUrl = structuredClone(vauto)
+    vautoWithUrl.recordsByVin[vin].autoCheckReport.url = `https://www.autocheck.com/report/${vin}`
+    expect(() => validateVinDocumentEnrichment(vautoWithUrl)).toThrow(/must not carry a document URL/i)
+  })
+
+  it('accepts only a current, timestamped saved Ford invoice marker', () => {
+    const vin = 'TESTDATASYN000008'
+    const enrichment = {
+      schemaVersion: 'inventory-flow-vin-document-enrichment-v1', generatedAt: '2026-08-30T14:00:00Z',
+      recordsByVin: { [vin]: { vin, fordInvoice: {
+        dataState: 'current', available: true, capturedAt: '2026-08-30T14:00:00Z', sourceLabel: 'Saved Ford factory invoice',
+      } } },
+    }
+    expect(validateVinDocumentEnrichment(enrichment)).toMatchObject({
+      recordsByVin: { [vin]: { fordInvoice: { available: true, capturedAt: '2026-08-30T14:00:00Z' } } },
+      metadata: { fordInvoiceCount: 1 },
+    })
+    const missing = structuredClone(enrichment)
+    delete missing.recordsByVin[vin].fordInvoice.capturedAt
+    expect(() => validateVinDocumentEnrichment(missing)).toThrow(/capture time/i)
+    const falseAvailability = structuredClone(enrichment)
+    falseAvailability.recordsByVin[vin].fordInvoice.available = false
+    expect(() => validateVinDocumentEnrichment(falseAvailability)).toThrow(/confirm a saved document/i)
   })
 
   it('follows the latest completed manifest and validates both exact snapshots', () => {

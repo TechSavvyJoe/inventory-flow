@@ -59,6 +59,12 @@ export function fordInvoiceUrl(vinValue: string | null | undefined): string | nu
   return url.href;
 }
 
+/** Same-origin private copy captured by the daily exact-VIN invoice pull. */
+export function savedFordInvoiceUrl(vinValue: string | null | undefined): string | null {
+  const vin = normalizedVin(vinValue);
+  return vin ? `/api/vehicles/${encodeURIComponent(vin)}/invoice` : null;
+}
+
 /**
  * Mirrors DealerMail's working OASIS destination for an exact Ford/Lincoln VIN.
  * The target is read-only, but DealerConnection can require its own sign-in.

@@ -6,9 +6,9 @@ const finite = (value) => typeof value === 'number' && Number.isFinite(value)
 export function formatMoney(value) { return finite(value) ? money.format(value) : '—' }
 export function formatMileage(value) { return finite(value) ? `${integer.format(value)} mi` : '—' }
 export function formatNumber(value) { return finite(value) ? integer.format(value) : '—' }
-/** Equipment-label prices are source values with no captured currency. */
+/** Equipment-label prices stay compact when the source does not name a currency. */
 export function formatReferencePrice(value) {
-  return finite(value) ? `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(value)} · currency not captured` : '—'
+  return finite(value) ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(value) : '—'
 }
 export function formatDays(value) {
   if (!finite(value)) return null
@@ -93,7 +93,7 @@ export function formatStickerMoney(value, sticker = {}) {
   if (/^[A-Z]{3}$/.test(currency)) {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency, currencyDisplay: currency === 'USD' ? 'symbol' : 'code', minimumFractionDigits: 0, maximumFractionDigits: 20 }).format(value)
   }
-  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(value)} (original sticker currency; verify)`
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(value)
 }
 
 export function joinFacts(parts, separator = ' · ') {

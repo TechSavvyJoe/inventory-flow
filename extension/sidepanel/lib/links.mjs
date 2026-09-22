@@ -55,6 +55,11 @@ export function fordInvoiceUrl(value) {
   return url.href
 }
 
+export function savedFordInvoiceUrl(origin, value) {
+  const vin = normalizedVin(value)
+  return vin ? appUrl(origin, `/api/vehicles/${encodeURIComponent(vin)}/invoice`) : null
+}
+
 export function fordOasisUrl(value) {
   const vin = normalizedVin(value)
   if (!vin) return null

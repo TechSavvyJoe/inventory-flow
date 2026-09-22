@@ -107,7 +107,7 @@ function hydrate(bootstrap, fetchedAt) {
   state.dataGeneration += 1
   state.detailPending.clear()
   state.bootstrap = bootstrap
-  state.data = buildPanelData(bootstrap)
+  state.data = buildPanelData(bootstrap, { origin: appOrigin() })
   state.index = buildIndex(state.data.vehicles)
   state.details.clear()
   state.detailFailed.clear()
@@ -1078,7 +1078,7 @@ function frequentFacts(vehicle) {
   const labelBase = docs.factoryEquipment?.basePrice
   const hasStickerBase = stickerBase !== null && stickerBase !== undefined
   const hasLabelBase = labelBase !== null && labelBase !== undefined
-  const baseLookup = fact(hasStickerBase ? 'Base MSRP' : hasLabelBase ? 'Base MSRP · reference' : 'Base MSRP', hasStickerBase ? fmt.formatStickerMoney(stickerBase, docs.windowSticker) : hasLabelBase ? fmt.formatReferencePrice(labelBase) : '—')
+  const baseLookup = fact('Base MSRP', hasStickerBase ? fmt.formatStickerMoney(stickerBase, docs.windowSticker) : hasLabelBase ? fmt.formatReferencePrice(labelBase) : '—')
   return el('section', { class: 'detail-frequent-facts', 'aria-label': 'Frequently used vehicle facts' },
     baseLookup,
     fact(start.source === 'OASIS' ? 'Warranty in-service · OASIS' : start.raw ? 'Warranty in-service · estimate' : 'Warranty in-service', start.raw ? fmt.formatDate(start.raw) : '—'),
@@ -1266,7 +1266,7 @@ function recordsTab(vehicle) {
       recordHead('Window sticker', { url: sticker.url, action: 'Open window sticker', missing: 'Window sticker unavailable.', dataState: sticker.dataState }),
       note(sourceNote(sticker, 'window-sticker')),
       sticker.vehicleDescription ? el('p', { class: 'd-caption', text: sticker.vehicleDescription }) : null,
-      recordPrices([['Base MSRP', sticker.basePrice], ['Options', sticker.totalOptions], ['Destination & delivery', sticker.destinationCharge], ['Total MSRP', sticker.totalMsrp]], (value) => fmt.formatStickerMoney(value, sticker)),
+      recordPrices([[hasNumber(sticker.totalMsrp) ? 'Original MSRP' : 'Base MSRP', sticker.totalMsrp ?? sticker.basePrice]], (value) => fmt.formatStickerMoney(value, sticker)),
       sticker.equipmentGroupContents?.length ? el('section', {}, el('h4', { text: 'Equipment group contents' }), ...sticker.equipmentGroupContents.map(text => el('p', { text }))) : null,
       kv([['Group price', typeof sticker.equipmentGroupPrice === 'number' ? fmt.formatStickerMoney(sticker.equipmentGroupPrice, sticker) : null], ['Equipment group', sticker.equipmentGroup], ['Engine', sourceDistanceText(sticker.engine)], ['Transmission', sourceDistanceText(sticker.transmission)], ['Exterior', sticker.exteriorColor], ['Interior', sticker.interiorColor]]),
       recordList('Factory options', sticker.options),
@@ -1281,8 +1281,7 @@ function recordsTab(vehicle) {
       recordHead('Equipment', { brand: 'vauto', url: label.url, action: 'Open equipment details', missing: 'Equipment details unavailable.', dataState: label.dataState }),
       note(sourceNote(label, 'vauto')),
       note(label.vehicleDescription),
-      [label.basePrice, label.totalOptions, label.destinationCharge, label.totalMsrp, ...label.packages.map((pkg) => pkg.price), ...label.sections.flatMap((group) => group.items.map((item) => item.price))].some(hasNumber) ? note('Reference pricing') : null,
-      el('div', { class: 'rec-metadata' }, recordPrices([['Base MSRP', label.basePrice], ['Options', label.totalOptions], ['Destination & delivery', label.destinationCharge], ['Total MSRP (reference)', label.totalMsrp]], referencePrice)),
+      el('div', { class: 'rec-metadata' }, recordPrices([[hasNumber(label.totalMsrp) ? 'Reference MSRP' : 'Base MSRP', label.totalMsrp ?? label.basePrice]], referencePrice)),
       kv([['Engine', label.engine], ['Transmission', label.transmission], ['Drivetrain', label.drivetrain], ['Exterior', label.exteriorColor], ['Interior', label.interiorColor]]),
       [...label.packages.map((pkg) => pkg.price), ...label.sections.flatMap((group) => group.items.map((item) => item.price))].some(hasNumber) ? el('p', { class: 'rec-price-context', text: 'Reference pricing' }) : null,
       label.packages.length ? recordSection('Equipment packages', label.packages.map((pkg) => el('div', { class: 'rec-package' },
@@ -1424,7 +1423,7 @@ async function loadDetail(vin, { retry = false } = {}) {
     const position = state.data.vehicles.findIndex((item) => item.vin === vin)
     const raw = state.bootstrap.vehicles.find((item) => item.vin === vin)
     if (position >= 0 && raw) {
-      const merged = toPanelVehicle(mergeDetail(raw, detail), state.bootstrap)
+      const merged = toPanelVehicle(mergeDetail(raw, detail), state.bootstrap, { origin: appOrigin() })
       state.data.vehicles[position] = merged
       state.index[position] = buildEntry(merged)
     }

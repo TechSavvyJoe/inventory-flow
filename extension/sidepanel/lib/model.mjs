@@ -7,7 +7,7 @@ import { serviceWorkflowStatus } from './service-readiness.mjs'
 // kept as separate facts and none is inferred from another.
 
 import { STORES } from './config.mjs'
-import { autoCheckUrl, factoryEquipmentUrl, fordInvoiceUrl, fordOasisUrl, listingUrl, photoUrl, windowStickerUrl } from './links.mjs'
+import { autoCheckUrl, factoryEquipmentUrl, fordInvoiceUrl, fordOasisUrl, listingUrl, photoUrl, savedFordInvoiceUrl, windowStickerUrl } from './links.mjs'
 import { autoCheckTone, equipmentByCategory, standoutEquipment } from './equipment.mjs'
 import { historyDetailTone } from './resources.mjs'
 import { warrantyOutlook } from './warranty.mjs'
@@ -292,7 +292,7 @@ function documentsFor(record, publicState, dealerMailState) {
   }
 }
 
-export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
+export function toPanelVehicle(record, bootstrap, { now = Date.now(), origin = null } = {}) {
   const meta = bootstrap.meta ?? {}
   const publicState = dataState(meta.publicFreshness)
   const dealerMailState = dataState(meta.dealerMailFreshness)
@@ -307,6 +307,7 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
   const make = text(record.make) || ''
   // The app enables Ford dealer tools for Ford and Lincoln VINs only.
   const fordFamily = /^(ford|lincoln)$/i.test(make)
+  const savedInvoice = Boolean(fordFamily && record.fordInvoice?.available === true && text(record.fordInvoice?.capturedAt) && origin)
   const price = number(record.listedPrice)
   const msrp = number(record.msrp)
   const vehicle = {
@@ -360,7 +361,8 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now() } = {}) {
     },
     links: {
       oasis: fordFamily ? fordOasisUrl(record.vin) : null,
-      invoice: fordFamily ? fordInvoiceUrl(record.vin) : null,
+      invoice: fordFamily ? savedInvoice ? savedFordInvoiceUrl(origin, record.vin) : fordInvoiceUrl(record.vin) : null,
+      ...(savedInvoice ? { invoiceSaved: true, invoiceCapturedAt: text(record.fordInvoice.capturedAt) } : {}),
     },
     hold: holdSignal(record, dealerMailState),
     location: resolveLocation(record, transfer),
@@ -497,8 +499,8 @@ export function dealSheetText(vehicle, formatValue) {
   return lines.join('\n')
 }
 
-export function buildPanelData(bootstrap, { now = Date.now() } = {}) {
-  const vehicles = (bootstrap.vehicles ?? []).map((record) => toPanelVehicle(record, bootstrap, { now }))
+export function buildPanelData(bootstrap, { now = Date.now(), origin = null } = {}) {
+  const vehicles = (bootstrap.vehicles ?? []).map((record) => toPanelVehicle(record, bootstrap, { now, origin }))
   const stores = (bootstrap.stores ?? []).map((item) => ({ store: item.store, publicUnits: number(item.publicUnits) ?? 0, currentHolds: number(item.currentHolds) ?? 0, awayFromHome: number(item.awayFromHome) ?? 0 }))
   const meta = bootstrap.meta ?? {}
   return {

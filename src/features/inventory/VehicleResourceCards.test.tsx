@@ -336,7 +336,7 @@ describe('source-backed vehicle resource cards', () => {
     expandDetails('equipment');
     const panel = within(document.querySelector('[data-resource-kind="vauto"]') as HTMLElement);
     expect(screen.getAllByText('Sticker & equipment')).toHaveLength(1);
-    expect(panel.getByText('vAuto equipment label · not an original window sticker · currency not captured')).toBeVisible();
+    expect(panel.getByText('vAuto equipment profile · not an original window sticker')).toBeVisible();
     expect(panel.getByRole('listitem', { name: 'Synthetic package · TEST-01 · Price 1,250.75' })).toBeVisible();
     expect(panel.getByText('Price 1,250.75')).toHaveClass('vehicle-resource-sticker__price');
     expect(panel.getByText('Price 0')).toHaveClass('vehicle-resource-sticker__price');
@@ -345,7 +345,7 @@ describe('source-backed vehicle resource cards', () => {
     expect(panel.getByRole('link', { name: 'Window sticker' })).toHaveAttribute('href', vehicle.windowSticker.url);
     expect(document.querySelector('[data-resource-kind="window-sticker"]')).toBeNull();
     page.rerender(<VehicleResourceCards vehicle={{ ...vehicle, windowSticker: { ...vehicle.windowSticker, dataState: 'unavailable', equipmentGroup: 'Unavailable original group', options: ['Unavailable original option'] } }} variant="summary"/>);
-    expect(screen.getByText('vAuto equipment label · not an original window sticker · currency not captured')).toBeVisible();
+    expect(screen.getByText('vAuto equipment profile · not an original window sticker')).toBeVisible();
     expect(screen.queryByText('Unavailable original option')).not.toBeInTheDocument();
   });
 

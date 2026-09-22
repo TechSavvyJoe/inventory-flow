@@ -46,7 +46,6 @@ function sourceNote(record, hasFacts, { date, dateLabel = 'Captured', missing = 
           : record?.dataState === 'unknown' ? 'Source status unknown' : null,
     !hasFacts ? missing : null,
     clean(date) ? timestamp === null ? `Unrecognized source date: ${date}` : timestamp > now ? `Future source date: ${formatDate(date, now)}` : `${dateLabel} ${formatDate(date, now)}` : null,
-    record?.sourceMessage, record?.failureReason,
   ])
 }
 
@@ -169,7 +168,7 @@ export function resourceSummaries(vehicle, { now = Date.now() } = {}) {
   const equipmentFacts = present([
     ...packages, ...equipmentItems.slice(0, 4), powertrain,
     join([factory?.exteriorColor ? `Exterior ${factory.exteriorColor}` : null, factory?.interiorColor ? `Interior ${factory.interiorColor}` : null]),
-    numeric(factory?.totalMsrp) ? `${formatNumber(factory.totalMsrp)} reference MSRP · currency not captured` : null,
+    numeric(factory?.totalMsrp) ? `${formatNumber(factory.totalMsrp)} reference MSRP` : null,
     ...equipmentItems.slice(4),
   ])
   if (factory) result.push({
@@ -208,8 +207,9 @@ export function resourceSummaries(vehicle, { now = Date.now() } = {}) {
       url: vehicle.links?.oasis ?? null, sourceKind: vehicle.links?.oasis ? 'Dealer lookup' : 'Saved data', target: 'records', hasCapturedData: oasisFacts.length > 0,
     })
     if (vehicle.links?.invoice) result.push({
-      id: 'invoice', title: 'Ford invoice', brand: 'ford', facts: [], compactFacts: ['DealerConnection sign-in'],
-      sourceNote: 'Invoice details are not captured', url: vehicle.links.invoice, sourceKind: 'Dealer lookup', target: 'records', hasCapturedData: false,
+      id: 'invoice', title: 'Ford invoice', brand: 'ford', facts: [], compactFacts: vehicle.links.invoiceSaved ? ['Saved factory invoice'] : [],
+      sourceNote: vehicle.links.invoiceSaved ? sourceNote({ dataState: 'current' }, true, { date: vehicle.links.invoiceCapturedAt, dateLabel: 'Saved', now }) : null,
+      url: vehicle.links.invoice, sourceKind: vehicle.links.invoiceSaved ? 'Saved copy' : 'Dealer lookup', target: 'records', hasCapturedData: false,
     })
   }
   return result

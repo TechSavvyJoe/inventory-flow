@@ -386,6 +386,11 @@ describe('modern inventory result access', () => {
     await user.keyboard('{Enter}');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await waitFor(() => expect(launcher).toHaveFocus());
+    await user.click(launcher);
+    const backdrop = document.querySelector<HTMLElement>('.inventory-records-backdrop');
+    expect(backdrop).toBeInTheDocument();
+    await user.click(backdrop!);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('keeps each row bound to its vehicle and mirrors selected state without leaking private evidence', () => {

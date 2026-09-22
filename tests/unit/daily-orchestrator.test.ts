@@ -55,4 +55,11 @@ describe('app-first daily orchestrator helpers', () => {
     expect(summary).toContain('Release bundle: work/releases/2026-09-17/inventory-flow-release.json')
     expect(summary).not.toMatch(/workbook|xlsx|customer/i)
   })
+
+  it('returns a failing process status for an incomplete scheduled run', async () => {
+    const internals = await loadInternals()
+
+    expect(internals.exitCodeForResult({ ok: true })).toBe(0)
+    expect(internals.exitCodeForResult({ ok: false, failureCode: 'DEALERMAIL_INCOMPLETE' })).toBe(1)
+  })
 })
