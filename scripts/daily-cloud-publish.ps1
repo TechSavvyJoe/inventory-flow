@@ -256,6 +256,9 @@ try {
         try {
           Assert-IntegrationDeployment
           Complete-VerifiedPublicationState -Receipt $receipt -Date $date
+          $archiveRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\archive-inventory-history.mjs', $date, '--workspace-root', $WorkspaceRoot)
+          if ($archiveRun.ExitCode -ne 0) { Write-Log "historical archive FAILED: $($archiveRun.Output.Trim())" 'ERROR'; throw 'HISTORICAL_ARCHIVE_FAILED' }
+          Write-Log "historical archive: $($archiveRun.Output.Trim())"
         } finally { Pop-Location }
         Write-Log "already published and verified for $date - nothing to do (use -Force to republish)"
         Write-Log '=== daily-cloud-publish SKIPPED (already current) ==='
