@@ -54,6 +54,10 @@
 .oasis-actions li { display: flex; align-items: flex-start; gap: 7px; border: 1px solid var(--moving-line); background: var(--moving-bg); border-radius: 5px; padding: 8px; color: var(--ink); font-size: 13px; }
 .oasis-actions li > .icon { flex: none; color: var(--moving); margin-top: 2px; }
 .oasis-actions li + li { margin-top: 5px; }
+.rec-service-history { list-style: none; margin: 0; padding: 0; }
+.rec-service-history li { padding: 7px 0; border-top: 1px solid var(--line); }
+.rec-service-history li:first-child { border-top: 0; }
+.rec-service-history p { margin: 3px 0 0; color: var(--ink-3); font-size: 12px; line-height: 1.4; }
 .rec .record-brand { width: 75px; height: 28px; }
 .rec .record-brand--ford { width: 40px; }
 .row-workflow-summary { grid-column: 1/-1; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 5px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-2); }

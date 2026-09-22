@@ -68,6 +68,8 @@ describe('Ford service-history merge', () => {
       },
     })
     expect(enrichment.recordsByVin[lincolnVin].fordOasis.serviceHistory.checkedRepairOrders).toBeUndefined()
+    expect(enrichment.recordsByVin[lincolnVin].fordOasis.serviceHistory.recentRepairOrders).toHaveLength(1)
+    expect(enrichment.recordsByVin[lincolnVin].fordOasis.serviceHistory.recentRepairOrders[0].privateCaptureOnly).toBeUndefined()
     expect(enrichment.recordsByVin[nonFordVin]).toBeUndefined()
   })
 

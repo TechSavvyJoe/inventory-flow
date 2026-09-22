@@ -1303,6 +1303,15 @@ function recordsTab(vehicle) {
       ['Months in service', hasNumber(oasis.monthsInService) ? String(oasis.monthsInService) : null], ['Sale mileage', hasNumber(oasis.saleMileage) ? fmt.formatMileage(oasis.saleMileage) : null],
     ]) : null,
     oasis?.openFieldServiceActions.length ? recordSection(oasis.openActionsCaptured === false ? `At least ${oasis.openFieldServiceActions.length} captured actions · result incomplete` : 'Open Ford service actions', [el('ul', { class: 'rec-list oasis-actions' }, ...oasis.openFieldServiceActions.map((item) => el('li', {}, icon('alert', { size: 17 }), el('span', {}, item.code ? el('b', { text: item.code }) : null, item.code && item.description ? ' · ' : '', sourceDistanceText(sourceDisplayText(item.description))))))]) : el('p', { class: 'rec-empty', text: 'Verify current actions in OASIS.' }),
+    oasis?.serviceHistory ? recordSection(`Ford service history · ${oasis.serviceHistory.repairOrderCount} repair ${oasis.serviceHistory.repairOrderCount === 1 ? 'order' : 'orders'}`, [
+      oasis.serviceHistory.recentRepairOrders.length
+        ? el('ol', { class: 'rec-service-history' }, ...oasis.serviceHistory.recentRepairOrders.map((order) => el('li', {},
+          el('div', { class: 'rec-line' }, el('b', { text: `${fmt.formatDate(order.openDate)} to ${fmt.formatDate(order.closeDate)}` }), hasNumber(order.odometer) ? el('span', { class: 'num', text: fmt.formatMileage(order.odometer) }) : null),
+          el('p', { text: order.services.length ? order.services.join(' · ') : order.inspection || order.summary || 'Service work recorded' }),
+        )))
+        : el('p', { class: 'rec-empty', text: 'No detailed recent repair order is available.' }),
+      oasis.serviceHistory.checkedAt ? note(`Checked ${fmt.formatDate(oasis.serviceHistory.checkedAt)}`) : null,
+    ]) : null,
     oasis?.warrantyCoverages.length ? recordSection('Ford warranty coverages', [el('ul', { class: 'rec-list' }, ...oasis.warrantyCoverages.map((item) => el('li', {}, el('b', { text: item.type }), item.description ? ` · ${sourceDistanceText(sourceDisplayText(item.description))}` : '')))]) : null,
     recordList('Extended coverage expirations', oasis?.extendedCoverageExpirations?.map(value => fmt.formatSourceDateText(value))),
   ))

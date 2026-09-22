@@ -394,6 +394,27 @@ function autoCheckReport() {
   }
 }
 
+function syntheticFordServiceHistory(vehicle) {
+  const order = (repairOrderNumber, openDate, closeDate, odometer, services, inspection = null) => ({
+    repairOrderNumber, dealerCode: 'DEMO1', openDate, closeDate, odometer, detailComplete: true,
+    inspection: inspection ? { status: 'confirmed', type: inspection } : { status: 'not_identified' },
+    parts: [], laborOperations: [], services,
+    summary: `${services.join('; ')}. Synthetic demonstration only.`,
+  })
+  const recentRepairOrders = [
+    order(`9000${vehicle.stock.slice(-2)}01`, '08/25/2026', '08/26/2026', vehicle.mileage, ['Used-car inspection', 'Oil and filter service', 'Brake inspection/service'], 'Used-car inspection'),
+    order(`9000${vehicle.stock.slice(-2)}02`, '05/10/2026', '05/10/2026', Math.max(0, vehicle.mileage - 1800), ['Tire inspection/service', 'Wheel alignment']),
+    order(`9000${vehicle.stock.slice(-2)}03`, '01/17/2026', '01/17/2026', Math.max(0, vehicle.mileage - 4200), ['Oil and filter service', 'Cabin air filter']),
+  ]
+  return {
+    dataState: 'current', checkedAt: '2026-08-30T09:12:00-04:00',
+    sourceLabel: 'Synthetic Ford service history demonstration — fabricated, not operational',
+    historyCaptured: true, repairOrderCount: 8, detailScanCount: recentRepairOrders.length,
+    inspectionSearchStatus: 'confirmed', latestRepairOrder: recentRepairOrders[0],
+    recentInspection: recentRepairOrders[0], recentRepairOrders,
+  }
+}
+
 const heldVins = new Set(['TESTDATAHWELL0001', 'TESTDATALNCN00001'])
 
 // Rich source coverage is opt-in for the local demonstration. Keep the default
@@ -509,6 +530,7 @@ function demoResources(vehicle) {
           : [],
         warrantyCoverages: [{ type: 'Synthetic coverage sample', description: 'Fabricated coverage record; verify actual terms before any vehicle decision' }],
         extendedCoverageExpirations: [],
+        serviceHistory: syntheticFordServiceHistory(vehicle),
       },
     } : {}),
   }

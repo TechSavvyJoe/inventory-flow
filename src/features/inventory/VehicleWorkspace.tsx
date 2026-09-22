@@ -613,6 +613,9 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const serviceHistory = fordOasis?.serviceHistory ?? null;
   const latestService = serviceHistory?.latestRepairOrder ?? null;
   const recentInspection = serviceHistory?.recentInspection ?? null;
+  const recentServiceOrders = serviceHistory?.recentRepairOrders?.length
+    ? serviceHistory.recentRepairOrders
+    : latestService ? [latestService] : [];
   const showServiceHistory = Boolean(serviceHistory && (latestService || !serviceHistory.historyCaptured));
   const openRecallCount = fordOasis?.openFieldServiceActions.length ?? 0;
   const hasCapturedRecallResult = hasCapturedOasisActionResult(fordOasis);
@@ -791,7 +794,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
 
           {serviceHistory && showServiceHistory ? (
             <CapturedRecordSection
-              title="Latest Ford dealer service"
+              title="Ford service history"
               count={serviceHistory.repairOrderCount ? countLabel(serviceHistory.repairOrderCount, "repair order") : "No repair orders"}
             >
               {latestService ? <>
@@ -817,6 +820,13 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                     {` · ${formatDate(recentInspection.openDate)} to ${formatDate(recentInspection.closeDate)}`}
                   </p>
                 ) : null}
+                {recentServiceOrders.length > 1 ? <section className="vdp-service-history-recent" aria-label="Recent Ford repair orders">
+                  <h4>Earlier recent service</h4>
+                  <ol>{recentServiceOrders.slice(1).map((order) => <li key={order.repairOrderNumber}>
+                    <div><strong>{formatDate(order.openDate)} to {formatDate(order.closeDate)}</strong>{order.odometer != null ? <span>{formatMileage(order.odometer)}</span> : null}</div>
+                    <p>{order.services.length ? order.services.map(sourceDistanceText).join(" · ") : sourceDistanceText(sourceDisplayText(order.summary)) || "Service work recorded"}</p>
+                  </li>)}</ol>
+                </section> : null}
               </> : (
                 <p className="inventory-vehicle-document__empty">
                   Ford service history could not be verified.

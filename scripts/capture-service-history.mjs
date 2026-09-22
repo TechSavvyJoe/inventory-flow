@@ -173,7 +173,6 @@ for (const item of queue) {
       }
       checkedRepairOrders.push(detailed)
       if (!inspection && detailed.inspection?.status === 'confirmed') inspection = detailed
-      if (checkedRepairOrders.length >= 1 && inspection) break
       await sleep(60)
     }
     if (stoppedReason === 'SESSION_EXPIRED') break

@@ -162,6 +162,7 @@ function fordOasisResource(
           inspectionSearchStatus: fordOasis.serviceHistory.inspectionSearchStatus,
           latestRepairOrder: fordServiceRepairOrder(fordOasis.serviceHistory.latestRepairOrder),
           recentInspection: fordServiceRepairOrder(fordOasis.serviceHistory.recentInspection),
+          recentRepairOrders: (fordOasis.serviceHistory.recentRepairOrders ?? []).map(fordServiceRepairOrder).filter((order) => order !== null),
         }
       })()
     : null
@@ -352,6 +353,14 @@ function officialDocumentSearchText(
     ...(fordOasis?.serviceHistory?.latestRepairOrder?.laborOperations ?? []).flatMap((operation) => [operation.code, operation.description]),
     ...(fordOasis?.serviceHistory?.latestRepairOrder?.parts ?? []).flatMap((part) => [part.description, part.partNumber]),
     fordOasis?.serviceHistory?.recentInspection?.inspection.type,
+    ...(fordOasis?.serviceHistory?.recentRepairOrders ?? []).flatMap((order) => [
+      order.openDate,
+      order.closeDate,
+      order.odometer,
+      order.inspection.type,
+      order.summary,
+      ...order.services,
+    ]),
     fordOasis ? 'Ford OASIS' : null,
     fordOasis?.openFieldServiceActions.length ? `${fordOasis.openFieldServiceActions.length} open recalls field service actions` : null,
     // Search only on vehicle-specific warranty facts. Coverage names, printed

@@ -335,7 +335,7 @@ function validateServiceHistory(value) {
   ensure(value && typeof value === 'object' && !Array.isArray(value), 'Ford service history must be an object')
   onlyKeys(value, new Set([
     'dataState', 'checkedAt', 'sourceLabel', 'historyCaptured', 'repairOrderCount', 'detailScanCount',
-    'inspectionSearchStatus', 'latestRepairOrder', 'recentInspection',
+    'inspectionSearchStatus', 'latestRepairOrder', 'recentInspection', 'recentRepairOrders',
   ]), 'Ford service history')
   ensure(RESOURCE_DATA_STATES.has(value.dataState), 'Ford service history data state is invalid')
   ensure(optionalTimestamp(value.checkedAt, 'Ford service history checkedAt'), 'Ford service history checkedAt is required')
@@ -352,6 +352,11 @@ function validateServiceHistory(value) {
     validateServiceRepairOrder(value.recentInspection, 'Recent Ford inspection repair order')
     ensure(value.recentInspection.inspection?.status === 'confirmed', 'Recent Ford inspection repair order must contain confirmed inspection evidence')
   }
+  const recentRepairOrders = value.recentRepairOrders ?? []
+  ensure(Array.isArray(recentRepairOrders) && recentRepairOrders.length <= 5, 'Recent Ford repair orders must be a bounded array')
+  recentRepairOrders.forEach((order, index) => validateServiceRepairOrder(order, `Recent Ford repair order ${index + 1}`))
+  ensure(recentRepairOrders.length <= value.detailScanCount, 'Recent Ford repair orders exceed the detailed scan count')
+  ensure(new Set(recentRepairOrders.map(order => order.repairOrderNumber)).size === recentRepairOrders.length, 'Recent Ford repair orders must be unique')
 }
 
 // Ford OASIS vehicle report facts captured read-only from FMCDealer for an

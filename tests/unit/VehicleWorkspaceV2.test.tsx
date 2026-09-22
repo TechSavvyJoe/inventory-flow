@@ -51,7 +51,7 @@ describe('Premium vehicle workspace shares the operational record', () => {
     showPremiumVehicle(vehicle)
     fireEvent.click(screen.getByRole('tab', { name: 'Records' }))
     const panel = screen.getByRole('tabpanel', { name: 'Records' })
-    expect(panel).toHaveTextContent('Latest Ford dealer service')
+    expect(panel).toHaveTextContent('Ford service history')
     expect(panel).toHaveTextContent('In service')
     expect(panel).toHaveTextContent('08/14/2026')
     expect(panel).toHaveTextContent('Ready')

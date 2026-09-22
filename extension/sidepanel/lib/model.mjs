@@ -233,6 +233,34 @@ function capturedWarranty(record, fallback) {
   } : null
 }
 
+function capturedServiceOrder(value) {
+  const repairOrderNumber = text(value?.repairOrderNumber)
+  const openDate = text(value?.openDate)
+  const closeDate = text(value?.closeDate)
+  if (!repairOrderNumber || !openDate || !closeDate) return null
+  return {
+    repairOrderNumber,
+    openDate,
+    closeDate,
+    odometer: number(value.odometer),
+    services: list(value.services),
+    summary: text(value.summary),
+    inspection: value.inspection?.status === 'confirmed' ? text(value.inspection.type) : null,
+  }
+}
+
+function capturedServiceHistory(value, fallback) {
+  if (!value || number(value.repairOrderCount) === null || number(value.detailScanCount) === null) return null
+  const latest = capturedServiceOrder(value.latestRepairOrder)
+  const recent = entries(value.recentRepairOrders).map(capturedServiceOrder).filter(Boolean)
+  return {
+    dataState: documentState(value.dataState, fallback), checkedAt: text(value.checkedAt),
+    repairOrderCount: number(value.repairOrderCount), detailScanCount: number(value.detailScanCount),
+    latestRepairOrder: latest,
+    recentRepairOrders: recent.length ? recent : latest ? [latest] : [],
+  }
+}
+
 function documentsFor(record, publicState, dealerMailState) {
   const autoCheck = record.autoCheckReport
   const sticker = record.windowSticker
@@ -287,6 +315,7 @@ function documentsFor(record, publicState, dealerMailState) {
       openFieldServiceActions: entries(oasis.openFieldServiceActions).filter((item) => text(item?.code)).map((item) => ({ code: text(item.code), description: text(item.description) })),
       warrantyCoverages: entries(oasis.warrantyCoverages).filter((item) => text(item?.type)).map((item) => ({ type: text(item.type), description: text(item.description) })),
       extendedCoverageExpirations: list(oasis.extendedCoverageExpirations),
+      ...(oasis.serviceHistory ? { serviceHistory: capturedServiceHistory(oasis.serviceHistory, dealerMailState) } : {}),
     } : null,
     warrantyCheck: capturedWarranty(record.warrantyCheck, dealerMailState),
   }

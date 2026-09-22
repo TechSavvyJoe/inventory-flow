@@ -61,6 +61,14 @@
 #inventory-vehicle-workspace .vdp-service-history-facts { margin:0 0 10px; }
 #inventory-vehicle-workspace .vdp-service-history-summary { margin:0 0 8px; color:var(--v10-ink); font-weight:600; }
 #inventory-vehicle-workspace .vdp-service-history-inspection { margin:8px 0 0; padding:8px 10px; border-left:3px solid var(--ifx-success); background:var(--ifx-success-surface); color:var(--v10-ink); }
+#inventory-vehicle-workspace .vdp-service-history-recent { margin-top:10px; padding-top:10px; border-top:1px solid var(--ifx-border-subtle); }
+#inventory-vehicle-workspace .vdp-service-history-recent h4 { margin:0 0 5px; color:var(--v10-ink); font-size:13px; }
+#inventory-vehicle-workspace .vdp-service-history-recent ol { list-style:none; margin:0; padding:0; }
+#inventory-vehicle-workspace .vdp-service-history-recent li { padding:8px 0; border-top:1px solid var(--ifx-border-subtle); }
+#inventory-vehicle-workspace .vdp-service-history-recent li:first-child { border-top:0; }
+#inventory-vehicle-workspace .vdp-service-history-recent li>div { display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px 10px; font-size:13px; }
+#inventory-vehicle-workspace .vdp-service-history-recent li span { color:var(--v10-muted); font-size:12px; font-variant-numeric:tabular-nums; }
+#inventory-vehicle-workspace .vdp-service-history-recent li p { margin:3px 0 0; color:var(--v10-muted); font-size:12px; }
 #inventory-vehicle-workspace .vdp-record-equipment-groups { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
 #inventory-vehicle-workspace .inventory-vehicle-document--sticker .vdp-record-section > ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 16px; }
 #inventory-vehicle-workspace .vdp-record-source-details { margin:0; border-top:1px solid var(--v10-border-soft); }

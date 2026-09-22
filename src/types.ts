@@ -219,6 +219,7 @@ export interface FordServiceHistoryRecord {
   inspectionSearchStatus: 'confirmed' | 'not_identified' | 'incomplete'
   latestRepairOrder?: FordServiceRepairOrderRecord | null
   recentInspection?: FordServiceRepairOrderRecord | null
+  recentRepairOrders?: FordServiceRepairOrderRecord[]
 }
 
 /**

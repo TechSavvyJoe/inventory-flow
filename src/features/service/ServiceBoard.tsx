@@ -7,6 +7,7 @@ import { useModalBackgroundIsolation } from "../../lib/useModalBackgroundIsolati
 import { confirmUnsavedWork } from "../../lib/useUnsavedChanges";
 import { useWorkspaceState } from "../../lib/workspace-memory";
 import { ServiceEditor } from "./ServicePage";
+import { serviceEvidenceSummary } from "./SourceServiceHistory";
 import { oasisActionLabel } from "../inventory/vehicle-resource-catalog";
 import { CopyableValue } from "../../components/CopyableValue";
 import { useSearchParams, useNavigate } from "react-router-dom";
@@ -46,6 +47,11 @@ function FordServiceActions({ vehicle }: { vehicle: VehicleRecord }) {
   const count = vehicle.fordOasis?.openFieldServiceActions?.length ?? 0;
   if (!count) return null;
   return <div className="service-v2-card-alert"><ShieldAlert size={14} aria-hidden="true" /><span>Saved OASIS · {oasisActionLabel(vehicle.fordOasis)}</span></div>;
+}
+
+function ServiceHistoryEvidence({ vehicle }: { vehicle: VehicleRecord }) {
+  const summary = serviceEvidenceSummary(vehicle);
+  return summary ? <div className="service-v2-card-history"><Wrench size={14} aria-hidden="true" /><span>{summary}</span></div> : null;
 }
 
 export function ServiceBoard({ toolbarAccessory }: { toolbarAccessory?: ReactNode } = {}) {
@@ -293,6 +299,7 @@ export function ServiceBoard({ toolbarAccessory }: { toolbarAccessory?: ReactNod
                         </div>
 
                         <FordServiceActions vehicle={vehicle} />
+                        <ServiceHistoryEvidence vehicle={vehicle} />
                         <div className="service-v2-card-footer">
                           <motion.span
                             layoutId={`service-badge-${vehicle.vin}`}
@@ -414,6 +421,7 @@ export function ServiceBoard({ toolbarAccessory }: { toolbarAccessory?: ReactNod
                         </div>
 
                         <FordServiceActions vehicle={vehicle} />
+                        <ServiceHistoryEvidence vehicle={vehicle} />
                         <div className="service-v2-card-footer">
                           <motion.span
                             layoutId={`service-badge-${vehicle.vin}`}
@@ -534,6 +542,7 @@ export function ServiceBoard({ toolbarAccessory }: { toolbarAccessory?: ReactNod
                         </div>
 
                         <FordServiceActions vehicle={vehicle} />
+                        <ServiceHistoryEvidence vehicle={vehicle} />
                         <div className="service-v2-card-footer">
                           <motion.span
                             layoutId={`service-badge-${vehicle.vin}`}

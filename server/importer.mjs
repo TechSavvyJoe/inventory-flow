@@ -904,7 +904,7 @@ function validatedServiceHistory(value, vin) {
   assertValid(value && typeof value === 'object' && !Array.isArray(value), 'Ford service history must be an object', { vin })
   assertOnlyKeys(value, new Set([
     'dataState', 'checkedAt', 'sourceLabel', 'historyCaptured', 'repairOrderCount', 'detailScanCount',
-    'inspectionSearchStatus', 'latestRepairOrder', 'recentInspection',
+    'inspectionSearchStatus', 'latestRepairOrder', 'recentInspection', 'recentRepairOrders',
   ]), 'Ford service history', { vin })
   assertValid(RESOURCE_DATA_STATES.has(value.dataState), 'Ford service history data state is invalid', { vin })
   const checkedAt = optionalIsoTimestamp(value.checkedAt, 'Ford service history checkedAt')
@@ -931,6 +931,12 @@ function validatedServiceHistory(value, vin) {
     result.recentInspection = validatedServiceRepairOrder(value.recentInspection, vin, 'Recent Ford inspection repair order')
     assertValid(result.recentInspection.inspection.status === 'confirmed', 'Recent Ford inspection repair order must contain confirmed inspection evidence', { vin })
   }
+  const recentRepairOrders = value.recentRepairOrders ?? []
+  assertValid(Array.isArray(recentRepairOrders) && recentRepairOrders.length <= 5, 'Recent Ford repair orders must be a bounded array', { vin })
+  const validatedRecentRepairOrders = recentRepairOrders.map((order, index) => validatedServiceRepairOrder(order, vin, `Recent Ford repair order ${index + 1}`))
+  assertValid(validatedRecentRepairOrders.length <= detailScanCount, 'Recent Ford repair orders exceed the detailed scan count', { vin })
+  assertValid(new Set(validatedRecentRepairOrders.map(order => order.repairOrderNumber)).size === validatedRecentRepairOrders.length, 'Recent Ford repair orders must be unique', { vin })
+  if (value.recentRepairOrders != null) result.recentRepairOrders = validatedRecentRepairOrders
   return result
 }
 

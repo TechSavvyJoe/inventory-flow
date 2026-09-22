@@ -15,6 +15,7 @@ import { CopyableValue } from '../../components/CopyableValue'
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
 import { VehicleGallery } from '../inventory/VehicleGallery'
 import { ServiceVehicleContext } from './ServiceVehicleContext'
+import { serviceEvidenceSummary, SourceServiceHistory } from './SourceServiceHistory'
 import { searchFieldsMatch } from '../inventory/inventory-search'
 import './ServiceDesk.css'
 
@@ -220,9 +221,10 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
       <nav className="service-vehicle-links" aria-label="Vehicle reference"><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { returnTo: currentWorkspaceReturnPath(location) })}>Vehicle details</Link><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: currentWorkspaceReturnPath(location) })}>Records</Link></nav>
     </>}
     </section>
+    <SourceServiceHistory vehicle={vehicle} recordsHref={recordsHref} />
     <ServiceVehicleContext vehicle={vehicle} recordsHref={recordsHref} />
       {!loading && detail && <>
-        <section className="service-history" aria-labelledby="service-history-title"><h3 id="service-history-title">Service history</h3>
+        <section className="service-history" aria-labelledby="service-history-title"><h3 id="service-history-title">Status updates</h3>
           {detail.history.length ? <><ol>{detail.history.slice(0, 3).map(historyEntry)}</ol>{detail.history.length > 3 && <details><summary>Earlier updates ({detail.history.length - 3})</summary><ol>{detail.history.slice(3).map(historyEntry)}</ol></details>}</> : <p>{detail.version ? 'Detailed service history is limited to sales staff and managers.' : serviceWorkflowStatus(detail) === 'serviced' ? 'Ready is recorded. No completion date is available.' : 'Service has not been confirmed. A manager must mark this vehicle Ready after review.'}</p>}
         </section>
       </>}
@@ -265,7 +267,7 @@ export function ServicePage({ toolbarAccessory }: { toolbarAccessory?: ReactNode
       {vehicles.length ? <ul className="service-list">{vehicles.map((vehicle) => <li key={vehicle.vin}><button className="service-vehicle-row" type="button" aria-pressed={selectedVin === vehicle.vin} onClick={() => selectVin(vehicle.vin)}>
         <ServicePhoto key={vehicle.vin} vehicle={vehicle} /><span className="service-vehicle-info"><strong>{vehicle.vehicleName}</strong><span>Stock {vehicle.stockNumber} · {vehicle.serviceReadiness?.store ?? vehicle.homeStore}</span><small>{vehicle.vin}</small></span>
         <span className="service-row-numbers"><strong>{vehicle.mileage != null ? `${formatNumber(vehicle.mileage)} mi` : 'Mileage unavailable'}</strong><span>{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : vehicle.inventoryDate ? `Listed ${displayDate(vehicle.inventoryDate)}` : ''}</span></span>
-        <span className={`service-status-badge service-status-${status}`}>{SERVICE_LABELS[status]}<small>{vehicle.serviceReadiness?.notes || (status === 'in_service' && vehicle.serviceReadiness?.serviceEnteredAt ? `Since ${displayDate(vehicle.serviceReadiness.serviceEnteredAt)}` : 'View & update')}</small></span>
+        <span className={`service-status-badge service-status-${status}`}>{SERVICE_LABELS[status]}<small>{vehicle.serviceReadiness?.notes || (status === 'in_service' && vehicle.serviceReadiness?.serviceEnteredAt ? `Since ${displayDate(vehicle.serviceReadiness.serviceEnteredAt)}` : serviceEvidenceSummary(vehicle) || 'View & update')}</small></span>
       </button></li>)}</ul> : <div className="service-empty"><CheckCircle2 size={28} /><h2>{search ? 'No matching vehicles' : EMPTY_TITLES[status]}</h2><p>{search ? 'Try a stock number, VIN, or model.' : 'Choose another status or expand to all stores.'}</p>{search ? <button type="button" onClick={() => setSearch('')}>Clear search</button> : scope === 'my_store' ? <button type="button" onClick={() => setScope('all')}>Search all stores</button> : null}</div>}
     </div>{selected && <ServiceEditor key={`${selected.vin}:${role}:${homeStore}`} vehicle={selected} role={role} store={homeStore} initialAction={STATUSES.includes(actionParam) ? actionParam : null} defaultDate={selected.vin.startsWith('TESTDATA') ? data.meta.reportDate : localToday()} onSaved={savedStatus} backLabel={returnTo ? workspaceReturnLabel(returnTo) : undefined} onBack={() => returnTo ? navigate(returnTo) : selectVin(null)} />}</div>
   </section>

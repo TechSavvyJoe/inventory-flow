@@ -69,7 +69,7 @@ test('service setup exposes captured OASIS details and an expandable photo witho
       const vehicle = (await page.getByRole('region', { name: 'Vehicle summary', exact: true }).boundingBox())!
       const reference = (await page.getByRole('region', { name: 'Service reference', exact: true }).boundingBox())!
       const status = (await page.getByRole('region', { name: 'Service status', exact: true }).boundingBox())!
-      const history = (await page.getByRole('region', { name: 'Service history', exact: true }).boundingBox())!
+      const history = (await page.getByRole('region', { name: 'Vehicle service records', exact: true }).boundingBox())!
       expect(reference.width).toBeCloseTo(vehicle.width, 0)
       expect(history.y).toBeCloseTo(status.y, 0)
       expect(reference.y - Math.max(status.y + status.height, history.y + history.height)).toBeLessThanOrEqual(20)
