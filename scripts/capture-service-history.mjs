@@ -213,6 +213,16 @@ for (const item of queue) {
       ...index.repairOrders[0], detailComplete: false,
     }
     if (!latest.detailComplete) incomplete = true
+    if (incomplete) {
+      const prior = priorVerifiedHistory(item.vin)
+      if (prior) {
+        // A complete index with one unavailable detail response still is not
+        // evidence to replace a verified history with a partial record.
+        out.records.push({ ...prior, result: 'OK', dataState: 'stale_unverified' })
+        sessionStatus = 'ok'; tally.PRIOR_HISTORY_PRESERVED++
+        continue
+      }
+    }
     out.records.push({
       vin: item.vin,
       checkedAt,
