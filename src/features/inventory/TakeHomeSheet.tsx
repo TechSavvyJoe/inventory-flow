@@ -6,7 +6,7 @@ import { STORE_BRANDING } from "../../app/storeBranding";
 import type { StoreName } from "../../types";
 import { useContainedFocus } from "../../lib/useContainedFocus";
 import { formatDate, formatMileage, formatMoney, vehicleDisplayName } from "./inventory-utils";
-import { publishedEquipment, standoutEquipment } from "./vehicle-feature-utils";
+import { compactEquipmentScanLabel, publishedEquipment } from "./vehicle-feature-utils";
 import { certifiedTerms } from "./vehicle-warranty-utils";
 import type { InventoryVehicle } from "./types";
 import "./TakeHomeSheet.css";
@@ -19,6 +19,7 @@ const STORE_DISPLAY: Record<string, { name: string; site: string }> = {
 };
 
 const isHttps = (value: string | null | undefined): value is string => typeof value === "string" && /^https:\/\//i.test(value);
+const customerEquipmentLabel = (value: string): string => compactEquipmentScanLabel(value).replace(/^[·|.]\s*/, "").trim();
 
 /**
  * Everything on the sheet is a published fact a customer could read on the
@@ -31,8 +32,9 @@ export function takeHomeModel(vehicle: InventoryVehicle) {
   const branding = STORE_BRANDING[store as StoreName] ?? null;
   const display = STORE_DISPLAY[store] ?? { name: store, site: "" };
   const photos = [...new Set([...(vehicle.imageUrls ?? []), vehicle.imageUrl].filter(isHttps))].slice(0, 4);
-  const equipment = publishedEquipment(vehicle).map((item) => item.label);
-  const standout = standoutEquipment(vehicle, 8).map((item) => item.label);
+  const published = publishedEquipment(vehicle);
+  const equipment = [...new Set(published.map((item) => customerEquipmentLabel(item.label)).filter(Boolean))];
+  const standout = [...new Set(published.filter((item) => item.standout).map((item) => customerEquipmentLabel(item.label)).filter(Boolean))].slice(0, 8);
   const price = vehicle.price ?? null;
   const msrp = vehicle.msrp ?? null;
   const savings = price !== null && msrp !== null && msrp > price ? msrp - price : null;

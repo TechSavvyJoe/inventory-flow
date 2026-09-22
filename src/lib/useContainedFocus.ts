@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -17,6 +17,12 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
     const bounds = element.getBoundingClientRect()
     return styles.display !== 'none' && styles.visibility !== 'hidden' && bounds.width > 0 && bounds.height > 0
   })
+}
+
+function coveredByNestedModal(container: HTMLElement) {
+  const modals = document.querySelectorAll<HTMLElement>('[aria-modal="true"]')
+  const top = modals[modals.length - 1]
+  return Boolean(top && top !== container && !container.contains(top) && !top.contains(container))
 }
 
 interface ContainedFocusOptions {
@@ -38,9 +44,27 @@ export function useContainedFocus({
 }: ContainedFocusOptions) {
   const onEscapeRef = useRef(onEscape)
 
-  useEffect(() => {
+  // Escape must work on the first paint after a portal opens. A passive effect
+  // leaves a short WebKit-only gap where a reopened dialog is visible but has
+  // not registered its keyboard owner yet.
+  useLayoutEffect(() => {
     onEscapeRef.current = onEscape
   }, [onEscape])
+
+  useLayoutEffect(() => {
+    if (!active) return
+    const container = containerRef.current
+    if (!container) return
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || coveredByNestedModal(container)) return
+      event.preventDefault()
+      onEscapeRef.current()
+    }
+
+    document.addEventListener('keydown', handleEscape, true)
+    return () => document.removeEventListener('keydown', handleEscape, true)
+  }, [active, containerRef])
 
   useEffect(() => {
     if (!active) return
@@ -54,27 +78,8 @@ export function useContainedFocus({
     }
     const frame = window.requestAnimationFrame(focusInitial)
 
-    // A dialog opened on top of this one (a later aria-modal element that is
-    // neither this container nor inside it) owns the keyboard until it closes:
-    // its Escape must not close this dialog too, and its Tab must not be
-    // pulled back into this container.
-    // Contract: every [aria-modal="true"] element in the app is a body portal
-    // mounted in stacking order and owns its own useContainedFocus trap, so
-    // document order is open order. An aria-modal element without a trap
-    // would leave the dialogs beneath it keyboard-unclosable.
-    const coveredByNestedModal = () => {
-      const modals = document.querySelectorAll<HTMLElement>('[aria-modal="true"]')
-      const top = modals[modals.length - 1]
-      return Boolean(top && top !== container && !container.contains(top) && !top.contains(container))
-    }
-
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (coveredByNestedModal()) return
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onEscapeRef.current()
-        return
-      }
+      if (coveredByNestedModal(container)) return
       if (!contain || event.key !== 'Tab') return
 
       const focusable = focusableElements(container)

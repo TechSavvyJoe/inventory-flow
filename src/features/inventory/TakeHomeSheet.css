@@ -77,7 +77,7 @@ body.takehome-open { overflow: hidden; }
 
 @media (max-width: 700px) {
   .th { min-height: 0; padding: 16px; }
-  .th-hero, .th-grid { grid-template-columns: 1fr; }
+  .th-hero, .th-grid, .th-bottom-grid { grid-template-columns: 1fr; }
   .th-equipment { columns: 2; }
   .takehome-toolbar { flex-wrap: wrap; }
 }

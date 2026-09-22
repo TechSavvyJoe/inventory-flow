@@ -48,7 +48,7 @@ describe('take-home sheet', () => {
     expect(model.certified?.name).toBe('Ford Blue Certified');
     expect(model.history).toBe('AutoCheck score 92 · 1 owner reported');
     const serialized = JSON.stringify(model);
-    for (const forbidden of ['Demo Salesperson', 'Customer appointment', 'Fowlerville', 'Demo Driver', 'transfer-1', 'in_transit', 'Mark arrived', '2024-03-14', 'inService', 'Bumper-to-bumper']) {
+    for (const forbidden of ['Demo Salesperson', 'Customer appointment', 'Fowlerville', 'Demo Driver', 'transfer-1', 'in_transit', 'Mark arrived', '2024-03-14', 'inService', 'Bumper-to-bumper', 'DEMO-', 'USD ']) {
       expect(serialized).not.toContain(forbidden);
     }
   });
