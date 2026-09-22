@@ -932,8 +932,9 @@ function validatedServiceHistory(value, vin) {
   assertValid(checkedAt, 'Ford service history checkedAt is required', { vin })
   assertValid(typeof value.historyCaptured === 'boolean', 'Ford service history historyCaptured must be a boolean', { vin })
   const repairOrderCount = optionalBoundedInteger(value.repairOrderCount, 'Ford service history repairOrderCount', { min: 0, max: 20_000 })
-  const detailScanCount = optionalBoundedInteger(value.detailScanCount, 'Ford service history detailScanCount', { min: 0, max: 20 })
+  const detailScanCount = optionalBoundedInteger(value.detailScanCount, 'Ford service history detailScanCount', { min: 0, max: 20_000 })
   assertValid(repairOrderCount !== undefined && detailScanCount !== undefined, 'Ford service history counts are required', { vin })
+  assertValid(detailScanCount <= repairOrderCount, 'Ford service history detailed scan count exceeds the reported repair-order count', { vin })
   const inspectionSearchStatus = optionalBoundedText(value.inspectionSearchStatus, 'Ford service history inspectionSearchStatus', { max: 40 })
   assertValid(SERVICE_HISTORY_SEARCH_STATES.has(inspectionSearchStatus), 'Ford service history inspection search status is invalid', { vin })
   const result = {

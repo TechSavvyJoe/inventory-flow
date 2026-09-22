@@ -187,7 +187,7 @@ function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, ste
     {
       name: 'ford_service_history',
       command: NODE,
-      args: ['scripts\\capture-service-history.mjs', 'run', reportDate, '--budget-ms', '1800000'],
+      args: ['scripts\\capture-service-history.mjs', 'run', reportDate, '--detail-limit', 'all', '--budget-ms', '3600000'],
       cwd: APP_ROOT,
       expired: /session_expired/i,
       warning: 'sign in to FMCDealer in the Work PC Automation Browser; Ford retail service-history data is incomplete for this run.',

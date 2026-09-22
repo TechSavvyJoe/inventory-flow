@@ -132,4 +132,75 @@ describe('Ford service-history merge', () => {
       dataState: 'stale_unverified', repairOrderCount: 2, historyCaptured: true,
     })
   })
+
+  it('retains every detailed visit in the service timeline while keeping the compact recent preview', () => {
+    const orders = Array.from({ length: 21 }, (_, index) => {
+      const day = String(21 - index).padStart(2, '0')
+      return repairOrder({
+        repairOrderNumber: String(300000 + index),
+        openDate: `04/${day}/2026`,
+        closeDate: `04/${day}/2026`,
+        odometer: 30000 - index * 100,
+        inspection: { status: 'not_identified' },
+        services: index === 20 ? ['Wheel hub / axle repair'] : ['Oil and filter service'],
+      })
+    })
+    const enrichment = {
+      schemaVersion: 'inventory-flow-vin-document-enrichment-v1', generatedAt: '2026-09-22T10:00:00.000Z',
+      recordsByVin: {},
+    }
+    mergeFordServiceHistory({
+      enrichment,
+      captures: {
+        schema: 'bob-maxey-ford-service-history-v1', reportDate: '2026-09-22',
+        records: [capture(fordVin, {
+          repairOrderCount: orders.length,
+          detailScanCount: orders.length,
+          latestRepairOrder: orders[0],
+          recentInspection: null,
+          repairOrderIndex: orders,
+          checkedRepairOrders: orders,
+        })],
+      },
+      vehicles: { [fordVin]: { make: 'Ford' } },
+    })
+
+    const history = enrichment.recordsByVin[fordVin].fordOasis.serviceHistory
+    expect(history.detailScanCount).toBe(21)
+    expect(history.recentRepairOrders).toHaveLength(5)
+    expect(history.repairOrderTimeline).toHaveLength(21)
+    expect(history.repairOrderTimeline[20]).toMatchObject({ services: ['Wheel hub / axle repair'] })
+  })
+
+  it('keeps an indexed Ford visit when the source does not offer its itemized repair detail', () => {
+    const indexedOnly = repairOrder({
+      repairOrderNumber: '123455', openDate: '03/01/2026', closeDate: '03/02/2026', odometer: 28000,
+      detailComplete: false, detailAvailability: 'source_unavailable', services: [],
+    })
+    const enrichment = {
+      schemaVersion: 'inventory-flow-vin-document-enrichment-v1', generatedAt: '2026-09-22T10:00:00.000Z',
+      recordsByVin: {},
+    }
+    mergeFordServiceHistory({
+      enrichment,
+      captures: {
+        schema: 'bob-maxey-ford-service-history-v1', reportDate: '2026-09-22',
+        records: [capture(fordVin, {
+          repairOrderCount: 2,
+          detailScanCount: 1,
+          repairOrderIndex: [repairOrder(), indexedOnly],
+          checkedRepairOrders: [repairOrder(), indexedOnly],
+        })],
+      },
+      vehicles: { [fordVin]: { make: 'Ford' } },
+    })
+
+    const history = enrichment.recordsByVin[fordVin].fordOasis.serviceHistory
+    expect(history).toMatchObject({ dataState: 'current', repairOrderCount: 2, detailScanCount: 1 })
+    expect(history.repairOrderTimeline).toEqual([
+      expect.objectContaining({ openDate: '04/02/2026', services: ['Certified Blue Oval inspection', 'Oil and filter service'] }),
+      expect.objectContaining({ openDate: '03/01/2026', closeDate: '03/02/2026' }),
+    ])
+    expect(history.repairOrderTimeline[1].services).toBeUndefined()
+  })
 })

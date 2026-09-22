@@ -3,6 +3,7 @@ import {
   parseServiceHistoryDetails,
   parseServiceHistoryIndex,
   repairOrderFingerprint,
+  serviceCategories,
 } from '../../scripts/lib/service-history-parser.mjs'
 
 const vin = '2FMPK4J95PBA07480'
@@ -80,5 +81,21 @@ describe('Ford PTS retail service-history parser', () => {
     expect(parsed.repairOrder!.laborOperations).toEqual([{ code: 'MPI', description: 'Multi-point inspection completed' }])
     expect(parsed.repairOrder!.summary).toBe('Multi-point inspection.')
     expect(JSON.stringify(parsed)).not.toMatch(/jane|doe|customer:/i)
+  })
+
+  it('derives useful broad repair categories from Ford parts and labor detail', () => {
+    expect(serviceCategories({
+      inspection: { status: 'not_identified' },
+      parts: [
+        { description: 'HUB ASY - WHEEL' },
+        { description: 'GASKET - WATER PUMP' },
+        { description: 'CAMSHAFT ASY' },
+      ],
+      laborOperations: [{ code: '120', description: 'HEAVY ENGINE REPAIRS' }],
+    })).toEqual(expect.arrayContaining([
+      'Wheel hub / axle repair',
+      'Cooling system service',
+      'Engine repair',
+    ]))
   })
 })

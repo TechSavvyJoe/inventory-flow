@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { CalendarDays, ChevronDown, ClipboardCheck, ExternalLink, Gauge } from 'lucide-react'
+import { CalendarDays, ChevronDown, ClipboardCheck, ExternalLink, Gauge, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { FordServiceHistoryVisitRecord, FordServiceRepairOrderRecord, VehicleRecord } from '../../types'
@@ -50,7 +50,24 @@ function serviceOutcome(service: string): string {
   if (normalized === 'battery service') return 'Battery service completed'
   if (normalized === 'wheel alignment') return 'Wheel alignment completed'
   if (normalized === 'fluid service') return 'Fluid service completed'
+  if (normalized === 'wheel hub / axle repair') return 'Wheel hub or axle repair completed'
+  if (normalized === 'suspension service') return 'Suspension service completed'
+  if (normalized === 'starting / charging system repair') return 'Starting or charging repair completed'
+  if (normalized === 'engine repair') return 'Engine repair completed'
+  if (normalized === 'cooling system service') return 'Cooling system service completed'
+  if (normalized === 'transmission service') return 'Transmission service completed'
+  if (normalized === 'fuel system service') return 'Fuel system service completed'
+  if (normalized === 'ignition system service') return 'Ignition system service completed'
+  if (normalized === 'exhaust system service') return 'Exhaust system service completed'
+  if (normalized === 'climate-control service') return 'Climate-control service completed'
   return service
+}
+
+function serviceTone(service: string): 'maintenance' | 'safety' | 'repair' {
+  const normalized = service.toLowerCase()
+  if (/brake|tire|inspection|diagnostic/.test(normalized)) return 'safety'
+  if (/repair|suspension|transmission|fuel system|ignition|exhaust|climate-control|cooling system|hub|axle|charging/.test(normalized)) return 'repair'
+  return 'maintenance'
 }
 
 function visitSummary(services: string[]): string {
@@ -68,7 +85,7 @@ function FordVisit({ visit }: { visit: FordServiceHistoryVisitRecord }) {
       {visit.odometer != null ? <span><Gauge size={14} aria-hidden="true" />{formatMileage(visit.odometer)}</span> : null}
     </header>
     <p>{visitSummary(services)}</p>
-    {services.length ? <ul aria-label="Completed service items">{services.map((service) => <li key={service}>{serviceOutcome(service)}</li>)}</ul> : null}
+    {services.length ? <ul aria-label="Completed service items">{services.map((service) => <li className={`service-source-service service-source-service--${serviceTone(service)}`} key={service}>{serviceOutcome(service)}</li>)}</ul> : null}
   </li>
 }
 
@@ -110,21 +127,21 @@ export function SourceServiceHistory({ vehicle, recordsHref }: { vehicle: Vehicl
 
   return <section className="service-source-history" aria-labelledby="source-service-history-title">
     <header className="service-source-history-heading">
-      <div><h3 id="source-service-history-title">Vehicle service records</h3><p>{fordFamily ? 'Ford dealer repair history' : 'AutoCheck history'}</p></div>
-      <span>{fordFamily ? 'FORD' : 'AUTOCHECK'}</span>
+      <div className="service-source-history-title"><span className="service-source-history-icon" aria-hidden="true"><Wrench size={17} /></span><div><h3 id="source-service-history-title">Vehicle service records</h3><p>{fordFamily ? 'Ford dealer repair history' : 'AutoCheck history'}</p></div></div>
+      <span className="service-source-history-source">{fordFamily ? 'FORD' : 'AUTOCHECK'}</span>
     </header>
     {fordFamily ? <>
       {history ? <div className="service-source-history-summary">
         <strong>{history.repairOrderCount ? `${history.repairOrderCount} service visits reported` : 'No service visits reported'}</strong>
-        <span>{documentedVisits.length ? `${documentedVisits.length} visits with work documented` : recordedOnlyVisits.length ? 'Visit dates and mileage on file' : 'Ford repair history'}</span>
+        <span className={documentedVisits.length ? 'service-source-history-summary--documented' : ''}>{documentedVisits.length ? `${documentedVisits.length} visits with work documented` : recordedOnlyVisits.length ? 'Visit dates and mileage on file' : 'Ford repair history'}</span>
       </div> : <p className="service-source-history-empty">Ford has not reported a dealer service history for this vehicle.</p>}
       {visits.length ? <>
         {documentedVisits.length ? <ol className="service-source-orders">{documentedVisits.map((visit, index) => <FordVisit key={`${visit.openDate}-${visit.closeDate}-${visit.odometer ?? index}`} visit={visit} />)}</ol> : null}
         {recordedOnlyVisits.length ? <>
-          <p className="service-source-history-recorded-note">Ford reported these visits with dates and mileage, but did not supply itemized work.</p>
+          <p className="service-source-history-recorded-note">Ford reported these visits by date and mileage; itemized work was not available from the source.</p>
           <button className="service-source-history-expand" type="button" aria-expanded={showRecordedVisits} onClick={() => setShowRecordedVisits((open) => !open)}>
             <ClipboardCheck size={15} aria-hidden="true" />
-            <span>{showRecordedVisits ? 'Hide additional visit dates' : `View ${recordedOnlyVisits.length} additional visit date${recordedOnlyVisits.length === 1 ? '' : 's'}`}</span>
+            <span>{showRecordedVisits ? 'Hide additional reported visits' : `View ${recordedOnlyVisits.length} additional reported visit${recordedOnlyVisits.length === 1 ? '' : 's'}`}</span>
             <ChevronDown size={16} aria-hidden="true" />
           </button>
           <AnimatePresence initial={false}>{showRecordedVisits ? <motion.ol className="service-source-orders service-source-orders--earlier" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }}>

@@ -9,10 +9,17 @@
 .inventory-service-link--in_service { color: var(--blue-700); }
 .inventory-service-link--serviced { color: var(--green); }
 .inventory-service-link.is-detailed { margin: 0; font-size: 14px; }
+.inventory-service-link.is-compact .inventory-service-link__content { display:flex; align-items:baseline; gap:4px; }
+.inventory-service-link.is-compact .inventory-service-link__detail { flex-wrap:nowrap; gap:0; }
+.inventory-service-link.is-compact .inventory-service-link__detail::before { content:"·"; margin-right:4px; color:currentColor; }
 
 /* Existing mobile signal rules flatten every child. Keep service explicit
    without changing the hold, movement, or document controls beside it. */
 @media (max-width: 760px) {
+  #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link.is-compact .inventory-service-link__detail {
+    display: none;
+  }
+
   #root #inventory-results-workspace .inventory-mobile-row__signals > .inventory-service-link {
     min-height: 44px;
     margin: 0;

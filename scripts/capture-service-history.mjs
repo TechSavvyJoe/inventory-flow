@@ -18,19 +18,21 @@ const ORIGIN = 'https://www.fordtechservice.dealerconnection.com'
 const HISTORY_URL = (vin) => `${ORIGIN}/VehicleService/Index?VIN=${vin}`
 const DETAILS_URL = `${ORIGIN}/VehicleService/Details`
 const FORD_MAKES = new Set(['FORD', 'LINC', 'LINCOLN'])
-const RECENT_DETAIL_LIMIT = 5
 const [, , cmd, reportDate, ...rest] = process.argv
 if (cmd !== 'run' || !/^\d{4}-\d{2}-\d{2}$/.test(reportDate || '')) {
-  console.error('usage: capture-service-history.mjs run <YYYY-MM-DD> [--max N] [--budget-ms N] [--refresh] [--vin VIN]')
+  console.error('usage: capture-service-history.mjs run <YYYY-MM-DD> [--max N] [--detail-limit N|all] [--budget-ms N] [--refresh] [--vin VIN]')
   process.exit(2)
 }
 const num = (flag, fallback) => { const index = rest.indexOf(flag); return index >= 0 ? Number(rest[index + 1]) : fallback }
 const value = (flag) => { const index = rest.indexOf(flag); return index >= 0 ? String(rest[index + 1] || '') : '' }
 const max = num('--max', Infinity)
-const budgetMs = num('--budget-ms', 1800000)
+const budgetMs = num('--budget-ms', 3600000)
+const detailLimitInput = value('--detail-limit').trim().toLowerCase()
+const detailLimit = !detailLimitInput || detailLimitInput === 'all' ? Infinity : Number(detailLimitInput)
 const refresh = rest.includes('--refresh')
 const requestedVin = value('--vin').trim().toUpperCase()
 if (requestedVin && !/^[A-HJ-NPR-Z0-9]{17}$/.test(requestedVin)) throw new Error('--vin must be a valid 17-character VIN')
+if (detailLimit !== Infinity && (!Number.isSafeInteger(detailLimit) || detailLimit < 1)) throw new Error('--detail-limit must be a positive integer or all')
 
 const vehicles = loadDatedInventoryVehicles(ROOT, reportDate)
 const fullWorklist = Object.entries(vehicles)
@@ -123,7 +125,7 @@ function formBody(vin, repairOrderNumber) {
 let context = null
 let sessionStatus = 'not_started'
 let stoppedReason = null
-const tally = { OK: 0, NO_HISTORY: 0, PRIOR_HISTORY_PRESERVED: 0, INCOMPLETE: 0, ERROR: 0, DETAILS_FETCHED: 0, DETAILS_REUSED: 0 }
+const tally = { OK: 0, NO_HISTORY: 0, PRIOR_HISTORY_PRESERVED: 0, INCOMPLETE: 0, ERROR: 0, DETAILS_FETCHED: 0, DETAILS_REUSED: 0, DETAILS_UNAVAILABLE: 0 }
 const startedAt = Date.now()
 if (queue.length) {
   context = await getOriginTab(ORIGIN, HISTORY_URL(queue[0].vin), { settleMs: 60000 }).catch(() => null)
@@ -180,10 +182,15 @@ for (const item of queue) {
       continue
     }
 
+    // Every VIN-bound repair order is opened by default. Existing complete
+    // details are reused across days, so normal daily runs only request newly
+    // observed repair orders. A finite limit is diagnostic-only and must not
+    // be published as a complete history.
+    const detailOrders = index.repairOrders.slice(0, detailLimit)
     const checkedRepairOrders = []
     let inspection = null
-    let incomplete = false
-    for (const order of index.repairOrders.slice(0, RECENT_DETAIL_LIMIT)) {
+    let incomplete = detailOrders.length < index.repairOrders.length
+    for (const order of detailOrders) {
       let detailed = cachedDetails(item.vin, order)
       if (detailed) tally.DETAILS_REUSED++
       if (!detailed) {
@@ -198,6 +205,15 @@ for (const item of queue) {
         })
         if (detailResponse.status === 0 || detailResponse.error || /login\.microsoftonline\.com/i.test(detailResponse.finalUrl || '')) {
           sessionStatus = 'session_expired'; stoppedReason = 'SESSION_EXPIRED'; break
+        }
+        // PTS sometimes lists an older repair order in the vehicle index but
+        // its detail endpoint responds with a Ford server error. The dated,
+        // VIN-bound index row is still valid history; retain it without
+        // inventing itemized work, then try its detail page on a future run.
+        if ([404, 410].includes(detailResponse.status) || (detailResponse.status >= 500 && detailResponse.status < 600)) {
+          checkedRepairOrders.push({ ...order, detailComplete: false, detailAvailability: 'source_unavailable' })
+          tally.DETAILS_UNAVAILABLE++
+          continue
         }
         const parsed = parseServiceHistoryDetails(detailResponse.text, order)
         if (parsed.state === 'session_expired') { sessionStatus = 'session_expired'; stoppedReason = 'SESSION_EXPIRED'; break }
@@ -218,7 +234,7 @@ for (const item of queue) {
     const latest = checkedRepairOrders.find((order) => repairOrderFingerprint(order) === repairOrderFingerprint(index.repairOrders[0])) ?? {
       ...index.repairOrders[0], detailComplete: false,
     }
-    if (!latest.detailComplete) incomplete = true
+    if (!latest.detailComplete && latest.detailAvailability !== 'source_unavailable') incomplete = true
     if (incomplete) {
       const prior = priorVerifiedHistory(item.vin)
       if (prior) {
@@ -245,7 +261,7 @@ for (const item of queue) {
       dataState: incomplete ? 'incomplete' : 'current',
       historyCaptured: true,
       repairOrderCount: index.repairOrders.length,
-      detailScanCount: checkedRepairOrders.length,
+      detailScanCount: checkedRepairOrders.filter((order) => order.detailComplete === true).length,
       inspectionSearchStatus: incomplete && !inspection ? 'incomplete' : inspection ? 'confirmed' : 'not_identified',
       // Keep the complete, VIN-bound index for a staff-facing timeline. The
       // merge step removes repair-order and dealer identifiers before release.

@@ -44,6 +44,18 @@ describe('service status shared across inventory and vehicle details', () => {
     expect(screen.getByRole('link')).toHaveAttribute('title', expect.stringContaining('Ford service-history'))
   })
 
+  it('uses the ready date only in compact vehicle-header status while retaining the full evidence in the tooltip', () => {
+    render(<ServiceStatusLink vin="TESTDATAHWELL0001" detailed compact labelPrefix="Service" service={{
+      status: 'serviced', readinessEvidence: {
+        source: 'ford_service_history', inspectionDate: '2026-09-11', inServiceDate: '2026-08-14', readyDate: '2026-09-11', types: ['Certified Blue Oval inspection'],
+      },
+    } as ServiceReadiness} />)
+    const link = screen.getByRole('link', { name: 'Service: Ready' })
+    expect(link).toHaveTextContent('Service: Ready09/11/2026')
+    expect(link).not.toHaveTextContent('Started 08/14/2026')
+    expect(link).toHaveAttribute('title', expect.stringContaining('Started 08/14/2026'))
+  })
+
   it('does not present attached source evidence as Ready when a manager status says otherwise', () => {
     render(<ServiceStatusLink vin="TESTDATAHWELL0001" detailed service={{
       status: 'needs_service', readinessBasis: 'manager_updated', readinessEvidence: {

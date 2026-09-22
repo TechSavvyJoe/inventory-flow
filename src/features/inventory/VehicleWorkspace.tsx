@@ -2413,7 +2413,7 @@ export function VehicleWorkspace({
               onKeyDown={event => onSectionKeyDown(event, index)}
               onClick={() => openAndFocusSection(section.id)} key={section.id}>{section.label}</button>)}
           </div>
-          <div className="vdp-focus-service"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} labelPrefix="Service" detailed /></div>
+          <div className="vdp-focus-service"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} labelPrefix="Service" detailed compact /></div>
         </div>
         <div className="vdp-focus-scroll" ref={scrollRef}>
           <VehicleDetailStatus state={detailState} onRetry={onRetryDetail} />

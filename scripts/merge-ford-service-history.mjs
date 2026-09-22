@@ -102,7 +102,7 @@ function shapeServiceHistory(record) {
   const latestRepairOrder = shapeRepairOrder(record.latestRepairOrder)
   const recentInspection = shapeRepairOrder(record.recentInspection)
   const recentRepairOrders = Array.isArray(record.checkedRepairOrders)
-    ? record.checkedRepairOrders.slice(0, 5).map(shapeRepairOrder).filter(Boolean)
+    ? record.checkedRepairOrders.filter((order) => order?.detailComplete === true).slice(0, 5).map(shapeRepairOrder).filter(Boolean)
     : []
   const repairOrderTimeline = shapeRepairOrderTimeline(record)
   if (latestRepairOrder) history.latestRepairOrder = latestRepairOrder

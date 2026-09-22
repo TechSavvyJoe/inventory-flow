@@ -119,19 +119,31 @@ function inspectionFrom(laborOperations) {
 }
 
 export function serviceCategories({ parts, laborOperations, inspection }) {
-  const text = [...parts.map((item) => item.description), ...laborOperations.map((item) => item.description)].join(' ').toUpperCase()
+  const safeParts = Array.isArray(parts) ? parts : []
+  const safeLaborOperations = Array.isArray(laborOperations) ? laborOperations : []
+  const text = [...safeParts.map((item) => item.description), ...safeLaborOperations.map((item) => item.description)].join(' ').toUpperCase()
   const services = []
   if (inspection?.status === 'confirmed' && inspection.type) services.push(inspection.type)
-  if (/OIL|OIL FILTER|5W[- ]?\d+/.test(text)) services.push('Oil and filter service')
+  if (/\bOIL\s*(?:FILTER|CHANGE|SERVICE)\b|\bFILTER\s+ASY\s*-\s*OIL\b|\b(?:MOTORCRAFT|SAE)\s+(?:0W|5W|10W)[- ]?\d+\b|\bENGINE OIL\b/.test(text)) services.push('Oil and filter service')
   if (/AIR CLEANER|ENGINE AIR FILTER/.test(text)) services.push('Engine air filter')
   if (/ODOUR|ODOR|CABIN|PARTICLES/.test(text)) services.push('Cabin air filter')
   if (/WIPER|WASHER BLADE/.test(text)) services.push('Wiper blades')
   if (/BRAKE/.test(text)) services.push('Brake inspection/service')
   if (/TIRE/.test(text)) services.push('Tire inspection/service')
-  if (/\bIDS\b|SELF TEST|DIAGNOSTIC|DTC|CODE/.test(text)) services.push('Diagnostic self-test')
   if (/BATTERY/.test(text)) services.push('Battery service')
   if (/ALIGNMENT/.test(text)) services.push('Wheel alignment')
-  if (/COOLANT|TRANSMISSION FLUID|BRAKE FLUID/.test(text)) services.push('Fluid service')
+  if (/WHEEL\s+(?:HUB|BEARING)|HUB\s+(?:ASY|ASSY)|\bAXLE\b|CV JOINT/.test(text)) services.push('Wheel hub / axle repair')
+  if (/SHOCK|STRUT|CONTROL ARM|BALL JOINT|SWAY BAR|SUSPENSION/.test(text)) services.push('Suspension service')
+  if (/STARTER|ALTERNATOR/.test(text)) services.push('Starting / charging system repair')
+  if (/CAM(?:SHAFT)?|TIMING (?:CHAIN|BELT)|VALVE|CRANK(?:SHAFT)?|PISTON|CYLINDER|INTAKE MANIFOLD|OIL PAN|ENGINE REPAIR|LONG BLOCK|SHORT BLOCK/.test(text)) services.push('Engine repair')
+  if (/WATER PUMP|COOLANT|RADIATOR|THERMOSTAT|ANTI[- ]?FREEZE/.test(text)) services.push('Cooling system service')
+  if (/TRANSMISSION|TRANSAXLE/.test(text)) services.push('Transmission service')
+  if (/FUEL PUMP|FUEL INJECTOR|INJECTOR ASY|FUEL SYSTEM/.test(text)) services.push('Fuel system service')
+  if (/SPARK PLUG|IGNITION COIL/.test(text)) services.push('Ignition system service')
+  if (/CATALYTIC|EXHAUST/.test(text)) services.push('Exhaust system service')
+  if (/AIR CONDITION|A\/C|HVAC|EVAPORATOR|CONDENSER/.test(text)) services.push('Climate-control service')
+  if (/\bIDS\b|SELF TEST|DIAGNOSTIC|DTC|CODE/.test(text)) services.push('Diagnostic self-test')
+  if (/COOLANT|TRANSMISSION FLUID|BRAKE FLUID|POWER STEERING FLUID/.test(text)) services.push('Fluid service')
   return [...new Set(services)].slice(0, 20)
 }
 
@@ -140,7 +152,7 @@ export function summarizeRepairOrder(order) {
   if (services.length) return `${services.join('; ')}.`
   if (order.laborOperations.length) return `${order.laborOperations.slice(0, 3).map((item) => item.description).join('; ')}.`
   if (order.parts.length) return `Parts recorded: ${order.parts.slice(0, 4).map((item) => item.description).join(', ')}.`
-  return 'Dealer service visit recorded.'
+  return 'Ford reported this visit without itemized work.'
 }
 
 // PTS detail rows can occasionally contain customer-labelled free text. Keep
