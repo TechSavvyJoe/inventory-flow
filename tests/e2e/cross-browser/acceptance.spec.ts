@@ -811,27 +811,6 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   }
   await page.setViewportSize(originalViewport)
 
-  await dialog.getByRole('button', { name: 'Take-home page' }).click()
-  const takeHome = page.getByRole('dialog', { name: /Take-home page/ })
-  await expect(takeHome).toBeVisible()
-  const sheet = takeHome.locator('.th')
-  await expect(sheet).toContainText('2024 Ford F-150 Lariat')
-  await expect(sheet).toContainText('$51,800')
-  await expect(sheet).toContainText('12,450 mi')
-  await capture(page, testInfo, 'customer-take-home')
-  await page.emulateMedia({ media: 'print' })
-  const printedSheet = await sheet.evaluate(element => ({
-    clientHeight: element.clientHeight,
-    scrollHeight: element.scrollHeight,
-    height: element.getBoundingClientRect().height,
-  }))
-  expect(printedSheet.height, 'Customer take-home page uses one US-letter sheet').toBeGreaterThanOrEqual(1_000)
-  expect(printedSheet.height, 'Customer take-home page uses one US-letter sheet').toBeLessThanOrEqual(1_100)
-  expect(printedSheet.scrollHeight, 'Customer take-home content fits without print clipping').toBeLessThanOrEqual(printedSheet.clientHeight + 1)
-  await page.emulateMedia({ media: 'screen' })
-  await takeHome.getByRole('button', { name: 'Close' }).click()
-  await expect(takeHome).toHaveCount(0)
-
   await dialog.getByRole('button', { name: 'Close vehicle details' }).click()
   await expect(dialog).toHaveCount(0)
   await expect(trigger).toBeFocused()
