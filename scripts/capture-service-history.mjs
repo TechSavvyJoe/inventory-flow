@@ -189,6 +189,7 @@ for (const item of queue) {
     const detailOrders = index.repairOrders.slice(0, detailLimit)
     const checkedRepairOrders = []
     let inspection = null
+    let certifiedInspection = null
     let incomplete = detailOrders.length < index.repairOrders.length
     for (const order of detailOrders) {
       let detailed = cachedDetails(item.vin, order)
@@ -228,6 +229,10 @@ for (const item of queue) {
       detailed = sanitizeServiceHistoryRepairOrder(detailed)
       checkedRepairOrders.push(detailed)
       if (!inspection && detailed.inspection?.status === 'confirmed') inspection = detailed
+      if (!certifiedInspection && detailed.inspection?.status === 'confirmed' &&
+        /^certified blue oval inspection$/i.test(String(detailed.inspection.type ?? '').trim())) {
+        certifiedInspection = detailed
+      }
       await sleep(60)
     }
     if (stoppedReason === 'SESSION_EXPIRED') break
@@ -268,6 +273,7 @@ for (const item of queue) {
       repairOrderIndex: index.repairOrders,
       latestRepairOrder: latest,
       recentInspection: inspection,
+      certifiedInspection,
       checkedRepairOrders,
     })
     sessionStatus = 'ok'

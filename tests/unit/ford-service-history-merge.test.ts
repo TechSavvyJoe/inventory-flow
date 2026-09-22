@@ -25,7 +25,7 @@ function capture(vin, overrides = {}) {
   return {
     vin, checkedAt: '2026-09-21T20:45:00.000Z', result: 'OK', dataState: 'current', historyCaptured: true,
     repairOrderCount: 2, detailScanCount: 1, inspectionSearchStatus: 'confirmed',
-    latestRepairOrder: order, recentInspection: order,
+    latestRepairOrder: order, recentInspection: order, certifiedInspection: order,
     repairOrderIndex: [{
       repairOrderNumber: order.repairOrderNumber, dealerCode: order.dealerCode,
       openDate: order.openDate, closeDate: order.closeDate, odometer: order.odometer,
@@ -71,6 +71,7 @@ describe('Ford service-history merge', () => {
       serviceHistory: {
         sourceLabel: 'Ford PTS Retail Service Repair History (read-only; no customer data)',
         recentInspection: { openDate: '04/02/2026', closeDate: '04/03/2026' },
+        certifiedInspection: { openDate: '04/02/2026', closeDate: '04/03/2026', inspection: { type: 'Certified Blue Oval inspection' } },
       },
     })
     expect(enrichment.recordsByVin[lincolnVin].fordOasis.serviceHistory.checkedRepairOrders).toBeUndefined()

@@ -253,10 +253,13 @@ function capturedServiceHistory(value, fallback) {
   if (!value || number(value.repairOrderCount) === null || number(value.detailScanCount) === null) return null
   const latest = capturedServiceOrder(value.latestRepairOrder)
   const recent = entries(value.recentRepairOrders).map(capturedServiceOrder).filter(Boolean)
+  const certified = capturedServiceOrder(value.certifiedInspection)
+  const certifiedInspection = certified && /^certified blue oval inspection$/i.test(certified.inspection || '') ? certified : null
   return {
     dataState: documentState(value.dataState, fallback), checkedAt: text(value.checkedAt),
     repairOrderCount: number(value.repairOrderCount), detailScanCount: number(value.detailScanCount),
     latestRepairOrder: latest,
+    ...(certifiedInspection ? { certifiedInspection } : {}),
     recentRepairOrders: recent.length ? recent : latest ? [latest] : [],
   }
 }

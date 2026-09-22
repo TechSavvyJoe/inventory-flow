@@ -114,10 +114,14 @@ describe('manager service readiness ledger', () => {
     })
   })
 
-  it('uses only a current post-intake Ford service-history inspection to mark Ford and Lincoln inventory Ready', () => {
+  it('uses only a current post-intake Certified Blue Oval inspection to mark Ford and Lincoln inventory Ready', () => {
     const serviceHistory = {
       dataState: 'current', historyCaptured: true,
       recentInspection: {
+        openDate: '09/12/2026', closeDate: '09/12/2026',
+        inspection: { status: 'confirmed', type: 'Used-car inspection' },
+      },
+      certifiedInspection: {
         openDate: '08/14/2026', closeDate: '09/11/2026',
         inspection: { status: 'confirmed', type: 'Certified Blue Oval inspection' },
       },
@@ -140,6 +144,10 @@ describe('manager service readiness ledger', () => {
     expect(serviceReadinessView({ ...vehicle, make: 'Cadillac' }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
     expect(serviceReadinessView({ ...vehicle, inventoryDate: '2026-08-15' }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
     expect(serviceReadinessView({ ...vehicle, fordOasis: { serviceHistory: { ...serviceHistory, dataState: 'stale' } } }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
+    expect(serviceReadinessView({
+      ...vehicle,
+      fordOasis: { serviceHistory: { ...serviceHistory, certifiedInspection: null, recentRepairOrders: [serviceHistory.recentInspection] } },
+    }, null, manager)).toMatchObject({ status: 'needs_service', readinessBasis: 'unconfirmed' })
     expect(serviceReadinessView(vehicle, { status: 'needs_service', version: 1, actor: manager.user }, manager)).toMatchObject({
       status: 'needs_service', readinessBasis: 'manager_updated',
       readinessEvidence: { source: 'ford_service_history', inServiceDate: '2026-08-14', readyDate: '2026-09-11' },

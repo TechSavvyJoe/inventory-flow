@@ -828,6 +828,7 @@ const OASIS_VEHICLE_TEXT_FIELDS = [
 const SERVICE_HISTORY_DATE_PATTERN = /^(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])\/\d{4}$/
 const SERVICE_HISTORY_SEARCH_STATES = new Set(['confirmed', 'not_identified', 'incomplete'])
 const SERVICE_HISTORY_INSPECTION_STATES = new Set(['confirmed', 'not_identified'])
+const CERTIFIED_BLUE_OVAL_INSPECTION = /^certified blue oval inspection$/i
 
 function validatedServiceHistoryInspection(value, vin, label) {
   assertValid(value && typeof value === 'object' && !Array.isArray(value), `${label} inspection is required`, { vin })
@@ -925,7 +926,7 @@ function validatedServiceHistory(value, vin) {
   assertValid(value && typeof value === 'object' && !Array.isArray(value), 'Ford service history must be an object', { vin })
   assertOnlyKeys(value, new Set([
     'dataState', 'checkedAt', 'sourceLabel', 'historyCaptured', 'repairOrderCount', 'detailScanCount',
-    'inspectionSearchStatus', 'latestRepairOrder', 'recentInspection', 'recentRepairOrders', 'repairOrderTimeline',
+    'inspectionSearchStatus', 'latestRepairOrder', 'recentInspection', 'certifiedInspection', 'recentRepairOrders', 'repairOrderTimeline',
   ]), 'Ford service history', { vin })
   assertValid(RESOURCE_DATA_STATES.has(value.dataState), 'Ford service history data state is invalid', { vin })
   const checkedAt = optionalIsoTimestamp(value.checkedAt, 'Ford service history checkedAt')
@@ -952,6 +953,15 @@ function validatedServiceHistory(value, vin) {
   if (value.recentInspection != null) {
     result.recentInspection = validatedServiceRepairOrder(value.recentInspection, vin, 'Recent Ford inspection repair order')
     assertValid(result.recentInspection.inspection.status === 'confirmed', 'Recent Ford inspection repair order must contain confirmed inspection evidence', { vin })
+  }
+  if (value.certifiedInspection != null) {
+    result.certifiedInspection = validatedServiceRepairOrder(value.certifiedInspection, vin, 'Certified Blue Oval inspection repair order')
+    assertValid(
+      result.certifiedInspection.inspection.status === 'confirmed' &&
+      CERTIFIED_BLUE_OVAL_INSPECTION.test(String(result.certifiedInspection.inspection.type ?? '').trim()),
+      'Certified Blue Oval inspection repair order must contain confirmed Certified Blue Oval evidence',
+      { vin },
+    )
   }
   const recentRepairOrders = value.recentRepairOrders ?? []
   assertValid(Array.isArray(recentRepairOrders) && recentRepairOrders.length <= 5, 'Recent Ford repair orders must be a bounded array', { vin })

@@ -55,6 +55,8 @@
 .oasis-actions li > .icon { flex: none; color: var(--moving); margin-top: 2px; }
 .oasis-actions li + li { margin-top: 5px; }
 .rec-service-history { list-style: none; margin: 0; padding: 0; }
+.rec-service-certification { display: flex; align-items: center; gap: 5px; margin: 0 0 8px; padding: 7px 8px; border: 1px solid color-mix(in srgb, var(--ok) 34%, var(--line)); border-radius: 5px; background: var(--ok-bg); color: var(--ok); font-size: 12px; line-height: 1.35; }
+.rec-service-certification .icon { flex: none; }
 .rec-service-history li { padding: 7px 0; border-top: 1px solid var(--line); }
 .rec-service-history li:first-child { border-top: 0; }
 .rec-service-history p { margin: 3px 0 0; color: var(--ink-3); font-size: 12px; line-height: 1.4; }

@@ -262,6 +262,7 @@
 .service-autocheck-history { padding:10px 12px; }
 .service-autocheck-history>p { margin:0; color:var(--ink-600); font-size:13px; }
 .service-autocheck-history>p strong { color:var(--ink-900); }
+.service-autocheck-history-note { padding-left:10px; border-left:3px solid var(--ifx-neutral-300); line-height:1.45; }
 .service-autocheck-history dl { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:10px 0 0; padding-top:10px; border-top:1px solid var(--ifx-border-subtle); }
 .service-autocheck-history dt { color:var(--ink-600); font-size:12px; }
 .service-autocheck-history dd { margin:2px 0 0; color:var(--ink-900); font-size:13px; font-weight:600; overflow-wrap:anywhere; }

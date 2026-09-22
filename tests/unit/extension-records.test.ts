@@ -123,6 +123,19 @@ describe('extension captured Records detail parity', () => {
     expect(oasis.textContent).not.toContain('not a saved report')
   })
 
+  it('labels Certified Blue Oval only when Ford service history explicitly captured it', async () => {
+    const record = recordWithSources()
+    record.fordOasis.serviceHistory.certifiedInspection = {
+      repairOrderNumber: '12001', dealerCode: '00001', openDate: '08/10/2026', closeDate: '08/11/2026', odometer: 23000,
+      detailComplete: true, inspection: { status: 'confirmed', type: 'Certified Blue Oval inspection' },
+      parts: [], laborOperations: [], services: ['Certified Blue Oval inspection'],
+    }
+    const detail = await openRecords(record)
+    const oasis = detail.querySelector('.rec-oasis')
+    expect(oasis.querySelector('.rec-service-certification').textContent).toContain('Certified Blue Oval inspection')
+    expect(oasis.querySelector('.rec-service-certification').textContent).toContain('08/11/2026')
+  })
+
   it('renders decoded OASIS descriptions as safe text, leaving source evidence intact', async () => {
     const record = recordWithSources()
     const encoded = 'REAR AXLE &#x25B4; &amp; &lt;img src=x onerror=alert(1)&gt;'

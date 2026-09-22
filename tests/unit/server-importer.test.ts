@@ -927,6 +927,17 @@ describe('verified daily source importer', () => {
       fordOasisCount: 1,
     })
 
+    const certifiedInspection = structuredClone(enrichment)
+    certifiedInspection.recordsByVin[vin].fordOasis.serviceHistory.certifiedInspection = structuredClone(
+      certifiedInspection.recordsByVin[vin].fordOasis.serviceHistory.recentInspection,
+    )
+    expect(validateVinDocumentEnrichment(certifiedInspection).recordsByVin[vin].fordOasis.serviceHistory.certifiedInspection).toMatchObject({
+      inspection: { status: 'confirmed', type: 'Certified Blue Oval inspection' },
+    })
+    const incorrectCertification = structuredClone(certifiedInspection)
+    incorrectCertification.recordsByVin[vin].fordOasis.serviceHistory.certifiedInspection.inspection.type = 'Used-car inspection'
+    expect(() => validateVinDocumentEnrichment(incorrectCertification)).toThrow(/Certified Blue Oval evidence/i)
+
     const nullNumbers = structuredClone(enrichment)
     nullNumbers.recordsByVin[vin].fordOasis.monthsInService = null
     nullNumbers.recordsByVin[vin].fordOasis.saleMileage = null

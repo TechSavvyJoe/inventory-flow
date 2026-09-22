@@ -175,6 +175,7 @@ function fordOasisResource(
           inspectionSearchStatus: fordOasis.serviceHistory.inspectionSearchStatus,
           latestRepairOrder: fordServiceRepairOrder(fordOasis.serviceHistory.latestRepairOrder),
           recentInspection: fordServiceRepairOrder(fordOasis.serviceHistory.recentInspection),
+          certifiedInspection: fordServiceRepairOrder(fordOasis.serviceHistory.certifiedInspection),
           recentRepairOrders: (fordOasis.serviceHistory.recentRepairOrders ?? []).map(fordServiceRepairOrder).filter((order) => order !== null),
           repairOrderTimeline: (fordOasis.serviceHistory.repairOrderTimeline ?? []).map(fordServiceHistoryVisit).filter((visit): visit is FordServiceHistoryVisit => visit !== null),
         }
@@ -366,6 +367,10 @@ function officialDocumentSearchText(
     ...(fordOasis?.serviceHistory?.latestRepairOrder?.laborOperations ?? []).flatMap((operation) => [operation.code, operation.description]),
     ...(fordOasis?.serviceHistory?.latestRepairOrder?.parts ?? []).flatMap((part) => [part.description, part.partNumber]),
     fordOasis?.serviceHistory?.recentInspection?.inspection.type,
+    fordOasis?.serviceHistory?.certifiedInspection?.openDate,
+    fordOasis?.serviceHistory?.certifiedInspection?.closeDate,
+    fordOasis?.serviceHistory?.certifiedInspection?.inspection.type,
+    ...(fordOasis?.serviceHistory?.certifiedInspection?.services ?? []),
     ...(fordOasis?.serviceHistory?.recentRepairOrders ?? []).flatMap((order) => [
       order.openDate,
       order.closeDate,

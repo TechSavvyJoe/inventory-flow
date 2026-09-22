@@ -1304,6 +1304,7 @@ function recordsTab(vehicle) {
     ]) : null,
     oasis?.openFieldServiceActions.length ? recordSection(oasis.openActionsCaptured === false ? `At least ${oasis.openFieldServiceActions.length} captured actions · result incomplete` : 'Open Ford service actions', [el('ul', { class: 'rec-list oasis-actions' }, ...oasis.openFieldServiceActions.map((item) => el('li', {}, icon('alert', { size: 17 }), el('span', {}, item.code ? el('b', { text: item.code }) : null, item.code && item.description ? ' · ' : '', sourceDistanceText(sourceDisplayText(item.description))))))]) : el('p', { class: 'rec-empty', text: 'Verify current actions in OASIS.' }),
     oasis?.serviceHistory ? recordSection(`Ford service history · ${oasis.serviceHistory.repairOrderCount} repair ${oasis.serviceHistory.repairOrderCount === 1 ? 'order' : 'orders'}`, [
+      oasis.serviceHistory.certifiedInspection ? el('p', { class: 'rec-service-certification' }, icon('check', { size: 15 }), el('strong', { text: 'Certified Blue Oval inspection' }), ` · ${fmt.formatDate(oasis.serviceHistory.certifiedInspection.closeDate)}`) : null,
       oasis.serviceHistory.recentRepairOrders.length
         ? el('ol', { class: 'rec-service-history' }, ...oasis.serviceHistory.recentRepairOrders.map((order) => el('li', {},
           el('div', { class: 'rec-line' }, el('b', { text: `${fmt.formatDate(order.openDate)} to ${fmt.formatDate(order.closeDate)}` }), hasNumber(order.odometer) ? el('span', { class: 'num', text: fmt.formatMileage(order.odometer) }) : null),

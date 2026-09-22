@@ -6,6 +6,7 @@ import type { FordServiceHistoryVisitRecord, FordServiceRepairOrderRecord, Vehic
 import { formatDate, formatDateTime, formatMileage } from '../inventory/inventory-utils'
 import { fordServiceHistoryUrl, officialVehicleDocumentUrl } from '../inventory/vehicle-document-utils'
 import { sourceDisplayText } from '../../lib/source-text'
+import { qualifyingAutoCheckInspection } from '../../lib/service-inspection-evidence'
 
 function fordOrders(vehicle: VehicleRecord): FordServiceRepairOrderRecord[] {
   const history = vehicle.fordOasis?.serviceHistory
@@ -102,12 +103,14 @@ export function serviceEvidenceSummary(vehicle: VehicleRecord): string | null {
   const fordFamily = /^(ford|lincoln|linc)$/i.test(String(vehicle.make || '').trim())
   if (fordFamily) {
     const history = vehicle.fordOasis?.serviceHistory
-    const inspection = history?.recentInspection
-    if (inspection) return `${inspection.inspection.type || 'Ford inspection'} · ${formatDate(inspection.closeDate)}`
+    const evidence = vehicle.serviceReadiness?.status === 'serviced' && vehicle.serviceReadiness.readinessEvidence?.source === 'ford_service_history'
+      ? vehicle.serviceReadiness.readinessEvidence
+      : null
+    if (evidence?.inspectionDate) return `${evidence.types?.[0] || 'Certified Blue Oval inspection'} · ${formatDate(evidence.inspectionDate)}`
     if (history?.repairOrderCount) return `${history.repairOrderCount} Ford service visits reported`
     return history?.historyCaptured ? 'No Ford service visits reported' : null
   }
-  const inspection = vehicle.autoCheckReport?.recentInspection
+  const inspection = qualifyingAutoCheckInspection(vehicle.serviceReadiness, vehicle.autoCheckReport)
   if (inspection) return `AutoCheck inspection · ${formatDate(inspection.date)}`
   return serviceRecordText(vehicle)
 }
@@ -121,8 +124,9 @@ export function SourceServiceHistory({ vehicle, recordsHref }: { vehicle: Vehicl
   const [showRecordedVisits, setShowRecordedVisits] = useState(false)
   const autoCheck = vehicle.autoCheckReport
   const autoCheckService = serviceRecordText(vehicle)
-  const autoCheckInspection = autoCheck?.recentInspection
-  const hasAutoCheckService = Boolean(autoCheckService || autoCheckInspection)
+  const autoCheckInspection = qualifyingAutoCheckInspection(vehicle.serviceReadiness, autoCheck)
+  const hasHistoricalAutoCheckInspection = Boolean(autoCheck?.recentInspection)
+  const hasAutoCheckService = Boolean(autoCheckService || autoCheckInspection || hasHistoricalAutoCheckInspection)
   const sourceUrl = fordFamily ? fordServiceHistoryUrl(vehicle.vin) : officialVehicleDocumentUrl(autoCheck?.url, 'autocheck', vehicle.listingUrl)
 
   return <section className="service-source-history" aria-labelledby="source-service-history-title">
@@ -153,7 +157,7 @@ export function SourceServiceHistory({ vehicle, recordsHref }: { vehicle: Vehicl
     </> : <>
       {hasAutoCheckService ? <div className="service-autocheck-history">
         {autoCheckService ? <p><strong>{autoCheckService}</strong></p> : null}
-        {autoCheckInspection ? <dl><div><dt>Most recent inspection</dt><dd>{formatDate(autoCheckInspection.date)}</dd></div><div><dt>Recorded as</dt><dd>{autoCheckInspection.types.map(sourceDisplayText).join(' · ')}</dd></div></dl> : <p>No inspection event was identified in the captured report.</p>}
+        {autoCheckInspection ? <dl><div><dt>Inspection since intake</dt><dd>{formatDate(autoCheckInspection.date)}</dd></div><div><dt>Recorded as</dt><dd>{autoCheckInspection.types.map(sourceDisplayText).join(' · ')}</dd></div></dl> : hasHistoricalAutoCheckInspection ? <p className="service-autocheck-history-note">Historic AutoCheck inspection details remain available in the full report and are not used for this vehicle's current service status.</p> : <p className="service-autocheck-history-note">No inspection since intake was identified in the captured report.</p>}
       </div> : <p className="service-source-history-empty">No AutoCheck service or inspection detail was captured.</p>}
     </>}
     <nav className="service-source-history-actions" aria-label="Service record actions">

@@ -55,11 +55,31 @@ describe('source service history', () => {
         dataState: 'current', checks: [{ label: 'Service / Repair', status: 'No Issue', detail: '13 Service Records Reported' }],
         recentInspection: { date: '2026-09-10', types: ['Vehicle Inspected', 'Multiple Point Vehicle Inspection'] },
       },
+      serviceReadiness: {
+        status: 'serviced',
+        readinessEvidence: { source: 'autocheck', inspectionDate: '2026-09-10', types: ['Vehicle Inspected', 'Multiple Point Vehicle Inspection'] },
+      },
     } as VehicleRecord
     render(<MemoryRouter><SourceServiceHistory vehicle={vehicle} recordsHref="/inventory/vehicle/1GNEVGKW2PJ285653?tab=data" /></MemoryRouter>)
     expect(screen.getByText('13 Service Records Reported')).toBeVisible()
     expect(screen.getByText('09/10/2026')).toBeVisible()
     expect(screen.getByText('Vehicle Inspected · Multiple Point Vehicle Inspection')).toBeVisible()
     expect(serviceEvidenceSummary(vehicle)).toBe('AutoCheck inspection · 09/10/2026')
+  })
+
+  it('keeps a pre-intake AutoCheck inspection in the full report without presenting it as current service work', () => {
+    const vehicle = {
+      vin: '3GCPYBEH3LG376449', make: 'Chevrolet',
+      autoCheckReport: {
+        dataState: 'current', checks: [{ label: 'Service / Repair', status: 'No Issue', detail: '21 Service Records Reported' }],
+        recentInspection: { date: '2025-09-15', types: ['Vehicle Inspected'] },
+      },
+      serviceReadiness: { status: 'needs_service', readinessEvidence: null },
+    } as VehicleRecord
+    render(<MemoryRouter><SourceServiceHistory vehicle={vehicle} recordsHref="/inventory/vehicle/3GCPYBEH3LG376449?tab=data" /></MemoryRouter>)
+    expect(screen.getByText('21 Service Records Reported')).toBeVisible()
+    expect(screen.getByText(/Historic AutoCheck inspection details remain available/i)).toBeVisible()
+    expect(screen.queryByText('09/15/2025')).not.toBeInTheDocument()
+    expect(serviceEvidenceSummary(vehicle)).toBe('21 Service Records Reported')
   })
 })

@@ -5,6 +5,7 @@ import type { AutoCheckResource, FactoryEquipmentResource, FordInvoiceResource, 
 import { formatDate, formatNumber, formatStickerMoney } from './inventory-utils';
 import { fordInvoiceUrl, fordOasisUrl, officialVehicleDocumentUrl, savedFordInvoiceUrl, vautoFactoryEquipmentUrl } from './vehicle-document-utils';
 import { resolveVehicleInService, type VehicleInServiceInput } from './vehicle-in-service';
+import { qualifyingAutoCheckInspection } from '../../lib/service-inspection-evidence';
 
 type SourceRecord<T> = Omit<T, 'dataState'> & { dataState?: string };
 
@@ -31,6 +32,14 @@ export interface VehicleResourceVehicle {
   fordInvoice?: SourceRecord<FordInvoiceResource> | null;
   fordOasis?: SourceRecord<Partial<FordOasisResource>> | null;
   warrantyCheck?: VehicleInServiceInput['warrantyCheck'];
+  serviceReadiness?: {
+    status?: string | null;
+    readinessEvidence?: {
+      source?: string | null;
+      inspectionDate?: string | null;
+      types?: string[] | null;
+    } | null;
+  } | null;
 }
 
 export interface VehicleResourceSummaryRow {
@@ -321,8 +330,9 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   // Ford and Lincoln readiness comes from the Ford service-history channel.
   // Keep their ordinary AutoCheck report, but do not present a competing
   // AutoCheck inspection signal beside the authoritative Ford dates.
-  const inspectionDate = fordFamily ? null : text(history?.recentInspection?.date);
-  const inspectionTypes = fordFamily ? [] : present(history?.recentInspection?.types ?? [], 4);
+  const qualifyingInspection = fordFamily ? null : qualifyingAutoCheckInspection(vehicle.serviceReadiness, history);
+  const inspectionDate = qualifyingInspection ? text(qualifyingInspection.date) : null;
+  const inspectionTypes = qualifyingInspection ? present(qualifyingInspection.types, 4) : [];
   const inspection = inspectionDate && inspectionTypes.length ? `AutoCheck inspection ${formatDate(inspectionDate)} · ${inspectionTypes.join(' · ')}` : null;
   const historyFacts = present([
     historyScore,

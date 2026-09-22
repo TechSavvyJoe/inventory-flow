@@ -4,6 +4,7 @@ import { ServiceStatusLink } from "./ServiceStatusLink";
 import { WorkspaceLink } from "../../components/WorkspaceLink";
 import { VehicleDetailStatus } from "../../components/VehicleDetailStatus";
 import { serviceStatusLabel, serviceWorkflowStatus } from "../../lib/service-readiness";
+import { qualifyingAutoCheckInspection } from "../../lib/service-inspection-evidence";
 import { sourceDisplayText } from "../../lib/source-text";
 import { sourceDistanceText } from "../../lib/source-distance";
 import { VehicleGallery } from "./VehicleGallery";
@@ -636,7 +637,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
     autoCheck?.scoreRangeLow != null && autoCheck.scoreRangeHigh != null
       ? `${autoCheck.scoreRangeLow}–${autoCheck.scoreRangeHigh}`
       : null;
-  const autoCheckInspection = fordFamily ? null : autoCheck?.recentInspection ?? null;
+  const autoCheckInspection = fordFamily ? null : qualifyingAutoCheckInspection(vehicle.serviceReadiness, autoCheck);
   const autoCheckHighlights = autoCheck?.checks?.filter(isPrimaryAutoCheckFinding) ?? [];
   const autoCheckOtherChecks = autoCheck?.checks?.filter(check => !autoCheckHighlights.includes(check)) ?? [];
   const autoCheckFacts = autoCheck

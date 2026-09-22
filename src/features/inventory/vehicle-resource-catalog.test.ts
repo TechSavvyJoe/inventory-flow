@@ -124,10 +124,21 @@ describe('rich vehicle resource catalog', () => {
   it('shows only the dated generic AutoCheck inspection evidence, never its location or provider detail', () => {
     const history = resource({ make: 'Cadillac', autoCheckReport: {
       dataState: 'current', recentInspection: { date: '2026-09-10', types: ['Vehicle Inspected', 'Multiple Point Vehicle Inspection'] },
+    }, serviceReadiness: {
+      status: 'serviced', readinessEvidence: { source: 'autocheck', inspectionDate: '2026-09-10', types: ['Vehicle Inspected', 'Multiple Point Vehicle Inspection'] },
     } }, 'autocheck');
     expect(history.facts).toContain('AutoCheck inspection 09/10/2026 · Vehicle Inspected · Multiple Point Vehicle Inspection');
     expect(history.summaryRows).toContainEqual({ label: 'Recent inspection', values: ['09/10/2026'], detail: 'Vehicle Inspected · Multiple Point Vehicle Inspection' });
     expect(history.scanFacts).toContain('Inspected 09/10/2026');
+  });
+
+  it('does not turn an historic AutoCheck inspection into a current inventory signal', () => {
+    const history = resource({ make: 'Chevrolet', autoCheckReport: {
+      dataState: 'current', recentInspection: { date: '2025-09-15', types: ['Vehicle Inspected'] },
+    }, serviceReadiness: { status: 'needs_service', readinessEvidence: null } }, 'autocheck');
+    expect(history.facts.join(' ')).not.toContain('AutoCheck inspection');
+    expect(history.summaryRows).not.toContainEqual(expect.objectContaining({ label: 'Recent inspection' }));
+    expect(history.scanFacts).not.toContain('Inspected 09/15/2025');
   });
 
   it('keeps Ford and Lincoln AutoCheck reports without showing competing inspection evidence', () => {

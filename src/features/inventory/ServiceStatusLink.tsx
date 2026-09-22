@@ -23,7 +23,7 @@ export function ServiceStatusLink({ vin, service, detailed = false, compact = fa
     : evidenceParts
   const evidenceDescription = evidenceParts.join('; ')
   const title = autoCheckEvidence ? `Ready from a qualifying AutoCheck post-intake inspection${evidenceDescription ? `. ${evidenceDescription}` : ''}`
-    : fordEvidence ? `Ready from a qualifying Ford service-history inspection after intake${evidenceDescription ? `. ${evidenceDescription}` : ''}`
+    : fordEvidence ? `Ready from a confirmed Certified Blue Oval inspection in Ford service history after intake${evidenceDescription ? `. ${evidenceDescription}` : ''}`
       : status === 'serviced' && !service?.completedAt ? 'Ready is recorded; no completion date is available' : 'Open vehicle service workflow'
   const accessibleLabel = labelPrefix ? `${labelPrefix}: ${label}` : `${label}. Open service status for VIN ${vin}`
   return <WorkspaceLink to={`/service?vin=${encodeURIComponent(vin)}`} preserveOrigin className={`inventory-service-link inventory-service-link--${status}${detailed ? ' is-detailed' : ''}${compact ? ' is-compact' : ''}`} onClick={event => event.stopPropagation()} title={title} aria-label={accessibleLabel}>

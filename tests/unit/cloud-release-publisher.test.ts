@@ -171,6 +171,11 @@ function fordOasisFixture() {
         services: ['Certified Blue Oval inspection', 'Wiper blades'],
         summary: 'Certified Blue Oval inspection; Wiper blades.',
       },
+      certifiedInspection: {
+        repairOrderNumber: '0000000000317147', dealerCode: '07317', openDate: '08/14/2026', closeDate: '09/11/2026', odometer: 121110,
+        detailComplete: true, inspection: { status: 'confirmed', type: 'Certified Blue Oval inspection' },
+        parts: [], laborOperations: [], services: ['Certified Blue Oval inspection'],
+      },
       repairOrderTimeline: [{
         openDate: '08/14/2026', closeDate: '09/11/2026', odometer: 121110,
         services: ['Certified Blue Oval inspection', 'Wiper blades'],
@@ -513,6 +518,10 @@ describe('portable cloud release validation', () => {
     const serviceOwnerName = structuredClone(bundle)
     serviceOwnerName.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.serviceHistory.latestRepairOrder.customerName = 'Jane Example'
     expect(() => validateReleaseBundle(serviceOwnerName)).toThrow(/Latest Ford repair order contains unsupported fields/)
+
+    const falseCertifiedInspection = structuredClone(bundle)
+    falseCertifiedInspection.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.serviceHistory.certifiedInspection.inspection.type = 'Used-car inspection'
+    expect(() => validateReleaseBundle(falseCertifiedInspection)).toThrow(/Certified Blue Oval evidence/)
 
     const badCode = structuredClone(bundle)
     badCode.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.openFieldServiceActions = [{ code: 'RECALL-1' }]

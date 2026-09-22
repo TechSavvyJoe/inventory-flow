@@ -221,6 +221,8 @@ export interface FordServiceHistory {
   inspectionSearchStatus: "confirmed" | "not_identified" | "incomplete";
   latestRepairOrder?: FordServiceRepairOrder | null;
   recentInspection?: FordServiceRepairOrder | null;
+  /** Latest confirmed Certified Blue Oval inspection for the exact VIN. */
+  certifiedInspection?: FordServiceRepairOrder | null;
   recentRepairOrders?: FordServiceRepairOrder[];
   repairOrderTimeline?: FordServiceHistoryVisit[];
 }

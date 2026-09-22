@@ -57,11 +57,25 @@ function autoCheckReadinessEvidence(vehicle) {
   return { source: 'autocheck', inspectionDate, types }
 }
 
+function isCertifiedBlueOvalInspection(order) {
+  return order?.inspection?.status === 'confirmed' &&
+    /^certified blue oval inspection$/i.test(String(order.inspection.type ?? '').trim())
+}
+
+function latestCertifiedBlueOvalInspection(history) {
+  const inspections = [
+    history?.certifiedInspection,
+    history?.recentInspection,
+    ...(Array.isArray(history?.recentRepairOrders) ? history.recentRepairOrders : []),
+  ].filter(isCertifiedBlueOvalInspection)
+  return inspections.sort((left, right) => (oasisDay(right.closeDate) ?? '').localeCompare(oasisDay(left.closeDate) ?? ''))[0] ?? null
+}
+
 function fordServiceReadinessEvidence(vehicle) {
   if (!/^(ford|linc|lincoln)$/i.test(String(vehicle.make ?? '').trim())) return null
   const history = vehicle.fordOasis?.serviceHistory
-  const inspection = history?.recentInspection
-  if (history?.dataState !== 'current' || history.historyCaptured !== true || inspection?.inspection?.status !== 'confirmed') return null
+  const inspection = latestCertifiedBlueOvalInspection(history)
+  if (history?.dataState !== 'current' || history.historyCaptured !== true || !inspection) return null
   const intakeDate = intakeDay(vehicle)
   const inServiceDate = oasisDay(inspection.openDate)
   const readyDate = oasisDay(inspection.closeDate)

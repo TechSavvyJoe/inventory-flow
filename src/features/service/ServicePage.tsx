@@ -27,7 +27,7 @@ const STATUS_HELP: Record<ServiceReadinessStatus, string> = {
   unknown: 'Service status has not been confirmed. A manager can check each vehicle and record the result.',
   needs_service: 'Vehicles waiting for service or still needing a manager service review. Ready is never assumed.',
   in_service: 'Service has started. Record completion when the work is finished.',
-  serviced: 'Ready from a manager-recorded completion or a qualifying Ford/OASIS or AutoCheck inspection after intake. Holds still apply.',
+  serviced: 'Ready from a manager-recorded completion, a confirmed Certified Blue Oval inspection for Ford or Lincoln, or a qualifying post-intake AutoCheck inspection for another make. Holds still apply.',
 }
 const EMPTY_TITLES: Record<ServiceReadinessStatus, string> = {
   unknown: 'No vehicles need a service review', needs_service: 'No vehicles waiting for service',

@@ -231,6 +231,8 @@ export interface FordServiceHistoryRecord {
   inspectionSearchStatus: 'confirmed' | 'not_identified' | 'incomplete'
   latestRepairOrder?: FordServiceRepairOrderRecord | null
   recentInspection?: FordServiceRepairOrderRecord | null
+  /** Latest confirmed Certified Blue Oval inspection for the exact VIN. */
+  certifiedInspection?: FordServiceRepairOrderRecord | null
   recentRepairOrders?: FordServiceRepairOrderRecord[]
   /** Every reported Ford dealer service visit, newest first. */
   repairOrderTimeline?: FordServiceHistoryVisitRecord[]
