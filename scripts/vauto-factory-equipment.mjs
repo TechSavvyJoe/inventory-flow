@@ -6,7 +6,7 @@
 //   node scripts/vauto-factory-equipment.mjs run <worklist.json> <out.json> [--max N] [--budget-ms N]
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { isMainModule } from './lib/is-main.mjs'
 import { closeOwnedTab, fetchInTab, getOriginTab, sleep } from './lib/cdp.mjs'
 
 const VAUTO_ORIGIN = 'https://provision.vauto.app.coxautoinc.com'
@@ -211,7 +211,7 @@ export async function main(argv = process.argv.slice(2)) {
   return exitCode
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+if (isMainModule(import.meta.url)) {
   main().then((code) => { process.exitCode = code }).catch((error) => {
     console.error(String(error?.message ?? error))
     process.exitCode = 1

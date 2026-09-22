@@ -2,8 +2,8 @@
 // file. The PDF itself stays outside the release and is uploaded privately.
 import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
+import { isMainModule } from './lib/is-main.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/
@@ -93,7 +93,7 @@ export function main(reportDate = process.argv[2]) {
   process.stdout.write(`${JSON.stringify({ reportDate, ...stats })}\n`)
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+if (isMainModule(import.meta.url)) {
   try { main() } catch (error) {
     process.stderr.write(`${error.message}\n`)
     process.exitCode = 1

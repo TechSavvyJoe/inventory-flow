@@ -2,8 +2,8 @@
 // builder. A dealership-website report always wins and removes the fallback.
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
+import { isMainModule } from './lib/is-main.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 let resolvedRoot
@@ -96,7 +96,7 @@ export function main(argv = process.argv.slice(2)) {
   return 0
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+if (isMainModule(import.meta.url)) {
   try { process.exitCode = main() } catch (error) {
     console.error(String(error?.message ?? error))
     process.exitCode = 1

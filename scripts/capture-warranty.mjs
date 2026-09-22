@@ -21,7 +21,7 @@
 // factory warranty rows plus FSA codes.
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { isMainModule } from './lib/is-main.mjs'
 import { closeOwnedTab, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
@@ -430,7 +430,7 @@ export async function main(argv = process.argv.slice(2)) {
   return out.fordOasisPending > 0 ? 1 : 0
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+if (isMainModule(import.meta.url)) {
   main().then((code) => { process.exitCode = code }).catch((error) => {
     console.error(String(error?.message ?? error))
     process.exitCode = 1

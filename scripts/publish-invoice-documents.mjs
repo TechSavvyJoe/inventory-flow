@@ -2,7 +2,7 @@
 // Requires the same machine identity and bearer token as the release publisher.
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { isMainModule } from './lib/is-main.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const PRIVATE_HOSTNAME = 'inventory-ops.joegallant.me'
@@ -94,7 +94,7 @@ export async function main(reportDate = process.argv[2]) {
   process.stdout.write(`${JSON.stringify({ reportDate, invoices: files.length, stored, alreadyStored })}\n`)
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     process.stderr.write(`Invoice documents were not published: ${error.message}\n`)
     process.exitCode = 1
