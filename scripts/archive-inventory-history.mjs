@@ -100,6 +100,28 @@ function writeAtomic(filePath, value) {
   renameSync(temporary, filePath)
 }
 
+function archiveRevision({ workspaceRoot, archiveDirectory, candidate }) {
+  const digest = sha256(candidate.filePath)
+  const revisionDirectory = path.join(archiveDirectory, 'revisions', digest)
+  const revisionManifestPath = path.join(revisionDirectory, 'manifest.json')
+  if (existsSync(revisionManifestPath)) {
+    const revision = JSON.parse(readFileSync(revisionManifestPath, 'utf8'))
+    if (!revision.entry || revision.entry.sha256 !== digest) throw new Error('ARCHIVE_REVISION_INVALID')
+    const archived = path.join(workspaceRoot, revision.entry.archivePath)
+    if (!existsSync(archived) || sha256(archived) !== digest) throw new Error('ARCHIVE_INTEGRITY_MISMATCH')
+    return { status: 'already_archived' }
+  }
+  const entry = archiveEntry({ workspaceRoot, archiveDirectory: revisionDirectory, ...candidate })
+  writeAtomic(revisionManifestPath, {
+    schemaVersion: ARCHIVE_SCHEMA,
+    reportDate: path.basename(archiveDirectory),
+    archivedAt: new Date().toISOString(),
+    purpose: 'immutable reporting archive revision',
+    entry,
+  })
+  return { status: 'archived', bytes: entry.bytes }
+}
+
 export function archiveReport({ workspaceRoot, reportDate }) {
   if (!DATE.test(reportDate)) throw new Error('ARCHIVE_REPORT_DATE_INVALID')
   const archiveDirectory = path.join(workspaceRoot, 'work', 'historical-archive', reportDate)
@@ -111,7 +133,18 @@ export function archiveReport({ workspaceRoot, reportDate }) {
       const archived = path.join(workspaceRoot, entry.archivePath)
       if (!existsSync(archived) || sha256(archived) !== entry.sha256) throw new Error('ARCHIVE_INTEGRITY_MISMATCH')
     }
-    return { reportDate, status: 'already_archived', entries: existing.entries.length, bytes: existing.entries.reduce((sum, entry) => sum + entry.bytes, 0) }
+    const known = new Set(existing.entries.map(entry => `${entry.sourcePath}:${entry.sha256}`))
+    const revisions = sourcesFor(workspaceRoot, reportDate)
+      .filter(candidate => !known.has(`${relativeOrThrow(workspaceRoot, candidate.filePath).replaceAll('\\', '/')}:${sha256(candidate.filePath)}`))
+      .map(candidate => archiveRevision({ workspaceRoot, archiveDirectory, candidate }))
+    return {
+      reportDate,
+      status: revisions.some(revision => revision.status === 'archived') ? 'revisions_archived' : 'already_archived',
+      entries: existing.entries.length,
+      bytes: existing.entries.reduce((sum, entry) => sum + entry.bytes, 0),
+      revisionCount: revisions.filter(revision => revision.status === 'archived').length,
+      revisionBytes: revisions.reduce((sum, revision) => sum + (revision.bytes ?? 0), 0),
+    }
   }
 
   const candidates = sourcesFor(workspaceRoot, reportDate)
