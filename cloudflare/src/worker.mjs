@@ -269,13 +269,23 @@ async function publisher(request, env) {
   if(!env.PUBLISHER_CLIENT_ID || !equal(claims.common_name,env.PUBLISHER_CLIENT_ID) || claims.email) throw new AccessError('PUBLISHER_IDENTITY_REQUIRED',403)
   if(!env.RELEASE_PUBLISHER_TOKEN || !equal(request.headers.get('authorization'),`Bearer ${env.RELEASE_PUBLISHER_TOKEN}`)) throw new AccessError('PUBLISHER_AUTHENTICATION_REQUIRED',403)
 }
+function releaseMetadata(bundle,counts) {
+  return JSON.stringify({completedAt:bundle.release.completedAt,timezone:bundle.release.timezone,warningCount:bundle.release.warnings?.length??0,...counts})
+}
 async function publishRelease(request, env) {
   const envelope=await readJson(request,MAX_UPLOAD)
   const bundle=await decryptEnvelope(envelope,env)
   const counts=bundle[RELEASE_VALIDATION]??validateReleaseBundle(bundle,{degradeOptionalResources:true})
+  const metadata=releaseMetadata(bundle,counts)
   releaseCompletionTime(bundle.release.completedAt)
   const existing=await env.INVENTORY_DB.prepare('SELECT * FROM cloud_release_versions WHERE bundle_sha256=? AND report_date=?').bind(envelope.bundleSha256,envelope.reportDate).first()
-  if(existing && existing.status!=='rejected' && await env.RELEASE_SNAPSHOTS.head(existing.object_key)) return json(200,{status:'already_published',reportDate:envelope.reportDate})
+  if(existing && existing.status!=='rejected' && await env.RELEASE_SNAPSHOTS.head(existing.object_key)) {
+    // A prior retry could have retained an older derived summary even though
+    // the encrypted bundle is the same. Refresh only those derived totals from
+    // the just-validated immutable content; never rewrite the source release.
+    await env.INVENTORY_DB.prepare('UPDATE cloud_release_versions SET metadata_json=? WHERE release_id=? AND bundle_sha256=? AND report_date=?').bind(metadata,existing.release_id,envelope.bundleSha256,envelope.reportDate).run()
+    return json(200,{status:'already_published',reportDate:envelope.reportDate})
+  }
   const state=await env.INVENTORY_DB.batch([env.INVENTORY_DB.prepare('SELECT revision FROM cloud_app_revision WHERE id=1'),env.INVENTORY_DB.prepare(CURRENT_SQL)])
   const revision=state[0].results[0]?.revision, current=state[1].results[0]
   if(!Number.isSafeInteger(revision)) throw new HttpError('DATABASE_NOT_CONFIGURED',503)
@@ -283,7 +293,6 @@ async function publishRelease(request, env) {
   const objectKey=`releases/${envelope.reportDate}/${envelope.bundleSha256}.json.enc`, serialized=JSON.stringify(envelope)
   await env.RELEASE_SNAPSHOTS.put(objectKey,serialized,{httpMetadata:{contentType:'application/octet-stream'},customMetadata:{reportDate:envelope.reportDate,bundleSha256:envelope.bundleSha256}})
   const id=existing?.release_id??crypto.randomUUID(), time=new Date().toISOString()
-  const metadata=JSON.stringify({completedAt:bundle.release.completedAt,timezone:bundle.release.timezone,warningCount:bundle.release.warnings?.length??0,...counts})
   try {
     await env.INVENTORY_DB.batch([
       env.INVENTORY_DB.prepare('UPDATE cloud_app_revision SET revision=CASE WHEN revision=? THEN revision+1 ELSE NULL END WHERE id=1').bind(revision),
