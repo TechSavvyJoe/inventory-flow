@@ -450,6 +450,9 @@
   #inventory-vehicle-workspace .vdp-focus-tabs { display:contents; }
   #inventory-vehicle-workspace .vdp-focus-tabs button { min-width:0; padding:6px 4px; font-size:13px; white-space:normal; border-radius:0; }
   #inventory-vehicle-workspace .vdp-focus-service { grid-column:3; grid-row:2; max-width:none; justify-content:center; border-left:1px solid var(--v10-border); }
+  #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link { width:100%; min-width:0; justify-content:center; padding-inline:4px; }
+  #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link__detail { justify-content:center; gap:0 4px; }
+  #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link__detail > span { min-width:0; white-space:normal; overflow-wrap:anywhere; }
   #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link__prefix { display:none; }
   #inventory-vehicle-workspace .vdp-focus-scroll { padding:10px; scrollbar-gutter:auto; background:var(--surface); }
   #inventory-vehicle-workspace .vdp-focus-scroll:has(.vdp-focus-overview) { padding-inline:0; }
