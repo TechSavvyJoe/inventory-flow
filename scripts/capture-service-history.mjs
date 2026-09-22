@@ -9,6 +9,7 @@ import {
   parseServiceHistoryDetails,
   parseServiceHistoryIndex,
   repairOrderFingerprint,
+  sanitizeServiceHistoryRepairOrder,
 } from './lib/service-history-parser.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
@@ -171,6 +172,7 @@ for (const item of queue) {
         detailed = parsed.repairOrder
         tally.DETAILS_FETCHED++
       }
+      detailed = sanitizeServiceHistoryRepairOrder(detailed)
       checkedRepairOrders.push(detailed)
       if (!inspection && detailed.inspection?.status === 'confirmed') inspection = detailed
       await sleep(60)

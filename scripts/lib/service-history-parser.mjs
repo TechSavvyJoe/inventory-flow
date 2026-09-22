@@ -1,4 +1,5 @@
 import { stripTags } from './cdp.mjs'
+import { containsForeignOasisText } from '../../server/oasis-coverage-grammar.mjs'
 
 const VIN_PATTERN = /\b[A-HJ-NPR-Z0-9]{17}\b/i
 const DATE_PATTERN = /^(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])\/\d{4}$/
@@ -138,6 +139,37 @@ export function summarizeRepairOrder(order) {
   return 'Repair-order details were available, but no service description was captured.'
 }
 
+// PTS detail rows can occasionally contain customer-labelled free text. Keep
+// the immutable source capture out of the release path by dropping only those
+// unsafe part/labor descriptions, then deriving every downstream field from
+// the remaining allow-listed vehicle-service facts. This also sanitizes cached
+// detail rows from an earlier run before they are reused.
+export function sanitizeServiceHistoryRepairOrder(order) {
+  if (!order || typeof order !== 'object' || Array.isArray(order)) return order
+  const parts = Array.isArray(order.parts)
+    ? order.parts.flatMap((part) => {
+        const description = bounded(part?.description, 300)
+        if (!description || containsForeignOasisText(description)) return []
+        const quantity = Number.isSafeInteger(part?.quantity) ? part.quantity : null
+        const partNumber = bounded(part?.partNumber, 120)
+        return [{ description, ...(quantity != null ? { quantity } : {}), ...(partNumber ? { partNumber } : {}) }]
+      }).slice(0, 80)
+    : []
+  const laborOperations = Array.isArray(order.laborOperations)
+    ? order.laborOperations.flatMap((operation) => {
+        const code = bounded(operation?.code, 40)
+        const description = bounded(operation?.description, 500)
+        if (!code || !description || containsForeignOasisText(description)) return []
+        return [{ code, description }]
+      }).slice(0, 80)
+    : []
+  const sanitized = { ...order, parts, laborOperations }
+  sanitized.inspection = inspectionFrom(laborOperations)
+  sanitized.services = serviceCategories(sanitized)
+  sanitized.summary = summarizeRepairOrder(sanitized)
+  return sanitized
+}
+
 export function parseServiceHistoryDetails(html, expectedOrder) {
   const source = String(html || '')
   if (/login\.microsoftonline\.com|type=["']?password/i.test(source)) return { state: 'session_expired' }
@@ -168,15 +200,11 @@ export function parseServiceHistoryDetails(html, expectedOrder) {
     return code && description ? [{ code, description }] : []
   }).slice(0, 80)
 
-  const inspection = inspectionFrom(laborOperations)
-  const result = {
+  const result = sanitizeServiceHistoryRepairOrder({
     ...expectedOrder,
     parts,
     laborOperations,
-    inspection,
     detailComplete: true,
-  }
-  result.services = serviceCategories(result)
-  result.summary = summarizeRepairOrder(result)
+  })
   return { state: 'ok', repairOrder: result }
 }

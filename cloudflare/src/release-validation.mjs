@@ -671,9 +671,17 @@ function validatePublic(snapshot, run, manifest, reportDate) {
     ensure(normalizedVin(key) === vin && !byVin.has(vin) && !stocks.has(stockNumber), 'public VIN/stock is duplicated or mismatched')
     ensure(Object.hasOwn(STORES, record.store), 'public physical store is invalid')
     ensure(typeof record.actual_location === 'string' && record.actual_location.trim() && typeof record.vehicle_name === 'string' && record.vehicle_name.trim(), 'public vehicle/location evidence is missing')
-    ensure(['in_stock', 'in_transit', 'in_production'].every((key) => typeof record[key] === 'boolean') && Array.isArray(record.source_sites), 'public source flags are missing')
+    ensure(
+      ['in_stock', 'in_transit', 'in_production'].every((key) => typeof record[key] === 'boolean') &&
+        Array.isArray(record.source_sites) && record.source_sites.length > 0 && record.source_sites.every((site) => Object.hasOwn(STORES, site)),
+      'public source flags or publishing stores are invalid',
+    )
     const url = new URL(record.listing_url)
-    ensure(url.protocol === 'https:' && !url.username && !url.password && !url.port && url.hostname === STORES[record.store].host && url.href.toUpperCase().includes(vin), 'public listing link must use HTTPS and match the VIN and physical store')
+    const sourceHosts = new Set(record.source_sites.map((site) => STORES[site].host))
+    ensure(
+      url.protocol === 'https:' && !url.username && !url.password && !url.port && sourceHosts.has(url.hostname) && url.href.toUpperCase().includes(vin),
+      'public listing link must use HTTPS and match the VIN and a publishing group store',
+    )
     byVin.set(vin, record)
     stocks.add(stockNumber)
   }

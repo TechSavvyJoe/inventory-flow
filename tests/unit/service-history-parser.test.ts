@@ -67,4 +67,18 @@ describe('Ford PTS retail service-history parser', () => {
     expect(repairOrderFingerprint(order)).toBe('0000000000317147|08/14/2026|09/11/2026|121110')
     expect(repairOrderFingerprint({ ...order, closeDate: '09/12/2026' })).not.toBe(repairOrderFingerprint(order))
   })
+
+  it('drops customer-labelled service text before deriving inspection and summary facts', () => {
+    const html = `<div>Repair Order: <b>${order.repairOrderNumber}</b></div>
+      <div>Repair Order Open Date: ${order.openDate} Repair Order Close Date: ${order.closeDate}</div>
+      <table><tr><th>Labor Operation Code</th><th>Labor Operation Code Description</th></tr>
+        <tr><td>UCC</td><td>Customer: Jane Doe requested a used car inspection</td></tr>
+        <tr><td>MPI</td><td>Multi-point inspection completed</td></tr>
+      </table>`
+    const parsed = parseServiceHistoryDetails(html, order)
+    expect(parsed.state).toBe('ok')
+    expect(parsed.repairOrder!.laborOperations).toEqual([{ code: 'MPI', description: 'Multi-point inspection completed' }])
+    expect(parsed.repairOrder!.summary).toBe('Multi-point inspection.')
+    expect(JSON.stringify(parsed)).not.toMatch(/jane|doe|customer:/i)
+  })
 })

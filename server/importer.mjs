@@ -1691,7 +1691,11 @@ export function validatePublicSnapshot(snapshot, { reportDate, manifest } = {}) 
     assertValid(typeof vehicle.in_stock === 'boolean', 'DealerOn in-stock flag must be Boolean', { vin })
     assertValid(typeof vehicle.in_transit === 'boolean', 'DealerOn in-transit flag must be Boolean', { vin })
     assertValid(typeof vehicle.in_production === 'boolean', 'DealerOn in-production flag must be Boolean', { vin })
-    assertValid(Array.isArray(vehicle.source_sites), 'Public source_sites must be an array', { vin })
+    assertValid(
+      Array.isArray(vehicle.source_sites) && vehicle.source_sites.length > 0 && vehicle.source_sites.every((site) => STORE_NAMES.includes(site)),
+      'Public source_sites must name known group stores',
+      { vin },
+    )
 
     let listingUrl
     try {
@@ -1704,10 +1708,16 @@ export function validatePublicSnapshot(snapshot, { reportDate, manifest } = {}) 
       'Public listing URL must use HTTPS without credentials or a custom port',
       { vin },
     )
-    assertValid(listingUrl.hostname.toLowerCase() === STORE_CONFIG[vehicle.store].websiteHost, 'Public listing URL host does not match physical store', {
+    // Group inventory can be physically at one store and publicly listed by a
+    // different Bob Maxey store. The URL must remain a known group host and
+    // correspond to a source site that actually published this VIN; never
+    // accept an arbitrary external host.
+    const sourceHosts = new Set(vehicle.source_sites.map((site) => STORE_CONFIG[site].websiteHost))
+    assertValid(sourceHosts.has(listingUrl.hostname.toLowerCase()), 'Public listing URL host does not match a publishing group store', {
       vin,
       store: vehicle.store,
       host: listingUrl.hostname,
+      sourceSites: vehicle.source_sites,
     })
     assertValid(listingUrl.toString().toUpperCase().includes(vin), 'Public listing URL does not contain its VIN', { vin })
 

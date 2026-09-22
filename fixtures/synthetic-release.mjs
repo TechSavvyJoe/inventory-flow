@@ -244,7 +244,10 @@ function publicRecord(vehicle) {
     model_code: `DEMO-${vehicle.model.replace(/\W/g, '').toUpperCase()}`,
     generic_color: vehicle.exterior.split(' ')[0],
     dealer_comments: 'Synthetic demonstration record. No customer, dealership, or source-system data is present.',
-    source_sites: [`Synthetic ${vehicle.store} fixture`],
+    // Mirror production semantics: this identifies the group storefront(s)
+    // that published the VIN, while data_status still marks the entire record
+    // as synthetic test data.
+    source_sites: [vehicle.store],
     data_status: SYNTHETIC_FIXTURE_MARKER,
     change_summary: 'No production change history — synthetic fixture',
   }
