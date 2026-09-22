@@ -9,8 +9,8 @@ import {
 } from "react";
 import { Clock3, CornerDownLeft, Search, Sparkles, X } from "lucide-react";
 import {
-  buildInventorySearchIndex,
-  rankInventorySearch,
+  buildInventorySearchIndexes,
+  rankInventorySearchWithAuthorizedFallback,
   type InventorySearchMatch,
 } from "./inventory-search";
 import { formatMileage, formatMoney, vehicleDisplayName } from "./inventory-utils";
@@ -26,6 +26,8 @@ interface InventoryPredictiveSearchProps {
   id: string;
   persistenceKey: string;
   placeholder?: string;
+  /** Parent results keep the suggestion list and visible inventory in sync. */
+  matches?: InventorySearchMatch[];
 }
 
 function readRecentSearches(key: string): string[] {
@@ -62,6 +64,7 @@ export function InventoryPredictiveSearch({
   id,
   persistenceKey,
   placeholder = "Search stock, VIN, vehicle, feature, salesperson, or hold…",
+  matches: suppliedMatches,
 }: InventoryPredictiveSearchProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -70,15 +73,20 @@ export function InventoryPredictiveSearch({
   const [popupOpen, setPopupOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const index = useMemo(() => buildInventorySearchIndex(vehicles), [vehicles]);
-  const matches = useMemo(() => rankInventorySearch(index, value, 8), [index, value]);
+  const indexes = useMemo(() => buildInventorySearchIndexes(vehicles), [vehicles]);
+  const localMatches = useMemo(
+    () => rankInventorySearchWithAuthorizedFallback(indexes, value),
+    [indexes, value],
+  );
+  const allMatches = suppliedMatches ?? localMatches;
+  const matches = allMatches.slice(0, 8);
 
   useEffect(() => {
     const validRecents = readRecentSearches(persistenceKey)
-      .filter((recent) => rankInventorySearch(index, recent, 1).length > 0)
+      .filter((recent) => rankInventorySearchWithAuthorizedFallback(indexes, recent, 1).length > 0)
       .slice(0, RECENT_SEARCH_LIMIT);
     setRecentSearches(validRecents);
-  }, [index, persistenceKey]);
+  }, [indexes, persistenceKey]);
 
   useEffect(() => {
     setActiveIndex(-1);
@@ -86,9 +94,9 @@ export function InventoryPredictiveSearch({
 
   useEffect(() => {
     const query = value.trim().toLocaleLowerCase();
-    if (!query || matches.length !== 1) return;
+    if (!query || allMatches.length !== 1) return;
 
-    const exactVehicleIdentifier = [matches[0].vehicle.vin, matches[0].vehicle.stockNumber]
+    const exactVehicleIdentifier = [allMatches[0].vehicle.vin, allMatches[0].vehicle.stockNumber]
       .some((identifier) => identifier.toLocaleLowerCase() === query);
 
     // Once a manager has entered an exact stock or VIN, the filtered row is
@@ -98,7 +106,7 @@ export function InventoryPredictiveSearch({
       setPopupOpen(false);
       setActiveIndex(-1);
     }
-  }, [matches, value]);
+  }, [allMatches, value]);
 
   const hasQuery = Boolean(value.trim());
   const optionsLength = hasQuery ? matches.length : recentSearches.length;
@@ -108,7 +116,7 @@ export function InventoryPredictiveSearch({
 
   const remember = (query: string) => {
     const clean = query.trim().replace(/\s+/g, " ").slice(0, 80);
-    if (!clean || rankInventorySearch(index, clean, 1).length === 0) return;
+    if (!clean || rankInventorySearchWithAuthorizedFallback(indexes, clean, 1).length === 0) return;
     setRecentSearches((current) => {
       const next = [clean, ...current.filter((item) => item.toLocaleLowerCase() !== clean.toLocaleLowerCase())]
         .slice(0, RECENT_SEARCH_LIMIT);
@@ -229,7 +237,7 @@ export function InventoryPredictiveSearch({
                 <><Clock3 size={14} aria-hidden="true" /> Recent searches</>
               )}
             </span>
-            {hasQuery ? <small aria-live="polite">{matches.length} suggested</small> : null}
+            {hasQuery ? <small aria-live="polite">{allMatches.length} matching</small> : null}
           </div>
           <ul id={listboxId} role="listbox" aria-label={hasQuery ? "Inventory suggestions" : "Recent inventory searches"}>
             {hasQuery ? matches.map((match, optionIndex) => {

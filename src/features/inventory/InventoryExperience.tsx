@@ -20,6 +20,7 @@ import { useModalBackgroundIsolation } from "../../lib/useModalBackgroundIsolati
 import { InventoryMobileList, InventoryTable, inventorySortSummary } from "./InventoryTable";
 import { VehicleWorkspace } from "./VehicleWorkspace";
 import { useInventoryDisclosure } from "./useInventoryDisclosure";
+import { buildInventorySearchIndexes, rankInventorySearchWithAuthorizedFallback } from "./inventory-search";
 import {
   activeFilterCount,
   DEFAULT_INVENTORY_FILTERS,
@@ -27,7 +28,6 @@ import {
   SORT_LABELS,
   sortVehicles,
   vehicleMatchesFilters,
-  vehicleMatchesQuery,
 } from "./inventory-utils";
 import type {
   InventoryExperienceProps,
@@ -429,6 +429,12 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     if (controlledSelectedVehicleId === undefined) setInternalSelectedVehicleId(next);
     onSelectedVehicleChange?.(next);
   };
+  const setSearchQuery = (nextQuery: string) => {
+    // Filtering must move to the first result page in the same update. Leaving
+    // this until an effect ran made an active later page look unchanged.
+    setPage(1);
+    setQuery(nextQuery);
+  };
 
   useLayoutEffect(() => {
     const surface = resultsSurfaceRef.current;
@@ -488,13 +494,22 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     onOpenSourceRecord?.(vehicle, source);
   };
 
-  const baseMatches = useMemo(
-    () => vehicles.filter((vehicle) => vehicleMatchesQuery(vehicle, query) && vehicleMatchesFilters(vehicle, filters)),
-    [filters, query, vehicles],
-  );
   const searchableVehicles = useMemo(
     () => vehicles.filter(vehicle => vehicleMatchesFilters(vehicle, filters, { ignoreStore: true }) && matchesQuickView(vehicle, quickView)),
     [filters, quickView, vehicles],
+  );
+  const searchIndexes = useMemo(() => buildInventorySearchIndexes(searchableVehicles), [searchableVehicles]);
+  const searchMatches = useMemo(
+    () => rankInventorySearchWithAuthorizedFallback(searchIndexes, query),
+    [query, searchIndexes],
+  );
+  const queryMatchIds = useMemo(() => new Set(searchMatches.map((match) => match.vehicle.id)), [searchMatches]);
+  const hasQuery = Boolean(query.trim());
+  const baseMatches = useMemo(
+    () => vehicles.filter((vehicle) =>
+      vehicleMatchesFilters(vehicle, filters) && (!hasQuery || queryMatchIds.has(vehicle.id)),
+    ),
+    [filters, hasQuery, queryMatchIds, vehicles],
   );
   const scopedVehicles = useMemo(() => {
     const scoped = baseMatches.filter((vehicle) => (scope === "group" || vehicle.location.homeStore.id === homeStore.id) && matchesQuickView(vehicle, quickView));
@@ -517,18 +532,18 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     const counts: Record<string, number> = { all: 0, needs_service: 0, in_service: 0, serviced: 0 };
     for (const vehicle of vehicles) {
       if (scope !== "group" && vehicle.location.homeStore.id !== homeStore.id) continue;
-      if (!vehicleMatchesQuery(vehicle, query) || !matchesQuickView(vehicle, quickView)) continue;
+      if ((hasQuery && !queryMatchIds.has(vehicle.id)) || !matchesQuickView(vehicle, quickView)) continue;
       if (!vehicleMatchesFilters(vehicle, { ...filters, serviceReadiness: "all" })) continue;
       counts.all += 1;
       counts[serviceWorkflowStatus(vehicle.serviceReadiness)] += 1;
     }
     return counts;
-  }, [filters, homeStore.id, query, quickView, scope, vehicles]);
+  }, [filters, hasQuery, homeStore.id, queryMatchIds, quickView, scope, vehicles]);
 
   const otherLocationMatches = useMemo(() => {
     if (!query.trim() || scope === "group") return 0;
-    return vehicles.filter((vehicle) => vehicle.location.homeStore.id !== homeStore.id && vehicleMatchesQuery(vehicle, query) && vehicleMatchesFilters(vehicle, filters, { ignoreStore: true }) && matchesQuickView(vehicle, quickView)).length;
-  }, [filters, homeStore.id, query, quickView, scope, vehicles]);
+    return vehicles.filter((vehicle) => vehicle.location.homeStore.id !== homeStore.id && queryMatchIds.has(vehicle.id)).length;
+  }, [homeStore.id, query, queryMatchIds, scope, vehicles]);
 
   const totalPages = Math.max(1, Math.ceil(scopedVehicles.length / rowsPerPage));
   const safePage = Math.min(page, totalPages);
@@ -606,7 +621,7 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     setQuickView("all");
   };
   const clearEmptyState = () => {
-    setQuery("");
+    setSearchQuery("");
     clearFilters();
   };
   const returnToFilterTrigger = () => window.requestAnimationFrame(() => filterTriggerRef.current?.focus({ preventScroll: true }));
@@ -634,7 +649,8 @@ export function InventoryExperience(props: InventoryExperienceProps) {
             id={`${filterPanelId}-search`}
             vehicles={searchableVehicles}
             value={query}
-            onChange={setQuery}
+            onChange={setSearchQuery}
+            matches={searchMatches}
             onSelectVehicle={(vehicle) => {
               if (vehicle.location.homeStore.id !== homeStore.id) setScope("group");
               openVehicleWorkspace(vehicle);

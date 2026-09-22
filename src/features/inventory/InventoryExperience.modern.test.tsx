@@ -137,6 +137,28 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getAllByRole('button', { name: new RegExp(`Open vehicle details for ${target.year} ${target.make} ${target.model}`, 'i') })[0]).toBeVisible();
   });
 
+  it('filters visible rows as typing changes, without letting shared source text keep unrelated vehicles on screen', () => {
+    const lincoln = { ...vehicle(1), make: 'Lincoln', model: 'Nautilus', trim: 'Reserve', vehicleName: '2024 Lincoln Nautilus Reserve' };
+    const sourceNoise = { ...vehicle(2), vehicleName: '2024 Ford Explorer XLT', authorizedSearchText: 'Ford Lincoln dealer source metadata' };
+    const unrelated = { ...vehicle(3), vehicleName: '2024 Ford F-150 XLT' };
+    render(
+      <InventoryExperience
+        homeStore={homeStore}
+        vehicles={[lincoln, sourceNoise, unrelated]}
+        metrics={{ publicUnits: 3, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Search inventory' }), { target: { value: 'lincoln' } });
+
+    const resultCount = document.querySelector<HTMLElement>('.inventory-results-count')!;
+    expect(resultCount).toHaveTextContent('1 shown');
+    expect(resultCount).toHaveTextContent('3 group');
+    expect(screen.getByRole('button', { name: /Open vehicle details for 2024 Lincoln Nautilus Reserve/i })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Open vehicle details for 2024 Ford Explorer XLT/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open vehicle details for 2024 Ford F-150 XLT/i })).not.toBeInTheDocument();
+  });
+
   it('clears a query-only empty state instead of leaving the search active', () => {
     render(
       <InventoryExperience

@@ -35,6 +35,13 @@ export interface InventorySearchMatch {
   matchedLabels: string[];
 }
 
+export interface InventorySearchIndexes {
+  /** Fields staff can recognize on a vehicle card or row. */
+  direct: InventorySearchIndexEntry[];
+  /** Direct fields plus role-authorized background search text. */
+  authorized: InventorySearchIndexEntry[];
+}
+
 interface SearchTerm {
   raw: string;
   folded: string;
@@ -118,8 +125,12 @@ function addFields(target: InventorySearchIndexedField[], inputs: FieldInput[]):
   for (const input of inputs) addField(target, input);
 }
 
-export function buildInventorySearchEntry(vehicle: InventoryVehicle): InventorySearchIndexEntry {
+export function buildInventorySearchEntry(
+  vehicle: InventoryVehicle,
+  options: { includeAuthorizedDetails?: boolean } = {},
+): InventorySearchIndexEntry {
   const fields: InventorySearchIndexedField[] = [];
+  const includeAuthorizedDetails = options.includeAuthorizedDetails !== false;
 
   addFields(fields, [
     { label: "Stock", value: vehicle.stockNumber, priority: 42, identifier: true },
@@ -179,7 +190,7 @@ export function buildInventorySearchEntry(vehicle: InventoryVehicle): InventoryS
   // The server constructs this from fields already authorized for the active
   // role. It is deliberately matching-only: hidden text never becomes a
   // suggestion excerpt or matched-field label.
-  if (vehicle.authorizedSearchText) {
+  if (includeAuthorizedDetails && vehicle.authorizedSearchText) {
     addField(fields, {
       label: "Authorized details",
       value: vehicle.authorizedSearchText.replace(SYNTHETIC_PIPE_SEPARATOR, " "),
@@ -188,53 +199,55 @@ export function buildInventorySearchEntry(vehicle: InventoryVehicle): InventoryS
     });
   }
 
-  for (const evidence of vehicle.holdEvidence ?? []) {
-    addFields(fields, [
-      { label: "Salesperson", value: evidence.salesperson, priority: 24 },
-      { label: "Customer / reason", value: evidence.customerOrReason, priority: 22 },
-      { label: "Held by", value: evidence.heldBy, priority: 18 },
-      { label: "Hold date", value: evidence.holdDate, priority: 12 },
-      { label: "Expected date", value: evidence.expectedDeliveryDate, priority: 12 },
-      { label: "CDK status", value: evidence.cdkState, priority: 18 },
-    ]);
-    for (const comment of evidence.comments ?? []) {
+  if (includeAuthorizedDetails) {
+    for (const evidence of vehicle.holdEvidence ?? []) {
       addFields(fields, [
-        { label: "Comment", value: comment.text, priority: 14 },
-        { label: "Comment author", value: comment.author, priority: 12 },
-        { label: "Comment date", value: comment.timestamp, priority: 8 },
+        { label: "Salesperson", value: evidence.salesperson, priority: 24 },
+        { label: "Customer / reason", value: evidence.customerOrReason, priority: 22 },
+        { label: "Held by", value: evidence.heldBy, priority: 18 },
+        { label: "Hold date", value: evidence.holdDate, priority: 12 },
+        { label: "Expected date", value: evidence.expectedDeliveryDate, priority: 12 },
+        { label: "CDK status", value: evidence.cdkState, priority: 18 },
       ]);
+      for (const comment of evidence.comments ?? []) {
+        addFields(fields, [
+          { label: "Comment", value: comment.text, priority: 14 },
+          { label: "Comment author", value: comment.author, priority: 12 },
+          { label: "Comment date", value: comment.timestamp, priority: 8 },
+        ]);
+      }
+      for (const alert of evidence.alerts ?? []) {
+        addFields(fields, [
+          { label: "Alert", value: alert.text, priority: 18 },
+          { label: "Alert author", value: alert.author, priority: 12 },
+          { label: "Alert date", value: alert.timestamp, priority: 8 },
+          { label: "Alert modification", value: alert.metadataRaw, priority: 8 },
+          { label: "Spiff", value: alert.spiffRaw, priority: 8 },
+        ]);
+      }
     }
-    for (const alert of evidence.alerts ?? []) {
-      addFields(fields, [
-        { label: "Alert", value: alert.text, priority: 18 },
-        { label: "Alert author", value: alert.author, priority: 12 },
-        { label: "Alert date", value: alert.timestamp, priority: 8 },
-        { label: "Alert modification", value: alert.metadataRaw, priority: 8 },
-        { label: "Spiff", value: alert.spiffRaw, priority: 8 },
-      ]);
-    }
-  }
 
-  if (vehicle.dealerMail.canViewEvidence && vehicle.dealerMailEvidence) {
-    const evidence = vehicle.dealerMailEvidence;
-    for (const [label, messages] of [["Comment", evidence.comments], ["Alert", evidence.alerts]] as const) {
-      for (const message of messages) addFields(fields, [
-        { label, value: message.text, priority: 14 },
-        { label: `${label} author`, value: message.author, priority: 12 },
-        { label: `${label} date`, value: message.timestamp, priority: 8 },
-        { label: `${label} modification`, value: message.metadataRaw, priority: 8 },
-        { label: "Spiff", value: message.spiffRaw, priority: 8 },
+    if (vehicle.dealerMail.canViewEvidence && vehicle.dealerMailEvidence) {
+      const evidence = vehicle.dealerMailEvidence;
+      for (const [label, messages] of [["Comment", evidence.comments], ["Alert", evidence.alerts]] as const) {
+        for (const message of messages) addFields(fields, [
+          { label, value: message.text, priority: 14 },
+          { label: `${label} author`, value: message.author, priority: 12 },
+          { label: `${label} date`, value: message.timestamp, priority: 8 },
+          { label: `${label} modification`, value: message.metadataRaw, priority: 8 },
+          { label: "Spiff", value: message.spiffRaw, priority: 8 },
+        ]);
+      }
+      for (const row of evidence.history) addFields(fields, [
+        { label: "Previous hold", value: row.statusLabel, priority: 10 },
+        { label: "Previous hold salesperson", value: row.salesperson, priority: 12 },
+        { label: "Previous customer / reason", value: row.customerOrReason, priority: 12 },
+        { label: "Previous hold date", value: row.holdDate, priority: 8 },
+        { label: "Previous expected date", value: row.expectedDate, priority: 8 },
+        { label: "Previous raw hold order", value: row.orderRaw, priority: 8 },
+        { label: "Previous raw lifecycle", value: row.lifecycle, priority: 8 },
       ]);
     }
-    for (const row of evidence.history) addFields(fields, [
-      { label: "Previous hold", value: row.statusLabel, priority: 10 },
-      { label: "Previous hold salesperson", value: row.salesperson, priority: 12 },
-      { label: "Previous customer / reason", value: row.customerOrReason, priority: 12 },
-      { label: "Previous hold date", value: row.holdDate, priority: 8 },
-      { label: "Previous expected date", value: row.expectedDate, priority: 8 },
-      { label: "Previous raw hold order", value: row.orderRaw, priority: 8 },
-      { label: "Previous raw lifecycle", value: row.lifecycle, priority: 8 },
-    ]);
   }
 
   return {
@@ -245,8 +258,18 @@ export function buildInventorySearchEntry(vehicle: InventoryVehicle): InventoryS
   };
 }
 
-export function buildInventorySearchIndex(vehicles: InventoryVehicle[]): InventorySearchIndexEntry[] {
-  return vehicles.map(buildInventorySearchEntry);
+export function buildInventorySearchIndex(
+  vehicles: InventoryVehicle[],
+  options?: { includeAuthorizedDetails?: boolean },
+): InventorySearchIndexEntry[] {
+  return vehicles.map((vehicle) => buildInventorySearchEntry(vehicle, options));
+}
+
+export function buildInventorySearchIndexes(vehicles: InventoryVehicle[]): InventorySearchIndexes {
+  return {
+    direct: buildInventorySearchIndex(vehicles, { includeAuthorizedDetails: false }),
+    authorized: buildInventorySearchIndex(vehicles),
+  };
 }
 
 function parseTerms(query: string): SearchTerm[] {
@@ -365,6 +388,22 @@ export function rankInventorySearch(
     left.vehicle.stockNumber.localeCompare(right.vehicle.stockNumber, "en-US", { numeric: true }),
   );
   return matches.slice(0, Math.max(0, limit)).map(({ order: _order, ...match }) => match);
+}
+
+/**
+ * Prefer a match from fields a user can see on the inventory surface. Role-
+ * authorized background text remains useful for a salesperson, hold, or
+ * comment lookup, but cannot make an otherwise precise vehicle search appear
+ * to match the entire inventory.
+ */
+export function rankInventorySearchWithAuthorizedFallback(
+  indexes: InventorySearchIndexes,
+  query: string,
+  limit = Number.POSITIVE_INFINITY,
+): InventorySearchMatch[] {
+  const directMatches = rankInventorySearch(indexes.direct, query);
+  const matches = directMatches.length ? directMatches : rankInventorySearch(indexes.authorized, query);
+  return matches.slice(0, Math.max(0, limit));
 }
 
 const entryCache = new WeakMap<InventoryVehicle, InventorySearchIndexEntry>();

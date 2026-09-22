@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildInventorySearchIndex,
+  buildInventorySearchIndexes,
   foldInventorySearchText,
   rankInventorySearch,
+  rankInventorySearchWithAuthorizedFallback,
   searchFieldsMatch,
 } from "./inventory-search";
 import type { InventoryVehicle } from "./types";
@@ -86,6 +88,29 @@ describe("predictive inventory search", () => {
     const transportRoleRecord = vehicle({ authorizedSearchText: null, holdEvidence: [] });
     expect(rankInventorySearch(buildInventorySearchIndex([transportRoleRecord]), "Scott Maxey"))
       .toHaveLength(0);
+  });
+
+  it("prefers direct vehicle matches before shared background search text", () => {
+    const lincoln = vehicle({
+      id: "lincoln",
+      make: "Lincoln",
+      model: "Nautilus",
+      vehicleName: "2024 Lincoln Nautilus Reserve",
+    });
+    const backgroundOnly = vehicle({
+      id: "background-only",
+      vehicleName: "2024 Ford Explorer XLT",
+      authorizedSearchText: "Ford Lincoln dealer source metadata",
+      holdEvidence: [{ id: "hold", salesperson: "Lincoln Shared Source" }],
+    });
+    const indexes = buildInventorySearchIndexes([lincoln, backgroundOnly]);
+
+    expect(rankInventorySearchWithAuthorizedFallback(indexes, "lincoln").map((match) => match.vehicle.id))
+      .toEqual(["lincoln"]);
+    expect(rankInventorySearchWithAuthorizedFallback(indexes, "metadata").map((match) => match.vehicle.id))
+      .toEqual(["background-only"]);
+    expect(rankInventorySearchWithAuthorizedFallback(indexes, "shared source").map((match) => match.vehicle.id))
+      .toEqual(["background-only"]);
   });
 
   it("indexes structured authorized hold details when they are present", () => {
