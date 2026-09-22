@@ -77,6 +77,25 @@ function openSourceDetails(card: HTMLElement) {
 }
 
 describe('vehicle document workspace', () => {
+  it('offers the VIN-linked vAuto profile instead of opening a Ford placeholder sticker', () => {
+    const complete = vehicle();
+    complete.windowSticker = {
+      dataState: 'incomplete',
+      url: 'https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker?sv=vehicle-token&make=Ford&vehicleType=U',
+    };
+    const equipmentUrl = 'https://assets.cai-media-management.com/window-stickers/d09817fc-332f-45c1-9e7f-86f0a9e16153.jpg';
+    complete.factoryEquipment = { dataState: 'current', url: equipmentUrl, isOriginalWindowSticker: false, packages: [], sections: [] };
+    render(<VehicleWorkspace vehicle={complete} homeStore={complete.location.homeStore} onClose={vi.fn()} initialTab="data" />);
+    const sticker = document.querySelector('[data-document-kind="window-sticker"]') as HTMLElement;
+    expect(sticker).toHaveAttribute('data-link-state', 'vauto-fallback');
+    expect(within(sticker).queryByRole('link', { name: /Open window sticker/ })).not.toBeInTheDocument();
+    expect(within(sticker).getByRole('link', { name: /Open vAuto equipment/ })).toHaveAttribute('href', equipmentUrl);
+    expect(sticker).toHaveTextContent('The original sticker is not available from the manufacturer');
+    const equipment = document.querySelector('[data-document-kind="vauto-factory-equipment"]') as HTMLElement;
+    expect(equipment).toHaveAttribute('data-original-window-sticker', 'false');
+    expect(within(equipment).getByRole('link', { name: /Open equipment details/ })).toHaveAttribute('href', equipmentUrl);
+  });
+
   it('orders complete records by the working flow and moves keyboard focus to each named section', () => {
     const complete=vehicle();
     complete.fordOasis={dataState:'current',warrantyStartDate:'01-June-2026',openFieldServiceActions:[],warrantyCoverages:[],extendedCoverageExpirations:[]};

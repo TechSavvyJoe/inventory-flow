@@ -69,18 +69,29 @@ describe('companion concept vehicle workspace', () => {
     for (const row of rows.slice(6)) expect(row.classList.contains('doc-sticker-option--child')).toBe(true)
   })
   it('uses one attributed equipment-label fallback when the sticker has no parsed options', async () => {
-    await boot([{ ...record(), windowSticker: { dataState: 'current', url: 'https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker?sv=synthetic&make=Ford&vehicleType=U', totalMsrp: 45000 }, factoryEquipment: { dataState: 'stale', packages: [{ name: 'Synthetic towing package', features: ['Synthetic trailer camera'] }] } }])
+    await boot([{ ...record(), windowSticker: { dataState: 'current', url: 'https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker?sv=synthetic&make=Ford&vehicleType=U' }, factoryEquipment: { dataState: 'stale', packages: [{ name: 'Synthetic towing package', features: ['Synthetic trailer camera'] }] } }])
     expect(document.querySelectorAll('.doc-summary[data-resource="window-sticker"]')).toHaveLength(0)
     const summary = document.querySelector('.doc-summary[data-resource="vauto"]')
-    expect(summary.textContent).toContain('Sticker & equipment')
+    expect(summary.textContent).toContain('vAuto equipment')
     expect(summary.textContent).toContain('vAuto equipment label · not an original window sticker')
     expect(summary.textContent).toContain('Synthetic trailer camera')
     expect(summary.textContent).toContain('Saved report')
-    expect(summary.textContent).not.toContain('45,000')
     expect(summary.querySelector('.doc-source-supplement').textContent).toContain('Open window sticker')
     document.querySelector('#tab-records').click()
     expect(document.querySelector('[data-record="window-sticker"]')).not.toBeNull()
     expect(document.querySelector('[data-record="vauto"]')).not.toBeNull()
+  })
+  it('routes an incomplete Ford sticker to a link-only vAuto profile', async () => {
+    const stickerUrl = 'https://www.bobmaxeyfordhowell.com/api/vhcliaa/inventory/21521/window-sticker?sv=synthetic&make=Ford&vehicleType=U'
+    const equipmentUrl = 'https://assets.cai-media-management.com/window-stickers/123e4567-e89b-42d3-a456-426614174000.jpg'
+    await boot([{ ...record(), windowSticker: { dataState: 'incomplete', url: stickerUrl }, factoryEquipment: { dataState: 'current', url: equipmentUrl } }])
+    expect(document.querySelector('.doc-summary[data-resource="window-sticker"]')).toBeNull()
+    expect(document.querySelector('.doc-grid--utilities .doc-vauto').getAttribute('aria-label')).toContain('vAuto equipment label')
+    document.querySelector('#tab-records').click()
+    const sticker = document.querySelector('[data-record="window-sticker"]')
+    expect(sticker.textContent).toContain('Original sticker unavailable')
+    expect(sticker.querySelector('.doc-source-supplement').textContent).toContain('Open vAuto equipment')
+    expect(sticker.querySelector('.rec-source')).toBeNull()
   })
   it('keeps explicit equipment-group contents separate from optional equipment', async () => {
     await boot([{ ...record(), windowSticker: { pricingCurrency: 'CAD', equipmentGroup: 'DEMO-GROUP', equipmentGroupPrice: 1250.75, equipmentGroupContents: ['Synthetic included camera'], options: ['Synthetic optional roof NO CHARGE'] } }])

@@ -1,6 +1,7 @@
 import { displayDate } from "../../lib/date-display";
 import type { TransferRecord } from "../../types";
 import { serviceWorkflowStatus } from "../../lib/service-readiness";
+import { availableWindowStickerUrl } from "./vehicle-document-utils";
 import type {
   DealerMailHoldSignal,
   InventoryFilters,
@@ -442,7 +443,7 @@ function sortValue(vehicle: InventoryVehicle, key: InventorySortKey): string | n
     case "documentAvailability":
       return [
         vehicle.autoCheckReport?.url,
-        vehicle.windowSticker?.url,
+        availableWindowStickerUrl(vehicle.windowSticker, vehicle.publicListing.listingUrl),
         vehicle.factoryEquipment?.url,
       ].filter(Boolean).length;
     case "salesperson":

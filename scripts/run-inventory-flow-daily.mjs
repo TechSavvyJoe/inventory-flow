@@ -198,7 +198,7 @@ function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, ste
       args: ['scripts\\capture-invoices.mjs', 'run', reportDate, '--budget-ms', '1800000'],
       cwd: APP_ROOT,
       expired: /session_expired|FETCH_ERROR/i,
-      warning: 'sign in to FMCDealer in the Work PC Automation Browser; Ford invoice data is incomplete for this run.',
+      warning: 'Ford invoice capture is incomplete; check the fordvisions session or source response and retry this source.',
     },
     { name: 'invoice_text', command: PYTHON, args: ['work\\extract_invoice_text.py', '--report-date', reportDate] },
     { name: 'invoice_parse', command: PYTHON, args: ['work\\parse_ford_invoice.py', '--report-date', reportDate] },

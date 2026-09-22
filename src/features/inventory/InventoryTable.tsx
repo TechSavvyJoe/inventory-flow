@@ -33,6 +33,7 @@ import {
 } from "./inventory-utils";
 import { primaryVehicleChangeSignal } from "./change-utils";
 import {
+  availableWindowStickerUrl,
   officialVehicleDocumentUrl,
   vautoFactoryEquipmentUrl,
 } from "./vehicle-document-utils";
@@ -674,7 +675,7 @@ function mobileDocumentAvailability(vehicle: InventoryVehicle) {
   );
   return {
     autoCheck: Boolean(officialVehicleDocumentUrl(autoCheck?.url, "autocheck", vehicle.publicListing.listingUrl) || hasCapturedAutoCheck),
-    sticker: Boolean(officialVehicleDocumentUrl(vehicle.windowSticker?.url, "window-sticker", vehicle.publicListing.listingUrl)),
+    sticker: Boolean(availableWindowStickerUrl(vehicle.windowSticker, vehicle.publicListing.listingUrl)),
     factoryEquipment: Boolean(vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url)),
   };
 }
@@ -701,7 +702,7 @@ export function vehicleAccessibleSummary(vehicle: InventoryVehicle): string {
     movement ? `Movement: ${movement.label}` : null,
     change ? `Recent change: ${change.shortLabel}` : null,
     mobileDocumentAvailability(vehicle).autoCheck ? "AutoCheck history available" : null,
-    officialVehicleDocumentUrl(vehicle.windowSticker?.url, "window-sticker", vehicle.publicListing.listingUrl) ? "Window sticker available" : null,
+    availableWindowStickerUrl(vehicle.windowSticker, vehicle.publicListing.listingUrl) ? "Window sticker available" : null,
     vautoFactoryEquipmentUrl(vehicle.factoryEquipment?.url) ? "vAuto informational equipment profile available" : null,
     openRecallSummary(vehicle),
   ].filter(Boolean).join(", ");

@@ -427,7 +427,8 @@ function sourceNoteBadge(note) {
 }
 
 function rowDocumentFacts(vehicle) {
-  const summaries = resourceSummaries(vehicle).filter(resource => resource.hasCapturedData && resource.id !== 'invoice')
+  const summaries = resourceSummaries(vehicle).filter(resource => resource.hasCapturedData && resource.id !== 'invoice'
+    && (resource.id !== 'window-sticker' || !['incomplete', 'unavailable', 'unknown'].includes(vehicle.documents.windowSticker?.dataState)))
   const prioritized = [...summaries.filter(resource => resource.id === 'oasis' && resource.compactFacts.some(fact => /Open FSA/i.test(fact))), ...summaries.filter(resource => !(resource.id === 'oasis' && resource.compactFacts.some(fact => /Open FSA/i.test(fact))))].slice(0, 3)
   if (!prioritized.length) return null
   // Listbox options keep one coherent keyboard action: open this vehicle.
@@ -939,9 +940,10 @@ function documentsGrid(vehicle) {
   const sourceResources = resourceSummaries(vehicle)
   const sticker = sourceResources.find(resource => resource.id === 'window-sticker')
   const equipment = sourceResources.find(resource => resource.id === 'vauto')
-  const usableSticker = vehicle.documents.windowSticker?.dataState !== 'unavailable' && (vehicle.documents.windowSticker?.options?.length || vehicle.documents.windowSticker?.equipmentGroup || vehicle.documents.windowSticker?.equipmentGroupContents?.length)
+  const usableSticker = !['incomplete', 'unavailable', 'unknown'].includes(vehicle.documents.windowSticker?.dataState)
+    && (vehicle.documents.windowSticker?.totalMsrp != null || vehicle.documents.windowSticker?.options?.length || vehicle.documents.windowSticker?.equipmentGroup || vehicle.documents.windowSticker?.equipmentGroupContents?.length)
   const selectedEquipment = usableSticker && sticker?.hasCapturedData
-    ? sticker : equipment?.hasCapturedData && vehicle.documents.factoryEquipment?.dataState !== 'unavailable' ? equipment : sticker ?? equipment
+    ? sticker : equipment && !['incomplete', 'unavailable', 'unknown'].includes(vehicle.documents.factoryEquipment?.dataState) && (equipment.hasCapturedData || equipment.url) ? equipment : sticker ?? equipment
   const resources = sourceResources.filter(resource => !['window-sticker', 'vauto'].includes(resource.id) || resource === selectedEquipment)
   const cards = resources.filter(resource => resource.hasCapturedData).map(resource => {
     const captured = resource.hasCapturedData
@@ -951,7 +953,7 @@ function documentsGrid(vehicle) {
       el('button', { type: 'button', class: `doc doc-summary-heading${resource.brand ? ` doc-${resource.brand}` : ''}`, disabled: !captured && !resource.url, 'aria-label': label,
         onclick: () => captured ? openRecord(resource.id) : openUrl(resource.url) },
         resource.brand ? resourceBrand(resource.brand) : icon('file-text'),
-        el('span', { class: 'doc-body' }, el('strong', { text: ['window-sticker', 'vauto'].includes(resource.id) ? 'Sticker & equipment' : resource.title })),
+        el('span', { class: 'doc-body' }, el('strong', { text: resource.id === 'window-sticker' ? 'Sticker & equipment' : resource.title })),
         icon(captured ? 'arrow-right' : 'external', { size: 14 })),
       resource.id === 'vauto' ? el('p', { class: 'doc-source-note', text: 'vAuto equipment label · not an original window sticker' }) : null,
       resource.facts.length ? documentSummaryFacts(resource, vehicle) : null,
@@ -1264,6 +1266,8 @@ function recordsTab(vehicle) {
   if (sticker) {
     children.push(el('section', { class: 'card rec', dataset: { record: 'window-sticker' }, tabindex: '-1' },
       recordHead('Window sticker', { url: sticker.url, action: 'Open window sticker', missing: 'Window sticker unavailable.', dataState: sticker.dataState }),
+      !sticker.url && docs.factoryEquipment?.url && !['incomplete', 'unavailable', 'unknown'].includes(docs.factoryEquipment.dataState)
+        ? el('div', { class: 'doc-source-note' }, 'Original sticker unavailable. ', el('button', { type: 'button', class: 'doc-source-supplement', onclick: () => openUrl(docs.factoryEquipment.url) }, 'Open vAuto equipment', icon('external', { size: 14 }))) : null,
       note(sourceNote(sticker, 'window-sticker')),
       sticker.vehicleDescription ? el('p', { class: 'd-caption', text: sticker.vehicleDescription }) : null,
       recordPrices([[hasNumber(sticker.totalMsrp) ? 'Original MSRP' : 'Base MSRP', sticker.totalMsrp ?? sticker.basePrice]], (value) => fmt.formatStickerMoney(value, sticker)),
@@ -1272,7 +1276,7 @@ function recordsTab(vehicle) {
       recordList('Factory options', sticker.options),
       recordList('Standard equipment', sticker.standardEquipment),
       recordList('Warranty printed on sticker', sticker.warranty),
-      note('Review the window sticker for full configuration and warranty terms.'),
+      sticker.url ? note('Review the window sticker for full configuration and warranty terms.') : null,
     ))
   }
   const label = docs.factoryEquipment

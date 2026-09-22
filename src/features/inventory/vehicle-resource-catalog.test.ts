@@ -196,6 +196,23 @@ describe('rich vehicle resource catalog', () => {
     expect(sticker.sourceNote).not.toContain('Lookup returned no document');
   });
 
+  it('uses the vAuto VIN equipment document when Ford supplies only a placeholder sticker', () => {
+    const stickerUrl = 'https://www.bobmaxeyfordinfowlerville.com/api/vhcliaa/inventory/23328/window-sticker?sv=vehicle-token&make=Ford&vehicleType=U';
+    const equipmentUrl = 'https://assets.cai-media-management.com/window-stickers/d09817fc-332f-45c1-9e7f-86f0a9e16153.jpg';
+    const sources = vehicle({
+      windowSticker: { dataState: 'incomplete', url: stickerUrl },
+      factoryEquipment: { dataState: 'current', url: equipmentUrl, isOriginalWindowSticker: false },
+    });
+    expect(resource(sources, 'window-sticker').href).toBeNull();
+    const overview = vehicleOverviewResources(sources)[0];
+    expect(overview.id).toBe('vauto');
+    expect(overview.title).toBe('vAuto equipment');
+    expect(overview.href).toBe(equipmentUrl);
+    expect(overview.alternateSticker).toBeUndefined();
+    expect(overview.equipmentContext).toContain('not an original window sticker');
+    expect(vehicleOverviewResources({ ...sources, factoryEquipment: { ...sources.factoryEquipment!, dataState: 'incomplete' } })[0].id).toBe('window-sticker');
+  });
+
   it('uses named vAuto packages and important captured items rather than counts', () => {
     const equipment = resource({ factoryEquipment: { dataState:'stale_unverified', capturedAt:'2026-08-28', isOriginalWindowSticker:false, engine:'2.0L', drivetrain:'AWD', packages:[{name:'Technology Package',code:'66T',features:['360-degree camera']}], sections:[{name:'Equipment',items:[{label:'Floor mats'},{label:'Adaptive cruise control'},{label:'360-degree camera'},{label:'Adaptive cruise control'}]}] } }, 'vauto');
     expect(equipment.compactFacts).toEqual(['Technology Package · 66T', 'Adaptive cruise control']);

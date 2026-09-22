@@ -71,6 +71,7 @@ import {
 } from "./inventory-utils";
 import { primaryVehicleChangeSignal } from "./change-utils";
 import {
+  availableWindowStickerUrl,
   autoCheckResultTone,
   fordInvoiceUrl,
   fordOasisUrl,
@@ -607,8 +608,10 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   if (!autoCheck && !sticker && !factoryEquipment && !fordOasis && !warrantyCheck && !showWarranty) return null;
   const autoCheckUrl = officialVehicleDocumentUrl(autoCheck?.url, "autocheck", vehicle.publicListing.listingUrl);
   const autoCheckViaVauto = autoCheck?.accessMethod === "vauto";
-  const stickerUrl = officialVehicleDocumentUrl(sticker?.url, "window-sticker", vehicle.publicListing.listingUrl);
+  const stickerUrl = availableWindowStickerUrl(sticker, vehicle.publicListing.listingUrl);
   const factoryEquipmentUrl = vautoFactoryEquipmentUrl(factoryEquipment?.url);
+  const fallbackEquipmentUrl = !stickerUrl && !["incomplete", "unavailable", "unknown"].includes(factoryEquipment?.dataState ?? "")
+    ? factoryEquipmentUrl : null;
   const oasisUrl = fordFamily ? fordOasisUrl(vehicle.vin) : null;
   const serviceHistoryUrl = fordFamily ? fordServiceHistoryUrl(vehicle.vin) : null;
   const serviceHistory = fordOasis?.serviceHistory ?? null;
@@ -930,7 +933,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
     { id: "sticker", label: "Window sticker", content: (sticker ? <article
           className="inventory-vehicle-document inventory-vehicle-document--sticker"
           data-document-kind="window-sticker"
-          data-link-state={stickerUrl ? "available" : "unavailable"}
+          data-link-state={stickerUrl ? "available" : fallbackEquipmentUrl ? "vauto-fallback" : "unavailable"}
         >
           <header className="inventory-vehicle-document__heading">
             <WindowStickerWordmark make={vehicle.make} />
@@ -941,7 +944,8 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             <DataState state={sticker.dataState} />
           </header>
 
-          <RecordSourceAction href={stickerUrl} label="Open sticker" accessibleLabel={`Open window sticker for ${vehicleDisplayName(vehicle)} in a new tab`} unavailableLabel="Window sticker unavailable" />
+          <RecordSourceAction href={stickerUrl ?? fallbackEquipmentUrl} label={stickerUrl ? "Open sticker" : "Open vAuto equipment"} accessibleLabel={`${stickerUrl ? "Open window sticker" : "Open vAuto equipment"} for ${vehicleDisplayName(vehicle)} in a new tab`} unavailableLabel="Window sticker unavailable" />
+          {!stickerUrl && fallbackEquipmentUrl ? <p className="inventory-vehicle-document__fallback">The original sticker is not available from the manufacturer. This VIN's vAuto equipment profile is available below.</p> : null}
 
           {sticker.totalMsrp != null || sticker.basePrice != null ? (
             <dl className="inventory-vehicle-document__metrics inventory-vehicle-document__metrics--sticker" aria-label="Window sticker pricing">
@@ -994,13 +998,13 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
               </div>
             </CapturedRecordSection>
           ) : null}
-          {!stickerFacts.length && !sticker.options?.length && !sticker.standardEquipment?.length && !sticker.warranty?.length && sticker.totalMsrp == null && sticker.basePrice == null && sticker.totalOptions == null && sticker.destinationCharge == null ? (
-            <p className="inventory-vehicle-document__empty">No window-sticker details are available for this vehicle.</p>
+          {!fallbackEquipmentUrl && !stickerFacts.length && !sticker.options?.length && !sticker.standardEquipment?.length && !sticker.warranty?.length && sticker.totalMsrp == null && sticker.basePrice == null && sticker.totalOptions == null && sticker.destinationCharge == null ? (
+            <p className="inventory-vehicle-document__empty">The original window sticker is not available for this vehicle.</p>
           ) : null}
-          <RecordSourceDetails>
+          {stickerUrl || stickerFacts.length || sticker.options?.length || sticker.standardEquipment?.length ? <RecordSourceDetails>
             {sticker.originalMarket ? <p>{sticker.originalMarket} window sticker</p> : null}
             <p>Original factory equipment does not confirm current condition or installed equipment.</p>
-          </RecordSourceDetails>
+          </RecordSourceDetails> : null}
         </article> : null) },
     { id: "equipment", label: "Equipment", content: (factoryEquipment ? <article
           className="inventory-vehicle-document inventory-vehicle-document--vauto"

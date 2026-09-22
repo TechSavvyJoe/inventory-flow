@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEALERMAIL_INTERACTIVE_INVENTORY_URL,
+  availableWindowStickerUrl,
   dealerMailInteractiveVehicleUrl,
   fordInvoiceUrl,
   fordOasisUrl,
@@ -35,5 +36,12 @@ describe('interactive DealerMail and Ford document destinations', () => {
     expect(fordInvoiceUrl('')).toBeNull()
     expect(savedFordInvoiceUrl('NOT-A-VIN')).toBeNull()
     expect(fordOasisUrl('NOT-A-VIN')).toBeNull()
+  })
+
+  it('does not advertise an incomplete Ford placeholder PDF as an available sticker', () => {
+    const url = 'https://www.bobmaxeyfordinfowlerville.com/api/vhcliaa/inventory/23328/window-sticker?sv=vehicle-token&make=Ford&vehicleType=U'
+    expect(availableWindowStickerUrl({ dataState: 'current', url })).toBe(url)
+    expect(availableWindowStickerUrl({ dataState: 'incomplete', url })).toBeNull()
+    expect(availableWindowStickerUrl({ dataState: 'unavailable', url })).toBeNull()
   })
 })

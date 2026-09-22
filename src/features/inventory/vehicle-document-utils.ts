@@ -220,3 +220,12 @@ export function officialVehicleDocumentUrl(
     return null;
   }
 }
+
+/** A valid endpoint is not a usable sticker when Ford returned a placeholder. */
+export function availableWindowStickerUrl(
+  sticker: { url?: string | null; dataState?: string | null } | null | undefined,
+  listingUrl?: string | null,
+): string | null {
+  if (sticker && ["incomplete", "unavailable", "unknown"].includes(sticker.dataState ?? "")) return null;
+  return officialVehicleDocumentUrl(sticker?.url, "window-sticker", listingUrl);
+}

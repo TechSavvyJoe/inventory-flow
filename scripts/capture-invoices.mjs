@@ -85,7 +85,12 @@ for (const vin of queue) {
   try {
     const r = await fetchInTab(page, INV_URL(vin), { binary: true, timeoutMs: 60000 })
     if (r.status === 0 || r.error) {
-      results.push({ vin, status: 'unavailable', reason: `FETCH_ERROR ${r.error || 'status 0'}` }); tally.unavailable++
+      stopped = 'FETCH_ERROR'
+      break
+    }
+    if (r.status !== 200) {
+      stopped = `HTTP_${r.status}`
+      break
     } else if (r.base64) {
       const buf = Buffer.from(r.base64, 'base64')
       if (buf.subarray(0, 5).toString('latin1').startsWith('%PDF')) {
@@ -96,14 +101,23 @@ for (const vin of queue) {
       }
     } else {
       const t = (r.text || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-      let reason = 'no PDF returned'
+      if (/msal-browser/i.test(r.text || '')) {
+        stopped = 'SESSION_EXPIRED'
+        break
+      }
+      let reason = null
       if (/not retail/i.test(t)) reason = 'Document Type is not retail'
       else if (/not found in our system/i.test(t)) reason = 'The VIN entered was not found in our system.'
-      else if (/msal-browser/i.test(r.text || '')) reason = 'SSO lapsed mid-run'
+      if (!reason) {
+        stopped = 'UNEXPECTED_RESPONSE'
+        break
+      }
       results.push({ vin, status: 'unavailable', reason }); tally.unavailable++
     }
   } catch (e) {
-    results.push({ vin, status: 'unavailable', reason: `ERROR ${String(e.message).slice(0, 100)}` }); tally.error++
+    tally.error++
+    stopped = 'CAPTURE_ERROR'
+    break
   }
   await sleep(120)
 }
@@ -114,8 +128,9 @@ writeFileSync(indexPath, JSON.stringify({
   capturedAtUtc: new Date().toISOString(), results }, null, 1))
 
 console.log(JSON.stringify({
-  sessionStatus: 'ok', fordLincolnVins: vins.length, attempted: queue.length,
+  sessionStatus: stopped === 'SESSION_EXPIRED' ? 'session_expired' : stopped ? 'incomplete' : 'ok',
+  fordLincolnVins: vins.length, attempted: queue.length, processed: results.length - prior.length,
   tally, stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), folder
 }))
 try { page.close() } catch {}
-process.exit(0)
+process.exit(stopped ? 1 : 0)

@@ -30,7 +30,7 @@ describe('extension captured document model', () => {
   it('retains sticker powertrain, colors, currency evidence and failure notes', () => {
     const sticker = { dataState: 'incomplete', url: stickerUrl, engine: '3.5L V6', transmission: '10-speed', exteriorColor: 'Blue', interiorColor: 'Black', pricingCurrency: 'CAD', pricingCurrencyEvidence: 'Printed Canadian dollars', originalMarket: 'Canada', sourceMessage: 'Captured pricing only', failureReason: 'Options unreadable', totalMsrp: 78000 }
     const { pricingCurrencyEvidence, ...expected } = sticker
-    expect(panel({ windowSticker: sticker }).documents.windowSticker).toMatchObject({ ...expected, currencyEvidence: pricingCurrencyEvidence })
+    expect(panel({ windowSticker: sticker }).documents.windowSticker).toMatchObject({ ...expected, url: null, currencyEvidence: pricingCurrencyEvidence })
   })
 
   it('retains vAuto powertrain, named package and section data without declaring it an original sticker', () => {

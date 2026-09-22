@@ -244,8 +244,12 @@ else {
               if (o.ready === 'complete' && /GetInvoice\.aspx/i.test(o.href) && !/callback\.html/i.test(o.href)) break
             }
           } finally { try { sock.close() } catch {} }
-          const again = await evaluateTab(tab, probeInvoice, r.opened)
-          if (!again.noTab) { v = again.value; v.renewed = true }
+          for (let attempt = 0; attempt < 5; attempt++) {
+            if (attempt) await pause(2000)
+            const again = await evaluateTab(tab, probeInvoice, r.opened)
+            if (!again.noTab) { v = again.value; v.renewed = true }
+            if (v.pdf || v.fordRefusal) break
+          }
         }
       }
       status.fordvisions = { ...v, tab: r.tab,

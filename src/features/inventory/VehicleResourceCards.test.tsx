@@ -335,7 +335,7 @@ describe('source-backed vehicle resource cards', () => {
     const page = render(<VehicleResourceCards vehicle={vehicle} variant="summary"/>);
     expandDetails('equipment');
     const panel = within(document.querySelector('[data-resource-kind="vauto"]') as HTMLElement);
-    expect(screen.getAllByText('Sticker & equipment')).toHaveLength(1);
+    expect(screen.getAllByText('vAuto equipment')).toHaveLength(1);
     expect(panel.getByText('vAuto equipment profile · not an original window sticker')).toBeVisible();
     expect(panel.getByRole('listitem', { name: 'Synthetic package · TEST-01 · Price 1,250.75' })).toBeVisible();
     expect(panel.getByText('Price 1,250.75')).toHaveClass('vehicle-resource-sticker__price');
@@ -347,6 +347,20 @@ describe('source-backed vehicle resource cards', () => {
     page.rerender(<VehicleResourceCards vehicle={{ ...vehicle, windowSticker: { ...vehicle.windowSticker, dataState: 'unavailable', equipmentGroup: 'Unavailable original group', options: ['Unavailable original option'] } }} variant="summary"/>);
     expect(screen.getByText('vAuto equipment profile · not an original window sticker')).toBeVisible();
     expect(screen.queryByText('Unavailable original option')).not.toBeInTheDocument();
+  });
+
+  it('keeps a link-only vAuto fallback actionable on the inventory scan', () => {
+    const vehicle = sources();
+    vehicle.windowSticker = { dataState: 'incomplete', url: vehicle.windowSticker!.url };
+    vehicle.factoryEquipment = {
+      dataState: 'current', isOriginalWindowSticker: false,
+      url: 'https://assets.cai-media-management.com/window-stickers/d09817fc-332f-45c1-9e7f-86f0a9e16153.jpg',
+    };
+    render(<VehicleResourceCards vehicle={vehicle} variant="scan" />);
+    expect(document.querySelector('[data-resource-kind="window-sticker"]')).toBeNull();
+    const equipment = within(document.querySelector('[data-resource-kind="vauto"]') as HTMLElement);
+    expect(equipment.getByText('VIN equipment profile available')).toBeVisible();
+    expect(equipment.getByText('Equipment')).toBeVisible();
   });
 
   it('keeps mobile scan evidence brief while retaining source status and service actions', () => {

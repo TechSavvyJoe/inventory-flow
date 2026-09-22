@@ -3,7 +3,7 @@ import { sourceDisplayText } from '../../lib/source-text';
 import { sourceDistanceText } from '../../lib/source-distance';
 import type { AutoCheckResource, FactoryEquipmentResource, FordInvoiceResource, FordOasisResource, WindowStickerResource, VehicleWorkspaceTab } from './types';
 import { formatDate, formatNumber, formatStickerMoney } from './inventory-utils';
-import { fordInvoiceUrl, fordOasisUrl, officialVehicleDocumentUrl, savedFordInvoiceUrl, vautoFactoryEquipmentUrl } from './vehicle-document-utils';
+import { availableWindowStickerUrl, fordInvoiceUrl, fordOasisUrl, officialVehicleDocumentUrl, savedFordInvoiceUrl, vautoFactoryEquipmentUrl } from './vehicle-document-utils';
 import { resolveVehicleInService, type VehicleInServiceInput } from './vehicle-in-service';
 import { qualifyingAutoCheckInspection } from '../../lib/service-inspection-evidence';
 
@@ -249,7 +249,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   const inService = resolveVehicleInService(vehicle);
   const sticker = vehicle.windowSticker;
   const demoSticker = getDemoWindowSticker(vehicle);
-  const stickerHref = demoSticker?.url ?? officialVehicleDocumentUrl(sticker?.url, 'window-sticker', listing);
+  const stickerHref = demoSticker?.url ?? availableWindowStickerUrl(sticker, listing);
   const groupContents = Array.isArray(sticker?.equipmentGroupContents) ? sticker.equipmentGroupContents.map(item => factText(item)).filter((item): item is string => Boolean(item)) : undefined;
   const stickerOptions = [...(groupContents ?? []), ...stickerSummaryOptions(sticker)];
   const stickerOptionLines = (sticker?.options ?? []).map(option => factText(option)).filter((option): option is string => Boolean(option));
@@ -481,12 +481,13 @@ export function vehicleOverviewResources(vehicle: VehicleResourceVehicle): Vehic
   const resources = vehicleResourceCatalog(vehicle);
   const sticker = resources.find(resource => resource.id === 'window-sticker');
   const factory = resources.find(resource => resource.id === 'vauto');
-  const stickerUsable = sticker && vehicle.windowSticker?.dataState !== 'unavailable'
-    && Boolean(sticker.stickerDetails?.optionLines.length || sticker.stickerDetails?.equipmentGroup || sticker.stickerDetails?.equipmentGroupContents?.length);
-  const factoryUsable = factory?.hasCapturedData && vehicle.factoryEquipment?.dataState !== 'unavailable';
+  const stickerUsable = sticker && !['incomplete', 'unavailable', 'unknown'].includes(vehicle.windowSticker?.dataState ?? '')
+    && Boolean(sticker.stickerDetails?.msrp || sticker.stickerDetails?.optionLines.length || sticker.stickerDetails?.equipmentGroup || sticker.stickerDetails?.equipmentGroupContents?.length);
+  const factoryUsable = factory && !['incomplete', 'unavailable', 'unknown'].includes(vehicle.factoryEquipment?.dataState ?? '')
+    && (factory.hasCapturedData || Boolean(factory.href));
   const preferred = stickerUsable ? sticker : factoryUsable ? factory : sticker ?? factory;
   if (!preferred) return resources;
-  let selected: VehicleResource = { ...preferred, title: 'Sticker & equipment' };
+  let selected: VehicleResource = { ...preferred, title: preferred.id === 'vauto' ? 'vAuto equipment' : 'Sticker & equipment' };
   if (preferred.id === 'vauto') {
     const equipment = vehicle.factoryEquipment;
     const exactPrice = (value: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 20 }).format(value);
@@ -499,7 +500,7 @@ export function vehicleOverviewResources(vehicle: VehicleResourceVehicle): Vehic
     const optionLines = [...packageLines, ...(equipment?.sections ?? []).flatMap(section => section.items.map(item => join([item.label, numeric(item.price) ? `Price ${exactPrice(item.price)}` : null])))].filter((line): line is string => Boolean(line?.trim()));
     selected = { ...selected, equipmentContext: 'vAuto equipment profile · not an original window sticker',
       stickerDetails: { msrp: numeric(equipment?.totalMsrp) ? exactPrice(equipment.totalMsrp) : undefined, optionLines, optionLabel: 'Packages & captured equipment' },
-      alternateSticker: sticker?.href && vehicle.windowSticker?.dataState !== 'unavailable' ? { href: sticker.href, label: sticker.demo ? 'Demo sticker' : 'Window sticker' } : undefined,
+      alternateSticker: sticker?.href ? { href: sticker.href, label: sticker.demo ? 'Demo sticker' : 'Window sticker' } : undefined,
     };
   } else selected.equipmentContext = selected.demo ? 'Synthetic sample · not an original' : 'Original window sticker';
   const remaining = resources.filter(resource => resource.id !== 'window-sticker' && resource.id !== 'vauto');

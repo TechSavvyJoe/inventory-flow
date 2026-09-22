@@ -269,6 +269,7 @@ function documentsFor(record, publicState, dealerMailState) {
   const sticker = record.windowSticker
   const factory = record.factoryEquipment
   const oasis = record.fordOasis
+  const stickerState = sticker ? documentState(sticker.dataState, publicState) : null
   return {
     autoCheck: autoCheck
       ? {
@@ -287,7 +288,7 @@ function documentsFor(record, publicState, dealerMailState) {
       : null,
     windowSticker: sticker
       ? {
-        url: windowStickerUrl(sticker.url, record.listingUrl), dataState: documentState(sticker.dataState, publicState),
+        url: ['incomplete', 'unavailable', 'unknown'].includes(stickerState) ? null : windowStickerUrl(sticker.url, record.listingUrl), dataState: stickerState,
         basePrice: number(sticker.basePrice), totalOptions: number(sticker.totalOptions), destinationCharge: number(sticker.destinationCharge), totalMsrp: number(sticker.totalMsrp),
         pricingCurrency: text(sticker.pricingCurrency), originalMarket: text(sticker.originalMarket), currencyEvidence: text(sticker.pricingCurrencyEvidence),
         vehicleDescription: text(sticker.vehicleDescription), equipmentGroup: text(sticker.equipmentGroup), equipmentGroupPrice: number(sticker.equipmentGroupPrice),
