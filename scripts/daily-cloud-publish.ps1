@@ -418,6 +418,12 @@ try {
     Update-IntegrationExpectedMetadata -Receipt $verifiedReceipt
     Assert-IntegrationDeployment
     Complete-VerifiedPublicationState -Receipt $verifiedReceipt -Date $date
+    # Preserve report-ready source evidence locally after the release has been
+    # independently verified. The archive is append-only and never includes
+    # credentials, browser sessions, or duplicated invoice PDFs.
+    $archiveRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\archive-inventory-history.mjs', $date, '--workspace-root', $WorkspaceRoot)
+    if ($archiveRun.ExitCode -ne 0) { Write-Log "historical archive FAILED: $($archiveRun.Output.Trim())" 'ERROR'; throw 'HISTORICAL_ARCHIVE_FAILED' }
+    Write-Log "historical archive: $($archiveRun.Output.Trim())"
     Write-Log '=== daily-cloud-publish SUCCESS ==='
   } finally {
     Pop-Location
