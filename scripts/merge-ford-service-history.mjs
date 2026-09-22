@@ -50,27 +50,38 @@ function shapeRepairOrder(value) {
     closeDate: optionalText(value.closeDate),
     detailComplete: value.detailComplete === true,
     inspection: shapeInspection(value.inspection),
-    parts: Array.isArray(value.parts)
-      ? value.parts.slice(0, 80).map((part) => ({
-          description: optionalText(part?.description),
-          ...(Number.isSafeInteger(part?.quantity) ? { quantity: part.quantity } : {}),
-          ...(optionalText(part?.partNumber) ? { partNumber: optionalText(part.partNumber) } : {}),
-        }))
-      : [],
-    laborOperations: Array.isArray(value.laborOperations)
-      ? value.laborOperations.slice(0, 80).map((operation) => ({
-          code: optionalText(operation?.code),
-          description: optionalText(operation?.description),
-        }))
-      : [],
+    // The release carries staff-useful service categories only. Raw PTS parts,
+    // labor, and free-form repair notes remain outside the public app payload.
+    parts: [],
+    laborOperations: [],
     services: Array.isArray(value.services)
       ? value.services.slice(0, 20).map(optionalText).filter(Boolean)
       : [],
   }
   if (Number.isSafeInteger(value.odometer)) order.odometer = value.odometer
-  const summary = optionalText(value.summary)
-  if (summary) order.summary = summary
   return order
+}
+
+function shapeRepairOrderTimeline(record) {
+  const detailedByFingerprint = new Map((record.checkedRepairOrders || [])
+    .filter((order) => order?.detailComplete === true)
+    .map((order) => [`${order.repairOrderNumber}|${order.openDate}|${order.closeDate}|${order.odometer ?? ''}`, order]))
+  const index = Array.isArray(record.repairOrderIndex) && record.repairOrderIndex.length
+    ? record.repairOrderIndex
+    : record.checkedRepairOrders || []
+  return index.flatMap((order) => {
+    const openDate = optionalText(order?.openDate)
+    const closeDate = optionalText(order?.closeDate)
+    if (!openDate || !closeDate) return []
+    const detailed = detailedByFingerprint.get(`${order.repairOrderNumber}|${openDate}|${closeDate}|${order.odometer ?? ''}`)
+    const visit = { openDate, closeDate }
+    if (Number.isSafeInteger(order?.odometer)) visit.odometer = order.odometer
+    const services = Array.isArray(detailed?.services)
+      ? detailed.services.slice(0, 20).map(optionalText).filter(Boolean)
+      : []
+    if (services.length) visit.services = services
+    return [visit]
+  })
 }
 
 function usableCapture(record, vin) {
@@ -93,9 +104,11 @@ function shapeServiceHistory(record) {
   const recentRepairOrders = Array.isArray(record.checkedRepairOrders)
     ? record.checkedRepairOrders.slice(0, 5).map(shapeRepairOrder).filter(Boolean)
     : []
+  const repairOrderTimeline = shapeRepairOrderTimeline(record)
   if (latestRepairOrder) history.latestRepairOrder = latestRepairOrder
   if (recentInspection) history.recentInspection = recentInspection
   if (recentRepairOrders.length) history.recentRepairOrders = recentRepairOrders
+  if (repairOrderTimeline.length) history.repairOrderTimeline = repairOrderTimeline
   return history
 }
 

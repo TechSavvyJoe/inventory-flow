@@ -900,11 +900,32 @@ function validatedServiceRepairOrder(value, vin, label) {
   return result
 }
 
+function validatedServiceHistoryVisit(value, vin, label) {
+  assertValid(value && typeof value === 'object' && !Array.isArray(value), `${label} must be an object`, { vin })
+  assertOnlyKeys(value, new Set(['openDate', 'closeDate', 'odometer', 'services']), label, { vin })
+  const openDate = optionalBoundedText(value.openDate, `${label} open date`, { max: 20 })
+  const closeDate = optionalBoundedText(value.closeDate, `${label} close date`, { max: 20 })
+  assertValid(SERVICE_HISTORY_DATE_PATTERN.test(openDate || ''), `${label} open date is invalid`, { vin })
+  assertValid(SERVICE_HISTORY_DATE_PATTERN.test(closeDate || ''), `${label} close date is invalid`, { vin })
+  const result = { openDate, closeDate }
+  const odometer = optionalBoundedInteger(value.odometer, `${label} odometer`, { min: 0, max: 20_000_000 })
+  if (odometer !== undefined) result.odometer = odometer
+  const services = value.services ?? []
+  assertValid(Array.isArray(services) && services.length <= 20, `${label} services must be a bounded array`, { vin })
+  const validatedServices = services.map((service) => {
+    const text = optionalBoundedText(service, `${label} service`, { max: 160 })
+    assertValid(text && !containsForeignOasisText(text), `${label} service is invalid`, { vin })
+    return text
+  })
+  if (validatedServices.length) result.services = validatedServices
+  return result
+}
+
 function validatedServiceHistory(value, vin) {
   assertValid(value && typeof value === 'object' && !Array.isArray(value), 'Ford service history must be an object', { vin })
   assertOnlyKeys(value, new Set([
     'dataState', 'checkedAt', 'sourceLabel', 'historyCaptured', 'repairOrderCount', 'detailScanCount',
-    'inspectionSearchStatus', 'latestRepairOrder', 'recentInspection', 'recentRepairOrders',
+    'inspectionSearchStatus', 'latestRepairOrder', 'recentInspection', 'recentRepairOrders', 'repairOrderTimeline',
   ]), 'Ford service history', { vin })
   assertValid(RESOURCE_DATA_STATES.has(value.dataState), 'Ford service history data state is invalid', { vin })
   const checkedAt = optionalIsoTimestamp(value.checkedAt, 'Ford service history checkedAt')
@@ -937,6 +958,10 @@ function validatedServiceHistory(value, vin) {
   assertValid(validatedRecentRepairOrders.length <= detailScanCount, 'Recent Ford repair orders exceed the detailed scan count', { vin })
   assertValid(new Set(validatedRecentRepairOrders.map(order => order.repairOrderNumber)).size === validatedRecentRepairOrders.length, 'Recent Ford repair orders must be unique', { vin })
   if (value.recentRepairOrders != null) result.recentRepairOrders = validatedRecentRepairOrders
+  const repairOrderTimeline = value.repairOrderTimeline ?? []
+  assertValid(Array.isArray(repairOrderTimeline) && repairOrderTimeline.length <= repairOrderCount, 'Ford service-history timeline exceeds the reported repair-order count', { vin })
+  const validatedTimeline = repairOrderTimeline.map((visit, index) => validatedServiceHistoryVisit(visit, vin, `Ford service-history visit ${index + 1}`))
+  if (value.repairOrderTimeline != null) result.repairOrderTimeline = validatedTimeline
   return result
 }
 

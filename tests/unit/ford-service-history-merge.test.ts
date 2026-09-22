@@ -26,6 +26,12 @@ function capture(vin, overrides = {}) {
     vin, checkedAt: '2026-09-21T20:45:00.000Z', result: 'OK', dataState: 'current', historyCaptured: true,
     repairOrderCount: 2, detailScanCount: 1, inspectionSearchStatus: 'confirmed',
     latestRepairOrder: order, recentInspection: order,
+    repairOrderIndex: [{
+      repairOrderNumber: order.repairOrderNumber, dealerCode: order.dealerCode,
+      openDate: order.openDate, closeDate: order.closeDate, odometer: order.odometer,
+    }, {
+      repairOrderNumber: '123455', dealerCode: '00001', openDate: '03/01/2026', closeDate: '03/02/2026', odometer: 28000,
+    }],
     checkedRepairOrders: [{ ...order, privateCaptureOnly: 'must never reach the app' }],
     ...overrides,
   }
@@ -70,6 +76,11 @@ describe('Ford service-history merge', () => {
     expect(enrichment.recordsByVin[lincolnVin].fordOasis.serviceHistory.checkedRepairOrders).toBeUndefined()
     expect(enrichment.recordsByVin[lincolnVin].fordOasis.serviceHistory.recentRepairOrders).toHaveLength(1)
     expect(enrichment.recordsByVin[lincolnVin].fordOasis.serviceHistory.recentRepairOrders[0].privateCaptureOnly).toBeUndefined()
+    expect(enrichment.recordsByVin[lincolnVin].fordOasis.serviceHistory.repairOrderTimeline).toEqual([
+      expect.objectContaining({ openDate: '04/02/2026', closeDate: '04/03/2026', services: ['Certified Blue Oval inspection', 'Oil and filter service'] }),
+      expect.objectContaining({ openDate: '03/01/2026', closeDate: '03/02/2026' }),
+    ])
+    expect(JSON.stringify(enrichment.recordsByVin[lincolnVin].fordOasis.serviceHistory.repairOrderTimeline)).not.toMatch(/12345|00001/)
     expect(enrichment.recordsByVin[nonFordVin]).toBeUndefined()
   })
 

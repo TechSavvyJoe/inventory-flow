@@ -1,6 +1,8 @@
-import { ExternalLink, Gauge } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { CalendarDays, ChevronDown, ClipboardCheck, ExternalLink, Gauge } from 'lucide-react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { FordServiceRepairOrderRecord, VehicleRecord } from '../../types'
+import type { FordServiceHistoryVisitRecord, FordServiceRepairOrderRecord, VehicleRecord } from '../../types'
 import { formatDate, formatDateTime, formatMileage } from '../inventory/inventory-utils'
 import { fordServiceHistoryUrl, officialVehicleDocumentUrl } from '../inventory/vehicle-document-utils'
 import { sourceDisplayText } from '../../lib/source-text'
@@ -16,6 +18,18 @@ function fordOrders(vehicle: VehicleRecord): FordServiceRepairOrderRecord[] {
   return [...new Map(orders.map((order) => [order.repairOrderNumber, order])).values()]
 }
 
+function fordVisits(vehicle: VehicleRecord): FordServiceHistoryVisitRecord[] {
+  const history = vehicle.fordOasis?.serviceHistory
+  if (!history) return []
+  if (history.repairOrderTimeline?.length) return history.repairOrderTimeline
+  return fordOrders(vehicle).map((order) => ({
+    openDate: order.openDate,
+    closeDate: order.closeDate,
+    ...(order.odometer != null ? { odometer: order.odometer } : {}),
+    ...(order.services.length ? { services: order.services } : {}),
+  }))
+}
+
 function serviceRecordText(vehicle: VehicleRecord): string | null {
   const check = vehicle.autoCheckReport?.checks?.find((item) => /service|repair/i.test(item.label))
   const detail = sourceDisplayText(check?.detail)
@@ -24,18 +38,38 @@ function serviceRecordText(vehicle: VehicleRecord): string | null {
   return status && !/^no issue$/i.test(status) && /record|service|repair/i.test(status) ? status : null
 }
 
-function FordOrder({ order }: { order: FordServiceRepairOrderRecord }) {
-  const services = order.services.length
-    ? order.services
-    : order.inspection.status === 'confirmed' && order.inspection.type
-      ? [order.inspection.type]
-      : []
+function serviceOutcome(service: string): string {
+  const normalized = service.toLowerCase()
+  if (normalized === 'oil and filter service') return 'Oil and filter changed'
+  if (normalized === 'engine air filter') return 'Engine air filter replaced'
+  if (normalized === 'cabin air filter') return 'Cabin air filter replaced'
+  if (normalized === 'wiper blades') return 'Wiper blades replaced'
+  if (normalized === 'tire inspection/service') return 'Tires inspected or serviced'
+  if (normalized === 'brake inspection/service') return 'Brakes inspected or serviced'
+  if (normalized === 'diagnostic self-test') return 'Diagnostic scan completed'
+  if (normalized === 'battery service') return 'Battery service completed'
+  if (normalized === 'wheel alignment') return 'Wheel alignment completed'
+  if (normalized === 'fluid service') return 'Fluid service completed'
+  return service
+}
+
+function visitSummary(services: string[]): string {
+  if (!services.length) return 'Dealer service visit recorded'
+  const completed = services.map(serviceOutcome)
+  const maintenance = completed.filter((item) => !/inspection/i.test(item))
+  if (maintenance.length) return `Work completed: ${maintenance.join(' · ')}`
+  return `Inspection completed: ${completed.join(' · ')}`
+}
+
+function FordVisit({ visit }: { visit: FordServiceHistoryVisitRecord }) {
+  const services = (visit.services ?? []).map(sourceDisplayText).filter((service): service is string => Boolean(service))
   return <li className="service-source-order">
     <header>
-      <strong>{formatDate(order.openDate)}<span aria-hidden="true"> → </span>{formatDate(order.closeDate)}</strong>
-      {order.odometer != null ? <span><Gauge size={14} aria-hidden="true" />{formatMileage(order.odometer)}</span> : null}
+      <span className="service-source-order-date"><CalendarDays size={15} aria-hidden="true" /><strong>{formatDate(visit.openDate)}<span aria-hidden="true"> → </span>{formatDate(visit.closeDate)}</strong></span>
+      {visit.odometer != null ? <span><Gauge size={14} aria-hidden="true" />{formatMileage(visit.odometer)}</span> : null}
     </header>
-    {services.length ? <ul aria-label="Work recorded">{services.map((service) => <li key={service}>{sourceDisplayText(service)}</li>)}</ul> : order.summary ? <p>{sourceDisplayText(order.summary)}</p> : <p>Service work recorded</p>}
+    <p>{visitSummary(services)}</p>
+    {services.length ? <ul aria-label="Completed service items">{services.map((service) => <li key={service}>{serviceOutcome(service)}</li>)}</ul> : null}
   </li>
 }
 
@@ -45,8 +79,8 @@ export function serviceEvidenceSummary(vehicle: VehicleRecord): string | null {
     const history = vehicle.fordOasis?.serviceHistory
     const inspection = history?.recentInspection
     if (inspection) return `${inspection.inspection.type || 'Ford inspection'} · ${formatDate(inspection.closeDate)}`
-    if (history?.repairOrderCount) return `${history.repairOrderCount} Ford repair orders reported`
-    return history?.historyCaptured ? 'No Ford repair orders reported' : null
+    if (history?.repairOrderCount) return `${history.repairOrderCount} Ford service visits reported`
+    return history?.historyCaptured ? 'No Ford service visits reported' : null
   }
   const inspection = vehicle.autoCheckReport?.recentInspection
   if (inspection) return `AutoCheck inspection · ${formatDate(inspection.date)}`
@@ -56,7 +90,8 @@ export function serviceEvidenceSummary(vehicle: VehicleRecord): string | null {
 export function SourceServiceHistory({ vehicle, recordsHref }: { vehicle: VehicleRecord; recordsHref: string }) {
   const fordFamily = /^(ford|lincoln|linc)$/i.test(String(vehicle.make || '').trim())
   const history = vehicle.fordOasis?.serviceHistory
-  const orders = fordOrders(vehicle)
+  const visits = fordVisits(vehicle)
+  const [showEarlierVisits, setShowEarlierVisits] = useState(false)
   const autoCheck = vehicle.autoCheckReport
   const autoCheckService = serviceRecordText(vehicle)
   const autoCheckInspection = autoCheck?.recentInspection
@@ -70,10 +105,22 @@ export function SourceServiceHistory({ vehicle, recordsHref }: { vehicle: Vehicl
     </header>
     {fordFamily ? <>
       {history ? <div className="service-source-history-summary">
-        <strong>{history.repairOrderCount ? `${history.repairOrderCount} repair orders reported` : 'No repair orders reported'}</strong>
-        <span>{orders.length ? `${orders.length} recent detailed ${orders.length === 1 ? 'record' : 'records'}` : 'No detailed record available'}</span>
-      </div> : <p className="service-source-history-empty">Ford service history has not been captured for this vehicle.</p>}
-      {orders.length ? <ol className="service-source-orders">{orders.map((order) => <FordOrder key={order.repairOrderNumber} order={order} />)}</ol> : null}
+        <strong>{history.repairOrderCount ? `${history.repairOrderCount} service visits reported` : 'No service visits reported'}</strong>
+        <span>{visits.filter((visit) => visit.services?.length).length ? `${visits.filter((visit) => visit.services?.length).length} visits with work documented` : 'Dealer repair timeline'}</span>
+      </div> : <p className="service-source-history-empty">Ford has not reported a dealer service history for this vehicle.</p>}
+      {visits.length ? <>
+        <ol className="service-source-orders">{visits.slice(0, 2).map((visit, index) => <FordVisit key={`${visit.openDate}-${visit.closeDate}-${visit.odometer ?? index}`} visit={visit} />)}</ol>
+        {visits.length > 2 ? <>
+          <button className="service-source-history-expand" type="button" aria-expanded={showEarlierVisits} onClick={() => setShowEarlierVisits((open) => !open)}>
+            <ClipboardCheck size={15} aria-hidden="true" />
+            <span>{showEarlierVisits ? 'Hide earlier visits' : `Show ${visits.length - 2} earlier service visits`}</span>
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
+          <AnimatePresence initial={false}>{showEarlierVisits ? <motion.ol className="service-source-orders service-source-orders--earlier" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }}>
+            {visits.slice(2).map((visit, index) => <FordVisit key={`${visit.openDate}-${visit.closeDate}-${visit.odometer ?? index + 2}`} visit={visit} />)}
+          </motion.ol> : null}</AnimatePresence>
+        </> : null}
+      </> : null}
       {history?.checkedAt ? <p className="service-source-history-meta">Checked {formatDateTime(history.checkedAt)}</p> : null}
     </> : <>
       {hasAutoCheckService ? <div className="service-autocheck-history">

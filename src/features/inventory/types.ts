@@ -203,6 +203,13 @@ export interface FordServiceRepairOrder {
   summary?: string | null;
 }
 
+export interface FordServiceHistoryVisit {
+  openDate: string;
+  closeDate: string;
+  odometer?: number | null;
+  services?: string[];
+}
+
 export interface FordServiceHistory {
   /** Raw API records may still carry the release spelling before adapter normalization. */
   dataState: SourceDataState | "stale_unverified" | "unknown";
@@ -215,6 +222,7 @@ export interface FordServiceHistory {
   latestRepairOrder?: FordServiceRepairOrder | null;
   recentInspection?: FordServiceRepairOrder | null;
   recentRepairOrders?: FordServiceRepairOrder[];
+  repairOrderTimeline?: FordServiceHistoryVisit[];
 }
 
 /**

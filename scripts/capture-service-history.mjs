@@ -49,10 +49,15 @@ mkdirSync(historyDir, { recursive: true })
 const outPath = path.join(historyDir, `${reportDate}-service-history.json`)
 const priorByVin = new Map()
 for (const name of readdirSync(historyDir).filter((name) => /^\d{4}-\d{2}-\d{2}-service-history\.json$/.test(name)).sort()) {
-  if (name === path.basename(outPath)) continue
   try {
     const capture = JSON.parse(readFileSync(path.join(historyDir, name), 'utf8'))
-    for (const record of capture.records || []) if (record?.vin) priorByVin.set(record.vin, record)
+    for (const record of capture.records || []) {
+      if (!record?.vin) continue
+      const prior = priorByVin.get(record.vin)
+      // A newer incomplete retry must never displace a verified capture from a
+      // previous run when it is the fallback for the same VIN.
+      if (!prior || isVerifiedHistory(record) || !isVerifiedHistory(prior)) priorByVin.set(record.vin, record)
+    }
   } catch {}
 }
 let out = {
@@ -64,13 +69,14 @@ let out = {
   records: [],
 }
 
+function isVerifiedHistory(record) {
+  return record?.result === 'OK' && record?.dataState === 'current' && record?.historyCaptured === true &&
+    Number.isSafeInteger(record?.repairOrderCount) && record.repairOrderCount > 0
+}
+
 function priorVerifiedHistory(vin) {
   const prior = priorByVin.get(vin)
-  return prior?.result === 'OK' && prior?.dataState === 'current' &&
-    prior?.historyCaptured === true && Number.isSafeInteger(prior?.repairOrderCount) &&
-    prior.repairOrderCount > 0
-    ? prior
-    : null
+  return isVerifiedHistory(prior) ? prior : null
 }
 
 function preservePriorHistory(record) {
@@ -217,8 +223,17 @@ for (const item of queue) {
       const prior = priorVerifiedHistory(item.vin)
       if (prior) {
         // A complete index with one unavailable detail response still is not
-        // evidence to replace a verified history with a partial record.
-        out.records.push({ ...prior, result: 'OK', dataState: 'stale_unverified' })
+        // evidence to replace a verified history with a partial record. Keep
+        // the newly confirmed visit list as well, so staff can still see the
+        // complete timeline while the detailed record is retried tomorrow.
+        out.records.push({
+          ...prior,
+          checkedAt,
+          repairOrderCount: index.repairOrders.length,
+          repairOrderIndex: index.repairOrders,
+          result: 'OK',
+          dataState: 'stale_unverified',
+        })
         sessionStatus = 'ok'; tally.PRIOR_HISTORY_PRESERVED++
         continue
       }
@@ -232,6 +247,9 @@ for (const item of queue) {
       repairOrderCount: index.repairOrders.length,
       detailScanCount: checkedRepairOrders.length,
       inspectionSearchStatus: incomplete && !inspection ? 'incomplete' : inspection ? 'confirmed' : 'not_identified',
+      // Keep the complete, VIN-bound index for a staff-facing timeline. The
+      // merge step removes repair-order and dealer identifiers before release.
+      repairOrderIndex: index.repairOrders,
       latestRepairOrder: latest,
       recentInspection: inspection,
       checkedRepairOrders,

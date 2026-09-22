@@ -49,6 +49,10 @@ function normalizedRepairOrder(value) {
   return digits && digits.length <= 24 ? digits : null
 }
 
+function containsPrivateServiceText(value) {
+  return containsForeignOasisText(value) || /\b(?:customer|owner|contact|phone|email|single thread|do not contact|claim number|policy number)\b/i.test(String(value || ''))
+}
+
 export function repairOrderFingerprint(order) {
   return [order?.repairOrderNumber, order?.openDate, order?.closeDate, order?.odometer ?? ''].join('|')
 }
@@ -136,7 +140,7 @@ export function summarizeRepairOrder(order) {
   if (services.length) return `${services.join('; ')}.`
   if (order.laborOperations.length) return `${order.laborOperations.slice(0, 3).map((item) => item.description).join('; ')}.`
   if (order.parts.length) return `Parts recorded: ${order.parts.slice(0, 4).map((item) => item.description).join(', ')}.`
-  return 'Repair-order details were available, but no service description was captured.'
+  return 'Dealer service visit recorded.'
 }
 
 // PTS detail rows can occasionally contain customer-labelled free text. Keep
@@ -149,7 +153,7 @@ export function sanitizeServiceHistoryRepairOrder(order) {
   const parts = Array.isArray(order.parts)
     ? order.parts.flatMap((part) => {
         const description = bounded(part?.description, 300)
-        if (!description || containsForeignOasisText(description)) return []
+        if (!description || /^prefix$/i.test(description) || containsPrivateServiceText(description)) return []
         const quantity = Number.isSafeInteger(part?.quantity) ? part.quantity : null
         const partNumber = bounded(part?.partNumber, 120)
         return [{ description, ...(quantity != null ? { quantity } : {}), ...(partNumber ? { partNumber } : {}) }]
@@ -159,7 +163,7 @@ export function sanitizeServiceHistoryRepairOrder(order) {
     ? order.laborOperations.flatMap((operation) => {
         const code = bounded(operation?.code, 40)
         const description = bounded(operation?.description, 500)
-        if (!code || !description || containsForeignOasisText(description)) return []
+        if (!code || !description || containsPrivateServiceText(description)) return []
         return [{ code, description }]
       }).slice(0, 80)
     : []

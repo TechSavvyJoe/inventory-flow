@@ -1,6 +1,7 @@
 import type {
   DealerMailHoldEvidence,
   FactoryEquipmentResource,
+  FordServiceHistoryVisit,
   FordOasisResource,
   InventoryDecisionMetrics,
   InventoryGroupStore,
@@ -132,6 +133,18 @@ function fordServiceRepairOrder(value: NonNullable<NonNullable<VehicleRecord['fo
   }
 }
 
+function fordServiceHistoryVisit(value: { openDate?: string | null; closeDate?: string | null; odometer?: number | null; services?: string[] } | null | undefined): FordServiceHistoryVisit | null {
+  const openDate = cleanOptionalText(value?.openDate)
+  const closeDate = cleanOptionalText(value?.closeDate)
+  if (!openDate || !closeDate) return null
+  return {
+    openDate,
+    closeDate,
+    odometer: cleanOptionalNumber(value?.odometer),
+    services: cleanTextList(value?.services),
+  }
+}
+
 function fordOasisResource(
   fordOasis: VehicleRecord['fordOasis'],
   fallbackState: SourceDataState,
@@ -163,6 +176,7 @@ function fordOasisResource(
           latestRepairOrder: fordServiceRepairOrder(fordOasis.serviceHistory.latestRepairOrder),
           recentInspection: fordServiceRepairOrder(fordOasis.serviceHistory.recentInspection),
           recentRepairOrders: (fordOasis.serviceHistory.recentRepairOrders ?? []).map(fordServiceRepairOrder).filter((order) => order !== null),
+          repairOrderTimeline: (fordOasis.serviceHistory.repairOrderTimeline ?? []).map(fordServiceHistoryVisit).filter((visit): visit is FordServiceHistoryVisit => visit !== null),
         }
       })()
     : null
@@ -348,7 +362,6 @@ function officialDocumentSearchText(
     fordOasis?.serviceHistory?.latestRepairOrder?.closeDate,
     fordOasis?.serviceHistory?.latestRepairOrder?.odometer,
     fordOasis?.serviceHistory?.latestRepairOrder?.inspection.type,
-    fordOasis?.serviceHistory?.latestRepairOrder?.summary,
     ...(fordOasis?.serviceHistory?.latestRepairOrder?.services ?? []),
     ...(fordOasis?.serviceHistory?.latestRepairOrder?.laborOperations ?? []).flatMap((operation) => [operation.code, operation.description]),
     ...(fordOasis?.serviceHistory?.latestRepairOrder?.parts ?? []).flatMap((part) => [part.description, part.partNumber]),
@@ -358,8 +371,13 @@ function officialDocumentSearchText(
       order.closeDate,
       order.odometer,
       order.inspection.type,
-      order.summary,
       ...order.services,
+    ]),
+    ...(fordOasis?.serviceHistory?.repairOrderTimeline ?? []).flatMap((visit) => [
+      visit.openDate,
+      visit.closeDate,
+      visit.odometer,
+      ...(visit.services ?? []),
     ]),
     fordOasis ? 'Ford OASIS' : null,
     fordOasis?.openFieldServiceActions.length ? `${fordOasis.openFieldServiceActions.length} open recalls field service actions` : null,

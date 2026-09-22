@@ -810,7 +810,7 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                         : `Not identified in ${countLabel(serviceHistory.detailScanCount, "recent repair order")} checked`}
                   </Fact>
                 </dl>
-                {latestService.summary ? <p className="vdp-service-history-summary">{sourceDistanceText(sourceDisplayText(latestService.summary))}</p> : null}
+                <p className="vdp-service-history-summary">{latestService.services.length ? latestService.services.map(sourceDistanceText).join(" · ") : "Dealer service visit recorded"}</p>
                 {latestService.services.length ? <ul aria-label="Latest Ford service work summary">
                   {latestService.services.map((service) => <li key={service}><span><strong>{service}</strong></span></li>)}
                 </ul> : null}
@@ -824,13 +824,11 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                   <h4>Earlier recent service</h4>
                   <ol>{recentServiceOrders.slice(1).map((order) => <li key={order.repairOrderNumber}>
                     <div><strong>{formatDate(order.openDate)} to {formatDate(order.closeDate)}</strong>{order.odometer != null ? <span>{formatMileage(order.odometer)}</span> : null}</div>
-                    <p>{order.services.length ? order.services.map(sourceDistanceText).join(" · ") : sourceDistanceText(sourceDisplayText(order.summary)) || "Service work recorded"}</p>
+                    <p>{order.services.length ? order.services.map(sourceDistanceText).join(" · ") : "Dealer service visit recorded"}</p>
                   </li>)}</ol>
                 </section> : null}
               </> : (
-                <p className="inventory-vehicle-document__empty">
-                  Ford service history could not be verified.
-                </p>
+                <p className="inventory-vehicle-document__empty">Ford service visits are listed in Records.</p>
               )}
               <RecordSourceAction
                 href={serviceHistoryUrl}

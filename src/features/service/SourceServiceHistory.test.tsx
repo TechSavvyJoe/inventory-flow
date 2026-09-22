@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 import type { FordServiceRepairOrderRecord, VehicleRecord } from '../../types'
@@ -12,7 +13,8 @@ function order(number: string, openDate: string, closeDate: string, services: st
 }
 
 describe('source service history', () => {
-  it('shows recent Ford work without exposing repair-order or dealer identifiers', () => {
+  it('shows a useful Ford service timeline without exposing repair-order or dealer identifiers', async () => {
+    const user = userEvent.setup()
     const recent = [
       order('123456', '09/01/2026', '09/03/2026', ['Oil and filter service', 'Brake inspection/service']),
       order('123012', '05/10/2026', '05/10/2026', ['Tire inspection/service']),
@@ -23,13 +25,23 @@ describe('source service history', () => {
         dataState: 'current', checkedAt: '2026-09-21T20:45:00.000Z', historyCaptured: true,
         repairOrderCount: 7, detailScanCount: 2, inspectionSearchStatus: 'not_identified',
         latestRepairOrder: recent[0], recentRepairOrders: recent,
+        repairOrderTimeline: [
+          { openDate: '09/01/2026', closeDate: '09/03/2026', odometer: 28100, services: recent[0].services },
+          { openDate: '05/10/2026', closeDate: '05/10/2026', odometer: 28100, services: recent[1].services },
+          { openDate: '02/11/2026', closeDate: '02/12/2026', odometer: 25000 },
+          { openDate: '11/10/2025', closeDate: '11/12/2025', odometer: 22000 },
+        ],
       } },
     } as VehicleRecord
     render(<MemoryRouter><SourceServiceHistory vehicle={vehicle} recordsHref="/inventory/vehicle/1FMCU9GN8RUA43672?tab=data" /></MemoryRouter>)
     expect(screen.getByRole('heading', { name: 'Vehicle service records' })).toBeVisible()
-    expect(screen.getByText('7 repair orders reported')).toBeVisible()
-    expect(screen.getByText('Oil and filter service')).toBeVisible()
-    expect(screen.getByText('Tire inspection/service')).toBeVisible()
+    expect(screen.getByText('7 service visits reported')).toBeVisible()
+    expect(screen.getByText('Oil and filter changed')).toBeVisible()
+    expect(screen.getByText('Tires inspected or serviced')).toBeVisible()
+    expect(screen.queryByText(/11\/10\/2025/)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show 2 earlier service visits' }))
+    expect(screen.getByText(/11\/10\/2025/)).toBeVisible()
+    expect(screen.getAllByText('Dealer service visit recorded')).toHaveLength(2)
     expect(screen.queryByText('123456')).not.toBeInTheDocument()
     expect(screen.queryByText('00001')).not.toBeInTheDocument()
   })

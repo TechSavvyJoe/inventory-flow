@@ -235,13 +235,19 @@
 .service-source-history-summary strong { color:var(--ink-900); font-size:14px; }
 .service-source-history-summary span,.service-source-history-meta { color:var(--ink-600); font-size:12px; }
 .service-source-orders { list-style:none; margin:0; padding:0 12px; }
-.service-source-order { padding:10px 0; border-bottom:1px solid var(--ifx-border-subtle); }
+.service-source-order { padding:12px 0; border-bottom:1px solid var(--ifx-border-subtle); }
 .service-source-order>header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:5px 10px; }
+.service-source-order-date { display:flex; align-items:center; gap:6px; min-width:0; color:var(--ifx-info); }
 .service-source-order>header strong { color:var(--ink-900); font-size:13px; font-variant-numeric:tabular-nums; }
 .service-source-order>header>span { display:flex; align-items:center; gap:4px; color:var(--ink-600); font-size:12px; font-variant-numeric:tabular-nums; }
-.service-source-order>ul { display:flex; flex-wrap:wrap; gap:5px; list-style:none; margin:7px 0 0; padding:0; }
+.service-source-order>ul { display:flex; flex-wrap:wrap; gap:5px; list-style:none; margin:8px 0 0; padding:0; }
 .service-source-order>ul>li { padding:3px 6px; border-radius:3px; background:var(--ifx-info-surface); color:var(--navy-900); font-size:12px; line-height:1.35; }
-.service-source-order>p { margin:6px 0 0; color:var(--ink-600); font-size:12px; }
+.service-source-order>p { margin:7px 0 0; color:var(--ink-900); font-size:12px; font-weight:650; line-height:1.45; }
+.service-source-history-expand { display:flex; align-items:center; justify-content:flex-start; gap:7px; width:100%; min-height:42px; margin:0; padding:8px 12px; border:0; border-bottom:1px solid var(--ifx-border-subtle); border-radius:0; background:var(--ifx-neutral-50); color:var(--ifx-info); font-size:13px; font-weight:650; text-align:left; }
+.service-source-history-expand svg:last-child { margin-left:auto; transition:transform .18s ease; }
+.service-source-history-expand[aria-expanded=true] svg:last-child { transform:rotate(180deg); }
+.service-source-history-expand:hover:not(:disabled) { border:0; border-bottom:1px solid var(--ifx-border-subtle); background:var(--ifx-info-surface); color:var(--navy-900); }
+.service-source-orders--earlier { overflow:hidden; background:var(--ifx-neutral-0); }
 .service-source-history-meta,.service-source-history-empty { margin:0; padding:9px 12px; }
 .service-source-history-empty { color:var(--ink-600); font-size:13px; }
 .service-autocheck-history { padding:10px 12px; }

@@ -209,6 +209,18 @@ export interface FordServiceRepairOrderRecord {
   summary?: string | null
 }
 
+/**
+ * A privacy-safe service visit from the Ford repair-history index. Unlike a
+ * detailed repair order, this never carries dealer or repair-order IDs.
+ */
+export interface FordServiceHistoryVisitRecord {
+  openDate: string
+  closeDate: string
+  odometer?: number | null
+  /** Present only when Ford returned a verified vehicle-service summary. */
+  services?: string[]
+}
+
 export interface FordServiceHistoryRecord {
   dataState: SourceFreshness
   checkedAt: string
@@ -220,6 +232,8 @@ export interface FordServiceHistoryRecord {
   latestRepairOrder?: FordServiceRepairOrderRecord | null
   recentInspection?: FordServiceRepairOrderRecord | null
   recentRepairOrders?: FordServiceRepairOrderRecord[]
+  /** Every reported Ford dealer service visit, newest first. */
+  repairOrderTimeline?: FordServiceHistoryVisitRecord[]
 }
 
 /**
