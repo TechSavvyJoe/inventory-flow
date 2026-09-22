@@ -307,9 +307,10 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   const history = vehicle.autoCheckReport;
   const historyHref = officialVehicleDocumentUrl(history?.url, 'autocheck', listing);
   const checks = historyCheckFacts(history);
-  const scanCheck = checks.find(check => /accident|damage/i.test(check.row.label) && !/lien|corrected title/i.test(check.full))
-    ?? checks.find(check => /odometer|service|repair|recall/i.test(check.row.label) && !/lien|corrected title/i.test(check.full))
-    ?? checks.find(check => /salvage|rebuilt|flood|lemon|buyback|rollback|structural|total loss/i.test(check.full));
+  const quickChecks = checks.filter(check => !/\b(?:lien reported|corrected title)\b/i.test(check.full));
+  const scanCheck = quickChecks.find(check => /accident|damage/i.test(check.row.label))
+    ?? quickChecks.find(check => /odometer|service|repair|recall/i.test(check.row.label))
+    ?? quickChecks.find(check => /salvage|rebuilt|flood|lemon|buyback|rollback|structural|total loss/i.test(check.full));
   const scanCheckText = scanCheck && /^(?:events reported|no issues?|no problems?|clear|normal)$/i.test(scanCheck.row.values[0] ?? '') && scanCheck.row.detail
     ? scanCheck.row.detail : scanCheck?.summary;
   const scoreRange = numeric(history?.scoreRangeLow) && numeric(history?.scoreRangeHigh) && history.scoreRangeLow <= history.scoreRangeHigh ? `${history.scoreRangeLow}–${history.scoreRangeHigh}` : undefined;
@@ -330,22 +331,22 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
     history?.estimatedInServiceDate ? `Estimated warranty start ${formatDate(history.estimatedInServiceDate)}` : null,
   ]);
   const historyCompact = present([
-    ...checks.filter(check => check.priority <= 1).map(check => check.compact),
+    ...quickChecks.filter(check => check.priority <= 1).map(check => check.compact),
     join([numeric(history?.score) ? `Score ${formatNumber(history.score)}` : null, ownership]),
-    checks.find(check => check.priority > 1)?.compact,
+    quickChecks.find(check => check.priority > 1)?.compact,
     odometer,
   ], 2);
   if (historyHref || historyFacts.length || history) result.push({
     id: 'autocheck', title: 'AutoCheck', subtitle: 'Vehicle history · Experian', brand: 'autocheck', facts: historyFacts,
     summaryFacts: present([
-      ...checks.filter(check => check.priority <= 1).map(check => check.summary),
-      ...checks.filter(check => check.priority > 1 && /title|accident|damage/i.test(check.summary)).map(check => check.summary),
+      ...quickChecks.filter(check => check.priority <= 1).map(check => check.summary),
+      ...quickChecks.filter(check => check.priority > 1 && /title|accident|damage/i.test(check.summary)).map(check => check.summary),
       inspection,
       ownership,
-      ...checks.filter(check => /service/i.test(check.summary) && check.priority > 1).map(check => check.summary),
-      ...checks.filter(check => /odometer/i.test(check.summary) && check.priority > 1).map(check => check.summary),
+      ...quickChecks.filter(check => /service/i.test(check.summary) && check.priority > 1).map(check => check.summary),
+      ...quickChecks.filter(check => /odometer/i.test(check.summary) && check.priority > 1).map(check => check.summary),
       odometer,
-      ...checks.filter(check => check.priority > 1 && !/title|accident|damage|service|odometer/i.test(check.summary)).map(check => check.summary),
+      ...quickChecks.filter(check => check.priority > 1 && !/title|accident|damage|service|odometer/i.test(check.summary)).map(check => check.summary),
     ]),
     summaryRows: [
       ...recordRows([{ label: 'Score', values: [numeric(history?.score) ? formatNumber(history.score) : null], detail: scoreRange ? `${scoreRange} typical range` : null }]),

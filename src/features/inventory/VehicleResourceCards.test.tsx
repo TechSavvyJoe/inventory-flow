@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InventoryVehicle } from './types';
 import type { VehicleRecord } from '../../types';
@@ -22,7 +22,7 @@ function expandDetails(kind: 'equipment' | 'history' | 'OASIS') {
 }
 
 describe('source-backed vehicle resource cards', () => {
-  it('shows all desktop workspace reports immediately and restores compact mobile disclosures on resize', () => {
+  it('keeps desktop workspace reports compact until the user requests details', () => {
     const media = {matches:true,addEventListener:vi.fn(),removeEventListener:vi.fn()};
     vi.stubGlobal('matchMedia',vi.fn(() => media));
     const vehicle = sources();
@@ -30,28 +30,17 @@ describe('source-backed vehicle resource cards', () => {
     vehicle.autoCheckReport = {...vehicle.autoCheckReport!,checks:[{label:'Service / Repair',status:'Records available',detail:'5 service records reported'}]};
     vehicle.fordOasis = {...vehicle.fordOasis!,warrantyCoverages:[{type:'Powertrain',description:'5 years / 60,000 miles'}]};
     const original = JSON.stringify(vehicle);
-    const page = render(<VehicleResourceCards vehicle={vehicle} variant="summary"/>);
-    expect(screen.queryByRole('button',{name:/^(Expand|Collapse) .* details$/})).not.toBeInTheDocument();
-    expect(document.querySelectorAll('.vehicle-resource-summary__disclosure:not([hidden])')).toHaveLength(3);
-    expect(screen.getByRole('list',{name:'Included with equipment group'})).toHaveTextContent('Included camera');
-    expect(screen.getByText('Late trial 90 days')).toBeVisible();
-    expect(screen.getByText('5 service records reported')).toBeVisible();
-    expect(screen.getByText('Powertrain · 5 years / 60,000 miles')).toBeVisible();
-    expect(screen.getByRole('link',{name:/Open AutoCheck history/})).toHaveAttribute('href',vehicle.autoCheckReport.url);
-    const update = media.addEventListener.mock.calls[0][1] as () => void;
-    act(() => { media.matches = false; update(); });
+    render(<VehicleResourceCards vehicle={vehicle} variant="summary"/>);
     expect(screen.getAllByRole('button',{name:/^Expand .* details$/})).toHaveLength(3);
+    expect(document.querySelectorAll('.vehicle-resource-summary__disclosure:not([hidden])')).toHaveLength(0);
     expect(screen.queryByText('Late trial 90 days')).not.toBeInTheDocument();
+    expect(screen.getByRole('link',{name:/Open AutoCheck history/})).toHaveAttribute('href',vehicle.autoCheckReport.url);
     expandDetails('equipment');
     expect(document.querySelectorAll('.vehicle-resource-summary__disclosure:not([hidden])')).toHaveLength(1);
-    act(() => { media.matches = true; update(); });
-    expect(document.querySelectorAll('.vehicle-resource-summary__disclosure:not([hidden])')).toHaveLength(3);
-    expect(screen.queryByRole('button',{name:/^(Expand|Collapse) .* details$/})).not.toBeInTheDocument();
-    page.unmount();
-    expect(media.removeEventListener).toHaveBeenCalledWith('change',update);
-    render(<VehicleResourceCards vehicle={vehicle} variant="preview"/>);
-    expect(screen.getByRole('button',{name:'Expand equipment details'})).toBeVisible();
-    expect(screen.queryByText('Late trial 90 days')).not.toBeInTheDocument();
+    expect(screen.getByRole('list',{name:'Included with equipment group'})).toHaveTextContent('Included camera');
+    expect(screen.getByText('Late trial 90 days')).toBeVisible();
+    expect(screen.queryByText('5 service records reported')).not.toBeInTheDocument();
+    expect(screen.queryByText('Powertrain · 5 years / 60,000 miles')).not.toBeInTheDocument();
     expect(JSON.stringify(vehicle)).toBe(original);
   });
 
@@ -196,7 +185,8 @@ describe('source-backed vehicle resource cards', () => {
     expect(history.getByText('Personal')).toBeVisible();
     expect(history.getByText('23,500 mi')).toBeVisible();
     expect(history.getByText('08/15/2026')).toBeVisible();
-    for (const finding of ['Recall found · 2 unrepaired recalls','Loss reported','Mileage discrepancy reported','Corrected title','5 service records reported']) expect(history.getByText(finding)).toBeVisible();
+    for (const finding of ['Recall found · 2 unrepaired recalls','Loss reported','Mileage discrepancy reported','5 service records reported']) expect(history.getByText(finding)).toBeVisible();
+    expect(history.queryByText('Corrected title')).not.toBeInTheDocument();
     const oasis = within(document.querySelector('[data-resource-kind="oasis"]') as HTMLElement);
     expect(oasis.getByText('At least 2 captured service actions · result incomplete')).toBeVisible();
     expect(oasis.getByText('26X01 · Replace only if required after dealer evaluation')).toBeVisible();
@@ -252,7 +242,7 @@ describe('source-backed vehicle resource cards', () => {
     expect(screen.queryByRole('list', {name:'Included with equipment group'})).not.toBeInTheDocument();
     expect(screen.queryByText('Late trial 90 days')).not.toBeInTheDocument();
     expect(screen.getByText('1 included feature · 3 optional entries')).toBeVisible();
-    expect(screen.getByText('Corrected title')).toBeVisible();
+    expect(screen.queryByText('Corrected title')).not.toBeInTheDocument();
     expect(screen.queryByTitle('Auction')).not.toBeInTheDocument();
     const equipmentToggle = screen.getByRole('button', {name:'Expand equipment details'});
     equipmentToggle.focus();
@@ -269,6 +259,7 @@ describe('source-backed vehicle resource cards', () => {
     expect(equipmentToggle).toHaveAttribute('aria-expanded','false');
     expect(screen.queryByText('Late trial 90 days')).not.toBeInTheDocument();
     expect(screen.getByTitle('Auction')).toBeVisible();
+    expect(screen.getByText('Corrected title')).toBeVisible();
     expect(document.querySelectorAll('.vehicle-resource-summary__toggle[aria-expanded="true"]')).toHaveLength(1);
     fireEvent.click(historyToggle);
     expect(historyToggle).toHaveFocus();
@@ -379,10 +370,12 @@ describe('source-backed vehicle resource cards', () => {
     const vehicle = sources();
     vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, checks: [{label:'Additional history',status:'Events reported',detail:'Corrected title · Synthetic example'}] };
     const page = render(<VehicleResourceCards vehicle={vehicle} variant="summary"/>);
-    expect(screen.getByText('Corrected title · Synthetic example')).toBeVisible();
+    expect(screen.queryByText('Corrected title · Synthetic example')).not.toBeInTheDocument();
     page.rerender(<VehicleResourceCards vehicle={{...vehicle,vin:'TESTDATAHWELL0001',imageUrl:'/demo-vehicles/f150.png'}} variant="summary"/>);
     const history = within(document.querySelector('[data-resource-kind="autocheck"]') as HTMLElement);
     expect(history.getByText('Demo')).toBeVisible();
+    expect(history.queryByText('Corrected title')).not.toBeInTheDocument();
+    expandDetails('history');
     expect(history.getByText('Corrected title')).toBeVisible();
     expect(history.queryByText('Corrected title · Synthetic example')).not.toBeInTheDocument();
     expect(vehicle.autoCheckReport.checks?.[0]?.detail).toBe('Corrected title · Synthetic example');

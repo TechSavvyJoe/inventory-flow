@@ -133,6 +133,23 @@ describe('rich vehicle resource catalog', () => {
     }
   });
 
+  it('keeps low-value title administration out of quick AutoCheck summaries without losing the source record', () => {
+    const history = resource({ autoCheckReport: { dataState: 'current', score: 90, ownerCount: 1, checks: [
+      { label: 'Additional History', status: 'Events Reported', detail: 'Lien Reported · Corrected Title' },
+      { label: 'Accident / Damage', status: 'No Issue', detail: 'No accidents or damage reported' },
+    ] } }, 'autocheck');
+    expect(history.facts.join(' ')).toContain('Lien Reported');
+    expect(history.facts.join(' ')).toContain('Corrected Title');
+    const quickText = [
+      ...(history.summaryFacts ?? []),
+      ...(history.compactFacts ?? []),
+      ...(history.scanFacts ?? []),
+    ].join(' ');
+    expect(quickText).not.toMatch(/Lien Reported|Corrected Title/i);
+    expect(quickText).toContain('No accidents or damage reported');
+    expect((history.summaryRows ?? []).flatMap(row => [row.label, ...row.values, row.detail ?? '']).join(' ')).toMatch(/Lien Reported|Corrected Title/i);
+  });
+
   it('never deduplicates a different historical odometer or suppresses its discrepancy warning', () => {
     const history = resource({autoCheckReport:{dataState:'current',lastReportedOdometer:9192,checks:[{label:'Odometer',status:'No Issue',detail:'Odometer discrepancy reported; Last reported odometer: 100,000 (09/01/2026)'}]}},'autocheck');
     expect(history.summaryFacts![0]).toContain('Odometer discrepancy reported');

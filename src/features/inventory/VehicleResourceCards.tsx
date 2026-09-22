@@ -124,6 +124,7 @@ function historyReviewLabels(vehicle: VehicleResourceVehicle) {
   return new Set((vehicle.autoCheckReport?.checks ?? []).filter(check => {
     const status = check.status?.trim() ?? '';
     const detail = check.detail?.trim() ?? '';
+    if (/\b(?:lien reported|corrected title)\b/i.test(`${check.label} ${status} ${detail}`)) return false;
     const serviceCount = /^\d+ service records?(?:\(s\))?(?: reported)?\.?$/i;
     // These are informational findings, not adverse history. Any additional
     // wording keeps the result eligible for review instead of being discarded.
@@ -138,8 +139,9 @@ function historyReviewLabels(vehicle: VehicleResourceVehicle) {
 }
 
 function compactHistoryRows(rows: VehicleResourceSummaryRow[], reviewLabels: Set<string>) {
-  return rows.filter(row => /^(score|owners \/ use|reported use|est\. in-service)$/i.test(row.label)
-    || /title|accident|damage/i.test(row.label) || reviewLabels.has(historyLabel(row.label)));
+  return rows.filter(row => !/\b(?:lien reported|corrected title)\b/i.test([row.label, ...row.values, row.detail].filter(Boolean).join(' '))
+    && (/^(score|owners \/ use|reported use|est\. in-service)$/i.test(row.label)
+      || /title|accident|damage/i.test(row.label) || reviewLabels.has(historyLabel(row.label))));
 }
 
 function historyExceptionText(row: VehicleResourceSummaryRow, synthetic: boolean) {
@@ -245,28 +247,12 @@ function ResourceSnapshot({ resource, vehicle, rows, facts, synthetic, detailed 
 export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideInServiceDate = false, selectedResourceId, onSelectResource, onClose, hideSourceSelectors = false, onOpenSection }: VehicleResourceCardsProps) {
   const [failedPreviews, setFailedPreviews] = useState<Set<string>>(() => new Set());
   const [expandedResource, setExpandedResource] = useState<{ vin: string; id: string } | null>(null);
-  const [desktopSummary, setDesktopSummary] = useState(() => variant === 'summary' && typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1100px)').matches);
   const disclosureId = useId();
   const syntheticPreview = Boolean(getDemoWindowSticker(vehicle));
   // A document preview is supplementary. If a static asset is unavailable in a
   // particular deployment, retain the card, its facts, and its source action
   // instead of leaving a conspicuous broken-image label in the workspace.
   useEffect(() => { setFailedPreviews(new Set()); setExpandedResource(null); }, [vehicle.vin]);
-  useEffect(() => {
-    if (variant !== 'summary' || typeof window.matchMedia !== 'function') {
-      setDesktopSummary(false);
-      return;
-    }
-    const media = window.matchMedia('(min-width: 1100px)');
-    const update = () => setDesktopSummary(media.matches);
-    update();
-    if (typeof media.addEventListener === 'function') {
-      media.addEventListener('change', update);
-      return () => media.removeEventListener('change', update);
-    }
-    media.addListener?.(update);
-    return () => media.removeListener?.(update);
-  }, [variant]);
   const selectedId = selectedResourceId !== undefined ? selectedResourceId : expandedResource?.vin === vehicle.vin ? expandedResource.id : null;
   const selectResource = (id: string | null) => {
     if (selectedResourceId === undefined) setExpandedResource(id === null ? null : {vin:vehicle.vin,id});
@@ -304,7 +290,6 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
   }
   if (variant === 'summary' || variant === 'preview') {
     const preview = variant === 'preview';
-    const expandAll = !preview && desktopSummary;
     const captured = usable.filter(resource => resource.hasCapturedData);
     const overview = preview && !captured.some(resource => resource.id === selectedId);
     const lookups = usable.filter(resource => !resource.hasCapturedData);
@@ -326,7 +311,7 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
       </button>;
     };
     const sourceLookups = lookups.length ? <div className="vehicle-resource-lookups" aria-label="Additional source lookups">{lookups.map(resource => <div key={resource.id} data-resource-kind={resource.id}>{sourceAction(resource)}</div>)}</div> : null;
-    return <div className={`vehicle-resources vehicle-resources--${variant}${expandAll ? ' is-expanded-desktop' : ''}${overview ? ' is-overview' : ''}${hideSourceSelectors ? ' has-shared-source-controls' : ''}`} aria-label="Vehicle documents and resources" onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
+    return <div className={`vehicle-resources vehicle-resources--${variant}${overview ? ' is-overview' : ''}${hideSourceSelectors ? ' has-shared-source-controls' : ''}`} aria-label="Vehicle documents and resources" onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
       {preview ? <div className="vehicle-resource-preview-toolbar">
         {captured.length ? <div className="vehicle-resource-preview-selectors" role="group" aria-label="Choose a vehicle report"><button type="button" className="vehicle-resource-summary__toggle" aria-pressed={overview} onClick={() => selectResource(null)}>Overview</button>{!hideSourceSelectors ? captured.map(resourceToggle) : null}</div> : null}
         {sourceLookups}
@@ -352,12 +337,12 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
             sticker.transmission ? ['Transmission', sticker.transmission] : null,
           ] as Array<[string, string] | null>).filter((entry): entry is [string, string] => Boolean(entry)) : [];
           const previewUrl = resource.previewUrl && !failedPreviews.has(resource.id) ? resource.previewUrl : undefined;
-          const expanded = expandAll || selectedId === resource.id;
+          const expanded = selectedId === resource.id;
           const detailId = `${disclosureId}-${resource.id}`;
           const visibleSourceNote = expanded ? resource.sourceNote : resource.sourceNote?.split(' · ').filter(part => !/^(?:Captured|Report run) \d{2}\/\d{2}\/\d{4}$/.test(part)).join(' · ');
           return <section key={resource.id} className={`vehicle-resource-summary${facts.length <= 2 ? " vehicle-resource-summary--sparse" : ""}`} data-resource-kind={resource.id} aria-label={resource.title} hidden={preview && !overview && !expanded}>
             <div className="vehicle-resource-summary__heading">{sourceAction(resource, !expanded)}
-            {!preview && !expandAll ? resourceToggle(resource) : null}
+            {!preview ? resourceToggle(resource) : null}
             </div>
             {resource.equipmentContext && (expanded || resource.id === 'vauto') ? <p className="vehicle-resource-source-kind">{resource.equipmentContext}</p> : expanded && syntheticPreview && ['autocheck', 'oasis'].includes(resource.id) ? <p className="vehicle-resource-source-kind">Synthetic source sample</p> : null}
             {!expanded && (!preview || overview) ? <div className={`vehicle-resource-summary__body is-compact${overview ? ' is-rich' : ''}${previewUrl ? " has-preview" : ""}`}>

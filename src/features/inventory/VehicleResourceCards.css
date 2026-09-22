@@ -248,13 +248,6 @@
 .vehicle-resource-summary__toggle[aria-expanded=true] svg { transform:rotate(180deg); }
 .vehicle-resource-summary__disclosure[hidden] { display:none; }
 .vehicle-resource-summary__disclosure>.vehicle-resource-summary__body { padding-top:6px; }
-.vehicle-resources--summary.is-expanded-desktop .vehicle-resource-summary__heading { grid-template-columns:minmax(0,1fr); min-height:44px; }
-.vehicle-resources--summary.is-expanded-desktop .vehicle-resource-summary__fields { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
-.vehicle-resources--summary.is-expanded-desktop .vehicle-resource-summary__fields > div { display:block; padding:6px 0; }
-.vehicle-resources--summary.is-expanded-desktop .vehicle-resource-summary__fields dt { margin-bottom:3px; }
-.vehicle-resources--summary.is-expanded-desktop .vehicle-resource-summary__fields > .is-section { grid-column:1 / -1; }
-.vehicle-resources--summary.is-expanded-desktop .vehicle-resource-summary__fields > .is-section dd > ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 12px; }
-.vehicle-resources--summary.is-expanded-desktop .vehicle-resource-summary__fields > .is-section dd li + li { margin:0; padding:0; border:0; }
 
 /* Inventory previews keep every report selector together and give the one
    selected report the complete row. Workspace summaries remain independent. */
