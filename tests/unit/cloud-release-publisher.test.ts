@@ -171,6 +171,10 @@ function fordOasisFixture() {
         services: ['Certified Blue Oval inspection', 'Wiper blades'],
         summary: 'Certified Blue Oval inspection; Wiper blades.',
       },
+      repairOrderTimeline: [{
+        openDate: '08/14/2026', closeDate: '09/11/2026', odometer: 121110,
+        services: ['Certified Blue Oval inspection', 'Wiper blades'],
+      }],
     },
   }
 }

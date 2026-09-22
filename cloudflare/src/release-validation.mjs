@@ -331,11 +331,27 @@ function validateServiceRepairOrder(value, label) {
   ensure(!summary || !containsForeignOasisText(summary), `${label} summary contains identity material`)
 }
 
+function validateServiceHistoryVisit(value, label) {
+  ensure(value && typeof value === 'object' && !Array.isArray(value), `${label} must be an object`)
+  onlyKeys(value, new Set(['openDate', 'closeDate', 'odometer', 'services']), label)
+  const openDate = optionalText(value.openDate, `${label} open date`, 20)
+  const closeDate = optionalText(value.closeDate, `${label} close date`, 20)
+  ensure(SERVICE_HISTORY_DATE_PATTERN.test(openDate || ''), `${label} open date is invalid`)
+  ensure(SERVICE_HISTORY_DATE_PATTERN.test(closeDate || ''), `${label} close date is invalid`)
+  if (value.odometer != null) ensure(optionalInteger(value.odometer, `${label} odometer`, 0, 20_000_000) !== undefined, `${label} odometer is invalid`)
+  const services = value.services ?? []
+  ensure(Array.isArray(services) && services.length <= 20, `${label} services must be a bounded array`)
+  for (const service of services) {
+    const text = optionalText(service, `${label} service`, 160)
+    ensure(text && !containsForeignOasisText(text), `${label} service is invalid`)
+  }
+}
+
 function validateServiceHistory(value) {
   ensure(value && typeof value === 'object' && !Array.isArray(value), 'Ford service history must be an object')
   onlyKeys(value, new Set([
     'dataState', 'checkedAt', 'sourceLabel', 'historyCaptured', 'repairOrderCount', 'detailScanCount',
-    'inspectionSearchStatus', 'latestRepairOrder', 'recentInspection', 'recentRepairOrders',
+    'inspectionSearchStatus', 'latestRepairOrder', 'recentInspection', 'recentRepairOrders', 'repairOrderTimeline',
   ]), 'Ford service history')
   ensure(RESOURCE_DATA_STATES.has(value.dataState), 'Ford service history data state is invalid')
   ensure(optionalTimestamp(value.checkedAt, 'Ford service history checkedAt'), 'Ford service history checkedAt is required')
@@ -357,6 +373,9 @@ function validateServiceHistory(value) {
   recentRepairOrders.forEach((order, index) => validateServiceRepairOrder(order, `Recent Ford repair order ${index + 1}`))
   ensure(recentRepairOrders.length <= value.detailScanCount, 'Recent Ford repair orders exceed the detailed scan count')
   ensure(new Set(recentRepairOrders.map(order => order.repairOrderNumber)).size === recentRepairOrders.length, 'Recent Ford repair orders must be unique')
+  const timeline = value.repairOrderTimeline ?? []
+  ensure(Array.isArray(timeline) && timeline.length <= count, 'Ford service-history timeline exceeds the reported repair-order count')
+  timeline.forEach((visit, index) => validateServiceHistoryVisit(visit, `Ford service-history visit ${index + 1}`))
 }
 
 // Ford OASIS vehicle report facts captured read-only from FMCDealer for an
