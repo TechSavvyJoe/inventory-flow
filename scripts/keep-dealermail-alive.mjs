@@ -33,6 +33,10 @@ const ROOT = resolveWorkspaceRoot(import.meta.url)
 const DIR = path.join(ROOT, 'work', 'app-feed-status')
 const OUT = path.join(DIR, 'dealermail-keeper.json')
 const LOG = path.join(DIR, 'dealermail-keeper.log')
+const BROWSER_STARTER = path.join(import.meta.dirname, 'start-automation-browser.ps1')
+const POWERSHELL = process.env.SystemRoot
+  ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  : 'powershell.exe'
 const GRID = 'https://www.dealermail.com/prospect_manager/V2_inventory_search_CRM_USED_NEW.asp?selectedStore=26,25,27,95'
 const OASIS = vin => `https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=${vin}`
 const INVOICE = vin => `https://fordvisions.dealerconnection.com/vinv/GetInvoice.aspx?v=${vin}&n=%2C&pa=00000&p=&ct=USA`
@@ -66,6 +70,37 @@ const targets = async () => {
   if (!response.ok) throw new Error(`could not list service tabs: HTTP ${response.status}`)
   return response.json()
 }
+
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+async function ensureAutomationBrowser() {
+  try {
+    await targets()
+    return { status: 'OK', restarted: false }
+  } catch {}
+
+  // The dedicated profile owns the existing authenticated sessions. Relaunching
+  // it can restore normal unattended capture after a browser crash, without
+  // reading credentials or attempting an interactive sign-in.
+  try {
+    execFileSync(POWERSHELL, [
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', BROWSER_STARTER,
+    ], { encoding: 'utf8', timeout: 90000, windowsHide: true })
+  } catch (error) {
+    return { status: 'UNAVAILABLE', restarted: true, error: String(error?.message || error).slice(0, 160) }
+  }
+
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    try {
+      await targets()
+      return { status: 'RECOVERED', restarted: true }
+    } catch {
+      await pause(1000)
+    }
+  }
+  return { status: 'UNAVAILABLE', restarted: true }
+}
+
 async function openServiceTab(url) {
   const response = await fetch(`http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(url)}`, { method: 'PUT', signal: AbortSignal.timeout(10000) })
   if (!response.ok) throw new Error(`could not open service tab: HTTP ${response.status}`)
@@ -126,7 +161,7 @@ function sampleFordVin() {
   } catch { return null }
 }
 
-const status = { checkedAt: new Date().toISOString() }
+const status = { checkedAt: new Date().toISOString(), automationBrowser: await ensureAutomationBrowser() }
 
 // ---- DealerMail: 200, no "Session Ended", and the grid's own function present -------------
 try {
