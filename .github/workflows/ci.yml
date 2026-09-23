@@ -8,6 +8,14 @@ on:
     # Covers the cross-browser projects the per-push e2e job skips (see below).
     - cron: '0 9 * * *'
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'What a manual run does'
+        type: choice
+        default: cross-browser
+        options:
+          - cross-browser
+          - update-visual-baselines
 
 permissions:
   contents: read
@@ -126,11 +134,108 @@ jobs:
             test-results/
           retention-days: 7
 
+  visual:
+    # Pinned visual-regression gate (see playwright.visual.config.ts). Baselines
+    # are meaningful only on this exact container image + Chromium build, so
+    # this job — never the Mac, which has branded Chrome and no Docker — is the
+    # only place a baseline comparison is trusted. Runs on pull_request and
+    # push to main like the rest of the suite; not on the nightly schedule
+    # (cross-browser-nightly's job) or a manual dispatch (that always means
+    # update-visual-baselines or cross-browser below, never a comparison run).
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build production bundle
+        # The gate pins the actual `pnpm build` CSS cascade, not the dev server's.
+        run: pnpm build
+
+      - name: Run the visual-regression gate
+        env:
+          PLAYWRIGHT_BUNDLED_CHROMIUM: '1'
+        run: pnpm exec playwright test --config playwright.visual.config.ts
+
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-report
+          path: |
+            playwright-report/
+            test-results/visual/
+          retention-days: 7
+
+  update-visual-baselines:
+    # The only re-baseline path. Manually triggered (Actions tab -> this
+    # workflow -> Run workflow) after a deliberate, reviewed visual change;
+    # never runs on a schedule or a push, so it never silently repins a
+    # regression. Download the uploaded snapshots artifact and commit its
+    # contents at tests/visual/app.visual.spec.ts-snapshots/ yourself — this
+    # job does not push, keeping `permissions: contents: read` for the whole
+    # workflow.
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'update-visual-baselines'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build production bundle
+        run: pnpm build
+
+      - name: Regenerate visual baselines
+        env:
+          PLAYWRIGHT_BUNDLED_CHROMIUM: '1'
+        run: pnpm exec playwright test --config playwright.visual.config.ts --update-snapshots
+
+      - name: Upload regenerated snapshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-snapshots
+          path: tests/visual/app.visual.spec.ts-snapshots/
+          retention-days: 14
+
   cross-browser-nightly:
     # The engines and projects per-push e2e above does not cover: Chromium
     # Android emulation, WebKit desktop, and Firefox desktop. Runs once a
     # night (or on demand) instead of on every push.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.target == 'cross-browser')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
