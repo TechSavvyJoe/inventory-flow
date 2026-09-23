@@ -90,9 +90,7 @@ separate signals.
 | Variant | Use |
 | --- | --- |
 | `primary` | One dominant Inventory Flow action in a region |
-| `oem` | Authorized OEM/location-context action, not product branding |
 | `secondary` | Supporting action such as details or open record |
-| `glass` | Dark cinematic hero only |
 | `quiet` | Low-priority utility |
 | `danger` | Destructive action with a confirmation step |
 

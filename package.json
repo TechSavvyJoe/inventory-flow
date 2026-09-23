@@ -29,6 +29,7 @@
     "integrations:perplexity-mcp": "node scripts/perplexity-inventory-mcp.mjs",
     "typecheck": "tsc -b",
     "check:design-system": "node scripts/check-design-system.mjs",
+    "report:dead-css": "node scripts/report-dead-css.mjs",
     "check:repo-safety": "node scripts/check-repo-safety.mjs",
     "extension:icons": "node scripts/build-extension-icons.mjs",
     "extension:preview": "node scripts/preview-extension.mjs",

@@ -47,6 +47,7 @@ run it, against authenticated dealer sources, over CDP.
 | `preview-extension.mjs` | local (`extension:preview`) | Serves the side panel as a plain page for design review and screenshots. |
 | `publish-cloud-release.mjs` | local/Windows host (`cloud:publish-release`) | Builds, validates, encrypts, and publishes the daily release bundle to the private Worker. |
 | `publish-invoice-documents.mjs` | Windows host | Uploads exact-VIN Ford/Lincoln invoice PDFs to the app's private R2 store. |
+| `report-dead-css.mjs` | local (`report:dead-css`) | Read-only report of CSS selectors under `src/` that need a class no source file renders; judges each selector of a rule separately. |
 | `run-inventory-flow-daily.mjs` | Windows host (`daily:run`) | The daily pipeline orchestrator invoked by the Windows scheduled publish task. |
 | `run-recovery-drill.mjs` | local/CI | Exercises the real D1 recovery/decrypt paths against a synthetic release bundle; `pnpm cloud:validate`'s companion in CI. |
 | `start-synthetic-demo.mjs` | local/CI (`dev:demo`, `start:demo`, Playwright `webServer`) | The synthetic-demo-only Node server; refuses a file-backed database outside demo identity. |

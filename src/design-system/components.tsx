@@ -1,7 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
 import { ActionsIcon } from "./icons";
 
-type ButtonVariant = "primary" | "oem" | "secondary" | "glass" | "quiet" | "danger";
+type ButtonVariant = "primary" | "secondary" | "quiet" | "danger";
 type ButtonSize = "sm" | "md" | "lg";
 
 export interface FlowButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

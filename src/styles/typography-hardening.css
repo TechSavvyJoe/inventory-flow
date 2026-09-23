@@ -32,55 +32,6 @@ html {
   font-synthesis: none;
 }
 
-/* Final legibility floor for the dense inventory controls. These selectors
-   intentionally win over the older production-v4 skin loaded earlier. */
-.inventory-experience--modern .inventory-page-header--modern .inventory-scope-switch--modern button {
-  font-size: 12px !important;
-  font-weight: 700 !important;
-}
-
-.inventory-experience--modern .inventory-page-header--modern .inventory-scope-switch--modern button b,
-.inventory-experience--modern .inventory-quick-filter-count,
-.inventory-experience--modern .inventory-sort-composer > summary small,
-.inventory-experience--modern .inventory-sort-composer > summary em,
-.inventory-experience--modern .inventory-sort-composer__heading span,
-.inventory-experience--modern .inventory-sort-composer__heading button,
-.inventory-experience--modern .inventory-sort-levels__priority,
-.inventory-experience--modern .inventory-sort-composer__add > span,
-#root .inventory-experience--modern .inventory-grid-shell .inventory-table.inventory-table--workbench-v5 .inventory-certified-label {
-  font-size: 11px !important;
-}
-
-.inventory-experience--modern .inventory-quick-filter-count,
-.inventory-experience--modern .inventory-sort-composer > summary em,
-.inventory-experience--modern .inventory-sort-composer__heading button,
-.inventory-experience--modern .inventory-sort-levels__priority,
-.inventory-experience--modern .inventory-sort-composer__add > span,
-#root .inventory-experience--modern .inventory-grid-shell .inventory-table.inventory-table--workbench-v5 .inventory-certified-label {
-  font-weight: 700 !important;
-}
-
-.inventory-experience--modern .inventory-sort-composer > summary small,
-.inventory-experience--modern .inventory-sort-composer__heading span {
-  font-weight: 600 !important;
-}
-
-#root .inventory-experience--modern .inventory-page-header--modern h1,
-#root .inventory-experience--modern .inventory-results-count,
-#root .inventory-experience--modern .inventory-sort-composer > summary strong,
-#root .inventory-experience--modern .inventory-sort-composer__heading strong {
-  font-weight: 700 !important;
-}
-
-#root .inventory-experience--modern .inventory-primary-search input {
-  font-weight: 400 !important;
-}
-
-.inventory-workspace-v3-summary .inventory-workspace-fact dd > button,
-.inventory-workspace-no-hold__fact-stack strong {
-  font-weight: 700 !important;
-}
-
 /* The records panel can render outside the element that defines the older
    --inventory-blue token. Give these important source actions a literal,
    high-contrast fallback so their white labels can never disappear on a
@@ -103,86 +54,14 @@ html {
   background: #064f91 !important;
 }
 
-/* Source-details was the last VDP area inheriting miniature type from the
-   early dense prototype. Keep every operational label readable without
-   enlarging the cards or sacrificing the two-column desktop layout. */
-.inventory-workspace-records .inventory-vehicle-documents__header strong {
-  font-size: 14px !important;
-  font-weight: 700 !important;
-}
-
-.inventory-workspace-records .inventory-vehicle-documents__header small,
-.inventory-workspace-records .inventory-vehicle-document__title small,
-.inventory-workspace-records .inventory-vehicle-document__empty,
-.inventory-workspace-records .inventory-vehicle-documents__disclaimer,
-.inventory-workspace-records .inventory-vehicle-document__source-note small,
-.inventory-workspace-records .inventory-vehicle-document__vauto-packages li > small,
-.inventory-workspace-records .inventory-vehicle-document__more > summary small,
-.inventory-workspace-records .inventory-vehicle-document__disclosure > summary small {
-  font-size: 12px !important;
-  line-height: 1.4 !important;
-}
-
-.inventory-workspace-records .inventory-vehicle-document__title strong,
-.inventory-workspace-records .inventory-vehicle-document__more > summary span,
-.inventory-workspace-records .inventory-vehicle-document__disclosure > summary span,
-.inventory-workspace-records .inventory-vehicle-document__check strong,
-.inventory-workspace-records .inventory-vehicle-document__source-note strong,
-.inventory-workspace-records .inventory-vehicle-document__vauto-packages strong,
-.inventory-workspace-records .inventory-vehicle-document__vauto-packages b,
-.inventory-workspace-records .inventory-vehicle-document__vauto-sections li b {
-  font-size: 12.5px !important;
-  font-weight: 700 !important;
-  line-height: 1.35 !important;
-}
-
-.inventory-workspace-records .inventory-document-wordmark__line {
-  font-size: 11px !important;
-  font-weight: 700 !important;
-}
-
-.inventory-workspace-data-details .inventory-source-card__title h4 {
-  font-size: 12.5px !important;
-  font-weight: 700 !important;
-}
-
-.inventory-workspace-data-details .inventory-boolean {
-  min-height: 22px;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-}
-
-.inventory-workspace-data-details .inventory-public-scan-record > summary strong {
-  font-size: 12px !important;
-  font-weight: 700 !important;
-}
-
-.inventory-workspace-data-details .inventory-public-scan-record > summary small,
-.inventory-workspace-data-details .inventory-public-scan-record > div > p,
-.inventory-workspace-data-details > .inventory-button--quiet {
-  font-size: 12px !important;
-  line-height: 1.4 !important;
-}
-
 /* Equipment, hold, and movement tab details use the same readable floor and
    the discrete weights supported consistently by Windows system fonts. */
-.inventory-workspace .inventory-workspace-equipment-evidence__method > summary,
-.inventory-workspace .inventory-workspace-equipment-evidence__sources > span,
 .inventory-workspace .inventory-workspace-equipment-group > header > span,
-.inventory-workspace .inventory-workspace-comments--disclosure > summary > span,
-.inventory-workspace .inventory-workspace-no-hold__heading > h3,
-.inventory-workspace .inventory-dealermail-actions__preflight > strong,
-.inventory-workspace .inventory-dealermail-actions__preflight .copyable-value__content > b {
+.inventory-workspace .inventory-workspace-no-hold__heading > h3 {
   font-weight: 700 !important;
 }
 
-.inventory-workspace .inventory-workspace-equipment-evidence__method > summary,
-.inventory-workspace .inventory-workspace-equipment-evidence__note,
-.inventory-workspace .inventory-workspace-equipment-evidence__sources > span,
 .inventory-workspace .inventory-workspace-equipment-group > header > span,
-.inventory-workspace .inventory-workspace-comments--disclosure > summary > span,
-.inventory-workspace .inventory-workspace-comments--disclosure > p,
-.inventory-workspace .inventory-workspace-no-hold__fact-stack > small,
 .inventory-workspace .inventory-current-location > span:not(.inventory-location-badge) > small,
 .inventory-workspace .inventory-current-location > .inventory-location-badge {
   font-size: 12px !important;
@@ -193,39 +72,10 @@ html {
   font-weight: 700 !important;
 }
 
-.inventory-workspace .inventory-workspace-no-hold__fact-stack > small {
-  font-weight: 500 !important;
-}
-
 /* Phone layouts still carried miniature photo/certification badges from the
    first prototype. These stay compact but are now legible at normal zoom. */
-@media (max-width: 760px) {
-  .inventory-experience--modern .inventory-quick-filter-label--compact,
-  .inventory-experience--modern .inventory-photo-count,
-  .inventory-experience--modern .inventory-mobile-row .inventory-certified-label {
-    font-size: 11px !important;
-    font-weight: 700 !important;
-  }
-
-  .inventory-experience--modern .inventory-photo-count {
-    min-width: 24px;
-    min-height: 20px;
-    padding-inline: 4px;
-    line-height: 1 !important;
-  }
-
-  .inventory-experience--modern .inventory-mobile-row .inventory-certified-label {
-    display: inline-flex;
-    align-items: center;
-    min-height: 18px;
-    padding: 2px 4px;
-    border-radius: 4px;
-    line-height: 1.1 !important;
-  }
-}
 
 .profile-initials,
-.inventory-experience--modern .inventory-scope-switch__compact b,
 .mobile-bottom-nav b {
   font-weight: 700 !important;
 }
@@ -237,37 +87,14 @@ html {
   line-height: 20px !important;
 }
 
-.inventory-workspace .inventory-workspace-topbar b {
-  font-size: 12px !important;
-  font-weight: 700 !important;
-}
-
-.inventory-workspace .inventory-workspace-identity__title h2 {
-  font-weight: 700 !important;
-}
-
-.inventory-workspace .inventory-workspace-mobile-context__copy > h2 {
-  font-weight: 700 !important;
-}
-
-.inventory-workspace .inventory-workspace-mobile-actions__more :is(a, button),
-.inventory-workspace .inventory-workspace-mobile-section-more :is(a, button) {
-  font-weight: 700 !important;
-}
-
 /* Normalize the last visible compact-control weights. Fractional/variable
    weights were a major source of fuzzy-looking Windows text. */
-#root .inventory-experience--modern .inventory-table-density-control button,
-#root .inventory-experience--modern .inventory-rows-control select,
-#root .inventory-experience--modern .inventory-page-size select,
 #root .app-shell .nav-count,
-#root .app-shell .navigation-count,
 #root .app-shell [class*="count-badge"] {
   font-weight: 700 !important;
 }
 
 #root .app-shell .nav-count,
-#root .app-shell .navigation-count,
 #root .app-shell [class*="count-badge"] {
   font-size: 11px !important;
 }
@@ -275,82 +102,7 @@ html {
 /* Attention and transfer workspaces are imported before the final premium
    skin. Preserve their production readability floor here so the late layer
    cannot reintroduce miniature metadata or flatten the action hierarchy. */
-#root .ops-queue :is(
-  .ops-result-count,
-  .ops-row-main > small,
-  .ops-row-owner small,
-  .ops-row-due small,
-  .ops-detail-facts small,
-  .ops-explanation small,
-  .ops-detail-issue,
-  .ops-detail-id,
-  .ops-source-boundary p,
-  .ops-explanation p,
-  .ops-history li p,
-  .ops-history blockquote
-) {
-  font-size: 12px !important;
-  line-height: 1.4 !important;
-}
 
-#root .ops-queue :is(.ops-toolbar label > span, .ops-action-grid label > span, .ops-list-head) {
-  font-size: 12px !important;
-  font-weight: 600 !important;
-}
-
-#root .ops-queue :is(
-  .ops-metrics button > span,
-  .ops-priority,
-  .ops-status,
-  .ops-row-owner em,
-  .ops-row-due em,
-  .ops-action-brief small,
-  .ops-action-brief-meta > span,
-  .ops-action-brief-meta > a,
-  .ops-source-boundary strong,
-  .ops-action-panel summary,
-  .ops-history > div > span,
-  .ops-detail-topline > span:last-child
-) {
-  font-size: 12px !important;
-  line-height: 1.35 !important;
-}
-
-#root .ops-queue :is(.ops-primary-actions button, .ops-primary-actions a, .ops-action-grid button) {
-  min-height: 40px;
-  border-radius: 8px;
-  font-size: 12.5px !important;
-  font-weight: 600 !important;
-}
-
-#root .ops-queue .ops-primary-actions .is-primary,
-#root .ops-queue .ops-resolve > button {
-  border-color: #0759bd !important;
-  color: #fff !important;
-  background: #0759bd !important;
-  box-shadow: none !important;
-}
-
-#root .ops-queue :is(.ops-secondary-actions button, .ops-action-grid label button) {
-  border-color: #c8d4e1;
-  color: #24445f;
-  background: #fff;
-}
-
-#root .transfer-workspace-v3 :is(
-  .transfer-workflow-metrics small,
-  .transfer-workflow-path strong,
-  .transfer-list-count,
-  .transfer-list-stage,
-  .transfer-next,
-  .transfer-due,
-  .transfer-list-accountability,
-  .transfer-list-outcomes,
-  .transfer-list-route,
-  .transfer-location,
-  .transfer-control-label,
-  .transfer-mobile-detail-bar small
-),
 #root .transfer-tracker-v3 :is(
   .mif-tracker-header p,
   .mif-tracker-header small,
@@ -358,11 +110,6 @@ html {
   .mif-tracker-request-summary small,
   .mif-tracker-accountability span,
   .mif-tracker-accountability small,
-  .mif-next-action span,
-  .mif-next-action small,
-  .mif-status-lane dt,
-  .mif-status-detail,
-  .mif-source-stale,
   .mif-timeline-event time,
   .mif-timeline-copy > span,
   .mif-timeline-meta span,
@@ -373,162 +120,18 @@ html {
   line-height: 1.4 !important;
 }
 
-#root .transfer-workspace-v3 :is(
-  .transfers-page-header > span,
-  .transfers-page-header > div > span,
-  .transfer-list-top b,
-  .transfer-list-accountability b,
-  .transfer-list-outcomes b,
-  .transfer-list-filter select,
-  .transfer-list-sort select,
-  .transfer-mobile-stage > span
-),
-#root .transfer-tracker-v3 :is(
-  .mif-next-action > div:last-child strong,
-  .mif-action-group > span,
-  .mif-technical-status-details > summary
-) {
-  font-size: 12px !important;
-  line-height: 1.35 !important;
-}
-
-#root .transfer-workspace-v3 .transfer-list-views button,
-#root .transfer-tracker-v3 .mif-action-group .mif-button {
-  min-height: 40px;
-  border-radius: 8px;
-  font-size: 12.5px !important;
-  font-weight: 600 !important;
-}
-
-#root .transfer-tracker-v3 .mif-button--primary,
-#root .transfer-workspace-v3 .mif-button--primary {
+#root .transfer-tracker-v3 .mif-button--primary {
   border-color: #0759bd !important;
   color: #fff !important;
   background: #0759bd !important;
   box-shadow: none !important;
 }
 
-#root .transfer-tracker-v3 .mif-button--secondary,
-#root .transfer-workspace-v3 .mif-button--secondary {
+#root .transfer-tracker-v3 .mif-button--secondary {
   border-color: #c8d4e1 !important;
   color: #24445f !important;
   background: #fff !important;
   box-shadow: 0 1px 2px rgb(9 31 52 / 5%) !important;
-}
-
-@media (max-width: 820px) {
-  #root .ops-queue :is(
-    .ops-scope-switch button,
-    .ops-toolbar select,
-    .ops-toolbar input,
-    .ops-search,
-    .ops-primary-actions button,
-    .ops-primary-actions a,
-    .ops-action-grid button,
-    .ops-action-brief-meta > a,
-    .ops-action-panel summary,
-    .ops-empty button
-  ),
-  #root .transfer-workspace-v3 :is(
-    .transfer-list-create,
-    .transfer-list-search,
-    .transfer-list-filter select,
-    .transfer-list-sort select,
-    .transfer-list-views button,
-    .transfer-mobile-detail-bar button,
-    .mif-transfer-empty .mif-button
-  ),
-  #root .transfer-tracker-v3 :is(
-    .mif-action-group .mif-button,
-    .mif-technical-status-details > summary
-  ) {
-    min-height: 44px !important;
-  }
-}
-
-/* Final VDP legibility floor. Operational labels should remain comfortably
-   readable at normal Windows scaling; only compact brand marks and numeric
-   badges are permitted below this floor. */
-.inventory-workspace.inventory-workspace--compact-v3 :is(
-  .inventory-workspace-fact dt,
-  .inventory-workspace-equipment-specs dt,
-  .inventory-workspace-factory-configuration dt,
-  .inventory-hold-evidence__facts dt,
-  .inventory-vehicle-document__facts dt,
-  .inventory-vehicle-document__metrics dt
-) {
-  color: #405c72 !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  line-height: 1.35 !important;
-}
-
-.inventory-workspace.inventory-workspace--compact-v3 :is(
-  .inventory-workspace-fact dd,
-  .inventory-workspace-equipment-specs dd,
-  .inventory-workspace-factory-configuration dd,
-  .inventory-hold-evidence__facts dd,
-  .inventory-vehicle-document__facts dd,
-  .inventory-vehicle-document__metrics dd
-) {
-  color: #17364f !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
-  line-height: 1.35 !important;
-}
-
-.inventory-workspace.inventory-workspace--compact-v3 :is(
-  .inventory-workspace-factory-configuration header small,
-  .inventory-workspace-factory-provenance,
-  .inventory-workspace-package-list header small,
-  .inventory-workspace-equipment-group--source > header small,
-  .inventory-vehicle-document__heading small,
-  .inventory-vehicle-document__check small,
-  .inventory-vehicle-document__disclosure small,
-  .inventory-vehicle-document__options li,
-  .inventory-vehicle-document__more li,
-  .inventory-vehicle-document__disclosure li,
-  .inventory-vehicle-document__source-note,
-  .inventory-vehicle-document__vauto-sections li,
-  .inventory-vehicle-document__unavailable
-) {
-  font-size: 12px !important;
-  line-height: 1.42 !important;
-}
-
-/* The records drawer is rendered beside the primary workspace node, so it
-   needs an equally specific standalone type floor. */
-.inventory-workspace-records :is(
-  .inventory-vehicle-documents__header small,
-  .inventory-vehicle-document__title small,
-  .inventory-vehicle-document__empty,
-  .inventory-vehicle-documents__disclaimer,
-  .inventory-vehicle-document__source-note,
-  .inventory-vehicle-document__source-note small,
-  .inventory-vehicle-document__check small,
-  .inventory-vehicle-document__more > summary small,
-  .inventory-vehicle-document__disclosure > summary small,
-  .inventory-vehicle-document__options li,
-  .inventory-vehicle-document__more li,
-  .inventory-vehicle-document__disclosure li,
-  .inventory-vehicle-document__vauto-packages li > small,
-  .inventory-vehicle-document__vauto-sections li,
-  .inventory-vehicle-document__facts dt,
-  .inventory-vehicle-document__metrics dt,
-  .inventory-workspace-fact dt,
-  .inventory-vehicle-document__unavailable
-) {
-  font-size: 12px !important;
-  line-height: 1.42 !important;
-}
-
-.inventory-workspace-records :is(
-  .inventory-vehicle-document__facts dd,
-  .inventory-vehicle-document__metrics dd,
-  .inventory-workspace-fact dd
-) {
-  font-size: 13px !important;
-  line-height: 1.35 !important;
 }
 
 #root .app-shell .profile-copy small {
@@ -539,39 +142,4 @@ html {
 #root .mif-group-operations .mif-priority {
   font-size: 12px !important;
   font-weight: 700 !important;
-}
-
-/* The movement toolbar needs room for an actual search field on phones.
-   Put search on its own row and keep the two refiners plus primary action in
-   a balanced second row instead of compressing four controls side by side. */
-@media (max-width: 720px) {
-  #root .transfer-workspace-v3 .transfer-list .transfer-list-toolbar,
-  #root .transfer-workspace-v3 .transfer-list--short .transfer-list-toolbar {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(116px, 1.25fr) !important;
-    grid-template-areas:
-      "search search search"
-      "filter sort create"
-      "views views views" !important;
-  }
-
-  #root .transfer-workspace-v3 .transfer-list-search input {
-    min-width: 0;
-    width: 100%;
-  }
-}
-
-.inventory-workspace-records :is(
-  .inventory-vehicle-document__title strong,
-  .inventory-vehicle-document__more section > h4,
-  .inventory-vehicle-document__more > summary span,
-  .inventory-vehicle-document__disclosure > summary span,
-  .inventory-vehicle-document__check strong,
-  .inventory-vehicle-document__source-note strong,
-  .inventory-vehicle-document__vauto-packages strong,
-  .inventory-vehicle-document__vauto-packages b,
-  .inventory-vehicle-document__vauto-sections li b
-) {
-  font-size: 12.5px !important;
-  font-weight: 700 !important;
-  line-height: 1.35 !important;
 }

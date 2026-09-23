@@ -10,19 +10,17 @@
     "./styles/global.css",
     "./styles/shell.css",
     "./styles/premium-refinement.css",
-    "./styles/vdp-final-refinement.css",
     "./styles/typography-hardening.css",
     "./styles/app-system-polish.css",
-    "./styles/inventory-experience-final.css",
     "./styles/readability-final.css",
     "./styles/inventory-production-v10.css"
   ],
   "files": {
     "src/components/CopyableValue.css": { "smallText": 1, "rawColors": 6 },
-    "src/design-system/components.css": { "smallText": 0, "rawColors": 6 },
+    "src/design-system/components.css": { "smallText": 0, "rawColors": 4 },
     "src/design-system/tokens.css": { "smallText": 0, "rawColors": 0 },
-    "src/features/inventory/inventory-modern.css": { "smallText": 169, "rawColors": 702 },
-    "src/features/inventory/inventory.css": { "smallText": 39, "rawColors": 56 },
+    "src/features/inventory/inventory-modern.css": { "smallText": 55, "rawColors": 188 },
+    "src/features/inventory/inventory.css": { "smallText": 20, "rawColors": 35 },
     "src/features/manager/manager.css": { "smallText": 0, "rawColors": 71 },
     "src/features/transfers/transfer-workspace-v3.css": { "smallText": 48, "rawColors": 145 },
     "src/features/transfers/transfer-workspace-v4.css": { "smallText": 1, "rawColors": 113 },
@@ -30,13 +28,11 @@
     "src/features/transfers/transfers.css": { "smallText": 22, "rawColors": 64 },
     "src/styles/app-system-polish.css": { "smallText": 0, "rawColors": 8 },
     "src/styles/global.css": { "smallText": 0, "rawColors": 10 },
-    "src/styles/inventory-experience-final.css": { "smallText": 5, "rawColors": 42 },
     "src/styles/pages.css": { "smallText": 0, "rawColors": 46 },
-    "src/styles/premium-refinement.css": { "smallText": 92, "rawColors": 397 },
-    "src/styles/readability-final.css": { "smallText": 0, "rawColors": 8 },
+    "src/styles/premium-refinement.css": { "smallText": 7, "rawColors": 18 },
+    "src/styles/readability-final.css": { "smallText": 0, "rawColors": 6 },
     "src/styles/shell.css": { "smallText": 8, "rawColors": 20 },
     "src/styles/tokens.css": { "smallText": 0, "rawColors": 0 },
-    "src/styles/typography-hardening.css": { "smallText": 5, "rawColors": 20 },
-    "src/styles/vdp-final-refinement.css": { "smallText": 0, "rawColors": 93 }
+    "src/styles/typography-hardening.css": { "smallText": 2, "rawColors": 12 }
   }
 }

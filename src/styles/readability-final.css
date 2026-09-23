@@ -87,29 +87,14 @@ html {
   font-weight: 600;
 }
 
-.app-shell .app-main :where(.ifx-signal) {
-  font-size: var(--app-readable-meta-size);
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.app-shell .app-main :where(
-  .page-subtitle,
-  .inventory-page-header--modern p,
-  .mif-manager-heading p,
-  .ops-queue-heading p
-) {
+.app-shell .app-main :where(.mif-manager-heading p) {
   color: var(--app-readable-support);
   font-size: var(--app-readable-body-size);
   font-weight: 500;
   line-height: 1.5;
 }
 
-.app-shell .app-main :where(
-  .page-heading,
-  .inventory-page-header--modern h1,
-  .mif-manager-heading h1
-) {
+.app-shell .app-main :where(.mif-manager-heading h1) {
   color: var(--app-readable-text);
   font-size: clamp(28px, 2vw, 32px);
   font-weight: 700;
@@ -140,7 +125,6 @@ html {
 
 #root .app-shell .nav-count,
 #root .app-shell .profile-initials,
-#root .app-shell .navigation-count,
 #root .app-shell [class*="count-badge"] {
   font-size: var(--app-readable-meta-size) !important;
   font-weight: 700 !important;
@@ -148,204 +132,6 @@ html {
 
 #root .app-shell .ifx-brand-lockup__type small {
   font-size: var(--app-readable-meta-size) !important;
-}
-
-/* Inventory command surface: one control tier and one supporting-copy tier. */
-#root .inventory-experience--modern .inventory-page-header--modern h1 {
-  font-weight: 700 !important;
-}
-
-#root .inventory-experience--modern .inventory-page-header--modern p,
-#root .inventory-experience--modern .inventory-page-header--modern p > span {
-  color: var(--app-readable-support) !important;
-  font-size: var(--app-readable-body-size) !important;
-  font-weight: 500 !important;
-}
-
-#root .inventory-experience--modern .inventory-command-bar .inventory-scope-switch--modern button,
-#root .inventory-experience--modern .inventory-quick-filters[class] button,
-#root .inventory-experience--modern .inventory-quick-filters[class] .inventory-quick-filter-label,
-#root .inventory-experience--modern .inventory-filter-button,
-#root .inventory-experience--modern .inventory-page-size,
-#root .inventory-experience--modern .inventory-sort-composer > summary,
-#root .inventory-experience--modern .inventory-sort-composer__menu button {
-  font-size: var(--app-readable-control-size) !important;
-  font-weight: 600 !important;
-  line-height: 1.35 !important;
-  letter-spacing: 0 !important;
-}
-
-#root .inventory-experience--modern :where(.inventory-results-count) {
-  color: var(--app-readable-support) !important;
-  font-size: var(--app-readable-support-size) !important;
-  font-weight: 600 !important;
-}
-
-#root .inventory-experience--modern :where(
-  .inventory-quick-filter-count,
-  .inventory-command-bar .inventory-scope-switch--modern button b,
-  .inventory-page-header--modern .inventory-scope-switch--modern button b,
-  .inventory-sort-header__direction,
-  .inventory-sort-header__priority,
-  .inventory-photo-count,
-  .inventory-certified-label
-) {
-  font-size: var(--app-readable-meta-size) !important;
-  font-weight: 700 !important;
-}
-
-#root .inventory-experience--modern .inventory-sort-composer > summary em,
-#root .inventory-experience--modern .inventory-sort-composer__heading button,
-#root .inventory-experience--modern .inventory-sort-composer__add > span,
-#root .inventory-experience--modern .inventory-pagination span {
-  font-size: var(--app-readable-meta-size) !important;
-  line-height: 1.4 !important;
-}
-
-@media (min-width: 761px) {
-  #root .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 thead th,
-  #root .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-sort-header > span:first-child,
-  #root .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 .inventory-table-actions-heading {
-    color: #27475f !important;
-    font-size: var(--app-readable-control-size) !important;
-    font-weight: 600 !important;
-    line-height: 1.35 !important;
-  }
-
-  #root .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 tbody td {
-    color: #17314b !important;
-    font-size: var(--app-readable-support-size) !important;
-    font-weight: 500 !important;
-    line-height: 1.4 !important;
-  }
-
-  #root .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 :where(
-    .inventory-vehicle-copy__spec,
-    .inventory-vehicle-copy__detail,
-    .inventory-table-copy-value--stock,
-    .inventory-equipment-cell > strong,
-    .inventory-equipment-cell > .is-quiet,
-    .inventory-hold-action__label strong,
-    .inventory-location-summary strong,
-    .inventory-change-summary strong,
-    .inventory-activity-summary strong,
-    .inventory-document-link strong,
-    .inventory-row-action-label
-  ) {
-    font-size: var(--app-readable-support-size) !important;
-    font-weight: 600 !important;
-    line-height: 1.35 !important;
-  }
-
-  #root .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 :where(
-    .inventory-vehicle-copy__spec,
-    .inventory-vehicle-copy__detail,
-    .inventory-table-copy-value--vin,
-    .inventory-financial-age-cell small,
-    .inventory-financial-age-cell span span,
-    .inventory-equipment-cell__secondary small,
-    .inventory-equipment-cell__more,
-    .inventory-location-summary small,
-    .inventory-change-summary small,
-    .inventory-activity-summary small,
-    .inventory-document-link small,
-    .inventory-documents-cell__photos,
-    .inventory-documents-cell__empty,
-    .copyable-value__button-label
-  ) {
-    color: var(--app-readable-support) !important;
-    font-weight: 500 !important;
-    line-height: 1.4 !important;
-  }
-
-  #root .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 :where(
-    .inventory-equipment-cell__secondary small,
-    .inventory-equipment-cell__more,
-    .inventory-location-summary small,
-    .inventory-change-summary small,
-    .inventory-activity-summary small,
-    .inventory-document-link small,
-    .inventory-documents-cell__photos,
-    .inventory-documents-cell__empty
-  ) {
-    font-size: var(--app-readable-meta-size) !important;
-  }
-
-  #root .inventory-experience--modern .inventory-grid-shell.inventory-grid-shell--operational-v9 .inventory-table--operational-v9 :where(
-    .inventory-equipment-cell__more,
-    .copyable-value__button-label
-  ) {
-    font-weight: 600 !important;
-  }
-}
-
-/* Attention center: replace miniature caps and fractional weights. */
-#root .ops-queue {
-  --text-muted: var(--app-readable-support);
-  --text-strong: var(--app-readable-text);
-  color: var(--app-readable-text);
-  font-size: var(--app-readable-body-size);
-}
-
-#root .ops-queue .ops-queue-heading h2 {
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-}
-
-#root .ops-queue :where(.ops-scope-switch button) {
-  font-size: var(--app-readable-control-size);
-  font-weight: 600;
-}
-
-#root .ops-queue .ops-result-count,
-#root .today-tabs button > span {
-  font-size: var(--app-readable-meta-size) !important;
-  font-weight: 600 !important;
-}
-
-#root .ops-queue :where(.ops-toolbar input, .ops-toolbar select, .ops-action-grid input, .ops-action-grid select, .ops-action-grid textarea) {
-  color: var(--app-readable-text);
-  font-size: var(--app-readable-body-size) !important;
-  font-weight: 400 !important;
-}
-
-#root .ops-queue :where(.ops-metrics span, .ops-toolbar label > span, .ops-action-grid label > span, .ops-list-head) {
-  color: var(--app-readable-support);
-  font-size: var(--app-readable-meta-size) !important;
-  font-weight: 600 !important;
-  line-height: 1.4 !important;
-  letter-spacing: 0.02em;
-}
-
-#root .ops-queue :where(
-  .ops-row-main > small,
-  .ops-row-owner small,
-  .ops-row-due small,
-  .ops-detail-id,
-  .ops-detail-facts small,
-  .ops-explanation small,
-  .ops-history li p,
-  .ops-history blockquote,
-  .ops-history-empty
-) {
-  color: var(--app-readable-support);
-  font-size: var(--app-readable-meta-size) !important;
-  font-weight: 500 !important;
-  line-height: 1.45 !important;
-}
-
-#root .ops-queue :where(.ops-row-main strong, .ops-row-owner strong, .ops-row-due strong, .ops-detail h3) {
-  color: var(--app-readable-text);
-  font-size: var(--app-readable-support-size);
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-#root .ops-queue :where(.ops-primary-actions button, .ops-primary-actions a, .ops-action-grid button) {
-  font-size: var(--app-readable-body-size) !important;
-  font-weight: 600 !important;
 }
 
 /* Manager operations: keep the table dense while unifying its text roles. */
@@ -363,7 +149,7 @@ html {
   font-weight: 400;
 }
 
-#root .mif-manager-feature :where(.mif-system-views button, .mif-manager-toolbutton, .mif-manager-primary, .mif-manager-review-button) {
+#root .mif-manager-feature :where(.mif-manager-toolbutton, .mif-manager-primary, .mif-manager-review-button) {
   font-size: var(--app-readable-control-size);
   font-weight: 600;
 }
@@ -410,28 +196,9 @@ html {
 
 /* Compact workflow counts are meaningful, so they share the 12 px floor even
    though transfer layout remains owned by its feature stylesheet. */
-#root .transfer-workspace-v3 .transfer-list-views button > span,
 #root .transfer-tracker-v3 .mif-move-progress span {
   font-size: var(--app-readable-meta-size) !important;
   line-height: 1.35 !important;
-}
-
-/* Queue counts and the card "Next" label sat at 4.2-4.4:1 on the list's
-   light-gray surfaces; the shared neutral roles clear 4.5:1 with margin. */
-#root .transfer-workspace-v3 .transfer-list-views button:not(.is-active) > span {
-  color: var(--app-readable-support) !important;
-}
-
-/* The selected pill's badge was white text on a 20% white wash over the blue,
-   which lightens the blue to 4.35:1. Invert it like the inventory scope
-   switch: blue count on a white badge, well above the floor. */
-#root .transfer-workspace-v3 .transfer-list-views button.is-active > span {
-  color: var(--move-blue) !important;
-  background: var(--surface) !important;
-}
-
-#root .transfer-workspace-v3 .transfer-next small {
-  color: var(--app-readable-muted) !important;
 }
 
 /* Transfer tracker and request workspace: the feature stylesheet still owns
@@ -449,24 +216,18 @@ html {
   .mif-timeline-event time,
   .mif-timeline-meta span,
   .mif-event-source,
-  .mif-status-lane dt,
-  .mif-status-detail,
-  .mif-source-stale,
   .mif-tracker-header small,
-  .mif-next-action span,
   .mif-tracker-accountability span,
   .mif-tracker-accountability small,
   .mif-tracker-request-summary span,
   .mif-tracker-request-summary small,
   .mif-condition-banner small,
   .mif-tracker-section h3,
-  .mif-technical-status-details > summary,
   .mif-accountability-list li > span,
   .mif-accountability-list small,
   .mif-request-source-strip small,
   .mif-field-error,
   .mif-auto-return-rule span,
-  .mif-check-field small,
   .mif-request-review section > span
 ) {
   font-size: var(--app-readable-meta-size) !important;
@@ -477,7 +238,6 @@ html {
 
 #root .mif-transfer-feature :where(
   .mif-timeline-copy > span,
-  .mif-status-value,
   .mif-tracker-request-summary strong,
   .mif-tracker-accountability strong,
   .mif-condition-banner span
@@ -506,82 +266,14 @@ html {
     font-size: var(--app-readable-body-size);
   }
 
-  .app-shell .app-main :where(
-    .page-heading,
-    .inventory-page-header--modern h1,
-    .mif-manager-heading h1
-  ) {
+  .app-shell .app-main :where(.mif-manager-heading h1) {
     font-size: 26px;
-  }
-
-  #root .inventory-experience--modern .inventory-mobile-row :where(
-    .inventory-photo-count,
-    .inventory-certified-label
-  ) {
-    font-size: var(--app-readable-meta-size) !important;
   }
 
   #root .mif-manager-feature .mif-operations-mobile-list > button > span {
     color: var(--app-readable-support);
     font-size: var(--app-readable-support-size);
     line-height: 1.45;
-  }
-}
-
-/* At the smallest supported phone width, four hero facts no longer have
-   enough room for readable labels, values, and the mileage copy affordance.
-   Use a calm two-by-two grid instead of squeezing or overlapping the text. */
-@media (max-width: 350px) {
-  .inventory-workspace.inventory-workspace--compact-v3
-    .inventory-workspace-identity__numbers {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    row-gap: 6px;
-  }
-
-  .inventory-workspace.inventory-workspace--compact-v3
-    .inventory-workspace-identity__numbers
-    .inventory-workspace-fact {
-    min-width: 0;
-    min-height: 42px;
-    padding-inline: 8px;
-  }
-
-  .inventory-workspace.inventory-workspace--compact-v3
-    .inventory-workspace-identity__numbers
-    .inventory-workspace-fact:nth-child(odd) {
-    padding-left: 0;
-    border-left: 0;
-  }
-}
-
-/* Final small-text floor for the inventory grid and vehicle workspace. */
-#root .inventory-experience--modern .inventory-grid-shell .inventory-table.inventory-table--workbench-v5 .inventory-certified-label {
-  font-size: var(--app-readable-meta-size) !important;
-  line-height: 1.25 !important;
-}
-
-#root .inventory-workspace.inventory-workspace--compact-v3 :where(
-  .inventory-workspace-topbar b,
-  .inventory-workspace-identity__copy-label,
-  .copyable-value__button-label,
-  .inventory-availability-note--compact strong,
-  .inventory-workspace-overview-panel__facts-heading small,
-  .inventory-workspace-intelligence__features > span,
-  .inventory-workspace-fact dd > small
-) {
-  font-size: var(--app-readable-meta-size) !important;
-  line-height: 1.4 !important;
-}
-
-#root .inventory-workspace.inventory-workspace--compact-v3 .copyable-value--compact .copyable-value__button {
-  min-block-size: 32px !important;
-  min-inline-size: 32px !important;
-}
-
-@media (max-width: 760px) {
-  #root .inventory-workspace.inventory-workspace--compact-v3 .copyable-value--compact .copyable-value__button {
-    min-block-size: 44px !important;
-    min-inline-size: 44px !important;
   }
 }
 
