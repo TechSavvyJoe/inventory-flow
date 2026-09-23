@@ -27,12 +27,13 @@
     "integrations:verify": "node scripts/verify-integration-deployment.mjs",
     "integrations:deploy": "node scripts/deploy-worker.mjs integrations",
     "integrations:perplexity-mcp": "node scripts/perplexity-inventory-mcp.mjs",
+    "typecheck": "tsc -b",
     "check:design-system": "node scripts/check-design-system.mjs",
     "check:repo-safety": "node scripts/check-repo-safety.mjs",
     "extension:icons": "node scripts/build-extension-icons.mjs",
     "extension:preview": "node scripts/preview-extension.mjs",
     "extension:dev": "node scripts/build-extension-dev.mjs",
-    "check": "pnpm check:repo-safety && pnpm check:design-system && pnpm test && pnpm build"
+    "check": "pnpm typecheck && pnpm check:repo-safety && pnpm check:design-system && pnpm test && pnpm build"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

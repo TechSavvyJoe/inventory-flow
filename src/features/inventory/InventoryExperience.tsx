@@ -807,7 +807,6 @@ export function InventoryExperience(props: InventoryExperienceProps) {
           onMoveVehicle={onMoveVehicle}
           onTrackMovement={onTrackMovement}
           onOpenListing={onOpenListing}
-          onOpenSourceRecord={onOpenSourceRecord}
         />
       ) : null}
     </section>

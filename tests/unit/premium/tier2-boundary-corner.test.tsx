@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, screen } from '@testing-library/react'
-import { premiumVehicle, showPremiumVehicle } from '../unit/premium-test-helpers'
+import { premiumVehicle, showPremiumVehicle } from '../premium-test-helpers'
 
 afterEach(cleanup)
 describe('Premium record boundary and source-truth cases', () => {

@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { AlertTriangle, CalendarClock, CheckCircle2, CircleHelp, ExternalLink, ShieldCheck } from "lucide-react";
-import { formatDate, formatMileage } from "./inventory-utils";
+import { formatDate } from "./inventory-utils";
 import { fordOasisUrl, officialVehicleDocumentUrl } from "./vehicle-document-utils";
 import { warrantyOutlook, type CoverageOutlook } from "./vehicle-warranty-utils";
 import type { InventoryVehicle } from "./types";

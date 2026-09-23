@@ -47,6 +47,22 @@ describe("CopyableValue", () => {
     expect(screen.getByText("Copied")).toBeInTheDocument();
   });
 
+  it("exposes a typed button, a polite live region, and a Copied state on the button itself", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    setClipboard({ writeText });
+    render(<CopyableValue label="VIN" text="1FTFW1E86HFA48871" />);
+
+    const button = screen.getByRole("button", { name: "Copy VIN: 1FTFW1E86HFA48871" });
+    expect(button).toHaveAttribute("type", "button");
+    fireEvent.click(button);
+
+    await waitFor(() => expect(button).toHaveTextContent("Copied"));
+    expect(writeText).toHaveBeenCalledWith("1FTFW1E86HFA48871");
+    const status = screen.getByRole("status");
+    expect(status).toHaveAttribute("aria-live", "polite");
+    expect(status).toHaveTextContent("VIN copied");
+  });
+
   it("falls back to the selected textarea when Clipboard API is blocked", async () => {
     setClipboard({ writeText: vi.fn().mockRejectedValue(new Error("blocked")) });
     let selectedText = "";

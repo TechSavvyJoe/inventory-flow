@@ -1,5 +1,5 @@
 import { forwardRef, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
-import { ActionsIcon, type FlowIconProps } from "./icons";
+import { ActionsIcon } from "./icons";
 
 type ButtonVariant = "primary" | "oem" | "secondary" | "glass" | "quiet" | "danger";
 type ButtonSize = "sm" | "md" | "lg";
@@ -70,40 +70,6 @@ export const FlowIconButton = forwardRef<HTMLButtonElement, FlowIconButtonProps>
   );
 });
 
-type SignalTone = "neutral" | "info" | "success" | "warning" | "danger" | "hold";
-
-export interface FlowSignalProps extends HTMLAttributes<HTMLSpanElement> {
-  tone?: SignalTone;
-  leading?: ReactNode;
-}
-
-export function FlowSignal({ children, className = "", leading, tone = "neutral", ...props }: FlowSignalProps) {
-  return (
-    <span {...props} className={`ifx-signal ifx-signal--${tone} ${className}`.trim()}>
-      {leading}
-      <span>{children}</span>
-    </span>
-  );
-}
-
-type SurfaceVariant = "base" | "raised" | "glass" | "command" | "dark";
-
-export interface FlowSurfaceProps extends HTMLAttributes<HTMLElement> {
-  variant?: SurfaceVariant;
-  header?: ReactNode;
-  footer?: ReactNode;
-}
-
-export function FlowSurface({ children, className = "", footer, header, variant = "base", ...props }: FlowSurfaceProps) {
-  return (
-    <section {...props} className={`ifx-surface ifx-surface--${variant} ${className}`.trim()}>
-      {header ? <header className="ifx-surface__header">{header}</header> : null}
-      <div className="ifx-surface__body">{children}</div>
-      {footer ? <footer className="ifx-surface__footer">{footer}</footer> : null}
-    </section>
-  );
-}
-
 export interface FlowBrandLockupProps extends HTMLAttributes<HTMLDivElement> {
   tenantLabel?: string;
   productLabel?: string;
@@ -136,24 +102,3 @@ export function FlowBrandLockup({
     </div>
   );
 }
-
-export interface FlowActionDockProps extends HTMLAttributes<HTMLDivElement> {
-  primary: ReactNode;
-  secondary?: ReactNode;
-  utilities?: ReactNode;
-  status?: ReactNode;
-}
-
-/** Dense action pattern intended for SRP rows and the sticky edge of a VDP. */
-export function FlowActionDock({ className = "", primary, secondary, status, utilities, ...props }: FlowActionDockProps) {
-  return (
-    <div {...props} className={`ifx-action-dock ${className}`.trim()}>
-      {status ? <div className="ifx-action-dock__status">{status}</div> : null}
-      <div className="ifx-action-dock__primary">{primary}</div>
-      {secondary ? <div className="ifx-action-dock__secondary">{secondary}</div> : null}
-      {utilities ? <div className="ifx-action-dock__utilities">{utilities}</div> : null}
-    </div>
-  );
-}
-
-export type FlowIconComponent = (props: FlowIconProps) => ReactNode;

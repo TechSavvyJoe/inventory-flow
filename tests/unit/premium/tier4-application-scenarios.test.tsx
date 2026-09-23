@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { InventoryExperienceV2 } from '../../src/features/inventory/InventoryExperienceV2'
-import { clearCustomerShortlist } from '../../src/features/inventory/useCustomerShortlist'
-import { premiumMetrics, premiumStore, premiumVehicle, showPremiumInventory, showPremiumVehicle } from '../unit/premium-test-helpers'
+import { InventoryExperienceV2 } from '../../../src/features/inventory/InventoryExperienceV2'
+import { clearCustomerShortlist } from '../../../src/features/inventory/useCustomerShortlist'
+import { premiumMetrics, premiumStore, premiumVehicle, showPremiumInventory, showPremiumVehicle } from '../premium-test-helpers'
 
 beforeEach(() => { clearCustomerShortlist(); sessionStorage.clear() })
 afterEach(() => { cleanup(); clearCustomerShortlist() })
@@ -39,7 +39,7 @@ describe('Premium dealership scenarios', () => {
     expect(screen.getByRole('link', { name: /Service:/ })).toBeInTheDocument()
   })
   it('uses actual movement identifiers instead of choosing another vehicle’s record', () => {
-    const vehicle = premiumVehicle({ movement: { state: 'in_transit', requestId: 'synthetic-move', destination: 'Fowlerville' } })
+    const vehicle = premiumVehicle({ movement: { state: 'in_transit', requestId: 'synthetic-move' } })
     const track = vi.fn()
     showPremiumVehicle(vehicle, { onTrackMovement: track })
     fireEvent.click(screen.getByRole('button', { name: 'Track movement' }))

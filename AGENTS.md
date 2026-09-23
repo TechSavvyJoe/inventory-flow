@@ -48,7 +48,7 @@ Never delete, loosen, or re-pin these without Joe's approval — agents may add 
 
 ## Validation before handoff
 
-- Run `pnpm check:repo-safety` then `pnpm check` before the first push and every pull request; `pnpm check` runs the repository safety gate, design-system ratchet, tests, and production build.
+- Run `pnpm check:repo-safety` then `pnpm check` before the first push and every pull request; `pnpm check` runs the type check (`tsc -b` with `noUnusedLocals`/`noUnusedParameters`), repository safety gate, design-system ratchet, tests, and production build.
 - Exercise inventory search, sorting, row actions, vehicle workspace tabs, dialog keyboard behavior, and transfer workflows.
 - Inspect the actual browser at all four target viewports; do not claim a UI fix based only on source or unit tests.
 - Report any production boundary that remains simulated, local-only, read-only, or unverified.

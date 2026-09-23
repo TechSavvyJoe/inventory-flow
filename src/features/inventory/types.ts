@@ -615,11 +615,6 @@ export interface InventoryExperienceProps {
   "aria-label"?: string;
 }
 
-export interface InventoryDecisionRailProps {
-  metrics: InventoryDecisionMetrics;
-  onSelect?: (metric: InventoryMetricKey) => void;
-}
-
 export interface InventoryTableProps {
   vehicles: InventoryVehicle[];
   selectedVehicleId?: string | null;
@@ -655,8 +650,4 @@ export interface VehicleWorkspaceProps {
   onMoveVehicle?: (vehicle: InventoryVehicle, intent: VehicleMoveIntent) => void;
   onTrackMovement?: (vehicle: InventoryVehicle) => void;
   onOpenListing?: (vehicle: InventoryVehicle) => void;
-  onOpenSourceRecord?: (
-    vehicle: InventoryVehicle,
-    source: InventorySourceRecord,
-  ) => void;
 }

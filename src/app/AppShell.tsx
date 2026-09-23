@@ -431,7 +431,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       <nav className={`mobile-bottom-nav${canSeeAdmin ? ' is-group-manager' : ''}`} aria-label="Mobile primary">
-        {mobileNavigationItems.map(({ id, to, label, shortLabel, icon: Icon }) => {
+        {mobileNavigationItems.map(({ id, to, shortLabel, icon: Icon }) => {
           const active = isNavActive(id, to)
           return (
             <NavLink

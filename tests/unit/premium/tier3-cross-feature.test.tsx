@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, screen, within } from '@testing-library/react'
-import { clearCustomerShortlist } from '../../src/features/inventory/useCustomerShortlist'
-import { premiumVehicle, showPremiumInventory } from '../unit/premium-test-helpers'
+import { clearCustomerShortlist } from '../../../src/features/inventory/useCustomerShortlist'
+import { premiumVehicle, showPremiumInventory } from '../premium-test-helpers'
 
 beforeEach(() => { clearCustomerShortlist(); sessionStorage.clear() })
 afterEach(() => { cleanup(); clearCustomerShortlist() })

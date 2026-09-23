@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { ServicePageV2 } from '../../src/features/service/ServicePageV2'
 import { VehicleWorkspaceV2 } from '../../src/features/inventory/VehicleWorkspaceV2'
-import { InventoryTableV2 } from '../../src/features/inventory/InventoryTableV2'
+import { InventoryTable } from '../../src/features/inventory/InventoryTable'
 import { CustomerShortlistDrawer } from '../../src/features/inventory/CustomerShortlistDrawer'
 import { clearCustomerShortlist, useCustomerShortlist } from '../../src/features/inventory/useCustomerShortlist'
 import { ApiError } from '../../src/lib/api'
@@ -88,17 +88,18 @@ describe('Premium service uses the manager-led service workflow', () => {
 describe('Premium inventory preserves source qualifications and actions', () => {
   it('never represents unverified or no observed holds as availability', () => {
     const vehicle = createMockVehicle({ vin: VIN, id: VIN, dealerMail: { dataState: 'stale', hasActiveHold: false, activeRecordCount: 0, canViewEvidence: false, canManageHold: false } })
-    const page = render(<InventoryTableV2 vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />)
-    expect(screen.getByText('Hold status not verified')).toBeInTheDocument()
+    const page = render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />)
+    expect(screen.getByText('Hold status unverified')).toBeInTheDocument()
     expect(screen.queryByText(/^Available$/)).not.toBeInTheDocument()
-    page.rerender(<InventoryTableV2 vehicles={[{ ...vehicle, dealerMail: { ...vehicle.dealerMail, dataState: 'current' } }]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />)
-    expect(screen.getByText('No current DealerMail hold found')).toBeInTheDocument()
+    page.rerender(<InventoryTable vehicles={[{ ...vehicle, dealerMail: { ...vehicle.dealerMail, dataState: 'current' } }]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />)
+    expect(screen.getByText('No current hold').closest('button')).toHaveAttribute('title', 'Availability still requires confirmation')
+    expect(screen.queryByText(/^Available$/)).not.toBeInTheDocument()
   })
 
   it('passes authorized direct-move intent through the shared row actions', () => {
     const vehicle = createMockVehicle({ id: VIN, vin: VIN })
     const move = vi.fn()
-    render(<InventoryTableV2 vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()}
+    render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()}
       moveActionFor={() => ({ intent: 'direct', label: 'Move vehicle', shortLabel: 'Move' })} onMoveVehicle={move} />)
     fireEvent.click(screen.getByRole('button', { name: /^Move vehicle / }))
     expect(move).toHaveBeenCalledWith(vehicle, 'direct')

@@ -6,6 +6,7 @@ import { ServiceBoard } from './ServiceBoard'
 import { clearWorkspaceMemory } from '../../lib/workspace-memory'
 import { ApiError } from '../../lib/api'
 import type { ServiceReadinessDetail, ServiceReadinessStatus, StoreName, VehicleRecord } from '../../types'
+import { createMotionPreference } from '../../../tests/unit/motion-test-utils'
 
 const mocked = vi.hoisted(() => ({ context: {} as Record<string, unknown>, get: vi.fn(), update: vi.fn(), refresh: vi.fn() }))
 vi.mock('../../app/AppDataContext', () => ({ useAppData: () => mocked.context }))
@@ -106,6 +107,36 @@ describe('Service readiness workspace', () => {
     render(<MemoryRouter initialEntries={['/service?view=board']}><ServiceBoard /></MemoryRouter>)
     await waitFor(() => expect(screen.getByText('Saved OASIS · At least 1 open service action · result incomplete')).toBeVisible())
     expect(mocked.update).not.toHaveBeenCalled()
+  })
+
+  it('names board card actions and moves focus into the service details drawer', async () => {
+    render(<MemoryRouter initialEntries={['/service?view=board']}><ServiceBoard /></MemoryRouter>)
+    expect(await screen.findByRole('button', { name: 'Start service for SYNTHETIC-002' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'View details for SYNTHETIC-002' }))
+    const drawer = await screen.findByRole('dialog', { name: /Service details for/ })
+    await waitFor(() => expect(drawer.contains(document.activeElement)).toBe(true))
+    expect(mocked.update).not.toHaveBeenCalled()
+  })
+
+  it('drops hover and press scaling on board actions while the system prefers reduced motion', async () => {
+    const preference = createMotionPreference()
+    preference.install()
+    try {
+      preference.set(true)
+      render(<MemoryRouter initialEntries={['/service?view=board']}><ServiceBoard /></MemoryRouter>)
+      const start = await screen.findByRole('button', { name: 'Start service for SYNTHETIC-002' })
+      fireEvent.pointerEnter(start, { pointerType: 'mouse', isPrimary: true })
+      fireEvent.pointerDown(start, { pointerType: 'mouse', isPrimary: true, button: 0 })
+      await act(async () => { await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))) })
+      expect(start.style.transform).not.toMatch(/scale/)
+      fireEvent.pointerUp(start, { pointerType: 'mouse', isPrimary: true, button: 0 })
+      fireEvent.pointerLeave(start, { pointerType: 'mouse', isPrimary: true })
+      act(() => preference.set(false))
+      fireEvent.pointerEnter(start, { pointerType: 'mouse', isPrimary: true })
+      await waitFor(() => expect(start.style.transform).toMatch(/scale\(/))
+    } finally {
+      preference.restore()
+    }
   })
 
   it('keeps the vehicle references readable when service detail fails to load', async () => {

@@ -210,9 +210,6 @@ export function InventoryPage({ homeMode = false, experienceComponent: Experienc
         onMoveVehicle={moveVehicle}
         onTrackMovement={trackMovement}
         onOpenListing={openListing}
-        onOpenSourceRecord={(vehicle, source) => {
-          if (source === 'public') openListing(vehicle)
-        }}
       />
     </section>
   )

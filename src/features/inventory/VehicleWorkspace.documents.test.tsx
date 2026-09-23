@@ -67,15 +67,6 @@ function openVehicleDocuments() {
   return screen.queryByRole('region', { name: 'Vehicle documents' });
 }
 
-function openSourceDetails(card: HTMLElement) {
-  const details = card.querySelector<HTMLDetailsElement>('details.vdp-record-source-details')!;
-  expect(details).not.toBeNull();
-  expect(details.open).toBe(false);
-  fireEvent.click(within(details).getByText('Source details'));
-  expect(details.open).toBe(true);
-  return details;
-}
-
 describe('vehicle document workspace', () => {
   it('offers the VIN-linked vAuto profile instead of opening a Ford placeholder sticker', () => {
     const complete = vehicle();
