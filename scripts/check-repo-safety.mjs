@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
+import { isMainModule } from './lib/is-main.mjs'
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url))
 const defaultRoot = path.resolve(scriptDirectory, '..')
@@ -178,7 +179,7 @@ export function formatSafetyResult(result) {
   return `Repository safety check failed:\n${lines.join('\n')}`
 }
 
-const isMain = process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url
+const isMain = isMainModule(import.meta.url)
 if (isMain) {
   const result = inspectRepository(process.argv[2] || defaultRoot)
   console[result.findings.length ? 'error' : 'log'](formatSafetyResult(result))

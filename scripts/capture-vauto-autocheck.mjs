@@ -279,7 +279,8 @@ export async function main(argv = process.argv.slice(2)) {
   saveAtomic(outputPath, output)
   const tally = Object.groupBy(output.records, (record) => record.result)
   console.log(JSON.stringify({ outputPath, done: output.records.length, ok: tally.OK?.length ?? 0, sessionStatus: output.sessionStatus, stoppedReason: output.stoppedReason ?? null }))
-  return exitCode
+  // A truncated queue is an incomplete capture; the runner must not record it as complete.
+  return output.stoppedReason ? 1 : exitCode
 }
 
 if (isMainModule(import.meta.url)) {

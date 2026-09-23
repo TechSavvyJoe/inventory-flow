@@ -8,8 +8,8 @@
 import { createServer, request as httpRequest } from 'node:http'
 import { createReadStream, statSync } from 'node:fs'
 import { extname, join, normalize, resolve, sep } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { SYNTHETIC_VEHICLE_PHOTOS } from '../extension/sidepanel/lib/synthetic-photos.mjs'
+import { isMainModule } from './lib/is-main.mjs'
 
 const root = resolve(import.meta.dirname, '..', 'extension')
 const demoPhotoRoot = resolve(import.meta.dirname, '..', 'public', 'demo-vehicles')
@@ -57,7 +57,7 @@ export function createExtensionPreviewServer({ demoApiPort = Number(process.env.
  })
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   const port = Number(process.env.EXTENSION_PREVIEW_PORT || 4177)
   const demoApiPort = Number(process.env.INVENTORY_DEMO_API_PORT || 4174)
   createExtensionPreviewServer({ demoApiPort }).listen(port, '127.0.0.1', () => console.log(`Extension preview: http://127.0.0.1:${port}/sidepanel/index.html  (demo API expected on ${demoApiPort})`))

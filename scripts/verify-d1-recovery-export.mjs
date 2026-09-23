@@ -4,9 +4,9 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { existsSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { pathToFileURL } from 'node:url'
 import { base64Key } from './publish-cloud-release.mjs'
 import { databaseEvidence } from './run-recovery-drill.mjs'
+import { isMainModule } from './lib/is-main.mjs'
 
 const FORMAT = 'inventory-flow-d1-sql-recovery-v1'
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex')
@@ -108,7 +108,7 @@ export function verifyD1RecoveryExport({ inputPath, outputPath, keyBase64, dispo
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (isMainModule(import.meta.url)) {
   try {
     const args = process.argv.slice(2)
     if (args.length === 2 && args[0] === '--verify-backup') {

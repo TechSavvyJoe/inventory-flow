@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmdirSyn
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { backup, DatabaseSync } from 'node:sqlite'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { buildSyntheticCloudBundle } from '../fixtures/synthetic-cloud-bundle.mjs'
 import { SYNTHETIC_NOW } from '../fixtures/synthetic-release.mjs'
 import { memberContext } from '../cloudflare/src/access.mjs'
@@ -15,6 +15,7 @@ import { decryptEnvelope } from '../cloudflare/src/worker.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { createInventoryServiceCore } from '../server/service-core.mjs'
 import { encryptBundle } from './publish-cloud-release.mjs'
+import { isMainModule } from './lib/is-main.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const FORMAT = 'inventory-flow-synthetic-sqlite-backup-v1'
@@ -210,7 +211,7 @@ export async function runRecoveryDrill({ reportDirectory } = {}) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (isMainModule(import.meta.url)) {
   if (process.argv.length > 2) throw new Error('The synthetic drill accepts no live database, key, path, or remote arguments')
   const base = path.join(ROOT, 'runtime', 'recovery-drills')
   mkdirSync(base, { recursive: true })

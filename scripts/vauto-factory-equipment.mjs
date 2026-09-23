@@ -208,7 +208,8 @@ export async function main(argv = process.argv.slice(2)) {
   const tally = {}
   for (const record of output.records) tally[record.result] = (tally[record.result] || 0) + 1
   console.log(JSON.stringify({ done: output.records.length, ok: output.records.filter((record) => record.result === 'OK').length, tally, sessionStatus: output.sessionStatus, stoppedReason: output.stoppedReason || null, seconds: Math.round((Date.now() - started) / 1000) }))
-  return exitCode
+  // A truncated queue is an incomplete capture; the runner must not record it as complete.
+  return output.stoppedReason ? 1 : exitCode
 }
 
 if (isMainModule(import.meta.url)) {

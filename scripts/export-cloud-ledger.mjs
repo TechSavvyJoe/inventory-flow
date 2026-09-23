@@ -2,8 +2,9 @@ import { createCipheriv, createHash, randomBytes, randomUUID } from 'node:crypto
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { LEDGER_COLUMNS, LEDGER_FORMAT, LEDGER_TABLE_NAMES, ledgerCounts, validateLedgerBundle } from '../cloudflare/src/ledger-import.mjs'
+import { isMainModule } from './lib/is-main.mjs'
 
 const APP_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
 
@@ -61,7 +62,7 @@ export function exportCloudLedger({ databasePath, reportDate, keyBase64, runtime
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (isMainModule(import.meta.url)) {
   try {
     const result = exportCloudLedger({
       keyBase64: process.env.INVENTORY_OPS_RELEASE_ENCRYPTION_KEY_BASE64,

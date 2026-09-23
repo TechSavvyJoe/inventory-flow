@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { loadLatestCompletedRelease, validateVinDocumentEnrichment } from '../server/importer.mjs'
@@ -7,6 +7,7 @@ import { sanitizeManagerDispositionDocuments } from '../server/manager-dispositi
 import { cloudReleaseFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
+import { assessOasisCapture } from './lib/oasis-parser.mjs'
 
 const STORES = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
 const WORKSPACE_ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -70,7 +71,12 @@ function fileInfo(filePath) {
 
 function writeJson(filePath, value) {
   mkdirSync(path.dirname(filePath), { recursive: true })
-  writeFileSync(filePath, JSON.stringify(value, null, 2) + '\n', { encoding: 'utf8' })
+  // The local API re-imports the manifest every few minutes and the cloud sync
+  // reads it concurrently; a temp file plus rename never exposes a half-written
+  // document to either reader.
+  const temporary = `${filePath}.${process.pid}.tmp`
+  writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', { encoding: 'utf8' })
+  renameSync(temporary, filePath)
 }
 
 function run(command, args, { cwd = WORKSPACE_ROOT, optional = false, label = command } = {}) {
@@ -170,10 +176,33 @@ function runDealerMail(reportDate, browserReady, warnings, steps) {
   return target
 }
 
+// Without a browser (--skip-authenticated, or the automation browser is down)
+// the run can still publish when this date's OASIS capture already exists and
+// covers the worklist, exactly as capture-oasis.mjs itself judges completeness.
+function reuseExistingOasisCapture(reportDate, steps) {
+  const worklistPath = path.join(WORK_ROOT, `oasis-vin-worklist-${reportDate}.json`)
+  const capturePath = path.join(WORK_ROOT, 'oasis-history', `${reportDate}-oasis.json`)
+  if (!existsSync(worklistPath) || !existsSync(capturePath)) {
+    steps.push({ name: 'oasis', status: 'skipped_browser_unavailable' })
+    return false
+  }
+  try {
+    const worklist = readJson(worklistPath)
+    const records = readJson(capturePath).records
+    if (!Array.isArray(worklist) || !Array.isArray(records)) throw new Error('unexpected OASIS capture shape')
+    const quality = assessOasisCapture(worklist, records)
+    steps.push({ name: 'oasis', status: quality.complete ? 'reused_existing_capture' : 'existing_capture_incomplete', detail: safeDetail(JSON.stringify(quality)) })
+    return quality.complete === true
+  } catch (error) {
+    steps.push({ name: 'oasis', status: 'existing_capture_unreadable', detail: safeDetail(String(error?.message ?? error)) })
+    return false
+  }
+}
+
 function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps) {
   if (!browserReady) {
     steps.push({ name: 'authenticated_optional_sources', status: 'skipped_browser_unavailable' })
-    return false
+    return reuseExistingOasisCapture(reportDate, steps)
   }
   let oasisComplete = true
   const optionalRuns = [
@@ -627,8 +656,10 @@ export const internals = {
   deriveManifest,
   exitCodeForResult,
   formatStores,
+  reuseExistingOasisCapture,
   summarize,
   todayInNewYork,
+  writeJson,
 }
 
 if (process.argv[1] && path.basename(process.argv[1]).toLowerCase() === 'run-inventory-flow-daily.mjs') {
