@@ -25,7 +25,7 @@ import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { getOriginTab, fetchInTab, sleep, targets, PORT } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
-import { parseOasisFull } from './lib/oasis-parser.mjs'
+import { assessOasisCapture, parseOasisFull } from './lib/oasis-parser.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -63,7 +63,8 @@ let out = { schema: 'bob-maxey-oasis-capture-v1', reportDate, capturedAtUtc: new
 if (!refresh && existsSync(outPath)) {
   try { const prev = JSON.parse(readFileSync(outPath, 'utf8')); if (Array.isArray(prev.records)) out.records = prev.records } catch {}
 }
-const done = new Set(out.records.map(r => r.vin))
+const done = new Set(out.records.filter(r => r.openActionsCaptured === true ||
+  r.actionResultLimit === 'canadian_service_info_warning').map(r => r.vin))
 const queue = worklist.map(w => w.vin).filter(v => !done.has(v)).slice(0, max)
 
 // ---------------------------------------------------------------- capture
@@ -118,6 +119,7 @@ for (const vin of queue) {
     const parsed = parseOasisFull(r.text)
     if (!parsed) { tally.NO_OASIS++; continue }
     state = 'ok'
+    out.records = out.records.filter(previous => previous.vin !== vin)
     out.records.push({ vin, ...parsed, capturedAt: new Date().toISOString() })
     tally.OK++
     if (out.records.length % 10 === 0) save()
@@ -127,8 +129,10 @@ for (const vin of queue) {
 
 save()
 try { ctx && ctx.page.close() } catch {}
+const quality = assessOasisCapture(worklist, out.records)
+if (!stopped && !Number.isFinite(max) && !quality.complete) stopped = 'INCOMPLETE_OASIS_CAPTURE'
 console.log(JSON.stringify({
   sessionStatus: state, records: out.records.length, worklist: worklist.length,
-  tally, stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), out: outPath
+  tally, ...quality, stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), out: outPath
 }))
-process.exit(stopped === 'SESSION_EXPIRED' ? 1 : 0)
+process.exit(stopped ? 1 : 0)

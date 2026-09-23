@@ -8,12 +8,13 @@
 //   node scripts/dryrun_resource_enrichment_check.mjs [YYYY-MM-DD]
 //   (defaults to today's date in America/New_York)
 import path from 'node:path'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { loadLatestCompletedRelease, validateVinDocumentEnrichmentForPublish } from '../server/importer.mjs'
 import { cloudReleaseFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
+import { assessOasisCapture, compareOasisEnrichment } from './lib/oasis-parser.mjs'
 
 const APP_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
 const WORKSPACE_ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -54,6 +55,19 @@ async function main() {
       withFordOasis: records.filter((record) => Boolean(record.fordOasis)).length,
       withOpenFieldServiceActions: records.filter((record) => (record.fordOasis?.openFieldServiceActions?.length ?? 0) > 0).length,
       fordOasisOnly: records.filter((record) => record.fordOasis && !record.factoryEquipment && !record.autoCheckReport).length,
+    }
+    const oasisPath = path.join(WORKSPACE_ROOT, 'work', 'oasis-history', `${REPORT_DATE}-oasis.json`)
+    const worklistPath = path.join(WORKSPACE_ROOT, 'work', `oasis-vin-worklist-${REPORT_DATE}.json`)
+    if (existsSync(oasisPath) && existsSync(worklistPath)) {
+      const capture = JSON.parse(readFileSync(oasisPath, 'utf8'))
+      const worklist = JSON.parse(readFileSync(worklistPath, 'utf8'))
+      if (!Array.isArray(capture.records) || !Array.isArray(worklist)) throw new Error('OASIS_CAPTURE_INVALID')
+      out.oasisCaptureQuality = assessOasisCapture(worklist, capture.records)
+      out.oasisEnrichmentParity = compareOasisEnrichment(capture.records, validated.recordsByVin)
+      if (!out.oasisCaptureQuality.complete || !out.oasisEnrichmentParity.complete) failed = true
+    } else if (existsSync(oasisPath) || existsSync(worklistPath) || records.some(record => record.fordOasis)) {
+      out.oasisCaptureQuality = { complete: false, reason: 'Current OASIS capture or worklist is missing' }
+      failed = true
     }
   } catch (error) {
     failed = true
