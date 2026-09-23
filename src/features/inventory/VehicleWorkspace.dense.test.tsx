@@ -482,6 +482,18 @@ describe('focused vehicle workspace', () => {
     expect(screen.getByRole('list',{name:'Factory options'})).toHaveTextContent('.TAILGATE STEP');
   });
 
+  it('says a vehicle the server marks unlisted is not publicly listed, never listed online', () => {
+    const unit = vehicle(); unit.holdEvidence = [];
+    unit.dealerMail = { ...unit.dealerMail, hasActiveHold: false, activeRecordCount: 0, position: null };
+    const { unmount } = render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    expect(screen.getAllByText(/Not publicly listed/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Listed online/)).not.toBeInTheDocument();
+    unmount();
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} initialTab="hold" onClose={vi.fn()} />);
+    expect(screen.getAllByText('Not publicly listed').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Listed online/)).not.toBeInTheDocument();
+  });
+
   it('shows unheld alerts without fabricating a primary hold', () => {
     const unit = vehicle(); unit.holdEvidence = [];
     unit.dealerMail = { ...unit.dealerMail, hasActiveHold: false, activeRecordCount: 0, position: null };

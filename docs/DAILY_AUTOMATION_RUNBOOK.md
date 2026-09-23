@@ -265,10 +265,15 @@ Two things happen alongside the prompt rather than inside it:
   up first. Pink/highlighted rows are explicit manager evidence that delivery
   is complete; unhighlighted rows remain sold / delivery pending even when a
   handwritten date is present. The app's active view removes a delivered VIN
-  without deleting its public/CRM audit evidence and carries a pending VIN
-  forward if it has dropped from the source feeds. A pending row without a
-  verified VIN becomes a high-priority identity-review alert and is never
-  silently removed or called delivered. Re-run the protected daily publisher
+  only when the log row named that exact VIN, without deleting its public/CRM
+  audit evidence, and never revives a VIN that has left both source feeds. A
+  row without a VIN matches only a unique stock number the reporting store
+  itself lists; such a delivered row, like a pending row without a verified
+  VIN, stays in inventory as a high-priority identity-review alert and is never
+  silently removed or called delivered. The publish receipt's
+  `managerDeliveredListedExclusionCount` (and the Node `/api/health`
+  `managerDeliveredHiddenWhileListed` count) reports VINs hidden by the log
+  while the public feed still lists them. Re-run the protected daily publisher
   after ingest so the redacted overlay and active membership reach the app/API.
 - **Baseline pointer advance.** See the next section. Run it after
   `published_and_verified`; it is not yet in the prompt as of 09/12/2026 -

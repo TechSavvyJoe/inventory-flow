@@ -15,7 +15,7 @@ import type {
   TransferVehicleSummary,
 } from '../features/transfers'
 import { formatCurrency, formatNumber } from '../lib/format'
-import type { SourceMeta, TransferRecord, UserRole, VehicleRecord } from '../types'
+import type { PublicListingCode, SourceMeta, TransferRecord, UserRole, VehicleRecord } from '../types'
 
 function code(value: string): string {
   return value.toLowerCase().trim().replace(/[_\s/]+/g, '-').replace(/[^a-z0-9-]/g, '')
@@ -97,26 +97,18 @@ function movementStatus(value: string): ExplicitStatus<MovementStatusCode> {
   return explicit(mapped, value || 'At home store — reported', tone)
 }
 
+// The server's deal_status column values (server/workflow.mjs). Anything else
+// is an outcome the server never recorded, so it reads as no outcome.
+const DEAL_STATUS_CODES: Readonly<Record<string, DealStatusCode>> = {
+  not_confirmed: 'no-outcome',
+  customer_showing: 'show-in-progress',
+  pending_confirmation: 'decision-pending',
+  sold_pending: 'sold-pending',
+  not_sold: 'shown-not-sold',
+}
+
 function dealStatus(value: string): ExplicitStatus<DealStatusCode> {
-  const normalized = code(value)
-  const mapped: DealStatusCode =
-    normalized.includes('sold-pending') || normalized.includes('sale-confirmed')
-      ? 'sold-pending'
-      : normalized.includes('not-sold')
-        ? 'shown-not-sold'
-        : normalized.includes('show')
-          ? 'show-in-progress'
-          : normalized.includes('appointment')
-            ? 'appointment-scheduled'
-            : normalized.includes('decision')
-              ? 'decision-pending'
-              : normalized.includes('deal-in-progress')
-                ? 'deal-in-progress'
-                : normalized.includes('cancel')
-                  ? 'deal-canceled'
-                  : normalized.includes('paperwork')
-                    ? 'paperwork-complete'
-                    : 'no-outcome'
+  const mapped: DealStatusCode = Object.hasOwn(DEAL_STATUS_CODES, value) ? DEAL_STATUS_CODES[value] : 'no-outcome'
   const label = mapped === 'sold-pending' ? 'Sold pending — delivery not confirmed' : value || 'No customer outcome'
   return explicit(mapped, label, mapped === 'shown-not-sold' ? 'warning' : mapped === 'sold-pending' ? 'info' : 'neutral')
 }
@@ -133,10 +125,23 @@ function dealerMailStatus(value: string): ExplicitStatus<DealerMailHoldCode> {
   return explicit(mapped, value || 'Unknown', mapped === 'primary' || mapped === 'backup' || mapped === 'multiple' ? 'warning' : 'neutral')
 }
 
-function publicStatus(value: string, freshness: SourceMeta['publicFreshness']): ExplicitStatus<PublicStatusCode> {
-  const normalized = code(value)
-  const mapped: PublicStatusCode = freshness === 'incomplete' ? 'source-incomplete' : freshness === 'stale_unverified' ? 'retained-stale' : normalized.includes('not-found') || normalized.includes('not-listed') ? 'not-found' : normalized.includes('not-provided') ? 'status-not-provided' : 'listed'
-  return explicit(mapped, value || 'Website status not provided', mapped === 'listed' ? 'info' : mapped === 'source-incomplete' ? 'danger' : 'neutral')
+// Switches on the server's public-listing code; the label is display text only.
+function publicStatus(
+  listing: PublicListingCode | undefined,
+  label: string,
+  freshness: SourceMeta['publicFreshness'],
+): ExplicitStatus<PublicStatusCode> {
+  const mapped: PublicStatusCode =
+    freshness === 'incomplete'
+      ? 'source-incomplete'
+      : freshness === 'stale_unverified' || listing === 'stale'
+        ? 'retained-stale'
+        : listing === 'listed'
+          ? 'listed'
+          : listing === 'pre_listing' || listing === 'not_in_release'
+            ? 'not-found'
+            : 'status-not-provided'
+  return explicit(mapped, label || 'Website status not provided', mapped === 'listed' ? 'info' : mapped === 'source-incomplete' ? 'danger' : 'neutral')
 }
 
 function cdkStatus(value: string): ExplicitStatus<CdkStatusCode> {
@@ -180,7 +185,7 @@ export function toTransferVehicle(vehicle: VehicleRecord, meta: SourceMeta): Tra
     serviceReadiness: vehicle.serviceReadiness,
     status: {
       dealerMail: dealerMailStatus(vehicle.hold.label),
-      publicListing: publicStatus(vehicle.publicListingState, meta.publicFreshness),
+      publicListing: publicStatus(vehicle.publicListing, vehicle.publicListingState, meta.publicFreshness),
       cdk: cdkStatus('Not checked'),
     },
   }
@@ -197,7 +202,7 @@ export function transferStatusLanes(transfer: TransferRecord, meta: SourceMeta):
     deal: dealStatus(transfer.dealStatus),
     delivery: deliveryStatus(transfer.deliveryStatus),
     dealerMail: dealerMailStatus(transfer.dealerMailHoldState),
-    publicListing: publicStatus(transfer.publicListingState, meta.publicFreshness),
+    publicListing: publicStatus(transfer.publicListing, transfer.publicListingState, meta.publicFreshness),
     cdk: cdkStatus(transfer.cdkStatus),
   }
 }
@@ -269,7 +274,7 @@ export function toTransferDetail(
         },
         status: {
           dealerMail: dealerMailStatus(transfer.dealerMailHoldState),
-          publicListing: publicStatus(transfer.publicListingState, meta.publicFreshness),
+          publicListing: publicStatus(transfer.publicListing, transfer.publicListingState, meta.publicFreshness),
           cdk: cdkStatus(transfer.cdkStatus),
         },
       }

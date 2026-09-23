@@ -1801,7 +1801,7 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
         : vehicle.publicListing.isListed === true
           ? "Listed online"
           : vehicle.publicListing.isListed === false
-            ? "Not listed online"
+            ? "Not publicly listed"
             : "Listing state not provided";
     const movementValue =
       humanizeWorkflowValue(vehicle.movement?.state) ||
@@ -1862,7 +1862,7 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
       : vehicle.publicListing.isListed === true
         ? "Listed online"
         : vehicle.publicListing.isListed === false
-          ? "Not listed online"
+          ? "Not publicly listed"
           : "Listing state not provided";
   const heldMovement =
     humanizeWorkflowValue(vehicle.movement?.state) ||
@@ -2433,7 +2433,7 @@ export function VehicleWorkspace({
                   {vehicle.fuelType ? <Fact label="Fuel">{vehicle.fuelType}</Fact> : null}
                 </dl>
                 <div className="vdp-focus-mobile-specs">{mobileSpecificationLines.map((line, index) => <p key={index}>{line}</p>)}</div>
-                <p className="vdp-focus-listing">{vehicle.location.homeStore.name} · {vehicle.publicListing.dataState !== "current" ? "Listing unverified" : vehicle.publicListing.isListed ? "Listed online" : "Not listed online"}{vehicle.certified ? <> · <CertifiedBadge certified homeStore={vehicle.location.homeStore.name} /></> : null}</p>
+                <p className="vdp-focus-listing">{vehicle.location.homeStore.name} · {vehicle.publicListing.dataState !== "current" ? "Listing unverified" : vehicle.publicListing.isListed === true ? "Listed online" : vehicle.publicListing.isListed === false ? "Not publicly listed" : "Listing state not provided"}{vehicle.certified ? <> · <CertifiedBadge certified homeStore={vehicle.location.homeStore.name} /></> : null}</p>
 
               </section>
               <section className="vdp-focus-keyfacts" aria-label="Frequently used vehicle facts"><dl>

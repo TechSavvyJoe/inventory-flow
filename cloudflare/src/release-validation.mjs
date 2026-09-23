@@ -806,12 +806,18 @@ function activeInventoryMembership(publicByVin, crmByVin, managerDispositionOver
   const activeVins = new Set([...publicByVin.keys(), ...crmByVin.keys()])
   const activeStoreCounts = Object.create(null)
   let managerDeliveredExclusionCount = 0
+  let managerDeliveredListedExclusionCount = 0
   let managerPendingIdentityReviewCount = 0
   for (const record of managerDispositionOverlay?.records ?? []) {
     const vin = typeof record?.vin === 'string' && VIN.test(record.vin) ? record.vin : null
     const conflicting = ['matched_vin_stock_review', 'stock_ambiguous'].includes(record?.matchStatus)
-    if (record?.deliveredManagerLog === true && vin && !conflicting) {
-      if (activeVins.delete(vin)) managerDeliveredExclusionCount += 1
+    // Mirrors server/service-core.mjs: only a delivered row that named this
+    // exact VIN hides it. A stock-number match stays active for identity review.
+    if (record?.deliveredManagerLog === true && record?.matchMethod === 'vin' && vin && !conflicting) {
+      if (activeVins.delete(vin)) {
+        managerDeliveredExclusionCount += 1
+        if (publicByVin.has(vin)) managerDeliveredListedExclusionCount += 1
+      }
       continue
     }
     if (record?.soldManagerLog === true && record?.deliveredManagerLog === false) {
@@ -828,6 +834,8 @@ function activeInventoryMembership(publicByVin, crmByVin, managerDispositionOver
     activeInventoryCount: activeVins.size,
     activeStoreCounts,
     managerDeliveredExclusionCount,
+    // Data health: hidden by the manager log while the public feed still lists it.
+    managerDeliveredListedExclusionCount,
     // Kept for receipt compatibility. Pending manager records no longer carry
     // a VIN back into active inventory after both current sources lose it.
     managerPendingCarryoverCount: 0,

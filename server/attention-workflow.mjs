@@ -164,7 +164,9 @@ export function buildAttentionMutation({ sourceItem, current, input, context, id
     createdAt: current?.created_at || occurredAt,
     updatedAt: occurredAt,
     lastActor: actor,
-    lastActorRole: context.role,
+    // Audit the signed-in role, not a group manager's previewed role, the same
+    // convention transfer events follow (workflow.mjs).
+    lastActorRole: context.authenticatedRole || context.role,
     lastStoreId: context.store,
   }
 
@@ -173,7 +175,7 @@ export function buildAttentionMutation({ sourceItem, current, input, context, id
     eventType,
     label: ACTION_LABELS[eventType],
     actor,
-    actorRole: context.role,
+    actorRole: context.authenticatedRole || context.role,
     storeId: context.store,
     occurredAt,
     assignee: null,

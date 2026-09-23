@@ -85,6 +85,37 @@ describe('portable inventory service core', () => {
     ]))
   })
 
+  it('emits one public-listing code from the public record and its freshness, never from DealerMail', () => {
+    const { database, portable } = harness()
+    const manager = { role: 'manager', store: 'Howell', user: 'Synthetic manager' }
+    const sales = { role: 'sales', store: 'Fowlerville', user: 'Synthetic sales', userId: 'sales-1' }
+    const listedVin = 'TESTDATAHWELL0001'
+    const crmOnlyVin = 'TESTDATAHWELL0002'
+    const goneVin = 'TESTDATADETRT0001'
+    const move = portable.createTransfer({ vin: goneVin, neededBy: '2026-08-31T14:00:00-04:00', reason: 'Listing code test' }, sales, 'listing-code-move').record
+    expect(move).toMatchObject({ publicListing: 'listed', publicListingState: 'Listed publicly; availability not confirmed' })
+
+    database.prepare('DELETE FROM public_vehicle_snapshots WHERE vin = ?').run(crmOnlyVin)
+    database.prepare('DELETE FROM public_vehicle_snapshots WHERE vin = ?').run(goneVin)
+    database.prepare('DELETE FROM crm_vehicle_snapshots WHERE vin = ?').run(goneVin)
+    const bootstrap = portable.bootstrap(manager)
+    const row = (vin) => bootstrap.vehicles.find((vehicle) => vehicle.vin === vin)
+    expect(row(listedVin)).toMatchObject({ publicListing: 'listed' })
+    // The DealerMail-only record's wording mentions "listed"; the code does not.
+    expect(row(crmOnlyVin)).toMatchObject({ publicListing: 'pre_listing', websiteStatus: 'Current DealerMail record — not publicly listed' })
+    expect(portable.getVehicle(crmOnlyVin, manager).publicListing).toBe('pre_listing')
+    expect(row(goneVin)).toBeUndefined()
+    expect(portable.listTransfers({}, sales).items.find((item) => item.id === move.id)).toMatchObject({
+      publicListing: 'not_in_release', publicListingState: 'Not in current public release',
+    })
+
+    // The day after the report date the retained public record is stale, not current.
+    const nextDay = createInventoryServiceCore({ database, repository: sqliteRepository, now: () => new Date('2026-08-31T10:15:00-04:00') })
+    expect(nextDay.bootstrap(manager).meta.publicFreshness).toBe('stale_unverified')
+    expect(nextDay.getVehicle(listedVin, manager).publicListing).toBe('stale')
+    expect(nextDay.getVehicle(crmOnlyVin, manager).publicListing).toBe('pre_listing')
+  })
+
   it.each([
     ['group manager outside the route', { role: 'group_manager', store: 'Lincoln', user: 'Group Manager' }, true],
     ['home-store manager', { role: 'manager', store: 'Howell', user: 'Howell Manager' }, true],

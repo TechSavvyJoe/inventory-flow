@@ -322,6 +322,11 @@ export interface DealerMailHoldSignal {
     program?: string | null;
     label: string;
     serviceDate?: string | null;
+    /**
+     * Redacted on the server (service-core holdSummary): present only for roles
+     * that may view private evidence. Every consumer falls back on `label`, so
+     * no client-side redaction is added that could drift from the server's.
+     */
     rawAlert?: string | null;
   } | null;
   canViewEvidence?: boolean;

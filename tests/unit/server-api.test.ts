@@ -256,6 +256,49 @@ describe('Inventory Flow API', () => {
     expect(delivered.status).toBe(404)
   })
 
+  it('hides only exact-VIN delivered rows, sends stock-only matches to identity review, and counts hidden listed VINs', async () => {
+    let exactVin = ''
+    let stockOnlyVin = ''
+    let stockOnlyStock = ''
+    const { baseUrl } = await harness((release) => {
+      const howell = release.vehicles.filter((vehicle) => vehicle.publicRecord?.store === 'Howell').slice(0, 2)
+      exactVin = howell[0].vin
+      stockOnlyVin = howell[1].vin
+      stockOnlyStock = howell[1].publicRecord.stock_number
+      const records = [
+        { stock_number: howell[0].publicRecord.stock_number, vin: exactVin, vehicle: 'Ignored source vehicle text', sold_manager_log: true, delivered_manager_log: true, delivery_date: release.reportDate, confidence: 'high' },
+        // No VIN on the sold board: matched only by this store's stock number.
+        { stock_number: stockOnlyStock, vin: null, vehicle: 'Ignored source vehicle text', sold_manager_log: true, delivered_manager_log: true, delivery_date: release.reportDate, confidence: 'high' },
+      ]
+      release.managerDispositionOverlay = sanitizeManagerDispositionDocuments({
+        documents: [{ expectedStore: 'Howell', data: {
+          schema_version: '1.0', classification: 'operational-redacted', cloud_upload_allowed: true,
+          source_store: 'Howell', source_period: release.reportDate.slice(0, 7), source_type: 'manager-log',
+          status_authority: MANAGER_DISPOSITION_AUTHORITY, status_independence: MANAGER_DISPOSITION_INDEPENDENCE,
+          records, summary: { sold_records: 2, delivered_records: 2, sold_not_marked_delivered: 0 },
+        } }],
+        reportDate: release.reportDate,
+        vehicles: release.vehicles,
+      })
+    })
+
+    const bootstrap = await fetch(`${baseUrl}/api/bootstrap?homeStore=Howell&role=manager`).then((response) => response.json())
+    expect(bootstrap.managerDispositions).toContainEqual(expect.objectContaining({ vin: stockOnlyVin, matchMethod: 'unique_stock', deliveredManagerLog: true }))
+    expect(bootstrap.vehicles.some((vehicle) => vehicle.vin === exactVin)).toBe(false)
+    const kept = bootstrap.vehicles.find((vehicle) => vehicle.vin === stockOnlyVin)
+    expect(kept).toMatchObject({ publicListing: 'listed', managerDisposition: expect.objectContaining({ deliveredManagerLog: true }) })
+    expect(bootstrap.attention).toContainEqual(expect.objectContaining({
+      type: 'manager_pending_identity_review',
+      stockNumber: stockOnlyStock,
+      vin: stockOnlyVin,
+      label: `${stockOnlyStock} is delivered on the manager log and needs an exact VIN match`,
+    }))
+    expect(bootstrap.attention.some((item) => item.type === 'manager_pending_identity_review' && item.vin === exactVin)).toBe(false)
+
+    const health = await fetch(`${baseUrl}/api/health`).then((response) => response.json())
+    expect(health.counts).toMatchObject({ managerDispositions: 2, managerDeliveredHidden: 1, managerDeliveredHiddenWhileListed: 1 })
+  })
+
   it('fails closed when the standalone Node API cannot resolve a stable transport assignee identity', () => {
     const stableContext = {
       role: 'manager', store: 'Fowlerville', user: 'Fowlerville Manager', userId: 'manager-1',
@@ -684,6 +727,40 @@ describe('Inventory Flow API', () => {
     database.prepare('DELETE FROM public_vehicle_snapshots WHERE vin = ?').run(vin)
     const crmOnly = await fetch(`${baseUrl}/api/bootstrap`, { headers }).then((response) => response.json())
     expect(crmOnly.attention.some((item) => item.vin === vin && item.type === 'vehicle_alert')).toBe(true)
+  })
+
+  it('keeps a DealerMail loaner alert text from porters, drivers and coordinators while keeping the loaner badge', async () => {
+    const alertText = 'LCTP loaner out 8/28 RO 55123 for synthetic customer Pat Example'
+    let vin = ''
+    const { baseUrl } = await harness((release) => {
+      const vehicle = release.vehicles.find((row) => row.crmRecord && row.publicRecord?.store === 'Howell')
+      vin = vehicle.vin
+      vehicle.crmRecord.alerts = [{ alertTextRaw: alertText, authorRaw: 'Synthetic service writer', timestampRaw: '08/28/2026 08:00 AM' }]
+    })
+    const badge = { active: true, program: 'LCTP', label: 'Current loaner LCTP', serviceDate: '8/28' }
+    const read = async (path: string, role: string) => {
+      const response = await fetch(`${baseUrl}${path}`, { headers: roleHeaders(role, 'Howell', `Synthetic ${role}`) })
+      expect(response.status).toBe(200)
+      return response.json()
+    }
+
+    const salesRow = (await read('/api/bootstrap', 'sales')).vehicles.find((vehicle) => vehicle.vin === vin)
+    expect(salesRow.hold.loaner).toEqual({ ...badge, rawAlert: alertText })
+    expect((await read(`/api/vehicles/${vin}`, 'sales')).hold.loaner.rawAlert).toBe(alertText)
+
+    for (const role of ['porter', 'driver', 'coordinator']) {
+      const bootstrap = await read('/api/bootstrap', role)
+      const detail = await read(`/api/vehicles/${vin}`, role)
+      const attention = await read('/api/attention', role)
+      expect(bootstrap.vehicles.find((vehicle) => vehicle.vin === vin).hold.loaner, role).toEqual(badge)
+      expect(detail.hold.loaner, role).toEqual(badge)
+      for (const body of [bootstrap, detail, attention]) {
+        const serialized = JSON.stringify(body).toLowerCase()
+        expect(serialized, role).not.toContain('rawalert')
+        expect(serialized, role).not.toContain('ro 55123')
+        expect(serialized, role).not.toContain('pat example')
+      }
+    }
   })
 
   it('scopes transfer reads and writes to related managers, group managers, and the assigned driver', async () => {

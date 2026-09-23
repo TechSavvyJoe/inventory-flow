@@ -1,6 +1,7 @@
 import { getDemoWindowSticker } from '../../lib/demo-documents';
 import { sourceDisplayText } from '../../lib/source-text';
 import { sourceDistanceText } from '../../lib/source-distance';
+import type { PublicListingCode } from '../../types';
 import type { AutoCheckResource, FactoryEquipmentResource, FordInvoiceResource, FordOasisResource, WindowStickerResource, VehicleWorkspaceTab } from './types';
 import { formatDate, formatNumber, formatStickerMoney } from './inventory-utils';
 import { availableWindowStickerUrl, fordInvoiceUrl, fordOasisUrl, officialVehicleDocumentUrl, savedFordInvoiceUrl, vautoFactoryEquipmentUrl } from './vehicle-document-utils';
@@ -25,7 +26,8 @@ export interface VehicleResourceVehicle {
   transmission?: string | null;
   drivetrain?: string | null;
   listingUrl?: string | null;
-  publicListing?: { listingUrl?: string | null };
+  /** An adapted vehicle's listing object, or an API record's server listing code. */
+  publicListing?: { listingUrl?: string | null } | PublicListingCode;
   autoCheckReport?: SourceRecord<AutoCheckResource> | null;
   windowSticker?: SourceRecord<WindowStickerResource> | null;
   factoryEquipment?: SourceRecord<FactoryEquipmentResource> | null;
@@ -244,7 +246,7 @@ function importantItems(values: string[]): string[] {
 /** Provider identity comes from each source record, never from an interchangeable report label. */
 export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): VehicleResource[] {
   const result: VehicleResource[] = [];
-  const listing = vehicle.publicListing?.listingUrl ?? vehicle.listingUrl;
+  const listing = (typeof vehicle.publicListing === 'object' ? vehicle.publicListing.listingUrl : null) ?? vehicle.listingUrl;
   const fordFamily = /^(ford|lincoln)$/i.test(vehicle.make?.trim() ?? '');
   const inService = resolveVehicleInService(vehicle);
   const sticker = vehicle.windowSticker;

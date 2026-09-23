@@ -4,6 +4,13 @@ export type UserRole = 'sales' | 'manager' | 'coordinator' | 'porter' | 'driver'
 
 export type SourceFreshness = 'current' | 'stale_unverified' | 'incomplete' | 'unknown'
 
+/**
+ * Server-owned public-listing code (server/service-core.mjs publicListingCode):
+ * from the current public release record and its freshness only. Clients switch
+ * on it and never parse the display labels beside it. Absent means unknown.
+ */
+export type PublicListingCode = 'listed' | 'pre_listing' | 'not_in_release' | 'stale'
+
 export interface PublicChangeCounts {
   newArrival: number
   removed: number
@@ -338,6 +345,7 @@ export interface HoldSummary {
     program?: string | null
     label: string
     serviceDate?: string | null
+    /** DealerMail alert text; the server sends it only to roles that may view private evidence. */
     rawAlert?: string | null
   } | null
 }
@@ -518,6 +526,7 @@ export interface VehicleRecord {
   crmStore?: StoreName
   sourceReportedLocation: StoreName
   websiteStatus: string
+  publicListing?: PublicListingCode
   publicListingState: string
   dealerOn: DealerOnFlags
   managerDisposition?: ManagerDispositionRecord | null
@@ -566,6 +575,7 @@ export interface TransferRecord {
   dealStatus: string
   deliveryStatus: string
   dealerMailHoldState: string
+  publicListing?: PublicListingCode
   publicListingState: string
   cdkStatus: string
   priority: 'low' | 'normal' | 'high' | 'urgent'
