@@ -13,6 +13,7 @@ import { apiAccessGeneration, confirmedMutationRevision, invalidateApiAccess, su
 import { clearWorkspaceMemory } from '../lib/workspace-memory'
 import { confirmUnsavedWork } from '../lib/useUnsavedChanges'
 import { clearCustomerShortlist } from '../features/inventory/useCustomerShortlist'
+import { clearRecentSearches } from '../features/inventory/InventoryPredictiveSearch'
 import {
   STORE_NAMES,
   type AttentionEventInput,
@@ -68,6 +69,7 @@ function clearClientWorkspace() {
   invalidateApiAccess()
   clearWorkspaceMemory()
   clearCustomerShortlist()
+  clearRecentSearches()
 }
 
 function emptyBootstrap(accessContext: string): BootstrapState {

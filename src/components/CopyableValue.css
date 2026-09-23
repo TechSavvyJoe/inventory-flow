@@ -101,14 +101,11 @@
 }
 
 @media (max-width: 760px) {
-  .copyable-value__button {
-    min-width: 38px;
-    min-height: 38px;
-  }
-
+  /* Touch targets stay at the 44px minimum on phones, compact variant included. */
+  .copyable-value__button,
   .copyable-value--compact .copyable-value__button {
-    min-width: 34px;
-    min-height: 34px;
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 

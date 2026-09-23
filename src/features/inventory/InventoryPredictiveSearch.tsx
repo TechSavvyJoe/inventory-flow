@@ -30,6 +30,24 @@ interface InventoryPredictiveSearchProps {
   matches?: InventorySearchMatch[];
 }
 
+const RECENT_SEARCH_KEY_PREFIX = "inventory-search:";
+
+/** Recent searches can contain a typed customer name; drop them with the rest
+ *  of the client workspace whenever access changes. */
+export function clearRecentSearches(): void {
+  try {
+    const storage = window.sessionStorage;
+    const keys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key && key.startsWith(RECENT_SEARCH_KEY_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) storage.removeItem(key);
+  } catch {
+    // Storage may be unavailable; nothing was persisted then either.
+  }
+}
+
 function readRecentSearches(key: string): string[] {
   try {
     const stored = window.sessionStorage.getItem(key);
