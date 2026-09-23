@@ -27,6 +27,14 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python test dependencies
+        run: python -m pip install Pillow pypdf
+
       - name: Reject unsafe repository artifacts
         run: node scripts/check-repo-safety.mjs
 
@@ -48,7 +56,7 @@ jobs:
         run: |
           pnpm cloud:validate
           node scripts/run-recovery-drill.mjs
-          python3 -m unittest discover -s tests/python
+          python -m unittest discover -s tests/python
 
   e2e:
     runs-on: ubuntu-latest
