@@ -77,6 +77,20 @@ describe('transfer event time guards', () => {
     expect(showing.record.lastConfirmedAt).toBe(recent)
   })
 
+  it('rejects zone-less timestamps instead of reading them in the server zone', () => {
+    const { service } = harness()
+    const id = approvedMove(service)
+    for (const occurredAt of ['2026-08-30T10:15', '2026-08-30T10:15:00', '2026-08-30', 'August 30 2026']) {
+      expect(() => service.appendTransferEvent(id, { type: 'note_added', note: 'Synthetic note', occurredAt }, sales, `zoneless-${occurredAt}`), occurredAt)
+        .toThrow(/explicit timezone/)
+    }
+    for (const occurredAt of ['2026-08-30T10:15:00Z', '2026-08-30T10:15:00.000Z', '2026-08-30T06:15:00-04:00', '2026-08-30T10:15Z']) {
+      expect(() => service.appendTransferEvent(id, { type: 'note_added', note: 'Synthetic note', occurredAt }, sales, `zoned-${occurredAt}`), occurredAt).not.toThrow()
+    }
+    expect(() => service.createTransfer({ vin: 'TESTDATAHWELL0001', neededBy: '2026-08-31T14:00', reason: 'Synthetic showing' }, sales, 'zoneless-request'))
+      .toThrow(/neededBy must be an ISO timestamp with an explicit timezone/)
+  })
+
   it('keeps ledger recency on the server clock so a backdated event does not hide the move', () => {
     const { service, database, tick } = harness()
     const id = approvedMove(service)

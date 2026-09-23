@@ -202,14 +202,19 @@ function storeName(value, field) {
   return store
 }
 
+// A timestamp without an explicit zone (a raw datetime-local value, or a bare
+// date) would be read in the server's zone, which is UTC on the hosted Worker
+// and Eastern on the dealership host. Require the instant to be unambiguous.
+const ZONED_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})$/i
+
 function isoTimestamp(value, field, { required = false } = {}) {
   if (value === undefined || value === null || value === '') {
     if (required) throw new WorkflowError(`${field} is required`, { details: { field } })
     return null
   }
-  const parsed = new Date(value)
+  const parsed = typeof value === 'string' && ZONED_ISO_TIMESTAMP.test(value.trim()) ? new Date(value.trim()) : new Date(NaN)
   if (Number.isNaN(parsed.valueOf())) {
-    throw new WorkflowError(`${field} must be a valid date or timestamp`, { details: { field } })
+    throw new WorkflowError(`${field} must be an ISO timestamp with an explicit timezone`, { details: { field } })
   }
   return parsed.toISOString()
 }
