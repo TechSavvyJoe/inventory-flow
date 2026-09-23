@@ -1,7 +1,7 @@
 // @ts-nocheck -- the daily orchestrator is plain ESM.
 // @vitest-environment node
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -61,5 +61,26 @@ describe('app-first daily orchestrator helpers', () => {
 
     expect(internals.exitCodeForResult({ ok: true })).toBe(0)
     expect(internals.exitCodeForResult({ ok: false, failureCode: 'DEALERMAIL_INCOMPLETE' })).toBe(1)
+  })
+
+  it('does not bind a previous manager overlay before its current-run validation', async () => {
+    const internals = await loadInternals()
+    const reportDate = '2026-09-23'
+    const publicPath = path.join(workspaceRoot, 'public.json')
+    const dealerPath = path.join(workspaceRoot, 'dealer.json')
+    writeFileSync(publicPath, JSON.stringify({ vehicles: [{ vin: '1FT8W3BM8RED19309', store: 'Howell' }] }))
+    writeFileSync(dealerPath, JSON.stringify({
+      completeDealerMailUsedInventory: { rows: [{ vin: '1FT8W3BM8RED19309', storeName: 'Howell' }] },
+      excludeActiveHoldsValidationSet: { rows: [{ vin: '1FT8W3BM8RED19309', storeName: 'Howell' }] },
+      summary: { uniqueHeldVehicles: 0 },
+    }))
+    const overlayDirectory = path.join(workspaceRoot, 'work', 'manager-supplied', 'sold-logs')
+    mkdirSync(overlayDirectory, { recursive: true })
+    writeFileSync(path.join(overlayDirectory, '2026-09-howell-operational.json'), '{stale overlay')
+
+    const manifest = internals.deriveManifest({ reportDate, publicPath, dealerPath, warnings: [], steps: [] })
+
+    expect(manifest.source_counts.dealermail_used_rows).toBe(1)
+    expect(manifest).not.toHaveProperty('manager_disposition_overlay')
   })
 })
