@@ -107,7 +107,7 @@ Open `http://127.0.0.1:4173`; the synthetic API is at `http://127.0.0.1:4174/api
 
 - [AI collaboration guide](docs/AI_COLLABORATION.md) explains private-GitHub, Claude Code, and Claude Desktop options.
 - [Shared-data architecture](docs/SHARED_DATA_ARCHITECTURE.md) explains why Git shares source code but not saved operational state, and what is required for multiple people or agents to see the same transfers.
-- `pnpm check:repo-safety` rejects trackable runtime databases, source caches, report artifacts, unreviewed raster captures, common credential formats, and unmarked fixtures.
+- `pnpm check:repo-safety` rejects trackable runtime databases, source caches, report artifacts, unreviewed raster captures outside the brand/demo asset directories, npm/yarn lockfiles, common credential formats, and unmarked fixtures.
 
 ## Important boundary
 

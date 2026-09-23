@@ -1,9 +1,10 @@
 import { defineConfig, devices } from '@playwright/test'
 
 // Local runs drive the installed Google Chrome, which is the browser dealership
-// staff actually use. CI installs only Playwright's bundled Chromium, where no
-// branded channel exists, so it sets PLAYWRIGHT_BUNDLED_CHROMIUM and we drop the
-// channel instead of pulling a second browser down on every run.
+// staff actually use. CI installs Playwright's bundled Chromium (and WebKit, for
+// the cross-browser acceptance subset), where no branded Chrome channel exists,
+// so it sets PLAYWRIGHT_BUNDLED_CHROMIUM and we drop the channel instead of
+// pulling a second Chrome down on every run.
 const chromiumChannel = process.env.PLAYWRIGHT_BUNDLED_CHROMIUM ? undefined : 'chrome'
 
 export default defineConfig({

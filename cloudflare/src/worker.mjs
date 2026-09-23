@@ -8,10 +8,8 @@ import { assertAdminOverviewAccess } from '../../server/admin-control-center.mjs
 import { readMembershipAdmin, saveMembership } from './membership-admin.mjs'
 import { serviceIntakeRows } from '../../server/service-intake.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
-import { importLedger, LedgerImportError } from './ledger-import.mjs'
 
 const FORMAT = 'inventory-flow-private-release-v1'
-const LEDGER_FORMAT = 'inventory-flow-private-ledger-v1'
 const MAX_UPLOAD = 25 * 1024 * 1024
 const MAX_INVOICE_UPLOAD = 8 * 1024 * 1024
 const INVOICE_ROLES = new Set(['sales', 'manager', 'group_manager'])
@@ -407,7 +405,6 @@ export default {
         const invoiceMatch=/^\/internal\/invoices\/(\d{4}-\d{2}-\d{2})\/([A-HJ-NPR-Z0-9]{17})$/.exec(url.pathname)
         if(request.method==='POST' && invoiceMatch) return await uploadInvoiceDocument(request,env,invoiceMatch[1],invoiceMatch[2])
         if(request.method==='POST' && url.pathname==='/internal/releases') return await publishRelease(request,env)
-        if(request.method==='POST' && url.pathname==='/internal/ledger') return json(200,await importLedger(await decryptEnvelope(await readJson(request,MAX_UPLOAD),env,LEDGER_FORMAT),env))
         if(request.method==='GET' && url.pathname==='/internal/status') {const current=await currentRelease(env);return json(200,{ready:Boolean(current),reportDate:current?.report_date??null,bundleSha256:current?.bundle_sha256??null,metadata:current?JSON.parse(current.metadata_json):null})}
         if(request.method==='GET' && url.pathname==='/internal/readiness') return json(200,await appReadiness(env))
         throw new HttpError('NOT_FOUND',404)
@@ -420,7 +417,7 @@ export default {
       const asset=await env.ASSETS.fetch(request)
       return new Response(asset.body,{status:asset.status,headers:{...Object.fromEntries(asset.headers),...headers}})
     } catch(error) {
-      const known=error instanceof HttpError || error instanceof AccessError || error instanceof WorkflowError || error instanceof RepositoryConflictError || error instanceof LedgerImportError
+      const known=error instanceof HttpError || error instanceof AccessError || error instanceof WorkflowError || error instanceof RepositoryConflictError
       return json(known?(error.status??400):500,{error:known?error.message:'The request could not be completed. Please try again.',code:known?error.code:'INTERNAL_ERROR',requestId})
     }
   },

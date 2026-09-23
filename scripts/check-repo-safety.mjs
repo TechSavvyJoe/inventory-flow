@@ -22,12 +22,28 @@ const REQUIRED_IGNORE_RULES = [
   '*.log',
   '**/__pycache__/',
   'design/**/*.png',
+  '.agents/',
+]
+
+// Reviewed brand/UI rasters are allowed only under these directories; a raster
+// anywhere else (repo root, docs/, design/, tests/, a working notes folder) may
+// silently carry a live VIN, hold detail, or an authenticated-page capture.
+const RASTER_ALLOWED_PREFIXES = [
+  'public/brand-kit/',
+  'public/brands/',
+  'public/resource-brands/',
+  'public/demo-vehicles/',
+  'public/demo-documents/',
+  'extension/icons/',
+  'extension/brands/',
+  'extension/resource-brands/',
 ]
 
 const SKIP_DIRECTORIES = new Set([
   '.git',
   '.vite',
   '.codex',
+  '.agents',
   'node_modules',
   'dist',
   'runtime',
@@ -43,7 +59,12 @@ const FORBIDDEN_PATHS = [
   { pattern: /(^|\/)data\//i, reason: 'generated source caches can contain current inventory or CRM evidence' },
   { pattern: /(^|\/)(?:work|outputs|exports)\//i, reason: 'report artifacts and exports are not repository data' },
   { pattern: /(^|\/)__pycache__\//i, reason: 'Python bytecode is generated locally' },
-  { pattern: /(^|\/)design\/.*\.(?:png|jpe?g|webp|heic)$/i, reason: 'unreviewed raster captures may contain live VIN or hold details' },
+  {
+    pattern: /\.(?:png|jpe?g|webp|heic|gif)$/i,
+    reason: `unreviewed raster captures may contain live VIN, hold, or authenticated-page details; rasters are only allowed under ${RASTER_ALLOWED_PREFIXES.join(', ')}`,
+    allow: new RegExp(`^(?:${RASTER_ALLOWED_PREFIXES.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'i'),
+  },
+  { pattern: /(?:^|\/)(?:package-lock\.json|yarn\.lock)$/i, reason: 'only pnpm-lock.yaml is tracked; an npm or yarn lockfile builds a different dependency tree' },
   { pattern: /(?:^|\/)\.env(?:\..+)?$/i, reason: 'environment files may contain secrets', allow: /^\.env\.example$/i },
   { pattern: /\.(?:sqlite(?:-shm|-wal|-journal)?|db|log|har|xlsx?|csv|jsonl|zip)$/i, reason: 'database, log, browser, report, or bulk-data artifact' },
   {

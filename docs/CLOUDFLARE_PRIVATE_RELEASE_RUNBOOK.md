@@ -193,10 +193,8 @@ D1 is the sole writable production ledger. New daily releases never replace
 requests, events, attention assignments, or history. Do not copy local SQLite
 over cloud state or re-run migration as a daily job.
 
-The one-time migration utilities are:
-scripts/export-cloud-ledger.mjs and scripts/verify-cloud-deployment.mjs ledger.
-They read the old database without changing it and use a separate encrypted
-ledger envelope. The cloud endpoint rejects a different import once state exists.
+Initial import completed 2026-09-02; recovery uses D1 Time Travel, see
+RECOVERY_DRILL.md.
 
 For an incident:
 

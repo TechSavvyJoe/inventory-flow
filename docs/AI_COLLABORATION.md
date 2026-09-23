@@ -81,10 +81,11 @@ The gate verifies that trackable files do not include:
 
 - `runtime/`, `data/`, `work/`, `outputs/`, exports, SQLite, logs, spreadsheets, HAR files, or bulk-data files;
 - `.env` files or common literal credential formats;
-- unreviewed raster captures, which can silently contain live VINs or hold/customer details;
+- a `package-lock.json` or `yarn.lock` (only `pnpm-lock.yaml` is tracked; a stray lockfile builds a different dependency tree);
+- unreviewed raster captures (png/jpg/jpeg/webp/heic/gif) anywhere outside the reviewed brand/demo asset directories (`public/{brand-kit,brands,resource-brands,demo-vehicles,demo-documents}/`, `extension/{icons,brands,resource-brands}/`) — a raster anywhere else, including the repo root, `docs/`, or `.agents/`, can silently carry a live VIN, hold detail, or an authenticated-page capture;
 - fixture files without `SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS`.
 
-Keep code-based design guidance and reviewed vector assets. Generate visual-regression screenshots from `pnpm dev:demo`; store CI screenshots as short-lived build artifacts rather than committing them by default.
+`.agents/` (per-session agent transcripts) is gitignored and never tracked. Keep code-based design guidance and reviewed vector assets. Generate visual-regression screenshots from `pnpm dev:demo`; store CI screenshots as short-lived build artifacts rather than committing them by default.
 
 ## What a remote AI cannot verify
 
