@@ -434,3 +434,48 @@ describe('session access and confirmed writes', () => {
   })
 
 })
+
+describe('bootstrap revalidation', () => {
+  const bootstrapJson = (etag: string) => new Response(JSON.stringify({ meta: { reportDate: '2026-09-22' }, vehicles: [] }), {
+    status: 200, headers: { 'Content-Type': 'application/json; charset=utf-8', ETag: etag },
+  })
+  const headerAt = (index: number, name: string) => new Headers(fetchMock.mock.calls[index][1]?.headers).get(name)
+
+  it('sends the stored validator and reuses the same payload object on 304', async () => {
+    fetchMock.mockResolvedValueOnce(bootstrapJson('"a"'))
+    const first = await api.getBootstrap('Howell', 'manager')
+    expect(headerAt(0, 'If-None-Match')).toBeNull()
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 304, headers: { ETag: '"a"' } }))
+    const second = await api.getBootstrap('Howell', 'manager')
+    expect(headerAt(1, 'If-None-Match')).toBe('"a"')
+    expect(second).toBe(first)
+    // A changed document replaces the payload and the validator.
+    fetchMock.mockResolvedValueOnce(bootstrapJson('"b"'))
+    const third = await api.getBootstrap('Howell', 'manager')
+    expect(third).not.toBe(first)
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 304 }))
+    await api.getBootstrap('Howell', 'manager')
+    expect(headerAt(3, 'If-None-Match')).toBe('"b"')
+  })
+
+  it('never reuses a validator across an access change', async () => {
+    const session = await import('../../src/lib/apiSession')
+    fetchMock.mockResolvedValueOnce(bootstrapJson('"a"'))
+    await api.getBootstrap('Howell', 'manager')
+    session.invalidateApiAccess()
+    fetchMock.mockResolvedValueOnce(bootstrapJson('"c"'))
+    await api.getBootstrap('Howell', 'manager')
+    expect(headerAt(1, 'If-None-Match')).toBeNull()
+  })
+
+  it('keeps validators per document, so another store never answers for this one', async () => {
+    fetchMock.mockResolvedValueOnce(bootstrapJson('"howell"'))
+    await api.getBootstrap('Howell', 'manager')
+    fetchMock.mockResolvedValueOnce(bootstrapJson('"lincoln"'))
+    await api.getBootstrap('Lincoln', 'manager')
+    expect(headerAt(1, 'If-None-Match')).toBeNull()
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 304 }))
+    await api.getBootstrap('Howell', 'manager')
+    expect(headerAt(2, 'If-None-Match')).toBe('"howell"')
+  })
+})

@@ -185,7 +185,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         const nextData = await getBootstrap(homeStore, role, controller.signal)
         if (requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return
         const nextUser = nextData.access?.user ?? null
-        if (knownUserRef.current !== nextUser) clearClientWorkspace()
+        // Only a change of identity clears the workspace. When the user is first
+        // learned there is nothing stale: the mount effect and clearAccess already
+        // cleared everything before this request, and clearing again would bump
+        // the access generation and discard the bootstrap validator this response
+        // just stored, turning every tab's first refresh into a full download.
+        if (knownUserRef.current !== null && knownUserRef.current !== nextUser) clearClientWorkspace()
         knownUserRef.current = nextUser
         const authenticatedRole = nextData.access?.role ?? role
         const authenticatedStore = nextData.access?.store ?? homeStore
