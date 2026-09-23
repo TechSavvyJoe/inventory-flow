@@ -150,6 +150,7 @@ export interface FactoryEquipmentSectionRecord {
 export interface FactoryEquipmentRecord {
   dataState?: SourceFreshness
   url?: string | null
+  savedPdfSha256?: string | null
   sourceLabel?: string | null
   capturedAt?: string | null
   vehicleDescription?: string | null

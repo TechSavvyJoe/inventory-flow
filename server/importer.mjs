@@ -60,7 +60,7 @@ const PHOTO_PATH_PATTERN = /^\/inventoryphotos\/.*\.(?:jpe?g|png|webp)$/i
 const AUTOCHECK_PATH = '/autocheck.aspx'
 const WINDOW_STICKER_PATH_PATTERN = /^\/api\/vhcliaa\/inventory\/[0-9]{1,8}\/window-sticker$/i
 const CAI_FACTORY_EQUIPMENT_PATH_PATTERN =
-  /^\/window-stickers\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jpg$/i
+  /^\/window-stickers\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|pdf)$/i
 const PHOTO_ALLOWED_HOSTS = new Set(Object.values(STORE_CONFIG).map((store) => store.websiteHost))
 const RESOURCE_DATA_STATES = new Set(['current', 'stale_unverified', 'incomplete'])
 const FORD_OASIS_FIELD_SERVICE_ACTION_CODE_PATTERN = /^[0-9]{2}[A-Z][0-9]{2,3}$/
@@ -622,6 +622,7 @@ function validatedFactoryEquipment(value, vin) {
       'sections',
       'disclaimer',
       'isOriginalWindowSticker',
+      'savedPdfSha256',
     ]),
     'Factory-equipment record',
     { vin },
@@ -634,8 +635,13 @@ function validatedFactoryEquipment(value, vin) {
   )
   const result = { dataState: value.dataState, isOriginalWindowSticker: false }
   const url = canonicalCaiFactoryEquipmentUrl(value.url)
-  assertValid(url !== null, 'Factory-equipment URL is not an approved vAuto/CAI image URL', { vin })
+  assertValid(url !== null, 'Factory-equipment URL is not an approved vAuto/CAI document URL', { vin })
   if (url) result.url = url
+  if (value.savedPdfSha256 !== undefined) {
+    assertValid(typeof value.savedPdfSha256 === 'string' && /^[a-f0-9]{64}$/.test(value.savedPdfSha256),
+      'Factory-equipment saved PDF digest is invalid', { vin })
+    result.savedPdfSha256 = value.savedPdfSha256
+  }
 
   const textFields = [
     ['sourceLabel', 160],

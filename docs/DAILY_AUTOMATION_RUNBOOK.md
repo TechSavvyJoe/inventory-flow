@@ -184,6 +184,7 @@ manifest warnings. In order:
 | 0 Idempotency | If `work\app-feed-status\{date}.json` is already `published_and_verified`, message Joe the counts and stop. | |
 | 1 Browser | `list_connected_browsers`, then `select_browser` deviceId `<automation-browser-device-id>` ("Work PC Automation Browser"). If absent, run `start-automation-browser.ps1`, wait 60 s, retry once; if still absent, skip every browser step (3, 3.7, 3.8, 7) and still finish 2/4/5. | Never picks another browser, never uses Chrome. |
 | 2 Public inventory + resource enrichment | Produces `snapshots\{date}-public.json` and the base workbook. AutoCheck, photos and window stickers come from the dealer VDP/API feeds. | Ford placeholder PDFs ("not yet been released") are labelled `not_released_by_ford`, not failures. |
+
 | 2.5 Vehicle Resources | `python work\add_resources_sheet.py --report-date {date}` | Run, do not edit. |
 | 3 DealerMail capture | `node apps\inventory-ops\scripts\capture-dealermail.mjs run {date} --budget-ms 900000` performs the complete read-only grid, exclude-holds, live-holds, detail, comment/alert and CDK capture over localhost CDP and writes the five raw files the existing builder consumes. | Never submits, holds, releases or comments. `SESSION_EXPIRED` is detected from DealerMail's actual `Session Ended` signature, not a password field. |
 | 3.2 Build + finalize snapshot | `node build_v2_snapshot.mjs {date}` **from `work\`** (its paths are cwd-relative) -> `-complete-used-inventory-deep.json`, must print `VALIDATION PASSED`. Then `node work\finalize_cloud_snapshot.mjs {date}` **from the workspace root** -> `-deep-cloud-ready.json`. | **New 09/12.** Finalize is REQUIRED: it adds the dual 22-cell arrays and the exclude-holds validation set the Cloudflare validator demands. Skipping it = `PUBLICATION_NOT_VERIFIED`. The manifest must name the CLOUD-READY file. |
@@ -197,6 +198,11 @@ manifest warnings. In order:
 | 3.95 vAuto Factory Equipment (API) | `python work\build_vauto_worklist.py --report-date {date}` then `node apps\inventory-ops\scripts\vauto-factory-equipment.mjs run work\vauto-history\worklist-{date}.json work\vauto-history\{date}-factory-equipment.json`. Every feed VIN not already OK, any make; ~0.2 s per VIN; resumable. | **Rewritten 09/12 (PM).** No form, no clicks, no popup, nothing on screen: the script calls vAuto's own `factoryequipment/WindowStickers/{VIN}` endpoint from inside the authenticated tab. `[]` = `NO_BUILD_DATA` (Euro/import makes), re-checked after 7 days. `SESSION_EXPIRED` = sign in to vAuto again in the automation Comet. The daily publish task runs this same pair as its Step 1.4, so the Cowork run is a second, harmless pass. |
 | 7 (removed) | The old vAuto appraisal-form driver was deleted. `--ui` is rejected before browser access. | Only the read-only Factory Equipment API path is supported. |
 | 8 Finish | Message Joe: public / DealerMail / held counts, publish status, failures and why, vehicles needing manual review; attach the workbook. Dates MM/DD/YYYY. | A VIN that dropped off the public feed is a Removed change, not active inventory. |
+
+Public VDP links are still checked daily. An exact-VIN original sticker whose
+URL and validated current facts match the prior completed snapshot reuses
+those facts instead of downloading the same PDF again. AutoCheck remains a
+fresh daily check because service evidence can change.
 
 Two things happen alongside the prompt rather than inside it:
 
@@ -350,6 +356,18 @@ task also pings this endpoint and logs `vauto=SESSION_EXPIRED` in
 day's public snapshot: every VIN, any make, minus VINs OK in any prior capture
 (CAI URLs are stable) and minus `NO_BUILD_DATA` VINs checked in the last 7 days.
 
+`scripts\cache-vauto-equipment-pdfs.py` keeps one content-hashed, VIN-linked
+printable PDF under `work\vauto-documents\objects\` and an index at
+`work\vauto-documents\index.json`. The approved vAuto PDF is preferred; a
+JPEG-only source becomes a labeled printable PDF. A confirmed 404 is recorded
+and skipped for the rest of that report day; a transient connection error can
+retry. These are informational vAuto equipment references, never verified
+original stickers. The Windows publisher stages active VIN PDFs in private R2
+only when `runtime\vauto-pdf-enabled.flag` exists after the Worker endpoint is
+deployed and verified. A staging failure blocks the new release and leaves the
+last verified release in place. The PDF cache is a best-effort source capture;
+its individual failures do not convert missing documents into current data.
+
 The old appraisal-form UI path has been removed. Passing `--ui` fails before
 browser access; the capture supports only the read-only Factory Equipment API.
 
@@ -452,6 +470,15 @@ even when signed in - so every prior run recorded "fordvisions unavailable" or a
 invoice data. NAVIGATING the tab once lets the MSAL javascript run and complete the silent
 SSO against the live FMCDealer session (it lands on `/FordEntraDealer/callback.html`, then on
 the real document). After that handshake, in-tab fetches return PDF bytes.
+
+The capture first checks prior dated `work\invoice-history\` folders for a
+parsed, exact-VIN invoice with a bounded, hash-checked PDF. It copies verified
+PDFs into today's dated archive while preserving the original capture time;
+only missing or damaged VINs enter the browser queue. If the queue is empty,
+the Fordvisions tab and SSO handshake are not opened. `--refresh` deliberately
+bypasses reuse. The release still stages date-scoped private R2 invoice copies
+for its own VINs; local PDF reuse does not treat old source data as a fresh
+verification of service readiness.
 
 09/14/2026 result: 178 Ford/Lincoln VINs, 131 PDFs, 47 unavailable (38 "Document Type is not
 retail", 9 "VIN not found"), **zero fetch errors**, 103 seconds. `extract_invoice_text.py`

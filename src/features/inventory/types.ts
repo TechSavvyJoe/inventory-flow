@@ -144,6 +144,7 @@ export interface FactoryEquipmentSection {
 export interface FactoryEquipmentResource {
   dataState: SourceDataState;
   url?: string | null;
+  savedPdfSha256?: string | null;
   sourceLabel?: string | null;
   capturedAt?: string | null;
   vehicleDescription?: string | null;

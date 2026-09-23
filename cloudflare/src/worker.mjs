@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { Buffer } from 'node:buffer'
 import { AccessError, memberContext, verifyAccess } from './access.mjs'
-import { validateReleaseBundle } from './release-validation.mjs'
+import { approvedFactoryEquipmentUrl, validateReleaseBundle } from './release-validation.mjs'
 import { loadD1Repository, RepositoryConflictError } from './repository.mjs'
 import { createInventoryServiceCore } from '../../server/service-core.mjs'
 import { assertAdminOverviewAccess } from '../../server/admin-control-center.mjs'
@@ -82,6 +82,7 @@ async function readBodyBytes(request, limit) {
 }
 
 function invoiceObjectKey(reportDate, vin) {return `documents/invoices/${reportDate}/${vin}.pdf`}
+function equipmentObjectKey(vin, sha256) {return `documents/vauto-equipment/${vin}/${sha256}.pdf`}
 function invoiceVehicle(release, vin) {return release.vehicles?.find((vehicle)=>vehicle?.vin===vin)??null}
 function fordFamilyVehicle(vehicle) {
   const make=String(vehicle?.publicRecord?.make??vehicle?.crmRecord?.makeRaw??'').trim().toUpperCase()
@@ -269,6 +270,60 @@ async function publisher(request, env) {
   if(!env.PUBLISHER_CLIENT_ID || !equal(claims.common_name,env.PUBLISHER_CLIENT_ID) || claims.email) throw new AccessError('PUBLISHER_IDENTITY_REQUIRED',403)
   if(!env.RELEASE_PUBLISHER_TOKEN || !equal(request.headers.get('authorization'),`Bearer ${env.RELEASE_PUBLISHER_TOKEN}`)) throw new AccessError('PUBLISHER_AUTHENTICATION_REQUIRED',403)
 }
+
+function equipmentIdentity(vin, sha256, sourceUrl) {
+  if(!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)||!/^[a-f0-9]{64}$/.test(sha256)||
+    typeof sourceUrl!=='string'||!sourceUrl.startsWith('https://')||sourceUrl.length>300||!approvedFactoryEquipmentUrl(sourceUrl)) {
+    throw new HttpError('INVALID_EQUIPMENT_DOCUMENT')
+  }
+}
+
+export async function equipmentDocumentStatus(env, vin, sha256, sourceUrl) {
+  equipmentIdentity(vin,sha256,sourceUrl)
+  const object=await env.RELEASE_SNAPSHOTS.head(equipmentObjectKey(vin,sha256))
+  const stored=object?.customMetadata?.vin===vin&&object?.customMetadata?.sha256===sha256&&
+    object?.customMetadata?.sourceUrl===sourceUrl&&object?.httpMetadata?.contentType==='application/pdf'
+  return json(200,{status:stored?'stored':'missing',vin,sha256})
+}
+
+export async function uploadEquipmentDocument(request, env, vin, sha256) {
+  const sourceUrl=request.headers.get('x-inventory-source-url')
+  equipmentIdentity(vin,sha256,sourceUrl)
+  if(request.headers.get('content-type')?.toLowerCase().split(';')[0].trim()!=='application/pdf') throw new HttpError('PDF_CONTENT_REQUIRED',415)
+  const pdf=await readBodyBytes(request,MAX_INVOICE_UPLOAD)
+  const prefix=String.fromCharCode(...pdf.subarray(0,5))
+  const tail=String.fromCharCode(...pdf.subarray(Math.max(0,pdf.length-2048)))
+  if(pdf.length<8||prefix!=='%PDF-'||!tail.includes('%%EOF')||await digest(pdf)!==sha256) throw new HttpError('INVALID_PDF')
+  const key=equipmentObjectKey(vin,sha256)
+  const existing=await env.RELEASE_SNAPSHOTS.head(key)
+  if(existing) {
+    if(existing.customMetadata?.vin!==vin||existing.customMetadata?.sha256!==sha256||
+      existing.customMetadata?.sourceUrl!==sourceUrl||existing.httpMetadata?.contentType!=='application/pdf') {
+      throw new HttpError('EQUIPMENT_DOCUMENT_CONFLICT',409)
+    }
+    return json(200,{status:'already_stored',vin,sha256})
+  }
+  await env.RELEASE_SNAPSHOTS.put(key,pdf,{httpMetadata:{contentType:'application/pdf'},
+    customMetadata:{vin,sha256,sourceUrl}})
+  return json(201,{status:'stored',vin,sha256,bytes:pdf.byteLength})
+}
+
+export async function savedEquipmentResponse(env, release, vin) {
+  const vehicle=invoiceVehicle(release,vin)
+  const equipment=vehicle?.resourceRecord?.factoryEquipment
+  const sha256=equipment?.savedPdfSha256
+  if(!equipment||equipment.dataState!=='current'||equipment.isOriginalWindowSticker!==false||
+    !/^[a-f0-9]{64}$/.test(sha256??'')||typeof equipment.url!=='string'||
+    !equipment.url.startsWith('https://')||!approvedFactoryEquipmentUrl(equipment.url)) {
+    throw new HttpError('EQUIPMENT_PDF_NOT_CAPTURED',404)
+  }
+  const object=await env.RELEASE_SNAPSHOTS.get(equipmentObjectKey(vin,sha256))
+  if(!object||object.size>MAX_INVOICE_UPLOAD||object.httpMetadata?.contentType!=='application/pdf'||
+    object.customMetadata?.vin!==vin||object.customMetadata?.sha256!==sha256||
+    object.customMetadata?.sourceUrl!==equipment.url) throw new HttpError('EQUIPMENT_PDF_UNAVAILABLE',503)
+  return new Response(object.body,{status:200,headers:{...headers,'Content-Type':'application/pdf',
+    'Content-Disposition':`inline; filename="${vin}-vauto-equipment.pdf"`}})
+}
 function releaseMetadata(bundle,counts) {
   return JSON.stringify({completedAt:bundle.release.completedAt,timezone:bundle.release.timezone,warningCount:bundle.release.warnings?.length??0,...counts})
 }
@@ -311,7 +366,7 @@ async function appApi(request,url,env,context) {
   const adminOverview=route==='/admin/overview'
   const adminMembersRoute=route==='/admin/members'
   if(adminOverview && !read) throw new HttpError('METHOD_NOT_ALLOWED',405)
-  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/(?:service|invoice)$/.test(route) || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
+  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/(?:service|invoice|equipment-pdf)$/.test(route) || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
   // The membership context was resolved from Access + D1 before this point.
   // Check it before reading the group directory or private release.
   if(adminOverview || adminMembersRoute) assertAdminOverviewAccess(context)
@@ -329,6 +384,7 @@ async function appApi(request,url,env,context) {
   const adminMembers=adminOverview?await loadAdminMembers(env):null
   const release=await readRelease(env)
   if(read && /^\/vehicles\/[^/]+\/invoice$/.test(route)) return savedInvoiceResponse(env,release,identifier,context)
+  if(read && /^\/vehicles\/[^/]+\/equipment-pdf$/.test(route)) return savedEquipmentResponse(env,release,identifier)
   let resolvedAssignmentInput=null
   for(let attempt=0;attempt<3;attempt++) {
     const repo=await loadD1Repository(env.INVENTORY_DB,release)
@@ -381,6 +437,9 @@ export default {
         await publisher(request,env)
         const invoiceMatch=/^\/internal\/invoices\/(\d{4}-\d{2}-\d{2})\/([A-HJ-NPR-Z0-9]{17})$/.exec(url.pathname)
         if(request.method==='POST' && invoiceMatch) return await uploadInvoiceDocument(request,env,invoiceMatch[1],invoiceMatch[2])
+        const equipmentMatch=/^\/internal\/equipment\/([A-HJ-NPR-Z0-9]{17})\/([a-f0-9]{64})$/.exec(url.pathname)
+        if(request.method==='GET' && equipmentMatch) return await equipmentDocumentStatus(env,equipmentMatch[1],equipmentMatch[2],request.headers.get('x-inventory-source-url'))
+        if(request.method==='POST' && equipmentMatch) return await uploadEquipmentDocument(request,env,equipmentMatch[1],equipmentMatch[2])
         if(request.method==='POST' && url.pathname==='/internal/releases') return await publishRelease(request,env)
         if(request.method==='POST' && url.pathname==='/internal/ledger') return json(200,await importLedger(await decryptEnvelope(await readJson(request,MAX_UPLOAD),env,LEDGER_FORMAT),env))
         if(request.method==='GET' && url.pathname==='/internal/status') {const current=await currentRelease(env);return json(200,{ready:Boolean(current),reportDate:current?.report_date??null,bundleSha256:current?.bundle_sha256??null,metadata:current?JSON.parse(current.metadata_json):null})}

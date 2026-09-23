@@ -16,7 +16,7 @@ function safeErrorMessage(error) {
 }
 
 export function startInventoryServer({
-  workspaceRoot = defaultWorkspaceRoot,
+  workspaceRoot = process.env.BOB_MAXEY_WORKSPACE_ROOT || defaultWorkspaceRoot,
   runtimeDir = path.join(appDirectory, 'runtime'),
   databasePath = path.join(runtimeDir, 'inventory-ops.sqlite'),
   distDir = path.join(appDirectory, 'dist'),
@@ -55,7 +55,7 @@ export function startInventoryServer({
   }
 
   const refreshResult = refresh()
-  const server = createInventoryServer({ service, serveDist, distDir, identityResolver, adminDirectory })
+  const server = createInventoryServer({ service, serveDist, distDir, workspaceRoot, identityResolver, adminDirectory })
   const timer = refreshIntervalMs > 0 ? setInterval(refresh, refreshIntervalMs) : null
   timer?.unref()
 

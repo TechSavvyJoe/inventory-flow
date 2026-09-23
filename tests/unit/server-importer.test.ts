@@ -822,6 +822,10 @@ describe('verified daily source importer', () => {
       externalAutoCheckCount: 0,
     })
 
+    const printable = structuredClone(enrichment)
+    printable.recordsByVin[vin].factoryEquipment.url = printable.recordsByVin[vin].factoryEquipment.url.replace('.jpg', '.pdf')
+    expect(validateVinDocumentEnrichment(printable).recordsByVin[vin].factoryEquipment.url).toMatch(/\.pdf$/)
+
     const unsafeHost = structuredClone(enrichment)
     unsafeHost.recordsByVin[vin].factoryEquipment.url =
       'https://evil.example/window-stickers/15fe2ec7-42e9-4d24-a549-5e749b01102e.jpg'

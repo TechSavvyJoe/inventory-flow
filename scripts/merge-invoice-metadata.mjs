@@ -57,7 +57,7 @@ export function mergeInvoiceMetadata({ enrichment, parsed, vehicles, pdfAvailabl
     record.fordInvoice = {
       dataState: 'current',
       available: true,
-      capturedAt: parsed.parsedAtUtc,
+      capturedAt: exactRows.get(vin).capturedAtUtc ?? parsed.parsedAtUtc,
       sourceLabel: 'Saved Ford factory invoice',
     }
     enrichment.recordsByVin[vin] = record

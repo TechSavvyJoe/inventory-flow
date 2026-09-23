@@ -39,6 +39,7 @@ describe('deal desk links', () => {
     expect(windowStickerUrl('https://www.bobmaxeylincoln.com/api/vhcliaa/inventory/21521/window-sticker?sv=SYNTHETIC&make=Lincoln&vehicleType=Used')).toContain('window-sticker')
     expect(windowStickerUrl('https://www.bobmaxeylincoln.com/api/vhcliaa/inventory/abc/window-sticker')).toBeNull()
     expect(factoryEquipmentUrl('https://assets.cai-media-management.com/window-stickers/12345678-1234-1234-8abc-123456789abc.jpg')).toContain('cai-media-management')
+    expect(factoryEquipmentUrl('https://assets.cai-media-management.com/window-stickers/12345678-1234-1234-8abc-123456789abc.pdf')).toMatch(/\.pdf$/)
     expect(factoryEquipmentUrl('https://assets.cai-media-management.com/window-stickers/../secret.jpg')).toBeNull()
     expect(DEALERMAIL_INVENTORY_URL).toMatch(/^https:\/\/www\.dealermail\.com\//)
   })

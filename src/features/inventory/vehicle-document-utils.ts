@@ -8,7 +8,7 @@ const OFFICIAL_BOB_MAXEY_HOSTS = new Set([
 const WINDOW_STICKER_PATH = /^\/api\/vhcliaa\/inventory\/[0-9]{1,8}\/window-sticker$/i;
 const VAUTO_FACTORY_EQUIPMENT_HOST = "assets.cai-media-management.com";
 const VAUTO_FACTORY_EQUIPMENT_PATH =
-  /^\/window-stickers\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jpg$/i;
+  /^\/window-stickers\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|pdf)$/i;
 
 export const DEALERMAIL_INVENTORY_SEARCH_BASE_URL =
   "https://www.dealermail.com/prospect_manager/V2_inventory_search_CRM_USED_NEW.asp";
@@ -65,6 +65,12 @@ export function savedFordInvoiceUrl(vinValue: string | null | undefined): string
   return vin ? `/api/vehicles/${encodeURIComponent(vin)}/invoice` : null;
 }
 
+/** Same-origin private, printable copy of the VIN-linked vAuto equipment label. */
+export function savedVautoEquipmentPdfUrl(vinValue: string | null | undefined): string | null {
+  const vin = normalizedVin(vinValue);
+  return vin ? `/api/vehicles/${encodeURIComponent(vin)}/equipment-pdf` : null;
+}
+
 /**
  * Mirrors DealerMail's working OASIS destination for an exact Ford/Lincoln VIN.
  * The target is read-only, but DealerConnection can require its own sign-in.
@@ -87,7 +93,7 @@ export function fordServiceHistoryUrl(vinValue: string | null | undefined): stri
 }
 
 /**
- * Accepts only the read-only CAI image produced by vAuto's Factory Equipment
+ * Accepts only the read-only CAI PDF or image produced by vAuto's Factory Equipment
  * view. This is an informational equipment label, not an original Monroney
  * window sticker.
  */

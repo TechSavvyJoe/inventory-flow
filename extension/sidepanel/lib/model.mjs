@@ -7,7 +7,7 @@ import { serviceWorkflowStatus } from './service-readiness.mjs'
 // kept as separate facts and none is inferred from another.
 
 import { STORES } from './config.mjs'
-import { autoCheckUrl, factoryEquipmentUrl, fordInvoiceUrl, fordOasisUrl, listingUrl, photoUrl, savedFordInvoiceUrl, windowStickerUrl } from './links.mjs'
+import { autoCheckUrl, factoryEquipmentUrl, fordInvoiceUrl, fordOasisUrl, listingUrl, photoUrl, savedFordInvoiceUrl, savedVautoEquipmentPdfUrl, windowStickerUrl } from './links.mjs'
 import { autoCheckTone, equipmentByCategory, standoutEquipment } from './equipment.mjs'
 import { historyDetailTone } from './resources.mjs'
 import { warrantyOutlook } from './warranty.mjs'
@@ -264,7 +264,7 @@ function capturedServiceHistory(value, fallback) {
   }
 }
 
-function documentsFor(record, publicState, dealerMailState) {
+function documentsFor(record, publicState, dealerMailState, origin) {
   const autoCheck = record.autoCheckReport
   const sticker = record.windowSticker
   const factory = record.factoryEquipment
@@ -300,7 +300,9 @@ function documentsFor(record, publicState, dealerMailState) {
       : null,
     factoryEquipment: factory
       ? {
-        url: factoryEquipmentUrl(factory.url), dataState: documentState(factory.dataState, dealerMailState),
+        url: origin && factory.dataState === 'current' && /^[a-f0-9]{64}$/.test(factory.savedPdfSha256 ?? '') && factoryEquipmentUrl(factory.url)
+          ? savedVautoEquipmentPdfUrl(origin, record.vin) : factoryEquipmentUrl(factory.url),
+        dataState: documentState(factory.dataState, dealerMailState),
         basePrice: number(factory.basePrice), totalOptions: number(factory.totalOptions), destinationCharge: number(factory.destinationCharge), totalMsrp: number(factory.totalMsrp),
         capturedAt: text(factory.capturedAt), sourceLabel: text(factory.sourceLabel), disclaimer: text(factory.disclaimer),
         vehicleDescription: text(factory.vehicleDescription), engine: text(factory.engine), transmission: text(factory.transmission), drivetrain: text(factory.drivetrain),
@@ -336,7 +338,7 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now(), origin = n
     : []
   const photos = [...new Set([record.imageUrl, ...(Array.isArray(record.imageUrls) ? record.imageUrls : [])].map(photoUrl).filter(Boolean))]
   const disposition = record.managerDisposition
-  const documents = documentsFor(record, publicState, dealerMailState)
+  const documents = documentsFor(record, publicState, dealerMailState, origin)
   const make = text(record.make) || ''
   // The app enables Ford dealer tools for Ford and Lincoln VINs only.
   const fordFamily = /^(ford|lincoln)$/i.test(make)

@@ -77,6 +77,7 @@ import {
   fordOasisUrl,
   fordServiceHistoryUrl,
   savedFordInvoiceUrl,
+  savedVautoEquipmentPdfUrl,
   officialVehicleDocumentUrl,
   vautoFactoryEquipmentUrl,
 } from "./vehicle-document-utils";
@@ -609,7 +610,10 @@ function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
   const autoCheckUrl = officialVehicleDocumentUrl(autoCheck?.url, "autocheck", vehicle.publicListing.listingUrl);
   const autoCheckViaVauto = autoCheck?.accessMethod === "vauto";
   const stickerUrl = availableWindowStickerUrl(sticker, vehicle.publicListing.listingUrl);
-  const factoryEquipmentUrl = vautoFactoryEquipmentUrl(factoryEquipment?.url);
+  const factoryEquipmentSourceUrl = vautoFactoryEquipmentUrl(factoryEquipment?.url);
+  const factoryEquipmentUrl = factoryEquipmentSourceUrl && factoryEquipment?.dataState === 'current' &&
+    /^[a-f0-9]{64}$/.test(factoryEquipment?.savedPdfSha256 ?? '')
+    ? savedVautoEquipmentPdfUrl(vehicle.vin) : factoryEquipmentSourceUrl;
   const fallbackEquipmentUrl = !stickerUrl && !["incomplete", "unavailable", "unknown"].includes(factoryEquipment?.dataState ?? "")
     ? factoryEquipmentUrl : null;
   const oasisUrl = fordFamily ? fordOasisUrl(vehicle.vin) : null;

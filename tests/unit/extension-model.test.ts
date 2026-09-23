@@ -238,6 +238,17 @@ describe('deal desk view model', () => {
 })
 
 describe('deal desk v2 projections', () => {
+  it('opens a saved vAuto PDF only while the matching equipment record is current', () => {
+    const sourceUrl = 'https://assets.cai-media-management.com/window-stickers/12345678-1234-4234-8abc-123456789abc.jpg'
+    const equipment = { url: sourceUrl, savedPdfSha256: 'a'.repeat(64), isOriginalWindowSticker: false }
+    const options = { origin: 'https://inventory-ops.joegallant.me' }
+    const current = base({ factoryEquipment: { ...equipment, dataState: 'current' } })
+    expect(toPanelVehicle(current, data(current), options).documents.factoryEquipment.url)
+      .toBe('https://inventory-ops.joegallant.me/api/vehicles/TESTDATAHWELL0001/equipment-pdf')
+    const stale = base({ factoryEquipment: { ...equipment, dataState: 'stale_unverified' } })
+    expect(toPanelVehicle(stale, data(stale), options).documents.factoryEquipment.url).toBe(sourceUrl)
+  })
+
   it('names the store certification, not a make program', () => {
     expect(certifiedProgram('Howell')).toMatchObject({ name: 'Ford Blue Certified', brand: 'ford' })
     expect(certifiedProgram('Lincoln')).toMatchObject({ name: 'Lincoln Certified Pre-Owned', brand: 'lincoln' })
