@@ -37,3 +37,29 @@ All tools are read-only. They cannot change Inventory Flow, DealerMail, holds, t
 ## Why not the hosted `/mcp` URL?
 
 `https://inventory-data.joegallant.me/mcp` is protected by Cloudflare Access Managed OAuth. It is still the correct path for remote MCP clients that complete that OAuth flow. Perplexity's Mac app local connector path expects a local command, and Perplexity's remote MCP support is still rolling out. The local bridge avoids disabling authentication or weakening the Cloudflare Access setup.
+
+## Claude Code and Claude Desktop
+
+The same local bridge works as a stdio MCP server for Claude Code and Claude Desktop, and it can read the token straight from the credential file that the owner-run integration command writes, so no MCP configuration file ever contains the secret.
+
+1. Issue a dedicated read-only grant for Claude (owner-run, from this checkout; requires the existing Wrangler login):
+
+   ```bash
+   node scripts/manage-integration-client.mjs create --transport wrangler --confirm --owner-user-id joe-gallant --type api_token --label "Claude" --scopes "inventory.read,health.read" --stores "Howell,Fowlerville,Ford Detroit,Lincoln" --days 90 --secret-output runtime/integration-credentials/claude.json
+   ```
+
+   `runtime/` is ignored by Git and by the repository safety gate. Revoke with the `revoke` command when the grant is no longer needed.
+
+2. Point each client at that file with `INVENTORY_FLOW_MCP_CREDENTIAL_FILE` instead of `INVENTORY_FLOW_MCP_TOKEN`:
+
+   - Claude Code (user scope, any project):
+
+     ```bash
+     claude mcp add --transport stdio --scope user --env INVENTORY_FLOW_MCP_CREDENTIAL_FILE=/absolute/path/to/inventory-flow/runtime/integration-credentials/claude.json inventory-flow -- /absolute/path/to/node /absolute/path/to/inventory-flow/scripts/perplexity-inventory-mcp.mjs
+     ```
+
+   - Claude Desktop: add the same command, arguments and environment variable under `mcpServers.inventory-flow` in `~/Library/Application Support/Claude/claude_desktop_config.json`, then restart Claude Desktop. Use absolute paths; the desktop app does not inherit your shell `PATH`.
+
+The bridge refuses to start with `INVENTORY_FLOW_MCP_TOKEN_EXPIRED` once the grant's `expiresAt` has passed; issue a new grant and replace the file.
+
+The hosted `https://inventory-data.joegallant.me/mcp` endpoint remains the path for claude.ai's custom-connector flow (its OAuth registration permits only the claude.ai callback). A connector added there also appears in Claude Desktop and Claude Code as a `claude.ai` server; that flow has not yet been completed and verified.
