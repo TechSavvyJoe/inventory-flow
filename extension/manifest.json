@@ -28,9 +28,7 @@
   },
   "permissions": ["sidePanel", "storage", "contextMenus"],
   "host_permissions": [
-    "https://inventory-ops.joegallant.me/*",
-    "http://127.0.0.1:4173/*",
-    "http://localhost:4173/*"
+    "https://inventory-ops.joegallant.me/*"
   ],
   "commands": {
     "_execute_action": {

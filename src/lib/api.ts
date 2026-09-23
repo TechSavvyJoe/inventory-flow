@@ -249,7 +249,7 @@ function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, s
     'x-inventory-preview-role': role,
     'x-inventory-preview-store': store,
     'x-inventory-demo-store': store,
-    'x-inventory-demo-user': import.meta.env.VITE_DEMO_USER_NAME || 'Joe Gallant',
+    'x-inventory-demo-user': import.meta.env.VITE_DEMO_USER_NAME || 'Demo user',
   }
 }
 

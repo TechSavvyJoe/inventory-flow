@@ -132,7 +132,9 @@ export async function runRecoveryDrill({ reportDirectory } = {}) {
     const first = await serviceFor(source, bundle.release)
     const request = first.service.createTransfer({ vin: bundle.release.vehicles[1].vin, neededBy: '2026-08-31T18:00:00Z', reason: 'SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS recovery drill' }, sales, 'synthetic-recovery-request')
     await first.commit()
-    for (const [input, identity] of [[{ type: 'manager_reviewed' }, 'review'], [{ type: 'approved', homeStoreManager: 'Synthetic home manager' }, 'approve'], [{ type: 'note_added', note: "Synthetic audit: 'quotes' <markup>\nLine two — exact text." }, 'note']]) {
+    // The drill runs the production (simple) workflow: one requesting-manager
+    // approval, a passive driver request and a free-text audit note.
+    for (const [input, identity] of [[{ type: 'request_approved', availabilityConfirmed: true }, 'approve'], [{ type: 'driver_requested' }, 'driver'], [{ type: 'note_added', note: "Synthetic audit: 'quotes' <markup>\nLine two — exact text." }, 'note']]) {
       const next = await serviceFor(source, bundle.release)
       next.service.appendTransferEvent(request.record.id, input, manager, `synthetic-recovery-${identity}`)
       await next.commit()
@@ -177,7 +179,7 @@ export async function runRecoveryDrill({ reportDirectory } = {}) {
     assert.deepEqual(recoveredBundle, bundle)
     const recovered = await serviceFor(restored, recoveredBundle.release)
     for (let index = 0; index < contexts.length; index++) assert.deepEqual(recovered.service.bootstrap(contexts[index]), originalViews[index])
-    const replay = recovered.service.appendTransferEvent(request.record.id, { type: 'manager_reviewed' }, manager, 'synthetic-recovery-review')
+    const replay = recovered.service.appendTransferEvent(request.record.id, { type: 'request_approved', availabilityConfirmed: true }, manager, 'synthetic-recovery-approve')
     assert.equal(replay.created, false)
     assert.deepEqual(await recovered.commit(), { committed: false, revision: original.revision })
     for (const table of ['transfer_events', 'attention_events']) {

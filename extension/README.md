@@ -74,8 +74,9 @@ The panel never sends a `POST`. Chrome stamps extension-originated writes with `
 | `sidePanel` | The panel is the whole product. |
 | `storage` | Display preferences (`sync`); a session-only copy of the inventory document, the compare set, filters and the take-home handoff (`session`). |
 | `contextMenus` | The "Search Inventory Flow for …" entry on selected text. |
-| `https://inventory-ops.joegallant.me/*` | The only production data source. |
-| `http://127.0.0.1:4173/*`, `http://localhost:4173/*` | The synthetic `pnpm dev:demo` server, selectable from Settings for training and development. |
+| `https://inventory-ops.joegallant.me/*` | The only data source; the shipped manifest grants no other origin. |
+
+The loopback demo origins (`http://127.0.0.1:4173/*`, `http://localhost:4173/*`) live only in the dev-only manifest overrides (`scripts/extension-dev-manifest.json`). `pnpm extension:dev` assembles that build in `dist/extension-dev/` for "Load unpacked"; only that build offers the synthetic `pnpm dev:demo` workspace in Settings. Never publish or distribute it.
 
 No `tabs`, no `activeTab`, no `<all_urls>`, no content scripts. The panel does not read the pages you are on. Production vehicle photos pass the existing HTTPS URL guard and load from their source URLs. The CSP separately permits bundled images, local-demo loopback images and preview placeholders; that does not broaden production source-link validation or give the panel page-reading access.
 
@@ -84,6 +85,7 @@ No `tabs`, no `activeTab`, no `<all_urls>`, no content scripts. The panel does n
 ```sh
 pnpm dev:demo              # synthetic API on 4174, app on 4173
 pnpm extension:preview     # serves the panel at http://127.0.0.1:4177/sidepanel/index.html
+pnpm extension:dev         # dev-only build with the loopback demo origins in dist/extension-dev/
 pnpm extension:icons       # re-render icons from public/brand-kit/inventory-flow-icon.svg (via Playwright's Chromium)
 pnpm test                  # includes tests/unit/extension-*.test.ts
 ```

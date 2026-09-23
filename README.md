@@ -84,9 +84,9 @@ The repository includes a deterministic synthetic release with eight fabricated 
 3. Open `http://127.0.0.1:4173`.
 4. Before handing off a change, run `pnpm check`.
 
-The synthetic API listens on `127.0.0.1:4174`, keeps demo workflow changes in memory, and resets when it stops. Every fixture value is marked `SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS`. Local development uses an explicitly non-production demo identity mode; role/store preview values are not authentication.
+The synthetic API listens on `127.0.0.1:4174`, keeps demo workflow changes in memory, and resets when it stops. Every fixture value is marked `SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS`. Local development uses a non-production demo identity; role/store preview values are not authentication.
 
-`pnpm dev` is the legacy dealership-host mode. It imports the latest completed local report release and therefore works only on an authorized host with the protected `work/` snapshots. After cloud cutover, a local `runtime/cloud-cutover.json` marker prevents reopening the retired SQLite ledger for writes. Use the hosted app for real work and `pnpm dev:demo` for development; never remove that marker without a deliberate, reconciled rollback.
+The Node server is synthetic-demo only: it needs an explicit synthetic release loader, keeps its ledger in memory, refuses a file-backed database, and refuses to start with `NODE_ENV=production`. Production runs on the Cloudflare Worker. Use `pnpm dev:demo` (or `pnpm start:demo` to serve the production build) for development.
 
 ### Apple Silicon Mac (M1/M2/M3/M4)
 
@@ -111,4 +111,4 @@ Open `http://127.0.0.1:4173`; the synthetic API is at `http://127.0.0.1:4174/api
 
 ## Important boundary
 
-The hosted Worker verifies Cloudflare Access signature, issuer, audience, and expiry, then resolves an enabled employee membership in D1. It ignores browser identity claims, separates upload-only machine access from employee access, and filters private evidence by role. The legacy Node production API still requires an explicitly configured trusted proxy; it is not the hosted entry point. See [ADR-001](docs/ADR-001-SERVER-OWNED-IDENTITY.md) and the [Cloudflare runbook](docs/CLOUDFLARE_PRIVATE_RELEASE_RUNBOOK.md). A working deployment is not a claim that multi-employee pilot, disaster recovery, and all UX acceptance checks are complete.
+The hosted Worker verifies Cloudflare Access signature, issuer, audience, and expiry, then resolves an enabled employee membership in D1. It ignores browser identity claims, separates upload-only machine access from employee access, and filters private evidence by role. The Node server is synthetic-demo only; production runs on the Worker. See [ADR-001](docs/ADR-001-SERVER-OWNED-IDENTITY.md) and the [Cloudflare runbook](docs/CLOUDFLARE_PRIVATE_RELEASE_RUNBOOK.md). A working deployment is not a claim that multi-employee pilot, disaster recovery, and all UX acceptance checks are complete.

@@ -374,9 +374,11 @@ describe('D1 shared operational repository', () => {
     release.vehicles[0].vin = '1FTEW1EP7PFA00001'
     const salesperson = { role: 'sales', store: 'Fowlerville', user: 'Synthetic salesperson' }
     const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic manager' }
+    // The review + release decision pair exists only in the optional advanced
+    // engine; simple mode refuses both events (server/workflow.mjs SIMPLE_TRANSITIONS).
     const session = async () => {
       const store = await loadD1Repository(d1, release)
-      return { ...store, service: createInventoryServiceCore({ database: store.database, repository: store.repository, now: () => SYNTHETIC_NOW }) }
+      return { ...store, service: createInventoryServiceCore({ database: store.database, repository: store.repository, now: () => SYNTHETIC_NOW, workflowMode: 'advanced' }) }
     }
     const first = await session()
     const requested = first.service.createTransfer({ vin: release.vehicles[0].vin, neededBy: '2026-08-30T20:00:00Z', reason: 'SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS showing' }, salesperson, 'SYNTHETIC-service-create')

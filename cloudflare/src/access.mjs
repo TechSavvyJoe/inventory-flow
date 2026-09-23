@@ -68,7 +68,6 @@ export async function memberContext(claims, env, request) {
       ['porter', 'driver'].includes(row.role) &&
       legacyTransportName(row.name) &&
       Number(row.transport_name_matches) === 1,
-    identityMode: 'trusted_proxy',
     authenticated: true,
     canPreviewRoles,
     canPreviewStores,

@@ -26,6 +26,10 @@ const key = (value, shiftKey = false) => document.activeElement.dispatchEvent(ne
 const open = (id) => { const button = document.getElementById(id); button.focus(); button.click(); return button }
 const buttonIn = (selector, startsWith) => [...document.querySelectorAll(`${selector} button`)].find((button) => button.textContent.startsWith(startsWith))
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView')
+// Only the dev-only build (pnpm extension:dev) grants the loopback demo origin.
+const DEV_BUILD_HOSTS = ['https://inventory-ops.joegallant.me/*', 'http://127.0.0.1:4173/*', 'http://localhost:4173/*']
+const SHIPPED_HOSTS = ['https://inventory-ops.joegallant.me/*']
+const grantHosts = (hostPermissions) => vi.stubGlobal('chrome', { runtime: { getManifest: () => ({ host_permissions: hostPermissions }) } })
 
 beforeEach(() => {
   vi.resetModules(); vi.clearAllMocks()
@@ -35,6 +39,7 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', (callback) => { callback(); return 0 })
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() })
   vi.spyOn(globalThis, 'setInterval').mockImplementation(() => 0)
+  grantHosts(DEV_BUILD_HOSTS)
   mock.settings = { ...DEFAULT_SETTINGS, workspace: 'demo' }
   mock.saveSettings.mockImplementation(async (patch) => { mock.settings = normalizeSettings({ ...mock.settings, ...patch }); return mock.settings })
   mock.saveFilters.mockResolvedValue(undefined)
@@ -76,6 +81,16 @@ describe('extension settings compatibility', () => {
     expect(document.documentElement.dataset.theme).toBe('light')
     buttonIn('[aria-label="Density"]', 'Compact').click()
     await vi.waitFor(() => expect(document.documentElement.dataset.density).toBe('compact'))
+    expect(mock.settings.workspace).toBe('demo')
+  })
+
+  it('shows no workspace switch and stays on production in the shipped build', async () => {
+    grantHosts(SHIPPED_HOSTS)
+    await boot()
+    expect(mock.bootstrap.mock.calls[0][0]).toMatchObject({ id: 'production' })
+    open('settings-btn')
+    expect(document.querySelector('#sheet [role="group"][aria-label="Workspace"]')).toBeNull()
+    expect(document.getElementById('demo-role')).toBeNull()
     expect(mock.settings.workspace).toBe('demo')
   })
 

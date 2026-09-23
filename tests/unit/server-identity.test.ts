@@ -1,175 +1,93 @@
 // @ts-nocheck -- server modules intentionally use the Node ESM runtime without a frontend declaration bundle.
 // @vitest-environment node
 
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
-import { createInventoryServer } from '../../server/api.mjs'
-import { importRelease, openInventoryDatabase } from '../../server/database.mjs'
-import {
-  createIdentityResolver,
-  IdentityConfigurationError,
-} from '../../server/identity.mjs'
-import { findLatestCompletedManifest, loadLatestCompletedRelease } from '../../server/importer.mjs'
-import { createInventoryService } from '../../server/service.mjs'
+import { buildSyntheticRelease } from '../../fixtures/synthetic-release.mjs'
+import { buildAttentionMutation } from '../../server/attention-workflow.mjs'
+import { createIdentityResolver } from '../../server/identity.mjs'
+import { startInventoryServer } from '../../server/index.mjs'
+import { buildTransferEvent, WorkflowError } from '../../server/workflow.mjs'
 
-const resources: Array<{
-  server: ReturnType<typeof createInventoryServer>
-  database: ReturnType<typeof openInventoryDatabase>
-  cleanup: () => void
-}> = []
-
+const cleanups: Array<() => unknown> = []
 afterEach(async () => {
-  while (resources.length) {
-    const resource = resources.pop()!
-    await new Promise<void>((resolve) => resource.server.close(() => resolve()))
-    resource.database.close()
-    resource.cleanup()
-  }
+  while (cleanups.length) await cleanups.pop()!()
 })
 
-async function trustedHarness() {
-  const fixture = createSyntheticWorkspace()
-  const { manifest } = findLatestCompletedManifest(fixture.workspaceRoot)
-  const now = new Date(`${manifest.report_date}T18:00:00-04:00`)
-  const database = openInventoryDatabase()
-  importRelease(database, loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot, now }), {
-    loadedAt: now.toISOString(),
+describe('Node server is synthetic-demo only', () => {
+  it('refuses production identity whatever mode is requested', () => {
+    // The Worker resolves production identity from Access + D1; the Node
+    // server has no production identity mode to select.
+    for (const options of [{ environment: 'production' }, { environment: 'production', mode: 'demo' }]) {
+      expect(() => createIdentityResolver(options)).toThrowError(expect.objectContaining({ code: 'NODE_SERVER_DEMO_ONLY' }))
+    }
+    expect(createIdentityResolver({ environment: 'development' }).mode).toBe('demo')
+    expect(createIdentityResolver({ environment: 'test' })).toBe(createIdentityResolver({ environment: 'development' }))
   })
-  const service = createInventoryService({ database, now: () => now })
-  const secret = 'test-only-trusted-proxy-secret-000000000000'
-  const identityResolver = createIdentityResolver({
-    mode: 'trusted_proxy',
-    environment: 'production',
-    trustedProxySecret: secret,
-  })
-  const server = createInventoryServer({ service, identityResolver })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('Test server did not bind')
-  resources.push({ server, database, cleanup: fixture.cleanup })
-  return { baseUrl: `http://127.0.0.1:${address.port}`, secret }
-}
 
-function trustedHeaders(secret: string, overrides: Record<string, string> = {}) {
-  return {
-    'content-type': 'application/json',
-    'x-inventory-proxy-secret': secret,
-    'x-inventory-authenticated-user': 'Fowlerville Salesperson',
-    'x-inventory-authenticated-user-id': 'member-fowlerville-sales-1',
-    'x-inventory-authenticated-role': 'sales',
-    'x-inventory-authenticated-store': 'Fowlerville',
-    ...overrides,
+  it('needs an explicit synthetic release loader and refuses a file-backed ledger before opening data', () => {
+    expect(() => startInventoryServer({ port: 0 })).toThrowError(expect.objectContaining({ code: 'SYNTHETIC_RELEASE_LOADER_REQUIRED' }))
+    const folder = mkdtempSync(path.join(tmpdir(), 'inventory-flow-demo-only-'))
+    cleanups.push(() => rmSync(folder, { recursive: true, force: true }))
+    const databasePath = path.join(folder, 'inventory-ops.sqlite')
+    expect(() => startInventoryServer({ port: 0, databasePath, releaseLoader: () => buildSyntheticRelease() }))
+      .toThrowError(expect.objectContaining({ code: 'FILE_LEDGER_REFUSED' }))
+    expect(existsSync(databasePath)).toBe(false)
+    expect(() => startInventoryServer({ port: 0, environment: 'production', releaseLoader: () => buildSyntheticRelease() }))
+      .toThrowError(expect.objectContaining({ code: 'NODE_SERVER_DEMO_ONLY' }))
+  })
+
+  it('serves the in-memory synthetic release through the demo identity', async () => {
+    const app = startInventoryServer({ port: 0, releaseLoader: () => buildSyntheticRelease() })
+    cleanups.push(() => app.close())
+    await new Promise((resolve) => (app.server.listening ? resolve(undefined) : app.server.once('listening', resolve)))
+    expect(app.refreshResult).toMatchObject({ ok: true })
+    const { port } = app.server.address()
+    const response = await fetch(`http://127.0.0.1:${port}/api/bootstrap`, {
+      headers: { 'x-inventory-demo-role': 'sales', 'x-inventory-demo-store': 'Howell', 'x-inventory-demo-user': 'Demo user' },
+    })
+    expect(response.status).toBe(200)
+    expect((await response.json()).access).toMatchObject({ user: 'Demo user', role: 'sales', store: 'Howell' })
+  })
+})
+
+// The only ROLE_MISMATCH coverage used to run through the retired trusted-proxy
+// harness. These pin it on the shared functions the Worker itself runs.
+describe('actor role must match the active role context', () => {
+  const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic Fowlerville manager', userId: 'manager-1' }
+  const current = {
+    id: 'synthetic-transfer-1', status: 'requested', requesting_store_id: 'Fowlerville', home_store_id: 'Howell',
+    destination_store_id: 'Fowlerville', current_location_id: 'Howell',
   }
-}
 
-describe('server-owned identity boundary', () => {
-  it('fails closed when production identity is absent, demo, or incomplete', () => {
-    expect(() => createIdentityResolver({ environment: 'production' })).toThrowError(
-      expect.objectContaining<Partial<IdentityConfigurationError>>({ code: 'IDENTITY_MODE_REQUIRED' }),
-    )
-    expect(() => createIdentityResolver({ environment: 'production', mode: 'demo' })).toThrowError(
-      expect.objectContaining<Partial<IdentityConfigurationError>>({ code: 'INSECURE_IDENTITY_MODE' }),
-    )
-    expect(() =>
-      createIdentityResolver({ environment: 'production', mode: 'trusted_proxy', trustedProxySecret: 'short' }),
-    ).toThrowError(expect.objectContaining<Partial<IdentityConfigurationError>>({ code: 'TRUSTED_PROXY_SECRET_REQUIRED' }))
+  it.each([
+    ['simple', { type: 'request_approved', availabilityConfirmed: true }],
+    ['advanced', { type: 'manager_reviewed' }],
+  ])('buildTransferEvent rejects a claimed group manager for a manager context (%s mode)', (workflowMode, event) => {
+    const context = { ...manager, workflowMode }
+    expect(buildTransferEvent({ current, input: event, context }).event.actorRole).toBe('manager')
+    let error
+    try {
+      buildTransferEvent({ current, input: { ...event, actorRole: 'group_manager' }, context })
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(WorkflowError)
+    expect(error).toMatchObject({ status: 403, code: 'ROLE_MISMATCH' })
   })
 
-  it('ignores browser role/store claims and accepts only authenticated upstream identity', async () => {
-    const { baseUrl, secret } = await trustedHarness()
-    const unauthenticated = await fetch(`${baseUrl}/api/bootstrap?role=group_manager&homeStore=Lincoln`, {
-      headers: {
-        'x-inventory-role': 'group_manager',
-        'x-inventory-store': 'Lincoln',
-        'x-inventory-user': 'Spoofed Browser User',
-      },
-    })
-    expect(unauthenticated.status).toBe(401)
-    expect(await unauthenticated.json()).toMatchObject({ code: 'AUTHENTICATION_REQUIRED' })
-
-    const authenticated = await fetch(`${baseUrl}/api/bootstrap?role=group_manager&homeStore=Lincoln`, {
-      headers: trustedHeaders(secret, {
-        'x-inventory-role': 'group_manager',
-        'x-inventory-store': 'Lincoln',
-        'x-inventory-user': 'Spoofed Browser User',
-      }),
-    })
-    expect(authenticated.status).toBe(200)
-    const bootstrap = await authenticated.json()
-    expect(bootstrap.access).toEqual({
-      user: 'Fowlerville Salesperson',
-      role: 'sales',
-      store: 'Fowlerville',
-      canViewPrivateEvidence: true,
-      canCreateTransfer: true,
-    })
-  })
-
-  it('requires an immutable user ID from the trusted authentication proxy', async () => {
-    const { baseUrl, secret } = await trustedHarness()
-    const headers = trustedHeaders(secret)
-    delete headers['x-inventory-authenticated-user-id']
-    const response = await fetch(`${baseUrl}/api/bootstrap`, { headers })
-    expect(response.status).toBe(401)
-    expect(await response.json()).toMatchObject({ code: 'IDENTITY_INCOMPLETE' })
-  })
-
-  it('uses upstream identity for persisted actors and rejects identity fields in a spoofed payload', async () => {
-    const { baseUrl, secret } = await trustedHarness()
-    const bootstrap = await fetch(`${baseUrl}/api/bootstrap`, { headers: trustedHeaders(secret) }).then((response) =>
-      response.json(),
-    )
-    const vehicle = bootstrap.vehicles.find((row: { publicStore: string }) => row.publicStore === 'Howell')
-    expect(vehicle).toBeTruthy()
-
-    const spoofed = await fetch(`${baseUrl}/api/transfers`, {
-      method: 'POST',
-      headers: trustedHeaders(secret),
-      body: JSON.stringify({
-        vin: vehicle.vin,
-        requestingStore: 'Lincoln',
-        requestedBy: 'Spoofed Browser User',
-        neededBy: '2026-08-31T14:00:00-04:00',
-        reason: 'Identity boundary test',
-        customerAppointment: true,
-        returnRequired: true,
-        priority: 'normal',
-      }),
-    })
-    expect(spoofed.status).toBe(403)
-    expect(await spoofed.json()).toMatchObject({ code: 'STORE_MISMATCH' })
-
-    const createdResponse = await fetch(`${baseUrl}/api/transfers`, {
-      method: 'POST',
-      headers: trustedHeaders(secret),
-      body: JSON.stringify({
-        vin: vehicle.vin,
-        neededBy: '2026-08-31T14:00:00-04:00',
-        reason: 'Identity boundary test',
-        customerAppointment: true,
-        returnRequired: true,
-        priority: 'normal',
-      }),
-    })
-    expect(createdResponse.status).toBe(201)
-    const created = await createdResponse.json()
-    expect(created.requestedBy).toBe('Fowlerville Salesperson')
-    expect(created.requestingStore).toBe('Fowlerville')
-
-    const spoofedEvent = await fetch(`${baseUrl}/api/transfers/${created.id}/events`, {
-      method: 'POST',
-      headers: trustedHeaders(secret, {
-        'x-inventory-authenticated-user': 'Fowlerville Manager',
-        'x-inventory-authenticated-role': 'manager',
-      }),
-      body: JSON.stringify({
-        type: 'manager_reviewed',
-        actor: 'Spoofed Browser User',
-        actorRole: 'group_manager',
-        store: 'Lincoln',
-      }),
-    })
-    expect(spoofedEvent.status).toBe(403)
-    expect(await spoofedEvent.json()).toMatchObject({ code: 'ROLE_MISMATCH' })
+  it('buildAttentionMutation rejects a claimed group manager for a manager context', () => {
+    const sourceItem = { id: 'synthetic-attention-1', type: 'transfer_next_action', store: 'Fowlerville', severity: 'warning' }
+    expect(buildAttentionMutation({ sourceItem, current: null, input: { type: 'acknowledge' }, context: manager }).event.actorRole).toBe('manager')
+    let error
+    try {
+      buildAttentionMutation({ sourceItem, current: null, input: { type: 'acknowledge', actorRole: 'group_manager' }, context: manager })
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(WorkflowError)
+    expect(error).toMatchObject({ status: 403, code: 'ROLE_MISMATCH' })
   })
 })

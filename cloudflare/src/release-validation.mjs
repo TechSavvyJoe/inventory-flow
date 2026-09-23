@@ -6,6 +6,7 @@ import {
   isFactoryCoverageRow,
   isOasisDate,
 } from '../../server/oasis-coverage-grammar.mjs'
+import { OASIS_VEHICLE_TEXT_FIELDS, OASIS_VEHICLE_TEXT_MAX_LENGTH } from '../../server/oasis-fields.mjs'
 
 // Portable validation for the encrypted daily evidence import. This module has
 // no filesystem, credentials, or source-fetching dependencies.
@@ -390,23 +391,25 @@ function validateServiceHistory(value) {
 
 // Ford OASIS vehicle report facts captured read-only from FMCDealer for an
 // exact VIN. Dates are validated as bounded printed text, never re-parsed. The
-// allow-list mirrors validatedFordOasis() in server/importer.mjs; prior-owner
-// names are never part of the capture and no such field is accepted here.
+// allow-list mirrors validatedFordOasis() in server/importer.mjs and shares its
+// vehicle text fields (server/oasis-fields.mjs); prior-owner names are never
+// part of the capture and no such field is accepted here.
 function validateFordOasis(value, vin) {
   onlyKeys(value, new Set([
-    'dataState', 'capturedAt', 'sourceLabel', 'vehicleDescription', 'versionSeries', 'buildDate',
-    'warrantyStartDate', 'releaseDate', 'monthsInService', 'saleMileage', 'openFieldServiceActions',
+    'dataState', 'capturedAt', 'sourceLabel', 'vehicleDescription', 'versionSeries', ...OASIS_VEHICLE_TEXT_FIELDS,
+    'buildDate', 'warrantyStartDate', 'releaseDate', 'monthsInService', 'saleMileage', 'openFieldServiceActions',
     'warrantyCoverages', 'extendedCoverageExpirations', 'openActionsCaptured', 'serviceHistory',
   ]), 'Ford OASIS record')
   ensure(RESOURCE_DATA_STATES.has(value.dataState), 'Ford OASIS data state is invalid')
   ensure(optionalTimestamp(value.capturedAt, 'Ford OASIS capturedAt'), 'Ford OASIS capturedAt is required')
   for (const [field, max] of [
-    ['sourceLabel', 160], ['vehicleDescription', 160], ['versionSeries', 120], ['buildDate', 40],
-    ['warrantyStartDate', 40], ['releaseDate', 40],
+    ['sourceLabel', 160], ['vehicleDescription', 160], ['versionSeries', 120],
+    ...OASIS_VEHICLE_TEXT_FIELDS.map((field) => [field, OASIS_VEHICLE_TEXT_MAX_LENGTH]),
+    ['buildDate', 40], ['warrantyStartDate', 40], ['releaseDate', 40],
   ]) {
     const text = optionalText(value[field], `Ford OASIS ${field}`, max)
     if (text && ['buildDate', 'warrantyStartDate', 'releaseDate'].includes(field)) ensure(isOasisDate(text), `Ford OASIS ${field} is not a recognized OASIS date`)
-    if (text && field === 'vehicleDescription') ensure(!containsForeignOasisText(text), 'Ford OASIS vehicleDescription contains non-vehicle material')
+    if (text && (field === 'vehicleDescription' || OASIS_VEHICLE_TEXT_FIELDS.includes(field))) ensure(!containsForeignOasisText(text), `Ford OASIS ${field} contains non-vehicle material`)
   }
   optionalInteger(value.monthsInService, 'Ford OASIS monthsInService', 0, 600)
   optionalInteger(value.saleMileage, 'Ford OASIS saleMileage', 0, 999_999)

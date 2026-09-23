@@ -1,8 +1,11 @@
 // @vitest-environment node
+// @ts-nocheck -- imports the unbundled extension config and the dev-manifest build script (plain ESM).
 // Guards the things that make a Manifest V3 extension silently fail to load.
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { devManifest } from '../../scripts/build-extension-dev.mjs'
+import { WORKSPACES, grantedWorkspaces, workspaceFor } from '../../extension/sidepanel/lib/config.mjs'
 
 const root = resolve(__dirname, '../../extension')
 const manifest = JSON.parse(readFileSync(resolve(root, 'manifest.json'), 'utf8'))
@@ -30,10 +33,28 @@ describe('Deal Desk extension manifest', () => {
     }
   })
 
-  it('asks for the minimum permissions and only the app origins', () => {
+  it('asks for the minimum permissions and only the production app origin', () => {
     expect(manifest.permissions.sort()).toEqual(['contextMenus', 'sidePanel', 'storage'])
-    expect(manifest.host_permissions).toEqual(['https://inventory-ops.joegallant.me/*', 'http://127.0.0.1:4173/*', 'http://localhost:4173/*'])
+    expect(manifest.host_permissions).toEqual(['https://inventory-ops.joegallant.me/*'])
     expect(manifest.optional_permissions).toBeUndefined()
+  })
+
+  it('adds the loopback demo origins only in the dev-only manifest build', () => {
+    const overrides = JSON.parse(readFileSync(resolve(__dirname, '../../scripts/extension-dev-manifest.json'), 'utf8'))
+    const dev = devManifest(manifest, overrides)
+    expect(dev.host_permissions).toEqual(['https://inventory-ops.joegallant.me/*', 'http://127.0.0.1:4173/*', 'http://localhost:4173/*'])
+    expect(dev.permissions).toEqual(manifest.permissions)
+    expect(dev.version).toBe(manifest.version)
+    expect(() => devManifest(manifest, { host_permissions: ['<all_urls>'] })).toThrow(/only the loopback demo origins/)
+  })
+
+  it('offers the local demo workspace only when Chrome grants its origin', () => {
+    const shipped = manifest.host_permissions
+    const dev = devManifest(manifest, JSON.parse(readFileSync(resolve(__dirname, '../../scripts/extension-dev-manifest.json'), 'utf8'))).host_permissions
+    expect(grantedWorkspaces(shipped).map((workspace) => workspace.id)).toEqual(['production'])
+    expect(grantedWorkspaces(dev).map((workspace) => workspace.id)).toEqual(['production', 'demo'])
+    expect(workspaceFor({ workspace: 'demo' }, 'extension', shipped)).toBe(WORKSPACES.production)
+    expect(workspaceFor({ workspace: 'demo' }, 'extension', dev)).toBe(WORKSPACES.demo)
   })
 
   it('keeps a strict extension-page CSP with no inline script', () => {

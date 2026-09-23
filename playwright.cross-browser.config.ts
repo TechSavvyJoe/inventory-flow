@@ -19,7 +19,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'node scripts/start-synthetic-demo.mjs',
-      env: { INVENTORY_OPS_PORT: '4274', INVENTORY_OPS_IDENTITY_MODE: 'demo', NODE_ENV: 'development' },
+      env: { INVENTORY_OPS_PORT: '4274', NODE_ENV: 'development' },
       url: 'http://127.0.0.1:4274/api/health',
       reuseExistingServer: false,
       timeout: 120_000,

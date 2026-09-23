@@ -19,7 +19,6 @@ let syntheticTick = 0
 const fixedNow = () => new Date(SYNTHETIC_NOW.getTime() + syntheticTick++)
 
 const app = startInventoryServer({
-  workspaceRoot: appDirectory,
   databasePath: ':memory:',
   distDir: path.join(appDirectory, 'dist'),
   serveDist: process.argv.includes('--serve-dist'),
@@ -67,18 +66,14 @@ function seedSyntheticWorkflow() {
   )
 
   if (approved.created) {
-    app.service.appendTransferEvent(
-      approved.record.id,
-      { type: 'manager_reviewed', note: 'Synthetic requesting-manager review.' },
-      { role: 'manager', store: 'Fowlerville', user: 'Demo Fowlerville Manager' },
-      'synthetic-demo-manager-reviewed',
-    )
+    // The demo runs the simple (production) workflow, so the approval is the
+    // one requesting-manager step that mode records.
     app.service.appendTransferEvent(
       approved.record.id,
       {
-        type: 'approved',
-        homeStoreManager: 'Demo Howell Used Manager',
-        note: 'Synthetic Home Store release confirmation for training only.',
+        type: 'request_approved',
+        availabilityConfirmed: true,
+        note: 'Synthetic approval after checking with the Howell used manager — training data only.',
       },
       { role: 'manager', store: 'Fowlerville', user: 'Demo Fowlerville Manager' },
       'synthetic-demo-approved',

@@ -20,10 +20,10 @@ verifies the signed assertion and an enabled server-owned D1 membership.
 
 September 2 cutover imported the complete validated source release and the
 existing operational ledger. Initial ledger import is hash-idempotent and
-refuses to overwrite non-empty cloud activity. A local
-runtime/cloud-cutover.json marker prevents reopening the retired SQLite
-ledger for live writes. The retained database is a recovery copy.
-In-memory pnpm dev:demo is unaffected.
+refuses to overwrite non-empty cloud activity. The Node server is
+synthetic-demo only and refuses any file-backed ledger, so the retired SQLite
+ledger cannot be reopened for live writes. The retained database is a recovery
+copy. In-memory pnpm dev:demo is unaffected.
 
 ## Identity and access
 

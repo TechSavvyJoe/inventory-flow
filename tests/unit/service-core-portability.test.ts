@@ -185,8 +185,15 @@ describe('portable inventory service core', () => {
     })).toBe(false)
   })
 
+  // Transport assignment is the optional advanced dispatch engine's feature;
+  // simple mode refuses transport_assigned/picked_up (server/workflow.mjs SIMPLE_TRANSITIONS).
+  function advancedPortable(database) {
+    return createInventoryServiceCore({ database, repository: sqliteRepository, now: () => new Date(SYNTHETIC_NOW), workflowMode: 'advanced' })
+  }
+
   it('binds outbound and return transport reads and mutations to the immutable assigned user ID', () => {
-    const { database, portable } = harness()
+    const { database } = harness()
+    const portable = advancedPortable(database)
     const salesperson = { role: 'sales', store: 'Fowlerville', user: 'Synthetic Sales', userId: 'sales-1' }
     const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic Manager', userId: 'manager-1' }
     const coordinator = { role: 'coordinator', store: 'Fowlerville', user: 'Synthetic Coordinator', userId: 'coord-1' }
@@ -256,7 +263,8 @@ describe('portable inventory service core', () => {
   })
 
   it('revokes a stable transport assignment immediately when the transfer is canceled', () => {
-    const { database, portable } = harness()
+    const { database } = harness()
+    const portable = advancedPortable(database)
     const salesperson = { role: 'sales', store: 'Fowlerville', user: 'Synthetic Sales', userId: 'sales-cancel' }
     const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic Manager', userId: 'manager-cancel' }
     const coordinator = { role: 'coordinator', store: 'Fowlerville', user: 'Synthetic Coordinator', userId: 'coord-cancel' }

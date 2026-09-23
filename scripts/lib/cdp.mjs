@@ -5,6 +5,12 @@
 export const PORT = 9222
 export const sleep = ms => new Promise(r => setTimeout(r, ms))
 
+// Source systems are read-only evidence. fetchInTab sends a POST only to an
+// exact URL listed here, each one a read that the source exposes as a form POST.
+// Ford PTS returns a repair order's detail only to this XHR form POST.
+export const PTS_REPAIR_ORDER_DETAILS_URL = 'https://www.fordtechservice.dealerconnection.com/VehicleService/Details'
+export const READ_ONLY_POST_URLS = Object.freeze([PTS_REPAIR_ORDER_DETAILS_URL])
+
 export async function targets({ timeoutMs = 10000 } = {}) {
   const response = await fetch(`http://127.0.0.1:${PORT}/json`, { signal: AbortSignal.timeout(timeoutMs) })
   if (!response.ok) throw new Error(`CDP_TARGETS_HTTP_${response.status}`)
@@ -144,6 +150,7 @@ export async function fetchInTab(page, url, {
 } = {}) {
   const requestMethod = String(method || 'GET').toUpperCase()
   if (!['GET', 'POST'].includes(requestMethod)) throw new Error(`UNSUPPORTED_FETCH_METHOD_${requestMethod}`)
+  if (requestMethod === 'POST' && !READ_ONLY_POST_URLS.includes(url)) throw new Error('FETCH_POST_NOT_ALLOWLISTED')
   const expr = `(async () => {
     const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), ${timeoutMs});
     try {
