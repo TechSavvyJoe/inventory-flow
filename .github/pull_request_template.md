@@ -14,8 +14,7 @@ Describe the user-visible result and the dealership workflow it supports.
 
 - [ ] `pnpm check:repo-safety`
 - [ ] `pnpm check`
-- [ ] Desktop inspected at 1440x900 and 1024x768
-- [ ] Mobile inspected at 390x844
+- [ ] Inspected at the AGENTS.md viewports (390x844, 1024x768, 1320x820, 1440x900)
 - [ ] Keyboard and focus behavior checked for changed controls/dialogs
 
 Attach before/after screenshots for visual changes and list any remaining local-only or simulated behavior.

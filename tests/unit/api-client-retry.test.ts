@@ -1,3 +1,4 @@
+// PRODUCT-RULE TEST
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TransferEventInput, TransferRequestInput } from '../../src/types'

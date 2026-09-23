@@ -1,3 +1,4 @@
+// PRODUCT-RULE TEST
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 // The provider, the real API client and a stubbed fetch: proves the first
 // refresh after load already revalidates with If-None-Match and that a 304

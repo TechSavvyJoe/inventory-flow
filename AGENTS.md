@@ -7,7 +7,7 @@ Inventory Flow is a dealership inventory, hold-awareness, and vehicle-movement a
 1. Read `README.md`, `DESIGN_SPEC.md`, and `docs/AI_COLLABORATION.md`.
 2. Run `pnpm install --frozen-lockfile` and `pnpm check` before changing code.
 3. Use `pnpm dev:demo`. The web app runs on `127.0.0.1:4173`; the API runs on `127.0.0.1:4174`.
-4. Compare visual changes at 390x844, 1024x768, 1320x820, and 1440x900 — the one viewport list; no other document restates a different set.
+4. Compare visual changes at 390x844, 1024x768, 1320x820, and 1440x900 — the one canonical viewport list; other documents link here (dated QA records are historical).
 
 The demo is deterministic, synthetic, and repository-safe. Never make it conditionally read a developer's live `runtime/`, `data/`, `work/`, browser profile, or report folders.
 
@@ -33,7 +33,7 @@ A remote agent cannot truthfully verify live inventory, live DealerMail holds, c
 
 ## Product-rule tests
 
-Never delete, loosen, or re-pin these without Joe's approval — agents may add cases; each file carries a `// PRODUCT-RULE TEST` header: `tests/unit/server-api.test.ts` (redaction, DealerMail-only cases, search-text at :664-665), `tests/unit/integration-read-service.test.ts` ("no observed hold distinct from availability"), `src/app/adapters.custody.test.ts`, `tests/unit/inventory-search-privacy.test.tsx`, `tests/unit/service-core-portability.test.ts`, `tests/unit/cloud-access-revocation.test.ts`, `tests/unit/repo-safety.test.ts`, and the write-surface, canary, and ETag/304 tests once they land. A pinned expectation that changes says why the old output was wrong in the commit; product-mandated strings (`No current DealerMail hold found`, `Hold status not verified`, redaction placeholders) stay pinned exactly.
+Never delete, loosen, or re-pin these without Joe's approval — agents may add cases; each file carries a `// PRODUCT-RULE TEST` header: `tests/unit/server-api.test.ts` (`it('serves current source data with full hold evidence for sales and redaction for transport-only roles')`, `it('keeps current DealerMail-only held VINs visible and in the safe Today hold-signal totals')`, and the searchText expectations in `it('shows unheld vehicle alerts and released history only in authorized evidence and search')`), `tests/unit/integration-read-service.test.ts` ("no observed hold distinct from availability"), `src/app/adapters.custody.test.ts`, `tests/unit/inventory-search-privacy.test.tsx`, `tests/unit/service-core-portability.test.ts`, `tests/unit/cloud-access-revocation.test.ts`, `tests/unit/repo-safety.test.ts`, `tests/unit/bootstrap-first-refresh.test.tsx` and `tests/unit/api-client-retry.test.ts` ('bootstrap revalidation') for the ETag/304 path, and the write-surface (M02) and role-matrix canary (M01) tests once they land. A pinned expectation that changes says why the old output was wrong in the commit; product-mandated strings (`No current DealerMail hold found`, `Hold status not verified`, redaction placeholders) stay pinned exactly.
 
 ## Interface standard
 
@@ -55,7 +55,7 @@ Never delete, loosen, or re-pin these without Joe's approval — agents may add 
 
 ## Git collaboration
 
-- Work on a branch; run `pnpm check` before any push to `main`; do not push directly to `main`. AI agents branch and open a pull request.
+- Joe may push to `main` only after `pnpm check` passes; AI agents never push to `main` — they work on a branch and open a pull request.
 - Keep commits scoped and submit a pull request with commands run and screenshots made from `pnpm dev:demo`.
 - Do not use screenshots from the protected host unless they were deliberately redacted and separately approved for repository use.
 - Never weaken `.gitignore` or `scripts/check-repo-safety.mjs` to make a failing commit pass.
