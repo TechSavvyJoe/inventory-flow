@@ -144,13 +144,17 @@ function countMatches(content, pattern) {
 function countIdSelectors(content) {
   const withoutComments = content.replace(/\/\*[\s\S]*?\*\//g, '')
   // The text between one `}` (or the start of the file) and the next `{` is a
-  // selector list (or an at-rule prelude, which never starts with `#`).
+  // selector list (or an at-rule prelude, which never starts with `#`). An ID
+  // selector can appear anywhere in a compound selector, not only as its
+  // leading component (e.g. `.shell #inventory-vehicle-workspace .x`), so the
+  // whole selector list is scanned rather than just each selector's first
+  // compound.
   let count = 0
   for (const chunk of withoutComments.split('{').slice(0, -1)) {
-    const selectorList = chunk.split('}').pop() ?? ''
+    const selectorList = (chunk.split('}').pop() ?? '').trim()
+    if (selectorList.startsWith('@')) continue
     for (const selector of selectorList.split(',')) {
-      const compound = selector.trim().split(/[\s>+~]/)[0] ?? ''
-      if (/^#[A-Za-z_-]/.test(compound)) count += 1
+      if (/#[A-Za-z_-]/.test(selector)) count += 1
     }
   }
   return count

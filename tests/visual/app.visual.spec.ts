@@ -25,13 +25,18 @@ async function settle(page: Page) {
   await page.waitForLoadState('networkidle')
 }
 
-function snapshot(page: Page, name: string) {
+function snapshot(page: Page, name: string, root = page.locator('body')) {
   // Photos are illustrative synthetic assets swapped in by
   // fixtures/synthetic-photos.mjs and are not the thing this gate protects;
   // masking them keeps the pinned baseline about layout and CSS, not image
   // bytes. Animations are frozen so a mid-transition frame never gets pinned.
+  //
+  // The mask root defaults to the whole page, but a workspace state passes
+  // the open dialog so images belonging to the inventory list behind the
+  // modal never get masked — those masks would otherwise paint over live
+  // dialog content (buttons, cells) that this gate is supposed to protect.
   return expect(page).toHaveScreenshot(name, {
-    mask: [page.locator('img')],
+    mask: [root.locator('img')],
     animations: 'disabled',
     fullPage: false,
   })
@@ -62,7 +67,7 @@ test.describe('inventory', () => {
     await page.goto(`/inventory?scope=group&vin=${VIN}&tab=overview`)
     await expect(page.getByRole('dialog')).toBeVisible()
     await settle(page)
-    await snapshot(page, 'vehicle-workspace-overview.png')
+    await snapshot(page, 'vehicle-workspace-overview.png', page.getByRole('dialog'))
   })
 
   test('vehicle workspace holds and moves', async ({ page }) => {
@@ -70,7 +75,7 @@ test.describe('inventory', () => {
     await expect(page.getByRole('dialog')).toBeVisible()
     await expect(page.getByRole('tab', { name: 'Holds & moves', selected: true })).toBeVisible()
     await settle(page)
-    await snapshot(page, 'vehicle-workspace-holds.png')
+    await snapshot(page, 'vehicle-workspace-holds.png', page.getByRole('dialog'))
   })
 })
 

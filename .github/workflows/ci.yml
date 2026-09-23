@@ -151,6 +151,9 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+      - name: Trust the workspace inside the container
+        # Container steps run as root; the runner-created workspace is owned by the runner uid, and `pnpm build` runs `git ls-files` (scripts/package-extension.mjs).
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -201,6 +204,9 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+      - name: Trust the workspace inside the container
+        # Container steps run as root; the runner-created workspace is owned by the runner uid, and `pnpm build` runs `git ls-files` (scripts/package-extension.mjs).
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
