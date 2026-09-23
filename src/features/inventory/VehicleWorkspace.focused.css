@@ -579,10 +579,9 @@
 /* Equipment, hold and location details share the readable 12px floor and the
    discrete weights Windows system fonts render consistently (formerly the
    global typography-hardening and premium-refinement layers). */
-#inventory-vehicle-workspace .inventory-workspace-equipment-group > header > span { font-size: 12px; font-weight: 700; line-height: 1.4; }
-#inventory-vehicle-workspace .inventory-workspace-no-hold__heading > h3 { font-weight: 700; }
-#inventory-vehicle-workspace .inventory-current-location > span:not(.inventory-location-badge) > small,
-#inventory-vehicle-workspace .inventory-current-location > .inventory-location-badge { font-size: 12px; line-height: 1.4; }
+.inventory-workspace .inventory-workspace-equipment-group > header > span { font-size: 12px; font-weight: 700; line-height: 1.4; }
+.inventory-workspace .inventory-current-location > span:not(.inventory-location-badge) > small,
+.inventory-workspace .inventory-current-location > .inventory-location-badge { font-size: 12px; line-height: 1.4; }
 .inventory-timeline__copy { color: #1f3b53; font-size: 12px; line-height: 1.4; }
 
 @media (min-width: 761px) {
