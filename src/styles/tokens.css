@@ -1,23 +1,181 @@
 @import "../../extension/sidepanel/tokens.css";
 
+/* The one global token sheet. Operational colours, type, motion and safe-area
+   insets come from the companion's shared tokens (imported above); this file
+   adds the app shell's sizes and the design-system (--ifx-*) family. Only
+   custom properties and the OEM skin hooks live here — element styles belong
+   in base.css. */
+
 :root {
-  font-family: var(--font-app);
-  color: var(--ink-900);
-  background: var(--surface);
-  font-synthesis: none;
-  text-rendering: auto;
   --nav-width: 188px;
   --top-height: 72px;
   --mobile-bottom-height: 70px;
 }
 
+:root {
+  /* Inventory Flow product identity — never overridden by an OEM skin. */
+  --ifx-product-ink: #071722;
+  --ifx-product-midnight: #0a1d2e;
+  --ifx-product-slate: #142a45;
+  --ifx-product-flow: #4c5eff;
+  --ifx-product-flow-strong: #3546db;
+  --ifx-product-arc: #2ed3e6;
+  --ifx-product-ice: #8ceeff;
+  --ifx-product-paper: #f6fafd;
+
+  --ifx-neutral-0: #fff;
+  --ifx-neutral-25: #fbfdfe;
+  --ifx-neutral-50: #f6fafd;
+  --ifx-neutral-100: #edf3f7;
+  --ifx-neutral-200: #d8e3ea;
+  --ifx-neutral-300: #bbcad4;
+  --ifx-neutral-400: #8ea2b0;
+  --ifx-neutral-500: #5b6f82;
+  --ifx-neutral-600: #526778;
+  --ifx-neutral-700: #354a5a;
+  --ifx-neutral-800: #1d3343;
+  --ifx-neutral-900: #0a1d2e;
+  --ifx-neutral-950: #071722;
+
+  --ifx-success: #087a58;
+  --ifx-success-surface: #e8f8f2;
+  --ifx-warning: #986000;
+  --ifx-warning-surface: #fff4d6;
+  --ifx-danger: #b92f3d;
+  --ifx-danger-surface: #ffecef;
+  --ifx-info: #1263bf;
+  --ifx-info-surface: #eaf4ff;
+  --ifx-hold: #6941c6;
+  --ifx-hold-surface: #f2edff;
+
+  --ifx-font-display: var(--font-app, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  --ifx-font-text: var(--font-app, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  --ifx-font-mono: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --ifx-text-xs: 0.75rem;
+  --ifx-text-sm: 0.8125rem;
+  --ifx-text-md: 0.875rem;
+  --ifx-text-body: 0.9375rem;
+  --ifx-text-lg: 1.0625rem;
+  --ifx-text-xl: 1.1875rem;
+  --ifx-text-h4: 1.4375rem;
+  --ifx-text-h3: 1.875rem;
+  --ifx-text-h2: 2.25rem;
+  --ifx-text-h1: 3rem;
+
+  /* A deliberately small set of native-font weights prevents the fractional
+     interpolation that can make operational copy look soft on Windows. */
+  --ifx-weight-regular: 400;
+  --ifx-weight-medium: 500;
+  --ifx-weight-semibold: 600;
+  --ifx-weight-bold: 700;
+  --ifx-leading-display: 1.1;
+  --ifx-leading-heading: 1.2;
+  --ifx-leading-compact: 1.4;
+  --ifx-leading-body: 1.55;
+  --ifx-tracking-tight: -0.018em;
+  --ifx-tracking-label: 0.008em;
+  --ifx-tracking-caps: 0.045em;
+
+  --ifx-space-0: 0;
+  --ifx-space-0-5: 0.125rem;
+  --ifx-space-1: 0.25rem;
+  --ifx-space-1-5: 0.375rem;
+  --ifx-space-2: 0.5rem;
+  --ifx-space-3: 0.75rem;
+  --ifx-space-4: 1rem;
+  --ifx-space-5: 1.25rem;
+  --ifx-space-6: 1.5rem;
+  --ifx-space-8: 2rem;
+  --ifx-space-10: 2.5rem;
+  --ifx-space-12: 3rem;
+  --ifx-space-16: 4rem;
+
+  --ifx-radius-xs: 5px;
+  --ifx-radius-sm: 8px;
+  --ifx-radius-md: 12px;
+  --ifx-radius-lg: 16px;
+  --ifx-radius-xl: 20px;
+  --ifx-radius-full: 999px;
+
+  --ifx-border-subtle: var(--ifx-neutral-200);
+  --ifx-border-control: var(--ifx-neutral-300);
+  --ifx-control-height-sm: 36px;
+  --ifx-control-height-md: 44px;
+  --ifx-control-height-lg: 48px;
+  --ifx-focus-ring: 0 0 0 3px color-mix(in srgb, var(--ifx-info) 24%, transparent);
+
+  --ifx-elevation-1: 0 1px 2px rgb(7 23 34 / 7%), 0 3px 8px rgb(7 23 34 / 4%);
+  --ifx-elevation-2: 0 7px 20px rgb(7 23 34 / 8%), 0 2px 5px rgb(7 23 34 / 5%);
+  --ifx-elevation-3: 0 16px 42px rgb(7 23 34 / 12%), 0 4px 10px rgb(7 23 34 / 6%);
+  --ifx-elevation-4: 0 24px 72px rgb(7 23 34 / 18%), 0 8px 20px rgb(7 23 34 / 8%);
+  --ifx-elevation-action: 0 6px 16px rgb(53 70 219 / 22%), inset 0 1px rgb(255 255 255 / 20%);
+
+  --ifx-motion-instant: 70ms;
+  --ifx-motion-fast: var(--motion-fast);
+  --ifx-motion-standard: var(--motion-standard);
+  --ifx-motion-deliberate: 360ms;
+  --ifx-motion-scene: 600ms;
+  --ifx-ease-standard: var(--motion-ease);
+  --ifx-ease-enter: var(--motion-enter);
+  --ifx-ease-exit: var(--motion-exit);
+  --ifx-ease-tactile: cubic-bezier(0.22, 0.9, 0.3, 1);
+
+  /* Operational defaults also serve standalone V2 pages and portal contents. */
+  --v10-ink: var(--ink-900);
+  --v10-ink-strong: var(--navy-900);
+  --v10-support: var(--ink-600);
+  --v10-muted: var(--ink-500);
+  --v10-border: var(--border);
+  --v10-border-strong: var(--border-strong);
+  --v10-border-soft: var(--surface-muted);
+  --v10-surface: var(--surface);
+  --v10-surface-subtle: var(--surface-soft);
+  --v10-surface-header: var(--surface-muted);
+  --v10-surface-active: var(--blue-050);
+  --v10-blue: var(--blue-600);
+  --v10-blue-strong: var(--blue-700);
+  --v10-brand: var(--blue-600);
+  --v10-red: var(--red);
+  --v10-warning: var(--amber);
+  --v10-warning-text: var(--amber);
+  --v10-warning-bg: var(--amber-bg);
+
+  /* Skin variables may change by OEM. They cannot recolor the product mark. */
+  --ifx-oem-accent: #4c5eff;
+  --ifx-oem-accent-strong: #3546db;
+  --ifx-oem-surface: #eef0ff;
+  --ifx-oem-metal: #d8e3ea;
+  --ifx-oem-scene-deep: #071722;
+  --ifx-oem-scene-mid: #4c5eff;
+  --ifx-oem-scene-glow: #2ed3e6;
+}
+
+[data-ifx-oem="ford"] {
+  --ifx-oem-accent: #0a5eb8;
+  --ifx-oem-accent-strong: #003478;
+  --ifx-oem-surface: #eaf3ff;
+  --ifx-oem-metal: #d9ecff;
+  --ifx-oem-scene-deep: #001a3d;
+  --ifx-oem-scene-mid: #075fb5;
+  --ifx-oem-scene-glow: #68b8ff;
+}
+
+[data-ifx-oem="lincoln"] {
+  --ifx-oem-accent: #5e686d;
+  --ifx-oem-accent-strong: #252b2e;
+  --ifx-oem-surface: #f1f3f3;
+  --ifx-oem-metal: #d8dddf;
+  --ifx-oem-scene-deep: #161a1c;
+  --ifx-oem-scene-mid: #5e696e;
+  --ifx-oem-scene-glow: #d8dddf;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  :root {
+    --ifx-motion-instant: 0.01ms;
+    --ifx-motion-fast: 0.01ms;
+    --ifx-motion-standard: 0.01ms;
+    --ifx-motion-deliberate: 0.01ms;
+    --ifx-motion-scene: 0.01ms;
   }
 }
