@@ -1322,7 +1322,7 @@
 }
 
 .inventory-current-location strong { color: var(--inventory-text); font-size: 12px; }
-.inventory-current-location small { color: var(--inventory-secondary); font-size: 11px; }
+.inventory-current-location small { color: var(--inventory-secondary); font-size: 12px; }
 
 .inventory-location-badge {
   padding: 3px 6px;

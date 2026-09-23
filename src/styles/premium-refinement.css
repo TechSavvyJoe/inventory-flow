@@ -1117,9 +1117,10 @@ textarea:focus-visible {
 }
 
 .inventory-quick-filter-count {
+  /* Count badges are metadata: 12px is the floor, not 11px. */
   min-width: 21px;
   height: 21px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .inventory-filter-button,
@@ -1745,7 +1746,7 @@ textarea:focus-visible {
 
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-availability-note--compact strong,
   .inventory-workspace.inventory-workspace--compact-v3 .inventory-workspace-intelligence__features span {
-    font-size: 11px !important;
+    font-size: 12px !important;
     font-weight: 600 !important;
     line-height: 1.35;
   }
