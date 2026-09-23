@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import path from 'node:path'
@@ -14,6 +15,8 @@ const MIME_TYPES = Object.freeze({
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.map': 'application/json; charset=utf-8',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.webp': 'image/webp',
@@ -41,6 +44,25 @@ function sendJson(response, status, payload) {
   securityHeaders(response)
   const body = JSON.stringify(payload)
   response.statusCode = status
+  response.setHeader('Content-Type', 'application/json; charset=utf-8')
+  response.setHeader('Content-Length', Buffer.byteLength(body))
+  response.end(body)
+}
+
+// The bootstrap is polled on a timer; an unchanged document answers 304 with
+// no body. The validator is derived from the serialized response, so any
+// ledger or release change produces a new one. Mirrors the Worker behavior.
+function sendJsonRevalidated(request, response, payload) {
+  securityHeaders(response)
+  const body = JSON.stringify(payload)
+  const etag = `"${createHash('sha256').update(body).digest('hex').slice(0, 40)}"`
+  response.setHeader('ETag', etag)
+  if (request.headers['if-none-match'] === etag) {
+    response.statusCode = 304
+    response.end()
+    return
+  }
+  response.statusCode = 200
   response.setHeader('Content-Type', 'application/json; charset=utf-8')
   response.setHeader('Content-Length', Buffer.byteLength(body))
   response.end(body)
@@ -227,7 +249,7 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
         return sendJson(response, 200, await adminDirectory.saveMember(await readJson(request), context, String(request.headers['idempotency-key'] ?? '')))
       }
       if (request.method === 'GET' && route === '/bootstrap') {
-        return sendJson(response, 200, service.bootstrap(context))
+        return sendJsonRevalidated(request, response, service.bootstrap(context))
       }
       if (request.method === 'GET' && route === '/vehicles') {
         return sendJson(response, 200, service.listVehicles(queryObject(url), context))

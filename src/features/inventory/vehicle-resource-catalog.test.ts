@@ -281,7 +281,7 @@ describe('rich vehicle resource catalog', () => {
   });
 
   it('keeps synthetic sticker identity and facts explicitly separate from an official original', () => {
-    const sticker = resource({vin:'TESTDATAHWELL0001',imageUrl:'/demo-vehicles/f150.png',msrp:68420,trim:'Lariat'},'window-sticker');
+    const sticker = resource({vin:'TESTDATAHWELL0001',imageUrl:'/demo-vehicles/f150.jpg',msrp:68420,trim:'Lariat'},'window-sticker');
     expect(sticker.demo).toBe(true);
     expect(sticker.brand).toBeNull();
     expect(sticker.sourceNote).toBe('Synthetic sample · not an original');

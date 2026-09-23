@@ -241,18 +241,43 @@ export function assertReleaseOrdering(current, reportDate, completedAt) {
   try {currentTime=releaseCompletionTime(metadata.completedAt)} catch {throw new HttpError('CURRENT_RELEASE_METADATA_INVALID',503)}
   if(currentTime>incomingTime) throw new HttpError('OLDER_RELEASE_REJECTED',409)
 }
-export async function readReleaseWithIdentity(env) {
+// One decrypted, parsed release per isolate. Every request still reads the
+// current-release row from D1, so a new publish (new object key and bundle
+// hash) or a rollback is a cache miss; only the multi-megabyte R2 read,
+// AES-GCM decrypt and JSON parse are skipped. Consumers build their own views
+// from the release and never mutate it.
+let releaseCache=null
+export async function readReleaseWithIdentity(env,{fresh=false}={}) {
   const row=await currentRelease(env)
   if(!row) throw new HttpError('INVENTORY_NOT_IMPORTED',503)
+  if(!fresh && releaseCache && releaseCache.objectKey===row.object_key && releaseCache.bundleSha256===row.bundle_sha256) {
+    return {release:releaseCache.release,bundleSha256:releaseCache.bundleSha256}
+  }
   const object=await env.RELEASE_SNAPSHOTS.get(row.object_key)
   if(!object || object.size>MAX_UPLOAD) throw new HttpError('RELEASE_ARTIFACT_UNAVAILABLE',503)
   const envelope=JSON.parse(await object.text())
   if(envelope.bundleSha256!==row.bundle_sha256) throw new HttpError('RELEASE_ARTIFACT_UNAVAILABLE',503)
-  return {release:(await decryptEnvelope(envelope,env)).release,bundleSha256:envelope.bundleSha256}
+  const release=(await decryptEnvelope(envelope,env)).release
+  releaseCache={objectKey:row.object_key,bundleSha256:envelope.bundleSha256,release}
+  return {release,bundleSha256:envelope.bundleSha256}
+}
+export function resetReleaseCache() { releaseCache=null }
+// The bootstrap is refreshed on a timer by every open tab. A validator lets an
+// unchanged document answer 304 with no body instead of the full payload; the
+// response stays private and uncacheable for intermediaries.
+async function jsonRevalidated(request,data) {
+  const body=JSON.stringify(data)
+  const digest=await crypto.subtle.digest('SHA-256',encoder.encode(body))
+  const etag=`"${Array.from(new Uint8Array(digest),(byte)=>byte.toString(16).padStart(2,'0')).join('').slice(0,40)}"`
+  const responseHeaders={...headers,'Content-Type':'application/json; charset=utf-8','ETag':etag}
+  if(request.headers.get('if-none-match')===etag) return new Response(null,{status:304,headers:responseHeaders})
+  return new Response(body,{status:200,headers:responseHeaders})
 }
 async function readRelease(env) {return (await readReleaseWithIdentity(env)).release}
 export async function appReadiness(env) {
-  const {release,bundleSha256}=await readReleaseWithIdentity(env)
+  // Readiness must prove the artifact can still be read and decrypted now,
+  // so it never answers from the per-isolate cache.
+  const {release,bundleSha256}=await readReleaseWithIdentity(env,{fresh:true})
   const repo=await loadD1Repository(env.INVENTORY_DB,release)
   const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
   // Fixed least-privileged context exercises the real read pipeline without
@@ -365,7 +390,7 @@ async function appApi(request,url,env,context) {
       }
       mutation=true
     } else throw new HttpError('NOT_FOUND',404)
-    if(!mutation) return json(200,result)
+    if(!mutation) return read && route==='/bootstrap' ? await jsonRevalidated(request,result) : json(200,result)
     try {await repo.commit();return json(result.created?201:200,result.record)}
     catch(error) {if(error instanceof RepositoryConflictError && attempt<2) continue; throw error}
   }

@@ -286,7 +286,7 @@ function VehicleRow({
               <Heart size={15} fill={shortlisted ? "currentColor" : "none"} />
             </motion.button>
           ) : null}
-          <DeskRowActions vehicle={vehicle} {...actions} canRequestVehicle={canRequest}
+          <DeskRowActions vehicle={vehicle} {...actions} includeServiceLink canRequestVehicle={canRequest}
             onSelectVehicle={onSelectVehicle} onRequestVehicle={onRequestVehicle} onTrackMovement={onTrackMovement} />
 
         </div>

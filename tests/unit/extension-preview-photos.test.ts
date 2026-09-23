@@ -21,8 +21,9 @@ describe('shared synthetic preview photo allowlist', () => {
       expect(withSyntheticVehicleIllustration({ vin })).toMatchObject({ imageUrl: path, imageUrls: [path], photoCount: 1 })
       expect(syntheticPreviewPhotos({ vin }, options)).toEqual([`http://127.0.0.1:4177${path}`])
       const bytes = readFileSync(resolve(__dirname, '../../public', path.slice(1)))
-      expect(bytes.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
-      expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([1536, 1024])
+      // JPEG start-of-image marker; illustrations stay small so the demo page loads fast.
+      expect(bytes.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]))
+      expect(bytes.length).toBeLessThan(160 * 1024)
     }
   })
 
@@ -31,19 +32,19 @@ describe('shared synthetic preview photo allowlist', () => {
       expect(syntheticVehiclePhotoPath(vin)).toBeNull()
       expect(syntheticPreviewPhotos({ vin, imageUrl: '/runtime/secret.png' }, options)).toEqual([])
     }
-    expect(syntheticPreviewPhotos({ ...vehicle, imageUrl: 'https://evil.example/image.png' }, options)).toEqual(['http://127.0.0.1:4177/demo-vehicles/f150.png'])
+    expect(syntheticPreviewPhotos({ ...vehicle, imageUrl: 'https://evil.example/image.png' }, options)).toEqual(['http://127.0.0.1:4177/demo-vehicles/f150.jpg'])
   })
 
   it('is excluded from the actual extension and production workspace', () => {
     for (const host of ['extension', 'node', undefined]) expect(syntheticPreviewPhotos(vehicle, { ...options, host })).toEqual([])
     for (const demo of [false, undefined, 'true']) expect(syntheticPreviewPhotos(vehicle, { ...options, workspace: { ...options.workspace, demo } })).toEqual([])
     expect(syntheticPreviewPhotos(vehicle)).toEqual([])
-    expect(photoUrl('/demo-vehicles/f150.png')).toBeNull()
-    expect(photoUrl('http://127.0.0.1:4177/demo-vehicles/f150.png')).toBeNull()
+    expect(photoUrl('/demo-vehicles/f150.jpg')).toBeNull()
+    expect(photoUrl('http://127.0.0.1:4177/demo-vehicles/f150.jpg')).toBeNull()
   })
 
   it('resolves only a clean HTTP(S) preview origin, including a protected remote preview', () => {
-    expect(syntheticPreviewPhotos(vehicle, { ...options, workspace: { demo: true, origin: 'https://synthetic-preview.example.test' } })).toEqual(['https://synthetic-preview.example.test/demo-vehicles/f150.png'])
+    expect(syntheticPreviewPhotos(vehicle, { ...options, workspace: { demo: true, origin: 'https://synthetic-preview.example.test' } })).toEqual(['https://synthetic-preview.example.test/demo-vehicles/f150.jpg'])
     for (const origin of ['file:///private/', 'javascript:alert(1)', 'chrome-extension://example', 'https://user:pass@example.test', 'https://example.test/path', 'https://example.test?redirect=1', 'not a URL', undefined]) {
       expect(syntheticPreviewPhotos(vehicle, { ...options, workspace: { demo: true, origin } })).toEqual([])
     }
@@ -69,21 +70,23 @@ describe('synthetic extension preview image server', () => {
     req.end()
   })
 
-  it('serves the existing full-resolution PNG with correct MIME without a live API', async () => {
-    const response = await get('/demo-vehicles/f150.png')
+  it('serves the demo JPEG illustration with correct MIME without a live API', async () => {
+    const response = await get('/demo-vehicles/f150.jpg')
     expect(response.status).toBe(200)
-    expect(response.headers['content-type']).toBe('image/png')
+    expect(response.headers['content-type']).toBe('image/jpeg')
     expect(response.headers['cache-control']).toBe('no-store')
-    expect([response.body.readUInt32BE(16), response.body.readUInt32BE(20)]).toEqual([1536, 1024])
-    expect(response.body.equals(readFileSync(resolve(__dirname, '../../public/demo-vehicles/f150.png')))).toBe(true)
-    const head = await get('/demo-vehicles/f150.png', 'HEAD')
+    // JPEG start-of-image marker; the asset is a real encoded photo, not a stub.
+    expect(response.body.readUInt16BE(0)).toBe(0xffd8)
+    expect(response.body.length).toBeLessThan(256 * 1024)
+    expect(response.body.equals(readFileSync(resolve(__dirname, '../../public/demo-vehicles/f150.jpg')))).toBe(true)
+    const head = await get('/demo-vehicles/f150.jpg', 'HEAD')
     expect(head.status).toBe(200)
     expect(head.body.length).toBe(0)
   })
 
   it('does not expose unlisted public assets, directory contents, or arbitrary files', async () => {
-    for (const path of ['/demo-vehicles/', '/demo-vehicles/README.md', '/demo-vehicles/not-allowed.png', '/demo-vehicles/f150.png/extra', '/public/demo-vehicles/f150.png', '/demo-vehicles-f150.png']) expect((await get(path)).status).toBe(404)
-    expect((await get('/demo-vehicles/f150.png', 'POST')).status).toBe(405)
+    for (const path of ['/demo-vehicles/', '/demo-vehicles/README.md', '/demo-vehicles/not-allowed.jpg', '/demo-vehicles/f150.jpg/extra', '/public/demo-vehicles/f150.jpg', '/demo-vehicles-f150.png']) expect((await get(path)).status).toBe(404)
+    expect((await get('/demo-vehicles/f150.jpg', 'POST')).status).toBe(405)
   })
 
   it('rejects literal/encoded traversal and malformed escaping before URL normalization', async () => {

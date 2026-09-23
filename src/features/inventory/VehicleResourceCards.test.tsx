@@ -293,7 +293,7 @@ describe('source-backed vehicle resource cards', () => {
   });
 
   it('does not promote a known demo-only CPO qualifier into a history exception', () => {
-    const vehicle = {...sources(),vin:'TESTDATAHWELL0001',imageUrl:'/demo-vehicles/f150.png'};
+    const vehicle = {...sources(),vin:'TESTDATAHWELL0001',imageUrl:'/demo-vehicles/f150.jpg'};
     vehicle.autoCheckReport = {...vehicle.autoCheckReport!, checks:[{label:'Certified Pre-Owned',status:'No CPO info available',detail:'Synthetic result'}]};
     const original = JSON.stringify(vehicle);
     const page = render(<VehicleResourceCards vehicle={vehicle} variant="summary"/>);
@@ -385,7 +385,7 @@ describe('source-backed vehicle resource cards', () => {
     vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, checks: [{label:'Additional history',status:'Events reported',detail:'Corrected title · Synthetic example'}] };
     const page = render(<VehicleResourceCards vehicle={vehicle} variant="summary"/>);
     expect(screen.queryByText('Corrected title · Synthetic example')).not.toBeInTheDocument();
-    page.rerender(<VehicleResourceCards vehicle={{...vehicle,vin:'TESTDATAHWELL0001',imageUrl:'/demo-vehicles/f150.png'}} variant="summary"/>);
+    page.rerender(<VehicleResourceCards vehicle={{...vehicle,vin:'TESTDATAHWELL0001',imageUrl:'/demo-vehicles/f150.jpg'}} variant="summary"/>);
     const history = within(document.querySelector('[data-resource-kind="autocheck"]') as HTMLElement);
     expect(history.getByText('Demo')).toBeVisible();
     expect(history.queryByText('Corrected title')).not.toBeInTheDocument();
@@ -419,7 +419,7 @@ describe('source-backed vehicle resource cards', () => {
   });
 
   it('keeps sparse evidence visible while uncaptured destinations remain compact source links', () => {
-    render(<VehicleResourceCards vehicle={{vin:'TESTDATAHWELL0001',make:'Ford',year:2024,model:'F-150',trim:'Lariat',msrp:68420,imageUrl:'/demo-vehicles/f150.png'}} variant="summary"/>);
+    render(<VehicleResourceCards vehicle={{vin:'TESTDATAHWELL0001',make:'Ford',year:2024,model:'F-150',trim:'Lariat',msrp:68420,imageUrl:'/demo-vehicles/f150.jpg'}} variant="summary"/>);
     const sample = document.querySelector('.vehicle-resource-summary--sparse') as HTMLElement;
     expect(within(sample).getByText('F-150 Lariat')).toBeVisible();
     expect(within(sample).getByText('$68,420 MSRP')).toBeVisible();
@@ -431,7 +431,7 @@ describe('source-backed vehicle resource cards', () => {
   });
 
   it('preserves captured sticker details alongside a synthetic document preview', () => {
-    const vehicle = { ...sources(), vin: 'TESTDATAHWELL0001', imageUrl: '/demo-vehicles/f150.png' };
+    const vehicle = { ...sources(), vin: 'TESTDATAHWELL0001', imageUrl: '/demo-vehicles/f150.jpg' };
     render(<VehicleResourceCards vehicle={vehicle} variant="summary" summaryLimit={6}/>);
     expandDetails('equipment');
     const sticker = document.querySelector('[data-resource-kind="window-sticker"]') as HTMLElement;
@@ -691,7 +691,7 @@ describe('source-backed vehicle resource cards', () => {
   });
 
   it('uses a clearly marked local demo sticker only with the exact synthetic identity and image', () => {
-    const vehicle={vin:'TESTDATAHWELL0001',make:'Ford',year:2024,model:'F-150',trim:'Lariat',msrp:68420,imageUrl:'/demo-vehicles/f150.png'};
+    const vehicle={vin:'TESTDATAHWELL0001',make:'Ford',year:2024,model:'F-150',trim:'Lariat',msrp:68420,imageUrl:'/demo-vehicles/f150.jpg'};
     render(<VehicleResourceCards vehicle={vehicle} variant="cards"/>);
     expect(screen.getByRole('link',{name:/Open demo sticker/})).toHaveAttribute('href','/demo-documents/window-sticker.html?vehicle=TESTDATAHWELL0001');
     const card=document.querySelector('[data-resource="window-sticker"]') as HTMLElement;
@@ -701,11 +701,11 @@ describe('source-backed vehicle resource cards', () => {
     expect(within(card).queryByText('Open the source for its full details.')).not.toBeInTheDocument();
     expect(within(card).getByRole('img')).toHaveAttribute('src','/demo-documents/window-sticker-TESTDATAHWELL0001.png');
     expect(card.querySelector('.vehicle-resource-brand--ford')).toBeNull();
-    expect(vehicleResourceCatalog({...vehicle,imageUrl:'/demo-vehicles/escape.png'}).find(resource=>resource.id==='window-sticker')).toBeUndefined();
+    expect(vehicleResourceCatalog({...vehicle,imageUrl:'/demo-vehicles/escape.jpg'}).find(resource=>resource.id==='window-sticker')).toBeUndefined();
   });
 
   it('keeps a demo-sticker card useful when its optional preview asset cannot load', () => {
-    const vehicle={vin:'TESTDATAHWELL0001',make:'Ford',year:2024,model:'F-150',trim:'Lariat',msrp:68420,imageUrl:'/demo-vehicles/f150.png'};
+    const vehicle={vin:'TESTDATAHWELL0001',make:'Ford',year:2024,model:'F-150',trim:'Lariat',msrp:68420,imageUrl:'/demo-vehicles/f150.jpg'};
     render(<VehicleResourceCards vehicle={vehicle} variant="cards"/>);
     const card=document.querySelector('[data-resource="window-sticker"]') as HTMLElement;
     const preview=card.querySelector('.vehicle-resource-preview') as HTMLImageElement;
@@ -746,7 +746,7 @@ describe('source-backed vehicle resource cards', () => {
     unmount();
     render(<VehicleResourceCards vehicle={{
       vin: 'TESTDATAHWELL0001', make: 'Ford', year: 2024, model: 'F-150', trim: 'Lariat', msrp: 68420,
-      imageUrl: '/demo-vehicles/f150.png',
+      imageUrl: '/demo-vehicles/f150.jpg',
     }} variant="inline" onOpenSection={vi.fn()}/>);
     const demo = document.querySelector('[data-resource-kind="window-sticker"]') as HTMLElement;
     expect(within(demo).getByText('Demo document')).toBeVisible();

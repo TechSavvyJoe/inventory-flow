@@ -597,15 +597,19 @@
   animation: store-status-in 760ms cubic-bezier(.2, .78, .2, 1) both;
 }
 
+/* A compact "find a vehicle" field: the page's own list filter stays the
+   dominant search on every workflow screen. */
 .global-search {
-  height: 46px;
+  height: 40px;
   min-width: 0;
+  width: min(100%, 360px);
+  justify-self: start;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 7px 0 12px;
+  gap: 8px;
+  padding: 0 5px 0 12px;
   border: 1px solid var(--border-strong);
-  border-radius: 9px;
+  border-radius: 8px;
   background: var(--surface);
   box-shadow: none;
   transition: border-color 140ms ease, box-shadow 140ms ease;
@@ -624,7 +628,7 @@
 }
 
 .global-search input {
-  height: 44px;
+  height: 38px;
   min-width: 0;
   flex: 1;
   border: 0;
@@ -641,20 +645,22 @@
 }
 
 .global-search > button {
-  width: 44px;
-  height: 44px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 8px;
-  background: var(--store-accent-strong);
-  color: white;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-600);
   cursor: pointer;
-  transition: transform 130ms ease, background-color 130ms ease;
+  transition: transform 130ms ease, background-color 130ms ease, color 130ms ease;
 }
 
-.global-search > button:hover {
-  background: var(--store-accent);
+.global-search > button:hover,
+.global-search:focus-within > button {
+  background: var(--surface-soft);
+  color: var(--store-accent-strong);
 }
 
 .global-search > button:active {

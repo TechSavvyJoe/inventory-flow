@@ -1,7 +1,7 @@
 import { equipmentFinderItems } from "./vehicle-equipment";
 import { CertifiedBadge } from "../../components/CertifiedBadge";
 import { WorkspaceLink } from "../../components/WorkspaceLink";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -408,8 +408,7 @@ function humanizeStatusLabel(label: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function DeskVehicleCell({ vehicle, onSelectVehicle, recordsAction, priority }: {
-  recordsAction?: ReactNode;
+function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
   priority?: boolean;
   vehicle: InventoryVehicle;
   onSelectVehicle: InventoryTableProps["onSelectVehicle"];
@@ -426,7 +425,7 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, recordsAction, priority }: 
       </span>
       <div className="inv-desk-vehicle__body">
         <span className="inv-desk-vehicle__title"><strong title={name}>{title}</strong></span>
-        <div className="inv-desk-vehicle__links"><CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name} />{recordsAction}</div>
+        <div className="inv-desk-vehicle__links"><CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name} /></div>
         {change ? <button type="button" className={`inv-desk-change inv-desk-change--${change.kind}`} data-row-action="history" data-inventory-vehicle-trigger={vehicle.id}
           aria-label={`View change history for ${name}: ${change.shortLabel}`} title={vehicle.changeSummary || change.label}
           onClick={(event) => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, "timeline"); }}>
@@ -604,11 +603,18 @@ interface DeskRowActionsProps extends Pick<
   vehicle: InventoryVehicle;
   variant?: "desktop" | "mobile";
   hideRecords?: boolean;
+  /** Row-owned Records launcher; when supplied it renders beside Details so every row action lives in one group. */
+  recordsAction?: ReactNode;
+  /** Only for layouts without an Operations service signal of their own. */
+  includeServiceLink?: boolean;
   recordsDisclosure?: { expanded: boolean; controls: string; onToggle: () => void };
 }
 
+// Hold status and service readiness are already labeled, clickable signals in
+// the Operations column, so the action group deliberately does not repeat them.
+// Every remaining action is directly visible (no overflow menu) at 44px.
 export function DeskRowActions({
-  vehicle, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onSelectVehicle, variant = "desktop", recordsDisclosure, hideRecords = false,
+  vehicle, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onSelectVehicle, variant = "desktop", recordsAction, recordsDisclosure, hideRecords = false, includeServiceLink = false,
 }: DeskRowActionsProps) {
   const name = vehicleDisplayName(vehicle);
   const listingUrl = vehicle.publicListing.listingUrl?.trim() || null;
@@ -624,7 +630,8 @@ export function DeskRowActions({
         onClick={() => onSelectVehicle(vehicle)} aria-label={`Open vehicle details for ${name}`} title="Open vehicle">
         Details
       </button> : null}
-      {!hideRecords ? <button type="button" className={`inv-desk-action${recordsDisclosure ? " inv-desk-action--records" : ""}`} data-row-action="records"
+      {recordsAction}
+      {!hideRecords && !recordsAction ? <button type="button" className={`inv-desk-action${recordsDisclosure ? " inv-desk-action--records" : ""}`} data-row-action="records"
         aria-expanded={recordsDisclosure?.expanded} aria-controls={recordsDisclosure?.controls}
         onClick={(event) => {
           event.currentTarget.focus({ preventScroll: true });
@@ -633,14 +640,10 @@ export function DeskRowActions({
         }} aria-label={`Open vehicle records for ${name}`} title="Open vehicle records">
         Records{recordsDisclosure ? <ChevronDown size={14} aria-hidden="true" className={recordsDisclosure.expanded ? "is-expanded" : undefined}/> : null}
       </button> : null}
-      {variant === "desktop" ? <button type="button" className="inv-desk-action" data-row-action="holds"
-        onClick={() => onSelectVehicle(vehicle, "hold")} aria-label={`Open hold and movement details for ${name}`} title="Open hold and movement details">
-        Hold
-      </button> : null}
-      <WorkspaceLink className="inv-desk-action" data-row-action="service" preserveOrigin to={`/service?vin=${encodeURIComponent(vehicle.vin)}`}
+      {includeServiceLink ? <WorkspaceLink className="inv-desk-action" data-row-action="service" preserveOrigin to={`/service?vin=${encodeURIComponent(vehicle.vin)}`}
         aria-label={`Open service status for ${name}`} title="Open service status">
         Service
-      </WorkspaceLink>
+      </WorkspaceLink> : null}
       {canTrack ? <button type="button" className="inv-desk-action" data-row-action="track-movement"
         onClick={() => onTrackMovement?.(vehicle)} aria-label={`Track movement for ${name}`} title="Track movement">Track</button> : null}
       {canCreateMove ? <button type="button" className="inv-desk-action"
@@ -708,6 +711,142 @@ export function vehicleAccessibleSummary(vehicle: InventoryVehicle): string {
   ].filter(Boolean).join(", ");
 }
 
+type RowActionHandlers = Pick<
+  InventoryTableProps,
+  | "onSelectVehicle"
+  | "canRequestVehicle"
+  | "moveActionFor"
+  | "onRequestVehicle"
+  | "onMoveVehicle"
+  | "onTrackMovement"
+  | "onOpenListing"
+  | "onOpenSourceRecord"
+>;
+
+/**
+ * Rows are memoized so a search keystroke or a selection change re-renders
+ * only the rows whose own inputs changed. Parents recreate their callbacks on
+ * every render, so the latest handlers live in a ref and rows receive one
+ * delegating object. It is rebuilt only when a handler appears or disappears,
+ * because presence decides whether an action renders at all.
+ */
+function useStableRowHandlers(handlers: RowActionHandlers): RowActionHandlers {
+  const latest = useRef(handlers);
+  latest.current = handlers;
+  const canRequest = handlers.canRequestVehicle;
+  const canRequestShape = typeof canRequest === "function" ? "function" : canRequest === true;
+  const shape = [
+    String(canRequestShape),
+    Boolean(handlers.moveActionFor), Boolean(handlers.onRequestVehicle), Boolean(handlers.onMoveVehicle),
+    Boolean(handlers.onTrackMovement), Boolean(handlers.onOpenListing), Boolean(handlers.onOpenSourceRecord),
+  ].join();
+  return useMemo<RowActionHandlers>(() => {
+    const current = latest.current;
+    // Forward the exact argument list: callers and tests distinguish
+    // `onSelectVehicle(vehicle)` from `onSelectVehicle(vehicle, undefined)`.
+    return {
+      onSelectVehicle: (...args) => latest.current.onSelectVehicle(...args),
+      canRequestVehicle: canRequestShape === "function"
+        ? (vehicle) => { const check = latest.current.canRequestVehicle; return typeof check === "function" ? check(vehicle) : check === true; }
+        : canRequestShape,
+      moveActionFor: current.moveActionFor ? (...args) => latest.current.moveActionFor?.(...args) ?? null : undefined,
+      onRequestVehicle: current.onRequestVehicle ? (...args) => latest.current.onRequestVehicle?.(...args) : undefined,
+      onMoveVehicle: current.onMoveVehicle ? (...args) => latest.current.onMoveVehicle?.(...args) : undefined,
+      onTrackMovement: current.onTrackMovement ? (...args) => latest.current.onTrackMovement?.(...args) : undefined,
+      onOpenListing: current.onOpenListing ? (...args) => latest.current.onOpenListing?.(...args) : undefined,
+      onOpenSourceRecord: current.onOpenSourceRecord ? (...args) => latest.current.onOpenSourceRecord?.(...args) : undefined,
+    };
+  // The ref always holds the latest handlers; only their presence is a dependency.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shape]);
+}
+
+type OpenRecords = (vehicle: InventoryVehicle, trigger: HTMLElement) => void;
+
+function RecordsLauncher({ vehicle, expanded, onOpenRecords, className, chevron }: {
+  vehicle: InventoryVehicle; expanded: boolean; onOpenRecords: OpenRecords; className: string; chevron: boolean;
+}) {
+  return <button type="button" className={className} data-row-action="records" data-inventory-vehicle-trigger={vehicle.id}
+    aria-label={`Open vehicle records for ${vehicleDisplayName(vehicle)}`} aria-haspopup="dialog" aria-expanded={expanded} title="Open vehicle records"
+    onClick={event => { event.stopPropagation(); event.currentTarget.focus({ preventScroll: true }); onOpenRecords(vehicle, event.currentTarget); }}>
+    <FileText size={15} aria-hidden="true"/>Records{chevron ? <ChevronRight size={14} aria-hidden="true"/> : null}
+  </button>;
+}
+
+interface VehicleRowProps {
+  vehicle: InventoryVehicle;
+  selected: boolean;
+  priority: boolean;
+  recordsExpanded: boolean;
+  onOpenRecords: OpenRecords;
+  handlers: RowActionHandlers;
+}
+
+const DeskRow = memo(function DeskRow({ vehicle, selected, priority, recordsExpanded, onOpenRecords, handlers }: VehicleRowProps) {
+  const hasResources = vehicleResourceCatalog(vehicle).some((resource) => resource.href || resource.hasCapturedData);
+  // One tbody per vehicle keeps its main row and source-signal row together, so
+  // striping, hover and selection are one rule and a filtered list never
+  // re-renders untouched rows just to flip their stripe.
+  return (
+    <tbody className={`inv-desk-vehicle-rows${selected ? " is-selected" : ""}`} data-inventory-vehicle-rows={vehicle.id}>
+      <tr
+        className={`inv-desk-row${selected ? " is-selected" : ""}`}
+        data-has-resources={hasResources ? "true" : "false"}
+        data-stock-number={vehicle.stockNumber}
+        data-inventory-vehicle-trigger={vehicle.id}
+        data-hold-state={vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
+        data-has-movement={vehicleMovementStatus(vehicle) ? "true" : "false"}
+        onClick={() => handlers.onSelectVehicle(vehicle)}
+      >
+        <td className="inv-desk-td inv-desk-td--vehicle" data-column="vehicle">
+          <DeskVehicleCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} priority={priority} />
+        </td>
+        <td className="inv-desk-td inv-desk-td--num" data-column="price">
+          <DeskPriceCell vehicle={vehicle} />
+        </td>
+        <td className="inv-desk-td" data-column="configuration">
+          <DeskConfigurationCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} />
+        </td>
+        <td className="inv-desk-td" data-column="status">
+          <DeskStatusCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} onOpenSourceRecord={handlers.onOpenSourceRecord} />
+        </td>
+        <td className="inv-desk-td inv-desk-td--actions" data-column="actions">
+          <DeskRowActions
+            vehicle={vehicle}
+            {...handlers}
+            recordsAction={<RecordsLauncher vehicle={vehicle} expanded={recordsExpanded} onOpenRecords={onOpenRecords} className="inv-desk-action inv-desk-action--records inventory-records-launch" chevron={false} />}
+          />
+        </td>
+      </tr>
+      {hasResources ? <tr className={`inv-desk-scan-row${selected ? " is-selected" : ""}`}>
+        <td colSpan={5}>
+          <VehicleResourceCards vehicle={vehicle} variant="scan" />
+        </td>
+      </tr> : null}
+    </tbody>
+  );
+});
+
+function useRecordsPanel(vehicles: InventoryVehicle[]) {
+  const [expandedVehicleId, setExpandedVehicleId] = useState<string | null>(null);
+  const recordsTriggerRef = useRef<HTMLElement | null>(null);
+  const recordsVehicle = vehicles.find(vehicle => vehicle.id === expandedVehicleId);
+  const openRecords = useCallback<OpenRecords>((vehicle, trigger) => {
+    recordsTriggerRef.current = trigger;
+    setExpandedVehicleId(vehicle.id);
+  }, []);
+  const panel = recordsVehicle ? <InventoryRecordsPanel vehicle={recordsVehicle} vehicles={vehicles} onVehicleChange={setExpandedVehicleId} onClose={() => setExpandedVehicleId(null)} onOpenWorkspace={vehicle => {
+    setExpandedVehicleId(null);
+    window.requestAnimationFrame(() => {
+      const launcher = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-row-action="records"]')).find(button => button.dataset.inventoryVehicleTrigger === vehicle.id && button.getClientRects().length > 0);
+      launcher?.focus({preventScroll:true});
+      openWorkspaceRef.current?.(vehicle, "data");
+    });
+  }} returnFocusRef={recordsTriggerRef}/> : null;
+  const openWorkspaceRef = useRef<InventoryTableProps["onSelectVehicle"] | null>(null);
+  return { expandedVehicleId, openRecords, panel, openWorkspaceRef };
+}
+
 export function InventoryTable({
   vehicles,
   selectedVehicleId,
@@ -722,14 +861,9 @@ export function InventoryTable({
   onOpenListing,
   onOpenSourceRecord,
 }: InventoryTableProps) {
-  const [expandedVehicleId, setExpandedVehicleId] = useState<string | null>(null);
-  const recordsTriggerRef = useRef<HTMLElement | null>(null);
-  const recordsVehicle = vehicles.find(vehicle => vehicle.id === expandedVehicleId);
-  const recordsAction = (vehicle: InventoryVehicle) => <button type="button" className="inventory-records-launch" data-row-action="records" data-inventory-vehicle-trigger={vehicle.id}
-    aria-label={`Open vehicle records for ${vehicleDisplayName(vehicle)}`} aria-haspopup="dialog" aria-expanded={expandedVehicleId === vehicle.id}
-    onClick={event => { event.stopPropagation(); event.currentTarget.focus({preventScroll:true}); recordsTriggerRef.current = event.currentTarget; setExpandedVehicleId(vehicle.id); }}>
-    <FileText size={15} aria-hidden="true"/>Records<ChevronRight size={14} aria-hidden="true"/>
-  </button>;
+  const handlers = useStableRowHandlers({ onSelectVehicle, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord });
+  const records = useRecordsPanel(vehicles);
+  records.openWorkspaceRef.current = onSelectVehicle;
   return (
     <section
       className="inventory-grid-shell--desk if-srp-grid"
@@ -765,71 +899,127 @@ export function InventoryTable({
               </th>
             </tr>
           </thead>
-          <tbody>
-            {vehicles.map((vehicle, index) => {
-              const selected = vehicle.id === selectedVehicleId;
-              const hasResources = vehicleResourceCatalog(vehicle).some((resource) => resource.href || resource.hasCapturedData);
-              const alternate = index % 2 === 1;
-              return (
-                <Fragment key={vehicle.id}>
-                <tr
-                  className={`inv-desk-row${selected ? " is-selected" : ""}${alternate ? " is-alternate" : ""}`}
-                  data-has-resources={hasResources ? "true" : "false"}
-                  data-stock-number={vehicle.stockNumber}
-                  data-inventory-vehicle-trigger={vehicle.id}
-                  data-hold-state={vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
-                  data-has-movement={vehicleMovementStatus(vehicle) ? "true" : "false"}
-                  onClick={() => onSelectVehicle(vehicle)}
-                >
-                  <td className="inv-desk-td inv-desk-td--vehicle" data-column="vehicle">
-                    <DeskVehicleCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} recordsAction={recordsAction(vehicle)} priority={index < 4} />
-                  </td>
-                  <td className="inv-desk-td inv-desk-td--num" data-column="price">
-                    <DeskPriceCell vehicle={vehicle} />
-                  </td>
-                  <td className="inv-desk-td" data-column="configuration">
-                    <DeskConfigurationCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
-                  </td>
-                  <td className="inv-desk-td" data-column="status">
-                    <DeskStatusCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} onOpenSourceRecord={onOpenSourceRecord} />
-                  </td>
-                  <td className="inv-desk-td inv-desk-td--actions" data-column="actions">
-                    <DeskRowActions
-                      vehicle={vehicle}
-                      onSelectVehicle={onSelectVehicle}
-                      canRequestVehicle={canRequestVehicle}
-                      moveActionFor={moveActionFor}
-                      onRequestVehicle={onRequestVehicle}
-                      onMoveVehicle={onMoveVehicle}
-                      onTrackMovement={onTrackMovement}
-                      onOpenListing={onOpenListing}
-                      onOpenSourceRecord={onOpenSourceRecord}
-                      hideRecords
-                    />
-                  </td>
-                </tr>
-                {hasResources ? <tr className={`inv-desk-scan-row${selected ? " is-selected" : ""}${alternate ? " is-alternate" : ""}`}>
-                  <td colSpan={5}>
-                    <VehicleResourceCards vehicle={vehicle} variant="scan" />
-                  </td>
-                </tr> : null}
-                </Fragment>
-              );
-            })}
-          </tbody>
+          {vehicles.map((vehicle, index) => (
+            <DeskRow
+              key={vehicle.id}
+              vehicle={vehicle}
+              selected={vehicle.id === selectedVehicleId}
+              priority={index < 4}
+              recordsExpanded={records.expandedVehicleId === vehicle.id}
+              onOpenRecords={records.openRecords}
+              handlers={handlers}
+            />
+          ))}
         </table>
       </div>
-      {recordsVehicle ? <InventoryRecordsPanel vehicle={recordsVehicle} vehicles={vehicles} onVehicleChange={setExpandedVehicleId} onClose={() => setExpandedVehicleId(null)} onOpenWorkspace={vehicle => {
-        setExpandedVehicleId(null);
-        window.requestAnimationFrame(() => {
-          const launcher = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-row-action="records"]')).find(button => button.dataset.inventoryVehicleTrigger === vehicle.id && button.getClientRects().length > 0);
-          launcher?.focus({preventScroll:true});
-          onSelectVehicle(vehicle, "data");
-        });
-      }} returnFocusRef={recordsTriggerRef}/> : null}
+      {records.panel}
     </section>
   );
 }
+
+const MobileRow = memo(function MobileRow({ vehicle, selected, priority, recordsExpanded, onOpenRecords, handlers }: VehicleRowProps) {
+  const { onSelectVehicle, onOpenSourceRecord } = handlers;
+  const name = vehicleDisplayName(vehicle);
+  const recentChange = primaryVehicleChangeSignal(vehicle.changeSummary);
+  const movementStatus = vehicleMovementStatus(vehicle);
+  const holdStatus = vehicleOperationalStatus(vehicle);
+  const currentLocation = resolveCurrentLocation(vehicle);
+  const specification = [
+    vehicle.engine,
+    vehicle.drivetrain,
+  ].filter(Boolean).join(" · ") || "Specifications in details";
+  const operationalUpdate = movementStatus?.label || (recentChange?.kind !== "other" ? recentChange?.shortLabel : null);
+  const holdToolsAvailable = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
+  const hasDocumentEvidence = Object.values(mobileDocumentAvailability(vehicle)).some(Boolean);
+  // The holder is already role-redacted by vehicleOperationalStatus.
+  // Keep that useful context on the compact SRP instead of making staff
+  // open the vehicle just to see who owns the current hold.
+  const compactHoldLabel = holdStatus.label;
+  const equipmentCues = [...new Set(standoutEquipment(vehicle, 6).filter(item => item.source !== "factory-equipment-group").map(item => compactEquipmentScanLabel(item.label)))].slice(0, 3);
+  return (
+    <article
+      className={`if-srp-mobile-row if-srp-mobile-row--scan${selected ? " is-selected" : ""}`}
+      data-has-document-evidence={hasDocumentEvidence ? "true" : "false"}
+      data-hold-state={vehicle.dealerMail.dataState !== "current" ? "unknown" : vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
+    >
+      <button
+        type="button"
+        className="inventory-mobile-row__open"
+        data-inventory-vehicle-trigger={vehicle.id}
+        onClick={(event) => {
+          event.currentTarget.focus({ preventScroll: true });
+          onSelectVehicle(vehicle);
+        }}
+        aria-label={vehicleAccessibleSummary(vehicle)}
+      >
+        <span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} priority={priority} /><PhotoCount vehicle={vehicle} /></span>
+        <span className="inventory-mobile-row__main">
+          <span className="inventory-mobile-row__title">
+            <strong>{name}</strong>
+            <ChevronRight className="inventory-mobile-open-indicator" size={16} aria-hidden="true" />
+          </span>
+          <span className="inventory-mobile-row__valuation">
+            <b>{formatMoney(vehicle.price)}</b>
+            <span>{formatMileage(vehicle.mileage)}</span>
+          </span>
+          <small className="inventory-mobile-row__specification" title={specification}>{specification}</small>
+        </span>
+      </button>
+      <div className="inventory-mobile-row__identity">
+        <span title={`Stock ${vehicle.stockNumber}`}>{vehicle.stockNumber}</span>
+        <CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name}/>
+        <RecordsLauncher vehicle={vehicle} expanded={recordsExpanded} onOpenRecords={onOpenRecords} className="inventory-records-launch" chevron />
+      </div>
+      <div className="inventory-mobile-row__signals" aria-label="Operational vehicle signals">
+        <div className="inventory-mobile-service"><span aria-hidden="true">Service</span><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed /></div>
+          <button
+            type="button"
+            className={`inventory-mobile-hold inventory-mobile-hold--${holdStatus.tone}`}
+            title={[currentLocation.detail, holdStatus.label, holdStatus.detail, holdToolsAvailable ? "DealerMail hold actions are available in vehicle details." : null].filter(Boolean).join(" · ")}
+            data-row-action={holdToolsAvailable ? "dealermail" : "hold-details"}
+            data-inventory-vehicle-trigger={vehicle.id}
+            onClick={(event) => {
+              event.currentTarget.focus({ preventScroll: true });
+              if (holdToolsAvailable) {
+                onOpenSourceRecord?.(vehicle, "dealermail");
+                return;
+              }
+              onSelectVehicle(vehicle, "hold");
+            }}
+            aria-label={holdToolsAvailable
+              ? `Open DealerMail hold tools for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}`
+              : `Open hold details for ${name}`}
+          >
+            <strong>{currentLocation.label}</strong><span aria-hidden="true" className="inventory-mobile-hold__separator">·</span>
+            <span>{compactHoldLabel}</span>
+          </button>
+          {vehicle.managerDisposition ? (
+            <span className="inventory-mobile-manager-disposition" data-state={vehicle.managerDisposition.dataState}>
+              <ClipboardCheck size={14} strokeWidth={1.9} aria-hidden="true" />
+              <span><strong>{vehicle.managerDisposition.soldLabel}</strong><small>{vehicle.managerDisposition.deliveryLabel}</small></span>
+            </span>
+          ) : null}
+          {operationalUpdate ? <p
+            className={`inventory-mobile-location inventory-mobile-update${movementStatus ? " inventory-mobile-update--movement" : ""}${movementStatus?.tone === "warning" ? " inventory-mobile-update--warning" : ""}`}
+            title={[currentLocation.detail, movementStatus?.detail || vehicle.changeSummary].filter(Boolean).join(" · ")}
+          >
+            <Truck size={14} strokeWidth={1.9} aria-hidden="true" />
+            <span>{humanizeStatusLabel(operationalUpdate)}</span>
+          </p> : null}
+      </div>
+      {equipmentCues.length ? <div className="inventory-mobile-row__equipment"><span>Equipment</span><p>{equipmentCues.join(" · ")}</p></div> : null}
+      <div className="inventory-mobile-row__footer">
+      <div className="inventory-mobile-row__actions">
+      <DeskRowActions vehicle={vehicle} variant="mobile" {...handlers} hideRecords />
+      </div>
+      <div className="inventory-mobile-row__resources">
+        <VehicleResourceCards vehicle={vehicle} variant="scan" />
+      </div>
+
+      </div>
+    </article>
+  );
+});
 
 export function InventoryMobileList({
   vehicles,
@@ -843,133 +1033,27 @@ export function InventoryMobileList({
   onTrackMovement,
   onOpenListing,
 }: Pick<InventoryTableProps, "vehicles" | "selectedVehicleId" | "onSelectVehicle" | "onOpenSourceRecord" | "canRequestVehicle" | "moveActionFor" | "onRequestVehicle" | "onMoveVehicle" | "onTrackMovement" | "onOpenListing">) {
-  const [expandedVehicleId, setExpandedVehicleId] = useState<string | null>(null);
-  const recordsTriggerRef = useRef<HTMLElement | null>(null);
-  const recordsVehicle = vehicles.find(vehicle => vehicle.id === expandedVehicleId);
-  const recordsAction = (vehicle: InventoryVehicle) => <button type="button" className="inventory-records-launch" data-row-action="records" data-inventory-vehicle-trigger={vehicle.id}
-    aria-label={`Open vehicle records for ${vehicleDisplayName(vehicle)}`} aria-haspopup="dialog" aria-expanded={expandedVehicleId === vehicle.id}
-    onClick={event => { event.stopPropagation(); event.currentTarget.focus({preventScroll:true}); recordsTriggerRef.current = event.currentTarget; setExpandedVehicleId(vehicle.id); }}>
-    <FileText size={15} aria-hidden="true"/>Records<ChevronRight size={14} aria-hidden="true"/>
-  </button>;
+  const handlers = useStableRowHandlers({ onSelectVehicle, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord });
+  const records = useRecordsPanel(vehicles);
+  records.openWorkspaceRef.current = onSelectVehicle;
   return (
     <div className="if-srp-mobile-list" aria-label="Inventory results">
-      {vehicles.map((vehicle, index) => {
-        const name = vehicleDisplayName(vehicle);
-        const recentChange = primaryVehicleChangeSignal(vehicle.changeSummary);
-        const movementStatus = vehicleMovementStatus(vehicle);
-        const holdStatus = vehicleOperationalStatus(vehicle);
-        const currentLocation = resolveCurrentLocation(vehicle);
-        const specification = [
-          vehicle.engine,
-          vehicle.drivetrain,
-        ].filter(Boolean).join(" · ") || "Specifications in details";
-        const operationalUpdate = movementStatus?.label || (recentChange?.kind !== "other" ? recentChange?.shortLabel : null);
-        const holdToolsAvailable = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
-        const hasDocumentEvidence = Object.values(mobileDocumentAvailability(vehicle)).some(Boolean);
-        // The holder is already role-redacted by vehicleOperationalStatus.
-        // Keep that useful context on the compact SRP instead of making staff
-        // open the vehicle just to see who owns the current hold.
-        const compactHoldLabel = holdStatus.label;
-        const equipmentCues = [...new Set(standoutEquipment(vehicle, 6).filter(item => item.source !== "factory-equipment-group").map(item => compactEquipmentScanLabel(item.label)))].slice(0, 3);
-        return (
-          <article
-            className={`if-srp-mobile-row if-srp-mobile-row--scan${vehicle.id === selectedVehicleId ? " is-selected" : ""}`}
-            key={vehicle.id}
-            data-has-document-evidence={hasDocumentEvidence ? "true" : "false"}
-            data-hold-state={vehicle.dealerMail.dataState !== "current" ? "unknown" : vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
-          >
-            <button
-              type="button"
-              className="inventory-mobile-row__open"
-              data-inventory-vehicle-trigger={vehicle.id}
-              onClick={(event) => {
-                event.currentTarget.focus({ preventScroll: true });
-                onSelectVehicle(vehicle);
-              }}
-              aria-label={vehicleAccessibleSummary(vehicle)}
-            >
-              <span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} priority={index < 2} /><PhotoCount vehicle={vehicle} /></span>
-              <span className="inventory-mobile-row__main">
-                <span className="inventory-mobile-row__title">
-                  <strong>{name}</strong>
-                  <ChevronRight className="inventory-mobile-open-indicator" size={16} aria-hidden="true" />
-                </span>
-                <span className="inventory-mobile-row__valuation">
-                  <b>{formatMoney(vehicle.price)}</b>
-                  <span>{formatMileage(vehicle.mileage)}</span>
-                </span>
-                <small className="inventory-mobile-row__specification" title={specification}>{specification}</small>
-              </span>
-            </button>
-            <div className="inventory-mobile-row__identity">
-              <span title={`Stock ${vehicle.stockNumber}`}>{vehicle.stockNumber}</span>
-              <CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name}/>
-              {recordsAction(vehicle)}
-            </div>
-            <div className="inventory-mobile-row__signals" aria-label="Operational vehicle signals">
-              <div className="inventory-mobile-service"><span aria-hidden="true">Service</span><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed /></div>
-                <button
-                  type="button"
-                  className={`inventory-mobile-hold inventory-mobile-hold--${holdStatus.tone}`}
-                  title={[currentLocation.detail, holdStatus.label, holdStatus.detail, holdToolsAvailable ? "DealerMail hold actions are available in vehicle details." : null].filter(Boolean).join(" · ")}
-                  data-row-action={holdToolsAvailable ? "dealermail" : "hold-details"}
-                  data-inventory-vehicle-trigger={vehicle.id}
-                  onClick={(event) => {
-                    event.currentTarget.focus({ preventScroll: true });
-                    if (holdToolsAvailable) {
-                      onOpenSourceRecord?.(vehicle, "dealermail");
-                      return;
-                    }
-                    onSelectVehicle(vehicle, "hold");
-                  }}
-                  aria-label={holdToolsAvailable
-                    ? `Open DealerMail hold tools for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}`
-                    : `Open hold details for ${name}`}
-                >
-                  <strong>{currentLocation.label}</strong><span aria-hidden="true" className="inventory-mobile-hold__separator">·</span>
-                  <span>{compactHoldLabel}</span>
-                </button>
-                {vehicle.managerDisposition ? (
-                  <span className="inventory-mobile-manager-disposition" data-state={vehicle.managerDisposition.dataState}>
-                    <ClipboardCheck size={14} strokeWidth={1.9} aria-hidden="true" />
-                    <span><strong>{vehicle.managerDisposition.soldLabel}</strong><small>{vehicle.managerDisposition.deliveryLabel}</small></span>
-                  </span>
-                ) : null}
-                {operationalUpdate ? <p
-                  className={`inventory-mobile-location inventory-mobile-update${movementStatus ? " inventory-mobile-update--movement" : ""}${movementStatus?.tone === "warning" ? " inventory-mobile-update--warning" : ""}`}
-                  title={[currentLocation.detail, movementStatus?.detail || vehicle.changeSummary].filter(Boolean).join(" · ")}
-                >
-                  <Truck size={14} strokeWidth={1.9} aria-hidden="true" />
-                  <span>{humanizeStatusLabel(operationalUpdate)}</span>
-                </p> : null}
-            </div>
-            {equipmentCues.length ? <div className="inventory-mobile-row__equipment"><span>Equipment</span><p>{equipmentCues.join(" · ")}</p></div> : null}
-            <div className="inventory-mobile-row__footer">
-            <div className="inventory-mobile-row__actions">
-            <DeskRowActions vehicle={vehicle} variant="mobile" onSelectVehicle={onSelectVehicle} onOpenSourceRecord={onOpenSourceRecord}
-              hideRecords
-              canRequestVehicle={canRequestVehicle} moveActionFor={moveActionFor} onRequestVehicle={onRequestVehicle} onMoveVehicle={onMoveVehicle}
-              onTrackMovement={onTrackMovement} onOpenListing={onOpenListing} />
-            </div>
-            <div className="inventory-mobile-row__resources">
-              <VehicleResourceCards vehicle={vehicle} variant="scan" />
-            </div>
-
-            </div>
-          </article>
-        );
-      })}
-      {recordsVehicle ? <InventoryRecordsPanel vehicle={recordsVehicle} vehicles={vehicles} onVehicleChange={setExpandedVehicleId} onClose={() => setExpandedVehicleId(null)} onOpenWorkspace={vehicle => {
-        setExpandedVehicleId(null);
-        window.requestAnimationFrame(() => {
-          const launcher = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-row-action="records"]')).find(button => button.dataset.inventoryVehicleTrigger === vehicle.id && button.getClientRects().length > 0);
-          launcher?.focus({preventScroll:true});
-          onSelectVehicle(vehicle, "data");
-        });
-      }} returnFocusRef={recordsTriggerRef}/> : null}
+      {vehicles.map((vehicle, index) => (
+        <MobileRow
+          key={vehicle.id}
+          vehicle={vehicle}
+          selected={vehicle.id === selectedVehicleId}
+          priority={index < 2}
+          recordsExpanded={records.expandedVehicleId === vehicle.id}
+          onOpenRecords={records.openRecords}
+          handlers={handlers}
+        />
+      ))}
+      {records.panel}
     </div>
   );
 }
+
 
 export function inventorySortSummary(sorts: InventoryTableProps["sorts"]): string {
   return sorts

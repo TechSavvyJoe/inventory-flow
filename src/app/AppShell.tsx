@@ -382,7 +382,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <input
               value={query}
               onChange={(event) => setSearchDraft({ accessContext: searchAccessContext, query: event.target.value })}
-              placeholder="Search stock, VIN, model, feature, salesperson, or hold"
+              placeholder="Find a vehicle: stock, VIN, or model"
               aria-label="Search inventory"
               autoComplete="off"
             />

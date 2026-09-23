@@ -15,7 +15,7 @@ describe('vehicle resources across workflow pages', () => {
     expect(screen.getByRole('status')).toHaveTextContent('/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data&returnTo=%2Fattention')
   })
   it('keeps synthetic sample documents separate from provider records', () => {
-    const vehicle = {vin:'TESTDATALNCN00001',make:'Lincoln',imageUrl:'/demo-vehicles/nautilus.png'} as VehicleRecord
+    const vehicle = {vin:'TESTDATALNCN00001',make:'Lincoln',imageUrl:'/demo-vehicles/nautilus.jpg'} as VehicleRecord
     render(<MemoryRouter><WorkflowVehicleResources vehicle={vehicle}/></MemoryRouter>)
     const link = screen.getByRole('link',{name:/Open demo sticker for VIN TESTDATALNCN00001/})
     expect(link).toHaveAttribute('href','/demo-documents/window-sticker.html?vehicle=TESTDATALNCN00001')

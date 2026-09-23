@@ -450,12 +450,15 @@
   #inventory-vehicle-workspace .vdp-focus-identifiers .copyable-value__button { flex:none; }
   #inventory-vehicle-workspace .vdp-focus-identifiers .copyable-value { font-size:12px; }
   #inventory-vehicle-workspace .vdp-focus-identifiers dt { font-size:12px; }
-  #inventory-vehicle-workspace .vdp-focus-navigation { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0 4px; padding:0 8px; }
-  #inventory-vehicle-workspace .vdp-focus-tabs { display:contents; }
-  #inventory-vehicle-workspace .vdp-focus-tabs button { min-width:0; margin:3px 0; padding:6px 4px; font-size:13px; white-space:normal; border-radius:4px; }
-  #inventory-vehicle-workspace .vdp-focus-service { grid-column:3; grid-row:2; max-width:none; justify-content:center; border-left:1px solid var(--v10-border); }
-  #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link { width:100%; min-width:0; justify-content:center; padding-inline:4px; }
-  #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link.is-compact { min-height:34px; padding:4px; }
+  /* One scrollable tab row with the service status as a pill at its end, so the
+     header, status and the operations actions all fit in the first viewport. */
+  #inventory-vehicle-workspace .vdp-focus-navigation { display:flex; align-items:center; gap:8px; padding:4px 8px 0; }
+  #inventory-vehicle-workspace .vdp-focus-tabs { display:flex; flex:1 1 auto; min-width:0; gap:4px; padding-bottom:4px; overflow-x:auto; scroll-snap-type:x proximity; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  #inventory-vehicle-workspace .vdp-focus-tabs::-webkit-scrollbar { display:none; }
+  #inventory-vehicle-workspace .vdp-focus-tabs button { flex:0 0 auto; scroll-snap-align:start; min-width:0; margin:0; padding:6px 12px; font-size:13px; white-space:nowrap; border-radius:4px; }
+  #inventory-vehicle-workspace .vdp-focus-service { flex:0 0 auto; max-width:46%; justify-content:center; margin-bottom:4px; border-left:0; }
+  #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link { width:auto; min-width:0; justify-content:center; padding-inline:8px; }
+  #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link.is-compact { min-height:36px; padding:4px 10px; border-radius:999px; }
   #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link__detail { justify-content:center; gap:0 4px; }
   #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link__detail > span { min-width:0; white-space:normal; overflow-wrap:anywhere; }
   #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link__prefix { display:none; }
@@ -475,10 +478,13 @@
   #inventory-vehicle-workspace .vdp-focus-mobile-specs { display:grid; gap:5px; }
   #inventory-vehicle-workspace .vdp-focus-mobile-specs p { margin:0; color:var(--ink-700); font:400 13px/1.35 var(--font-app); overflow-wrap:anywhere; }
   #inventory-vehicle-workspace .vdp-focus-mobile-specs p:first-child { color:var(--navy-900); font-weight:600; }
-  #inventory-vehicle-workspace .vdp-focus-operations { padding:8px 10px; border:1px solid var(--border-strong); border-radius:4px; background:var(--surface); }
-  #inventory-vehicle-workspace .vdp-focus-operations h3 { margin-bottom:7px; font-size:16px; }
-  #inventory-vehicle-workspace .vdp-focus-operations > dl { grid-template-columns:minmax(0,1fr); gap:0; }
-  #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact { grid-template-columns:82px minmax(0,1fr); gap:8px; padding:6px 0; }
+  /* Location, hold, and the decisive actions lead the phone overview; the
+     gallery and specifications follow. */
+  #inventory-vehicle-workspace .vdp-focus-operations { order:-1; padding:8px 10px; border:1px solid var(--border-strong); border-radius:4px; background:var(--surface); }
+  #inventory-vehicle-workspace .vdp-focus-operations h3 { margin-bottom:4px; font-size:15px; }
+  #inventory-vehicle-workspace .vdp-focus-operations > dl { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
+  #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact { grid-template-columns:74px minmax(0,1fr); gap:6px; padding:6px 0; }
+  #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact dd { overflow-wrap:normal; word-break:normal; }
   #inventory-vehicle-workspace .vdp-focus-operations .vdp-focus-service-fact { display:none; }
   #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact dt { font-size:12px; }
   #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact dd { font-size:14px; }

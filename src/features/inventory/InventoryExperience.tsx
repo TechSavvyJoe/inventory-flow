@@ -1,5 +1,5 @@
 import { useWorkspaceState, useWorkspaceScroll } from "../../lib/workspace-memory";
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from "react";
+import { useDeferredValue, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -499,12 +499,16 @@ export function InventoryExperience(props: InventoryExperienceProps) {
     [filters, quickView, vehicles],
   );
   const searchIndexes = useMemo(() => buildInventorySearchIndexes(searchableVehicles), [searchableVehicles]);
+  // The search field echoes each keystroke at once; re-ranking and re-rendering
+  // the result rows follows as a deferred, interruptible update so typing never
+  // waits on the table.
+  const deferredQuery = useDeferredValue(query);
   const searchMatches = useMemo(
-    () => rankInventorySearchWithAuthorizedFallback(searchIndexes, query),
-    [query, searchIndexes],
+    () => rankInventorySearchWithAuthorizedFallback(searchIndexes, deferredQuery),
+    [deferredQuery, searchIndexes],
   );
   const queryMatchIds = useMemo(() => new Set(searchMatches.map((match) => match.vehicle.id)), [searchMatches]);
-  const hasQuery = Boolean(query.trim());
+  const hasQuery = Boolean(deferredQuery.trim());
   const baseMatches = useMemo(
     () => vehicles.filter((vehicle) =>
       vehicleMatchesFilters(vehicle, filters) && (!hasQuery || queryMatchIds.has(vehicle.id)),

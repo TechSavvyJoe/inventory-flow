@@ -4,14 +4,14 @@
  * Production photo URL validation does not import or use this mapping.
  */
 export const SYNTHETIC_VEHICLE_PHOTOS = Object.freeze({
-  TESTDATAHWELL0001: '/demo-vehicles/f150.png',
-  TESTDATAHWELL0002: '/demo-vehicles/bronco-sport.png',
-  TESTDATAFWELL0001: '/demo-vehicles/escape.png',
-  TESTDATAFWELL0002: '/demo-vehicles/maverick.png',
-  TESTDATADETRT0001: '/demo-vehicles/explorer.png',
-  TESTDATADETRT0002: '/demo-vehicles/silverado.png',
-  TESTDATALNCN00001: '/demo-vehicles/nautilus.png',
-  TESTDATALNCN00002: '/demo-vehicles/corsair.png',
+  TESTDATAHWELL0001: '/demo-vehicles/f150.jpg',
+  TESTDATAHWELL0002: '/demo-vehicles/bronco-sport.jpg',
+  TESTDATAFWELL0001: '/demo-vehicles/escape.jpg',
+  TESTDATAFWELL0002: '/demo-vehicles/maverick.jpg',
+  TESTDATADETRT0001: '/demo-vehicles/explorer.jpg',
+  TESTDATADETRT0002: '/demo-vehicles/silverado.jpg',
+  TESTDATALNCN00001: '/demo-vehicles/nautilus.jpg',
+  TESTDATALNCN00002: '/demo-vehicles/corsair.jpg',
 })
 
 export function syntheticVehiclePhotoPath(vin) {

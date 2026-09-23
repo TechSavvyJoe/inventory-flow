@@ -8,7 +8,7 @@ const DEMO_PHOTOS: Record<string, string> = {
 
 export function getDemoWindowSticker(vehicle: { vin: string; imageUrl?: string | null; imageUrls?: string[] | null }) {
   const photo = DEMO_PHOTOS[vehicle.vin]
-  if (!photo || ![vehicle.imageUrl, ...(vehicle.imageUrls ?? [])].includes(`/demo-vehicles/${photo}.png`)) return null
+  if (!photo || ![vehicle.imageUrl, ...(vehicle.imageUrls ?? [])].includes(`/demo-vehicles/${photo}.jpg`)) return null
   return {
     url: `/demo-documents/window-sticker.html?vehicle=${encodeURIComponent(vehicle.vin)}`,
     previewUrl: `/demo-documents/window-sticker-${vehicle.vin}.png`,

@@ -659,7 +659,7 @@ describe('modern inventory result access', () => {
     ]));
   });
 
-  it('exposes details, records, hold, service, move, and listing directly with no More menu', async () => {
+  it('exposes details, records, move, and listing directly with no More menu; hold and service open from their Operations signals', async () => {
     const vehicle = heldMovingVehicle();
     const onSelectVehicle = vi.fn();
     const onOpenSourceRecord = vi.fn();
@@ -669,21 +669,23 @@ describe('modern inventory result access', () => {
     const props = { vehicles: [vehicle], sorts: [] as const, onSortChange: vi.fn(), onSelectVehicle, canRequestVehicle: true, onRequestVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord };
     const { rerender } = render(<InventoryTable {...props} sorts={[]} />);
     const actions = screen.getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' });
-    expect(within(actions).getAllByRole('button').map(button => button.getAttribute('title'))).toEqual(['Open vehicle', 'Open hold and movement details', 'Track movement', 'Open listing']);
+    expect(within(actions).getAllByRole('button').map(button => button.getAttribute('title'))).toEqual(['Open vehicle', 'Open vehicle records', 'Track movement', 'Open listing']);
+    // The Operations column already carries the clickable hold signal and the
+    // service link, so the action group does not duplicate them.
+    expect(within(actions).queryByRole('button', { name: /Open hold and movement details/ })).toBeNull();
+    expect(within(actions).queryByRole('link', { name: /Open service status/ })).toBeNull();
+    expect(screen.getByRole('link', { name: /Open service status for VIN/ })).toHaveAttribute('href', `/service?vin=${vehicle.vin}`);
     fireEvent.click(within(actions).getByRole('button', { name: /Open vehicle details/ }));
     expect(onSelectVehicle).toHaveBeenCalledExactlyOnceWith(vehicle);
-    fireEvent.click(screen.getByRole('button', { name: /Open vehicle records/ }));
+    fireEvent.click(within(actions).getByRole('button', { name: /Open vehicle records/ }));
     expect(onSelectVehicle).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Full vehicle' }));
     await waitFor(() => expect(onSelectVehicle).toHaveBeenLastCalledWith(vehicle, 'data'));
-    fireEvent.click(within(actions).getByRole('button', { name: /Open hold and movement details/ }));
-    expect(onSelectVehicle).toHaveBeenLastCalledWith(vehicle, 'hold');
-    expect(within(actions).getByRole('link', { name: /Open service status/ })).toHaveAttribute('href', `/service?vin=${vehicle.vin}`);
     fireEvent.click(within(actions).getByRole('button', { name: /Track movement/ }));
     expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(vehicle);
     fireEvent.click(within(actions).getByRole('button', { name: /Open listing/ }));
     expect(onOpenListing).toHaveBeenCalledExactlyOnceWith(vehicle);
-    expect(onSelectVehicle).toHaveBeenCalledTimes(3);
+    expect(onSelectVehicle).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole('button', { name: /Review DealerMail handoff/ }));
     expect(onOpenSourceRecord).toHaveBeenCalledExactlyOnceWith(vehicle, 'dealermail');
     fireEvent.click(screen.getByRole('button', { name: /Open vehicle records/ }));
