@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { createReadStream, existsSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import path from 'node:path'
 import { assertAdminOverviewAccess } from './admin-control-center.mjs'
@@ -209,7 +209,7 @@ function serveStatic(request, response, distDir, url) {
   else createReadStream(candidate).pipe(response)
 }
 
-export function createApiHandler({ service, serveDist = false, distDir, identityResolver = createIdentityResolver(), adminDirectory } = {}) {
+export function createApiHandler({ service, serveDist = false, distDir, workspaceRoot, identityResolver = createIdentityResolver(), adminDirectory } = {}) {
   if (!service) throw new Error('service is required')
   if (!identityResolver?.resolve) throw new Error('identityResolver is required')
   return async function handler(request, response) {
@@ -257,6 +257,40 @@ export function createApiHandler({ service, serveDist = false, distDir, identity
       const vehicleMatch = route.match(/^\/vehicles\/([^/]+)$/)
       if (request.method === 'GET' && vehicleMatch) {
         return sendJson(response, 200, service.getVehicle(pathSegment(vehicleMatch[1]), context))
+      }
+      const equipmentPdfMatch = route.match(/^\/vehicles\/([^/]+)\/equipment-pdf$/)
+      if (request.method === 'GET' && equipmentPdfMatch) {
+        const vin = pathSegment(equipmentPdfMatch[1])
+        if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin) || !workspaceRoot) throw new HttpError('Equipment PDF unavailable', 404, 'EQUIPMENT_PDF_NOT_CAPTURED')
+        const vehicle = service.getVehicle(vin, context)
+        const equipment = vehicle.factoryEquipment
+        const sha256 = equipment?.savedPdfSha256
+        if (equipment?.dataState !== 'current' || equipment?.isOriginalWindowSticker !== false ||
+            !/^[a-f0-9]{64}$/.test(sha256 ?? '')) throw new HttpError('Equipment PDF unavailable', 404, 'EQUIPMENT_PDF_NOT_CAPTURED')
+        const folder = path.join(workspaceRoot, 'work', 'vauto-documents')
+        const indexPath = path.join(folder, 'index.json')
+        if (!existsSync(indexPath)) throw new HttpError('Saved equipment PDF unavailable', 503, 'EQUIPMENT_PDF_UNAVAILABLE')
+        const index = JSON.parse(readFileSync(indexPath, 'utf8'))
+        const entry = index.byVin?.[vin]
+        const file = path.join(folder, 'objects', `${sha256}.pdf`)
+        if (index.schema !== 'vauto-equipment-pdf-cache-v1' || entry?.sha256 !== sha256 ||
+            entry?.sourceUrl !== equipment.url ||
+            !['printed_vin', 'vauto_exact_vin_image_only'].includes(entry?.vinVerification) || !existsSync(file)) {
+          throw new HttpError('Saved equipment PDF unavailable', 503, 'EQUIPMENT_PDF_UNAVAILABLE')
+        }
+        const size = statSync(file).size
+        const pdf = size <= 8 * 1024 * 1024 ? readFileSync(file) : Buffer.alloc(0)
+        if (size < 8 || size > 8 * 1024 * 1024 || pdf.subarray(0, 5).toString('latin1') !== '%PDF-' ||
+            !pdf.subarray(Math.max(0, pdf.length - 2048)).toString('latin1').includes('%%EOF') ||
+            createHash('sha256').update(pdf).digest('hex') !== sha256) {
+          throw new HttpError('Saved equipment PDF failed integrity check', 503, 'EQUIPMENT_PDF_UNAVAILABLE')
+        }
+        securityHeaders(response)
+        response.statusCode = 200
+        response.setHeader('Content-Type', 'application/pdf')
+        response.setHeader('Content-Disposition', `inline; filename="${vin}-vauto-equipment.pdf"`)
+        response.setHeader('Content-Length', size)
+        return createReadStream(file).pipe(response)
       }
       const serviceMatch = route.match(/^\/vehicles\/([^/]+)\/service$/)
       if (request.method === 'GET' && serviceMatch) {

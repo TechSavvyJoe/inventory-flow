@@ -11,7 +11,7 @@ const OFFICIAL_HOSTS = new Set([
 ])
 const WINDOW_STICKER_PATH = /^\/api\/vhcliaa\/inventory\/[0-9]{1,8}\/window-sticker$/i
 const VAUTO_HOST = 'assets.cai-media-management.com'
-const VAUTO_PATH = /^\/window-stickers\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jpg$/i
+const VAUTO_PATH = /^\/window-stickers\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|pdf)$/i
 
 // DealerMail's per-vehicle screens are HTML fragments that only work inside the
 // full inventory page, so the app (and this panel) opens the complete screen
@@ -58,6 +58,11 @@ export function fordInvoiceUrl(value) {
 export function savedFordInvoiceUrl(origin, value) {
   const vin = normalizedVin(value)
   return vin ? appUrl(origin, `/api/vehicles/${encodeURIComponent(vin)}/invoice`) : null
+}
+
+export function savedVautoEquipmentPdfUrl(origin, value) {
+  const vin = normalizedVin(value)
+  return vin ? appUrl(origin, `/api/vehicles/${encodeURIComponent(vin)}/equipment-pdf`) : null
 }
 
 export function fordOasisUrl(value) {

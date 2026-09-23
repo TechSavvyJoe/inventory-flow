@@ -21,9 +21,10 @@ describe('dealerMailInteractiveVehicleUrl', () => {
 })
 
 describe('vautoFactoryEquipmentUrl', () => {
-  it('accepts only the read-only CAI informational equipment image route', () => {
+  it('accepts only the read-only CAI informational equipment PDF or image route', () => {
     const valid = 'https://assets.cai-media-management.com/window-stickers/15fe2ec7-42e9-4d24-a549-5e749b01102e.jpg'
     expect(vautoFactoryEquipmentUrl(valid)).toBe(valid)
+    expect(vautoFactoryEquipmentUrl(valid.replace('.jpg', '.pdf'))).toBe(valid.replace('.jpg', '.pdf'))
     expect(vautoFactoryEquipmentUrl(valid.replace('assets.cai-media-management.com', 'evil.example'))).toBeNull()
     expect(vautoFactoryEquipmentUrl(`${valid}?next=https://evil.example`)).toBeNull()
     expect(vautoFactoryEquipmentUrl(valid.replace('.jpg', '.png'))).toBeNull()

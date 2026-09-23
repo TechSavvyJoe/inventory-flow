@@ -47,6 +47,7 @@ run it, against authenticated dealer sources, over CDP.
 | `preview-extension.mjs` | local (`extension:preview`) | Serves the side panel as a plain page for design review and screenshots. |
 | `publish-cloud-release.mjs` | local/Windows host (`cloud:publish-release`) | Builds, validates, encrypts, and publishes the daily release bundle to the private Worker. |
 | `publish-invoice-documents.mjs` | Windows host | Uploads exact-VIN Ford/Lincoln invoice PDFs to the app's private R2 store. |
+| `publish-vauto-documents.mjs` | Windows host (`daily-cloud-publish.ps1`) | Stages the VIN-bound, hash-checked vAuto equipment PDFs from `work\vauto-documents\` in the app's private R2 store before a release publishes; posts only to the app's own Worker. |
 | `report-dead-css.mjs` | local (`report:dead-css`) | Read-only report of CSS selectors under `src/` that need a class no source file renders; judges each selector of a rule separately. |
 | `run-inventory-flow-daily.mjs` | Windows host (`daily:run`) | The daily pipeline orchestrator invoked by the Windows scheduled publish task. |
 | `run-recovery-drill.mjs` | local/CI | Exercises the real D1 recovery/decrypt paths against a synthetic release bundle; `pnpm cloud:validate`'s companion in CI. |
@@ -55,7 +56,7 @@ run it, against authenticated dealer sources, over CDP.
 | `upload-cloud-assets.mjs` | Windows host/local | Uploads the assets `prepare-cloud-assets.mjs` staged to the cloud release's asset store. |
 | `validate-cloud-release.mjs` | local/CI (`cloud:validate`) | Offline Cloudflare release gate; opens only an in-memory database, never a live one. |
 | `vauto-factory-equipment.mjs` | Windows host | vAuto Factory Equipment capture over the read-only `WindowStickers` JSON endpoint; no appraisal form involved. |
-| `verify-cloud-deployment.mjs` | local/Windows host, owner-run | `status`/`readiness` checks against the deployed private Worker. |
+| `verify-cloud-deployment.mjs` | local/Windows host, owner-run | `status`/`readiness`/`equipment-status` read-only checks against the deployed private Worker. |
 | `verify-d1-recovery-export.mjs` | local, owner-run | Validates an explicitly supplied D1 SQL export locally; never connects to D1. |
 | `verify-integration-deployment.mjs` | local, owner-run (`integrations:verify`) | Read-only live smoke test of the integrations Worker; local credentials are consumed, never displayed. |
 
@@ -253,6 +254,11 @@ manifest warnings. In order:
 | 7 (removed) | The old vAuto appraisal-form driver was deleted. `--ui` is rejected before browser access. | Only the read-only Factory Equipment API path is supported. |
 | 8 Finish | Message Joe: public / DealerMail / held counts, publish status, failures and why, vehicles needing manual review; attach the workbook. Dates MM/DD/YYYY. | A VIN that dropped off the public feed is a Removed change, not active inventory. |
 
+Public VDP links are still checked daily. An exact-VIN original sticker whose
+URL and validated current facts match the prior completed snapshot reuses
+those facts instead of downloading the same PDF again. AutoCheck remains a
+fresh daily check because service evidence can change.
+
 Two things happen alongside the prompt rather than inside it:
 
 - **Manager disposition overlay.** When the manager's handwritten monthly
@@ -410,6 +416,21 @@ task also pings this endpoint and logs `vauto=SESSION_EXPIRED` in
 day's public snapshot: every VIN, any make, minus VINs OK in any prior capture
 (CAI URLs are stable) and minus `NO_BUILD_DATA` VINs checked in the last 7 days.
 
+`scripts\cache-vauto-equipment-pdfs.py` keeps one content-hashed, VIN-linked
+printable PDF under `work\vauto-documents\objects\` and an index at
+`work\vauto-documents\index.json`. A dated VIN-to-hash snapshot under
+`work\vauto-documents\snapshots\` is copied into the historical reporting
+archive; the content-addressed PDF objects remain in the controlled cache.
+The approved vAuto PDF is preferred; a
+JPEG-only source becomes a labeled printable PDF. A confirmed 404 is recorded
+and skipped for the rest of that report day; a transient connection error can
+retry. These are informational vAuto equipment references, never verified
+original stickers. The Windows publisher stages active VIN PDFs in private R2
+only when `runtime\vauto-pdf-enabled.flag` exists after the Worker endpoint is
+deployed and verified. A staging failure blocks the new release and leaves the
+last verified release in place. The PDF cache is a best-effort source capture;
+its individual failures do not convert missing documents into current data.
+
 The old appraisal-form UI path has been removed. Passing `--ui` fails before
 browser access; the capture supports only the read-only Factory Equipment API.
 
@@ -512,6 +533,15 @@ even when signed in - so every prior run recorded "fordvisions unavailable" or a
 invoice data. NAVIGATING the tab once lets the MSAL javascript run and complete the silent
 SSO against the live FMCDealer session (it lands on `/FordEntraDealer/callback.html`, then on
 the real document). After that handshake, in-tab fetches return PDF bytes.
+
+The capture first checks prior dated `work\invoice-history\` folders for a
+parsed, exact-VIN invoice with a bounded, hash-checked PDF. It copies verified
+PDFs into today's dated archive while preserving the original capture time;
+only missing or damaged VINs enter the browser queue. If the queue is empty,
+the Fordvisions tab and SSO handshake are not opened. `--refresh` deliberately
+bypasses reuse. The release still stages date-scoped private R2 invoice copies
+for its own VINs; local PDF reuse does not treat old source data as a fresh
+verification of service readiness.
 
 09/14/2026 result: 178 Ford/Lincoln VINs, 131 PDFs, 47 unavailable (38 "Document Type is not
 retail", 9 "VIN not found"), **zero fetch errors**, 103 seconds. `extract_invoice_text.py`

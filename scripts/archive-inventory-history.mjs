@@ -64,6 +64,7 @@ function sourcesFor(root, reportDate) {
     ['oasis', datedFiles(root, 'oasis-history', reportDate, { extensions: ['.json'] })],
     ['warranty', datedFiles(root, 'warranty-history', reportDate, { extensions: ['.json'] })],
     ['vauto-autocheck', datedFiles(root, 'vauto-history', reportDate, { extensions: ['.json'] })],
+    ['vauto-equipment-index', datedFiles(root, 'vauto-documents/snapshots', reportDate, { extensions: ['.json'] })],
     // The original invoice PDFs remain in the controlled invoice store. Archive
     // parsed metadata/text for trend reporting without duplicating documents.
     ['invoice-metadata', datedFiles(root, 'invoice-history', reportDate, { extensions: ['.json', '.txt'], datedDirectory: true })],

@@ -15,10 +15,12 @@
 // invoice data. NAVIGATING the tab once lets the MSAL javascript run and complete the silent
 // SSO against the existing FMCDealer session (it lands on /FordEntraDealer/callback.html and
 // then on the real document). After that handshake, in-tab fetches return the PDF bytes.
-import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from 'node:fs'
+import { copyFileSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
+import { reusableInvoices, savedInvoicePdf } from './lib/invoice-cache.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -43,22 +45,36 @@ const vins = Object.entries(vehicles)
 
 const folder = path.join(ROOT, 'work', 'invoice-history', reportDate)
 mkdirSync(folder, { recursive: true })
-const have = new Set(refresh ? [] : readdirSync(folder).filter(f => f.endsWith('.pdf')).map(f => f.replace(/\.pdf$/i, '')))
-
 let prior = []
 const indexPath = path.join(folder, 'index.json')
 if (!refresh && existsSync(indexPath)) {
-  try { prior = (JSON.parse(readFileSync(indexPath, 'utf8')).results || []).filter(r => r.status === 'pdf' && have.has(r.vin)) } catch {}
+  try {
+    const index = JSON.parse(readFileSync(indexPath, 'utf8'))
+    if (index.schema === 'ford-invoice-index-v1' && index.reportDate === reportDate) {
+      prior = (index.results || []).filter(row => row.status === 'pdf' && vins.includes(row.vin) &&
+        savedInvoicePdf(path.join(folder, `${row.vin}.pdf`), row.sha256))
+    }
+  } catch {}
 }
 const priorVins = new Set(prior.map(r => r.vin))
+const reused = refresh ? new Map() : reusableInvoices(ROOT, reportDate, vins.filter(vin => !priorVins.has(vin)))
+for (const [vin, item] of reused) {
+  copyFileSync(item.file, path.join(folder, `${vin}.pdf`))
+  prior.push({ vin, status: 'pdf', bytes: item.bytes, sha256: item.sha256,
+    capturedAtUtc: item.capturedAtUtc, sourceReportDate: item.sourceReportDate })
+  priorVins.add(vin)
+}
 const queue = vins.filter(v => !priorVins.has(v)).slice(0, max)
 
 const t0 = Date.now()
-const ctx = await getOriginTab(ORIGIN, ORIGIN + '/', { settleMs: 45000 })
-if (!ctx.state || !ctx.state.host.includes('fordvisions')) {
-  console.log(JSON.stringify({ sessionStatus: 'unavailable', detail: 'no fordvisions tab' })); process.exit(1)
+let page = null
+if (queue.length) {
+  const ctx = await getOriginTab(ORIGIN, ORIGIN + '/', { settleMs: 45000 })
+  if (!ctx.state || !ctx.state.host.includes('fordvisions')) {
+    console.log(JSON.stringify({ sessionStatus: 'unavailable', detail: 'no fordvisions tab' })); process.exit(1)
+  }
+  page = ctx.page
 }
-const page = ctx.page
 
 // --- the SSO handshake (see header) -----------------------------------------
 let authed = false
@@ -93,9 +109,12 @@ for (const vin of queue) {
       break
     } else if (r.base64) {
       const buf = Buffer.from(r.base64, 'base64')
-      if (buf.subarray(0, 5).toString('latin1').startsWith('%PDF')) {
+      if (buf.length >= 8 && buf.length <= 8 * 1024 * 1024 &&
+          buf.subarray(0, 5).toString('latin1') === '%PDF-' &&
+          buf.subarray(Math.max(0, buf.length - 2048)).toString('latin1').includes('%%EOF')) {
         writeFileSync(path.join(folder, `${vin}.pdf`), buf)
-        results.push({ vin, status: 'pdf', bytes: buf.length }); tally.pdf++
+        results.push({ vin, status: 'pdf', bytes: buf.length,
+          sha256: createHash('sha256').update(buf).digest('hex'), capturedAtUtc: new Date().toISOString() }); tally.pdf++
       } else {
         results.push({ vin, status: 'unavailable', reason: 'response was not a PDF' }); tally.unavailable++
       }
@@ -130,7 +149,7 @@ writeFileSync(indexPath, JSON.stringify({
 console.log(JSON.stringify({
   sessionStatus: stopped === 'SESSION_EXPIRED' ? 'session_expired' : stopped ? 'incomplete' : 'ok',
   fordLincolnVins: vins.length, attempted: queue.length, processed: results.length - prior.length,
-  tally, stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), folder
+  reused: reused.size, tally, stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), folder
 }))
-try { page.close() } catch {}
+try { page?.close() } catch {}
 process.exit(stopped ? 1 : 0)

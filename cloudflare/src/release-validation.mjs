@@ -43,7 +43,7 @@ const RESOURCE_SCHEMA = 'inventory-flow-vin-document-enrichment-v1'
 const RESOURCE_DATA_STATES = new Set(['current', 'stale_unverified', 'incomplete'])
 const FORD_OASIS_FIELD_SERVICE_ACTION_CODE = /^[0-9]{2}[A-Z][0-9]{2,3}$/
 const WARRANTY_CHECK_COVERAGE_STATUSES = new Set(['ACTIVE', 'EXPIRED', 'N/A'])
-const CAI_FACTORY_EQUIPMENT_PATH = /^\/window-stickers\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jpg$/i
+const CAI_FACTORY_EQUIPMENT_PATH = /^\/window-stickers\/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|pdf)$/i
 const PUBLIC_RESOURCE_ARCHIVE_ONLY_FIELDS = new Set([
   'validated_vin',
   'observedAt',
@@ -149,7 +149,7 @@ function boundedStrings(value, label, limit = 120, itemMax = 500) {
   })
 }
 
-function approvedFactoryEquipmentUrl(value) {
+export function approvedFactoryEquipmentUrl(value) {
   if (value === undefined || value === null || value === '') return true
   if (typeof value !== 'string') return false
   let url
@@ -167,11 +167,15 @@ function validateFactoryEquipment(value, vin) {
   onlyKeys(value, new Set([
     'dataState', 'url', 'sourceLabel', 'capturedAt', 'vehicleDescription', 'basePrice', 'totalOptions',
     'destinationCharge', 'totalMsrp', 'exteriorColor', 'interiorColor', 'engine', 'transmission',
-    'drivetrain', 'packages', 'sections', 'disclaimer', 'isOriginalWindowSticker',
+    'drivetrain', 'packages', 'sections', 'disclaimer', 'isOriginalWindowSticker', 'savedPdfSha256',
   ]), 'factory-equipment record')
   ensure(RESOURCE_DATA_STATES.has(value.dataState), 'factory-equipment data state is invalid')
   ensure(value.isOriginalWindowSticker === false, 'factory-equipment record must be labeled as informational, not an original sticker')
   ensure(approvedFactoryEquipmentUrl(value.url), 'factory-equipment URL is not an approved HTTPS vAuto/CAI resource')
+  if (value.savedPdfSha256 !== undefined) {
+    ensure(/^[a-f0-9]{64}$/.test(value.savedPdfSha256), 'factory-equipment saved PDF digest is invalid')
+    ensure(typeof value.url === 'string' && value.url.startsWith('https://'), 'factory-equipment saved PDF needs its source URL')
+  }
   for (const [field, max] of [
     ['sourceLabel', 160], ['vehicleDescription', 320], ['exteriorColor', 200], ['interiorColor', 200],
     ['engine', 240], ['transmission', 240], ['drivetrain', 160],

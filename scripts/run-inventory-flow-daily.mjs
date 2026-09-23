@@ -173,8 +173,9 @@ function runDealerMail(reportDate, browserReady, warnings, steps) {
 function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps) {
   if (!browserReady) {
     steps.push({ name: 'authenticated_optional_sources', status: 'skipped_browser_unavailable' })
-    return
+    return false
   }
+  let oasisComplete = true
   const optionalRuns = [
     {
       name: 'oasis',
@@ -231,12 +232,20 @@ function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, ste
   for (const item of optionalRuns) {
     const result = run(item.command, item.args, { cwd: item.cwd ?? WORKSPACE_ROOT, optional: true, label: item.name })
     if (!result.ok || item.expired?.test(result.output)) {
-      if (item.warning) warnings.push(item.warning)
-      steps.push({ name: item.name, status: result.ok ? 'completed_with_warning' : 'failed_non_blocking', detail: safeDetail(result.output) })
+      if (item.name === 'oasis') {
+        oasisComplete = false
+        warnings.push(item.expired?.test(result.output)
+          ? item.warning
+          : 'Ford OASIS action-result capture is incomplete; review the source and retry before publishing.')
+      } else if (item.warning) {
+        warnings.push(item.warning)
+      }
+      steps.push({ name: item.name, status: item.name === 'oasis' ? 'failed_blocking' : result.ok ? 'completed_with_warning' : 'failed_non_blocking', detail: safeDetail(result.output) })
     } else {
       steps.push({ name: item.name, status: 'complete' })
     }
   }
+  return oasisComplete
 }
 
 function runManagerDisposition(reportDate, warnings, steps) {
@@ -562,20 +571,21 @@ async function runDaily(options) {
     return { ok: false, failureCode: 'DEALERMAIL_INCOMPLETE', summary, manifestPath, releasePath }
   }
 
-  runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps)
+  const oasisComplete = runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps)
   runManagerDisposition(reportDate, warnings, steps)
   let manifest = deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps })
   writeJson(manifestPath, manifest)
 
   const resourcesOk = runResourceBuild(reportDate, warnings, steps)
   manifest = { ...readJson(manifestPath), warnings: [...new Set([...warnings, AVAILABILITY_CAVEAT])], daily_steps: steps }
-  if (!resourcesOk) {
+  if (!resourcesOk || !oasisComplete) {
     manifest.complete = false
-    manifest.validation_results = { ...manifest.validation_results, passed: false, resource_enrichment_validated: false }
+    manifest.validation_results = { ...manifest.validation_results, passed: false, resource_enrichment_validated: resourcesOk, oasis_capture_validated: oasisComplete }
     writeJson(manifestPath, manifest)
-    const summary = summarize({ reportDate, validation: {}, publishStatus: 'not_published_resource_validation_failed', manifestPath, releasePath, warnings })
-    writeJson(path.join(releaseDirectory, 'daily-summary.json'), { reportDate, status: 'not_published_resource_validation_failed', summary })
-    return { ok: false, failureCode: 'RESOURCE_VALIDATION_FAILED', summary, manifestPath, releasePath }
+    const status = !oasisComplete ? 'not_published_oasis_incomplete' : 'not_published_resource_validation_failed'
+    const summary = summarize({ reportDate, validation: {}, publishStatus: status, manifestPath, releasePath, warnings })
+    writeJson(path.join(releaseDirectory, 'daily-summary.json'), { reportDate, status, summary })
+    return { ok: false, failureCode: !oasisComplete ? 'OASIS_INCOMPLETE' : 'RESOURCE_VALIDATION_FAILED', summary, manifestPath, releasePath }
   }
   manifest.validation_results = { ...manifest.validation_results, resource_enrichment_validated: true, passed: true }
   writeJson(manifestPath, manifest)

@@ -6,19 +6,28 @@ export function parseOasisActions(text) {
   const heading = /OUTSTANDING FIELD SERVICE ACTIONS\s*:?/i.exec(text)
   if (!heading) return result
   const remainder = text.slice(heading.index + heading[0].length)
-  const boundary = /NO WARNING MESSAGES|GENERAL WARRANTY INFORMATION|WARRANTY COVERAGE|End of OASIS report/i.exec(remainder)
-  const block = remainder.slice(0, boundary ? boundary.index : remainder.length).trim()
-  if (/^NO CAMPAIGN MESSAGE\(S\) FOUND[.!]?$/i.test(block)) {
+  const boundary = /NO WARNING MESSAGES|WARNING MESSAGES|GENERAL WARRANTY INFORMATION|WARRANTY COVERAGE|End of OASIS report/i.exec(remainder)
+  const warningText = boundary ? remainder.slice(boundary.index, boundary.index + 350) : ''
+  const warningSection = /^WARNING MESSAGES\b/i.test(warningText)
+  const sourceLimited = warningSection &&
+    /VEHICLE SOLD IN CANADA SERVICE INFO MAY BE UNAVAILABLE/i.test(warningText)
+  if (sourceLimited) result.actionResultLimit = 'canadian_service_info_warning'
+  const divider = /(?:\s*(?:&#x25b4;|&#9652;|▴|▲))+\s*$/i
+  const block = remainder.slice(0, boundary ? boundary.index : remainder.length).replace(divider, '').trim()
+  if (boundary && !warningSection && /^NO CAMPAIGN MESSAGE\(S\) FOUND[.!]?$/i.test(block)) {
     return { ...result, openActionsCaptured: true, openFieldServiceActionCount: 0 }
   }
   const codes = [...block.matchAll(/\b\d{2}[A-Z]\d{2,3}\b/g)]
-  let complete = Boolean(boundary) && block.length <= 20000 && codes.length > 0 && codes.length <= 60
-  const prefix = block.slice(0, codes[0]?.index ?? block.length).trim()
+  let complete = Boolean(boundary) && !warningSection && block.length <= 20000 && codes.length > 0 && codes.length <= 60
+  const prefix = block.slice(0, codes[0]?.index ?? block.length).trim().replace(
+    /^NOTICE\s*[–—-]?\s*Prior to performing any FSA software repairs, see EFC\s+View full list of recalls and programs supported by this process\s*/i,
+    '',
+  ).trim()
   if (prefix && !/^(?:FSA|CAMPAIGN)\s+(?:NUMBER|CODE)\s+(?:DESCRIPTION|TITLE)$/i.test(prefix)) complete = false
   const seen = new Set()
   for (let index = 0; index < codes.length && index < 60; index++) {
     const code = codes[index][0]
-    const description = block.slice(codes[index].index + code.length, codes[index + 1]?.index ?? block.length).replace(/\s+/g, ' ').trim()
+    const description = block.slice(codes[index].index + code.length, codes[index + 1]?.index ?? block.length).replace(divider, '').replace(/\s+/g, ' ').trim()
     if (seen.has(code) || !description || description.length > 300 || /\b\d{2}[A-Z][A-Z0-9?]{2,}(?=\s|$)/.test(description)) complete = false
     if (seen.has(code)) continue
     seen.add(code)
@@ -132,4 +141,47 @@ export function parseOasisFull(html) {
     extendedCoverageCategories: categories,
     extendedCoverageExpirations: expirations,
   }
+}
+
+export function assessOasisCapture(worklist, records) {
+  const byVin = new Map(records.map(record => [record.vin, record]))
+  let missingVinCount = 0
+  let incompleteActionResults = 0
+  let sourceLimitedCount = 0
+  for (const { vin } of worklist) {
+    const record = byVin.get(vin)
+    if (!record) {
+      missingVinCount++
+    } else if (record.actionResultLimit === 'canadian_service_info_warning' &&
+      record.openActionsCaptured === false) {
+      sourceLimitedCount++
+    } else if (record.openActionsCaptured !== true ||
+      record.openFieldServiceActionCount !== record.openFieldServiceActions?.length) {
+      incompleteActionResults++
+    }
+  }
+  return {
+    complete: missingVinCount === 0 && incompleteActionResults === 0,
+    missingVinCount,
+    incompleteActionResults,
+    sourceLimitedCount,
+  }
+}
+
+export function compareOasisEnrichment(capturedRecords, resourcesByVin) {
+  let missing = 0
+  let mismatched = 0
+  for (const source of capturedRecords) {
+    const published = resourcesByVin[source.vin]?.fordOasis
+    if (!published) {
+      missing++
+      continue
+    }
+    const sourceCodes = (source.openFieldServiceActions ?? []).map(action => action.code).sort()
+    const publishedCodes = (published.openFieldServiceActions ?? []).map(action => action.code).sort()
+    if (published.capturedAt !== source.capturedAt ||
+      published.openActionsCaptured !== source.openActionsCaptured ||
+      JSON.stringify(publishedCodes) !== JSON.stringify(sourceCodes)) mismatched++
+  }
+  return { complete: missing === 0 && mismatched === 0, missing, mismatched }
 }

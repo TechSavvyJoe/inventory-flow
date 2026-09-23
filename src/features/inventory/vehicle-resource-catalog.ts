@@ -4,7 +4,7 @@ import { sourceDistanceText } from '../../lib/source-distance';
 import type { PublicListingCode } from '../../types';
 import type { AutoCheckResource, FactoryEquipmentResource, FordInvoiceResource, FordOasisResource, WindowStickerResource, VehicleWorkspaceTab } from './types';
 import { formatDate, formatNumber, formatStickerMoney } from './inventory-utils';
-import { availableWindowStickerUrl, fordInvoiceUrl, fordOasisUrl, officialVehicleDocumentUrl, savedFordInvoiceUrl, vautoFactoryEquipmentUrl } from './vehicle-document-utils';
+import { availableWindowStickerUrl, fordInvoiceUrl, fordOasisUrl, officialVehicleDocumentUrl, savedFordInvoiceUrl, savedVautoEquipmentPdfUrl, vautoFactoryEquipmentUrl } from './vehicle-document-utils';
 import { resolveVehicleInService, type VehicleInServiceInput } from './vehicle-in-service';
 import { qualifyingAutoCheckInspection } from '../../lib/service-inspection-evidence';
 
@@ -387,7 +387,10 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
   });
 
   const equipment = vehicle.factoryEquipment;
-  const equipmentHref = vautoFactoryEquipmentUrl(equipment?.url);
+  const equipmentSourceHref = vautoFactoryEquipmentUrl(equipment?.url);
+  const equipmentHref = equipmentSourceHref && equipment?.dataState === 'current' &&
+    /^[a-f0-9]{64}$/.test(equipment?.savedPdfSha256 ?? '')
+    ? savedVautoEquipmentPdfUrl(vehicle.vin) : equipmentSourceHref;
   const packages = present((equipment?.packages ?? []).map(pkg => join([pkg.name, pkg.code])));
   const equipmentItems = importantItems([
     ...(equipment?.sections ?? []).flatMap(section => section.items.map(item => item.label)),

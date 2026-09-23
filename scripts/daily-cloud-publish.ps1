@@ -353,6 +353,27 @@ try {
       Write-Log 'vauto: automation browser not listening on 127.0.0.1:9222 - skipping capture, prior labels still merge' 'WARN'
     }
 
+    # Stable vAuto labels are saved once as printable PDFs. Missing or broken
+    # source documents remain informational and never block the live inventory.
+    try {
+      $pdfCacheRun = Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @('scripts\cache-vauto-equipment-pdfs.py', '--workspace-root', $WorkspaceRoot, '--report-date', $date, '--max', '25', '--budget-seconds', '120')
+      if ($pdfCacheRun.ExitCode -ne 0) {
+        Write-Log "vauto PDFs: cache incomplete - $($pdfCacheRun.Output.Trim())" 'WARN'
+      } else {
+        Write-Log "vauto PDFs: $($pdfCacheRun.Output.Trim())"
+      }
+    } catch {
+      Write-Log "vauto PDFs: cache skipped - $($_.Exception.Message)" 'WARN'
+    }
+    if (Test-Path -LiteralPath (Join-Path $AppRoot 'runtime\vauto-pdf-enabled.flag')) {
+      $equipmentPublishRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\publish-vauto-documents.mjs', $date)
+      if ($equipmentPublishRun.ExitCode -ne 0) {
+        Write-Log "vauto PDFs: private staging FAILED - $($equipmentPublishRun.Output.Trim())" 'ERROR'
+        throw 'VAUTO_PDF_STAGING_FAILED'
+      }
+      Write-Log "vauto PDFs: $($equipmentPublishRun.Output.Trim())"
+    }
+
     # Step 1.45 - remaining factory warranty per VIN, figured at that vehicle's listed odometer.
     # Ford/Lincoln coverage comes from Ford OASIS through the authenticated FMCDealer tab in the
     # automation browser; non-Ford makes use the Experian AutoCheck estimate, which is

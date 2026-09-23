@@ -11,7 +11,9 @@
 //   POST /api/attention/:id/events         record an action-center event
 //   POST /api/vehicles/:vin/service        record service readiness
 //   POST /api/admin/members                edit employee access (group manager)
-// plus the machine-only publisher uploads under /internal/ (service token).
+// plus the three machine-only publisher uploads under /internal/ (Access
+// service identity and publisher token): POST /internal/releases,
+// POST /internal/invoices/:date/:vin and POST /internal/equipment/:vin/:sha256.
 // Adding a write means changing WRITE_BRANCHES here, with Joe's approval.
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -30,7 +32,7 @@ const WRITE_BRANCHES = ['/api/transfers', '/api/transfers/:transfer/events', '/a
 
 // Every path the app serves, plus write-shaped paths that must never exist.
 const READ_PATHS = [
-  '/api/health', '/api/bootstrap', '/api/vehicles', '/api/vehicles/:vin', '/api/vehicles/:vin/invoice',
+  '/api/health', '/api/bootstrap', '/api/vehicles', '/api/vehicles/:vin', '/api/vehicles/:vin/invoice', '/api/vehicles/:vin/equipment-pdf',
   '/api/transfers/:transfer', '/api/attention', '/api/attention/:attention', '/api/admin/overview', '/',
 ]
 const NEVER_WRITABLE = [
@@ -68,7 +70,7 @@ function validWrite(branch, ids, revision) {
 }
 
 describe('the source pins exactly the documented write branches', () => {
-  it('the Worker treats only POST as a write and branches on exactly five employee writes and two publisher uploads', () => {
+  it('the Worker treats only POST as a write and branches on exactly five employee writes and three publisher uploads', () => {
     const source = readFileSync(path.join(root, 'cloudflare/src/worker.mjs'), 'utf8')
     expect(source).toContain("const read=request.method==='GET', write=request.method==='POST'")
     expect(source).toContain("if(!read && !write) throw new HttpError('METHOD_NOT_ALLOWED',405)")
@@ -80,6 +82,7 @@ describe('the source pins exactly the documented write branches', () => {
     expect(source.match(/await saveMembership\(/g)).toHaveLength(1)
     expect(source.match(/request\.method==='POST' && [^)]+\)/g)).toEqual([
       "request.method==='POST' && invoiceMatch)",
+      "request.method==='POST' && equipmentMatch)",
       "request.method==='POST' && url.pathname==='/internal/releases')",
     ])
   })
@@ -133,7 +136,7 @@ describe('Worker write surface', () => {
   it('an employee session reaches no publisher upload route with any method', async () => {
     const before = snapshot()
     for (const method of ['GET', 'POST', ...OTHER_METHODS]) {
-      for (const pathname of ['/internal/releases', `/internal/invoices/2026-09-15/${VIN}`, '/internal/status', '/internal/readiness']) {
+      for (const pathname of ['/internal/releases', `/internal/invoices/2026-09-15/${VIN}`, `/internal/equipment/${VIN}/${'a'.repeat(64)}`, '/internal/status', '/internal/readiness']) {
         expect((await cloud.call(method, pathname, members.group.email, PROBE)).status, `${method} ${pathname}`).toBe(401)
       }
     }

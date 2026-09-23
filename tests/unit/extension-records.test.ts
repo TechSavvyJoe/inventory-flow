@@ -188,6 +188,14 @@ describe('extension captured Records detail parity', () => {
     expect(detail.querySelector('.rec-oasis').textContent).toContain('Verify current actions in OASIS')
     expect(detail.querySelector('.rec-oasis').textContent).not.toMatch(/0 open|No open|All clear|Ready/)
   })
+  it('distinguishes a captured zero from an unverified action result', async () => {
+    const record = recordWithSources()
+    record.fordOasis = { dataState: 'current', openActionsCaptured: true, openFieldServiceActions: [] }
+    const detail = await openRecords(record)
+    const oasis = detail.querySelector('.rec-oasis').textContent
+    expect(oasis).toContain('No open Ford service actions in the captured report.')
+    expect(oasis).not.toContain('Verify current actions in OASIS')
+  })
   it.each([
     ['2099-09-14T12:00:00Z', 'Future source date:'],
     ['not-a-date', 'Unrecognized source date: not-a-date'],

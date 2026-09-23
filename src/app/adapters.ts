@@ -81,6 +81,7 @@ function factoryEquipmentResource(
   return {
     dataState: resourceDataState(factoryEquipment.dataState, fallbackState),
     url: vautoFactoryEquipmentUrl(factoryEquipment.url),
+    savedPdfSha256: /^[a-f0-9]{64}$/.test(factoryEquipment.savedPdfSha256 ?? '') ? factoryEquipment.savedPdfSha256 : null,
     sourceLabel: cleanOptionalText(factoryEquipment.sourceLabel),
     capturedAt: cleanOptionalText(factoryEquipment.capturedAt),
     vehicleDescription: cleanOptionalText(factoryEquipment.vehicleDescription),

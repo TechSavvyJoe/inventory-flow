@@ -3,6 +3,9 @@
 // @vitest-environment node
 
 import { afterEach, describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import { createInventoryServer, prepareNodeTransferEventInput } from '../../server/api.mjs'
 import { importRelease, openInventoryDatabase } from '../../server/database.mjs'
@@ -26,24 +29,24 @@ afterEach(async () => {
   while (openWorkspaces.length) openWorkspaces.pop()?.cleanup()
 })
 
-async function harness(mutateRelease?: (release: ReturnType<typeof loadLatestCompletedRelease>) => void) {
+async function harness(mutateRelease?: (release: ReturnType<typeof loadLatestCompletedRelease>, workspaceRoot: string) => void) {
   const fixture = createSyntheticWorkspace()
   openWorkspaces.push(fixture)
   const { manifest } = findLatestCompletedManifest(fixture.workspaceRoot)
   const fixedNow = new Date(`${manifest.report_date}T18:00:00-04:00`)
   const release = loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot, now: fixedNow })
-  mutateRelease?.(release)
+  mutateRelease?.(release, fixture.workspaceRoot)
   const database = openInventoryDatabase()
   importRelease(database, release, { loadedAt: fixedNow.toISOString() })
   // Keep the detailed legacy workflow's security and audit regression suite.
   // The simple default has dedicated coverage in simple-moves-workflow.test.ts.
   const service = createInventoryService({ database, now: () => fixedNow, workflowMode: 'advanced' })
-  const server = createInventoryServer({ service })
+  const server = createInventoryServer({ service, workspaceRoot: fixture.workspaceRoot })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   openResources.push({ server, database })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Test server did not bind')
-  return { baseUrl: `http://127.0.0.1:${address.port}`, manifest, release, database }
+  return { baseUrl: `http://127.0.0.1:${address.port}`, manifest, release, database, workspaceRoot: fixture.workspaceRoot }
 }
 
 function roleHeaders(role: string, store: string, user: string) {
@@ -54,6 +57,44 @@ function roleHeaders(role: string, store: string, user: string) {
     'x-inventory-user': user,
   }
 }
+
+it('serves only the VIN-linked saved vAuto PDF from the local document cache', async () => {
+  const pdf = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n')
+  const sha256 = createHash('sha256').update(pdf).digest('hex')
+  let vin = ''
+  let sourceUrl = ''
+  const { baseUrl, workspaceRoot } = await harness((release, root) => {
+    const vehicle = release.vehicles.find(record => record.resourceRecord?.factoryEquipment)
+    if (!vehicle?.resourceRecord?.factoryEquipment) throw new Error('Missing synthetic vAuto equipment')
+    vin = vehicle.vin
+    sourceUrl = vehicle.resourceRecord.factoryEquipment.url
+    vehicle.resourceRecord.factoryEquipment = {
+      ...vehicle.resourceRecord.factoryEquipment,
+      dataState: 'current',
+      isOriginalWindowSticker: false,
+      savedPdfSha256: sha256,
+    }
+    const objects = path.join(root, 'work', 'vauto-documents', 'objects')
+    mkdirSync(objects, { recursive: true })
+    writeFileSync(path.join(objects, `${sha256}.pdf`), pdf)
+    writeFileSync(path.join(root, 'work', 'vauto-documents', 'index.json'), JSON.stringify({
+      schema: 'vauto-equipment-pdf-cache-v1',
+      byVin: { [vin]: { sha256, sourceUrl, vinVerification: 'printed_vin' } },
+    }))
+  })
+  const url = `${baseUrl}/api/vehicles/${vin}/equipment-pdf`
+  const response = await fetch(url, { headers: roleHeaders('manager', 'Howell', 'PDF QA') })
+  expect(response.status).toBe(200)
+  expect(response.headers.get('content-type')).toBe('application/pdf')
+  expect(Buffer.from(await response.arrayBuffer())).toEqual(pdf)
+
+  writeFileSync(path.join(workspaceRoot, 'work', 'vauto-documents', 'index.json'), JSON.stringify({
+    schema: 'vauto-equipment-pdf-cache-v1',
+    byVin: { [vin]: { sha256, sourceUrl: sourceUrl.replace('.jpg', '.pdf'), vinVerification: 'printed_vin' } },
+  }))
+  const mismatched = await fetch(url, { headers: roleHeaders('manager', 'Howell', 'PDF QA') })
+  expect(mismatched.status).toBe(503)
+})
 
 async function postEvent(
   baseUrl: string,
@@ -570,6 +611,7 @@ describe('Inventory Flow API', () => {
     expect(bootstrap.vehicles).toHaveLength(manifest.source_counts.public_unique_vins)
     expect(bootstrap.transfers).toHaveLength(0)
     expect(bootstrap.meta.publicFreshness).toBe('current')
+    expect(bootstrap.meta.dealerMailCapturedAt).toBe(release.sourceRuns.dealerMail.extractedAt)
     expect(bootstrap.meta.publicChangeCounts).toEqual({
       newArrival: manifest.public_change_counts.new_arrival,
       removed: manifest.public_change_counts.removed,

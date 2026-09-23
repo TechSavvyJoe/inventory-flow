@@ -33,16 +33,16 @@ describe('Deal Desk extension manifest', () => {
     }
   })
 
-  it('asks for the minimum permissions and only the production app origin', () => {
-    expect(manifest.permissions.sort()).toEqual(['contextMenus', 'sidePanel', 'storage'])
-    expect(manifest.host_permissions).toEqual(['https://inventory-ops.joegallant.me/*'])
+  it('limits authenticated reads to the production app and the DealerMail inventory tab (no loopback origin ships)', () => {
+    expect(manifest.permissions.sort()).toEqual(['contextMenus', 'scripting', 'sidePanel', 'storage'])
+    expect(manifest.host_permissions).toEqual(['https://inventory-ops.joegallant.me/*', 'https://www.dealermail.com/*', 'https://dealermail.com/*'])
     expect(manifest.optional_permissions).toBeUndefined()
   })
 
   it('adds the loopback demo origins only in the dev-only manifest build', () => {
     const overrides = JSON.parse(readFileSync(resolve(__dirname, '../../scripts/extension-dev-manifest.json'), 'utf8'))
     const dev = devManifest(manifest, overrides)
-    expect(dev.host_permissions).toEqual(['https://inventory-ops.joegallant.me/*', 'http://127.0.0.1:4173/*', 'http://localhost:4173/*'])
+    expect(dev.host_permissions).toEqual(['https://inventory-ops.joegallant.me/*', 'https://www.dealermail.com/*', 'https://dealermail.com/*', 'http://127.0.0.1:4173/*', 'http://localhost:4173/*'])
     expect(dev.permissions).toEqual(manifest.permissions)
     expect(dev.version).toBe(manifest.version)
     expect(() => devManifest(manifest, { host_permissions: ['<all_urls>'] })).toThrow(/only the loopback demo origins/)
