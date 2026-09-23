@@ -7,7 +7,7 @@ Inventory Flow is a dealership inventory, hold-awareness, and vehicle-movement a
 1. Read `README.md`, `DESIGN_SPEC.md`, and `docs/AI_COLLABORATION.md`.
 2. Run `pnpm install --frozen-lockfile` and `pnpm check` before changing code.
 3. Use `pnpm dev:demo`. The web app runs on `127.0.0.1:4173`; the API runs on `127.0.0.1:4174`.
-4. Compare visual changes at 390x844, 1024x768, 1320x820, and 1440x900 — the one canonical viewport list; other documents link here (dated QA records are historical).
+4. Compare visual changes at 390x844, 1024x768, 1320x820, and 1440x900 — the canonical viewport list; where another document names a different set (dated QA records, the advanced-workflow roadmap's future release gate), this list governs.
 
 The demo is deterministic, synthetic, and repository-safe. Never make it conditionally read a developer's live `runtime/`, `data/`, `work/`, browser profile, or report folders.
 

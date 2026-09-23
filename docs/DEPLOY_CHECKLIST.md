@@ -70,7 +70,7 @@ Roll back immediately if any of the following happen and don't resolve within a 
 - Cloudflare Access authentication failures spike on the app host (employee sign-in broken) or the integrations host (client grants failing to authenticate).
 - `node scripts/verify-integration-deployment.mjs` fails any gate (unauthenticated-denial, REST reconciliation, or OAuth discovery/PKCE/dynamic-registration).
 - A health endpoint's `version.versionId` does not match the version just deployed - the deploy did not take, or traffic is still routing to a stale version.
-- A sold-pending or inventory-updates regression is confirmed live (see product rules in [`CLAUDE.md`](../CLAUDE.md): sold-pending, hold state, listing state, and physical location are separate facts and must never be inferred from one another).
+- A sold-pending or inventory-updates regression is confirmed live (see product rules in [`AGENTS.md`](../AGENTS.md): sold-pending, hold state, listing state, and physical location are separate facts and must never be inferred from one another).
 
 To roll back, use the version ID recorded in the pre-deploy step (or the correct one from `wrangler deployments list` if this deploy has already appended a newer entry to the log):
 

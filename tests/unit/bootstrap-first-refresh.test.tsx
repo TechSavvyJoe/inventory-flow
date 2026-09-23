@@ -94,12 +94,22 @@ describe('first bootstrap refresh after load', () => {
     const loaded = context.data
     expect(context.loading).toBe(false)
 
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 304, headers: { ETag: '"a"' } }))
+    let answer!: (r: Response) => void
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve }))
     const historyBeforePoll = loadingHistory.length
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(headerAt(1, 'If-None-Match')).toBe('"a"')
+    // The poll's fetch is in flight and still unresolved here — this is the
+    // moment a regression would already have flipped loading to true.
+    expect(context.loading).toBe(false)
+
+    await act(async () => {
+      answer(new Response(null, { status: 304, headers: { ETag: '"a"' } }))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
     // Every render since the timer fired kept loading false — the button
     // never spins and no "Loading the full vehicle record…" flash occurs.
     expect(loadingHistory.slice(historyBeforePoll)).not.toContain(true)

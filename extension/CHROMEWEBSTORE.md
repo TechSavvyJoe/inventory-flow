@@ -51,7 +51,7 @@ English
 
 ### Screenshot Notes
 Capture screenshots only from `pnpm dev:demo` (synthetic data), never from the protected
-production host — see `extension/README.md` "Distribution" and the root `CLAUDE.md` git rule
+production host — see `extension/README.md` "Distribution" and the root `AGENTS.md` git rule
 against committing authenticated-page captures. Suggested shots: (1) the search list with a
 row expanded to show hold/service/location facts, (2) a vehicle detail view's Holds & moves
 tab, (3) the compare view with two or three vehicles.
@@ -154,7 +154,7 @@ are reconstructed from `extension/manifest.json` history for when a first submis
 
 ### Known Issues / Limitations
 - No screenshots exist yet; they must come from `pnpm dev:demo` only (never the protected
-  host — see the root `CLAUDE.md` git rules and `extension/README.md` "Distribution").
+  host — see the root `AGENTS.md` git rules and `extension/README.md` "Distribution").
 - No public privacy policy is published yet (see "Privacy Policy" above) — required before any
   **public** listing; may be unnecessary for a Forcelist-only internal deployment, but Chrome
   Web Store review still expects the data-disclosure form to be filled in accurately either way.

@@ -125,6 +125,8 @@ No marketing eyebrow, tagline, fake performance claim, or customer-sensitive tex
 
 ## Responsive acceptance
 
+Inspect at the viewports listed in [AGENTS.md](AGENTS.md); the width-specific criteria below apply at those sizes.
+
 - 1440×900 desktop: no page-level horizontal scrolling; table may use controlled internal overflow only below 1180px.
 - 1024px tablet: priority columns remain, secondary fields move into the drawer.
 - 390×844 mobile: no horizontal scrolling, 44px touch targets, bottom navigation, status text alongside color/icon.
