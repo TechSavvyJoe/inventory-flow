@@ -3,7 +3,7 @@
 Run from the application directory:
 
 ```sh
-pnpm exec playwright install webkit
+pnpm exec playwright install chromium webkit firefox
 pnpm exec playwright test --config playwright.cross-browser.config.ts
 ```
 
@@ -13,15 +13,15 @@ and source assertions require the eight fabricated `TESTDATA` vehicles. A
 48-vehicle response fixture exercises pagination without writing to the ledger.
 The main local demo or cloud application is not changed.
 
-Local runs and the CI nightly/`workflow_dispatch` job (`cross-browser-nightly` in
-`.github/workflows/ci.yml`) cover all six projects: Chromium at 1440 × 900
-(`chromium-desktop`), Chromium with a Pixel 7 emulation (`chromium-android`),
-Firefox at 1440 × 900 (`firefox-desktop`), WebKit at 1440 × 900
-(`webkit-desktop`), and WebKit with a 390 × 844 mobile viewport and touch input
-(`webkit-mobile`). Every push and PR (the `e2e` job) runs only
-`chromium-desktop` and `webkit-mobile` to keep per-push CI time down; the
-remaining three projects (`chromium-android`, `webkit-desktop`,
-`firefox-desktop`) run once a night, or on demand via `workflow_dispatch`.
+The config defines five projects: Chromium at 1440 × 900 (`chromium-desktop`),
+Chromium with a Pixel 7 emulation (`chromium-android`), Firefox at 1440 × 900
+(`firefox-desktop`), WebKit at 1440 × 900 (`webkit-desktop`), and WebKit with a
+390 × 844 mobile viewport and touch input (`webkit-mobile`). A local run of the
+command above executes all five. In CI, the per-push/PR `e2e` job
+(`.github/workflows/ci.yml`) runs only `chromium-desktop` and `webkit-mobile`
+to keep per-push time down; `cross-browser-nightly` (schedule or
+`workflow_dispatch`) runs the remaining three — `chromium-android`,
+`webkit-desktop`, and `firefox-desktop` — once a night, or on demand.
 WebKit and Firefox here are real browser engines, but this is **not** a
 physical Mac Safari, Android, or iPhone test. Real device acceptance,
 production sign-in, and authorized live-data checks remain separate release
