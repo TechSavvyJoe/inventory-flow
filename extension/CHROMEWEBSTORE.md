@@ -64,7 +64,7 @@ tab, (3) the compare view with two or three vehicles.
 | `storage` | permissions | Saves the user's display preferences (theme, density, home store) via `chrome.storage.sync`, and keeps a session-only copy of the fetched inventory list, the compare set, active filters, and a take-home-page handoff via `chrome.storage.session`. Nothing here is synced or sent anywhere outside the user's own Chrome profile. |
 | `contextMenus` | permissions | Adds the single "Search Inventory Flow for …" entry that appears when the user selects text and right-clicks, letting them open the panel pre-filled with that selection. |
 | `https://inventory-ops.joegallant.me/*` | host_permissions | The dealership group's own production Inventory Flow application — the only place the panel reads live inventory, hold, and vehicle-status data from. |
-| `http://127.0.0.1:4173/*`, `http://localhost:4173/*` | host_permissions | The local synthetic demo server (`pnpm dev:demo`) used only for staff training and development; it serves fixture data, never real inventory. |
+| `http://127.0.0.1:4173/*` | host_permissions | The local synthetic demo server (`pnpm dev:demo`) used only for staff training and development; it serves fixture data, never real inventory. |
 
 No `tabs`, `activeTab`, `<all_urls>`, or content-script permissions are requested. The panel
 never reads the content of the page the user is on — the context-menu handler only receives

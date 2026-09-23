@@ -76,7 +76,7 @@ The panel never sends a `POST`. Chrome stamps extension-originated writes with `
 | `storage` | Display preferences (`sync`); a session-only copy of the inventory document, the compare set, filters and the take-home handoff (`session`). |
 | `contextMenus` | The "Search Inventory Flow for …" entry on selected text. |
 | `https://inventory-ops.joegallant.me/*` | The only production data source. |
-| `http://127.0.0.1:4173/*`, `http://localhost:4173/*` | The synthetic `pnpm dev:demo` server, selectable from Settings for training and development. |
+| `http://127.0.0.1:4173/*` | The synthetic `pnpm dev:demo` server, selectable from Settings for training and development. |
 
 No `tabs`, no `activeTab`, no `<all_urls>`, no content scripts. The panel does not read the pages you are on. Production vehicle photos pass the existing HTTPS URL guard and load from their source URLs. The CSP separately permits bundled images, local-demo loopback images and preview placeholders; that does not broaden production source-link validation or give the panel page-reading access.
 
