@@ -1,3 +1,4 @@
+// PRODUCT-RULE TEST
 // @ts-nocheck -- exercises plain ESM Worker with real cryptographic signatures.
 // @vitest-environment node
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
