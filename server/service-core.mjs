@@ -262,11 +262,20 @@ function loanerSignal(messages) {
   }
 }
 
+function redactLoaner(loaner, context) {
+  if (!loaner) return loaner
+  if (context?.canViewPrivateEvidence) return loaner
+  return { ...loaner, rawAlert: null }
+}
+
 function holdSummary(source, context, freshness, { includePrivate = false } = {}) {
   const holdRecord = source.holdRecord
   const crmRecord = source.crmRecord
   const messages = dealerMailMessages(source)
-  const loaner = loanerSignal(messages)
+  // The loaner signal (program, label, service date) is operational. The raw
+  // DealerMail alert text is customer-sensitive evidence and follows the same
+  // role gate as comments, alerts, and hold reasons.
+  const loaner = redactLoaner(loanerSignal(messages), context)
   const messageCounts = {
     commentsCount: messages.comments.reduce((count, group) => count + (Array.isArray(group?.rows) ? group.rows.length : 0), 0),
     alertsCount: messages.alerts.length,
@@ -1560,8 +1569,11 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
       sourceId: vehicle.vin,
     })
   }
+  // Every active move gets an attention item. A fixed cap silently dropped the
+  // least recently touched moves, which are exactly the ones needing review,
+  // and made them unreachable through /api/attention/:id.
   for (const row of transferRows.filter((row) => isActiveTransfer(row) &&
-    !(context.workflowMode === 'simple' && row.status === 'returned_home')).slice(0, 20)) {
+    !(context.workflowMode === 'simple' && row.status === 'returned_home'))) {
     const next = context.workflowMode === 'simple' ? simpleNextAction(row) : { label: row.next_action, owner: cleanText(row.next_action_owner) }
     items.push({
       id: versionedAttentionId(`transfer-${row.id}`, [

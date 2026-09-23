@@ -2,6 +2,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import path from 'node:path'
+import { pipeline } from 'node:stream'
 import { assertAdminOverviewAccess } from './admin-control-center.mjs'
 import { createIdentityResolver, IdentityError } from './identity.mjs'
 import { WorkflowError } from './workflow.mjs'
@@ -185,7 +186,21 @@ function serveStatic(request, response, distDir, url) {
   response.setHeader('Content-Length', statSync(candidate).size)
   response.statusCode = 200
   if (request.method === 'HEAD') response.end()
-  else createReadStream(candidate).pipe(response)
+  else sendFile(candidate, response)
+}
+
+// pipeline() destroys the read stream when the client disconnects and routes a
+// late file error to the callback instead of an uncaught exception; a bare
+// pipe() leaked one file descriptor per aborted download.
+function sendFile(file, response) {
+  pipeline(createReadStream(file), response, (error) => {
+    if (error && !response.headersSent) {
+      response.statusCode = 500
+      response.end()
+    } else if (error) {
+      response.destroy()
+    }
+  })
 }
 
 export function createApiHandler({ service, serveDist = false, distDir, workspaceRoot, identityResolver = createIdentityResolver(), adminDirectory } = {}) {
@@ -269,7 +284,7 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
         response.setHeader('Content-Type', 'application/pdf')
         response.setHeader('Content-Disposition', `inline; filename="${vin}-vauto-equipment.pdf"`)
         response.setHeader('Content-Length', size)
-        return createReadStream(file).pipe(response)
+        return sendFile(file, response)
       }
       const serviceMatch = route.match(/^\/vehicles\/([^/]+)\/service$/)
       if (request.method === 'GET' && serviceMatch) {
