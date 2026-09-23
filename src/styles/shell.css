@@ -17,6 +17,9 @@
   grid-template-columns: var(--shell-nav-width) minmax(0, 1fr);
   grid-template-rows: var(--top-height) minmax(0, 1fr);
   background: var(--surface);
+  color: var(--app-readable-text);
+  font-size: var(--app-readable-body-size);
+  line-height: 1.5;
   transition: grid-template-columns 220ms cubic-bezier(.2, .78, .2, 1);
 }
 
@@ -94,7 +97,8 @@
 
 .brand-block .ifx-brand-lockup__type small {
   color: rgb(229 239 249 / 82%);
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.3;
   letter-spacing: .07em;
 }
 
@@ -123,7 +127,7 @@
 
 .nav-link {
   position: relative;
-  min-height: 52px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -134,6 +138,7 @@
   text-decoration: none;
   font-size: 15px;
   font-weight: 600;
+  line-height: 1.35;
   white-space: nowrap;
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease;
 }
@@ -170,6 +175,7 @@
 }
 
 .nav-label {
+  font-weight: 600;
   opacity: 1;
   transition: opacity 130ms ease 80ms, transform 160ms ease 50ms;
 }
@@ -189,7 +195,7 @@
   border-radius: 7px;
   background: var(--red);
   color: white;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -201,7 +207,7 @@
   height: 18px;
   padding-inline: 4px;
   border: 2px solid var(--nav-context-base);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .nav-footer {
@@ -230,9 +236,11 @@
 }
 
 .nav-footer-copy small {
-  color: #b6c9dc;
-  font-size: 13px;
+  color: var(--ifx-neutral-200);
+  -webkit-text-fill-color: currentColor;
+  font-size: var(--app-readable-meta-size);
   font-weight: 500;
+  line-height: 1.4;
 }
 
 .nav-collapse-button {
@@ -246,7 +254,7 @@
   background: rgb(255 255 255 / 5%);
   color: #ccdaea;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 150ms ease, color 150ms ease;
@@ -276,7 +284,8 @@
   gap: 14px;
   padding: 0 18px;
   border-bottom: 1px solid color-mix(in srgb, var(--store-accent) 25%, var(--border));
-  background: rgb(255 255 255 / 99%);
+  background: #fff;
+  color: #163149;
   box-shadow: 0 1px 3px rgb(11 38 65 / 5%);
   transition: border-color 320ms ease;
 }
@@ -349,7 +358,7 @@
   display: grid;
   place-items: center;
   padding: 3px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--app-control-border);
   border-radius: 8px;
   background: white;
   box-shadow: none;
@@ -376,10 +385,10 @@
 }
 
 .store-control-copy > span:first-child {
-  color: var(--ink-600);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
+  color: var(--app-readable-support);
+  font-size: var(--app-readable-meta-size);
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .store-select-wrap {
@@ -396,7 +405,7 @@
   border: 0;
   padding: 0 22px 0 0;
   background: transparent;
-  color: var(--store-accent-strong);
+  color: var(--app-text-primary);
   font: inherit;
   font-size: 15px;
   font-weight: 700;
@@ -446,9 +455,10 @@
   align-items: center;
   gap: 8px;
   padding: 0 5px 0 12px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--app-control-border);
   border-radius: 8px;
   background: var(--surface);
+  color: #163149;
   box-shadow: none;
   transition: border-color 140ms ease, box-shadow 140ms ease;
 }
@@ -470,16 +480,15 @@
   min-width: 0;
   flex: 1;
   border: 0;
-  outline: 0;
   background: transparent;
-  color: var(--ink-900);
+  color: var(--app-text-primary);
   font: inherit;
   font-size: 14px;
   font-weight: 400;
 }
 
 .global-search input::placeholder {
-  color: var(--ink-600);
+  color: var(--app-text-muted);
 }
 
 .global-search > button {
@@ -513,6 +522,7 @@
 .freshness-chip,
 .profile-button {
   min-width: 0;
+  min-height: 44px;
   height: 44px;
   display: flex;
   align-items: center;
@@ -520,13 +530,14 @@
   background: transparent;
   color: var(--ink-700);
   font: inherit;
+  line-height: 1.35;
   cursor: pointer;
 }
 
 .freshness-chip {
   gap: 7px;
   padding: 0 9px;
-  border-radius: 10px;
+  border-radius: var(--app-control-radius);
   font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
@@ -541,9 +552,10 @@
 .freshness-chip small {
   max-width: 102px;
   overflow: hidden;
-  color: var(--ink-500);
-  font-size: 13px;
+  color: var(--app-readable-support);
+  font-size: var(--app-readable-meta-size);
   font-weight: 500;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -568,7 +580,8 @@
   justify-content: flex-start;
   gap: 8px;
   padding: 0 7px;
-  border-radius: 9px;
+  border-radius: var(--app-control-radius);
+  color: #163149;
 }
 
 .profile-initials {
@@ -580,7 +593,7 @@
   border-radius: 50%;
   background: var(--store-accent-strong);
   color: white;
-  font-size: 11px;
+  font-size: var(--app-readable-meta-size);
   font-weight: 700;
   letter-spacing: 0.03em;
 }
@@ -606,13 +619,15 @@
 .profile-copy strong {
   color: var(--ink-900);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .profile-copy small {
-  color: var(--ink-600);
-  font-size: 13px;
+  color: var(--app-readable-support);
+  font-size: 12px;
   font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: 0.035em;
 }
 
 .profile-button > svg {
@@ -629,6 +644,9 @@
   grid-column: 2;
   grid-row: 2;
   padding: 24px;
+  color: var(--app-readable-text);
+  font-size: var(--app-readable-body-size);
+  line-height: 1.5;
 }
 
 .mobile-bottom-nav {
@@ -659,7 +677,7 @@
   width: min(390px, calc(100vw - 28px));
   overflow: hidden;
   padding: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--app-control-border);
   border-radius: 12px;
   background: white;
   box-shadow: 0 20px 52px rgb(5 29 52 / 20%);
@@ -707,9 +725,11 @@
 }
 
 .utility-panel-header small {
-  color: var(--ink-600);
-  font-size: 13px;
+  color: var(--app-text-secondary);
+  font-size: 11px;
   font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: 0.035em;
 }
 
 .utility-panel-header button {
@@ -761,14 +781,16 @@
 
 .utility-update-card small {
   overflow: hidden;
-  color: var(--ink-600);
-  font-size: 13px;
+  color: var(--app-text-secondary);
+  font-size: 11px;
+  line-height: 1.3;
+  letter-spacing: 0.035em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .utility-update-card button {
-  min-height: 44px;
+  min-height: 38px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -778,7 +800,7 @@
   background: white;
   color: var(--store-accent-strong);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -838,7 +860,7 @@
 
 .utility-role-control small,
 .utility-manager-link small {
-  color: var(--ink-500);
+  color: var(--app-text-secondary);
   font-size: 13px;
 }
 
@@ -847,7 +869,7 @@
   appearance: none;
   border: 0;
   background: transparent;
-  color: var(--ink-900);
+  color: var(--app-text-primary);
   font: inherit;
   font-size: 14px;
   font-weight: 700;
@@ -1011,7 +1033,7 @@
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     border-top: 1px solid var(--border);
-    background: rgb(255 255 255 / 97%);
+    background: #fff;
     box-shadow: 0 -8px 24px rgb(25 50 75 / 8%);
   }
 
@@ -1289,6 +1311,11 @@ html[data-interface-transition='oem']::view-transition-new(root) {
     background: Canvas;
     opacity: .72;
   }
+
+  :where(.button, .ifx-button, .ifx-icon-button, .nav-link, .nav-collapse-button, .freshness-chip, .profile-button, .global-search) {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
 }
 
 /* A short visual viewport while typing should belong to the form. The rail
@@ -1297,4 +1324,233 @@ html[data-interface-transition='oem']::view-transition-new(root) {
   .app-shell:has(input:focus, textarea:focus) .mobile-bottom-nav { display: none; }
   .app-shell:has(input:focus, textarea:focus) { padding-bottom: var(--safe-bottom); }
   .app-shell:has(input:focus, textarea:focus) .top-bar { position: relative; }
+}
+
+/* Utility-panel service links, the synthetic-data notice and the production
+   role-preview banner are rendered by the shell itself. */
+.utility-service-link {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 56px;
+  color: var(--ink-900);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  text-decoration: none;
+}
+
+.utility-service-link > span {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+}
+
+.utility-service-link small {
+  color: var(--app-text-secondary);
+  font-size: 12px;
+}
+
+.utility-service-link svg {
+  width: 20px;
+  height: 20px;
+}
+
+.utility-role-help {
+  margin: 8px 0 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-600);
+}
+
+.synthetic-preview-notice {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: var(--ifx-neutral-700);
+  background: var(--ifx-neutral-100);
+  border-left: 3px solid var(--ifx-info);
+}
+
+.role-preview-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--ifx-warning);
+  border-radius: 6px;
+  background: var(--ifx-warning-surface);
+  color: var(--ink-900);
+  font-size: 14px;
+}
+
+.role-preview-banner button {
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--ifx-info);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--blue-700);
+  font: 600 14px var(--font-app);
+  cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  .mobile-bottom-nav {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .synthetic-preview-notice {
+    margin-bottom: 8px;
+    padding: 5px 8px;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+/* Mobile brand and bar details: the product lockup's secondary line keeps a
+   12px floor, and the phone rail's badge stays legible. */
+.mobile-brand .ifx-brand-lockup__type small {
+  font-size: 12px;
+  line-height: 1.3;
+  letter-spacing: 0.035em;
+}
+
+.mobile-bottom-nav b {
+  min-width: 20px;
+  min-height: 20px;
+  font-size: 11px;
+  line-height: 20px;
+}
+
+@media (max-width: 880px) {
+  .mobile-bottom-nav :where(a, button) {
+    min-height: 56px;
+  }
+}
+
+@media (max-width: 760px) {
+  .mobile-bottom-nav button {
+    min-height: 70px;
+    font-size: 11px;
+  }
+}
+
+/* The utility panel is portaled to <body>, so it carries its own control
+   floor instead of inheriting the app-main rules below. */
+.utility-panel :where(button, select, a) {
+  min-height: 44px;
+}
+
+.utility-panel :where(button, a, label) {
+  border-radius: var(--app-control-radius);
+}
+
+:where(.button, .ifx-button, .ifx-icon-button, .nav-link, .nav-collapse-button, .freshness-chip, .profile-button):disabled {
+  cursor: not-allowed;
+}
+
+/* Readable type floor for everything the shell frames. Feature sheets own
+   their layout; these rules set only the neutral text roles and control copy
+   inside the main region, at a specificity feature classes can override. */
+.app-shell .app-main :where(p, li, dd, blockquote) {
+  line-height: 1.5;
+}
+
+.app-shell :where(small) {
+  font-size: var(--app-readable-meta-size);
+  line-height: 1.4;
+}
+
+.app-shell .app-main :where(input, select, textarea) {
+  color: var(--app-readable-text);
+  font-size: var(--app-readable-body-size);
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.app-shell .app-main :where(button, summary, [role="button"]) {
+  font-size: var(--app-readable-control-size);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+
+.app-shell .app-main :where(input, textarea)::placeholder {
+  color: var(--app-readable-muted);
+  opacity: 1;
+}
+
+.app-shell .app-main :where(a[href]) {
+  text-underline-offset: 2px;
+}
+
+.app-shell .app-main :where(.button, .ifx-button) {
+  font-size: var(--app-readable-body-size);
+  font-weight: 600;
+}
+
+/* Laptop widths keep navigation labels visible while reclaiming width. */
+@media (min-width: 761px) and (max-width: 1280px) {
+  .app-shell.app-shell.is-nav-expanded { --shell-nav-width: 176px; }
+  .app-shell .brand-block { padding-inline: 12px; }
+  .app-shell .primary-nav { padding: 12px 8px; }
+  .app-shell .nav-link { padding-inline: 8px; gap: 8px; white-space: normal; }
+  .app-shell .nav-label { font-size: 14px; line-height: 1.3; }
+  .app-shell .brand-block .ifx-brand-lockup { gap: 8px; }
+  .app-shell .brand-block .ifx-brand-lockup__type strong { font-size: 16px; }
+  .app-shell main.app-main { padding: 16px; }
+}
+
+@media (min-width: 761px) and (max-width: 1100px) {
+  .app-shell.app-shell:is(.is-nav-expanded, .is-nav-compact) { --shell-nav-width: 104px; }
+  .app-shell .brand-block { justify-content: center; padding: 0; }
+  .app-shell .brand-block .ifx-brand-lockup__type,
+  .app-shell .nav-footer-copy,
+  .app-shell .nav-collapse-button { display: none; }
+  .app-shell .primary-nav { gap: 3px; padding: 10px 6px; }
+  .app-shell .nav-link { flex-direction: column; justify-content: center; gap: 5px; padding: 8px 3px; min-height: 66px; text-align: center; }
+  .app-shell .nav-link .nav-label { width: auto; max-width: 92px; height: auto; opacity: 1; transform: none; pointer-events: auto; overflow: visible; font-size: 13px; }
+  .app-shell .nav-count { position: absolute; top: 4px; right: 4px; min-width: 20px; margin: 0; }
+  .app-shell .top-bar { padding-left: max(14px, var(--safe-left)); padding-right: max(14px, var(--safe-right)); gap: 10px; }
+}
+
+/* Landscape phones share the compact tablet shell but still need notch space. */
+@media (min-width: 761px) and (max-width: 880px) {
+  .app-shell main.app-main { padding-left: max(16px, var(--safe-left)); padding-right: max(16px, var(--safe-right)); }
+}
+
+/* Phones (<= 640px): the shell steps down to a 14px body, 12-13px metadata
+   and a 60px bar on an 8px rhythm. */
+@media (max-width: 640px) {
+  .app-shell.app-shell {
+    --mobile-bottom-height: 60px;
+    --top-height: 56px;
+  }
+
+  /* Side padding stays at 14px: the moves layout bleeds 12px into it. */
+  .app-shell main.app-main {
+    padding: 8px max(14px, var(--safe-right)) 20px max(14px, var(--safe-left));
+  }
+
+  .app-shell .mobile-bottom-nav :is(a, button) {
+    min-height: 44px;
+    gap: 2px;
+    font-size: 12px;
+  }
+
+  .app-shell .mobile-bottom-nav svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .app-shell .mobile-bottom-nav b {
+    top: 3px;
+    font-size: 12px;
+    line-height: 16px;
+  }
 }

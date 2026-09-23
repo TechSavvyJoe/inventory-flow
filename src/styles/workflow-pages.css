@@ -135,3 +135,14 @@
 .action-follow-up summary:hover, .updates-source summary:hover { color:var(--blue-700); text-decoration:underline; text-underline-offset:3px; }
 .action-follow-up-form label { color:var(--ink-700); font-weight:600; }
 .action-follow-up-form :is(input,textarea) { font-weight:400; }
+
+/* Denser rhythm and a 14px reading floor for the queue and updates pages
+   (formerly the global compact-workspace.css). */
+.workflow-page .workflow-toolbar, .action-queue .workflow-toolbar { margin-block: 12px; }
+.workflow-page .updates-row { padding-block: 14px; }
+.workflow-page :is(.workflow-vehicle small, .updates-specs, .updates-values, .workflow-muted),
+.action-queue :is(.action-task p, .action-owner, .action-owner > span, .action-follow-up summary) { font-size: 14px; }
+
+@media (max-width: 760px) {
+  .workflow-page .updates-row { padding-block: 12px; }
+}

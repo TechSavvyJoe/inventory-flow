@@ -266,6 +266,30 @@
   background: var(--inventory-bg);
   cursor: pointer;
   font-weight: 600;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease,
+    box-shadow 160ms ease,
+    transform 100ms ease;
+}
+
+.inventory-filter-button:active {
+  transform: translateY(1px);
+}
+
+.inventory-quick-filter-count {
+  min-width: 21px;
+  height: 21px;
+  font-size: 11px;
+}
+
+.inventory-page-size > span {
+  font-size: 13px;
+}
+
+.inventory-predictive-search input {
+  min-height: 48px;
 }
 
 .inventory-filter-button:hover,
@@ -940,12 +964,66 @@
   }
 }
 
-/* Phones: the inventory page never scrolls sideways. Moved here from the deleted
-   global inventory-experience-final.css; the #root rule in
-   inventory-production-v10.css still wins on max-width. */
+/* The inventory page spans its column and carries the workspace text tokens
+   (formerly the global inventory-production-v10.css). */
+.inventory-page {
+  --v10-ink: var(--ifx-neutral-900);
+  --v10-ink-strong: var(--navy-900);
+  --v10-support: var(--ifx-neutral-700);
+  --v10-muted: var(--ifx-neutral-600);
+  --v10-border: var(--ifx-neutral-300);
+  --v10-border-soft: var(--ifx-neutral-200);
+  --v10-surface: var(--ifx-neutral-0);
+  --v10-surface-subtle: var(--ifx-neutral-50);
+  --v10-surface-header: var(--ifx-neutral-100);
+  --v10-blue: var(--store-accent, var(--ifx-oem-accent));
+  --v10-blue-strong: var(--store-accent-strong, var(--ifx-oem-accent-strong));
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  margin-inline: 0;
+  color: var(--v10-ink);
+}
+
+/* Phones: the inventory page never scrolls sideways. */
 @media (max-width: 760px) {
   .inventory-page {
-    max-width: 100%;
     overflow-x: clip;
+  }
+}
+
+/* The shell frame around the inventory page: a fluid gutter on wide screens,
+   edge to edge on phones and tablets with the gutters moved onto the
+   controls, rows and notices themselves. */
+@supports selector(:has(*)) {
+  .app-main:has(> .inventory-page) {
+    padding-inline: clamp(14px, 1.35vw, 24px);
+  }
+}
+
+@media (max-width: 880px) {
+  .app-shell main.app-main:has(> .inventory-page) {
+    padding-inline: 0;
+  }
+
+  .app-main:has(> .inventory-page) > :is(.synthetic-preview-notice, .role-preview-banner) {
+    margin-inline: 0;
+    padding-left: max(10px, var(--safe-left));
+    padding-right: max(10px, var(--safe-right));
+    border-radius: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-main:has(#inventory-results-workspace) .synthetic-preview-notice {
+    margin-block: 0 4px;
+    padding-block: 5px;
+    line-height: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inventory-filter-button {
+    transition: none;
   }
 }

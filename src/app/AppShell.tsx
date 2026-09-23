@@ -33,10 +33,7 @@ import {
 } from '../lib/inventory-navigation'
 import { useAppData } from './AppDataContext'
 import { STORE_BRANDING } from './storeBranding'
-import '../styles/mobile-density.css'
 import { openStoreActionCount } from '../features/attention/action-center'
-import '../styles/workflow-navigation.css'
-import '../styles/compact-workspace.css'
 
 const NAV_ITEMS = [
   { id: 'inventory', to: '/inventory', label: 'Inventory', shortLabel: 'Inventory', icon: CarFront },

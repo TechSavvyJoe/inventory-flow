@@ -136,3 +136,8 @@
 #root .simple-move-records > summary:hover { color:var(--blue-700); text-decoration:underline; text-underline-offset:3px; }
 #root .vehicle-location-results tbody tr:hover { background:var(--surface-soft); }
 #root .vehicle-location-results a:focus-visible { outline:2px solid var(--focus); outline-offset:3px; }
+
+/* Phones: the location views share the shell's 8px rhythm. */
+@media (max-width: 640px) {
+  #root .vehicle-location-views button { min-height: 44px; padding: 6px 10px; }
+}

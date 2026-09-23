@@ -44,10 +44,10 @@ asset and the provider's own usage rules; Inventory Flow never redraws them.
 | `public/brand-kit/inventory-flow-icon.svg` | App icon, favicon, collapsed navigation |
 | `public/brand-kit/inventory-flow-reversed.svg` | Dark hero or presentation surface |
 | `public/brand-kit/inventory-flow-monochrome.svg` | One-color print, etching, accessibility fallback |
-| `src/design-system/tokens.css` | CSS custom properties and OEM skin hooks |
+| `src/styles/tokens.css` | The one token sheet: the `--ifx-*` custom properties and OEM skin hooks live beside the app's shared tokens |
 | `src/design-system/icons.tsx` | 24 px icon frame and the `ActionsIcon` default glyph for `FlowIconButton` |
 | `src/design-system/components.tsx` | `FlowButton`, `FlowIconButton` (the icon-only primitive), and `FlowBrandLockup` (rendered by the app shell) |
-| `src/design-system/components.css` | Component states and responsive treatment |
+| `src/design-system/components.css` | Component states and responsive treatment; `components.tsx` imports it, so it loads with the components |
 
 ## Logo rules
 
@@ -138,8 +138,9 @@ delay interaction or animate tables themselves.
 
 ## Integration sequence
 
-1. Import `src/design-system/tokens.css` before app-level styles, then import
-   `components.css` once.
+1. `src/main.tsx` imports `src/styles/tokens.css` (which carries the `--ifx-*`
+   family) before any component; `components.tsx` imports `components.css`
+   itself, so importing a component brings its styles.
 2. Replace the current product mark reference with
    `/brand-kit/inventory-flow-icon.svg` and render
    `<FlowBrandLockup tenantLabel="Maxey" />` in the expanded navigation.

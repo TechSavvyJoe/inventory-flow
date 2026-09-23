@@ -288,3 +288,103 @@
 }
 
 .mif-manager-queues > summary:focus-visible { outline: 3px solid var(--mif-blue); outline-offset: 2px; }
+
+/* Page frame and readable text roles (formerly the global pages.css,
+   readability-final.css and mobile-density.css). The manager table stays
+   dense while every text role shares the 12/13px floor. */
+.manager-page { min-width: 0; max-width: 1540px; margin: 0 auto; }
+
+.mif-manager-feature {
+  --mif-secondary: var(--app-readable-support);
+  --mif-muted: var(--app-readable-muted);
+  color: var(--app-readable-text);
+  font-family: var(--font-app);
+  font-size: var(--app-readable-body-size);
+}
+
+.app-shell .app-main :where(.mif-manager-heading p) {
+  color: var(--app-readable-support);
+  font-size: var(--app-readable-body-size);
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.app-shell .app-main :where(.mif-manager-heading h1) {
+  color: var(--app-readable-text);
+  font-size: clamp(28px, 2vw, 32px);
+  font-weight: 700;
+  line-height: 1.14;
+  letter-spacing: -0.025em;
+}
+
+.app-shell .mif-manager-feature :is(input, select, textarea) {
+  color: var(--app-readable-text);
+  font-size: var(--app-readable-body-size);
+  font-weight: 400;
+}
+
+.mif-manager-feature :is(.mif-manager-toolbutton, .mif-manager-primary, .mif-manager-review-button) {
+  font-size: var(--app-readable-control-size);
+  font-weight: 600;
+}
+
+.mif-manager-feature :is(.mif-operation-metrics span, .mif-manager-filter > span, .mif-save-view-bar label span) {
+  color: var(--app-readable-support);
+  font-size: var(--app-readable-support-size);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.mif-manager-feature :is(.mif-operation-metrics small, .mif-manager-resultbar, .mif-sort-builder__heading span) {
+  color: var(--app-readable-muted);
+  font-size: var(--app-readable-meta-size);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.mif-manager-feature .mif-operations-table {
+  color: var(--app-readable-text);
+  font-size: var(--app-readable-support-size);
+}
+
+.mif-manager-feature .mif-operations-table th {
+  color: #344f66;
+  font-size: var(--app-readable-meta-size);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.mif-manager-feature .mif-operations-table td {
+  color: #1c374f;
+  font-size: var(--app-readable-support-size);
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.mif-manager-feature .mif-operations-table :is(td > span, td > small, .mif-route-cells b) {
+  color: var(--app-readable-support);
+  font-size: var(--app-readable-meta-size);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+@media (max-width: 760px) {
+  .app-shell .app-main :where(.mif-manager-heading h1) {
+    font-size: 26px;
+  }
+
+  .mif-manager-feature .mif-operations-mobile-list > button > span {
+    color: var(--app-readable-support);
+    font-size: var(--app-readable-support-size);
+    line-height: 1.45;
+  }
+}
+
+/* Phones: the shell's 20px heading ramp and 8px rhythm. */
+@media (max-width: 640px) {
+  .app-shell .app-main .mif-manager-heading h1 { margin-top: 0; font-size: 20px; line-height: 1.2; }
+  .app-shell .app-main .mif-manager-heading p { margin-top: 2px; font-size: 13px; line-height: 1.4; }
+  .app-shell .mif-manager-main { padding: 8px 10px 60px; }
+  .app-shell .mif-manager-heading { gap: 10px; }
+  .app-shell .mif-operation-metric { padding: 8px 10px; }
+}

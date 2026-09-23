@@ -3,8 +3,8 @@
   --mif-blue: #0759bd;
   --mif-blue-hover: #064b9f;
   --mif-text: #102238;
-  --mif-secondary: #536579;
-  --mif-muted: #728195;
+  --mif-secondary: var(--app-readable-support);
+  --mif-muted: var(--app-readable-muted);
   --mif-border: #dce4ed;
   --mif-soft: #f5f8fb;
   --mif-selected: #edf5ff;
@@ -44,7 +44,16 @@
   justify-content: center;
   min-height: 42px;
   padding: 0 18px;
+  letter-spacing: -0.005em;
   transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.mif-button:hover {
+  border-color: var(--ifx-control-border-hover);
+}
+
+.mif-button:active {
+  transform: translateY(1px);
 }
 
 .mif-button:focus-visible,
@@ -255,7 +264,7 @@
 
 .mif-accountability-list { list-style: none; margin: 0; padding: 0; }
 .mif-accountability-list li { align-items: center; display: grid; gap: 8px; grid-template-columns: 22px 1fr; min-height: 34px; position: relative; }
-.mif-accountability-list li > span { align-items: center; border: 1px solid var(--mif-blue); border-radius: 50%; color: var(--mif-blue); display: flex; font-size: 12px; height: 20px; justify-content: center; width: 20px; }
+.mif-accountability-list li > span { align-items: center; border: 1px solid var(--mif-blue); border-radius: 50%; color: var(--mif-blue); display: flex; font-size: 12px; height: 22px; justify-content: center; width: 22px; }
 .mif-accountability-list b { font-size: 12px; font-weight: 700; line-height: 1.35; }
 .mif-accountability-list small { color: var(--mif-secondary); font-size: 11px; font-weight: 500; grid-column: 2; line-height: 1.4; }
 
@@ -514,4 +523,91 @@
   .mif-source-stale { font-size: 8px; }
   .mif-timeline-event { min-height: 48px; grid-template-columns: 20px 72px 1fr; gap: 6px; }
   .mif-timeline-event time { font-size: 8px; }
+}
+
+/* Readable workflow metadata (formerly the global readability and
+   typography layers). The tracker's prototype-era dense-desktop block set
+   event times to 8px, status labels to 9px and most metadata to 10-11px;
+   every visible text role here holds the shared 12/13px floor. */
+@media (max-width: 760px) {
+  .mif-icon-button { min-height: 44px; }
+}
+
+.mif-transfer-feature :where(
+  .mif-timeline-event time,
+  .mif-timeline-meta span,
+  .mif-event-source,
+  .mif-tracker-header small,
+  .mif-tracker-accountability span,
+  .mif-tracker-accountability small,
+  .mif-tracker-request-summary span,
+  .mif-tracker-request-summary small,
+  .mif-condition-banner small,
+  .mif-tracker-section h3,
+  .mif-accountability-list li > span,
+  .mif-accountability-list small,
+  .mif-request-source-strip small,
+  .mif-field-error,
+  .mif-auto-return-rule span,
+  .mif-request-review section > span
+) {
+  font-size: var(--app-readable-meta-size) !important;
+  line-height: 1.4 !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}
+
+.mif-transfer-feature :where(
+  .mif-timeline-copy > span,
+  .mif-tracker-request-summary strong,
+  .mif-tracker-accountability strong,
+  .mif-condition-banner span
+) {
+  font-size: var(--app-readable-support-size) !important;
+  line-height: 1.45 !important;
+}
+
+/* The 72px time column was sized for the old 8-10px type; give the larger
+   glyphs room instead of clipping. Below 720px the tracker stacks the time
+   above the copy in two columns, so this widening applies only above it. */
+@media (min-width: 721px) {
+  .mif-transfer-feature .mif-timeline-event {
+    grid-template-columns: 22px minmax(96px, auto) minmax(0, 1fr) !important;
+  }
+}
+
+.mif-transfer-tracker.transfer-tracker-v3 :is(
+  .mif-tracker-header p,
+  .mif-tracker-header small,
+  .mif-tracker-request-summary span,
+  .mif-tracker-request-summary small,
+  .mif-tracker-accountability span,
+  .mif-tracker-accountability small,
+  .mif-timeline-event time,
+  .mif-timeline-copy > span,
+  .mif-timeline-meta span,
+  .mif-outcome-separation header span,
+  .mif-outcome-separation > div > span
+) {
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+}
+
+.mif-transfer-tracker.transfer-tracker-v3 .mif-move-progress span {
+  font-size: var(--app-readable-meta-size);
+  line-height: 1.35;
+}
+
+.mif-transfer-tracker.transfer-tracker-v3 .mif-button.mif-button--primary {
+  border-color: #0759bd;
+  color: #fff;
+  background: #0759bd;
+  box-shadow: none;
+}
+
+.mif-transfer-tracker.transfer-tracker-v3 .mif-button.mif-button--secondary {
+  border-color: #c8d4e1;
+  color: #24445f;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(9 31 52 / 5%);
 }

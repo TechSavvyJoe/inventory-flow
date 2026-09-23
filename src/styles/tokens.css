@@ -2,14 +2,30 @@
 
 /* The one global token sheet. Operational colours, type, motion and safe-area
    insets come from the companion's shared tokens (imported above); this file
-   adds the app shell's sizes and the design-system (--ifx-*) family. Only
-   custom properties and the OEM skin hooks live here — element styles belong
-   in base.css. */
+   adds the app shell's sizes, the readable text roles and the design-system
+   (--ifx-*) family. Only custom properties and the OEM skin hooks live here —
+   element styles belong in base.css. */
 
 :root {
   --nav-width: 188px;
   --top-height: 72px;
   --mobile-bottom-height: 70px;
+
+  /* Readable text roles shared by the shell and the feature sheets. */
+  --app-readable-text: #102238;
+  --app-readable-support: #40566c;
+  --app-readable-muted: #53697c;
+  --app-readable-meta-size: 12px;
+  --app-readable-control-size: 13px;
+  --app-readable-support-size: 13px;
+  --app-readable-body-size: 14px;
+
+  /* Shell controls. */
+  --app-control-radius: 8px;
+  --app-control-border: #c8d4e1;
+  --app-text-primary: #102238;
+  --app-text-secondary: #40566c;
+  --app-text-muted: #5b6f82;
 }
 
 :root {
@@ -103,6 +119,8 @@
   --ifx-control-height-md: 44px;
   --ifx-control-height-lg: 48px;
   --ifx-focus-ring: 0 0 0 3px color-mix(in srgb, var(--ifx-info) 24%, transparent);
+  --ifx-focus-color: #1686e4;
+  --ifx-control-border-hover: #8fa6b9;
 
   --ifx-elevation-1: 0 1px 2px rgb(7 23 34 / 7%), 0 3px 8px rgb(7 23 34 / 4%);
   --ifx-elevation-2: 0 7px 20px rgb(7 23 34 / 8%), 0 2px 5px rgb(7 23 34 / 5%);
