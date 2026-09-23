@@ -429,7 +429,8 @@ export async function main(argv = process.argv.slice(2)) {
   out.fordOasisPending = out.records.filter((record) => record.result === 'OASIS_UNAVAILABLE').length
   save()
   console.log(JSON.stringify({ records: out.records.length, tally: out.tally, oasisSession: oasisState, fordOasisPending: out.fordOasisPending, stoppedReason: out.stoppedReason || null, seconds: Math.round((Date.now() - t0) / 1000), out: outPath }))
-  return out.fordOasisPending > 0 ? 1 : 0
+  // A truncated queue is an incomplete capture; the runner must not record it as complete.
+  return out.stoppedReason || out.fordOasisPending > 0 ? 1 : 0
 }
 
 if (isMainModule(import.meta.url)) {

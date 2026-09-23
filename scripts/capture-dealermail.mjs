@@ -117,9 +117,19 @@ const capturedAt = new Date().toISOString()
 
 const get = async url => {
   const r = await fetchInTab(page, url, { timeoutMs: 45000 })
-  return { status: r.status, text: r.text || '' }
+  const text = r.text || ''
+  // The grid check above only proves the session was alive at the start. A
+  // session that ends mid-capture answers 200 with the "Session Ended" page,
+  // which would otherwise parse as "no holds" and be published as complete.
+  if (r.status === 0 || r.error || /Session Ended/i.test(text)) {
+    fail('session_expired', `DealerMail session ended during ${url.split('?')[0].split('/').pop()}`)
+  }
+  return { status: r.status, text }
 }
 const overBudget = () => Date.now() - t0 > budgetMs
+// A truncated capture is incomplete, never "ok": the snapshot builder would
+// finalize it and the day would only fail hours later in the release validator.
+let truncated = null
 
 // exclude view: every non-held unit, used to cross-check total - held
 const ex = await get(EXCLUDE)
@@ -134,7 +144,7 @@ const excludeView = await page.evalJs(`(() => {
 const comments = [], alerts = [], cdk = [], holds = []
 
 for (const r of held) {
-  if (overBudget()) break
+  if (overBudget()) { truncated = 'hold details'; break }
   const c = await get(`${PM}V2_CDK_lookup_one_vehicle_full.asp?s=${encodeURIComponent(r.stock)}`)
   cdk.push({ stock: r.stock, status: c.status, text: c.text })
   await sleep(120)
@@ -158,19 +168,21 @@ for (const r of held) {
 }
 
 for (const r of full.filter(x => x.commentsFlag === 'Y')) {
-  if (overBudget()) break
+  if (overBudget()) { truncated = 'comments'; break }
   const c = await get(`${PM}V2_inventory_held_comments_USED.asp?id=${encodeURIComponent(r.commentId)}`)
   comments.push({ stock: r.stock, commentId: r.commentId, status: String(c.status), text: c.text })
   await sleep(120)
 }
 
 for (const r of full.filter(x => x.alertsFlag === 'Y')) {
-  if (overBudget()) break
+  if (overBudget()) { truncated = 'alerts'; break }
   const vin = (r.cells[10] || '').trim()
   const a = await get(`${PM}V2_inventory_alerts_USED.asp?vin=${encodeURIComponent(vin)}&stockNo=${encodeURIComponent(r.stock)}`)
   alerts.push({ stock: r.stock, vin, status: String(a.status), text: a.text })
   await sleep(120)
 }
+
+if (truncated) fail('incomplete', `BUDGET_EXHAUSTED while capturing ${truncated}; raise --budget-ms or retry`)
 
 const inventoryRows = full.map(r => [r.stock, r.storeCode, r.rowClass,
   ...CELL_INDEXES.map(i => (r.cells[i] ?? '').trim())])
