@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { InventoryExperience } from '../../src/features/inventory/InventoryExperience'
+import { InventoryExperienceHarness } from './inventory-experience-harness'
 import { InventoryTable } from '../../src/features/inventory/InventoryTable'
 import { VehicleWorkspace } from '../../src/features/inventory/VehicleWorkspace'
 import type { InventoryVehicle } from '../../src/features/inventory/types'
@@ -61,16 +61,16 @@ afterEach(() => {
 
 describe('manager-friendly inventory UI', () => {
   it('restores local query edits on return but honors a fresh explicit search for the same text', () => {
-    const props = { homeStore: { id: 'Howell', name: 'Howell' }, vehicles: [vehicle(1), vehicle(2)], metrics: { publicUnits: 2, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }, searchPersistenceKey: 'synthetic:search:user', initialQuery: 'HT0001', queryRequestKey: 'first-request' };
-    let page = render(<InventoryExperience {...props} />);
+    const props = { homeStore: { id: 'Howell', name: 'Howell' }, vehicles: [vehicle(1), vehicle(2)], searchPersistenceKey: 'synthetic:search:user', initialQuery: 'HT0001', queryRequestKey: 'first-request' };
+    let page = render(<InventoryExperienceHarness {...props} />);
     const query = () => screen.getByRole('combobox', { name: /Search inventory/i });
     fireEvent.change(query(), { target: { value: 'HT0002' } });
     expect(query()).toHaveValue('HT0002');
     page.unmount();
-    page = render(<InventoryExperience {...props} />);
+    page = render(<InventoryExperienceHarness {...props} />);
     expect(query()).toHaveValue('HT0002');
     page.unmount();
-    render(<InventoryExperience {...props} queryRequestKey="second-request" />);
+    render(<InventoryExperienceHarness {...props} queryRequestKey="second-request" />);
     expect(query()).toHaveValue('HT0001');
   });
 
@@ -97,7 +97,7 @@ describe('manager-friendly inventory UI', () => {
     const other = { ...vehicle(3, true), serviceReadiness: { ...home.serviceReadiness, vin: vehicle(3).vin }, location: { homeStore: { id: 'Lincoln', name: 'Lincoln' } } };
     const unserviced = vehicle(5, true);
     unserviced.serviceReadiness = { ...home.serviceReadiness, vin: unserviced.vin, status: 'needs_service', completedAt: null };
-    const { container } = render(<InventoryExperience homeStore={{ id: 'Howell', name: 'Howell' }} vehicles={[home, other, unserviced]} metrics={{ publicUnits: 2, currentHolds: 2, awayFromHome: 0, returnOverdue: 0 }} />);
+    const { container } = render(<InventoryExperienceHarness homeStore={{ id: 'Howell', name: 'Howell' }} vehicles={[home, other, unserviced]} />);
     fireEvent.click(screen.getByRole('button', { name: /^Ready: / }));
     fireEvent.click(screen.getByRole('button', { name: /^Held: / }));
     expect(container.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(1);
@@ -109,13 +109,13 @@ describe('manager-friendly inventory UI', () => {
   });
 
   it('persists the service filter within an employee context and resets for another context', async () => {
-    const props = { homeStore: { id: 'Howell', name: 'Howell' }, vehicles: [vehicle(1)], metrics: { publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 } };
-    const { rerender, unmount } = render(<InventoryExperience {...props} searchPersistenceKey="employee-one:manager:Howell" />);
+    const props = { homeStore: { id: 'Howell', name: 'Howell' }, vehicles: [vehicle(1)] };
+    const { rerender, unmount } = render(<InventoryExperienceHarness {...props} searchPersistenceKey="employee-one:manager:Howell" />);
     fireEvent.click(screen.getByRole('button', { name: /^Ready: / }));
-    rerender(<InventoryExperience {...props} searchPersistenceKey="employee-two:sales:Howell" />);
+    rerender(<InventoryExperienceHarness {...props} searchPersistenceKey="employee-two:sales:Howell" />);
     expect(screen.getByRole('button', { name: /^All service: / })).toHaveAttribute('aria-pressed', 'true');
     unmount();
-    render(<InventoryExperience {...props} searchPersistenceKey="employee-one:manager:Howell" />);
+    render(<InventoryExperienceHarness {...props} searchPersistenceKey="employee-one:manager:Howell" />);
     expect(screen.getByRole('button', { name: /^Ready: / })).toHaveAttribute('aria-pressed', 'true');
   });
   it('makes the home count and complete group count unmistakable while staying home-store first', async () => {
@@ -125,10 +125,9 @@ describe('manager-friendly inventory UI', () => {
     }
 
     render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={{ id: 'Howell', name: 'Howell' }}
         vehicles={vehicles}
-        metrics={{ publicUnits: 4, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     )
 
@@ -143,10 +142,9 @@ describe('manager-friendly inventory UI', () => {
 
   it('offers the requested row-count increments and keeps the table paged', async () => {
     render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={{ id: 'Howell', name: 'Howell' }}
         vehicles={Array.from({ length: 28 }, (_, index) => vehicle(index + 1))}
-        metrics={{ publicUnits: 28, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     )
 
@@ -194,7 +192,7 @@ describe('manager-friendly inventory UI', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(null)
     const external = vi.fn()
     const current = vehicle(7)
-    render(<InventoryExperience homeStore={{ id: 'Howell', name: 'Howell' }} vehicles={[current]} metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }} onOpenSourceRecord={external} />)
+    render(<InventoryExperienceHarness homeStore={{ id: 'Howell', name: 'Howell' }} vehicles={[current]} onOpenSourceRecord={external} />)
     const row = document.querySelector('.inv-desk-table tbody tr.inv-desk-row') as HTMLElement
     fireEvent.click(within(row).getByRole('button', { name: /Review DealerMail handoff for stock/ }))
     await waitFor(() => expect(screen.getByRole('tabpanel', { name: 'Holds & moves' })).toBeVisible())

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useWorkspaceState } from '../../lib/workspace-memory';
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput';
-import { searchFieldsMatch } from '../inventory/inventory-search';
+import { searchFieldsMatch } from '../../lib/search';
 import { CopyableValue } from '../../components/CopyableValue';
 import {
   AlertTriangle,

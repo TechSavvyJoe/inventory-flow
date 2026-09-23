@@ -16,12 +16,6 @@
     "./styles/inventory-production-v10.css"
   ],
   "grandfatheredFilenames": [
-    "src/features/inventory/InventoryExperienceV2.tsx",
-    "src/features/inventory/InventoryPageV2.tsx",
-    "src/features/inventory/VehicleWorkspaceV2.tsx",
-    "src/features/service/ServicePageV2.css",
-    "src/features/service/ServicePageV2.tsx",
-    "src/features/transfers/TransfersPageV2.tsx",
     "src/features/transfers/transfer-workspace-v3.css",
     "src/features/transfers/transfer-workspace-v4.css",
     "src/styles/app-system-polish.css",
@@ -206,13 +200,6 @@
       "important": 0,
       "idSelectors": 0
     },
-    "src/features/service/ServicePageV2.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 3,
-      "important": 0,
-      "idSelectors": 0
-    },
     "src/features/service/ServiceDesk.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -241,55 +228,6 @@
       "important": 62,
       "idSelectors": 7
     },
-    "src/features/inventory/VehicleWorkspace.records.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 0,
-      "idSelectors": 119
-    },
-    "src/features/inventory/VehicleWorkspace.focused.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 1,
-      "idSelectors": 510
-    },
-    "src/features/inventory/TakeHomeSheet.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 2,
-      "idSelectors": 0
-    },
-    "src/components/CertifiedBadge.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 0,
-      "idSelectors": 0
-    },
-    "src/features/inventory/WarrantyOutlook.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 0,
-      "idSelectors": 0
-    },
-    "src/features/inventory/VehicleResourceCards.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 0,
-      "idSelectors": 0
-    },
-    "src/features/inventory/DealerMailHandoff.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 0,
-      "idSelectors": 0
-    },
     "src/features/inventory/InventoryServiceFilter.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -309,6 +247,55 @@
       "rawColors": 35,
       "rgbHslColors": 9,
       "important": 13,
+      "idSelectors": 0
+    },
+    "src/features/inventory/VehicleWorkspace.records.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 119
+    },
+    "src/features/inventory/VehicleWorkspace.focused.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 1,
+      "idSelectors": 510
+    },
+    "src/features/inventory/WarrantyOutlook.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/TakeHomeSheet.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 2,
+      "idSelectors": 0
+    },
+    "src/components/CertifiedBadge.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/VehicleResourceCards.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/DealerMailHandoff.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
       "idSelectors": 0
     },
     "src/features/inventory/InventoryMobile.scan.css": {

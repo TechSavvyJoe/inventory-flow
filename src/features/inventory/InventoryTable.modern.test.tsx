@@ -666,7 +666,7 @@ describe('modern inventory result access', () => {
     const onOpenListing = vi.fn();
     const onRequestVehicle = vi.fn();
     const onTrackMovement = vi.fn();
-    const props = { vehicles: [vehicle], sorts: [] as const, onSortChange: vi.fn(), onSelectVehicle, canRequestVehicle: true, onRequestVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord };
+    const props = { vehicles: [vehicle], sorts: [] as const, onSortChange: vi.fn(), onSelectVehicle, canRequestVehicle: () => true, onRequestVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord };
     const { rerender } = render(<InventoryTable {...props} sorts={[]} />);
     const actions = screen.getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' });
     expect(within(actions).getAllByRole('button').map(button => button.getAttribute('title'))).toEqual(['Open vehicle', 'Open vehicle records', 'Track movement', 'Open listing']);

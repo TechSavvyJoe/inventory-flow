@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { InventoryPredictiveSearch } from '../../src/features/inventory/InventoryPredictiveSearch'
-import { InventoryExperienceV2 } from '../../src/features/inventory/InventoryExperienceV2'
+import { InventoryExperienceHarness } from './inventory-experience-harness'
 import { createMockVehicle } from './testHelpers'
-import type { InventoryDecisionMetrics, InventoryStore } from '../../src/features/inventory/types'
+import type { InventoryStore } from '../../src/features/inventory/types'
 
 describe('Challenger Layout & Accessibility Suite', () => {
   const mockHomeStore: InventoryStore = { id: 'howell', name: 'Howell' }
@@ -28,13 +28,6 @@ describe('Challenger Layout & Accessibility Suite', () => {
     }),
   ]
 
-  const mockMetrics: InventoryDecisionMetrics = {
-    publicUnits: 42,
-    currentHolds: 7,
-    awayFromHome: 3,
-    returnOverdue: 1,
-  }
-
   afterEach(() => {
     cleanup()
   })
@@ -58,7 +51,7 @@ describe('Challenger Layout & Accessibility Suite', () => {
   })
 
   it('renders shared predictive search, filters and sort controls', () => {
-    render(<InventoryExperienceV2 homeStore={mockHomeStore} vehicles={mockVehicles} metrics={mockMetrics} />)
+    render(<InventoryExperienceHarness homeStore={mockHomeStore} vehicles={mockVehicles} />)
     expect(screen.getByRole('combobox', { name: 'Search inventory' })).toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Inventory quick filters' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^All: / })).toHaveAttribute('aria-pressed', 'true')
@@ -67,7 +60,7 @@ describe('Challenger Layout & Accessibility Suite', () => {
   })
 
   it('switching quick filters updates their accessible pressed states', () => {
-    render(<InventoryExperienceV2 homeStore={mockHomeStore} vehicles={mockVehicles} metrics={mockMetrics} />)
+    render(<InventoryExperienceHarness homeStore={mockHomeStore} vehicles={mockVehicles} />)
     const held = screen.getByRole('button', { name: /^Held: / })
     expect(held).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(held)

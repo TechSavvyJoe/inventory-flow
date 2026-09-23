@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode, RefObject } from "react";
+import type { RefObject } from "react";
 import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus';
 import type { DealerMailEvidenceMessage, DealerMailHistoryRecord, ServiceReadiness, ServiceReadinessStatus } from "../../types";
 
@@ -7,12 +7,6 @@ export type InventoryScope = "home" | "group";
 export type SourceDataState = "current" | "stale" | "incomplete" | "unavailable";
 
 export type HoldPosition = "primary" | "backup" | "multiple" | null;
-
-export type InventoryMetricKey =
-  | "publicUnits"
-  | "currentHolds"
-  | "awayFromHome"
-  | "returnOverdue";
 
 export interface InventoryStore {
   id: string;
@@ -550,13 +544,6 @@ export interface InventorySort {
   direction: "asc" | "desc";
 }
 
-export interface InventoryViewState {
-  scope: InventoryScope;
-  query: string;
-  filters: InventoryFilters;
-  sorts: InventorySort[];
-}
-
 export type VehicleWorkspaceTab = "overview" | "equipment" | "movement" | "hold" | "timeline" | "data";
 
 export type InventorySourceRecord = "public" | "dealeron" | "dealermail" | "movement";
@@ -569,86 +556,71 @@ export interface InventoryMoveAction {
   shortLabel: string;
 }
 
-export interface InventoryExperienceProps {
-  TableComponent?: ComponentType<InventoryTableProps>;
-  WorkspaceComponent?: ComponentType<VehicleWorkspaceProps>;
-  toolbarAccessory?: ReactNode;
-  returnLabel?: string;
-  footerAccessory?: ReactNode;
-  vehicleFilter?: (vehicle: InventoryVehicle) => boolean;
-  detailState?: VehicleDetailLoadState;
-  onRetryDetail?: () => void;
+/**
+ * Row and workspace actions shared by the inventory list, its table and the
+ * vehicle workspace. Each surface Picks the members it renders, so an action
+ * is declared once. The server's move decision reaches the list as a
+ * function: InventoryPage resolves it per vehicle from the signed-in role.
+ */
+export interface InventoryVehicleActionProps {
+  canRequestVehicle?: (vehicle: InventoryVehicle) => boolean;
+  moveActionFor?: (vehicle: InventoryVehicle) => InventoryMoveAction | null;
+  onRequestVehicle?: (vehicle: InventoryVehicle) => void;
+  onMoveVehicle?: (vehicle: InventoryVehicle, intent: VehicleMoveIntent) => void;
+  onTrackMovement?: (vehicle: InventoryVehicle) => void;
+  onOpenListing?: (vehicle: InventoryVehicle) => void;
+  onOpenSourceRecord?: (
+    vehicle: InventoryVehicle,
+    source: InventorySourceRecord,
+  ) => void;
+}
+
+/**
+ * Scope and the open vehicle are owned by InventoryPage (URL, then workspace
+ * memory); tab, query, filters, sort and page stay internal to the list.
+ */
+export interface InventoryExperienceProps extends InventoryVehicleActionProps {
   homeStore: InventoryStore;
   vehicles: InventoryVehicle[];
-  metrics: InventoryDecisionMetrics;
   groupStores?: InventoryGroupStore[];
-  title?: string;
-  initialScope?: InventoryScope;
-  scope?: InventoryScope;
+  scope: InventoryScope;
+  onScopeChange: (scope: InventoryScope) => void;
+  selectedVehicleId: string | null;
+  onSelectedVehicleChange: (vehicleId: string | null) => void;
+  detailState?: VehicleDetailLoadState;
+  onRetryDetail?: () => void;
+  returnLabel?: string;
   initialQuery?: string;
   /** A fresh explicit search must override prior local edits to the same text. */
   queryRequestKey?: string;
   /** Separates session-only recent searches by the current signed-in/preview context. */
   searchPersistenceKey?: string;
-  initialFilters?: Partial<InventoryFilters>;
   initialSorts?: InventorySort[];
-  selectedVehicleId?: string | null;
-  defaultSelectedVehicleId?: string | null;
   initialWorkspaceTab?: VehicleWorkspaceTab;
   pageSize?: number;
-  canRequestVehicle?: boolean | ((vehicle: InventoryVehicle) => boolean);
-  moveActionFor?: (vehicle: InventoryVehicle) => InventoryMoveAction | null;
-  onScopeChange?: (scope: InventoryScope) => void;
-  onViewStateChange?: (state: InventoryViewState) => void;
-  onSelectedVehicleChange?: (vehicleId: string | null) => void;
-  onMetricSelect?: (metric: InventoryMetricKey) => void;
-  onGroupStoreSelect?: (store: InventoryStore) => void;
-  onViewVehicle?: (vehicle: InventoryVehicle) => void;
-  onRequestVehicle?: (vehicle: InventoryVehicle) => void;
-  onMoveVehicle?: (vehicle: InventoryVehicle, intent: VehicleMoveIntent) => void;
-  onTrackMovement?: (vehicle: InventoryVehicle) => void;
-  onOpenListing?: (vehicle: InventoryVehicle) => void;
-  onOpenSourceRecord?: (
-    vehicle: InventoryVehicle,
-    source: InventorySourceRecord,
-  ) => void;
-  className?: string;
-  "aria-label"?: string;
 }
 
-export interface InventoryTableProps {
+export interface InventoryTableProps extends InventoryVehicleActionProps {
   vehicles: InventoryVehicle[];
   selectedVehicleId?: string | null;
   sorts: InventorySort[];
   onSortChange: (sorts: InventorySort[]) => void;
   onSelectVehicle: (vehicle: InventoryVehicle, section?: VehicleWorkspaceTab) => void;
-  canRequestVehicle?: boolean | ((vehicle: InventoryVehicle) => boolean);
-  moveActionFor?: (vehicle: InventoryVehicle) => InventoryMoveAction | null;
-  onRequestVehicle?: (vehicle: InventoryVehicle) => void;
-  onMoveVehicle?: (vehicle: InventoryVehicle, intent: VehicleMoveIntent) => void;
-  onTrackMovement?: (vehicle: InventoryVehicle) => void;
-  onOpenListing?: (vehicle: InventoryVehicle) => void;
-  onOpenSourceRecord?: (
-    vehicle: InventoryVehicle,
-    source: InventorySourceRecord,
-  ) => void;
 }
 
-export interface VehicleWorkspaceProps {
-  workspaceAccessory?: ReactNode;
+export interface VehicleWorkspaceProps extends Pick<
+  InventoryVehicleActionProps,
+  "onRequestVehicle" | "onMoveVehicle" | "onTrackMovement" | "onOpenListing"
+> {
   returnLabel?: string;
   detailState?: VehicleDetailLoadState;
   onRetryDetail?: () => void;
   vehicle: InventoryVehicle;
   homeStore: InventoryStore;
+  /** The list's decision already resolved for this one vehicle. */
   canRequestVehicle?: boolean;
   moveAction?: InventoryMoveAction | null;
   initialTab?: VehicleWorkspaceTab;
   returnFocusRef?: RefObject<HTMLElement | null>;
   onClose: () => void;
-  onViewVehicle?: (vehicle: InventoryVehicle) => void;
-  onRequestVehicle?: (vehicle: InventoryVehicle) => void;
-  onMoveVehicle?: (vehicle: InventoryVehicle, intent: VehicleMoveIntent) => void;
-  onTrackMovement?: (vehicle: InventoryVehicle) => void;
-  onOpenListing?: (vehicle: InventoryVehicle) => void;
 }

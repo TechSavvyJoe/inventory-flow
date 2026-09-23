@@ -618,7 +618,7 @@ export function DeskRowActions({
 }: DeskRowActionsProps) {
   const name = vehicleDisplayName(vehicle);
   const listingUrl = vehicle.publicListing.listingUrl?.trim() || null;
-  const requestAllowed = typeof canRequestVehicle === "function" ? canRequestVehicle(vehicle) : canRequestVehicle === true;
+  const requestAllowed = canRequestVehicle?.(vehicle) === true;
   const canTrack = Boolean(onTrackMovement && vehicle.movement?.requestId && vehicleMovementStatus(vehicle));
   const explicitMoveAction = moveActionFor?.(vehicle) ?? null;
   const moveAction = explicitMoveAction ?? (requestAllowed ? { intent: "request" as const, label: "Request vehicle", shortLabel: "Request" } : null);
@@ -733,10 +733,8 @@ type RowActionHandlers = Pick<
 function useStableRowHandlers(handlers: RowActionHandlers): RowActionHandlers {
   const latest = useRef(handlers);
   latest.current = handlers;
-  const canRequest = handlers.canRequestVehicle;
-  const canRequestShape = typeof canRequest === "function" ? "function" : canRequest === true;
   const shape = [
-    String(canRequestShape),
+    Boolean(handlers.canRequestVehicle),
     Boolean(handlers.moveActionFor), Boolean(handlers.onRequestVehicle), Boolean(handlers.onMoveVehicle),
     Boolean(handlers.onTrackMovement), Boolean(handlers.onOpenListing), Boolean(handlers.onOpenSourceRecord),
   ].join();
@@ -746,9 +744,7 @@ function useStableRowHandlers(handlers: RowActionHandlers): RowActionHandlers {
     // `onSelectVehicle(vehicle)` from `onSelectVehicle(vehicle, undefined)`.
     return {
       onSelectVehicle: (...args) => latest.current.onSelectVehicle(...args),
-      canRequestVehicle: canRequestShape === "function"
-        ? (vehicle) => { const check = latest.current.canRequestVehicle; return typeof check === "function" ? check(vehicle) : check === true; }
-        : canRequestShape,
+      canRequestVehicle: current.canRequestVehicle ? (...args) => latest.current.canRequestVehicle?.(...args) ?? false : undefined,
       moveActionFor: current.moveActionFor ? (...args) => latest.current.moveActionFor?.(...args) ?? null : undefined,
       onRequestVehicle: current.onRequestVehicle ? (...args) => latest.current.onRequestVehicle?.(...args) : undefined,
       onMoveVehicle: current.onMoveVehicle ? (...args) => latest.current.onMoveVehicle?.(...args) : undefined,

@@ -10,8 +10,8 @@ import { formatCurrency, formatDate, formatDateTime, formatNumber } from '../../
 import { serviceStatusLabel } from '../../lib/service-readiness'
 import type { AttentionEventInput, AttentionItem, StoreName, UserRole, VehicleRecord } from '../../types'
 import { actionCategory, belongsToActionStore, groupByVehicle, INFORMATIONAL_REASON_LABELS, isActionable, isTaskOverdue, taskLinkLabel, taskTitle, type ActionCategory, type ActionRow } from './action-center'
-import { currentWorkspaceReturnPath, vehicleWorkspacePath, withWorkspaceReturnPath } from '../inventory/inventory-navigation'
-import { searchFieldsMatch } from '../inventory/inventory-search'
+import { currentWorkspaceReturnPath, vehicleWorkspacePath, withWorkspaceReturnPath } from '../../lib/inventory-navigation'
+import { searchFieldsMatch } from '../../lib/search'
 import '../../styles/workflow-pages.css'
 import './OperationsQueue.css'
 

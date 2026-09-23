@@ -30,7 +30,7 @@ import { STORE_NAMES, type StoreName, type UserRole } from '../types'
 import {
   createInventorySearchNavigation,
   inventorySearchAccessContext,
-} from '../features/inventory/inventory-navigation'
+} from '../lib/inventory-navigation'
 import { useAppData } from './AppDataContext'
 import { STORE_BRANDING } from './storeBranding'
 import '../styles/mobile-density.css'

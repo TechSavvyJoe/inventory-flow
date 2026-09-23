@@ -25,8 +25,9 @@ Design and implementation notes are in [Brand architecture](docs/BRAND_ARCHITECT
 ## Release 1.3.0: consistent workspaces and mobile reliability
 
 The default inventory, vehicle, move, and service screens use the established
-V1 layout and shared workflow components. A session-only vehicle shortlist and
-an optional service Board add useful views without changing operational rules.
+V1 layout and shared workflow components. A session-only vehicle shortlist adds
+a useful view without changing operational rules. (The optional service Board
+was retired; Service is a single list.)
 Shortlists and in-memory view state clear when access changes; customer notes
 are never written to browser storage.
 

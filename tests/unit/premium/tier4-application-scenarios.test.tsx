@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { InventoryExperienceV2 } from '../../../src/features/inventory/InventoryExperienceV2'
+import { InventoryExperienceHarness } from '../inventory-experience-harness'
 import { clearCustomerShortlist } from '../../../src/features/inventory/useCustomerShortlist'
-import { premiumMetrics, premiumStore, premiumVehicle, showPremiumInventory, showPremiumVehicle } from '../premium-test-helpers'
+import { premiumStore, premiumVehicle, showPremiumInventory, showPremiumVehicle } from '../premium-test-helpers'
 
 beforeEach(() => { clearCustomerShortlist(); sessionStorage.clear() })
 afterEach(() => { cleanup(); clearCustomerShortlist() })
@@ -17,7 +17,7 @@ describe('Premium dealership scenarios', () => {
     expect(move).toHaveBeenCalledWith(vehicle, 'direct')
   })
   it('does not expose creation actions when the role cannot request or directly move', () => {
-    showPremiumInventory([premiumVehicle()], { canRequestVehicle: false, moveActionFor: () => null })
+    showPremiumInventory([premiumVehicle()], { canRequestVehicle: () => false, moveActionFor: () => null })
     const grid = within(screen.getByRole('region', { name: 'Inventory results table' }))
     expect(grid.queryByRole('button', { name: /^Move vehicle / })).not.toBeInTheDocument()
     expect(grid.queryByRole('button', { name: /^Request vehicle / })).not.toBeInTheDocument()
@@ -25,10 +25,10 @@ describe('Premium dealership scenarios', () => {
   })
   it('clears customer interest when the same browser changes authenticated context', () => {
     const vehicle = premiumVehicle()
-    const base = { vehicles: [vehicle], homeStore: premiumStore, metrics: premiumMetrics, defaultSelectedVehicleId: vehicle.id }
-    const page = render(<InventoryExperienceV2 {...base} searchPersistenceKey="manager:Howell:alice" />)
+    const base = { vehicles: [vehicle], homeStore: premiumStore, initialSelectedVehicleId: vehicle.id }
+    const page = render(<InventoryExperienceHarness {...base} searchPersistenceKey="manager:Howell:alice" />)
     fireEvent.click(screen.getByRole('button', { name: /Add SYNTHETIC-001 to shortlist/ }))
-    page.rerender(<InventoryExperienceV2 {...base} searchPersistenceKey="sales:Lincoln:bob" />)
+    page.rerender(<InventoryExperienceHarness {...base} searchPersistenceKey="sales:Lincoln:bob" />)
     expect(screen.getByRole('button', { name: /Add SYNTHETIC-001 to shortlist/ })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.queryByRole('region', { name: 'Customer shortlist' })).not.toBeInTheDocument()
   })

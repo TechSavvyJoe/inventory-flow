@@ -9,7 +9,7 @@ import { InventoryPage } from '../../src/features/inventory/InventoryPage'
 import {
   createInventorySearchNavigation,
   inventorySearchAccessContext,
-} from '../../src/features/inventory/inventory-navigation'
+} from '../../src/lib/inventory-navigation'
 import type { BootstrapData, StoreName, UserRole } from '../../src/types'
 
 const mockState = vi.hoisted(() => ({

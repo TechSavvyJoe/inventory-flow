@@ -1,4 +1,4 @@
-import type { StoreName, UserRole } from '../../types'
+import type { StoreName, UserRole } from '../types'
 
 const INVENTORY_SEARCH_STATE_KEY = 'inventorySearchRequest'
 
