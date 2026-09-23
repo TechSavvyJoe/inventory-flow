@@ -1,3 +1,4 @@
+// PRODUCT-RULE TEST
 // @ts-nocheck -- server modules intentionally use the Node ESM runtime without a frontend declaration bundle.
 // @vitest-environment node
 

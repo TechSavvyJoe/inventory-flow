@@ -1,3 +1,4 @@
+// PRODUCT-RULE TEST
 // @ts-nocheck -- repository safety helper intentionally uses Node ESM.
 // @vitest-environment node
 

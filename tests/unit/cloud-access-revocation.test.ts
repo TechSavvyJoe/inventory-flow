@@ -1,3 +1,4 @@
+// PRODUCT-RULE TEST
 // @ts-nocheck -- real signed JWT and SQL membership checks; fabricated identities only.
 // @vitest-environment node
 import { DatabaseSync } from 'node:sqlite'

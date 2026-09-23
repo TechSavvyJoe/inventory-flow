@@ -1,3 +1,4 @@
+// PRODUCT-RULE TEST
 // @ts-nocheck -- service is portable ESM; these fixtures contain synthetic data only.
 import { describe, expect, it, vi } from 'vitest'
 import { createIntegrationReadService, IntegrationReadError } from '../../server/integrations/read-service.mjs'

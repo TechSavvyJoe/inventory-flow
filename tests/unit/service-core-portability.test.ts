@@ -1,3 +1,4 @@
+// PRODUCT-RULE TEST
 // @ts-nocheck -- service adapters intentionally use platform-neutral ESM contracts.
 // @vitest-environment node
 

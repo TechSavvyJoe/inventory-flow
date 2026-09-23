@@ -1,3 +1,4 @@
+// PRODUCT-RULE TEST
 import { useLocation } from 'react-router-dom'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
