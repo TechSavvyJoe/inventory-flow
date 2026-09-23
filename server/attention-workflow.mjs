@@ -69,11 +69,15 @@ function requiredText(value, field, maxLength = 1000) {
   return text
 }
 
+// Same rule as the move workflow: a zone-less value would be read in the
+// server's zone, so the client must send an unambiguous instant.
+const ZONED_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})$/i
+
 function isoTimestamp(value, field) {
   const text = optionalText(value, field, 100)
   if (!text) return null
-  const timestamp = Date.parse(text)
-  if (!Number.isFinite(timestamp)) throw new WorkflowError(`${field} must be a valid date and time`, { details: { field } })
+  const timestamp = ZONED_ISO_TIMESTAMP.test(text) ? Date.parse(text) : Number.NaN
+  if (!Number.isFinite(timestamp)) throw new WorkflowError(`${field} must be an ISO timestamp with an explicit timezone`, { details: { field } })
   return new Date(timestamp).toISOString()
 }
 
