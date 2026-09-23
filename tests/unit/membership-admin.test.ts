@@ -49,6 +49,17 @@ describe('Membership administration', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM cloud_memberships').get().count).toBe(2)
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM cloud_membership_events').get().count).toBe(1)
   })
+  it('does not report a conflict when only unrelated app activity advanced the global revision', async () => {
+    const { db, sqlite } = harness()
+    const directory = await readMembershipAdmin(db, context)
+    // A transfer or release commit elsewhere bumps cloud_app_revision while the
+    // form is open; the directory itself is unchanged.
+    sqlite.prepare('UPDATE cloud_app_revision SET revision=revision+5 WHERE id=1').run()
+    const saved = await saveMembership(db, input({ expectedRevision: directory.revision }), context, 'unrelated-activity')
+    expect(saved).toMatchObject({ saved: true, replayed: false })
+    expect((await readMembershipAdmin(db, context)).revision).toBe(directory.revision + 1)
+    expect(sqlite.prepare('SELECT revision FROM cloud_app_revision').get().revision).toBe(6)
+  })
   it('rejects spoofed roles, disabled actors, email reassignment and self-demotion', async () => {
     const { db, sqlite } = harness()
     await expect(saveMembership(db, input(), { ...context, role: 'sales' }, 'denied')).rejects.toMatchObject({ status: 403 })

@@ -14,7 +14,7 @@ The initial group manager is configured by a trusted owner with access to the pr
 
 Apply only `cloudflare/migrations/0009_membership_admin.sql` to an already migrated database before deploying the membership-management routes. It adds the append-only access history and final-group-manager protection triggers. It does not change memberships or other business data. Generic migration execution remains blocked by the repository's release safeguards.
 
-`GET /api/admin/members` returns the membership directory, current revision and recent access history. `POST /api/admin/members` requires the signed-in enabled group-manager membership, same-origin request, an idempotency key, a supported role and store, and the revision seen by the editor. The directory change, audit event and application revision advance commit atomically. A stale editor must reload and review the change again.
+`GET /api/admin/members` returns the membership directory, current revision and recent access history. `POST /api/admin/members` requires the signed-in enabled group-manager membership, same-origin request, an idempotency key, a supported role and store, and the directory revision seen by the editor. That revision is the length of the append-only access history, so unrelated move or release activity does not invalidate an open form. The directory change, audit event and application revision advance commit atomically. A stale editor must reload and review the change again.
 
 ## Local demo
 

@@ -4,7 +4,7 @@ export const INTEGRATION_SCOPES = Object.freeze(['inventory.read', 'changes.read
 export const INTEGRATION_STORES = Object.freeze(['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln'])
 const READER_ROLES = ['sales', 'manager', 'group_manager']
 const TOKEN_PATTERN = /^iflow_([a-f0-9]{32})_([A-Za-z0-9_-]{43})$/
-const AUDIT_OPERATIONS = new Set(['health', 'inventory_list', 'inventory_get', 'operational_inventory_search', 'vehicle_resources_get', 'changes_list', 'daily_operations_get', 'data_quality_get', 'reconciliation_get', 'holds_summary', 'manager_dispositions_list', 'mcp_initialize', 'mcp_tools_list', 'mcp_tools_call', 'mcp_notification', 'other'])
+export const AUDIT_OPERATIONS = new Set(['health', 'inventory_list', 'inventory_get', 'operational_inventory_search', 'vehicle_resources_get', 'changes_list', 'daily_operations_get', 'data_quality_get', 'reconciliation_get', 'holds_summary', 'manager_dispositions_list', 'mcp_initialize', 'mcp_tools_list', 'mcp_tools_call', 'mcp_notification', 'other'])
 const AUDIT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 // Per client, not global. Every rejection is audited too, including the 429 a
 // client gets for exceeding its own quota — the one outcome a misbehaving
