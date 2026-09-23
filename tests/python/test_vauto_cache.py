@@ -76,6 +76,9 @@ class VautoPdfCacheTests(unittest.TestCase):
             self.assertEqual(index["byVin"][VIN]["sourceUrl"], JPG_URL)
             self.assertTrue((root / "work" / "vauto-documents" / "objects" /
                              f"{index['byVin'][VIN]['sha256']}.pdf").exists())
+            snapshot = json.loads((root / "work" / "vauto-documents" / "snapshots" /
+                                   "2026-09-23-index.json").read_text())
+            self.assertEqual(snapshot["byVin"][VIN]["sha256"], index["byVin"][VIN]["sha256"])
 
     def test_transient_failure_can_retry_on_the_same_day(self):
         with tempfile.TemporaryDirectory() as temporary:

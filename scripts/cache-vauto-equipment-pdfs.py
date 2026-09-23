@@ -204,6 +204,17 @@ def cache_documents(root: Path, report_date: str, budget_seconds: int = 600, lim
             persist_index()
             print(json.dumps({"vin": vin, "status": "not_saved", "reason": str(exc)[:120]}), flush=True)
     persist_index()
+    snapshots = folder / "snapshots"
+    snapshots.mkdir(exist_ok=True)
+    snapshot = snapshots / f"{report_date}-index.json"
+    temporary = snapshots / f".{report_date}.{os.getpid()}.tmp"
+    temporary.write_text(json.dumps({
+        "schema": "vauto-equipment-pdf-snapshot-v1", "reportDate": report_date,
+        "activeVins": len(vins), "sourceDocuments": len(sources),
+        "byVin": {vin: by_vin[vin] for vin in sorted(vins) if vin in by_vin},
+        "failures": {vin: failures[vin] for vin in sorted(vins) if vin in failures},
+    }, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(snapshot)
     return {"reportDate": report_date, "active": len(vins), "sourceDocuments": len(sources),
             "saved": saved, "reused": skipped, "failed": failed,
             "unavailableToday": skipped_failed + failed,

@@ -358,7 +358,10 @@ day's public snapshot: every VIN, any make, minus VINs OK in any prior capture
 
 `scripts\cache-vauto-equipment-pdfs.py` keeps one content-hashed, VIN-linked
 printable PDF under `work\vauto-documents\objects\` and an index at
-`work\vauto-documents\index.json`. The approved vAuto PDF is preferred; a
+`work\vauto-documents\index.json`. A dated VIN-to-hash snapshot under
+`work\vauto-documents\snapshots\` is copied into the historical reporting
+archive; the content-addressed PDF objects remain in the controlled cache.
+The approved vAuto PDF is preferred; a
 JPEG-only source becomes a labeled printable PDF. A confirmed 404 is recorded
 and skipped for the rest of that report day; a transient connection error can
 retry. These are informational vAuto equipment references, never verified
