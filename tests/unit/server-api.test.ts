@@ -1579,4 +1579,35 @@ describe('Inventory Flow API', () => {
       expect(items, `sort=${key} should use the default order`).toEqual(expected)
     }
   })
+
+  it('answers an unchanged bootstrap poll with a 304 and issues a fresh ETag once a transfer event changes it', async () => {
+    const { baseUrl } = await harness()
+    const headers = roleHeaders('sales', 'Fowlerville', 'ETag Test Salesperson')
+    const first = await fetch(`${baseUrl}/api/bootstrap?homeStore=Fowlerville&role=sales`, { headers })
+    expect(first.status).toBe(200)
+    const etag = first.headers.get('etag')
+    expect(etag).toBeTruthy()
+    const firstBody = await first.text()
+    expect(firstBody.length).toBeGreaterThan(0)
+
+    const revalidated = await fetch(`${baseUrl}/api/bootstrap?homeStore=Fowlerville&role=sales`, {
+      headers: { ...headers, 'if-none-match': etag! },
+    })
+    expect(revalidated.status).toBe(304)
+    expect(await revalidated.text()).toBe('')
+    expect(revalidated.headers.get('etag')).toBe(etag)
+
+    const seed = await fetch(`${baseUrl}/api/bootstrap?homeStore=Fowlerville&role=sales`, { headers }).then((response) => response.json())
+    const vehicle = seed.vehicles.find((row: { publicStore: string }) => row.publicStore === 'Howell')
+    const created = await createSalesRequest(baseUrl, vehicle, 'ETag Test Salesperson')
+    expect(created.response.status).toBe(201)
+
+    const afterWrite = await fetch(`${baseUrl}/api/bootstrap?homeStore=Fowlerville&role=sales`, {
+      headers: { ...headers, 'if-none-match': etag! },
+    })
+    expect(afterWrite.status).toBe(200)
+    const nextEtag = afterWrite.headers.get('etag')
+    expect(nextEtag).toBeTruthy()
+    expect(nextEtag).not.toBe(etag)
+  })
 })

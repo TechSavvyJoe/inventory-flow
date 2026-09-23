@@ -2,7 +2,7 @@
 // @vitest-environment node
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 import { generateKeyPair, exportJWK, SignJWT } from 'jose'
-import worker, { prepareTransportAssignment, readJson, resolveTransportAssignment } from '../../cloudflare/src/worker.mjs'
+import worker, { jsonRevalidated, prepareTransportAssignment, readJson, resolveTransportAssignment } from '../../cloudflare/src/worker.mjs'
 import { memberContext, verifyAccess } from '../../cloudflare/src/access.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
 
@@ -180,5 +180,26 @@ describe('Cloud Worker authentication boundary',()=>{
       replay,
     })
     expect(prepare).not.toHaveBeenCalled()
+  })
+
+  it('mirrors the Node server: a matching validator gets a 304 with no body, and a changed document gets a new ETag',async()=>{
+    const data={meta:{reportDate:'2026-09-22'},vehicles:[]}
+    const first=await jsonRevalidated(new Request('https://synthetic.invalid'),data)
+    expect(first.status).toBe(200)
+    const etag=first.headers.get('ETag')
+    expect(etag).toBeTruthy()
+    expect(await first.text()).toBe(JSON.stringify(data))
+
+    const revalidated=await jsonRevalidated(new Request('https://synthetic.invalid',{headers:{'if-none-match':etag}}),data)
+    expect(revalidated.status).toBe(304)
+    expect(await revalidated.text()).toBe('')
+    expect(revalidated.headers.get('ETag')).toBe(etag)
+
+    const changed={...data,vehicles:[{vin:'SYNTHETIC-VIN-1'}]}
+    const afterChange=await jsonRevalidated(new Request('https://synthetic.invalid',{headers:{'if-none-match':etag}}),changed)
+    expect(afterChange.status).toBe(200)
+    const nextEtag=afterChange.headers.get('ETag')
+    expect(nextEtag).toBeTruthy()
+    expect(nextEtag).not.toBe(etag)
   })
 })

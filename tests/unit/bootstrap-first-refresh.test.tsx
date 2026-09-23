@@ -28,8 +28,11 @@ const okResponse = (etag: string, reportDate = '2026-09-22') => new Response(JSO
 })
 const headerAt = (index: number, name: string) => new Headers(fetchMock.mock.calls[index]?.[1]?.headers).get(name)
 
+let loadingHistory: boolean[] = []
+
 function Probe() {
   context = useAppData()
+  loadingHistory.push(context.loading)
   return <output data-testid="report">{context.data?.meta.reportDate ?? 'none'}</output>
 }
 
@@ -38,10 +41,12 @@ describe('first bootstrap refresh after load', () => {
     fetchMock.mockReset()
     vi.stubGlobal('fetch', fetchMock)
     window.localStorage.clear()
+    loadingHistory = []
   })
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   it('sends If-None-Match on the very first refresh and keeps the same data object on 304', async () => {
@@ -74,5 +79,62 @@ describe('first bootstrap refresh after load', () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 304 }))
     await act(async () => { await context.refresh() })
     expect(headerAt(2, 'If-None-Match')).toBe('"second"')
+  })
+
+  it('never flips loading to true on an unattended foreground timer poll once data is loaded', async () => {
+    // The interval that drives the poll is created at mount, so fake timers
+    // must be installed before render — switching to them afterward would
+    // leave that interval bound to the real clock.
+    vi.useFakeTimers()
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    fetchMock.mockResolvedValueOnce(okResponse('"a"'))
+    render(<AppDataProvider><Probe /></AppDataProvider>)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByTestId('report')).toHaveTextContent('2026-09-22')
+    const loaded = context.data
+    expect(context.loading).toBe(false)
+
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 304, headers: { ETag: '"a"' } }))
+    const historyBeforePoll = loadingHistory.length
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(headerAt(1, 'If-None-Match')).toBe('"a"')
+    // Every render since the timer fired kept loading false — the button
+    // never spins and no "Loading the full vehicle record…" flash occurs.
+    expect(loadingHistory.slice(historyBeforePoll)).not.toContain(true)
+    expect(context.data).toBe(loaded)
+    expect(context.loading).toBe(false)
+    expect(context.lastCheckedAt).not.toBeNull()
+    visibility.mockRestore()
+  })
+
+  it('shows loading when a manual refresh click joins an in-flight background timer poll', async () => {
+    vi.useFakeTimers()
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    fetchMock.mockResolvedValueOnce(okResponse('"a"'))
+    render(<AppDataProvider><Probe /></AppDataProvider>)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByTestId('report')).toHaveTextContent('2026-09-22')
+    expect(context.loading).toBe(false)
+
+    let unblock!: (response: Response) => void
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => { unblock = resolve }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+    // The background poll is now in flight and did not show loading.
+    expect(context.loading).toBe(false)
+
+    let clicked!: Promise<void>
+    act(() => { clicked = context.refresh() })
+    // A foreground ask joining that same in-flight read must spin the button.
+    expect(context.loading).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      unblock(new Response(null, { status: 304, headers: { ETag: '"a"' } }))
+      await clicked
+    })
+    expect(context.loading).toBe(false)
+    visibility.mockRestore()
   })
 })

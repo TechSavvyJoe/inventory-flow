@@ -263,7 +263,7 @@ export function resetReleaseCache() { releaseCache=null }
 // The bootstrap is refreshed on a timer by every open tab. A validator lets an
 // unchanged document answer 304 with no body instead of the full payload; the
 // response stays private and uncacheable for intermediaries.
-async function jsonRevalidated(request,data) {
+export async function jsonRevalidated(request,data) {
   const body=JSON.stringify(data)
   const digest=await crypto.subtle.digest('SHA-256',encoder.encode(body))
   const etag=`"${Array.from(new Uint8Array(digest),(byte)=>byte.toString(16).padStart(2,'0')).join('').slice(0,40)}"`
