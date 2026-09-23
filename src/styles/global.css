@@ -239,31 +239,6 @@ textarea:focus-visible,
   margin-bottom: 18px;
 }
 
-.state-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  color: var(--neutral);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.state-label svg {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 auto;
-  stroke-width: 1.9;
-}
-
-.state-blue { color: var(--blue-600); }
-.state-green { color: var(--green); }
-.state-amber { color: var(--amber); }
-.state-red { color: var(--red); }
-.state-violet { color: var(--violet); }
-.state-neutral { color: var(--neutral); }
-
 .source-warning {
   display: flex;
   align-items: flex-start;

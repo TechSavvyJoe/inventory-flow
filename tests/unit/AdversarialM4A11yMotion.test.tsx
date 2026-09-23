@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import React, { Suspense, useState } from 'react'
+import React, { Suspense } from 'react'
 import { render, screen, fireEvent, cleanup, act, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import fs from 'node:fs'
@@ -9,16 +9,12 @@ import {
   motion,
   motionValue,
   MotionConfig,
-  AnimatePresence,
   useReducedMotion,
 } from 'framer-motion'
 import {
   isV1Requested,
-  loadInventoryPage,
   loadInventoryPageV1,
   loadInventoryPageV2,
-  loadTransfersPage,
-  loadServicePage,
   preloadRoute,
   InventoryPage,
   TransfersPage,
@@ -38,7 +34,7 @@ import { createMotionPreference } from './motion-test-utils'
 // Test Data & Shared Mocks
 // ============================================================================
 
-const { mockVehicle1, mockVehicle2, mockVehicle3, mockTransfer1, mockBootstrap, mockAppData } = vi.hoisted(() => {
+const { mockVehicle1, mockTransfer1, mockAppData } = vi.hoisted(() => {
   const v1 = {
     id: 'VIN1FTFW1E86HFA11111',
     vin: '1FTFW1E86HFA11111',

@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import React from 'react';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -352,7 +351,6 @@ describe('Adversarial Challenger 1: Table Grid Layout & Alignment', () => {
         );
       }
 
-      const startTime = performance.now();
       render(
         <InventoryTableV2
           vehicles={testVehicles}
@@ -361,7 +359,6 @@ describe('Adversarial Challenger 1: Table Grid Layout & Alignment', () => {
           onSelectVehicle={vi.fn()}
         />
       );
-      const renderDurationMs = performance.now() - startTime;
 
       // Ensure all 100 rows rendered with all cells intact
       const renderedRows = document.querySelectorAll('tbody tr.inventory-table-v2-row');

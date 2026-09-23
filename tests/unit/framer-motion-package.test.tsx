@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { renderToString } from 'react-dom/server'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { motion, motionValue, AnimatePresence, useAnimation, useReducedMotion } from 'framer-motion'

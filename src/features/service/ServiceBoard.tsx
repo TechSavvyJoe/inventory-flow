@@ -12,7 +12,6 @@ import { oasisActionLabel } from "../inventory/vehicle-resource-catalog";
 import { CopyableValue } from "../../components/CopyableValue";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
-  Calendar,
   CarFront,
   CheckCircle2,
   Clock3,

@@ -1,17 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import React, { useState } from 'react'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
-import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import { MemoryRouter } from 'react-router-dom'
 import {
   motion,
   motionValue,
   MotionConfig,
   AnimatePresence,
   useReducedMotion,
-  useAnimation,
-  usePresence,
-  useIsPresent,
-  useMotionValue,
 } from 'framer-motion'
 import {
   isV1Requested,
@@ -26,8 +22,6 @@ import {
   loadServicePageV2,
   preloadRoute,
   InventoryPage,
-  TransfersPage,
-  ServicePage,
 } from '../../src/app/routeModules'
 import fs from 'node:fs'
 import path from 'node:path'

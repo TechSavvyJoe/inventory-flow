@@ -1,5 +1,4 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { InventoryExperience } from '../../src/features/inventory/InventoryExperience'
 import { InventoryTable } from '../../src/features/inventory/InventoryTable'

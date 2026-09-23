@@ -1,14 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { InventoryTableV2 } from '../../src/features/inventory/InventoryTableV2';
 import { ServicePageV2 } from '../../src/features/service/ServicePageV2';
 import { TransfersPageV2, calculateCountdown } from '../../src/features/transfers/TransfersPageV2';
-import type { InventoryStore, InventoryVehicle } from '../../src/features/inventory/types';
 import type { BootstrapData, VehicleRecord, TransferRecord } from '../../src/types';
 import { createMockVehicle, setupClipboardMock } from './testHelpers';
 
-const { mockVehicle1, mockVehicle2, mockVehicle3, mockTransfer1, mockTransfer2, mockBootstrap, mockAppData } = vi.hoisted(() => {
+const { mockVehicle1, mockTransfer1, mockAppData } = vi.hoisted(() => {
   const v1 = {
     vin: '1FTFW1E86HFA11111',
     stockNumber: 'STK101',
