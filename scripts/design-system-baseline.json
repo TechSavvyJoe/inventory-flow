@@ -14,7 +14,7 @@
   ],
   "files": {
     "src/styles/shell.css": {
-      "smallText": 7,
+      "smallText": 0,
       "rawColors": 23,
       "rgbHslColors": 20,
       "important": 3,
@@ -91,14 +91,14 @@
       "idSelectors": 0
     },
     "src/features/transfers/transfers-page.css": {
-      "smallText": 5,
+      "smallText": 3,
       "rawColors": 36,
       "rgbHslColors": 2,
       "important": 0,
       "idSelectors": 0
     },
     "src/features/transfers/transfer-workspace-v3.css": {
-      "smallText": 48,
+      "smallText": 47,
       "rawColors": 145,
       "rgbHslColors": 9,
       "important": 29,
@@ -175,14 +175,14 @@
       "idSelectors": 45
     },
     "src/features/inventory/inventory-modern.css": {
-      "smallText": 55,
+      "smallText": 51,
       "rawColors": 188,
       "rgbHslColors": 44,
       "important": 1,
       "idSelectors": 0
     },
     "src/features/inventory/inventory.css": {
-      "smallText": 21,
+      "smallText": 19,
       "rawColors": 35,
       "rgbHslColors": 9,
       "important": 13,

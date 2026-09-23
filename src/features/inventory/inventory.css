@@ -137,7 +137,7 @@
   align-items: center;
   gap: 6px;
   color: var(--inventory-text);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -281,7 +281,7 @@
 .inventory-quick-filter-count {
   min-width: 21px;
   height: 21px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .inventory-page-size > span {

@@ -1155,7 +1155,7 @@
 }
 
 .inventory-current-location > span:nth-child(2) { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.inventory-current-location strong { font-size: 11.5px; }
+.inventory-current-location strong { font-size: 12px; }
 .inventory-current-location small { color: #5c7185; font-size: 9px; }
 .inventory-location-badge { white-space: nowrap; }
 
@@ -1204,18 +1204,18 @@
   border-radius: 9px;
   color: #745019;
   background: #fff8e9;
-  font-size: 9.5px;
+  font-size: 12px;
   line-height: 1.4;
 }
 
 .inventory-availability-note > svg { flex: 0 0 auto; margin-top: 1px; }
-.inventory-availability-note strong { display: block; color: #66420d; font-size: 10px; }
+.inventory-availability-note strong { display: block; color: #66420d; font-size: 13px; font-weight: 600; }
 .inventory-availability-note--danger { margin: 0 0 12px; border-color: #e5a8a8; color: #872b2b; background: #fff1f1; }
 .inventory-availability-note--danger strong { color: #872b2b; }
 
 .inventory-workspace-empty--compact { min-height: 150px; padding: 18px; }
 .inventory-workspace-empty--compact h3 { font-size: 13px; }
-.inventory-workspace-empty--compact p { margin: 5px 0 10px; color: #647588; font-size: 10px; }
+.inventory-workspace-empty--compact p { margin: 5px 0 10px; color: #647588; font-size: 12px; }
 
 .inventory-timeline { position: relative; display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 .inventory-timeline > li { position: relative; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; padding-bottom: 12px; }
