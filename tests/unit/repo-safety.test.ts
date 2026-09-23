@@ -49,6 +49,18 @@ describe('repository safety gate', () => {
     )
   })
 
+  it('rejects raster captures outside the reviewed asset folders', () => {
+    const root = temporaryRepository()
+    mkdirSync(path.join(root, 'public', 'brands'), { recursive: true })
+    mkdirSync(path.join(root, 'src', 'features'), { recursive: true })
+    for (const name of ['loaded_app.png', 'public/brands/store.png', 'src/features/table.jpg']) {
+      writeFileSync(path.join(root, ...name.split('/')), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+    }
+    const result = inspectRepository(root)
+    const flagged = result.findings.filter((finding) => /raster captures/.test(finding.reason)).map((finding) => finding.file)
+    expect(flagged).toEqual(['loaded_app.png', 'src/features/table.jpg'])
+  })
+
   it('flags a literal credential in a PowerShell script', () => {
     const root = temporaryRepository()
     const syntheticToken = `ghp_${'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcd'}`

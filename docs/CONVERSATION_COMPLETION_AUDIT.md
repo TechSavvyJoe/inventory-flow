@@ -66,13 +66,13 @@ to the Chrome companion. The rejected V2 visual style is not the target.
   source or test audit cannot approve uninspected screens, physical-device
   behavior, employee sign-in or real source integrations.
 - Final inspected captures:
-  [Service desktop composition, 68](/tmp/inventory-skill-audit/68-service-final-desktop.png),
-  [full-width reference body, 62](/tmp/inventory-skill-audit/62-service-reference-full-width.png),
-  [Service mobile, 63](/tmp/inventory-skill-audit/63-service-final-mobile.png),
-  [verified 150% photo zoom, 64](/tmp/inventory-skill-audit/64-service-photo-150-percent.png),
-  [centered desktop facts, 65](/tmp/inventory-skill-audit/65-centered-facts-desktop.png),
-  [manager presets on mobile, 66](/tmp/inventory-skill-audit/66-manager-mobile-saved-views.png)
-  and [Updates predictive search, 67](/tmp/inventory-skill-audit/67-updates-predictive-mobile.png).
+  Service desktop composition, 68,
+  full-width reference body, 62,
+  Service mobile, 63,
+  verified 150% photo zoom, 64,
+  centered desktop facts, 65,
+  manager presets on mobile, 66
+  and Updates predictive search, 67.
   No overflow/clipping was observed in these captures. They remain local
   artifacts. Capture 57 was at 100% and is not zoom evidence; earlier desktop
   side-column layouts and phone captures are superseded.

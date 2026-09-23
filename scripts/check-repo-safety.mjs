@@ -44,6 +44,14 @@ const FORBIDDEN_PATHS = [
   { pattern: /(^|\/)(?:work|outputs|exports)\//i, reason: 'report artifacts and exports are not repository data' },
   { pattern: /(^|\/)__pycache__\//i, reason: 'Python bytecode is generated locally' },
   { pattern: /(^|\/)design\/.*\.(?:png|jpe?g|webp|heic)$/i, reason: 'unreviewed raster captures may contain live VIN or hold details' },
+  {
+    // Reviewed brand, demo, and companion rasters live under public/ and
+    // extension/; design/ captures are gitignored. A screenshot dropped at the
+    // repository root or beside source is an unreviewed capture.
+    pattern: /\.(?:png|jpe?g|webp|heic|gif|bmp|tiff?)$/i,
+    reason: 'raster captures belong under public/ or extension/ after review; keep PR screenshots out of the repository',
+    allow: /^(?:public|extension|design)\//,
+  },
   { pattern: /(?:^|\/)\.env(?:\..+)?$/i, reason: 'environment files may contain secrets', allow: /^\.env\.example$/i },
   { pattern: /\.(?:sqlite(?:-shm|-wal|-journal)?|db|log|har|xlsx?|csv|jsonl|zip)$/i, reason: 'database, log, browser, report, or bulk-data artifact' },
   {

@@ -89,15 +89,15 @@ the relevant workflow checks are complete.
   Current synthetic review captures include `46-records-highlights-mobile.png`
   and `47-records-highlights-desktop.png`; all full reports remain reachable.
 - Final inspected Service desktop composition:
-  [top layout at 1440×1000, capture 68](/tmp/inventory-skill-audit/68-service-final-desktop.png),
+  top layout at 1440×1000, capture 68,
   with a 240px gallery, adjacent status/history and the full-width reference
-  immediately below; [reference body, capture 62](/tmp/inventory-skill-audit/62-service-reference-full-width.png).
+  immediately below; reference body, capture 62.
   Final phone evidence:
-  [Service mobile, capture 63](/tmp/inventory-skill-audit/63-service-final-mobile.png)
-  and [verified 150% photo zoom, capture 64](/tmp/inventory-skill-audit/64-service-photo-150-percent.png).
-  Also inspected: [centered desktop facts, capture 65](/tmp/inventory-skill-audit/65-centered-facts-desktop.png)
-  [manager mobile presets, capture 66](/tmp/inventory-skill-audit/66-manager-mobile-saved-views.png)
-  and [Updates predictive search, capture 67](/tmp/inventory-skill-audit/67-updates-predictive-mobile.png).
+  Service mobile, capture 63
+  and verified 150% photo zoom, capture 64.
+  Also inspected: centered desktop facts, capture 65
+  manager mobile presets, capture 66
+  and Updates predictive search, capture 67.
   No overflow was observed in these captures. Captures 59–61 are superseded by
   62; capture 57 showed 100% and is not zoom evidence. Earlier phone captures
   56/58 are superseded by 63 for the final layout.
