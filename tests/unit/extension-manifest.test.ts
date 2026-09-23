@@ -30,9 +30,9 @@ describe('Deal Desk extension manifest', () => {
     }
   })
 
-  it('asks for the minimum permissions and only the app origins', () => {
-    expect(manifest.permissions.sort()).toEqual(['contextMenus', 'sidePanel', 'storage'])
-    expect(manifest.host_permissions).toEqual(['https://inventory-ops.joegallant.me/*', 'http://127.0.0.1:4173/*', 'http://localhost:4173/*'])
+  it('limits authenticated reads to the app and DealerMail inventory tab', () => {
+    expect(manifest.permissions.sort()).toEqual(['contextMenus', 'scripting', 'sidePanel', 'storage'])
+    expect(manifest.host_permissions).toEqual(['https://inventory-ops.joegallant.me/*', 'https://www.dealermail.com/*', 'https://dealermail.com/*', 'http://127.0.0.1:4173/*', 'http://localhost:4173/*'])
     expect(manifest.optional_permissions).toBeUndefined()
   })
 

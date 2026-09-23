@@ -545,6 +545,7 @@ export function buildPanelData(bootstrap, { now = Date.now(), origin = null } = 
     meta: {
       reportDate: text(meta.reportDate),
       completedAt: text(meta.completedAt),
+      dealerMailCapturedAt: text(meta.dealerMailCapturedAt),
       publicFreshness: dataState(meta.publicFreshness),
       dealerMailFreshness: dataState(meta.dealerMailFreshness),
       heldVinCount: number(meta.heldVinCount) ?? vehicles.filter((item) => item.hold.hasActiveHold).length,

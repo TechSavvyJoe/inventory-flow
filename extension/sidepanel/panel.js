@@ -15,6 +15,7 @@ import { copyText, host, openExtensionPage, openUrl, placeholderPhotos, previewF
 import { takeHomeModel } from './lib/takehome.mjs'
 import { serviceWorkflowStatus } from './lib/service-readiness.mjs'
 import { sourceDisplayText } from './lib/source-text.mjs'
+import { dealerMailTabId, checkLiveDealerMailHold, withLiveDealerMailHold } from './lib/live-dealermail-hold.mjs'
 import { resourceSummaries } from './lib/resources.mjs'
 import { syntheticPreviewPhotos } from './lib/synthetic-photos.mjs'
 
@@ -38,6 +39,7 @@ const state = {
   filters: { ...EMPTY_FILTERS }, sort: 'relevance', sheetKind: 'settings',
   loading: false, error: null, fetchedAt: null, controller: null, toastTimer: null, sheetReturnFocus: null, previousView: 'list',
   dataGeneration: 0,
+  liveHoldChecks: new Map(),
 }
 
 /* Icons that live in static markup */
@@ -100,11 +102,41 @@ function cacheKey() {
 
 function vehicleByVin(vin) { return state.data?.vehicles.find((item) => item.vin === vin) ?? null }
 
+function updateLiveHold(vin, check) {
+  if (!state.bootstrap || !state.data) return
+  if (check) state.liveHoldChecks.set(vin, check)
+  else state.liveHoldChecks.delete(vin)
+  const position = state.data.vehicles.findIndex((item) => item.vin === vin)
+  const raw = state.bootstrap.vehicles.find((item) => item.vin === vin)
+  if (position < 0 || !raw) return
+  const detail = state.details.get(vin)
+  const base = toPanelVehicle(detail ? mergeDetail(raw, detail) : raw, state.bootstrap, { origin: appOrigin() })
+  const updated = withLiveDealerMailHold(base, check)
+  state.data.vehicles[position] = updated
+  state.index[position] = buildEntry(updated)
+  renderScopes()
+  renderList()
+  if (state.view === 'detail' && state.selectedVin === vin) renderDetail(updated, { keepScroll: true })
+  if (state.view === 'compare') renderCompare()
+}
+
+async function verifyLiveHold(vin, stock) {
+  if (host !== 'extension' || state.workspace.demo) return
+  const generation = state.dataGeneration
+  const tabId = await dealerMailTabId()
+  if (generation !== state.dataGeneration) return
+  if (!tabId) { updateLiveHold(vin, null); return }
+  updateLiveHold(vin, { status: 'checking' })
+  const check = await checkLiveDealerMailHold(tabId, stock)
+  if (generation === state.dataGeneration && vehicleByVin(vin)?.stockNumber === stock) updateLiveHold(vin, check)
+}
+
 function hydrate(bootstrap, fetchedAt) {
   const before = state.data?.access
   const after = bootstrap.access
   if (before && (before.user !== after?.user || before.userId !== after?.userId || before.role !== after?.role || before.store !== after?.store)) resetIdentityView()
   state.dataGeneration += 1
+  state.liveHoldChecks.clear()
   state.detailPending.clear()
   state.bootstrap = bootstrap
   state.data = buildPanelData(bootstrap, { origin: appOrigin() })
@@ -122,7 +154,7 @@ function hydrate(bootstrap, fetchedAt) {
   renderFreshness()
   if (state.view === 'detail' && state.selectedVin) {
     const vehicle = vehicleByVin(state.selectedVin)
-    if (vehicle) { loadDetail(vehicle.vin); renderDetail(vehicle, { keepScroll: true }) }
+    if (vehicle) { loadDetail(vehicle.vin); renderDetail(vehicle, { keepScroll: true }); verifyLiveHold(vehicle.vin, vehicle.stockNumber) }
   }
   if (state.view === 'compare') renderCompare()
 }
@@ -319,8 +351,8 @@ function holdPill(vehicle, { long = false } = {}) {
     ? primary?.salesperson ? `Held by ${primary.salesperson}`
       : hold.position === 'backup' ? 'Held · backup'
         : hold.position === 'multiple' ? `Held · ${hold.backupCount + 1}`
-          : long ? hold.label : 'Held'
-    : hold.tone === 'clear' ? 'No hold found' : 'Hold unverified'
+          : long ? hold.label : hold.liveCheckStatus === 'verified' ? 'Held' : 'Held at capture'
+    : hold.tone === 'clear' ? (hold.liveCheckStatus === 'verified' ? 'No active hold' : 'No hold at capture') : 'Hold unverified'
   return el('span', { class: `pill ${tone}`.trim(), title: fmt.joinFacts([hold.label, primary?.salesperson ? `Held by ${primary.salesperson}` : null]) }, hold.tone === 'held' ? icon('lock') : null, label)
 }
 
@@ -577,6 +609,7 @@ function renderFreshness() {
     state.workspace.demo ? el('span', { class: 'demo-disclosure', text: 'Demo · synthetic records & illustrations' }) : '',
     el('span', { class: `dot ${state.error ? 'is-off' : problem ? 'is-stale' : ''}`.trim() }),
     `${fmt.formatReportDate(meta.reportDate)} release`,
+    meta.dealerMailCapturedAt ? ` · holds captured ${fmt.formatDateTime(meta.dealerMailCapturedAt)}` : ' · daily hold snapshot',
     problem ? ' · review needed' : '',
     ` · ${state.loading ? 'refreshing…' : `checked ${fmt.formatRelative(state.fetchedAt)}`}${stale && !state.loading ? ' · update needed' : ''}`,
   )
@@ -735,7 +768,7 @@ function statusGrid(vehicle) {
   const primary = hold.evidence[0]
   const holdValue = hold.tone === 'held' ? (primary?.salesperson ? `Held by ${primary.salesperson}` : hold.position === 'backup' ? 'Backup hold' : hold.position === 'multiple' ? `${hold.backupCount + 1} holds` : 'On hold') : hold.tone === 'clear' ? 'No hold found' : 'Not verified'
   const holdSub = hold.tone === 'held'
-    ? fmt.joinFacts([primary?.expectedDate ? `Expected ${fmt.formatDate(primary.expectedDate)}` : null, hold.backupCount ? `${hold.backupCount} backup${hold.backupCount === 1 ? '' : 's'}` : null]) || (hold.canViewEvidence ? 'DealerMail hold' : 'Details restricted')
+    ? fmt.joinFacts([hold.liveCheckStatus === 'verified' ? 'Verified in DealerMail' : 'At daily capture', primary?.expectedDate ? `Expected ${fmt.formatDate(primary.expectedDate)}` : null, hold.backupCount ? `${hold.backupCount} backup${hold.backupCount === 1 ? '' : 's'}` : null]) || (hold.canViewEvidence ? 'DealerMail hold' : 'Details restricted')
     : hold.tone === 'clear' ? 'Confirm before promising' : 'Needs review'
   const flags = fmt.joinFacts([listing.dealerOn.inStock === true ? 'in stock' : listing.dealerOn.inStock === false ? 'not in stock' : null, listing.dealerOn.inTransit === true ? 'in transit' : null, listing.dealerOn.inProduction === true ? 'in production' : null])
   return el('div', { class: 'sig-grid' },
@@ -1129,19 +1162,25 @@ function holdTab(vehicle) {
     }
   }
   const status = []
+  const capturedAt = state.data?.meta?.dealerMailCapturedAt ?? state.data?.meta?.completedAt
+  status.push(el('p', { class: 'd-caption', text: hold.liveCheckStatus === 'verified'
+    ? `Checked directly in DealerMail ${fmt.formatDateTime(hold.liveCheckedAt)}. Open DealerMail for current names and notes.`
+    : hold.liveCheckStatus === 'checking' ? 'Checking the current DealerMail hold…'
+      : hold.liveCheckStatus === 'unavailable' ? 'Could not confirm the current hold in DealerMail. Review it there before relying on this status.'
+        : `DealerMail snapshot${capturedAt ? ` captured ${fmt.formatDateTime(capturedAt)}` : ''}. Holds may change during the day.` }))
   if (hold.canViewEvidence && hold.tone === 'held') {
     if (state.detailStatus === 'loading' && !hold.detailLoaded) status.push(el('p', { class: 'd-caption d-caption-live', text: 'Loading the full DealerMail record…' }))
     if (state.detailStatus === 'failed' && !hold.detailLoaded) status.push(el('p', { class: 'd-caption' }, 'The full record could not be loaded. ', el('button', { type: 'button', class: 'd-inline', onclick: () => loadDetail(vehicle.vin, { retry: true }) }, 'Retry')))
     if (state.detailStatus === 'gone' && !hold.detailLoaded) status.push(el('p', { class: 'd-caption d-caption-warn', text: 'This vehicle is no longer in the current snapshot; the DealerMail record could not be loaded.' }))
   }
-  if (hold.tone === 'held' && !hold.canViewEvidence) status.push(el('p', { class: 'd-caption', text: 'Hold details are restricted for your role.' }))
+  if (hold.tone === 'held' && !hold.canViewEvidence && hold.liveCheckStatus !== 'verified') status.push(el('p', { class: 'd-caption', text: 'Hold details are restricted for your role.' }))
   const actions = el('div', { class: 'dock-utils' },
     vehicle.hold.canManage ? chip('Open in DealerMail', 'mail', async (button) => { await copy(vehicle.stockNumber, 'Stock number', button); openUrl(links.DEALERMAIL_INVENTORY_URL) }, { title: 'Copies the stock number, then opens DealerMail inventory' }) : null,
     chip('Stock', 'tag', (button) => copy(vehicle.stockNumber, 'Stock number', button), { title: 'Copy stock number' }),
     chip('Open in app', 'external', () => openUrl(links.inventorySearchUrl(appOrigin(), vehicle.stockNumber))),
   )
   const holdCard = el('section', { class: `card hold-card is-${hold.tone}` },
-    el('div', { class: 'hold-head' }, el('span', { class: 'hold-icon' }, icon(hold.tone === 'held' ? 'lock' : hold.tone === 'clear' ? 'check' : 'help', { size: 16 })), el('div', {}, el('strong', { text: headline }), el('small', { text: hold.tone === 'held' ? 'Review hold details' : 'Confirm before promising' }))),
+    el('div', { class: 'hold-head' }, el('span', { class: 'hold-icon' }, icon(hold.tone === 'held' ? 'lock' : hold.tone === 'clear' ? 'check' : 'help', { size: 16 })), el('div', {}, el('strong', { text: headline }), el('small', { text: hold.liveCheckStatus === 'verified' ? 'Live DealerMail check' : hold.tone === 'held' ? 'At last capture' : 'Confirm before promising' }))),
     facts, ...backups, ...status, ...messages,
     el('p', { class: 'd-caption', text: 'Confirm availability and vehicle location with the home store before committing to a customer.' }),
     actions,
@@ -1438,8 +1477,9 @@ async function loadDetail(vin, { retry = false } = {}) {
     const raw = state.bootstrap.vehicles.find((item) => item.vin === vin)
     if (position >= 0 && raw) {
       const merged = toPanelVehicle(mergeDetail(raw, detail), state.bootstrap, { origin: appOrigin() })
-      state.data.vehicles[position] = merged
-      state.index[position] = buildEntry(merged)
+      const updated = withLiveDealerMailHold(merged, state.liveHoldChecks.get(vin))
+      state.data.vehicles[position] = updated
+      state.index[position] = buildEntry(updated)
     }
   }
   if (state.view === 'detail' && state.selectedVin === vin) {
@@ -1463,6 +1503,7 @@ function openDetail(vehicle) {
   renderDetail(vehicle)
   loadDetail(vehicle.vin)
   showView('detail')
+  verifyLiveHold(vehicle.vin, vehicle.stockNumber)
   setTimeout(() => ui.detail.focus({ preventScroll: true }), 40)
 }
 
@@ -1842,7 +1883,18 @@ ui.backdrop.addEventListener('click', closeSheet)
 
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state.data && isStale() && !state.loading) load({ silent: true }) })
 window.addEventListener('focus', () => { if (state.data && isStale() && !state.loading) load({ silent: true }) })
-setInterval(() => { if (document.visibilityState === 'visible') { renderFreshness(); if (state.data && isStale() && !state.loading) load({ silent: true }) } }, 60_000)
+setInterval(() => {
+  if (document.visibilityState !== 'visible') return
+  renderFreshness()
+  if (state.data && isStale() && !state.loading) load({ silent: true })
+  else if (state.view === 'detail' && state.selectedVin) {
+    const vehicle = vehicleByVin(state.selectedVin)
+    const check = state.liveHoldChecks.get(state.selectedVin)
+    if (vehicle && check?.status !== 'checking' && (!check?.checkedAt || Date.now() - Date.parse(check.checkedAt) > 2 * 60_000)) {
+      verifyLiveHold(vehicle.vin, vehicle.stockNumber)
+    }
+  }
+}, 60_000)
 
 /* Boot ------------------------------------------------------------------ */
 async function boot() {

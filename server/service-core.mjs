@@ -1244,6 +1244,7 @@ function metaView(dataset, database, now, loadStatus) {
   return {
     reportDate: dataset.state.current_report_date || dataset.sourceRuns.public?.report_date || '',
     completedAt: manifest.completed_at || dataset.sourceRuns.public?.loaded_at || '',
+    dealerMailCapturedAt: dataset.sourceRuns.dealerMail?.extracted_at || '',
     timezone: timeZone,
     publicFreshness,
     dealerMailFreshness,

@@ -567,6 +567,7 @@ describe('Inventory Flow API', () => {
     expect(bootstrap.vehicles).toHaveLength(manifest.source_counts.public_unique_vins)
     expect(bootstrap.transfers).toHaveLength(0)
     expect(bootstrap.meta.publicFreshness).toBe('current')
+    expect(bootstrap.meta.dealerMailCapturedAt).toBe(release.sourceRuns.dealerMail.extractedAt)
     expect(bootstrap.meta.publicChangeCounts).toEqual({
       newArrival: manifest.public_change_counts.new_arrival,
       removed: manifest.public_change_counts.removed,
