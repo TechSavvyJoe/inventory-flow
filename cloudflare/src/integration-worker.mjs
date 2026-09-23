@@ -13,7 +13,7 @@ const SAFE_HEADERS = {
   'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
 }
-const TOOL_OPERATIONS = {
+export const TOOL_OPERATIONS = {
   inventory: 'inventory_list', vehicle: 'inventory_get', operationalInventory: 'operational_inventory_search', vehicleResources: 'vehicle_resources_get',
   changes: 'changes_list', health: 'health', dailyOperations: 'daily_operations_get', dataQuality: 'data_quality_get', reconciliation: 'reconciliation_get',
   holdSummary: 'holds_summary', managerDispositions: 'manager_dispositions_list',
