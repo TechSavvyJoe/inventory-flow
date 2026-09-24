@@ -1,0 +1,302 @@
+{
+ "branch": "plan/overview",
+ "base": "plan/phase-2-gates-css-ia",
+ "spec_file": "/Users/joegallant/inventory-flow-lanes/handoff/specs/OVERVIEW_SPEC.md",
+ "decisions": {
+  "service_board": "RETIRE the Board view (Joe, 2026-09-23). Keep the Service List view only; delete ServiceBoard.tsx, ServicePageV2.css board rules, and the framer-motion dependency if nothing else imports it. ServicePageV2 collapses into ServicePage.",
+  "pages": "KEEP the Inventory updates page (Joe, 2026-09-23). REPLACE Group operations with a new role-scoped /overview page (spec: /Users/joegallant/inventory-flow-lanes/handoff/specs/OVERVIEW_SPEC.md, being written); /manager redirects to /overview. In Phase 2, M12 does only: remove the duplicate global search box and prepare the nav slot for Overview; do NOT delete GroupOperations until the Overview moves land.",
+  "advanced_mode": "KEEP the advanced workflow engine and docs/ADVANCED_WORKFLOW_ROADMAP.md (Joe, 2026-09-23). Only the simple-mode fallthrough is closed (done in Phase 1 M02).",
+  "name_search": "DETAIL-ONLY (Joe, 2026-09-23): customer/reason tokens leave the list bootstrap payload entirely; matching happens only inside the opened vehicle. Joe signed off on re-pinning server-api.test.ts for this contract change (Phase 3, M15).",
+  "overview": "NEW WORKSTREAM (Joe, 2026-09-23): Overview page (store cards, store board SVG schematic, where-is-my-inventory with days away, return verification, holds, exceptions, freshness, printable snapshot), disposition ledger (app-owned, manager-only, audited), service metrics (serviced / not, days since receipt, receipt->service start, time in service, per store and vehicle). Executes after M11/M13 as moves O1..On from the spec."
+ },
+ "decisions_taken": [
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Unaccounted N days — recommended 7 (one threshold; the separate stale-confirmation threshold was dropped).",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Aged thresholds — recommended listing 60/90 for listed vehicles only (CRM-only rows excluded and labelled by basis); service waiting 14/30.",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Landing route — recommended keep / = Inventory; Overview is the first rail item; revisit after two weeks of use.",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Mobile rail — recommended Overview · Inventory · Moves · Actions · More (Updates, Service and Control center under More); amends M13.",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Disposition corrections — recommended any closing state → Keep with a required note; sold_pending → wholesale | transfer_out allowed directly for a collapsed deal; no deletes ever.",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Does a delivered disposition hide the vehicle like the imported manager log does — recommended no; it is a chip plus the listed_but_delivered exception after 3 days; only sources remove a vehicle.",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Store board positions — recommended approximate defaults in config that Joe confirms; distances/tiles later, if ever.",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Transport roles get /overview — recommended yes, movement-only variant.",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Dispositions/overview in the integrations API and extension — recommended no; the integrations path calls bootstrap(principal, { overview: false }) and the allowlist projection never picks either field.",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Medians vs averages — recommended medians with n.",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Separate GET /api/overview vs bootstrap field — recommended bootstrap field (one fetch, ETag/304, one computation); revisit if growth exceeds 5%.",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Print length — recommended one page for My store; up to two for All stores.",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Service page store parameter — recommended add ?store=<S> to /service in O3 so store-card service counts open the Service page filtered to that store.",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Should sales see disposition notes — recommended yes (same rule as hold evidence, canViewPrivateEvidence; the server guard rejects hold-evidence tokens in notes).",
+  "DEFAULT ADOPTED (Joe: \"do everything you suggested\"): Ship order — recommended Slice A first (O1, O3, O4, O7, O9: no D1 change, no product-rule re-pin), then Slice B (O2, O5, O6, O8) after Joe signs the re-pins and applies 0010."
+ ],
+ "data_definitions": [
+  "asOfDay = dateInTimeZone(currentNow, meta.timezone) (service-core L142); all durations are whole calendar days via daysBetween(start, end) (L153-162), which returns null for non-YYYY-MM-DD input and clamps at 0, so every 'ordered' check compares ISO-day strings first. Limit: minute-level facts never enter a metric so the bootstrap ETag stays stable within a day.",
+  "custody (per vehicle): 'conflict' when movement.locationConfidence === 'conflicting' or movement.state === 'location_exception'; 'in_transit' when movement.currentLocation === 'In transit'; 'away' when a ledger row says currentLocation is a store ≠ homeStore (custodyBasis 'ledger') or there is no ledger and sourceReportedLocation (= publicStore, L1026) ≠ homeStore (custodyBasis 'source_reported'); 'on_lot' otherwise. 'visiting' is a store-perspective count (currentStore or sourceReportedLocation equals the card's store while homeStore differs). returnLeg 'return' when the row's movement_status is return_in_transit. Limit: source-reported custody is the website's store, not physical custody, and the basis word is always rendered.",
+  "daysAway = daysBetween(dateInTimeZone(new Date(movement.departedAt), tz), asOfDay) when custody is away or in_transit and departedAt exists; else null (daysAwayBasis 'unknown'). departedAt = movementDepartureAt(row, events) (L666-683): the earliest event after the last returned_home among direct_move_recorded, vehicle_departed, picked_up, in_transit, a destination-tagged customer_showing/sale_outcome_pending/sale_confirmed/not_sold (to_location_id === destination_store_id), or return_started from the destination; undefined while only requested/approved, for unknown/conflicting confidence, and while home. Only returned_home (workflowPatch L702-713) resets the clock. Limit: an approved-but-not-departed request has no days away.",
+  "unaccounted: first matching rule wins, N = thresholds.unaccountedAfterDays = 7 (single threshold): (1) location_conflict = custody conflict; (2) source_conflict = crmStore && crmStore !== publicStore; (3) no_app_record = custody away with custodyBasis source_reported; (4) stale_confirmation = custody away/in_transit and daysBetween(dateInTimeZone(new Date(lastConfirmedAt ?? row.requested_at), tz), asOfDay) >= 7. Vehicles on their home lot with no ledger are never unaccounted. Limit: the rule cannot see a unit that moved without any app record and is still listed at home.",
+  "returnOverdue (attributed to the home store) = the storeSummaries rule (L1386-1394): isActiveTransfer(row), return_required, return_due_at, new Date(return_due_at) < now, status not in {returned_home, closed} nor {sale_confirmed, delivery_confirmed}, movement_status not in {returned_home, closed}. receivedHomeAt = ISO day of the latest returned_home event when within recentReceiptDays (7) of asOfDay; return verification is derived client-side from returnLeg + receivedHomeAt. Limit: other stores' rows are only those visible to the viewer (transferVisible L1259), so counts are viewer-relative and labelled 'Moves as visible to you'.",
+  "holds (per store) = holdSignals[store].activeHoldVins (holdSignalSummaries L1683-1710: hold_vehicle_snapshots rows with crm_store_id === store and active_hold_count > 0); holdsPastExpected = holdSignals[store].pastExpected (same rows, dateIsBeforeReport(expected_date, reportDate)). Per-vehicle holdActive/holdPastExpected facts come from the same rows, never from hold.state or hold.label, so Inventory view=holds equals the card. Row chips render hold.label verbatim (states primary | multiple | none_observed | stale | unknown); none_observed is never counted as available and the not-held chip is exactly 'No current DealerMail hold found'. Limit: storeSummaries.currentHolds and meta.heldVinCount count rows including active_hold_count = 0 (importer database.mjs L407-421) and are never displayed on the Overview.",
+  "service dates (per vehicle): when serviceReadiness.readinessBasis === 'manager_updated', enteredAt = isoDay(row.service_entered_at) and completedAt = isoDay(row.completed_at) from the manager row only; when basis is ford_service_history_inspection or autocheck_post_intake_inspection, enteredAt = readinessEvidence.inServiceDate and completedAt = readinessEvidence.readyDate ?? inspectionDate; any other basis has no dates. arrivalDate = earliest(isoDay(serviceIntake.first_arrival_date), isoDay(vehicle.inventoryDate)) (intakeDay rule, service-readiness.mjs L36-46) with arrivalBasis intake | listing_date | unknown. serviceStatus = serviceWorkflowStatus(status) (needs_service | in_service | serviced). Limit: serviceReadinessView (L115-116) falls back to evidence dates even for a needs_service manager row, so the view's dates are never used blindly.",
+  "waitingDays (status needs_service only) = daysBetween(arrivalDate, asOfDay). Limit: intake dates exist only for vehicles whose new_arrival was observed after migration 0008; older units use the public listing date, which can lag physical receipt.",
+  "receiptToStartDays (status in_service or serviced only) = daysBetween(arrivalDate, enteredAt) when both exist and arrivalDate <= enteredAt as ISO strings; else null. Aggregated as a median with n per store and group.",
+  "inServiceDays: status in_service → daysBetween(enteredAt, asOfDay) ('currently in service', the median uses these only); status serviced → daysBetween(enteredAt, completedAt) when both exist and enteredAt <= completedAt; else null.",
+  "receiptToReadyDays (status serviced only) = daysBetween(arrivalDate, completedAt) when both exist and arrivalDate <= completedAt; else null. Limit: evidence-based Ready carries the source's dates (Ford/AutoCheck), not the store's.",
+  "sinceServiceUpdateDays = daysBetween(dateInTimeZone(new Date(row.updated_at), tz), asOfDay) when a manager row exists (updated_at is an ISO timestamp). dateOrderIssue = true when enteredAt < arrivalDate, completedAt < arrivalDate or completedAt < enteredAt as ISO-day strings (feeds the service_date_order exception).",
+  "service aggregates per store (serviceReadiness.store = serviceStore(): verified current location if a store else home store) and group: counts by status; counts by readinessBasis (manager_updated, ford_service_history_inspection, autocheck_post_intake_inspection, new_arrival, unconfirmed, legacy_review); medians with n for receiptToStartDays, inServiceDays (in_service only), receiptToReadyDays; agedWaiting14/agedWaiting30 = needs_service vehicles with waitingDays >= 14 / >= 30; arrivalBasis distribution. Invariant: readiness is evaluated on the full vehicle view before any list projection (M15 cuts fordOasis.serviceHistory bodies that fordServiceReadinessEvidence reads, L65-84).",
+  "agedBucket = 90 when daysListed >= 90, 60 when >= 60, only when vehicle.publicListing === 'listed' (the code, never a label); daysListed = daysBetween(publicRecord.inventory_date, reportDate) for public rows (L1000-1002). CRM-only rows use crmRecord.inventoryAgeNumber (CRM age), get agedBasis 'crm_age' and no bucket, so 'Listed 60+ days' counts listed vehicles only. Limit: listing age is not lot age.",
+  "records (per vehicle) = { autoCheck: autoCheckReport?.dataState === 'current', oasis: fordOasis?.dataState === 'current', sticker: windowSticker?.dataState === 'current', invoice: fordInvoice?.dataState === 'current', fordHistory: fordOasis?.serviceHistory?.historyCaptured === true }; recordsApplicable = 5 for Ford/Lincoln makes (/^(ford|linc|lincoln)$/i) else 3 (autoCheck, sticker, invoice); recordsCaptured = count of true among applicable; store 'Records incomplete' = vehicles with recordsCaptured < recordsApplicable. Limit: presence means a current capture exists, not that its content is complete.",
+  "dispositions (Slice B, per owner store): counts of the latest vehicle_disposition_events row per VIN by code keep | sold_pending | delivered | wholesale | transfer_out | none, grouped by dispositionOwnerStore(source) = source.homeAssignment?.home_store_id || (publicRecord?.store || crmRecord?.storeName), which is role-independent. Never inferred from a listing disappearing, a sale_confirmed/delivery_confirmed move event or the imported manager log.",
+  "exceptions (server list per store with vins ≤ 50): location_conflict, source_conflict, no_app_record, stale_confirmation (from unaccounted), return_overdue, hold_past_expected, identity_review (managerIdentityReviewRecord count), records_incomplete, service_date_order, and in Slice B listed_but_delivered (appDisposition delivered && publicListing === 'listed' && daysBetween(effectiveDate, asOfDay) >= 3) and delivered_move_no_disposition (visible transfer with delivery_status delivery_confirmed and no delivered disposition; managers only; a prompt, never an inference)."
+ ],
+ "manual_steps_for_joe": [
+  "Slice B only: apply cloudflare/migrations/0010_vehicle_dispositions.sql to the live D1 as its own single file (never via wrangler d1 migrations apply) BEFORE deploying either Worker — the app Worker and the integrations Worker both load the D1 batch that gains the new SELECT and DEPLOY_CHECKLIST L3 requires both from one commit; verify vehicle_disposition_events in sqlite_master with the checklist query; deploying first makes every /api/* and /api/v1/* request fail.",
+  "Slice B only: run pnpm cloud:validate (now requires the new table) and the recovery drill once after the migration; record the pre-deploy version IDs of both Workers as rollback targets.",
+  "Confirm the four store positions in src/features/overview/store-board-config.ts (edit x/y only; no addresses are stored).",
+  "Confirm thresholds in server/overview-summary.mjs OVERVIEW_THRESHOLDS (unaccounted 7 days, aged listing 60/90, service waiting 14/30, listed-after-delivered 3, recent receipt 7).",
+  "Approve the mobile rail change (Overview · Inventory · Moves · Actions · More, with Inventory updates, Service status and Control center under More) that amends M13, and the AppShell.test.tsx updates.",
+  "Before Slice B merges, approve the product-rule test changes per AGENTS.md L36: the write-surface.contract.test.ts re-pin from five to six employee write branches, the cloud-write-identity.test.ts disposition case, and the role-matrix-canary.test.ts additions (cases added, none loosened).",
+  "Confirm disposition vocabulary (Keep / Sold pending / Delivered / Wholesale / Transfer out), the two extra transitions sold_pending → wholesale | transfer_out, and who may correct a Delivered/Wholesale row (default: same writers, note required).",
+  "Decide whether O7 may add one confirmed Certified Blue Oval order to the synthetic fixture (default yes; one VIN, one test case added) so the demo shows an evidence-based Ready.",
+  "After the Slice B deploy: record one disposition on a real unit as group manager; confirm it appears in Control center audit without the note, that the imported manager-log line still shows beside it, and that a note containing a hold's customer/reason text is refused with DISPOSITION_NOTE_CONTAINS_HOLD_EVIDENCE."
+ ],
+ "moves": [
+  {
+   "id": "O1",
+   "title": "Server overview projection (Slice A)",
+   "what": "Create server/overview-summary.mjs exporting buildOverviewSummary({context, meta, asOfDay, now, vehicles, visibleTransferRows, transferEventsById, stores, holdRows, holdSignals, serviceRowByVin, serviceIntakeByVin, managerDispositionRecords}) and OVERVIEW_THRESHOLDS = {unaccountedAfterDays: 7, agedListingDays: [60, 90], serviceWaitingDays: [14, 30], listedAfterDeliveredDays: 3, recentReceiptDays: 7}, returning the OverviewSummary shape of spec §7.2 (stores[4] in STORE_NAMES order, group, board.flows, vehicleFacts keyed by VIN with default keys omitted, service (omitted for coordinator/porter/driver), exceptions). Implement every metric exactly per §5: custody/basis (§5.1), daysAway from movement.departedAt (§5.2), unaccounted rules 1-4 with N=7 (§5.3), returnOverdue with the storeSummaries rule and receivedHomeAt within 7 days (§5.4), holds = holdSignals[store].activeHoldVins with holdActive/holdPastExpected facts from rows with active_hold_count > 0 (§5.5), service dates from the manager row when basis is manager_updated else from readinessEvidence, durations gated on status, ISO-string date-order checks, medians with n (§5.6), agedBucket only when publicListing === 'listed' (§5.7), records bitmap + recordsCaptured/recordsApplicable (§5.8), exceptions (§5.10 Slice A kinds). In server/service-core.mjs change bootstrap(contextInput = {}) at L1892 to bootstrap(contextInput = {}, { overview = true } = {}) and attach overview after stores at L1917; build serviceRowByVin from state.serviceEventsByVin. Change cloudflare/src/integration-worker.mjs L60 to service.bootstrap(principal, { overview: false }). Add to src/types.ts: OverviewSummary, OverviewStoreCounts, OverviewBoardFlow, OverviewVehicleFacts, OverviewServiceMetrics, OverviewServiceStoreMetrics, OverviewException, BootstrapData.overview?, and SourceMeta.resourceFreshness?: SourceFreshness (L24-45). In src/app/adapters.ts toInventoryVehicle (L524) add overview: data.overview?.vehicleFacts[vehicle.vin] ?? null; add InventoryVehicle.overview?: OverviewVehicleFacts | null in src/features/inventory/types.ts. Guarantee the M15 invariant: readiness is evaluated on the full vehicle view before any list projection (vehicleFromSnapshot L1825-1830 computes vehicleView then serviceReadinessView; when M15 adds listProjection, apply the cut after readiness).",
+   "why": "One server-owned, role-filtered, day-granular projection computed once per bootstrap gives every role the same numbers the lists and Action center use, keeps ETag/304 stable, and puts every metric Joe asked for (days away, unaccounted, receipt→start, in service, receipt→ready, aged, records captured) in one place without a second fetch.",
+   "effort": "opus/high · 1.5 days",
+   "depends_on": [
+    "M13 PR A (optional)"
+   ],
+   "verification": "tests/unit/overview-summary.test.ts passes with one case per metric in spec §15.1 including: status gating (manager needs_service row with null dates on a Ford vehicle with a Certified Blue Oval order yields no durations), holds excludes active_hold_count = 0 rows, dateOrderIssue from a reversed pair, aged excludes CRM-only rows, ETag stability (same day + same ledger → identical JSON), transport roles get no service/dispositions and facts only for visible transfers, and the payload test (fixture cloned to 226 unique VINs; JSON.stringify(bootstrap(ctx)) ≤ 5% larger than bootstrap(ctx, { overview: false })). role-matrix-canary asserts integrationBootstrapFromSource output has no overview key. src/app/adapters.custody.test.ts and adapters.listing.test.ts: cases added, none changed. pnpm check green.",
+   "files": [
+    "server/overview-summary.mjs",
+    "server/service-core.mjs",
+    "cloudflare/src/integration-worker.mjs",
+    "src/types.ts",
+    "src/app/adapters.ts",
+    "src/features/inventory/types.ts",
+    "tests/unit/overview-summary.test.ts",
+    "src/app/adapters.custody.test.ts",
+    "src/app/adapters.listing.test.ts",
+    "tests/unit/role-matrix-canary.test.ts"
+   ],
+   "spec_file": "/Users/joegallant/inventory-flow-lanes/handoff/specs/OVERVIEW_SPEC.md",
+   "slice": "A",
+   "amendments": []
+  },
+  {
+   "id": "O3",
+   "title": "Deep-link contract (Slice A)",
+   "what": "Inventory: in src/features/inventory/InventoryPage.tsx read store, view, service, vins on entry and strip them with navigate({...}, {replace: true}) exactly like the legacy q (L73-88); pass them via initialFilters (InventoryExperience.tsx L369-398) with filterRequestKey = location.key in the Experience key. Add InventoryFilters.overviewView?: { view, store } and vins?: string[] (types.ts L505-515); in inventory-utils.ts add vehicleMatchesOverviewView(vehicle, view, store) reading vehicle.overview and vehicle.appDisposition and comparing vehicle.location.homeStore.name === store and vehicle.overview.currentStore === store (a vehicle with no facts matches only on-lot for its home store), the vins predicate, and count both in activeFilterCount (L509); chip row shows 'View: Away from home · Howell' / 'Vehicles: 4 selected'. view values: on-lot, away, visiting, in-transit, conflict, unaccounted, return-overdue, aged-60, aged-90, holds, holds-past-expected, records-incomplete (Slice B adds disposition-*). Moves: in TransfersPage.tsx read view/store/from/to on entry; view maps to queueFilter (moving, planned→ready-to-collect, return-due, sold-pending, issues) and leaves queueView='active'; add queueFilter 'return-overdue' with the exact predicate returnRequired && returnDueAt && Date.parse(returnDueAt) < Date.now() && !['returned_home','closed','sale_confirmed','delivery_confirmed'].includes(requestStatus) && !['returned_home','closed'].includes(movementStatus) && !isTerminalTransfer(record); store=S sets storeScope and a one-shot record.homeStore === S predicate; from/to predicates per §8.2. Action center: /attention?category=<ActionCategory> applied once to OperationsQueue category state (L94). Service: /service?store=S sets scope and a one-shot serviceReadiness.store filter. Create src/features/overview/overview-links.ts building every href in §8.4 with returnTo = currentWorkspaceReturnPath(location). Add '/overview' → 'Back to Overview' in inventory-navigation.ts workspaceReturnLabel (L111).",
+   "why": "Every number on the Overview must open the filtered list behind it with a count that matches the card, using the pages' existing filter state (composing with M11) rather than a parallel state, and Back must return to /overview.",
+   "effort": "sonnet/high · 1 day",
+   "depends_on": [
+    "O1",
+    "M11"
+   ],
+   "verification": "src/features/overview/overview-links.test.ts asserts every href in §8.4; inventory-utils.test.ts covers overviewView (homeStore.name comparison) and vins; InventoryPage.lifecycle.test.tsx: params consumed, stripped, chip shown, Back returns to /overview; a TransfersPage test proves view=return-overdue&store= yields exactly the server rule's rows and leaves queueView at active; ServicePage and OperationsQueue tests for store/category params. pnpm check green.",
+   "files": [
+    "src/features/inventory/InventoryPage.tsx",
+    "src/features/inventory/InventoryExperience.tsx",
+    "src/features/inventory/types.ts",
+    "src/features/inventory/inventory-utils.ts",
+    "src/features/inventory/inventory-utils.test.ts",
+    "src/features/inventory/InventoryPage.lifecycle.test.tsx",
+    "src/features/inventory/inventory-navigation.ts",
+    "src/features/transfers/TransfersPage.tsx",
+    "src/features/attention/OperationsQueue.tsx",
+    "src/features/service/ServicePage.tsx",
+    "src/features/overview/overview-links.ts",
+    "src/features/overview/overview-links.test.ts"
+   ],
+   "spec_file": "/Users/joegallant/inventory-flow-lanes/handoff/specs/OVERVIEW_SPEC.md",
+   "slice": "A",
+   "amendments": []
+  },
+  {
+   "id": "O4",
+   "title": "Overview page, route, nav, print, delete Group operations (Slice A)",
+   "what": "Create src/features/overview/OverviewPage.tsx, overview-selectors.ts (storeCard, awayRows, returnVerification derived client-side from facts with custody in_transit + returnLeg 'return' plus receivedHomeAt, exceptionRows, serviceRows, dispositionRows) and overview.css (class prefix ov-, only --ifx-* tokens, .sr-only from global.css, the @media print block of §10 verbatim). Render the skeleton of §3 (header with h1, ScopeSwitch or the ServicePage L259 pattern until M13 PR B, as-of line, print button; SourceWarning; store cards per §3 with basis words 'source-reported', 'Records incomplete', return-home verification, and 'Moves as visible to you' on other stores' cards for non-group_manager viewers; board section with filter chips only (SVG in O5); where-is-my-inventory list with days away, custody, return due, overdue, unaccounted and a Records link (vehicleWorkspacePath(vin, {tab: 'data', returnTo})) on every row; exceptions per §11 with verbatim copy; freshness per §12 from data.meta incl. resourceFreshness; print-only header/footer). Layout per §3 at 1440/1320/1024/390 with the first-mobile-viewport contents. Register the lazy route in src/app/routeModules.ts (beside L53, add to preloadRoute, drop loadManagerPage L54); src/App.tsx: add /overview route with key ${currentUser}:${role}:${homeStore}, change /manager to <Navigate to='/overview' replace />, drop the ManagerPage import. AppShell.tsx: NAV_ITEMS gains {id:'overview', to:'/overview', label:'Overview', shortLabel:'Overview', icon: Gauge} first; desktop rail Overview · Inventory · Vehicle moves · Action center · Inventory updates · Service status (· Control center); mobileNavigationIds = ['overview','inventory','moves','today'] for every role (Updates, Service, Control center fall into More); delete utility-manager-link (L293-295) and canSeeManager (L118). Delete src/features/manager/* (GroupOperations.tsx, ManagerPage.tsx, manager.css, types.ts, index.ts, GroupOperations.test.tsx); remove only the .manager-page selector from the shared rule at src/styles/pages.css L1-7; remove the manager.css entry at scripts/design-system-baseline.json L33. Extend scripts/start-synthetic-demo.mjs seedSyntheticWorkflow with the two departed direct moves of §15.8 (TESTDATAFWELL0002 → Ford Detroit, movedAt now−9d, returnDueAt now−2d; TESTDATALNCN00001 → Howell, movedAt now−3d, returnDueAt now+2d, then return_started at now−1d). Update AppShell.test.tsx L162/L189/L208/L215/L235/L284.",
+   "why": "This is the page Joe asked for: one integrated overview per role with every number a deep link, honest basis words so a website store is never read as physical location, a printable snapshot, and the dead Group operations feature removed in the same change per M12.",
+   "effort": "opus/high · 3 days",
+   "depends_on": [
+    "O1",
+    "O3",
+    "M13 PR B"
+   ],
+   "verification": "OverviewPage.test.tsx per role (§15.6): group_manager 4 cards and no visibility label; manager home card first, other cards labelled 'Moves as visible to you', withheld rows have no transfer link; sales no write controls; coordinator/driver movement-only cards and no service section; every where-list row has a Records link; basis word renders for source-reported rows; no literal 'Available' and 'No current DealerMail hold found' never a count label; print header hidden on screen and no note text in the DOM. AppShell.test.tsx rail order per role and /manager → /overview. tests/e2e/overview.spec.ts at 390/1024/1320/1440 against pnpm dev:demo: first mobile viewport shows title, scope switch, as-of, home card with eight counts, two away rows with days away; each card number opens the right list with matching count; Return overdue opens Moves with exactly one row; Records links open the Records tab; print emulation hides nav; scrollWidth ≤ 390. Design ratchet: overview.css 0 raw colors, 0 sub-12px px font sizes, manager.css baseline entry gone, no new import in src/main.tsx. pnpm check green; screenshots at four viewports in the PR.",
+   "files": [
+    "src/features/overview/OverviewPage.tsx",
+    "src/features/overview/overview-selectors.ts",
+    "src/features/overview/overview.css",
+    "src/features/overview/OverviewPage.test.tsx",
+    "src/app/routeModules.ts",
+    "src/App.tsx",
+    "src/app/AppShell.tsx",
+    "src/app/AppShell.test.tsx",
+    "src/styles/pages.css",
+    "scripts/design-system-baseline.json",
+    "scripts/start-synthetic-demo.mjs",
+    "tests/e2e/overview.spec.ts",
+    "src/features/manager/GroupOperations.tsx",
+    "src/features/manager/ManagerPage.tsx",
+    "src/features/manager/manager.css",
+    "src/features/manager/types.ts",
+    "src/features/manager/index.ts",
+    "src/features/manager/GroupOperations.test.tsx"
+   ],
+   "spec_file": "/Users/joegallant/inventory-flow-lanes/handoff/specs/OVERVIEW_SPEC.md",
+   "slice": "A",
+   "amendments": []
+  },
+  {
+   "id": "O7",
+   "title": "Service metrics section, report and aged list (Slice A)",
+   "what": "In OverviewPage add the Service section per §9: per-store table (stacked cards ≤ 760px) with Store · Waiting · In service · Ready · Median receipt→start (n) · Median in service (n) · Median receipt→Ready (n) · Waiting 14+/30+ · Arrival dates from intake %, group row last bold; counts link per §8.4 (/service?status=&store=), medians not links, n links to contributing VINs via vins=; basis strip; aged waiting list top 10 with 'Waiting n days · arrived date (intake|listing date)', 'Records k/5' link to the Records tab and 'Update service' (/service?vin=) for managers; 'Open report' toggles .ov-service.is-report and calls window.print(); the verbatim footnote of §9. Fixture: in fixtures/synthetic-release.mjs syntheticFordServiceHistory (L400-418) add one confirmed 'Certified Blue Oval Inspection' order to TESTDATAFWELL0002 with openDate/closeDate on or after its inventory_date so the demo has one evidence-based Ready; add a service-readiness.test.ts case (none changed). Hidden for coordinator/porter/driver.",
+   "why": "Joe asked for service reporting per store and group: what has and has not been serviced, how long since receipt, receipt→service start, time in service, with per-vehicle drill-down to the pulled records; medians with n and the honest arrival-date footnote keep it truthful.",
+   "effort": "sonnet/high · 1 day",
+   "depends_on": [
+    "O1",
+    "O4"
+   ],
+   "verification": "Component test: table values equal overview.service per store and group, count links match §8.4, n links carry the right vins, aged rows show basis words and Records links, transport roles see no section, report mode shows all rows and the footnote; service-readiness.test.ts case for the Certified Blue Oval fixture order passes; e2e: an aged row's Records link opens the workspace Records tab; demo screenshots show a non-zero Certified Blue Oval column (or O7's PR notes the 0 if Joe declines the fixture change).",
+   "files": [
+    "src/features/overview/OverviewPage.tsx",
+    "src/features/overview/OverviewPage.test.tsx",
+    "src/features/overview/overview.css",
+    "fixtures/synthetic-release.mjs",
+    "tests/unit/service-readiness.test.ts",
+    "tests/e2e/overview.spec.ts"
+   ],
+   "spec_file": "/Users/joegallant/inventory-flow-lanes/handoff/specs/OVERVIEW_SPEC.md",
+   "slice": "A",
+   "amendments": []
+  },
+  {
+   "id": "O9",
+   "title": "Docs and manual steps",
+   "what": "DESIGN_SPEC.md L28: replace '- **Manager**: group operations table, saved views, exceptions, next-action ownership.' with an Overview line (store cards, store board, where-is-my-inventory, exceptions, service metrics, dispositions, printable snapshot; /manager redirects). docs/DEPLOY_CHECKLIST.md: migrations line L17 becomes 0001-0010 and a note that 0010 must be applied as its own single file before deploying EITHER Worker (§6.9). docs/SERVICE_READINESS.md: a 'Service metrics on the Overview' section with the exact definitions of §5.6 and the honest limits. AGENTS.md L36: add tests/unit/overview-summary.test.ts (ETag stability and role filtering) to the product-rule list and record the write-surface re-pin to six branches. No README edit (README has no Group operations/manager mention). Slice A ships the DESIGN_SPEC and SERVICE_READINESS parts; the DEPLOY_CHECKLIST and AGENTS parts land with Slice B.",
+   "why": "Docs must describe the shipped app (M17) and the deploy checklist must carry the new migration and both-Workers order before anyone deploys Slice B.",
+   "effort": "sonnet/medium · 0.5 day",
+   "depends_on": [
+    "O4",
+    "O6"
+   ],
+   "verification": "grep finds no 'Group operations' or '/manager' in DESIGN_SPEC.md; DEPLOY_CHECKLIST names 0010 and the both-Workers rule; AGENTS.md product-rule list includes the new test and the six-branch pin; links resolve; pnpm check green.",
+   "files": [
+    "DESIGN_SPEC.md",
+    "docs/DEPLOY_CHECKLIST.md",
+    "docs/SERVICE_READINESS.md",
+    "AGENTS.md"
+   ],
+   "spec_file": "/Users/joegallant/inventory-flow-lanes/handoff/specs/OVERVIEW_SPEC.md",
+   "slice": "A",
+   "amendments": []
+  },
+  {
+   "id": "O2",
+   "title": "Disposition ledger (Slice B)",
+   "what": "Add cloudflare/migrations/0010_vehicle_dispositions.sql exactly as spec §6.1 (table vehicle_disposition_events, index, two append-only triggers). Add the same DDL to migrate() in server/database.mjs next to vehicle_service_events (L246-262) plus listDispositionEvents/insertDispositionEvent; add both to REQUIRED_METHODS in server/repository-dispatch.mjs (L6-20) with wrappers; in cloudflare/src/repository.mjs add the 9th statement 'SELECT * FROM vehicle_disposition_events ORDER BY vin, version' (L369-377) → dispositionEvents: results[8].results and d1SnapshotRepository.listDispositionEvents/insertDispositionEvent (L257). Create server/vehicle-disposition.mjs per §6.2: DISPOSITION_CODES, DISPOSITION_EVENT_COLUMNS, DISPOSITION_TRANSITIONS (incl. sold_pending → wholesale | transfer_out), dispositionOwnerStore(source) = source.homeAssignment?.home_store_id || (source.publicRecord?.store || source.crmRecord?.storeName), dispositionView(source, vehicle, row, context, {includeNote}) gating note/updatedBy on context.canViewPrivateEvidence, buildDispositionEvent with every validation and error code in §6.2 including the hold-evidence note guard (422 DISPOSITION_NOTE_CONTAINS_HOLD_EVIDENCE) and actor fields only from the server context. In server/service-core.mjs: snapshot() builds dispositionEventsByVin; vehicleFromSnapshot sets vehicle.appDisposition; add getDisposition and updateDisposition mirroring serviceDetail/updateServiceReadiness. In server/admin-control-center.mjs add DISPOSITION_AUDIT_ACTIVITY and dispositionEvents to adminOverview (never the note). Routes: cloudflare/src/worker.mjs L337 regex → (?:service|invoice|disposition), read branch after L368, write branch immediately after the service write branch at L369; server/api.mjs dispositionMatch GET/POST directly after the serviceMatch block (L261-268). Client: src/lib/api.ts getDisposition/updateDisposition beside L293-303; src/types.ts AppDispositionCode, AppDisposition, AppDispositionDetail, AppDispositionInput, VehicleRecord.appDisposition; InventoryVehicle.appDisposition pass-through. Demo seed in scripts/start-synthetic-demo.mjs per §6.7. Add vehicle_disposition_events to scripts/validate-cloud-release.mjs L28. Re-pin tests/unit/write-surface.contract.test.ts exactly per §6.8 (six branches, expectation arrays, validWrite case, tables snapshot) and add the cloud-write-identity disposition case; add O1's overview exclusion plus Slice B canary cases per §15.3 with a dedicated disposition identity.",
+   "why": "Managers need an app-owned, audited, idempotent record of keep / sold pending / delivered / wholesale / transfer out that sits beside the imported manager log without replacing it; the ledger is the only new write and must be pinned in the write-surface and write-identity product-rule tests in the same commit or pnpm check goes red.",
+   "effort": "opus/high · 2 days",
+   "depends_on": [],
+   "verification": "tests/unit/vehicle-disposition.test.ts covers every case in §15.2 (create, replay, hash conflict 409, version conflict 409, all allowed and disallowed transitions, correction note required, transfer_out destination rule, future date 422, hold-evidence token 422, other-store manager 403, sales 403, group_manager anywhere, ownerStore identical across manager/driver/group_manager contexts, note/updatedBy hidden for transport roles and present for sales, triggers abort UPDATE/DELETE, Control center audit without note, never-inferred in both directions: release drop leaves ledger untouched and sale_confirmed + delivery_confirmed events never create/change a row). write-surface.contract.test.ts passes with six branches; cloud-write-identity disposition case passes (422 on actorRole key, actor fields from D1 membership, 403 for the Howell manager on a Fowlerville VIN); role-matrix-canary passes with the new marker; server-api/cloud-release-worker route tests: GET/POST accepted, others 405, Idempotency-Key and same-origin required, unknown route 404. pnpm cloud:validate requires the new table. Deploy only per §6.9: apply 0010 before either Worker.",
+   "files": [
+    "cloudflare/migrations/0010_vehicle_dispositions.sql",
+    "server/database.mjs",
+    "server/repository-dispatch.mjs",
+    "cloudflare/src/repository.mjs",
+    "server/vehicle-disposition.mjs",
+    "server/service-core.mjs",
+    "server/admin-control-center.mjs",
+    "cloudflare/src/worker.mjs",
+    "server/api.mjs",
+    "src/lib/api.ts",
+    "src/types.ts",
+    "src/features/inventory/types.ts",
+    "src/app/adapters.ts",
+    "scripts/start-synthetic-demo.mjs",
+    "scripts/validate-cloud-release.mjs",
+    "tests/unit/vehicle-disposition.test.ts",
+    "tests/unit/write-surface.contract.test.ts",
+    "tests/unit/cloud-write-identity.test.ts",
+    "tests/unit/role-matrix-canary.test.ts",
+    "tests/unit/server-api.test.ts",
+    "tests/unit/cloud-release-worker.test.ts"
+   ],
+   "spec_file": "/Users/joegallant/inventory-flow-lanes/handoff/specs/OVERVIEW_SPEC.md",
+   "slice": "B",
+   "amendments": []
+  },
+  {
+   "id": "O5",
+   "title": "Store board SVG schematic (Slice B)",
+   "what": "Create src/features/overview/store-board-config.ts with STORE_BOARD_POSITIONS exactly as §4 (viewBox 0 0 100 70; Fowlerville 16,28; Howell 36,24; Ford Detroit 78,52; Lincoln 86,62; no addresses) and src/features/overview/StoreBoard.tsx: inline <svg role='img' aria-labelledby='ov-board-title ov-board-desc'>, pins as SVG <a href> with a delegated onClick calling navigate, circle r=5 (home store stroke var(--ifx-oem-accent), others var(--ifx-neutral-500), fill var(--ifx-neutral-0)), invisible r=9 hit circle, <title> per pin, count text (font-size 4 viewBox units); one <path> per overview.board.flows entry (outbound solid, return dashed 2 1.5, planned dotted) with marker-end arrowhead, midpoint count and <title>; a visually hidden <table class='sr-only'> mirroring pins and flows; the shared OverviewFilter chips drive pin numbers and the where-list; on mobile the board sits in <details class='ov-board-details'> closed by default. Pin hrefs = the card's active count href; arrow hrefs = /transfers?view=<moving|planned>&from=A&to=B (return arrows from=dest&to=home) from overview-links.ts.",
+   "why": "Joe asked to click into a map/board showing where each store's inventory is with filters; the app has no per-vehicle positions, so an honest schematic with configured positions, counts on pins and arrows for moves in progress is the truthful form.",
+   "effort": "sonnet/high · 1 day (opus review)",
+   "depends_on": [
+    "O1",
+    "O4"
+   ],
+   "verification": "StoreBoard.test.tsx: four pins with accessible titles, arrows per flow kind with titles, sr-only table mirrors counts, pin/arrow hrefs match overview-links; e2e at 390 opens the details, asserts rendered SVG text ≥ 12px, a pin click navigates to Inventory with the chip, the return arrow (demo seed b) navigates to Moves filtered from Howell to Lincoln; hit target ≥ 44px at 1440. Design ratchet unchanged (no raw colors).",
+   "files": [
+    "src/features/overview/store-board-config.ts",
+    "src/features/overview/StoreBoard.tsx",
+    "src/features/overview/StoreBoard.test.tsx",
+    "src/features/overview/OverviewPage.tsx",
+    "src/features/overview/overview-links.ts",
+    "tests/e2e/overview.spec.ts"
+   ],
+   "spec_file": "/Users/joegallant/inventory-flow-lanes/handoff/specs/OVERVIEW_SPEC.md",
+   "slice": "B",
+   "amendments": []
+  },
+  {
+   "id": "O6",
+   "title": "Disposition UI (Slice B)",
+   "what": "Create src/features/overview/DispositionDialog.tsx per §6.10: role='dialog' aria-modal aria-labelledby, useContainedFocus and useModalBackgroundIsolation (src/lib), Escape closes, focus returns to opener; radio group of allowed transitions from a client mirror of DISPOSITION_TRANSITIONS; date input required for delivered/wholesale (default meta.reportDate for TESTDATA VINs else local today); destination store select for transfer_out only; note textarea 500 chars with helper text 'No customer names. Notes are visible to sales and managers.'; Save (primary Ford blue) / Cancel; on 409 DISPOSITION_VERSION_CONFLICT keep the draft, load latest, show 'Another manager updated this vehicle. Review and save again.'; on 422 DISPOSITION_NOTE_CONTAINS_HOLD_EVIDENCE keep the draft and show the server message under the note; on success call refresh() and announce 'Sold pending recorded for #stock.' Entry points: 'Record disposition' on where-list and dispositions-section rows when appDisposition.canManage, and a 'Disposition' control with current code and 'Change' in the VehicleWorkspace Operations block (VehicleWorkspace.tsx L2450). Always render beside it the imported evidence line from vehicle.managerDisposition (soldLabel/deliveryLabel · sourceStore · sourcePeriod). Add the dispositions section and card counts (Sold pending / Wholesale / Transfer out) to OverviewPage for managers/sales; codes+dates only for transport roles. Add Inventory view values disposition-keep/-sold-pending/-delivered/-wholesale/-transfer-out/-none to the O3 predicate.",
+   "why": "Managers manage dispositions from the Overview and the vehicle workspace with the app's own audited record shown next to, never instead of, the imported manager log.",
+   "effort": "sonnet/high · 1 day",
+   "depends_on": [
+    "O2",
+    "O4"
+   ],
+   "verification": "DispositionDialog.test.tsx: focus trap, Escape, focus return, only allowed transitions listed, required date/destination/note rules, 409 and 422 handling, success status message; OverviewPage.test.tsx: Record button only when canManage (manager own store, group_manager anywhere), sales sees notes in detail but no button, transport roles see code+date only; manager-log line renders beside the app disposition with distinct labels; e2e: manager records sold_pending on TESTDATAHWELL0001 and the card count updates after refresh.",
+   "files": [
+    "src/features/overview/DispositionDialog.tsx",
+    "src/features/overview/DispositionDialog.test.tsx",
+    "src/features/overview/OverviewPage.tsx",
+    "src/features/overview/OverviewPage.test.tsx",
+    "src/features/inventory/VehicleWorkspace.tsx",
+    "src/features/inventory/inventory-utils.ts",
+    "tests/e2e/overview.spec.ts"
+   ],
+   "spec_file": "/Users/joegallant/inventory-flow-lanes/handoff/specs/OVERVIEW_SPEC.md",
+   "slice": "B",
+   "amendments": []
+  },
+  {
+   "id": "O8",
+   "title": "Slice B test gate (canary, per-role components, e2e, ratchet)",
+   "what": "Extend tests/unit/role-matrix-canary.test.ts per §15.3 with a dedicated identity { role: 'manager', store: 'Howell', user: marker('disposition actor') } that posts only dispositions (note = marker), add /api/vehicles/:vin/disposition to readEverything, assert transport roles get no marker in bootstrap.overview, vehicles[*].appDisposition or the disposition read, evidence roles do, and the integration projection has no overview key and no appDisposition. Complete per-role component tests for Slice B surfaces (board, dispositions section, dialog), the e2e board/disposition scenarios at four viewports, and the design ratchet run. Run the whole product-rule set (write-surface, cloud-write-identity, canary, adapters custody/listing, server-api) and pnpm check as the final gate.",
+   "why": "Slice B adds the only new write and a new private field; the product-rule tests must prove redaction, the write surface and never-inferred behavior before it merges.",
+   "effort": "sonnet/high · 1.5 days; final gate fable/xhigh",
+   "depends_on": [
+    "O2",
+    "O5",
+    "O6"
+   ],
+   "verification": "All product-rule tests green with cases added and none loosened (diff of each file shows only additions plus the approved write-surface re-pin); e2e overview.spec.ts green at 390/1024/1320/1440 on Chromium; pnpm check green; tier-up review and a fable/xhigh critique recorded in the PR.",
+   "files": [
+    "tests/unit/role-matrix-canary.test.ts",
+    "src/features/overview/OverviewPage.test.tsx",
+    "src/features/overview/DispositionDialog.test.tsx",
+    "src/features/overview/StoreBoard.test.tsx",
+    "tests/e2e/overview.spec.ts",
+    "scripts/design-system-baseline.json"
+   ],
+   "spec_file": "/Users/joegallant/inventory-flow-lanes/handoff/specs/OVERVIEW_SPEC.md",
+   "slice": "B",
+   "amendments": []
+  }
+ ]
+}
