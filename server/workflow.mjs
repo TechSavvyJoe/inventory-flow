@@ -11,7 +11,7 @@ const TRANSFER_INTENTS = new Set(['request', 'direct'])
 const DIRECT_MOVE_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
 const DIRECT_MOVE_FUTURE_TOLERANCE_MS = 5 * 60 * 1000
 const PASSIVE_EVENTS = new Set(['note_added', 'eta_updated', 'driver_requested', 'condition_issue', 'location_exception', 'escalated'])
-const ACTIVE_ONLY_PASSIVE_EVENTS = new Set(['driver_requested', 'condition_issue', 'location_exception', 'escalated'])
+const ACTIVE_ONLY_PASSIVE_EVENTS = new Set(['eta_updated', 'driver_requested', 'condition_issue', 'location_exception', 'escalated'])
 const TRANSPORT_ASSIGNMENT_EVENTS = new Set(['transport_assigned', 'return_assigned'])
 
 // Distinct events preserve the advanced audit/identity rules while the default
@@ -202,14 +202,19 @@ function storeName(value, field) {
   return store
 }
 
+// A timestamp without an explicit zone (a raw datetime-local value, or a bare
+// date) would be read in the server's zone, which is UTC on the hosted Worker
+// and Eastern on the dealership host. Require the instant to be unambiguous.
+const ZONED_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})$/i
+
 function isoTimestamp(value, field, { required = false } = {}) {
   if (value === undefined || value === null || value === '') {
     if (required) throw new WorkflowError(`${field} is required`, { details: { field } })
     return null
   }
-  const parsed = new Date(value)
+  const parsed = typeof value === 'string' && ZONED_ISO_TIMESTAMP.test(value.trim()) ? new Date(value.trim()) : new Date(NaN)
   if (Number.isNaN(parsed.valueOf())) {
-    throw new WorkflowError(`${field} must be a valid date or timestamp`, { details: { field } })
+    throw new WorkflowError(`${field} must be an ISO timestamp with an explicit timezone`, { details: { field } })
   }
   return parsed.toISOString()
 }
@@ -511,7 +516,7 @@ export function allowedEventTypes(currentStatus, role, workflowMode = 'advanced'
   )
 }
 
-function workflowPatch(current, eventType, input, actor, occurredAt, context) {
+function workflowPatch(current, eventType, input, actor, occurredAt, context, recordedAt = occurredAt) {
   const destination = current.destination_store_id
   const home = current.home_store_id
   const assignee = optionalText(input.assignee, 'assignee', 160)
@@ -519,7 +524,9 @@ function workflowPatch(current, eventType, input, actor, occurredAt, context) {
   const dueAt = isoTimestamp(input.dueAt, 'dueAt')
   const patch = {
     status: PASSIVE_EVENTS.has(eventType) ? current.status : (SIMPLE_EVENT_STATUS[eventType] ?? eventType),
-    updated_at: occurredAt,
+    // Ledger recency follows the server clock; occurredAt is the actor's
+    // business time and is kept on the event and confirmation fields.
+    updated_at: recordedAt,
   }
 
   switch (eventType) {
@@ -831,6 +838,20 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
     })
   }
   const occurredAt = isoTimestamp(input.occurredAt, 'occurredAt') || now.toISOString()
+  const occurredTime = Date.parse(occurredAt)
+  // occurredAt becomes the move's last confirmed location time. Bound it the
+  // same way as a direct move's movedAt: a far-future value would otherwise
+  // block every later move of that vehicle through the chronology check.
+  if (occurredTime > now.valueOf() + DIRECT_MOVE_FUTURE_TOLERANCE_MS) {
+    throw new WorkflowError('occurredAt cannot be materially in the future', {
+      details: { field: 'occurredAt', futureToleranceMinutes: 5 },
+    })
+  }
+  if (occurredTime < now.valueOf() - DIRECT_MOVE_MAX_AGE_MS) {
+    throw new WorkflowError('occurredAt cannot be more than 90 days ago', {
+      details: { field: 'occurredAt', maximumBackdateDays: 90 },
+    })
+  }
   const storeId = storeName(context.store, 'store')
   const simpleOutcomeEstablishesDestination = context.workflowMode === 'simple' &&
     SIMPLE_OUTCOME_EVENTS.has(eventType) && SIMPLE_PRE_DESTINATION_STATES.has(current.status)
@@ -895,7 +916,7 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
 
   return {
     event,
-    requestPatch: workflowPatch(current, eventType, input, actor, occurredAt, context),
+    requestPatch: workflowPatch(current, eventType, input, actor, occurredAt, context, now.toISOString()),
   }
 }
 

@@ -1614,8 +1614,11 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
       sourceId: vehicle.vin,
     })
   }
+  // Every active move gets an attention item. A fixed cap silently dropped the
+  // least recently touched moves, which are exactly the ones needing review,
+  // and made them unreachable through /api/attention/:id.
   for (const row of transferRows.filter((row) => isActiveTransfer(row) &&
-    !(context.workflowMode === 'simple' && row.status === 'returned_home')).slice(0, 20)) {
+    !(context.workflowMode === 'simple' && row.status === 'returned_home'))) {
     const next = context.workflowMode === 'simple' ? simpleNextAction(row) : { label: row.next_action, owner: cleanText(row.next_action_owner) }
     items.push({
       id: versionedAttentionId(`transfer-${row.id}`, [

@@ -34,8 +34,11 @@ async function authorizedActor(db, userId) {
 export async function readMembershipAdmin(db, context) {
   const userId = actorId(context)
   await authorizedActor(db, userId)
+  // The directory revision is the append-only access history length. It only
+  // moves when a membership changes, so a transfer or release commit elsewhere
+  // (which bumps the global app revision) no longer invalidates an open form.
   const results = await db.batch([
-    db.prepare('SELECT revision FROM cloud_app_revision WHERE id=1'),
+    db.prepare('SELECT COUNT(*) AS revision FROM cloud_membership_events'),
     db.prepare(`SELECT ${FIELDS} FROM cloud_memberships ORDER BY name COLLATE NOCASE, user_id`),
     db.prepare('SELECT id,actor_name,target_user_id,action,reason,next_json,created_at FROM cloud_membership_events ORDER BY created_at DESC,id DESC LIMIT 30'),
   ])
@@ -72,9 +75,11 @@ export async function saveMembership(db, input, context, requestKey) {
   const timestamp = new Date().toISOString()
   try {
     await db.batch([
-      // A stale snapshot or revoked actor aborts the entire transaction through
-      // the existing NOT NULL revision constraint. No partial member/audit write.
-      db.prepare(`UPDATE cloud_app_revision SET revision=CASE WHEN revision=? AND EXISTS(SELECT 1 FROM cloud_memberships WHERE user_id=? AND enabled=1 AND role='group_manager') THEN revision+1 ELSE NULL END WHERE id=1`).bind(change.expectedRevision, userId),
+      // A stale directory snapshot or revoked actor aborts the entire transaction
+      // through the existing NOT NULL revision constraint. No partial
+      // member/audit write. The app revision still advances so cached
+      // bootstraps refresh.
+      db.prepare(`UPDATE cloud_app_revision SET revision=CASE WHEN (SELECT COUNT(*) FROM cloud_membership_events)=? AND EXISTS(SELECT 1 FROM cloud_memberships WHERE user_id=? AND enabled=1 AND role='group_manager') THEN revision+1 ELSE NULL END WHERE id=1`).bind(change.expectedRevision, userId),
       previous
         ? db.prepare('UPDATE cloud_memberships SET name=?,role=?,home_store=?,enabled=?,updated_at=? WHERE user_id=?').bind(change.name, change.role, change.homeStore, change.enabled ? 1 : 0, timestamp, id)
         : db.prepare('INSERT INTO cloud_memberships(email,user_id,name,role,home_store,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(change.email, id, change.name, change.role, change.homeStore, change.enabled ? 1 : 0, timestamp, timestamp),

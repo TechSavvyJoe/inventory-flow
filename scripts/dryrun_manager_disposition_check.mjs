@@ -11,7 +11,7 @@ import { cloudReleaseFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
-const REPORT_DATE = process.argv[2] ?? '2026-09-12'
+const REPORT_DATE = process.argv[2] ?? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date())
 const WORKSPACE_ROOT = resolveWorkspaceRoot(import.meta.url)
 
 function mmddyyyy(iso) {

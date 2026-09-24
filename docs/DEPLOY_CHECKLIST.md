@@ -15,7 +15,7 @@ Both `wrangler.jsonc` files now configure a [`version_metadata`](https://develop
   ```sh
   wrangler d1 execute inventory-ops-production --remote --command "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name" --config cloudflare/wrangler.jsonc
   ```
-  Release 1.2.1 requires `0009_membership_admin.sql` to already be applied. If a new migration ships with this deploy, apply it remotely as its own single file first and confirm it here before deploying Worker code that depends on it.
+  Release 1.2.1 requires `0009_membership_admin.sql` to already be applied. The integration Worker's MCP tools for operational inventory search, vehicle resources, daily operations, data quality and reconciliation require `0010_integration_audit_operations.sql` (single-file apply; it rebuilds the audit table and both audit indexes) or their audit INSERT fails and the tool answers `AUDIT_UNAVAILABLE`. If a new migration ships with this deploy, apply it remotely as its own single file first and confirm it here before deploying Worker code that depends on it.
 - [ ] No known critical bugs in the release; changes reviewed.
 - [ ] Rollback plan is written down **before** deploying, not improvised after: record the current (pre-deploy) version IDs for both Workers.
   ```sh

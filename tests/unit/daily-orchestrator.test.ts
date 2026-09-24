@@ -1,7 +1,7 @@
 // @ts-nocheck -- the daily orchestrator is plain ESM.
 // @vitest-environment node
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -61,6 +61,34 @@ describe('app-first daily orchestrator helpers', () => {
 
     expect(internals.exitCodeForResult({ ok: true })).toBe(0)
     expect(internals.exitCodeForResult({ ok: false, failureCode: 'DEALERMAIL_INCOMPLETE' })).toBe(1)
+  })
+
+  it('reuses a complete existing OASIS capture when the browser is unavailable, and only then', async () => {
+    const internals = await loadInternals()
+    const reportDate = '2026-09-22'
+    const steps = []
+    expect(internals.reuseExistingOasisCapture(reportDate, steps)).toBe(false)
+    expect(steps.at(-1)).toMatchObject({ name: 'oasis', status: 'skipped_browser_unavailable' })
+
+    mkdirSync(path.join(workspaceRoot, 'work', 'oasis-history'), { recursive: true })
+    const worklist = [{ vin: '1FT8W3BM8RED19309' }, { vin: '1FTFW1E50NFA00009' }]
+    writeFileSync(path.join(workspaceRoot, 'work', `oasis-vin-worklist-${reportDate}.json`), JSON.stringify(worklist))
+    const complete = (vin) => ({ vin, openActionsCaptured: true, openFieldServiceActionCount: 0, openFieldServiceActions: [] })
+    writeFileSync(path.join(workspaceRoot, 'work', 'oasis-history', `${reportDate}-oasis.json`), JSON.stringify({ records: [complete(worklist[0].vin)] }))
+    expect(internals.reuseExistingOasisCapture(reportDate, steps)).toBe(false)
+    expect(steps.at(-1)).toMatchObject({ name: 'oasis', status: 'existing_capture_incomplete' })
+
+    writeFileSync(path.join(workspaceRoot, 'work', 'oasis-history', `${reportDate}-oasis.json`), JSON.stringify({ records: worklist.map((item) => complete(item.vin)) }))
+    expect(internals.reuseExistingOasisCapture(reportDate, steps)).toBe(true)
+    expect(steps.at(-1)).toMatchObject({ name: 'oasis', status: 'reused_existing_capture' })
+  })
+
+  it('writes JSON through a temporary file so readers never see a partial manifest', async () => {
+    const internals = await loadInternals()
+    const target = path.join(workspaceRoot, 'work', 'run-status', 'atomic.json')
+    internals.writeJson(target, { complete: true })
+    expect(JSON.parse(readFileSync(target, 'utf8'))).toEqual({ complete: true })
+    expect(readdirSync(path.dirname(target)).filter((name) => name.endsWith('.tmp'))).toEqual([])
   })
 
   it('does not bind a previous manager overlay before its current-run validation', async () => {

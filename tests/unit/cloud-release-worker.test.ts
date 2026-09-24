@@ -43,6 +43,15 @@ describe('Cloud Worker authentication boundary',()=>{
     const denied={...env,INVENTORY_DB:{prepare(){return {bind(){return this},first:async()=>null}}}}
     expect((await worker.fetch(request('/api/health',await token()),denied)).status).toBe(403)
   })
+  it('answers 405 for a write to a read-only route before touching the release or ledger',async()=>{
+    const get=vi.fn(()=>{throw new Error('Release must not be read for a request that can never commit')})
+    const guarded={...env,RELEASE_SNAPSHOTS:{get}}
+    for (const path of ['/api/vehicles/TESTDATAHWELL0001','/api/vehicles/TESTDATAHWELL0001/invoice','/api/vehicles/TESTDATAHWELL0001/equipment-pdf','/api/attention/synthetic-id','/api/transfers/synthetic-id','/api/bootstrap']) {
+      const response=await worker.fetch(request(path,await token(),{method:'POST',headers:{origin:`https://${host}`,'idempotency-key':'synthetic','content-type':'application/json'},body:'{}'}),guarded)
+      expect(response.status,path).toBe(405)
+    }
+    expect(get).not.toHaveBeenCalled()
+  })
   it('does not expose the raw release download',async()=>expect((await worker.fetch(request('/api/releases/current',await token()),env)).status).toBe(404))
   it('separates the machine uploader from employee access',async()=>{
     const jwt=await token({aud:env.ACCESS_PUBLISHER_AUDIENCE,sub:'',email:undefined,common_name:env.PUBLISHER_CLIENT_ID})

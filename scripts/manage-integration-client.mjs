@@ -5,8 +5,9 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { closeSync, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, chmodSync, unlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { INTEGRATION_SCOPES, INTEGRATION_STORES, hashIntegrationToken } from '../cloudflare/src/integration-access.mjs'
+import { isMainModule } from './lib/is-main.mjs'
 
 const APP_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const require = createRequire(import.meta.url)
@@ -358,7 +359,7 @@ async function main(args) {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+if (isMainModule(import.meta.url)) {
   main(process.argv.slice(2)).catch((error) => {
     const result = error instanceof IntegrationManagementError ? { code: error.code, ...(error.clientId ? { clientId: error.clientId } : {}), ...(error.cleanupComplete !== undefined ? { cleanupComplete: error.cleanupComplete } : {}) } : { code: 'INTEGRATION_ADMIN_FAILED' }
     process.stderr.write(`${JSON.stringify(result)}\n`)

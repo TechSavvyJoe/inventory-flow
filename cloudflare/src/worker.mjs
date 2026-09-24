@@ -357,7 +357,10 @@ async function publishRelease(request, env) {
   const metadata=releaseMetadata(bundle,counts)
   releaseCompletionTime(bundle.release.completedAt)
   const existing=await env.INVENTORY_DB.prepare('SELECT * FROM cloud_release_versions WHERE bundle_sha256=? AND report_date=?').bind(envelope.bundleSha256,envelope.reportDate).first()
-  if(existing && existing.status!=='rejected' && await env.RELEASE_SNAPSHOTS.head(existing.object_key)) {
+  // Only the live release is "already published". A superseded bundle falls
+  // through to the ordering check so a retry of an older publish is rejected
+  // rather than reported as live while a newer release stays current.
+  if(existing && existing.status==='current' && await env.RELEASE_SNAPSHOTS.head(existing.object_key)) {
     // A prior retry could have retained an older derived summary even though
     // the encrypted bundle is the same. Refresh only those derived totals from
     // the just-validated immutable content; never rewrite the source release.
@@ -390,6 +393,10 @@ async function appApi(request,url,env,context) {
   const adminMembersRoute=route==='/admin/members'
   if(adminOverview && !read) throw new HttpError('METHOD_NOT_ALLOWED',405)
   if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/(?:service|invoice|equipment-pdf)$/.test(route) || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
+  // Only these routes accept writes. Answer 405 here, before the release is
+  // decrypted and the D1 snapshot is loaded for a request that can never commit.
+  const writable=route==='/transfers' || /^\/vehicles\/[^/]+\/service$/.test(route) || /^\/(transfers|attention)\/[^/]+\/events$/.test(route) || adminMembersRoute
+  if(write && !writable) throw new HttpError('METHOD_NOT_ALLOWED',405)
   // The membership context was resolved from Access + D1 before this point.
   // Check it before reading the group directory or private release.
   if(adminOverview || adminMembersRoute) assertAdminOverviewAccess(context)

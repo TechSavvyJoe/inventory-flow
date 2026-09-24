@@ -212,7 +212,9 @@ export function TransferActionDialog({ action, record, detail, onClose, onComple
         fromLocation: record.currentLocation,
         toLocation:
           eventType === 'arrived' ? record.destination : eventType === 'returned_home' ? record.homeStore : undefined,
-        dueAt: dueAt || undefined,
+        // datetime-local values carry no zone; send an instant, as the other
+        // move forms do, so the server never interprets local time as UTC.
+        dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
         assignee: assignee.trim() || undefined,
       })
       if (!isCurrentWorkspace()) return
