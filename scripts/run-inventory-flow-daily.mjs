@@ -282,7 +282,7 @@ function runManagerDisposition(reportDate, warnings, steps) {
   const csv = path.join(WORK_ROOT, 'sold-delivered', `${month}.csv`)
   if (!existsSync(csv)) {
     steps.push({ name: 'manager_disposition', status: 'skipped_no_csv' })
-    return
+    return false
   }
   const ingest = run(PYTHON, ['work\\ingest_sold_delivered.py', '--report-date', reportDate, '--csv', csv], {
     optional: true,
@@ -298,8 +298,10 @@ function runManagerDisposition(reportDate, warnings, steps) {
   if (!ingest.ok || !check.ok) {
     warnings.push('Manager sold/delivered overlay did not validate; it was not used to change current inventory status.')
     steps.push({ name: 'manager_disposition', status: 'failed_non_blocking', detail: safeDetail(check.output) })
+    return false
   } else {
     steps.push({ name: 'manager_disposition', status: 'complete' })
+    return true
   }
 }
 
@@ -369,7 +371,7 @@ function countByStore(rows, field = 'store') {
   return counts
 }
 
-function deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps }) {
+function deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, managerDispositionValidated = false }) {
   const publicSnapshot = readJson(publicPath)
   const dealerSnapshot = readJson(dealerPath)
   const publicRows = rowsFromPublic(publicSnapshot)
@@ -377,7 +379,7 @@ function deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps })
   const excludeRows = dealerSnapshot.excludeActiveHoldsValidationSet?.rows ?? []
   const publicInfo = fileInfo(publicPath)
   const dealerInfo = fileInfo(dealerPath)
-  const managerBinding = managerBindingFor(reportDate, publicRows)
+  const managerBinding = managerDispositionValidated ? managerBindingFor(reportDate, publicRows) : null
   const sourceCounts = {
     public_unique_vins: publicRows.length,
     public_by_store: publicSnapshot.validation?.store_counts ?? countByStore(publicRows),
@@ -609,8 +611,10 @@ async function runDaily(options) {
   }
 
   const oasisComplete = runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps)
-  runManagerDisposition(reportDate, warnings, steps)
   let manifest = deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps })
+  writeJson(manifestPath, manifest)
+  const managerDispositionValidated = runManagerDisposition(reportDate, warnings, steps)
+  manifest = deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, managerDispositionValidated })
   writeJson(manifestPath, manifest)
 
   const resourcesOk = runResourceBuild(reportDate, warnings, steps)

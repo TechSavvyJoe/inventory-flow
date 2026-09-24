@@ -55,7 +55,7 @@ Never delete, loosen, or re-pin these without Joe's approval — agents may add 
 
 ## Git collaboration
 
-- Joe may push to `main` only after `pnpm check` passes; AI agents never push to `main` — they work on a branch and open a pull request.
+- Joe may push to `main` only after `pnpm check` passes. By default, AI agents never push to `main` — they work on a branch and open a pull request. An agent may merge or push to `main` only when Joe explicitly instructs it to do so for that specific PR or change, in that session, and only after `pnpm check` passes on it; that instruction is not standing and does not carry over to other PRs or later sessions. This exception covers `main` only — it does not extend to any Joe-only production step listed elsewhere in this file (Cloudflare/Worker deploy, the D1 migration ledger backfill, the tunnel/custom-domain move), which stay off-limits to agents regardless of instruction.
 - Keep commits scoped and submit a pull request with commands run and screenshots made from `pnpm dev:demo`.
 - Do not use screenshots from the protected host unless they were deliberately redacted and separately approved for repository use.
 - Never weaken `.gitignore` or `scripts/check-repo-safety.mjs` to make a failing commit pass.
