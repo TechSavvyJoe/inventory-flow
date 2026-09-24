@@ -442,7 +442,15 @@ function managerBindingFor(reportDate, publicRows = []) {
   const directory = path.join(WORK_ROOT, 'manager-supplied', 'sold-logs')
   const target = path.join(directory, `${month}-howell-operational.json`)
   if (!existsSync(target)) return null
-  const overlay = readJson(target)
+  // manager-supplied is a hand-dropped file, not build output: a stale or
+  // half-written overlay must not crash the daily manifest. Treat any parse
+  // or validation failure the same as "no overlay for this month."
+  let overlay
+  try {
+    overlay = readJson(target)
+  } catch {
+    return null
+  }
   const stats = overlay.summary ?? overlay
   const currentVehicles = publicRows.map((row) => ({
     vin: String(row?.vin ?? '').trim().toUpperCase(),
