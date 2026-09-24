@@ -33,22 +33,23 @@ function runCmdCapture(cmd, args) {
   return result.stdout
 }
 
+// Pure decision logic, kept free of spawnSync so it can be unit-tested
+// without a real git checkout: refuse a dirty tree or a HEAD that is not
+// origin/main unless the operator opts in with --allow-branch, in which
+// case the tag is marked so a hotfix build is never mistaken for main.
+export function deployTag({ head, shortHead, originMain, dirty, allowBranch }) {
+  if (dirty && !allowBranch) throw new Error('WORKING_TREE_DIRTY: commit or stash your changes, or pass --allow-branch to deploy.')
+  if (head !== originMain && !allowBranch) throw new Error('NOT_ON_ORIGIN_MAIN: HEAD does not match origin/main. Pass --allow-branch to deploy an explicit hotfix.')
+  return allowBranch ? `${shortHead}-branch` : shortHead
+}
+
 function checkBranch(allowBranch) {
   git(['fetch'])
   const head = git(['rev-parse', 'HEAD'])
   const originMain = git(['rev-parse', 'origin/main'])
   const dirty = git(['status', '--porcelain']).length > 0
-  
-  if (dirty) {
-    if (!allowBranch) throw new Error('WORKING_TREE_DIRTY: commit or stash your changes, or pass --allow-branch to deploy.')
-  }
-  
-  if (head !== originMain) {
-    if (!allowBranch) throw new Error('NOT_ON_ORIGIN_MAIN: HEAD does not match origin/main. Pass --allow-branch to deploy an explicit hotfix.')
-  }
-  
-  const shortSha = git(['rev-parse', '--short', 'HEAD'])
-  return allowBranch ? `${shortSha}-branch` : shortSha
+  const shortHead = git(['rev-parse', '--short', 'HEAD'])
+  return deployTag({ head, shortHead, originMain, dirty, allowBranch })
 }
 
 function main(argv) {
