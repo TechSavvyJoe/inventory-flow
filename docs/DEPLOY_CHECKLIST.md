@@ -22,7 +22,7 @@ Both `wrangler.jsonc` files now configure a [`version_metadata`](https://develop
   wrangler deployments list --config cloudflare/wrangler.jsonc
   wrangler deployments list --config cloudflare/integrations.wrangler.jsonc
   ```
-  As of September 19, 2026 the rollback targets are app `09ecac9e-21aa-4e0e-957e-196531c34798` and integrations `9d0ac26c-6dfd-46d9-a33a-4c69c9e74885` - confirm these are still current before relying on them; they go stale the moment another deploy happens. `wrangler rollback` takes the version ID as a **positional argument**, not a `--version-id` flag:
+  As of September 19, 2026 the rollback targets are the ones shown by `wrangler deployments list` - confirm these are still current before relying on them; they go stale the moment another deploy happens. `wrangler rollback` takes the version ID as a **positional argument**, not a `--version-id` flag:
   ```sh
   wrangler rollback <version-id> --config cloudflare/wrangler.jsonc
   wrangler rollback <version-id> --config cloudflare/integrations.wrangler.jsonc

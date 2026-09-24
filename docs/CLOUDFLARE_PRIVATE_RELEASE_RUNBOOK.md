@@ -283,3 +283,29 @@ Still required before a broader production rollout:
   proves the mechanism, not that a future source login will succeed.
 - Review performance, monitoring, accessibility, and operational adoption with
   the pilot users. Do not claim that cloud deployment makes every UI perfect.
+
+## Infrastructure Migration (Phase 3)
+
+### D1 Migration Ledger Backfill
+To backfill the D1 migrations table manually (do not run locally against production):
+```sh
+wrangler d1 execute inventory-ops-production --remote --config cloudflare/wrangler.jsonc --command "CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"
+wrangler d1 execute inventory-ops-production --remote --config cloudflare/wrangler.jsonc --command "INSERT OR IGNORE INTO d1_migrations (name) VALUES ('0001_initial.sql'), ('0002_location_confidence.sql'), ('0003_transport_assignment_identity.sql'), ('0004_attention_work_items.sql'), ('0005_home_store_assignments.sql'), ('0006_store_views.sql'), ('0007_service_readiness.sql'), ('0008_service_intake.sql'), ('0009_membership_admin.sql');"
+```
+Verify the ledger:
+```sh
+wrangler d1 migrations list --remote --config cloudflare/wrangler.jsonc
+```
+
+### Tunnel Cleanup and Custom Domain Move
+Moving `inventory-ops.joegallant.me` to a Workers `custom_domain` requires account-level actions:
+1. Log into the Cloudflare dashboard. Verify the retired PC tunnel and DNS CNAME for `inventory-ops.joegallant.me` still exist.
+2. In `cloudflare/wrangler.jsonc`, configure the environment with a `custom_domain` route:
+   ```jsonc
+   "routes": [
+     { "pattern": "inventory-ops.joegallant.me", "custom_domain": true }
+   ]
+   ```
+3. Deploy the worker to claim the custom domain.
+4. Delete the legacy tunnel CNAME and tunnel from the Cloudflare dashboard.
+5. Uninstall `cloudflared` on the PC.

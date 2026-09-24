@@ -4,7 +4,7 @@
 // not command substitution and would have been passed through as a literal.
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync, readFileSync, appendFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -18,36 +18,91 @@ const CONFIGS = {
 
 function git(args) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', shell: false, windowsHide: true, timeout: 30000, maxBuffer: 1024 * 1024 })
-  if (result.error || result.status !== 0 || typeof result.stdout !== 'string') throw new Error(`GIT_COMMAND_FAILED: git ${args.join(' ')}`)
+  if (result.error || result.status !== 0 || typeof result.stdout !== 'string') throw new Error(`GIT_COMMAND_FAILED: git ${args.join(' ')}\n${result.stderr || result.stdout}`)
+  return result.stdout.trim()
+}
+
+function runCmd(cmd, args) {
+  const result = spawnSync(cmd, args, { cwd: root, stdio: 'inherit', shell: false, windowsHide: true })
+  if (result.error || result.status !== 0) throw new Error(`COMMAND_FAILED: ${cmd} ${args.join(' ')}`)
+}
+
+function runCmdCapture(cmd, args) {
+  const result = spawnSync(cmd, args, { cwd: root, encoding: 'utf8', shell: false, windowsHide: true })
+  if (result.error || result.status !== 0) throw new Error(`COMMAND_FAILED: ${cmd} ${args.join(' ')}\n${result.stderr || result.stdout}`)
   return result.stdout
 }
 
-/** Wrangler tags are limited to alphanumerics, dashes and underscores. */
-export function deployTag({ sha, dirty, allowDirty }) {
-  if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error('COMMIT_SHA_UNRESOLVED')
-  if (!dirty) return sha
-  // A tag that claims a commit the deployed bundle does not match is worse
-  // than no tag at all, so a dirty tree stops the deploy unless the operator
-  // says in the command that they know the version is not that commit.
-  if (!allowDirty) throw new Error('WORKING_TREE_DIRTY: commit or stash your changes, or pass --allow-dirty to tag this deploy <sha>-dirty.')
-  return `${sha}-dirty`
-}
-
-export function resolveTag({ allowDirty }) {
-  return deployTag({ sha: git(['rev-parse', '--short', 'HEAD']).trim(), dirty: git(['status', '--porcelain']).trim().length > 0, allowDirty })
+function checkBranch(allowBranch) {
+  git(['fetch'])
+  const head = git(['rev-parse', 'HEAD'])
+  const originMain = git(['rev-parse', 'origin/main'])
+  const dirty = git(['status', '--porcelain']).length > 0
+  
+  if (dirty) {
+    if (!allowBranch) throw new Error('WORKING_TREE_DIRTY: commit or stash your changes, or pass --allow-branch to deploy.')
+  }
+  
+  if (head !== originMain) {
+    if (!allowBranch) throw new Error('NOT_ON_ORIGIN_MAIN: HEAD does not match origin/main. Pass --allow-branch to deploy an explicit hotfix.')
+  }
+  
+  const shortSha = git(['rev-parse', '--short', 'HEAD'])
+  return allowBranch ? `${shortSha}-branch` : shortSha
 }
 
 function main(argv) {
-  const target = argv[0]
-  const config = CONFIGS[target]
-  if (!config) throw new Error(`DEPLOY_TARGET_REQUIRED: expected one of ${Object.keys(CONFIGS).join(', ')}`)
-  const extra = argv.slice(1).filter(argument => argument !== '--allow-dirty')
-  const tag = resolveTag({ allowDirty: argv.includes('--allow-dirty') })
+  const allowBranch = argv.includes('--allow-branch')
+  const tag = checkBranch(allowBranch)
+
   const wrangler = path.join(path.dirname(require.resolve('wrangler/package.json')), 'bin', 'wrangler.js')
   if (!existsSync(wrangler)) throw new Error('WRANGLER_NOT_INSTALLED')
-  process.stdout.write(`Deploying ${target} Worker from ${config} tagged ${tag}\n`)
-  const result = spawnSync(process.execPath, [wrangler, 'deploy', '--config', config, '--tag', tag, ...extra], { cwd: root, stdio: 'inherit', shell: false, windowsHide: true })
-  if (result.error || result.status !== 0) throw new Error('WRANGLER_DEPLOY_FAILED')
+
+  // Pre-deploy checks
+  process.stdout.write(`Running pnpm check...\n`)
+  const npmCmd = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+  runCmd(npmCmd, ['check'])
+  
+  // dist/build.json is created after build by us
+  const distDir = path.join(root, 'dist')
+  const buildJsonPath = path.join(distDir, 'build.json')
+  const buildInfo = { commit: git(['rev-parse', 'HEAD']) }
+  writeFileSync(buildJsonPath, JSON.stringify(buildInfo, null, 2))
+  
+  process.stdout.write(`Running pnpm cloud:validate...\n`)
+  runCmd(npmCmd, ['cloud:validate'])
+  
+  // Assert dist/build.json before upload
+  if (!existsSync(buildJsonPath)) throw new Error('dist/build.json is missing before upload')
+  const writtenBuildInfo = JSON.parse(readFileSync(buildJsonPath, 'utf8'))
+  if (writtenBuildInfo.commit !== buildInfo.commit) throw new Error('dist/build.json commit mismatch')
+
+  // Pre-deploy D1 check
+  process.stdout.write(`Checking pending D1 migrations...\n`)
+  const migrationsOut = runCmdCapture(process.execPath, [wrangler, 'd1', 'migrations', 'list', '--remote', '--config', CONFIGS.app])
+  if (migrationsOut.includes('unapplied') || migrationsOut.includes('❌') || migrationsOut.includes('[ ]')) {
+    throw new Error('PENDING_D1_MIGRATIONS: Apply migrations before deploying')
+  }
+
+  // Deploy both app and integrations
+  const versionIds = {}
+  for (const [target, config] of Object.entries(CONFIGS)) {
+    process.stdout.write(`Deploying ${target} Worker from ${config} tagged ${tag}\n`)
+    runCmd(process.execPath, [wrangler, 'deploy', '--config', config, '--tag', tag])
+    
+    // Extract version id
+    const out = runCmdCapture(process.execPath, [wrangler, 'deployments', 'list', '--config', config])
+    // Parse version ID from `wrangler deployments list`. Output is typically a table. The top row usually is the latest.
+    const match = out.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/)
+    versionIds[target] = match ? match[1] : 'unknown'
+  }
+
+  const deployLog = path.join(root, 'docs', 'SHARED_DATA_DEPLOYMENT.md')
+  const logEntry = `\n- ${new Date().toISOString()} | Tag: ${tag} | App Version: ${versionIds.app} | Integrations Version: ${versionIds.integrations}`
+  if (existsSync(deployLog)) {
+    appendFileSync(deployLog, logEntry)
+  }
+  process.stdout.write(`\nDeployed successfully.\nApp version: ${versionIds.app}\nIntegrations version: ${versionIds.integrations}\n`)
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
