@@ -14,7 +14,7 @@ import { SYNTHETIC_VEHICLE_PHOTOS } from '../extension/sidepanel/lib/synthetic-p
 const root = resolve(import.meta.dirname, '..', 'extension')
 const demoPhotoRoot = resolve(import.meta.dirname, '..', 'public', 'demo-vehicles')
 const demoPhotoPaths = new Set(Object.values(SYNTHETIC_VEHICLE_PHOTOS))
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.json': 'application/json; charset=utf-8' }
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.json': 'application/json; charset=utf-8' }
 
 export function createExtensionPreviewServer({ demoApiPort = Number(process.env.INVENTORY_DEMO_API_PORT || 4174) } = {}) {
  const demoApi = { host: '127.0.0.1', port: demoApiPort }

@@ -8,8 +8,8 @@ import {
   sortVehicles,
   vehicleMoveAction,
   vehicleMatchesFilters,
-  vehicleMatchesQuery,
 } from "./inventory-utils";
+import { inventoryVehicleMatchesSearch } from "./inventory-search";
 import type { InventoryVehicle } from "./types";
 
 function vehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
@@ -104,8 +104,8 @@ describe("inventory source-safe selectors", () => {
 
   it("finds partial VINs and folded model punctuation", () => {
     const record = vehicle();
-    expect(vehicleMatchesQuery(record, "RKF123")).toBe(true);
-    expect(vehicleMatchesQuery(record, "f150 supercrew")).toBe(true);
+    expect(inventoryVehicleMatchesSearch(record, "RKF123")).toBe(true);
+    expect(inventoryVehicleMatchesSearch(record, "f150 supercrew")).toBe(true);
   });
 
   it("does not treat a stale negative hold result as verified no-hold", () => {

@@ -11,6 +11,7 @@ import {
   isFactoryCoverageRow,
   isOasisDate,
 } from './oasis-coverage-grammar.mjs'
+import { OASIS_VEHICLE_TEXT_FIELDS, OASIS_VEHICLE_TEXT_MAX_LENGTH } from './oasis-fields.mjs'
 import { sanitizeManagerDispositionDocuments } from './manager-disposition-schema.mjs'
 import { loadManagerDispositionOverlay } from './manager-disposition-overlay.mjs'
 
@@ -825,12 +826,6 @@ function validatedFordInvoice(value, vin) {
   return { dataState: 'current', available: true, capturedAt, sourceLabel }
 }
 
-const OASIS_VEHICLE_TEXT_FIELDS = [
-  'bodyStyle', 'driveType', 'paintColor', 'paintCode', 'engine', 'engineCalibration',
-  'transmission', 'axleRatio', 'axleCode', 'grossVehicleWeight', 'wheelSize', 'tire',
-  'syncVersion', 'fuelType',
-]
-
 const SERVICE_HISTORY_DATE_PATTERN = /^(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])\/\d{4}$/
 const SERVICE_HISTORY_SEARCH_STATES = new Set(['confirmed', 'not_identified', 'incomplete'])
 const SERVICE_HISTORY_INSPECTION_STATES = new Set(['confirmed', 'not_identified'])
@@ -1020,7 +1015,7 @@ function validatedFordOasis(value, vin) {
     ['sourceLabel', 160],
     ['vehicleDescription', 160],
     ['versionSeries', 120],
-    ...OASIS_VEHICLE_TEXT_FIELDS.map(key => [key, 160]),
+    ...OASIS_VEHICLE_TEXT_FIELDS.map(key => [key, OASIS_VEHICLE_TEXT_MAX_LENGTH]),
     ['buildDate', 40],
     ['warrantyStartDate', 40],
     ['releaseDate', 40],

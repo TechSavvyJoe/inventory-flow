@@ -1,4 +1,4 @@
-// Manager-disposition dry-run oracle, modeled on dryrun_full_bundle_check.mjs:
+// Manager-disposition dry-run oracle, modeled on the other dryrun_*.mjs oracles:
 // loads the release through the REAL importer (manifest gate + the exact
 // manifest-bound *-operational.json loader), builds the same cloud bundle
 // publish-cloud-release.mjs builds, and runs the REAL validateReleaseBundle.

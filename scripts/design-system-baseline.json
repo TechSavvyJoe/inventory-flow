@@ -4,46 +4,259 @@
     "@fontsource/inter/latin-500.css",
     "@fontsource/inter/latin-600.css",
     "@fontsource/inter/latin-700.css",
-    "./design-system/tokens.css",
-    "./design-system/components.css",
     "./styles/tokens.css",
-    "./styles/global.css",
     "./styles/shell.css",
-    "./styles/premium-refinement.css",
-    "./styles/vdp-final-refinement.css",
-    "./styles/typography-hardening.css",
-    "./styles/app-system-polish.css",
-    "./styles/inventory-experience-final.css",
-    "./styles/readability-final.css",
-    "./styles/inventory-production-v10.css"
+    "./styles/base.css"
+  ],
+  "grandfatheredFilenames": [
+    "src/features/transfers/transfer-workspace-v3.css",
+    "src/features/transfers/transfer-workspace-v4.css"
   ],
   "files": {
-    "src/components/CopyableValue.css": { "smallText": 1, "rawColors": 6 },
-    "src/design-system/components.css": { "smallText": 0, "rawColors": 6 },
-    "src/design-system/tokens.css": { "smallText": 0, "rawColors": 0 },
-    "src/features/attention/attention.css": { "smallText": 17, "rawColors": 22 },
-    "src/features/attention/operations-queue.css": { "smallText": 0, "rawColors": 72 },
-    "src/features/inventory/inventory-modern.css": { "smallText": 169, "rawColors": 702 },
-    "src/features/inventory/inventory.css": { "smallText": 39, "rawColors": 56 },
-    "src/features/inventory/InventoryExperience.production-v4.css": { "smallText": 14, "rawColors": 35 },
-    "src/features/inventory/InventoryTable.compact-v3.css": { "smallText": 21, "rawColors": 104 },
-    "src/features/inventory/InventoryTable.operational-v9.css": { "smallText": 0, "rawColors": 79 },
-    "src/features/inventory/InventoryTable.production-v4.css": { "smallText": 28, "rawColors": 65 },
-    "src/features/inventory/VehicleWorkspace.compact-v3.css": { "smallText": 98, "rawColors": 264 },
-    "src/features/manager/manager.css": { "smallText": 0, "rawColors": 79 },
-    "src/features/transfers/transfer-workspace-v3.css": { "smallText": 63, "rawColors": 145 },
-    "src/features/transfers/transfer-workspace-v4.css": { "smallText": 1, "rawColors": 113 },
-    "src/features/transfers/transfers-page.css": { "smallText": 5, "rawColors": 36 },
-    "src/features/transfers/transfers.css": { "smallText": 30, "rawColors": 64 },
-    "src/styles/app-system-polish.css": { "smallText": 0, "rawColors": 8 },
-    "src/styles/global.css": { "smallText": 0, "rawColors": 10 },
-    "src/styles/inventory-experience-final.css": { "smallText": 5, "rawColors": 42 },
-    "src/styles/pages.css": { "smallText": 0, "rawColors": 46 },
-    "src/styles/premium-refinement.css": { "smallText": 92, "rawColors": 397 },
-    "src/styles/readability-final.css": { "smallText": 0, "rawColors": 8 },
-    "src/styles/shell.css": { "smallText": 8, "rawColors": 20 },
-    "src/styles/tokens.css": { "smallText": 0, "rawColors": 0 },
-    "src/styles/typography-hardening.css": { "smallText": 5, "rawColors": 20 },
-    "src/styles/vdp-final-refinement.css": { "smallText": 0, "rawColors": 93 }
+    "src/styles/shell.css": {
+      "smallText": 0,
+      "rawColors": 23,
+      "rgbHslColors": 20,
+      "important": 3,
+      "idSelectors": 0
+    },
+    "src/styles/base.css": {
+      "smallText": 0,
+      "rawColors": 8,
+      "rgbHslColors": 6,
+      "important": 15,
+      "idSelectors": 6
+    },
+    "src/styles/tokens.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/components/RouteLoadingState.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 1,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/design-system/components.css": {
+      "smallText": 0,
+      "rawColors": 4,
+      "rgbHslColors": 5,
+      "important": 1,
+      "idSelectors": 0
+    },
+    "src/features/admin/admin.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 2,
+      "idSelectors": 0
+    },
+    "src/features/attention/InventoryUpdatesPage.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/styles/workflow-pages.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/service-status-link.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 2
+    },
+    "src/components/PredictiveSearchInput.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/manager/manager.css": {
+      "smallText": 0,
+      "rawColors": 73,
+      "rgbHslColors": 1,
+      "important": 25,
+      "idSelectors": 0
+    },
+    "src/features/transfers/transfers-page.css": {
+      "smallText": 3,
+      "rawColors": 36,
+      "rgbHslColors": 2,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/transfers/transfer-workspace-v3.css": {
+      "smallText": 47,
+      "rawColors": 145,
+      "rgbHslColors": 9,
+      "important": 29,
+      "idSelectors": 0
+    },
+    "src/features/transfers/transfers.css": {
+      "smallText": 22,
+      "rawColors": 68,
+      "rgbHslColors": 6,
+      "important": 13,
+      "idSelectors": 0
+    },
+    "src/features/transfers/transfer-vehicle-context.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 29
+    },
+    "src/features/transfers/transfer-simple.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 4,
+      "idSelectors": 123
+    },
+    "src/components/CopyableValue.css": {
+      "smallText": 1,
+      "rawColors": 6,
+      "rgbHslColors": 0,
+      "important": 1,
+      "idSelectors": 0
+    },
+    "src/features/attention/OperationsQueue.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/service/ServiceDesk.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 3,
+      "idSelectors": 0
+    },
+    "src/features/inventory/VehicleGallery.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 3
+    },
+    "src/features/transfers/vehicle-moves.css": {
+      "smallText": 0,
+      "rawColors": 6,
+      "rgbHslColors": 0,
+      "important": 7,
+      "idSelectors": 204
+    },
+    "src/features/transfers/transfer-workspace-v4.css": {
+      "smallText": 1,
+      "rawColors": 113,
+      "rgbHslColors": 8,
+      "important": 62,
+      "idSelectors": 7
+    },
+    "src/features/inventory/InventoryServiceFilter.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 45
+    },
+    "src/features/inventory/inventory-modern.css": {
+      "smallText": 51,
+      "rawColors": 188,
+      "rgbHslColors": 44,
+      "important": 1,
+      "idSelectors": 0
+    },
+    "src/features/inventory/inventory.css": {
+      "smallText": 19,
+      "rawColors": 35,
+      "rgbHslColors": 9,
+      "important": 13,
+      "idSelectors": 1
+    },
+    "src/features/inventory/VehicleWorkspace.records.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 119
+    },
+    "src/features/inventory/VehicleWorkspace.focused.css": {
+      "smallText": 0,
+      "rawColors": 1,
+      "rgbHslColors": 0,
+      "important": 1,
+      "idSelectors": 510
+    },
+    "src/features/inventory/WarrantyOutlook.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/TakeHomeSheet.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 2,
+      "idSelectors": 0
+    },
+    "src/components/CertifiedBadge.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/VehicleResourceCards.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/DealerMailHandoff.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/InventoryMobile.scan.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/InventoryTable.desk.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 5,
+      "important": 1,
+      "idSelectors": 0
+    },
+    "src/features/inventory/InventoryRecordsPanel.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    }
   }
 }

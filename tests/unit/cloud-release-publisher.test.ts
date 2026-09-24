@@ -4,7 +4,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDecipheriv } from 'node:crypto'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
-import { loadLatestCompletedRelease } from '../../server/importer.mjs'
+import { readFileSync } from 'node:fs'
+import { loadLatestCompletedRelease, validateVinDocumentEnrichment } from '../../server/importer.mjs'
+import { OASIS_VEHICLE_TEXT_FIELDS } from '../../server/oasis-fields.mjs'
 import { resourceProvenanceSha256 } from '../../server/resource-validation.mjs'
 import { validateReleaseBundle } from '../../cloudflare/src/release-validation.mjs'
 import { datasetFromRelease } from '../../cloudflare/src/repository.mjs'
@@ -507,8 +509,10 @@ describe('portable cloud release validation', () => {
     const resourceVehicle = addFordOasis(bundle)
     expect(validateReleaseBundle(bundle)).toMatchObject({ resourceRecordCount: 1, fordOasisRecordCount: 1 })
 
+    // engineCalibration is a shared OASIS vehicle field now (server/oasis-fields.mjs);
+    // an unlisted field is still refused.
     const unsupported = structuredClone(bundle)
-    unsupported.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.engineCalibration = 'PCTCCRNA'
+    unsupported.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.dealerNote = 'Synthetic unlisted note'
     expect(() => validateReleaseBundle(unsupported)).toThrow(/Ford OASIS record contains unsupported fields/)
 
     const ownerName = structuredClone(bundle)
@@ -538,6 +542,46 @@ describe('portable cloud release validation', () => {
     const recordTampering = structuredClone(bundle)
     recordTampering.release.vehicles.find((vehicle) => vehicle.vin === resourceVehicle.vin).resourceRecord.fordOasis.openFieldServiceActions = []
     expect(() => validateReleaseBundle(recordTampering)).toThrow(/source provenance/)
+  })
+
+  it('passes an importer-normalized OASIS record carrying every shared vehicle field through strict Worker validation', () => {
+    const vin = completeBundle().release.vehicles.find((record) => record.resourceRecord).vin
+    const values = {
+      bodyStyle: 'Sport Utility 4D', driveType: '4WD', paintColor: 'Synthetic Blue Metallic', paintCode: 'SB',
+      engine: '2.7L V6 EcoBoost', engineCalibration: 'SYNCAL-00', transmission: '10-Speed Automatic', axleRatio: '3.73',
+      axleCode: 'X7', grossVehicleWeight: '6800 LBS', wheelSize: '20 inch', tire: '275/60R20', syncVersion: 'SYNC 4', fuelType: 'Gasoline',
+    }
+    expect(Object.keys(values).sort()).toEqual([...OASIS_VEHICLE_TEXT_FIELDS].sort())
+    // The importer and the Worker validator read the one shared list.
+    for (const file of ['../../server/importer.mjs', '../../cloudflare/src/release-validation.mjs']) {
+      expect(readFileSync(new URL(file, import.meta.url), 'utf8')).toMatch(/import \{ OASIS_VEHICLE_TEXT_FIELDS, OASIS_VEHICLE_TEXT_MAX_LENGTH \} from '[./]+(?:server\/)?oasis-fields\.mjs'/)
+    }
+    const enrichment = (fordOasis) => ({
+      schemaVersion: 'inventory-flow-vin-document-enrichment-v1', generatedAt: '2026-09-12T15:00:00Z',
+      recordsByVin: { [vin]: { vin, fordOasis } },
+    })
+    const normalized = validateVinDocumentEnrichment(enrichment({ ...fordOasisFixture(), ...values })).recordsByVin[vin].fordOasis
+    expect(normalized).toMatchObject(values)
+
+    const bundle = completeBundle()
+    const vehicle = bundle.release.vehicles.find((record) => record.vin === vin)
+    vehicle.resourceRecord.fordOasis = normalized
+    const run = bundle.release.sourceRuns.resources
+    run.metadata.fordOasisCount = 1
+    run.provenanceSha256 = resourceProvenanceSha256(run, bundle.release.vehicles)
+    expect(validateReleaseBundle(bundle)).toMatchObject({ resourceRecordCount: 1, fordOasisRecordCount: 1 })
+
+    // Both validators apply the same length and foreign-text checks to each field.
+    for (const [field, bad, message] of [
+      ['paintColor', 'Owner name: Jane Example', /contains non-vehicle material/],
+      ['bodyStyle', 'x'.repeat(161), /outside the safe text limit/],
+    ]) {
+      expect(() => validateVinDocumentEnrichment(enrichment({ ...normalized, [field]: bad }))).toThrow(message)
+      const rejected = structuredClone(bundle)
+      rejected.release.vehicles.find((record) => record.vin === vin).resourceRecord.fordOasis[field] = bad
+      rejected.release.sourceRuns.resources.provenanceSha256 = resourceProvenanceSha256(rejected.release.sourceRuns.resources, rejected.release.vehicles)
+      expect(() => validateReleaseBundle(rejected)).toThrow(message)
+    }
   })
 
   it('accepts a resource record that carries only Ford OASIS facts and still accepts releases without an OASIS count', () => {

@@ -30,13 +30,10 @@ import { STORE_NAMES, type StoreName, type UserRole } from '../types'
 import {
   createInventorySearchNavigation,
   inventorySearchAccessContext,
-} from '../features/inventory/inventory-navigation'
+} from '../lib/inventory-navigation'
 import { useAppData } from './AppDataContext'
 import { STORE_BRANDING } from './storeBranding'
-import '../styles/mobile-density.css'
 import { openStoreActionCount } from '../features/attention/action-center'
-import '../styles/workflow-navigation.css'
-import '../styles/compact-workspace.css'
 
 const NAV_ITEMS = [
   { id: 'inventory', to: '/inventory', label: 'Inventory', shortLabel: 'Inventory', icon: CarFront },
@@ -382,7 +379,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <input
               value={query}
               onChange={(event) => setSearchDraft({ accessContext: searchAccessContext, query: event.target.value })}
-              placeholder="Search stock, VIN, model, feature, salesperson, or hold"
+              placeholder="Find a vehicle: stock, VIN, or model"
               aria-label="Search inventory"
               autoComplete="off"
             />
@@ -431,7 +428,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       <nav className={`mobile-bottom-nav${canSeeAdmin ? ' is-group-manager' : ''}`} aria-label="Mobile primary">
-        {mobileNavigationItems.map(({ id, to, label, shortLabel, icon: Icon }) => {
+        {mobileNavigationItems.map(({ id, to, shortLabel, icon: Icon }) => {
           const active = isNavActive(id, to)
           return (
             <NavLink

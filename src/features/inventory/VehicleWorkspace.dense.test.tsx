@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VehicleWorkspace } from './VehicleWorkspace';
 import type { InventoryVehicle } from './types';
+import { createMotionPreference } from '../../../tests/unit/motion-test-utils';
 
 afterEach(() => {
   cleanup();
@@ -179,6 +180,31 @@ describe('focused vehicle workspace', () => {
     const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
     expect(facts).toHaveTextContent('In-service05/13/2023OASIS');
     expect(facts).not.toHaveTextContent('estimate');
+  });
+
+  it('is a labelled modal dialog that closes with Escape', () => {
+    const onClose = vi.fn();
+    render(<VehicleWorkspace vehicle={vehicle()} homeStore={vehicle().location.homeStore} onClose={onClose} />);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveAttribute('id', 'inventory-vehicle-workspace');
+    expect(dialog).toHaveAttribute('aria-label', '2017 Ford F-150 Lariat vehicle workspace');
+    fireEvent.keyDown(dialog, { key: 'Escape', code: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('closes once from the close control while the system prefers reduced motion', () => {
+    const preference = createMotionPreference();
+    preference.install();
+    try {
+      preference.set(true);
+      const onClose = vi.fn();
+      render(<VehicleWorkspace vehicle={vehicle()} homeStore={vehicle().location.homeStore} onClose={onClose} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Close vehicle details' }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      preference.restore();
+    }
   });
 
   it('keeps one vehicle identity, exact copy controls and persistent close controls', () => {
@@ -480,6 +506,18 @@ describe('focused vehicle workspace', () => {
     await user.click(screen.getByRole('tab',{name:'Records'}));
     expect(screen.getByRole('list',{name:'Factory options'})).toHaveTextContent('Max Trailer Tow Package (DEMO-1) $1,100.50');
     expect(screen.getByRole('list',{name:'Factory options'})).toHaveTextContent('.TAILGATE STEP');
+  });
+
+  it('says a vehicle the server marks unlisted is not publicly listed, never listed online', () => {
+    const unit = vehicle(); unit.holdEvidence = [];
+    unit.dealerMail = { ...unit.dealerMail, hasActiveHold: false, activeRecordCount: 0, position: null };
+    const { unmount } = render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    expect(screen.getAllByText(/Not publicly listed/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Listed online/)).not.toBeInTheDocument();
+    unmount();
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} initialTab="hold" onClose={vi.fn()} />);
+    expect(screen.getAllByText('Not publicly listed').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Listed online/)).not.toBeInTheDocument();
   });
 
   it('shows unheld alerts without fabricating a primary hold', () => {

@@ -22,7 +22,7 @@
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs'
 import path from 'node:path'
 import { isMainModule } from './lib/is-main.mjs'
-import { closeOwnedTab, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { closeDuplicateTabs, closeOwnedTab, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 import { factoryTermText, isFactoryCoverageRow, isOasisDate } from '../server/oasis-coverage-grammar.mjs'
@@ -331,6 +331,7 @@ export async function main(argv = process.argv.slice(2)) {
       let ctx
       try {
         ctx = await getOriginTab(OASIS_ORIGIN, OASIS_URL(vin), { settleMs: 60000, connectTimeoutMs: 65000 })
+        await closeDuplicateTabs(OASIS_ORIGIN, { pathIncludes: '/oasis/Index', keepTabId: ctx.tab?.id })
       } catch {
         oasisState = 'browser_unavailable'
         return { state: oasisState }
@@ -419,6 +420,7 @@ export async function main(argv = process.argv.slice(2)) {
     if (out.records.length % 10 === 0) save()
     await sleep(60)
   }
+  await closeDuplicateTabs(OASIS_ORIGIN, { pathIncludes: '/oasis/Index', keepTabId: oasisCtx?.tab?.id })
   await closeOwnedTab(oasisCtx)
   out.finishedAt = new Date().toISOString()
   out.oasisSession = oasisState

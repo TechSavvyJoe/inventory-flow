@@ -11,7 +11,7 @@ vi.mock('../../app/AppDataContext', () => ({ useAppData: () => mocked.context })
 vi.mock('../../lib/api', async original => ({ ...await original<typeof import('../../lib/api')>(), getVehicle: mocked.get }))
 vi.mock('../../components/SourceWarning', () => ({ SourceWarning: () => null }))
 vi.mock('../../app/adapters', () => ({
-  inventoryMetrics: () => ({}), groupStores: () => [], inventoryStore: () => ({ id: 'howell', name: 'Howell' }),
+  groupStores: () => [], inventoryStore: () => ({ id: 'howell', name: 'Howell' }),
   toInventoryVehicle: (vehicle: VehicleRecord) => ({ id: vehicle.vin, vin: vehicle.vin, vehicleName: vehicle.vehicleName }),
 }))
 vi.mock('./InventoryExperience', () => ({ InventoryExperience: (props: InventoryExperienceProps) => <>

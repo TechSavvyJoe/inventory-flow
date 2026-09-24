@@ -1,9 +1,10 @@
 import { defineConfig, devices } from '@playwright/test'
 
 // Local runs drive the installed Google Chrome, which is the browser dealership
-// staff actually use. CI installs only Playwright's bundled Chromium, where no
-// branded channel exists, so it sets PLAYWRIGHT_BUNDLED_CHROMIUM and we drop the
-// channel instead of pulling a second browser down on every run.
+// staff actually use. CI installs Playwright's bundled Chromium (and WebKit, for
+// the cross-browser acceptance subset), where no branded Chrome channel exists,
+// so it sets PLAYWRIGHT_BUNDLED_CHROMIUM and we drop the channel instead of
+// pulling a second Chrome down on every run.
 const chromiumChannel = process.env.PLAYWRIGHT_BUNDLED_CHROMIUM ? undefined : 'chrome'
 
 export default defineConfig({
@@ -33,7 +34,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'node scripts/start-synthetic-demo.mjs',
-      env: { INVENTORY_OPS_PORT: '4474', INVENTORY_OPS_IDENTITY_MODE: 'demo', NODE_ENV: 'development' },
+      env: { INVENTORY_OPS_PORT: '4474', NODE_ENV: 'development' },
       url: 'http://127.0.0.1:4474/api/health',
       reuseExistingServer: false,
       timeout: 120_000,

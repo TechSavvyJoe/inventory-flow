@@ -7,7 +7,7 @@ const meta = (overrides = {}) => ({ reportDate: '2026-08-30', completedAt: '2026
 const base = (overrides = {}) => ({
   vin: 'TESTDATAHWELL0001', stockNumber: 'DEMO-H01', year: 2024, make: 'Ford', model: 'F-150', trim: 'Lariat', vehicleName: '2024 Ford F-150 Lariat',
   listedPrice: 51800, homeStore: 'Howell', publicStore: 'Howell', sourceReportedLocation: 'Howell', homeStoreConfirmed: true,
-  websiteStatus: 'Not provided', publicListingState: 'Listed publicly', dealerOn: { inStock: true, inTransit: false, inProduction: false },
+  websiteStatus: 'Not provided', publicListing: 'listed', publicListingState: 'Listed publicly', dealerOn: { inStock: true, inTransit: false, inProduction: false },
   hold: { state: 'none_observed', label: 'No hold observed', backupCount: 0, canViewEvidence: true },
   movement: { state: 'source_reported', label: 'Source-reported location', currentLocation: 'Howell', locationConfidence: 'reported' },
   ...overrides,
@@ -39,6 +39,19 @@ describe('deal desk view model', () => {
     expect(vehicle.listing.isListed).toBe(true)
     expect(vehicle.movement).toBeNull()
     expect(vehicle.location).toMatchObject({ label: 'Howell', provenance: 'source-reported' })
+  })
+
+  it.each([
+    ['listed', 'Listed publicly; availability not confirmed', true],
+    ['stale', 'Last verified public listing — availability not confirmed', true],
+    ['pre_listing', 'Pre-listing — current DealerMail record; public website listing not yet observed', false],
+    ['not_in_release', 'Not in current public release', false],
+    [undefined, 'Listed publicly; availability not confirmed', null],
+  ])('reads listing status %s from the server code, never from its label', (code, label, listed) => {
+    // A DealerMail-only record carries wording such as "not publicly listed";
+    // the label is display text and must not decide the fact either way.
+    const record = base({ publicListing: code, publicListingState: label, websiteStatus: 'Current DealerMail record — not publicly listed', listingUrl: 'https://www.bobmaxeyfordhowell.com/used-x' })
+    expect(toPanelVehicle(record, data(record)).listing.isListed).toBe(listed)
   })
 
   it('does not call a hold verified when the DealerMail snapshot is not current', () => {

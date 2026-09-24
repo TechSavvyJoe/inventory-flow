@@ -2,7 +2,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { ServicePage } from './ServicePage'
-import { ServiceBoard } from './ServiceBoard'
 import { clearWorkspaceMemory } from '../../lib/workspace-memory'
 import { ApiError } from '../../lib/api'
 import type { ServiceReadinessDetail, ServiceReadinessStatus, StoreName, VehicleRecord } from '../../types'
@@ -99,15 +98,6 @@ describe('Service readiness workspace', () => {
     expect(mocked.update).not.toHaveBeenCalled()
   })
 
-  it('qualifies partial OASIS action counts on the service board', async () => {
-    const vehicle = record('needs_service')
-    vehicle.fordOasis = { dataState: 'incomplete', capturedAt: '2026-08-30T10:00:00Z', openActionsCaptured: false, openFieldServiceActions: [{ code: '26N99', description: 'Synthetic conditional service action' }] }
-    mocked.context.data = { meta: { reportDate: '2026-08-30' }, vehicles: [vehicle] }
-    render(<MemoryRouter initialEntries={['/service?view=board']}><ServiceBoard /></MemoryRouter>)
-    await waitFor(() => expect(screen.getByText('Saved OASIS · At least 1 open service action · result incomplete')).toBeVisible())
-    expect(mocked.update).not.toHaveBeenCalled()
-  })
-
   it('keeps the vehicle references readable when service detail fails to load', async () => {
     mocked.get.mockRejectedValue(new Error('Service status is unavailable.'))
     show('/service?vin=TESTDATAHWELL0001')
@@ -186,14 +176,22 @@ describe('Service readiness workspace', () => {
     expect(screen.queryByRole('listbox', { name: 'Search service vehicles suggestions' })).not.toBeInTheDocument()
   })
 
-  it('shows one truthful board no-results state with a clear action', () => {
-    render(<MemoryRouter initialEntries={['/service?view=board']}><ServiceBoard /></MemoryRouter>)
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Filter service vehicles' }), { target: { value: 'no such vehicle' } })
-    expect(screen.getByText('No service vehicles match “no such vehicle”')).toBeInTheDocument()
+  it('shows one truthful list no-results state with a clear action', () => {
+    show()
+    const search = screen.getByRole('searchbox', { name: 'Search service vehicles' })
+    fireEvent.change(search, { target: { value: 'no such vehicle' } })
+    expect(screen.getByRole('heading', { name: 'No matching vehicles' })).toBeInTheDocument()
     expect(screen.queryByText('No vehicles waiting for service')).not.toBeInTheDocument()
-    expect(screen.queryByText('No vehicles currently undergoing service')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Clear search' }))
-    expect(screen.getByRole('searchbox', { name: 'Filter service vehicles' })).toHaveValue('')
+    expect(search).toHaveValue('')
+    expect(screen.getByText('Synthetic Ford 001')).toBeInTheDocument()
+  })
+
+  it('offers no List/Board view switch now that the board is retired', () => {
+    show('/service?view=board')
+    expect(screen.queryByRole('group', { name: 'Service view' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Board' })).not.toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Service status' })).toBeInTheDocument()
   })
 
   it('saves a manager completion with its date and current version, then refreshes the list', async () => {

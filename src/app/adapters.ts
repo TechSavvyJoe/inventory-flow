@@ -396,11 +396,22 @@ function officialDocumentSearchText(
   ].filter((value) => value !== null && value !== undefined && String(value).trim() !== '').join(' | ')
 }
 
-function isListed(vehicle: VehicleRecord): boolean | null {
-  const state = `${vehicle.publicListingState} ${vehicle.websiteStatus}`.toLowerCase()
-  if (state.includes('not found') || state.includes('removed') || state.includes('not listed')) return false
-  if (state.includes('listed') || state.includes('available')) return true
-  return vehicle.listingUrl ? true : null
+/**
+ * Switches on the server's public-listing code; the labels beside it are display
+ * text and are never parsed. A stale code is the last verified listing, so it
+ * stays listed while dataState carries the staleness. No code means unknown.
+ */
+function isListed(code: VehicleRecord['publicListing']): boolean | null {
+  switch (code) {
+    case 'listed':
+    case 'stale':
+      return true
+    case 'pre_listing':
+    case 'not_in_release':
+      return false
+    default:
+      return null
+  }
 }
 
 function holdActive(state: VehicleRecord['hold']['state'], dealerMailState: SourceDataState): boolean | null {
@@ -644,7 +655,7 @@ export function toInventoryVehicle(
     warrantyCheck,
     publicListing: {
       dataState: publicState,
-      isListed: isListed(vehicle),
+      isListed: isListed(vehicle.publicListing),
       websiteStatus: vehicle.websiteStatus,
       listingUrl: vehicle.listingUrl || null,
       updatedAt: data.meta.completedAt,

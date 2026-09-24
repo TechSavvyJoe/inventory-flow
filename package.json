@@ -9,12 +9,9 @@
   },
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n api,web -c blue,cyan \"node --watch server/index.mjs\" \"vite --host 127.0.0.1\"",
     "dev:demo": "concurrently -k -n demo,web -c blue,cyan \"node --watch scripts/start-synthetic-demo.mjs\" \"vite --host 127.0.0.1\"",
-    "dev:api": "node --watch server/index.mjs",
     "dev:web": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build && node scripts/package-extension.mjs",
-    "start": "node server/index.mjs --serve-dist",
     "start:demo": "node scripts/start-synthetic-demo.mjs --serve-dist",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
@@ -30,11 +27,14 @@
     "integrations:verify": "node scripts/verify-integration-deployment.mjs",
     "integrations:deploy": "node scripts/deploy-worker.mjs integrations",
     "integrations:perplexity-mcp": "node scripts/perplexity-inventory-mcp.mjs",
+    "typecheck": "tsc -b",
     "check:design-system": "node scripts/check-design-system.mjs",
+    "report:dead-css": "node scripts/report-dead-css.mjs",
     "check:repo-safety": "node scripts/check-repo-safety.mjs",
     "extension:icons": "node scripts/build-extension-icons.mjs",
     "extension:preview": "node scripts/preview-extension.mjs",
-    "check": "pnpm check:repo-safety && pnpm check:design-system && pnpm test && pnpm build"
+    "extension:dev": "node scripts/build-extension-dev.mjs",
+    "check": "pnpm typecheck && pnpm check:repo-safety && pnpm check:design-system && pnpm test && pnpm build"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

@@ -123,6 +123,29 @@ const BOOTSTRAP_BODY_TIMEOUT_MS = 60_000
 
 type RequestTiming = {
   bodyTimeoutMs?: number
+  /**
+   * Keep the last successful payload and its validator so a periodic refresh
+   * can send If-None-Match and reuse it on 304. Only for large documents that
+   * are polled unchanged most of the time; never for mutations.
+   */
+  revalidate?: boolean
+}
+
+type RevalidatedEntry = { etag: string; payload: unknown; generation: number }
+
+// Page-session only. Each entry remembers the access generation it was fetched
+// under, so anything cached before access changed is discarded rather than
+// letting one employee's document survive into another's session.
+const revalidatedResponses = new Map<string, RevalidatedEntry>()
+
+function revalidatedEntry(path: string, generation: number): RevalidatedEntry | undefined {
+  const entry = revalidatedResponses.get(path)
+  if (!entry) return undefined
+  if (entry.generation !== generation) {
+    revalidatedResponses.delete(path)
+    return undefined
+  }
+  return entry
 }
 
 async function request<T>(path: string, options: RequestInit = {}, timing: RequestTiming = {}): Promise<T> {
@@ -133,6 +156,8 @@ async function request<T>(path: string, options: RequestInit = {}, timing: Reque
     ? await beginMutation(path, options.body, headers)
     : undefined
   if (mutation) headers.set('Idempotency-Key', mutation.pending.key)
+  const cached = timing.revalidate && !mutation ? revalidatedEntry(path, accessGeneration) : undefined
+  if (cached) headers.set('If-None-Match', cached.etag)
 
   const timeoutController = new AbortController()
   let timeout = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT_MS)
@@ -172,6 +197,10 @@ async function request<T>(path: string, options: RequestInit = {}, timing: Reque
     if (response.status === 403) {
       reportAccessFailure({ status: 403, role: headers.get('x-inventory-preview-role') as UserRole | null, store: headers.get('x-inventory-preview-store') as StoreName | null, message: 'Your account does not have access to this workspace. Reload to check your current access.' }, accessGeneration)
     }
+    if (response.status === 304 && cached) {
+      confirmed = true
+      return cached.payload as T
+    }
     if (!response.ok) {
       confirmed = response.status >= 400 && response.status < 500 && ![408, 425, 429].includes(response.status)
       const payload = isJson ? await response.json().catch(() => null) : null
@@ -195,6 +224,11 @@ async function request<T>(path: string, options: RequestInit = {}, timing: Reque
     }
     confirmed = true
     if (mutation) recordConfirmedMutation(accessGeneration)
+    if (timing.revalidate && !mutation) {
+      const etag = response.headers.get('ETag')
+      if (etag) revalidatedResponses.set(path, { etag, payload, generation: accessGeneration })
+      else revalidatedResponses.delete(path)
+    }
     return payload
   } finally {
     clearTimeout(timeout)
@@ -215,7 +249,7 @@ function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, s
     'x-inventory-preview-role': role,
     'x-inventory-preview-store': store,
     'x-inventory-demo-store': store,
-    'x-inventory-demo-user': import.meta.env.VITE_DEMO_USER_NAME || 'Joe Gallant',
+    'x-inventory-demo-user': import.meta.env.VITE_DEMO_USER_NAME || 'Demo user',
   }
 }
 
@@ -224,7 +258,7 @@ export function getBootstrap(homeStore: StoreName, role: UserRole, signal?: Abor
   return request<BootstrapData>(
     `/api/bootstrap?${params}`,
     { headers: demoIdentityHeaders(role, homeStore), signal },
-    { bodyTimeoutMs: BOOTSTRAP_BODY_TIMEOUT_MS },
+    { bodyTimeoutMs: BOOTSTRAP_BODY_TIMEOUT_MS, revalidate: true },
   )
 }
 

@@ -1,8 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { ArrowRight, ArrowUpRight, Check, ChevronDown, FileText } from 'lucide-react';
 import type { VehicleWorkspaceTab } from './types';
-import { checkPriority, vehicleOverviewResources, vehicleResourceCatalog, type VehicleResource, type VehicleResourceSummaryRow, type VehicleResourceVehicle } from './vehicle-resource-catalog';
-import { compactEquipmentScanLabel } from './vehicle-feature-utils';
+import { checkPriority, vehicleOverviewResources, type VehicleResource, type VehicleResourceSummaryRow, type VehicleResourceVehicle } from './vehicle-resource-catalog';
 import { autoCheckResultTone } from './vehicle-document-utils';
 import { getDemoWindowSticker } from '../../lib/demo-documents';
 import './VehicleResourceCards.css';
@@ -10,7 +9,7 @@ import './VehicleResourceCards.css';
 export type { VehicleResourceVehicle } from './vehicle-resource-catalog';
 export interface VehicleResourceCardsProps {
   vehicle: VehicleResourceVehicle;
-  variant: 'cards' | 'inline' | 'summary' | 'preview' | 'scan';
+  variant: 'summary' | 'preview' | 'scan';
   /** A workspace has room for more source evidence than an inventory row. */
   summaryLimit?: 4 | 6;
   /** The workspace already displays its one authoritative date beside vehicle details. */
@@ -30,18 +29,6 @@ function ResourceBrand({ resource }: { resource: VehicleResource }) {
   if (failed) return <span className="vehicle-resource-brand-fallback">{resource.brand === 'autocheck' ? 'AutoCheck' : resource.brand === 'vauto' ? 'vAuto' : 'Ford'}</span>;
   if (!resource.brand) return <FileText aria-hidden="true" className="vehicle-resource-symbol"/>;
   return <img className={`vehicle-resource-brand vehicle-resource-brand--${resource.brand}`} src={`/resource-brands/${resource.brand}.svg`} alt="" onError={() => setFailed(true)}/>;
-}
-
-function inlineResourceFacts(resource: VehicleResource): string {
-  return resource.compactFacts.map(fact => {
-    // Preserve history warnings and other non-equipment evidence verbatim. A
-    // long factory option, however, belongs in the detailed record; the SRP
-    // scan gets a semantic package cue plus the clear source/Records actions.
-    if (['window-sticker', 'vauto'].includes(resource.id) && fact.length > 64 && /\b(package|equipment|trailer|tow|camera|cruise|blind\s+(?:spot|zone)|seats?)\b/i.test(fact)) {
-      return compactEquipmentScanLabel(fact);
-    }
-    return displaySourceMoney(fact);
-  }).join(' · ');
 }
 
 export function displaySourceMoney(value: string) {
@@ -258,7 +245,7 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
     if (selectedResourceId === undefined) setExpandedResource(id === null ? null : {vin:vehicle.vin,id});
     onSelectResource?.(id);
   };
-  const resources = (variant === 'cards' ? vehicleResourceCatalog(vehicle) : vehicleOverviewResources(vehicle)).filter(resource => variant !== 'cards' || resource.id !== 'invoice');
+  const resources = vehicleOverviewResources(vehicle);
   const usable = resources.filter(resource => resource.href || resource.hasCapturedData);
   if (!usable.length) return null;
   if (variant === 'scan') {
@@ -288,121 +275,88 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
       })}
     </div>;
   }
-  if (variant === 'summary' || variant === 'preview') {
-    const preview = variant === 'preview';
-    const captured = usable.filter(resource => resource.hasCapturedData);
-    const overview = preview && !captured.some(resource => resource.id === selectedId);
-    const lookups = usable.filter(resource => !resource.hasCapturedData);
-    const sourceAction = (resource: VehicleResource, compact = false) => {
-      const label = resource.id === 'autocheck' ? 'Open AutoCheck history' : resource.id === 'vauto' ? 'Open vAuto equipment' : resource.action;
-      const title = [resource.title, resource.subtitle, ...resource.facts].filter(Boolean).join(' · ');
-      const content = <><ResourceBrand resource={resource}/><span>{compact && resource.demo ? 'Demo sticker' : ['Sticker & equipment', 'vAuto equipment'].includes(resource.title) ? resource.title : resource.id === 'autocheck' ? 'History' : resource.id === 'vauto' ? 'Equipment' : resource.demo ? 'Demo sticker' : resource.id === 'window-sticker' ? 'Window sticker' : resource.id === 'oasis' ? 'OASIS' : 'Invoice'}</span>{compact && syntheticPreview && ['autocheck', 'oasis'].includes(resource.id) ? <small className="vehicle-resource-heading-qualifier">Demo</small> : null}{resource.href ? <ArrowUpRight size={14} aria-hidden="true"/> : <ArrowRight size={14} aria-hidden="true"/>}</>;
-      return resource.href ? <a className="vehicle-resource-summary__source" href={resource.href} data-resource={resource.id} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" title={title} aria-label={`${label} for VIN ${vehicle.vin} in a new tab`}>{content}</a>
-        : onOpenSection ? <button type="button" className="vehicle-resource-summary__source" data-resource={resource.id} onClick={() => onOpenSection(resource.target)} title={title} aria-label={`${resource.dataAction} for VIN ${vehicle.vin}`}>{content}</button>
-          : <span className="vehicle-resource-summary__source">{content}</span>;
-    };
-    const resourceToggle = (resource: VehicleResource) => {
-      const expanded = selectedId === resource.id;
-      const detailLabel = resource.id === 'autocheck' ? 'history' : resource.id === 'oasis' ? 'OASIS' : 'equipment';
-      return <button key={resource.id} type="button" className="vehicle-resource-summary__toggle" aria-expanded={expanded} aria-controls={`${disclosureId}-${resource.id}`}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${detailLabel} details`}
-        onClick={() => selectResource(expanded ? null : resource.id)}>
-        <span>{preview ? resource.id === 'autocheck' ? 'AutoCheck' : resource.id === 'oasis' ? 'OASIS' : resource.id === 'vauto' ? 'Equipment' : 'Sticker' : expanded ? 'Less' : 'Details'}</span><ChevronDown size={14} aria-hidden="true"/>
-      </button>;
-    };
-    const sourceLookups = lookups.length ? <div className="vehicle-resource-lookups" aria-label="Additional source lookups">{lookups.map(resource => <div key={resource.id} data-resource-kind={resource.id}>{sourceAction(resource)}</div>)}</div> : null;
-    return <div className={`vehicle-resources vehicle-resources--${variant}${overview ? ' is-overview' : ''}${hideSourceSelectors ? ' has-shared-source-controls' : ''}`} aria-label="Vehicle documents and resources" onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
-      {preview ? <div className="vehicle-resource-preview-toolbar">
-        {captured.length ? <div className="vehicle-resource-preview-selectors" role="group" aria-label="Choose a vehicle report"><button type="button" className="vehicle-resource-summary__toggle" aria-pressed={overview} onClick={() => selectResource(null)}>Overview</button>{!hideSourceSelectors ? captured.map(resourceToggle) : null}</div> : null}
-        {sourceLookups}
-        {onClose ? <button type="button" className="vehicle-resource-preview-close" aria-label="Close records" onClick={onClose}>Close</button> : null}
-      </div> : null}
-      {captured.length ? <div className="vehicle-resource-summaries">
-        {captured.map(resource => {
-          const candidates = [...(resource.score ? resource.facts.slice(0, 1) : []), ...(resource.summaryFacts ?? resource.compactFacts), ...resource.facts];
-          const facts = candidates.filter((fact, index) => !candidates.slice(0, index).some(previous => previous === fact || previous.includes(fact))).slice(0, summaryLimit);
-          const availableRows = resource.summaryRows?.filter(row => row.values.length && !(hideInServiceDate && ['Warranty start', 'Est. in-service'].includes(row.label)));
-          const rows = resource.id === 'autocheck' || resource.id === 'oasis' ? availableRows : availableRows?.slice(0, summaryLimit);
-          const sticker = resource.stickerDetails;
-          const stickerPricing = sticker ? ([
-            sticker.msrp ? ['Original MSRP', sticker.msrp] : sticker.basePrice ? ['Base MSRP', sticker.basePrice] : null,
-          ] as Array<[string, string] | null>).filter((entry): entry is [string, string] => Boolean(entry)) : [];
-          const stickerVehicleFacts = sticker ? ([
-            sticker.exteriorColor ? ['Exterior', sticker.exteriorColor] : null,
-            sticker.interiorColor ? ['Interior', sticker.interiorColor] : null,
-            sticker.engine ? ['Engine', sticker.engine] : null,
-            sticker.transmission ? ['Transmission', sticker.transmission] : null,
-          ] as Array<[string, string] | null>).filter((entry): entry is [string, string] => Boolean(entry)) : [];
-          const previewUrl = resource.previewUrl && !failedPreviews.has(resource.id) ? resource.previewUrl : undefined;
-          const expanded = selectedId === resource.id;
-          const detailId = `${disclosureId}-${resource.id}`;
-          const visibleSourceNote = expanded ? resource.sourceNote : resource.sourceNote?.split(' · ').filter(part => !/^(?:Captured|Report run) \d{2}\/\d{2}\/\d{4}$/.test(part)).join(' · ');
-          return <section key={resource.id} className={`vehicle-resource-summary${facts.length <= 2 ? " vehicle-resource-summary--sparse" : ""}`} data-resource-kind={resource.id} aria-label={resource.title} hidden={preview && !overview && !expanded}>
-            <div className="vehicle-resource-summary__heading">{sourceAction(resource, !expanded)}
-            {!preview ? resourceToggle(resource) : null}
-            </div>
-            {resource.equipmentContext && (expanded || resource.id === 'vauto') ? <p className="vehicle-resource-source-kind">{resource.equipmentContext}</p> : expanded && syntheticPreview && ['autocheck', 'oasis'].includes(resource.id) ? <p className="vehicle-resource-source-kind">Synthetic source sample</p> : null}
-            {!expanded && (!preview || overview) ? <div className={`vehicle-resource-summary__body is-compact${overview ? ' is-rich' : ''}${previewUrl ? " has-preview" : ""}`}>
-              {previewUrl ? <img className="vehicle-resource-summary__preview" src={previewUrl} alt={resource.demo ? "Clearly marked synthetic demo window sticker" : "Window sticker preview"} loading="lazy" onError={() => setFailedPreviews(current => current.has(resource.id) ? current : new Set(current).add(resource.id))}/> : null}
-              <ResourceSnapshot resource={resource} vehicle={vehicle} rows={rows} facts={facts} synthetic={syntheticPreview} detailed={overview}/>
-            </div> : null}
-            <div id={detailId} className="vehicle-resource-summary__disclosure" hidden={!expanded}>
-              {expanded ? <>
-            <div className={`vehicle-resource-summary__body${previewUrl ? " has-preview" : ""}${sticker ? " has-sticker" : rows?.length ? " has-fields" : ""}`}>
-              {previewUrl ? <img className="vehicle-resource-summary__preview" src={previewUrl} alt={resource.demo ? "Clearly marked synthetic demo window sticker" : "Window sticker preview"} loading="lazy" onError={() => setFailedPreviews(current => current.has(resource.id) ? current : new Set(current).add(resource.id))}/> : null}
-              {sticker ? <div className="vehicle-resource-sticker">
-                {sticker.vehicleDescription ? <p className="vehicle-resource-sticker__vehicle">{sticker.vehicleDescription}</p> : null}
-                {stickerPricing.length ? <dl className="vehicle-resource-sticker__pricing" aria-label="Window sticker pricing">{stickerPricing.map(([label,value]) => <div key={label}><dt>{label}</dt><dd>{displaySourceMoney(value)}</dd></div>)}</dl> : null}
-                {stickerVehicleFacts.length ? <dl className="vehicle-resource-sticker__specs" aria-label="Window sticker vehicle details">{stickerVehicleFacts.map(([label,value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : null}
-                {sticker.equipmentGroup || sticker.equipmentGroupContents?.length ? <section className="vehicle-resource-sticker__group" aria-label="Equipment group">
-                  <p className="vehicle-resource-sticker__label">Equipment group</p>
-                  {sticker.equipmentGroup ? <StickerLineContent line={{...stickerLineParts(sticker.equipmentGroup), price:sticker.equipmentGroupPrice ?? stickerLineParts(sticker.equipmentGroup).price}}/> : null}
-                  {sticker.equipmentGroupContents?.length ? <ul className="vehicle-resource-sticker__included" aria-label="Included with equipment group">{sticker.equipmentGroupContents.map((line,index) => <li key={index} title={line} aria-label={line}><StickerLineContent line={stickerLineParts(line)}/></li>)}</ul> : null}
-                </section> : null}
-                <div className="vehicle-resource-sticker__optional">{sticker.optionLines.length ? <><p className="vehicle-resource-sticker__label">{sticker.optionLabel ?? 'Optional equipment & packages'}</p><StickerOptions lines={sticker.optionLines}/></> : <p className="vehicle-resource-sticker__missing">Optional equipment details not captured</p>}</div>
-                {sticker.standardEquipment?.length ? <section className="vehicle-resource-sticker__section" aria-label="Standard equipment"><p className="vehicle-resource-sticker__label">Standard equipment</p><ul>{sticker.standardEquipment.map((item,index) => <li key={index}>{item}</li>)}</ul></section> : null}
-                {sticker.warranty?.length ? <section className="vehicle-resource-sticker__section" aria-label="Printed warranty"><p className="vehicle-resource-sticker__label">Printed warranty</p><ul>{sticker.warranty.map((item,index) => <li key={index}>{item}</li>)}</ul></section> : null}
-              </div> : rows !== undefined ? <SummaryFields rows={rows} resource={resource} synthetic={syntheticPreview}/> : <ul className="vehicle-resource-summary__facts">{facts.map((fact, index) => <li key={index}>{displaySourceMoney(fact)}</li>)}</ul>}
-            </div>
-              </> : null}
-            </div>
-            {resource.alternateSticker ? <a className="vehicle-resource-summary__source" href={resource.alternateSticker.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{resource.alternateSticker.label}<ArrowUpRight size={14} aria-hidden="true"/></a> : null}
-            {!resource.demo && visibleSourceNote ? <p className="vehicle-resource-source-note">{visibleSourceNote}</p> : null}
-          </section>;
-        })}
-      </div> : null}
-      {!preview ? sourceLookups : null}
-    </div>;
-  }
-  return <div className={`vehicle-resources vehicle-resources--${variant}`} aria-label="Vehicle documents and resources" onClick={event => event.stopPropagation()} onKeyDown={event => { if (variant === 'inline' && (event.key === 'Enter' || event.key === ' ')) event.stopPropagation(); }}>
-    {usable.map(resource => {
-      const previewUrl = resource.previewUrl && !failedPreviews.has(resource.id) ? resource.previewUrl : undefined;
-      const accessibleName = `${resource.href ? resource.id === 'autocheck' ? 'Open AutoCheck history' : resource.id === 'vauto' ? 'Open vAuto equipment' : resource.action : resource.dataAction} for VIN ${vehicle.vin}${resource.href ? ' in a new tab' : ''}`;
-      const title = [resource.title, resource.subtitle, ...resource.facts].filter(Boolean).join(' · ');
-      const openData = () => onOpenSection?.(resource.target);
-      const inlineLabel = resource.id === 'autocheck' ? null : resource.id === 'vauto' ? 'Equipment' : resource.id === 'window-sticker' ? resource.demo ? 'Demo sticker' : 'Sticker' : resource.id === 'oasis' ? 'OASIS' : 'Invoice';
-      const sourceKind = resource.demo ? 'Demo document' : null;
-      const primaryFacts = resource.summaryFacts ?? (resource.score ? resource.facts.slice(1) : resource.facts);
-      const resourceContent = <><span className="vehicle-resource-inline-heading"><ResourceBrand resource={resource}/>{inlineLabel ? <span className="vehicle-resource-inline-label">{inlineLabel}</span> : null}{resource.href ? <ArrowUpRight size={15} aria-hidden="true"/> : <ArrowRight size={15} aria-hidden="true"/>}</span></>;
-      if (variant === 'inline') return <div key={resource.id} className={`vehicle-resource-inline-item${!resource.hasCapturedData ? ' vehicle-resource-inline-item--lookup' : ''}`} data-resource-kind={resource.id}>
-        {resource.href ? <a className="vehicle-resource-inline" data-resource={resource.id} href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" title={title} aria-label={accessibleName}>{resourceContent}{sourceKind ? <span className="vehicle-resource-source-kind">{sourceKind}</span> : null}</a>
-          : onOpenSection ? <button className="vehicle-resource-inline" data-resource={resource.id} type="button" onClick={openData} title={title} aria-label={accessibleName}>{resourceContent}{sourceKind ? <span className="vehicle-resource-source-kind">{sourceKind}</span> : null}</button> : <span className="vehicle-resource-inline">{resourceContent}{sourceKind ? <span className="vehicle-resource-source-kind">{sourceKind}</span> : null}</span>}
-        {resource.hasCapturedData && resource.compactFacts.length ? <p className="vehicle-resource-inline-facts" aria-label={resource.compactFacts.slice(0, 1).join('; ')}>{inlineResourceFacts({ ...resource, compactFacts: resource.compactFacts.slice(0, 1) })}</p> : null}
-      </div>;
-      return <article className="vehicle-resource-card" data-resource={resource.id} key={resource.id}>
-        <div className="vehicle-resource-heading"><ResourceBrand resource={resource}/><div><h3>{resource.id === 'autocheck' ? 'History' : resource.id === 'vauto' ? 'Equipment' : resource.demo ? 'Demo sticker' : resource.title}</h3>{sourceKind ? <p className="vehicle-resource-source-kind">{sourceKind}</p> : null}</div></div>
-        <div className={`vehicle-resource-body${previewUrl ? ' has-preview' : ''}`}>
-          {previewUrl ? <img className="vehicle-resource-preview" src={previewUrl} alt="Clearly marked synthetic demo window sticker" loading="lazy" onError={() => setFailedPreviews(current => current.has(resource.id) ? current : new Set(current).add(resource.id))}/> : null}
-          {resource.score ? <div className="vehicle-resource-score"><strong>{resource.score.value}</strong><span>Score{resource.score.range ? <small>{resource.score.range} typical</small> : null}</span></div> : null}
-          {primaryFacts.length ? <ul>{primaryFacts.slice(0, 6).map((fact, index) => <li key={`${resource.id}-${index}`}>{fact}</li>)}</ul> : previewUrl || sourceKind ? null : <p>{resource.subtitle}</p>}
-        </div>
-        <div className="vehicle-resource-actions">
-        {resource.href && resource.hasCapturedData && onOpenSection ? <button className="vehicle-resource-open" type="button" onClick={openData} aria-label={`${resource.dataAction} for VIN ${vehicle.vin}`}>View details<ArrowRight aria-hidden="true" size={16}/></button> : null}
-        {resource.href ? <a className="vehicle-resource-open" href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={accessibleName}>{resource.action}<ArrowUpRight aria-hidden="true" size={16}/></a>
-          : onOpenSection ? <button className="vehicle-resource-open" type="button" onClick={openData} aria-label={accessibleName} title={resource.dataAction}>{resource.id === 'autocheck' ? 'View history' : resource.id === 'vauto' ? 'View equipment' : resource.dataAction}<ArrowRight aria-hidden="true" size={16}/></button>
-            : <p className="vehicle-resource-unavailable">Open details in Records</p>}
-        </div>
-      </article>;
-    })}
+  const preview = variant === 'preview';
+  const captured = usable.filter(resource => resource.hasCapturedData);
+  const overview = preview && !captured.some(resource => resource.id === selectedId);
+  const lookups = usable.filter(resource => !resource.hasCapturedData);
+  const sourceAction = (resource: VehicleResource, compact = false) => {
+    const label = resource.id === 'autocheck' ? 'Open AutoCheck history' : resource.id === 'vauto' ? 'Open vAuto equipment' : resource.action;
+    const title = [resource.title, resource.subtitle, ...resource.facts].filter(Boolean).join(' · ');
+    const content = <><ResourceBrand resource={resource}/><span>{compact && resource.demo ? 'Demo sticker' : ['Sticker & equipment', 'vAuto equipment'].includes(resource.title) ? resource.title : resource.id === 'autocheck' ? 'History' : resource.id === 'vauto' ? 'Equipment' : resource.demo ? 'Demo sticker' : resource.id === 'window-sticker' ? 'Window sticker' : resource.id === 'oasis' ? 'OASIS' : 'Invoice'}</span>{compact && syntheticPreview && ['autocheck', 'oasis'].includes(resource.id) ? <small className="vehicle-resource-heading-qualifier">Demo</small> : null}{resource.href ? <ArrowUpRight size={14} aria-hidden="true"/> : <ArrowRight size={14} aria-hidden="true"/>}</>;
+    return resource.href ? <a className="vehicle-resource-summary__source" href={resource.href} data-resource={resource.id} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" title={title} aria-label={`${label} for VIN ${vehicle.vin} in a new tab`}>{content}</a>
+      : onOpenSection ? <button type="button" className="vehicle-resource-summary__source" data-resource={resource.id} onClick={() => onOpenSection(resource.target)} title={title} aria-label={`${resource.dataAction} for VIN ${vehicle.vin}`}>{content}</button>
+        : <span className="vehicle-resource-summary__source">{content}</span>;
+  };
+  const resourceToggle = (resource: VehicleResource) => {
+    const expanded = selectedId === resource.id;
+    const detailLabel = resource.id === 'autocheck' ? 'history' : resource.id === 'oasis' ? 'OASIS' : 'equipment';
+    return <button key={resource.id} type="button" className="vehicle-resource-summary__toggle" aria-expanded={expanded} aria-controls={`${disclosureId}-${resource.id}`}
+      aria-label={`${expanded ? 'Collapse' : 'Expand'} ${detailLabel} details`}
+      onClick={() => selectResource(expanded ? null : resource.id)}>
+      <span>{preview ? resource.id === 'autocheck' ? 'AutoCheck' : resource.id === 'oasis' ? 'OASIS' : resource.id === 'vauto' ? 'Equipment' : 'Sticker' : expanded ? 'Less' : 'Details'}</span><ChevronDown size={14} aria-hidden="true"/>
+    </button>;
+  };
+  const sourceLookups = lookups.length ? <div className="vehicle-resource-lookups" aria-label="Additional source lookups">{lookups.map(resource => <div key={resource.id} data-resource-kind={resource.id}>{sourceAction(resource)}</div>)}</div> : null;
+  return <div className={`vehicle-resources vehicle-resources--${variant}${overview ? ' is-overview' : ''}${hideSourceSelectors ? ' has-shared-source-controls' : ''}`} aria-label="Vehicle documents and resources" onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
+    {preview ? <div className="vehicle-resource-preview-toolbar">
+      {captured.length ? <div className="vehicle-resource-preview-selectors" role="group" aria-label="Choose a vehicle report"><button type="button" className="vehicle-resource-summary__toggle" aria-pressed={overview} onClick={() => selectResource(null)}>Overview</button>{!hideSourceSelectors ? captured.map(resourceToggle) : null}</div> : null}
+      {sourceLookups}
+      {onClose ? <button type="button" className="vehicle-resource-preview-close" aria-label="Close records" onClick={onClose}>Close</button> : null}
+    </div> : null}
+    {captured.length ? <div className="vehicle-resource-summaries">
+      {captured.map(resource => {
+        const candidates = [...(resource.score ? resource.facts.slice(0, 1) : []), ...(resource.summaryFacts ?? resource.compactFacts), ...resource.facts];
+        const facts = candidates.filter((fact, index) => !candidates.slice(0, index).some(previous => previous === fact || previous.includes(fact))).slice(0, summaryLimit);
+        const availableRows = resource.summaryRows?.filter(row => row.values.length && !(hideInServiceDate && ['Warranty start', 'Est. in-service'].includes(row.label)));
+        const rows = resource.id === 'autocheck' || resource.id === 'oasis' ? availableRows : availableRows?.slice(0, summaryLimit);
+        const sticker = resource.stickerDetails;
+        const stickerPricing = sticker ? ([
+          sticker.msrp ? ['Original MSRP', sticker.msrp] : sticker.basePrice ? ['Base MSRP', sticker.basePrice] : null,
+        ] as Array<[string, string] | null>).filter((entry): entry is [string, string] => Boolean(entry)) : [];
+        const stickerVehicleFacts = sticker ? ([
+          sticker.exteriorColor ? ['Exterior', sticker.exteriorColor] : null,
+          sticker.interiorColor ? ['Interior', sticker.interiorColor] : null,
+          sticker.engine ? ['Engine', sticker.engine] : null,
+          sticker.transmission ? ['Transmission', sticker.transmission] : null,
+        ] as Array<[string, string] | null>).filter((entry): entry is [string, string] => Boolean(entry)) : [];
+        const previewUrl = resource.previewUrl && !failedPreviews.has(resource.id) ? resource.previewUrl : undefined;
+        const expanded = selectedId === resource.id;
+        const detailId = `${disclosureId}-${resource.id}`;
+        const visibleSourceNote = expanded ? resource.sourceNote : resource.sourceNote?.split(' · ').filter(part => !/^(?:Captured|Report run) \d{2}\/\d{2}\/\d{4}$/.test(part)).join(' · ');
+        return <section key={resource.id} className={`vehicle-resource-summary${facts.length <= 2 ? " vehicle-resource-summary--sparse" : ""}`} data-resource-kind={resource.id} aria-label={resource.title} hidden={preview && !overview && !expanded}>
+          <div className="vehicle-resource-summary__heading">{sourceAction(resource, !expanded)}
+          {!preview ? resourceToggle(resource) : null}
+          </div>
+          {resource.equipmentContext && (expanded || resource.id === 'vauto') ? <p className="vehicle-resource-source-kind">{resource.equipmentContext}</p> : expanded && syntheticPreview && ['autocheck', 'oasis'].includes(resource.id) ? <p className="vehicle-resource-source-kind">Synthetic source sample</p> : null}
+          {!expanded && (!preview || overview) ? <div className={`vehicle-resource-summary__body is-compact${overview ? ' is-rich' : ''}${previewUrl ? " has-preview" : ""}`}>
+            {previewUrl ? <img className="vehicle-resource-summary__preview" src={previewUrl} alt={resource.demo ? "Clearly marked synthetic demo window sticker" : "Window sticker preview"} loading="lazy" onError={() => setFailedPreviews(current => current.has(resource.id) ? current : new Set(current).add(resource.id))}/> : null}
+            <ResourceSnapshot resource={resource} vehicle={vehicle} rows={rows} facts={facts} synthetic={syntheticPreview} detailed={overview}/>
+          </div> : null}
+          <div id={detailId} className="vehicle-resource-summary__disclosure" hidden={!expanded}>
+            {expanded ? <>
+          <div className={`vehicle-resource-summary__body${previewUrl ? " has-preview" : ""}${sticker ? " has-sticker" : rows?.length ? " has-fields" : ""}`}>
+            {previewUrl ? <img className="vehicle-resource-summary__preview" src={previewUrl} alt={resource.demo ? "Clearly marked synthetic demo window sticker" : "Window sticker preview"} loading="lazy" onError={() => setFailedPreviews(current => current.has(resource.id) ? current : new Set(current).add(resource.id))}/> : null}
+            {sticker ? <div className="vehicle-resource-sticker">
+              {sticker.vehicleDescription ? <p className="vehicle-resource-sticker__vehicle">{sticker.vehicleDescription}</p> : null}
+              {stickerPricing.length ? <dl className="vehicle-resource-sticker__pricing" aria-label="Window sticker pricing">{stickerPricing.map(([label,value]) => <div key={label}><dt>{label}</dt><dd>{displaySourceMoney(value)}</dd></div>)}</dl> : null}
+              {stickerVehicleFacts.length ? <dl className="vehicle-resource-sticker__specs" aria-label="Window sticker vehicle details">{stickerVehicleFacts.map(([label,value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : null}
+              {sticker.equipmentGroup || sticker.equipmentGroupContents?.length ? <section className="vehicle-resource-sticker__group" aria-label="Equipment group">
+                <p className="vehicle-resource-sticker__label">Equipment group</p>
+                {sticker.equipmentGroup ? <StickerLineContent line={{...stickerLineParts(sticker.equipmentGroup), price:sticker.equipmentGroupPrice ?? stickerLineParts(sticker.equipmentGroup).price}}/> : null}
+                {sticker.equipmentGroupContents?.length ? <ul className="vehicle-resource-sticker__included" aria-label="Included with equipment group">{sticker.equipmentGroupContents.map((line,index) => <li key={index} title={line} aria-label={line}><StickerLineContent line={stickerLineParts(line)}/></li>)}</ul> : null}
+              </section> : null}
+              <div className="vehicle-resource-sticker__optional">{sticker.optionLines.length ? <><p className="vehicle-resource-sticker__label">{sticker.optionLabel ?? 'Optional equipment & packages'}</p><StickerOptions lines={sticker.optionLines}/></> : <p className="vehicle-resource-sticker__missing">Optional equipment details not captured</p>}</div>
+              {sticker.standardEquipment?.length ? <section className="vehicle-resource-sticker__section" aria-label="Standard equipment"><p className="vehicle-resource-sticker__label">Standard equipment</p><ul>{sticker.standardEquipment.map((item,index) => <li key={index}>{item}</li>)}</ul></section> : null}
+              {sticker.warranty?.length ? <section className="vehicle-resource-sticker__section" aria-label="Printed warranty"><p className="vehicle-resource-sticker__label">Printed warranty</p><ul>{sticker.warranty.map((item,index) => <li key={index}>{item}</li>)}</ul></section> : null}
+            </div> : rows !== undefined ? <SummaryFields rows={rows} resource={resource} synthetic={syntheticPreview}/> : <ul className="vehicle-resource-summary__facts">{facts.map((fact, index) => <li key={index}>{displaySourceMoney(fact)}</li>)}</ul>}
+          </div>
+            </> : null}
+          </div>
+          {resource.alternateSticker ? <a className="vehicle-resource-summary__source" href={resource.alternateSticker.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{resource.alternateSticker.label}<ArrowUpRight size={14} aria-hidden="true"/></a> : null}
+          {!resource.demo && visibleSourceNote ? <p className="vehicle-resource-source-note">{visibleSourceNote}</p> : null}
+        </section>;
+      })}
+    </div> : null}
+    {!preview ? sourceLookups : null}
   </div>;
 }

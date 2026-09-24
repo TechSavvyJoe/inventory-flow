@@ -1,7 +1,7 @@
 import { confirmUnsavedWork, useUnsavedChanges } from '../../lib/useUnsavedChanges'
 import { useWorkspaceLifetime } from '../../lib/useWorkspaceLifetime'
 import { useWorkspaceState, useWorkspaceScroll } from '../../lib/workspace-memory'
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ArrowLeft, CarFront, CheckCircle2, Wrench } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
@@ -9,14 +9,14 @@ import { ApiError, getServiceReadiness, updateServiceReadiness } from '../../lib
 import { formatDate, formatNumber } from '../../lib/format'
 import { SERVICE_STATUS_OPTIONS, serviceWorkflowStatus, serviceStatusLabel } from '../../lib/service-readiness'
 import { vehiclePhotoDisplaySources } from '../../lib/vehicle-photos'
-import { currentWorkspaceReturnPath, vehicleWorkspacePath, readWorkspaceReturnPath, workspaceReturnLabel } from '../inventory/inventory-navigation'
+import { currentWorkspaceReturnPath, vehicleWorkspacePath, readWorkspaceReturnPath, workspaceReturnLabel } from '../../lib/inventory-navigation'
 import type { ServiceReadinessDetail, ServiceReadinessStatus, ServiceWorkflowStatus, StoreName, UserRole, VehicleRecord } from '../../types'
 import { CopyableValue } from '../../components/CopyableValue'
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
 import { VehicleGallery } from '../inventory/VehicleGallery'
 import { ServiceVehicleContext } from './ServiceVehicleContext'
 import { serviceEvidenceSummary, SourceServiceHistory } from './SourceServiceHistory'
-import { searchFieldsMatch } from '../inventory/inventory-search'
+import { searchFieldsMatch } from '../../lib/search'
 import './ServiceDesk.css'
 
 export const SERVICE_LABELS: Record<ServiceReadinessStatus, string> = {
@@ -231,7 +231,7 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
   </aside>
 }
 
-export function ServicePage({ toolbarAccessory }: { toolbarAccessory?: ReactNode } = {}) {
+export function ServicePage() {
   const { data, homeStore, role, currentUser, refresh } = useAppData()
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
@@ -256,7 +256,7 @@ export function ServicePage({ toolbarAccessory }: { toolbarAccessory?: ReactNode
   }
   if (!data) return null
   return <section className={`service-page${selected ? ' service-has-selection' : ''}${selected && returnTo ? ' service-from-vehicle' : ''}`}>
-    <header className="service-page-heading"><h1><Wrench aria-hidden="true" size={25} />Service status</h1><div className="service-heading-controls">{toolbarAccessory}<div className="service-scope" role="group" aria-label="Service inventory scope"><button type="button" aria-pressed={scope === 'my_store'} onClick={() => setScope('my_store')}>My store · {homeStore}</button><button type="button" aria-pressed={scope === 'all'} onClick={() => setScope('all')}>All stores</button></div></div></header>
+    <header className="service-page-heading"><h1><Wrench aria-hidden="true" size={25} />Service status</h1><div className="service-heading-controls"><div className="service-scope" role="group" aria-label="Service inventory scope"><button type="button" aria-pressed={scope === 'my_store'} onClick={() => setScope('my_store')}>My store · {homeStore}</button><button type="button" aria-pressed={scope === 'all'} onClick={() => setScope('all')}>All stores</button></div></div></header>
     <div className="service-tabs" role="group" aria-label="Service status">
       {STATUSES.map((value) => <button key={value} type="button" aria-pressed={status === value} onClick={() => setParams({ status: value, ...(returnTo ? { returnTo } : {}) })}>{SERVICE_LABELS[value]}{' '}<span>{counts[value]}</span></button>)}
     </div>

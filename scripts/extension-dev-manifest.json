@@ -1,0 +1,9 @@
+{
+  "name": "Inventory Flow Deal Desk (local demo)",
+  "short_name": "Deal Desk dev",
+  "host_permissions": [
+    "https://inventory-ops.joegallant.me/*",
+    "http://127.0.0.1:4173/*",
+    "http://localhost:4173/*"
+  ]
+}

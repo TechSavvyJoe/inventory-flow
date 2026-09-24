@@ -187,11 +187,23 @@ function movementSignal(record, transfer, now) {
   }
 }
 
+/**
+ * Switches on the server's public-listing code (server/service-core.mjs
+ * publicListingCode); the labels beside it are display text and are never
+ * parsed. A stale code is the last verified listing, so it stays listed while
+ * the listing dataState carries the staleness. No code means unknown.
+ */
 function isListed(record) {
-  const state = `${record.publicListingState ?? ''} ${record.websiteStatus ?? ''}`.toLowerCase()
-  if (state.includes('not found') || state.includes('removed') || state.includes('not listed')) return false
-  if (state.includes('listed') || state.includes('available')) return true
-  return record.listingUrl ? true : null
+  switch (record.publicListing) {
+    case 'listed':
+    case 'stale':
+      return true
+    case 'pre_listing':
+    case 'not_in_release':
+      return false
+    default:
+      return null
+  }
 }
 
 /** Dealer-confirmed policy: certified vehicles at the three Ford stores are Blue Certified.

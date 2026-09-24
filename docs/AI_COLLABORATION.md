@@ -36,7 +36,7 @@ Inside Claude Code, start the safe app when browser QA is needed:
 pnpm dev:demo
 ```
 
-Do not use `sudo` for the Claude Code npm installation. Open a branch for each task, run `pnpm check`, and submit a pull request. `CLAUDE.md` provides the standing product and safety rules. Anthropic's current setup reference is [Set up Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started).
+Do not use `sudo` for the Claude Code npm installation. Open a branch for each task, run `pnpm check`, and submit a pull request. [`AGENTS.md`](../AGENTS.md) provides the standing product and safety rules that both Claude and Codex read (`CLAUDE.md` imports it). Anthropic's current setup reference is [Set up Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started).
 
 ### Claude Desktop
 
@@ -66,26 +66,18 @@ Collaboration boundaries:
 - repository agents use the synthetic fixture and tests; cloud access is not granted by GitHub access;
 - branches and pull requests share code changes only;
 - the work PC still collects and validates daily sources, then publishes them through its separately scoped machine identity;
-- the separate read-only API/MCP service has its own scopes and credentials; Git access does not grant data access. Its live activation is currently blocked by Cloudflare CPU limits, and customer/private fields remain excluded. See [Shared data API](SHARED_DATA_API.md) for exact coverage and activation status.
+- the separate read-only API/MCP service has its own scopes and credentials; Git access does not grant data access. Its read API, access restrictions, and OAuth discovery are live and verified; hosted AI client connections are pending, and customer/private fields remain excluded. See [Shared data API](SHARED_DATA_API.md) for exact coverage and activation status.
 
 ## Repository safety gate
 
-Run these commands before the first push and every pull request:
-
-```bash
-pnpm check:repo-safety
-pnpm check
-```
-
-The gate verifies that trackable files do not include:
+Run the safety-gate commands from [`AGENTS.md`](../AGENTS.md) ("Validation before handoff") before the first push and every pull request. The gate verifies that trackable files do not include:
 
 - `runtime/`, `data/`, `work/`, `outputs/`, exports, SQLite, logs, spreadsheets, HAR files, or bulk-data files;
 - `.env` files or common literal credential formats;
-- unreviewed raster captures, which can silently contain live VINs or hold/customer details;
+- a `package-lock.json` or `yarn.lock` (only `pnpm-lock.yaml` is tracked; a stray lockfile builds a different dependency tree);
+- unreviewed raster captures (png/jpg/jpeg/webp/heic/gif) anywhere outside the reviewed brand/demo asset directories (`public/{brand-kit,brands,resource-brands,demo-vehicles,demo-documents}/`, `extension/{icons,brands,resource-brands}/`) — a raster anywhere else, including the repo root, `docs/`, or `.agents/`, can silently carry a live VIN, hold detail, or an authenticated-page capture;
 - fixture files without `SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS`.
 
-Keep code-based design guidance and reviewed vector assets. Generate visual-regression screenshots from `pnpm dev:demo`; store CI screenshots as short-lived build artifacts rather than committing them by default.
+`.agents/` (per-session agent transcripts) is gitignored and never tracked. Keep code-based design guidance and reviewed vector assets. Generate visual-regression screenshots from `pnpm dev:demo`; store CI screenshots as short-lived build artifacts rather than committing them by default.
 
-## What a remote AI cannot verify
-
-A remote repository agent cannot truthfully verify current dealership inventory, current DealerMail holds, cookies/authentication, production Cloudflare Access, real vehicle document links, or the contents of the local operational ledger. Its valid evidence is the source, tests, synthetic fixture, build, and synthetic browser QA. Any live-source or production claim requires a separate authorized verification on the controlled host.
+See [`AGENTS.md`](../AGENTS.md) for what a remote AI agent can and cannot truthfully verify from this repository.

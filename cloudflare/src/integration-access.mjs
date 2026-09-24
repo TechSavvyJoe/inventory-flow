@@ -96,7 +96,6 @@ function grantPrincipal(row, now) {
     user: row.name,
     store: row.home_store,
     authenticated: true,
-    identityMode: 'trusted_proxy',
     canPreviewRoles: false,
     rateLimitPerMinute: row.rate_limit_per_minute,
   })

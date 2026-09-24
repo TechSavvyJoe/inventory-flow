@@ -42,15 +42,6 @@ export const EQUIPMENT_CATEGORIES: Array<{ id: EquipmentCategoryId; label: strin
   { id: "other", label: "Other published equipment" },
 ];
 
-export const EQUIPMENT_SOURCE_LABELS: Record<EquipmentEvidenceSource, string> = {
-  "inventory-feature": "Published vehicle listing",
-  "factory-option": "Original window sticker · Option",
-  "factory-standard": "Original window sticker · Standard",
-  "equipment-group": "Original window sticker · Equipment group",
-  "vauto-package": "VIN equipment profile · Package",
-  "vauto-informational": "VIN equipment profile",
-};
-
 const EQUIPMENT_SOURCE_SECTIONS = new Map<string, string>([
   ["exterior", "Exterior"],
   ["interior", "Interior"],

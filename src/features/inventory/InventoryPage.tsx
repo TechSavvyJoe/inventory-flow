@@ -1,13 +1,13 @@
 import { useWorkspaceState } from '../../lib/workspace-memory'
 import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus'
-import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
-import { groupStores, inventoryMetrics, inventoryStore, toInventoryVehicle } from '../../app/adapters'
+import { groupStores, inventoryStore, toInventoryVehicle } from '../../app/adapters'
 import { SourceWarning } from '../../components/SourceWarning'
 import { ApiError, getVehicle } from '../../lib/api'
 import type { VehicleRecord } from '../../types'
-import type { InventoryExperienceProps, InventoryScope, InventoryVehicle, VehicleWorkspaceTab } from './types'
+import type { InventoryScope, InventoryVehicle, VehicleWorkspaceTab } from './types'
 import { InventoryExperience } from './InventoryExperience'
 import { canRequestVehicleMove, movementTrackingPath, transferByVin, vehicleMoveAction } from './inventory-utils'
 import {
@@ -19,10 +19,10 @@ import {
   currentWorkspaceReturnPath,
   withWorkspaceReturnPath,
   workspaceReturnLabel,
-} from './inventory-navigation'
+} from '../../lib/inventory-navigation'
 
 
-export function InventoryPage({ homeMode = false, experienceComponent: Experience = InventoryExperience }: { homeMode?: boolean; experienceComponent?: ComponentType<InventoryExperienceProps> }) {
+export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   const { data, homeStore, role, currentUser } = useAppData()
   const [params] = useSearchParams()
   const location = useLocation()
@@ -183,17 +183,14 @@ export function InventoryPage({ homeMode = false, experienceComponent: Experienc
     <section className={`inventory-page${homeMode ? ' inventory-home-mode' : ''}`}>
       <SourceWarning meta={data.meta} />
       {requestedVin && !data.vehicles.some(vehicle => vehicle.vin === requestedVin) ? <div className="source-warning" role="status">This vehicle record is unavailable in your current inventory. Search the inventory or return to your previous workspace.</div> : null}
-      <Experience
+      <InventoryExperience
         key={`${accessContext}-${queryRequestKey}-${homeMode ? 'home' : 'inventory'}`}
         homeStore={store}
         vehicles={vehicles}
         detailState={activeDetail ? 'ready' : detailRequest.key === detailKey ? detailRequest.state : 'loading'}
         onRetryDetail={() => setDetailRetry(value => value + 1)}
         returnLabel={workspaceReturnLabel(workspaceReturnPath)}
-        metrics={inventoryMetrics(data, homeStore)}
         groupStores={groupStores(data, homeStore)}
-        title={`${homeStore} inventory`}
-        initialScope={requestedScope}
         scope={requestedScope}
         initialQuery={query}
         queryRequestKey={queryRequestKey}
@@ -205,14 +202,10 @@ export function InventoryPage({ homeMode = false, experienceComponent: Experienc
         canRequestVehicle={(vehicle) => canRequestVehicleMove(vehicle, role, store.id)}
         moveActionFor={(vehicle) => vehicleMoveAction(vehicle, role, store)}
         onScopeChange={changeScope}
-        onGroupStoreSelect={() => changeScope('group')}
         onRequestVehicle={requestVehicle}
         onMoveVehicle={moveVehicle}
         onTrackMovement={trackMovement}
         onOpenListing={openListing}
-        onOpenSourceRecord={(vehicle, source) => {
-          if (source === 'public') openListing(vehicle)
-        }}
       />
     </section>
   )

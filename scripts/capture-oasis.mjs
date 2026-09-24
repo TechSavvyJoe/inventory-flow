@@ -23,7 +23,7 @@
 // tabs so getOriginTab opens a clean one, and the run retries once.
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
-import { getOriginTab, fetchInTab, sleep, targets, PORT } from './lib/cdp.mjs'
+import { closeDuplicateTabs, closeOwnedTab, closeUnresponsiveOriginTabs, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import { assessOasisCapture, parseOasisFull } from './lib/oasis-parser.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
@@ -68,23 +68,15 @@ const done = new Set(out.records.filter(r => r.openActionsCaptured === true ||
 const queue = worklist.map(w => w.vin).filter(v => !done.has(v)).slice(0, max)
 
 // ---------------------------------------------------------------- capture
-async function closeOriginTabs() {
-  for (const t of await targets()) {
-    if (t.type === 'page' && (t.url || '').startsWith(ORIGIN)) {
-      try { await fetch(`http://127.0.0.1:${PORT}/json/close/${t.id}`) } catch {}
-    }
-  }
-  await sleep(1500)
-}
-
 let state = 'not_started'
 let ctx = null
 async function attach(seedVin) {
   const c = await getOriginTab(ORIGIN, OASIS_URL(seedVin), { settleMs: 60000 })
+  await closeDuplicateTabs(ORIGIN, { pathIncludes: '/oasis/Index', keepTabId: c.tab?.id })
   if (!c.state || c.state.host !== 'www.fordtechservice.dealerconnection.com') {
     const host = String((c.state && c.state.host) || '')
     state = /microsoftonline|login|signin/i.test(host) ? 'session_expired' : 'unavailable'
-    try { c.page.close() } catch {}
+    await closeOwnedTab(c)
     return null
   }
   return c
@@ -95,7 +87,7 @@ const save = () => { out.vehicleCount = out.records.length; writeFileSync(outPat
 
 if (queue.length) {
   try { ctx = await attach(queue[0]) } catch (e) {
-    if (/CDP_TIMEOUT/.test(String(e.message))) { await closeOriginTabs(); ctx = await attach(queue[0]).catch(() => null) }
+    if (/CDP_TIMEOUT/.test(String(e.message))) { await closeUnresponsiveOriginTabs(ORIGIN); ctx = await attach(queue[0]).catch(() => null) }
     else throw e
   }
 }
@@ -128,7 +120,8 @@ for (const vin of queue) {
 }
 
 save()
-try { ctx && ctx.page.close() } catch {}
+await closeDuplicateTabs(ORIGIN, { pathIncludes: '/oasis/Index', keepTabId: ctx?.tab?.id })
+await closeOwnedTab(ctx)
 const quality = assessOasisCapture(worklist, out.records)
 if (!stopped && !Number.isFinite(max) && !quality.complete) stopped = 'INCOMPLETE_OASIS_CAPTURE'
 console.log(JSON.stringify({

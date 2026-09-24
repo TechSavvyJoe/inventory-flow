@@ -14,28 +14,39 @@
 .if-srp-grid .inv-desk-th:first-child { border-left:0; }
 .if-srp-grid .inv-desk-th:first-child { border-radius: 5px 0 0 0; }
 .if-srp-grid .inv-desk-th:last-child { border-radius: 0 5px 0 0; }
-.if-srp-grid .inv-desk-th--vehicle { width: 33%; }
+.if-srp-grid .inv-desk-th--vehicle { width: 32%; }
 .if-srp-grid .inv-desk-th--price { width: 12%; }
-.if-srp-grid .inv-desk-th--configuration { width: 20%; }
-.if-srp-grid .inv-desk-th--status { width: 20%; }
-.if-srp-grid .inv-desk-th--actions { width: 15%; }
-.if-srp-grid .inv-desk-td { padding: 10px 12px; vertical-align: top; border-bottom: 1px solid var(--border); border-left:1px solid var(--border-strong); background: var(--surface); }
+.if-srp-grid .inv-desk-th--configuration { width: 21%; }
+.if-srp-grid .inv-desk-th--status { width: 21%; }
+.if-srp-grid .inv-desk-th--actions { width: 14%; }
+.if-srp-grid .inv-desk-td { padding: 8px 12px; vertical-align: top; border-bottom: 1px solid var(--border); border-left:1px solid var(--border-strong); background: var(--surface); }
 .if-srp-grid .inv-desk-td:first-child { border-left:0; }
 .if-srp-grid .inv-desk-row:last-child .inv-desk-td { border-bottom: 0; }
-.if-srp-grid .inv-desk-row[data-has-resources="true"] .inv-desk-td { border-bottom: 0; padding-top: 6px; padding-bottom: 0; }
-.if-srp-grid .inv-desk-row[data-has-resources="true"] .inv-desk-td--actions { border-bottom: 0; vertical-align: top; padding-bottom: 0; }
-.if-srp-grid .inv-desk-resource-row > td { padding: 8px 12px 10px; border-top: 1px solid var(--border); border-bottom: 2px solid var(--border-strong); background: var(--surface); }
-.if-srp-grid .inv-desk-resource-row:last-child > td { border-bottom: 0; }
-.if-srp-grid .inv-desk-resource-row.is-selected > td { background: var(--blue-050); }
-.if-srp-grid .inv-desk-row.is-alternate .inv-desk-td { background:var(--surface-soft); }
-.if-srp-grid .inv-desk-scan-row > td { padding:6px 12px 9px; border-bottom:2px solid var(--border-strong); background:var(--surface); }
-.if-srp-grid .inv-desk-scan-row.is-alternate > td { background:var(--surface-soft); }
-.if-srp-grid .inv-desk-scan-row.is-selected > td { background:var(--blue-050); }
-.if-srp-grid .inv-desk-scan-row .vehicle-resources--scan { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:0; border-color:var(--border-strong); background:var(--surface); }
-.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan { display:grid; grid-template-columns:max-content minmax(0,1fr); align-content:center; align-items:start; gap:2px 10px; min-height:54px; padding:6px 10px; }
-.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan + .vehicle-resource-scan { padding-left:10px; }
-.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan > .vehicle-resource-scan__source { grid-column:1; grid-row:1 / span 3; align-self:start; }
-.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan > :is(span,small) { grid-column:2; color:var(--ink-700); }
+.if-srp-grid .inv-desk-row[data-has-resources="true"] .inv-desk-td { border-bottom: 0; padding-top: 8px; padding-bottom: 2px; }
+.if-srp-grid .inv-desk-row[data-has-resources="true"] .inv-desk-td--actions { border-bottom: 0; vertical-align: top; padding-bottom: 2px; }
+/* Each vehicle owns one tbody (main row + optional source-signal row), so the
+   stripe, hover and selection treatments are one rule per vehicle. */
+.if-srp-grid .inv-desk-vehicle-rows:nth-of-type(even) > tr > td { background:var(--surface-soft); }
+.if-srp-grid .inv-desk-vehicle-rows + .inv-desk-vehicle-rows > .inv-desk-row > .inv-desk-td { border-top:1px solid var(--border-strong); }
+.if-srp-grid .inv-desk-vehicle-rows:last-of-type > tr:last-child > td { border-bottom: 0; }
+.if-srp-grid .inv-desk-vehicle-rows:is(:hover,.is-selected) > tr > td { background: var(--blue-050); }
+/* Source signals read as one quiet line under the row: source mark, then its
+   two captured facts separated by middots. The full reports stay in Records. */
+.if-srp-grid .inv-desk-scan-row > td { padding:0 12px 7px; border-bottom:2px solid var(--border-strong); background:var(--surface); }
+.if-srp-grid .inv-desk-scan-row .vehicle-resources--scan { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 22px; width:100%; overflow:visible; border:0; border-radius:0; background:transparent; }
+/* Each source takes an equal share of the strip and wraps inside it, so the
+   strip is one or two lines instead of one line per source. */
+.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan { flex:1 1 0; display:flex; flex-direction:row; flex-wrap:wrap; align-items:baseline; gap:0 6px; min-width:min(100%, 240px); min-height:24px; padding:0; border:0; color:var(--ink-700); font:400 13px/1.4 var(--font-app); }
+.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan + .vehicle-resource-scan { border-left:0; padding-left:0; }
+.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan > .vehicle-resource-scan__source { min-height:24px; padding:0; gap:5px; color:var(--ink-900); font:600 13px/1.4 var(--font-app); }
+.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan__source .vehicle-resource-brand { width:auto; max-width:60px; height:15px; }
+.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan__source .vehicle-resource-brand--ford { width:auto; height:16px; }
+.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan__source .vehicle-resource-symbol { width:15px; height:15px; }
+.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan > :is(span,small) { color:var(--ink-700); overflow-wrap:anywhere; }
+.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan > :is(span,small) + :is(span,small)::before { content:"·"; margin-right:6px; color:var(--ink-500); }
+.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan > small { font-size:12px; }
+.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan__date { display:inline; }
+.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan__missing { font-size:13px; }
 .if-srp-grid .inventory-desktop-records { --records-toolbar-top:calc(var(--top-height, 64px) + var(--safe-top, 0px)); }
 .if-srp-grid .inventory-desktop-records > header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
 .if-srp-grid .inventory-desktop-records > header > strong { font-size:14px; color:var(--ink-900); }
@@ -45,9 +56,6 @@
 .if-srp-grid .inv-desk-action .is-expanded { transform:rotate(180deg); }
 .if-srp-grid .inv-desk-action--records[aria-expanded="true"] { background:var(--navy-900); border-color:var(--navy-900); color:var(--surface); }
 .if-srp-grid .inv-desk-row { cursor: pointer; }
-.if-srp-grid .inv-desk-row:not(:first-child) .inv-desk-td { border-top:1px solid var(--border-strong); }
-.if-srp-grid .inv-desk-resource-row + .inv-desk-row .inv-desk-td { border-top:0; }
-.if-srp-grid .inv-desk-row:hover .inv-desk-td, .if-srp-grid .inv-desk-row.is-selected .inv-desk-td { background: var(--blue-050); }
 .if-srp-grid .inv-desk-vehicle { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 2px 10px; align-items: start; }
 .if-srp-grid .inv-desk-vehicle__photo, .if-srp-mobile-list .inventory-vehicle-visual { display: block; position: relative; flex-shrink: 0; overflow: hidden; width: 120px; height: 80px; background: var(--surface-muted); border: 1px solid var(--border); border-radius: 5px; }
 .if-srp-grid .inv-desk-vehicle__img, .if-srp-mobile-list .inventory-vehicle-visual img { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -56,11 +64,13 @@
 .if-srp-grid .inventory-photo-count, .if-srp-mobile-list .inventory-photo-count { position: absolute; right: 4px; bottom: 4px; padding: 2px 5px; color: var(--surface); background: var(--navy-900); border-radius: 3px; font-size: 12px; line-height: 16px; }
 .if-srp-grid .inv-desk-vehicle__body { display: grid; gap: 3px; min-width: 0; }
 .if-srp-grid .inv-desk-vehicle__title strong { display: block; white-space: normal; overflow: visible; color: var(--ink-900); font: 700 17px/1.25 var(--font-app); }
-.if-srp-grid .inv-desk-vehicle__facts { grid-column:1 / -1; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:2px 12px; margin:6px 0 0; }
+/* Stock, mileage and VIN sit beside the photo instead of under it, so the
+   identity cell is no taller than the photo plus one line. */
+.if-srp-grid .inv-desk-vehicle__facts { grid-column:2; display:flex; flex-wrap:wrap; align-items:center; gap:1px 12px; margin:3px 0 0; }
 .if-srp-grid .inv-desk-vehicle__facts > div { display:flex; align-items:center; gap:6px; min-width:0; }
 .if-srp-grid .inv-desk-vehicle__facts dt { color:var(--ink-600); font:400 12px/1.4 var(--font-app); }
 .if-srp-grid .inv-desk-vehicle__facts dd { min-width:0; margin:0; color:var(--ink-900); font:500 14px/1.4 var(--font-app); font-variant-numeric:tabular-nums; }
-.if-srp-grid .inv-desk-vehicle__facts > .inv-desk-vehicle__vin { grid-column:1 / -1; }
+.if-srp-grid .inv-desk-vehicle__facts > .inv-desk-vehicle__vin { flex-basis:100%; }
 .if-srp-grid .inv-desk-copy { display: inline-flex; align-items: center; min-width: 0; gap: 2px; font: inherit; }
 .if-srp-grid .inv-desk-copy .copyable-value__content { overflow-wrap: anywhere; white-space: normal; font: inherit; }
 .if-srp-grid .copyable-value__button { display: inline-flex; justify-content: center; align-items: center; width: 22px; height: 22px; min-width: 22px; min-height: 22px; padding: 0; border: 0; color: var(--ink-500); background: transparent; }
@@ -103,10 +113,14 @@
   .if-srp-grid .inv-desk-location > span::before { content: "·"; margin-right: 6px; color: var(--ink-500); }
 }
 .if-srp-grid .inventory-recall-chip { display: inline-flex; align-items: center; justify-self: start; gap: 4px; border: 0; padding: 2px 0; background: transparent; color: var(--red); font: 500 14px/1.4 var(--font-app); cursor: pointer; }
+/* Details, Records, the movement action and Listing: four direct 44px targets
+   in two rows. Hold and service are opened from their Operations signals. */
 .if-srp-grid .inv-desk-actions { display: grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap: 6px; width: 100%; }
-.if-srp-grid .inv-desk-action { display: inline-flex; justify-content: center; align-items: center; gap: 4px; width: 100%; min-height: 44px; height:44px; padding: 5px; color: var(--blue-700); border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface-soft); box-shadow:0 1px 1px rgb(16 43 66 / 6%); font: 600 14px/1.2 var(--font-app); text-decoration: none; cursor: pointer; transition:background-color 140ms ease,border-color 140ms ease,color 140ms ease,box-shadow 140ms ease,transform 140ms ease; }
+.if-srp-grid .inv-desk-action { display: inline-flex; justify-content: center; align-items: center; gap: 4px; width: 100%; min-height: 44px; height:44px; padding: 5px; color: var(--blue-700); border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface-soft); box-shadow:0 1px 1px rgb(16 43 66 / 6%); font: 600 14px/1.2 var(--font-app); text-decoration: none; white-space: nowrap; cursor: pointer; transition:background-color 140ms ease,border-color 140ms ease,color 140ms ease,box-shadow 140ms ease,transform 140ms ease; }
 .if-srp-grid .inv-desk-action--primary { border-color:var(--navy-900); background: var(--navy-900); color: var(--surface); }
-.if-srp-grid .inv-desk-action--quiet { border-color: transparent; min-height: 44px; padding-block: 5px; color: var(--ink-600); background: transparent; }
+.if-srp-grid .inv-desk-action--records { box-shadow:0 1px 1px rgb(16 43 66 / 6%); transform:none; }
+.if-srp-grid .inv-desk-action--quiet { border-color: transparent; min-height: 44px; padding-block: 5px; color: var(--ink-600); background: transparent; box-shadow: none; }
+.if-srp-grid .inv-desk-action--quiet:nth-child(3):last-child { grid-column: 1 / -1; }
 .if-srp-grid .inv-desk-action:hover { border-color:var(--blue-600); background: var(--blue-050); color: var(--blue-700); box-shadow:0 3px 7px rgb(16 43 66 / 12%); transform:translateY(-1px); }
 .if-srp-grid .inv-desk-action--primary:hover { background: var(--blue-700); color: var(--surface); }
 .if-srp-grid .inv-desk-action:active { transform:translateY(0); box-shadow:none; }

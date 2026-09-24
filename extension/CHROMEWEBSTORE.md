@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Inventory Flow Deal Desk
 
-> Last Updated: 2026-09-19
+> Last Updated: 2026-09-23
 
 This file is the single source of truth for the store listing. Update it whenever
 `manifest.json`, permissions, data handling, or user-facing behavior change, and add a
@@ -51,7 +51,7 @@ English
 
 ### Screenshot Notes
 Capture screenshots only from `pnpm dev:demo` (synthetic data), never from the protected
-production host — see `extension/README.md` "Distribution" and the root `CLAUDE.md` git rule
+production host — see `extension/README.md` "Distribution" and the root `AGENTS.md` git rule
 against committing authenticated-page captures. Suggested shots: (1) the search list with a
 row expanded to show hold/service/location facts, (2) a vehicle detail view's Holds & moves
 tab, (3) the compare view with two or three vehicles.
@@ -63,12 +63,14 @@ tab, (3) the compare view with two or three vehicles.
 | `sidePanel` | permissions | The extension's entire UI is a Chrome side panel; this permission is what lets the extension register and open it. |
 | `storage` | permissions | Saves the user's display preferences (theme, density, home store) via `chrome.storage.sync`, and keeps a session-only copy of the fetched inventory list, the compare set, active filters, and a take-home-page handoff via `chrome.storage.session`. Nothing here is synced or sent anywhere outside the user's own Chrome profile. |
 | `contextMenus` | permissions | Adds the single "Search Inventory Flow for …" entry that appears when the user selects text and right-clicks, letting them open the panel pre-filled with that selection. |
-| `https://inventory-ops.joegallant.me/*` | host_permissions | The dealership group's own production Inventory Flow application — the only place the panel reads live inventory, hold, and vehicle-status data from. |
-| `http://127.0.0.1:4173/*`, `http://localhost:4173/*` | host_permissions | The local synthetic demo server (`pnpm dev:demo`) used only for staff training and development; it serves fixture data, never real inventory. |
+| `scripting` | permissions | Runs one read-only check inside an already open, signed-in DealerMail inventory tab (`/prospect_manager/`): it fetches the selected stock's hold-detail page and returns only the hold status, the active-order count and the check time. It never submits, holds, releases or comments, and no names, notes, cookies or page HTML leave that tab. |
+| `https://inventory-ops.joegallant.me/*` | host_permissions | The dealership group's own production Inventory Flow application — the panel's source for inventory, the daily hold snapshot, and vehicle-status data. |
+| `https://www.dealermail.com/*`, `https://dealermail.com/*` | host_permissions | Lets the panel find the user's open DealerMail inventory tab and run the live hold check above there. DealerMail stays read-only evidence. |
 
-No `tabs`, `activeTab`, `<all_urls>`, or content-script permissions are requested. The panel
-never reads the content of the page the user is on — the context-menu handler only receives
-the text the user already selected, via Chrome's built-in `selectionText`.
+No `tabs`, `activeTab`, `<all_urls>`, or declared content scripts are requested. The panel
+never reads the content of the page the user is on, except the live hold check above, which
+runs only in a DealerMail inventory tab — the context-menu handler only receives the text the
+user already selected, via Chrome's built-in `selectionText`.
 
 ## Privacy & Data Use
 
@@ -94,7 +96,7 @@ and validation apply.
 | Location | No | No | — | No |
 | Web history | No | No | — | No |
 | User activity | No | No | — | No |
-| Website content | No | No | The context-menu action reads only text the user has actively selected on the current page, to prefill a search; it is not stored beyond that single search and is never sent anywhere but the extension's own panel | No |
+| Website content | No | No | The context-menu action reads only text the user has actively selected on the current page, to prefill a search; it is not stored beyond that single search and is never sent anywhere but the extension's own panel. The live hold check reads the selected stock's DealerMail hold-detail page inside the user's own DealerMail tab and returns only the hold status and active-order count to the panel; nothing is sent elsewhere | No |
 
 ### Data Use Certification
 - [x] Data is NOT sold to third parties
@@ -155,7 +157,7 @@ are reconstructed from `extension/manifest.json` history for when a first submis
 
 ### Known Issues / Limitations
 - No screenshots exist yet; they must come from `pnpm dev:demo` only (never the protected
-  host — see the root `CLAUDE.md` git rules and `extension/README.md` "Distribution").
+  host — see the root `AGENTS.md` git rules and `extension/README.md` "Distribution").
 - No public privacy policy is published yet (see "Privacy Policy" above) — required before any
   **public** listing; may be unnecessary for a Forcelist-only internal deployment, but Chrome
   Web Store review still expects the data-disclosure form to be filled in accurately either way.

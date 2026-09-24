@@ -1,4 +1,4 @@
-import { ROLE_PICKER_ROLES, STALE_AFTER_MS, STORES, WORKSPACES, workspaceFor } from './lib/config.mjs'
+import { ROLE_PICKER_ROLES, STALE_AFTER_MS, STORES, WORKSPACES, grantedWorkspaces, workspaceFor } from './lib/config.mjs'
 import { PanelApiError, fetchBootstrap, fetchVehicle } from './lib/api.mjs'
 import { buildPanelData, copyFields, dealSheetText, mergeDetail, requestBlockedReason, roleLabel, toPanelVehicle, vehicleMoveAction } from './lib/model.mjs'
 import { buildEntry, buildIndex, rank } from './lib/search.mjs'
@@ -1610,9 +1610,12 @@ function renderSheet() {
     el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Appearance' }), segmented([{ value: 'light', label: 'Match app' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'System' }], s.theme, (theme) => updateSettings({ theme }), 'Appearance'), el('p', { class: 'field-help', text: 'Match app uses Inventory Flow’s white, navy, and blue design. System follows your device.' })),
     el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Density' }), segmented([{ value: 'comfortable', label: 'Comfortable' }, { value: 'compact', label: 'Compact' }], s.density, (density) => updateSettings({ density }), 'Density')),
   )
-  if (host === 'extension') {
+  // Only the dev-only build grants the loopback demo; the shipped companion
+  // reaches production alone, so it shows no workspace switch.
+  const workspaces = host === 'extension' ? grantedWorkspaces() : []
+  if (workspaces.length > 1) {
     ui.sheetBody.append(el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Workspace' }),
-      segmented(Object.values(WORKSPACES).map((item) => ({ value: item.id, label: item.label })), s.workspace, (workspace) => updateSettings({ workspace }, { reload: true }).then(() => { renderSheet(); ui.sheetBody.querySelector('[aria-label="Workspace"] [aria-pressed="true"]')?.focus({ preventScroll: true }) }), 'Workspace'),
+      segmented(workspaces.map((item) => ({ value: item.id, label: item.label })), state.workspace.id, (workspace) => updateSettings({ workspace }, { reload: true }).then(() => { renderSheet(); ui.sheetBody.querySelector('[aria-label="Workspace"] [aria-pressed="true"]')?.focus({ preventScroll: true }) }), 'Workspace'),
       el('p', { class: 'field-help', text: s.workspace === 'demo' ? 'The local demo is synthetic training data from pnpm dev:demo — never live inventory.' : 'Production uses your Cloudflare Access sign-in for Inventory Flow.' })))
   }
   if (state.workspace.demo) {

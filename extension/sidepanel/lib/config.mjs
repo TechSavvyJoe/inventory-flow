@@ -1,5 +1,6 @@
 // Workspaces the panel can talk to. Production is the Access-gated app; the
 // local demo is the synthetic `pnpm dev:demo` server and is never live data.
+// Only the dev-only extension build grants the demo origin (see grantedWorkspaces).
 export const WORKSPACES = Object.freeze({
   production: Object.freeze({ id: 'production', label: 'Production', origin: 'https://inventory-ops.joegallant.me', demo: false }),
   demo: Object.freeze({ id: 'demo', label: 'Local demo', origin: 'http://127.0.0.1:4173', demo: true }),
@@ -45,10 +46,26 @@ export function detectHost() {
   return 'node'
 }
 
-export function workspaceFor(settings, host = detectHost()) {
+function manifestHostPermissions() {
+  try { return globalThis.chrome?.runtime?.getManifest?.()?.host_permissions ?? [] } catch { return [] }
+}
+
+/**
+ * The shipped manifest grants only the production origin; the dev-only build
+ * (`pnpm extension:dev`) adds the loopback demo. Offer only the workspaces
+ * Chrome actually lets the panel reach.
+ */
+export function grantedWorkspaces(hostPermissions = manifestHostPermissions()) {
+  const granted = new Set(hostPermissions)
+  return Object.values(WORKSPACES).filter((workspace) => granted.has(`${workspace.origin}/*`))
+}
+
+export function workspaceFor(settings, host = detectHost(), hostPermissions = manifestHostPermissions()) {
   if (host === 'preview') {
     // The preview server proxies /api to the demo API on its own origin.
     return { id: 'demo', label: 'Local demo (preview)', origin: location.origin, demo: true }
   }
-  return WORKSPACES[settings.workspace] ?? WORKSPACES.production
+  const selected = WORKSPACES[settings.workspace] ?? WORKSPACES.production
+  if (host !== 'extension') return selected
+  return grantedWorkspaces(hostPermissions).includes(selected) ? selected : WORKSPACES.production
 }

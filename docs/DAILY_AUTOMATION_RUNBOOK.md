@@ -7,6 +7,62 @@ file covers *what runs, when, on which machine, and how to fix or undo each
 piece*. Dates in this file are MM/DD/YYYY; internal file names and JSON keys
 stay ISO on purpose (the pipeline matches on them).
 
+## Repository scripts reference (`scripts/*.mjs`)
+
+Every script this repository tracks, where it actually runs, and what it does.
+"CI" means `.github/workflows/ci.yml` runs it on every push/PR; "local" means a
+developer or Joe runs it by hand or via a `pnpm` script on a Mac or the
+Windows automation host; "Windows host" means only the scheduled tasks above
+run it, against authenticated dealer sources, over CDP.
+
+| Script | Runs where | Purpose |
+|---|---|---|
+| `archive-inventory-history.mjs` | local | Archives a dated inventory-history snapshot into the append-only history schema. |
+| `block-generic-d1-migrate.mjs` | local/CI (`cloud:d1:migrate`) | Refuses a generic `wrangler d1 migrations apply`; this D1 database predates Wrangler's migration ledger. |
+| `build-demo-documents.mjs` | local | Generates synthetic static demo-document data from the fixture release; never opens live data. |
+| `build-extension-icons.mjs` | local (`extension:icons`) | Renders the Chrome extension's toolbar/store icons from the brand mark. |
+| `capture-dealermail.mjs` | Windows host | Deterministic, resumable read-only DealerMail deep capture over CDP. |
+| `capture-demo-documents.mjs` | local | Renders synthetic HTML documents against the local preview server only; never captures live vehicle data. |
+| `capture-invoices.mjs` | Windows host | Ford/Lincoln factory invoice PDF capture over CDP through the FMCDealer/Entra SSO session. |
+| `capture-oasis.mjs` | Windows host | Deterministic, read-only Ford OASIS build/warranty/recall capture over CDP. |
+| `capture-service-history.mjs` | Windows host | Deterministic, read-only Ford PTS Retail Service Repair History capture over CDP. |
+| `capture-ui.mjs` | local (`qa:visual`) | Captures UI screenshots from the demo app for design review. |
+| `capture-vauto-autocheck.mjs` | Windows host | Exact-VIN AutoCheck fallback captured from vAuto's own read-only report API. |
+| `capture-warranty.mjs` | Windows host | Remaining factory warranty per VIN (Ford OASIS, else AutoCheck estimate) at the vehicle's actual listed mileage. |
+| `check-design-system.mjs` | local/CI (`check:design-system`) | The design-system ratchet: sub-12px text and raw-color counts must not regress. |
+| `check-repo-safety.mjs` | local/CI (`check:repo-safety`) | The repository safety gate documented above. |
+| `configure-integration-secrets.mjs` | local, owner-run | Configures the integrations Worker's Wrangler secrets through the protected secret-store wrapper. |
+| `deploy-worker.mjs` | local, owner-run (`cloud:deploy`, `integrations:deploy`) | Cross-platform `wrangler deploy` wrapper that tags every version. |
+| `dryrun_manager_disposition_check.mjs` | Windows host | Dry-run oracle: runs the manager-disposition overlay through the real importer/validators without publishing. |
+| `dryrun_manifest_check.mjs` | Windows host | Dry-run oracle: verifies a run-status manifest passes the real gate functions before the scheduled publish attempts it. |
+| `dryrun_resource_enrichment_check.mjs` | Windows host | Dry-run oracle: exercises the real resource-enrichment validators end-to-end on a candidate file. |
+| `keep-dealermail-alive.mjs` | Windows host | The `BobMaxey-DealerMailKeeper` task: pings DealerMail/FMCDealer/vAuto over CDP every 10 min to keep sessions warm. |
+| `manage-integration-client.mjs` | local, owner-run (`integrations:client`) | Inspects or narrowly updates the dedicated MCP Access application; never part of the public API. |
+| `merge-ford-service-history.mjs` | Windows host | Merges exact-VIN Ford PTS service history into the daily resource-enrichment file. |
+| `merge-invoice-metadata.mjs` | Windows host | Attaches exact-VIN Ford/Lincoln invoice availability to the daily resource-enrichment file. |
+| `merge-vauto-autocheck.mjs` | Windows host | Merges exact-VIN vAuto AutoCheck fallback facts into the daily resource-enrichment file. |
+| `package-extension.mjs` | local/CI (part of `build`) | Packages exactly the reviewed, tracked extension source into the build output. |
+| `perplexity-inventory-mcp.mjs` | local (`integrations:perplexity-mcp`) | Runs the Perplexity inventory MCP bridge against the local integration credential file. |
+| `prepare-cloud-assets.mjs` | local/Windows host | Hashes and stages `dist/` assets for the cloud release's asset store. |
+| `preview-extension.mjs` | local (`extension:preview`) | Serves the side panel as a plain page for design review and screenshots. |
+| `publish-cloud-release.mjs` | local/Windows host (`cloud:publish-release`) | Builds, validates, encrypts, and publishes the daily release bundle to the private Worker. |
+| `publish-invoice-documents.mjs` | Windows host | Uploads exact-VIN Ford/Lincoln invoice PDFs to the app's private R2 store. |
+| `publish-vauto-documents.mjs` | Windows host (`daily-cloud-publish.ps1`) | Stages the VIN-bound, hash-checked vAuto equipment PDFs from `work\vauto-documents\` in the app's private R2 store before a release publishes; posts only to the app's own Worker. |
+| `report-dead-css.mjs` | local (`report:dead-css`) | Read-only report of CSS selectors under `src/` that need a class no source file renders; judges each selector of a rule separately. |
+| `run-inventory-flow-daily.mjs` | Windows host (`daily:run`) | The daily pipeline orchestrator invoked by the Windows scheduled publish task. |
+| `run-recovery-drill.mjs` | local/CI | Exercises the real D1 recovery/decrypt paths against a synthetic release bundle; `pnpm cloud:validate`'s companion in CI. |
+| `start-synthetic-demo.mjs` | local/CI (`dev:demo`, `start:demo`, Playwright `webServer`) | The synthetic-demo-only Node server; refuses a file-backed database outside demo identity. |
+| `sync-cloud-release.mjs` | Windows host | Orchestrates build/validate/encrypt/publish/re-verify for the scheduled daily publish task. |
+| `upload-cloud-assets.mjs` | Windows host/local | Uploads the assets `prepare-cloud-assets.mjs` staged to the cloud release's asset store. |
+| `validate-cloud-release.mjs` | local/CI (`cloud:validate`) | Offline Cloudflare release gate; opens only an in-memory database, never a live one. |
+| `vauto-factory-equipment.mjs` | Windows host | vAuto Factory Equipment capture over the read-only `WindowStickers` JSON endpoint; no appraisal form involved. |
+| `verify-cloud-deployment.mjs` | local/Windows host, owner-run | `status`/`readiness`/`equipment-status` read-only checks against the deployed private Worker. |
+| `verify-d1-recovery-export.mjs` | local, owner-run | Validates an explicitly supplied D1 SQL export locally; never connects to D1. |
+| `verify-integration-deployment.mjs` | local, owner-run (`integrations:verify`) | Read-only live smoke test of the integrations Worker; local credentials are consumed, never displayed. |
+
+Scripts under `scripts/lib/` are shared helpers imported by the table above,
+not entry points run on their own.
+
 ## The morning, unattended
 
 | Local time | What | Runs where | Owned by |
@@ -184,7 +240,6 @@ manifest warnings. In order:
 | 0 Idempotency | If `work\app-feed-status\{date}.json` is already `published_and_verified`, message Joe the counts and stop. | |
 | 1 Browser | `list_connected_browsers`, then `select_browser` deviceId `<automation-browser-device-id>` ("Work PC Automation Browser"). If absent, run `start-automation-browser.ps1`, wait 60 s, retry once; if still absent, skip every browser step (3, 3.7, 3.8, 7) and still finish 2/4/5. | Never picks another browser, never uses Chrome. |
 | 2 Public inventory + resource enrichment | Produces `snapshots\{date}-public.json` and the base workbook. AutoCheck, photos and window stickers come from the dealer VDP/API feeds. | Ford placeholder PDFs ("not yet been released") are labelled `not_released_by_ford`, not failures. |
-
 | 2.5 Vehicle Resources | `python work\add_resources_sheet.py --report-date {date}` | Run, do not edit. |
 | 3 DealerMail capture | `node apps\inventory-ops\scripts\capture-dealermail.mjs run {date} --budget-ms 900000` performs the complete read-only grid, exclude-holds, live-holds, detail, comment/alert and CDK capture over localhost CDP and writes the five raw files the existing builder consumes. | Never submits, holds, releases or comments. `SESSION_EXPIRED` is detected from DealerMail's actual `Session Ended` signature, not a password field. |
 | 3.2 Build + finalize snapshot | `node build_v2_snapshot.mjs {date}` **from `work\`** (its paths are cwd-relative) -> `-complete-used-inventory-deep.json`, must print `VALIDATION PASSED`. Then `node work\finalize_cloud_snapshot.mjs {date}` **from the workspace root** -> `-deep-cloud-ready.json`. | **New 09/12.** Finalize is REQUIRED: it adds the dual 22-cell arrays and the exclude-holds validation set the Cloudflare validator demands. Skipping it = `PUBLICATION_NOT_VERIFIED`. The manifest must name the CLOUD-READY file. |
@@ -217,10 +272,15 @@ Two things happen alongside the prompt rather than inside it:
   up first. Pink/highlighted rows are explicit manager evidence that delivery
   is complete; unhighlighted rows remain sold / delivery pending even when a
   handwritten date is present. The app's active view removes a delivered VIN
-  without deleting its public/CRM audit evidence and carries a pending VIN
-  forward if it has dropped from the source feeds. A pending row without a
-  verified VIN becomes a high-priority identity-review alert and is never
-  silently removed or called delivered. Re-run the protected daily publisher
+  only when the log row named that exact VIN, without deleting its public/CRM
+  audit evidence, and never revives a VIN that has left both source feeds. A
+  row without a VIN matches only a unique stock number the reporting store
+  itself lists; such a delivered row, like a pending row without a verified
+  VIN, stays in inventory as a high-priority identity-review alert and is never
+  silently removed or called delivered. The publish receipt's
+  `managerDeliveredListedExclusionCount` (and the Node `/api/health`
+  `managerDeliveredHiddenWhileListed` count) reports VINs hidden by the log
+  while the public feed still lists them. Re-run the protected daily publisher
   after ingest so the redacted overlay and active membership reach the app/API.
 - **Baseline pointer advance.** See the next section. Run it after
   `published_and_verified`; it is not yet in the prompt as of 09/12/2026 -

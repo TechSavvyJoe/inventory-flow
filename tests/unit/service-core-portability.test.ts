@@ -1,3 +1,4 @@
+// PRODUCT-RULE TEST
 // @ts-nocheck -- service adapters intentionally use platform-neutral ESM contracts.
 // @vitest-environment node
 
@@ -84,6 +85,37 @@ describe('portable inventory service core', () => {
     ]))
   })
 
+  it('emits one public-listing code from the public record and its freshness, never from DealerMail', () => {
+    const { database, portable } = harness()
+    const manager = { role: 'manager', store: 'Howell', user: 'Synthetic manager' }
+    const sales = { role: 'sales', store: 'Fowlerville', user: 'Synthetic sales', userId: 'sales-1' }
+    const listedVin = 'TESTDATAHWELL0001'
+    const crmOnlyVin = 'TESTDATAHWELL0002'
+    const goneVin = 'TESTDATADETRT0001'
+    const move = portable.createTransfer({ vin: goneVin, neededBy: '2026-08-31T14:00:00-04:00', reason: 'Listing code test' }, sales, 'listing-code-move').record
+    expect(move).toMatchObject({ publicListing: 'listed', publicListingState: 'Listed publicly; availability not confirmed' })
+
+    database.prepare('DELETE FROM public_vehicle_snapshots WHERE vin = ?').run(crmOnlyVin)
+    database.prepare('DELETE FROM public_vehicle_snapshots WHERE vin = ?').run(goneVin)
+    database.prepare('DELETE FROM crm_vehicle_snapshots WHERE vin = ?').run(goneVin)
+    const bootstrap = portable.bootstrap(manager)
+    const row = (vin) => bootstrap.vehicles.find((vehicle) => vehicle.vin === vin)
+    expect(row(listedVin)).toMatchObject({ publicListing: 'listed' })
+    // The DealerMail-only record's wording mentions "listed"; the code does not.
+    expect(row(crmOnlyVin)).toMatchObject({ publicListing: 'pre_listing', websiteStatus: 'Current DealerMail record — not publicly listed' })
+    expect(portable.getVehicle(crmOnlyVin, manager).publicListing).toBe('pre_listing')
+    expect(row(goneVin)).toBeUndefined()
+    expect(portable.listTransfers({}, sales).items.find((item) => item.id === move.id)).toMatchObject({
+      publicListing: 'not_in_release', publicListingState: 'Not in current public release',
+    })
+
+    // The day after the report date the retained public record is stale, not current.
+    const nextDay = createInventoryServiceCore({ database, repository: sqliteRepository, now: () => new Date('2026-08-31T10:15:00-04:00') })
+    expect(nextDay.bootstrap(manager).meta.publicFreshness).toBe('stale_unverified')
+    expect(nextDay.getVehicle(listedVin, manager).publicListing).toBe('stale')
+    expect(nextDay.getVehicle(crmOnlyVin, manager).publicListing).toBe('pre_listing')
+  })
+
   it.each([
     ['group manager outside the route', { role: 'group_manager', store: 'Lincoln', user: 'Group Manager' }, true],
     ['home-store manager', { role: 'manager', store: 'Howell', user: 'Howell Manager' }, true],
@@ -153,8 +185,15 @@ describe('portable inventory service core', () => {
     })).toBe(false)
   })
 
+  // Transport assignment is the optional advanced dispatch engine's feature;
+  // simple mode refuses transport_assigned/picked_up (server/workflow.mjs SIMPLE_TRANSITIONS).
+  function advancedPortable(database) {
+    return createInventoryServiceCore({ database, repository: sqliteRepository, now: () => new Date(SYNTHETIC_NOW), workflowMode: 'advanced' })
+  }
+
   it('binds outbound and return transport reads and mutations to the immutable assigned user ID', () => {
-    const { database, portable } = harness()
+    const { database } = harness()
+    const portable = advancedPortable(database)
     const salesperson = { role: 'sales', store: 'Fowlerville', user: 'Synthetic Sales', userId: 'sales-1' }
     const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic Manager', userId: 'manager-1' }
     const coordinator = { role: 'coordinator', store: 'Fowlerville', user: 'Synthetic Coordinator', userId: 'coord-1' }
@@ -224,7 +263,8 @@ describe('portable inventory service core', () => {
   })
 
   it('revokes a stable transport assignment immediately when the transfer is canceled', () => {
-    const { database, portable } = harness()
+    const { database } = harness()
+    const portable = advancedPortable(database)
     const salesperson = { role: 'sales', store: 'Fowlerville', user: 'Synthetic Sales', userId: 'sales-cancel' }
     const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic Manager', userId: 'manager-cancel' }
     const coordinator = { role: 'coordinator', store: 'Fowlerville', user: 'Synthetic Coordinator', userId: 'coord-cancel' }

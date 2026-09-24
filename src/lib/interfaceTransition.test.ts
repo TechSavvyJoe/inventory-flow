@@ -20,6 +20,28 @@ describe('runInterfaceTransition', () => {
     vi.restoreAllMocks();
   });
 
+  it('applies the update without a view transition once the system prefers reduced motion', async () => {
+    let reduced = false;
+    const transition = vi.fn((update: () => void) => {
+      update();
+      return { finished: Promise.resolve() };
+    });
+    Object.defineProperty(document, 'startViewTransition', { configurable: true, value: transition });
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({ matches: reduced }) as MediaQueryList),
+    });
+    const update = vi.fn();
+
+    runInterfaceTransition(update, 'vehicle');
+    expect(transition).toHaveBeenCalledOnce();
+    reduced = true;
+    runInterfaceTransition(update, 'vehicle');
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(transition).toHaveBeenCalledOnce();
+    await Promise.resolve();
+  });
+
   it('treats a browser-skipped visual transition as a harmless completed update', async () => {
     let rejectFinished: ((reason?: unknown) => void) | undefined;
     const finished = new Promise<void>((_resolve, reject) => {

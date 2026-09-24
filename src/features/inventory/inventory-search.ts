@@ -1,3 +1,4 @@
+import { addSearchField, foldSearchText, parseSearchTerms, scoreSearchTerm, type SearchField, type SearchFieldInput } from "../../lib/search";
 import type { InventoryVehicle } from "./types";
 
 const integerFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -7,26 +8,13 @@ const moneyFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
-const JOINER_PUNCTUATION = /([a-z0-9])[-‐‑‒–—/_.',](?=[a-z0-9])/gi;
-const DIACRITICS = /[\u0300-\u036f]/g;
-const NON_ALPHANUMERIC = /[^a-z0-9]+/g;
 const SYNTHETIC_PIPE_SEPARATOR = /\s+\|\s+/g;
 
 export interface InventorySearchIndexEntry {
   vehicle: InventoryVehicle;
-  fields: InventorySearchIndexedField[];
+  fields: SearchField[];
   literalText: string;
   foldedText: string;
-}
-
-interface InventorySearchIndexedField {
-  label: string;
-  literal: string;
-  folded: string;
-  tokens: string[];
-  priority: number;
-  identifier: boolean;
-  displaySafe: boolean;
 }
 
 export interface InventorySearchMatch {
@@ -40,46 +28,6 @@ export interface InventorySearchIndexes {
   direct: InventorySearchIndexEntry[];
   /** Direct fields plus role-authorized background search text. */
   authorized: InventorySearchIndexEntry[];
-}
-
-interface SearchTerm {
-  raw: string;
-  folded: string;
-  literalOnly: boolean;
-}
-
-interface FieldInput {
-  label: string;
-  value: unknown;
-  priority?: number;
-  identifier?: boolean;
-  displaySafe?: boolean;
-}
-
-function literalSearchText(value: unknown): string {
-  return String(value ?? "")
-    .normalize("NFKD")
-    .replace(DIACRITICS, "")
-    .toLocaleLowerCase()
-    .replace(/[\u2010\u2011\u2012\u2013\u2014]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
- * Creates a forgiving comparison form without ever interpreting user input as
- * a regular expression or wildcard. Punctuation joining letters/numbers is
- * folded so F-150/F150 and 42,810/42810 behave the same.
- */
-export function foldInventorySearchText(value: unknown): string {
-  let folded = literalSearchText(value).replace(/[$£€]/g, "");
-  // A second pass handles adjacent punctuation sequences predictably.
-  for (let pass = 0; pass < 2; pass += 1) folded = folded.replace(JOINER_PUNCTUATION, "$1");
-  return folded.replace(NON_ALPHANUMERIC, " ").trim();
-}
-
-function fieldTokens(folded: string): string[] {
-  return [...new Set(folded.split(" ").filter(Boolean))];
 }
 
 function numberAliases(value: number | null | undefined, kind: "money" | "mileage"): string[] {
@@ -103,33 +51,15 @@ function vehicleName(vehicle: InventoryVehicle): string {
       .join(" ");
 }
 
-function addField(target: InventorySearchIndexedField[], input: FieldInput): void {
-  if (input.value === null || input.value === undefined) return;
-  const raw = String(input.value).trim();
-  if (!raw) return;
-  const literal = literalSearchText(raw);
-  const folded = foldInventorySearchText(raw);
-  if (!literal && !folded) return;
-  target.push({
-    label: input.label,
-    literal,
-    folded,
-    tokens: fieldTokens(folded),
-    priority: input.priority ?? 0,
-    identifier: input.identifier ?? false,
-    displaySafe: input.displaySafe ?? true,
-  });
-}
-
-function addFields(target: InventorySearchIndexedField[], inputs: FieldInput[]): void {
-  for (const input of inputs) addField(target, input);
+function addFields(target: SearchField[], inputs: SearchFieldInput[]): void {
+  for (const input of inputs) addSearchField(target, input);
 }
 
 export function buildInventorySearchEntry(
   vehicle: InventoryVehicle,
   options: { includeAuthorizedDetails?: boolean } = {},
 ): InventorySearchIndexEntry {
-  const fields: InventorySearchIndexedField[] = [];
+  const fields: SearchField[] = [];
   const includeAuthorizedDetails = options.includeAuthorizedDetails !== false;
 
   addFields(fields, [
@@ -173,25 +103,25 @@ export function buildInventorySearchEntry(
   ]);
 
   for (const value of numberAliases(vehicle.price, "money")) {
-    addField(fields, { label: "Price", value, priority: 25 });
+    addSearchField(fields, { label: "Price", value, priority: 25 });
   }
   for (const value of numberAliases(vehicle.msrp, "money")) {
-    addField(fields, { label: "MSRP", value, priority: 18 });
+    addSearchField(fields, { label: "MSRP", value, priority: 18 });
   }
   for (const value of numberAliases(vehicle.mileage, "mileage")) {
-    addField(fields, { label: "Mileage", value, priority: 23 });
+    addSearchField(fields, { label: "Mileage", value, priority: 23 });
   }
-  addField(fields, { label: "Days listed", value: vehicle.daysListed, priority: 12 });
+  addSearchField(fields, { label: "Days listed", value: vehicle.daysListed, priority: 12 });
 
   for (const feature of vehicle.features ?? []) {
-    addField(fields, { label: "Feature", value: feature, priority: 16 });
+    addSearchField(fields, { label: "Feature", value: feature, priority: 16 });
   }
 
   // The server constructs this from fields already authorized for the active
   // role. It is deliberately matching-only: hidden text never becomes a
   // suggestion excerpt or matched-field label.
   if (includeAuthorizedDetails && vehicle.authorizedSearchText) {
-    addField(fields, {
+    addSearchField(fields, {
       label: "Authorized details",
       value: vehicle.authorizedSearchText.replace(SYNTHETIC_PIPE_SEPARATOR, " "),
       priority: 8,
@@ -272,90 +202,17 @@ export function buildInventorySearchIndexes(vehicles: InventoryVehicle[]): Inven
   };
 }
 
-function parseTerms(query: string): SearchTerm[] {
-  return literalSearchText(query)
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((raw) => {
-      const folded = foldInventorySearchText(raw);
-      return { raw, folded, literalOnly: folded.length === 0 };
-    });
-}
-
-function editDistance(left: string, right: string, maximum: number): number {
-  if (Math.abs(left.length - right.length) > maximum) return maximum + 1;
-  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
-  for (let row = 1; row <= left.length; row += 1) {
-    const current = [row];
-    let rowMinimum = row;
-    for (let column = 1; column <= right.length; column += 1) {
-      const cost = left[row - 1] === right[column - 1] ? 0 : 1;
-      const value = Math.min(
-        current[column - 1] + 1,
-        previous[column] + 1,
-        previous[column - 1] + cost,
-      );
-      current.push(value);
-      rowMinimum = Math.min(rowMinimum, value);
-    }
-    if (rowMinimum > maximum) return maximum + 1;
-    previous = current;
-  }
-  return previous[right.length];
-}
-
-function fuzzyThreshold(term: string): number {
-  if (term.length < 4 || /\d/.test(term) || !/[a-z]/.test(term)) return 0;
-  return term.length >= 7 ? 2 : 1;
-}
-
-function scoreTerm(field: InventorySearchIndexedField, term: SearchTerm): number {
-  if (term.literalOnly) {
-    return field.literal.includes(term.raw) ? 98 + field.priority : -1;
-  }
-
-  if (field.literal === term.raw) return 176 + field.priority;
-  if (field.folded === term.folded) return 168 + field.priority;
-  if (field.identifier && field.folded.startsWith(term.folded)) return 158 + field.priority;
-  if (field.identifier && field.folded.includes(term.folded)) return 148 + field.priority;
-  if (field.tokens.includes(term.folded)) return 138 + field.priority;
-  if (field.folded.startsWith(term.folded)) return 126 + field.priority;
-  if (field.folded.includes(term.folded)) return 104 + field.priority;
-  if (field.literal.includes(term.raw)) return 96 + field.priority;
-
-  const threshold = fuzzyThreshold(term.folded);
-  if (threshold === 0) return -1;
-  let bestDistance = threshold + 1;
-  for (const token of field.tokens) {
-    if (Math.abs(token.length - term.folded.length) > threshold) continue;
-    bestDistance = Math.min(bestDistance, editDistance(token, term.folded, threshold));
-    if (bestDistance === 1) break;
-  }
-  return bestDistance <= threshold ? 70 - bestDistance * 12 + field.priority : -1;
-}
-
-/**
- * Applies the inventory search engine's token, punctuation, and typo matching
- * to an explicit set of fields from another authorized view.
- */
-export function searchFieldsMatch(query: string, values: readonly unknown[]): boolean {
-  if (!query.trim()) return true;
-  const fields: InventorySearchIndexedField[] = [];
-  for (const value of values) addField(fields, { label: "Search", value });
-  return parseTerms(query).every((term) => fields.some((field) => scoreTerm(field, term) >= 0));
-}
-
 function scoreEntry(entry: InventorySearchIndexEntry, query: string): InventorySearchMatch | null {
-  const terms = parseTerms(query);
+  const terms = parseSearchTerms(query);
   if (terms.length === 0) return { vehicle: entry.vehicle, score: 0, matchedLabels: [] };
 
   let score = 0;
   const labels = new Set<string>();
   for (const term of terms) {
     let bestScore = -1;
-    let bestField: InventorySearchIndexedField | null = null;
+    let bestField: SearchField | null = null;
     for (const field of entry.fields) {
-      const nextScore = scoreTerm(field, term);
+      const nextScore = scoreSearchTerm(field, term);
       if (nextScore > bestScore) {
         bestScore = nextScore;
         bestField = field;
@@ -366,7 +223,7 @@ function scoreEntry(entry: InventorySearchIndexEntry, query: string): InventoryS
     if (bestField.displaySafe) labels.add(bestField.label);
   }
 
-  const foldedPhrase = foldInventorySearchText(query);
+  const foldedPhrase = foldSearchText(query);
   if (foldedPhrase && entry.foldedText.includes(foldedPhrase)) score += 52;
   return { vehicle: entry.vehicle, score, matchedLabels: [...labels].slice(0, 3) };
 }

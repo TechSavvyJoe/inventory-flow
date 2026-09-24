@@ -9,7 +9,7 @@
 .transfer-action-scrim { position: absolute; inset: 0; width: 100%; border: 0; background: rgb(3 18 33 / 55%); backdrop-filter: blur(2px); }
 .transfer-action-dialog { position: relative; width: min(620px, 100%); max-height: min(760px, calc(100vh - 40px)); overflow: auto; padding: 22px; border: 1px solid #d4dee9; border-radius: 12px; background: white; box-shadow: 0 28px 80px rgb(4 25 48 / 28%); font-family: var(--font-app); text-rendering: auto; }
 .transfer-action-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 17px; border-bottom: 1px solid #e1e7ee; }
-.transfer-action-dialog header span { color: #0759bd; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.transfer-action-dialog header span { color: #0759bd; font-size: 12px; font-weight: 700; text-transform: uppercase; }
 .transfer-action-dialog h2 { margin: 5px 0 0; color: #062a4d; font-size: 23px; }
 .transfer-action-dialog header p { margin: 5px 0 0; color: #536579; font-size: 13px; }
 .transfer-action-dialog header button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 8px; background: #f5f8fb; cursor: pointer; }
@@ -26,7 +26,7 @@
 .action-field > span { color: #102238; font-size: 12px; font-weight: 700; }
 .action-field small { color: #728195; font-weight: 500; }
 .action-field input, .action-field select, .action-field textarea { width: 100%; border: 1px solid #dce4ed; border-radius: 8px; padding: 10px 11px; color: #102238; background: #fff; resize: vertical; }
-.action-field > small { color: #536579; font-size: 11px; line-height: 1.4; }
+.action-field > small { color: #536579; font-size: 12px; line-height: 1.4; }
 .action-separation-note, .action-error { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; padding: 11px 12px; border-radius: 8px; font-size: 12px; line-height: 1.45; }
 .action-separation-note { border: 1px solid #bed6ef; background: #edf5ff; color: #164e86; }
 .action-error { border: 1px solid #e7b7b7; background: #fff0f0; color: #8b2929; }

@@ -8,7 +8,6 @@ import { WorkspaceRefreshStatus } from './components/WorkspaceRefreshStatus'
 import { LoadingState } from './components/LoadingState'
 import { RouteLoadBoundary } from './components/RouteLoadBoundary'
 import { RouteLoadingState } from './components/RouteLoadingState'
-import './styles/pages.css'
 
 function AppRoutes() {
   const { data, loading, error, accessErrorStatus, lastCheckedAt, savedChangesPending, refresh, role, homeStore, currentUser } = useAppData()

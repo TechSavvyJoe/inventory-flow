@@ -30,19 +30,32 @@ function requestFor(workspace, settings, path) {
 export function bootstrapRequest(workspace, settings) { return requestFor(workspace, settings, '/api/bootstrap') }
 export function vehicleRequest(workspace, settings, vin) { return requestFor(workspace, settings, `/api/vehicles/${encodeURIComponent(String(vin).toUpperCase())}`) }
 
+// The panel polls the same one or two documents repeatedly (bootstrap on an
+// interval, the open vehicle on demand). Keep only the last payload and its
+// ETag per URL so an unchanged poll can send If-None-Match and reuse it
+// instead of re-parsing the whole document. Page-session only, in memory —
+// nothing here is written to storage or survives a reload.
+const revalidated = new Map()
+
 async function fetchJson({ url, init }, { fetchImpl, signal }) {
+  const cached = revalidated.get(url)
+  const headers = cached ? { ...init.headers, 'If-None-Match': cached.etag } : init.headers
   let response
   try {
-    response = await fetchImpl(url, { ...init, signal })
+    response = await fetchImpl(url, { ...init, headers, signal })
   } catch (error) {
     if (error?.name === 'AbortError') throw error
     throw new PanelApiError('offline')
   }
   // Access answers an unauthenticated request with a redirect to its login
-  // page; with redirect: 'manual' that surfaces as an opaque redirect.
-  if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400) || response.status === 401) {
+  // page; with redirect: 'manual' that surfaces as an opaque redirect. A 304
+  // is also in the 300s, so it must be carved out before this check.
+  if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400 && response.status !== 304) || response.status === 401) {
     throw new PanelApiError('signin', { status: response.status })
   }
+  // Must sit before the `!response.ok` check below — a 304 is not "ok" but
+  // means the cached payload is still current.
+  if (response.status === 304 && cached) return cached.payload
   const contentType = response.headers.get('content-type') ?? ''
   const isJson = /^application\/(?:[\w.-]+\+)?json(?:\s*;|$)/i.test(contentType)
   if (response.status === 403) {
@@ -54,6 +67,9 @@ async function fetchJson({ url, init }, { fetchImpl, signal }) {
   if (!isJson) throw new PanelApiError('signin', { status: response.status })
   const payload = await response.json().catch(() => null)
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new PanelApiError('invalid', { status: response.status })
+  const etag = response.headers.get('etag')
+  if (etag) revalidated.set(url, { etag, payload })
+  else revalidated.delete(url)
   return payload
 }
 

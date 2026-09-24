@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { buildSyntheticRelease, SYNTHETIC_NOW } from '../../fixtures/synthetic-release.mjs'
 import { importRelease, openInventoryDatabase } from '../../server/database.mjs'
 import { createInventoryService } from '../../server/service.mjs'
+import { SIMPLE_TRANSITIONS, TRANSITION_MAP, workflowInternals } from '../../server/workflow.mjs'
 
 const databases = []
 afterEach(() => { while (databases.length) databases.pop().close() })
@@ -47,6 +48,43 @@ function approve(service, id) {
 }
 
 describe('simple manager-led vehicle moves', () => {
+  it('reads every TRANSITION_MAP edge once: simple mode keeps what it records and refuses the advanced dispatch steps', () => {
+    const refused = []
+    for (const [from, events] of Object.entries(TRANSITION_MAP)) {
+      for (const event of events) {
+        // The optional advanced engine keeps its whole map.
+        expect(workflowInternals.transitionAllowed(from, event, 'advanced'), `advanced ${from} -> ${event}`).toBe(true)
+        const simple = workflowInternals.transitionAllowed(from, event, 'simple')
+        expect(simple, `simple ${from} -> ${event}`).toBe(SIMPLE_TRANSITIONS[from]?.has(event) === true)
+        if (!simple) refused.push(`${from} -> ${event}`)
+      }
+    }
+    expect(refused.sort()).toEqual([
+      'approved -> transport_assigned',
+      'arrived -> return_requested',
+      'customer_showing -> return_requested',
+      'manager_reviewed -> approved',
+      'manager_reviewed -> declined',
+      'not_sold -> return_requested',
+      'picked_up -> in_transit',
+      'requested -> declined',
+      'requested -> manager_reviewed',
+      'return_assigned -> return_in_transit',
+      'return_requested -> return_assigned',
+      'sale_outcome_pending -> return_requested',
+      'transport_assigned -> picked_up',
+    ])
+    // The simple table names only known states and events, and never a
+    // passive event (those keep their own rule in both modes).
+    for (const [from, events] of Object.entries(SIMPLE_TRANSITIONS)) {
+      expect(Object.hasOwn(TRANSITION_MAP, from), from).toBe(true)
+      for (const event of events) {
+        expect(workflowInternals.EVENT_ROLE_RULES[event], event).toBeTruthy()
+        expect(workflowInternals.PASSIVE_EVENTS.has(event), event).toBe(false)
+      }
+    }
+  })
+
   it('lets the home-store manager record one direct move at its destination with an atomic physical audit', () => {
     const { service, database } = emptyHarness()
     const movedAt = new Date(SYNTHETIC_NOW.getTime() - 24 * 60 * 60 * 1000).toISOString()
@@ -610,8 +648,12 @@ describe('simple manager-led vehicle moves', () => {
   })
 
   it('declines a legacy reviewed request in one manager action without requiring the retired second approval form', () => {
-    const { service, id } = harness()
-    service.appendTransferEvent(id, { type: 'manager_reviewed' }, manager)
+    const { service, database, id } = harness()
+    // Simple mode no longer records the retired review step; the legacy row
+    // comes from the optional advanced engine that once wrote it.
+    expect(() => service.appendTransferEvent(id, { type: 'manager_reviewed' }, manager)).toThrow('Cannot record')
+    const legacy = createInventoryService({ database, workflowMode: 'advanced', now: () => new Date(SYNTHETIC_NOW) })
+    legacy.appendTransferEvent(id, { type: 'manager_reviewed' }, manager)
     expect(service.getTransfer(id, manager).allowedActions).toContain('decline')
     expect(() => service.appendTransferEvent(id, { type: 'request_declined' }, manager)).toThrow('decline reason is required')
     expect(() => service.appendTransferEvent(id, { type: 'request_declined', note: 'Synthetic decline' }, homeManager)).toThrow('requesting-store manager')
@@ -623,12 +665,19 @@ describe('simple manager-led vehicle moves', () => {
 
   it('preserves legacy dispatch transitions and evidence while allowing an existing request to finish in the simpler interface', () => {
     const { service, database, id } = harness()
-    service.appendTransferEvent(id, { type: 'manager_reviewed' }, manager, 'old-review')
-    expect(() => service.appendTransferEvent(id, { type: 'approved' }, manager)).toThrow('homeStoreManager is required')
-    service.appendTransferEvent(id, { type: 'approved', homeStoreManager: homeManager.user }, manager, 'old-release')
+    // Legacy dispatch rows were written by the optional advanced engine; simple
+    // mode refuses each of those events itself and never falls through to it.
+    const legacy = createInventoryService({ database, workflowMode: 'advanced', now: () => new Date(SYNTHETIC_NOW) })
+    expect(() => service.appendTransferEvent(id, { type: 'manager_reviewed' }, manager)).toThrow('Cannot record')
+    legacy.appendTransferEvent(id, { type: 'manager_reviewed' }, manager, 'old-review')
+    expect(() => legacy.appendTransferEvent(id, { type: 'approved' }, manager)).toThrow('homeStoreManager is required')
+    expect(() => service.appendTransferEvent(id, { type: 'approved', homeStoreManager: homeManager.user }, manager)).toThrow('Cannot record')
+    legacy.appendTransferEvent(id, { type: 'approved', homeStoreManager: homeManager.user }, manager, 'old-release')
     expect(() => service.appendTransferEvent(id, { type: 'picked_up' }, manager)).toThrow('Cannot record')
-    expect(() => service.appendTransferEvent(id, { type: 'transport_assigned', assignee: 'Synthetic driver', dueAt: request.neededBy }, manager)).toThrow('verified transport assignee identity')
-    service.appendTransferEvent(id, { type: 'transport_assigned', assignee: 'Synthetic driver', assigneeUserId: 'driver-1', dueAt: request.neededBy }, manager, 'old-dispatch')
+    expect(() => service.appendTransferEvent(id, { type: 'transport_assigned', assignee: 'Synthetic driver', assigneeUserId: 'driver-1', dueAt: request.neededBy }, manager)).toThrow('Cannot record')
+    expect(() => legacy.appendTransferEvent(id, { type: 'transport_assigned', assignee: 'Synthetic driver', dueAt: request.neededBy }, manager)).toThrow('verified transport assignee identity')
+    legacy.appendTransferEvent(id, { type: 'transport_assigned', assignee: 'Synthetic driver', assigneeUserId: 'driver-1', dueAt: request.neededBy }, manager, 'old-dispatch')
+    expect(() => service.appendTransferEvent(id, { type: 'picked_up' }, manager)).toThrow('Cannot record')
     const rawBefore = database.prepare('SELECT * FROM transfer_requests WHERE id=?').get(id)
     const simpleView = service.getTransfer(id, manager)
     expect(simpleView.nextAction).not.toMatch(/driver|dispatch/i)

@@ -7,7 +7,7 @@
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { isMainModule } from './lib/is-main.mjs'
-import { closeOwnedTab, fetchInTab, getOriginTab, sleep } from './lib/cdp.mjs'
+import { closeDuplicateTabs, closeOwnedTab, fetchInTab, getOriginTab, sleep } from './lib/cdp.mjs'
 
 const VAUTO_ORIGIN = 'https://provision.vauto.app.coxautoinc.com'
 const LANDING_URL = `${VAUTO_ORIGIN}/Va/Appraisal/Default.aspx?new=true`
@@ -35,6 +35,7 @@ export async function getVautoContext() {
     connectTimeoutMs: 10000,
     commandTimeoutMs: 65000,
   })
+  await closeDuplicateTabs(VAUTO_ORIGIN, { pathIncludes: '/Va/Appraisal/Default.aspx', keepTabId: context.tab?.id })
   let identity = null
   const started = Date.now()
   while (Date.now() - started < 90000) {
@@ -202,7 +203,10 @@ export async function main(argv = process.argv.slice(2)) {
     output.sessionStatus = /SESSION_EXPIRED/.test(String(error?.message)) ? 'SESSION_EXPIRED' : 'ERROR'
     output.error = String(error?.message ?? error).slice(0, 200)
     exitCode = 1
-  } finally { await closeOwnedTab(context) }
+  } finally {
+    await closeDuplicateTabs(VAUTO_ORIGIN, { pathIncludes: '/Va/Appraisal/Default.aspx', keepTabId: context?.tab?.id })
+    await closeOwnedTab(context)
+  }
   output.finishedAt = new Date().toISOString()
   save()
   const tally = {}

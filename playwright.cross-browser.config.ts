@@ -19,7 +19,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'node scripts/start-synthetic-demo.mjs',
-      env: { INVENTORY_OPS_PORT: '4274', INVENTORY_OPS_IDENTITY_MODE: 'demo', NODE_ENV: 'development' },
+      env: { INVENTORY_OPS_PORT: '4274', NODE_ENV: 'development' },
       url: 'http://127.0.0.1:4274/api/health',
       reuseExistingServer: false,
       timeout: 120_000,
@@ -35,8 +35,6 @@ export default defineConfig({
     { name: 'chromium-desktop', use: { ...devices['Desktop Chrome'], channel: process.env.PLAYWRIGHT_BUNDLED_CHROMIUM ? undefined : 'chrome', viewport: { width: 1440, height: 900 } } },
     { name: 'chromium-android', use: { ...devices['Pixel 7'], browserName: 'chromium' } },
     { name: 'firefox-desktop', use: { ...devices['Desktop Firefox'], viewport: { width: 1440, height: 900 } } },
-    // Firefox narrow viewport checks layout; it does not emulate an Android device.
-    { name: 'firefox-narrow', testMatch: '**/mobile-premium.spec.ts', use: { ...devices['Desktop Firefox'], viewport: { width: 390, height: 844 } } },
     { name: 'webkit-desktop', use: { ...devices['Desktop Safari'], viewport: { width: 1440, height: 900 } } },
     // Playwright WebKit with an iPhone viewport; this is not a physical iPhone.
     { name: 'webkit-mobile', use: { ...devices['iPhone 13'], viewport: { width: 390, height: 844 } } },

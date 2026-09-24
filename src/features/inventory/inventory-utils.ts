@@ -10,13 +10,8 @@ import type {
   InventoryStore,
   InventoryMoveAction,
   InventoryVehicle,
-  SourceDataState,
   WindowStickerResource,
 } from "./types";
-import {
-  buildInventorySearchEntry,
-  inventoryVehicleMatchesSearch,
-} from "./inventory-search";
 
 export const DEFAULT_INVENTORY_FILTERS: InventoryFilters = {
   storeId: "all",
@@ -224,19 +219,6 @@ export function vehicleMoveAction(
   return null;
 }
 
-export function sourceStateLabel(state: SourceDataState): string {
-  switch (state) {
-    case "current":
-      return "Current source";
-    case "stale":
-      return "Stale source";
-    case "incomplete":
-      return "Incomplete source";
-    case "unavailable":
-      return "Source unavailable";
-  }
-}
-
 export function publicListingLabel(vehicle: InventoryVehicle): string {
   const signal = vehicle.publicListing;
   if (signal.dataState !== "current" && signal.isListed !== true) {
@@ -260,14 +242,6 @@ export function dealerMailHoldLabel(signal: DealerMailHoldSignal): string {
   }
   if (signal.hasActiveHold === false) return "No current DealerMail hold found";
   return "DealerMail hold not provided";
-}
-
-export function vehicleSearchText(vehicle: InventoryVehicle): string {
-  return buildInventorySearchEntry(vehicle).foldedText;
-}
-
-export function vehicleMatchesQuery(vehicle: InventoryVehicle, query: string): boolean {
-  return inventoryVehicleMatchesSearch(vehicle, query);
 }
 
 export function vehicleMatchesFilters(

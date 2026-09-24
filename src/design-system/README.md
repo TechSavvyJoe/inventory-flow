@@ -33,9 +33,7 @@ The interface has three deliberately separate layers:
      used as the product identity.
 
 Third-party marks such as AutoCheck must likewise use an authorized official
-asset and the provider's own usage rules. `VehicleHistoryIcon` is the neutral
-Inventory Flow icon for history-report actions; it does not imitate the
-AutoCheck logo.
+asset and the provider's own usage rules; Inventory Flow never redraws them.
 
 ## Asset map
 
@@ -46,11 +44,10 @@ AutoCheck logo.
 | `public/brand-kit/inventory-flow-icon.svg` | App icon, favicon, collapsed navigation |
 | `public/brand-kit/inventory-flow-reversed.svg` | Dark hero or presentation surface |
 | `public/brand-kit/inventory-flow-monochrome.svg` | One-color print, etching, accessibility fallback |
-| `src/design-system/tokens.css` | CSS custom properties and OEM skin hooks |
-| `src/design-system/tokens.ts` | Typed token source for charts and JS behavior |
-| `src/design-system/icons.tsx` | Original 24 px operations icon family |
-| `src/design-system/components.tsx` | Buttons, badges, surfaces, brand lockup, action dock |
-| `src/design-system/components.css` | Component states and responsive treatment |
+| `src/styles/tokens.css` | The one token sheet: the `--ifx-*` custom properties and OEM skin hooks live beside the app's shared tokens |
+| `src/design-system/icons.tsx` | 24 px icon frame and the `ActionsIcon` default glyph for `FlowIconButton` |
+| `src/design-system/components.tsx` | `FlowButton`, `FlowIconButton` (the icon-only primitive), and `FlowBrandLockup` (rendered by the app shell) |
+| `src/design-system/components.css` | Component states and responsive treatment; `components.tsx` imports it, so it loads with the components |
 
 ## Logo rules
 
@@ -84,14 +81,16 @@ and progressive disclosure rather than miniature type.
 
 ## Components and states
 
+Status wording must carry the meaning; color and icon only reinforce it. Hold,
+public listing, CRM state, transport location, sold, and delivered remain
+separate signals.
+
 ### FlowButton
 
 | Variant | Use |
 | --- | --- |
 | `primary` | One dominant Inventory Flow action in a region |
-| `oem` | Authorized OEM/location-context action, not product branding |
 | `secondary` | Supporting action such as details or open record |
-| `glass` | Dark cinematic hero only |
 | `quiet` | Low-priority utility |
 | `danger` | Destructive action with a confirmation step |
 
@@ -103,20 +102,13 @@ belong in operational action areas.
 ### FlowIconButton
 
 `label` is required. It becomes the accessible name and tooltip. An icon-only
-button must expose a 44 px target on touch devices.
+button must expose a 44 px target on touch devices. This is the designated
+primitive for icon-only controls.
 
-### FlowSignal
+### FlowBrandLockup
 
-Status wording must carry the meaning; color and icon only reinforce it. Hold,
-public listing, CRM state, transport location, sold, and delivered remain
-separate signals.
-
-### FlowSurface and FlowActionDock
-
-Use `command` for the primary inventory/vehicle operating surface and `dark`
-sparingly for brand moments. `FlowActionDock` keeps one primary action, one
-supporting action, and utilities visible without turning the entire card into
-a button wall.
+The app shell renders it in the expanded and compact navigation. Product and
+tenant stay separate elements.
 
 ## Accessibility
 
@@ -146,15 +138,16 @@ delay interaction or animate tables themselves.
 
 ## Integration sequence
 
-1. Import `src/design-system/tokens.css` before app-level styles, then import
-   `components.css` once.
+1. `src/main.tsx` imports `src/styles/tokens.css` (which carries the `--ifx-*`
+   family) before any component; `components.tsx` imports `components.css`
+   itself, so importing a component brings its styles.
 2. Replace the current product mark reference with
    `/brand-kit/inventory-flow-icon.svg` and render
    `<FlowBrandLockup tenantLabel="Maxey" />` in the expanded navigation.
 3. Set `data-ifx-oem="ford"`, `"lincoln"`, or `"neutral"` on the app shell.
-4. Adopt `FlowButton`, `FlowSignal`, and the original icons first in Inventory
-   table row actions and the vehicle workspace. Do not change source-status
-   wording while changing visual treatment.
+4. Adopt `FlowButton` and `FlowIconButton` first in Inventory table row
+   actions and the vehicle workspace. Do not change source-status wording while
+   changing visual treatment.
 5. Migrate remaining pages incrementally; the `ifx-` namespace prevents
    collisions with existing styles.
 

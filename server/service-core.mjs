@@ -197,10 +197,12 @@ function buildIndexes(dataset) {
   const managerDispositionByVin = new Map(managerDispositionRecords
     .filter((row) => typeof row?.vin === 'string' && VIN_PATTERN.test(row.vin))
     .map((row) => [row.vin, row]))
+  // Only a delivered row that named this exact VIN may hide a vehicle. A row
+  // matched by stock number alone stays in inventory and goes to the identity
+  // review alert instead: a reused or mistyped stock number must never hide a
+  // unit that is still listed or still in DealerMail.
   const managerDeliveredVins = new Set(managerDispositionRecords
-    .filter((row) => row?.deliveredManagerLog === true &&
-      typeof row?.vin === 'string' && VIN_PATTERN.test(row.vin) &&
-      row?.matchStatus !== 'matched_vin_stock_review' && row?.matchStatus !== 'stock_ambiguous')
+    .filter(managerDeliveryHidesVin)
     .map((row) => row.vin))
   // Current inventory must be backed by a current public listing or current
   // DealerMail record. The manager sold board is retained as redacted audit
@@ -208,12 +210,50 @@ function buildIndexes(dataset) {
   // That keeps off-market sold/delivered units out of the app and API while
   // allowing fresh DealerMail-only arrivals to remain visible as pre-listing.
   const vins = new Set([...publicByVin.keys(), ...crmByVin.keys()])
-  for (const vin of managerDeliveredVins) vins.delete(vin)
+  const managerHiddenVins = []
+  for (const vin of managerDeliveredVins) {
+    if (vins.delete(vin)) managerHiddenVins.push(vin)
+  }
+  // Data health: hidden by the manager log while the public feed still lists
+  // it. The delivery evidence is exact-VIN, but the count keeps a mistaken
+  // manager-log row visible instead of silently shrinking the listed set.
+  const managerHiddenListedVins = managerHiddenVins.filter((vin) => publicByVin.has(vin))
   return {
     publicByVin, crmByVin, holdByVin, resourceByVin, homeByVin,
     releasedHistoryByVin, managerDispositionOverlay, managerDispositionRecords,
-    managerDispositionByVin, managerDeliveredVins, vins,
+    managerDispositionByVin, managerDeliveredVins, managerHiddenVins, managerHiddenListedVins, vins,
   }
+}
+
+const MANAGER_IDENTITY_CONFLICTS = new Set(['matched_vin_stock_review', 'stock_ambiguous'])
+
+function managerDeliveryHidesVin(row) {
+  return row?.deliveredManagerLog === true && row?.matchMethod === 'vin' &&
+    typeof row?.vin === 'string' && VIN_PATTERN.test(row.vin) &&
+    !MANAGER_IDENTITY_CONFLICTS.has(row?.matchStatus)
+}
+
+/**
+ * Manager-log rows that cannot be placed on an exact VIN: sold/delivery-pending
+ * rows without a VIN or with a conflicting identity, and delivered rows whose
+ * VIN came from a stock-number match (or conflicts) and so did not hide the
+ * vehicle. Each becomes the existing identity-review attention item.
+ */
+function managerIdentityReviewRecord(row) {
+  if (row?.soldManagerLog !== true) return false
+  if (row?.deliveredManagerLog === false) return !row?.vin || MANAGER_IDENTITY_CONFLICTS.has(row?.matchStatus)
+  return row?.deliveredManagerLog === true && !managerDeliveryHidesVin(row)
+}
+
+/**
+ * The one public-listing code. It comes only from the current public release
+ * record and its freshness; labels beside it are display text. DealerMail
+ * presence never makes a vehicle listed: it only separates a pre-listing
+ * arrival from a vehicle that is in neither current source.
+ */
+function publicListingCode(source, publicFreshness) {
+  if (source?.publicRecord) return publicFreshness === 'current' ? 'listed' : 'stale'
+  return source?.crmRecord ? 'pre_listing' : 'not_in_release'
 }
 
 function currentInventoryRecord(source) {
@@ -262,11 +302,23 @@ function loanerSignal(messages) {
   }
 }
 
+/**
+ * The loaner badge facts every role may see. The alert text itself is DealerMail
+ * evidence and commonly carries customer or RO references, so it reaches only
+ * roles that may view private evidence. Clients fall back on the label.
+ */
+function loanerForRole(loaner, context) {
+  if (!loaner) return null
+  if (context.canViewPrivateEvidence) return loaner
+  const { active, program, label, serviceDate } = loaner
+  return { active, program, label, serviceDate }
+}
+
 function holdSummary(source, context, freshness, { includePrivate = false } = {}) {
   const holdRecord = source.holdRecord
   const crmRecord = source.crmRecord
   const messages = dealerMailMessages(source)
-  const loaner = loanerSignal(messages)
+  const loaner = loanerForRole(loanerSignal(messages), context)
   const messageCounts = {
     commentsCount: messages.comments.reduce((count, group) => count + (Array.isArray(group?.rows) ? group.rows.length : 0), 0),
     alertsCount: messages.alerts.length,
@@ -563,7 +615,7 @@ function transferNextActionStore(row) {
   return cleanText(row.destination_store_id) || cleanText(row.requesting_store_id)
 }
 
-function transferView(row, events, source, context, dealerMailFreshness, { includePrivate = false } = {}) {
+function transferView(row, events, source, context, meta, { includePrivate = false } = {}) {
   const next = context.workflowMode === 'simple' ? simpleNextAction(row) : { label: row.next_action, owner: cleanText(row.next_action_owner) }
   const record = {
     id: row.id,
@@ -579,7 +631,8 @@ function transferView(row, events, source, context, dealerMailFreshness, { inclu
     movementStatus: row.movement_status,
     dealStatus: row.deal_status,
     deliveryStatus: row.delivery_status,
-    dealerMailHoldState: holdStateForTransfer(source, dealerMailFreshness),
+    dealerMailHoldState: holdStateForTransfer(source, meta.dealerMailFreshness),
+    publicListing: publicListingCode(source, meta.publicFreshness),
     publicListingState: source.publicRecord ? 'Listed publicly; availability not confirmed' : 'Not in current public release',
     cdkStatus: cdkStatus(source),
     priority: row.priority,
@@ -843,7 +896,7 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ? blockingTransferRows[0]
     : null
   const activeTransferView = active
-    ? transferView(active, activeEvents, source, context, meta.dealerMailFreshness, { includePrivate: false })
+    ? transferView(active, activeEvents, source, context, meta, { includePrivate: false })
     : null
   const baseMovement = movementSummary(source, active, activeTransferView, meta.publicFreshness, activeEvents)
   const physicalMovement = location?.conflicting
@@ -972,6 +1025,7 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     crmStore: cleanText(crmRecord?.storeName),
     sourceReportedLocation: publicStore,
     websiteStatus: publicRecord ? cleanText(publicRecord.availability) || 'Not provided' : 'Current DealerMail record — not publicly listed',
+    publicListing: publicListingCode(source, meta.publicFreshness),
     publicListingState: publicRecord
       ? meta.publicFreshness === 'current'
         ? 'Listed publicly; availability not confirmed'
@@ -1592,9 +1646,8 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
       sourceId: row.id,
     })
   }
-  for (const record of managerDispositionRecords.filter((row) =>
-    row?.soldManagerLog === true && row?.deliveredManagerLog === false &&
-    (!row?.vin || ['matched_vin_stock_review', 'stock_ambiguous'].includes(row?.matchStatus)))) {
+  for (const record of managerDispositionRecords.filter(managerIdentityReviewRecord)) {
+    const delivered = record.deliveredManagerLog === true
     items.push({
       id: versionedAttentionId(`manager-pending-identity-${record.sourceStore}-${record.stockNumber}`, [
         conditionDay,
@@ -1602,11 +1655,14 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
         record.sourcePeriod,
         record.stockNumber,
         record.matchStatus,
+        ...(delivered ? ['delivered', record.matchMethod] : []),
       ]),
       severity: 'warning',
       priority: 'high',
       type: 'manager_pending_identity_review',
-      label: `${record.stockNumber} is sold / delivery pending and needs an exact VIN match`,
+      label: delivered
+        ? `${record.stockNumber} is delivered on the manager log and needs an exact VIN match`
+        : `${record.stockNumber} is sold / delivery pending and needs an exact VIN match`,
       vehicleName: record.vehicleName || `Vehicle ${record.stockNumber}`,
       stockNumber: record.stockNumber,
       vin: record.vin || undefined,
@@ -1614,7 +1670,9 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
       relatedStores: [record.sourceStore],
       owner: `${record.sourceStore} manager`,
       sourceLabel: 'Manager-supplied sold board',
-      whyItMatters: 'The row is not highlighted, so it must stay operationally active, but it cannot be placed in the VIN-based inventory table until its identity is confirmed.',
+      whyItMatters: delivered
+        ? 'The manager log marks this unit delivered, but the row did not carry this exact VIN, so the vehicle stays in inventory until its identity is confirmed.'
+        : 'The row is not highlighted, so it must stay operationally active, but it cannot be placed in the VIN-based inventory table until its identity is confirmed.',
       recommendedAction: 'Confirm the exact stock number and VIN; do not treat this unit as delivered or available.',
       href: '/attention',
       sourceId: `${record.sourceStore}:${record.stockNumber}`,
@@ -1681,6 +1739,10 @@ function healthView(state, loadStatus) {
       resources: resourceCoverage.vehicles,
       resourceCoverage,
       managerDispositions: state.indexes.managerDispositionRecords.length,
+      // VINs the manager log hid from active inventory, and how many of those
+      // the current public feed still lists, so a mistaken row is visible.
+      managerDeliveredHidden: state.indexes.managerHiddenVins.length,
+      managerDeliveredHiddenWhileListed: state.indexes.managerHiddenListedVins.length,
       transfers: state.allTransferRows.length,
     },
     sources: {
@@ -1849,7 +1911,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
           getTransferEvents(database, row.id),
           source,
           state.context,
-          state.meta.dealerMailFreshness,
+          state.meta,
           { includePrivate: false },
         )
       })
@@ -1971,7 +2033,8 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       if (!sourceItem) throw new WorkflowError('Attention item was not found', { status: 404, code: 'ATTENTION_NOT_FOUND' })
       const replay = idempotencyKey && getAttentionEvents(database, id).find((event) => event.idempotency_key === idempotencyKey)
       if (replay) {
-        if (replay.actor !== state.context.user || replay.actor_role !== state.context.role || replay.event_type !== input?.type) {
+        const auditRole = state.context.authenticatedRole || state.context.role
+        if (replay.actor !== state.context.user || replay.actor_role !== auditRole || replay.event_type !== input?.type) {
           throw new WorkflowError('This action key belongs to another action', { status: 409, code: 'IDEMPOTENCY_CONFLICT' })
         }
         return { record: sourceItem, created: false }
@@ -2043,7 +2106,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
             getTransferEvents(database, row.id),
             sourceVehicle(state.indexes, row.vin),
             state.context,
-            state.meta.dealerMailFreshness,
+            state.meta,
             { includePrivate: false },
           ),
         ),
@@ -2062,7 +2125,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         getTransferEvents(database, id),
         sourceVehicle(state.indexes, row.vin),
         state.context,
-        state.meta.dealerMailFreshness,
+        state.meta,
         { includePrivate: state.context.canViewPrivateEvidence },
       )
     },
@@ -2236,7 +2299,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
           getTransferEvents(database, id),
           sourceVehicle(state.indexes, row.vin),
           state.context,
-          state.meta.dealerMailFreshness,
+          state.meta,
           { includePrivate: state.context.canViewPrivateEvidence },
         )
       const replayType = String(input?.type ?? '').trim().toLowerCase()

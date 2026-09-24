@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readFileSync } from 'node:fs'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { McpServer, fromJsonSchema } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
@@ -32,8 +33,31 @@ const managerDispositionSchema = z.strictObject({
   review: z.boolean().optional(), limit: limit.optional(), cursor: cursor.optional(),
 })
 
+/**
+ * The token comes from the environment, or from the credential file that
+ * `manage-integration-client.mjs create --secret-output` writes under the
+ * ignored runtime/ folder. Pointing a client config at that file keeps the
+ * secret out of every MCP configuration file and out of copy/paste.
+ */
+function readToken(environment) {
+  const direct = environment.INVENTORY_FLOW_MCP_TOKEN || environment.INVENTORY_FLOW_API_KEY
+  if (direct) return direct
+  const credentialFile = environment.INVENTORY_FLOW_MCP_CREDENTIAL_FILE
+  if (typeof credentialFile !== 'string' || !credentialFile) return undefined
+  let credential
+  try {
+    credential = JSON.parse(readFileSync(credentialFile, 'utf8'))
+  } catch {
+    return undefined
+  }
+  if (!credential || typeof credential !== 'object' || typeof credential.token !== 'string') return undefined
+  const expiresAt = typeof credential.expiresAt === 'string' ? Date.parse(credential.expiresAt) : Number.NaN
+  if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) throw new Error('INVENTORY_FLOW_MCP_TOKEN_EXPIRED')
+  return credential.token
+}
+
 function readConfiguration(environment = process.env) {
-  const token = environment.INVENTORY_FLOW_MCP_TOKEN || environment.INVENTORY_FLOW_API_KEY
+  const token = readToken(environment)
   if (typeof token !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(token)) {
     throw new Error('INVENTORY_FLOW_MCP_TOKEN_REQUIRED')
   }
@@ -51,7 +75,7 @@ function readConfiguration(environment = process.env) {
 }
 
 function readRestConfiguration(environment = process.env) {
-  const token = environment.INVENTORY_FLOW_MCP_TOKEN || environment.INVENTORY_FLOW_API_KEY
+  const token = readToken(environment)
   if (typeof token !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(token)) {
     throw new Error('INVENTORY_FLOW_MCP_TOKEN_REQUIRED')
   }

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { InventoryExperience, normalizedPageSize } from './InventoryExperience';
+import { normalizedPageSize } from './InventoryExperience';
+import { InventoryExperienceHarness } from '../../../tests/unit/inventory-experience-harness';
 import type { InventoryVehicle } from './types';
 
 const homeStore = { id: 'howell', name: 'Howell' };
@@ -34,7 +35,7 @@ describe('modern inventory scope and paging', () => {
 
   it('keeps a collapsed service filter visible and counts it with Held', () => {
     const readyHeld = { ...vehicle(1), dealerMail: { dataState: 'current' as const, hasActiveHold: true, position: null }, serviceReadiness: { vin: vehicle(1).vin, status: 'serviced' as const, version: 1, serviceEnteredAt: null, completedAt: '2026-09-14', updatedAt: '2026-09-14T12:00:00Z', updatedBy: 'Synthetic manager', updatedByRole: 'manager' as const, updatedAtStore: 'Howell' as const, store: 'Howell' as const, canManage: false } };
-    render(<InventoryExperience homeStore={homeStore} vehicles={[readyHeld, vehicle(2)]} metrics={{ publicUnits: 2, currentHolds: 1, awayFromHome: 0, returnOverdue: 0 }} />);
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[readyHeld, vehicle(2)]} />);
     fireEvent.click(screen.getByRole('button', { name: /^Held:/ }));
     fireEvent.click(screen.getByRole('button', { name: /^Ready:/ }));
     expect(screen.getByRole('button', { name: 'Filters 2' })).toHaveAttribute('aria-expanded', 'false');
@@ -48,7 +49,7 @@ describe('modern inventory scope and paging', () => {
   });
 
   it('never loses a secondary view restriction when Filters closes', () => {
-    render(<InventoryExperience homeStore={homeStore} vehicles={[vehicle(1)]} metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }} />);
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[vehicle(1)]} />);
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     fireEvent.click(screen.getByRole('button', { name: /^New today/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Show 0 vehicles' }));
@@ -62,18 +63,18 @@ describe('modern inventory scope and paging', () => {
   it('restores a saved service filter with its visible summary, and persists clearing it', () => {
     const key = 'inventory-service:v1:session:howell';
     window.sessionStorage.setItem(key, 'serviced');
-    const props = { homeStore, vehicles: [vehicle(1)], metrics: { publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 } };
-    const mounted = render(<InventoryExperience {...props} />);
+    const props = { homeStore, vehicles: [vehicle(1)] };
+    const mounted = render(<InventoryExperienceHarness {...props} />);
     expect(screen.getByRole('button', { name: 'Clear service filter: Ready' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Clear 1 filter' }));
     expect(window.sessionStorage.getItem(key)).toBe('all');
     mounted.unmount();
-    render(<InventoryExperience {...props} />);
+    render(<InventoryExperienceHarness {...props} />);
     expect(screen.queryByRole('group', { name: 'Active inventory filters' })).not.toBeInTheDocument();
   });
 
   it('connects the disclosure to both filter areas and returns focus on Escape', async () => {
-    render(<InventoryExperience homeStore={homeStore} vehicles={[vehicle(1)]} metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }} />);
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[vehicle(1)]} />);
     const trigger = screen.getByRole('button', { name: 'Filters' });
     const ids = trigger.getAttribute('aria-controls')!.split(' ');
     expect(ids).toHaveLength(2);
@@ -89,10 +90,9 @@ describe('modern inventory scope and paging', () => {
   it('uses 10 rows as the safe default', () => {
     expect(normalizedPageSize(8)).toBe(10);
     render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={homeStore}
         vehicles={Array.from({ length: 12 }, (_, index) => vehicle(index))}
-        metrics={{ publicUnits: 12, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
 
@@ -101,10 +101,9 @@ describe('modern inventory scope and paging', () => {
 
   it('uses concise visible mobile search and quick-view copy without shortening accessible names', () => {
     const { container } = render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={homeStore}
         vehicles={[vehicle(1)]}
-        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
 
@@ -121,10 +120,9 @@ describe('modern inventory scope and paging', () => {
   it('keeps the filtered row actionable after an exact VIN or stock search', async () => {
     const target = vehicle(1);
     render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={homeStore}
         vehicles={[target]}
-        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
 
@@ -142,10 +140,9 @@ describe('modern inventory scope and paging', () => {
     const sourceNoise = { ...vehicle(2), vehicleName: '2024 Ford Explorer XLT', authorizedSearchText: 'Ford Lincoln dealer source metadata' };
     const unrelated = { ...vehicle(3), vehicleName: '2024 Ford F-150 XLT' };
     render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={homeStore}
         vehicles={[lincoln, sourceNoise, unrelated]}
-        metrics={{ publicUnits: 3, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
 
@@ -161,10 +158,9 @@ describe('modern inventory scope and paging', () => {
 
   it('clears a query-only empty state instead of leaving the search active', () => {
     render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={homeStore}
         vehicles={[vehicle(1)]}
-        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
     const search = screen.getByRole('combobox', { name: 'Search inventory' });
@@ -176,11 +172,10 @@ describe('modern inventory scope and paging', () => {
 
   it('labels home scope accurately and only exposes a location filter for all locations', () => {
     render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={homeStore}
         groupStores={[homeStore, { id: 'fowlerville', name: 'Fowlerville' }]}
         vehicles={[vehicle(1)]}
-        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
 
@@ -195,10 +190,9 @@ describe('modern inventory scope and paging', () => {
 
   it('exposes five-level sort composition with explicit direction and priority controls', () => {
     render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={homeStore}
         vehicles={[vehicle(1), vehicle(2)]}
-        metrics={{ publicUnits: 2, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
         initialSorts={[{ key: 'vehicle', direction: 'asc' }]}
       />,
     );
@@ -241,8 +235,8 @@ describe('vehicle workspace background isolation', () => {
     const unit = vehicle(4);
     unit.features = ['Heated Steering Wheel'];
     unit.changeSummary = 'Price changed today';
-    render(<InventoryExperience homeStore={homeStore} vehicles={[unit]}
-      metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }} />);
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[unit]}
+      />);
 
     for (const [control, section, target] of [
       [/View all 1 equipment items for/i, 'Equipment', 'equipment'],
@@ -261,10 +255,9 @@ describe('vehicle workspace background isolation', () => {
 
   it('returns focus to the vehicle trigger after Escape closes the workspace', async () => {
     render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={homeStore}
         vehicles={[vehicle(3)]}
-        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
     const trigger = screen.getByRole('button', { name: /^Open vehicle details for 2024 Ford F-150/i });
@@ -279,10 +272,9 @@ describe('vehicle workspace background isolation', () => {
 
   it('returns focus to the vehicle trigger after the visible Close action', async () => {
     render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={homeStore}
         vehicles={[vehicle(5)]}
-        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
     const trigger = screen.getByRole('button', { name: /^Open vehicle details for 2024 Ford F-150/i });
@@ -297,10 +289,9 @@ describe('vehicle workspace background isolation', () => {
     const unit = vehicle(6);
     unit.features = ['FX4 Off-Road Package'];
     render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={homeStore}
         vehicles={[unit]}
-        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
     const trigger = document.querySelector<HTMLButtonElement>('button[data-row-action="open-details"]')!;
@@ -324,10 +315,9 @@ describe('vehicle workspace background isolation', () => {
     document.body.style.setProperty('overflow', 'clip', 'important');
     document.body.style.setProperty('overscroll-behavior', 'contain');
     const { container } = render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={homeStore}
         vehicles={[vehicle(1)]}
-        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
     const experience = container.querySelector<HTMLElement>('.inventory-experience');
@@ -363,10 +353,9 @@ describe('vehicle workspace background isolation', () => {
   it('cleans up on unmount and remains correct across repeated open and close cycles', () => {
     document.body.style.setProperty('overflow', 'auto');
     const { container, unmount } = render(
-      <InventoryExperience
+      <InventoryExperienceHarness
         homeStore={homeStore}
         vehicles={[vehicle(2)]}
-        metrics={{ publicUnits: 1, currentHolds: 0, awayFromHome: 0, returnOverdue: 0 }}
       />,
     );
     const background = container.querySelector<HTMLElement>('.inventory-experience__content')!;

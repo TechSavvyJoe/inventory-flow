@@ -1,4 +1,3 @@
-import { vi } from 'vitest'
 import type { InventoryVehicle } from '../../src/features/inventory/types'
 
 export function createMockVehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
@@ -133,34 +132,4 @@ export function createMockVehicle(overrides: Partial<InventoryVehicle> = {}): In
     ...overrides,
   }
   return base as unknown as InventoryVehicle
-}
-
-export function setupClipboardMock() {
-  const originalClipboard = navigator.clipboard
-  let lastCopiedText = ''
-  const writeTextMock = vi.fn().mockImplementation(async (text: string) => {
-    lastCopiedText = text
-    return Promise.resolve()
-  })
-
-  Object.defineProperty(navigator, 'clipboard', {
-    value: {
-      writeText: writeTextMock,
-      readText: vi.fn().mockImplementation(async () => lastCopiedText),
-    },
-    configurable: true,
-    writable: true,
-  })
-
-  return {
-    getLastCopied: () => lastCopiedText,
-    writeTextMock,
-    restore: () => {
-      Object.defineProperty(navigator, 'clipboard', {
-        value: originalClipboard,
-        configurable: true,
-        writable: true,
-      })
-    },
-  }
 }

@@ -39,7 +39,9 @@ export function verifyPublishedRelease({ envelope, expected, status, readiness }
     for (const store of STORES) check((status.metadata?.[field]?.[store] ?? 0) === (expected[field]?.[store] ?? 0), 'CLOUD_STORE_COUNT_MISMATCH')
   }
   check(readiness.counts?.inventory === expected.activeInventoryCount && readiness.counts?.managerDispositions === expected.managerDispositionRecordCount && readiness.bootstrapBytes > 0, 'APP_READ_MODEL_MISMATCH')
-  return { ...Object.fromEntries(COUNT_FIELDS.map(field => [field, expected[field]])), publicStoreCounts: expected.publicStoreCounts, crmStoreCounts: expected.crmStoreCounts, activeStoreCounts: expected.activeStoreCounts }
+  // Reported for data health, not cross-checked: VINs the manager log hid while
+  // the public feed still lists them. A Worker older than this field still verifies.
+  return { ...Object.fromEntries(COUNT_FIELDS.map(field => [field, expected[field]])), managerDeliveredListedExclusionCount: expected.managerDeliveredListedExclusionCount ?? 0, publicStoreCounts: expected.publicStoreCounts, crmStoreCounts: expected.crmStoreCounts, activeStoreCounts: expected.activeStoreCounts }
 }
 
 export async function syncCloudRelease({ release, environment = process.env, fetchImpl = fetch, now = new Date() }) {

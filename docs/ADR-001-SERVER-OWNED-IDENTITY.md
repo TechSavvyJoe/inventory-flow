@@ -88,6 +88,7 @@ The demo remains intentionally insecure and visibly separate. It is appropriate 
 ## Consequences
 
 - Production requests fail closed instead of falling back to a prototype identity.
+- The Node server is synthetic-demo only: it has no trusted-proxy mode, refuses to start with `NODE_ENV=production` (`NODE_SERVER_DEMO_ONLY`), needs an explicit synthetic release loader, and refuses a file-backed ledger. Production runs on the Cloudflare Worker.
 - Access supplies authenticated employee identity; enabled D1 membership supplies application user, role, and Home Store.
 - Client role previews cannot elevate production authorization.
 - Adding Google or another identity provider is an Access configuration change, not a React authentication feature.

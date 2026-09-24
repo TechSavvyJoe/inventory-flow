@@ -75,7 +75,7 @@ describe('dedicated read-only integration credentials', () => {
   it('returns only server-owned grants and current employee identity', async () => {
     const { env } = await harness()
     const principal = await authenticateIntegration(request(apiToken, { 'x-inventory-authenticated-role': 'group_manager', 'x-inventory-authenticated-store': 'Fowlerville', 'x-integration-scopes': '*' }), env)
-    expect(principal).toEqual({ clientId, grantType: 'api_token', userId: 'synthetic-user', role: 'manager', stores: ['Howell', 'Lincoln'], scopes: ['inventory.read', 'health.read'], user: 'Synthetic manager', store: 'Howell', authenticated: true, identityMode: 'trusted_proxy', canPreviewRoles: false, rateLimitPerMinute: 3 })
+    expect(principal).toEqual({ clientId, grantType: 'api_token', userId: 'synthetic-user', role: 'manager', stores: ['Howell', 'Lincoln'], scopes: ['inventory.read', 'health.read'], user: 'Synthetic manager', store: 'Howell', authenticated: true, canPreviewRoles: false, rateLimitPerMinute: 3 })
     expect(Object.isFrozen(principal)).toBe(true)
     expect(Object.isFrozen(principal.scopes)).toBe(true)
     expect(JSON.stringify(principal)).not.toContain(apiToken)

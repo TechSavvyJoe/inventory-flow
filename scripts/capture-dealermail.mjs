@@ -21,7 +21,7 @@
 // real function, and the loaded grid has >100 rows of exactly 22 cells.
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import path from 'node:path'
-import { getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { closeDuplicateTabs, closeOwnedTab, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -45,14 +45,17 @@ const outDir = path.join(ROOT, 'work', 'dealermail-history', 'snapshots')
 mkdirSync(outDir, { recursive: true })
 const p = suffix => path.join(outDir, `${reportDate}-${suffix}`)
 
-const fail = (status, detail) => {
+let ctx = null
+const fail = async (status, detail) => {
   console.log(JSON.stringify({ sessionStatus: status, detail: detail || null, wrote: [] }))
+  await closeOwnedTab(ctx)
   process.exit(status === 'ok' ? 0 : 1)
 }
 
 const t0 = Date.now()
-const ctx = await getOriginTab(ORIGIN, GRID, { settleMs: 60000 })
-if (!ctx.state || !ctx.state.host.includes('dealermail.com')) fail('unavailable', 'no dealermail tab')
+ctx = await getOriginTab(ORIGIN, GRID, { settleMs: 60000 })
+await closeDuplicateTabs(ORIGIN, { pathIncludes: '/prospect_manager/V2_inventory_search_CRM_USED_NEW.asp', keepTabId: ctx.tab?.id })
+if (!ctx.state || !ctx.state.host.includes('dealermail.com')) await fail('unavailable', 'no dealermail tab')
 const page = ctx.page
 
 await page.call('Page.navigate', { url: GRID })
@@ -66,7 +69,7 @@ const pre = await page.evalJs(`({
   sessionEnded: /Session Ended/i.test(document.body ? document.body.innerText : ''),
   hasShowModels: typeof showModels === 'function'
 })`)
-if (pre.sessionEnded || !pre.hasShowModels) fail('session_expired', 'grid returned Session Ended / no showModels')
+if (pre.sessionEnded || !pre.hasShowModels) await fail('session_expired', 'grid returned Session Ended / no showModels')
 
 await page.evalJs(`showModels('ALL'); true`)
 await sleep(9000)
@@ -105,9 +108,9 @@ const grid = await page.evalJs(`(() => {
 
 const full = grid.full
 const rawCells = grid.rawCells
-if (full.length < 100) fail('session_expired', `only ${full.length} rows after showModels`)
+if (full.length < 100) await fail('session_expired', `only ${full.length} rows after showModels`)
 const badCells = rawCells.filter(r => r.rawCellInnerText.length !== 22 || r.rawCellControlValues.length !== 22)
-if (badCells.length) fail('bad_capture', `${badCells.length} rows not 22 cells (validator would reject)`)
+if (badCells.length) await fail('bad_capture', `${badCells.length} rows not 22 cells (validator would reject)`)
 
 const held = full.filter(r => /onHold/i.test(r.rowClass))
 const capturedAt = new Date().toISOString()
@@ -189,5 +192,6 @@ console.log(JSON.stringify({
   holdsParsed: holds.reduce((n, h) => n + h.rows.length, 0),
   seconds: Math.round((Date.now() - t0) / 1000), outDir
 }))
-try { page.close() } catch {}
+await closeDuplicateTabs(ORIGIN, { pathIncludes: '/prospect_manager/V2_inventory_search_CRM_USED_NEW.asp', keepTabId: ctx.tab?.id })
+await closeOwnedTab(ctx)
 process.exit(0)

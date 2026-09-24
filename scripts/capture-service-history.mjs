@@ -3,7 +3,7 @@
 // No customer/owner name, complaint, technician, or free-form identity field is collected.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { PTS_REPAIR_ORDER_DETAILS_URL, closeDuplicateTabs, closeOwnedTab, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import {
   parseServiceHistoryDetails,
@@ -16,7 +16,6 @@ import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 const ROOT = resolveWorkspaceRoot(import.meta.url)
 const ORIGIN = 'https://www.fordtechservice.dealerconnection.com'
 const HISTORY_URL = (vin) => `${ORIGIN}/VehicleService/Index?VIN=${vin}`
-const DETAILS_URL = `${ORIGIN}/VehicleService/Details`
 const FORD_MAKES = new Set(['FORD', 'LINC', 'LINCOLN'])
 const [, , cmd, reportDate, ...rest] = process.argv
 if (cmd !== 'run' || !/^\d{4}-\d{2}-\d{2}$/.test(reportDate || '')) {
@@ -129,10 +128,11 @@ const tally = { OK: 0, NO_HISTORY: 0, PRIOR_HISTORY_PRESERVED: 0, INCOMPLETE: 0,
 const startedAt = Date.now()
 if (queue.length) {
   context = await getOriginTab(ORIGIN, HISTORY_URL(queue[0].vin), { settleMs: 60000 }).catch(() => null)
+  await closeDuplicateTabs(ORIGIN, { pathIncludes: '/VehicleService/', keepTabId: context?.tab?.id })
   const host = String(context?.state?.host || '')
   if (!context || host !== 'www.fordtechservice.dealerconnection.com') {
     sessionStatus = /microsoftonline|login|signin/i.test(host) ? 'session_expired' : 'unavailable'
-    try { context?.page?.close() } catch {}
+    await closeOwnedTab(context)
     console.log(JSON.stringify({ sessionStatus, captured: out.records.length, queued: queue.length, out: outPath }))
     process.exit(1)
   }
@@ -195,7 +195,7 @@ for (const item of queue) {
       let detailed = cachedDetails(item.vin, order)
       if (detailed) tally.DETAILS_REUSED++
       if (!detailed) {
-        const detailResponse = await fetchInTab(context.page, DETAILS_URL, {
+        const detailResponse = await fetchInTab(context.page, PTS_REPAIR_ORDER_DETAILS_URL, {
           method: 'POST',
           body: formBody(item.vin, order.repairOrderNumber),
           headers: {
@@ -287,7 +287,8 @@ for (const item of queue) {
 }
 
 save()
-try { context?.page?.close() } catch {}
+await closeDuplicateTabs(ORIGIN, { pathIncludes: '/VehicleService/', keepTabId: context?.tab?.id })
+await closeOwnedTab(context)
 const resultByVin = new Map(out.records.map((record) => [record.vin, record]))
 const complete = worklist.every((item) => completeResults.has(resultByVin.get(item.vin)?.result)) && !stoppedReason
 console.log(JSON.stringify({

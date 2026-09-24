@@ -1,3 +1,4 @@
+// PRODUCT-RULE TEST
 // @ts-nocheck -- repository safety helper intentionally uses Node ESM.
 // @vitest-environment node
 
@@ -127,5 +128,55 @@ describe('repository safety gate', () => {
     for (const file of ['SAFE.md', 'FIXTURE.md']) {
       expect(result.findings).not.toEqual(expect.arrayContaining([expect.objectContaining({ file })]))
     }
+  })
+
+  it('flags unreviewed rasters outside the allowlisted prefixes but not inside them', () => {
+    const root = temporaryRepository()
+    const flaggedNames = ['root.png', 'docs/a.jpg', 'tests/c.webp', 'design/b.png', 'public/other.gif']
+    const allowedNames = ['public/brand-kit/x.png', 'public/demo-vehicles/x.jpg', 'extension/icons/x.png']
+    for (const name of [...flaggedNames, ...allowedNames]) {
+      mkdirSync(path.dirname(path.join(root, ...name.split('/'))), { recursive: true })
+      writeFileSync(path.join(root, ...name.split('/')), 'raster\n')
+    }
+    const result = inspectRepository(root)
+    expect(result.findings).toEqual(
+      expect.arrayContaining(
+        flaggedNames.map((file) => expect.objectContaining({ file, reason: expect.stringMatching(/unreviewed raster/) })),
+      ),
+    )
+    for (const file of allowedNames) {
+      expect(result.findings).not.toEqual(expect.arrayContaining([expect.objectContaining({ file })]))
+    }
+  })
+
+  it('flags npm and yarn lockfiles anywhere in the tree', () => {
+    const root = temporaryRepository()
+    mkdirSync(path.join(root, 'sub'), { recursive: true })
+    writeFileSync(path.join(root, 'package-lock.json'), '{}\n')
+    writeFileSync(path.join(root, 'sub', 'yarn.lock'), '# yarn\n')
+    const result = inspectRepository(root)
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ file: 'package-lock.json', reason: expect.stringMatching(/only pnpm-lock\.yaml/) }),
+        expect.objectContaining({ file: 'sub/yarn.lock', reason: expect.stringMatching(/only pnpm-lock\.yaml/) }),
+      ]),
+    )
+  })
+
+  it('flags a .gitignore missing the required .agents/ ignore rule', () => {
+    const root = temporaryRepository()
+    writeFileSync(
+      path.join(root, '.gitignore'),
+      projectIgnore
+        .split(/\r?\n/)
+        .filter((line) => line.trim() !== '.agents/')
+        .join('\n'),
+    )
+    const result = inspectRepository(root)
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ file: '.gitignore', reason: 'missing required ignore rule: .agents/' }),
+      ]),
+    )
   })
 })

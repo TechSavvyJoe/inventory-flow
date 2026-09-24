@@ -1,48 +1,63 @@
 import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { createInventoryServer } from './api.mjs'
 import { getCurrentDataset, importRelease, openInventoryDatabase } from './database.mjs'
 import { createIdentityResolver } from './identity.mjs'
-import { loadLatestCompletedRelease } from './importer.mjs'
 import { createInventoryService } from './service.mjs'
-import { assertLocalLedgerWritable } from './local-cutover.mjs'
 
 const serverDirectory = path.dirname(fileURLToPath(import.meta.url))
 const appDirectory = path.resolve(serverDirectory, '..')
-const defaultWorkspaceRoot = path.resolve(appDirectory, '..', '..')
+
+export class DemoServerConfigurationError extends Error {
+  constructor(message, code) {
+    super(message)
+    this.name = 'DemoServerConfigurationError'
+    this.code = code
+  }
+}
 
 function safeErrorMessage(error) {
   return String(error?.message || 'Unknown source refresh error').slice(0, 500)
 }
 
+// The Node server hosts only the synthetic demo (scripts/start-synthetic-demo.mjs).
+// It never loads a dealership release on its own and never opens a file-backed
+// ledger: live saved activity runs on the Cloudflare Worker.
 export function startInventoryServer({
-  workspaceRoot = process.env.BOB_MAXEY_WORKSPACE_ROOT || defaultWorkspaceRoot,
-  runtimeDir = path.join(appDirectory, 'runtime'),
-  databasePath = path.join(runtimeDir, 'inventory-ops.sqlite'),
+  releaseLoader,
+  databasePath = ':memory:',
   distDir = path.join(appDirectory, 'dist'),
   serveDist = false,
   host = '127.0.0.1',
   port = 4174,
-  refreshIntervalMs = 5 * 60 * 1000,
+  refreshIntervalMs = 0,
   now = () => new Date(),
-  releaseLoader = loadLatestCompletedRelease,
-  identityMode = process.env.INVENTORY_OPS_IDENTITY_MODE,
   environment = process.env.NODE_ENV || 'development',
-  trustedProxySecret = process.env.INVENTORY_OPS_TRUSTED_PROXY_SECRET,
   adminDirectory,
 } = {}) {
-  assertLocalLedgerWritable({ databasePath, runtimeDir })
-  // Resolve the trust boundary before opening data or binding a port so an
-  // unsafe production configuration fails closed during startup.
-  const identityResolver = createIdentityResolver({ mode: identityMode, environment, trustedProxySecret })
-  const database = openInventoryDatabase({ databasePath, runtimeDir })
+  if (typeof releaseLoader !== 'function') {
+    throw new DemoServerConfigurationError(
+      'The Node server needs an explicit synthetic releaseLoader; it never loads a dealership release.',
+      'SYNTHETIC_RELEASE_LOADER_REQUIRED',
+    )
+  }
+  if (databasePath !== ':memory:') {
+    throw new DemoServerConfigurationError(
+      'The Node server keeps its demo ledger in memory and refuses a file-backed database. Live saved activity is at https://inventory-ops.joegallant.me; use pnpm dev:demo for synthetic development.',
+      'FILE_LEDGER_REFUSED',
+    )
+  }
+  // Resolve the trust boundary before opening data or binding a port so a
+  // production configuration fails closed during startup.
+  const identityResolver = createIdentityResolver({ environment })
+  const database = openInventoryDatabase({ databasePath })
   const initialStatus = { lastAttemptAt: null, lastSuccessAt: null, error: null }
   const service = createInventoryService({ database, now, initialLoadStatus: initialStatus })
 
   function refresh() {
     const attemptedAt = now().toISOString()
     try {
-      const release = releaseLoader({ workspaceRoot, now: now() })
+      const release = releaseLoader({ now: now() })
       importRelease(database, release, { loadedAt: attemptedAt })
       service.setLoadStatus({ lastAttemptAt: attemptedAt, lastSuccessAt: attemptedAt, error: null })
       return { ok: true, reportDate: release.reportDate }
@@ -55,7 +70,7 @@ export function startInventoryServer({
   }
 
   const refreshResult = refresh()
-  const server = createInventoryServer({ service, serveDist, distDir, workspaceRoot, identityResolver, adminDirectory })
+  const server = createInventoryServer({ service, serveDist, distDir, identityResolver, adminDirectory })
   const timer = refreshIntervalMs > 0 ? setInterval(refresh, refreshIntervalMs) : null
   timer?.unref()
 
@@ -85,9 +100,9 @@ export function startInventoryServer({
     const address = server.address()
     const activePort = typeof address === 'object' && address ? address.port : port
     const sourceNote = refreshResult.ok
-      ? `source release ${refreshResult.reportDate}`
+      ? `synthetic release ${refreshResult.reportDate}`
       : `retained release ${refreshResult.retainedReportDate || 'none'} (refresh failed)`
-    console.log(`Maxey Inventory Flow server listening on http://${host}:${activePort} — ${sourceNote}`)
+    console.log(`Maxey Inventory Flow demo server listening on http://${host}:${activePort} — ${sourceNote}`)
   })
 
   function close() {
@@ -106,25 +121,4 @@ export function startInventoryServer({
   }
 
   return { server, service, database, refresh, close, refreshResult }
-}
-
-const isMain = process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url
-if (isMain) {
-  const serveDist = process.argv.includes('--serve-dist')
-  const port = Number.parseInt(process.env.INVENTORY_OPS_PORT || '4174', 10)
-  const app = startInventoryServer({ serveDist, port: Number.isFinite(port) ? port : 4174 })
-  let shuttingDown = false
-  async function shutdown() {
-    if (shuttingDown) return
-    shuttingDown = true
-    try {
-      await app.close()
-      process.exitCode = 0
-    } catch (error) {
-      console.error(safeErrorMessage(error))
-      process.exitCode = 1
-    }
-  }
-  process.once('SIGINT', shutdown)
-  process.once('SIGTERM', shutdown)
 }

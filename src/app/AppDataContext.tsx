@@ -162,30 +162,53 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     clearAccess(context, failure.status, failure.message)
   }), [clearAccess])
 
-  const refreshBootstrap = useCallback((afterMutation = false): Promise<void> => {
+  // `background` marks a read the person never asked for (the foreground
+  // timer, a focus/online event, or a silent visibility check). Those reads
+  // must not flip `loading` to true while data is already on screen — that
+  // repaints the vehicle workspace and announces "Loading the full vehicle
+  // record…" through a polite live region every poll. A real ask (mount,
+  // the Refresh button, an ErrorState retry, or a post-mutation reload)
+  // always shows loading as before. If a foreground ask instead joins an
+  // in-flight background read (the dedupe branch below), it still flips
+  // loading to true so the button it came from responds.
+  const refreshBootstrap = useCallback((afterMutation = false, background = false): Promise<void> => {
     if (latestAccessContextRef.current !== accessContext || accessErrorRef.current) return Promise.resolve()
     const mutationRevision = confirmedMutationRevision()
     const pending = inFlightRef.current
     if (!afterMutation && pending?.accessContext === accessContext && pending.mutationRevision === mutationRevision) {
+      if (!background) {
+        setBootstrapState((current) => (current.accessContext === accessContext && !current.loading)
+          ? { ...current, loading: true }
+          : current)
+      }
       return pending.promise
     }
     cancelRead()
     const requestId = requestSequenceRef.current
     const controller = new AbortController()
     lastAttemptRef.current = Date.now()
-    setBootstrapState((current) => ({
-      ...(current.accessContext === accessContext ? current : emptyBootstrap(accessContext)),
-      loading: true,
-      error: current.accessContext === accessContext && current.data ? current.error : null,
-      accessErrorStatus: null,
-      savedChangesPending: afterMutation || mutationRevision !== lastSyncedMutationRef.current || current.savedChangesPending,
-    }))
+    setBootstrapState((current) => {
+      const matchesContext = current.accessContext === accessContext
+      const hasData = matchesContext && current.data != null
+      return {
+        ...(matchesContext ? current : emptyBootstrap(accessContext)),
+        loading: background && hasData ? current.loading : true,
+        error: matchesContext && current.data ? current.error : null,
+        accessErrorStatus: null,
+        savedChangesPending: afterMutation || mutationRevision !== lastSyncedMutationRef.current || current.savedChangesPending,
+      }
+    })
     const promise = (async () => {
       try {
         const nextData = await getBootstrap(homeStore, role, controller.signal)
         if (requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return
         const nextUser = nextData.access?.user ?? null
-        if (knownUserRef.current !== nextUser) clearClientWorkspace()
+        // Only a change of identity clears the workspace. When the user is first
+        // learned there is nothing stale: the mount effect and clearAccess already
+        // cleared everything before this request, and clearing again would bump
+        // the access generation and discard the bootstrap validator this response
+        // just stored, turning every tab's first refresh into a full download.
+        if (knownUserRef.current !== null && knownUserRef.current !== nextUser) clearClientWorkspace()
         knownUserRef.current = nextUser
         const authenticatedRole = nextData.access?.role ?? role
         const authenticatedStore = nextData.access?.store ?? homeStore
@@ -235,7 +258,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const refreshForeground = () => {
       if (document.visibilityState !== 'visible' || accessErrorRef.current || Date.now() - lastAttemptRef.current < FOREGROUND_REFRESH_MS) return
-      void refresh()
+      void refreshBootstrap(false, true)
     }
     window.addEventListener('focus', refreshForeground)
     window.addEventListener('online', refreshForeground)
@@ -247,7 +270,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', refreshForeground)
       window.clearInterval(timer)
     }
-  }, [refresh])
+  }, [refreshBootstrap])
 
   const setHomeStore = useCallback((store: StoreName) => {
     if (store === homeStore || !confirmUnsavedWork()) return

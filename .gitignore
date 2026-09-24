@@ -55,7 +55,13 @@ exports/
 
 # Local IDE and AI-agent state.
 .claude/
+.agents/
 .tmp-test/
 .codex/
 .idea/
 .vscode/
+
+# Lockfiles: pnpm-lock.yaml is the only tracked lockfile; a stray npm/yarn
+# lockfile builds a different dependency tree from the one pnpm test/build use.
+package-lock.json
+yarn.lock

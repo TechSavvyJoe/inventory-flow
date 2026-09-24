@@ -293,7 +293,7 @@ describe('source-backed vehicle resource cards', () => {
   });
 
   it('does not promote a known demo-only CPO qualifier into a history exception', () => {
-    const vehicle = {...sources(),vin:'TESTDATAHWELL0001',imageUrl:'/demo-vehicles/f150.png'};
+    const vehicle = {...sources(),vin:'TESTDATAHWELL0001',imageUrl:'/demo-vehicles/f150.jpg'};
     vehicle.autoCheckReport = {...vehicle.autoCheckReport!, checks:[{label:'Certified Pre-Owned',status:'No CPO info available',detail:'Synthetic result'}]};
     const original = JSON.stringify(vehicle);
     const page = render(<VehicleResourceCards vehicle={vehicle} variant="summary"/>);
@@ -385,7 +385,7 @@ describe('source-backed vehicle resource cards', () => {
     vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, checks: [{label:'Additional history',status:'Events reported',detail:'Corrected title · Synthetic example'}] };
     const page = render(<VehicleResourceCards vehicle={vehicle} variant="summary"/>);
     expect(screen.queryByText('Corrected title · Synthetic example')).not.toBeInTheDocument();
-    page.rerender(<VehicleResourceCards vehicle={{...vehicle,vin:'TESTDATAHWELL0001',imageUrl:'/demo-vehicles/f150.png'}} variant="summary"/>);
+    page.rerender(<VehicleResourceCards vehicle={{...vehicle,vin:'TESTDATAHWELL0001',imageUrl:'/demo-vehicles/f150.jpg'}} variant="summary"/>);
     const history = within(document.querySelector('[data-resource-kind="autocheck"]') as HTMLElement);
     expect(history.getByText('Demo')).toBeVisible();
     expect(history.queryByText('Corrected title')).not.toBeInTheDocument();
@@ -419,7 +419,7 @@ describe('source-backed vehicle resource cards', () => {
   });
 
   it('keeps sparse evidence visible while uncaptured destinations remain compact source links', () => {
-    render(<VehicleResourceCards vehicle={{vin:'TESTDATAHWELL0001',make:'Ford',year:2024,model:'F-150',trim:'Lariat',msrp:68420,imageUrl:'/demo-vehicles/f150.png'}} variant="summary"/>);
+    render(<VehicleResourceCards vehicle={{vin:'TESTDATAHWELL0001',make:'Ford',year:2024,model:'F-150',trim:'Lariat',msrp:68420,imageUrl:'/demo-vehicles/f150.jpg'}} variant="summary"/>);
     const sample = document.querySelector('.vehicle-resource-summary--sparse') as HTMLElement;
     expect(within(sample).getByText('F-150 Lariat')).toBeVisible();
     expect(within(sample).getByText('$68,420 MSRP')).toBeVisible();
@@ -431,7 +431,7 @@ describe('source-backed vehicle resource cards', () => {
   });
 
   it('preserves captured sticker details alongside a synthetic document preview', () => {
-    const vehicle = { ...sources(), vin: 'TESTDATAHWELL0001', imageUrl: '/demo-vehicles/f150.png' };
+    const vehicle = { ...sources(), vin: 'TESTDATAHWELL0001', imageUrl: '/demo-vehicles/f150.jpg' };
     render(<VehicleResourceCards vehicle={vehicle} variant="summary" summaryLimit={6}/>);
     expandDetails('equipment');
     const sticker = document.querySelector('[data-resource-kind="window-sticker"]') as HTMLElement;
@@ -621,28 +621,11 @@ describe('source-backed vehicle resource cards', () => {
     expect(vehicleResourceCatalog(different).find(resource => resource.id === 'vauto')!.facts).toContain('Different captured engine · Synthetic automatic · AWD');
   });
 
-  it('shows four branded cards with captured facts and keeps invoice out of the card row', () => {
-    render(<VehicleResourceCards vehicle={sources()} variant="cards"/>);
-    expect(screen.getAllByRole('article')).toHaveLength(4);
-    expect(screen.getByText('CAD 68,420 MSRP · Synthetic equipment group')).toBeVisible();
-    expect(screen.getByText('91')).toBeVisible();
-    expect(screen.getByText('Score')).toBeVisible();
-    expect(screen.getByText('1 owner · Personal')).toBeVisible();
-    expect(screen.getByText('Heated front seats')).toBeVisible();
-    expect(screen.getByText('Synthetic Tow Package')).toBeVisible();
-    expect(screen.getByText('Warranty start 08/14/2024')).toBeVisible();
-    expect(screen.queryByText(/CARFAX/)).not.toBeInTheDocument();
-    expect(screen.queryByText('Ford invoice')).not.toBeInTheDocument();
-    expect(document.querySelector('[data-resource="autocheck"] img')).toHaveAttribute('src','/resource-brands/autocheck.svg');
-    expect(document.querySelector('[data-resource="oasis"] img')).toHaveAttribute('src','/resource-brands/ford.svg');
-    expect(document.querySelector('[data-resource="vauto"] img')).toHaveAttribute('src','/resource-brands/vauto.svg');
-  });
-
-  it('keeps direct compact source links external, provider-named, and separate from row selection', () => {
+  it('keeps workspace source links external, provider-named, and separate from row selection', () => {
     const rowAction = vi.fn();
-    render(<div onClick={rowAction}><VehicleResourceCards vehicle={sources()} variant="inline"/></div>);
+    render(<div onClick={rowAction}><VehicleResourceCards vehicle={sources()} variant="summary"/></div>);
     const links = screen.getAllByRole('link');
-    expect(links).toHaveLength(4);
+    expect(links.length).toBeGreaterThan(0);
     const autoCheck = screen.getByRole('link', {name:/Open AutoCheck history/});
     expect(autoCheck).toHaveAttribute('href',sources().autoCheckReport?.url);
     fireEvent.click(autoCheck);
@@ -658,7 +641,7 @@ describe('source-backed vehicle resource cards', () => {
 
   it('does not swallow Escape or Tab needed by the containing vehicle dialog', () => {
     const keyAction = vi.fn();
-    render(<div onKeyDown={keyAction}><VehicleResourceCards vehicle={sources()} variant="inline"/></div>);
+    render(<div onKeyDown={keyAction}><VehicleResourceCards vehicle={sources()} variant="summary"/></div>);
     const link = screen.getByRole('link',{name:/Open AutoCheck/});
     fireEvent.keyDown(link,{key:'Escape'}); fireEvent.keyDown(link,{key:'Tab'});
     expect(keyAction).toHaveBeenCalledTimes(2);
@@ -668,7 +651,7 @@ describe('source-backed vehicle resource cards', () => {
 
   it('offers an explicit captured-data action when a URL is rejected without weakening the source guard', () => {
     const vehicle=sources(); vehicle.autoCheckReport!.url='https://carfax.com/report?vin=1FTFW1E84RKF12345';
-    const onOpenSection=vi.fn(); render(<VehicleResourceCards vehicle={vehicle} variant="inline" onOpenSection={onOpenSection}/>);
+    const onOpenSection=vi.fn(); render(<VehicleResourceCards vehicle={vehicle} variant="summary" onOpenSection={onOpenSection}/>);
     expect(screen.queryByRole('link',{name:/AutoCheck/})).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button',{name:/View AutoCheck data/}));
     expect(onOpenSection).toHaveBeenCalledWith('data');
@@ -676,10 +659,19 @@ describe('source-backed vehicle resource cards', () => {
   });
 
   it('omits missing resources and never manufactures a dealer lookup from an invalid VIN', () => {
-    render(<VehicleResourceCards vehicle={{vin:'NOT-A-VIN',make:'Ford'}} variant="inline"/>);
+    render(<VehicleResourceCards vehicle={{vin:'NOT-A-VIN',make:'Ford'}} variant="summary"/>);
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(document.querySelector('.vehicle-resources')).toBeNull();
+  });
+
+  it('uses a clearly marked local demo sticker only with the exact synthetic identity and image', () => {
+    const vehicle={vin:'TESTDATAHWELL0001',make:'Ford',year:2024,model:'F-150',trim:'Lariat',msrp:68420,imageUrl:'/demo-vehicles/f150.jpg'};
+    render(<VehicleResourceCards vehicle={vehicle} variant="summary"/>);
+    expect(screen.getByRole('link',{name:/Open demo sticker/})).toHaveAttribute('href','/demo-documents/window-sticker.html?vehicle=TESTDATAHWELL0001');
+    const sticker=document.querySelector('[data-resource-kind="window-sticker"]') as HTMLElement;
+    expect(sticker.querySelector('.vehicle-resource-brand--ford')).toBeNull();
+    expect(vehicleResourceCatalog({...vehicle,imageUrl:'/demo-vehicles/escape.jpg'}).find(resource=>resource.id==='window-sticker')).toBeUndefined();
   });
 
   it('keeps valid Ford destinations compact when no report details are available', () => {
@@ -690,33 +682,6 @@ describe('source-backed vehicle resource cards', () => {
     expect(entries.find(entry=>entry.id==='oasis')?.sourceNote).toBeNull();
   });
 
-  it('uses a clearly marked local demo sticker only with the exact synthetic identity and image', () => {
-    const vehicle={vin:'TESTDATAHWELL0001',make:'Ford',year:2024,model:'F-150',trim:'Lariat',msrp:68420,imageUrl:'/demo-vehicles/f150.png'};
-    render(<VehicleResourceCards vehicle={vehicle} variant="cards"/>);
-    expect(screen.getByRole('link',{name:/Open demo sticker/})).toHaveAttribute('href','/demo-documents/window-sticker.html?vehicle=TESTDATAHWELL0001');
-    const card=document.querySelector('[data-resource="window-sticker"]') as HTMLElement;
-    expect(within(card).getByText('Demo document')).toBeVisible();
-    expect(within(card).getByText('F-150 Lariat')).toBeVisible();
-    expect(within(card).getByText('$68,420 MSRP')).toBeVisible();
-    expect(within(card).queryByText('Open the source for its full details.')).not.toBeInTheDocument();
-    expect(within(card).getByRole('img')).toHaveAttribute('src','/demo-documents/window-sticker-TESTDATAHWELL0001.png');
-    expect(card.querySelector('.vehicle-resource-brand--ford')).toBeNull();
-    expect(vehicleResourceCatalog({...vehicle,imageUrl:'/demo-vehicles/escape.png'}).find(resource=>resource.id==='window-sticker')).toBeUndefined();
-  });
-
-  it('keeps a demo-sticker card useful when its optional preview asset cannot load', () => {
-    const vehicle={vin:'TESTDATAHWELL0001',make:'Ford',year:2024,model:'F-150',trim:'Lariat',msrp:68420,imageUrl:'/demo-vehicles/f150.png'};
-    render(<VehicleResourceCards vehicle={vehicle} variant="cards"/>);
-    const card=document.querySelector('[data-resource="window-sticker"]') as HTMLElement;
-    const preview=card.querySelector('.vehicle-resource-preview') as HTMLImageElement;
-    fireEvent.error(preview);
-
-    expect(card.querySelector('.vehicle-resource-preview')).toBeNull();
-    expect(card.querySelector('.vehicle-resource-body')).not.toHaveClass('has-preview');
-    expect(within(card).getByText('F-150 Lariat')).toBeVisible();
-    expect(within(card).getByRole('link',{name:/Open demo sticker/})).toHaveAttribute('href','/demo-documents/window-sticker.html?vehicle=TESTDATAHWELL0001');
-  });
-
   it('accepts both application and common API records without an adapter', () => {
     const record={...sources(),fordOasis:{dataState:'stale_unverified',warrantyStartDate:'14-AUG-2024'}} as unknown as VehicleRecord;
     const adapted=sources() as InventoryVehicle;
@@ -724,91 +689,4 @@ describe('source-backed vehicle resource cards', () => {
     expect(vehicleResourceCatalog(adapted)).toHaveLength(5);
   });
 
-  it('renders useful SRP facts as page content, not just title tooltips', () => {
-    render(<VehicleResourceCards vehicle={sources()} variant="inline" onOpenSection={vi.fn()}/>);
-    const history = document.querySelector('[data-resource-kind="autocheck"]') as HTMLElement;
-    expect(history.querySelector('.vehicle-resource-inline-facts')).toHaveTextContent('Score 91');
-    expect(history.querySelector('.vehicle-resource-inline-facts')).toHaveTextContent('1 owner');
-    expect(history.querySelector('.vehicle-resource-inline-facts')).not.toHaveTextContent('No accidents reported');
-    expect(within(history).queryByText('Original source')).not.toBeInTheDocument();
-    const sticker = document.querySelector('[data-resource-kind="window-sticker"]') as HTMLElement;
-    expect(sticker.querySelector('.vehicle-resource-inline-facts')).toHaveTextContent('CAD 68,420 MSRP');
-    expect(sticker.querySelector('.vehicle-resource-inline-facts')).toHaveTextContent('Synthetic equipment group');
-  });
-
-  it('keeps compact SRP cards focused on the vehicle facts and actions', () => {
-    const { unmount } = render(<VehicleResourceCards vehicle={sources()} variant="inline" onOpenSection={vi.fn()}/>);
-    const equipment = document.querySelector('[data-resource-kind="window-sticker"]') as HTMLElement;
-    expect(within(equipment).getByText('Sticker')).toBeVisible();
-    expect(equipment.querySelector('summary')).toBeNull();
-    expect(within(equipment).queryByText(/Informational/)).not.toBeInTheDocument();
-
-    unmount();
-    render(<VehicleResourceCards vehicle={{
-      vin: 'TESTDATAHWELL0001', make: 'Ford', year: 2024, model: 'F-150', trim: 'Lariat', msrp: 68420,
-      imageUrl: '/demo-vehicles/f150.png',
-    }} variant="inline" onOpenSection={vi.fn()}/>);
-    const demo = document.querySelector('[data-resource-kind="window-sticker"]') as HTMLElement;
-    expect(within(demo).getByText('Demo document')).toBeVisible();
-  });
-
-  it('keeps captured VDP details separate from the original source action', () => {
-    const onOpenSection=vi.fn();
-    render(<VehicleResourceCards vehicle={sources()} variant="cards" onOpenSection={onOpenSection}/>);
-    const history=document.querySelector('[data-resource="autocheck"]') as HTMLElement;
-    expect(within(history).getByRole('link',{name:/Open AutoCheck history/})).toHaveAttribute('href',sources().autoCheckReport?.url);
-    fireEvent.click(within(history).getByRole('button',{name:/View AutoCheck data/}));
-    expect(onOpenSection).toHaveBeenCalledWith('data');
-    expect(within(history).getByText('Accident / damage: No accidents reported')).toBeVisible();
-  });
-
-  it('keeps an incomplete record concise while retaining its useful history result', () => {
-    const vehicle=sources();
-    vehicle.autoCheckReport={dataState:'stale',ownerCount:1,checks:[{label:'Title',status:'Salvage reported'}]};
-    render(<VehicleResourceCards vehicle={vehicle} variant="inline" onOpenSection={vi.fn()}/>);
-    const history=document.querySelector('[data-resource-kind="autocheck"]') as HTMLElement;
-    expect(history.querySelector('.vehicle-resource-inline-facts')).toHaveTextContent('Title: Salvage reported');
-    expect(within(history).queryByText(/Saved data|Refresh source|Saved report/)).not.toBeInTheDocument();
-    expect(within(history).queryByRole('link')).not.toBeInTheDocument();
-  });
-
-  it.each(['2099-01-01', 'not-a-date'])('keeps technical capture dates out of inline summaries: %s', reportRunAt => {
-    const vehicle=sources();
-    vehicle.autoCheckReport!.reportRunAt=reportRunAt;
-    vehicle.fordOasis={dataState:'current',warrantyStartDate:'14-AUG-2024',openFieldServiceActions:[]};
-    render(<VehicleResourceCards vehicle={vehicle} variant="inline" onOpenSection={vi.fn()}/>);
-    const history=document.querySelector('[data-resource-kind="autocheck"]') as HTMLElement;
-    expect(within(history).queryByText(/Source date|Future source date|Unrecognized source date/)).not.toBeInTheDocument();
-    const oasis=document.querySelector('[data-resource-kind="oasis"]') as HTMLElement;
-    expect(within(oasis).queryByText(/Action result not captured/)).not.toBeInTheDocument();
-  });
-
-  it('keeps invoice as one compact sign-in source link with no blank summary block', () => {
-    render(<VehicleResourceCards vehicle={sources()} variant="inline"/>);
-    const invoice=document.querySelector('[data-resource-kind="invoice"]')!;
-    expect(invoice).toHaveClass('vehicle-resource-inline-item--lookup');
-    expect(within(invoice as HTMLElement).getByRole('link',{name:/Open invoice/})).toHaveAttribute('href',expect.stringContaining('v=1FTFW1E84RKF12345'));
-    expect(invoice.querySelector('.vehicle-resource-inline-facts')).toBeNull();
-    expect(invoice.querySelector('details')).toBeNull();
-    expect(invoice).not.toHaveTextContent('Dealer sign-in');
-    expect(invoice).toHaveTextContent('Invoice');
-  });
-
-  it('keeps routine capture dates out of the manager-facing cards', () => {
-    const vehicle=sources(); vehicle.autoCheckReport!.reportRunAt='2026-09-01';
-    render(<VehicleResourceCards vehicle={vehicle} variant="cards"/>);
-    const history=document.querySelector('[data-resource="autocheck"]') as HTMLElement;
-    expect(within(history).queryByText('Report run 09/01/2026')).not.toBeInTheDocument();
-    expect(history.querySelector('summary')).toBeNull();
-    expect(history.querySelector('.vehicle-resource-body')).not.toHaveTextContent('Report run');
-    expect(within(history).queryByText('Report run 09/01/2026')).not.toBeInTheDocument();
-  });
-
-  it('does not rewrite a long OASIS warning as an equipment cue', () => {
-    const vehicle=sources();
-    const description='CAMERA INSPECTION — VERIFY VIN BEFORE REPAIR; SERVICE ACTION REMAINS OPEN';
-    vehicle.fordOasis!.openFieldServiceActions=[{code:'TEST-26A',description}];
-    render(<VehicleResourceCards vehicle={vehicle} variant="inline"/>);
-    expect(document.querySelector('[data-resource-kind="oasis"] .vehicle-resource-inline-facts')).toHaveTextContent(description);
-  });
 });

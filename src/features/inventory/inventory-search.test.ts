@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { foldSearchText } from "../../lib/search";
 import {
   buildInventorySearchIndex,
   buildInventorySearchIndexes,
-  foldInventorySearchText,
   rankInventorySearch,
   rankInventorySearchWithAuthorizedFallback,
-  searchFieldsMatch,
 } from "./inventory-search";
 import type { InventoryVehicle } from "./types";
 
@@ -38,14 +37,9 @@ function vehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
 }
 
 describe("predictive inventory search", () => {
-  it("reuses token and typo matching across explicit view fields", () => {
-    expect(searchFieldsMatch("ford howel", ["2024 Ford Explorer", "Howell"])).toBe(true);
-    expect(searchFieldsMatch("ford lincoln", ["2024 Ford Explorer", "Howell"])).toBe(false);
-  });
-
   it("folds model punctuation and formatted numeric values", () => {
     const index = buildInventorySearchIndex([vehicle()]);
-    expect(foldInventorySearchText("F-150")).toBe("f150");
+    expect(foldSearchText("F-150")).toBe("f150");
     for (const query of ["f150", "$42,810", "42810", "2,052", "2052"]) {
       expect(rankInventorySearch(index, query)).toHaveLength(1);
     }

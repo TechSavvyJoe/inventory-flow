@@ -36,6 +36,38 @@ const SIMPLE_OUTCOME_EVENTS = new Set(['customer_showing', 'sale_outcome_pending
 const SIMPLE_OUTCOME_FROM = new Set(['approved', 'transport_assigned', 'picked_up', 'in_transit', 'arrived'])
 const SIMPLE_PRE_DESTINATION_STATES = new Set(['approved', 'transport_assigned', 'picked_up', 'in_transit'])
 
+// Every lifecycle transition the simple (default) mode records, listed
+// explicitly. Simple mode never falls through to TRANSITION_MAP: the advanced
+// dispatch events (manager_reviewed, approved, declined, transport_assigned,
+// picked_up, in_transit, return_requested, return_assigned, return_in_transit)
+// are refused here even though legacy rows may still sit in those states and
+// finish through the simple events below. Passive events are checked apart.
+function simpleTransitionTable() {
+  const table = new Map()
+  const add = (from, events) => {
+    if (!table.has(from)) table.set(from, new Set())
+    for (const event of events) table.get(from).add(event)
+  }
+  for (const [event, states] of Object.entries(SIMPLE_EVENT_FROM)) for (const from of states) add(from, [event])
+  for (const from of SIMPLE_OUTCOME_FROM) add(from, SIMPLE_OUTCOME_EVENTS)
+  // The outcome chain once the vehicle is being shown.
+  add('customer_showing', ['sale_outcome_pending', 'sale_confirmed', 'not_sold'])
+  add('sale_outcome_pending', ['sale_confirmed', 'not_sold'])
+  // A sold-pending vehicle waits for delivery; only a manager unwinds it.
+  add('sale_confirmed', ['delivery_confirmed', 'not_sold'])
+  add('delivery_confirmed', ['closed'])
+  // Cancellation before the vehicle leaves its home store.
+  for (const from of ['requested', 'manager_reviewed', 'approved', 'transport_assigned']) add(from, ['canceled'])
+  // The return trip ends with the Home Store's receipt.
+  add('return_in_transit', ['returned_home'])
+  add('returned_home', ['closed'])
+  // Legacy simple-ledger rows may still record an arrival after a departure.
+  add('picked_up', ['arrived'])
+  add('in_transit', ['arrived'])
+  return Object.freeze(Object.fromEntries(table))
+}
+export const SIMPLE_TRANSITIONS = simpleTransitionTable()
+
 export const TRANSITION_MAP = Object.freeze({
   requested: new Set(['manager_reviewed', 'declined', 'canceled']),
   manager_reviewed: new Set(['approved', 'declined', 'canceled']),
@@ -453,28 +485,24 @@ function saleUnwindRestricted(currentStatus, eventType, role) {
   return eventType === 'not_sold' && currentStatus === 'sale_confirmed' && !PRIVILEGED_ROLES.has(role)
 }
 
-function transitionAllowed(currentStatus, eventType, workflowMode = 'advanced') {
-  if (Object.hasOwn(SIMPLE_EVENT_FROM, eventType)) {
-    return workflowMode === 'simple' && SIMPLE_EVENT_FROM[eventType].has(currentStatus)
-  }
-  if (workflowMode === 'simple' && SIMPLE_OUTCOME_EVENTS.has(eventType) && SIMPLE_OUTCOME_FROM.has(currentStatus)) return true
+function passiveTransitionAllowed(currentStatus, eventType) {
   if (eventType === 'driver_requested') return currentStatus === 'approved'
   if (ACTIVE_ONLY_PASSIVE_EVENTS.has(eventType) && ['declined', 'canceled', 'closed'].includes(currentStatus)) return false
-  if (PASSIVE_EVENTS.has(eventType)) return true
-  return TRANSITION_MAP[currentStatus]?.has(eventType) === true
+  return true
+}
+
+function lifecycleTransitions(currentStatus, workflowMode) {
+  return (workflowMode === 'simple' ? SIMPLE_TRANSITIONS : TRANSITION_MAP)[currentStatus] ?? new Set()
+}
+
+function transitionAllowed(currentStatus, eventType, workflowMode = 'advanced') {
+  if (PASSIVE_EVENTS.has(eventType)) return passiveTransitionAllowed(currentStatus, eventType)
+  return lifecycleTransitions(currentStatus, workflowMode).has(eventType)
 }
 
 export function allowedEventTypes(currentStatus, role, workflowMode = 'advanced') {
   if (!USER_ROLES.includes(role)) return []
-  const candidates = new Set([...(TRANSITION_MAP[currentStatus] ?? []), ...PASSIVE_EVENTS])
-  if (workflowMode === 'simple') {
-    for (const [event, states] of Object.entries(SIMPLE_EVENT_FROM)) {
-      if (states.has(currentStatus)) candidates.add(event)
-    }
-    if (SIMPLE_OUTCOME_FROM.has(currentStatus)) {
-      for (const event of SIMPLE_OUTCOME_EVENTS) candidates.add(event)
-    }
-  }
+  const candidates = new Set([...lifecycleTransitions(currentStatus, workflowMode), ...PASSIVE_EVENTS])
   return [...candidates].filter(
     (eventType) =>
       eventRoleAllowed(eventType, role, workflowMode) &&
@@ -787,7 +815,7 @@ export function buildTransferEvent({ current, input, context, idempotencyKey, no
       details: {
         currentStatus: current.status,
         eventType,
-        allowed: [...(TRANSITION_MAP[current.status] ?? []), ...PASSIVE_EVENTS],
+        allowed: [...lifecycleTransitions(current.status, context.workflowMode), ...PASSIVE_EVENTS],
       },
     })
   }

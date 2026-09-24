@@ -166,6 +166,8 @@ export function buildServiceReadinessEvent(vehicle, rows, input, context, { now,
     id: randomUUID(), vin: vehicle.vin, version: view.version + 1, status: input.status,
     service_entered_at: enteredAt, completed_at: input.status === 'serviced' ? date : null,
     notes, updated_at: now.toISOString(), actor: context.user, actor_user_id: context.userId || null,
-    actor_role: context.role, store_id: context.store, input_hash: inputHash, idempotency_key: idempotencyKey,
+    // Audit the signed-in role, not a group manager's previewed role, the same
+    // convention transfer events follow (workflow.mjs).
+    actor_role: context.authenticatedRole || context.role, store_id: context.store, input_hash: inputHash, idempotency_key: idempotencyKey,
   } }
 }

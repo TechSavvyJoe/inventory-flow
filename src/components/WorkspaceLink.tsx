@@ -1,6 +1,6 @@
 import type { AnchorHTMLAttributes } from 'react'
 import { Link, useInRouterContext, useLocation } from 'react-router-dom'
-import { currentWorkspaceReturnPath, withWorkspaceReturnPath } from '../features/inventory/inventory-navigation'
+import { currentWorkspaceReturnPath, withWorkspaceReturnPath } from '../lib/inventory-navigation'
 
 type Props = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> & {
   to: string

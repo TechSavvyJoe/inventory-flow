@@ -38,7 +38,9 @@ function sourceFor(bundle, records) {
 
 function fixtures() {
   const bundle = buildSyntheticCloudBundle()
-  const current = bundle.release.vehicles.filter(vehicle => vehicle.publicRecord).slice(0, 2)
+  // The source log is Howell's, and the no-VIN stock fallback only matches
+  // vehicles the reporting store itself lists.
+  const current = bundle.release.vehicles.filter(vehicle => vehicle.publicRecord?.store === 'Howell').slice(0, 2)
   const records = [
     { stock_number: current[0].publicRecord.stock_number, vin: current[0].vin, vehicle: 'source-controlled text discarded', sold_manager_log: true, delivered_manager_log: true, delivery_date: bundle.reportDate, confidence: 'high', source_store_note: PRIVATE },
     { stock_number: current[1].publicRecord.stock_number, vin: null, vehicle: 'also discarded', sold_manager_log: true, delivered_manager_log: false, delivery_date: null, confidence: 'medium-high' },
@@ -59,6 +61,23 @@ describe('strict manager disposition overlay', () => {
     expect(JSON.stringify(overlay)).not.toContain('source-controlled text')
     expect(overlay.sources[0].strippedFieldCount).toBe(1)
     expect(validateSanitizedManagerDispositionOverlay(overlay, { reportDate: bundle.reportDate, vehicles: bundle.release.vehicles })).toEqual(overlay.summary)
+  })
+
+  it('scopes the no-VIN stock fallback to vehicles the reporting store lists', () => {
+    const { bundle, source } = fixtures()
+    const elsewhere = bundle.release.vehicles.find(vehicle => vehicle.publicRecord && vehicle.publicRecord.store !== 'Howell')
+    source.records = [{ stock_number: elsewhere.publicRecord.stock_number, vin: null, vehicle: 'another store stock number', sold_manager_log: true, delivered_manager_log: true, delivery_date: bundle.reportDate, confidence: 'high' }]
+    source.summary = { sold_records: 1, delivered_records: 1, sold_not_marked_delivered: 0 }
+    const overlay = sanitizeManagerDispositionDocuments({ documents: [{ expectedStore: 'Howell', data: source }], reportDate: bundle.reportDate, vehicles: bundle.release.vehicles })
+    // Another store's stock number is never this store's vehicle: no VIN, no
+    // physical store, and review required instead of a delivered match.
+    expect(overlay.records[0]).toMatchObject({ vin: null, vehicleName: null, matchMethod: 'not_matched', matchStatus: 'stock_not_in_current_release', physicalStore: null, reviewRequired: true })
+    expect(validateSanitizedManagerDispositionOverlay(overlay, { reportDate: bundle.reportDate, vehicles: bundle.release.vehicles })).toEqual(overlay.summary)
+    // A forged cross-store match fails validation against current public evidence.
+    const forged = structuredClone(overlay)
+    Object.assign(forged.records[0], { vin: elsewhere.vin, vehicleName: elsewhere.publicRecord.vehicle_name, matchMethod: 'unique_stock', matchStatus: 'matched', physicalStore: elsewhere.publicRecord.store, reviewRequired: false })
+    forged.summary = { ...forged.summary, matchedRecordCount: 1, unmatchedRecordCount: 0, reviewRecordCount: 0 }
+    expect(() => validateSanitizedManagerDispositionOverlay(forged, { reportDate: bundle.reportDate, vehicles: bundle.release.vehicles })).toThrow(/stock fallback is not unique|differs from current public evidence/)
   })
 
   it('fails closed for unknown/private fields, future delivery, altered matches, or impossible stripping claims', () => {
@@ -133,13 +152,7 @@ describe('strict manager disposition overlay', () => {
     }
   })
 
-  it('binds the sanitized projection and all four counts into cloud validation', () => {
-    const { bundle, source } = fixtures()
-    source.records.push({
-      stock_number: 'OFFMARKET-1', vin: '1FTFW1E50NFA00009', vehicle: 'off-market source text discarded',
-      sold_manager_log: true, delivered_manager_log: false, delivery_date: null, confidence: 'high',
-    })
-    source.summary = { sold_records: 4, delivered_records: 1, sold_not_marked_delivered: 3 }
+  function bindOverlay(bundle, source) {
     const overlay = sanitizeManagerDispositionDocuments({ documents: [{ expectedStore: 'Howell', data: source }], reportDate: bundle.reportDate, vehicles: bundle.release.vehicles })
     const rawHash = 'b'.repeat(64)
     bundle.release.managerDispositionOverlay = overlay
@@ -147,9 +160,20 @@ describe('strict manager disposition overlay', () => {
       type: 'manager_disposition_overlay', reportDate: bundle.reportDate, extractedAt: null,
       sha256: managerDispositionSha256(overlay), bytes: new TextEncoder().encode(canonicalManagerDispositionJson(overlay)).byteLength,
       schemaVersion: MANAGER_DISPOSITION_SCHEMA, status: 'current', staleReason: null, rowCount: overlay.summary.recordCount,
-      metadata: { classification: 'operational-redacted', cloudUploadAllowed: true, sourceCount: 1, sourceStores: ['Howell'], soldRecordCount: overlay.summary.soldRecordCount, deliveredRecordCount: overlay.summary.deliveredRecordCount, reviewRecordCount: overlay.summary.reviewRecordCount, strippedFieldCount: 1, sanitizer: 'strict_allowlist_v1', boundSourceSha256: rawHash },
+      metadata: { classification: 'operational-redacted', cloudUploadAllowed: true, sourceCount: 1, sourceStores: ['Howell'], soldRecordCount: overlay.summary.soldRecordCount, deliveredRecordCount: overlay.summary.deliveredRecordCount, reviewRecordCount: overlay.summary.reviewRecordCount, strippedFieldCount: overlay.sources[0].strippedFieldCount, sanitizer: 'strict_allowlist_v1', boundSourceSha256: rawHash },
     }
     bundle.release.manifest.manager_disposition_overlay = { status: 'complete', classification: 'operational-redacted', source_type: 'manager-log', path: `local-file:${bundle.reportDate.slice(0, 7)}-howell-operational.json`, sha256: rawHash, source_store: 'Howell', source_period: bundle.reportDate.slice(0, 7), sold_records: overlay.summary.soldRecordCount, delivered_records: overlay.summary.deliveredRecordCount, sold_not_marked_delivered: overlay.summary.soldNotMarkedDeliveredCount, matched_current_public_vins: overlay.summary.matchedRecordCount, unmatched_records: overlay.summary.unmatchedRecordCount, conflicting_records: overlay.summary.conflictingRecordCount, review_records: overlay.summary.reviewRecordCount, cloud_upload_allowed: true }
+    return overlay
+  }
+
+  it('binds the sanitized projection and all four counts into cloud validation', () => {
+    const { bundle, source } = fixtures()
+    source.records.push({
+      stock_number: 'OFFMARKET-1', vin: '1FTFW1E50NFA00009', vehicle: 'off-market source text discarded',
+      sold_manager_log: true, delivered_manager_log: false, delivery_date: null, confidence: 'high',
+    })
+    source.summary = { sold_records: 4, delivered_records: 1, sold_not_marked_delivered: 3 }
+    bindOverlay(bundle, source)
     const validated = validateReleaseBundle(bundle)
     expect(validated).toMatchObject({
       managerDispositionRecordCount: 4,
@@ -157,6 +181,8 @@ describe('strict manager disposition overlay', () => {
       managerDeliveredRecordCount: 1,
       managerDispositionReviewCount: 2,
       managerDeliveredExclusionCount: 1,
+      // The exact-VIN delivered row's vehicle is still in the public feed.
+      managerDeliveredListedExclusionCount: 1,
       managerPendingCarryoverCount: 0,
       managerPendingIdentityReviewCount: 1,
     })
@@ -164,5 +190,17 @@ describe('strict manager disposition overlay', () => {
     const tampered = structuredClone(bundle); tampered.release.managerDispositionOverlay.records[0].deliveryLabel = PRIVATE
     expect(() => validateReleaseBundle(tampered)).toThrow(/sanitized labels/)
     expect(JSON.stringify(bundle.release.managerDispositionOverlay)).not.toContain(PRIVATE)
+  })
+
+  it('keeps a delivered stock-number-only match in active inventory for identity review', () => {
+    const { bundle, current, source } = fixtures()
+    source.records = [{ stock_number: current[1].publicRecord.stock_number, vin: null, vehicle: 'stock-only delivered row', sold_manager_log: true, delivered_manager_log: true, delivery_date: bundle.reportDate, confidence: 'high' }]
+    source.summary = { sold_records: 1, delivered_records: 1, sold_not_marked_delivered: 0 }
+    const overlay = bindOverlay(bundle, source)
+    expect(overlay.records[0]).toMatchObject({ vin: current[1].vin, matchMethod: 'unique_stock', matchStatus: 'matched' })
+    const validated = validateReleaseBundle(bundle)
+    // Only a row that named the exact VIN may hide a vehicle.
+    expect(validated).toMatchObject({ managerDeliveredExclusionCount: 0, managerDeliveredListedExclusionCount: 0 })
+    expect(validated.activeInventoryCount).toBe(validated.publicRowCount)
   })
 })

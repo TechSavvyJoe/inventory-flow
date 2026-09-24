@@ -78,3 +78,25 @@ describe('Perplexity local Inventory Flow MCP bridge', () => {
     }
   })
 })
+
+describe('bridge credential file configuration', () => {
+  it('reads the token from the credential file that the integration client command writes', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { createRestInventoryClient } = await import('../../scripts/perplexity-inventory-mcp.mjs')
+    const directory = mkdtempSync(join(tmpdir(), 'inventory-flow-credential-'))
+    const credentialFile = join(directory, 'claude.json')
+    // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
+    writeFileSync(credentialFile, JSON.stringify({ clientId: 'synthetic', label: 'Synthetic', token: 'iflow_synthetic_test_token', scopes: ['inventory.read'], stores: ['Howell'], expiresAt: '2999-01-01T00:00:00.000Z' }))
+    expect(typeof createRestInventoryClient({ INVENTORY_FLOW_MCP_CREDENTIAL_FILE: credentialFile }).inventory).toBe('function')
+    // An explicit token still wins over the file.
+    expect(typeof createRestInventoryClient({ INVENTORY_FLOW_MCP_TOKEN: 'iflow_explicit', INVENTORY_FLOW_MCP_CREDENTIAL_FILE: join(directory, 'missing.json') }).inventory).toBe('function')
+    writeFileSync(credentialFile, JSON.stringify({ token: 'iflow_expired', expiresAt: '2020-01-01T00:00:00.000Z' }))
+    expect(() => createRestInventoryClient({ INVENTORY_FLOW_MCP_CREDENTIAL_FILE: credentialFile })).toThrow('INVENTORY_FLOW_MCP_TOKEN_EXPIRED')
+    writeFileSync(credentialFile, 'not json')
+    expect(() => createRestInventoryClient({ INVENTORY_FLOW_MCP_CREDENTIAL_FILE: credentialFile })).toThrow('INVENTORY_FLOW_MCP_TOKEN_REQUIRED')
+    expect(() => createRestInventoryClient({ INVENTORY_FLOW_MCP_CREDENTIAL_FILE: join(directory, 'missing.json') })).toThrow('INVENTORY_FLOW_MCP_TOKEN_REQUIRED')
+    expect(() => createRestInventoryClient({})).toThrow('INVENTORY_FLOW_MCP_TOKEN_REQUIRED')
+  })
+})

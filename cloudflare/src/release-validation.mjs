@@ -6,6 +6,7 @@ import {
   isFactoryCoverageRow,
   isOasisDate,
 } from '../../server/oasis-coverage-grammar.mjs'
+import { OASIS_VEHICLE_TEXT_FIELDS, OASIS_VEHICLE_TEXT_MAX_LENGTH } from '../../server/oasis-fields.mjs'
 
 // Portable validation for the encrypted daily evidence import. This module has
 // no filesystem, credentials, or source-fetching dependencies.
@@ -394,23 +395,25 @@ function validateServiceHistory(value) {
 
 // Ford OASIS vehicle report facts captured read-only from FMCDealer for an
 // exact VIN. Dates are validated as bounded printed text, never re-parsed. The
-// allow-list mirrors validatedFordOasis() in server/importer.mjs; prior-owner
-// names are never part of the capture and no such field is accepted here.
+// allow-list mirrors validatedFordOasis() in server/importer.mjs and shares its
+// vehicle text fields (server/oasis-fields.mjs); prior-owner names are never
+// part of the capture and no such field is accepted here.
 function validateFordOasis(value, vin) {
   onlyKeys(value, new Set([
-    'dataState', 'capturedAt', 'sourceLabel', 'vehicleDescription', 'versionSeries', 'buildDate',
-    'warrantyStartDate', 'releaseDate', 'monthsInService', 'saleMileage', 'openFieldServiceActions',
+    'dataState', 'capturedAt', 'sourceLabel', 'vehicleDescription', 'versionSeries', ...OASIS_VEHICLE_TEXT_FIELDS,
+    'buildDate', 'warrantyStartDate', 'releaseDate', 'monthsInService', 'saleMileage', 'openFieldServiceActions',
     'warrantyCoverages', 'extendedCoverageExpirations', 'openActionsCaptured', 'serviceHistory',
   ]), 'Ford OASIS record')
   ensure(RESOURCE_DATA_STATES.has(value.dataState), 'Ford OASIS data state is invalid')
   ensure(optionalTimestamp(value.capturedAt, 'Ford OASIS capturedAt'), 'Ford OASIS capturedAt is required')
   for (const [field, max] of [
-    ['sourceLabel', 160], ['vehicleDescription', 160], ['versionSeries', 120], ['buildDate', 40],
-    ['warrantyStartDate', 40], ['releaseDate', 40],
+    ['sourceLabel', 160], ['vehicleDescription', 160], ['versionSeries', 120],
+    ...OASIS_VEHICLE_TEXT_FIELDS.map((field) => [field, OASIS_VEHICLE_TEXT_MAX_LENGTH]),
+    ['buildDate', 40], ['warrantyStartDate', 40], ['releaseDate', 40],
   ]) {
     const text = optionalText(value[field], `Ford OASIS ${field}`, max)
     if (text && ['buildDate', 'warrantyStartDate', 'releaseDate'].includes(field)) ensure(isOasisDate(text), `Ford OASIS ${field} is not a recognized OASIS date`)
-    if (text && field === 'vehicleDescription') ensure(!containsForeignOasisText(text), 'Ford OASIS vehicleDescription contains non-vehicle material')
+    if (text && (field === 'vehicleDescription' || OASIS_VEHICLE_TEXT_FIELDS.includes(field))) ensure(!containsForeignOasisText(text), `Ford OASIS ${field} contains non-vehicle material`)
   }
   optionalInteger(value.monthsInService, 'Ford OASIS monthsInService', 0, 600)
   optionalInteger(value.saleMileage, 'Ford OASIS saleMileage', 0, 999_999)
@@ -810,12 +813,18 @@ function activeInventoryMembership(publicByVin, crmByVin, managerDispositionOver
   const activeVins = new Set([...publicByVin.keys(), ...crmByVin.keys()])
   const activeStoreCounts = Object.create(null)
   let managerDeliveredExclusionCount = 0
+  let managerDeliveredListedExclusionCount = 0
   let managerPendingIdentityReviewCount = 0
   for (const record of managerDispositionOverlay?.records ?? []) {
     const vin = typeof record?.vin === 'string' && VIN.test(record.vin) ? record.vin : null
     const conflicting = ['matched_vin_stock_review', 'stock_ambiguous'].includes(record?.matchStatus)
-    if (record?.deliveredManagerLog === true && vin && !conflicting) {
-      if (activeVins.delete(vin)) managerDeliveredExclusionCount += 1
+    // Mirrors server/service-core.mjs: only a delivered row that named this
+    // exact VIN hides it. A stock-number match stays active for identity review.
+    if (record?.deliveredManagerLog === true && record?.matchMethod === 'vin' && vin && !conflicting) {
+      if (activeVins.delete(vin)) {
+        managerDeliveredExclusionCount += 1
+        if (publicByVin.has(vin)) managerDeliveredListedExclusionCount += 1
+      }
       continue
     }
     if (record?.soldManagerLog === true && record?.deliveredManagerLog === false) {
@@ -832,6 +841,8 @@ function activeInventoryMembership(publicByVin, crmByVin, managerDispositionOver
     activeInventoryCount: activeVins.size,
     activeStoreCounts,
     managerDeliveredExclusionCount,
+    // Data health: hidden by the manager log while the public feed still lists it.
+    managerDeliveredListedExclusionCount,
     // Kept for receipt compatibility. Pending manager records no longer carry
     // a VIN back into active inventory after both current sources lose it.
     managerPendingCarryoverCount: 0,

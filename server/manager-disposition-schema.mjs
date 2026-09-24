@@ -140,7 +140,14 @@ function releaseIndexes(vehicles) {
   return { byVin, byStock }
 }
 
-function resolveMatch(stockNumber, sourceVin, indexes) {
+// Stock numbers are assigned per store, so the no-VIN fallback only looks at
+// vehicles the reporting store itself lists publicly. A stock number that
+// exists only at another store is not a match.
+function storeStockMatches(indexes, stockNumber, sourceStore) {
+  return (indexes.byStock.get(stockNumber) ?? []).filter((vehicle) => publicStore(vehicle) === sourceStore)
+}
+
+function resolveMatch(stockNumber, sourceVin, sourceStore, indexes) {
   let matchMethod = 'not_matched'
   let matchStatus = sourceVin ? 'not_in_current_release' : 'stock_not_in_current_release'
   let matchedVehicle = null
@@ -151,7 +158,7 @@ function resolveMatch(stockNumber, sourceVin, indexes) {
       matchStatus = vehicleStocks(matchedVehicle).includes(stockNumber) ? 'matched' : 'matched_vin_stock_review'
     }
   } else {
-    const stockMatches = indexes.byStock.get(stockNumber) ?? []
+    const stockMatches = storeStockMatches(indexes, stockNumber, sourceStore)
     if (stockMatches.length === 1) {
       matchMethod = 'unique_stock'
       matchStatus = 'matched'
@@ -215,7 +222,7 @@ function sanitizeInputRecord(value, document, indexes) {
   else ensure(deliveryDate === null, 'a record not marked delivered cannot carry a delivery date')
   ensure(typeof value.confidence === 'string' && CONFIDENCE.has(value.confidence), 'confidence is unsupported')
 
-  const matched = resolveMatch(stockNumber, sourceVin, indexes)
+  const matched = resolveMatch(stockNumber, sourceVin, document.source_store, indexes)
   return {
     stockNumber,
     vin: matched.vin,
@@ -354,10 +361,10 @@ export function validateSanitizedManagerDispositionOverlay(overlay, { reportDate
       seenMatchedVin.add(vin)
       const matched = indexes.byVin.get(vin)
       ensure(record.physicalStore === publicStore(matched), 'sanitized physical store differs from current public evidence')
-      if (record.matchMethod === 'unique_stock') ensure((indexes.byStock.get(stockNumber) ?? []).length === 1, 'sanitized stock fallback is not unique')
+      if (record.matchMethod === 'unique_stock') ensure(storeStockMatches(indexes, stockNumber, record.sourceStore).length === 1, 'sanitized stock fallback is not unique')
     }
     const sourceVin = record.matchMethod === 'vin' ? vin : null
-    const expectedMatch = resolveMatch(stockNumber, sourceVin, indexes)
+    const expectedMatch = resolveMatch(stockNumber, sourceVin, record.sourceStore, indexes)
     ensure(record.vin === expectedMatch.vin, 'sanitized VIN does not match current public evidence')
     ensure(record.matchMethod === expectedMatch.matchMethod && record.matchStatus === expectedMatch.matchStatus, 'sanitized match result differs from current public evidence')
     ensure(record.physicalStore === expectedMatch.physicalStore && record.reviewRequired === expectedMatch.reviewRequired, 'sanitized store/review result differs from current public evidence')

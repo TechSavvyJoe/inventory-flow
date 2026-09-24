@@ -1,6 +1,6 @@
 import { useId, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
 import { Search, X } from 'lucide-react'
-import { searchFieldsMatch } from '../features/inventory/inventory-search'
+import { searchFieldsMatch } from '../lib/search'
 import './PredictiveSearchInput.css'
 
 export interface PredictiveSearchCandidate {
