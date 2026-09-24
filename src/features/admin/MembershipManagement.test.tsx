@@ -31,7 +31,9 @@ describe('MembershipManagement role choices', () => {
 
   it('offers only salesperson, store manager, and group manager for new employees', async () => {
     render(<MembershipManagement role="group_manager" store="Howell" onSaved={vi.fn()} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Add employee' }))
+    const addEmployee = screen.getByRole('button', { name: 'Add employee' })
+    await waitFor(() => expect(addEmployee).toBeEnabled())
+    fireEvent.click(addEmployee)
     const picker = screen.getByLabelText('Role')
     expect(within(picker).getAllByRole('option').map(option => option.textContent)).toEqual([
       'Salesperson', 'Store manager', 'Group manager',
