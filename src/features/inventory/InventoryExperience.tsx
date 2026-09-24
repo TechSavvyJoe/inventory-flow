@@ -631,7 +631,7 @@ export function InventoryExperience({
         <div className="if-srp-heading-grid">
         <header className="if-srp-header">
           <div>
-            <h1 aria-label={scope === "group" ? "All locations inventory" : title}><span className="if-srp-title-full">{scope === "group" ? "All locations inventory" : title}</span><span className="if-srp-title-mobile" aria-hidden="true">Inventory</span></h1>
+            <h1 aria-label={scope === "group" ? "All locations inventory" : title}>Inventory</h1>
           </div>
           <ScopeSwitch homeStore={homeStore} scope={scope} homeCount={homeVehicleCount} groupCount={groupVehicleCount} onChange={setScope} />
         </header>

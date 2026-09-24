@@ -93,6 +93,30 @@ test('every operational page fits a compact phone and a short landscape viewport
   expect(errors).toEqual([])
 })
 
+test('the selected workspace tab stays fully visible on direct entry, resize and keyboard navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/inventory?vin=TESTDATAHWELL0001&tab=hold')
+  const tabs = page.getByRole('tablist', { name: 'Vehicle workspace sections' })
+  const selected = tabs.getByRole('tab', { selected: true })
+  const selectedFits = async () => {
+    const tab = await selected.boundingBox()
+    const strip = await tabs.boundingBox()
+    return Boolean(tab && strip && tab.x >= strip.x - 1 && tab.x + tab.width <= strip.x + strip.width + 1)
+  }
+  await expect(selected).toHaveText('Holds & moves')
+  await expect.poll(selectedFits).toBe(true)
+  await page.setViewportSize({ width: 320, height: 568 })
+  await expect.poll(selectedFits).toBe(true)
+  await selected.focus()
+  await page.keyboard.press('End')
+  await expect(selected).toHaveText('Activity')
+  await expect.poll(selectedFits).toBe(true)
+  await page.keyboard.press('Home')
+  await expect(selected).toHaveText('Overview')
+  await expect.poll(selectedFits).toBe(true)
+  await fits(page)
+})
+
 test('a phone vehicle workspace remains usable after rotation and a keyboard-sized viewport', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/inventory?vin=TESTDATAHWELL0002')

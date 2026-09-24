@@ -115,6 +115,8 @@
 
   --ifx-border-subtle: var(--ifx-neutral-200);
   --ifx-border-control: var(--ifx-neutral-300);
+  --ifx-line-hairline: 1px;
+  --ifx-line-selection: 2px;
   --ifx-control-height-sm: 36px;
   --ifx-control-height-md: 44px;
   --ifx-control-height-lg: 48px;

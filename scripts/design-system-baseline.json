@@ -172,7 +172,7 @@
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 0,
-      "idSelectors": 45
+      "idSelectors": 43
     },
     "src/features/inventory/inventory-modern.css": {
       "smallText": 51,
@@ -247,7 +247,7 @@
     "src/features/inventory/InventoryTable.desk.css": {
       "smallText": 0,
       "rawColors": 0,
-      "rgbHslColors": 5,
+      "rgbHslColors": 2,
       "important": 1,
       "idSelectors": 0
     },

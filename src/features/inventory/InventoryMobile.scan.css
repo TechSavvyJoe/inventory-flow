@@ -78,9 +78,9 @@
 }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action:hover { background:var(--blue-050); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action--records {
-  gap:5px; border-color:var(--navy-900); color:var(--surface); background:var(--navy-900);
+  gap:var(--ifx-space-1); border-color:var(--border-strong); color:var(--blue-700); background:var(--surface);
 }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action--records:is(:hover,:focus-visible,:active,[aria-expanded="true"]) { border-color:var(--blue-700); color:var(--surface); background:var(--blue-700); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action--records:is(:hover,:focus-visible,:active,[aria-expanded="true"]) { border-color:var(--blue-700); color:var(--blue-700); background:var(--blue-050); }
 .if-srp-mobile-list .inv-desk-action--records > svg { flex-shrink:0; transition:transform .16s ease; }
 .if-srp-mobile-list .inv-desk-action--records > svg.is-expanded { transform:rotate(180deg); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__actions [data-row-action="listing"] { margin:0; padding-inline:0; gap:3px; }

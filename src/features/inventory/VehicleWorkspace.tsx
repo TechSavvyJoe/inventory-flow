@@ -777,6 +777,24 @@ export function VehicleWorkspace({
     }
     pendingFocus.current = null;
   }, [activeTarget, vehicle.id]);
+  useLayoutEffect(() => {
+    const tab = activeTabRef.current;
+    const strip = tab?.parentElement;
+    if (!tab || !strip) return;
+    // Reveal the active section without moving the page or the content pane.
+    // Resize observation also covers a rotation or a changing service label.
+    const reveal = () => {
+      const bounds = tab.getBoundingClientRect();
+      const visible = strip.getBoundingClientRect();
+      if (bounds.left < visible.left) strip.scrollLeft += bounds.left - visible.left;
+      else if (bounds.right > visible.right) strip.scrollLeft += bounds.right - visible.right;
+    };
+    reveal();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(reveal);
+    observer.observe(strip);
+    return () => observer.disconnect();
+  }, [activePage, vehicle.id]);
   useContainedFocus({
     // Stays active while the Take-home sheet is open: the hook yields Escape and
     // Tab to the nested aria-modal sheet, and toggling it off re-ran the initial
