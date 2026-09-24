@@ -642,7 +642,6 @@ export function InventoryExperience({
             vehicles={searchableVehicles}
             value={query}
             onChange={setSearchQuery}
-            matches={searchMatches}
             onSelectVehicle={(vehicle) => {
               if (vehicle.location.homeStore.id !== homeStore.id) setScope("group");
               openVehicleWorkspace(vehicle);

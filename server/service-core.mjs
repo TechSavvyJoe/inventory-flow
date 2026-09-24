@@ -242,7 +242,7 @@ function managerDeliveryHidesVin(row) {
 function managerIdentityReviewRecord(row) {
   if (row?.soldManagerLog !== true) return false
   if (row?.deliveredManagerLog === false) return !row?.vin || MANAGER_IDENTITY_CONFLICTS.has(row?.matchStatus)
-  return row?.deliveredManagerLog === true && Boolean(row?.vin) && !managerDeliveryHidesVin(row)
+  return row?.deliveredManagerLog === true && !managerDeliveryHidesVin(row)
 }
 
 /**
