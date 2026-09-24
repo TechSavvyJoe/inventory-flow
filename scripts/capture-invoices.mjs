@@ -156,6 +156,8 @@ console.log(JSON.stringify({
   fordLincolnVins: vins.length, attempted: queue.length, processed: results.length - prior.length,
   reused: reused.size, tally, stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), folder
 }))
-await closeDuplicateTabs(ORIGIN, { pathIncludes: '/vinv/GetInvoice.aspx', keepTabId: context?.tab?.id })
-await closeOwnedTab(context)
+if (context) {
+  await closeDuplicateTabs(ORIGIN, { pathIncludes: '/vinv/GetInvoice.aspx', keepTabId: context.tab?.id })
+  await closeOwnedTab(context)
+}
 process.exit(stopped ? 1 : 0)
