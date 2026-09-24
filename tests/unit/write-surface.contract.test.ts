@@ -145,7 +145,10 @@ describe('Worker write surface', () => {
 
   it('accepts POST on exactly the documented write branches', async () => {
     for (const branch of WRITE_BRANCHES) {
-      const write = validWrite(branch, ids, cloud.revision())
+      // The membership directory's optimistic lock is the append-only
+      // membership-events count, not the generic app revision every other
+      // branch uses; see membership-admin.mjs's readMembershipAdmin.
+      const write = validWrite(branch, ids, branch === '/api/admin/members' ? cloud.count('cloud_membership_events') : cloud.revision())
       const before = cloud.revision()
       const response = await cloud.call('POST', write.path, members[write.as].email, write.body)
       expect(response.status, `${branch}: ${JSON.stringify(response.json)}`).toBeGreaterThanOrEqual(200)
