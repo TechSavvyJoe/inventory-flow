@@ -7,6 +7,7 @@ import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { isMainModule } from './lib/is-main.mjs'
 
 const require = createRequire(import.meta.url)
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -50,7 +51,7 @@ function main(argv) {
   if (result.error || result.status !== 0) throw new Error('WRANGLER_DEPLOY_FAILED')
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (isMainModule(import.meta.url)) {
   try { main(process.argv.slice(2)) } catch (error) {
     process.stderr.write(`${error.message}\n`)
     process.exit(1)

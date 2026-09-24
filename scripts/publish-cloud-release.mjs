@@ -1,9 +1,10 @@
 import { createCipheriv, createHash, randomBytes } from 'node:crypto'
 import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { loadLatestCompletedRelease } from '../server/importer.mjs'
 import { RELEASE_FORMAT, validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
+import { isMainModule } from './lib/is-main.mjs'
 
 const APP_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
 const PRIVATE_HOSTNAME = 'inventory-ops.joegallant.me'
@@ -172,7 +173,7 @@ export async function main() {
   process.stdout.write(`${payload.status}: ${payload.reportDate}\n`)
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     process.stderr.write(`Cloud release was not published: ${error.message}\n`)
     process.exitCode = 1
