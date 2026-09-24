@@ -37,3 +37,12 @@ captures and compares the production build in its pinned Linux container.
 The changes edit existing component styles and tighten the design-system debt
 baseline. They add no stylesheet forks, ID selectors, important overrides, source
 writes or production deployment. Main and the Phase 3 lane remain untouched.
+
+## Visual source pin
+
+The visual source is the immutable layout commit
+`e2e4f489ba405ce79ec9a65577166d43dc3464d8`. This is an intentional replacement of
+the old boxed inventory/workspace layout, supported by the synthetic review
+above and the review-only capture in GitHub run `36067636723`. The Playwright
+version, container image, complete 32-state requirement and pixel comparison
+thresholds remain unchanged.
