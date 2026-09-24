@@ -778,7 +778,10 @@ export function VehicleWorkspace({
     pendingFocus.current = null;
   }, [activeTarget, vehicle.id]);
   useContainedFocus({
-    active: !takeHomeOpen, contain: true, containerRef: workspaceRef, initialFocusRef: activeTabRef,
+    // Stays active while the Take-home sheet is open: the hook yields Escape and
+    // Tab to the nested aria-modal sheet, and toggling it off re-ran the initial
+    // focus on close, stealing focus from the Take-home button.
+    active: true, contain: true, containerRef: workspaceRef, initialFocusRef: activeTabRef,
     returnFocusRef, onEscape: onClose,
   });
 
