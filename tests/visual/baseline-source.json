@@ -1,0 +1,5 @@
+{
+  "sourceCommit": "4cdf3b0875b134bebf85612037d065ccc19ee308",
+  "playwrightVersion": "1.62.1",
+  "containerImage": "mcr.microsoft.com/playwright:v1.62.1-noble"
+}

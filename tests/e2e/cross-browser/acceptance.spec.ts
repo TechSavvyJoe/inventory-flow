@@ -364,7 +364,9 @@ test('five-column comparison uses each row for a clear photo and high-value scan
     await route.fulfill({ response, json: payload })
   })
   await page.goto('/inventory')
-  const main = page.locator('.inv-desk-table .inv-desk-row').first()
+  // This fixture's document facts belong to this VIN; movement sorting can put
+  // another vehicle first without changing the comparison-row contract.
+  const main = page.getByRole('row', { name: /TESTDATAHWELL0001/ })
   // The redesigned desktop scan consolidates configuration and equipment into
   // one useful column rather than restoring a sixth narrow, low-value column.
   await expect(page.locator('.inv-desk-table thead th')).toHaveCount(5)

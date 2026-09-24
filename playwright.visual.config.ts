@@ -8,15 +8,18 @@ import { defineConfig } from '@playwright/test'
 // .github/workflows/ci.yml). The Mac has neither — branded Chrome locally,
 // no Docker — so `channel` is hard-coded to `undefined` (never the local
 // 'chrome' channel other configs use) and this suite is never expected to
-// produce a passing baseline comparison outside that container. A plain
-// `pnpm test:e2e` never touches this config, so it never writes -darwin
-// snapshots here by accident.
+// produce a passing baseline comparison outside that container. CI reconstructs
+// snapshots from the immutable source pin; see docs/VISUAL_BASELINES.md.
 const port = process.env.INVENTORY_VISUAL_PORT ?? '4575'
 const baseURL = `http://127.0.0.1:${port}`
 
 export default defineConfig({
   testDir: './tests/visual',
   testMatch: '**/*.spec.ts',
+  snapshotPathTemplate: '{testDir}/../../test-results/visual-baselines/{arg}-{projectName}-{platform}{ext}',
+  // Missing expectations fail closed. Only the explicit review-capture job or
+  // the pinned-source preparation worktree may write baseline PNGs.
+  updateSnapshots: process.env.INVENTORY_VISUAL_BASELINE_CAPTURE === '1' ? 'all' : 'none',
   outputDir: process.env.CI ? 'test-results/visual' : '/tmp/inventory-flow-qa/visual',
   // Isolated in-memory ledger per run — the default e2e suite POSTs transfers
   // and adds a Date.now()-named member, so the visual spec (read-only) never

@@ -176,7 +176,10 @@ jobs:
       - name: Run the visual-regression gate
         env:
           PLAYWRIGHT_BUNDLED_CHROMIUM: '1'
-        run: pnpm exec playwright test --config playwright.visual.config.ts
+          INVENTORY_VISUAL_CONTAINER: mcr.microsoft.com/playwright:v1.62.1-noble
+        run: |
+          node scripts/prepare-visual-baselines.mjs
+          pnpm exec playwright test --config playwright.visual.config.ts
 
       - name: Upload the Playwright report
         if: failure()
@@ -189,13 +192,10 @@ jobs:
           retention-days: 7
 
   update-visual-baselines:
-    # The only re-baseline path. Manually triggered (Actions tab -> this
-    # workflow -> Run workflow) after a deliberate, reviewed visual change;
-    # never runs on a schedule or a push, so it never silently repins a
-    # regression. Download the uploaded snapshots artifact and commit its
-    # contents at tests/visual/app.visual.spec.ts-snapshots/ yourself — this
-    # job does not push, keeping `permissions: contents: read` for the whole
-    # workflow.
+    # Review-only candidate capture after a deliberate visual change. Review
+    # the artifact, then propose its source SHA in baseline-source.json through
+    # a separate reviewed change. Never commit PNGs or automatically advance
+    # the source pin; see docs/VISUAL_BASELINES.md.
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'update-visual-baselines'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -228,13 +228,14 @@ jobs:
       - name: Regenerate visual baselines
         env:
           PLAYWRIGHT_BUNDLED_CHROMIUM: '1'
+          INVENTORY_VISUAL_BASELINE_CAPTURE: '1'
         run: pnpm exec playwright test --config playwright.visual.config.ts --update-snapshots
 
       - name: Upload regenerated snapshots
         uses: actions/upload-artifact@v4
         with:
           name: visual-snapshots
-          path: tests/visual/app.visual.spec.ts-snapshots/
+          path: test-results/visual-baselines/
           retention-days: 14
 
   cross-browser-nightly:

@@ -23,10 +23,16 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-test('mobile inventory keeps its place while a records sheet opens and switches vehicles', async ({ page }) => {
-  for (const width of [320, 390]) {
+for (const width of [320, 390]) {
+  test(`mobile inventory keeps its place while a records sheet opens and switches vehicles at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 })
     await page.goto('/inventory?scope=home')
+    // The sheet's next/previous order follows the list. Select the order this
+    // scenario needs instead of depending on changing movement evidence.
+    await page.getByRole('button', { name: /^Sort inventory\./ }).click()
+    await page.getByRole('combobox', { name: 'Sort priority 1 field' }).selectOption('stock')
+    await page.getByRole('button', { name: 'Stock: change to ascending', exact: true }).click()
+    await page.getByRole('button', { name: 'Close sort options', exact: true }).click()
     const rows = page.locator('.if-srp-mobile-row--scan')
     await expect(rows).toHaveCount(2)
     const first = rows.first()
@@ -59,8 +65,8 @@ test('mobile inventory keeps its place while a records sheet opens and switches 
     await expect(toggle).toBeFocused()
     expect((await first.boundingBox())!.height).toBeCloseTo(initialHeight, 0)
     await expect(page).toHaveURL(url)
-  }
-})
+  })
+}
 
 test('every operational page fits a compact phone and a short landscape viewport', async ({ page }) => {
   const errors: string[] = []
@@ -99,16 +105,38 @@ test('a phone vehicle workspace remains usable after rotation and a keyboard-siz
       const bounds = (await workspace.boundingBox())!
       expect(Math.abs(bounds.x)).toBeLessThanOrEqual(1)
       expect(Math.abs(bounds.width - viewport.width)).toBeLessThanOrEqual(1)
+      // Since the density refinement the tabs form one horizontal scroll strip.
+      // Each section must be reachable and select successfully on a short phone;
+      // the five full-size targets are not meant to fit side by side at 320px.
       for (const name of ['Overview', 'Equipment', 'Records', 'Holds & moves', 'Activity']) {
-        await expect(workspace.getByRole('tab', { name, exact: true })).toBeInViewport()
+        const tab = workspace.getByRole('tab', { name, exact: true })
+        await tab.scrollIntoViewIfNeeded()
+        await tab.click()
+        await expect(tab).toBeInViewport()
+        await expect(tab).toHaveAttribute('aria-selected', 'true')
       }
+      await workspace.getByRole('tab', { name: 'Overview', exact: true }).click()
       for (const value of await workspace.locator('.vdp-focus-identifiers .copyable-value__content').all()) {
         const content = (await value.boundingBox())!
         expect(content.x + content.width).toBeLessThanOrEqual(viewport.width)
         await expect(value).toHaveCSS('white-space', 'nowrap')
       }
-      for (const fact of await workspace.locator('.vdp-focus-operations dd:visible').all()) {
-        expect((await fact.boundingBox())!.width).toBeGreaterThan(120)
+      // Operations now leads the overview in two columns. Preserve readable,
+      // unclipped facts rather than the retired one-column minimum width.
+      const operations = workspace.getByRole('region', { name: 'Vehicle operational summary' })
+      for (const fact of await operations.getByRole('definition').all()) {
+        await expect(fact).toBeVisible()
+        const dimensions = await fact.evaluate(element => ({
+          fontSize: parseFloat(getComputedStyle(element).fontSize),
+          width: element.clientWidth,
+          contentWidth: element.scrollWidth,
+          height: element.clientHeight,
+          contentHeight: element.scrollHeight,
+        }))
+        expect(dimensions.fontSize).toBeGreaterThanOrEqual(12)
+        expect(dimensions.width).toBeGreaterThan(0)
+        expect(dimensions.contentWidth).toBeLessThanOrEqual(dimensions.width + 1)
+        expect(dimensions.contentHeight).toBeLessThanOrEqual(dimensions.height + 1)
       }
     }
     await workspace.getByRole('tab', { name: 'Records', exact: true }).click()
