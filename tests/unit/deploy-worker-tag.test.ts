@@ -1,3 +1,4 @@
+// @ts-nocheck -- portable ESM script module.
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'

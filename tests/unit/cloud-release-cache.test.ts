@@ -1,3 +1,4 @@
+// @ts-nocheck -- Worker ESM uses the nodejs_compat Buffer implementation.
 // @vitest-environment node
 import { randomBytes } from 'node:crypto'
 import { describe, it, expect, beforeEach } from 'vitest'
