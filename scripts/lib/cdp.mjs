@@ -80,6 +80,7 @@ export async function getOriginTab(origin, landingUrl, {
 } = {}) {
   const list = await targets()
   const probeExpression = `({ host: location.host, href: location.href.slice(0, 200), ready: document.readyState, title: document.title.slice(0, 120) })`
+  const stale = []
   for (const candidate of list.filter(t => t.type === 'page' && (t.url || '').startsWith(origin + '/'))) {
     let candidatePage
     try {
@@ -89,8 +90,18 @@ export async function getOriginTab(origin, landingUrl, {
       })
       const state = await candidatePage.evalJs(probeExpression, { timeoutMs: 5000 })
       if (state?.href?.startsWith(origin)) return { page: candidatePage, tab: candidate, opened: false, state }
-    } catch {}
+    } catch { stale.push(candidate) }
     try { candidatePage?.close() } catch {}
+  }
+
+  // A failed renderer is the only existing tab we are willing to remove here.
+  // Healthy tabs may belong to the signed-in user and must remain available.
+  for (const candidate of stale) {
+    try {
+      await fetch(`http://127.0.0.1:${PORT}/json/close/${encodeURIComponent(candidate.id)}`, {
+        method: 'POST', signal: AbortSignal.timeout(5000),
+      })
+    } catch {}
   }
 
   let tab = null
@@ -128,15 +139,64 @@ export async function getOriginTab(origin, landingUrl, {
     if (st && st.ready === 'complete' && (st.href.startsWith(origin) || !navigated)) break
     await sleep(1000)
   }
-  return { page, tab, opened, state: st || await probe() }
+  // A reused blank page becomes owned by this capture. `opened` remains false
+  // for callers that use it as a navigation signal, while `owned` tells the
+  // cleanup helper that the tab itself should be closed at the end.
+  return { page, tab, opened, owned: true, state: st || await probe() }
 }
 
 export async function closeOwnedTab(context) {
   if (!context) return
-  if (context.opened) {
+  if (context.owned || context.opened) {
     try { await context.page?.call('Page.close', {}, { timeoutMs: 5000 }) } catch {}
   }
   try { context.page?.close() } catch {}
+}
+
+// Close only source tabs whose renderer no longer answers CDP commands. This
+// is intentionally conservative: healthy origin tabs, including login tabs,
+// are left alone for the user's next run.
+export async function closeUnresponsiveOriginTabs(origin) {
+  const list = await targets()
+  for (const candidate of list.filter(t => t.type === 'page' && (t.url || '').startsWith(origin + '/'))) {
+    let page
+    try {
+      page = await connect(candidate.webSocketDebuggerUrl, { timeoutMs: 5000, connectTimeoutMs: 3000 })
+      await page.evalJs('document.readyState', { timeoutMs: 3000 })
+    } catch {
+      try {
+        await fetch(`http://127.0.0.1:${PORT}/json/close/${encodeURIComponent(candidate.id)}`, {
+          method: 'POST', signal: AbortSignal.timeout(5000),
+        })
+      } catch {}
+    } finally {
+      try { page?.close() } catch {}
+    }
+  }
+  await sleep(300)
+}
+
+// Keep one operational page for a source workflow. The path filter is
+// required so login, menu, and other user-opened pages on the same origin are
+// never treated as duplicates.
+export async function closeDuplicateTabs(origin, { pathIncludes = '', keepTabId = null } = {}) {
+  const list = await targets()
+  const matches = list.filter((candidate) => candidate.type === 'page' &&
+    (candidate.url || '').startsWith(origin + '/') &&
+    (!pathIncludes || (candidate.url || '').includes(pathIncludes)))
+  if (matches.length < 2) return 0
+  const keep = matches.find((candidate) => candidate.id === keepTabId) || matches[0]
+  let closed = 0
+  for (const candidate of matches) {
+    if (candidate.id === keep.id) continue
+    try {
+      const response = await fetch(`http://127.0.0.1:${PORT}/json/close/${encodeURIComponent(candidate.id)}`, {
+        method: 'POST', signal: AbortSignal.timeout(5000),
+      })
+      if (response.ok) closed++
+    } catch {}
+  }
+  return closed
 }
 
 // Credentialed fetch performed by the page itself. Text responses come back as text; binary

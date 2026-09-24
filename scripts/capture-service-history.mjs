@@ -3,7 +3,7 @@
 // No customer/owner name, complaint, technician, or free-form identity field is collected.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { PTS_REPAIR_ORDER_DETAILS_URL, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { PTS_REPAIR_ORDER_DETAILS_URL, closeDuplicateTabs, closeOwnedTab, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import {
   parseServiceHistoryDetails,
@@ -128,10 +128,11 @@ const tally = { OK: 0, NO_HISTORY: 0, PRIOR_HISTORY_PRESERVED: 0, INCOMPLETE: 0,
 const startedAt = Date.now()
 if (queue.length) {
   context = await getOriginTab(ORIGIN, HISTORY_URL(queue[0].vin), { settleMs: 60000 }).catch(() => null)
+  await closeDuplicateTabs(ORIGIN, { pathIncludes: '/VehicleService/', keepTabId: context?.tab?.id })
   const host = String(context?.state?.host || '')
   if (!context || host !== 'www.fordtechservice.dealerconnection.com') {
     sessionStatus = /microsoftonline|login|signin/i.test(host) ? 'session_expired' : 'unavailable'
-    try { context?.page?.close() } catch {}
+    await closeOwnedTab(context)
     console.log(JSON.stringify({ sessionStatus, captured: out.records.length, queued: queue.length, out: outPath }))
     process.exit(1)
   }
@@ -286,7 +287,8 @@ for (const item of queue) {
 }
 
 save()
-try { context?.page?.close() } catch {}
+await closeDuplicateTabs(ORIGIN, { pathIncludes: '/VehicleService/', keepTabId: context?.tab?.id })
+await closeOwnedTab(context)
 const resultByVin = new Map(out.records.map((record) => [record.vin, record]))
 const complete = worklist.every((item) => completeResults.has(resultByVin.get(item.vin)?.result)) && !stoppedReason
 console.log(JSON.stringify({

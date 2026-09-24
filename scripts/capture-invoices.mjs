@@ -18,7 +18,7 @@
 import { copyFileSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
-import { getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
+import { closeDuplicateTabs, closeOwnedTab, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import { reusableInvoices, savedInvoicePdf } from './lib/invoice-cache.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
@@ -68,12 +68,16 @@ const queue = vins.filter(v => !priorVins.has(v)).slice(0, max)
 
 const t0 = Date.now()
 let page = null
+let context = null
 if (queue.length) {
-  const ctx = await getOriginTab(ORIGIN, ORIGIN + '/', { settleMs: 45000 })
-  if (!ctx.state || !ctx.state.host.includes('fordvisions')) {
-    console.log(JSON.stringify({ sessionStatus: 'unavailable', detail: 'no fordvisions tab' })); process.exit(1)
+  context = await getOriginTab(ORIGIN, ORIGIN + '/', { settleMs: 45000 })
+  await closeDuplicateTabs(ORIGIN, { pathIncludes: '/vinv/GetInvoice.aspx', keepTabId: context.tab?.id })
+  if (!context.state || !context.state.host.includes('fordvisions')) {
+    console.log(JSON.stringify({ sessionStatus: 'unavailable', detail: 'no fordvisions tab' }))
+    await closeOwnedTab(context)
+    process.exit(1)
   }
-  page = ctx.page
+  page = context.page
 }
 
 // --- the SSO handshake (see header) -----------------------------------------
@@ -88,6 +92,7 @@ if (queue.length) {
   if (!authed) {
     console.log(JSON.stringify({ sessionStatus: 'session_expired',
       detail: 'MSAL SSO did not complete - sign in to fordvisions.dealerconnection.com in the Work PC Automation Browser' }))
+    await closeOwnedTab(context)
     process.exit(1)
   }
 }
@@ -151,5 +156,6 @@ console.log(JSON.stringify({
   fordLincolnVins: vins.length, attempted: queue.length, processed: results.length - prior.length,
   reused: reused.size, tally, stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), folder
 }))
-try { page?.close() } catch {}
+await closeDuplicateTabs(ORIGIN, { pathIncludes: '/vinv/GetInvoice.aspx', keepTabId: context?.tab?.id })
+await closeOwnedTab(context)
 process.exit(stopped ? 1 : 0)
