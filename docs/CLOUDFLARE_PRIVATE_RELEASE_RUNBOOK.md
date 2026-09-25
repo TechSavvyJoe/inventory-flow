@@ -67,14 +67,28 @@ Query strings are redacted from platform error telemetry.
 
 ## Deployment
 
-From the app repository, on an explicitly authorized deployment host:
+Production Worker deployment and migration-ledger backfill are Joe-only operations. From the reviewed clean app checkout on Joe's controlled deployment host:
 
 ```powershell
 pnpm install --frozen-lockfile
-pnpm check
-pnpm cloud:validate
-pnpm cloud:deploy
+pnpm cloud:release
 ```
+
+`pnpm cloud:release` runs `pnpm check` (including the production build), then
+`pnpm cloud:validate`, then a read-only remote D1 migration preflight using the
+named `INVENTORY_DB` binding and the app Wrangler config. It verifies that
+`d1_migrations` exists and that every local migration filename is recorded.
+Missing ledger, pending migrations, malformed output, or a failed query stops
+the release before a deploy. It never applies schema files or backfills the
+ledger. A filename check does not replace Joe's verification of the actual schema.
+
+After those gates, the wrapper deploys the app Worker and then integrations with
+the same resolved commit tag. A failed app deploy prevents the integrations
+attempt. If integrations fails after the app succeeds, the release is partial;
+there is no automatic rollback. Record both versions and let Joe choose a
+reviewed retry or explicit rollback before declaring the release complete.
+`pnpm cloud:deploy` and `pnpm integrations:deploy` retain the same gates for
+deliberate single-Worker recovery. See the [deploy checklist](DEPLOY_CHECKLIST.md).
 
 `pnpm cloud:validate` is offline: it checks the Worker modules and applies the
 numbered migration files only to an in-memory SQLite database. It never contacts
@@ -82,11 +96,15 @@ Cloudflare or writes to D1.
 
 Do **not** run `pnpm cloud:d1:migrate` or a generic
 `wrangler d1 migrations apply` against the current production database. Its
-original migrations were applied outside Wrangler's migration ledger, and
+original migrations were applied outside Wrangler's migration ledger. An empty
+or absent ledger now intentionally blocks the release wrapper: Joe must verify
+the installed schema and complete a separately reviewed ledger backfill first.
+This repository change does not claim that production backfill is complete.
+In particular,
 `0003_transport_assignment_identity.sql` contains non-idempotent column adds;
 a generic apply would stop partway through and leave a misleading partial
-ledger. Apply a reviewed future schema file as one explicit, authorized
-single-file operation, verify the resulting schema, then deploy. For the
+ledger. Joe must apply a reviewed future schema file as one explicit
+single-file operation, verify the resulting schema and ledger entry, then deploy. For the
 service-readiness release, apply `0007_service_readiness.sql` first and
 `0008_service_intake.sql` second before deploying the Worker that reads them.
 The 1.2.0 employee-management release also requires the exact reviewed
