@@ -129,12 +129,18 @@ multi-employee operation remain separately unverified.
 
 ## Local validation — September 25, 2026
 
+Validated implementation: `131dc51363643cd0219be694212e43f89720929d`.
+Later documentation-only commits record the results below.
+
 - Frozen dependency installation passed. The final `VITEST_MAX_WORKERS=2 pnpm
   check` passed 2,488 tests in 175 files, type checking, repository safety,
   the design-system guard, production build and companion packaging.
 - `pnpm cloud:validate` applied all 12 migrations to an in-memory database.
   No production migration ran.
 - `pnpm test:e2e` passed all 42 existing browser tests.
+- `pnpm exec playwright test --config playwright.cross-browser.config.ts`
+  passed 110 tests across Chromium desktop/Android, Firefox desktop and WebKit
+  desktop/mobile, with 5 intentional layout-specific skips (7.4 minutes).
 - A fresh production-build synthetic server also confirmed that the actual
   HTTP bootstrap disables reporting and the vehicle workspace exposes no
   inactive report button or Issues tab when it has no existing issue history.
