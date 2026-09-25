@@ -2,27 +2,27 @@
 
 Use this before every production deploy of `inventory-ops-production` (app) and/or `inventory-flow-integrations` (integrations). Both Workers must ship from the **same commit**; do not deploy one ahead of the other except for an intentional rollback. Background on the current deployed state, prior version IDs, and known gaps is in [Shared-data deployment log](SHARED_DATA_DEPLOYMENT.md) — append to that log after every deploy covered by this checklist. Architecture context is in [Shared-data architecture](SHARED_DATA_ARCHITECTURE.md).
 
-Both `wrangler.jsonc` files now configure a [`version_metadata`](https://developers.cloudflare.com/workers/runtime-apis/bindings/version-metadata/) binding (`CF_VERSION_METADATA`), and `pnpm cloud:deploy` / `pnpm integrations:deploy` run `scripts/deploy-worker.mjs`, which resolves the git short SHA in node — not in the shell, because the deployment host is PowerShell — and passes it to `wrangler deploy --tag`. Every future deployment therefore carries its source commit on the Cloudflare dashboard and in `/api/health` / `/api/v1/data-health`'s `version` field — the "no version_metadata binding configured" gap noted in the deployment log for earlier releases no longer applies going forward.
+Both `wrangler.jsonc` files configure the [`version_metadata`](https://developers.cloudflare.com/workers/runtime-apis/bindings/version-metadata/) binding (`CF_VERSION_METADATA`). **Run `pnpm cloud:deploy` once to release both Workers.** `pnpm integrations:deploy` is an alias for the same paired command, not a second step. The wrapper invokes pnpm's JavaScript entry through Node on Windows, runs both validation gates, verifies the existing D1 migration ledger, then deploys app followed by integrations with one source tag. Deployment remains Joe-only under `AGENTS.md`.
 
-**A deploy from a dirty working tree is refused.** The tag would name a commit the deployed bundle does not match, so commit or set aside your changes first. `node scripts/deploy-worker.mjs app --allow-dirty` overrides it and tags the version `<sha>-dirty`; use that only for a deliberate hotfix, and record in the deployment log what the tree actually contained.
+**The default requires a clean checkout at `origin/main` after fetch.** `pnpm cloud:deploy --allow-branch` is the explicit hotfix override and uses `<sha>-branch`; `dist/build.json` and the local receipt also record whether the tree was dirty. Keep the checkout quiet throughout the run. The only supported option is `--allow-branch`: `--dry-run`, the old `app`/`integrations` positional targets, and `--allow-dirty` are rejected before any command runs. For offline validation use `pnpm check` and `pnpm cloud:validate`.
 
 ## Pre-deploy
 
 - [ ] `pnpm check` passes on a quiet machine (repo-safety guard, design-system ratchet, full test suite, production build). Do not skip it for a "small" change — the September 16 deploy history shows small unmerged changes are exactly what leak to production by accident.
 - [ ] CI is green **on the exact commit being deployed**, not just on an earlier pre-merge tip with byte-identical content claimed by inspection. If `main` has moved since CI last ran, re-run CI on the merged commit before deploying it.
-- [ ] `git log` confirms the app Worker and integrations Worker will be deployed from the same commit (same `git rev-parse HEAD` for both `pnpm cloud:deploy` and `pnpm integrations:deploy` runs).
-- [ ] Migrations `0001`-`0009` are already applied to the live D1 database as single files, each run individually (never via `wrangler d1 migrations apply` / `pnpm cloud:d1:migrate` - `d1_migrations` stays empty by design and an apply run fails loudly on `0003`'s bare `ALTER TABLE ADD COLUMN`). Verify the expected tables exist before trusting a migration is live:
+- [ ] `git log` confirms the intended source commit; the paired command rechecks the checkout before uploading either Worker.
+- [ ] Joe has verified the actual schema and backfilled the migration ledger using the [owner-only procedure](CLOUDFLARE_PRIVATE_RELEASE_RUNBOOK.md#d1-migration-ledger-backfill). The wrapper requires every exact filename currently in `cloudflare/migrations/`, including `0010_integration_audit_operations.sql`, and refuses missing, duplicate, unexpected, or unreadable ledger entries. It performs only this read-only query; it never creates the ledger or applies migrations:
   ```sh
-  wrangler d1 execute inventory-ops-production --remote --command "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name" --config cloudflare/wrangler.jsonc
+  wrangler d1 execute INVENTORY_DB --remote --config cloudflare/wrangler.jsonc --command "SELECT name FROM d1_migrations ORDER BY name" --json
   ```
-  Release 1.2.1 requires `0009_membership_admin.sql` to already be applied. The integration Worker's MCP tools for operational inventory search, vehicle resources, daily operations, data quality and reconciliation require `0010_integration_audit_operations.sql` (single-file apply; it rebuilds the audit table and both audit indexes) or their audit INSERT fails and the tool answers `AUDIT_UNAVAILABLE`. If a new migration ships with this deploy, apply it remotely as its own single file first and confirm it here before deploying Worker code that depends on it.
+  A recorded filename is not proof that its schema changes happened. Do not fill the ledger merely to make the gate pass, or replay historical migrations with a generic apply command. New migrations require separate owner execution and verification before recording them and releasing dependent code.
 - [ ] No known critical bugs in the release; changes reviewed.
 - [ ] Rollback plan is written down **before** deploying, not improvised after: record the current (pre-deploy) version IDs for both Workers.
   ```sh
-  wrangler deployments list --config cloudflare/wrangler.jsonc
-  wrangler deployments list --config cloudflare/integrations.wrangler.jsonc
+  wrangler deployments status --json --config cloudflare/wrangler.jsonc
+  wrangler deployments status --json --config cloudflare/integrations.wrangler.jsonc
   ```
-  As of September 19, 2026 the rollback targets are app `09ecac9e-21aa-4e0e-957e-196531c34798` and integrations `9d0ac26c-6dfd-46d9-a33a-4c69c9e74885` - confirm these are still current before relying on them; they go stale the moment another deploy happens. `wrangler rollback` takes the version ID as a **positional argument**, not a `--version-id` flag:
+  Record the currently serving **version IDs**, not deployment IDs or the first UUID in a history listing. History can be oldest-first. `wrangler rollback` takes the version ID as a **positional argument**, not a `--version-id` flag:
   ```sh
   wrangler rollback <version-id> --config cloudflare/wrangler.jsonc
   wrangler rollback <version-id> --config cloudflare/integrations.wrangler.jsonc
@@ -32,13 +32,9 @@ Both `wrangler.jsonc` files now configure a [`version_metadata`](https://develop
 
 ## Deploy
 
-- [ ] Deploy the app Worker: `pnpm cloud:deploy`
-- [ ] Deploy the integrations Worker from the **same commit**: `pnpm integrations:deploy`
-- [ ] Capture both new version IDs and append them, with source commit and timestamp, to [Shared-data deployment log](SHARED_DATA_DEPLOYMENT.md):
-  ```sh
-  wrangler deployments list --config cloudflare/wrangler.jsonc
-  wrangler deployments list --config cloudflare/integrations.wrangler.jsonc
-  ```
+- [ ] Release both Workers with one invocation: `pnpm cloud:deploy`.
+- [ ] Confirm the wrapper recorded both `version_id` values from the matching Wrangler deploy receipts and appended them to [Shared-data deployment log](SHARED_DATA_DEPLOYMENT.md). Its local `test-results/release-*/release.json` and per-Worker JSONL receipts remain ignored.
+- [ ] If a command fails or its receipt cannot be verified, stop and inspect the receipt and current Worker status before retrying. The first Worker may already be deployed; the failing Worker may also have changed. The wrapper neither retries nor rolls back automatically and never calls an unverified version `unknown` success. If both deploys succeeded but the documentation append failed, repair the log from the receipt instead of redeploying.
 - [ ] Smoke test: `node scripts/verify-cloud-deployment.mjs readiness` (drives `/internal/readiness`, the publisher-authenticated deep readiness check - real D1/R2 read path, no browser claims).
 - [ ] Monitor both Workers for 15 minutes: `wrangler tail --config cloudflare/wrangler.jsonc` and `wrangler tail --config cloudflare/integrations.wrangler.jsonc`. Watch for elevated error rates or latency.
 - [ ] Verify key flows in the live app (see Post-deploy).

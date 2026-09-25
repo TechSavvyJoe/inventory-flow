@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto'
 import { Buffer } from 'node:buffer'
+import { humanErrorMessage } from './error-messages.mjs'
 import { AccessError, memberContext, verifyAccess } from './access.mjs'
 import { approvedFactoryEquipmentUrl, validateReleaseBundle } from './release-validation.mjs'
 import { loadD1Repository, RepositoryConflictError } from './repository.mjs'
@@ -22,6 +23,18 @@ const headers = {
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 }
 function json(status, data) { return new Response(JSON.stringify(data), {status,headers:{...headers,'Content-Type':'application/json; charset=utf-8'}}) }
+// Error logs identify a route shape, never a VIN, record ID, or search query.
+function errorRoute(requestUrl) {
+  const pathname = new URL(requestUrl).pathname
+  if (['/api/health', '/api/bootstrap', '/api/vehicles', '/api/transfers', '/api/attention', '/api/admin/overview', '/api/admin/members', '/internal/releases', '/internal/status', '/internal/readiness'].includes(pathname)) return pathname
+  const record = /^\/api\/(vehicles|transfers|attention)\/[^/]+(?:\/(service|invoice|equipment-pdf|events))?$/.exec(pathname)
+  if (record) return `/api/${record[1]}/:id${record[2] ? `/${record[2]}` : ''}`
+  if (pathname.startsWith('/internal/invoices/')) return '/internal/invoices/:date/:vin'
+  if (pathname.startsWith('/internal/equipment/')) return '/internal/equipment/:vin/:hash'
+  if (pathname.startsWith('/assets/')) return '/assets/:file'
+  if (pathname.startsWith('/downloads/')) return '/downloads/:file'
+  return '/other'
+}
 // The version_metadata binding is absent locally and in tests; report null
 // rather than throwing so health checks keep working without it configured.
 export function versionMetadata(env) {
@@ -29,7 +42,8 @@ export function versionMetadata(env) {
   if(!meta) return null
   return {versionId:meta.id??null,versionTag:meta.tag||null,versionTimestamp:meta.timestamp??null}
 }
-class HttpError extends Error { constructor(code, status = 400) { super(code); this.code = code; this.status = status } }
+
+class HttpError extends Error { constructor(code, status = 400) { super(code); this.code = code; this.status = status; this.humanMessage = humanErrorMessage(code); } }
 function equal(a, b) { const left=encoder.encode(String(a??'')), right=encoder.encode(String(b??'')); return left.length === right.length && timingSafeEqual(left,right) }
 function validTimestamp(value) {return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)&&Number.isFinite(Date.parse(value))}
 // decodeURIComponent throws URIError on a malformed escape such as '%E0%A4%A'.
@@ -206,18 +220,28 @@ export async function decryptEnvelope(envelope, env, format=FORMAT) {
   if(typeof env.RELEASE_ENCRYPTION_KEY_BASE64!=='string' || !env.RELEASE_ENCRYPTION_KEY_BASE64) throw new HttpError('RELEASE_KEY_NOT_CONFIGURED',503)
   const iv=bytes(envelope.iv), encrypted=bytes(envelope.ciphertext), keyBytes=bytes(env.RELEASE_ENCRYPTION_KEY_BASE64)
   if(iv.length!==12 || encrypted.length<17 || keyBytes.length!==32) throw new HttpError('INVALID_ENCRYPTED_CONTENT')
+  let stage='key-import'
   try {
     const key=await crypto.subtle.importKey('raw',keyBytes,'AES-GCM',false,['decrypt'])
+    stage='decrypt'
     const plaintext=await crypto.subtle.decrypt({name:'AES-GCM',iv,additionalData:encoder.encode(`${format}:${envelope.reportDate}:${envelope.bundleSha256}`)},key,encrypted)
+    stage='hash'
     if(await digest(plaintext)!==envelope.bundleSha256) throw new Error()
+    stage='parse'
     const bundle=JSON.parse(decoder.decode(plaintext))
+    stage='schema'
     if(bundle.schemaVersion!==format || bundle.reportDate!==envelope.reportDate) throw new Error()
+    stage='validate'
     if(format===FORMAT) {
       const validation=validateReleaseBundle(bundle,{degradeOptionalResources:true})
       Object.defineProperty(bundle,RELEASE_VALIDATION,{value:validation,enumerable:false})
     }
     return bundle
-  } catch {throw new HttpError('INVALID_OR_INCOMPLETE_RELEASE')}
+  } catch {
+    const error = new HttpError('INVALID_OR_INCOMPLETE_RELEASE')
+    error.stage = stage
+    throw error
+  }
 }
 const CURRENT_SQL=`SELECT v.* FROM cloud_release_state s JOIN cloud_release_versions v ON v.release_id=s.value WHERE s.key='current_release_id' AND v.status='current'`
 async function currentRelease(env) {return env.INVENTORY_DB.prepare(CURRENT_SQL).first()}
@@ -481,10 +505,19 @@ export default {
       if(!['GET','HEAD'].includes(request.method)) throw new HttpError('METHOD_NOT_ALLOWED',405)
       if(!env.ASSETS) throw new HttpError('FRONTEND_NOT_DEPLOYED',503)
       const asset=await env.ASSETS.fetch(request)
-      return new Response(asset.body,{status:asset.status,headers:{...Object.fromEntries(asset.headers),...headers}})
+      const assetHeaders = new Headers(asset.headers)
+      for (const [name, value] of Object.entries(headers)) assetHeaders.set(name, value)
+      if (url.pathname.startsWith('/assets/') && asset.status === 200) {
+        assetHeaders.set('Cache-Control', 'private, max-age=31536000, immutable')
+      }
+      return new Response(asset.body,{status:asset.status,headers:assetHeaders})
     } catch(error) {
       const known=error instanceof HttpError || error instanceof AccessError || error instanceof WorkflowError || error instanceof RepositoryConflictError
-      return json(known?(error.status??400):500,{error:known?error.message:'The request could not be completed. Please try again.',code:known?error.code:'INTERNAL_ERROR',requestId})
+      const stage = error instanceof HttpError ? error.stage : undefined
+      if (!known || stage) {
+        console.error({ requestId, name: known ? error.name : 'Error', code: known ? error.code : 'INTERNAL_ERROR', route: errorRoute(request.url), ...(stage ? { stage } : {}) })
+      }
+      return json(known?(error.status??400):500,{error:known?(error.humanMessage || error.message):'The request could not be completed. Please try again.',code:known?error.code:'INTERNAL_ERROR',requestId})
     }
   },
 }

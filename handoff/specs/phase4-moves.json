@@ -1,0 +1,102 @@
+{
+ "branch": "plan/phase-4-docs-companion",
+ "base": "plan/phase-3-release-payload-pipeline",
+ "sequencing": "## Sequencing rules the critique added\n\n- **M07 before M06**: the visual gate lands first so the V2 collapse is the first move it protects.\n- **Decide the Service board before M06** (open question 3): ServicePageV2.tsx:6-23 is the only List/Board toggle; deleting it without deciding strands ServiceBoard.tsx.\n- **M09 stage 0 in Phase 1** right after M05 (static proof, no gate) so M07's baselines are captured once.\n- **Enable `noUnusedLocals` after the deletions, in the same PR** (48 errors today, 27 in files M05 deletes).\n- **Merge Phase 1 (and 2) to main before M14**: HEAD is 2 ahead of main and production already runs unmerged code; the off-main refusal would otherwise refuse the branch carrying M01/M02.\n- **M03's gate change and its deletions land in one commit**, gate run locally first, because CI runs check-repo-safety before install.\n- **M08 (first-poll fix) lands before polish/targeted-ui-pass merges.**\n\n",
+ "principles": [
+  "Delete before you add: superseded files, rules and tests leave in the same PR; no *-final, *-polish, *-vN, .flow or V2 filenames, ever.",
+  "One owner per fact: status codes come from the server (public listing, hold, movement, CDK, sale, delivery, location stay separate fields); labels are display-only; one token file, one button, one scope switch, one status vocabulary, one search-text builder.",
+  "Sources stay read-only evidence and the client never infers one status family from another's text; 'No current DealerMail hold found' is never rendered or filtered as available.",
+  "Gates only ratchet: the visual baseline (zero counted pixels), the design ratchet, the write-surface test, the ETag/304 tests and the role-matrix canary run in CI; raising a baseline needs an explicit flag and a commit message saying why the old output was wrong.",
+  "Ship in slices that stay green: each move is one or two PRs verified with `pnpm check` and screenshots at 390/1024/1320/1440 from `pnpm dev:demo`; measured before/after numbers go in the PR body.",
+  "No new runtime layers: no fetch/cache/state library, no list virtualization while the list is paginated, no client persistence of the bootstrap, no framework in the panel, no new write routes anywhere.",
+  "Rules live in one file (AGENTS.md, imported by CLAUDE.md); every other document links to it instead of restating it."
+ ],
+ "leave_alone": [
+  "src/app/adapters.ts (the evidence-separation mapper) and src/app/adapters.custody.test.ts — the 765 + 847 lines look like complexity but encode the status-family separation; extend, never simplify away.",
+  "Server-owned identity per ADR-001 (cloudflare/src/access.mjs, preview only for a verified group_manager) and the memberships lookup on every request — the correlated COUNT runs on a tiny table and costs nothing; do not block writes during role preview (only the audit label is fixed in M01). The x-inventory-preview-* headers stay; only the demo fallback name changes.",
+  "D1 optimistic concurrency, idempotency keys and the same-origin write check (worker.mjs:347 SAME_ORIGIN_REQUIRED), the single-snapshot repository design, and the encrypted R2 release with publish ordering — no caching layers, no read-model object, no second envelope.",
+  "The resilient data-state UI (App.tsx error/freshness handling, ErrorState, WorkspaceRefreshStatus, the freshness chip) and the 60 s foreground poll with the content-hash ETag from 9450dd2 — keep that ETag as is; do not replace it with a composite key; M08 only fixes the first-poll generation bump and the loading flag.",
+  "The side panel's read-only, deep-link-only API (extension/sidepanel/lib/api.mjs) and its vanilla DOM: splitting into ES modules or sharing lib code is fine, a framework rewrite or any write path is not. Its Worker header-spoofing tests (cloud-access-revocation, cloud-admin-control-center, integration-access) are out of scope for any x-inventory-authenticated-* cleanup.",
+  "The integrations Worker and MCP bridge: they have live consumers being set up now (commit 7485678, docs/PERPLEXITY_MCP.md); keep them read-only with customer fields excluded, keep the full evidence view (checks, coverages) in their bootstrap, ship them only through the release command, and do not add endpoints beyond that.",
+  "Modal focus trap, Escape, focus restore and scroll lock in AppShell/VehicleWorkspace, and the source-honest copy strings ('Availability not confirmed', 'No current DealerMail hold found', 'Hold status not verified') — these strings stay pinned exactly in tests.",
+  "Pagination instead of virtualization, no fetch/cache/state library, no client persistence of the bootstrap — redacted hold details must not sit in localStorage on shared showroom PCs.",
+  "The Moves list + detail split and the Records/hold/timeline tabs as the information architecture; the desktop workspace stays a dialog (add prev/next stepping in M13, no drawer conversion).",
+  ".gitignore and scripts/check-repo-safety.mjs may only tighten; the demo stays deterministic and synthetic and never reads a developer's runtime/, data/ or work/ folders.",
+  "The advanced workflow engine and docs/ADVANCED_WORKFLOW_ROADMAP.md — M02 closes only the simple-mode fallthrough; deleting advanced mode is a product decision for Joe.",
+  "The extension's DealerMail 'Held by' wording — it is the source's own column name; only the two misuses for the salesperson are relabeled.",
+  "Playwright's branded-Chrome local channel and the bundled-Chromium CI channel — the visual baselines are pinned to one Linux container precisely because of this split.",
+  "autoCheckReport.checks, the sticker arrays, factoryEquipment packages/sections and warrantyCheck coverages in the list bootstrap — five list surfaces and the panel's row facts read them; only the OASIS per-visit bodies leave the list projection."
+ ],
+ "decisions": {
+  "service_board": "RETIRE the Board view (Joe, 2026-09-23). Keep the Service List view only; delete ServiceBoard.tsx, ServicePageV2.css board rules, and the framer-motion dependency if nothing else imports it. ServicePageV2 collapses into ServicePage.",
+  "pages": "KEEP the Inventory updates page as its own destination (Joe, 2026-09-23). RETIRE Group operations: its queues become manager filters/saved views in Action center; /manager redirects to /attention. Remove the duplicate global search box per M12; nav = Inventory, Vehicle moves, Action center, Inventory updates, Service status (+ Control center for group managers).",
+  "advanced_mode": "KEEP the advanced workflow engine and docs/ADVANCED_WORKFLOW_ROADMAP.md (Joe, 2026-09-23). Only the simple-mode fallthrough is closed (done in Phase 1 M02).",
+  "name_search": "DETAIL-ONLY (Joe, 2026-09-23): customer/reason tokens leave the list bootstrap payload entirely; matching happens only inside the opened vehicle. Joe signed off on re-pinning server-api.test.ts for this contract change (Phase 3, M15)."
+ },
+ "manual_steps_for_joe": [
+  "M18: the Chrome Web Store private listing is Joe's account step; ship the staleness notice and the shared modules, and document the listing steps."
+ ],
+ "moves": [
+  {
+   "id": "M17",
+   "rank": 17,
+   "title": "Docs that describe the shipped app: DESIGN_SPEC rewritten in place, one deploy-state doc, an archive, a one-page architecture map",
+   "what": "Rewrite DESIGN_SPEC.md in place so links from CLAUDE.md/AGENTS.md/README keep working: keep 'Source and status boundaries' (lines 30-44, including 'Never display Available…'), the privacy and role rules (118-124) and the first-viewport copy guidance almost verbatim; replace the IA, tab list, 344 px panel, 172 px rail, 14 px body and hex lists with the shipped values: the nav list and a glossary table (route, nav label, h1, code directory), the ScopeSwitch, the status vocabulary from M13, the row anatomy from M11, the workspace anatomy with the mobile first-viewport order, CLAUDE.md's 15-16 / 12-13 px scale, and a pointer to the token file; drop the references to gitignored concept PNGs. Make docs/SHARED_DATA_DEPLOYMENT.md the only 'what is deployed / which migrations are live' document with a current-state block at the top (fix the PR #13 paragraph at line 46 and the 0006 note at line 76); AI_COLLABORATION.md:69 and SHARED_DATA_API.md:3 link there instead of asserting status. Move the dated reviews and audits (FULL_SOFTWARE_REVIEW_2026-09-01, DESIGN_SYSTEM_AUDIT_2026-09-01, CONVERSATION_COMPLETION_AUDIT, inventory-flow-redesign-2026-09-09, FIDELITY_QA, RELEASE_1_*) into docs/archive/ with a one-line 'Historical; superseded by X' header; move README's release log (lines 25-76) into CHANGELOG.md. Add a one-page docs/ARCHITECTURE.md: the flow diagram (collectors → encrypted release → R2/D1 → Worker → SPA / side panel / integrations), where each product rule is enforced (file and function), an ordered 'adding an evidence field' file list (importer validator, shared OASIS constant, Worker validator, service-core view + listProjection, types, adapters, extension model, tests), and the glossary.",
+   "why": "An agent following DESIGN_SPEC today restores a Home screen, a Movement tab, a 344 px panel or 14 px text — a likely driver of the v3/v4/v9/v10 churn. Answering 'what is deployed' means reconciling three documents that disagree, and every new evidence field is rediscovered by trial and error.",
+   "effort": "S — 1 day",
+   "impact": 3,
+   "risk": "None to runtime. Do it after M12/M13 so the spec describes the settled IA, not the one being retired.",
+   "depends_on": [
+    "M12",
+    "M13"
+   ],
+   "verification": "A fresh agent session given only AGENTS.md, DESIGN_SPEC.md and ARCHITECTURE.md can name the nav, the workspace tabs, the four viewports and the 'add a field' file list without reading code; `grep -rn 'PR #13' docs` finds only the archive; every doc under docs/ has one owner listed in an index.",
+   "source_findings": [
+    "F-017",
+    "F-047"
+   ],
+   "amendments": []
+  },
+  {
+   "id": "M18",
+   "rank": 18,
+   "title": "Side panel: share the app's rule modules, delete dead panel code, add a staleness notice",
+   "what": "Now: add describe.each parity tests asserting the app's WARRANTY_TERMS and revisions toEqual the extension's (vehicle-warranty-utils.ts:30 vs warranty.mjs:13) and that publishedEquipment / equipmentByCategory agree, following the existing source-distance.test.ts pattern. Then point the dependency one way with no new build step: extension/sidepanel/lib/{warranty, equipment, format, source-distance, source-text, service-readiness}.mjs become the single source and src imports them (precedent: src/styles/tokens.css imports extension/sidepanel/tokens.css; the Worker imports server/service-core.mjs); delete the src twins and the two 'Keep this file in step' comments. Make src/lib/format.ts the only wrapper, with an explicit fallback argument (formatDate(value, 'Not recorded')) so each context keeps its wording, and one time-zone constant decided once inside displayDate; delete formatDate/formatDateTime/formatNumber/formatMoney from inventory-utils.ts, formatDateTime from transfers/presentation.ts and the displayDate/localToday copies in ServicePage. In panel.js (1,875 lines, ~113 top-level functions) delete the four unreferenced functions (statusGrid, dealSheet, specsCard and the fourth); splitting panel.js into plain ES modules is allowed and optional; no framework, no write path. If the two copies of the resource-strip logic (vehicle-resource-catalog.ts ~500 lines and extension resources.mjs) are ever consolidated, it happens here as parity work, not as a bytes project. Staleness: /api/bootstrap carries a read-only companion.minimumVersion (and appVersion); the panel compares chrome.runtime.getManifest().version and shows a non-blocking 'Companion update available' notice with the install link; package-extension.mjs bumps manifest.version only when files under extension/ change; publishing the drafted extension/CHROMEWEBSTORE.md listing as a private item is Joe's account step (its version table stops below the manifest's 1.3.0).",
+   "why": "Warranty terms and equipment precedence are customer-facing facts maintained in two hand-synced copies with separate fixtures, so the web app and the panel can disagree without any test failing. Salespeople run old panels against a newer API with no warning, and every release creates manual reinstall work across four stores.",
+   "effort": "M — 2 days",
+   "impact": 3,
+   "risk": "Low. The parity tests land first and stay after the merge. The bootstrap field is read-only and unaffected by role redaction.",
+   "depends_on": [
+    "M15"
+   ],
+   "verification": "Parity tests green; `grep -rn 'Keep this file in step' src extension` → 0; one warranty table in the repo; on the demo the panel shows the notice when its manifest is below minimumVersion and nothing otherwise; the packaged zip still contains only tracked files under extension/.",
+   "source_findings": [
+    "F-020",
+    "F-059",
+    "F-073"
+   ],
+   "amendments": [
+    "[WRONG] M18 cites 'vehicle-warranty-utils.ts:30' without a path; it lives at src/features/inventory/vehicle-warranty-utils.ts (line 30 confirmed), not src/lib. M10's token counts are approximate (I count 42 var(--ifx-danger*) vs 31 var(--red*), plan says 49 vs 22); the direction holds, do not quote them as exact."
+   ]
+  },
+  {
+   "id": "M19",
+   "title": "Synthetic identifiers in tests: replace realistic-looking VINs and stock numbers with obviously synthetic ones",
+   "what": "Salvaged intent from the deleted branch chore/synthetic-vins (archived as tag archive/2026-09-23/chore/synthetic-vins; read its commit for the approach, do not cherry-pick). Across tests/ and src/**/*.test.* replace VINs shaped like real Ford/Lincoln VINs (e.g. 1FTFW1E84RKF12345, 1FMSK8…) and realistic stock numbers with the repo's synthetic convention (TESTDATA-prefixed 17-character VINs that still satisfy the VIN regex used by the app, e.g. TESTDATAHWELL0001, and DEMO-/SYN- stock numbers), keeping every fixture valid for the validators it feeds (VIN regex ^[A-HJ-NPR-Z0-9]{17}$, store scoping, sort order expectations). Extend scripts/check-repo-safety.mjs with a rule that flags a realistic WMI-prefixed VIN pattern (1FT, 1FM, 1FA, 3FA, 5LM, 1LN, 2LM, 1C4, 3GN…) inside tests/, src/ and fixtures/, allowing only the synthetic prefixes, and add its regression case to tests/unit/repo-safety.test.ts. Product-rule test files may have their fixture VINs renamed only when the assertion text does not pin the VIN itself; list every such file under deviations.",
+   "why": "AGENTS.md forbids live VIN lists in the repo; realistic-looking VINs in 26 test files make a leak of a real VIN indistinguishable from a fixture, and the safety gate cannot tell them apart today.",
+   "effort": "sonnet/high · 0.5 day",
+   "depends_on": [
+    "M17"
+   ],
+   "verification": "grep -rlE \"\\b(1FT|1FM|1FA|3FA|5LM|1LN|2LM)[A-HJ-NPR-Z0-9]{14}\\b\" tests src fixtures returns nothing; pnpm check green including the new repo-safety case; test count unchanged.",
+   "files": [
+    "tests/**",
+    "src/**/*.test.*",
+    "fixtures/**",
+    "scripts/check-repo-safety.mjs",
+    "tests/unit/repo-safety.test.ts"
+   ],
+   "amendments": []
+  }
+ ]
+}

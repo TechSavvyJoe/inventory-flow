@@ -71,10 +71,18 @@ From the app repository, on an explicitly authorized deployment host:
 
 ```powershell
 pnpm install --frozen-lockfile
-pnpm check
-pnpm cloud:validate
 pnpm cloud:deploy
 ```
+
+This is a Joe-only paired release: the wrapper runs `pnpm check` and
+`pnpm cloud:validate`, records the source in `dist/build.json`, verifies the
+existing D1 migration ledger with a read-only `SELECT`, and deploys both Workers
+with one tag. `pnpm integrations:deploy` invokes the same pair; do not run both
+aliases for one release. The default requires a clean checkout at fetched
+`origin/main`; an intentional hotfix may use `--allow-branch` and is tagged
+`<sha>-branch`. All other arguments, including `--dry-run`, are rejected before
+commands run. See the [deploy checklist](DEPLOY_CHECKLIST.md) for partial-failure
+handling and the ignored local receipts.
 
 `pnpm cloud:validate` is offline: it checks the Worker modules and applies the
 numbered migration files only to an in-memory SQLite database. It never contacts
@@ -86,7 +94,9 @@ original migrations were applied outside Wrangler's migration ledger, and
 `0003_transport_assignment_identity.sql` contains non-idempotent column adds;
 a generic apply would stop partway through and leave a misleading partial
 ledger. Apply a reviewed future schema file as one explicit, authorized
-single-file operation, verify the resulting schema, then deploy. For the
+single-file operation, verify the resulting schema and record the exact filename
+in the reviewed migration ledger, then deploy. Until Joe completes the verified
+backfill below, the new release command deliberately refuses to deploy. For the
 service-readiness release, apply `0007_service_readiness.sql` first and
 `0008_service_intake.sql` second before deploying the Worker that reads them.
 The 1.2.0 employee-management release also requires the exact reviewed
@@ -283,3 +293,63 @@ Still required before a broader production rollout:
   proves the mechanism, not that a future source login will succeed.
 - Review performance, monitoring, accessibility, and operational adoption with
   the pilot users. Do not claim that cloud deployment makes every UI perfect.
+
+## Infrastructure Migration (Phase 3)
+
+### D1 Migration Ledger Backfill
+
+**Joe-only production work; not performed by this code change or by the release
+wrapper.** Historical migrations were applied outside Wrangler's ledger.
+Creating ledger rows does not apply or verify their SQL. Never run a blanket
+backfill or generic migration apply merely to unblock deployment.
+
+1. Arrange the maintenance/recovery window and preserve a verified database
+   backup through the existing owner procedure.
+2. Compare each exact file below with the live schema, indexes, constraints, and
+   required data changes. Record the evidence of prior application. A table's
+   existence alone is insufficient. Apply any genuinely missing migration as
+   its separately reviewed single-file operation before marking it complete.
+3. After that review, Joe may create the standard `d1_migrations` ledger if it
+   is absent and insert **only the filenames individually verified as applied**.
+   Resolve unexpected or duplicate entries through the same review. Do not
+   record invented names or assume `INSERT OR IGNORE` verifies anything.
+4. Re-read the ledger with the query below. The release gate requires exact
+   agreement with all `.sql` filenames in `cloudflare/migrations/`; future files
+   extend that requirement automatically. Keep the generic apply path unused
+   while historic non-idempotent migrations could be replayed.
+
+Current filenames (reference list, not an executable backfill):
+
+- `0001_initial.sql`
+- `0002_app_access.sql`
+- `0003_transport_assignment_identity.sql`
+- `0004_integrations.sql`
+- `0005_manager_disposition_audit.sql`
+- `0006_integration_audit_per_client.sql`
+- `0007_service_readiness.sql`
+- `0008_service_intake.sql`
+- `0009_membership_admin.sql`
+- `0010_integration_audit_operations.sql`
+
+The owner can inspect the existing ledger without creating it:
+
+```sh
+wrangler d1 execute INVENTORY_DB --remote --config cloudflare/wrangler.jsonc --command "SELECT name FROM d1_migrations ORDER BY name" --json
+```
+
+Missing-table, authentication, malformed-output, or filename-mismatch errors
+stop the release before either Worker deploys. The wrapper does not use
+`wrangler d1 migrations list`, which can initialize the migration table.
+
+### Tunnel Cleanup and Custom Domain Move
+Moving `inventory-ops.joegallant.me` to a Workers `custom_domain` requires account-level actions:
+1. Log into the Cloudflare dashboard. Verify the retired PC tunnel and DNS CNAME for `inventory-ops.joegallant.me` still exist.
+2. In `cloudflare/wrangler.jsonc`, configure the environment with a `custom_domain` route:
+   ```jsonc
+   "routes": [
+     { "pattern": "inventory-ops.joegallant.me", "custom_domain": true }
+   ]
+   ```
+3. Deploy the worker to claim the custom domain.
+4. Delete the legacy tunnel CNAME and tunnel from the Cloudflare dashboard.
+5. Uninstall `cloudflared` on the PC.

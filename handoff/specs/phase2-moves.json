@@ -1,0 +1,219 @@
+{
+ "branch": "plan/phase-2-gates-css-ia",
+ "base": "plan/phase-1-safety-hygiene",
+ "sequencing": "## Sequencing rules the critique added\n\n- **M07 before M06**: the visual gate lands first so the V2 collapse is the first move it protects.\n- **Decide the Service board before M06** (open question 3): ServicePageV2.tsx:6-23 is the only List/Board toggle; deleting it without deciding strands ServiceBoard.tsx.\n- **M09 stage 0 in Phase 1** right after M05 (static proof, no gate) so M07's baselines are captured once.\n- **Enable `noUnusedLocals` after the deletions, in the same PR** (48 errors today, 27 in files M05 deletes).\n- **Merge Phase 1 (and 2) to main before M14**: HEAD is 2 ahead of main and production already runs unmerged code; the off-main refusal would otherwise refuse the branch carrying M01/M02.\n- **M03's gate change and its deletions land in one commit**, gate run locally first, because CI runs check-repo-safety before install.\n- **M08 (first-poll fix) lands before polish/targeted-ui-pass merges.**\n\n",
+ "principles": [
+  "Delete before you add: superseded files, rules and tests leave in the same PR; no *-final, *-polish, *-vN, .flow or V2 filenames, ever.",
+  "One owner per fact: status codes come from the server (public listing, hold, movement, CDK, sale, delivery, location stay separate fields); labels are display-only; one token file, one button, one scope switch, one status vocabulary, one search-text builder.",
+  "Sources stay read-only evidence and the client never infers one status family from another's text; 'No current DealerMail hold found' is never rendered or filtered as available.",
+  "Gates only ratchet: the visual baseline (zero counted pixels), the design ratchet, the write-surface test, the ETag/304 tests and the role-matrix canary run in CI; raising a baseline needs an explicit flag and a commit message saying why the old output was wrong.",
+  "Ship in slices that stay green: each move is one or two PRs verified with `pnpm check` and screenshots at 390/1024/1320/1440 from `pnpm dev:demo`; measured before/after numbers go in the PR body.",
+  "No new runtime layers: no fetch/cache/state library, no list virtualization while the list is paginated, no client persistence of the bootstrap, no framework in the panel, no new write routes anywhere.",
+  "Rules live in one file (AGENTS.md, imported by CLAUDE.md); every other document links to it instead of restating it."
+ ],
+ "leave_alone": [
+  "src/app/adapters.ts (the evidence-separation mapper) and src/app/adapters.custody.test.ts — the 765 + 847 lines look like complexity but encode the status-family separation; extend, never simplify away.",
+  "Server-owned identity per ADR-001 (cloudflare/src/access.mjs, preview only for a verified group_manager) and the memberships lookup on every request — the correlated COUNT runs on a tiny table and costs nothing; do not block writes during role preview (only the audit label is fixed in M01). The x-inventory-preview-* headers stay; only the demo fallback name changes.",
+  "D1 optimistic concurrency, idempotency keys and the same-origin write check (worker.mjs:347 SAME_ORIGIN_REQUIRED), the single-snapshot repository design, and the encrypted R2 release with publish ordering — no caching layers, no read-model object, no second envelope.",
+  "The resilient data-state UI (App.tsx error/freshness handling, ErrorState, WorkspaceRefreshStatus, the freshness chip) and the 60 s foreground poll with the content-hash ETag from 9450dd2 — keep that ETag as is; do not replace it with a composite key; M08 only fixes the first-poll generation bump and the loading flag.",
+  "The side panel's read-only, deep-link-only API (extension/sidepanel/lib/api.mjs) and its vanilla DOM: splitting into ES modules or sharing lib code is fine, a framework rewrite or any write path is not. Its Worker header-spoofing tests (cloud-access-revocation, cloud-admin-control-center, integration-access) are out of scope for any x-inventory-authenticated-* cleanup.",
+  "The integrations Worker and MCP bridge: they have live consumers being set up now (commit 7485678, docs/PERPLEXITY_MCP.md); keep them read-only with customer fields excluded, keep the full evidence view (checks, coverages) in their bootstrap, ship them only through the release command, and do not add endpoints beyond that.",
+  "Modal focus trap, Escape, focus restore and scroll lock in AppShell/VehicleWorkspace, and the source-honest copy strings ('Availability not confirmed', 'No current DealerMail hold found', 'Hold status not verified') — these strings stay pinned exactly in tests.",
+  "Pagination instead of virtualization, no fetch/cache/state library, no client persistence of the bootstrap — redacted hold details must not sit in localStorage on shared showroom PCs.",
+  "The Moves list + detail split and the Records/hold/timeline tabs as the information architecture; the desktop workspace stays a dialog (add prev/next stepping in M13, no drawer conversion).",
+  ".gitignore and scripts/check-repo-safety.mjs may only tighten; the demo stays deterministic and synthetic and never reads a developer's runtime/, data/ or work/ folders.",
+  "The advanced workflow engine and docs/ADVANCED_WORKFLOW_ROADMAP.md — M02 closes only the simple-mode fallthrough; deleting advanced mode is a product decision for Joe.",
+  "The extension's DealerMail 'Held by' wording — it is the source's own column name; only the two misuses for the salesperson are relabeled.",
+  "Playwright's branded-Chrome local channel and the bundled-Chromium CI channel — the visual baselines are pinned to one Linux container precisely because of this split.",
+  "autoCheckReport.checks, the sticker arrays, factoryEquipment packages/sections and warrantyCheck coverages in the list bootstrap — five list surfaces and the panel's row facts read them; only the OASIS per-visit bodies leave the list projection."
+ ],
+ "decisions": {
+  "service_board": "RETIRE the Board view (Joe, 2026-09-23). Keep the Service List view only; delete ServiceBoard.tsx, ServicePageV2.css board rules, and the framer-motion dependency if nothing else imports it. ServicePageV2 collapses into ServicePage.",
+  "pages": "KEEP the Inventory updates page (Joe, 2026-09-23). REPLACE Group operations with a new role-scoped /overview page (spec: /Users/joegallant/inventory-flow-lanes/handoff/specs/OVERVIEW_SPEC.md, being written); /manager redirects to /overview. In Phase 2, M12 does only: remove the duplicate global search box and prepare the nav slot for Overview; do NOT delete GroupOperations until the Overview moves land.",
+  "advanced_mode": "KEEP the advanced workflow engine and docs/ADVANCED_WORKFLOW_ROADMAP.md (Joe, 2026-09-23). Only the simple-mode fallthrough is closed (done in Phase 1 M02).",
+  "name_search": "DETAIL-ONLY (Joe, 2026-09-23): customer/reason tokens leave the list bootstrap payload entirely; matching happens only inside the opened vehicle. Joe signed off on re-pinning server-api.test.ts for this contract change (Phase 3, M15).",
+  "overview": "NEW WORKSTREAM (Joe, 2026-09-23): Overview page (store cards, store board SVG schematic, where-is-my-inventory with days away, return verification, holds, exceptions, freshness, printable snapshot), disposition ledger (app-owned, manager-only, audited), service metrics (serviced / not, days since receipt, receipt->service start, time in service, per store and vehicle). Executes after M11/M13 as moves O1..On from the spec."
+ },
+ "moves": [
+  {
+   "id": "M07",
+   "rank": 7,
+   "title": "Install the two gates: a pinned Linux visual baseline with zero pixel tolerance, and a ratchet that fails on orphans and versioned files",
+   "what": "Visual: a separate playwright.visual.config.ts (precedent: playwright.cross-browser.config.ts) with testDir tests/visual, its own ports, one webServer `node scripts/start-synthetic-demo.mjs --serve-dist` after `pnpm build` so the gate sees the production CSS cascade M09 rewrites, reuseExistingServer false (fresh :memory: ledger every run; the default suite's specs POST transfers and add a Date.now()-named member, so the visual spec never shares an invocation with them and stays read-only). Four projects named by viewport — visual-390x844 (viewport 390x844, deviceScaleFactor 1, isMobile, hasTouch, browserName chromium, channel hard-coded undefined, no device descriptor; devices['iPhone 13'] would capture 390x664), visual-1024x768, visual-1320x820, visual-1440x900 at DPR 1 — so the snapshot path names the viewport. Per test: page.clock.setFixedTime(SYNTHETIC_NOW = 2026-08-30T10:15-04:00) before goto, timezoneId 'America/Detroit', locale 'en-US', animations disabled, photos masked; 5-8 states (inventory list, filters open, workspace overview and holds, moves list + tracker, service, admin). expect.toHaveScreenshot({ maxDiffPixels: 0, threshold: 0.05 }) and no maxDiffPixelRatio: at 0.001 the gate's own replay of the branch's capture sets let 49 of 101 real code-caused diffs through (up to 928 px), and at Playwright's default 0.2 threshold pixelmatch ignores hairline and muted-text shifts such as #e5e7eb→#d1d5db; a per-screenshot absolute allowance is permitted only with measured jitter written beside it, never a global ratio. CI: the visual project runs as its own job in `container: mcr.microsoft.com/playwright:v1.62.1-noble` (tag = the lockfile's @playwright/test 1.62.1; bump both in one PR and expect one re-baseline), with setup-node 24 and pnpm inside the container (start-synthetic-demo uses node:sqlite); baselines are generated and compared only there — never on the Mac, which has branded Chrome and no Docker. A workflow_dispatch job runs `playwright test --config playwright.visual.config.ts --update-snapshots` in the same container and uploads the -snapshots folder as an artifact Joe commits; that is the only re-baseline path and keeps ci.yml at permissions: contents: read. Before M09 stage 1 relies on it, run the first PR with --repeat-each=3 and once more on a fresh runner; zero failures required. Self-test in the PR: flip a low-contrast value (a hairline #e5e7eb→#d1d5db) and require a red run with a diff image. No page.coverage dump (M09 is proven statically and by this gate). Ratchet: rework scripts/check-design-system.mjs with no new dependency — fail on any src/**/*.css not reachable from main.tsx imports (a 15-line graph walk); reject new filenames matching -final, -polish, -hardening, -refinement, -vN, .flow or V2; freeze the global import list initialized from today's 16 globalStyleImports entries in scripts/design-system-baseline.json and make it shrink-only by comparing against the list itself; measure imported files only and add !important, ID-selector and rgb/hsl counts beside sub-12px and hex; make the baseline tighten automatically, with an explicit --accept flag required to raise it.",
+   "why": "There are zero toHaveScreenshot calls in the repo, so every consolidation step is a leap of faith; the Sep 1 audit made this the precondition for retiring layers and it never happened. The current ratchet counts dead files, never tightens, and had its own allowlist widened 11→12→18→16 in the commits that added layers. A ratio threshold, a shared webServer or an iPhone-13 descriptor would each make the gate report green on exactly the regressions it exists to catch.",
+   "effort": "S — 1 day",
+   "impact": 4,
+   "risk": "Low once pinned. The remaining hazard is font fallback for glyphs outside the self-hosted Inter subset (the → arrow at TransfersPage.tsx:652 / TransferTracker.tsx:186,260, and the ui-monospace stack in DealerMailHandoff.css:17); the container pins those too. Dropping the ratio can expose one flaky state; give that one screenshot an absolute allowance with the reason beside it.",
+   "depends_on": [
+    "M05"
+   ],
+   "verification": "A PR adding src/styles/anything-final.css fails the ratchet; the hairline self-test fails the visual job with a diff image; --repeat-each=3 plus a fresh-runner re-run show zero failures; the workflow_dispatch job produces a snapshot artifact; a plain `pnpm test:e2e` on the Mac writes no -darwin baselines.",
+   "source_findings": [
+    "F-004",
+    "F-013",
+    "gap3-1",
+    "gap3-3",
+    "gap3-4",
+    "gap3-5"
+   ],
+   "amendments": [
+    "[SEQUENCING] M09 stage 0 before M07 is backwards. The stated reason ('so M07's baselines are captured once') only holds if stage 0 moves pixels, but stage 0 claims zero visual change — so gating it costs zero re-baselines and proves the claim. Capture M07's baselines on the M05 commit (the dist-byte-identical point), then land stage 0 under the gate; only the --ifx-focus-ring rename could diff, and only on focused states. M07 depends solely on M05, so move it into Phase 1 right after M05.",
+    "[TRIM] M07's --repeat-each=3, fresh-runner rerun and hairline self-test are one-time PR checks; do not turn them into standing CI steps."
+   ]
+  },
+  {
+   "id": "M06",
+   "rank": 8,
+   "title": "Collapse the V1/V2 route seam and the 40-prop InventoryExperience API; settle the Service board",
+   "what": "Resolve open question 3 first. Recommended: retire ServiceBoard.tsx (591 lines) and the List/Board toggle in this PR — ServicePageV2.tsx:6-23 is the only place the toggle exists, so deleting ServicePageV2 without deciding strands the board; delete ServiceBoard.tsx, ServicePageV2.css (imported only by ServiceBoard) and the board tests in ServicePage.test.tsx. If Joe keeps it: fold the toggle into ServicePage.tsx's toolbarAccessory slot (:234, :259), render one ServiceLane mapped over SERVICE_STATUS_OPTIONS, share a pure serviceVehiclesFor(vehicles, scope, homeStore, search) with ServicePage, and call serviceWorkflowStatus directly instead of the per-render getEffectiveStatus wrapper. Then inline the shortlist button, filter and drawer into InventoryExperience and the Heart into VehicleWorkspace (about 80 lines), and delete InventoryPageV2, InventoryExperienceV2, VehicleWorkspaceV2, TransfersPageV2 and ServicePageV2 (.tsx). Cut src/app/routeModules.ts (128 lines) to plain lazy() exports plus a path→loader map for hover/focus preloading (~25 lines); ?v=1 is ignored so old links keep working; remove the .catch() fallbacks (RouteLoadBoundary already handles load failures) and the 'satisfies PROJECT.md' contract loaders. Delete the now-unused props from InventoryExperienceProps (types.ts:566, 40 members): experienceComponent, WorkspaceComponent, TableComponent, toolbarAccessory/footerAccessory/vehicleFilter/workspaceAccessory, metrics (and the inventoryMetrics call), onMetricSelect, onViewStateChange, onViewVehicle. Make vin and scope controlled by InventoryPage (URL or workspace memory): delete internalScope, internalSelectedVehicleId, defaultSelectedVehicleId and initialScope behind one stateful test harness for the ~18 direct renders; tab, query, filters, sort and page stay internal. Define one InventoryVehicleActionProps that InventoryExperienceProps, InventoryTableProps and VehicleWorkspaceProps Pick from, and make canRequestVehicle function-only (InventoryPage already resolves it). While in these files: move searchFieldsMatch and its normalizers to src/lib/search.ts and inventory-navigation.ts to src/lib (about 16 mechanical import edits), and move VehicleDocuments (~520 lines with HoldEvidenceRecord and CapturedWarrantyTable) into its own file with VehicleWorkspace.tsx kept as the export path.",
+   "why": "Every V2 page is a 7-35-line wrapper around V1 held alive by ?v=1 loaders nothing links to; the prop-injection slots are the reason a screen change touches four files, and the naming invites more forks. Three places store the open vehicle and two store scope. The board is a Kanban plus framer-motion (ServicePage chunk 156,560 B raw / ~49 KB gz) for three columns and a handful of vehicles; its layout animations measure every card on every poll and already turned main red twice.",
+   "effort": "S-M — 1.5 days",
+   "impact": 3,
+   "risk": "Low-medium. The controlled-props change needs the test harness first. M07 lands before this move, so the visual project is the gate; run the shortlist isolation test (AdversarialM4Stress) after.",
+   "depends_on": [
+    "M05",
+    "M07"
+   ],
+   "verification": "InventoryExperienceProps 40 → ~20 members; `git ls-files | grep V2` returns nothing; /inventory?v=1 renders the same page; shortlist and Escape/focus tests green; visual project zero counted pixels at all 4 viewports (or, if the board is retired, one deliberate re-baseline of the service state with the before/after in the PR); `grep -rn ServiceBoard src` empty if retired.",
+   "source_findings": [
+    "F-025",
+    "F-065",
+    "F-079",
+    "F-062",
+    "F-068",
+    "F-066",
+    "F-049"
+   ],
+   "amendments": [
+    "[BLOCKING] M06 deletes InventoryExperienceV2/VehicleWorkspaceV2 but tests/unit/premium-test-helpers.tsx imports both and is consumed by 7 files: tests/unit/VehicleWorkspaceV2.test.tsx (9 live-behaviour cases: Ford service dates without implying availability, AutoCheck inspection summary, direct-move intent, detail retry), tests/unit/AdversarialM4Stress.test.tsx (which M06 itself says to run afterwards), tests/unit/shortlist-context-continuity.test.tsx, and tests/e2e/tier1-4 (which M05 just relocates to tests/unit/premium/). M06 must retarget the helper to InventoryExperience/VehicleWorkspace (with the shortlist inlined) and rename/keep VehicleWorkspaceV2.test.tsx in the same PR; its verification 'git ls-files | grep V2 returns nothing' otherwise invites deleting those assertions.",
+    "[SEQUENCING] M06's retarget of tests/unit/premium-test-helpers.tsx must be in the same PR as the V2 deletions, or tier1-4 (relocated in M05), AdversarialM4Stress and shortlist-context-continuity go red; M05 itself is safe because the helper does not import InventoryTableV2."
+   ]
+  },
+  {
+   "id": "M09",
+   "rank": 9,
+   "title": "CSS: purge the dead rules in imported sheets (stage 0, Phase 1) and collapse 16 global sheets into tokens, base and shell (stage 1, Phase 2)",
+   "what": "Stage 0 — no pixel gate needed, lands in Phase 1 right after M05 so M07's baselines are captured once: a rule whose every selector requires an unrendered class cannot match. Write a small read-only script that splits every rule's selector list on commas and tests each selector's class tokens against src TS/TSX (allowing `${}` prefixes such as inventory-workspace-panel--${...}); a rule is dead only when every selector is dead, and a live selector grouped with dead ones (inventory-experience-final.css:351-355 groups the live `.inventory-page` with two dead `.inventory-experience--modern` selectors) keeps the rule with the dead selectors removed — a per-rule test marks that file 62/62 dead and would drop the phone overflow-x: clip. Delete src/styles/vdp-final-refinement.css and its main.tsx import (155/155 rules need .inventory-workspace--compact-v3, which no TSX renders); move the ~2 live declarations of inventory-experience-final.css into the inventory sheet and delete the file; strip everything keyed on inventory-experience--modern, --compact-v3, *-workbench-v5 and *-production-v8 from premium-refinement (5,041 lines), inventory-modern (7,349), inventory.css, mobile-density, inventory-production-v10, typography-hardening and readability-final, deleting files that end up empty; remove the dead .ifx-signal, .ifx-surface, .ifx-action-dock, .ifx-icon-button, .ifx-button--glass/--oem and unused size/variant rules from src/design-system/components.css (311 lines, 37 .ifx-button selectors) under the same proof. Stage 1 — gated by M07 at zero counted pixels per PR: fold surviving override declarations selector-by-selector into the sheet co-located with the component that renders them (if-srp → InventoryExperience, workspace → VehicleWorkspace.focused, pages.css transfer rules → vehicle-moves.css, the mobile-shell part of mobile-density → shell.css); raise every on-screen size below 12 px at its source (inventory-modern.css:2859 'Action overdue.' → 13px/600; @media print in TakeHomeSheet exempt); move font-smoothing / font-synthesis / text-size-adjust into global.css so typography-hardening.css and readability-final.css can be deleted; merge app-system-polish into base; merge src/design-system/tokens.css (167 lines: the --ifx-* aliases and the data-ifx-oem rules, edited in M10) into src/styles/tokens.css, and have src/design-system/components.tsx import components.css itself so the sheet loads with FlowButton instead of globally. main.tsx then imports the four Inter weights, tokens.css, base.css and shell.css only (16 → 3 stylesheet entries; M07's shrink-only list follows). Focus: rename premium-refinement.css:19 `--ifx-focus-ring: #1686e4` to `--ifx-focus-color` and update :1015 in the same edit before that file goes — the only real defect is the missing halo where the shadow form is expected; `var(--focus)` in workflow-pages.css:10 is defined (extension/sidepanel/tokens.css:31 `--focus: #4c96ea`, imported by src/styles/tokens.css:1), so Attention and Updates already have a ring. Out of this move's estimate: a later optional PR may declare `@layer tokens, base, shell` for those three sheets only (~27 !important, mostly reduced-motion) and mechanically strip #root/!important from feature sheets — do it only if a specific override still bites once the dead rules are gone, and always remove !important before layering because precedence inverts inside layers.",
+   "why": "37% of imported declarations and 85% of imported !important match markup that no longer exists (postcss parse against every class token; the F-029 correction estimates ~200 KB raw of the index CSS chunk in stage 0 alone). The 'final authority' layers load before the lazy feature CSS and win only through #root and !important, which is why 2,859 accumulated. Every route pays 323 KB raw / 43 KB gz of inventory CSS before it paints (dist index CSS 323,499 B today; InventoryPage CSS 381,574 B).",
+   "effort": "L — 4 days (stage 0 ≈ 1, stage 1 ≈ 3)",
+   "impact": 5,
+   "risk": "Medium. Order matters: purge dead rules before moving anything; per-selector, not per-rule, matching; the visual gate at zero pixels makes each stage-1 step provable.",
+   "depends_on": [
+    "M05",
+    "M07"
+   ],
+   "verification": "Stage 0: the script's per-selector report lists what it removed; dist index CSS shrinks by ~200 KB raw; screenshots at 4 viewports unchanged by eye and, once M07 lands, zero counted pixels against its first baseline. Stage 1: visual project zero counted pixels on every PR; main.tsx global sheets 16 → 3; index CSS chunk 323 KB raw → ≤ 100 KB; imported !important ~1,297 → ≤ 190; #root selectors 874 → ~0 outside print/reduced-motion; total src CSS ~31.4k → ~17k lines; ui-readability.spec passes at all 4 viewports; summary.json smallText 0 on every page.",
+   "source_findings": [
+    "F-006",
+    "F-029",
+    "F-042",
+    "F-071",
+    "F-030",
+    "F-046"
+   ],
+   "amendments": [
+    "[BLOCKING] M05 and M09 stage 0 delete FlowIconButton and the .ifx-icon-button rules (both unused today: only FlowButton in src/components/ErrorState.tsx and WorkspaceRefreshStatus.tsx and FlowBrandLockup in src/app/AppShell.tsx are live), yet M10 makes 'FlowButton/FlowIconButton the only button'. Fix: M05 keeps FlowIconButton and its rules in src/design-system/components.css as the designated icon-only primitive (CLAUDE.md requires accessible names on icon-only controls), or M10 explicitly re-adds it; state that FlowBrandLockup stays because AppShell renders it.",
+    "[SEQUENCING] M09 stage 0 before M07 is backwards. The stated reason ('so M07's baselines are captured once') only holds if stage 0 moves pixels, but stage 0 claims zero visual change — so gating it costs zero re-baselines and proves the claim. Capture M07's baselines on the M05 commit (the dist-byte-identical point), then land stage 0 under the gate; only the --ifx-focus-ring rename could diff, and only on focused states. M07 depends solely on M05, so move it into Phase 1 right after M05."
+   ],
+   "stage": "STAGE 1 ONLY (collapse the 16 global sheets into tokens, base and shell under the visual gate). Stage 0 was done in Phase 1."
+  },
+  {
+   "id": "M10",
+   "rank": 10,
+   "title": "One token family, one tracker sheet, one button",
+   "what": "Tokens: keep extension/sidepanel/tokens.css as the single source (src/styles/tokens.css already imports it and package-extension.mjs ships only files under extension/). In the --ifx-* alias block (now inside src/styles/tokens.css after M09) redefine --ifx-success/danger/warning/info as aliases of --green/--red/--amber/--blue-600 (and the -surface tokens to the matching *-bg) so status hues unify app-wide in ten lines; hold stays amber (DESIGN_SPEC reserves violet for location); delete the --v10-*, --app-*, --app-readable-*, --move-*, --transfer-v3-* alias sets and the 76 never-read custom properties; put the contrast-corrected muted/neutral/focus values in the token file. Raw colors: replace literals with tokens only in files being rewritten in this move and M11, and have the ratchet require 0 raw colors in any new CSS file; no separate codemod. Tracker: step 1 delete every rule scoped only to the never-rendered .transfer-workspace-v3/-v4 roots (~205 of 449 and 89 of 199 rules); step 2, after tracker screenshots at 4 viewports on TransfersPage and the manager view, split survivors by owner: tracker rules into TransferTracker.css beside TransferTracker.tsx, page rules (.transfer-list-filter, .transfer-mobile-detail-bar, the `container: transfer-detail` rule and its queries) plus the 87 transfer selectors in pages.css into vehicle-moves.css; delete transfer-workspace-v3.css (2,841 lines), -v4.css (1,507) and the transfer-tracker-v3/-v4 classes; drop text-transform: uppercase at pages.css:184. Button: make FlowButton/FlowIconButton (src/design-system/components.tsx, already used by ErrorState and WorkspaceRefreshStatus, styled by components.css which the component now imports) the only button: remove the glass and oem variants and the decorative edge span, restyle on tokens with 44 px targets, migrate the ~60 call sites, then delete the mif-button, inv-btn, inventory-button, admin-primary/secondary-button, takehome-btn and inv-desk-action rules.",
+   "why": "Status color is product semantics and today one status renders in two hues (--ifx-danger 49 uses vs --red 22). Vehicle Moves ships two full tracker skins (4,348 lines) on the app's most rule-sensitive surface. Eight button systems mean a copy-button change edits ~10 files.",
+   "effort": "M — 3 days",
+   "impact": 3,
+   "risk": "Medium on the tracker merge (custody/handoff/return UI): screenshot both pages before and re-baseline the visual project once, deliberately, for this stage.",
+   "depends_on": [
+    "M09"
+   ],
+   "verification": "grep for the button class families finds one; transfer CSS 4,348 → ~1,000 lines; distinct hex in imported CSS 1,057 → ≤ 200 and the ratchet baseline drops accordingly; one deliberate visual re-baseline with the before/after tracker screenshots in the PR at 390/1024/1320/1440.",
+   "source_findings": [
+    "F-023",
+    "F-041",
+    "F-044",
+    "F-026"
+   ],
+   "amendments": [
+    "[BLOCKING] M05 and M09 stage 0 delete FlowIconButton and the .ifx-icon-button rules (both unused today: only FlowButton in src/components/ErrorState.tsx and WorkspaceRefreshStatus.tsx and FlowBrandLockup in src/app/AppShell.tsx are live), yet M10 makes 'FlowButton/FlowIconButton the only button'. Fix: M05 keeps FlowIconButton and its rules in src/design-system/components.css as the designated icon-only primitive (CLAUDE.md requires accessible names on icon-only controls), or M10 explicitly re-adds it; state that FlowBrandLockup stays because AppShell renders it.",
+    "[WRONG] M18 cites 'vehicle-warranty-utils.ts:30' without a path; it lives at src/features/inventory/vehicle-warranty-utils.ts (line 30 confirmed), not src/lib. M10's token counts are approximate (I count 42 var(--ifx-danger*) vs 31 var(--red*), plan says 49 vs 22); the direction holds, do not quote them as exact."
+   ]
+  },
+  {
+   "id": "M11",
+   "rank": 11,
+   "title": "Inventory rows: one line per vehicle, one records view, fixed status order, real table at tablet width",
+   "what": "Start from the 9450dd2 row (stock/mileage/VIN beside the photo, compact evidence strip, memoized DeskRow/MobileRow). Delete the inv-desk-scan-row <tr> and the mobile per-row evidence card; keep one 12-13 px source line in the vehicle cell (AutoCheck score · owners, or open OASIS actions — this is why M15 keeps autoCheckReport.checks in the bootstrap) and move sticker/option-code text to Records. Cap the Configuration cell at two lines. Operations cell renders fixed labeled lines in fixed order: Location · Hold (expected date and backups directly under it) · Move · Service; the row label reads 'Hold · <salesperson>' and the workspace Operations fact 'Salesperson', with 'Held by' kept only for evidence.heldBy (DealerMail's own column name); remove the customerOrReason title tooltip from the list; the hold label opens the Holds tab. Actions: Details becomes the one secondary-styled row action beside a small Records/docs indicator; Track/Request and Listing stay as text actions. Default page size 50. Records: the row Records button opens the workspace Records tab (or InventoryRecordsPanel renders VehicleDocuments); delete the preview variant; VehicleDocuments builds its compact facts from vehicle-resource-catalog.ts so full and compact views cannot diverge. Filters: merge the quick chips and the Filters-panel Hold/Movement selects into one filter state (keep the selects' extra options such as 'Hold status unverified' and 'No move in progress'), collapse the chip rows between 761 and 1000 px. Tablet: the card/table switch is decided in two places that must change together — the JS at InventoryExperience.tsx:441-447 (`(max-width: 760px)` media OR results-surface `width <= 1000` → setCompactResults → MobileRow vs DeskRow) and the container query at InventoryTable.desk.css:147 (`inventory-surface (max-width: 1000px)`); lower both thresholds to ~820 px so a 1024 landscape tablet (~856 px surface) gets a 4-priority-column table (Vehicle, Price/age, Status, Action) while 768 portrait keeps cards; lowering only the CSS would leave MobileRow rendering between 820 and 1000 px. Targets: raise fine-pointer targets to ≥ 24 px in CopyableValue.css, the sort-option buttons and the pager; widen the backstop from (pointer: coarse) to (any-pointer: coarse); count badges 11 → 12 px; no 44 px pseudo-element hit areas on dense table controls.",
+   "why": "Scanning (fit, held, here) is the main job and at ~2.5 vehicles per 1440x900 screen it needs paging (226 units = 23 pages). The Operations cell interleaves hold and service dates and 'Held by' names two different people, against the separation rule. Tablets, common in dealership offices, get the least information of any breakpoint.",
+   "effort": "M — 3 days",
+   "impact": 5,
+   "risk": "Medium. This is the most-used surface; keep the AutoCheck/OASIS strip decision from 9450dd2 visible (one line, not removed), keep hold/move/service as separate labeled fields, never an availability column. Re-baseline the visual project once with before/after screenshots.",
+   "depends_on": [
+    "M06",
+    "M09"
+   ],
+   "verification": "Row height 90-110 px; ≥ 5-6 rows visible at 1440x900 and ≥ 3 at 390x844 (screenshots in PR); DOM nodes at 226 vehicles / 100 per page 12,286 → ≤ 7,000; search keystroke stays ≤ 100 ms; summary.json smallText 0 and smallTargets 0 at 390 and 1024; home@1024x768 shows a table, not cards, and a 900 px-wide surface renders DeskRow; InventoryTable.modern tests query by role, not 'inv-desk-scan-row'.",
+   "source_findings": [
+    "F-007",
+    "F-012",
+    "F-032",
+    "F-048",
+    "F-074"
+   ],
+   "amendments": [
+    "[MISSING] M11 verification names 'InventoryTable.modern tests' but two files query inv-desk-scan-row: src/features/inventory/InventoryTable.modern.test.tsx and tests/unit/inventory-modern-ui.test.tsx — name both."
+   ]
+  },
+  {
+   "id": "M12",
+   "rank": 12,
+   "title": "Fold seven destinations into three: retire Group operations, Inventory updates and the global search box",
+   "what": "Add GroupOperations' two saved views (Overdue returns, Location exceptions) as manager-only filters on Moves > All stores, then delete ManagerPage.tsx (69 lines), GroupOperations.tsx (776), manager.css (290) and their tests, redirect /manager, and drop the src/features/manager/manager.css entry (rawColors 79) from scripts/design-system-baseline.json in the same commit so the per-file allowances do not drift. Retire /updates (src/features/attention/InventoryUpdatesPage.tsx) and its nav item: widen Inventory's existing 'New today' chip to a recent window; the per-vehicle timeline already renders `field: before → after` for every non-hidden change type (adapters.ts:455-467, timelineFromPublicChanges), so no timeline work is needed — the only open point is the page's 'other' view (mileage/stock/store changes), open question 4. The Service board's fate was settled in M06. In SourceServiceHistory.tsx replace AnimatePresence/motion.ol with a plain conditional <ol>, then remove framer-motion from package.json along with motion-test-utils.ts and any remaining vendor tests. Delete the global search form from AppShell (searchDraft at :103, the .global-search form at :380, handleSearch and its CSS); every page keeps its own PredictiveSearchInput, and the Service search matches name, stock and VIN as its placeholder promises. Moving ServiceEditor (the only write on /service) into the vehicle workspace is a second, separate product decision.",
+   "why": "Staff learn five places that show the same vehicles through different filters; each page multiplies list, search, scope and empty-state code for one maintainer. Two search boxes within 280 px produce 'my search did nothing' reports. framer-motion (~38 KB gz) loads on the default Service list for one height animation.",
+   "effort": "M — 2 days",
+   "impact": 4,
+   "risk": "Medium (product). Group managers lose a dedicated page; the Moves filters must carry both saved views before deletion. Updates' 'other' view survives only in the per-vehicle timeline — confirm that is acceptable.",
+   "depends_on": [
+    "M06"
+   ],
+   "verification": "Rail = Inventory, Moves, Action center (+ Control center for group managers); `grep framer-motion package.json pnpm-lock.yaml` empty; ServicePage chunk 156,560 B raw / ~49 KB gz → ≤ 15 KB gz; one search box per page in all 48 screenshots; ~1,100-1,500 TSX lines removed; design-system-baseline.json has no manager.css entry; pnpm check:design-system green.",
+   "source_findings": [
+    "F-009",
+    "F-049",
+    "F-063"
+   ],
+   "amendments": [
+    "[BLOCKING] M12 deletes the AppShell global search (src/app/AppShell.tsx:103/195/380), which invalidates 3 of 6 cases in tests/unit/inventory-search-privacy.test.tsx ('keeps the duplicate shell search off the inventory route', 'submits AppShell search through router state without putting it in the URL', 'allows the global search form to submit by Enter') — a file M04 lists as PRODUCT-RULE TEST that agents may 'never delete, loosen or re-pin without Joe's approval'. The plan flags the analogous re-pin for server-api.test.ts:664-665 in M15 but is silent here. Fix: M12 names the re-pin and Joe's sign-off, keeps the three InventoryPage cases (query consumed from router state; q stripped at InventoryPage.tsx:129/151 and inventory-navigation.ts:67; dropped on access-context change) and adds one case that the per-page PredictiveSearchInput on Moves/Service/Action center never writes the query into the URL.",
+    "[SEQUENCING] M12 must land with the inventory-search-privacy re-pin and the per-page privacy case, not after."
+   ]
+  },
+  {
+   "id": "M13",
+   "rank": 13,
+   "title": "One vocabulary: status labels, scope switch, priority, one primary per screen, mobile rail, Holds tab order, copy fixes",
+   "what": "PR A (server contract, small, first): publish the next-owner store on VehicleMovementSignal (src/features/inventory/types.ts:347-369 has no such field today) from the actionability the server already computes for Action center items, and use it for owner-aware color — red only when the viewer's store owns the next step; other-store rows read neutrally ('Overdue · waiting on Fowlerville salesperson'). PR B (presentation): move slaLabel() from src/features/transfers/presentation.ts to src/lib and use it in InventoryTable, VehicleWorkspace and TransfersPage (On track / Due soon / Overdue; keep or collapse 'Well past due' deliberately); one priority chip style without uppercase. Build ScopeSwitch {homeStoreName, value, onChange, counts?, homeDisabled?} rendered under the h1 on Inventory, Action center, Service and Moves, preserving confirmUnsavedWork (OperationsQueue) and the detailCertified disable; keep the .workflow-scope and .service-scope rules that also style the Open/Done and Service-view toggles; decide one shared persistence key versus per-page. One primary per screen and one primary color (Ford blue): Start-a-move picker rows become secondary and show vehicle.hold.label as metadata plus a fixed 'Availability not confirmed — confirm with home store' line (never disable requests for held vehicles: backup requests are legitimate); drop the uppercase 'VEHICLE MOVES' eyebrow. Mobile rail for every role: Inventory, Moves, Actions (badge), More, with Control center inside More and the count shown on More whenever Actions sits there; update AppShell.test.tsx:204-206. Holds tab: HoldDetails before DealerMailHandoff; the handoff becomes a secondary outlined 'Open in DealerMail (copies stock)' keeping .inventory-dealermail-handoff__launch; the Overview button reads 'Hold status' (it switches tabs, it does not open DealerMail); remove the duplicated 'Primary Hold · active … primary' and Comments/Alerts chips. Workspace: put the Operations section before the gallery in the JSX rather than CSS order (screen-reader order), move the service pill into Operations as a labeled 'Service' line, and add previous/next vehicle stepping on desktop (buttons + up/down keys) following the filtered list order. Copy fixes ride with files already being edited, not as their own PR: '1 move' / 'n moves' via the inline pattern used ~35 times (TransfersPage.tsx:620); the freshness chip keeps its state word, shows time only when today, and loses the 102 px max-width; search placeholder 'Stock, VIN, model, or feature'; Action center button 'Details'; one name per destination (Action center in nav, mobile and h1).",
+   "why": "One overdue move currently carries six labels across three queues, and red goes to stores that do not own the task, which trains people to ignore red. The scope switch exists in four bespoke versions with 'locations' vs 'stores'. Nine solid primaries per viewport on Start a move, with no hold label, produce declined requests. Group managers lose the Action center badge on phones.",
+   "effort": "S-M — 2 days (PR A 0.5, PR B 1.5)",
+   "impact": 3,
+   "risk": "Low-medium. The owner-aware color needs the small server field in PR A; everything else is presentation. Product-mandated strings stay exact.",
+   "depends_on": [
+    "M12"
+   ],
+   "verification": "grep for 'Move needs attention|Move needs action|Needs movement attention|Well past due' finds one module; screenshots at 4 viewports show one primary per page; group_manager at 390 shows the Actions badge; hold tab has no text below 12 px; keyboard tab order reaches Operations before the gallery; '1 moves' gone; a synthetic other-store overdue move renders neutral, a home-store one red.",
+   "source_findings": [
+    "F-031",
+    "F-061",
+    "F-067",
+    "F-043",
+    "F-046",
+    "F-008",
+    "F-081"
+   ],
+   "amendments": [
+    "[TRIM] M13's 'decide one shared persistence key versus per-page' for ScopeSwitch: pick per-page (what Inventory, Service, Moves and Action center do today via useWorkspaceState) and move on."
+   ]
+  }
+ ]
+}

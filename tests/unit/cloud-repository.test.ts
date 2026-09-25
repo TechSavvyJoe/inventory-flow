@@ -76,13 +76,22 @@ function syntheticAttention(overrides = {}) {
     createdAt: requestAt, updatedAt: requestAt, lastActor: 'Synthetic salesperson', lastActorRole: 'sales', lastStoreId: 'Howell', ...overrides,
   }
 }
+// The Cloudflare path (cloudflare/src/repository.mjs) no longer computes
+// payload_json/cdk_json/metadata_json: nothing reads them there, only the
+// plain .payload/.cdk/.metadata fields service-core actually consumes. The
+// Node path (server/database.mjs) still persists and reads them from real
+// SQLite for its own storage, so the two backends now legitimately differ
+// on these fields; drop them before comparing for portable equivalence.
 function normalizeDataset(dataset) {
   const normalized = structuredClone(dataset)
   normalized.state.current_manifest_path = ''
   for (const source of Object.values(normalized.sourceRuns)) {
-    if (source) { source.snapshot_path = ''; source.manifest_path = '' }
+    if (source) { source.snapshot_path = ''; source.manifest_path = ''; delete source.metadata_json }
   }
-  for (const key of ['publicRows', 'crmRows', 'holdRows', 'resourceRows']) normalized[key].sort((a, b) => a.vin.localeCompare(b.vin))
+  for (const key of ['publicRows', 'crmRows', 'holdRows', 'resourceRows']) {
+    normalized[key].sort((a, b) => a.vin.localeCompare(b.vin))
+    for (const row of normalized[key]) { delete row.payload_json; delete row.cdk_json }
+  }
   return normalized
 }
 
