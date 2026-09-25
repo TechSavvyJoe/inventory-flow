@@ -177,6 +177,16 @@ No receipt is advanced on failure. If a process is forcibly killed, inspect the
 recorded PID and ensure it is no longer running before removing its exact lock;
 never remove a lock belonging to an active writer.
 
+The receipt verifies the inventory release; private invoice PDF uploads and
+completion follow afterward. If an invoice upload fails, `daily-cloud-publish.ps1`
+fails without advancing local completion. Its next run loads the publisher
+credentials and retries the idempotent invoice uploads from that receipt before
+integration verification, latest pointers, and archival. It does not scrape
+sources or republish the inventory release on this retry. A receipt alone is
+not proof that the full daily publisher finished successfully.
+An advertised current invoice missing locally is fatal and requires restoring
+its exact-VIN source PDF; legitimate batches with no eligible invoices remain valid.
+
 Publishing checks full snapshots, exact VIN/store sets, raw row
 evidence, primary/backups/deleted records, and source hashes. It uses a stable
 content hash and fresh encryption nonce. Invalid/incomplete/older releases do

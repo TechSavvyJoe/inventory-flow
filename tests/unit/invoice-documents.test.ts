@@ -60,4 +60,30 @@ describe('saved Ford invoice metadata', () => {
       .toBe(`https://inventory-ops.joegallant.me/internal/invoices/2026-09-21/${vin}`)
     expect(() => invoicePublicationEndpoint('https://other.example/', '2026-09-21', vin)).toThrow(/Cloud publish URL/)
   })
+
+  it('fails without exposing a VIN or path when an advertised current invoice PDF is missing', () => {
+    expect(() => invoiceFiles({
+      parsed: { schema: 'ford-invoice-parsed-v1', results: [{ vin, status: 'pdf', invoice: { vin } }] },
+      enrichment: { schemaVersion: 'inventory-flow-vin-document-enrichment-v1', recordsByVin: {
+        [vin]: { fordInvoice: { dataState: 'current', available: true } },
+      } },
+      folder: 'SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS/private-invoices',
+      fileExists: () => false,
+    })).toThrowError(new Error('INVOICE_DOCUMENT_MISSING'))
+  })
+
+  it.each([{ results: [] }, { results: [
+    { vin, status: 'unavailable' },
+    { vin, status: 'pdf', invoice: { vin: chevyVin } },
+    { vin: chevyVin, status: 'pdf', invoice: { vin: chevyVin } },
+  ] }])('allows a legitimate batch with no eligible invoice documents', ({ results }) => {
+    expect(invoiceFiles({
+      parsed: { schema: 'ford-invoice-parsed-v1', results },
+      enrichment: { schemaVersion: 'inventory-flow-vin-document-enrichment-v1', recordsByVin: {
+        [vin]: { fordInvoice: { dataState: 'current', available: true } },
+      } },
+      folder: 'SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS/private-invoices',
+      fileExists: () => { throw new Error('INELIGIBLE_DOCUMENT_SHOULD_NOT_BE_OPENED') },
+    })).toEqual([])
+  })
 })

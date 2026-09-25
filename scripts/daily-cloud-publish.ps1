@@ -228,6 +228,27 @@ function Complete-VerifiedPublicationState {
   Write-Log 'run manifest: recorded verified cloud publication and advanced latest pointers'
 }
 
+function Complete-PublicationFollowups {
+  param(
+    [Parameter(Mandatory)]$Receipt,
+    [Parameter(Mandatory)][string]$Date
+  )
+
+  # The inventory receipt is written before document uploads. Retry these
+  # idempotent uploads even when the inventory release is already verified.
+  Write-Log 'invoice documents: publishing private saved copies'
+  $invoicePublishRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\publish-invoice-documents.mjs', $Date)
+  if ($invoicePublishRun.ExitCode -ne 0) { Write-Log "invoice documents FAILED: $($invoicePublishRun.Output.Trim())" 'ERROR'; throw 'INVOICE_DOCUMENT_PUBLISH_FAILED' }
+  Write-Log "invoice documents: $($invoicePublishRun.Output.Trim())"
+  Update-IntegrationExpectedMetadata -Receipt $Receipt
+  Assert-IntegrationDeployment
+  Complete-VerifiedPublicationState -Receipt $Receipt -Date $Date
+  # Preserve report-ready evidence only after the publication follow-ups pass.
+  $archiveRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\archive-inventory-history.mjs', $Date, '--workspace-root', $WorkspaceRoot)
+  if ($archiveRun.ExitCode -ne 0) { Write-Log "historical archive FAILED: $($archiveRun.Output.Trim())" 'ERROR'; throw 'HISTORICAL_ARCHIVE_FAILED' }
+  Write-Log "historical archive: $($archiveRun.Output.Trim())"
+}
+
 $exitCode = 0
 $originalEnv = @{}
 $secretNames = @()
@@ -238,41 +259,11 @@ try {
   $date = Resolve-ReportDate
   Write-Log "report date: $date"
 
-  # Idempotency guard: if this report date already published and verified, exit
-  # clean without re-scraping VDPs. Lets the task retry hourly for cheap until
-  # the day's snapshot is actually ready, without hammering the dealer sites.
-  $receiptPath = Join-Path $LogDir ("{0}.json" -f $date)
-  if (-not $Force -and (Test-Path $receiptPath)) {
-    $receipt = $null
-    try {
-      $receipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
-    } catch {
-      Write-Log "existing receipt unreadable, continuing with publish" 'WARN'
-    }
-    if ($receipt -and $receipt.status -eq 'published_and_verified' -and $receipt.reportDate -eq $date) {
-      if (Test-ReceiptMatchesManagerOverlay -Receipt $receipt -Date $date) {
-        Update-IntegrationExpectedMetadata -Receipt $receipt
-        Push-Location $AppRoot
-        try {
-          Assert-IntegrationDeployment
-          Complete-VerifiedPublicationState -Receipt $receipt -Date $date
-          $archiveRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\archive-inventory-history.mjs', $date, '--workspace-root', $WorkspaceRoot)
-          if ($archiveRun.ExitCode -ne 0) { Write-Log "historical archive FAILED: $($archiveRun.Output.Trim())" 'ERROR'; throw 'HISTORICAL_ARCHIVE_FAILED' }
-          Write-Log "historical archive: $($archiveRun.Output.Trim())"
-        } finally { Pop-Location }
-        Write-Log "already published and verified for $date - nothing to do (use -Force to republish)"
-        Write-Log '=== daily-cloud-publish SKIPPED (already current) ==='
-        exit 0
-      }
-      Write-Log "verified receipt is missing the manifest-bound manager disposition overlay; rebuilding through the protected Windows publisher" 'WARN'
-    }
-  }
-
   if (-not (Test-Path $SecretPath)) { throw 'SECRET_STORE_MISSING' }
 
-  # Decrypt the DPAPI bundle and stage each secret as a process env var.
-  # Windows PowerShell 5.1: ConvertFrom-Json -AsHashtable is unavailable, so
-  # enumerate PSObject properties instead.
+  # Both new publications and document retries need the DPAPI credentials.
+  # Keep staging inside the same try/finally so every exit restores the caller.
+  # Windows PowerShell 5.1 lacks ConvertFrom-Json -AsHashtable.
   $raw     = Get-Content $SecretPath -Raw
   $plain   = [System.Net.NetworkCredential]::new('', (ConvertTo-SecureString $raw)).Password
   $secrets = $plain | ConvertFrom-Json
@@ -284,6 +275,30 @@ try {
     [System.Environment]::SetEnvironmentVariable($property.Name, [string]$property.Value)
   }
   Write-Log ("secrets loaded: {0} ({1})" -f $secretNames.Count, ($secretNames -join ', '))
+
+  # A verified inventory release still needs its document and completion
+  # follow-ups. Reuse the receipt without re-scraping or republishing sources.
+  $receiptPath = Join-Path $LogDir ("{0}.json" -f $date)
+  if (-not $Force -and (Test-Path $receiptPath)) {
+    $receipt = $null
+    try {
+      $receipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
+    } catch {
+      Write-Log "existing receipt unreadable, continuing with publish" 'WARN'
+    }
+    if ($receipt -and $receipt.status -eq 'published_and_verified' -and $receipt.reportDate -eq $date) {
+      if (Test-ReceiptMatchesManagerOverlay -Receipt $receipt -Date $date) {
+        Push-Location $AppRoot
+        try {
+          Complete-PublicationFollowups -Receipt $receipt -Date $date
+        } finally { Pop-Location }
+        Write-Log "already published and verified for $date; document and completion follow-ups verified (use -Force to republish)"
+        Write-Log '=== daily-cloud-publish SKIPPED (already current) ==='
+        exit 0
+      }
+      Write-Log "verified receipt is missing the manifest-bound manager disposition overlay; rebuilding through the protected Windows publisher" 'WARN'
+    }
+  }
 
   Push-Location $AppRoot
   try {
@@ -433,21 +448,8 @@ try {
       Write-Log 'cloud publish did not report published_and_verified' 'ERROR'
       throw 'PUBLISH_NOT_VERIFIED'
     }
-    Write-Log 'invoice documents: publishing private saved copies'
-    $invoicePublishRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\publish-invoice-documents.mjs', $date)
-    $invoicePublishOut = $invoicePublishRun.Output
-    if ($invoicePublishRun.ExitCode -ne 0) { Write-Log "invoice documents FAILED: $($invoicePublishOut.Trim())" 'ERROR'; throw 'INVOICE_DOCUMENT_PUBLISH_FAILED' }
-    Write-Log "invoice documents: $($invoicePublishOut.Trim())"
     $verifiedReceipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
-    Update-IntegrationExpectedMetadata -Receipt $verifiedReceipt
-    Assert-IntegrationDeployment
-    Complete-VerifiedPublicationState -Receipt $verifiedReceipt -Date $date
-    # Preserve report-ready source evidence locally after the release has been
-    # independently verified. The archive is append-only and never includes
-    # credentials, browser sessions, or duplicated invoice PDFs.
-    $archiveRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\archive-inventory-history.mjs', $date, '--workspace-root', $WorkspaceRoot)
-    if ($archiveRun.ExitCode -ne 0) { Write-Log "historical archive FAILED: $($archiveRun.Output.Trim())" 'ERROR'; throw 'HISTORICAL_ARCHIVE_FAILED' }
-    Write-Log "historical archive: $($archiveRun.Output.Trim())"
+    Complete-PublicationFollowups -Receipt $verifiedReceipt -Date $date
     Write-Log '=== daily-cloud-publish SUCCESS ==='
   } finally {
     Pop-Location
@@ -457,11 +459,16 @@ try {
   Write-Log ("=== daily-cloud-publish FAILED: {0} ===" -f $_.Exception.Message) 'ERROR'
 } finally {
   foreach ($key in $originalEnv.Keys) {
-    [System.Environment]::SetEnvironmentVariable($key, $originalEnv[$key])
+    # PowerShell 7.5+ converts a null setter argument to an empty value.
+    # Remove absent originals explicitly; preserve existing strings as-is.
+    if ($null -eq $originalEnv[$key]) {
+      Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue
+    } else {
+      [System.Environment]::SetEnvironmentVariable($key, $originalEnv[$key])
+    }
   }
   $originalEnv = @{}
   $secrets = $null
 }
 
 exit $exitCode
-
