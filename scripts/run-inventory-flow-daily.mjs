@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { loadLatestCompletedRelease, validateVinDocumentEnrichment } from '../server/importer.mjs'
@@ -18,6 +18,14 @@ const NODE = existsSync(path.join(RUNTIME_ROOT, 'node', 'bin', 'node.exe')) ? pa
 const PYTHON = existsSync(path.join(RUNTIME_ROOT, 'python', 'python.exe')) ? path.join(RUNTIME_ROOT, 'python', 'python.exe') : 'python'
 const POWERSHELL = process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell'
 const AVAILABILITY_CAVEAT = 'Public listings, source flags, expected dates, holds, CDK responses, manager sold logs, and resource records do not independently establish availability, a sale, delivery, funding, paperwork completion, or physical location. Confirm with the appropriate store before customer commitment.'
+const DEALERMAIL_REVISION_SUFFIXES = [
+  'deep-capture-raw.json',
+  'exclude-view-raw.json',
+  'hold-details-raw.json',
+  'complete-list-raw-cells.json',
+  'complete-inventory-raw.json',
+  'complete-used-inventory-deep-cloud-ready.json',
+]
 
 function parseArgs(argv) {
   const options = {
@@ -26,6 +34,7 @@ function parseArgs(argv) {
     noPublish: false,
     forcePublish: false,
     skipAuthenticated: false,
+    refreshHolds: false,
   }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -35,6 +44,7 @@ function parseArgs(argv) {
     else if (arg === '--no-publish') options.noPublish = true
     else if (arg === '--force-publish') options.forcePublish = true
     else if (arg === '--skip-authenticated') options.skipAuthenticated = true
+    else if (arg === '--refresh-holds') options.refreshHolds = true
     else if (arg === '--help' || arg === '-h') options.help = true
     else throw new Error(`Unknown option: ${arg}`)
   }
@@ -135,6 +145,31 @@ function dealerCloudSnapshotPath(reportDate) {
   return path.join(WORK_ROOT, 'dealermail-history', 'snapshots', `${reportDate}-complete-used-inventory-deep-cloud-ready.json`)
 }
 
+function archiveDealerMailRevision(reportDate, archivedAt = new Date()) {
+  const snapshotDirectory = path.join(WORK_ROOT, 'dealermail-history', 'snapshots')
+  const existing = DEALERMAIL_REVISION_SUFFIXES
+    .map((suffix) => ({ suffix, source: path.join(snapshotDirectory, `${reportDate}-${suffix}`) }))
+    .filter(({ source }) => existsSync(source))
+  if (!existing.length) return null
+
+  const revision = archivedAt.toISOString().replace(/[:.]/g, '-')
+  const archiveDirectory = path.join(WORK_ROOT, 'dealermail-history', 'intraday', reportDate, revision)
+  mkdirSync(archiveDirectory, { recursive: true })
+  const files = []
+  for (const { suffix, source } of existing) {
+    const destination = path.join(archiveDirectory, `${reportDate}-${suffix}`)
+    copyFileSync(source, destination)
+    files.push({ name: path.basename(destination), sha256: sha256(destination) })
+  }
+  writeJson(path.join(archiveDirectory, 'archive-manifest.json'), {
+    schema: 'inventory-flow-dealermail-intraday-archive-v1',
+    reportDate,
+    archivedAt: archivedAt.toISOString(),
+    files,
+  })
+  return archiveDirectory
+}
+
 function runPublicInventory(reportDate, steps) {
   const target = publicSnapshotPath(reportDate)
   if (existsSync(target)) {
@@ -148,9 +183,9 @@ function runPublicInventory(reportDate, steps) {
   return target
 }
 
-function runDealerMail(reportDate, browserReady, warnings, steps) {
+function runDealerMail(reportDate, browserReady, warnings, steps, { refresh = false } = {}) {
   const target = dealerCloudSnapshotPath(reportDate)
-  if (existsSync(target)) {
+  if (existsSync(target) && !refresh) {
     steps.push({ name: 'dealermail', status: 'reused', path: target })
     return target
   }
@@ -158,6 +193,14 @@ function runDealerMail(reportDate, browserReady, warnings, steps) {
     warnings.push('sign in to DealerMail in the Work PC Automation Browser; DealerMail was not captured and the cloud release was not published.')
     steps.push({ name: 'dealermail', status: 'skipped_browser_unavailable' })
     return null
+  }
+  if (refresh) {
+    const archiveDirectory = archiveDealerMailRevision(reportDate)
+    steps.push({
+      name: 'dealermail_archive',
+      status: archiveDirectory ? 'complete' : 'skipped_no_prior_snapshot',
+      ...(archiveDirectory ? { path: archiveDirectory } : {}),
+    })
   }
   const capture = run(NODE, ['scripts\\capture-dealermail.mjs', 'run', reportDate, '--budget-ms', '900000'], {
     cwd: APP_ROOT,
@@ -371,7 +414,7 @@ function countByStore(rows, field = 'store') {
   return counts
 }
 
-function deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, managerDispositionValidated = false }) {
+function deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, managerDispositionValidated = false, runMode = 'inventory_flow_background_pipeline' }) {
   const publicSnapshot = readJson(publicPath)
   const dealerSnapshot = readJson(dealerPath)
   const publicRows = rowsFromPublic(publicSnapshot)
@@ -398,7 +441,7 @@ function deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, m
   return {
     report_date: reportDate,
     timezone: 'America/New_York',
-    run_mode: 'inventory_flow_background_pipeline',
+    run_mode: runMode,
     required_daily_output: 'inventory_flow_app_api_mcp',
     public_inventory_status: 'complete',
     dealermail_status: 'complete_authenticated_read_only',
@@ -506,7 +549,7 @@ function buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath) {
   return validation
 }
 
-function publish(reportDate, forcePublish, steps) {
+function publish(reportDate, forcePublish, steps, { holdRefresh = false } = {}) {
   const args = [
     '-NoProfile',
     '-NonInteractive',
@@ -520,6 +563,7 @@ function publish(reportDate, forcePublish, steps) {
     WORKSPACE_ROOT,
   ]
   if (forcePublish) args.push('-Force')
+  if (holdRefresh) args.push('-HoldRefresh')
   const result = run(POWERSHELL, args, { optional: true, label: 'Cloudflare publisher' })
   steps.push({ name: 'cloudflare_publish', status: result.ok ? 'complete' : 'failed', detail: safeDetail(result.output) })
   return result.ok
@@ -553,6 +597,9 @@ async function runDaily(options) {
   const releaseDirectory = path.join(WORK_ROOT, 'releases', reportDate)
   const releasePath = path.join(releaseDirectory, 'inventory-flow-release.json')
   const receiptPath = path.join(WORK_ROOT, 'app-feed-status', `${reportDate}.json`)
+  const intradayStatusPath = path.join(WORK_ROOT, 'hold-refresh-status', `${reportDate}.json`)
+  const summaryPath = options.refreshHolds ? intradayStatusPath : path.join(releaseDirectory, 'daily-summary.json')
+  const runMode = options.refreshHolds ? 'inventory_flow_intraday_hold_refresh' : 'inventory_flow_background_pipeline'
   const warnings = []
   const steps = []
 
@@ -571,7 +618,21 @@ async function runDaily(options) {
     return { ok: true, summary, validation, manifestPath, releasePath }
   }
 
-  if (!options.forcePublish && existsSync(receiptPath)) {
+  if (options.refreshHolds) {
+    const receipt = existsSync(receiptPath) ? readJson(receiptPath) : null
+    if (receipt?.status !== 'published_and_verified' || receipt?.reportDate !== reportDate || receipt?.complete !== true) {
+      const summary = `Inventory Flow ${reportDate}: intraday hold refresh waiting for the morning verified release.`
+      writeJson(intradayStatusPath, {
+        reportDate,
+        status: 'waiting_for_verified_morning_release',
+        checkedAt: new Date().toISOString(),
+        summary,
+      })
+      return { ok: true, summary, validation: {}, manifestPath, releasePath }
+    }
+  }
+
+  if (!options.forcePublish && !options.refreshHolds && existsSync(receiptPath)) {
     const receipt = readJson(receiptPath)
     if (receipt.status === 'published_and_verified' && receipt.reportDate === reportDate) {
       const release = loadLatestCompletedRelease({ workspaceRoot: WORKSPACE_ROOT, now: validationClockFor(reportDate) })
@@ -589,9 +650,46 @@ async function runDaily(options) {
   }
 
   const browserReady = options.skipAuthenticated ? false : await ensureAutomationBrowser(warnings)
-  const publicPath = runPublicInventory(reportDate, steps)
-  const dealerPath = runDealerMail(reportDate, browserReady, warnings, steps)
+  const publicPath = options.refreshHolds ? publicSnapshotPath(reportDate) : runPublicInventory(reportDate, steps)
+  if (options.refreshHolds && !existsSync(publicPath)) {
+    const summary = `Inventory Flow ${reportDate}: intraday hold refresh failed because the verified public snapshot is missing.`
+    writeJson(intradayStatusPath, {
+      reportDate,
+      status: 'failed_missing_public_snapshot',
+      checkedAt: new Date().toISOString(),
+      summary,
+    })
+    return { ok: false, failureCode: 'PUBLIC_SNAPSHOT_MISSING', summary, manifestPath, releasePath }
+  }
+  if (options.refreshHolds) steps.push({ name: 'public_inventory', status: 'reused', path: publicPath })
+
+  const existingOasisComplete = options.refreshHolds ? reuseExistingOasisCapture(reportDate, steps) : null
+  if (options.refreshHolds && !existingOasisComplete) {
+    const summary = `Inventory Flow ${reportDate}: intraday hold refresh stopped because the morning OASIS capture is not complete.`
+    writeJson(intradayStatusPath, {
+      reportDate,
+      status: 'failed_morning_oasis_incomplete',
+      checkedAt: new Date().toISOString(),
+      summary,
+      steps,
+    })
+    return { ok: false, failureCode: 'OASIS_INCOMPLETE', summary, manifestPath, releasePath }
+  }
+
+  const dealerPath = runDealerMail(reportDate, browserReady, warnings, steps, { refresh: options.refreshHolds })
   if (!dealerPath) {
+    if (options.refreshHolds) {
+      const summary = `Inventory Flow ${reportDate}: intraday hold refresh failed; the last verified cloud release was preserved.`
+      writeJson(intradayStatusPath, {
+        reportDate,
+        status: 'failed_dealermail_refresh',
+        checkedAt: new Date().toISOString(),
+        summary,
+        warnings,
+        steps,
+      })
+      return { ok: false, failureCode: 'DEALERMAIL_INCOMPLETE', summary, manifestPath, releasePath }
+    }
     const incomplete = {
       report_date: reportDate,
       timezone: 'America/New_York',
@@ -606,18 +704,31 @@ async function runDaily(options) {
     }
     writeJson(manifestPath, incomplete)
     const summary = summarize({ reportDate, validation: {}, publishStatus: 'not_published_dealermail_incomplete', manifestPath, releasePath, warnings })
-    writeJson(path.join(releaseDirectory, 'daily-summary.json'), { reportDate, status: 'not_published_dealermail_incomplete', summary })
+    writeJson(summaryPath, { reportDate, status: 'not_published_dealermail_incomplete', summary })
     return { ok: false, failureCode: 'DEALERMAIL_INCOMPLETE', summary, manifestPath, releasePath }
   }
 
-  const oasisComplete = runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps)
-  let manifest = deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps })
+  const oasisComplete = options.refreshHolds
+    ? existingOasisComplete
+    : runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps)
+  let manifest = deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, runMode })
   writeJson(manifestPath, manifest)
   const managerDispositionValidated = runManagerDisposition(reportDate, warnings, steps)
-  manifest = deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, managerDispositionValidated })
+  manifest = deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, managerDispositionValidated, runMode })
   writeJson(manifestPath, manifest)
 
-  const resourcesOk = runResourceBuild(reportDate, warnings, steps)
+  const resourcesOk = options.refreshHolds
+    ? (() => {
+        const current = validateCurrentResourceFile()
+        steps.push({
+          name: 'resources',
+          status: current.ok ? 'reused_validated' : 'failed_blocking',
+          detail: safeDetail(current.output),
+        })
+        if (!current.ok) warnings.push('The saved vehicle resource bundle did not validate, so the hold-only release was not published.')
+        return current.ok
+      })()
+    : runResourceBuild(reportDate, warnings, steps)
   manifest = { ...readJson(manifestPath), warnings: [...new Set([...warnings, AVAILABILITY_CAVEAT])], daily_steps: steps }
   if (!resourcesOk || !oasisComplete) {
     manifest.complete = false
@@ -625,7 +736,7 @@ async function runDaily(options) {
     writeJson(manifestPath, manifest)
     const status = !oasisComplete ? 'not_published_oasis_incomplete' : 'not_published_resource_validation_failed'
     const summary = summarize({ reportDate, validation: {}, publishStatus: status, manifestPath, releasePath, warnings })
-    writeJson(path.join(releaseDirectory, 'daily-summary.json'), { reportDate, status, summary })
+    writeJson(summaryPath, { reportDate, status, summary, warnings, steps, checkedAt: new Date().toISOString() })
     return { ok: false, failureCode: !oasisComplete ? 'OASIS_INCOMPLETE' : 'RESOURCE_VALIDATION_FAILED', summary, manifestPath, releasePath }
   }
   manifest.validation_results = { ...manifest.validation_results, resource_enrichment_validated: true, passed: true }
@@ -635,14 +746,16 @@ async function runDaily(options) {
   let publishStatus = 'publish_skipped_by_flag'
   let publishOk = true
   if (!options.noPublish) {
-    publishOk = publish(reportDate, options.forcePublish, steps)
-    publishStatus = publishOk ? 'published_or_already_verified' : 'publish_failed_last_verified_release_preserved'
+    publishOk = publish(reportDate, options.forcePublish || options.refreshHolds, steps, { holdRefresh: options.refreshHolds })
+    publishStatus = publishOk
+      ? options.refreshHolds ? 'intraday_holds_published_and_verified' : 'published_or_already_verified'
+      : 'publish_failed_last_verified_release_preserved'
     manifest = readJson(manifestPath)
     manifest.daily_steps = steps
     writeJson(manifestPath, manifest)
   }
   const summary = summarize({ reportDate, validation, publishStatus, manifestPath, releasePath, warnings })
-  writeJson(path.join(releaseDirectory, 'daily-summary.json'), { reportDate, status: publishStatus, summary, counts: validation, warnings })
+  writeJson(summaryPath, { reportDate, status: publishStatus, summary, counts: validation, warnings, steps, checkedAt: new Date().toISOString() })
   return {
     ok: publishOk,
     failureCode: publishOk ? null : 'CLOUDFLARE_PUBLISH_FAILED',
@@ -654,16 +767,20 @@ async function runDaily(options) {
 }
 
 function printHelp() {
-  console.log(`Usage: run-inventory-flow-daily --date YYYY-MM-DD [--dry-run] [--no-publish] [--force-publish] [--skip-authenticated]
+  console.log(`Usage: run-inventory-flow-daily --date YYYY-MM-DD [--dry-run] [--no-publish] [--force-publish] [--skip-authenticated] [--refresh-holds]
 
 Runs the app-first daily pipeline: source collection, validation, local release bundle, and Cloudflare publish.
+--refresh-holds archives and refreshes DealerMail only after the morning release is verified, then republishes a validated revision through the protected publisher.
 Excel workbook generation is intentionally outside this command.`)
 }
 
 export const internals = {
+  archiveDealerMailRevision,
   deriveManifest,
   exitCodeForResult,
   formatStores,
+  parseArgs,
+  publish,
   reuseExistingOasisCapture,
   summarize,
   todayInNewYork,

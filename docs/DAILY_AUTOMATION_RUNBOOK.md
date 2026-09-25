@@ -70,6 +70,7 @@ not entry points run on their own.
 | 07:30 | Public inventory + resource enrichment, Vehicle Resources sheet, scripted DealerMail deep capture + snapshot build/finalize, scripted Ford OASIS and invoice capture, workbook merge/tidy/validate, complete the manifest, verify (never run) the publish, vAuto backup, message Joe | Claude scheduled task `Bob Maxey Used Inventory - Daily Report`, prompt `outputs\bob_maxey_task_prompt_2026-09-14.txt` | Claude Cowork |
 | 08:45, 09:45, 10:45 | Idempotent recovery: follow the same 09/14 prompt only when today's verified receipt is absent; defer to an active writer | Codex heartbeat `Daily Bob Maxey Used Inventory Report` | Codex recovery |
 | 09:15, then every 30 min to 15:15 | Build/reuse resource cache, publish to Cloudflare, verify live | Windows task `BobMaxey-InventoryFlow-DailyPublish` | Task Scheduler |
+| 09:25, then every 30 min to 19:25 | After the morning release is verified, archive the prior DealerMail revision, refresh current holds/comments/alerts, rebuild and validate the release, and republish through the same protected publisher | Windows task `BobMaxey-InventoryFlow-IntradayHolds` | Task Scheduler |
 | every 15 min, all day | Relaunch the isolated automation **Comet** if it is not running | Windows task `BobMaxey-AutomationBrowser` | Task Scheduler |
 | every 10 min, all day | Keep DealerMail, FMCDealer/OASIS, Ford invoices and vAuto sessions warm; recreate missing read-only service tabs and report each service's real failure signature | Windows task `BobMaxey-DealerMailKeeper` | Task Scheduler |
 
@@ -80,9 +81,19 @@ decrypt). The Claude task only *verifies* the publish by reading the receipt and
 the Windows task's log, and may `Start-ScheduledTask` it once if the manifest
 completed after the last scheduled slot.
 
+The intraday hold task is deliberately narrower than the morning run. It does not
+recapture OASIS, Ford service history, invoices, stickers, vAuto, warranty, or
+public inventory, and it does not re-upload saved invoice or vAuto PDF documents.
+It validates the existing resource bundle before every publication. It requires
+the same-date morning `published_and_verified`
+receipt, reuses the morning source evidence, archives each prior DealerMail
+revision under `work\dealermail-history\intraday\YYYY-MM-DD\`, and fails closed
+without replacing the last verified cloud release when DealerMail or validation
+is incomplete.
+
 ## Windows scheduled tasks
 
-All three are registered for the automation account with logon type **Interactive**: they
+All scheduled tasks are registered for the automation account with logon type **Interactive**: they
 run while Joe is logged on (a locked screen is fine; a full log-off or a reboot
 to the login screen is not). To run logged-off, open Task Scheduler, tick
 *Run whether user is logged on or not*, and enter the Windows password. DPAPI
