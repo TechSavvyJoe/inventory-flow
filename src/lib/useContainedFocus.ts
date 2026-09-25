@@ -37,10 +37,27 @@ export function useContainedFocus({
   onEscape,
 }: ContainedFocusOptions) {
   const onEscapeRef = useRef(onEscape)
+  const activationRef = useRef<{ container: HTMLElement; opener: HTMLElement | null } | null>(null)
 
   useLayoutEffect(() => {
     onEscapeRef.current = onEscape
   }, [onEscape])
+
+  // Capture before early Tab or background isolation moves focus. Retain the
+  // activation's opener through containment changes and StrictMode rehearsal.
+  useLayoutEffect(() => {
+    if (!active) {
+      activationRef.current = null
+      return
+    }
+    const container = containerRef.current
+    if (container && activationRef.current?.container !== container) {
+      activationRef.current = {
+        container,
+        opener: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+      }
+    }
+  }, [active, containerRef])
 
   // A committed dialog can receive keyboard input before passive effects run.
   // Install its handler before paint so a quick reopen/Escape is never lost.
@@ -99,7 +116,7 @@ export function useContainedFocus({
     if (!active) return
     const container = containerRef.current
     if (!container) return
-    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const returnFocus = activationRef.current?.opener ?? null
     const frame = window.requestAnimationFrame(() => {
       const target = initialFocusRef?.current ?? focusableElements(container)[0] ?? container
       target.focus()
