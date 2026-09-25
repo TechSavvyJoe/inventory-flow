@@ -12,6 +12,7 @@
 param(
   [string]$ReportDate,
   [switch]$SkipPhotoCache,
+  [switch]$HoldRefresh,
   [switch]$Force,
   [string]$WorkspaceRoot
 )
@@ -231,15 +232,20 @@ function Complete-VerifiedPublicationState {
 function Complete-PublicationFollowups {
   param(
     [Parameter(Mandatory)]$Receipt,
-    [Parameter(Mandatory)][string]$Date
+    [Parameter(Mandatory)][string]$Date,
+    [switch]$ReuseDocuments
   )
 
   # The inventory receipt is written before document uploads. Retry these
   # idempotent uploads even when the inventory release is already verified.
-  Write-Log 'invoice documents: publishing private saved copies'
-  $invoicePublishRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\publish-invoice-documents.mjs', $Date)
-  if ($invoicePublishRun.ExitCode -ne 0) { Write-Log "invoice documents FAILED: $($invoicePublishRun.Output.Trim())" 'ERROR'; throw 'INVOICE_DOCUMENT_PUBLISH_FAILED' }
-  Write-Log "invoice documents: $($invoicePublishRun.Output.Trim())"
+  if (-not $ReuseDocuments) {
+    Write-Log 'invoice documents: publishing private saved copies'
+    $invoicePublishRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\publish-invoice-documents.mjs', $Date)
+    if ($invoicePublishRun.ExitCode -ne 0) { Write-Log "invoice documents FAILED: $($invoicePublishRun.Output.Trim())" 'ERROR'; throw 'INVOICE_DOCUMENT_PUBLISH_FAILED' }
+    Write-Log "invoice documents: $($invoicePublishRun.Output.Trim())"
+  } else {
+    Write-Log 'invoice documents: reused for hold-only refresh'
+  }
   Update-IntegrationExpectedMetadata -Receipt $Receipt
   Assert-IntegrationDeployment
   Complete-VerifiedPublicationState -Receipt $Receipt -Date $Date
@@ -302,7 +308,7 @@ try {
 
   Push-Location $AppRoot
   try {
-    if (-not $SkipPhotoCache) {
+    if (-not $SkipPhotoCache -and -not $HoldRefresh) {
       # Step 1 - vehicle resource cache (photos / AutoCheck / window stickers).
       # Prefer reusing resources already embedded in the hash-bound snapshot;
       # fall back to a fresh VDP extraction when that yields nothing.
@@ -327,9 +333,10 @@ try {
       }
       Write-Log "photo cache: $($cacheOut.Trim())"
     } else {
-      Write-Log 'photo cache: skipped by flag'
+      Write-Log $(if ($HoldRefresh) { 'photo cache: reused for hold-only refresh' } else { 'photo cache: skipped by flag' })
     }
 
+    if (-not $HoldRefresh) {
     # Step 1.4 - vAuto Factory Equipment (CAI label) capture, API path.
     # Silent and headless: an authenticated fetch inside the automation browser's own
     # vAuto tab (127.0.0.1:9222), ~0.2 s per VIN, no form, no popup, nothing on screen.
@@ -407,28 +414,35 @@ try {
     } catch {
       Write-Log "warranty: skipped - $($_.Exception.Message)" 'WARN'
     }
+    } else {
+      Write-Log 'stable enrichment: reusing saved vAuto, AutoCheck, PDF, sticker, invoice, photo, and warranty data for hold-only refresh'
+    }
 
     # Step 1.5 - per-VIN resource enrichment (window sticker / invoice / vAuto CAI label)
     # Rebuilds data\vin-document-enrichment.json from whatever the morning captured,
     # values copied as printed, then proves it against the REAL validators before
     # anything is published. A failure here stops the publish - never ships a bad file.
-    Write-Log 'resources: building vin-document-enrichment.json'
-    $enrichRun = Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @((Join-Path $WorkspaceRoot 'work\build_vin_document_enrichment.py'), '--report-date', $date)
-    $enrichOut = $enrichRun.Output
-    if ($enrichRun.ExitCode -ne 0) { Write-Log "resources: build FAILED: $($enrichOut.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_BUILD_FAILED' }
-    Write-Log "resources: $($enrichOut.Trim())"
-    $serviceHistoryMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-ford-service-history.mjs', $date)
-    $serviceHistoryMergeOut = $serviceHistoryMergeRun.Output
-    if ($serviceHistoryMergeRun.ExitCode -ne 0) { Write-Log "resources: Ford service history merge FAILED: $($serviceHistoryMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_SERVICE_HISTORY_MERGE_FAILED' }
-    Write-Log "resources: $($serviceHistoryMergeOut.Trim())"
-    $autoCheckMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-vauto-autocheck.mjs', $date)
-    $autoCheckMergeOut = $autoCheckMergeRun.Output
-    if ($autoCheckMergeRun.ExitCode -ne 0) { Write-Log "resources: AutoCheck merge FAILED: $($autoCheckMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_AUTOCHECK_MERGE_FAILED' }
-    Write-Log "resources: $($autoCheckMergeOut.Trim())"
-    $invoiceMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-invoice-metadata.mjs', $date)
-    $invoiceMergeOut = $invoiceMergeRun.Output
-    if ($invoiceMergeRun.ExitCode -ne 0) { Write-Log "resources: invoice merge FAILED: $($invoiceMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_INVOICE_MERGE_FAILED' }
-    Write-Log "resources: $($invoiceMergeOut.Trim())"
+    if (-not $HoldRefresh) {
+      Write-Log 'resources: building vin-document-enrichment.json'
+      $enrichRun = Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @((Join-Path $WorkspaceRoot 'work\build_vin_document_enrichment.py'), '--report-date', $date)
+      $enrichOut = $enrichRun.Output
+      if ($enrichRun.ExitCode -ne 0) { Write-Log "resources: build FAILED: $($enrichOut.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_BUILD_FAILED' }
+      Write-Log "resources: $($enrichOut.Trim())"
+      $serviceHistoryMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-ford-service-history.mjs', $date)
+      $serviceHistoryMergeOut = $serviceHistoryMergeRun.Output
+      if ($serviceHistoryMergeRun.ExitCode -ne 0) { Write-Log "resources: Ford service history merge FAILED: $($serviceHistoryMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_SERVICE_HISTORY_MERGE_FAILED' }
+      Write-Log "resources: $($serviceHistoryMergeOut.Trim())"
+      $autoCheckMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-vauto-autocheck.mjs', $date)
+      $autoCheckMergeOut = $autoCheckMergeRun.Output
+      if ($autoCheckMergeRun.ExitCode -ne 0) { Write-Log "resources: AutoCheck merge FAILED: $($autoCheckMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_AUTOCHECK_MERGE_FAILED' }
+      Write-Log "resources: $($autoCheckMergeOut.Trim())"
+      $invoiceMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-invoice-metadata.mjs', $date)
+      $invoiceMergeOut = $invoiceMergeRun.Output
+      if ($invoiceMergeRun.ExitCode -ne 0) { Write-Log "resources: invoice merge FAILED: $($invoiceMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_INVOICE_MERGE_FAILED' }
+      Write-Log "resources: $($invoiceMergeOut.Trim())"
+    } else {
+      Write-Log 'resources: reusing the hold-refresh bundle already rebuilt by the daily orchestrator'
+    }
     Write-Log 'resources: validating against release validators'
     $enrichCheckRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\dryrun_resource_enrichment_check.mjs', $date)
     $enrichCheck = $enrichCheckRun.Output
@@ -449,7 +463,7 @@ try {
       throw 'PUBLISH_NOT_VERIFIED'
     }
     $verifiedReceipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
-    Complete-PublicationFollowups -Receipt $verifiedReceipt -Date $date
+    Complete-PublicationFollowups -Receipt $verifiedReceipt -Date $date -ReuseDocuments:$HoldRefresh
     Write-Log '=== daily-cloud-publish SUCCESS ==='
   } finally {
     Pop-Location

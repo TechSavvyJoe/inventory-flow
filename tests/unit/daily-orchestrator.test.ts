@@ -1,7 +1,7 @@
 // @ts-nocheck -- the daily orchestrator is plain ESM.
 // @vitest-environment node
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -61,6 +61,46 @@ describe('app-first daily orchestrator helpers', () => {
 
     expect(internals.exitCodeForResult({ ok: true })).toBe(0)
     expect(internals.exitCodeForResult({ ok: false, failureCode: 'DEALERMAIL_INCOMPLETE' })).toBe(1)
+  })
+
+  it('parses the intraday hold-refresh mode without enabling unrelated source flags', async () => {
+    const internals = await loadInternals()
+
+    expect(internals.parseArgs(['--date', '2026-09-25', '--refresh-holds'])).toMatchObject({
+      date: '2026-09-25',
+      refreshHolds: true,
+      skipAuthenticated: false,
+      forcePublish: false,
+    })
+  })
+
+  it('archives the prior DealerMail revision before an intraday refresh', async () => {
+    const internals = await loadInternals()
+    const reportDate = '2026-09-25'
+    const snapshotDirectory = path.join(workspaceRoot, 'work', 'dealermail-history', 'snapshots')
+    mkdirSync(snapshotDirectory, { recursive: true })
+    writeFileSync(path.join(snapshotDirectory, `${reportDate}-hold-details-raw.json`), JSON.stringify({ holds: [1] }))
+    writeFileSync(path.join(snapshotDirectory, `${reportDate}-complete-used-inventory-deep-cloud-ready.json`), JSON.stringify({ complete: true }))
+
+    const archiveDirectory = internals.archiveDealerMailRevision(reportDate, new Date('2026-09-25T14:25:00.000Z'))
+
+    expect(archiveDirectory).toContain(path.join('intraday', reportDate, '2026-09-25T14-25-00-000Z'))
+    expect(existsSync(path.join(archiveDirectory, `${reportDate}-hold-details-raw.json`))).toBe(true)
+    const manifest = JSON.parse(readFileSync(path.join(archiveDirectory, 'archive-manifest.json'), 'utf8'))
+    expect(manifest.files).toHaveLength(2)
+    expect(manifest.files.every((file) => /^[A-F0-9]{64}$/.test(file.sha256))).toBe(true)
+  })
+
+  it('keeps hold-only publishing on the lightweight protected path', () => {
+    const orchestrator = readFileSync(new URL('../../scripts/run-inventory-flow-daily.mjs', import.meta.url), 'utf8')
+    const publisher = readFileSync(new URL('../../scripts/daily-cloud-publish.ps1', import.meta.url), 'utf8')
+
+    expect(orchestrator).toContain("if (holdRefresh) args.push('-HoldRefresh')")
+    expect(orchestrator).toContain("status: current.ok ? 'reused_validated' : 'failed_blocking'")
+    expect(publisher).toContain('[switch]$HoldRefresh')
+    expect(publisher).toContain('reusing saved vAuto, AutoCheck, PDF, sticker, invoice, photo, and warranty data')
+    expect(publisher).toContain('invoice documents: reused for hold-only refresh')
+    expect(publisher).toContain("@('scripts\\dryrun_resource_enrichment_check.mjs', $date)")
   })
 
   it('reuses a complete existing OASIS capture when the browser is unavailable, and only then', async () => {
