@@ -24,10 +24,29 @@ $ErrorActionPreference = 'Stop'
 $global:HarnessScenario = Get-Content -LiteralPath $ScenarioPath -Raw | ConvertFrom-Json
 $env:USERPROFILE = $global:HarnessScenario.profile
 $env:INVENTORY_TEST_EXISTING_SECRET = 'synthetic-before'
-[System.Environment]::SetEnvironmentVariable('INVENTORY_TEST_NEW_SECRET', $null)
-$syntheticSecrets = '{"INVENTORY_TEST_EXISTING_SECRET":"synthetic-loaded","INVENTORY_TEST_NEW_SECRET":"synthetic-added"}'
+Remove-Item -LiteralPath 'Env:INVENTORY_TEST_NEW_SECRET' -ErrorAction SilentlyContinue
+if ((Test-Path -LiteralPath 'Env:INVENTORY_TEST_NEW_SECRET') -or
+    $null -ne [System.Environment]::GetEnvironmentVariable('INVENTORY_TEST_NEW_SECRET')) {
+  throw 'SYNTHETIC_ABSENT_ENVIRONMENT_PRECONDITION_FAILED'
+}
+$syntheticSecrets = @{
+  INVENTORY_TEST_EXISTING_SECRET = 'synthetic-loaded'
+  INVENTORY_TEST_NEW_SECRET = 'synthetic-added'
+}
+# Empty environment values became supported in PowerShell 7.5. Verify their
+# restoration there without treating an empty value as an absent variable.
+$supportsEmptyEnvironmentValues = $PSVersionTable.PSVersion.Major -gt 7 -or
+  ($PSVersionTable.PSVersion.Major -eq 7 -and $PSVersionTable.PSVersion.Minor -ge 5)
+if ($supportsEmptyEnvironmentValues) {
+  $env:INVENTORY_TEST_EMPTY_SECRET = ''
+  if (-not (Test-Path -LiteralPath 'Env:INVENTORY_TEST_EMPTY_SECRET') -or
+      '' -cne [System.Environment]::GetEnvironmentVariable('INVENTORY_TEST_EMPTY_SECRET')) {
+    throw 'SYNTHETIC_EMPTY_ENVIRONMENT_PRECONDITION_FAILED'
+  }
+  $syntheticSecrets.INVENTORY_TEST_EMPTY_SECRET = 'synthetic-empty-loaded'
+}
 if ($global:HarnessScenario.secretPresent) {
-  $syntheticSecrets | ConvertTo-SecureString -AsPlainText -Force | ConvertFrom-SecureString |
+  $syntheticSecrets | ConvertTo-Json -Compress | ConvertTo-SecureString -AsPlainText -Force | ConvertFrom-SecureString |
     Set-Content -NoNewline -LiteralPath (Join-Path $AppRoot 'runtime/cloud-secrets/publisher.dpapi')
 }
 
@@ -44,7 +63,9 @@ function global:Invoke-SyntheticNative {
   $event = [ordered]@{
     helper = $helper
     arguments = @($HelperArguments | Select-Object -Skip 1)
-    credentialsLoaded = ($env:INVENTORY_TEST_EXISTING_SECRET -eq 'synthetic-loaded' -and $env:INVENTORY_TEST_NEW_SECRET -eq 'synthetic-added')
+    credentialsLoaded = ($env:INVENTORY_TEST_EXISTING_SECRET -eq 'synthetic-loaded' -and
+      $env:INVENTORY_TEST_NEW_SECRET -eq 'synthetic-added' -and
+      (-not $supportsEmptyEnvironmentValues -or $env:INVENTORY_TEST_EMPTY_SECRET -eq 'synthetic-empty-loaded'))
   }
   $event | ConvertTo-Json -Compress | Add-Content -LiteralPath $global:HarnessScenario.events
   switch ($helper) {
@@ -82,7 +103,13 @@ $publisherExit = $LASTEXITCODE
 [ordered]@{
   exitCode = $publisherExit
   existingSecretRestored = ($env:INVENTORY_TEST_EXISTING_SECRET -eq 'synthetic-before')
-  newSecretRemoved = ($null -eq [System.Environment]::GetEnvironmentVariable('INVENTORY_TEST_NEW_SECRET'))
+  newSecretRemoved = (-not (Test-Path -LiteralPath 'Env:INVENTORY_TEST_NEW_SECRET') -and
+    $null -eq [System.Environment]::GetEnvironmentVariable('INVENTORY_TEST_NEW_SECRET'))
+  supportsEmptyEnvironmentValues = $supportsEmptyEnvironmentValues
+  emptySecretRestored = if ($supportsEmptyEnvironmentValues) {
+    (Test-Path -LiteralPath 'Env:INVENTORY_TEST_EMPTY_SECRET') -and
+      '' -ceq [System.Environment]::GetEnvironmentVariable('INVENTORY_TEST_EMPTY_SECRET')
+  } else { $null }
   locationRestored = ((Get-Location).Path -eq $beforeLocation)
 } | ConvertTo-Json | Set-Content -LiteralPath $global:HarnessScenario.result
 exit $publisherExit
@@ -125,8 +152,10 @@ function fixture(cached = false) {
     expect(existsSync(scenario.result), output).toBe(true)
     const result = JSON.parse(readFileSync(scenario.result, 'utf8'))
     expect(result).toMatchObject({ existingSecretRestored: true, newSecretRemoved: true, locationRestored: true })
+    if (result.supportsEmptyEnvironmentValues) expect(result.emptySecretRestored).toBe(true)
+    else expect(result.emptySecretRestored).toBeNull()
     expect(execution.status).toBe(result.exitCode)
-    expect(output).not.toMatch(/synthetic-before|synthetic-loaded|synthetic-added/)
+    expect(output).not.toMatch(/synthetic-before|synthetic-loaded|synthetic-added|synthetic-empty-loaded/)
     const events: { helper: string; arguments: string[]; credentialsLoaded: boolean }[] = existsSync(scenario.events)
       ? readFileSync(scenario.events, 'utf8').trim().split(/\r?\n/).map(line => JSON.parse(line)) : []
     expect(events.every(event => event.credentialsLoaded)).toBe(true)

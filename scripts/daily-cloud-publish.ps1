@@ -459,7 +459,13 @@ try {
   Write-Log ("=== daily-cloud-publish FAILED: {0} ===" -f $_.Exception.Message) 'ERROR'
 } finally {
   foreach ($key in $originalEnv.Keys) {
-    [System.Environment]::SetEnvironmentVariable($key, $originalEnv[$key])
+    # PowerShell 7.5+ converts a null setter argument to an empty value.
+    # Remove absent originals explicitly; preserve existing strings as-is.
+    if ($null -eq $originalEnv[$key]) {
+      Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue
+    } else {
+      [System.Environment]::SetEnvironmentVariable($key, $originalEnv[$key])
+    }
   }
   $originalEnv = @{}
   $secrets = $null
