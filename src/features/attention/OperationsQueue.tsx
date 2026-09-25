@@ -23,18 +23,20 @@ interface OperationsQueueProps {
 const CATEGORIES: Array<[ActionCategory, string]> = [['all', 'All tasks'], ['moves', 'Vehicle moves'], ['holds', 'Hold follow-ups'], ['inventory', 'Inventory checks'], ['service', 'Service']]
 
 function TaskVehicle({ item, vehicle }: { item: AttentionItem; vehicle?: VehicleRecord }) {
+  const homeStore = vehicle?.homeStore || item.store
+  const currentStore = vehicle?.movement?.locationConfidence === 'verified' && vehicle.movement.currentLocation
+    ? vehicle.movement.currentLocation : vehicle?.sourceReportedLocation
   const location = vehicle?.movement?.locationConfidence === 'verified' && vehicle.movement.currentLocation
     ? `Confirmed at ${vehicle.movement.currentLocation}`
     : vehicle?.sourceReportedLocation ? `Reported at ${vehicle.sourceReportedLocation}` : null
   const value = vehicle ? [vehicle.listedPrice != null ? formatCurrency(vehicle.listedPrice) : null, vehicle.mileage != null ? `${formatNumber(vehicle.mileage)} mi` : null, vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : null].filter(Boolean).join(' · ') : ''
-  return <div className="workflow-vehicle action-vehicle"><VehicleThumbnail vehicle={vehicle}/><div>
+  return <div className="workflow-vehicle action-vehicle"><VehicleThumbnail vehicle={vehicle}/><div className="action-vehicle-summary">
     <strong>{vehicle?.vehicleName || item.vehicleName || item.store || 'Store inventory'}</strong>
-    <div className="action-vehicle-identifiers">{(vehicle?.stockNumber || item.stockNumber) && <CopyableValue label="stock number" text={(vehicle?.stockNumber || item.stockNumber)!} compact>Stock {vehicle?.stockNumber || item.stockNumber}</CopyableValue>}{(vehicle?.vin || item.vin) && <CopyableValue label="VIN" text={(vehicle?.vin || item.vin)!} compact>{vehicle?.vin || item.vin}</CopyableValue>}</div>
-    <small>{vehicle?.homeStore || item.store}</small>
     {value ? <p className="action-vehicle-value">{value}</p> : null}
     {vehicle ? <p className="action-vehicle-readiness">{[serviceStatusLabel(vehicle.serviceReadiness), location].filter(Boolean).join(' · ')}</p> : null}
+    {homeStore && homeStore !== currentStore ? <small>Home: {homeStore}</small> : null}
     {item.count ? <small>{item.count} {item.count === 1 ? 'vehicle' : 'vehicles'}</small> : null}
-  </div></div>
+  </div><div className="action-vehicle-identifiers">{(vehicle?.stockNumber || item.stockNumber) && <CopyableValue label="stock number" text={(vehicle?.stockNumber || item.stockNumber)!} compact>Stock {vehicle?.stockNumber || item.stockNumber}</CopyableValue>}{(vehicle?.vin || item.vin) && <CopyableValue label="VIN" text={(vehicle?.vin || item.vin)!} compact>{vehicle?.vin || item.vin}</CopyableValue>}</div></div>
 }
 
 function TaskActions({ item, vehicle, returnTo }: { item: AttentionItem; vehicle?: VehicleRecord; returnTo: string }) {

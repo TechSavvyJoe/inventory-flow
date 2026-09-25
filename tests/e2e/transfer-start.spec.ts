@@ -120,3 +120,26 @@ test('an authorized active direct move keeps Track and adds Move again', async (
   await expect(page.getByRole('button', { name: /collected|arrived/i })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
 })
+
+test('failed full move reads explain the retained summary and recover through retry', async ({ page }) => {
+  let failDetails = true
+  await page.route('**/api/transfers/*', async route => {
+    if (route.request().method() !== 'GET' || !failDetails) return route.continue()
+    await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Synthetic temporary detail failure' }) })
+  })
+  await page.goto('/transfers')
+  await page.locator('.transfer-list-item').first().click()
+  const retry = page.getByRole('button', { name: 'Retry move details', exact: true })
+  await expect(retry).toBeVisible()
+  await expect(page.getByRole('alert')).toContainText('The summary remains available')
+  await expect(page.getByRole('region', { name: 'Next step' })).toBeVisible()
+  expect((await retry.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+  failDetails = false
+  const recovered = page.waitForResponse(response => response.request().method() === 'GET' && response.url().includes('/api/transfers/') && response.ok())
+  await retry.click()
+  await recovered
+  await expect(retry).toHaveCount(0)
+  await expect(page.getByText('Loading full move record… Summary remains available.', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Next step' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})

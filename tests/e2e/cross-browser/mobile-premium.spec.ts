@@ -27,13 +27,19 @@ test('mobile inventory keeps its place while a records sheet opens and switches 
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 })
     await page.goto('/inventory?scope=home')
+    // Exercise both held and unheld records; the landing default is No hold.
+    await page.getByRole('button', { name: /^All:/ }).click()
     const rows = page.locator('.if-srp-mobile-row--scan')
     await expect(rows).toHaveCount(2)
-    const first = rows.first()
+    // Default price ordering puts the Bronco before the F-150. Select the
+    // intended rich-record fixture rather than coupling this test to row order.
+    const first = rows.filter({ hasText: 'DEMO-H01' })
     const initialHeight = (await first.boundingBox())!.height
-    // The compact card intentionally carries the three-source quick scan. Keep
-    // it below one short-phone viewport while guarding against runaway growth.
-    expect(initialHeight).toBeLessThanOrEqual(600)
+    // A list is a comparison surface; full source ledgers belong in Records.
+    // Even this held vehicle with movement attention must stay compact.
+    expect(initialHeight).toBeLessThanOrEqual(280)
+    expect((await rows.first().boundingBox())!.y).toBeLessThanOrEqual(300)
+    await expect(first.locator('.vehicle-resources--scan')).toHaveCount(0)
     const url = page.url()
     const toggle = first.getByRole('button', { name: /^Open vehicle records for/ })
     await toggle.click()
@@ -50,7 +56,7 @@ test('mobile inventory keeps its place while a records sheet opens and switches 
     await expect(panel.getByRole('list', { name:'Included with equipment group' })).toHaveCount(0)
     await expect(page).toHaveURL(url)
     await fits(page)
-    await panel.getByRole('button', { name: 'Next vehicle', exact: true }).click()
+    await panel.getByRole('button', { name: 'Previous vehicle', exact: true }).click()
     const next = page.getByRole('dialog', { name: '2023 Ford Bronco Sport Badlands records', exact:true })
     await expect(next).toBeVisible()
     await expect(next).toContainText('DEMO-H02')

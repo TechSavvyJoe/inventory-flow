@@ -85,6 +85,8 @@ export interface VehicleResource {
   compactFacts: string[];
   /** Short inventory scan signals; full reports remain in the workspace. */
   scanFacts?: string[];
+  /** Structured form of the existing primary history scan signal. */
+  primaryScanRow?: VehicleResourceSummaryRow;
   /** Provenance and availability, deliberately separate from vehicle facts. */
   sourceNote: string | null;
   href: string | null;
@@ -382,6 +384,7 @@ export function vehicleResourceCatalog(vehicle: VehicleResourceVehicle): Vehicle
       inspectionDate ? `Inspected ${formatDate(inspectionDate)}` : null,
       odometer,
     ]),
+    primaryScanRow: scanCheck?.row,
     href: historyHref, target: 'data', action: 'Open history', dataAction: 'View AutoCheck data', hasCapturedData: historyFacts.length > 0,
     score: numeric(history?.score) ? { value: history.score, range: scoreRange } : undefined,
   });

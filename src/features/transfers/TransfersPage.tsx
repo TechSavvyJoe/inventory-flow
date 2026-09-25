@@ -265,34 +265,54 @@ function TransferDetailLoader({
     () => ({ id: selectedRecord?.id, refreshKey: selectedRecordRefreshKey, role, homeStore }),
     [selectedRecord?.id, selectedRecordRefreshKey, role, homeStore],
   )
-  const [recordDetail, setRecordDetail] = useState<{ context: typeof requestContext; record: TransferRecord } | null>(null)
+  const [detailRequest, setDetailRequest] = useState<{
+    context: typeof requestContext;
+    status: 'loading' | 'ready' | 'failed';
+    record?: TransferRecord;
+  } | null>(null)
+  const [retryVersion, setRetryVersion] = useState(0)
   useEffect(() => {
     let active = true
     const id = requestContext.id
     if (!id) {
-      setRecordDetail(null)
+      setDetailRequest(null)
       return () => { active = false }
     }
+    setDetailRequest({ context: requestContext, status: 'loading' })
     // The active flag guards private data and actions from an earlier context.
     // Do not abort a small same-origin read on every status refresh: WebKit
     // reports those expected cancellations as access-control console errors.
     // A stale response is safely ignored, while the latest context still gets
     // its own authoritative detail request.
     getTransfer(id, requestContext.role, requestContext.homeStore)
-      .then((record) => { if (active && record?.id === id) setRecordDetail({ context: requestContext, record }) })
-      .catch(() => { if (active) setRecordDetail(null) })
+      .then((record) => {
+        if (!active) return
+        setDetailRequest(record?.id === id
+          ? { context: requestContext, status: 'ready', record }
+          : { context: requestContext, status: 'failed' })
+      })
+      .catch(() => { if (active) setDetailRequest({ context: requestContext, status: 'failed' }) })
     return () => {
       active = false
     }
-  }, [requestContext])
-  const detail = recordDetail?.context === requestContext
-    ? toTransferDetail(recordDetail.record, data.vehicles.find((vehicle) => vehicle.vin === recordDetail.record.vin), data.meta, role)
+  }, [requestContext, retryVersion])
+  const currentRequest = detailRequest?.context === requestContext ? detailRequest : null
+  const recordDetail = currentRequest?.status === 'ready' ? currentRequest.record : undefined
+  const detail = recordDetail
+    ? toTransferDetail(recordDetail, data.vehicles.find((vehicle) => vehicle.vin === recordDetail.vin), data.meta, role)
     : selected?.detail ?? null
   const vehicle = data.vehicles.find(vehicle => vehicle.vin === selectedRecord?.vin)
-  return <TransferTracker transfer={detail} mode="page" onAction={onAction} vehicleLinks={vehicle ? <nav className="move-vehicle-links" aria-label="Vehicle reference">
+  const failed = currentRequest?.status === 'failed'
+  return <>
+    {selected && currentRequest?.status !== 'ready' ? <div className="move-detail-load" role={failed ? 'alert' : 'status'}>
+      <p>{failed ? 'Full move record could not load. The summary remains available; additional history and details may be missing.' : 'Loading full move record… Summary remains available.'}</p>
+      {failed ? <button type="button" onClick={() => setRetryVersion(version => version + 1)}>Retry move details</button> : null}
+    </div> : null}
+    <TransferTracker transfer={detail} mode="page" onAction={onAction} vehicleLinks={vehicle ? <nav className="move-vehicle-links" aria-label="Vehicle reference">
     <Link to={vehicleWorkspacePath(vehicle.vin, { returnTo })}>Vehicle details</Link>
     <Link to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo })}>Records</Link>
   </nav> : null} />
+  </>
 }
 
 export function TransfersPage() {
@@ -679,7 +699,7 @@ export function TransfersPage() {
                 </span>
               </header>
             ) : null}
-            <TransferDetailLoader selected={selected} data={data} role={role} homeStore={homeStore} onAction={handleAction} returnTo={currentWorkspaceReturnPath(location)} />
+            <TransferDetailLoader key={accessContext} selected={selected} data={data} role={role} homeStore={homeStore} onAction={handleAction} returnTo={currentWorkspaceReturnPath(location)} />
           </div>
         </div>
       )}

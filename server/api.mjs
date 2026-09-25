@@ -201,7 +201,7 @@ function serveStatic(request, response, distDir, url) {
   securityHeaders(response)
   response.setHeader(
     'Content-Security-Policy',
-    "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'",
+    "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; media-src 'self' blob:; connect-src 'self'",
   )
   response.setHeader('Content-Type', MIME_TYPES[path.extname(candidate).toLowerCase()] || 'application/octet-stream')
   response.setHeader('Content-Length', statSync(candidate).size)

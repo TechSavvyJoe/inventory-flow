@@ -7,6 +7,9 @@
    element styles belong in base.css. */
 
 :root {
+  --ifx-layer-modal: 100;
+  --ifx-modal-scrim: rgb(7 23 34 / 55%);
+  --ifx-disabled-opacity: 0.5;
   --nav-width: 188px;
   --top-height: 72px;
   --mobile-bottom-height: 70px;

@@ -1,3 +1,4 @@
+import { CustomerSummary } from '../sales/CustomerSummary';
 import { EQUIPMENT_CATEGORIES, equipmentFinderItems, type EquipmentCategoryId, type EquipmentFinderItem } from "./vehicle-equipment";
 import { CertifiedBadge } from "../../components/CertifiedBadge";
 import { ServiceStatusLink } from "./ServiceStatusLink";
@@ -636,6 +637,7 @@ export function VehicleWorkspace({
   const [activeTarget, setActiveTarget] = useState<WorkspaceSectionId>(initialTab);
   const [takeHomeOpen, setTakeHomeOpen] = useState(false);
   const takeHomeButtonRef = useRef<HTMLButtonElement>(null);
+  const takeHomeOpenerRef = useRef<HTMLButtonElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
   const activeTabRef = useRef<HTMLButtonElement>(null);
   const dealerMailActionsRef = useRef<HTMLElement>(null);
@@ -664,7 +666,7 @@ export function VehicleWorkspace({
       ? `${vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"} · ${formatDate(vehicle.dealerMail.loaner.serviceDate)}`
       : vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"
     : null;
-  const holdLabel = !holdCurrent ? "Hold status unverified"
+  const holdLabel = !holdCurrent ? (vehicle.dealerMail.lastKnownActiveHold ? "Last verified hold" : "Hold status unverified")
     : loanerLabel
       ? loanerLabel
     : vehicle.dealerMail.hasActiveHold === true
@@ -835,6 +837,7 @@ export function VehicleWorkspace({
               <div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
               {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
             </section>
+                <CustomerSummary key={vehicle.id} vehicle={vehicle} onRecords={() => openAndFocusSection("data")} onTakeHome={(button) => { takeHomeOpenerRef.current = button; setTakeHomeOpen(true); }} />
               </div>
               <section className="vdp-focus-operations" aria-label="Vehicle operational summary">
                 <h3>Operations</h3>
@@ -868,11 +871,11 @@ export function VehicleWorkspace({
             {recordsNeedReview ? <button type="button" className="vdp-focus-warning" onClick={() => openAndFocusSection("data")}><AlertTriangle size={16} aria-hidden="true" />Some vehicle information needs review.</button> : null}
           </WorkspacePanel>
           <WorkspacePanel id="equipment" label="Equipment" active={activePage === "equipment"}>
-            <section className="vdp-equipment-specifications" aria-label="Complete vehicle specifications">
-              <h3><Gauge size={17} strokeWidth={1.8} aria-hidden="true"/>Specifications</h3>
-              <dl className="vdp-focus-extra-specs">{equipmentSpecifications.map(([label, value]) => <Fact key={label} label={label!} className={label === "Model code" ? "vdp-spec-model-code" : undefined}>{value}</Fact>)}</dl>
-            </section>
             <SourceConfirmedEquipment vehicle={vehicle} />
+            <details className="vdp-equipment-specifications" aria-label="Complete vehicle specifications">
+              <summary><Gauge size={17} strokeWidth={1.8} aria-hidden="true"/><span>Specifications</span><ChevronDown size={16} aria-hidden="true"/></summary>
+              <dl className="vdp-focus-extra-specs">{equipmentSpecifications.map(([label, value]) => <Fact key={label} label={label!} className={label === "Model code" ? "vdp-spec-model-code" : undefined}>{value}</Fact>)}</dl>
+            </details>
             <details className="vdp-equipment-description" aria-label="Vehicle description">
               <summary><FileText size={17} strokeWidth={1.8} aria-hidden="true"/><span>Description</span><ChevronDown size={16} aria-hidden="true"/></summary>
               <p>{vehicle.dealerComments || "No vehicle description was published."}</p>
@@ -902,7 +905,7 @@ export function VehicleWorkspace({
             {listingUrl ? onOpenListing ? <button type="button" onClick={() => onOpenListing(vehicle)} data-action="open-listing"><Globe2 size={18} aria-hidden="true" />Listing</button>
               : <a href={listingUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" data-action="open-listing" data-read-only="true"><Globe2 size={18} aria-hidden="true" />Listing</a> : null}
             {invoiceUrl ? <a href={invoiceUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" data-action="invoice" data-read-only="true"><FileText size={18} aria-hidden="true" />Invoice</a> : null}
-            <button type="button" onClick={() => setTakeHomeOpen(true)} data-action="take-home" ref={takeHomeButtonRef} aria-label="Take-home page"><Printer size={18} aria-hidden="true" /><span>Take-home</span></button>
+            <button type="button" onClick={(event) => { takeHomeOpenerRef.current = event.currentTarget; setTakeHomeOpen(true); }} data-action="take-home" ref={takeHomeButtonRef} aria-label="Take-home page"><Printer size={18} aria-hidden="true" /><span>Take-home</span></button>
             <div className="vdp-focus-utilities">
               <button type="button" aria-pressed={shortlisted}
                 aria-label={`${shortlisted ? "Remove" : "Add"} ${vehicle.stockNumber} ${shortlisted ? "from" : "to"} shortlist`}
@@ -914,7 +917,7 @@ export function VehicleWorkspace({
           </div>
         </footer>
       </aside>
-      {takeHomeOpen ? <TakeHomeSheet vehicle={vehicle} onClose={() => setTakeHomeOpen(false)} returnFocusRef={takeHomeButtonRef} /> : null}
+      {takeHomeOpen ? <TakeHomeSheet vehicle={vehicle} onClose={() => setTakeHomeOpen(false)} returnFocusRef={takeHomeOpenerRef} /> : null}
     </>, document.body,
   );
 }

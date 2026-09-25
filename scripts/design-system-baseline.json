@@ -172,7 +172,7 @@
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 0,
-      "idSelectors": 45
+      "idSelectors": 41
     },
     "src/features/inventory/inventory-modern.css": {
       "smallText": 51,
@@ -186,7 +186,7 @@
       "rawColors": 35,
       "rgbHslColors": 9,
       "important": 13,
-      "idSelectors": 1
+      "idSelectors": 0
     },
     "src/features/inventory/VehicleWorkspace.records.css": {
       "smallText": 0,
@@ -200,7 +200,7 @@
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 510
+      "idSelectors": 506
     },
     "src/features/inventory/WarrantyOutlook.css": {
       "smallText": 0,
@@ -237,6 +237,13 @@
       "important": 0,
       "idSelectors": 0
     },
+    "src/features/sales/CustomerSummary.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
     "src/features/inventory/InventoryMobile.scan.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -247,11 +254,18 @@
     "src/features/inventory/InventoryTable.desk.css": {
       "smallText": 0,
       "rawColors": 0,
-      "rgbHslColors": 5,
+      "rgbHslColors": 0,
       "important": 1,
       "idSelectors": 0
     },
     "src/features/inventory/InventoryRecordsPanel.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/ScanVehicleDialog.css": {
       "smallText": 0,
       "rawColors": 0,
       "rgbHslColors": 0,

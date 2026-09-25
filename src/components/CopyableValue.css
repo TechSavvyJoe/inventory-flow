@@ -12,8 +12,8 @@
 }
 
 .copyable-value__button {
-  min-width: 28px;
-  min-height: 28px;
+  min-width: var(--ifx-control-height-md);
+  min-height: var(--ifx-control-height-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -63,8 +63,8 @@
 }
 
 .copyable-value--compact .copyable-value__button {
-  min-width: 28px;
-  min-height: 28px;
+  min-width: var(--ifx-control-height-md);
+  min-height: var(--ifx-control-height-md);
   padding: 0 5px;
   border-radius: 5px;
 }

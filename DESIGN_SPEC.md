@@ -8,7 +8,7 @@ Maxey Inventory Flow is an internal operations surface for a four-store dealersh
 2. What matching vehicles can the group reach when my store does not have the right unit?
 3. Where is a moved vehicle, who has custody, what happens next, and when is it due?
 
-The home-store view is the default for salespeople and managers. Group inventory is a deliberate expansion. Group Operations is a manager surface.
+The home-store view opens with **No hold** selected for salespeople and managers. It uses reported or confirmed physical location and the latest complete hold snapshot, including retained observations explicitly labeled with their as-of date. **All**, **Held**, and **Offsite** remain one tap away; no hold observation promises availability. The home location scope includes assigned vehicles and positively located visitors, while Offsite includes owned vehicles known elsewhere or in transit. Unknown/conflicting locations stay in All. The last selected view is preserved within the authorized session. Group inventory is a deliberate expansion. Group Operations is a manager surface.
 
 ## Accepted concept references
 
@@ -111,16 +111,18 @@ No marketing eyebrow, tagline, fake performance claim, or customer-sensitive tex
 3. User deliberately expands to All Stores or Group Reach.
 4. Selecting a vehicle opens the workspace without losing list context.
 5. Request Vehicle records an internal movement request only; it never writes to DealerMail/CDK or asserts availability.
-6. Home-store manager approves/declines; requesting manager accepts custody responsibility.
-7. Transport and both handoffs record custody, time, location, and next owner.
-8. A not-sold outcome creates a return task; closure requires home-store receipt or explicit authorized disposition.
+6. The requesting-store manager checks availability with the Home Store, then records one approval or decline. There is no second in-app approval, driver/dispatch assignment, collection checklist, or destination-arrival checklist in the everyday workflow.
+7. Sales can record the showing outcome or start the return. An authorized manager can record a direct move with its actual destination and time; an approval alone does not establish physical custody.
+8. A not-sold outcome returns the vehicle to the return path. A Home Store manager records receipt back home, which closes the move without a separate Close step. Sold pending remains open until an authorized manager explicitly records delivery or a failed deal; it is not a delivery or closure inference.
+
+The shared service defaults to `workflowMode: 'simple'`. Earlier dual-approval and dispatch flows are advanced foundations, not current release requirements; see [Operating model](docs/OPERATING_MODEL.md) and [Advanced workflow roadmap](docs/ADVANCED_WORKFLOW_ROADMAP.md).
 
 ## Privacy and role rules
 
 - No customer name, exact reason, comment, or alert text on dashboards, movement tables, driver views, or notifications.
-- Salespeople see the minimum needed for their store/request.
-- Drivers see logistics, keys/condition, and handoff data—not customer details.
-- Authorized managers may open exact DealerMail evidence in the detail workspace.
+- Authorized salespeople and managers can open exact DealerMail hold owner/reason, salesperson, expected date, comments, alerts, and backup evidence in the vehicle workspace; do not hide these existing role-authorized facts behind a manager-only rule.
+- Drivers, porters, and coordinators receive logistics with customer-sensitive fields redacted by the server. Frontend hiding is not the privacy boundary.
+- Store and role membership comes from the server. Revocation clears protected workspaces and caches; a temporary refresh failure retains the last verified data with its as-of date.
 - The frontend never receives raw DealerMail arrays or unrestricted snapshot files.
 
 ## Responsive acceptance
@@ -130,4 +132,16 @@ Inspect at the viewports listed in [AGENTS.md](AGENTS.md); the width-specific cr
 - 1440×900 desktop: no page-level horizontal scrolling; table may use controlled internal overflow only below 1180px.
 - 1024px tablet: priority columns remain, secondary fields move into the drawer.
 - 390×844 mobile: no horizontal scrolling, 44px touch targets, bottom navigation, status text alongside color/icon.
+- Judge density using an unfiltered, multi-vehicle list as well as the default No hold view. Include provider summaries in the complete desktop row height; measuring only the primary table row hides wasted space. Typical phone results should be about 200–250px, and complete desktop groups about 240–280px. Long warnings may need more space; do not truncate material evidence to meet a budget.
+- Phone results use a compact identity block, location/hold/service facts, and one shared action row. Full provider details are one Records action away. Desktop compares a short set of labeled AutoCheck, sticker, and OASIS facts beneath the main row.
+- Full Records uses up to two report columns on desktop and a single report sequence on phones. Keep labels near values and source details with their report. The phone report-navigation row may scroll horizontally; report bodies and the page must not.
 
+
+## Vehicle scanning acceptance
+
+- Scan is a phone/tablet action and is hidden in the desktop toolbar. Choosing it starts the camera immediately in a compact viewfinder without opening the keyboard. The same camera view attempts VIN barcodes and local stock-tag OCR automatically, with no mode selection. An employee-selected photo and manual entry remain fallbacks; recognition must not upload photos or customer information to an external service.
+- Match the decoded VIN or stock number against the employee's authorized inventory. A unique, exact barcode match fills the existing inventory search and shows that vehicle. Live-camera and photo OCR readings are reviewed before applying the search. Saving uses the existing result's session shortlist control; scanning does not silently save or create an inventory record.
+- Uncertain OCR, multiple candidates, and unmatched text remain reviewable. Let the employee correct or choose the identifier before changing search; never choose a likely vehicle silently.
+- Keep manual VIN/stock search available when permission is denied, camera/barcode support is missing, or recognition fails. Stop camera tracks when the scanner closes, the page leaves the flow, or access is revoked; do not persist photos or video frames.
+- A scan identifies a vehicle only. Listing, holds, service, movement, and source freshness remain separate; a match never promises availability.
+- Synthetic browser tests cover recognition results, selection, fallback, and cleanup. Real windshield barcodes, stock-tag print quality, camera focus, lighting, and physical phones require separate dealership acceptance and remain unverified until exercised.

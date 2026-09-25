@@ -148,6 +148,18 @@ test('rich Records stay ordered, factual and navigable on small and large screen
     await expect(history.getByRole('link', { name: /Open AutoCheck report/ })).toHaveAttribute('href', HISTORY_URL)
     await expect(history.getByRole('link', { name: /Open AutoCheck report/ })).toHaveAttribute('target', '_blank')
     await page.evaluate(async () => { await document.fonts.ready })
+    const recordsPanel = await workspace.getByRole('tabpanel', { name: 'Records', exact: true }).boundingBox()
+    const historyBox = await history.boundingBox()
+    expect(historyBox!.y - recordsPanel!.y, 'Report facts start near the top, without a tall summary/navigation stack').toBeLessThanOrEqual(150)
+    if (size.width >= 1024) {
+      const oasisBox = await records.locator('[data-record-section="oasis"]').boundingBox()
+      expect(Math.abs(oasisBox!.y - historyBox!.y), 'Desktop shows history and OASIS together').toBeLessThanOrEqual(2)
+      expect(oasisBox!.x).toBeGreaterThan(historyBox!.x + historyBox!.width)
+    }
+    for (const button of await records.getByRole('navigation', { name: 'Record sections' }).getByRole('button').all()) {
+      const box = await button.boundingBox()
+      expect(box!.height, 'Report navigation keeps a full touch target').toBeGreaterThanOrEqual(44)
+    }
     await capture(page, size.width, 'top')
 
     const jumps = records.getByRole('navigation', { name: 'Record sections' })

@@ -9,7 +9,7 @@ import './VehicleResourceCards.css';
 export type { VehicleResourceVehicle } from './vehicle-resource-catalog';
 export interface VehicleResourceCardsProps {
   vehicle: VehicleResourceVehicle;
-  variant: 'summary' | 'preview' | 'scan';
+  variant: 'summary' | 'preview' | 'scan' | 'signals';
   /** A workspace has room for more source evidence than an inventory row. */
   summaryLimit?: 4 | 6;
   /** The workspace already displays its one authoritative date beside vehicle details. */
@@ -137,6 +137,43 @@ function historyExceptionText(row: VehicleResourceSummaryRow, synthetic: boolean
     : [...row.values, ...(row.detail ? [row.detail] : [])].map(value => reportDisplayText(value, synthetic)).filter(Boolean).join(' · ');
 }
 
+/** Inventory presentation reuses structured report fields; it does not derive source status. */
+function scanRows(resource: VehicleResource, vehicle: VehicleResourceVehicle): VehicleResourceSummaryRow[] {
+  const rows = resource.summaryRows ?? [];
+  if (resource.id === 'autocheck') {
+    const ownership = rows.find(row => row.label === 'Owners / use' || row.label === 'Reported use');
+    const reviewLabels = historyReviewLabels(vehicle);
+    const primary = rows.find(row => reviewLabels.has(historyLabel(row.label))) ?? resource.primaryScanRow;
+    return [rows.find(row => row.label === 'Score'), primary,
+      ownership ? { ...ownership, label:ownership.label === 'Owners / use' ? 'Owners' : 'Use', detail:undefined } : undefined,
+    ].filter((row): row is VehicleResourceSummaryRow => Boolean(row));
+  }
+  if (resource.id === 'oasis') {
+    return [
+      { label:'Actions', values:[resource.scanFacts?.[0] === 'No open Ford actions' ? 'No open actions' : resource.scanFacts?.[0] ?? 'Action status unconfirmed'] },
+      rows.find(row => row.label === 'Warranty start'),
+    ].filter((row): row is VehicleResourceSummaryRow => Boolean(row));
+  }
+  const sticker = resource.stickerDetails;
+  if (sticker) return [
+    sticker.msrp ? { label:'MSRP', values:[displaySourceMoney(sticker.msrp)] } : undefined,
+    sticker.equipmentGroup ? { label:'Group', values:[stickerLineParts(sticker.equipmentGroup).label] } : undefined,
+    sticker.optionLines.length ? { label:resource.id === 'vauto' ? 'Equipment' : 'Option', values:sticker.optionLines.map(stickerLineParts).filter(line => !line.child).slice(0, 1).map(line => line.price ? `${line.label} (${displaySourceMoney(line.price)})` : line.label) } : undefined,
+  ].filter((row): row is VehicleResourceSummaryRow => Boolean(row));
+  return rows.slice(0, 3);
+}
+
+function ScanFields({ rows, resource, synthetic }: { rows: VehicleResourceSummaryRow[]; resource: VehicleResource; synthetic: boolean }) {
+  return <dl className="vehicle-resource-scan__fields">{rows.map((row, index) => {
+    const label = resource.id === 'autocheck' ? HISTORY_LABELS[row.label.toLowerCase()] ?? row.label : row.label === 'Warranty start' ? 'In service' : row.label;
+    const specificHistoryResult = resource.id === 'autocheck' && row.detail && /^(?:no issues?|no problems?|clear|normal|events reported)$/i.test(row.values.join(' '));
+    return <div key={`${row.label}-${index}`}>
+      <dt>{label}</dt>
+      <dd>{specificHistoryResult ? <span>{reportDisplayText(row.detail!, synthetic)}</span> : <>{row.values.map((value, valueIndex) => <span key={valueIndex}>{reportDisplayText(value, synthetic)}</span>)}{row.detail && row.label !== 'Score' ? <span>{reportDisplayText(row.detail, synthetic)}</span> : null}</>}</dd>
+    </div>;
+  })}</dl>;
+}
+
 function SnapshotFields({ rows, history = false, synthetic, emphasis = false }: {
   rows: VehicleResourceSummaryRow[]; history?: boolean; synthetic: boolean; emphasis?: boolean;
 }) {
@@ -248,6 +285,18 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
   const resources = vehicleOverviewResources(vehicle);
   const usable = resources.filter(resource => resource.href || resource.hasCapturedData);
   if (!usable.length) return null;
+  if (variant === 'signals') {
+    const review = historyReviewLabels(vehicle);
+    const history = resources.find(resource => resource.id === 'autocheck');
+    const findings = history?.summaryRows?.filter(row => review.has(historyLabel(row.label))) ?? [];
+    const oasis = resources.find(resource => resource.id === 'oasis');
+    const actions = vehicle.fordOasis?.openFieldServiceActions?.length ?? 0;
+    if (!findings.length && !actions) return null;
+    return <div className="vehicle-resource-signals" aria-label="Source findings to review">
+      {findings.length ? <span title={findings.map(row => historyExceptionText(row, syntheticPreview)).join('; ')}>AutoCheck{vehicle.autoCheckReport?.dataState !== 'current' ? ' (saved)' : ''}: {findings.length === 1 ? historyExceptionText(findings[0], syntheticPreview) : `${findings.length} findings to review`}</span> : null}
+      {actions ? <span>OASIS: {oasis?.scanFacts?.[0]}</span> : null}
+    </div>;
+  }
   if (variant === 'scan') {
     const history = resources.find(resource => resource.id === 'autocheck');
     const oasis = resources.find(resource => resource.id === 'oasis');
@@ -256,21 +305,15 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
     return <div className={`vehicle-resources vehicle-resources--scan${onSelectResource ? ' is-interactive' : ''}`} aria-label="Captured source signals; complete reports in Records" onClick={event => event.stopPropagation()} onKeyDown={event => { if (onSelectResource && (event.key === 'Enter' || event.key === ' ')) event.stopPropagation(); }}>
       {!history ? <p className="vehicle-resource-scan__missing">History not captured</p> : null}
       {sources.map(resource => {
-        const qualification = resource.demo && resource.sourceNote === 'Synthetic sample · not an original' ? null
-          : resource.sourceNote?.split(' · ').filter(part => !/^(?:Captured|Report run) (?:[A-Z][a-z]{2} \d{1,2}, \d{4}|\d{2}\/\d{2}\/\d{4})$/.test(part)).join(' · ');
-        const scanFacts = [...(resource.scanFacts?.length ? resource.scanFacts : [resource.hasCapturedData ? 'Captured details in Records' : resource.id === 'vauto' && resource.href ? 'VIN equipment profile available' : 'No captured report'])].slice(0, 2);
+        const rows = scanRows(resource, vehicle);
         const label = resource.id === 'autocheck' ? 'AutoCheck' : resource.id === 'oasis' ? 'OASIS' : resource.id === 'vauto' ? 'Equipment' : 'Sticker';
         const sourceContent = <><ResourceBrand resource={resource}/><span className="vehicle-resource-scan__source-label">{label}</span>{onSelectResource ? <ChevronDown size={13} aria-hidden="true"/> : null}</>;
         return <div key={resource.id} data-resource-kind={resource.id} className="vehicle-resource-scan">
           {onSelectResource && resource.hasCapturedData ? <button type="button" className="vehicle-resource-scan__source" aria-label={`Show ${label === 'Sticker' ? 'sticker' : label === 'Equipment' ? 'equipment' : label} records`} aria-expanded={selectedId === resource.id} onClick={event => { event.currentTarget.focus({preventScroll:true}); selectResource(resource.id); }}>{sourceContent}</button>
             : resource.href && (onSelectResource || resource.id === 'vauto') ? <a className="vehicle-resource-scan__source" href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`Open ${resource.id === 'vauto' ? 'vAuto equipment' : label} source in a new tab`}><ResourceBrand resource={resource}/><span className="vehicle-resource-scan__source-label">{label}</span><ArrowUpRight size={13} aria-hidden="true"/></a>
               : <strong className="vehicle-resource-scan__source vehicle-resource-scan__source--static">{sourceContent}</strong>}
-          {scanFacts.map((fact,index) => {
-            const date = /^(Est\. in-service|In-service) (\d{2}\/\d{2}\/\d{4})$/.exec(fact);
-            return date ? <span key={index} className="vehicle-resource-scan__date"><span>{date[1]}</span>{' '}<span>{date[2]}</span></span>
-              : <span key={index}>{resource.id === 'oasis' && fact === 'No open Ford actions' ? 'No open actions' : fact}</span>;
-          })}
-          {qualification ? <small className={qualification === 'Demo' && resource.demo ? 'is-demo' : undefined}>{qualification}</small> : null}
+          {rows.length ? <ScanFields rows={rows} resource={resource} synthetic={syntheticPreview}/> : <p className="vehicle-resource-scan__missing">{resource.hasCapturedData ? 'Captured details in Records' : resource.id === 'vauto' && resource.href ? 'VIN equipment profile available' : 'No captured report'}</p>}
+          {resource.sourceNote ? <p className="vehicle-resource-scan__caption">{resource.sourceNote}</p> : null}
         </div>;
       })}
     </div>;
@@ -312,6 +355,7 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
         const sticker = resource.stickerDetails;
         const stickerPricing = sticker ? ([
           sticker.msrp ? ['Original MSRP', sticker.msrp] : sticker.basePrice ? ['Base MSRP', sticker.basePrice] : null,
+          sticker.totalOptions ? ['Options total', sticker.totalOptions] : null,
         ] as Array<[string, string] | null>).filter((entry): entry is [string, string] => Boolean(entry)) : [];
         const stickerVehicleFacts = sticker ? ([
           sticker.exteriorColor ? ['Exterior', sticker.exteriorColor] : null,

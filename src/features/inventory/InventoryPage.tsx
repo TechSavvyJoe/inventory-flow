@@ -193,6 +193,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         groupStores={groupStores(data, homeStore)}
         scope={requestedScope}
         initialQuery={query}
+        initialQuickView={query.trim() || requestedVin ? "all" : "no-hold"}
         queryRequestKey={queryRequestKey}
         initialWorkspaceTab={(['overview', 'equipment', 'movement', 'hold', 'timeline', 'data'] as VehicleWorkspaceTab[]).find(tab => tab === params.get('tab')) ?? 'overview'}
         searchPersistenceKey={accessContext}

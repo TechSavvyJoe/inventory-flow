@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { scannerAssets } from './scripts/scanner-assets.ts'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), scannerAssets()],
   server: {
     port: 4173,
     strictPort: true,

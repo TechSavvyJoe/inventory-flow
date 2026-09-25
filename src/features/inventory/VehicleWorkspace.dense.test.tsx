@@ -439,7 +439,8 @@ describe('focused vehicle workspace', () => {
     expect(screen.getByText('Equipment group price',{selector:'dt'}).parentElement).toHaveTextContent('$4,770');
   });
 
-  it('puts complete vehicle specifications first in Equipment with distinct color and powertrain facts', () => {
+  it('puts equipment search first and keeps complete specifications in a collapsed disclosure', async () => {
+    const user = userEvent.setup();
     const unit = vehicle();
     unit.modelCode = 'DEMO-CODE';
     unit.mpgCity = 18;
@@ -447,8 +448,13 @@ describe('focused vehicle workspace', () => {
     unit.features = ['Heated seats'];
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} initialTab="equipment" onClose={vi.fn()}/>);
     const equipment = screen.getByRole('tabpanel',{name:'Equipment'});
-    const specifications = within(equipment).getByRole('region',{name:'Complete vehicle specifications'});
-    expect(within(equipment).getAllByRole('heading')[0]).toHaveTextContent('Specifications');
+    const specifications = within(equipment).getByRole('group',{name:'Complete vehicle specifications'});
+    const finder = within(equipment).getByRole('region',{name:'Equipment & packages'});
+    expect(finder.compareDocumentPosition(specifications) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(specifications).not.toHaveAttribute('open');
+    const disclosure = within(specifications).getByText('Specifications');
+    await user.click(disclosure);
+    expect(specifications).toHaveAttribute('open');
     for (const [label, value] of [
       ['Mileage', '123,328 mi'], ['Age', '2 days'], ['Engine', '3.5L V6 EcoBoost'],
       ['Drive', '4WD'], ['Transmission', '10-Speed Automatic'], ['Body', 'SuperCrew 4x4'],

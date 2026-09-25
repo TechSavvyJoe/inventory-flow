@@ -133,7 +133,9 @@ describe('source-backed vehicle resource cards', () => {
     fireEvent.click(screen.getByRole('button',{name:'Show OASIS records'}));
     expect(onSelectResource).toHaveBeenLastCalledWith('oasis');
     expect(onRowClick).not.toHaveBeenCalled();
-    expect(screen.getByText('Open Recall Check: Recall found · 1 unrepaired recall')).toBeVisible();
+    expect(screen.getByText('Recalls')).toBeVisible();
+    expect(screen.getByText('Recall found')).toBeVisible();
+    expect(screen.getByText('1 unrepaired recall')).toBeVisible();
     expect(screen.queryByText('Loss reported')).not.toBeInTheDocument();
     expect(document.querySelector('[data-resource-kind="autocheck"] img')).toHaveAttribute('src','/resource-brands/autocheck.svg');
     expect(document.querySelector('[data-resource-kind="window-sticker"] img')).toHaveAttribute('src','/resource-brands/ford.svg');
@@ -368,7 +370,9 @@ describe('source-backed vehicle resource cards', () => {
     vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, dataState: 'stale', checks: [{ label: 'Additional history', status: 'Events reported', detail: 'Corrected title' }] };
     vehicle.fordOasis = { ...vehicle.fordOasis!, openActionsCaptured: false, capturedAt: '2026-09-01', openFieldServiceActions: [{ code: '26X01', description: 'Replace only if required after dealer evaluation' }] };
     const page = render(<VehicleResourceCards vehicle={vehicle} variant="scan"/>);
-    expect(screen.getByText('Score 91 · 1 owner')).toBeVisible();
+    expect(screen.getByText('Score')).toBeVisible();
+    expect(screen.getByText('91')).toBeVisible();
+    expect(screen.getByText('1 owner')).toBeVisible();
     expect(screen.queryByText('Corrected title')).not.toBeInTheDocument();
     expect(screen.getByText('Saved report · refresh at source')).toBeVisible();
     expect(screen.getByText('At least 1 captured service action · result incomplete')).toBeVisible();
@@ -378,6 +382,58 @@ describe('source-backed vehicle resource cards', () => {
     expect(screen.getByText('Captured actions (incomplete)')).toBeVisible();
     expect(screen.getByText('26X01 · Replace only if required after dealer evaluation')).toBeVisible();
     expect(screen.queryByText('Warranty start')).not.toBeInTheDocument();
+  });
+
+  it('keeps a sole material loss finding among the first two labeled scan rows', () => {
+    const vehicle = sources();
+    vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, checks:[{label:'Insurance Loss / Transfer',status:'Total loss reported'}] };
+    render(<VehicleResourceCards vehicle={vehicle} variant="scan"/>);
+    const history = document.querySelector('[data-resource-kind="autocheck"]') as HTMLElement;
+    const rows = history.querySelectorAll('.vehicle-resource-scan__fields > div');
+    expect(within(rows[0] as HTMLElement).getByText('Score')).toBeVisible();
+    expect(within(rows[1] as HTMLElement).getByText('Insurance')).toBeVisible();
+    expect(within(rows[1] as HTMLElement).getByText('Total loss reported')).toBeVisible();
+  });
+
+  it('offers additional captured comparison facts without inventing report results or changing source records', () => {
+    const vehicle = sources();
+    vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, reportRunAt:'2026-09-01', lastReportedOdometer:12000, lastReportedOdometerDate:'2026-08-20', checks:[
+      { label:'Title', status:'No title brands reported' },
+      { label:'Accident / damage', status:'No accidents reported' },
+    ] };
+    vehicle.windowSticker = { ...vehicle.windowSticker!, equipmentGroupContents:['Adaptive cruise control', 'Heated front seats'], options:['Trailer Tow Package', 'Power moonroof'], totalOptions:5400 };
+    vehicle.fordOasis = { ...vehicle.fordOasis!, dataState:'stale', capturedAt:'2026-08-30', openActionsCaptured:false, openFieldServiceActions:[{code:'26X01',description:'Inspect connector before replacing'}], warrantyCoverages:[{type:'Powertrain',description:'5 years / 60,000 miles'}] };
+    const original = JSON.stringify(vehicle);
+    const page = render(<VehicleResourceCards vehicle={vehicle} variant="scan"/>);
+    for (const provider of document.querySelectorAll('.vehicle-resource-scan__fields')) expect(provider.children.length).toBeLessThanOrEqual(3);
+    expect(screen.queryByText('Adaptive cruise control')).not.toBeInTheDocument();
+    page.rerender(<VehicleResourceCards vehicle={vehicle} variant="preview"/>);
+    expandDetails('history');
+    expect(screen.getByText('No title brands reported')).toBeVisible();
+    expect(screen.getByText('12,000 mi')).toBeVisible();
+    expect(screen.getByText('08/20/2026')).toBeVisible();
+    expandDetails('equipment');
+    expect(screen.getByText('Adaptive cruise control')).toBeVisible();
+    expect(screen.getByText('Heated front seats')).toBeVisible();
+    expect(screen.getByText('CAD 5,400')).toBeVisible();
+    expandDetails('OASIS');
+    expect(screen.getByText('26X01 · Inspect connector before replacing')).toBeVisible();
+    expect(screen.getByText('06/20/2024')).toBeVisible();
+    expect(screen.getByText('Powertrain · 5 years / 60,000 miles')).toBeVisible();
+    expect(screen.queryByText(/No open actions|Active warranty|Available for sale/)).not.toBeInTheDocument();
+    expect(JSON.stringify(vehicle)).toBe(original);
+  });
+
+  it('keeps adverse history visible in phone signals even beside a clean accident check', () => {
+    const vehicle = sources();
+    vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, dataState:'stale', checks:[
+      {label:'Accident / damage',status:'No accidents reported'},
+      {label:'Insurance Loss / Transfer',status:'Total loss reported'},
+    ] };
+    vehicle.fordOasis = {dataState:'current',buildDate:'2024-06-20'};
+    render(<VehicleResourceCards vehicle={vehicle} variant="signals"/>);
+    expect(screen.getByText('AutoCheck (saved): Total loss reported')).toBeVisible();
+    expect(screen.queryByText('No accidents reported')).not.toBeInTheDocument();
   });
 
   it('uses one demo qualifier without stripping real source details', () => {

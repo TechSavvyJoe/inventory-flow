@@ -593,6 +593,7 @@ export interface InventoryExperienceProps extends InventoryVehicleActionProps {
   onRetryDetail?: () => void;
   returnLabel?: string;
   initialQuery?: string;
+  initialQuickView?: "all" | "no-hold";
   /** A fresh explicit search must override prior local edits to the same text. */
   queryRequestKey?: string;
   /** Separates session-only recent searches by the current signed-in/preview context. */

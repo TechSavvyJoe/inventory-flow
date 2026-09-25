@@ -31,6 +31,9 @@ function MembershipEditor({ role, store, onSaved }: { role: UserRole; store: Sto
   const [draft, setDraft] = useState<MembershipInput | null>(null)
   const [saving, setSaving] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const editorOpenerRef = useRef<HTMLButtonElement | null>(null)
+  const restoreEditorFocusRef = useRef(false)
   const initialDraft = useRef('')
   const captureWorkspace = useWorkspaceLifetime(`${role}:${store}`)
   const { confirmDiscard, markSaved } = useUnsavedChanges(Boolean(draft && JSON.stringify(draft) !== initialDraft.current), { saving })
@@ -48,11 +51,17 @@ function MembershipEditor({ role, store, onSaved }: { role: UserRole; store: Sto
     if (draft) {
       formRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
       formRef.current?.querySelector<HTMLInputElement>('input')?.focus()
+    } else if (restoreEditorFocusRef.current) {
+      restoreEditorFocusRef.current = false
+      const opener = editorOpenerRef.current
+      if (opener?.isConnected && !opener.disabled) opener.focus()
+      else headingRef.current?.focus()
     }
   }, [draft?.id, Boolean(draft)])
 
-  function edit(member?: ManagedMember) {
+  function edit(opener: HTMLButtonElement, member?: ManagedMember) {
     if (!directory || saving || !confirmDiscard()) return
+    editorOpenerRef.current = opener
     setError(''); setNotice('')
     const next = { ...(member ?? { email: '', name: '', role: 'sales' as const, homeStore: store, enabled: true }), reason: '', expectedRevision: directory.revision }
     initialDraft.current = JSON.stringify(next)
@@ -71,6 +80,7 @@ function MembershipEditor({ role, store, onSaved }: { role: UserRole; store: Sto
       if (!isCurrentWorkspace()) return
       markSaved()
       setNotice(`${draft.name}'s access was saved.`)
+      restoreEditorFocusRef.current = true
       setDraft(null)
       setLoadAttempt(value => value + 1)
       onSaved()
@@ -83,8 +93,8 @@ function MembershipEditor({ role, store, onSaved }: { role: UserRole; store: Sto
   const legacyDraftRole = draft && !ASSIGNABLE_ROLES.includes(draft.role) ? draft.role : null
   return <section className="admin-section admin-section--people" id="admin-people" aria-labelledby="admin-people-title">
     <header className="admin-section__header">
-      <div><h2 id="admin-people-title">People &amp; access</h2><p>Choose each employee's role, home store, and sign-in access.</p></div>
-      <button className="admin-primary-button" type="button" disabled={!directory || saving} onClick={() => edit()}><Plus size={16} /> Add employee</button>
+      <div><h2 id="admin-people-title" ref={headingRef} tabIndex={-1}>People &amp; access</h2><p>Choose each employee's role, home store, and sign-in access.</p></div>
+      <button className="admin-primary-button" type="button" disabled={!directory || saving} onClick={event => edit(event.currentTarget)}><Plus size={16} /> Add employee</button>
     </header>
     <div className="admin-member-toolbar">
       <label className="admin-member-search"><Search size={16} /><input aria-label="Search employees" value={query} onChange={event => setQuery(event.target.value)} placeholder="Name, email, role, or store" /></label>
@@ -93,7 +103,7 @@ function MembershipEditor({ role, store, onSaved }: { role: UserRole; store: Sto
     {notice && <p className="admin-save-notice" role="status"><Check size={16} />{notice}</p>}
     {error && <p className="admin-save-error" role="alert">{error}</p>}
     {draft && <form className="admin-member-form" ref={formRef} onSubmit={event => void save(event)}>
-      <header><h3>{draft.id ? `Edit ${directory?.members.find(member => member.id === draft.id)?.name}` : 'Add employee'}</h3><button type="button" className="admin-secondary-button" disabled={saving} aria-label="Cancel employee changes" onClick={() => { if (confirmDiscard()) setDraft(null) }}><X size={16} /> Cancel</button></header>
+      <header><h3>{draft.id ? `Edit ${directory?.members.find(member => member.id === draft.id)?.name}` : 'Add employee'}</h3><button type="button" className="admin-secondary-button" disabled={saving} aria-label="Cancel employee changes" onClick={() => { if (confirmDiscard()) { restoreEditorFocusRef.current = true; setDraft(null) } }}><X size={16} /> Cancel</button></header>
       <div className="admin-member-fields">
         <label>Full name<input required maxLength={160} value={draft.name} disabled={saving} onChange={event => change('name', event.target.value)} /></label>
         <label>Sign-in email<input aria-label="Sign-in email" required type="email" maxLength={254} value={draft.email} disabled={saving || Boolean(draft.id)} onChange={event => change('email', event.target.value)} />{draft.id && <small>Email stays tied to this employee's history.</small>}</label>
@@ -110,7 +120,7 @@ function MembershipEditor({ role, store, onSaved }: { role: UserRole; store: Sto
         <div><strong>{member.name}{member.id === directory.currentUserId && <span className="admin-you-tag">You</span>}</strong><small>{member.email}</small></div>
         <div><span>{ROLE_LABELS[member.role]}</span><small>{member.homeStore}{member.role === 'group_manager' ? ' · All stores' : ''}</small></div>
         <span className={`admin-status admin-status--${member.enabled ? 'active' : 'disabled'}`}><span />{member.enabled ? 'Active' : 'Disabled'}</span>
-        <button className="admin-secondary-button" type="button" disabled={saving} aria-label={`Edit ${member.name}`} onClick={() => edit(member)}><Pencil size={15} /> Edit</button>
+        <button className="admin-secondary-button" type="button" disabled={saving} aria-label={`Edit ${member.name}`} onClick={event => edit(event.currentTarget, member)}><Pencil size={15} /> Edit</button>
       </article>)}
       {!filtered.length && <p>No employees match this search.</p>}
     </div>}

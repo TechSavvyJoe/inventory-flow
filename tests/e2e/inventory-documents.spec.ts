@@ -13,6 +13,9 @@ test('inventory search opens the VIN-specific premium document workspace', async
   // when desktop and mobile projects start together. Wait for the real page
   // heading, not an arbitrary timer or the transient loading surface.
   await expect(page.getByRole('heading', { name: /Howell inventory/i })).toBeVisible({ timeout: 15_000 })
+  // The rich document fixture is deliberately held. Select All before checking
+  // result controls, which are absent when the default No hold view is empty.
+  await page.getByRole('button', { name: /^All:/ }).click()
   await expect(page.getByLabel('Rows per page').locator('option')).toHaveText([
     '10',
     '15',
