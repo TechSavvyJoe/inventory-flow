@@ -53,6 +53,11 @@ traversal. It belongs only in external artifact storage. Missing/deleted release
 assets require restoring the exact reviewed bytes or deliberately reviewing a
 new candidate; there is no automatic fallback.
 
+Validate workflow edits with `actionlint .github/workflows/ci.yml` before
+pushing. `pnpm check` does not validate GitHub's expression-context rules.
+The temporary path is set at step runtime through `GITHUB_ENV`; the `runner`
+context is unavailable in job-level `env` expressions.
+
 Visual checks cover the synthetic fixture. They do not establish production
 authentication, live inventory accuracy, physical-device behavior or employee
 acceptance.

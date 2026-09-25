@@ -148,9 +148,9 @@ jobs:
     timeout-minutes: 15
     container:
       image: mcr.microsoft.com/playwright:v1.62.1-noble
-    env:
-      INVENTORY_VISUAL_BASELINE_DIR: ${{ runner.temp }}/inventory-flow-visual-baselines
     steps:
+      - name: Select temporary baseline directory
+        run: echo "INVENTORY_VISUAL_BASELINE_DIR=$RUNNER_TEMP/inventory-flow-visual-baselines" >> "$GITHUB_ENV"
       - name: Check out source
         uses: actions/checkout@v4
       - name: Trust the workspace inside the container
@@ -208,9 +208,9 @@ jobs:
     timeout-minutes: 15
     container:
       image: mcr.microsoft.com/playwright:v1.62.1-noble
-    env:
-      INVENTORY_VISUAL_BASELINE_DIR: ${{ runner.temp }}/inventory-flow-visual-baselines
     steps:
+      - name: Select temporary baseline directory
+        run: echo "INVENTORY_VISUAL_BASELINE_DIR=$RUNNER_TEMP/inventory-flow-visual-baselines" >> "$GITHUB_ENV"
       - name: Check out source
         uses: actions/checkout@v4
       - name: Trust the workspace inside the container
