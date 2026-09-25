@@ -193,14 +193,14 @@
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 0,
-      "idSelectors": 119
+      "idSelectors": 118
     },
     "src/features/inventory/VehicleWorkspace.focused.css": {
       "smallText": 0,
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 506
+      "idSelectors": 503
     },
     "src/features/inventory/WarrantyOutlook.css": {
       "smallText": 0,

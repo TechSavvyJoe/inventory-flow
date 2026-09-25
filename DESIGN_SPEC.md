@@ -134,7 +134,8 @@ Inspect at the viewports listed in [AGENTS.md](AGENTS.md); the width-specific cr
 - 390×844 mobile: no horizontal scrolling, 44px touch targets, bottom navigation, status text alongside color/icon.
 - Judge density using an unfiltered, multi-vehicle list as well as the default No hold view. Include provider summaries in the complete desktop row height; measuring only the primary table row hides wasted space. Typical phone results should be about 200–250px, and complete desktop groups about 240–280px. Long warnings may need more space; do not truncate material evidence to meet a budget.
 - Phone results use a compact identity block, location/hold/service facts, and one shared action row. Full provider details are one Records action away. Desktop compares a short set of labeled AutoCheck, sticker, and OASIS facts beneath the main row.
-- Full Records uses up to two report columns on desktop and a single report sequence on phones. Keep labels near values and source details with their report. The phone report-navigation row may scroll horizontally; report bodies and the page must not.
+- Overview has one Show details / Hide details control for all captured documents and records. They expand together, retain their source links, and reset to summaries when another vehicle opens. Full records remains a separate action.
+- Full Records uses up to two report columns on desktop and a single report sequence on phones. Reports flow in reading order with compact gaps, without reserving space to match a taller neighboring report; a lone report uses the full width. Keep labels near values and source details with their report. The phone report-navigation row may scroll horizontally; report bodies and the page must not.
 
 
 ## Vehicle scanning acceptance

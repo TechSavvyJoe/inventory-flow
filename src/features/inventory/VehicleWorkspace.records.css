@@ -1,4 +1,4 @@
-/* Read reports in source order; use the second desktop column for comparison. */
+/* Read complete reports down each column in source order, without shared row tracks. */
 #inventory-vehicle-workspace .vdp-records-summary {
   display:flex; flex-wrap:wrap; gap:var(--ifx-space-1) var(--ifx-space-5);
   margin:0 0 var(--ifx-space-2); border:0; border-radius:0; background:none;
@@ -10,8 +10,9 @@
 #inventory-vehicle-workspace .vdp-record-jumps { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; }
 #inventory-vehicle-workspace .vdp-record-jumps button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:7px 12px; border:1px solid var(--v10-border); border-radius:6px; background:var(--v10-surface); color:var(--v10-blue); font-size:14px; font-weight:600; cursor:pointer; }
 #inventory-vehicle-workspace .vdp-record-jumps button:hover { border-color:var(--v10-blue); background:var(--v10-surface-subtle); }
-#inventory-vehicle-workspace .inventory-vehicle-documents__grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,max(calc(var(--ifx-space-16) * 7),calc(50% - var(--ifx-space-3)))),1fr)); align-items:start; columns:auto; gap:var(--ifx-space-3); }
-#inventory-vehicle-workspace [data-record-section] { min-width:0; scroll-margin-top:10px; }
+.vdp-records .inventory-vehicle-documents__grid { display:block; columns:2 calc(var(--ifx-space-16) * 7); column-gap:var(--ifx-space-3); }
+.vdp-records .inventory-vehicle-documents__grid:has(> :only-child) { columns:auto; }
+#inventory-vehicle-workspace [data-record-section] { min-width:0; break-inside:avoid; margin-bottom:var(--ifx-space-3); scroll-margin-top:10px; }
 #inventory-vehicle-workspace [data-record-section]:focus-visible { outline:2px solid var(--v10-blue); outline-offset:3px; border-radius:8px; }
 #inventory-vehicle-workspace .inventory-vehicle-document { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:var(--ifx-space-2) var(--ifx-space-3); margin:0; padding:var(--ifx-space-3); border:1px solid var(--v10-border); border-radius:var(--ifx-radius-xs); background:var(--v10-surface); }
 #inventory-vehicle-workspace .inventory-vehicle-document > * { grid-column:1 / -1; min-width:0; margin:0; }

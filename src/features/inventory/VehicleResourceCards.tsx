@@ -14,6 +14,8 @@ export interface VehicleResourceCardsProps {
   summaryLimit?: 4 | 6;
   /** The workspace already displays its one authoritative date beside vehicle details. */
   hideInServiceDate?: boolean;
+  /** The Overview's shared control expands every captured summary together. */
+  detailsExpanded?: boolean;
   /** Undefined uses local selection; null shows every captured source summary. */
   selectedResourceId?: string | null;
   onSelectResource?: (id: string | null) => void;
@@ -268,7 +270,7 @@ function ResourceSnapshot({ resource, vehicle, rows, facts, synthetic, detailed 
   return <ul className="vehicle-resource-summary__facts">{facts.slice(0,2).map((fact,index) => <li key={index}>{displaySourceMoney(fact)}</li>)}</ul>;
 }
 
-export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideInServiceDate = false, selectedResourceId, onSelectResource, onClose, hideSourceSelectors = false, onOpenSection }: VehicleResourceCardsProps) {
+export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideInServiceDate = false, detailsExpanded, selectedResourceId, onSelectResource, onClose, hideSourceSelectors = false, onOpenSection }: VehicleResourceCardsProps) {
   const [failedPreviews, setFailedPreviews] = useState<Set<string>>(() => new Set());
   const [expandedResource, setExpandedResource] = useState<{ vin: string; id: string } | null>(null);
   const disclosureId = useId();
@@ -364,12 +366,12 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
           sticker.transmission ? ['Transmission', sticker.transmission] : null,
         ] as Array<[string, string] | null>).filter((entry): entry is [string, string] => Boolean(entry)) : [];
         const previewUrl = resource.previewUrl && !failedPreviews.has(resource.id) ? resource.previewUrl : undefined;
-        const expanded = selectedId === resource.id;
+        const expanded = !preview && detailsExpanded !== undefined ? detailsExpanded : selectedId === resource.id;
         const detailId = `${disclosureId}-${resource.id}`;
         const visibleSourceNote = expanded ? resource.sourceNote : resource.sourceNote?.split(' · ').filter(part => !/^(?:Captured|Report run) \d{2}\/\d{2}\/\d{4}$/.test(part)).join(' · ');
         return <section key={resource.id} className={`vehicle-resource-summary${facts.length <= 2 ? " vehicle-resource-summary--sparse" : ""}`} data-resource-kind={resource.id} aria-label={resource.title} hidden={preview && !overview && !expanded}>
           <div className="vehicle-resource-summary__heading">{sourceAction(resource, !expanded)}
-          {!preview ? resourceToggle(resource) : null}
+          {!preview && detailsExpanded === undefined ? resourceToggle(resource) : null}
           </div>
           {resource.equipmentContext && (expanded || resource.id === 'vauto') ? <p className="vehicle-resource-source-kind">{resource.equipmentContext}</p> : expanded && syntheticPreview && ['autocheck', 'oasis'].includes(resource.id) ? <p className="vehicle-resource-source-kind">Synthetic source sample</p> : null}
           {!expanded && (!preview || overview) ? <div className={`vehicle-resource-summary__body is-compact${overview ? ' is-rich' : ''}${previewUrl ? " has-preview" : ""}`}>

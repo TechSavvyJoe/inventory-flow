@@ -8,6 +8,7 @@ import { serviceStatusLabel, serviceWorkflowStatus } from "../../lib/service-rea
 import { VehicleGallery } from "./VehicleGallery";
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -47,7 +48,7 @@ import {
 import { CopyableValue } from "../../components/CopyableValue";
 import { DealerMailHandoff } from "./DealerMailHandoff";
 import { VehicleResourceCards, displaySourceMoney } from "./VehicleResourceCards";
-import { oasisActionLabel } from "./vehicle-resource-catalog";
+import { oasisActionLabel, vehicleOverviewResources } from "./vehicle-resource-catalog";
 import { resolveVehicleInService } from "./vehicle-in-service";
 import {
   formatDate,
@@ -636,6 +637,10 @@ export function VehicleWorkspace({
   const shortlisted = shortlist.isShortlisted(vehicle);
   const [activeTarget, setActiveTarget] = useState<WorkspaceSectionId>(initialTab);
   const [takeHomeOpen, setTakeHomeOpen] = useState(false);
+  const [expandedDocumentsVin, setExpandedDocumentsVin] = useState<string | null>(null);
+  const documentsId = useId();
+  const documentsExpanded = expandedDocumentsVin === vehicle.vin;
+  const hasCapturedDocuments = useMemo(() => vehicleOverviewResources(vehicle).some(resource => resource.hasCapturedData), [vehicle]);
   const takeHomeButtonRef = useRef<HTMLButtonElement>(null);
   const takeHomeOpenerRef = useRef<HTMLButtonElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
@@ -767,9 +772,10 @@ export function VehicleWorkspace({
   useLayoutEffect(() => {
     setActiveTarget(initialTab);
     setTakeHomeOpen(false);
+    setExpandedDocumentsVin(null);
     pendingFocus.current = null;
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [initialTab, vehicle.id]);
+  }, [initialTab, vehicle.id, vehicle.vin]);
   useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     if (pendingFocus.current === "dealermail") {
@@ -861,8 +867,19 @@ export function VehicleWorkspace({
 
             </div>
             <section className="vdp-focus-resources" aria-label="Documents and vehicle records">
-              <div className="vdp-focus-section-heading"><h3>Documents &amp; vehicle records</h3><button type="button" onClick={() => openAndFocusSection("data")}>Full records <ChevronRight size={16} aria-hidden="true" /></button></div>
-              <VehicleResourceCards vehicle={vehicle} variant="summary" summaryLimit={6} hideInServiceDate onOpenSection={openAndFocusSection} />
+              <div className="vdp-focus-section-heading vdp-document-heading">
+                <h3>Documents &amp; vehicle records</h3>
+                <div className="vdp-document-actions">
+                  {hasCapturedDocuments ? <button type="button" aria-expanded={documentsExpanded} aria-controls={documentsId}
+                    onClick={() => setExpandedDocumentsVin(documentsExpanded ? null : vehicle.vin)}>
+                    {documentsExpanded ? "Hide details" : "Show details"}<ChevronDown size={16} aria-hidden="true" />
+                  </button> : null}
+                  <button type="button" onClick={() => openAndFocusSection("data")}>Full records <ChevronRight size={16} aria-hidden="true" /></button>
+                </div>
+              </div>
+              <div id={documentsId}>
+                <VehicleResourceCards vehicle={vehicle} variant="summary" summaryLimit={6} hideInServiceDate detailsExpanded={documentsExpanded} onOpenSection={openAndFocusSection} />
+              </div>
             </section>
 
             {vehicle.managerDisposition ? <p className="vdp-focus-warning"><ClipboardCheck size={16} aria-hidden="true" /><strong>Manager log: {vehicle.managerDisposition.soldLabel}</strong> · {vehicle.managerDisposition.deliveryLabel}{vehicle.managerDisposition.deliveryDate ? ` · ${formatDate(vehicle.managerDisposition.deliveryDate)}` : ""}<small>Independent of listing, hold, CDK, and location.</small></p> : null}
