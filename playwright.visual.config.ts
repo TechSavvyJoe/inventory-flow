@@ -1,4 +1,6 @@
 import { defineConfig } from '@playwright/test'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 
 // Pinned visual-regression gate. Baselines are pixel-exact captures of the
 // production CSS cascade (`pnpm build` output, served with --serve-dist) and
@@ -13,11 +15,16 @@ import { defineConfig } from '@playwright/test'
 // snapshots here by accident.
 const port = process.env.INVENTORY_VISUAL_PORT ?? '4575'
 const baseURL = `http://127.0.0.1:${port}`
+// Reviewed raster references live outside Git and outside outputDir (which
+// Playwright clears). CI restores the exact pinned private release asset.
+const baselineDirectory = process.env.INVENTORY_VISUAL_BASELINE_DIR ?? path.join(tmpdir(), 'inventory-flow-visual-baselines')
 
 export default defineConfig({
   testDir: './tests/visual',
   testMatch: '**/*.spec.ts',
   outputDir: process.env.CI ? 'test-results/visual' : '/tmp/inventory-flow-qa/visual',
+  snapshotPathTemplate: path.join(baselineDirectory, '{arg}-{projectName}-{platform}{ext}'),
+  updateSnapshots: 'none',
   // Isolated in-memory ledger per run — the default e2e suite POSTs transfers
   // and adds a Date.now()-named member, so the visual spec (read-only) never
   // shares an invocation with it.

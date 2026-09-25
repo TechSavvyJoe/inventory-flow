@@ -298,7 +298,7 @@
   background: var(--inventory-selected);
 }
 
-.inventory-filter-button span {
+.inventory-filter-button .inv-btn__count {
   display: grid;
   min-width: 20px;
   height: 20px;
@@ -997,12 +997,14 @@
    controls, rows and notices themselves. */
 @supports selector(:has(*)) {
   .app-main:has(> .inventory-page) {
+    padding-top:var(--ifx-space-2);
     padding-inline: clamp(14px, 1.35vw, 24px);
   }
 }
 
 @media (max-width: 880px) {
   .app-shell main.app-main:has(> .inventory-page) {
+    padding-top:var(--ifx-space-2);
     padding-inline: 0;
   }
 
@@ -1014,13 +1016,8 @@
   }
 }
 
-@media (max-width: 760px) {
-  .app-main:has(#inventory-results-workspace) .synthetic-preview-notice {
-    margin-block: 0 4px;
-    padding-block: 5px;
-    line-height: 20px;
-  }
-}
+/* Keep the synthetic-environment notice visible without a second large header. */
+.app-main:has(> .inventory-page) .synthetic-preview-notice { margin-block:0 var(--ifx-space-1); padding-block:var(--ifx-space-1); line-height:var(--ifx-space-5); }
 
 @media (prefers-reduced-motion: reduce) {
   .inventory-filter-button {

@@ -2,80 +2,13 @@ import { CertifiedBadge } from "../../components/CertifiedBadge";
 import { useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Check, Printer, X } from "lucide-react";
-import { STORE_BRANDING } from "../../app/storeBranding";
-import type { StoreName } from "../../types";
 import { useContainedFocus } from "../../lib/useContainedFocus";
-import { formatDate, formatMileage, formatMoney, vehicleDisplayName } from "./inventory-utils";
-import { publishedEquipment } from "./vehicle-feature-utils";
-import { certifiedTerms } from "./vehicle-warranty-utils";
+import { formatDate, formatMileage, formatMoney } from "./inventory-utils";
 import type { InventoryVehicle } from "./types";
+import { takeHomeModel, type TakeHomeModel } from '../sales/customer-summary';
+export { takeHomeModel } from '../sales/customer-summary';
+export type { TakeHomeModel } from '../sales/customer-summary';
 import "./TakeHomeSheet.css";
-
-const STORE_DISPLAY: Record<string, { name: string; site: string }> = {
-  Howell: { name: "Bob Maxey Ford of Howell", site: "bobmaxeyfordhowell.com" },
-  Fowlerville: { name: "Bob Maxey Ford in Fowlerville", site: "bobmaxeyfordinfowlerville.com" },
-  "Ford Detroit": { name: "Bob Maxey Ford", site: "bobmaxeyford.com" },
-  Lincoln: { name: "Bob Maxey Lincoln", site: "bobmaxeylincoln.com" },
-};
-
-const isHttps = (value: string | null | undefined): value is string => typeof value === "string" && /^https:\/\//i.test(value);
-const customerEquipmentLabel = (value: string): string => value
-  .replace(/^[·|.]\s*/, "")
-  .replace(/\s+[·|]\s*(?:USD|CAD)\s*\$?[\d,]+(?:\.\d{2})?$/i, "")
-  .replace(/\s+[·|]\s*NO\s*CHARGE$/i, "")
-  .replace(/\s+[·|]\s*[A-Z]{2,}-[A-Z0-9-]+$/, "")
-  .trim();
-
-/**
- * Everything on the sheet is a published fact a customer could read on the
- * website: identity, price, mileage, specs, equipment, description and the
- * store's certification. Holds, custody, movement, manager-log, in-service
- * and warranty estimates never appear here.
- */
-export function takeHomeModel(vehicle: InventoryVehicle) {
-  const store = vehicle.location.homeStore.name;
-  const branding = STORE_BRANDING[store as StoreName] ?? null;
-  const display = STORE_DISPLAY[store] ?? { name: store, site: "" };
-  const photos = [...new Set([...(vehicle.imageUrls ?? []), vehicle.imageUrl].filter(isHttps))].slice(0, 4);
-  const published = publishedEquipment(vehicle);
-  const equipment = [...new Set(published.map((item) => customerEquipmentLabel(item.label)).filter(Boolean))];
-  const standout = [...new Set(published.filter((item) => item.standout).map((item) => customerEquipmentLabel(item.label)).filter(Boolean))].slice(0, 8);
-  const price = vehicle.price ?? null;
-  const msrp = vehicle.msrp ?? null;
-  const savings = price !== null && msrp !== null && msrp > price ? msrp - price : null;
-  const autoCheck = vehicle.autoCheckReport;
-  const history = autoCheck
-    ? [autoCheck.score != null ? `AutoCheck score ${autoCheck.score}` : null, autoCheck.ownerCount != null ? `${autoCheck.ownerCount} owner${autoCheck.ownerCount === 1 ? "" : "s"} reported` : null].filter(Boolean).join(" · ") || null
-    : null;
-  return {
-    store,
-    storeName: display.name,
-    storeSite: display.site,
-    logo: branding ? { src: branding.assetPath, alt: branding.altText, wide: branding.oemKey !== "lincoln" } : null,
-    name: vehicleDisplayName(vehicle),
-    descriptor: [vehicle.bodyStyle, vehicle.drivetrain, vehicle.engine, vehicle.exteriorColor].filter(Boolean).join(" · "),
-    stockNumber: vehicle.stockNumber,
-    vin: vehicle.vin,
-    price,
-    msrp,
-    savings,
-    mileage: vehicle.mileage ?? null,
-    certified: vehicle.certified ? certifiedTerms(store) : null,
-    photos,
-    specs: ([
-      ["Body", vehicle.bodyStyle], ["Drivetrain", vehicle.drivetrain], ["Engine", vehicle.engine], ["Transmission", vehicle.transmission], ["Fuel", vehicle.fuelType],
-      ["Fuel economy", vehicle.mpgCity != null || vehicle.mpgHighway != null ? `${vehicle.mpgCity ?? "—"} city / ${vehicle.mpgHighway ?? "—"} hwy` : null],
-      ["Exterior", vehicle.exteriorColor], ["Interior", vehicle.interiorColor],
-    ] as Array<[string, string | null | undefined]>).filter((entry): entry is [string, string] => Boolean(entry[1])),
-    highlights: [...new Set([...standout, ...equipment])].slice(0, 8),
-    equipment,
-    history,
-    description: vehicle.dealerComments?.trim() || null,
-    listingUrl: isHttps(vehicle.publicListing.listingUrl) ? vehicle.publicListing.listingUrl : null,
-  };
-}
-
-export type TakeHomeModel = ReturnType<typeof takeHomeModel>;
 
 export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeHomeModel; now?: Date }) {
   const heroPhoto = model.photos[0] ?? null;
@@ -161,7 +94,7 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
       ) : null}
       <footer className="th-foot">
         {model.listingUrl ? <a className="th-listing-link" href={model.listingUrl} target="_blank" rel="noopener noreferrer">View full vehicle listing</a> : null}
-        <span>Prepared {formatDate(now.toISOString())} · {model.storeName}{model.storeSite ? ` · ${model.storeSite}` : ""}</span>
+        <span>{model.publishedAt ? `Inventory snapshot ${formatDate(model.publishedAt)} · ` : ""}Prepared {formatDate(now.toISOString())} · {model.storeName}{model.storeSite ? ` · ${model.storeSite}` : ""}</span>
         <span>Price excludes tax, title, license and dealer fees. Vehicle information is believed accurate but not guaranteed; confirm equipment, mileage and availability with the dealership before purchase.</span>
       </footer>
     </article>

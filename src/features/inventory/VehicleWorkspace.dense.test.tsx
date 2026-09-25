@@ -78,6 +78,46 @@ function vehicle(): InventoryVehicle {
 }
 
 describe('focused vehicle workspace', () => {
+  it('expands every Overview document together and resets the shared control for another vehicle', async () => {
+    const user = userEvent.setup();
+    const unit = vehicle();
+    unit.windowSticker = { dataState: 'current', equipmentGroupContents: ['Synthetic included camera'], options: ['Synthetic optional package'] };
+    unit.autoCheckReport = { dataState: 'current', score: 91, checks: [{ label: 'Service / Repair', status: 'Records available', detail: '5 service records reported' }] };
+    unit.fordOasis = { dataState: 'current', buildDate: '20-JUN-2024', openFieldServiceActions: [], extendedCoverageExpirations: [], warrantyCoverages: [{ type: 'Powertrain', description: 'Synthetic coverage detail' }] };
+    const onClose = vi.fn();
+    const page = render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={onClose} />);
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Overview' })).toHaveFocus());
+    const documents = screen.getByRole('region', { name: 'Documents and vehicle records' });
+    const toggle = within(documents).getByRole('button', { name: 'Show details' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(document.getElementById(toggle.getAttribute('aria-controls')!)).toContainElement(within(documents).getByRole('region', { name: 'AutoCheck' }));
+    expect(within(documents).queryByRole('button', { name: /^Expand .* details$/ })).not.toBeInTheDocument();
+    expect(within(documents).queryByText('Synthetic optional package')).not.toBeInTheDocument();
+    toggle.focus();
+    await user.keyboard('{Enter}');
+    expect(toggle).toHaveFocus();
+    expect(toggle).toHaveAccessibleName('Hide details');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(within(documents).getByRole('list', { name: 'Included with equipment group' })).toHaveTextContent('Synthetic included camera');
+    expect(within(documents).getByText('Synthetic optional package')).toBeVisible();
+    expect(within(documents).getByText('5 service records reported')).toBeVisible();
+    expect(within(documents).getByText('Powertrain · Synthetic coverage detail')).toBeVisible();
+    page.rerender(<VehicleWorkspace vehicle={{ ...unit, price: 21988 }} homeStore={unit.location.homeStore} onClose={onClose} />);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await user.keyboard(' ');
+    expect(toggle).toHaveFocus();
+    expect(toggle).toHaveAccessibleName('Show details');
+    expect(within(documents).queryByText('Synthetic optional package')).not.toBeInTheDocument();
+    expect(within(documents).queryByText('5 service records reported')).not.toBeInTheDocument();
+    expect(within(documents).queryByText('Powertrain · Synthetic coverage detail')).not.toBeInTheDocument();
+    await user.click(toggle);
+    page.rerender(<VehicleWorkspace vehicle={{ ...unit, id: 'TESTDATAOTHER001', vin: 'TESTDATAOTHER001' }} homeStore={unit.location.homeStore} onClose={onClose} />);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(within(documents).queryByText('Synthetic optional package')).not.toBeInTheDocument();
+    await user.click(within(documents).getByRole('button', { name: 'Full records' }));
+    expect(screen.getByRole('tab', { name: 'Records' })).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('keeps one short reference-fact group beside vehicle details and before equipment', () => {
     const unit = vehicle();
     unit.windowSticker = {dataState:'current',basePrice:42500,pricingCurrency:'USD'};
@@ -439,7 +479,8 @@ describe('focused vehicle workspace', () => {
     expect(screen.getByText('Equipment group price',{selector:'dt'}).parentElement).toHaveTextContent('$4,770');
   });
 
-  it('puts complete vehicle specifications first in Equipment with distinct color and powertrain facts', () => {
+  it('puts equipment search first and keeps complete specifications in a collapsed disclosure', async () => {
+    const user = userEvent.setup();
     const unit = vehicle();
     unit.modelCode = 'DEMO-CODE';
     unit.mpgCity = 18;
@@ -447,8 +488,13 @@ describe('focused vehicle workspace', () => {
     unit.features = ['Heated seats'];
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} initialTab="equipment" onClose={vi.fn()}/>);
     const equipment = screen.getByRole('tabpanel',{name:'Equipment'});
-    const specifications = within(equipment).getByRole('region',{name:'Complete vehicle specifications'});
-    expect(within(equipment).getAllByRole('heading')[0]).toHaveTextContent('Specifications');
+    const specifications = within(equipment).getByRole('group',{name:'Complete vehicle specifications'});
+    const finder = within(equipment).getByRole('region',{name:'Equipment & packages'});
+    expect(finder.compareDocumentPosition(specifications) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(specifications).not.toHaveAttribute('open');
+    const disclosure = within(specifications).getByText('Specifications');
+    await user.click(disclosure);
+    expect(specifications).toHaveAttribute('open');
     for (const [label, value] of [
       ['Mileage', '123,328 mi'], ['Age', '2 days'], ['Engine', '3.5L V6 EcoBoost'],
       ['Drive', '4WD'], ['Transmission', '10-Speed Automatic'], ['Body', 'SuperCrew 4x4'],

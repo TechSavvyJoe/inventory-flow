@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { BootstrapData, VehicleRecord, WarrantyCheckCoverageRecord } from '../../src/types'
 
 // Richer display evidence layered over the isolated demo at its read boundary.
@@ -70,7 +70,7 @@ const richRecords: Partial<VehicleRecord> = {
   },
 }
 
-async function installRichDemoRecords(page: Page) {
+async function installRichDemoRecords(page: Page, recordOverrides: Partial<VehicleRecord> = richRecords) {
   await page.addInitScript(() => {
     localStorage.setItem('maxey-role', 'group_manager')
     localStorage.setItem('maxey-home-store', 'Howell')
@@ -82,7 +82,7 @@ async function installRichDemoRecords(page: Page) {
     expect(payload.vehicles.every(vehicle => vehicle.vin.startsWith('TESTDATA'))).toBe(true)
     const vehicle = payload.vehicles.find(vehicle => vehicle.vin === VIN)
     expect(vehicle).toBeDefined()
-    Object.assign(vehicle!, richRecords)
+    Object.assign(vehicle!, recordOverrides)
     await route.fulfill({ response, json: payload })
   })
   await page.route(`**/api/vehicles/${VIN}`, async route => {
@@ -90,7 +90,7 @@ async function installRichDemoRecords(page: Page) {
     expect(response.ok()).toBe(true)
     const vehicle = await response.json() as VehicleRecord
     expect(vehicle.vin).toBe(VIN)
-    await route.fulfill({ response, json: { ...vehicle, ...richRecords } })
+    await route.fulfill({ response, json: { ...vehicle, ...recordOverrides } })
   })
 }
 
@@ -103,15 +103,58 @@ async function capture(page: Page, width: number, state: string) {
 
 test.use({ deviceScaleFactor: 1 })
 
-test('rich Records stay ordered, factual and navigable on small and large screens', async ({ page }, testInfo) => {
-  const errors: string[] = []
-  page.on('pageerror', error => errors.push(error.message))
-  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
-  await installRichDemoRecords(page)
-  const sizes = testInfo.project.name === 'mobile'
-    ? [{ width: 390, height: 844 }]
-    : [{ width: 1024, height: 768 }, { width: 1320, height: 820 }, { width: 1440, height: 900 }]
-  for (const size of sizes) {
+async function expectCompactReportColumns(records: Locator, width: number) {
+  const sections = await records.locator('[data-record-section]').evaluateAll(elements => elements.map(element => {
+    const box = element.getBoundingClientRect()
+    return { id: element.getAttribute('data-record-section'), x: box.x, y: box.y, bottom: box.bottom, fragments: element.getClientRects().length }
+  }))
+  const columns = new Map<number, typeof sections>()
+  for (const section of sections) {
+    expect(section.fragments, `${section.id} remains one complete report`).toBe(1)
+    const column = Math.round(section.x)
+    columns.set(column, [...(columns.get(column) ?? []), section])
+  }
+  expect(columns.size, 'Reports use two independent desktop columns and one phone reading order').toBe(Math.min(sections.length, width >= 1024 ? 2 : 1))
+  const visualReadingOrder: (string | null)[] = []
+  for (const [, column] of [...columns].sort(([left], [right]) => left - right)) {
+    column.sort((first, second) => first.y - second.y)
+    visualReadingOrder.push(...column.map(section => section.id))
+    for (let index = 1; index < column.length; index++) {
+      const gap = column[index].y - column[index - 1].bottom
+      expect(gap, `${column[index].id} follows the previous report without a row-sized blank area`).toBeLessThanOrEqual(16)
+      expect(gap, 'Separate report borders remain distinguishable').toBeGreaterThanOrEqual(8)
+    }
+  }
+  expect(visualReadingOrder).toEqual(sections.map(section => section.id))
+}
+
+async function expectReportHeadingVisible(workspace: Locator, section: Locator) {
+  const scroll = await workspace.locator('.vdp-focus-scroll').boundingBox()
+  const heading = await section.locator('.inventory-vehicle-document__heading').boundingBox()
+  expect(heading, 'The jumped-to report has a visible heading').not.toBeNull()
+  expect(heading!.y, 'Jump lands below the fixed workspace navigation').toBeGreaterThanOrEqual(scroll!.y - 1)
+  expect(heading!.y + heading!.height, 'The full heading remains above the fixed footer').toBeLessThanOrEqual(scroll!.y + scroll!.height + 1)
+}
+
+// Each viewport owns a complete flow and its own normal test budget. Combining
+// all desktop widths consumed that budget in CI before the final flow finished.
+for (const size of [
+  { project: 'mobile', width: 390, height: 844 },
+  { project: 'desktop', width: 1024, height: 768 },
+  { project: 'desktop', width: 1320, height: 820 },
+  { project: 'desktop', width: 1440, height: 900 },
+]) {
+  test(`rich Records stay ordered, factual and navigable at ${size.width}×${size.height}`, async ({ page, browserName }, testInfo) => {
+    test.skip(testInfo.project.name !== size.project, 'Viewport runs in its matching desktop or mobile project')
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    page.on('console', message => {
+      // Match the cross-browser health guard: WebKit ignores this optional
+      // viewport hint. Every other console error and page error still fails.
+      if (browserName === 'webkit' && message.text() === 'Viewport argument key "interactive-widget" not recognized and ignored.') return
+      if (message.type() === 'error') errors.push(message.text())
+    })
+    await installRichDemoRecords(page)
     await page.setViewportSize(size)
     await page.goto(`/inventory?scope=group&vin=${VIN}&tab=data`)
     await expect(page).toHaveTitle(/Inventory Flow/)
@@ -148,6 +191,14 @@ test('rich Records stay ordered, factual and navigable on small and large screen
     await expect(history.getByRole('link', { name: /Open AutoCheck report/ })).toHaveAttribute('href', HISTORY_URL)
     await expect(history.getByRole('link', { name: /Open AutoCheck report/ })).toHaveAttribute('target', '_blank')
     await page.evaluate(async () => { await document.fonts.ready })
+    const recordsPanel = await workspace.getByRole('tabpanel', { name: 'Records', exact: true }).boundingBox()
+    const historyBox = await history.boundingBox()
+    expect(historyBox!.y - recordsPanel!.y, 'Report facts start near the top, without a tall summary/navigation stack').toBeLessThanOrEqual(150)
+    await expectCompactReportColumns(records, size.width)
+    for (const button of await records.getByRole('navigation', { name: 'Record sections' }).getByRole('button').all()) {
+      const box = await button.boundingBox()
+      expect(box!.height, 'Report navigation keeps a full touch target').toBeGreaterThanOrEqual(44)
+    }
     await capture(page, size.width, 'top')
 
     const jumps = records.getByRole('navigation', { name: 'Record sections' })
@@ -155,6 +206,7 @@ test('rich Records stay ordered, factual and navigable on small and large screen
       await jumps.getByRole('button', { name: button, exact: true }).click()
       const section = records.locator(`[data-record-section="${sectionId}"]`)
       await expect(section).toBeFocused()
+      await expectReportHeadingVisible(workspace, section)
       await expect(workspace.getByRole('tab', { name: 'Records', exact: true })).toBeInViewport()
       await expect(workspace.getByRole('heading', { name: NAME, exact: true })).toBeInViewport()
       const footer = await workspace.locator('.vdp-focus-footer').boundingBox()
@@ -194,7 +246,43 @@ test('rich Records stay ordered, factual and navigable on small and large screen
     const warranty = records.locator('[data-record-section="warranty"]')
     await expect(warranty.getByRole('table', { name: 'Remaining factory warranty by coverage' })).toContainText('47,550 miles')
     await expect(warranty.getByRole('table', { name: 'AutoCheck warranty estimate', includeHidden: true })).toBeHidden()
+    // Native columns may rebalance when report evidence expands. Keep the
+    // reports unbroken and ensure every jump follows its actual new position.
+    for (const expanded of [true, false]) {
+      for (const details of await records.locator('.vdp-record-source-details').all()) {
+        const isOpen = await details.evaluate(element => (element as HTMLDetailsElement).open)
+        if (isOpen !== expanded) await details.locator(':scope > summary').click()
+      }
+      await expectCompactReportColumns(records, size.width)
+      for (const section of await records.locator('[data-record-section]').all()) {
+        await jumps.getByRole('button', { name: (await section.getAttribute('aria-label'))!, exact: true }).click()
+        await expect(section).toBeFocused()
+        await expectReportHeadingVisible(workspace, section)
+      }
+      await capture(page, size.width, expanded ? 'evidence-expanded' : 'evidence-collapsed')
+    }
     await expect(page.locator('vite-error-overlay')).toHaveCount(0)
-  }
-  expect(errors).toEqual([])
+    expect(errors).toEqual([])
+  })
+}
+
+test('a single captured report uses the available width and keeps its jump visible', async ({ page }, testInfo) => {
+  await installRichDemoRecords(page, {
+    autoCheckReport: undefined, windowSticker: undefined, factoryEquipment: undefined, warrantyCheck: undefined,
+    fordOasis: richRecords.fordOasis,
+  })
+  const width = testInfo.project.name === 'mobile' ? 390 : 1440
+  await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+  await page.goto(`/inventory?scope=group&vin=${VIN}&tab=data`)
+  const workspace = page.getByRole('dialog', { name: `${NAME} vehicle workspace` })
+  const records = workspace.getByRole('region', { name: 'Vehicle documents' })
+  const report = records.getByRole('region', { name: 'OASIS', exact: true })
+  await expect(records.locator('[data-record-section]')).toHaveCount(1)
+  await expectCompactReportColumns(records, width)
+  const container = await records.locator('.inventory-vehicle-documents__grid').boundingBox()
+  const box = await report.boundingBox()
+  expect(Math.abs(container!.width - box!.width), 'A lone report does not reserve an empty second column').toBeLessThanOrEqual(1)
+  await records.getByRole('navigation', { name: 'Record sections' }).getByRole('button', { name: 'OASIS', exact: true }).click()
+  await expect(report).toBeFocused()
+  await expectReportHeadingVisible(workspace, report)
 })

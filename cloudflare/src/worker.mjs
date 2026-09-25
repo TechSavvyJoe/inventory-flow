@@ -8,6 +8,7 @@ import { assertAdminOverviewAccess } from '../../server/admin-control-center.mjs
 import { readMembershipAdmin, saveMembership } from './membership-admin.mjs'
 import { serviceIntakeRows } from '../../server/service-intake.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
+import { readIssuePhoto } from './issue-photo-storage.mjs'
 
 const FORMAT = 'inventory-flow-private-release-v1'
 const MAX_UPLOAD = 25 * 1024 * 1024
@@ -19,7 +20,7 @@ const decoder = new TextDecoder('utf-8', { fatal: true })
 const headers = {
   'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
-  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+  'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; media-src 'self' blob:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
 }
 function json(status, data) { return new Response(JSON.stringify(data), {status,headers:{...headers,'Content-Type':'application/json; charset=utf-8'}}) }
 // The version_metadata binding is absent locally and in tests; report null
@@ -385,14 +386,15 @@ async function publishRelease(request, env) {
   } catch {throw new HttpError('PUBLISH_CONFLICT_RETRY',409)}
   return json(201,{status:'published',reportDate:envelope.reportDate})
 }
-async function appApi(request,url,env,context) {
+async function appApi(request,url,env,context,claims) {
   const route=url.pathname.replace(/^\/api(?:\/v1)?/,'')
   const read=request.method==='GET', write=request.method==='POST'
   if(!read && !write) throw new HttpError('METHOD_NOT_ALLOWED',405)
   const adminOverview=route==='/admin/overview'
   const adminMembersRoute=route==='/admin/members'
   if(adminOverview && !read) throw new HttpError('METHOD_NOT_ALLOWED',405)
-  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/(?:service|invoice|equipment-pdf)$/.test(route) || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
+  const issueReadRoute=/^\/vehicle-issues(?:\/[^/]+(?:\/photos\/[a-f0-9]{64})?)?$/.test(route)
+  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/(?:service|invoice|equipment-pdf)$/.test(route) || issueReadRoute || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
   // Only these routes accept writes. Answer 405 here, before the release is
   // decrypted and the D1 snapshot is loaded for a request that can never commit.
   const writable=route==='/transfers' || /^\/vehicles\/[^/]+\/service$/.test(route) || /^\/(transfers|attention)\/[^/]+\/events$/.test(route) || adminMembersRoute
@@ -415,8 +417,10 @@ async function appApi(request,url,env,context) {
   const release=await readRelease(env)
   if(read && /^\/vehicles\/[^/]+\/invoice$/.test(route)) return savedInvoiceResponse(env,release,identifier,context)
   if(read && /^\/vehicles\/[^/]+\/equipment-pdf$/.test(route)) return savedEquipmentResponse(env,release,identifier)
-  let resolvedAssignmentInput=null
   for(let attempt=0;attempt<3;attempt++) {
+    // A conflicting commit may have been an employee access change. Resolve
+    // the same verified Access identity again before replaying any operation.
+    if(attempt>0) context=await memberContext(claims,env,request)
     const repo=await loadD1Repository(env.INVENTORY_DB,release)
     const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
     const query=Object.fromEntries(url.searchParams)
@@ -424,9 +428,23 @@ async function appApi(request,url,env,context) {
     if(read && adminOverview) result={...service.adminOverview(context,adminMembers),canManageMembers:true}
     else if(read && route==='/bootstrap') {
       result=service.bootstrap(context)
+      // The protected write allowlist is still awaiting explicit extension.
+      result.vehicleIssuesEnabled=false
       result.access={...result.access,authenticatedRole:context.authenticatedRole??context.role,authenticatedStore:context.authenticatedStore??context.store,canPreviewRoles:context.canPreviewRoles===true,canPreviewStores:context.canPreviewStores===true,rolePreviewActive:context.rolePreviewActive===true,storePreviewActive:context.storePreviewActive===true}
     }
     else if(read && route==='/vehicles') result=service.listVehicles(query,context)
+    else if(read && route==='/vehicle-issues') result=service.listVehicleIssues(query,context)
+    else if(read && /^\/vehicle-issues\/[^/]+$/.test(route)) result=service.getVehicleIssue(identifier,context)
+    else if(read && /^\/vehicle-issues\/[^/]+\/photos\/[a-f0-9]{64}$/.test(route)) {
+      const issue=service.getVehicleIssue(identifier,context)
+      const photo=issue.photos.find(photo=>photo.id===route.split('/')[4])
+      if(!photo) throw new HttpError('PHOTO_NOT_FOUND',404)
+      const bytes=await readIssuePhoto(env,issue.vin,photo)
+      // Photo storage can be slow; access revoked during the read must also
+      // deny the bytes, not merely the next request.
+      await memberContext(claims,env,request)
+      return new Response(bytes,{headers:{...headers,'Content-Type':'image/jpeg','Cross-Origin-Resource-Policy':'same-origin','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"}})
+    }
     else if(read && /^\/vehicles\/[^/]+$/.test(route)) result=service.getVehicle(identifier,context)
     else if(read && /^\/vehicles\/[^/]+\/service$/.test(route)) result=service.getServiceReadiness(identifier,context)
     else if(write && /^\/vehicles\/[^/]+\/service$/.test(route)) {result=service.updateServiceReadiness(identifier,input,context,idempotency);mutation=true}
@@ -438,21 +456,20 @@ async function appApi(request,url,env,context) {
     else if(write && /^\/(transfers|attention)\/[^/]+\/events$/.test(route)) {
       const [,type]=route.split('/')
       if(type==='attention') result=service.appendAttentionEvent(identifier,input,context,idempotency)
-      else if(!TRANSPORT_ASSIGNMENT_EVENTS.has(String(input?.type??'').trim().toLowerCase()) || resolvedAssignmentInput) {
-        result=service.appendTransferEvent(identifier,resolvedAssignmentInput??input,context,idempotency)
+      else if(!TRANSPORT_ASSIGNMENT_EVENTS.has(String(input?.type??'').trim().toLowerCase())) {
+        result=service.appendTransferEvent(identifier,input,context,idempotency)
       } else {
         // Authorize the transfer, role, store, lifecycle and payload before
         // querying the employee directory. This prevents unrelated users from
         // probing valid or duplicate staff names through assignment errors.
         const prepared=await prepareTransportAssignment(input,env,(candidate)=>
           service.appendTransferEvent(identifier,candidate,context,idempotency))
-        resolvedAssignmentInput=prepared.input
-        result=prepared.replay??service.appendTransferEvent(identifier,resolvedAssignmentInput,context,idempotency)
+        result=prepared.replay??service.appendTransferEvent(identifier,prepared.input,context,idempotency)
       }
       mutation=true
     } else throw new HttpError('NOT_FOUND',404)
     if(!mutation) return read && route==='/bootstrap' ? await jsonRevalidated(request,result) : json(200,result)
-    try {await repo.commit();return json(result.created?201:200,result.record)}
+    try {await repo.commit({email:claims.email,context});return json(result.created?201:200,result.record)}
     catch(error) {if(error instanceof RepositoryConflictError && attempt<2) continue; throw error}
   }
   throw new HttpError('REPOSITORY_CONFLICT',409)
@@ -475,9 +492,10 @@ export default {
         if(request.method==='GET' && url.pathname==='/internal/readiness') return json(200,await appReadiness(env))
         throw new HttpError('NOT_FOUND',404)
       }
-      const context=await memberContext(await verifyAccess(request,env),env,request)
+      const claims=await verifyAccess(request,env)
+      const context=await memberContext(claims,env,request)
       if(request.method==='GET' && url.pathname==='/api/health') return json(200,{ok:true,ready:Boolean(await currentRelease(env)),service:'inventory-flow-cloud',version:versionMetadata(env)})
-      if(url.pathname.startsWith('/api/')) return await appApi(request,url,env,context)
+      if(url.pathname.startsWith('/api/')) return await appApi(request,url,env,context,claims)
       if(!['GET','HEAD'].includes(request.method)) throw new HttpError('METHOD_NOT_ALLOWED',405)
       if(!env.ASSETS) throw new HttpError('FRONTEND_NOT_DEPLOYED',503)
       const asset=await env.ASSETS.fetch(request)

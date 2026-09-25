@@ -8,7 +8,7 @@ export function resolveStoreScope(scope, workingStore) {
 }
 
 export function matchesInventoryView(vehicle, view) {
-  if (view === 'held') return vehicle.hold?.hasActiveHold === true
+  if (view === 'held') return vehicle.hold?.hasActiveHold === true || vehicle.hold?.lastKnownActiveHold === true
   if (view === 'moving') return Boolean(vehicle.movement)
   return true
 }

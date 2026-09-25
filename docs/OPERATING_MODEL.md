@@ -1,6 +1,24 @@
 # Cross-store vehicle operating model
 
-## Governing rule
+## Current everyday workflow
+
+The production interface uses the server-owned **simple** workflow. Its rules are implemented in `server/workflow.mjs` and verified by `tests/unit/simple-moves-workflow.test.ts`. This section governs current behavior; the advanced reference below does not add steps to it.
+
+1. Sales searches Home Store inventory first and deliberately expands to the group. Public listing, DealerMail holds, service, source location, and the app movement ledger stay separate.
+2. Sales requests another store's vehicle through their own manager. The requesting-store manager checks with the Home Store, then records **one** in-app approval or decline. No second digital approval is required.
+3. The everyday interface has no driver/dispatch assignment, collection checklist, or destination-arrival checklist. An approval is permission, not proof that the vehicle has moved. Authorized managers can record a direct move using its actual destination and time.
+4. Sales can record the showing outcome or start the return. The requesting-store manager remains accountable for the return and next action. The server enforces the actor's role and store on every transition.
+5. A Home Store manager explicitly records receipt back home; that event closes the move without another Close step. Sold pending stays open until an authorized manager explicitly records delivery or that the deal fell through. Listing removal, holds, expected dates, CDK, and office processing never establish delivery or closure.
+
+Only one active move controls a VIN. Home/away/visiting/all-store views expose location and time away without granting access to private transfer evidence. Authorized sales and managers retain full vehicle/hold records; transport roles receive logistics with customer-sensitive evidence redacted. Read-only source imports never overwrite the app-owned movement ledger.
+
+The [README](../README.md) describes the current staff experience. The [phased roadmap](ADVANCED_WORKFLOW_ROADMAP.md) describes optional later rollout work.
+
+## Advanced workflow reference — retained for later rollout
+
+**Everything below this heading describes the earlier advanced operating design.** Dual approvals, driver assignments, collection/arrival handoffs, service-level targets, and notification delivery are not requirements or promises of the current everyday interface. The advanced transition engine remains available only through the trusted service's `workflowMode: 'advanced'` constructor option and regression tests; employees cannot enable it through a browser setting. Source separation, explicit evidence, privacy, and audit principles apply to both modes.
+
+### Advanced governing rule
 
 **The Home Store retains inventory authority. Once a vehicle is released, the requesting-store manager retains custody accountability until the Home Store confirms its return or an authorized final disposition is explicitly completed.**
 
@@ -79,7 +97,7 @@ Draft → Waiting on My Manager → Waiting on Home-Store Used-Car Manager → R
 
 Release is permission to move within a defined window. It is not a sale.
 
-The two manager steps must never be collapsed into a generic **Approved** state. The requesting-store manager forwards the request; the Home Store used-car manager supplies the release decision.
+In the optional advanced mode, the two manager steps must remain distinct rather than collapse into a generic **Approved** state. The requesting-store manager forwards the request; the Home Store used-car manager supplies the release decision.
 
 ### Movement and custody
 

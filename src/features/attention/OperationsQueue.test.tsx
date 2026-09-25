@@ -5,6 +5,17 @@ import type { AttentionItem, VehicleRecord } from '../../types'
 import { OperationsQueue } from './OperationsQueue'
 
 afterEach(cleanup)
+
+it('links each vehicle issue to its own history without generic review controls', () => {
+  const issue = task({ id: 'issue-synthetic-1', type: 'vehicle_issue', label: 'Fuel issue', href: '/attention?issue=synthetic-1', allowedActions: [], events: [] })
+  const second = task({ id: 'issue-synthetic-2', type: 'vehicle_issue', label: 'Cleaning issue', href: '/attention?issue=synthetic-2', allowedActions: [], events: [] })
+  show([issue, second])
+  fireEvent.click(screen.getByRole('button', { name: /Vehicle issues\s*1/ }))
+  expect(screen.getByRole('link', { name: 'Open fuel issue' })).toHaveAttribute('href', '/attention?issue=synthetic-1&returnTo=%2F')
+  expect(screen.getByRole('link', { name: 'Open cleaning issue' })).toHaveAttribute('href', '/attention?issue=synthetic-2&returnTo=%2F')
+  expect(screen.queryByRole('button', { name: 'Mark reviewed' })).not.toBeInTheDocument()
+  expect(screen.queryByText('Follow-up & history')).not.toBeInTheDocument()
+})
 function task(overrides: Partial<AttentionItem> = {}): AttentionItem {
   return { id: 'synthetic-hold', type: 'past_expected_hold', severity: 'warning', status: 'open', priority: 'normal',
     label: 'Synthetic hold check', vehicleName: 'Synthetic Ford H01', stockNumber: 'SYN-H01', vin: 'TESTDATAHWELL0001', store: 'Howell',

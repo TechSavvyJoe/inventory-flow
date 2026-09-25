@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { WorkflowError } from './workflow.mjs'
 
 const PRIORITIES = new Set(['low', 'normal', 'high', 'urgent'])
@@ -119,6 +119,29 @@ function defaultPriority(item) {
   return 'normal'
 }
 
+// Hash the normalized request, not the resulting workflow: later state changes
+// must not prevent an identical retry from returning the current record.
+export function attentionInputHash(input, context) {
+  const payload = {
+    type: requiredText(input?.type, 'type', 60).toLowerCase(),
+    note: optionalText(input?.note, 'note', 1500),
+    assignee: optionalText(input?.assignee, 'assignee', 160),
+    assignedRole: optionalText(input?.assignedRole, 'assignedRole', 60),
+    followUpAt: isoTimestamp(input?.followUpAt, 'followUpAt'),
+    priority: optionalText(input?.priority, 'priority', 60)?.toLowerCase() ?? null,
+    resolutionCode: optionalText(input?.resolutionCode, 'resolutionCode', 60)?.toLowerCase() ?? null,
+    occurredAt: isoTimestamp(input?.occurredAt, 'occurredAt'),
+    actor: requiredText(context.user, 'actor', 160),
+    actorUserId: context.userId || null,
+    role: context.role,
+    authenticatedRole: context.authenticatedRole || context.role,
+    store: context.store || null,
+  }
+  if (input.actor && input.actor !== payload.actor) throw new WorkflowError('actor must match the authenticated user context', { status: 403, code: 'ACTOR_MISMATCH' })
+  if (input.actorRole && input.actorRole !== context.role) throw new WorkflowError('actorRole must match the active role context', { status: 403, code: 'ROLE_MISMATCH' })
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex')
+}
+
 export function buildAttentionMutation({ sourceItem, current, input, context, idempotencyKey, now = new Date() }) {
   if (!sourceItem) throw new WorkflowError('Attention item was not found', { status: 404, code: 'ATTENTION_NOT_FOUND' })
   const eventType = requiredText(input?.type, 'type', 60).toLowerCase()
@@ -177,6 +200,7 @@ export function buildAttentionMutation({ sourceItem, current, input, context, id
   const event = {
     id: randomUUID(),
     eventType,
+    inputHash: attentionInputHash(input, context),
     label: ACTION_LABELS[eventType],
     actor,
     actorRole: context.authenticatedRole || context.role,
@@ -222,7 +246,7 @@ export function buildAttentionMutation({ sourceItem, current, input, context, id
       break
     }
     case 'change_priority': {
-      const priority = String(input.priority ?? '').toLowerCase()
+      const priority = String(input.priority ?? '').trim().toLowerCase()
       if (!PRIORITIES.has(priority)) throw new WorkflowError('priority must be low, normal, high, or urgent')
       workflow.priority = priority
       event.priority = priority
@@ -237,7 +261,7 @@ export function buildAttentionMutation({ sourceItem, current, input, context, id
       event.priority = 'urgent'
       break
     case 'resolve': {
-      const resolutionCode = String(input.resolutionCode ?? '').toLowerCase()
+      const resolutionCode = String(input.resolutionCode ?? '').trim().toLowerCase()
       if (!RESOLUTION_CODES.has(resolutionCode)) {
         throw new WorkflowError('resolutionCode must identify how the operational work was closed')
       }

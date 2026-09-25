@@ -332,6 +332,9 @@ export interface WarrantyCheckRecord {
 }
 
 export interface HoldSummary {
+  /** A retained observation, never a claim of current hold status. */
+  lastKnownActiveHold?: boolean
+  lastKnownNoHold?: boolean
   state: 'primary' | 'backup' | 'multiple' | 'none_observed' | 'stale' | 'unknown'
   label: string
   canViewEvidence?: boolean
@@ -492,6 +495,7 @@ export interface ServiceReadinessInput {
 }
 
 export interface VehicleRecord {
+  canReportIssue?: boolean
   vin: string
   stockNumber: string
   year?: number | string
@@ -712,6 +716,76 @@ export interface HoldSignalSummary {
   freshness: SourceFreshness
 }
 
+export type VehicleIssueCategory = 'cleaning' | 'fuel' | 'mechanical' | 'damage' | 'other'
+export type VehicleIssueStatus = 'open' | 'in_progress' | 'awaiting_review' | 'completed'
+export type VehicleIssueAction = 'assign' | 'start_work' | 'request_completion' | 'complete' | 'reopen' | 'add_note'
+
+export interface VehicleIssue {
+  id: string
+  vin: string
+  stockNumber: string
+  vehicleName: string
+  homeStore: StoreName
+  reportStore: StoreName
+  category: VehicleIssueCategory
+  priority: 'normal' | 'urgent'
+  description: string
+  status: VehicleIssueStatus
+  version: number
+  assignee: string | null
+  reportedBy: string
+  reportedByUserId: string
+  reportedAt: string
+  updatedAt: string
+  completedAt: string | null
+  completedBy: string | null
+  photoCount: number
+  allowedActions: string[]
+}
+
+export interface VehicleIssuePhoto {
+  id: string
+  contentType: string
+  bytes: number
+  eventId: string
+  createdAt: string
+}
+
+export interface VehicleIssueEvent {
+  id: string
+  type: string
+  version: number
+  note: string | null
+  assignee: string | null
+  status: VehicleIssueStatus
+  actor: string
+  actorUserId: string
+  actorRole: UserRole
+  store: StoreName
+  createdAt: string
+  photos: Array<Pick<VehicleIssuePhoto, 'id' | 'contentType' | 'bytes'>>
+}
+
+export interface VehicleIssueDetail extends VehicleIssue {
+  photos: VehicleIssuePhoto[]
+  events: VehicleIssueEvent[]
+}
+
+export interface VehicleIssueCreateInput {
+  category: VehicleIssueCategory
+  priority: 'normal' | 'urgent'
+  description: string
+  photos?: Array<{ data: string }>
+}
+
+export interface VehicleIssueEventInput {
+  type: VehicleIssueAction
+  expectedVersion: number
+  assignee?: string | null
+  note?: string
+  photos?: Array<{ data: string }>
+}
+
 export interface BootstrapData {
   access?: {
     user: string
@@ -734,6 +808,8 @@ export interface BootstrapData {
   holdSignals?: HoldSignalSummary[]
   managerDispositions?: ManagerDispositionRecord[]
   publicChanges?: PublicChangeEvent[]
+  vehicleIssues?: VehicleIssue[]
+  vehicleIssuesEnabled?: boolean
 }
 
 interface TransferRequestInputBase {

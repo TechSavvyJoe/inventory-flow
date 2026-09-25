@@ -14,9 +14,15 @@ import {
   createRepositoryContext,
   listServiceEvents,
   insertServiceEvent,
+  vehicleIssuesEnabled,
+  listVehicleIssueRows,
+  listVehicleIssueEvents,
+  insertVehicleIssue,
+  appendVehicleIssueEvent,
 } from './repository-dispatch.mjs'
 import { buildServiceReadinessEvent, serviceReadinessView } from './service-readiness.mjs'
-import { allowedAttentionActions, buildAttentionMutation, canSeePersistedAssignee, isTransportItem } from './attention-workflow.mjs'
+import { buildVehicleIssue, buildVehicleIssueEvent, canReportVehicleIssue, vehicleIssueView, VEHICLE_ISSUE_CATEGORIES, VEHICLE_ISSUE_STATUSES } from './vehicle-issues.mjs'
+import { allowedAttentionActions, attentionInputHash, buildAttentionMutation, canSeePersistedAssignee, isTransportItem } from './attention-workflow.mjs'
 import { assertAdminOverviewAccess, buildAdminOverview } from './admin-control-center.mjs'
 import { STORE_NAMES } from './constants.mjs'
 import { normalizePublicChangeCounts } from './public-change-counts.mjs'
@@ -324,7 +330,12 @@ function holdSummary(source, context, freshness, { includePrivate = false } = {}
     alertsCount: messages.alerts.length,
   }
   if (freshness !== 'current') {
+    const retained = holdRecord ? holdSummary(source, context, 'current', { includePrivate }) : null
     return {
+      ...retained,
+      lastKnownActiveHold: Boolean(holdRecord),
+      // A prior complete observation is retained separately from current status.
+      lastKnownNoHold: freshness === 'stale_unverified' && Boolean(crmRecord) && !holdRecord,
       state: holdRecord ? 'stale' : crmRecord ? 'stale' : 'unknown',
       label: holdRecord ? 'Last verified hold — confirm in DealerMail' : 'Hold status stale — confirm in DealerMail',
       backupCount: holdRecord ? primaryAndBackups(holdRecord).backups.length : 0,
@@ -1417,7 +1428,7 @@ function storeSummaries(vehicles, holdRows, transferRows, now) {
   })
 }
 
-function attentionEventView(row, { includeNotes = false } = {}) {
+function attentionEventView(row, { includeNotes = false, includeAssignee = false } = {}) {
   return {
     id: row.id,
     type: row.event_type,
@@ -1426,7 +1437,7 @@ function attentionEventView(row, { includeNotes = false } = {}) {
     actorRole: row.actor_role,
     store: cleanText(row.store_id),
     occurredAt: row.occurred_at,
-    assignee: cleanText(row.assignee),
+    assignee: includeAssignee ? cleanText(row.assignee) : null,
     followUpAt: cleanText(row.follow_up_at),
     priority: cleanText(row.priority),
     resolutionCode: cleanText(row.resolution_code),
@@ -1439,6 +1450,22 @@ function defaultAttentionPriority(item) {
   if (item.severity === 'critical') return 'urgent'
   if (item.severity === 'warning') return 'high'
   return 'normal'
+}
+
+// Select source identity and authored evidence before role redaction. Capture
+// metadata and other VINs do not describe a new condition on this vehicle.
+function attentionSourceEvidence(source) {
+  if (!source) return null
+  const { primary, backups } = primaryAndBackups(source.holdRecord)
+  const holds = [primary, ...backups].filter(Boolean).map((row) => [
+    cleanText(row.holdPosition), row.holdOrderNumber ?? cleanText(row.orderRaw),
+    cleanText(row.holdDateRaw), cleanText(row.expectedDeliveryDateRaw),
+    cleanText(row.salespersonRaw), cleanText(row.customerOrReasonRaw), cleanText(row.heldByRaw),
+  ])
+  const alerts = simplifyAlerts(dealerMailMessages(source)).map((alert) => [
+    alert.text, alert.author, alert.timestamp, alert.metadataRaw, alert.spiffRaw,
+  ])
+  return { holds: holds.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))), alerts: alerts.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))) }
 }
 
 function versionedAttentionId(baseId, evidence) {
@@ -1501,7 +1528,7 @@ function mergeAttentionWorkflow(database, items, context) {
       resolutionCode: cleanText(workflow?.resolution_code),
       resolutionNote: context.canViewPrivateEvidence ? cleanText(workflow?.resolution_note) : null,
       lastUpdatedAt: cleanText(workflow?.updated_at),
-      events: workflow ? getAttentionEvents(database, item.id).map((event) => attentionEventView(event, { includeNotes: context.canViewPrivateEvidence })) : [],
+      events: workflow ? getAttentionEvents(database, item.id).map((event) => attentionEventView(event, { includeNotes: context.canViewPrivateEvidence, includeAssignee: canSeePersistedAssignee(item, context) })) : [],
     }
     record.allowedActions = allowedAttentionActions(record, context)
     Object.assign(record, attentionActionability(record, context))
@@ -1509,7 +1536,7 @@ function mergeAttentionWorkflow(database, items, context) {
   })
 }
 
-function attentionItems(meta, vehicles, stores, transferRows, database, context, conditionDay, managerDispositionRecords = []) {
+function attentionItems(meta, vehicles, stores, transferRows, database, context, conditionDay, managerDispositionRecords = [], sources = []) {
   const items = []
   if (meta.publicFreshness !== 'current' || meta.dealerMailFreshness !== 'current') {
     items.push({
@@ -1593,6 +1620,7 @@ function attentionItems(meta, vehicles, stores, transferRows, database, context,
         vehicle.hold.state,
         vehicle.hold.expectedDate,
         vehicle.hold.alertsCount,
+        attentionSourceEvidence(sources.find((source) => source.vin === vehicle.vin)),
       ]),
       severity: pastExpected ? 'critical' : 'warning',
       priority: pastExpected ? 'urgent' : 'high',
@@ -1789,6 +1817,29 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
   const database = createRepositoryContext(databaseHandle, repository)
   let loadStatus = { ...initialLoadStatus }
 
+  function issueSnapshot(contextInput) {
+    const context = roleContext(contextInput)
+    const enabled = vehicleIssuesEnabled(database)
+    const issues = listVehicleIssueRows(database)
+    const eventsByIssue = new Map()
+    for (const event of listVehicleIssueEvents(database)) {
+      const rows = eventsByIssue.get(event.issue_id) ?? []
+      rows.push(event)
+      eventsByIssue.set(event.issue_id, rows)
+    }
+    for (const rows of eventsByIssue.values()) rows.sort((left, right) => left.version - right.version)
+    return { context, enabled, issues, eventsByIssue }
+  }
+
+  function issueRecords(state) {
+    return state.issues.map((issue) => vehicleIssueView(issue, state.eventsByIssue.get(issue.id) ?? [], state.context))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id))
+  }
+
+  function requireIssueStorage(state) {
+    if (!state.enabled) throw new WorkflowError('Vehicle issue storage is not enabled yet.', { status: 503, code: 'MIGRATION_REQUIRED' })
+  }
+
   function snapshot(contextInput = {}) {
     // Mode is deployment-owned, never a client role/header/body override.
     const context = { ...roleContext(contextInput), workflowMode }
@@ -1831,7 +1882,19 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
     if (vehicle) {
       // Internal provenance is non-enumerable: expose only the safe readiness view.
       Object.defineProperty(vehicle, 'serviceIntake', { value: state.serviceIntakeByVin.get(source.vin) })
+      // Calendar freshness describes the report, not whether a recorded inspection
+      // happened. Keep the selected release's original evidence until replacement.
+      Object.defineProperty(vehicle, 'publishedServiceEvidence', { value: {
+        ...vehicle,
+        serviceIntake: vehicle.serviceIntake,
+        autoCheckReport: source.publicRecord?.autoCheckReport
+          ? { ...source.publicRecord.autoCheckReport, dataState: state.dataset.sourceRuns.public?.status === 'current'
+              ? source.publicRecord.autoCheckReport.dataState ?? 'current' : state.dataset.sourceRuns.public?.status }
+          : state.dataset.sourceRuns.resources?.status === 'current' ? source.resourceRecord?.autoCheckReport : undefined,
+        fordOasis: state.dataset.sourceRuns.resources?.status === 'current' ? source.resourceRecord?.fordOasis : undefined,
+      } })
       vehicle.serviceReadiness = serviceReadinessView(vehicle, state.serviceEventsByVin.get(source.vin)?.at(-1), state.context)
+      vehicle.canReportIssue = vehicleIssuesEnabled(database) && canReportVehicleIssue(vehicle, state.context)
     }
     return vehicle
   }
@@ -1862,6 +1925,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       state.context,
       dateInTimeZone(state.currentNow, state.meta.timezone),
       state.indexes.managerDispositionRecords,
+      state.sources,
     )
   }
 
@@ -1895,6 +1959,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
 
     bootstrap(contextInput = {}) {
       const state = snapshot(contextInput)
+      const issueState = issueSnapshot(contextInput)
       if (!state.dataset.publicRows.length) {
         throw new WorkflowError('No verified public inventory release is loaded', {
           status: 503,
@@ -1931,6 +1996,8 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         stores,
         vehicles,
         transfers,
+        vehicleIssuesEnabled: issueState.enabled,
+        vehicleIssues: issueRecords(issueState),
         holdSignals: holdSignalSummaries(state.dataset.holdRows, state.meta),
         managerDispositions: state.indexes.managerDispositionRecords.map((record) => ({
           ...record,
@@ -1945,6 +2012,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
           state.context,
           dateInTimeZone(state.currentNow, state.meta.timezone),
           state.indexes.managerDispositionRecords,
+          state.sources,
         ),
         publicChanges: state.publicChanges,
       }
@@ -1957,6 +2025,62 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const vehicle = source && vehicleFromSnapshot(state, source)
       if (!vehicle) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
       return serviceDetail(vehicle, state.serviceEventsByVin.get(vin) ?? [], state.context)
+    },
+
+    listVehicleIssues(query = {}, contextInput = {}) {
+      const state = issueSnapshot(contextInput)
+      if (!query || typeof query !== 'object' || Array.isArray(query) ||
+          Object.keys(query).some((key) => !['vin', 'store', 'status', 'category', 'priority', 'limit', 'offset'].includes(key))) {
+        throw new WorkflowError('Unsupported vehicle issue filter.', { code: 'INVALID_ISSUE_FILTER' })
+      }
+      if ((query.store && !STORE_NAMES.includes(query.store)) ||
+          (query.status && !VEHICLE_ISSUE_STATUSES.includes(query.status)) ||
+          (query.category && !VEHICLE_ISSUE_CATEGORIES.includes(query.category)) ||
+          (query.priority && !['normal', 'urgent'].includes(query.priority))) {
+        throw new WorkflowError('Choose a valid vehicle issue filter.', { code: 'INVALID_ISSUE_FILTER' })
+      }
+      const vin = query.vin ? normalizedVin(query.vin) : null
+      const items = issueRecords(state).filter((issue) => (!vin || issue.vin === vin) &&
+        (!query.store || issue.reportStore === query.store) && (!query.status || issue.status === query.status) &&
+        (!query.category || issue.category === query.category) && (!query.priority || issue.priority === query.priority))
+      const offset = integerQuery(query.offset, 0, { min: 0, max: 100000 })
+      const limit = integerQuery(query.limit, 100, { min: 1, max: 500 })
+      return { items: items.slice(offset, offset + limit), total: items.length }
+    },
+
+    getVehicleIssue(id, contextInput = {}) {
+      const state = issueSnapshot(contextInput)
+      const issue = state.issues.find((row) => row.id === id)
+      if (!issue) throw new WorkflowError('Vehicle issue was not found.', { status: 404, code: 'VEHICLE_ISSUE_NOT_FOUND' })
+      return vehicleIssueView(issue, state.eventsByIssue.get(id) ?? [], state.context, { detail: true })
+    },
+
+    createVehicleIssue(vinInput, input, contextInput = {}, idempotencyKey) {
+      const state = snapshot(contextInput)
+      const issueState = issueSnapshot(contextInput)
+      requireIssueStorage(issueState)
+      const vin = normalizedVin(vinInput)
+      const source = state.sources.find((candidate) => candidate.vin === vin)
+      const vehicle = source && vehicleFromSnapshot(state, source)
+      const result = buildVehicleIssue({
+        vin, vehicle, issues: issueState.issues, input, context: issueState.context,
+        idempotencyKey, now: state.currentNow,
+      })
+      if (result.created) insertVehicleIssue(database, result.issue, result.event)
+      return { created: result.created, record: this.getVehicleIssue(result.issue.id, contextInput) }
+    },
+
+    appendVehicleIssueEvent(id, input, contextInput = {}, idempotencyKey) {
+      const state = issueSnapshot(contextInput)
+      requireIssueStorage(state)
+      const issue = state.issues.find((row) => row.id === id)
+      if (!issue) throw new WorkflowError('Vehicle issue was not found.', { status: 404, code: 'VEHICLE_ISSUE_NOT_FOUND' })
+      const result = buildVehicleIssueEvent({
+        issue, rows: state.eventsByIssue.get(id) ?? [], input, context: state.context,
+        idempotencyKey, now: now(),
+      })
+      if (result.created) appendVehicleIssueEvent(database, result.event)
+      return { created: result.created, record: this.getVehicleIssue(id, contextInput) }
     },
 
     updateServiceReadiness(vinInput, input, contextInput = {}, idempotencyKey) {
@@ -2034,10 +2158,12 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const state = snapshot(contextInput)
       const sourceItem = attentionFromSnapshot(state).find((candidate) => candidate.id === id)
       if (!sourceItem) throw new WorkflowError('Attention item was not found', { status: 404, code: 'ATTENTION_NOT_FOUND' })
-      const replay = idempotencyKey && getAttentionEvents(database, id).find((event) => event.idempotency_key === idempotencyKey)
+      const replayKey = String(idempotencyKey ?? '').trim()
+      const replay = replayKey && getAttentionEvents(database, id).find((event) => event.idempotency_key === replayKey)
       if (replay) {
-        const auditRole = state.context.authenticatedRole || state.context.role
-        if (replay.actor !== state.context.user || replay.actor_role !== auditRole || replay.event_type !== input?.type) {
+        let inputHash
+        try { inputHash = attentionInputHash(input, state.context) } catch { /* A different or invalid retry conflicts. */ }
+        if (!replay.input_hash || replay.input_hash !== inputHash) {
           throw new WorkflowError('This action key belongs to another action', { status: 409, code: 'IDEMPOTENCY_CONFLICT' })
         }
         return { record: sourceItem, created: false }

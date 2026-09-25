@@ -1,0 +1,141 @@
+// SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
+import { describe, expect, it } from 'vitest'
+import { inventoryInLocationScope, matchesInventoryQuickView } from './inventory-quick-views'
+import type { InventoryScope, InventoryVehicle } from './types'
+
+const howell = { id: 'howell', name: 'Howell' }
+const fowlerville = { id: 'fowlerville', name: 'Fowlerville' }
+const lincoln = { id: 'lincoln', name: 'Lincoln' }
+function vehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
+  return {
+    id: 'TESTDATAHWELL0001', vin: 'TESTDATAHWELL0001', stockNumber: 'SYNTHETIC-QUICK-VIEW',
+    year: 2026, make: 'Ford', model: 'Synthetic model', price: null, mileage: null,
+    publicListing: { dataState: 'current', isListed: true },
+    dealerOn: { dataState: 'current', inStock: true, inTransit: false, inProduction: false },
+    dealerMail: { dataState: 'current', hasActiveHold: false },
+    location: { homeStore: howell, sourceReportedStore: howell },
+    ...overrides,
+  }
+}
+function matches(record: InventoryVehicle, view: Parameters<typeof matchesInventoryQuickView>[1], scope: InventoryScope = 'home') {
+  return matchesInventoryQuickView(record, view, { scope, homeStore: howell })
+}
+
+describe('inventory quick views use independent hold and location evidence', () => {
+  it('includes owned units and known visitors in home scope, including held visitors', () => {
+    const ownedElsewhere = vehicle({ location: { homeStore: howell, sourceReportedStore: fowlerville } })
+    const visitor = vehicle({ location: { homeStore: lincoln, sourceReportedStore: howell } })
+    const elsewhere = vehicle({ location: { homeStore: lincoln, sourceReportedStore: fowlerville } })
+    expect(inventoryInLocationScope(ownedElsewhere, 'home', howell)).toBe(true)
+    expect(inventoryInLocationScope(visitor, 'home', howell)).toBe(true)
+    expect(inventoryInLocationScope(elsewhere, 'home', howell)).toBe(false)
+    expect(inventoryInLocationScope(elsewhere, 'group', howell)).toBe(true)
+    expect(matches(visitor, 'no-hold')).toBe(true)
+    expect(matches({ ...visitor, dealerMail: { dataState: 'current', hasActiveHold: true } }, 'held')).toBe(true)
+    // The caller combines scope with the view; All adds no second scope filter.
+    expect(matches(elsewhere, 'all')).toBe(true)
+    expect(matches(elsewhere, 'all', 'group')).toBe(true)
+  })
+
+  it('uses app-confirmed location before an older source-reported store', () => {
+    const record = vehicle({ location: { homeStore: howell, sourceReportedStore: howell, appConfirmedLocation: 'Fowlerville', appConfirmedStore: fowlerville } })
+    expect(matches(record, 'no-hold')).toBe(false)
+    expect(matches(record, 'offsite')).toBe(true)
+    const departedVisitor = { ...record, location: { ...record.location, homeStore: lincoln } }
+    expect(inventoryInLocationScope(departedVisitor, 'home', howell)).toBe(false)
+  })
+
+  it('shows group no-hold units at any known group store, not only the selected location', () => {
+    const elsewhere = vehicle({ location: { homeStore: lincoln, sourceReportedStore: lincoln } })
+    expect(matches(elsewhere, 'no-hold')).toBe(false)
+    expect(matches(elsewhere, 'no-hold', 'group')).toBe(true)
+    const vendor = vehicle({ location: { homeStore: howell, appConfirmedLocation: 'External service vendor', appConfirmedAt: '2026-08-30T12:00:00Z' } })
+    expect(matches(vendor, 'no-hold', 'group')).toBe(false)
+    expect(matches(vendor, 'offsite')).toBe(false)
+  })
+
+  it('keeps hold and offsite categories independent', () => {
+    const heldAway = vehicle({ dealerMail: { dataState: 'current', hasActiveHold: true }, location: { homeStore: howell, sourceReportedStore: fowlerville } })
+    expect(matches(heldAway, 'held')).toBe(true)
+    expect(matches(heldAway, 'offsite')).toBe(true)
+    expect(matches(heldAway, 'no-hold')).toBe(false)
+    const visitor = { ...heldAway, location: { homeStore: fowlerville, sourceReportedStore: howell } }
+    expect(matches(visitor, 'offsite')).toBe(false)
+    expect(matches(visitor, 'offsite', 'group')).toBe(true)
+  })
+
+  it('does not fabricate a current location from ownership, CRM store or a request', () => {
+    const unknown = vehicle({ location: { homeStore: howell, crmStore: howell }, movement: { requestId: 'synthetic-request', requestStatus: 'requested' } })
+    expect(matches(unknown, 'all')).toBe(true)
+    expect(matches(unknown, 'no-hold')).toBe(false)
+    expect(matches(unknown, 'offsite')).toBe(false)
+    expect(matches(unknown, 'moving')).toBe(true)
+  })
+
+  it.each(['requested', 'approved', 'transport_assigned', 'return_requested', 'return_assigned'])('does not mistake %s for physical departure', requestStatus => {
+    const record = vehicle({ movement: { state: 'at_home', requestStatus, requestId: 'synthetic-request' } })
+    expect(matches(record, 'no-hold')).toBe(true)
+    expect(matches(record, 'offsite')).toBe(false)
+    expect(matches(record, 'moving')).toBe(true)
+  })
+
+  it.each(['in_transit', 'picked_up', 'return_in_transit', 'returning'])('excludes explicit %s from no-hold at the store and includes it offsite', state => {
+    const record = vehicle({ movement: { state, requestId: 'synthetic-request' }, location: { homeStore: howell, sourceReportedStore: howell, appConfirmedLocation: 'In transit', appConfirmedAt: '2026-08-30T12:00:00Z' } })
+    for (const scope of ['home', 'group'] as const) {
+      expect(matches(record, 'no-hold', scope)).toBe(false)
+      expect(matches(record, 'offsite', scope)).toBe(true)
+    }
+  })
+
+  it('does not turn conflicting location records into either at-store or offsite evidence', () => {
+    const conflict = vehicle({ location: { homeStore: howell, sourceReportedStore: fowlerville, appConfirmedLocation: 'In transit', conflict: true }, movement: { state: 'in_transit' } })
+    expect(matches(conflict, 'all')).toBe(true)
+    expect(matches(conflict, 'no-hold')).toBe(false)
+    expect(matches(conflict, 'offsite')).toBe(false)
+  })
+
+  it.each(['Unknown', 'Location not confirmed', 'Location needs checking'])('excludes the %s sentinel rather than falling back to a public store', appConfirmedLocation => {
+    const record = vehicle({ location: { homeStore: howell, sourceReportedStore: howell, appConfirmedLocation, appConfirmedAt: '2026-08-30T12:00:00Z' } })
+    expect(matches(record, 'no-hold')).toBe(false)
+    expect(matches(record, 'offsite')).toBe(false)
+  })
+
+  it('recognizes returned-home custody after the move has closed', () => {
+    const returned = vehicle({ movement: null, location: { homeStore: howell, sourceReportedStore: fowlerville, appConfirmedLocation: 'Howell', appConfirmedStore: howell, appConfirmedAt: '2026-08-30T12:00:00Z' } })
+    expect(matches(returned, 'no-hold')).toBe(true)
+    expect(matches(returned, 'offsite')).toBe(false)
+    expect(matches(returned, 'moving')).toBe(false)
+  })
+
+  it('retains an explicitly published no-hold observation without treating missing hold data as no-hold', () => {
+    const stale = vehicle({ dealerMail: { dataState: 'stale', hasActiveHold: null, lastKnownNoHold: true } })
+    expect(matches(stale, 'no-hold')).toBe(true)
+    for (const dealerMail of [
+      { dataState: 'stale' as const, hasActiveHold: false },
+      { dataState: 'current' as const, hasActiveHold: null },
+      { dataState: 'unavailable' as const, hasActiveHold: null },
+      { dataState: 'incomplete' as const, hasActiveHold: null, lastKnownNoHold: true },
+      { dataState: 'current' as const, hasActiveHold: true, lastKnownNoHold: true },
+      { dataState: 'stale' as const, hasActiveHold: null, lastKnownNoHold: true, lastKnownActiveHold: true },
+    ]) expect(matches(vehicle({ dealerMail }), 'no-hold')).toBe(false)
+    expect(matches(vehicle({ dealerMail: { dataState: 'stale', hasActiveHold: null, lastKnownActiveHold: true } }), 'held')).toBe(true)
+  })
+
+  it('excludes loaners and manager-recorded sales from the no-hold working view', () => {
+    const loaner = vehicle({ dealerMail: { dataState: 'current', hasActiveHold: false, loaner: { active: true, label: 'Synthetic service loaner' } } })
+    const sold = vehicle({ managerDisposition: { dataState: 'current', sold: true, delivered: false, sourceStore: howell, sourcePeriod: '2026-08', confidence: 'high', soldLabel: 'Sold — manager log', deliveryLabel: 'Not marked delivered — manager log' } })
+    for (const record of [loaner, sold]) {
+      expect(matches(record, 'all')).toBe(true)
+      expect(matches(record, 'no-hold')).toBe(false)
+    }
+  })
+
+  it('preserves secondary movement and daily change views', () => {
+    expect(matches(vehicle({ movement: { state: 'at_home', requestId: 'synthetic-request' } }), 'moving')).toBe(true)
+    expect(matches(vehicle({ changeSummary: 'New arrival · price changed' }), 'new')).toBe(true)
+    expect(matches(vehicle({ changeSummary: 'New today' }), 'new')).toBe(true)
+    expect(matches(vehicle({ changeSummary: 'New arrival · price changed' }), 'price')).toBe(true)
+    expect(matches(vehicle(), 'new')).toBe(false)
+    expect(matches(vehicle(), 'price')).toBe(false)
+  })
+})

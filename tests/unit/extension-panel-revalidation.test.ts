@@ -6,7 +6,7 @@
 // handled before fetchJson's generic "every non-ok status is an error"
 // branch, or a healthy revalidation would be reported as a server failure.
 import { beforeEach, describe, expect, it } from 'vitest'
-import { fetchBootstrap } from '../../extension/sidepanel/lib/api.mjs'
+import { fetchBootstrap, fetchVehicle, clearApiCache } from '../../extension/sidepanel/lib/api.mjs'
 
 const workspace = { origin: 'https://demo.synthetic.invalid', demo: true }
 
@@ -86,4 +86,36 @@ describe('extension panel bootstrap revalidation', () => {
       { name: 'PanelApiError', kind: 'server', status: 500 },
     )
   })
+  it('invalidates bootstrap and detail validators on denial and discards late protected reads', async () => {
+    clearApiCache()
+    const settings = settingsFor('Synthetic Revocation Store')
+    const body = { meta: {}, vehicles: [] }
+    await fetchBootstrap(workspace, settings, { fetchImpl: async () => jsonResponse(body, '"bootstrap"') })
+    await fetchVehicle(workspace, settings, 'FIRST', { fetchImpl: async () => jsonResponse({ vin: 'FIRST' }, '"detail"') })
+    let resolveLate
+    const pending = fetchVehicle(workspace, settings, 'LATE', { fetchImpl: () => new Promise((resolve) => { resolveLate = resolve }) })
+    await expect(fetchVehicle(workspace, settings, 'DENIED', { fetchImpl: async () => new Response(null, { status: 403 }) })).rejects.toMatchObject({ kind: 'forbidden' })
+    resolveLate(jsonResponse({ vin: 'LATE' }, '"late"'))
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    const fetchImpl = fetchImplFor([new Response(null, { status: 304 })])
+    await expect(fetchBootstrap(workspace, settings, { fetchImpl })).rejects.toMatchObject({ kind: 'server' })
+    await expect(fetchVehicle(workspace, settings, 'FIRST', { fetchImpl })).rejects.toMatchObject({ kind: 'server' })
+    await expect(fetchVehicle(workspace, settings, 'LATE', { fetchImpl })).rejects.toMatchObject({ kind: 'server' })
+    expect(calls.every((call) => !call.headers.has('If-None-Match'))).toBe(true)
+  })
+
+  it('revokes immediately on a 403 without reading an indefinitely streaming error body', async () => {
+    clearApiCache()
+    const settings = settingsFor('Synthetic Streaming Denial')
+    await fetchBootstrap(workspace, settings, { fetchImpl: async () => jsonResponse({ meta: {}, vehicles: [] }, '"protected"') })
+    const body = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{"code":')); } })
+    const denial = new Response(body, { status: 403, headers: { 'content-type': 'application/json' } })
+    await expect(fetchVehicle(workspace, settings, 'DENIED', { fetchImpl: async () => denial })).rejects.toMatchObject({ kind: 'forbidden', status: 403 })
+    expect(denial.bodyUsed).toBe(false)
+    const fetchImpl = fetchImplFor([new Response(null, { status: 304 })])
+    await expect(fetchBootstrap(workspace, settings, { fetchImpl })).rejects.toMatchObject({ kind: 'server' })
+    expect(calls[0].headers.has('If-None-Match')).toBe(false)
+    await body.cancel()
+  })
+
 })

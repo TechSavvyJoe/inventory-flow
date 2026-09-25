@@ -13,6 +13,9 @@ test('inventory search opens the VIN-specific premium document workspace', async
   // when desktop and mobile projects start together. Wait for the real page
   // heading, not an arbitrary timer or the transient loading surface.
   await expect(page.getByRole('heading', { name: /Howell inventory/i })).toBeVisible({ timeout: 15_000 })
+  // The rich document fixture is deliberately held. Select All before checking
+  // result controls, which are absent when the default No hold view is empty.
+  await page.getByRole('button', { name: /^All:/ }).click()
   await expect(page.getByLabel('Rows per page').locator('option')).toHaveText([
     '10',
     '15',
@@ -36,7 +39,24 @@ test('inventory search opens the VIN-specific premium document workspace', async
 
   const dialog = page.getByRole('dialog', { name: `${NAME} vehicle workspace` })
   await expect(dialog).toBeVisible()
-  await dialog.getByRole('tab', { name: 'Records', exact: true }).click()
+  const overviewDocuments = dialog.getByRole('region', { name: 'Documents and vehicle records', exact: true })
+  const sharedDetails = overviewDocuments.getByRole('button', { name: /^(Show|Hide) details$/ })
+  await sharedDetails.focus()
+  await page.keyboard.press('Enter')
+  await expect(sharedDetails).toHaveAttribute('aria-expanded', 'true')
+  await expect(sharedDetails).toHaveAccessibleName('Hide details')
+  await expect(sharedDetails).toBeFocused()
+  for (const name of ['Sticker & equipment', 'AutoCheck', 'Ford OASIS']) {
+    const source = overviewDocuments.getByRole('region', { name, exact: true })
+    await expect(source.locator('.vehicle-resource-summary__disclosure')).toBeVisible()
+  }
+  expect((await sharedDetails.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+  await page.keyboard.press('Space')
+  await expect(sharedDetails).toHaveAttribute('aria-expanded', 'false')
+  await expect(sharedDetails).toBeFocused()
+  await expect(overviewDocuments.locator('.vehicle-resource-summary__disclosure:visible')).toHaveCount(0)
+  await overviewDocuments.getByRole('button', { name: 'Full records', exact: true }).click()
+  await expect(dialog.getByRole('tab', { name: 'Records', exact: true })).toHaveAttribute('aria-selected', 'true')
   const documents = dialog.getByRole('region', { name: 'Vehicle documents' })
   // Synthetic AutoCheck score and range, followed by concise equipment
   // highlights with the complete record still one click away.

@@ -230,7 +230,7 @@ export function publicListingLabel(vehicle: InventoryVehicle): string {
 }
 
 export function dealerMailHoldLabel(signal: DealerMailHoldSignal): string {
-  if (signal.dataState !== "current") return "Hold status not verified";
+  if (signal.dataState !== "current") return signal.lastKnownActiveHold ? "Last verified hold — confirm in DealerMail" : "Hold status not verified";
   if (signal.loaner?.active) {
     return signal.loaner.serviceDate ? `${signal.loaner.label} · ${signal.loaner.serviceDate}` : signal.loaner.label;
   }
@@ -274,7 +274,7 @@ export function vehicleMatchesFilters(
   }
 
   const dealerMail = vehicle.dealerMail;
-  if (filters.dealerMail === "held" && dealerMail.hasActiveHold !== true) return false;
+  if (filters.dealerMail === "held" && dealerMail.hasActiveHold !== true && !dealerMail.lastKnownActiveHold) return false;
   if (
     filters.dealerMail === "not-held" &&
     !(dealerMail.dataState === "current" && dealerMail.hasActiveHold === false)

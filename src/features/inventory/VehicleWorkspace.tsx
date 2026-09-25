@@ -1,3 +1,9 @@
+import { CustomerSummary } from '../sales/CustomerSummary';
+import { VehicleIssues, VehicleIssuesSummary } from '../issues/VehicleIssues';
+import { IssueReportDialog } from '../issues/IssueReportDialog';
+import { canReportVehicleIssue } from '../issues/issue-model';
+import { confirmUnsavedWork } from '../../lib/useUnsavedChanges';
+import type { VehicleIssueDetail } from '../../types';
 import { EQUIPMENT_CATEGORIES, equipmentFinderItems, type EquipmentCategoryId, type EquipmentFinderItem } from "./vehicle-equipment";
 import { CertifiedBadge } from "../../components/CertifiedBadge";
 import { ServiceStatusLink } from "./ServiceStatusLink";
@@ -7,6 +13,7 @@ import { serviceStatusLabel, serviceWorkflowStatus } from "../../lib/service-rea
 import { VehicleGallery } from "./VehicleGallery";
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -46,7 +53,7 @@ import {
 import { CopyableValue } from "../../components/CopyableValue";
 import { DealerMailHandoff } from "./DealerMailHandoff";
 import { VehicleResourceCards, displaySourceMoney } from "./VehicleResourceCards";
-import { oasisActionLabel } from "./vehicle-resource-catalog";
+import { oasisActionLabel, vehicleOverviewResources } from "./vehicle-resource-catalog";
 import { resolveVehicleInService } from "./vehicle-in-service";
 import {
   formatDate,
@@ -80,9 +87,10 @@ type WorkspaceSectionId =
   | "movement"
   | "equipment"
   | "timeline"
-  | "data";
+  | "data"
+  | "issues";
 
-type WorkspacePageId = "overview" | "equipment" | "hold" | "data" | "timeline";
+type WorkspacePageId = "overview" | "equipment" | "hold" | "data" | "timeline" | "issues";
 
 const WORKSPACE_SECTIONS: Array<{ id: WorkspacePageId; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -90,6 +98,7 @@ const WORKSPACE_SECTIONS: Array<{ id: WorkspacePageId; label: string }> = [
   { id: "data", label: "Records" },
   { id: "hold", label: "Holds & moves" },
   { id: "timeline", label: "Activity" },
+  { id: "issues", label: "Issues" },
 ];
 
 function workspacePage(section: WorkspaceSectionId): WorkspacePageId {
@@ -627,6 +636,7 @@ function TimelineDetails({ vehicle }: { vehicle: InventoryVehicle }) {
 
 export function VehicleWorkspace({
   vehicle, canRequestVehicle = false, moveAction, initialTab = "overview", returnFocusRef, returnLabel = "Back to inventory", detailState, onRetryDetail,
+  issueContext,
   onClose, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing,
 }: VehicleWorkspaceProps) {
   // Inherits the inventory list's signed-in shortlist; a standalone workspace
@@ -635,7 +645,32 @@ export function VehicleWorkspace({
   const shortlisted = shortlist.isShortlisted(vehicle);
   const [activeTarget, setActiveTarget] = useState<WorkspaceSectionId>(initialTab);
   const [takeHomeOpen, setTakeHomeOpen] = useState(false);
+  const [issueReportOpen, setIssueReportOpen] = useState(false);
+  const [createdIssueId, setCreatedIssueId] = useState<string>();
+  const [issueUpdates, setIssueUpdates] = useState<{ context: string; items: VehicleIssueDetail[] }>({ context: '', items: [] });
+  const closeWorkspace = () => { if (confirmUnsavedWork()) onClose(); };
+  const issueOpenerRef = useRef<HTMLElement | null>(null);
+  const issueAccessKey = `${issueContext?.currentUser}:${issueContext?.role}:${issueContext?.homeStore}:${vehicle.vin}`;
+  const vehicleIssues = useMemo(() => {
+    const rows = new Map((issueContext?.issues ?? []).filter(issue => issue.vin === vehicle.vin).map(issue => [issue.id, issue]));
+    if (issueUpdates.context === issueAccessKey) for (const issue of issueUpdates.items) {
+      if (!rows.has(issue.id) || rows.get(issue.id)!.version <= issue.version) rows.set(issue.id, issue);
+    }
+    return [...rows.values()];
+  }, [issueContext?.issues, issueUpdates, issueAccessKey, vehicle.vin]);
+  const canReportIssue = Boolean(issueContext && canReportVehicleIssue(vehicle, issueContext));
+  const workspaceSections = WORKSPACE_SECTIONS.filter(section => section.id !== 'issues' || issueContext);
+  const reportIssue = (button: HTMLButtonElement) => { issueOpenerRef.current = button; setIssueReportOpen(true); };
+  function issueSaved(issue: VehicleIssueDetail) {
+    setIssueUpdates(previous => ({ context: issueAccessKey, items: [...(previous.context === issueAccessKey ? previous.items.filter(row => row.id !== issue.id) : []), issue] }));
+    void issueContext?.onChanged();
+  }
+  const [expandedDocumentsVin, setExpandedDocumentsVin] = useState<string | null>(null);
+  const documentsId = useId();
+  const documentsExpanded = expandedDocumentsVin === vehicle.vin;
+  const hasCapturedDocuments = useMemo(() => vehicleOverviewResources(vehicle).some(resource => resource.hasCapturedData), [vehicle]);
   const takeHomeButtonRef = useRef<HTMLButtonElement>(null);
+  const takeHomeOpenerRef = useRef<HTMLButtonElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
   const activeTabRef = useRef<HTMLButtonElement>(null);
   const dealerMailActionsRef = useRef<HTMLElement>(null);
@@ -664,7 +699,7 @@ export function VehicleWorkspace({
       ? `${vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"} · ${formatDate(vehicle.dealerMail.loaner.serviceDate)}`
       : vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"
     : null;
-  const holdLabel = !holdCurrent ? "Hold status unverified"
+  const holdLabel = !holdCurrent ? (vehicle.dealerMail.lastKnownActiveHold ? "Last verified hold" : "Hold status unverified")
     : loanerLabel
       ? loanerLabel
     : vehicle.dealerMail.hasActiveHold === true
@@ -739,6 +774,7 @@ export function VehicleWorkspace({
   </>;
 
   function openAndFocusSection(target: WorkspaceSectionId) {
+    if (target !== activeTarget && !confirmUnsavedWork()) return;
     pendingFocus.current = "tab";
     setActiveTarget(target);
     // Reselecting the current section also returns to its beginning.
@@ -754,20 +790,23 @@ export function VehicleWorkspace({
   }
   function onSectionKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
     let next: number;
-    if (event.key === "ArrowRight") next = (index + 1) % WORKSPACE_SECTIONS.length;
-    else if (event.key === "ArrowLeft") next = (index - 1 + WORKSPACE_SECTIONS.length) % WORKSPACE_SECTIONS.length;
+    if (event.key === "ArrowRight") next = (index + 1) % workspaceSections.length;
+    else if (event.key === "ArrowLeft") next = (index - 1 + workspaceSections.length) % workspaceSections.length;
     else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = WORKSPACE_SECTIONS.length - 1;
+    else if (event.key === "End") next = workspaceSections.length - 1;
     else return;
     event.preventDefault();
-    openAndFocusSection(WORKSPACE_SECTIONS[next].id);
+    openAndFocusSection(workspaceSections[next].id);
   }
   useLayoutEffect(() => {
     setActiveTarget(initialTab);
     setTakeHomeOpen(false);
+    setIssueReportOpen(false);
+    setCreatedIssueId(undefined);
+    setExpandedDocumentsVin(null);
     pendingFocus.current = null;
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [initialTab, vehicle.id]);
+  }, [initialTab, vehicle.id, vehicle.vin]);
   useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     if (pendingFocus.current === "dealermail") {
@@ -782,27 +821,27 @@ export function VehicleWorkspace({
     // Tab to the nested aria-modal sheet, and toggling it off re-ran the initial
     // focus on close, stealing focus from the Take-home button.
     active: true, contain: true, containerRef: workspaceRef, initialFocusRef: activeTabRef,
-    returnFocusRef, onEscape: onClose,
+    returnFocusRef, onEscape: closeWorkspace,
   });
 
   return createPortal(
     <>
-      <div className={`inventory-workspace-backdrop vdp-focus-backdrop${takeHomeOpen ? " is-take-home-open" : ""}`} onClick={onClose} aria-hidden="true" />
+      <div className={`inventory-workspace-backdrop vdp-focus-backdrop${takeHomeOpen ? " is-take-home-open" : ""}`} onClick={closeWorkspace} aria-hidden="true" />
       <aside id="inventory-vehicle-workspace" className={`inventory-workspace inventory-workspace--focused${takeHomeOpen ? " is-take-home-open" : ""}`}
         ref={workspaceRef} role="dialog" aria-modal="true" aria-label={displayName + " vehicle workspace"} tabIndex={-1}
-        data-active-section={activePage} data-active-target={activeTarget}>
+        data-active-section={activePage} data-active-target={activeTarget} data-has-issues={Boolean(issueContext)}>
         <header className="vdp-focus-header">
-          <button type="button" className="vdp-focus-back" onClick={onClose} aria-label={returnLabel}><ChevronLeft size={20} aria-hidden="true" /><span>{returnLabel}</span></button>
+          <button type="button" className="vdp-focus-back" onClick={closeWorkspace} aria-label={returnLabel}><ChevronLeft size={20} aria-hidden="true" /><span>{returnLabel}</span></button>
           <div className="vdp-focus-identity"><h2 id="inventory-workspace-title">{displayName}</h2><strong>{formatMoney(vehicle.price)}</strong></div>
           <dl className="vdp-focus-identifiers">
             <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} /></dd></div>
             <div><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} /></dd></div>
           </dl>
-          <button type="button" className="vdp-focus-close" onClick={onClose} aria-label="Close vehicle details"><X size={20} aria-hidden="true" /></button>
+          <button type="button" className="vdp-focus-close" onClick={closeWorkspace} aria-label="Close vehicle details"><X size={20} aria-hidden="true" /></button>
         </header>
         <div className="vdp-focus-navigation">
           <div className="vdp-focus-tabs" role="tablist" aria-label="Vehicle workspace sections">
-            {WORKSPACE_SECTIONS.map((section, index) => <button type="button" role="tab" id={"inventory-tab-" + section.id}
+            {workspaceSections.map((section, index) => <button type="button" role="tab" id={"inventory-tab-" + section.id}
               aria-controls={"inventory-section-" + section.id} aria-selected={activePage === section.id}
               tabIndex={activePage === section.id ? 0 : -1} ref={activePage === section.id ? activeTabRef : undefined}
               onKeyDown={event => onSectionKeyDown(event, index)}
@@ -835,6 +874,7 @@ export function VehicleWorkspace({
               <div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
               {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
             </section>
+                <CustomerSummary key={vehicle.id} vehicle={vehicle} onRecords={() => openAndFocusSection("data")} onTakeHome={(button) => { takeHomeOpenerRef.current = button; setTakeHomeOpen(true); }} />
               </div>
               <section className="vdp-focus-operations" aria-label="Vehicle operational summary">
                 <h3>Operations</h3>
@@ -854,12 +894,24 @@ export function VehicleWorkspace({
                   {serviceStatus !== "serviced" ? <WorkspaceLink to={serviceHref + "&action=serviced"} preserveOrigin>Mark Ready</WorkspaceLink> : <WorkspaceLink to={serviceHref} preserveOrigin>Service history</WorkspaceLink>}
                 </div>
                 {hasMovement ? <div className="vdp-focus-next-action"><strong>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div> : null}
+                {issueContext ? <VehicleIssuesSummary issues={vehicleIssues} canReport={canReportIssue} enabled={issueContext.enabled} onOpen={() => openAndFocusSection('issues')} onReport={reportIssue} /> : null}
               </section>
 
             </div>
             <section className="vdp-focus-resources" aria-label="Documents and vehicle records">
-              <div className="vdp-focus-section-heading"><h3>Documents &amp; vehicle records</h3><button type="button" onClick={() => openAndFocusSection("data")}>Full records <ChevronRight size={16} aria-hidden="true" /></button></div>
-              <VehicleResourceCards vehicle={vehicle} variant="summary" summaryLimit={6} hideInServiceDate onOpenSection={openAndFocusSection} />
+              <div className="vdp-focus-section-heading vdp-document-heading">
+                <h3>Documents &amp; vehicle records</h3>
+                <div className="vdp-document-actions">
+                  {hasCapturedDocuments ? <button type="button" aria-expanded={documentsExpanded} aria-controls={documentsId}
+                    onClick={() => setExpandedDocumentsVin(documentsExpanded ? null : vehicle.vin)}>
+                    {documentsExpanded ? "Hide details" : "Show details"}<ChevronDown size={16} aria-hidden="true" />
+                  </button> : null}
+                  <button type="button" onClick={() => openAndFocusSection("data")}>Full records <ChevronRight size={16} aria-hidden="true" /></button>
+                </div>
+              </div>
+              <div id={documentsId}>
+                <VehicleResourceCards vehicle={vehicle} variant="summary" summaryLimit={6} hideInServiceDate detailsExpanded={documentsExpanded} onOpenSection={openAndFocusSection} />
+              </div>
             </section>
 
             {vehicle.managerDisposition ? <p className="vdp-focus-warning"><ClipboardCheck size={16} aria-hidden="true" /><strong>Manager log: {vehicle.managerDisposition.soldLabel}</strong> · {vehicle.managerDisposition.deliveryLabel}{vehicle.managerDisposition.deliveryDate ? ` · ${formatDate(vehicle.managerDisposition.deliveryDate)}` : ""}<small>Independent of listing, hold, CDK, and location.</small></p> : null}
@@ -868,11 +920,11 @@ export function VehicleWorkspace({
             {recordsNeedReview ? <button type="button" className="vdp-focus-warning" onClick={() => openAndFocusSection("data")}><AlertTriangle size={16} aria-hidden="true" />Some vehicle information needs review.</button> : null}
           </WorkspacePanel>
           <WorkspacePanel id="equipment" label="Equipment" active={activePage === "equipment"}>
-            <section className="vdp-equipment-specifications" aria-label="Complete vehicle specifications">
-              <h3><Gauge size={17} strokeWidth={1.8} aria-hidden="true"/>Specifications</h3>
-              <dl className="vdp-focus-extra-specs">{equipmentSpecifications.map(([label, value]) => <Fact key={label} label={label!} className={label === "Model code" ? "vdp-spec-model-code" : undefined}>{value}</Fact>)}</dl>
-            </section>
             <SourceConfirmedEquipment vehicle={vehicle} />
+            <details className="vdp-equipment-specifications" aria-label="Complete vehicle specifications">
+              <summary><Gauge size={17} strokeWidth={1.8} aria-hidden="true"/><span>Specifications</span><ChevronDown size={16} aria-hidden="true"/></summary>
+              <dl className="vdp-focus-extra-specs">{equipmentSpecifications.map(([label, value]) => <Fact key={label} label={label!} className={label === "Model code" ? "vdp-spec-model-code" : undefined}>{value}</Fact>)}</dl>
+            </details>
             <details className="vdp-equipment-description" aria-label="Vehicle description">
               <summary><FileText size={17} strokeWidth={1.8} aria-hidden="true"/><span>Description</span><ChevronDown size={16} aria-hidden="true"/></summary>
               <p>{vehicle.dealerComments || "No vehicle description was published."}</p>
@@ -895,6 +947,7 @@ export function VehicleWorkspace({
             </div>
           </WorkspacePanel>
           <WorkspacePanel id="timeline" label="Activity" active={activePage === "timeline"}><TimelineDetails vehicle={vehicle} /></WorkspacePanel>
+          {issueContext ? <WorkspacePanel id="issues" label="Issues" active={activePage === 'issues'}><VehicleIssues key={issueAccessKey} issues={vehicleIssues} context={issueContext} canReport={canReportIssue} onReport={reportIssue} onSaved={issueSaved} initialIssueId={createdIssueId} /></WorkspacePanel> : null}
         </div>
         <footer className="vdp-focus-footer">
           <span>Inventory Flow <strong>MAXEY</strong></span>
@@ -902,7 +955,7 @@ export function VehicleWorkspace({
             {listingUrl ? onOpenListing ? <button type="button" onClick={() => onOpenListing(vehicle)} data-action="open-listing"><Globe2 size={18} aria-hidden="true" />Listing</button>
               : <a href={listingUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" data-action="open-listing" data-read-only="true"><Globe2 size={18} aria-hidden="true" />Listing</a> : null}
             {invoiceUrl ? <a href={invoiceUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" data-action="invoice" data-read-only="true"><FileText size={18} aria-hidden="true" />Invoice</a> : null}
-            <button type="button" onClick={() => setTakeHomeOpen(true)} data-action="take-home" ref={takeHomeButtonRef} aria-label="Take-home page"><Printer size={18} aria-hidden="true" /><span>Take-home</span></button>
+            <button type="button" onClick={(event) => { takeHomeOpenerRef.current = event.currentTarget; setTakeHomeOpen(true); }} data-action="take-home" ref={takeHomeButtonRef} aria-label="Take-home page"><Printer size={18} aria-hidden="true" /><span>Take-home</span></button>
             <div className="vdp-focus-utilities">
               <button type="button" aria-pressed={shortlisted}
                 aria-label={`${shortlisted ? "Remove" : "Add"} ${vehicle.stockNumber} ${shortlisted ? "from" : "to"} shortlist`}
@@ -914,7 +967,8 @@ export function VehicleWorkspace({
           </div>
         </footer>
       </aside>
-      {takeHomeOpen ? <TakeHomeSheet vehicle={vehicle} onClose={() => setTakeHomeOpen(false)} returnFocusRef={takeHomeButtonRef} /> : null}
+      {takeHomeOpen ? <TakeHomeSheet vehicle={vehicle} onClose={() => setTakeHomeOpen(false)} returnFocusRef={takeHomeOpenerRef} /> : null}
+      {issueReportOpen && issueContext ? <IssueReportDialog key={issueAccessKey} vehicle={vehicle} context={issueContext} returnFocusRef={issueOpenerRef} onClose={() => setIssueReportOpen(false)} onSaved={issue => { issueSaved(issue); setIssueReportOpen(false); setCreatedIssueId(issue.id); openAndFocusSection('issues'); }} /> : null}
     </>, document.body,
   );
 }

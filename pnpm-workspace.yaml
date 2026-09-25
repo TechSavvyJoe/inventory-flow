@@ -3,6 +3,8 @@ allowBuilds:
   # workerd for its local Worker validation. Keep this approval narrow; adding
   # a package here requires a separate supply-chain review.
   esbuild: true
+  # OCR ships prebuilt browser assets; its optional funding-message hook is unnecessary.
+  tesseract.js: false
   workerd: true
 
 # Keep Wrangler's local Miniflare image-processing dependency on the patched

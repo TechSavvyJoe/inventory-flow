@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MembershipManagement } from './MembershipManagement'
@@ -31,7 +32,9 @@ describe('MembershipManagement role choices', () => {
 
   it('offers only salesperson, store manager, and group manager for new employees', async () => {
     render(<MembershipManagement role="group_manager" store="Howell" onSaved={vi.fn()} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Add employee' }))
+    const addEmployee = await screen.findByRole('button', { name: 'Add employee' })
+    await waitFor(() => expect(addEmployee).toBeEnabled())
+    fireEvent.click(addEmployee)
     const picker = screen.getByLabelText('Role')
     expect(within(picker).getAllByRole('option').map(option => option.textContent)).toEqual([
       'Salesperson', 'Store manager', 'Group manager',
@@ -45,6 +48,44 @@ describe('MembershipManagement role choices', () => {
     await waitFor(() => expect(picker).toHaveValue('driver'))
     expect(within(picker).getByRole('option', { name: 'Driver · Legacy' })).toBeDisabled()
     expect(within(picker).getAllByRole('option')).toHaveLength(4)
+  })
+
+  it('returns keyboard focus to the actual Add or Edit opener when canceled', async () => {
+    const user = userEvent.setup()
+    render(<MembershipManagement role="group_manager" store="Howell" onSaved={vi.fn()} />)
+    for (const name of ['Add employee', 'Edit Legacy Driver']) {
+      const opener = await screen.findByRole('button', { name })
+      await waitFor(() => expect(opener).toBeEnabled())
+      opener.focus()
+      await user.keyboard('{Enter}')
+      expect(screen.getByRole('textbox', { name: 'Full name' })).toHaveFocus()
+      screen.getByRole('button', { name: 'Cancel employee changes' }).focus()
+      await user.keyboard('{Enter}')
+      expect(screen.queryByRole('textbox', { name: 'Full name' })).not.toBeInTheDocument()
+      expect(opener).toHaveFocus()
+    }
+  })
+
+  it('returns focus to the employee heading if filtering removes the Edit opener', async () => {
+    const user = userEvent.setup()
+    render(<MembershipManagement role="group_manager" store="Howell" onSaved={vi.fn()} />)
+    await user.click(await screen.findByRole('button', { name: 'Edit Legacy Driver' }))
+    await user.type(screen.getByRole('textbox', { name: 'Search employees' }), 'Group Manager')
+    expect(screen.queryByRole('button', { name: 'Edit Legacy Driver' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel employee changes' }))
+    expect(screen.getByRole('heading', { name: 'People & access' })).toHaveFocus()
+  })
+
+  it('returns focus after a successful save while announcing the result', async () => {
+    api.saveMembershipAccess.mockResolvedValue({ saved: true, id: 'legacy-driver' })
+    const user = userEvent.setup()
+    render(<MembershipManagement role="group_manager" store="Howell" onSaved={vi.fn()} />)
+    const opener = await screen.findByRole('button', { name: 'Edit Legacy Driver' })
+    await user.click(opener)
+    await user.type(screen.getByRole('textbox', { name: 'Reason for change' }), 'Synthetic access review')
+    await user.click(screen.getByRole('button', { name: 'Save access' }))
+    expect(await screen.findByRole('status')).toHaveTextContent("Legacy Driver's access was saved.")
+    expect(opener).toHaveFocus()
   })
 
   it('retains employee changes when Cancel, Reload, or editing another employee is declined', async () => {

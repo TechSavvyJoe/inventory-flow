@@ -1,5 +1,5 @@
 import { ROLE_PICKER_ROLES, STALE_AFTER_MS, STORES, WORKSPACES, grantedWorkspaces, workspaceFor } from './lib/config.mjs'
-import { PanelApiError, fetchBootstrap, fetchVehicle } from './lib/api.mjs'
+import { PanelApiError, clearApiCache, fetchBootstrap, fetchVehicle } from './lib/api.mjs'
 import { buildPanelData, copyFields, dealSheetText, mergeDetail, requestBlockedReason, roleLabel, toPanelVehicle, vehicleMoveAction } from './lib/model.mjs'
 import { buildEntry, buildIndex, rank } from './lib/search.mjs'
 import { EMPTY_FILTERS, SORTS, activeFilterCount, applyFilters, describeFilters, filterOptions, normalizeFilters, sortMatches } from './lib/filters.mjs'
@@ -179,12 +179,7 @@ async function load({ silent = false } = {}) {
     // A sign-in or membership failure means the identity behind any cached
     // document can no longer be trusted.
     if (['signin', 'forbidden'].includes(state.error.kind)) {
-      resetIdentityView()
-      state.data = null; state.bootstrap = null; state.index = []; state.results = []
-      clear(ui.rows); clear(ui.detail); clear(ui.compare); clear(ui.tray)
-      renderScopes(); renderStorePicker(); renderWorkspaceLinks(); renderWho()
-      ui.resultContext.hidden = true; ui.expandStores.hidden = true; ui.more.hidden = true; ui.tray.hidden = true
-      storage.clearCache().catch(() => {})
+      invalidateAccess(state.error)
     }
     if (!state.data) { hideSkeleton(); renderStatus() }
     else toast(errorTitle(state.error), { iconName: 'alert' })
@@ -192,6 +187,20 @@ async function load({ silent = false } = {}) {
   } finally {
     if (state.controller === controller) { state.loading = false; ui.refresh.classList.remove('is-spinning'); renderFreshness() }
   }
+}
+
+function invalidateAccess(error) {
+  state.controller?.abort()
+  clearApiCache()
+  resetIdentityView()
+  state.error = error
+  state.data = null; state.bootstrap = null; state.index = []; state.results = []
+  state.liveHoldChecks.clear(); state.detailStatus = null; state.fetchedAt = null
+  clear(ui.rows); clear(ui.detail); clear(ui.compare); clear(ui.tray)
+  renderScopes(); renderStorePicker(); renderWorkspaceLinks(); renderWho()
+  ui.resultContext.hidden = true; ui.expandStores.hidden = true; ui.more.hidden = true; ui.tray.hidden = true
+  storage.clearCache().catch(() => {})
+  hideSkeleton(); renderStatus(); renderFreshness()
 }
 
 function isStale() { return !state.fetchedAt || Date.now() - state.fetchedAt > STALE_AFTER_MS }
@@ -347,7 +356,7 @@ function holdPill(vehicle, { long = false } = {}) {
   const hold = vehicle.hold
   const tone = hold.tone === 'held' ? 'pill-held' : hold.tone === 'clear' ? '' : 'pill-moving'
   const primary = hold.canViewEvidence ? hold.evidence.find((item) => item.position === 'primary') ?? hold.evidence[0] : null
-  const label = hold.tone === 'held'
+  const label = hold.lastKnownActiveHold ? fmt.joinFacts(['Last verified hold', primary?.salesperson]) : hold.tone === 'held'
     ? primary?.salesperson ? `Held by ${primary.salesperson}`
       : hold.position === 'backup' ? 'Held · backup'
         : hold.position === 'multiple' ? `Held · ${hold.backupCount + 1}`
@@ -395,7 +404,7 @@ function renderRow(match, position) {
   const config = fmt.joinFacts([vehicle.exteriorColor, vehicle.daysListed !== null ? `${fmt.formatNumber(vehicle.daysListed)} days listed` : null])
   const powertrain = fmt.joinFacts([vehicle.engine, vehicle.drivetrain])
   const primaryHold = vehicle.hold.canViewEvidence ? vehicle.hold.evidence[0] : null
-  const holdDetail = vehicle.hold.hasActiveHold === true ? fmt.joinFacts([primaryHold?.salesperson ? `Held by ${primaryHold.salesperson}` : null, primaryHold?.expectedDate ? `Expected ${fmt.formatDate(primaryHold.expectedDate)}` : null, vehicle.hold.backupCount ? `${vehicle.hold.backupCount} backup${vehicle.hold.backupCount === 1 ? '' : 's'}` : null]) : null
+  const holdDetail = vehicle.hold.hasActiveHold === true || vehicle.hold.lastKnownActiveHold ? fmt.joinFacts([primaryHold?.salesperson ? `Held by ${primaryHold.salesperson}` : null, primaryHold?.expectedDate ? `Expected ${fmt.formatDate(primaryHold.expectedDate)}` : null, vehicle.hold.backupCount ? `${vehicle.hold.backupCount} backup${vehicle.hold.backupCount === 1 ? '' : 's'}` : null]) : null
   return el('li', {
     class: `row ${position === state.activeIndex ? 'is-active' : ''} ${inCompare ? 'is-compared' : ''}`.trim(), role: 'option', id: `row-${vehicle.vin}`,
     'aria-selected': String(position === state.activeIndex), dataset: { vin: vehicle.vin, index: String(position) },
@@ -766,8 +775,8 @@ function signal({ tone, iconName, label, value, sub, onClick, title }) {
 function statusGrid(vehicle) {
   const hold = vehicle.hold, loc = vehicle.location, move = vehicle.movement, listing = vehicle.listing
   const primary = hold.evidence[0]
-  const holdValue = hold.tone === 'held' ? (primary?.salesperson ? `Held by ${primary.salesperson}` : hold.position === 'backup' ? 'Backup hold' : hold.position === 'multiple' ? `${hold.backupCount + 1} holds` : 'On hold') : hold.tone === 'clear' ? 'No hold found' : 'Not verified'
-  const holdSub = hold.tone === 'held'
+  const holdValue = hold.lastKnownActiveHold ? 'Last verified hold' : hold.tone === 'held' ? (primary?.salesperson ? `Held by ${primary.salesperson}` : hold.position === 'backup' ? 'Backup hold' : hold.position === 'multiple' ? `${hold.backupCount + 1} holds` : 'On hold') : hold.tone === 'clear' ? 'No hold found' : 'Not verified'
+  const holdSub = hold.tone === 'held' || hold.lastKnownActiveHold
     ? fmt.joinFacts([hold.liveCheckStatus === 'verified' ? 'Verified in DealerMail' : 'At daily capture', primary?.expectedDate ? `Expected ${fmt.formatDate(primary.expectedDate)}` : null, hold.backupCount ? `${hold.backupCount} backup${hold.backupCount === 1 ? '' : 's'}` : null]) || (hold.canViewEvidence ? 'DealerMail hold' : 'Details restricted')
     : hold.tone === 'clear' ? 'Confirm before promising' : 'Needs review'
   const flags = fmt.joinFacts([listing.dealerOn.inStock === true ? 'in stock' : listing.dealerOn.inStock === false ? 'not in stock' : null, listing.dealerOn.inTransit === true ? 'in transit' : null, listing.dealerOn.inProduction === true ? 'in production' : null])
@@ -816,7 +825,7 @@ async function openTakeHome(vehicle) {
 function tabsBar(vehicle) {
   const tablist = el('div', { class: 'detail-tablist', role: 'tablist', 'aria-label': 'Vehicle sections' })
   const bar = el('div', { class: 'tabs detail-tabs' }, el('span', { class: 'tabs-ind', 'aria-hidden': 'true' }), tablist)
-  const counts = { equipment: vehicle.equipment.byCategory.reduce((sum, group) => sum + group.items.length, 0), hold: vehicle.hold.tone === 'held' ? hold_count(vehicle) : 0 }
+  const counts = { equipment: vehicle.equipment.byCategory.reduce((sum, group) => sum + group.items.length, 0), hold: vehicle.hold.tone === 'held' || vehicle.hold.lastKnownActiveHold ? hold_count(vehicle) : 0 }
   for (const [id, label] of TABS) {
     tablist.append(el('button', {
       type: 'button', class: 'tab', role: 'tab', id: `tab-${id}`, dataset: { tab: id }, 'aria-selected': String(id === state.tab), 'aria-controls': 'tab-panel', tabindex: id === state.tab ? '0' : '-1',
@@ -1143,10 +1152,10 @@ function readOnlyNote() {
 function holdTab(vehicle) {
   const hold = vehicle.hold
   const primary = hold.evidence.find((item) => item.position === 'primary')
-  const headline = hold.tone === 'held'
+  const headline = hold.lastKnownActiveHold ? fmt.joinFacts(['Last verified hold', primary?.salesperson]) : hold.tone === 'held'
     ? fmt.joinFacts([hold.position === 'backup' ? 'Backup hold' : hold.position === 'multiple' ? `${hold.backupCount + 1} holds` : 'Primary hold', primary?.salesperson])
     : hold.tone === 'clear' ? 'No active hold' : 'Hold status needs review'
-  const facts = hold.tone === 'held' ? kv([
+  const facts = hold.tone === 'held' || hold.lastKnownActiveHold ? kv([
     ['Placed', primary?.holdDate ? fmt.formatDate(primary.holdDate) : null],
     ['Expected', primary?.expectedDate ? fmt.formatDate(primary.expectedDate) : null],
     ['Reason', primary?.customerOrReason],
@@ -1156,7 +1165,7 @@ function holdTab(vehicle) {
   ]) : null
   const backups = hold.evidence.filter((item) => item.position === 'backup').map((item) => el('div', { class: 'd-evidence' }, el('b', { text: 'Backup' }), item.salesperson ? el('span', { text: ` · ${item.salesperson}` }) : null, item.expectedDate ? el('span', { text: ` · expected ${fmt.formatDate(item.expectedDate)}` }) : null, item.customerOrReason ? el('div', {}, el('span', { text: item.customerOrReason })) : null))
   const messages = []
-  if (hold.canViewEvidence && hold.tone === 'held') {
+  if (hold.canViewEvidence && (hold.tone === 'held' || hold.lastKnownActiveHold)) {
     for (const [label, iconName, items] of [['Comment', 'message', hold.comments], ['Alert', 'bell', hold.alerts]]) {
       for (const item of items) messages.push(el('div', { class: `d-evidence ${label === 'Alert' ? 'is-alert' : ''}`.trim() }, icon(iconName, { size: 14 }), el('b', { text: label }), item.author ? el('span', { text: ` · ${item.author}` }) : null, item.timestamp ? el('span', { text: ` · ${fmt.formatDateTime(item.timestamp)}` }) : null, el('div', {}, el('span', { text: item.text }))))
     }
@@ -1168,7 +1177,10 @@ function holdTab(vehicle) {
     : hold.liveCheckStatus === 'checking' ? 'Checking the current DealerMail hold…'
       : hold.liveCheckStatus === 'unavailable' ? 'Could not confirm the current hold in DealerMail. Review it there before relying on this status.'
         : `DealerMail snapshot${capturedAt ? ` captured ${fmt.formatDateTime(capturedAt)}` : ''}. Holds may change during the day.` }))
-  if (hold.canViewEvidence && hold.tone === 'held') {
+  if (['checking', 'unavailable'].includes(hold.liveCheckStatus)) {
+    status.push(el('p', { class: 'd-caption', text: `Last verified DealerMail snapshot${capturedAt ? ` captured ${fmt.formatDateTime(capturedAt)}` : ''}. Names and notes below describe that capture, not a current hold confirmation.` }))
+  }
+  if (hold.canViewEvidence && (hold.tone === 'held' || hold.lastKnownActiveHold)) {
     if (state.detailStatus === 'loading' && !hold.detailLoaded) status.push(el('p', { class: 'd-caption d-caption-live', text: 'Loading the full DealerMail record…' }))
     if (state.detailStatus === 'failed' && !hold.detailLoaded) status.push(el('p', { class: 'd-caption' }, 'The full record could not be loaded. ', el('button', { type: 'button', class: 'd-inline', onclick: () => loadDetail(vehicle.vin, { retry: true }) }, 'Retry')))
     if (state.detailStatus === 'gone' && !hold.detailLoaded) status.push(el('p', { class: 'd-caption d-caption-warn', text: 'This vehicle is no longer in the current snapshot; the DealerMail record could not be loaded.' }))
@@ -1465,6 +1477,10 @@ async function loadDetail(vin, { retry = false } = {}) {
   } catch (error) {
     if (generation !== state.dataGeneration) return
     if (error?.name === 'AbortError') { state.detailPending.delete(vin); return }
+    if (error instanceof PanelApiError && ['signin', 'forbidden'].includes(error.kind)) {
+      invalidateAccess(error)
+      return
+    }
     state.detailStatus = error instanceof PanelApiError && error.kind === 'notfound' ? 'gone' : 'failed'
     state.detailFailed.set(vin, state.detailStatus)
   } finally {

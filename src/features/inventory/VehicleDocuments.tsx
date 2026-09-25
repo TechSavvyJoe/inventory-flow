@@ -591,10 +591,9 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
                         : `Not identified in ${countLabel(serviceHistory.detailScanCount, "recent repair order")} checked`}
                   </Fact>
                 </dl>
-                <p className="vdp-service-history-summary">{latestService.services.length ? latestService.services.map(sourceDistanceText).join(" · ") : "Ford did not supply itemized work for this visit."}</p>
                 {latestService.services.length ? <ul aria-label="Latest Ford service work summary">
-                  {latestService.services.map((service) => <li key={service}><span><strong>{service}</strong></span></li>)}
-                </ul> : null}
+                  {latestService.services.map((service) => <li key={service}><span><strong>{sourceDistanceText(service)}</strong></span></li>)}
+                </ul> : <p className="vdp-service-history-summary">Ford did not supply itemized work for this visit.</p>}
                 {recentInspection && recentInspection.repairOrderNumber !== latestService.repairOrderNumber ? (
                   <p className="vdp-service-history-inspection">
                     <strong>{recentInspection.inspection.type || "Inspection confirmed"}</strong>

@@ -59,3 +59,7 @@
   .action-condition-fields { grid-template-columns: 1fr; }
   .action-home-manager-notice { grid-column: auto; }
 }
+.move-detail-load { display:flex; align-items:center; flex-wrap:wrap; gap:var(--ifx-space-2); padding:var(--ifx-space-2) var(--ifx-space-3); border-bottom:1px solid var(--ifx-border-subtle); color:var(--ink-700); background:var(--surface); }
+.move-detail-load p { flex:1; min-width:0; margin:0; font:var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); }
+.move-detail-load button { flex:none; min-height:var(--ifx-control-height-md); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--blue-600); border-radius:var(--ifx-radius-xs); background:var(--blue-600); color:var(--surface); font:var(--ifx-weight-semibold) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); cursor:pointer; }
+.move-detail-load button:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }

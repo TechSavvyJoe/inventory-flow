@@ -11,6 +11,10 @@ import type {
   VehicleRecord,
   ServiceReadinessDetail,
   ServiceReadinessInput,
+  VehicleIssue,
+  VehicleIssueDetail,
+  VehicleIssueCreateInput,
+  VehicleIssueEventInput,
 } from '../types'
 import type { AdminOverview, MembershipDirectory, MembershipInput } from '../features/admin/types'
 
@@ -123,6 +127,7 @@ const BOOTSTRAP_BODY_TIMEOUT_MS = 60_000
 
 type RequestTiming = {
   bodyTimeoutMs?: number
+  responseType?: 'blob'
   /**
    * Keep the last successful payload and its validator so a periodic refresh
    * can send If-None-Match and reuse it on 304. Only for large documents that
@@ -189,7 +194,10 @@ async function request<T>(path: string, options: RequestInit = {}, timing: Reque
     }
     const isJson = /^application\/(?:[\w.-]+\+)?json(?:\s*;|$)/i.test(response.headers.get('Content-Type') ?? '')
     const isSignIn = isSignInResponse(response)
-    if (response.status === 401 || isSignIn || (response.ok && !isJson)) {
+    const expectedBody = timing.responseType === 'blob'
+      ? /^image\/jpeg(?:\s*;|$)/i.test(response.headers.get('Content-Type') ?? '')
+      : isJson
+    if (response.status === 401 || isSignIn || (response.ok && !expectedBody)) {
       confirmed = response.status === 401 || isSignIn
       reportAccessFailure({ status: 401, role: headers.get('x-inventory-preview-role') as UserRole | null, store: headers.get('x-inventory-preview-store') as StoreName | null, message: SIGN_IN_MESSAGE }, accessGeneration)
       throw new ApiError(SIGN_IN_MESSAGE, 401)
@@ -209,7 +217,7 @@ async function request<T>(path: string, options: RequestInit = {}, timing: Reque
     }
     let payload: T
     try {
-      payload = await response.json() as T
+      payload = timing.responseType === 'blob' ? await response.blob() as T : await response.json() as T
     } catch (cause) {
       // `fetch()` resolves as soon as response headers arrive, while
       // `response.json()` continues consuming the body with the same signal.
@@ -267,6 +275,32 @@ export function getVehicle(vin: string, role: UserRole, store: StoreName, signal
     headers: demoIdentityHeaders(role, store),
     signal,
   })
+}
+
+export function getVehicleIssues(role: UserRole, store: StoreName, signal?: AbortSignal): Promise<{ items: VehicleIssue[]; total: number }> {
+  return request('/api/vehicle-issues', { headers: demoIdentityHeaders(role, store), signal })
+}
+
+export function getVehicleIssue(id: string, role: UserRole, store: StoreName, signal?: AbortSignal): Promise<VehicleIssueDetail> {
+  return request(`/api/vehicle-issues/${encodeURIComponent(id)}`, { headers: demoIdentityHeaders(role, store), signal })
+}
+
+export function createVehicleIssue(vin: string, input: VehicleIssueCreateInput, role: UserRole, store: StoreName): Promise<VehicleIssueDetail> {
+  return request(`/api/vehicles/${encodeURIComponent(vin)}/issues`, {
+    method: 'POST', headers: demoIdentityHeaders(role, store), body: JSON.stringify(input),
+  })
+}
+
+export function appendVehicleIssueEvent(id: string, input: VehicleIssueEventInput, role: UserRole, store: StoreName): Promise<VehicleIssueDetail> {
+  return request(`/api/vehicle-issues/${encodeURIComponent(id)}/events`, {
+    method: 'POST', headers: demoIdentityHeaders(role, store), body: JSON.stringify(input),
+  })
+}
+
+export function getVehicleIssuePhoto(issueId: string, photoId: string, role: UserRole, store: StoreName, signal?: AbortSignal): Promise<Blob> {
+  return request(`/api/vehicle-issues/${encodeURIComponent(issueId)}/photos/${encodeURIComponent(photoId)}`, {
+    headers: demoIdentityHeaders(role, store), signal, cache: 'no-store',
+  }, { responseType: 'blob' })
 }
 
 /**

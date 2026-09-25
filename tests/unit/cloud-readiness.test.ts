@@ -25,11 +25,15 @@ function encryptedFixture() {
   } finally {fixture.cleanup()}
 }
 
-function harness() {
+function harness({ issuesEnabled = false } = {}) {
   const {key,envelope}=encryptedFixture(),serialized=JSON.stringify(envelope)
   const first=vi.fn(async()=>({object_key:'synthetic-private-release',bundle_sha256:envelope.bundleSha256}))
   const batch=vi.fn(async statements=>{
-    expect(statements).toHaveLength(8)
+    if (statements.length === 1) {
+      expect(statements[0].sql).toBe("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('vehicle_issues', 'vehicle_issue_events')")
+      return [{success:true,results:issuesEnabled?[{name:'vehicle_issues'},{name:'vehicle_issue_events'}]:[]}]
+    }
+    expect(statements).toHaveLength(issuesEnabled ? 10 : 8)
     for(const {sql} of statements)expect(sql).toMatch(/^SELECT /)
     return statements.map(({sql})=>({success:true,results:sql.includes('cloud_app_revision')?[{revision:7}]:[]}))
   })
@@ -39,10 +43,10 @@ function harness() {
 }
 
 describe('machine-only full app readiness',()=>{
-  it('runs decrypt, source validation, read-only D1 snapshot and real bootstrap, returning only allowed summaries',async()=>{
-    const {env,first,batch,get}=harness()
+  it.each([false,true])('runs decrypt, source validation, read-only D1 snapshot and real bootstrap, returning only allowed summaries (issue schema %s)',async(issuesEnabled)=>{
+    const {env,first,batch,get}=harness({issuesEnabled})
     const result=await appReadiness(env)
-    expect(first).toHaveBeenCalledOnce();expect(get).toHaveBeenCalledOnce();expect(batch).toHaveBeenCalledOnce()
+    expect(first).toHaveBeenCalledOnce();expect(get).toHaveBeenCalledOnce();expect(batch).toHaveBeenCalledTimes(2)
     expect(Object.keys(result).sort()).toEqual(['bootstrapBytes','bundleSha256','counts','ready','reportDate'])
     const stored = JSON.parse(await (await env.RELEASE_SNAPSHOTS.get('synthetic-private-release')).text())
     expect(result.bundleSha256).toBe(stored.bundleSha256)

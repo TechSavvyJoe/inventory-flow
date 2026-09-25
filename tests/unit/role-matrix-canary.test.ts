@@ -218,6 +218,7 @@ describe.each(['simple', 'advanced'])('role-matrix canary (%s moves)', (workflow
     const [noted, resolved] = reviews
     const attentionEvents = (item) => `/api/attention/${encodeURIComponent(item.id)}/events`
     await post(baseUrl, homeManager, attentionEvents(noted), { type: 'acknowledge' })
+    await post(baseUrl, homeManager, attentionEvents(noted), { type: 'assign', assignee: marker(seeded, 'attention hold assignee') })
     await post(baseUrl, homeManager, attentionEvents(noted), { type: 'add_note', note: marker(seeded, 'attention note') })
     await post(baseUrl, homeManager, attentionEvents(resolved), { type: 'resolve', resolutionCode: 'other', note: marker(seeded, 'attention resolution note') })
 

@@ -44,8 +44,8 @@ function holdActive(state, dealerMailState) {
 }
 
 /** Same wording as the app's dealerMailHoldLabel. */
-export function holdLabel({ dataState: state, hasActiveHold, conciseState, position }) {
-  if (state !== 'current') return 'Hold status not verified'
+export function holdLabel({ dataState: state, hasActiveHold, conciseState, position, lastKnownActiveHold }) {
+  if (state !== 'current') return lastKnownActiveHold ? 'Last verified hold — confirm in DealerMail' : 'Hold status not verified'
   if (hasActiveHold === true) {
     if (conciseState) return conciseState
     if (position === 'backup') return 'DealerMail backup hold'
@@ -64,7 +64,7 @@ function holdSignal(record, dealerMailState) {
   const evidence = []
   // Evidence is only ever the server's role-redacted projection; the panel adds
   // nothing and shows salesperson/reason only when the app would.
-  if (canViewEvidence && hasActiveHold) {
+  if (canViewEvidence && (hasActiveHold || hold.lastKnownActiveHold)) {
     const primary = record.privateEvidence?.primary ?? null
     evidence.push({
       position: 'primary',
@@ -84,10 +84,11 @@ function holdSignal(record, dealerMailState) {
     state: hold.state,
     dataState: dealerMailState,
     hasActiveHold,
+    lastKnownActiveHold: hold.lastKnownActiveHold === true,
     position,
     backupCount: number(hold.backupCount) ?? 0,
     conciseState: text(hold.label),
-    label: holdLabel({ dataState: dealerMailState, hasActiveHold, conciseState: text(hold.label), position }),
+    label: holdLabel({ dataState: dealerMailState, hasActiveHold, conciseState: text(hold.label), position, lastKnownActiveHold: hold.lastKnownActiveHold }),
     tone,
     canViewEvidence,
     canManage: hold.canManage === true,

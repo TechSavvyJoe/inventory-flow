@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { WorkflowError } from './workflow.mjs'
 import { SERVICE_EVENT_COLUMNS } from './service-readiness.mjs'
 import { serviceIntakeRows } from './service-intake.mjs'
+import { VEHICLE_ISSUE_COLUMNS, VEHICLE_ISSUE_EVENT_COLUMNS } from './vehicle-issues.mjs'
 
 function assertDatabasePath(databasePath, runtimeDir) {
   if (databasePath === ':memory:') return databasePath
@@ -261,6 +262,62 @@ export function migrate(database) {
     CREATE TRIGGER IF NOT EXISTS vehicle_service_events_no_delete
     BEFORE DELETE ON vehicle_service_events BEGIN SELECT RAISE(ABORT, 'Service history is append-only'); END;
 
+    -- App-owned operational reports. Listing, holds, service readiness, and
+    -- physical custody remain independent. Reporting and history survive releases.
+    CREATE TABLE IF NOT EXISTS vehicle_issues (
+      id TEXT PRIMARY KEY,
+      vin TEXT NOT NULL,
+      stock_number TEXT NOT NULL,
+      vehicle_name TEXT NOT NULL,
+      home_store_id TEXT NOT NULL,
+      report_store_id TEXT NOT NULL,
+      category TEXT NOT NULL CHECK (category IN ('cleaning','fuel','mechanical','damage','other')),
+      priority TEXT NOT NULL CHECK (priority IN ('normal','urgent')),
+      description TEXT NOT NULL CHECK (length(description) BETWEEN 1 AND 1000),
+      reporter TEXT NOT NULL,
+      reporter_user_id TEXT NOT NULL,
+      reporter_role TEXT NOT NULL CHECK (reporter_role IN ('sales','manager','group_manager')),
+      created_at TEXT NOT NULL,
+      input_hash TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      UNIQUE (reporter_user_id, idempotency_key)
+    );
+    CREATE TABLE IF NOT EXISTS vehicle_issue_events (
+      id TEXT PRIMARY KEY,
+      issue_id TEXT NOT NULL REFERENCES vehicle_issues(id),
+      version INTEGER NOT NULL CHECK (version > 0),
+      event_type TEXT NOT NULL CHECK (event_type IN ('reported','assign','start_work','request_completion','complete','reopen','add_note')),
+      status TEXT NOT NULL CHECK (status IN ('open','in_progress','awaiting_review','completed')),
+      assignee TEXT,
+      note TEXT,
+      actor TEXT NOT NULL,
+      actor_user_id TEXT NOT NULL,
+      actor_role TEXT NOT NULL CHECK (actor_role IN ('sales','manager','group_manager')),
+      store_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      completed_at TEXT,
+      completed_by TEXT,
+      photos_json TEXT NOT NULL DEFAULT '[]',
+      input_hash TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      UNIQUE (issue_id, version),
+      UNIQUE (issue_id, actor_user_id, idempotency_key),
+      CHECK (event_type NOT IN ('assign','complete','reopen') OR actor_role IN ('manager','group_manager')),
+      CHECK ((status = 'completed' AND completed_at IS NOT NULL AND completed_by IS NOT NULL)
+        OR (status <> 'completed' AND completed_at IS NULL AND completed_by IS NULL))
+    );
+    CREATE INDEX IF NOT EXISTS vehicle_issues_vin_idx ON vehicle_issues(vin, created_at DESC);
+    CREATE INDEX IF NOT EXISTS vehicle_issues_store_idx ON vehicle_issues(report_store_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS vehicle_issue_events_issue_idx ON vehicle_issue_events(issue_id, version DESC);
+    CREATE TRIGGER IF NOT EXISTS vehicle_issues_no_update BEFORE UPDATE ON vehicle_issues
+    BEGIN SELECT RAISE(ABORT, 'Vehicle issue history is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS vehicle_issues_no_delete BEFORE DELETE ON vehicle_issues
+    BEGIN SELECT RAISE(ABORT, 'Vehicle issue history is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS vehicle_issue_events_no_update BEFORE UPDATE ON vehicle_issue_events
+    BEGIN SELECT RAISE(ABORT, 'Vehicle issue history is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS vehicle_issue_events_no_delete BEFORE DELETE ON vehicle_issue_events
+    BEGIN SELECT RAISE(ABORT, 'Vehicle issue history is append-only'); END;
+
     CREATE INDEX IF NOT EXISTS public_snapshot_store_idx
       ON public_vehicle_snapshots(source_run_id, physical_store_id);
     CREATE INDEX IF NOT EXISTS crm_snapshot_store_idx
@@ -288,6 +345,8 @@ export function migrate(database) {
   if (!requestColumns.has('transport_assignee_user_id')) {
     database.exec('ALTER TABLE transfer_requests ADD COLUMN transport_assignee_user_id TEXT')
   }
+  const attentionColumns = new Set(database.prepare('PRAGMA table_info(attention_events)').all().map((row) => row.name))
+  if (!attentionColumns.has('input_hash')) database.exec('ALTER TABLE attention_events ADD COLUMN input_hash TEXT')
   const eventColumns = new Set(database.prepare('PRAGMA table_info(transfer_events)').all().map((row) => row.name))
   if (!eventColumns.has('actor_user_id')) {
     database.exec('ALTER TABLE transfer_events ADD COLUMN actor_user_id TEXT')
@@ -841,8 +900,8 @@ export function upsertAttentionWorkflow(database, workflow, event) {
         INSERT INTO attention_events (
           id, attention_key, event_type, label, actor, actor_role, store_id,
           occurred_at, assignee, follow_up_at, priority, resolution_code,
-          note, created_at, idempotency_key
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          note, created_at, idempotency_key, input_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         event.id || randomUUID(),
@@ -860,6 +919,7 @@ export function upsertAttentionWorkflow(database, workflow, event) {
         event.note || null,
         event.createdAt,
         event.idempotencyKey || null,
+        event.inputHash || null,
       )
 
     return { row: getAttentionWorkflowRow(database, workflow.attentionKey), created: true }
@@ -868,6 +928,38 @@ export function upsertAttentionWorkflow(database, workflow, event) {
 
 export function listServiceEvents(database) {
   return database.prepare('SELECT * FROM vehicle_service_events ORDER BY vin, version').all()
+}
+
+export function vehicleIssuesEnabled() { return true }
+
+export function listVehicleIssueRows(database) {
+  return database.prepare('SELECT * FROM vehicle_issues ORDER BY created_at DESC, id').all()
+}
+
+export function listVehicleIssueEvents(database) {
+  return database.prepare('SELECT * FROM vehicle_issue_events ORDER BY issue_id, version').all()
+}
+
+function insertVehicleIssueRow(database, table, columns, row) {
+  database.prepare(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`)
+    .run(...columns.map((column) => row[column] ?? null))
+}
+
+export function insertVehicleIssue(database, issue, event) {
+  return withTransaction(database, () => {
+    insertVehicleIssueRow(database, 'vehicle_issues', VEHICLE_ISSUE_COLUMNS, issue)
+    insertVehicleIssueRow(database, 'vehicle_issue_events', VEHICLE_ISSUE_EVENT_COLUMNS, event)
+  })
+}
+
+export function appendVehicleIssueEvent(database, event) {
+  return withTransaction(database, () => {
+    const latest = database.prepare('SELECT MAX(version) AS version FROM vehicle_issue_events WHERE issue_id = ?').get(event.issue_id)
+    if (!latest.version || latest.version + 1 !== event.version) {
+      throw new WorkflowError('Another employee updated this issue. Reload and try again.', { status: 409, code: 'ISSUE_VERSION_CONFLICT' })
+    }
+    insertVehicleIssueRow(database, 'vehicle_issue_events', VEHICLE_ISSUE_EVENT_COLUMNS, event)
+  })
 }
 
 export function insertServiceEvent(database, row) {

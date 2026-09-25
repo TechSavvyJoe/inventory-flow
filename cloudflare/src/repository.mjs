@@ -1,4 +1,6 @@
 import { SERVICE_EVENT_COLUMNS } from '../../server/service-readiness.mjs'
+import { VEHICLE_ISSUE_COLUMNS, VEHICLE_ISSUE_EVENT_COLUMNS } from '../../server/vehicle-issues.mjs'
+import { WorkflowError } from '../../server/workflow.mjs'
 
 /**
  * D1 adapter for the platform-neutral, synchronous Inventory Flow service.
@@ -36,7 +38,7 @@ const ATTENTION_COLUMNS = [
 const ATTENTION_EVENT_COLUMNS = [
   'id', 'attention_key', 'event_type', 'label', 'actor', 'actor_role', 'store_id',
   'occurred_at', 'assignee', 'follow_up_at', 'priority', 'resolution_code',
-  'note', 'created_at', 'idempotency_key',
+  'note', 'created_at', 'idempotency_key', 'input_hash',
 ]
 const TRANSFER_PATCH_COLUMNS = new Set([
   'approved_by', 'status', 'movement_status', 'deal_status', 'delivery_status',
@@ -225,7 +227,7 @@ function attentionEventRow(key, event) {
     label: event.label, actor: event.actor, actor_role: event.actorRole, store_id: nullable(event.storeId),
     occurred_at: event.occurredAt, assignee: nullable(event.assignee), follow_up_at: nullable(event.followUpAt),
     priority: nullable(event.priority), resolution_code: nullable(event.resolutionCode),
-    note: nullable(event.note), created_at: event.createdAt, idempotency_key: nullable(event.idempotencyKey),
+    note: nullable(event.note), created_at: event.createdAt, idempotency_key: nullable(event.idempotencyKey), input_hash: nullable(event.inputHash),
   }
 }
 
@@ -255,6 +257,23 @@ function recordTransferEvent(database, row) {
 }
 
 export const d1SnapshotRepository = Object.freeze({
+  vehicleIssuesEnabled(database) { return database.vehicleIssuesEnabled === true },
+  listVehicleIssueRows(database) { return (database.vehicleIssues ?? []).map(clone) },
+  listVehicleIssueEvents(database) { return (database.vehicleIssueEvents ?? []).map(clone) },
+  insertVehicleIssue(database, issue, event) {
+    if (!database.vehicleIssuesEnabled) throw new WorkflowError('Vehicle issue storage is not enabled yet.', { status: 503, code: 'MIGRATION_REQUIRED' })
+    insert(database, 'vehicle_issues', VEHICLE_ISSUE_COLUMNS, issue)
+    insert(database, 'vehicle_issue_events', VEHICLE_ISSUE_EVENT_COLUMNS, event)
+    database.vehicleIssues.push(clone(issue))
+    database.vehicleIssueEvents.push(clone(event))
+  },
+  appendVehicleIssueEvent(database, event) {
+    if (!database.vehicleIssuesEnabled) throw new WorkflowError('Vehicle issue storage is not enabled yet.', { status: 503, code: 'MIGRATION_REQUIRED' })
+    const rows = database.vehicleIssueEvents.filter((row) => row.issue_id === event.issue_id)
+    if (rows.at(-1)?.version !== event.version - 1) throw new RepositoryConflictError()
+    insert(database, 'vehicle_issue_events', VEHICLE_ISSUE_EVENT_COLUMNS, event)
+    database.vehicleIssueEvents.push(clone(event))
+  },
   listServiceEvents(database) {
     return [...database.serviceEvents].sort((a, b) => compare(a.vin, b.vin) || a.version - b.version).map(clone)
   },
@@ -366,6 +385,13 @@ export const d1SnapshotRepository = Object.freeze({
 
 /** D1 batch executes this read set against a single consistent transaction. */
 export async function loadD1Repository(d1, release, options = {}) {
+  // Migrations are an operator-owned step. Existing inventory remains readable
+  // while the new feature is unavailable; never create production schema here.
+  const capability = await d1.batch([d1.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('vehicle_issues', 'vehicle_issue_events')")])
+  if (capability.length !== 1 || capability[0].success === false || !Array.isArray(capability[0].results)) {
+    throw new Error('Unable to read workflow storage capabilities')
+  }
+  const issuesEnabled = capability[0].results.length === 2
   const statements = [
     'SELECT revision FROM cloud_app_revision WHERE id = 1',
     'SELECT * FROM transfer_requests ORDER BY updated_at DESC, id',
@@ -375,6 +401,10 @@ export async function loadD1Repository(d1, release, options = {}) {
     'SELECT * FROM home_assignments WHERE effective_to IS NULL ORDER BY effective_from DESC',
     'SELECT * FROM vehicle_service_events ORDER BY vin, version',
     'SELECT * FROM vehicle_service_intake',
+    ...(issuesEnabled ? [
+      'SELECT * FROM vehicle_issues ORDER BY created_at DESC, id',
+      'SELECT * FROM vehicle_issue_events ORDER BY issue_id, version',
+    ] : []),
   ]
   const results = await d1.batch(statements.map((sql) => d1.prepare(sql)))
   if (results.length !== statements.length || results.some((result) => result.success === false || !Array.isArray(result.results))) {
@@ -387,28 +417,53 @@ export async function loadD1Repository(d1, release, options = {}) {
     transfers: results[1].results, transferEvents: results[2].results,
     attention: results[3].results, attentionEvents: results[4].results,
     serviceEvents: results[6].results,
+    vehicleIssuesEnabled: issuesEnabled,
+    vehicleIssues: issuesEnabled ? results[8].results : [],
+    vehicleIssueEvents: issuesEnabled ? results[9].results : [],
     pending: [], closed: false,
   }
   return {
     database,
     repository: d1SnapshotRepository,
     revision,
-    async commit() {
+    async commit(authorization) {
       if (database.closed) throw new Error('This request repository has already committed or failed')
       database.closed = true
-      if (!database.pending.length) return { committed: false, revision }
-      const guard = d1.prepare('UPDATE cloud_app_revision SET revision = CASE WHEN revision = ? THEN revision + 1 ELSE NULL END WHERE id = 1').bind(revision)
+      const mutation = database.pending.length > 0
+      if (!mutation && !authorization) return { committed: false, revision }
+      const conditions = ['revision = ?']
+      const params = [revision]
+      if (authorization) {
+        const { email, context } = authorization
+        // Check the exact server-owned identity used to authorize and audit
+        // this attempt inside the write transaction, not in a separate read.
+        // Membership changes need not bump the ledger revision to be caught.
+        conditions.push(`EXISTS (
+          SELECT 1 FROM cloud_memberships AS member
+          WHERE member.email = ? AND member.user_id = ? AND member.enabled = 1
+            AND member.name = ? COLLATE BINARY AND member.role = ? AND member.home_store = ?
+            AND (? = 0 OR (SELECT COUNT(*) FROM cloud_memberships AS candidate
+              WHERE candidate.enabled = 1 AND candidate.role IN ('porter', 'driver')
+                AND candidate.name = member.name COLLATE BINARY) = 1)
+        )`)
+        params.push(email, context.userId, context.user, context.authenticatedRole, context.authenticatedStore,
+          context.allowLegacyTransportAssignmentByName === true ? 1 : 0)
+      }
+      // A replay with no new rows still checks authorization before returning
+      // its protected record, but does not advance the workflow revision.
+      const guard = d1.prepare(`UPDATE cloud_app_revision SET revision = CASE WHEN ${conditions.join(' AND ')} THEN revision + ${mutation ? 1 : 0} ELSE NULL END WHERE id = 1`).bind(...params)
       try {
         const writes = await d1.batch([guard, ...database.pending.map(({ sql, params }) => d1.prepare(sql).bind(...params))])
         if (writes.some((result) => result.success === false)) throw new Error('Shared workflow transaction failed')
       } catch (error) {
         // Do not leak the database error, values, or SQL to API clients. A stale
-        // revision is the only failure safe for automatic request replay.
+        // revision or changed membership is safe to replay only after the
+        // Worker reloads membership and the service authorizes the action again.
         const message = `${error?.message ?? ''} ${error?.cause?.message ?? ''}`
         if (/NOT NULL constraint failed:\s*cloud_app_revision\.revision/i.test(message)) throw new RepositoryConflictError()
         throw new Error('Unable to save the shared workflow transaction')
       }
-      return { committed: true, revision: revision + 1 }
+      return { committed: mutation, revision: revision + (mutation ? 1 : 0) }
     },
   }
 }

@@ -17,7 +17,7 @@ function fakeD1() {
   const sqlite = new DatabaseSync(':memory:')
   openDatabases.push(sqlite)
   sqlite.exec('PRAGMA foreign_keys = ON')
-  for (const name of ['0001_initial.sql', '0002_app_access.sql', '0003_transport_assignment_identity.sql', '0007_service_readiness.sql', '0008_service_intake.sql']) {
+  for (const name of ['0001_initial.sql', '0002_app_access.sql', '0003_transport_assignment_identity.sql', '0007_service_readiness.sql', '0008_service_intake.sql', '0011_vehicle_issues.sql', '0012_attention_event_input_hash.sql']) {
     sqlite.exec(readFileSync(new URL(`../../cloudflare/migrations/${name}`, import.meta.url), 'utf8'))
   }
   return {
@@ -408,6 +408,8 @@ describe('D1 shared operational repository', () => {
     const attentionRetry = await session()
     expect(attentionRetry.service.appendAttentionEvent(item.id, { type: 'acknowledge' }, manager, 'SYNTHETIC-service-attention').created).toBe(false)
     expect(() => attentionRetry.service.appendAttentionEvent(item.id, { type: 'resolve' }, manager, 'SYNTHETIC-service-attention')).toThrow('another action')
+    expect(() => attentionRetry.service.appendAttentionEvent(item.id, { type: 'acknowledge', note: 'Changed semantic payload' }, manager, 'SYNTHETIC-service-attention')).toThrow('another action')
+    expect(d1.sqlite.prepare('SELECT input_hash FROM attention_events').get().input_hash).toMatch(/^[a-f0-9]{64}$/)
     expect(await attentionRetry.commit()).toMatchObject({ committed: false })
     const final = await session()
     expect(final.service.getTransfer(requested.record.id, manager).requestStatus).toBe('approved')

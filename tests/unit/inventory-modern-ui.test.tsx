@@ -102,7 +102,7 @@ describe('manager-friendly inventory UI', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Held: / }));
     expect(container.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(1);
     fireEvent.change(screen.getByRole('combobox', { name: /Search inventory/ }), { target: { value: 'F-150' } });
-    const expand = screen.getByRole('button', { name: /1 additional vehicle match at other locations/ });
+    const expand = screen.getByRole('button', { name: /1 additional vehicle match across all locations/ });
     fireEvent.click(expand);
     expect(container.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(2);
     expect(screen.getByRole('button', { name: /^Ready: / })).toHaveAttribute('aria-pressed', 'true');

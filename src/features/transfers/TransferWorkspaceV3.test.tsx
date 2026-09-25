@@ -801,6 +801,63 @@ describe('transfer workspace v3 layout', () => {
     expect(mocks.getTransfer).toHaveBeenCalledWith('transfer-1', 'manager', 'Howell');
   });
 
+  it('keeps the move summary readable after a failed detail read and restores full evidence on retry', async () => {
+    const data = bootstrap(1);
+    data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', privateEvidence: undefined };
+    let resolveRetry!: (record: TransferRecord) => void;
+    mocks.getTransfer.mockRejectedValueOnce(new Error('Temporary failure'))
+      .mockImplementationOnce(() => new Promise<TransferRecord>(resolve => { resolveRetry = resolve; }));
+    mocks.useAppData.mockReturnValue({ data, currentUser: 'Employee one', homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
+    render(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+    const retry = await screen.findByRole('button', { name: 'Retry move details' });
+    expect(screen.getByRole('alert')).toHaveTextContent('The summary remains available');
+    expect(screen.getAllByText('2025 Ford F-150 1').length).toBeGreaterThan(0);
+    fireEvent.click(retry);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading full move record');
+    await act(async () => { resolveRetry({ ...data.transfers[0], privateEvidence: { requestReason: 'Recovered authorized details' } }); });
+    expect(screen.getByText('Recovered authorized details')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry move details' })).not.toBeInTheDocument();
+    expect(mocks.getTransfer).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['success', 'failure'] as const)('ignores a late %s from a retried move detail after access changes', async (outcome) => {
+    const data = bootstrap(1);
+    data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', privateEvidence: undefined };
+    let resolveRetry!: (record: TransferRecord) => void;
+    let rejectRetry!: (error: Error) => void;
+    const restricted = { ...data.transfers[0], allowedActions: [], nextAction: 'Waiting for requesting-store manager' };
+    mocks.getTransfer.mockRejectedValueOnce(new Error('Temporary failure'))
+      .mockImplementationOnce(() => new Promise<TransferRecord>((resolve, reject) => { resolveRetry = resolve; rejectRetry = reject; }))
+      .mockResolvedValueOnce(restricted);
+    mocks.useAppData.mockReturnValue({ data, homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
+    const { rerender } = render(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry move details' }));
+    mocks.useAppData.mockReturnValue({ data: { ...data, transfers: [restricted] }, homeStore: 'Ford Detroit', role: 'sales', submitTransfer: vi.fn() });
+    rerender(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+    await waitFor(() => expect(mocks.getTransfer).toHaveBeenCalledTimes(3));
+    await act(async () => {
+      if (outcome === 'success') resolveRetry({ ...data.transfers[0], privateEvidence: { requestReason: 'Previous access retry evidence' } });
+      else rejectRetry(new Error('Previous access failure'));
+    });
+    expect(screen.queryByText('Previous access retry evidence')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry move details' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Waiting for requesting-store manager' })).toBeInTheDocument();
+  });
+
+  it('withdraws cached move details when the employee changes within the same role and store', async () => {
+    const data = bootstrap(1);
+    data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', privateEvidence: undefined };
+    mocks.getTransfer.mockResolvedValueOnce({ ...data.transfers[0], privateEvidence: { requestReason: 'Previous employee detail' } })
+      .mockImplementationOnce(() => new Promise(() => {}));
+    mocks.useAppData.mockReturnValue({ data, currentUser: 'Employee one', homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
+    const { rerender } = render(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+    expect(await screen.findByText('Previous employee detail')).toBeInTheDocument();
+    mocks.useAppData.mockReturnValue({ data, currentUser: 'Employee two', homeStore: 'Howell', role: 'manager', submitTransfer: vi.fn() });
+    rerender(<MemoryRouter initialEntries={['/transfers?id=transfer-1']}><TransfersPage /></MemoryRouter>);
+    expect(screen.queryByText('Previous employee detail')).not.toBeInTheDocument();
+    expect(mocks.getTransfer).toHaveBeenCalledTimes(2);
+  });
+
   it('does not let a previous role/store detail response overwrite the current access view', async () => {
     const data = bootstrap(1);
     data.transfers[0] = { ...data.transfers[0], workflowMode: 'simple', requestStatus: 'requested', allowedActions: ['approve'], privateEvidence: undefined };

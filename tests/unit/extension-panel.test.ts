@@ -7,7 +7,7 @@ const api = vi.hoisted(() => ({ bootstrap: vi.fn(), vehicle: vi.fn() }))
 vi.mock('../../extension/sidepanel/lib/api.mjs', async (importOriginal) => ({ ...(await importOriginal()), fetchBootstrap: api.bootstrap, fetchVehicle: api.vehicle }))
 vi.mock('../../extension/sidepanel/lib/host.mjs', () => ({
   host: 'preview', previewFlags: { photos: false }, placeholderPhotos: () => [], copyText: vi.fn(), openUrl: vi.fn(), openExtensionPage: vi.fn(),
-  storage: { getSettings: async () => ({ workspace: 'demo', theme: 'light', density: 'comfortable', demoRole: 'sales', demoStore: 'Howell' }), getCompare: async () => [], getFilters: async () => null, takePendingQuery: async () => null, onPendingQuery: () => {}, getCache: async () => null, setCache: async () => {}, clearCache: async () => {}, setCompare: async () => {}, setFilters: async () => {} },
+  storage: { getSettings: async () => ({ workspace: 'demo', theme: 'light', density: 'comfortable', demoRole: 'sales', demoStore: 'Howell' }), getCompare: async () => [], getFilters: async () => null, takePendingQuery: async () => null, onPendingQuery: () => {}, getCache: async () => null, setCache: async () => {}, clearCache: vi.fn(async () => {}), setCompare: async () => {}, setFilters: async () => {} },
 }))
 
 const vehicle = (homeStore = 'Howell', vin = 'TESTDATAHWELL0001') => ({
@@ -299,6 +299,59 @@ describe('extension working-store workflow and identity reset', () => {
     expect(document.querySelector('.d-utilities')).toBeNull()
     expect(document.querySelector('#panel').dataset.view).toBe('list')
     expect(document.querySelector('#workspace-links').hidden).toBe(true)
+  })
+
+  it.each(['signin', 'forbidden'])('clears cached private details and pending reads after detail %s denial', async (kind) => {
+    const { PanelApiError } = await import('../../extension/sidepanel/lib/api.mjs')
+    const { storage } = await import('../../extension/sidepanel/lib/host.mjs')
+    const first = vehicle()
+    const second = { ...vehicle(), vin: 'TESTDATAHWELL0002', stockNumber: 'DEMO-H02' }
+    const third = { ...vehicle(), vin: 'TESTDATAHWELL0003', stockNumber: 'DEMO-H03' }
+    api.bootstrap.mockResolvedValue({ ...bootstrap(), vehicles: [first, second, third] })
+    api.vehicle.mockResolvedValueOnce({ ...first, privateEvidence: { primary: { salesperson: 'Synthetic Private Person', customerOrReason: 'Cached private customer reason' } } })
+    await import('../../extension/sidepanel/panel.js')
+    await waitForText('#rows', 'DEMO-H01')
+    document.querySelector('#row-TESTDATAHWELL0001').click()
+    await vi.waitFor(() => expect(document.querySelector('#tab-hold')).not.toBeNull())
+    document.querySelector('#tab-hold').click()
+    await waitForText('#detail', 'Cached private customer reason')
+    document.querySelector('#back').click()
+    let resolveLate
+    api.vehicle.mockReturnValueOnce(new Promise((resolve) => { resolveLate = resolve }))
+    document.querySelector('#row-TESTDATAHWELL0003').click()
+    document.querySelector('#back').click()
+    api.vehicle.mockRejectedValueOnce(new PanelApiError(kind, { status: kind === 'signin' ? 401 : 403 }))
+    document.querySelector('#row-TESTDATAHWELL0002').click()
+    await vi.waitFor(() => expect(storage.clearCache).toHaveBeenCalled())
+    expect(document.querySelector('#panel').dataset.view).toBe('list')
+    expect(document.querySelector('#status').textContent).not.toBe('')
+    expect(document.querySelector('#rows').textContent).toBe('')
+    expect(document.querySelector('#detail').textContent).toBe('')
+    resolveLate({ ...third, privateEvidence: { primary: { customerOrReason: 'Late private reason' } } })
+    await Promise.resolve(); await Promise.resolve()
+    expect(document.body.textContent).not.toContain('Cached private customer reason')
+    expect(document.body.textContent).not.toContain('Late private reason')
+    expect(document.body.textContent).not.toContain('Synthetic Private Person')
+  })
+
+  it('retains previously loaded private evidence after a temporary detail failure', async () => {
+    const { PanelApiError } = await import('../../extension/sidepanel/lib/api.mjs')
+    const { storage } = await import('../../extension/sidepanel/lib/host.mjs')
+    const second = { ...vehicle(), vin: 'TESTDATAHWELL0002', stockNumber: 'DEMO-H02' }
+    api.bootstrap.mockResolvedValue({ ...bootstrap(), vehicles: [vehicle(), second] })
+    await import('../../extension/sidepanel/panel.js')
+    await waitForText('#rows', 'DEMO-H01')
+    document.querySelector('#row-TESTDATAHWELL0001').click()
+    await vi.waitFor(() => expect(api.vehicle).toHaveBeenCalledTimes(1))
+    document.querySelector('#back').click()
+    api.vehicle.mockRejectedValueOnce(new PanelApiError('server', { status: 503 }))
+    document.querySelector('#row-TESTDATAHWELL0002').click()
+    await vi.waitFor(() => expect(api.vehicle).toHaveBeenCalledTimes(2))
+    document.querySelector('#back').click()
+    document.querySelector('#row-TESTDATAHWELL0001').click()
+    document.querySelector('#tab-hold').click()
+    await waitForText('#detail', 'Synthetic Private Person')
+    expect(storage.clearCache).not.toHaveBeenCalled()
   })
 
   it('discards a late detail response after the signed-in identity changes', async () => {

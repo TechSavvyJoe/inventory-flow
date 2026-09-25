@@ -1,0 +1,15 @@
+.customer-summary { grid-column: 1 / -1; min-width: 0; border-block-start: 1px solid var(--border); padding-block: var(--ifx-space-3); color: var(--ink-900); }
+.customer-summary > summary { min-height: var(--control-target); cursor: pointer; font-size: var(--ifx-text-body); font-weight: var(--ifx-weight-semibold); }
+.customer-summary > summary small { display: block; color: var(--ink-600); font-size: var(--ifx-text-sm); font-weight: var(--ifx-weight-regular); margin-block-start: var(--ifx-space-1); }
+.customer-summary__content { display: grid; gap: var(--ifx-space-3); }
+.customer-summary__content p { margin: 0; color: var(--ink-600); font-size: var(--ifx-text-sm); line-height: var(--ifx-leading-body); }
+.customer-summary__content label { display: grid; gap: var(--ifx-space-2); font-size: var(--ifx-text-sm); }
+.customer-summary__content textarea { box-sizing: border-box; width: 100%; min-height: calc(var(--control-target) * 4); resize: vertical; padding: var(--ifx-space-3); background: var(--surface); color: var(--ink-900); border: 1px solid var(--border-strong); border-radius: var(--radius-control); font: inherit; line-height: var(--ifx-leading-body); }
+.customer-summary__actions { display: flex; flex-wrap: wrap; gap: var(--ifx-space-2); }
+.customer-summary__actions button { display: inline-flex; align-items: center; justify-content: center; gap: var(--ifx-space-2); min-height: var(--ifx-control-height-md); padding: var(--ifx-space-2) var(--ifx-space-3); border: 1px solid var(--border-strong); border-radius: var(--ifx-radius-xs); background: var(--surface); color: var(--ink-900); font: inherit; font-size: var(--ifx-text-md); font-weight: var(--ifx-weight-semibold); line-height: var(--ifx-leading-compact); text-align: center; cursor: pointer; transition: background-color var(--motion-fast), border-color var(--motion-fast); }
+.customer-summary__actions button:hover:not(:disabled) { background: var(--blue-050); border-color: var(--blue-600); }
+.customer-summary__actions button svg { width: var(--ifx-space-4); height: var(--ifx-space-4); flex: none; }
+.customer-summary__actions button:first-child { background: var(--blue-600); border-color: var(--blue-600); color: var(--surface); }
+.customer-summary__actions button:first-child:hover:not(:disabled) { background: var(--blue-700); border-color: var(--blue-700); }
+.customer-summary :is(button, summary, textarea):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 600px) { .customer-summary__actions button { width: 100%; } }

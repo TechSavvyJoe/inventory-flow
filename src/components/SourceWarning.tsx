@@ -1,4 +1,5 @@
 import { AlertTriangle, ShieldAlert } from 'lucide-react'
+import { formatDate } from '../lib/format'
 import type { SourceMeta } from '../types'
 
 export function SourceWarning({ meta }: { meta: SourceMeta }) {
@@ -12,7 +13,7 @@ export function SourceWarning({ meta }: { meta: SourceMeta }) {
       <Icon aria-hidden="true" />
       <div>
         <strong>{critical ? 'Inventory needs review' : 'Some inventory details may be out of date'}</strong>
-        <p>Confirm holds and availability with the home store before promising a vehicle.</p>
+        <p>{meta.reportDate ? `Showing published data from ${formatDate(meta.reportDate)} until the next refresh. ` : null}Confirm holds and availability with the home store before promising a vehicle.</p>
       </div>
     </section>
   )

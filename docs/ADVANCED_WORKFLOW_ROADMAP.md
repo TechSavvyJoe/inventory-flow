@@ -4,7 +4,7 @@ Inventory Flow is being introduced with an adoption-first interface: salespeople
 
 ## Phase 1 — current operating experience
 
-- Current direction (September 9, 2026): salesperson request, one requesting-store manager approval after manually checking availability with the Home Store, then actual collection/arrival/return/home-receipt updates. No second in-app store approval or driver/dispatch assignment is required. Home receipt completes the move without a separate Close step.
+- Current everyday direction: salesperson request and one requesting-store manager approval after manually checking availability with the Home Store, followed by outcome or return updates and explicit Home Store receipt. No second in-app approval, driver/dispatch assignment, collection checklist, or destination-arrival checklist is required. Authorized managers can record direct moves with actual destination/time. Home receipt completes the move without a separate Close step.
 - One next action, one assigned owner, and one due time shown prominently.
 - Salesperson and manager assignments are the primary operating model.
 - Searchable home inventory, home inventory away, visiting inventory, and all-store location views. Time away starts only from actual departure evidence; notes and approvals cannot reset it. Conflicting location evidence is flagged, never guessed.

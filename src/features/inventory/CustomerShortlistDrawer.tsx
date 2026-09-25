@@ -7,7 +7,7 @@ export interface CustomerShortlistDrawerProps {
   entries: ShortlistEntry[];
   onRemove: (id: string) => void;
   onClear: () => void;
-  onSelectVehicle?: (vehicle: { id: string }) => void;
+  onSelectVehicle?: (vehicle: { id: string }, trigger: HTMLButtonElement) => void;
 }
 
 /** A small session shortlist; every displayed fact comes from current inventory. */
@@ -26,7 +26,7 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
       <p>Compare current inventory details. Confirm availability with the home store.</p>
       <ul className="shortlist-drawer__vehicles">
         {entries.map(entry => <li key={entry.id} className="shortlist-drawer__vehicle">
-          <button type="button" className="shortlist-drawer__open" onClick={() => onSelectVehicle?.({ id: entry.id })} aria-label={`Open shortlisted ${entry.displayName}, stock ${entry.stockNumber}`}>
+          <button type="button" className="shortlist-drawer__open" onClick={event => onSelectVehicle?.({ id: entry.id }, event.currentTarget)} aria-label={`Open shortlisted ${entry.displayName}, stock ${entry.stockNumber}`}>
             {entry.imageUrl ? <img src={entry.imageUrl} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" /> : <CarFront size={28} aria-hidden="true" />}
             <strong>{entry.displayName}</strong><span>Stock {entry.stockNumber}</span><b>{formatMoney(entry.price)}</b>
             {entry.exteriorColor ? <span>{entry.exteriorColor}</span> : null}

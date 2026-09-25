@@ -104,6 +104,42 @@ async function expectNoOverflow(page: Page) {
   for (const overflow of dimensions.dialogOverflow) expect(overflow).toBeLessThanOrEqual(1)
 }
 
+
+async function expectOpenFilterGeometry(page: Page, width: number) {
+  const sections = [
+    page.getByRole('group', { name: 'Inventory search and location scope' }),
+    page.getByRole('group', { name: 'Inventory quick filters' }),
+    page.getByRole('group', { name: 'Inventory service status' }),
+    page.getByRole('group', { name: 'Inventory location scope' }),
+    page.getByRole('button', { name: /^Filters/ }),
+    page.getByRole('button', { name: /^Sort inventory\./ }),
+  ]
+  for (const optional of [page.getByRole('button', { name: 'Scan vehicle', exact: true }), page.getByRole('button', { name: /^Shortlist \(\d+\)$/ })]) {
+    if (await optional.isVisible()) sections.push(optional)
+  }
+  const boxes = await Promise.all(sections.map(async section => {
+    await expect(section).toBeVisible()
+    return { name: await section.getAttribute('aria-label') || await section.innerText(), box: (await section.boundingBox())! }
+  }))
+  for (let left = 0; left < boxes.length; left++) {
+    for (let right = left + 1; right < boxes.length; right++) {
+      const a = boxes[left]!
+      const b = boxes[right]!
+      const overlapWidth = Math.min(a.box.x + a.box.width, b.box.x + b.box.width) - Math.max(a.box.x, b.box.x)
+      const overlapHeight = Math.min(a.box.y + a.box.height, b.box.y + b.box.height) - Math.max(a.box.y, b.box.y)
+      expect(overlapWidth > 1 && overlapHeight > 1, `${width}px ${a.name} and ${b.name} must not overlap`).toBe(false)
+    }
+  }
+  if (width <= 760) {
+    expect(boxes[2]!.box.y, `${width}px service filters follow the quick filters`).toBeGreaterThanOrEqual(boxes[1]!.box.y + boxes[1]!.box.height)
+  }
+  for (const button of await sections[2]!.getByRole('button').all()) {
+    const target = (await button.boundingBox())!
+    expect(target.height).toBeGreaterThanOrEqual(44)
+    expect(target.width).toBeGreaterThanOrEqual(44)
+  }
+}
+
 function results(page: Page, mobile: boolean) {
   return mobile
     ? page.locator('.if-srp-mobile-list .if-srp-mobile-row')
@@ -113,7 +149,7 @@ function results(page: Page, mobile: boolean) {
 test('inventory reflows from a wide monitor to a narrow phone without crowded controls', async ({ page, isMobile }, testInfo) => {
   test.setTimeout(120_000)
   await loadInventory(page)
-  const widths = isMobile ? [320, 390, 430] : [320, 390, 600, 720, 760, 761, 820, 1024, 1280, 1440, 1920, 2560]
+  const widths = isMobile ? [320, 390, 430] : [320, 390, 600, 720, 760, 761, 820, 1024, 1280, 1320, 1440, 1920, 2560]
   const measurements: unknown[] = []
   for (const width of widths) {
     await page.setViewportSize({ width, height: 900 })
@@ -172,10 +208,31 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     await page.getByLabel('Sort priority 1 field').selectOption('price')
     await page.getByRole('button', { name: 'Close sort options' }).click()
     await expect(sortPanel).toBeHidden()
+    const search = page.getByRole('group', { name: 'Inventory search and location scope' })
+    const quickFilters = page.getByRole('group', { name: 'Inventory quick filters' })
+    const closedSearch = (await search.boundingBox())!
+    const closedQuickFilters = (await quickFilters.boundingBox())!
     await page.getByRole('button', { name: /^Filters/ }).click()
     await expect(page.getByRole('region', { name: 'Inventory filters' })).toBeVisible()
+    await expectOpenFilterGeometry(page, width)
     await expectNoOverflow(page)
+    if ([320, 390, 1024, 1320, 1440].includes(width)) await capture(page, testInfo, `filters-open-${width}`)
     await page.getByRole('button', { name: /^Filters/ }).click()
+    const restoredSearch = (await search.boundingBox())!
+    const restoredQuickFilters = (await quickFilters.boundingBox())!
+    for (const [before, after] of [[closedSearch, restoredSearch], [closedQuickFilters, restoredQuickFilters]]) {
+      expect(after!.y, `${width}px closing filters restores the compact header`).toBeCloseTo(before!.y, 0)
+      expect(after!.height).toBeCloseTo(before!.height, 0)
+    }
+    if (width === 320 || width === 390) {
+      await page.getByRole('button', { name: 'Save DEMO-H02 to shortlist', exact: true }).click()
+      await page.getByRole('button', { name: /^Filters/ }).click()
+      await expectOpenFilterGeometry(page, width)
+      await expectNoOverflow(page)
+      await capture(page, testInfo, `shortlist-filters-open-${width}`)
+      await page.getByRole('button', { name: /^Filters/ }).click()
+      await page.getByRole('button', { name: 'Remove DEMO-H02 from shortlist', exact: true }).click()
+    }
     await page.evaluate(() => window.scrollTo(0, 0))
     measurements.push({ width, controls: bounds, firstVehicleTop: top, layout: mobileVisible ? 'phone' : 'comparison' })
     await capture(page, testInfo, `responsive-${width}`)
@@ -215,6 +272,8 @@ async function loadInventory(page: Page) {
   await expect(page).toHaveTitle(/Inventory Flow/)
   await expect(page).toHaveURL(/\/inventory/)
   await expect(page.getByRole('heading', { name: 'Howell inventory' })).toBeVisible()
+  // These coverage cases exercise held and unheld records together.
+  await page.getByRole('button', { name: /^All:/ }).click()
   await expect(page.getByRole('button', { name: 'All locations, 8 group vehicles' })).toBeVisible()
   // This invariant prevents this suite from accidentally running against real data.
   const bootstrap = await page.request.get('/api/bootstrap?role=manager&homeStore=Howell')
@@ -311,11 +370,16 @@ test('inventory scope, literal search, multilevel sort, and row controls operate
   const sortButton = page.getByRole('button', { name: /^Sort inventory\./ })
   await sortButton.click()
   const sortPanel = page.locator('.inventory-sort-composer__panel')
+  await expect(sortPanel).toBeVisible()
   const panelBounds = await sortPanel.boundingBox()
-  const controlBounds = await page.locator('.if-srp-controls').boundingBox()
+  // Phone controls use display:contents to share the compact header grid;
+  // their fixed sort sheet is contained by the viewport, not that boxless wrapper.
+  const controlBounds = isMobile
+    ? { x: 0, width: page.viewportSize()!.width }
+    : await page.locator('.if-srp-controls').boundingBox()
   expect(panelBounds, 'Sort options have a visible layout').not.toBeNull()
   expect(controlBounds).not.toBeNull()
-  expect(panelBounds!.width, 'Sort options use the control bar, not the trigger width').toBeGreaterThanOrEqual(Math.min(300, controlBounds!.width))
+  expect(panelBounds!.width, 'Sort options have a readable width independent of the trigger').toBeGreaterThanOrEqual(Math.min(300, controlBounds!.width))
   expect(panelBounds!.x).toBeGreaterThanOrEqual(controlBounds!.x - 1)
   expect(panelBounds!.x + panelBounds!.width).toBeLessThanOrEqual(controlBounds!.x + controlBounds!.width + 1)
   await page.getByLabel('Sort priority 1 field').selectOption('price')
@@ -329,7 +393,8 @@ test('inventory scope, literal search, multilevel sort, and row controls operate
   await page.getByLabel('Add another inventory sort').selectOption('mileage')
   await expect(page.getByLabel('Sort priority 3 field')).toHaveValue('mileage')
   await capture(page, testInfo, 'inventory-multilevel-sort')
-  await sortButton.click()
+  await page.getByRole('button', { name: 'Close sort options', exact: true }).click()
+  await expect(sortButton).toHaveAttribute('aria-expanded', 'false')
 
   await page.getByLabel('Rows per page').selectOption('100')
   await expect(page.getByLabel('Rows per page')).toHaveValue('100')
@@ -364,7 +429,9 @@ test('five-column comparison uses each row for a clear photo and high-value scan
     await route.fulfill({ response, json: payload })
   })
   await page.goto('/inventory')
-  const main = page.locator('.inv-desk-table .inv-desk-row').first()
+  await page.getByRole('button', { name: /^All:/ }).click()
+  // Assert against the rich-record fixture, independent of default price sorting.
+  const main = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-H01"]')
   // The redesigned desktop scan consolidates configuration and equipment into
   // one useful column rather than restoring a sixth narrow, low-value column.
   await expect(page.locator('.inv-desk-table thead th')).toHaveCount(5)
@@ -400,6 +467,7 @@ test('five-column comparison uses each row for a clear photo and high-value scan
       return {
         text,
         rowHeight: row.getBoundingClientRect().height,
+        vehicleGroupHeight: row.closest('tbody')!.getBoundingClientRect().height,
         photo: photo.getBoundingClientRect().toJSON(),
         image: { naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight },
         tableWidth: table.clientWidth,
@@ -413,10 +481,10 @@ test('five-column comparison uses each row for a clear photo and high-value scan
       expect(element.scrollHeight, `${width}px ${element.selector} not vertically clipped`).toBeLessThanOrEqual(element.clientHeight + 1)
     }
     expect(dimensions.rowHeight, `${width}px row keeps scroll density`).toBeGreaterThanOrEqual(84)
-    // The scan now includes stock/mileage/VIN copy ledgers, multiple equipment
-    // cues and three action rows with 44px targets. Preserve those useful facts
-    // within the reviewed 190px density budget rather than shrinking controls.
-    expect(dimensions.rowHeight, `${width}px row keeps the expanded scan compact`).toBeLessThanOrEqual(190)
+    // A held/moving vehicle needs up to 180px for real evidence and 44px actions.
+    // Budget the full group too, so a short primary row cannot hide a tall report strip.
+    expect(dimensions.rowHeight, `${width}px comparison row stays compact`).toBeLessThanOrEqual(180)
+    expect(dimensions.vehicleGroupHeight, `${width}px complete vehicle including providers`).toBeLessThanOrEqual(width <1320 ?300 :280)
     for (const name of ['Copy stock number: DEMO-H01', 'Copy mileage: 12450', 'Copy VIN: TESTDATAHWELL0001']) {
       await expect(main.getByRole('button', { name, exact: true })).toBeVisible()
     }
@@ -515,7 +583,9 @@ test('phone cards show exact equipment and document facts with direct detail act
     await page.setViewportSize({ width, height: 844 })
     await page.evaluate(async () => { await document.fonts.ready; window.scrollTo(0, 0) })
     await expect(card).toBeVisible()
-    await expect(card.locator('.vehicle-resource-scan[data-resource-kind="autocheck"]')).toContainText('Score 95 · 2 owners')
+    // Detailed provider ledgers remain in Records instead of repeating under every result.
+    await expect(card.locator('.vehicle-resources--scan')).toHaveCount(0)
+    expect((await card.boundingBox())!.height, `${width}px rich vehicle stays a compact comparison row`).toBeLessThanOrEqual(280)
     await recordsTrigger.click()
     await expect(expandedRecords).toBeVisible()
     // Only the selected source occupies the full-width preview pane.
@@ -585,6 +655,7 @@ test('larger page sizes expand the results and pagination changes the visible ve
     await route.fulfill({ response, json: payload })
   })
   await page.goto('/inventory?scope=group')
+  await page.getByRole('button', { name: /^All:/ }).click()
   await expect(page.getByRole('button', { name: 'All locations, 48 group vehicles' })).toBeVisible()
   await page.getByRole('button', { name: 'All locations, 48 group vehicles' }).click()
   await page.getByLabel('Rows per page').selectOption('10')
