@@ -235,10 +235,8 @@
   #inventory-results-workspace.if-srp .if-srp-controls { display:contents; }
   #inventory-results-workspace.if-srp .if-srp-quickviews { grid-column: 1 / -1; grid-row: 3; gap: var(--ifx-space-1); }
   #inventory-results-workspace.if-srp .if-srp-quickviews > button { min-height: 44px; padding: 6px 7px; }
-  #inventory-results-workspace.if-srp .if-srp-tools { grid-column: 2; grid-row: 1; gap: var(--ifx-space-1); }
   #inventory-results-workspace.if-srp .if-srp-tools .inv-btn { min-height: 44px; padding: 6px 7px; gap: 3px; }
   #inventory-results-workspace.if-srp .inventory-filter-button .inv-btn__count { display: inline; }
-  #inventory-results-workspace.if-srp .if-srp-service-filters { display: none; grid-column: 1 / -1; grid-row: 2; }
   #inventory-results-workspace.if-srp[data-filters-open="true"] .if-srp-service-filters { display: grid; margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--border); }
   #inventory-results-workspace.if-srp .if-srp-service-heading { display: block; grid-column: 1 / -1; font-size: 14px; margin-bottom: 3px; }
   #inventory-results-workspace.if-srp .if-srp-active-filters { gap: 2px 4px; }
@@ -280,7 +278,7 @@
   .if-srp .inventory-experience__content { display:grid; grid-template-columns:auto minmax(0,1fr); gap:var(--ifx-space-1); }
   .if-srp .if-srp-heading-grid { display:contents; }
   .if-srp .if-srp-searchbar { grid-column:1 / -1; grid-row:2; margin:0; padding-inline:var(--ifx-space-2); }
-  .if-srp .if-srp-tools { justify-content:flex-end; padding-left:0; padding-right:var(--ifx-space-2); }
+  .if-srp .if-srp-tools { grid-column:2; grid-row:1; gap:var(--ifx-space-1); justify-content:flex-end; padding-left:0; padding-right:var(--ifx-space-2); }
   .if-srp .if-srp-tools .inv-btn, .if-srp .if-srp-tools .inventory-scan-entry > button { width:var(--ifx-control-height-md); min-width:var(--ifx-control-height-md); padding:0; font-size:var(--ifx-text-md); }
   .if-srp .if-srp-tools .inv-btn > svg, .inventory-scan-entry > button > svg { display:block; width:var(--ifx-space-4); height:var(--ifx-space-4); }
   .if-srp .if-srp-tools .inv-btn > span, .if-srp .inventory-tool-label { display:none; }
@@ -288,7 +286,7 @@
   .inventory-scan-entry { margin:0; }
   .if-srp .if-srp-quickviews { padding-inline:var(--ifx-space-2); }
   .if-srp .inventory-experience__content > :not(.if-srp-heading-grid,.if-srp-controls) { grid-column:1 / -1; }
-  .if-srp .if-srp-service-filters { grid-column:1 / -1; grid-row:auto; }
+  .if-srp .if-srp-service-filters { display:none; grid-column:1 / -1; grid-row:auto; }
   .if-srp .if-srp-tools:has(> .button) { grid-column:1 / -1; grid-row:4; padding-inline:var(--ifx-space-2); }
   .if-srp .if-srp-tools > .button { margin-right:auto; min-height:var(--ifx-control-height-md); }
 }
