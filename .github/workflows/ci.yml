@@ -148,6 +148,8 @@ jobs:
     timeout-minutes: 15
     container:
       image: mcr.microsoft.com/playwright:v1.62.1-noble
+    env:
+      INVENTORY_VISUAL_BASELINE_DIR: ${{ runner.temp }}/inventory-flow-visual-baselines
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -169,6 +171,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Restore reviewed visual baselines
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/visual-baselines.mjs restore
+
       - name: Build production bundle
         # The gate pins the actual `pnpm build` CSS cascade, not the dev server's.
         run: pnpm build
@@ -176,7 +183,7 @@ jobs:
       - name: Run the visual-regression gate
         env:
           PLAYWRIGHT_BUNDLED_CHROMIUM: '1'
-        run: pnpm exec playwright test --config playwright.visual.config.ts
+        run: pnpm exec playwright test --config playwright.visual.config.ts --update-snapshots=none
 
       - name: Upload the Playwright report
         if: failure()
@@ -192,15 +199,17 @@ jobs:
     # The only re-baseline path. Manually triggered (Actions tab -> this
     # workflow -> Run workflow) after a deliberate, reviewed visual change;
     # never runs on a schedule or a push, so it never silently repins a
-    # regression. Download the uploaded snapshots artifact and commit its
-    # contents at tests/visual/app.visual.spec.ts-snapshots/ yourself — this
-    # job does not push, keeping `permissions: contents: read` for the whole
-    # workflow.
+    # regression. Review the external candidate, publish its exact bundle as a
+    # private CI baseline release asset, and update the metadata-only pin.
+    # No PNGs enter Git. This job never publishes or changes the pin itself;
+    # the whole workflow keeps `permissions: contents: read`.
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'update-visual-baselines'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
       image: mcr.microsoft.com/playwright:v1.62.1-noble
+    env:
+      INVENTORY_VISUAL_BASELINE_DIR: ${{ runner.temp }}/inventory-flow-visual-baselines
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -228,13 +237,20 @@ jobs:
       - name: Regenerate visual baselines
         env:
           PLAYWRIGHT_BUNDLED_CHROMIUM: '1'
-        run: pnpm exec playwright test --config playwright.visual.config.ts --update-snapshots
+        run: pnpm exec playwright test --config playwright.visual.config.ts --update-snapshots=all
+
+      - name: Package candidate with source provenance and hashes
+        run: |
+          mkdir -p "$RUNNER_TEMP/inventory-flow-visual-candidate"
+          node scripts/visual-baselines.mjs pack --dir "$INVENTORY_VISUAL_BASELINE_DIR" --out "$RUNNER_TEMP/inventory-flow-visual-candidate/visual-baselines.json"
 
       - name: Upload regenerated snapshots
         uses: actions/upload-artifact@v4
         with:
-          name: visual-snapshots
-          path: tests/visual/app.visual.spec.ts-snapshots/
+          name: visual-baseline-candidate
+          path: |
+            ${{ runner.temp }}/inventory-flow-visual-baselines/
+            ${{ runner.temp }}/inventory-flow-visual-candidate/visual-baselines.json
           retention-days: 14
 
   cross-browser-nightly:

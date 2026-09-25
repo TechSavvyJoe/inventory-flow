@@ -10,6 +10,10 @@ manager-confirmed issue workflow preparation, and its separate activation gates.
 The validation history below describes the earlier implementation, not that
 follow-up's current test totals.
 
+The later [visual-baseline CI repair](VISUAL_BASELINES.md) replaces the missing
+reference-file setup with reviewed external assets and a metadata-only pin.
+The historical missing-baseline failures below describe the earlier gate.
+
 ## Confirmed defects, ordered by severity
 
 | Priority | Finding and affected users | Evidence and reproduction | Repair |

@@ -136,20 +136,25 @@ async function expectReportHeadingVisible(workspace: Locator, section: Locator) 
   expect(heading!.y + heading!.height, 'The full heading remains above the fixed footer').toBeLessThanOrEqual(scroll!.y + scroll!.height + 1)
 }
 
-test('rich Records stay ordered, factual and navigable on small and large screens', async ({ page, browserName }, testInfo) => {
-  const errors: string[] = []
-  page.on('pageerror', error => errors.push(error.message))
-  page.on('console', message => {
-    // Match the cross-browser health guard: WebKit ignores this optional
-    // viewport hint. Every other console error and page error still fails.
-    if (browserName === 'webkit' && message.text() === 'Viewport argument key "interactive-widget" not recognized and ignored.') return
-    if (message.type() === 'error') errors.push(message.text())
-  })
-  await installRichDemoRecords(page)
-  const sizes = testInfo.project.name === 'mobile'
-    ? [{ width: 390, height: 844 }]
-    : [{ width: 1024, height: 768 }, { width: 1320, height: 820 }, { width: 1440, height: 900 }]
-  for (const size of sizes) {
+// Each viewport owns a complete flow and its own normal test budget. Combining
+// all desktop widths consumed that budget in CI before the final flow finished.
+for (const size of [
+  { project: 'mobile', width: 390, height: 844 },
+  { project: 'desktop', width: 1024, height: 768 },
+  { project: 'desktop', width: 1320, height: 820 },
+  { project: 'desktop', width: 1440, height: 900 },
+]) {
+  test(`rich Records stay ordered, factual and navigable at ${size.width}×${size.height}`, async ({ page, browserName }, testInfo) => {
+    test.skip(testInfo.project.name !== size.project, 'Viewport runs in its matching desktop or mobile project')
+    const errors: string[] = []
+    page.on('pageerror', error => errors.push(error.message))
+    page.on('console', message => {
+      // Match the cross-browser health guard: WebKit ignores this optional
+      // viewport hint. Every other console error and page error still fails.
+      if (browserName === 'webkit' && message.text() === 'Viewport argument key "interactive-widget" not recognized and ignored.') return
+      if (message.type() === 'error') errors.push(message.text())
+    })
+    await installRichDemoRecords(page)
     await page.setViewportSize(size)
     await page.goto(`/inventory?scope=group&vin=${VIN}&tab=data`)
     await expect(page).toHaveTitle(/Inventory Flow/)
@@ -257,9 +262,9 @@ test('rich Records stay ordered, factual and navigable on small and large screen
       await capture(page, size.width, expanded ? 'evidence-expanded' : 'evidence-collapsed')
     }
     await expect(page.locator('vite-error-overlay')).toHaveCount(0)
-  }
-  expect(errors).toEqual([])
-})
+    expect(errors).toEqual([])
+  })
+}
 
 test('a single captured report uses the available width and keeps its jump visible', async ({ page }, testInfo) => {
   await installRichDemoRecords(page, {

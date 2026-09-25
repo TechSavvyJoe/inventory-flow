@@ -16,8 +16,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  // The default 30s per-test timeout is tight for records-clarity's three
-  // viewport passes and transfer-start's role-switching flow once several
+  // The default 30s per-test timeout is tight for a complete Records viewport
+  // flow and transfer-start's role-switching flow once several
   // spec files share the machine in parallel; 45s is slack for a loaded
   // machine, not a licence for a slow test to grow further.
   timeout: 45_000,
