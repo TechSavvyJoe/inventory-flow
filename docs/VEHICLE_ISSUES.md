@@ -155,8 +155,11 @@ Later documentation-only commits record the results below.
 - Screenshots and browser proof remain outside tracked source at
   `/tmp/inventory-issues-{report,detail,completed}-{chromium,webkit}-{width}.png`
   and `/tmp/inventory-issues-preview-{chromium,webkit}-proof.json`.
-- Pixel comparisons were not run. The earlier review's missing baseline-image
-  gate remains unresolved; no baseline was created or repinned.
+- Pixel comparisons were not run at this implementation checkpoint. The later
+  [main release check for `e80782b`](https://github.com/TechSavvyJoe/inventory-flow/actions/runs/36173966245)
+  passed 32 strict Linux pixel comparisons for the core app, resolving the
+  earlier missing-baseline gate. This does not establish acceptance of inactive
+  issue-reporting uploads or replace the unmocked HTTP/browser checks above.
 
 The final independent review accepted the inactive preparation and the three
 attention repairs. It did not approve activation or production readiness.
