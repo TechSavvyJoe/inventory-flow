@@ -385,7 +385,7 @@ async function publishRelease(request, env) {
   } catch {throw new HttpError('PUBLISH_CONFLICT_RETRY',409)}
   return json(201,{status:'published',reportDate:envelope.reportDate})
 }
-async function appApi(request,url,env,context) {
+async function appApi(request,url,env,context,claims) {
   const route=url.pathname.replace(/^\/api(?:\/v1)?/,'')
   const read=request.method==='GET', write=request.method==='POST'
   if(!read && !write) throw new HttpError('METHOD_NOT_ALLOWED',405)
@@ -415,8 +415,10 @@ async function appApi(request,url,env,context) {
   const release=await readRelease(env)
   if(read && /^\/vehicles\/[^/]+\/invoice$/.test(route)) return savedInvoiceResponse(env,release,identifier,context)
   if(read && /^\/vehicles\/[^/]+\/equipment-pdf$/.test(route)) return savedEquipmentResponse(env,release,identifier)
-  let resolvedAssignmentInput=null
   for(let attempt=0;attempt<3;attempt++) {
+    // A conflicting commit may have been an employee access change. Resolve
+    // the same verified Access identity again before replaying any operation.
+    if(attempt>0) context=await memberContext(claims,env,request)
     const repo=await loadD1Repository(env.INVENTORY_DB,release)
     const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
     const query=Object.fromEntries(url.searchParams)
@@ -438,21 +440,20 @@ async function appApi(request,url,env,context) {
     else if(write && /^\/(transfers|attention)\/[^/]+\/events$/.test(route)) {
       const [,type]=route.split('/')
       if(type==='attention') result=service.appendAttentionEvent(identifier,input,context,idempotency)
-      else if(!TRANSPORT_ASSIGNMENT_EVENTS.has(String(input?.type??'').trim().toLowerCase()) || resolvedAssignmentInput) {
-        result=service.appendTransferEvent(identifier,resolvedAssignmentInput??input,context,idempotency)
+      else if(!TRANSPORT_ASSIGNMENT_EVENTS.has(String(input?.type??'').trim().toLowerCase())) {
+        result=service.appendTransferEvent(identifier,input,context,idempotency)
       } else {
         // Authorize the transfer, role, store, lifecycle and payload before
         // querying the employee directory. This prevents unrelated users from
         // probing valid or duplicate staff names through assignment errors.
         const prepared=await prepareTransportAssignment(input,env,(candidate)=>
           service.appendTransferEvent(identifier,candidate,context,idempotency))
-        resolvedAssignmentInput=prepared.input
-        result=prepared.replay??service.appendTransferEvent(identifier,resolvedAssignmentInput,context,idempotency)
+        result=prepared.replay??service.appendTransferEvent(identifier,prepared.input,context,idempotency)
       }
       mutation=true
     } else throw new HttpError('NOT_FOUND',404)
     if(!mutation) return read && route==='/bootstrap' ? await jsonRevalidated(request,result) : json(200,result)
-    try {await repo.commit();return json(result.created?201:200,result.record)}
+    try {await repo.commit({email:claims.email,context});return json(result.created?201:200,result.record)}
     catch(error) {if(error instanceof RepositoryConflictError && attempt<2) continue; throw error}
   }
   throw new HttpError('REPOSITORY_CONFLICT',409)
@@ -475,9 +476,10 @@ export default {
         if(request.method==='GET' && url.pathname==='/internal/readiness') return json(200,await appReadiness(env))
         throw new HttpError('NOT_FOUND',404)
       }
-      const context=await memberContext(await verifyAccess(request,env),env,request)
+      const claims=await verifyAccess(request,env)
+      const context=await memberContext(claims,env,request)
       if(request.method==='GET' && url.pathname==='/api/health') return json(200,{ok:true,ready:Boolean(await currentRelease(env)),service:'inventory-flow-cloud',version:versionMetadata(env)})
-      if(url.pathname.startsWith('/api/')) return await appApi(request,url,env,context)
+      if(url.pathname.startsWith('/api/')) return await appApi(request,url,env,context,claims)
       if(!['GET','HEAD'].includes(request.method)) throw new HttpError('METHOD_NOT_ALLOWED',405)
       if(!env.ASSETS) throw new HttpError('FRONTEND_NOT_DEPLOYED',503)
       const asset=await env.ASSETS.fetch(request)

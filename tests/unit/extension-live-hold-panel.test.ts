@@ -51,13 +51,35 @@ it('replaces a released truck hold and removes the stale person and reason', asy
   expect(live.check).toHaveBeenCalledWith(7, 'HT1345U')
 })
 
-it('treats a failed live check as unverified, never as a current snapshot hold', async () => {
+it('retains the dated captured evidence after a failed production live check', async () => {
   live.check.mockResolvedValue({ status: 'unavailable' })
   await import('../../extension/sidepanel/panel.js')
   await vi.waitFor(() => expect(document.querySelector('#rows .row')).not.toBeNull())
   document.querySelector('#rows .row').click()
-  await vi.waitFor(() => expect(document.querySelector('.detail-status-line')?.textContent).toContain('Hold unverified'))
+  await vi.waitFor(() => expect(document.querySelector('.detail-status-line')?.textContent).toContain('Last verified hold'))
   document.querySelector('#tab-hold').click()
   expect(document.querySelector('.hold-card')?.textContent).toContain('Could not confirm the current hold')
+  expect(document.querySelector('.hold-card')?.textContent).toContain('Old salesperson')
+  expect(document.querySelector('.hold-card')?.textContent).toContain('Old hold reason')
+  expect(document.querySelector('.hold-card')?.textContent).toContain('Last verified DealerMail snapshot captured')
+  expect(document.querySelector('.hold-card')?.textContent).toContain('09/23/2026')
+  document.querySelector('#back').click()
+  document.querySelector('#scope-held').click()
+  expect(document.querySelector('#rows')?.textContent).toContain('HT1345U')
+})
+
+it('keeps captured evidence visible while the production live check is pending', async () => {
+  let finishCheck
+  live.check.mockReturnValue(new Promise((resolve) => { finishCheck = resolve }))
+  await import('../../extension/sidepanel/panel.js')
+  await vi.waitFor(() => expect(document.querySelector('#rows .row')).not.toBeNull())
+  document.querySelector('#rows .row').click()
+  await vi.waitFor(() => expect(live.check).toHaveBeenCalled())
+  document.querySelector('#tab-hold').click()
+  expect(document.querySelector('.hold-card')?.textContent).toContain('Checking the current DealerMail hold')
+  expect(document.querySelector('.hold-card')?.textContent).toContain('Old hold reason')
+  expect(document.querySelector('.hold-card')?.textContent).toContain('Last verified DealerMail snapshot captured')
+  finishCheck({ status: 'verified', stock: 'HT1345U', activeCount: 1, checkedAt: '2026-09-23T15:30:00Z' })
+  await vi.waitFor(() => expect(document.querySelector('.hold-card')?.textContent).toContain('Checked directly in DealerMail'))
   expect(document.querySelector('.hold-card')?.textContent).not.toMatch(/Old salesperson|Old hold reason/)
 })

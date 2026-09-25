@@ -307,6 +307,8 @@ export interface WarrantyCheckResource {
 }
 
 export interface DealerMailHoldSignal {
+  lastKnownActiveHold?: boolean;
+  lastKnownNoHold?: boolean;
   dataState: SourceDataState;
   hasActiveHold: boolean | null;
   position?: HoldPosition;

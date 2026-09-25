@@ -203,6 +203,41 @@ describe('manager service readiness ledger', () => {
     })
   })
 
+  it.each(['Ford', 'Toyota'])('keeps reopened %s service dates separate from its captured inspection', (make) => {
+    const db = openInventoryDatabase()
+    databases.push(db)
+    const release = buildSyntheticRelease()
+    const source = release.vehicles.find(vehicle => vehicle.vin === VIN)
+    source.publicRecord.make = make
+    source.publicRecord.inventory_date = '2026-08-01'
+    source.publicRecord.autoCheckReport = {
+      dataState: 'current', recentInspection: { date: '2026-08-20', types: ['Vehicle Serviced or Inspected'] },
+    }
+    source.resourceRecord = { ...source.resourceRecord, fordOasis: { serviceHistory: {
+      dataState: 'current', historyCaptured: true,
+      certifiedInspection: { openDate: '08/15/2026', closeDate: '08/20/2026', inspection: { status: 'confirmed', type: 'Certified Blue Oval inspection' } },
+    } } }
+    importRelease(db, release)
+    const reload = () => createInventoryService({ database: db, now: () => SYNTHETIC_NOW })
+    const evidence = make === 'Ford'
+      ? { source: 'ford_service_history', inspectionDate: '2026-08-20', inServiceDate: '2026-08-15', readyDate: '2026-08-20' }
+      : { source: 'autocheck', inspectionDate: '2026-08-20' }
+    expect(reload().getServiceReadiness(VIN, manager)).toMatchObject({ status: 'serviced', completedAt: '2026-08-20', readinessEvidence: evidence })
+
+    const started = reload().updateServiceReadiness(VIN, { status: 'in_service', expectedVersion: 0, serviceDate: '2026-08-29' }, manager, `synthetic-${make}-start`)
+    expect(started.record).toMatchObject({ status: 'in_service', readinessBasis: 'manager_updated', serviceEnteredAt: '2026-08-29', completedAt: null, readinessEvidence: evidence })
+    const finished = reload().updateServiceReadiness(VIN, { status: 'serviced', expectedVersion: 1, serviceDate: '2026-08-30' }, manager, `synthetic-${make}-finish`)
+    expect(finished.record).toMatchObject({ status: 'serviced', serviceEnteredAt: '2026-08-29', completedAt: '2026-08-30', readinessEvidence: evidence })
+
+    const reopened = reload().updateServiceReadiness(VIN, { status: 'needs_service', expectedVersion: 2 }, manager, `synthetic-${make}-reopen`)
+    expect(reopened.record).toMatchObject({ status: 'needs_service', readinessBasis: 'manager_updated', serviceEnteredAt: null, completedAt: null, readinessEvidence: evidence })
+    expect(reopened.record.history[1]).toMatchObject({ status: 'serviced', serviceEnteredAt: '2026-08-29', completedAt: '2026-08-30' })
+    const restarted = reload().updateServiceReadiness(VIN, { status: 'in_service', expectedVersion: 3, serviceDate: '2026-08-30' }, manager, `synthetic-${make}-restart`)
+    expect(restarted.record).toMatchObject({ status: 'in_service', readinessBasis: 'manager_updated', serviceEnteredAt: '2026-08-30', completedAt: null, readinessEvidence: evidence })
+    expect(db.prepare('SELECT service_entered_at, completed_at FROM vehicle_service_events WHERE vin=? ORDER BY version DESC LIMIT 1').get(VIN))
+      .toEqual({ service_entered_at: '2026-08-30', completed_at: null })
+  })
+
   it('keeps unconfirmed inventory Waiting across cold D1 loads without creating a manager attestation', async () => {
     const { db, cold } = await cloud()
     const first = await cold()

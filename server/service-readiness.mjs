@@ -97,10 +97,11 @@ export function serviceReadinessView(vehicle, row, context, { includeNotes = fal
   const store = serviceStore(vehicle)
   const canManage = context.role === 'group_manager' || (context.role === 'manager' && store === context.store)
   const recordedStatus = SERVICE_STATUSES.includes(row?.status) ? row.status : null
-  // A current, exact-VIN inspection after intake is useful readiness evidence.
+  // A complete, exact-VIN inspection in the selected release is readiness evidence.
   // It never replaces a manager's recorded decision, but remains attached so
   // the SRP and VDP can show the independent source and its dates.
-  const readinessEvidence = fordServiceReadinessEvidence(vehicle) ?? autoCheckReadinessEvidence(vehicle)
+  const publishedEvidence = vehicle.publishedServiceEvidence ?? vehicle
+  const readinessEvidence = fordServiceReadinessEvidence(publishedEvidence) ?? autoCheckReadinessEvidence(publishedEvidence)
   const readinessBasis = readinessEvidence?.source === 'ford_service_history'
     ? 'ford_service_history_inspection'
     : readinessEvidence ? 'autocheck_post_intake_inspection' : row ? 'legacy_review' : vehicle.serviceIntake ? 'new_arrival' : 'unconfirmed'
@@ -112,8 +113,10 @@ export function serviceReadinessView(vehicle, row, context, { includeNotes = fal
     status: recordedStatus ?? (readinessEvidence ? 'serviced' : 'needs_service'),
     readinessBasis: recordedStatus ? 'manager_updated' : readinessBasis,
     version: row?.version ?? 0,
-    serviceEnteredAt: row?.service_entered_at ?? readinessEvidence?.inServiceDate ?? null,
-    completedAt: row?.completed_at ?? readinessEvidence?.readyDate ?? readinessEvidence?.inspectionDate ?? null,
+    // A manager clearing/reopening work intentionally clears its dates. Source
+    // inspection dates remain evidence, not dates for the new service cycle.
+    serviceEnteredAt: recordedStatus ? row.service_entered_at ?? null : readinessEvidence?.inServiceDate ?? null,
+    completedAt: recordedStatus ? row.completed_at ?? null : readinessEvidence?.readyDate ?? readinessEvidence?.inspectionDate ?? null,
     updatedAt: row?.updated_at ?? null, updatedBy: row?.actor ?? null,
     updatedByRole: row?.actor_role ?? null, updatedAtStore: row?.store_id ?? null,
     store, canManage, readinessEvidence,

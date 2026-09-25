@@ -324,7 +324,12 @@ function holdSummary(source, context, freshness, { includePrivate = false } = {}
     alertsCount: messages.alerts.length,
   }
   if (freshness !== 'current') {
+    const retained = holdRecord ? holdSummary(source, context, 'current', { includePrivate }) : null
     return {
+      ...retained,
+      lastKnownActiveHold: Boolean(holdRecord),
+      // A prior complete observation is retained separately from current status.
+      lastKnownNoHold: freshness === 'stale_unverified' && Boolean(crmRecord) && !holdRecord,
       state: holdRecord ? 'stale' : crmRecord ? 'stale' : 'unknown',
       label: holdRecord ? 'Last verified hold — confirm in DealerMail' : 'Hold status stale — confirm in DealerMail',
       backupCount: holdRecord ? primaryAndBackups(holdRecord).backups.length : 0,
@@ -1831,6 +1836,17 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
     if (vehicle) {
       // Internal provenance is non-enumerable: expose only the safe readiness view.
       Object.defineProperty(vehicle, 'serviceIntake', { value: state.serviceIntakeByVin.get(source.vin) })
+      // Calendar freshness describes the report, not whether a recorded inspection
+      // happened. Keep the selected release's original evidence until replacement.
+      Object.defineProperty(vehicle, 'publishedServiceEvidence', { value: {
+        ...vehicle,
+        serviceIntake: vehicle.serviceIntake,
+        autoCheckReport: source.publicRecord?.autoCheckReport
+          ? { ...source.publicRecord.autoCheckReport, dataState: state.dataset.sourceRuns.public?.status === 'current'
+              ? source.publicRecord.autoCheckReport.dataState ?? 'current' : state.dataset.sourceRuns.public?.status }
+          : state.dataset.sourceRuns.resources?.status === 'current' ? source.resourceRecord?.autoCheckReport : undefined,
+        fordOasis: state.dataset.sourceRuns.resources?.status === 'current' ? source.resourceRecord?.fordOasis : undefined,
+      } })
       vehicle.serviceReadiness = serviceReadinessView(vehicle, state.serviceEventsByVin.get(source.vin)?.at(-1), state.context)
     }
     return vehicle

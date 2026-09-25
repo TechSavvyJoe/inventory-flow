@@ -128,7 +128,8 @@ describe('deal desk bootstrap fetch', () => {
     expect(await attempt(opaque)).toMatchObject({ kind: 'signin' })
     expect(await attempt(new Response(null, { status: 302, headers: { location: 'https://techsavvyjoe.cloudflareaccess.com/login' } }))).toMatchObject({ kind: 'signin' })
     expect(await attempt(new Response('<html>login</html>', { status: 200, headers: { 'content-type': 'text/html' } }))).toMatchObject({ kind: 'signin' })
-    expect(await attempt(new Response(JSON.stringify({ error: 'x', code: 'MEMBERSHIP_REQUIRED' }), { status: 403, headers: { 'content-type': 'application/json' } }))).toMatchObject({ kind: 'forbidden', code: 'MEMBERSHIP_REQUIRED' })
+    // Revocation must not wait for an error body, which can stall; classify from headers alone.
+    expect(await attempt(new Response(JSON.stringify({ error: 'x', code: 'MEMBERSHIP_REQUIRED' }), { status: 403, headers: { 'content-type': 'application/json' } }))).toMatchObject({ kind: 'forbidden', status: 403, code: null })
     expect(await attempt(new Response('boom', { status: 503 }))).toMatchObject({ kind: 'server', status: 503 })
     const offline = await fetchBootstrap(WORKSPACES.production, settings, { fetchImpl: async () => { throw new TypeError('Failed to fetch') } }).catch((error) => error)
     expect(offline).toBeInstanceOf(PanelApiError)

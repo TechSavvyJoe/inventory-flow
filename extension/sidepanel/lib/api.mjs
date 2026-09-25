@@ -36,8 +36,19 @@ export function vehicleRequest(workspace, settings, vin) { return requestFor(wor
 // instead of re-parsing the whole document. Page-session only, in memory —
 // nothing here is written to storage or survives a reload.
 const revalidated = new Map()
+let cacheGeneration = 0
+
+export function clearApiCache() {
+  cacheGeneration += 1
+  revalidated.clear()
+}
+
+function assertCurrentGeneration(generation) {
+  if (generation !== cacheGeneration) throw new DOMException('Access changed', 'AbortError')
+}
 
 async function fetchJson({ url, init }, { fetchImpl, signal }) {
+  const generation = cacheGeneration
   const cached = revalidated.get(url)
   const headers = cached ? { ...init.headers, 'If-None-Match': cached.etag } : init.headers
   let response
@@ -47,10 +58,12 @@ async function fetchJson({ url, init }, { fetchImpl, signal }) {
     if (error?.name === 'AbortError') throw error
     throw new PanelApiError('offline')
   }
+  assertCurrentGeneration(generation)
   // Access answers an unauthenticated request with a redirect to its login
   // page; with redirect: 'manual' that surfaces as an opaque redirect. A 304
   // is also in the 300s, so it must be carved out before this check.
   if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400 && response.status !== 304) || response.status === 401) {
+    clearApiCache()
     throw new PanelApiError('signin', { status: response.status })
   }
   // Must sit before the `!response.ok` check below — a 304 is not "ok" but
@@ -59,14 +72,16 @@ async function fetchJson({ url, init }, { fetchImpl, signal }) {
   const contentType = response.headers.get('content-type') ?? ''
   const isJson = /^application\/(?:[\w.-]+\+)?json(?:\s*;|$)/i.test(contentType)
   if (response.status === 403) {
-    const body = isJson ? await response.json().catch(() => null) : null
-    throw new PanelApiError('forbidden', { status: 403, code: body?.code ?? null })
+    // Revoke from headers alone: an error body can stall indefinitely.
+    clearApiCache()
+    throw new PanelApiError('forbidden', { status: 403 })
   }
   if (response.status === 404) throw new PanelApiError('notfound', { status: 404 })
   if (!response.ok) throw new PanelApiError('server', { status: response.status })
-  if (!isJson) throw new PanelApiError('signin', { status: response.status })
+  if (!isJson) { clearApiCache(); throw new PanelApiError('signin', { status: response.status }) }
   const payload = await response.json().catch(() => null)
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new PanelApiError('invalid', { status: response.status })
+  assertCurrentGeneration(generation)
   const etag = response.headers.get('etag')
   if (etag) revalidated.set(url, { etag, payload })
   else revalidated.delete(url)

@@ -38,6 +38,7 @@ The API derives role-safe fields. Raw source arrays, customer/reason, comments, 
 - Daily `work/`, `outputs/`, workbook, automation, and source systems are never written or locked.
 - The app advances its current source pointer only after complete validation.
 - Source failure retains the prior verified snapshot with a visible as-of time and never implies released holds, availability, sale, delivery, or return.
+- Date rollover keeps the selected release’s hold details and inspection-based service readiness until a validated replacement is published. Retained holds remain in Held views as “Last verified hold”; current hold status stays unverified. Service evidence must have been complete in the selected release, and manager decisions continue to take precedence.
 
 ## App-owned data
 

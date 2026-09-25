@@ -485,7 +485,7 @@ function holdEvidence(vehicle: VehicleRecord, dataState: SourceDataState): Deale
   const primary = privateEvidence?.primary
   const backups = privateEvidence?.backups ?? []
   const isLastVerified = vehicle.hold.state === 'stale' || dataState === 'stale'
-  if (isLastVerified && !primary && backups.length === 0) return []
+  if (isLastVerified && !primary && backups.length === 0 && !vehicle.hold.lastKnownActiveHold) return []
   const records: DealerMailHoldEvidence[] = [
     {
       id: `${vehicle.vin}-primary`,
@@ -683,12 +683,14 @@ export function toInventoryVehicle(
     dealerMail: {
       dataState: dealerMailState,
       hasActiveHold: holdActive(vehicle.hold.state, dealerMailState),
+      lastKnownActiveHold: vehicle.hold.lastKnownActiveHold,
+      lastKnownNoHold: vehicle.hold.lastKnownNoHold,
       position:
         vehicle.hold.state === 'primary' || vehicle.hold.state === 'backup' || vehicle.hold.state === 'multiple'
           ? vehicle.hold.state
           : null,
       activeRecordCount:
-        vehicle.hold.state === 'primary' || vehicle.hold.state === 'multiple'
+        vehicle.hold.state === 'primary' || vehicle.hold.state === 'multiple' || vehicle.hold.lastKnownActiveHold
           ? 1 + vehicle.hold.backupCount
           : vehicle.hold.state === 'backup'
             ? 1

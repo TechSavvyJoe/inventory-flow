@@ -21,18 +21,33 @@ export async function inspectDealerMailHoldPage(stockNumber) {
     const html = await response.text()
     if (/Session Ended/i.test(html)) return { status: 'unavailable' }
     const doc = new DOMParser().parseFromString(html, 'text/html')
-    const headers = [...doc.querySelectorAll('th, td')].map((cell) => cell.textContent.trim().toUpperCase())
-    if (!headers.includes('HOLD ORDER') || !headers.includes('STOCKNO')) return { status: 'unavailable' }
     const cellValue = (cell) => String(cell.querySelector('input, select, textarea')?.value ?? cell.textContent ?? '').trim().toUpperCase()
+    const headerRows = [...doc.querySelectorAll('tr')].filter((row) => {
+      const cells = [...row.children].filter((cell) => ['TH', 'TD'].includes(cell.tagName))
+      return cells[0]?.textContent.trim().toUpperCase() === 'HOLD ORDER' && cells[1]?.textContent.trim().toUpperCase() === 'STOCKNO'
+    })
+    if (headerRows.length !== 1) return { status: 'unavailable' }
+    const header = headerRows[0]
+    const table = header.closest('table')
+    if (!table) return { status: 'unavailable' }
+    const rows = [...table.querySelectorAll('tr')].filter((row) => row.closest('table') === table)
     const activeOrders = []
-    for (const row of doc.querySelectorAll('tr')) {
-      const cells = [...row.querySelectorAll('td')]
-      if (cells.length < 8) continue
+    let parsedRows = 0
+    for (const row of rows) {
+      if (row === header) continue
+      const cells = [...row.children].filter((cell) => ['TH', 'TD'].includes(cell.tagName))
+      // An unexpected row is not evidence of no holds. In particular, never
+      // skip truncated source rows or an unrecognized order value.
+      if (cells.length !== 8 || cells.some((cell) => cell.colSpan !== 1 || cell.rowSpan !== 1)) return { status: 'unavailable' }
       const order = cellValue(cells[0])
-      if (!/^(?:DELETED|\d+)$/.test(order)) continue
+      if (!/^(?:DELETED|[1-9]\d*)$/.test(order)) return { status: 'unavailable' }
       if (cellValue(cells[1]) !== stock) return { status: 'unavailable' }
+      parsedRows += 1
       if (order !== 'DELETED') activeOrders.push(order)
     }
+    // A header-only response is recognized as empty only with the complete
+    // eight-column schema. A partial header could be an incomplete response.
+    if (!parsedRows && (header.children.length !== 8 || [...header.children].some((cell) => !cell.textContent.trim() || cell.colSpan !== 1 || cell.rowSpan !== 1))) return { status: 'unavailable' }
     if (activeOrders.length && (!activeOrders.includes('1') || new Set(activeOrders).size !== activeOrders.length)) {
       return { status: 'unavailable' }
     }
@@ -64,12 +79,24 @@ export async function checkLiveDealerMailHold(tabId, stock, { scripting = global
 export function withLiveDealerMailHold(vehicle, check) {
   if (!check) return vehicle
   const verified = check.status === 'verified'
-  const held = verified && check.activeCount > 0
+  if (!verified) {
+    const lastKnownActiveHold = vehicle.hold.lastKnownActiveHold === true || vehicle.hold.hasActiveHold === true
+    return { ...vehicle, hold: {
+      ...vehicle.hold,
+      state: 'unknown', dataState: 'stale', hasActiveHold: null, tone: 'unverified',
+      lastKnownActiveHold,
+      label: lastKnownActiveHold ? 'Last verified hold — confirm in DealerMail' : 'Hold status not verified',
+      liveCheckStatus: check.status, liveCheckedAt: null,
+    } }
+  }
+  const held = check.activeCount > 0
   const hold = {
     ...vehicle.hold,
     state: verified ? (held ? (check.activeCount > 1 ? 'multiple' : 'primary') : 'none_observed') : 'unknown',
     dataState: verified ? 'current' : 'unavailable',
     hasActiveHold: verified ? held : null,
+    lastKnownActiveHold: verified ? false : vehicle.hold.lastKnownActiveHold === true,
+    lastKnownNoHold: false,
     position: held ? (check.activeCount > 1 ? 'multiple' : 'primary') : null,
     backupCount: held ? check.activeCount - 1 : 0,
     label: verified ? (held ? 'Active hold verified in DealerMail' : 'No active hold in DealerMail')

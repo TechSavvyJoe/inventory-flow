@@ -332,6 +332,9 @@ export interface WarrantyCheckRecord {
 }
 
 export interface HoldSummary {
+  /** A retained observation, never a claim of current hold status. */
+  lastKnownActiveHold?: boolean
+  lastKnownNoHold?: boolean
   state: 'primary' | 'backup' | 'multiple' | 'none_observed' | 'stale' | 'unknown'
   label: string
   canViewEvidence?: boolean

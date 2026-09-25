@@ -393,22 +393,44 @@ export async function loadD1Repository(d1, release, options = {}) {
     database,
     repository: d1SnapshotRepository,
     revision,
-    async commit() {
+    async commit(authorization) {
       if (database.closed) throw new Error('This request repository has already committed or failed')
       database.closed = true
-      if (!database.pending.length) return { committed: false, revision }
-      const guard = d1.prepare('UPDATE cloud_app_revision SET revision = CASE WHEN revision = ? THEN revision + 1 ELSE NULL END WHERE id = 1').bind(revision)
+      const mutation = database.pending.length > 0
+      if (!mutation && !authorization) return { committed: false, revision }
+      const conditions = ['revision = ?']
+      const params = [revision]
+      if (authorization) {
+        const { email, context } = authorization
+        // Check the exact server-owned identity used to authorize and audit
+        // this attempt inside the write transaction, not in a separate read.
+        // Membership changes need not bump the ledger revision to be caught.
+        conditions.push(`EXISTS (
+          SELECT 1 FROM cloud_memberships AS member
+          WHERE member.email = ? AND member.user_id = ? AND member.enabled = 1
+            AND member.name = ? COLLATE BINARY AND member.role = ? AND member.home_store = ?
+            AND (? = 0 OR (SELECT COUNT(*) FROM cloud_memberships AS candidate
+              WHERE candidate.enabled = 1 AND candidate.role IN ('porter', 'driver')
+                AND candidate.name = member.name COLLATE BINARY) = 1)
+        )`)
+        params.push(email, context.userId, context.user, context.authenticatedRole, context.authenticatedStore,
+          context.allowLegacyTransportAssignmentByName === true ? 1 : 0)
+      }
+      // A replay with no new rows still checks authorization before returning
+      // its protected record, but does not advance the workflow revision.
+      const guard = d1.prepare(`UPDATE cloud_app_revision SET revision = CASE WHEN ${conditions.join(' AND ')} THEN revision + ${mutation ? 1 : 0} ELSE NULL END WHERE id = 1`).bind(...params)
       try {
         const writes = await d1.batch([guard, ...database.pending.map(({ sql, params }) => d1.prepare(sql).bind(...params))])
         if (writes.some((result) => result.success === false)) throw new Error('Shared workflow transaction failed')
       } catch (error) {
         // Do not leak the database error, values, or SQL to API clients. A stale
-        // revision is the only failure safe for automatic request replay.
+        // revision or changed membership is safe to replay only after the
+        // Worker reloads membership and the service authorizes the action again.
         const message = `${error?.message ?? ''} ${error?.cause?.message ?? ''}`
         if (/NOT NULL constraint failed:\s*cloud_app_revision\.revision/i.test(message)) throw new RepositoryConflictError()
         throw new Error('Unable to save the shared workflow transaction')
       }
-      return { committed: true, revision: revision + 1 }
+      return { committed: mutation, revision: revision + (mutation ? 1 : 0) }
     },
   }
 }
