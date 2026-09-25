@@ -85,6 +85,10 @@ The repository includes a deterministic synthetic release with eight fabricated 
 3. Open `http://127.0.0.1:4173`.
 4. Before handing off a change, run `pnpm check`.
 
+`pnpm check` requires PowerShell 7 (`pwsh` on `PATH`) on macOS, Linux, and
+Windows. The daily-publisher regression tests run PowerShell against synthetic
+temporary files with all source and network helpers intercepted.
+
 The synthetic API listens on `127.0.0.1:4174`, keeps demo workflow changes in memory, and resets when it stops. Every fixture value is marked `SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS`. Local development uses a non-production demo identity; role/store preview values are not authentication.
 
 The Node server is synthetic-demo only: it needs an explicit synthetic release loader, keeps its ledger in memory, refuses a file-backed database, and refuses to start with `NODE_ENV=production`. Production runs on the Cloudflare Worker. Use `pnpm dev:demo` (or `pnpm start:demo` to serve the production build) for development.

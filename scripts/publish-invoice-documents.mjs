@@ -44,11 +44,14 @@ export function invoiceFiles({ parsed, enrichment, folder, fileExists = existsSy
   return parsed.results.flatMap((entry) => {
     const vin = String(entry?.vin ?? '').toUpperCase()
     const resource = enrichment.recordsByVin[vin]?.fordInvoice
+    const eligible = entry?.status === 'pdf' && VIN_RE.test(vin) && String(entry?.invoice?.vin ?? '').toUpperCase() === vin &&
+      resource?.available === true && resource?.dataState === 'current'
+    if (!eligible) return []
     const file = path.join(folder, `${vin}.pdf`)
-    return entry?.status === 'pdf' && VIN_RE.test(vin) && String(entry?.invoice?.vin ?? '').toUpperCase() === vin &&
-      resource?.available === true && resource?.dataState === 'current' && fileExists(file)
-      ? [{ vin, file }]
-      : []
+    // An advertised current document must not disappear from the upload batch
+    // and let the daily publisher report successful completion.
+    if (!fileExists(file)) throw new Error('INVOICE_DOCUMENT_MISSING')
+    return [{ vin, file }]
   })
 }
 
