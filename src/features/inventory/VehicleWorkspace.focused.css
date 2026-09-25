@@ -1,7 +1,8 @@
 /* Focused vehicle workspace: one fixed frame, one active pane, one scroller. */
+.inventory-workspace[data-has-issues="true"] { --vdp-tab-columns:4; --vdp-service-span:2; }
 @keyframes vdp-focus-backdrop-in { from { opacity:0; } to { opacity:1; } }
 @keyframes vdp-focus-panel-in { from { opacity:.72; transform:translateY(5px) scale(.996); } to { opacity:1; transform:translateY(0) scale(1); } }
-.vdp-focus-backdrop { display:block; position:fixed; inset:0; z-index:220; background:color-mix(in srgb,var(--ifx-neutral-950) 28%,transparent); animation:vdp-focus-backdrop-in 140ms ease-out; }
+.vdp-focus-backdrop { display:block; position:fixed; inset:0; z-index:var(--ifx-layer-workspace-backdrop); background:color-mix(in srgb,var(--ifx-neutral-950) 28%,transparent); animation:vdp-focus-backdrop-in 140ms ease-out; }
 .vdp-focus-backdrop.is-take-home-open,
 #inventory-vehicle-workspace.is-take-home-open { display:none !important; }
 #inventory-vehicle-workspace {
@@ -16,7 +17,7 @@
   --v10-surface: var(--ifx-neutral-0);
   --v10-surface-subtle: var(--ifx-neutral-50);
   --v10-warning: var(--ifx-warning);
-  position: fixed; inset: 12px; z-index: 230;
+  position: fixed; inset: 12px; z-index: var(--ifx-layer-workspace);
   width: auto; max-width: none; height: calc(100dvh - 24px); max-height: none;
   display: flex; flex-direction: column; overflow: hidden; transform: none;
   border: 1px solid var(--v10-border); border-radius: 8px;
@@ -455,12 +456,12 @@
   #inventory-vehicle-workspace .vdp-focus-identifiers .copyable-value__button { flex:none; }
   #inventory-vehicle-workspace .vdp-focus-identifiers .copyable-value { font-size:12px; }
   #inventory-vehicle-workspace .vdp-focus-identifiers dt { font-size:12px; }
-  /* All sections remain discoverable without horizontal swiping. Service owns
-     the sixth cell, keeping navigation and operational status together. */
-  #inventory-vehicle-workspace .vdp-focus-navigation { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:stretch; gap:var(--ifx-space-1); padding:var(--ifx-space-1) var(--ifx-space-2); }
+  /* With issue reporting, six tabs and service fit into two touch-sized rows.
+     Deployments without issues retain the existing three-column navigation. */
+  #inventory-vehicle-workspace .vdp-focus-navigation { display:grid; grid-template-columns:repeat(var(--vdp-tab-columns,3),minmax(0,1fr)); align-items:stretch; gap:var(--ifx-space-1); padding:var(--ifx-space-1) var(--ifx-space-2); }
   #inventory-vehicle-workspace .vdp-focus-tabs { display:contents; }
   #inventory-vehicle-workspace .vdp-focus-tabs button { min-width:0; margin:0; padding:var(--ifx-space-1); font-size:var(--ifx-text-sm); white-space:normal; border-radius:var(--ifx-radius-xs); }
-  #inventory-vehicle-workspace .vdp-focus-service { min-width:0; max-width:none; justify-content:center; margin:0; border-left:0; }
+  #inventory-vehicle-workspace .vdp-focus-service { grid-column:span var(--vdp-service-span,1); min-width:0; max-width:none; justify-content:center; margin:0; border-left:0; }
   #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link { width:100%; min-width:0; justify-content:center; padding-inline:var(--ifx-space-1); }
   #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link.is-compact { min-height:var(--ifx-control-height-md); padding:var(--ifx-space-1); border-radius:var(--ifx-radius-xs); }
   #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link__detail { justify-content:center; gap:0 4px; }

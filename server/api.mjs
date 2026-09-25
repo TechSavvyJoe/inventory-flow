@@ -201,7 +201,7 @@ function serveStatic(request, response, distDir, url) {
   securityHeaders(response)
   response.setHeader(
     'Content-Security-Policy',
-    "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; media-src 'self' blob:; connect-src 'self'",
+    "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; media-src 'self' blob:; connect-src 'self'",
   )
   response.setHeader('Content-Type', MIME_TYPES[path.extname(candidate).toLowerCase()] || 'application/octet-stream')
   response.setHeader('Content-Length', statSync(candidate).size)
@@ -227,6 +227,7 @@ function sendFile(file, response) {
 export function createApiHandler({ service, serveDist = false, distDir, workspaceRoot, identityResolver = createIdentityResolver(), adminDirectory } = {}) {
   if (!service) throw new Error('service is required')
   if (!identityResolver?.resolve) throw new Error('identityResolver is required')
+  const issuePhotos = new Map()
   return async function handler(request, response) {
     try {
       const url = new URL(request.url || '/', 'http://127.0.0.1')
@@ -264,10 +265,33 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
         return sendJson(response, 200, await adminDirectory.saveMember(await readJson(request), context, String(request.headers['idempotency-key'] ?? '')))
       }
       if (request.method === 'GET' && route === '/bootstrap') {
-        return sendJsonRevalidated(request, response, service.bootstrap(context))
+        // Activate together with the two reviewed issue write branches after
+        // Joe approves extending the protected employee-write contract.
+        return sendJsonRevalidated(request, response, { ...service.bootstrap(context), vehicleIssuesEnabled: false })
       }
       if (request.method === 'GET' && route === '/vehicles') {
         return sendJson(response, 200, service.listVehicles(queryObject(url), context))
+      }
+      if (request.method === 'GET' && route === '/vehicle-issues') {
+        return sendJson(response, 200, service.listVehicleIssues(queryObject(url), context))
+      }
+      const issueMatch = route.match(/^\/vehicle-issues\/([^/]+)$/)
+      if (request.method === 'GET' && issueMatch) {
+        return sendJson(response, 200, service.getVehicleIssue(pathSegment(issueMatch[1]), context))
+      }
+      const issuePhotoMatch = route.match(/^\/vehicle-issues\/([^/]+)\/photos\/([a-f0-9]{64})$/)
+      if (request.method === 'GET' && issuePhotoMatch) {
+        const issue = service.getVehicleIssue(pathSegment(issuePhotoMatch[1]), context)
+        const photo = issue.photos.find(photo => photo.id === issuePhotoMatch[2])
+        if (!photo) throw new HttpError('Photo not found.', 404, 'PHOTO_NOT_FOUND')
+        const bytes = issuePhotos.get(`${issue.vin}/${photo.id}`)
+        if (!bytes) throw new HttpError('Photo unavailable. Try again.', 503, 'PHOTO_UNAVAILABLE')
+        securityHeaders(response)
+        response.setHeader('Content-Type', 'image/jpeg')
+        response.setHeader('Cross-Origin-Resource-Policy', 'same-origin')
+        response.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'")
+        response.end(bytes)
+        return
       }
       const vehicleMatch = route.match(/^\/vehicles\/([^/]+)$/)
       if (request.method === 'GET' && vehicleMatch) {

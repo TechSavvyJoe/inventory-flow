@@ -20,7 +20,7 @@ interface OperationsQueueProps {
   vehicles?: VehicleRecord[]; currentUser?: string
   onAction: (id: string, input: AttentionEventInput) => Promise<AttentionItem>
 }
-const CATEGORIES: Array<[ActionCategory, string]> = [['all', 'All tasks'], ['moves', 'Vehicle moves'], ['holds', 'Hold follow-ups'], ['inventory', 'Inventory checks'], ['service', 'Service']]
+const CATEGORIES: Array<[ActionCategory, string]> = [['all', 'All tasks'], ['issues', 'Vehicle issues'], ['moves', 'Vehicle moves'], ['holds', 'Hold follow-ups'], ['inventory', 'Inventory checks'], ['service', 'Service']]
 
 function TaskVehicle({ item, vehicle }: { item: AttentionItem; vehicle?: VehicleRecord }) {
   const homeStore = vehicle?.homeStore || item.store
@@ -99,7 +99,7 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
   const scoped = useMemo(() => items.filter(item => scope === 'group' || belongsToActionStore(item, homeStore)), [items, scope, homeStore])
   const statusItems = scoped.filter(item => status === 'reviewed' ? item.status === 'resolved' : item.status !== 'resolved')
   const matchesSearch = (item: AttentionItem) =>
-    searchFieldsMatch(query, [taskTitle(item), item.vehicleName, item.stockNumber, item.vin, item.owner, item.assignedTo, item.store])
+    searchFieldsMatch(query, [taskTitle(item), item.type === 'vehicle_issue' ? item.whyItMatters : undefined, item.vehicleName, item.stockNumber, item.vin, item.owner, item.assignedTo, item.store])
   const priorityRank = { urgent: 0, high: 1, normal: 2, low: 3 }
   const taskItems = statusItems.filter(isActionable)
   const visible = groupByVehicle(taskItems
@@ -118,7 +118,7 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
     <div className="workflow-page-heading"><div><h1>Action center</h1><p>The next step for your store, in one place.</p></div>
       <div className="workflow-scope" role="group" aria-label="Queue location scope"><button type="button" aria-pressed={scope === 'home'} onClick={() => { if (confirmUnsavedWork()) setScope('home') } }>{homeStore}</button><button type="button" aria-pressed={scope === 'group'} onClick={() => { if (confirmUnsavedWork()) setScope('group') } }>All stores</button></div>
     </div>
-    <div className="workflow-tabs" role="group" aria-label="Task category">{CATEGORIES.map(([key, label]) => <button type="button" key={key} aria-pressed={category === key} onClick={() => { if (confirmUnsavedWork()) setCategory(key) } }>{label}<span>{categoryCounts(key)}</span></button>)}</div>
+    <div className="workflow-tabs" role="group" aria-label="Task category">{CATEGORIES.filter(([key]) => key !== 'issues' || items.some(item => item.type === 'vehicle_issue')).map(([key, label]) => <button type="button" key={key} aria-pressed={category === key} onClick={() => { if (confirmUnsavedWork()) setCategory(key) } }>{label}<span>{categoryCounts(key)}</span></button>)}</div>
     <div className="workflow-toolbar"><PredictiveSearchInput className="workflow-search" value={query} onChange={value => { if (confirmUnsavedWork()) setQuery(value) }} ariaLabel="Search work queue" clearLabel="Clear queue search" placeholder="Search vehicle, stock, VIN, or task" candidates={statusItems.filter(item => category === 'all' || actionCategory(item) === category).filter(matchesSearch).map(item => ({ id: item.id, label: item.vehicleName || item.stockNumber || taskTitle(item), detail: taskTitle(item), value: item.stockNumber || item.vehicleName || taskTitle(item), searchValues: [taskTitle(item), item.vehicleName, item.stockNumber, item.vin, item.owner, item.assignedTo, item.store] }))} />
       <div className="workflow-scope action-status-buttons" role="group" aria-label="Task status"><button type="button" aria-pressed={status === 'open'} onClick={() => { if (confirmUnsavedWork()) setStatus('open') } }>Open</button><button type="button" aria-pressed={status === 'reviewed'} onClick={() => { if (confirmUnsavedWork()) setStatus('reviewed') } }>Reviewed</button></div><span className="workflow-muted" role="status"><span>{visible.length} {visible.length === 1 ? 'task' : 'tasks'}</span>{alsoWorthKnowing.length ? ` · ${alsoWorthKnowing.length} informational` : ''}</span>
     </div>
@@ -150,10 +150,11 @@ function TaskRow({ row, vehicle, returnTo, reportDate, role, homeStore, currentU
   // One row is one vehicle, but each condition keeps its own workflow record: a
   // note about the hold has to land on the hold, not on the move that leads the
   // row. Service status is recorded on the service page instead.
-  const followUps = row.items.filter(item => item.type !== 'service_pending')
+  const followUps = row.items.filter(item => item.type !== 'service_pending' && item.type !== 'vehicle_issue')
   return <article role="listitem" className="action-row"><div className="action-row-content">
     <TaskVehicle item={lead} vehicle={vehicle}/>
     <div className="action-task"><strong>{taskTitle(lead)}</strong>
+      {lead.type === 'vehicle_issue' ? <p className="workflow-muted">{lead.whyItMatters}</p> : null}
       {relatedTasks.length > 0 ? <div className="action-task-related" aria-label="Other tasks for this vehicle">{relatedTasks.map(item => <Link key={item.id} to={withWorkspaceReturnPath(item.href!, returnTo)}>{taskLinkLabel(item)}</Link>)}</div> : null}
     </div>
     <div className="action-owner"><strong>{lead.assignedTo || lead.owner || 'Store manager'}</strong><span className={overdue ? 'workflow-overdue' : undefined}>{lead.followUpAt ? `Follow up ${formatDateTime(lead.followUpAt)}` : lead.dueAt ? `Due ${formatDate(lead.dueAt)}` : lead.status === 'resolved' ? 'Reviewed' : 'Next store review'}</span></div>

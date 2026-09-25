@@ -15,6 +15,11 @@ const REQUIRED_METHODS = Object.freeze([
   "listTransferRows",
   "listServiceEvents",
   "insertServiceEvent",
+  "vehicleIssuesEnabled",
+  "listVehicleIssueRows",
+  "listVehicleIssueEvents",
+  "insertVehicleIssue",
+  "appendVehicleIssueEvent",
   "supersedeTransferRequest",
   "upsertAttentionWorkflow"
 ])
@@ -84,4 +89,24 @@ export function listServiceEvents(context, ...args) {
 
 export function insertServiceEvent(context, ...args) {
   return invoke(context, 'insertServiceEvent', args)
+}
+
+export function vehicleIssuesEnabled(context, ...args) {
+  return invoke(context, 'vehicleIssuesEnabled', args)
+}
+
+export function listVehicleIssueRows(context, ...args) {
+  return invoke(context, 'listVehicleIssueRows', args)
+}
+
+export function listVehicleIssueEvents(context, ...args) {
+  return invoke(context, 'listVehicleIssueEvents', args)
+}
+
+export function insertVehicleIssue(context, ...args) {
+  return invoke(context, 'insertVehicleIssue', args)
+}
+
+export function appendVehicleIssueEvent(context, ...args) {
+  return invoke(context, 'appendVehicleIssueEvent', args)
 }

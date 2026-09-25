@@ -8,6 +8,11 @@
 
 :root {
   --ifx-layer-modal: 100;
+  /* Vehicle workspace portals sit above list overlays; nested issue dialogs
+     must remain above the workspace while its content is inert. */
+  --ifx-layer-workspace-backdrop: 220;
+  --ifx-layer-workspace: 230;
+  --ifx-layer-nested-modal: 240;
   --ifx-modal-scrim: rgb(7 23 34 / 55%);
   --ifx-disabled-opacity: 0.5;
   --nav-width: 188px;

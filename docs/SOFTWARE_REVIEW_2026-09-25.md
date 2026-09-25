@@ -4,6 +4,12 @@ Baseline: `4cdf3b0875b134bebf85612037d065ccc19ee308`. Repairs are on `fix/retain
 
 Validated implementation source: `4d0aef848e373c76c831cc68e69fbda5bf13be35`, including the final phone filter correction. The core sales interface is `afa6402b10a7e1cef3e3e97477fb8d7eb67bccf9`, following evidence/access repair `eb0609d` and release guard `7ca84e0`. Report updates are recorded in separate documentation commits.
 
+Later follow-up: [vehicle issues and additional attention repairs](VEHICLE_ISSUES.md)
+records the work beginning at `8db3ced`, including three newly repaired defects,
+manager-confirmed issue workflow preparation, and its separate activation gates.
+The validation history below describes the earlier implementation, not that
+follow-up's current test totals.
+
 ## Confirmed defects, ordered by severity
 
 | Priority | Finding and affected users | Evidence and reproduction | Repair |

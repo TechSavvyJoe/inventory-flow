@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import type { VehicleIssueContext } from '../issues/issue-model';
 import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus';
 import type { DealerMailEvidenceMessage, DealerMailHistoryRecord, ServiceReadiness, ServiceReadinessStatus } from "../../types";
 
@@ -427,6 +428,7 @@ export interface PublicScanAudit {
 }
 
 export interface InventoryVehicle {
+  canReportIssue?: boolean;
   id: string;
   vin: string;
   serviceReadiness?: ServiceReadiness;
@@ -546,7 +548,7 @@ export interface InventorySort {
   direction: "asc" | "desc";
 }
 
-export type VehicleWorkspaceTab = "overview" | "equipment" | "movement" | "hold" | "timeline" | "data";
+export type VehicleWorkspaceTab = "overview" | "equipment" | "movement" | "hold" | "timeline" | "data" | "issues";
 
 export type InventorySourceRecord = "public" | "dealeron" | "dealermail" | "movement";
 
@@ -582,6 +584,7 @@ export interface InventoryVehicleActionProps {
  * memory); tab, query, filters, sort and page stay internal to the list.
  */
 export interface InventoryExperienceProps extends InventoryVehicleActionProps {
+  issueContext?: VehicleIssueContext;
   homeStore: InventoryStore;
   vehicles: InventoryVehicle[];
   groupStores?: InventoryGroupStore[];
@@ -615,6 +618,7 @@ export interface VehicleWorkspaceProps extends Pick<
   InventoryVehicleActionProps,
   "onRequestVehicle" | "onMoveVehicle" | "onTrackMovement" | "onOpenListing"
 > {
+  issueContext?: VehicleIssueContext;
   returnLabel?: string;
   detailState?: VehicleDetailLoadState;
   onRetryDetail?: () => void;

@@ -23,7 +23,7 @@ import {
 
 
 export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
-  const { data, homeStore, role, currentUser } = useAppData()
+  const { data, homeStore, role, currentUser, refresh } = useAppData()
   const [params] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -186,6 +186,9 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
       <InventoryExperience
         key={`${accessContext}-${queryRequestKey}-${homeMode ? 'home' : 'inventory'}`}
         homeStore={store}
+        issueContext={data.vehicleIssuesEnabled === true || Boolean(data.vehicleIssues?.length)
+          ? { role, homeStore, currentUser, enabled: data.vehicleIssuesEnabled === true, issues: data.vehicleIssues ?? [], onChanged: refresh }
+          : undefined}
         vehicles={vehicles}
         detailState={activeDetail ? 'ready' : detailRequest.key === detailKey ? detailRequest.state : 'loading'}
         onRetryDetail={() => setDetailRetry(value => value + 1)}
@@ -195,7 +198,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         initialQuery={query}
         initialQuickView={query.trim() || requestedVin ? "all" : "no-hold"}
         queryRequestKey={queryRequestKey}
-        initialWorkspaceTab={(['overview', 'equipment', 'movement', 'hold', 'timeline', 'data'] as VehicleWorkspaceTab[]).find(tab => tab === params.get('tab')) ?? 'overview'}
+        initialWorkspaceTab={(['overview', 'equipment', 'movement', 'hold', 'timeline', 'data', 'issues'] as VehicleWorkspaceTab[]).find(tab => tab === params.get('tab') && (tab !== 'issues' || data.vehicleIssuesEnabled === true || Boolean(data.vehicleIssues?.length))) ?? 'overview'}
         searchPersistenceKey={accessContext}
         selectedVehicleId={selectedVehicleId}
         onSelectedVehicleChange={selectVehicle}

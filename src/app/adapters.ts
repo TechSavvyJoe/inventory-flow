@@ -633,6 +633,7 @@ export function toInventoryVehicle(
     // role. The predictive search indexes it, but the UI never renders it.
     authorizedSearchText: [vehicle.searchText, documentSearchText].filter(Boolean).join(' | ') || null,
     serviceReadiness: vehicle.serviceReadiness,
+    canReportIssue: vehicle.canReportIssue,
     autoCheckReport: vehicle.autoCheckReport
       ? {
           ...vehicle.autoCheckReport,

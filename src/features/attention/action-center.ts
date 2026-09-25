@@ -6,8 +6,9 @@ import type {
   UserRole,
 } from '../../types'
 import { serviceWorkflowStatus } from '../../lib/service-readiness'
+import { ISSUE_CATEGORIES, issueNextStep } from '../issues/issue-model'
 
-export type ActionCategory = 'all' | 'moves' | 'holds' | 'inventory' | 'service'
+export type ActionCategory = 'all' | 'moves' | 'holds' | 'inventory' | 'service' | 'issues'
 
 /** The signed-in store and role the queue is being read for. */
 export interface ActionViewer {
@@ -39,6 +40,7 @@ export const INFORMATIONAL_REASON_LABELS: Record<AttentionInformationalReason, s
 }
 
 export function actionCategory(item: AttentionItem): Exclude<ActionCategory, 'all'> {
+  if (item.type === 'vehicle_issue') return 'issues'
   if (item.type === 'service_pending') return 'service'
   if (TRANSPORT_TYPES.includes(item.type)) return 'moves'
   if (HOLD_TYPES.includes(item.type)) return 'holds'
@@ -113,7 +115,26 @@ export function actionCenterItems(data: BootstrapData, viewer: ActionViewer): At
       href: `/service?vin=${encodeURIComponent(vehicle.vin)}`, allowedActions: [], events: [],
     } satisfies AttentionItem]
   })
-  return [...items, ...serviceItems].map(item => classify(item, viewer))
+  const issueItems: AttentionItem[] = (data.vehicleIssues ?? []).map(issue => {
+    const local = issue.reportStore === viewer.store
+    const manager = viewer.role === 'manager' || viewer.role === 'group_manager'
+    const actionable = local && issue.allowedActions.length > 0 && (issue.status !== 'awaiting_review' || manager)
+    return {
+      id: `issue-${issue.id}`, type: 'vehicle_issue', status: issue.status === 'completed' ? 'resolved' : 'open',
+      priority: issue.priority, severity: issue.priority === 'urgent' ? 'critical' : 'info',
+      label: `${ISSUE_CATEGORIES[issue.category]} issue`, vehicleName: issue.vehicleName,
+      stockNumber: issue.stockNumber, vin: issue.vin, store: issue.reportStore, relatedStores: [issue.reportStore],
+      actionStore: issue.reportStore, actionability: actionable ? 'actionable' : 'informational',
+      informationalReason: actionable ? null : local ? 'role_scope' : 'other_store',
+      owner: issue.status === 'awaiting_review' ? `${issue.reportStore} manager` : issue.assignee || `${issue.reportStore} manager`,
+      whyItMatters: issue.description, recommendedAction: issueNextStep(issue),
+      href: `/attention?issue=${encodeURIComponent(issue.id)}`,
+      // Issue updates use their versioned ledger; generic review actions must
+      // never bypass manager completion or write to a derived attention item.
+      allowedActions: [], events: [], lastUpdatedAt: issue.updatedAt,
+    }
+  })
+  return [...items, ...serviceItems, ...issueItems].map(item => classify(item, viewer))
 }
 
 /**
@@ -168,6 +189,7 @@ export function taskDescription(item: AttentionItem) {
   return item.recommendedAction
 }
 export function taskLinkLabel(item: AttentionItem) {
+  if (item.type === 'vehicle_issue') return `Open ${item.label.toLowerCase()}`
   if (item.type === 'vehicle_alert') return 'Review vehicle'
   const category = actionCategory(item)
   if (category === 'service') return 'Update service'

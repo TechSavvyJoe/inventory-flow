@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AttentionItem, BootstrapData, StoreName, VehicleRecord } from '../../types'
+import type { AttentionItem, BootstrapData, StoreName, VehicleIssue, VehicleRecord } from '../../types'
 import {
   actionCenterItems, belongsToActionStore, groupByVehicle, isActionable, openStoreActionCount,
 } from './action-center'
@@ -35,6 +35,20 @@ function data(overrides: Partial<BootstrapData> = {}): BootstrapData {
 }
 
 describe('Action center triage on the client', () => {
+  it('retains issue tasks for vehicles absent from the feed, with no generic completion path', () => {
+    const issue: VehicleIssue = { id: 'synthetic-issue', vin: 'TESTDATAHWELL0001', stockNumber: 'SYN-1', vehicleName: 'Synthetic vehicle', homeStore: 'Howell', reportStore: 'Howell', category: 'fuel', priority: 'urgent', description: 'Fuel required before lot drive', status: 'open', version: 1, assignee: null, reportedBy: 'Synthetic sales', reportedByUserId: 'synthetic-sales', reportedAt: '2026-09-25T12:00:00Z', updatedAt: '2026-09-25T12:00:00Z', completedAt: null, completedBy: null, photoCount: 0, allowedActions: ['add_note', 'request_completion'] }
+    const fixture = data({ attention: [], vehicles: [], vehicleIssues: [issue] })
+    const [entry] = actionCenterItems(fixture, { store: 'Howell', role: 'sales' })
+    expect(entry).toMatchObject({ type: 'vehicle_issue', priority: 'urgent', actionability: 'actionable', href: '/attention?issue=synthetic-issue', allowedActions: [], events: [] })
+    expect(openStoreActionCount(fixture, { store: 'Howell', role: 'sales' })).toBe(1)
+    issue.status = 'awaiting_review'
+    expect(openStoreActionCount(fixture, { store: 'Howell', role: 'sales' })).toBe(0)
+    expect(openStoreActionCount(fixture, { store: 'Howell', role: 'manager' })).toBe(1)
+    expect(openStoreActionCount(fixture, { store: 'Lincoln', role: 'group_manager' })).toBe(0)
+    issue.status = 'completed'
+    expect(openStoreActionCount(fixture, { store: 'Howell', role: 'manager' })).toBe(0)
+    expect(actionCenterItems(fixture, { store: 'Howell', role: 'manager' })[0].status).toBe('resolved')
+  })
   it('counts one row per vehicle and leaves everything else classified but uncounted', () => {
     const fixture = data()
     const viewer = { store: 'Howell' as StoreName, role: 'manager' as const }
