@@ -70,7 +70,7 @@ Recorded on September 19 from `wrangler deployments list` for both Workers plus 
 | 2026-09-15 14:45 | `aa51f742-5021-40d7-9c2f-02e95b85052b` |
 | 2026-09-15 14:49 | `c86d1ab7-7ceb-458c-a3df-86838a88625d` |
 | 2026-09-15 14:51 | `9d0ac26c-6dfd-46d9-a33a-4c69c9e74885` (current) |
- The current version `9d0ac26c-6dfd-46d9-a33a-4c69c9e74885` predates every release 1.2.0/1.2.1 commit that touches the modules it bundles (`server/service-core.mjs`, `cloudflare/src/worker.mjs`, `repository.mjs`, `release-validation.mjs`) and the integration read expansion in `d61a5f4`, committed five minutes after that deploy. Treat it as stale: redeploy it from the same commit as the app Worker at the next app deployment (the same `pnpm check` → `pnpm cloud:validate` sequence, then `pnpm integrations:deploy`), then run `node scripts/verify-integration-deployment.mjs` as described under the activation gates.
+ The current version `9d0ac26c-6dfd-46d9-a33a-4c69c9e74885` predates every release 1.2.0/1.2.1 commit that touches the modules it bundles (`server/service-core.mjs`, `cloudflare/src/worker.mjs`, `repository.mjs`, `release-validation.mjs`) and the integration read expansion in `d61a5f4`, committed five minutes after that deploy. Treat it as stale: redeploy it from the same commit as the app Worker at the next app deployment (`pnpm cloud:release` now deploys both Workers from one commit and runs `pnpm check` and `pnpm cloud:validate` itself), then run `node scripts/verify-integration-deployment.mjs` as described under the activation gates.
 
 **Migrations.** The live D1 database carries the tables introduced by `0007`–`0009`, applied as single files (the `d1_migrations` table stays empty by design). Release 1.2.1 requires `0009_membership_admin.sql`.
 

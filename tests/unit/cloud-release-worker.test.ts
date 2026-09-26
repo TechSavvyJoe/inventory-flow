@@ -157,6 +157,21 @@ describe('Cloud Worker authentication boundary',()=>{
       expect(JSON.stringify(log.mock.calls)).not.toContain('TESTDATAHWELL0001')
     } finally { log.mockRestore() }
   })
+  it('logs known server-side failures by code and route template, and keeps 4xx refusals quiet',async()=>{
+    const log=vi.spyOn(console,'error').mockImplementation(()=>{})
+    try {
+      const jwt=await token()
+      const unavailable=await worker.fetch(request('/inventory?vin=SYNTHETIC-PRIVATE-QUERY',jwt),env)
+      expect(unavailable.status).toBe(503)
+      const body=await unavailable.json()
+      expect(log).toHaveBeenCalledTimes(1)
+      expect(log).toHaveBeenCalledWith({requestId:body.requestId,name:'Error',code:'FRONTEND_NOT_DEPLOYED',route:'/other'})
+      expect(JSON.stringify(log.mock.calls)).not.toContain('SYNTHETIC-PRIVATE')
+      const refused=await worker.fetch(request('/inventory',jwt,{method:'DELETE'}),env)
+      expect(refused.status).toBe(405)
+      expect(log).toHaveBeenCalledTimes(1)
+    } finally { log.mockRestore() }
+  })
   it('reports a decryption stage with the request ID without logging the upload',async()=>{
     const log=vi.spyOn(console,'error').mockImplementation(()=>{})
     try {

@@ -32,7 +32,7 @@ run it, against authenticated dealer sources, over CDP.
 | `check-design-system.mjs` | local/CI (`check:design-system`) | The design-system ratchet: sub-12px text and raw-color counts must not regress. |
 | `check-repo-safety.mjs` | local/CI (`check:repo-safety`) | The repository safety gate documented above. |
 | `configure-integration-secrets.mjs` | local, owner-run | Configures the integrations Worker's Wrangler secrets through the protected secret-store wrapper. |
-| `deploy-worker.mjs` | local, owner-run (`cloud:deploy`, `integrations:deploy`) | Cross-platform `wrangler deploy` wrapper that tags every version. |
+| `deploy-worker.mjs` | local, owner-run (`cloud:release`; `cloud:deploy` and `integrations:deploy` are aliases) | Paired release of both Workers from `origin/main`: runs `pnpm check` and `pnpm cloud:validate`, verifies the D1 ledger read-only, deploys with one tag, and records version receipts. See [Deploy checklist](DEPLOY_CHECKLIST.md). |
 | `dryrun_manager_disposition_check.mjs` | Windows host | Dry-run oracle: runs the manager-disposition overlay through the real importer/validators without publishing. |
 | `dryrun_manifest_check.mjs` | Windows host | Dry-run oracle: verifies a run-status manifest passes the real gate functions before the scheduled publish attempts it. |
 | `dryrun_resource_enrichment_check.mjs` | Windows host | Dry-run oracle: exercises the real resource-enrichment validators end-to-end on a candidate file. |
