@@ -39,6 +39,7 @@ export async function createCloudWorkerHarness(members) {
   const bundle = buildSyntheticCloudBundle()
   const envelope = encryptBundle(bundle, encryptionKey)
   const serialized = JSON.stringify(envelope)
+  const storedObjects = new Map()
 
   const database = new DatabaseSync(':memory:')
   applySyntheticSchema(database)
@@ -67,8 +68,22 @@ export async function createCloudWorkerHarness(members) {
     INVENTORY_DB: sqliteD1(database),
     RELEASE_SNAPSHOTS: {
       async get(key) {
-        expect(key).toBe(objectKey)
-        return { size: Buffer.byteLength(serialized), text: async () => serialized }
+        if (key === objectKey) return { size: Buffer.byteLength(serialized), text: async () => serialized }
+        const stored = storedObjects.get(key)
+        if (!stored) return null
+        return {
+          size: stored.bytes.length,
+          httpMetadata: stored.httpMetadata,
+          customMetadata: stored.customMetadata,
+          arrayBuffer: async () => stored.bytes.buffer.slice(stored.bytes.byteOffset, stored.bytes.byteOffset + stored.bytes.byteLength),
+        }
+      },
+      async put(key, value, options = {}) {
+        storedObjects.set(key, {
+          bytes: Buffer.from(value),
+          httpMetadata: options.httpMetadata,
+          customMetadata: options.customMetadata,
+        })
       },
     },
   }
@@ -97,14 +112,15 @@ export async function createCloudWorkerHarness(members) {
       ...(write && body !== undefined ? { body: JSON.stringify(body) } : {}),
     })
     const response = await worker.fetch(request, env)
-    const text = await response.text()
+    const bodyBytes = Buffer.from(await response.arrayBuffer())
+    const text = bodyBytes.toString('utf8')
     let json = null
     try { json = JSON.parse(text) } catch { json = null }
-    return { status: response.status, json }
+    return { status: response.status, json, bodyBytes, headers: response.headers }
   }
 
   return {
-    env, database, bundle, call,
+    env, database, bundle, call, storedObjects,
     revision: () => database.prepare('SELECT revision FROM cloud_app_revision WHERE id=1').get().revision,
     count: (table) => database.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n,
     close: () => { database.close(); vi.unstubAllGlobals() },

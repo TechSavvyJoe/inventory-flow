@@ -9,7 +9,8 @@ import { assertAdminOverviewAccess } from '../../server/admin-control-center.mjs
 import { readMembershipAdmin, saveMembership } from './membership-admin.mjs'
 import { serviceIntakeRows } from '../../server/service-intake.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
-import { readIssuePhoto } from './issue-photo-storage.mjs'
+import { ISSUE_BODY_BYTES, prepareIssuePhotos } from '../../server/issue-photos.mjs'
+import { readIssuePhoto, storeIssuePhotos } from './issue-photo-storage.mjs'
 
 const FORMAT = 'inventory-flow-private-release-v1'
 const MAX_UPLOAD = 25 * 1024 * 1024
@@ -28,10 +29,10 @@ function json(status, data) { return new Response(JSON.stringify(data), {status,
 export function errorRoute(requestUrl) {
   const pathname = new URL(requestUrl).pathname
   if (['/api/health', '/api/bootstrap', '/api/vehicles', '/api/transfers', '/api/attention', '/api/admin/overview', '/api/admin/members', '/internal/releases', '/internal/status', '/internal/readiness'].includes(pathname)) return pathname
-  const record = /^\/api\/(vehicles|transfers|attention)\/[^/]+(?:\/(service|invoice|equipment-pdf|events))?$/.exec(pathname)
+  const record = /^\/api\/(vehicles|transfers|attention)\/[^/]+(?:\/(service|invoice|equipment-pdf|events|issues))?$/.exec(pathname)
   if (record) return `/api/${record[1]}/:id${record[2] ? `/${record[2]}` : ''}`
-  const issue = /^\/api\/vehicle-issues(?:\/[^/]+(?:\/photos\/[a-f0-9]{64})?)?$/.exec(pathname)
-  if (issue) return pathname === '/api/vehicle-issues' ? pathname : pathname.includes('/photos/') ? '/api/vehicle-issues/:id/photos/:hash' : '/api/vehicle-issues/:id'
+  const issue = /^\/api\/vehicle-issues(?:\/[^/]+(?:\/(?:events|photos\/[a-f0-9]{64}))?)?$/.exec(pathname)
+  if (issue) return pathname === '/api/vehicle-issues' ? pathname : pathname.includes('/photos/') ? '/api/vehicle-issues/:id/photos/:hash' : pathname.endsWith('/events') ? '/api/vehicle-issues/:id/events' : '/api/vehicle-issues/:id'
   if (pathname.startsWith('/internal/invoices/')) return '/internal/invoices/:date/:vin'
   if (pathname.startsWith('/internal/equipment/')) return '/internal/equipment/:vin/:hash'
   if (pathname.startsWith('/assets/')) return '/assets/:file'
@@ -420,10 +421,11 @@ async function appApi(request,url,env,context,claims) {
   const adminMembersRoute=route==='/admin/members'
   if(adminOverview && !read) throw new HttpError('METHOD_NOT_ALLOWED',405)
   const issueReadRoute=/^\/vehicle-issues(?:\/[^/]+(?:\/photos\/[a-f0-9]{64})?)?$/.test(route)
-  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/(?:service|invoice|equipment-pdf)$/.test(route) || issueReadRoute || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
+  const issueWriteRoute=/^\/vehicles\/[^/]+\/issues$/.test(route) || /^\/vehicle-issues\/[^/]+\/events$/.test(route)
+  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/(?:service|invoice|equipment-pdf)$/.test(route) || issueReadRoute || issueWriteRoute || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
   // Only these routes accept writes. Answer 405 here, before the release is
   // decrypted and the D1 snapshot is loaded for a request that can never commit.
-  const writable=route==='/transfers' || /^\/vehicles\/[^/]+\/service$/.test(route) || /^\/(transfers|attention)\/[^/]+\/events$/.test(route) || adminMembersRoute
+  const writable=route==='/transfers' || /^\/vehicles\/[^/]+\/service$/.test(route) || /^\/(transfers|attention)\/[^/]+\/events$/.test(route) || issueWriteRoute || adminMembersRoute
   if(write && !writable) throw new HttpError('METHOD_NOT_ALLOWED',405)
   // The membership context was resolved from Access + D1 before this point.
   // Check it before reading the group directory or private release.
@@ -435,7 +437,9 @@ async function appApi(request,url,env,context,claims) {
   if(write && request.headers.get('origin')!==url.origin) throw new AccessError('SAME_ORIGIN_REQUIRED',403)
   const idempotency=request.headers.get('idempotency-key')
   if(write && (!idempotency || idempotency.length>160 || /[\x00-\x1f]/.test(idempotency))) throw new HttpError('IDEMPOTENCY_KEY_REQUIRED')
-  const input=write?await readJson(request,64*1024):null
+  const input=write?await readJson(request,issueWriteRoute?ISSUE_BODY_BYTES:64*1024):null
+  const issuePhotos=write&&issueWriteRoute?prepareIssuePhotos(input.photos):[]
+  const issueInput=write&&issueWriteRoute?{...input,photos:issuePhotos.map(photo=>photo.metadata)}:input
   if(adminMembersRoute) return json(200,read
     ? await readMembershipAdmin(env.INVENTORY_DB,context)
     : await saveMembership(env.INVENTORY_DB,input,context,idempotency))
@@ -454,8 +458,6 @@ async function appApi(request,url,env,context,claims) {
     if(read && adminOverview) result={...service.adminOverview(context,adminMembers),canManageMembers:true}
     else if(read && route==='/bootstrap') {
       result=service.bootstrap(context)
-      // The protected write allowlist is still awaiting explicit extension.
-      result.vehicleIssuesEnabled=false
       result.access={...result.access,authenticatedRole:context.authenticatedRole??context.role,authenticatedStore:context.authenticatedStore??context.store,canPreviewRoles:context.canPreviewRoles===true,canPreviewStores:context.canPreviewStores===true,rolePreviewActive:context.rolePreviewActive===true,storePreviewActive:context.storePreviewActive===true}
     }
     else if(read && route==='/vehicles') result=service.listVehicles(query,context)
@@ -470,6 +472,14 @@ async function appApi(request,url,env,context,claims) {
       // deny the bytes, not merely the next request.
       await memberContext(claims,env,request)
       return new Response(bytes,{headers:{...headers,'Content-Type':'image/jpeg','Cross-Origin-Resource-Policy':'same-origin','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"}})
+    }
+    else if(write && /^\/vehicles\/[^/]+\/issues$/.test(route)) {
+      result=service.createVehicleIssue(identifier,issueInput,context,idempotency);mutation=true
+      if(result.created) await storeIssuePhotos(env,result.record.vin,issuePhotos)
+    }
+    else if(write && /^\/vehicle-issues\/[^/]+\/events$/.test(route)) {
+      result=service.appendVehicleIssueEvent(identifier,issueInput,context,idempotency);mutation=true
+      if(result.created) await storeIssuePhotos(env,result.record.vin,issuePhotos)
     }
     else if(read && /^\/vehicles\/[^/]+$/.test(route)) result=service.getVehicle(identifier,context)
     else if(read && /^\/vehicles\/[^/]+\/service$/.test(route)) result=service.getServiceReadiness(identifier,context)

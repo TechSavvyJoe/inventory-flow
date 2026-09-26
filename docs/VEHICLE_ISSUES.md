@@ -1,9 +1,10 @@
 # Vehicle issues
 
-Status: the domain, private photo handling and interface are prepared. Employee
-HTTP save routes remain inactive pending Joe's explicit approval to extend the
-protected write allowlist. Synthetic browser previews intercept writes into a
-disposable ledger; they do not establish end-to-end HTTP upload acceptance.
+Status: active in source for the synthetic Node demo and hosted Worker. Joe
+approved the two employee write branches and the manager-confirmed completion
+rule. Production deployment and migration `0011_vehicle_issues.sql` remain
+separate operator steps; an older production schema continues to expose
+inventory while reporting stays unavailable.
 
 Vehicle issues are staff observations about a specific VIN: cleaning, fuel,
 mechanical concerns, damage, or another problem. They belong to Inventory
@@ -73,7 +74,7 @@ every object referenced by issue history and allow for in-flight writes.
 
 ## API and release boundary
 
-The proposed employee API extension has two POST branches:
+The protected employee API has two issue-specific POST branches:
 
 - `/api/vehicles/:vin/issues`: create a report with optional photos.
 - `/api/vehicle-issues/:id/events`: add a versioned update with optional photos.
@@ -89,9 +90,9 @@ return a clear unavailable response. Deployment and production migration are
 separate Joe-operated steps; local tests and synthetic browser checks do not
 establish physical-device, multi-employee or production acceptance.
 
-The two new POST branches require the explicit protected write-contract
-approval described in `AGENTS.md`; the original closed allowlist must not be
-silently replaced with a permissive route matcher.
+The two branches are pinned in the product-rule write-surface contract. Adding
+another write still requires the explicit approval described in `AGENTS.md`;
+the closed allowlist must not be replaced with a permissive route matcher.
 
 ## Related review findings
 
@@ -121,11 +122,11 @@ in the database. A follow-up should add a deliberate archived-vehicle history
 view and a durable vehicle identity for service records. Vehicle issues already
 preserve that identity and remain accessible after source removal.
 
-Remaining acceptance work for issues is explicit: authorize and connect the two
-employee save routes, add HTTP upload/failure/retry tests against both adapters,
-then test the unmocked browser workflow. Physical camera/library behavior,
-production authentication, production migrations, R2 recovery/cleanup and
-multi-employee operation remain separately unverified.
+The two employee save routes, HTTP upload/failure/retry behavior and the
+unmocked synthetic browser workflow are now connected and tested. Physical
+camera/library behavior, production authentication, production migration and
+deployment, R2 disaster recovery/cleanup and simultaneous multi-employee
+operation remain separately unverified.
 
 ## Local validation — September 25, 2026
 
@@ -141,9 +142,11 @@ Later documentation-only commits record the results below.
 - `pnpm exec playwright test --config playwright.cross-browser.config.ts`
   passed 110 tests across Chromium desktop/Android, Firefox desktop and WebKit
   desktop/mobile, with 5 intentional layout-specific skips (7.4 minutes).
-- A fresh production-build synthetic server also confirmed that the actual
-  HTTP bootstrap disables reporting and the vehicle workspace exposes no
-  inactive report button or Issues tab when it has no existing issue history.
+- Before activation, a fresh production-build synthetic server confirmed that
+  the HTTP bootstrap disabled reporting and hid the inactive controls. The
+  current bootstrap instead follows the ledger capability: migrated Node and
+  Worker schemas enable reporting, while an older Worker schema stays readable
+  with `vehicleIssuesEnabled: false`.
 - Chromium and WebKit issue previews passed at 390×844, 1024×768, 1320×820 and
   1440×900. Checks exercised photo preparation/rendering, assignment, manager
   review and completion, retained history, dialog layering, keyboard behavior,
@@ -151,7 +154,7 @@ Later documentation-only commits record the results below.
   into the synthetic domain service, not sent through employee HTTP routes.
 - Private Worker photo reads were tested with active membership, denied
   membership and revocation during the object read. These do not establish
-  acceptance of the proposed upload routes.
+  acceptance of the upload routes at that earlier checkpoint.
 - Screenshots and browser proof remain outside tracked source at
   `/tmp/inventory-issues-{report,detail,completed}-{chromium,webkit}-{width}.png`
   and `/tmp/inventory-issues-preview-{chromium,webkit}-proof.json`.
@@ -161,5 +164,19 @@ Later documentation-only commits record the results below.
   earlier missing-baseline gate. This does not establish acceptance of inactive
   issue-reporting uploads or replace the unmocked HTTP/browser checks above.
 
-The final independent review accepted the inactive preparation and the three
-attention repairs. It did not approve activation or production readiness.
+That review accepted the inactive preparation and the three attention repairs.
+The later activation is covered by the current write-surface, adapter and
+browser tests; it does not establish production readiness.
+
+## Activation validation — September 25, 2026
+
+- Real Node and Worker HTTP tests create, retry and update issue records; store
+  and retrieve sanitized encrypted photos; enforce reporting-store writes and
+  manager-only completion; preserve optimistic versions; and prove failed R2
+  storage or access revocation cannot commit issue history.
+- The protected write-surface test pins exactly seven employee POST branches,
+  including the two approved issue branches, and continues rejecting source
+  system writes and unsupported methods.
+- The unmocked Playwright demo flow passed on desktop and mobile: report with a
+  photo, assign the work, and confirm completion as a manager through the real
+  Node HTTP routes.

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { Buffer } from 'node:buffer'
 import { WorkflowError } from './workflow.mjs'
 
 export const ISSUE_PHOTO_BYTES = 500 * 1024
