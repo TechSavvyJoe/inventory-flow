@@ -8,6 +8,7 @@ const loaders = {
   transfers: () => import('../features/transfers/TransfersPage').then(module => ({ default: module.TransfersPage })),
   service: () => import('../features/service/ServicePage').then(module => ({ default: module.ServicePage })),
   attention: () => import('../features/attention/AttentionPage').then(module => ({ default: module.AttentionPage })),
+  overview: () => import('../features/overview/OverviewPage').then(module => ({ default: module.OverviewPage })),
   manager: () => import('../features/manager/ManagerPage').then(module => ({ default: module.ManagerPage })),
   updates: () => import('../features/attention/InventoryUpdatesPage').then(module => ({ default: module.InventoryUpdatesPage })),
   admin: () => import('../features/admin/AdminPage').then(module => ({ default: module.AdminPage })),
@@ -17,6 +18,7 @@ export const InventoryPage = lazy(loaders.inventory)
 export const TransfersPage = lazy(loaders.transfers)
 export const ServicePage = lazy(loaders.service)
 export const AttentionPage = lazy(loaders.attention)
+export const OverviewPage = lazy(loaders.overview)
 export const ManagerPage = lazy(loaders.manager)
 export const InventoryUpdatesPage = lazy(loaders.updates)
 export const AdminPage = lazy(loaders.admin)

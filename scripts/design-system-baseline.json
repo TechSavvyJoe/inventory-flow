@@ -132,6 +132,13 @@
       "important": 1,
       "idSelectors": 0
     },
+    "src/features/overview/overview.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
     "src/features/issues/issues.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -207,7 +214,7 @@
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 503
+      "idSelectors": 502
     },
     "src/features/inventory/WarrantyOutlook.css": {
       "smallText": 0,
