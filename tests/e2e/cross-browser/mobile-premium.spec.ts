@@ -272,7 +272,11 @@ async function openVehicleService(page: Page) {
 test('workflow returns keep the filtered inventory vehicle through service and a move form', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const workspace = await openFilteredVehicle(page)
-  const documentStarted = await page.evaluate(() => performance.timeOrigin)
+  const documentMarker = await page.evaluate(() => {
+    const marker = crypto.randomUUID()
+    Object.defineProperty(window, '__inventoryFlowE2EDocumentMarker', { value: marker, configurable: true })
+    return marker
+  })
   await openVehicleService(page)
   const origin = new URL(page.url()).searchParams.get('returnTo')!
   expect(new URL(origin, page.url()).searchParams.get('vin')).toBe(workflowVin)
@@ -287,7 +291,7 @@ test('workflow returns keep the filtered inventory vehicle through service and a
   await expect(workspace).toHaveCount(0)
   await expect(page.getByRole('combobox', { name: /Search inventory/i })).toHaveValue(workflowSearch)
   expect(new URL(page.url()).searchParams.has('q')).toBe(false)
-  expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentStarted)
+  expect(await page.evaluate(() => Reflect.get(window, '__inventoryFlowE2EDocumentMarker'))).toBe(documentMarker)
 })
 
 test('native Back and Forward restore vehicle selection and the private inventory search', async ({ page }) => {

@@ -1,9 +1,7 @@
 import { createCipheriv, createHash, randomBytes } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { loadLatestCompletedRelease } from '../server/importer.mjs'
 import { RELEASE_FORMAT, validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
-import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 import { isMainModule } from './lib/is-main.mjs'
 
 const APP_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -36,7 +34,6 @@ const DEFINITE_RELEASE_REJECTION_CODES = new Set([
   'PRIVATE_HOST_REQUIRED',
   'PUBLISHER_AUTHENTICATION_REQUIRED',
   'PUBLISHER_IDENTITY_REQUIRED',
-  'PUBLISH_CONFLICT_RETRY',
   'RELEASE_KEY_NOT_CONFIGURED',
 ])
 
@@ -191,7 +188,7 @@ function outcomeUnknown(envelope, cause) {
   return new CloudPublicationReconciliationError('CLOUD_PUBLICATION_OUTCOME_UNKNOWN', envelope?.bundleSha256, { cause })
 }
 
-export async function publishEnvelope(envelope, { environment = process.env, fetchImpl = fetch } = {}) {
+export async function publishEnvelope(envelope, { environment = process.env, fetchImpl = fetch, beforeRequest = null } = {}) {
   const endpoint = publicationEndpoint(requiredEnvironment('INVENTORY_OPS_CLOUD_URL', environment))
   const body = JSON.stringify(envelope)
   if (Buffer.byteLength(body, 'utf8') > MAX_ENVELOPE_BYTES) throw new Error('Encrypted release exceeds the permitted upload size')
@@ -206,6 +203,9 @@ export async function publishEnvelope(envelope, { environment = process.env, fet
     },
     body,
   }
+  // The guarded publisher installs its durable exact-candidate marker here,
+  // after every local request preflight but before the first network call.
+  if (beforeRequest) await beforeRequest(envelope)
   let response
   try {
     response = await fetchImpl(endpoint, request)
@@ -228,7 +228,10 @@ export async function publishEnvelope(envelope, { environment = process.env, fet
       ? payload.code
       : null
     if (!code || !DEFINITE_RELEASE_REJECTION_CODES.has(code)) throw outcomeUnknown(envelope)
-    throw new Error(`Cloud release publish failed (${response.status}: ${code})`)
+    const rejection = new Error(`Cloud release publish failed (${response.status}: ${code})`)
+    rejection.definiteNoCommit = true
+    rejection.bundleSha256 = envelope.bundleSha256
+    throw rejection
   }
   if (!payload || !['published', 'already_published'].includes(payload.status) || payload.reportDate !== envelope.reportDate) {
     throw outcomeUnknown(envelope)
@@ -236,20 +239,12 @@ export async function publishEnvelope(envelope, { environment = process.env, fet
   return { status: payload.status, reportDate: payload.reportDate }
 }
 
-export async function main() {
-  publicationEndpoint(requiredEnvironment('INVENTORY_OPS_CLOUD_URL'))
-  accessHeaders()
-  const workspaceRoot = resolveWorkspaceRoot(import.meta.url)
-  const release = loadLatestCompletedRelease({ workspaceRoot })
-  if (release.sourceRuns?.public?.status !== 'current' || release.sourceRuns?.dealerMail?.status !== 'current') {
-    throw new Error('Refusing to publish because the public or DealerMail source is not current')
-  }
-
-  const envelope = encryptBundle(cloudReleaseFrom(release), base64Key(requiredEnvironment('INVENTORY_OPS_RELEASE_ENCRYPTION_KEY_BASE64')))
-  const payload = await publishEnvelope(envelope)
-  // This output is intentionally limited to publish state and report date. It
-  // never contains credentials, source data, customer details, or raw notes.
-  process.stdout.write(`${payload.status}: ${payload.reportDate}\n`)
+export async function main({ syncMain = null } = {}) {
+  // Compatibility entry point only. Repository-supported publication always
+  // uses the lock, durable marker, exact verification, and receipt in the sync
+  // coordinator; this low-level crypto/HTTP module never publishes by itself.
+  const guardedMain = syncMain ?? (await import('./sync-cloud-release.mjs')).main
+  return guardedMain()
 }
 
 export function publisherFailureMessage(error) {

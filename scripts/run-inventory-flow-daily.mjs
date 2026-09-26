@@ -8,7 +8,7 @@ import { cloudBundleSha256, cloudReleaseFrom } from './publish-cloud-release.mjs
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 import { assessOasisCapture } from './lib/oasis-parser.mjs'
-import { acquirePublicationLock, assertInheritedPublicationLock, receiptSourceHashes, releasePublicationLock } from './sync-cloud-release.mjs'
+import { acquirePublicationLock, assertInheritedPublicationLock, readPublicationReconciliation, receiptSourceHashes, releasePublicationLock } from './sync-cloud-release.mjs'
 
 const STORES = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
 const WORKSPACE_ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -940,6 +940,43 @@ function retainedPublicationReconciliation({ reportDate, intradayStatusPath, man
   }
 }
 
+function retainedGlobalPublicationReconciliation(workspaceRoot = WORKSPACE_ROOT) {
+  try {
+    const state = readPublicationReconciliation(workspaceRoot)
+    if (!state) return null
+    return {
+      consistent: true,
+      reportDate: state.reportDate,
+      failureCode: state.failureCode,
+      candidate: {
+        bundleSha256: state.candidate.bundleSha256,
+        dealerMailSha256: state.candidate.sourceHashes.dealerMail,
+      },
+    }
+  } catch {
+    return { consistent: false, reportDate: null, failureCode: 'PUBLICATION_RECONCILIATION_STATE_INVALID', candidate: null }
+  }
+}
+
+function publicationAttemptForCandidate({ reportDate, bundleSha256, sourceHashes, holdRefresh }) {
+  let state
+  try {
+    state = readPublicationReconciliation(WORKSPACE_ROOT)
+  } catch {
+    return { present: true, consistent: false, state: null }
+  }
+  if (!state) return null
+  const consistent = state.reportDate === reportDate &&
+    sameHash(state.candidate.bundleSha256, bundleSha256) &&
+    state.candidate.holdRefresh === holdRefresh &&
+    ['public', 'dealerMail', 'resources', 'managerDisposition', 'managerDispositionBinding'].every((field) => {
+      const expected = sourceHashes[field] ?? null
+      const actual = state.candidate.sourceHashes[field] ?? null
+      return expected === null ? actual === null : sameHash(actual, expected)
+    })
+  return { present: true, consistent, state }
+}
+
 async function runIntradayHoldRefresh({ options, reportDate, manifestPath, releasePath, receiptPath, intradayStatusPath, warnings, steps }) {
   const retainedReconciliation = retainedPublicationReconciliation({ reportDate, intradayStatusPath, manifestPath })
   if (retainedReconciliation) {
@@ -1077,6 +1114,12 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
     }
 
     const publication = publish(reportDate, true, steps, { holdRefresh: true, expectedSourceHashes: built.sourceHashes })
+    const durableAttempt = publicationAttemptForCandidate({
+      reportDate,
+      bundleSha256: built.bundleSha256,
+      sourceHashes: built.sourceHashes,
+      holdRefresh: true,
+    })
     const afterReceipt = readReceiptStateAfterPublication(receiptPath)
     const publicationOutcome = classifyPublicationOutcome({
       processOk: publication.ok,
@@ -1084,7 +1127,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
       afterState: afterReceipt,
       expectedHashes: built.sourceHashes,
       reportDate,
-      publisherOutput: afterReceipt.lookupFailed
+      publisherOutput: afterReceipt.lookupFailed || durableAttempt
         ? `${publication.output}\nCLOUD_PUBLICATION_OUTCOME_UNKNOWN`
         : publication.output,
     })
@@ -1147,7 +1190,9 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
 
     if (publicationOutcome === 'publication_outcome_unknown') {
       keepCandidate = true
-      publishedFailureCode = 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
+      publishedFailureCode = durableAttempt && !durableAttempt.consistent
+        ? 'PUBLICATION_RECONCILIATION_STATE_INVALID'
+        : 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
       const candidateBundleSha256 = publishedCandidateBundleSha256(publication.output, built.bundleSha256)
       candidateEvidence = {
         bundleSha256: candidateBundleSha256,
@@ -1170,7 +1215,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
       writeIntradayStatus(intradayStatusPath, {
         reportDate,
         status,
-        failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+        failureCode: publishedFailureCode,
         summary,
         validation: built.validation,
         warnings,
@@ -1178,7 +1223,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
         reconciliationRequired: true,
         candidate: candidateEvidence,
       })
-      result = { ok: false, failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN', summary, validation: built.validation, manifestPath, releasePath }
+      result = { ok: false, failureCode: publishedFailureCode, summary, validation: built.validation, manifestPath, releasePath }
       return result
     }
 
@@ -1186,7 +1231,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
   } catch (error) {
     if (keepCandidate) {
       const failureCode = publishedFailureCode ?? 'POST_PUBLISH_STATE_RECORD_FAILED'
-      const outcomeUnknown = failureCode === 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
+      const outcomeUnknown = ['CLOUD_PUBLICATION_OUTCOME_UNKNOWN', 'PUBLICATION_RECONCILIATION_STATE_INVALID'].includes(failureCode)
       const summary = outcomeUnknown
         ? `Inventory Flow ${reportDate}: the cloud publication outcome remains unknown and requires reconciliation before another refresh.`
         : `Inventory Flow ${reportDate}: the intraday hold release is published and verified, but post-publication state recording is incomplete.`
@@ -1256,6 +1301,26 @@ async function runDailyUnlocked(options) {
       warnings: release.warnings ?? [],
     })
     return { ok: true, summary, validation, manifestPath, releasePath }
+  }
+
+  const retainedGlobalReconciliation = retainedGlobalPublicationReconciliation()
+  if (retainedGlobalReconciliation) {
+    const failureCode = retainedGlobalReconciliation.consistent
+      ? 'PUBLICATION_RECONCILIATION_REQUIRED'
+      : 'PUBLICATION_RECONCILIATION_STATE_INVALID'
+    const summary = retainedGlobalReconciliation.consistent
+      ? `Inventory Flow publication is blocked: the ${retainedGlobalReconciliation.reportDate} candidate SHA-256 ${retainedGlobalReconciliation.candidate.bundleSha256} requires exact-hash reconciliation before any new capture, rebuild, or publish.`
+      : 'Inventory Flow publication is blocked: the durable publication-reconciliation marker is malformed or unreadable and requires operator repair before any new capture, rebuild, or publish.'
+    return {
+      ok: false,
+      failureCode,
+      summary,
+      validation: {},
+      manifestPath,
+      releasePath,
+      reconciliationRequired: true,
+      candidate: retainedGlobalReconciliation.candidate,
+    }
   }
 
   if (options.refreshHolds) {
@@ -1340,15 +1405,33 @@ async function runDailyUnlocked(options) {
   let candidate = null
   if (!options.noPublish) {
     const publication = publish(reportDate, options.forcePublish, steps)
+    const durableAttempt = publicationAttemptForCandidate({
+      reportDate,
+      bundleSha256: built.bundleSha256,
+      sourceHashes: built.sourceHashes,
+      holdRefresh: false,
+    })
     publishOk = publication.ok
     if (publishOk) {
       publishStatus = 'published_or_already_verified'
     } else {
-      const failure = classifyFailedPublication({
-        publisherOutput: publication.output,
-        fallbackBundleSha256: built.bundleSha256,
-        dealerMailSha256: built.sourceHashes.dealerMail,
-      })
+      const failure = durableAttempt
+        ? {
+            status: 'cloud_publication_outcome_unknown',
+            failureCode: durableAttempt.consistent
+              ? 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
+              : 'PUBLICATION_RECONCILIATION_STATE_INVALID',
+            reconciliationRequired: true,
+            candidate: {
+              bundleSha256: built.bundleSha256,
+              dealerMailSha256: built.sourceHashes.dealerMail,
+            },
+          }
+        : classifyFailedPublication({
+            publisherOutput: publication.output,
+            fallbackBundleSha256: built.bundleSha256,
+            dealerMailSha256: built.sourceHashes.dealerMail,
+          })
       publishStatus = failure.status
       failureCode = failure.failureCode
       reconciliationRequired = failure.reconciliationRequired
@@ -1451,8 +1534,10 @@ export const internals = {
   formatStores,
   parseArgs,
   publish,
+  publicationAttemptForCandidate,
   publishedCandidateBundleSha256,
   readReceiptStateAfterPublication,
+  retainedGlobalPublicationReconciliation,
   retainedPublicationReconciliation,
   reuseExistingOasisCapture,
   runDaily,

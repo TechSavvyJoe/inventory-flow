@@ -13,6 +13,7 @@ param(
   [string]$ReportDate,
   [switch]$SkipPhotoCache,
   [switch]$HoldRefresh,
+  [switch]$ReconcilePending,
   [switch]$Force,
   [string]$WorkspaceRoot
 )
@@ -48,6 +49,7 @@ if (-not (Test-Path -LiteralPath $PythonExecutable)) {
 }
 $LogDir        = Join-Path $WorkspaceRoot 'work\app-feed-status'
 $PublicationLockPath = Join-Path $LogDir '.publication.lock'
+$PublicationReconciliationPath = Join-Path $LogDir 'publication-reconciliation.json'
 $PublicationLockOwnerEnvironment = 'INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID'
 $SecretPath    = Join-Path $AppRoot 'runtime\cloud-secrets\publisher.dpapi'
 $IntegrationExpectedPath = Join-Path $AppRoot 'runtime\integration-expected-release.json'
@@ -155,6 +157,50 @@ function Invoke-NativeCapture {
   [pscustomobject]@{
     Output   = [string]$output
     ExitCode = [int]$nativeExitCode
+  }
+}
+
+function Get-PendingPublicationReconciliation {
+  if (-not (Test-Path -LiteralPath $PublicationReconciliationPath)) { return $null }
+  try {
+    $item = Get-Item -LiteralPath $PublicationReconciliationPath -Force
+    if ($item.PSIsContainer -or ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw 'invalid marker type'
+    }
+    $state = Get-Content -LiteralPath $PublicationReconciliationPath -Raw | ConvertFrom-Json
+    $parsedRecordedAt = [DateTimeOffset]::MinValue
+    $recordedAtValid = [DateTimeOffset]::TryParse([string]$state.recordedAt, [ref]$parsedRecordedAt)
+    $expectedStateFields = @('candidate', 'failureCode', 'reconciliationRequired', 'recordedAt', 'reportDate', 'schemaVersion', 'status')
+    $actualStateFields = @($state.PSObject.Properties.Name | Sort-Object)
+    if ((Compare-Object $expectedStateFields $actualStateFields) -or
+        $state.schemaVersion -ne 1 -or
+        $state.status -cne 'publication_reconciliation_required' -or
+        $state.reconciliationRequired -ne $true -or
+        [string]$state.reportDate -notmatch '^\d{4}-\d{2}-\d{2}$' -or
+        -not $recordedAtValid -or
+        [string]$state.failureCode -notin @('CLOUD_PUBLICATION_ATTEMPT_IN_PROGRESS', 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN', 'CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED')) {
+      throw 'invalid marker schema'
+    }
+    $expectedCandidateFields = @('bundleSha256', 'holdRefresh', 'sourceHashes')
+    $actualCandidateFields = @($state.candidate.PSObject.Properties.Name | Sort-Object)
+    if ((Compare-Object $expectedCandidateFields $actualCandidateFields) -or
+        [string]$state.candidate.bundleSha256 -notmatch '^[a-fA-F0-9]{64}$' -or
+        $state.candidate.holdRefresh -isnot [bool]) {
+      throw 'invalid candidate schema'
+    }
+    $sourceFields = @($state.candidate.sourceHashes.PSObject.Properties.Name | Sort-Object)
+    $expectedSourceFields = @('dealerMail', 'managerDisposition', 'managerDispositionBinding', 'public', 'resources')
+    if (Compare-Object $expectedSourceFields $sourceFields) { throw 'invalid source-hash schema' }
+    foreach ($required in @('public', 'dealerMail', 'resources')) {
+      if ([string]$state.candidate.sourceHashes.$required -notmatch '^[a-fA-F0-9]{64}$') { throw 'invalid required source hash' }
+    }
+    foreach ($optional in @('managerDisposition', 'managerDispositionBinding')) {
+      $value = $state.candidate.sourceHashes.$optional
+      if ($null -ne $value -and [string]$value -notmatch '^[a-fA-F0-9]{64}$') { throw 'invalid optional source hash' }
+    }
+    return $state
+  } catch {
+    throw 'PUBLICATION_RECONCILIATION_STATE_INVALID'
   }
 }
 
@@ -336,7 +382,19 @@ try {
   $pipelineLock = Enter-PublicationPipelineLock
   Write-Log "=== daily-cloud-publish start (host=$env:COMPUTERNAME user=$env:USERNAME) ==="
 
-  $date = Resolve-ReportDate
+  # sync-cloud-release.mjs installs this cross-date exact-candidate marker
+  # before its first POST network call. Check it before loading secrets,
+  # rebuilding enrichment, or honoring -Force so no scheduled lane can create
+  # a second candidate while the first attempt still needs reconciliation.
+  $pendingReconciliation = Get-PendingPublicationReconciliation
+  if ($pendingReconciliation -and -not $ReconcilePending) {
+    throw ("PUBLICATION_RECONCILIATION_REQUIRED candidate_bundle_sha256={0}" -f ([string]$pendingReconciliation.candidate.bundleSha256).ToLowerInvariant())
+  }
+  if ($ReconcilePending -and -not $pendingReconciliation) {
+    throw 'PUBLICATION_RECONCILIATION_NOT_FOUND'
+  }
+
+  $date = if ($ReconcilePending) { [string]$pendingReconciliation.reportDate } else { Resolve-ReportDate }
   Write-Log "report date: $date"
 
   if ($HoldRefresh -and [string]::IsNullOrWhiteSpace($env:INVENTORY_OPS_EXPECTED_SOURCE_HASHES_JSON)) {
@@ -359,6 +417,27 @@ try {
     [System.Environment]::SetEnvironmentVariable($property.Name, [string]$property.Value)
   }
   Write-Log ("secrets loaded: {0} ({1})" -f $secretNames.Count, ($secretNames -join ', '))
+
+  if ($ReconcilePending) {
+    Push-Location $AppRoot
+    try {
+      Write-Log ("publication reconciliation: verifying exact retained candidate {0}" -f ([string]$pendingReconciliation.candidate.bundleSha256).ToLowerInvariant())
+      $reconcileRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\sync-cloud-release.mjs', '--reconcile-pending')
+      if ($reconcileRun.ExitCode -ne 0 -or $reconcileRun.Output -notmatch '"publication"\s*:\s*"reconciled_exact_candidate"') {
+        Write-Log "publication reconciliation FAILED: $($reconcileRun.Output.Trim())" 'ERROR'
+        throw 'PUBLICATION_RECONCILIATION_NOT_VERIFIED'
+      }
+      $receiptPath = Join-Path $LogDir ("{0}.json" -f ([string]$pendingReconciliation.reportDate))
+      $verifiedReceipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
+      if ([string]$verifiedReceipt.bundleSha256 -cne ([string]$pendingReconciliation.candidate.bundleSha256).ToLowerInvariant()) {
+        throw 'PUBLICATION_RECONCILIATION_RECEIPT_MISMATCH'
+      }
+      $verifiedPublicationAvailable = $true
+      Complete-PublicationFollowups -Receipt $verifiedReceipt -Date ([string]$pendingReconciliation.reportDate) -ReuseDocuments:([bool]$pendingReconciliation.candidate.holdRefresh)
+      Write-Log '=== daily-cloud-publish RECONCILED EXACT CANDIDATE ==='
+      exit 0
+    } finally { Pop-Location }
+  }
 
   # A verified inventory release still needs its document and completion
   # follow-ups. Reuse the receipt without re-scraping or republishing sources.

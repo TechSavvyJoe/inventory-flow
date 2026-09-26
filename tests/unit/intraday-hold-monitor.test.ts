@@ -203,7 +203,7 @@ describe('intraday hold task monitor', () => {
       status: 'intraday_holds_publication_outcome_unknown',
       reconciliationRequired: true,
       candidateBundleSha256: candidateHash,
-      failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+      failureCode: 'CLOUD_PUBLICATION_ATTEMPT_IN_PROGRESS',
     })
     const scenario = {
       now: '2026-09-25T12:00:00-04:00',
@@ -226,6 +226,62 @@ describe('intraday hold task monitor', () => {
 
     expect(run(root, { ...scenario, now: '2026-09-25T12:15:00-04:00' })).toEqual({ started: 0, events: 0 })
     expect(readdirSync(path.join(root, 'work/hold-refresh-monitor/alerts'))).toHaveLength(1)
+  })
+
+  it('uses the cross-date publisher marker as authoritative and never starts the writer', () => {
+    const root = workspace()
+    const candidateHash = 'E'.repeat(64)
+    writeReceipts(root)
+    writeFileSync(path.join(root, 'work/app-feed-status/publication-reconciliation.json'), JSON.stringify({
+      schemaVersion: 1,
+      status: 'publication_reconciliation_required',
+      reconciliationRequired: true,
+      reportDate: '2026-09-24',
+      failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+      recordedAt: '2026-09-24T20:00:00.000Z',
+      candidate: {
+        bundleSha256: candidateHash,
+        holdRefresh: false,
+        sourceHashes: {
+          public: '1'.repeat(64), dealerMail: '2'.repeat(64), resources: '3'.repeat(64),
+          managerDisposition: null, managerDispositionBinding: null,
+        },
+      },
+    }))
+
+    const result = run(root, {
+      now: '2026-09-25T12:00:00-04:00',
+      initial: ready(1, '2026-09-25T11:25:00-04:00'),
+    })
+
+    expect(result).toEqual({ started: 0, events: 1 })
+    expect(JSON.parse(readFileSync(path.join(root, 'work/hold-refresh-monitor/active-alert.json'), 'utf8'))).toMatchObject({
+      code: 'intraday_hold_publication_reconciliation_required',
+      summary: expect.stringContaining(candidateHash),
+      evidence: {
+        reconciliationRequired: true,
+        reconciliationSource: 'global_marker',
+        candidateBundleSha256: candidateHash,
+      },
+    })
+  })
+
+  it('fails closed on a malformed cross-date publisher marker without starting the writer', () => {
+    const root = workspace()
+    writeReceipts(root)
+    writeFileSync(path.join(root, 'work/app-feed-status/publication-reconciliation.json'), '{truncated marker')
+
+    expect(run(root, {
+      now: '2026-09-25T12:00:00-04:00',
+      initial: ready(1, '2026-09-25T11:25:00-04:00'),
+    })).toEqual({ started: 0, events: 1 })
+    const alert = JSON.parse(readFileSync(path.join(root, 'work/hold-refresh-monitor/active-alert.json'), 'utf8'))
+    expect(alert).toMatchObject({
+      code: 'intraday_hold_publication_reconciliation_required',
+      evidence: { reconciliationRequired: true, reconciliationSource: 'global_marker' },
+    })
+    expect(alert.evidence.reasons).toContain('publication_reconciliation_marker_invalid')
+    expect(alert.evidence.reasons).toContain('candidate_bundle_hash_missing_or_invalid')
   })
 
   it.each(['missing', 'corrupt'])('uses the reconciliation manifest when hold status is %s and never starts the writer', (statusCondition) => {

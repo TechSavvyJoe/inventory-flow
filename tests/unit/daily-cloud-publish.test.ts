@@ -52,6 +52,10 @@ if ($global:HarnessScenario.secretPresent) {
 if ($global:HarnessScenario.lockPresent) {
   Set-Content -NoNewline -LiteralPath (Join-Path $WorkspaceRoot 'work/app-feed-status/.publication.lock') -Value '{"pid":999999,"ownerId":"synthetic-other-task"}'
 }
+if ($global:HarnessScenario.preexistingReconciliationMarker) {
+  $global:HarnessScenario.preexistingReconciliationMarker | ConvertTo-Json -Depth 8 |
+    Set-Content -LiteralPath (Join-Path $WorkspaceRoot 'work/app-feed-status/publication-reconciliation.json')
+}
 
 function global:Get-Command {
   param([string]$Name, [string]$ErrorAction)
@@ -73,6 +77,26 @@ function global:Invoke-SyntheticNative {
   $event | ConvertTo-Json -Compress | Add-Content -LiteralPath $global:HarnessScenario.events
   switch ($helper) {
     'sync-cloud-release.mjs' {
+      if ($HelperArguments -contains '--reconcile-pending') {
+        $global:HarnessScenario.receipt | ConvertTo-Json -Depth 8 |
+          Set-Content -LiteralPath $global:HarnessScenario.receiptPath
+        $markerPath = Join-Path $WorkspaceRoot 'work/app-feed-status/publication-reconciliation.json'
+        $archiveDirectory = Join-Path $WorkspaceRoot 'work/app-feed-status/reconciled'
+        New-Item -ItemType Directory -Path $archiveDirectory -Force | Out-Null
+        Move-Item -LiteralPath $markerPath -Destination (Join-Path $archiveDirectory 'synthetic-reconciled.json')
+        $global:LASTEXITCODE = 0
+        '{"status":"published_and_verified","publication":"reconciled_exact_candidate"}'
+        break
+      }
+      if ($global:HarnessScenario.syncReconciliationMarker) {
+        $global:HarnessScenario.syncReconciliationMarker | ConvertTo-Json -Depth 8 |
+          Set-Content -LiteralPath (Join-Path $WorkspaceRoot 'work/app-feed-status/publication-reconciliation.json')
+      }
+      if ($global:HarnessScenario.syncExit -ne 0) {
+        $global:LASTEXITCODE = $global:HarnessScenario.syncExit
+        [string]$global:HarnessScenario.syncOutput
+        break
+      }
       $global:HarnessScenario.receipt | ConvertTo-Json -Depth 8 |
         Set-Content -LiteralPath $global:HarnessScenario.receiptPath
       $global:LASTEXITCODE = 0
@@ -101,7 +125,7 @@ function global:Invoke-SyntheticNative {
 }
 
 $beforeLocation = (Get-Location).Path
-& (Join-Path $AppRoot 'scripts/daily-cloud-publish.ps1') -ReportDate '2026-09-25' -WorkspaceRoot $WorkspaceRoot -SkipPhotoCache -Force:$global:HarnessScenario.force
+& (Join-Path $AppRoot 'scripts/daily-cloud-publish.ps1') -ReportDate '2026-09-25' -WorkspaceRoot $WorkspaceRoot -SkipPhotoCache -Force:$global:HarnessScenario.force -ReconcilePending:$global:HarnessScenario.reconcile
 $publisherExit = $LASTEXITCODE
 [ordered]@{
   exitCode = $publisherExit
@@ -138,11 +162,12 @@ function fixture(cached = false) {
   writeFileSync(harnessPath, harness)
   const readManifest = () => JSON.parse(readFileSync(manifestPath, 'utf8'))
   let runNumber = 0
-  function run(options: { invoiceExit?: number; integrationExit?: number; secretPresent?: boolean; force?: boolean; lockPresent?: boolean } = {}) {
+  function run(options: { invoiceExit?: number; integrationExit?: number; secretPresent?: boolean; force?: boolean; reconcile?: boolean; lockPresent?: boolean; syncExit?: number; syncOutput?: string; syncReconciliationMarker?: object; preexistingReconciliationMarker?: object } = {}) {
     const prefix = path.join(root, `attempt-${++runNumber}`)
     const scenario = {
       profile: path.join(root, 'profile'), events: `${prefix}.events`, result: `${prefix}.result`,
-      receipt, receiptPath, invoiceExit: 0, integrationExit: 0, secretPresent: true, force: false, lockPresent: false, ...options,
+      receipt, receiptPath, invoiceExit: 0, integrationExit: 0, secretPresent: true, force: false, reconcile: false, lockPresent: false,
+      syncExit: 0, syncOutput: '', syncReconciliationMarker: null, preexistingReconciliationMarker: null, ...options,
     }
     const scenarioPath = `${prefix}.json`
     writeFileSync(scenarioPath, JSON.stringify(scenario))
@@ -164,7 +189,7 @@ function fixture(cached = false) {
     expect(events.every(event => event.credentialsLoaded)).toBe(true)
     return { output, events, helpers: events.map(event => event.helper), exitCode: result.exitCode }
   }
-  return { run, readManifest, receiptPath, appRoot }
+  return { run, readManifest, receiptPath, appRoot, workspaceRoot }
 }
 
 afterEach(() => {
@@ -240,5 +265,81 @@ describe('daily PowerShell publisher document retries', () => {
       'verify-integration-deployment.mjs', 'advance_latest_pointer.py', 'archive-inventory-history.mjs'])
     expect(result.output).toContain('SUCCESS')
     expect(result.output).not.toContain('SKIPPED')
+  }, 30_000)
+
+  it('blocks every later scheduled attempt before secrets or enrichment after an ambiguous publish, even with Force', () => {
+    const test = fixture()
+    const candidateHash = 'c'.repeat(64)
+    const reconciliation = {
+      schemaVersion: 1,
+      status: 'publication_reconciliation_required',
+      reconciliationRequired: true,
+      reportDate,
+      failureCode: 'CLOUD_PUBLICATION_ATTEMPT_IN_PROGRESS',
+      recordedAt: '2026-09-25T14:30:00.000Z',
+      candidate: {
+        bundleSha256: candidateHash,
+        holdRefresh: false,
+        sourceHashes: {
+          public: '1'.repeat(64), dealerMail: '2'.repeat(64), resources: '3'.repeat(64),
+          managerDisposition: null, managerDispositionBinding: null,
+        },
+      },
+    }
+    const first = test.run({
+      syncExit: 1,
+      syncOutput: `Cloud sync incomplete: CLOUD_PUBLICATION_OUTCOME_UNKNOWN. candidate_bundle_sha256=${candidateHash}.`,
+      syncReconciliationMarker: reconciliation,
+    })
+    expect(first.exitCode).toBe(1)
+    expect(first.helpers).toContain('sync-cloud-release.mjs')
+    expect(first.output).toContain('CLOUD_PUBLICATION_OUTCOME_UNKNOWN')
+
+    const retry = test.run({ force: true })
+    expect(retry.exitCode).toBe(1)
+    expect(retry.helpers).toEqual([])
+    expect(retry.output).toContain(`PUBLICATION_RECONCILIATION_REQUIRED candidate_bundle_sha256=${candidateHash}`)
+    expect(retry.output).not.toContain('secrets loaded')
+    expect(retry.output).not.toMatch(/photo cache:|resources: building|cloud publish: running/)
+  }, 60_000)
+
+  it('fails closed before secrets when the durable reconciliation marker is malformed', () => {
+    const test = fixture()
+    writeFileSync(path.join(test.workspaceRoot, 'work/app-feed-status/publication-reconciliation.json'), '{truncated marker')
+    const result = test.run({ force: true })
+    expect(result.exitCode).toBe(1)
+    expect(result.helpers).toEqual([])
+    expect(result.output).toContain('PUBLICATION_RECONCILIATION_STATE_INVALID')
+    expect(result.output).not.toContain('secrets loaded')
+  }, 30_000)
+
+  it('uses the guarded exact-candidate recovery path and preserves hold-refresh document reuse', () => {
+    const test = fixture()
+    const candidateHash = receipt.bundleSha256
+    const marker = {
+      schemaVersion: 1,
+      status: 'publication_reconciliation_required',
+      reconciliationRequired: true,
+      reportDate,
+      failureCode: 'CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED',
+      recordedAt: '2026-09-25T14:30:00.000Z',
+      candidate: {
+        bundleSha256: candidateHash,
+        holdRefresh: true,
+        sourceHashes: {
+          public: '1'.repeat(64), dealerMail: '2'.repeat(64), resources: '3'.repeat(64),
+          managerDisposition: null, managerDispositionBinding: null,
+        },
+      },
+    }
+    const result = test.run({ reconcile: true, preexistingReconciliationMarker: marker })
+    expect(result.exitCode, result.output).toBe(0)
+    expect(result.helpers).toEqual(['sync-cloud-release.mjs', 'verify-integration-deployment.mjs',
+      'advance_latest_pointer.py', 'archive-inventory-history.mjs'])
+    expect(result.events[0].arguments).toEqual(['--reconcile-pending'])
+    expect(result.output).toContain('RECONCILED EXACT CANDIDATE')
+    expect(result.output).toContain('invoice documents: reused for hold-only refresh')
+    expect(existsSync(path.join(test.workspaceRoot, 'work/app-feed-status/publication-reconciliation.json'))).toBe(false)
+    expect(existsSync(path.join(test.workspaceRoot, 'work/app-feed-status/reconciled/synthetic-reconciled.json'))).toBe(true)
   }, 30_000)
 })

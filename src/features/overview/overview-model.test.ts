@@ -115,7 +115,11 @@ describe('overview model', () => {
       movement: { state: 'at_requesting_store', label: 'At requesting store', currentLocation: 'Lincoln', locationConfidence: 'verified', departedAt: '2026-09-20T16:00:00Z', returnDueAt: '2026-09-24' },
     })
     const fixture = data([homeHeld, away])
-    fixture.vehicleIssues = [{ id: 'issue-1', vin: homeHeld.vin, stockNumber: homeHeld.stockNumber, vehicleName: homeHeld.vehicleName, homeStore: 'Howell', reportStore: 'Howell', category: 'cleaning', priority: 'normal', description: 'Synthetic issue', status: 'open', version: 1, assignee: null, reportedBy: 'Synthetic sales', reportedByUserId: 'sales-1', reportedAt: '2026-09-25T12:00:00Z', updatedAt: '2026-09-25T12:00:00Z', completedAt: null, completedBy: null, photoCount: 0, allowedActions: [] }]
+    fixture.vehicleIssues = [
+      { id: 'issue-1', vin: homeHeld.vin, stockNumber: homeHeld.stockNumber, vehicleName: homeHeld.vehicleName, homeStore: 'Howell', reportStore: 'Howell', category: 'cleaning', priority: 'normal', description: 'Synthetic issue', status: 'open', version: 1, assignee: null, reportedBy: 'Synthetic sales', reportedByUserId: 'sales-1', reportedAt: '2026-09-25T12:00:00Z', updatedAt: '2026-09-25T12:00:00Z', completedAt: null, completedBy: null, photoCount: 0, allowedActions: [] },
+      { id: 'issue-2', vin: away.vin, stockNumber: away.stockNumber, vehicleName: away.vehicleName, homeStore: 'Howell', reportStore: 'Lincoln', category: 'fuel', priority: 'urgent', description: 'Synthetic visiting-store issue', status: 'open', version: 1, assignee: null, reportedBy: 'Synthetic sales', reportedByUserId: 'sales-2', reportedAt: '2026-09-25T12:05:00Z', updatedAt: '2026-09-25T12:05:00Z', completedAt: null, completedBy: null, photoCount: 0, allowedActions: ['assign', 'complete'] },
+      { id: 'issue-3', vin: away.vin, stockNumber: away.stockNumber, vehicleName: away.vehicleName, homeStore: 'Howell', reportStore: 'Howell', category: 'damage', priority: 'normal', description: 'Synthetic home-store issue', status: 'open', version: 1, assignee: null, reportedBy: 'Synthetic sales', reportedByUserId: 'sales-3', reportedAt: '2026-09-25T12:10:00Z', updatedAt: '2026-09-25T12:10:00Z', completedAt: null, completedBy: null, photoCount: 0, allowedActions: ['assign', 'complete'] },
+    ]
     fixture.attention = [{ id: 'attention-1', severity: 'warning', type: 'hold', label: 'Review hold', store: 'Howell', status: 'open', priority: 'normal', allowedActions: [], events: [] }]
 
     const overview = buildOverviewModel(fixture)
@@ -126,8 +130,13 @@ describe('overview model', () => {
     expect(howell.populations.away.map(fact => fact.vehicle.vin)).toEqual([away.vin])
     expect(howell.populations.return_overdue.map(fact => fact.vehicle.vin)).toEqual([away.vin])
     expect(howell.populations.manager_log_sold.map(fact => fact.vehicle.vin)).toEqual([homeHeld.vin])
-    expect(howell.populations.open_issues.map(fact => fact.vehicle.vin)).toEqual([homeHeld.vin])
+    expect(howell.populations.open_issues.map(fact => fact.vehicle.vin)).toEqual([homeHeld.vin, away.vin])
+    expect(howell.populations.open_issues.find(fact => fact.vehicle.vin === away.vin)?.openIssues.map(issue => issue.id)).toEqual(['issue-3'])
+    expect(howell.openIssues.map(issue => issue.id)).toEqual(['issue-1', 'issue-3'])
     expect(lincoln.populations.visiting.map(fact => fact.vehicle.vin)).toEqual([away.vin])
+    expect(lincoln.populations.open_issues.map(fact => fact.vehicle.vin)).toEqual([away.vin])
+    expect(lincoln.populations.open_issues[0].openIssues.map(issue => issue.id)).toEqual(['issue-2'])
+    expect(lincoln.openIssues.map(issue => issue.id)).toEqual(['issue-2'])
     expect(howell.attention).toHaveLength(1)
     expect(homeHeld.managerDisposition?.soldManagerLog).toBe(true)
     expect(howell.populations.on_lot.map(fact => fact.vehicle.vin)).toContain(homeHeld.vin)

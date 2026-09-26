@@ -47,6 +47,7 @@ $AlertHistoryDirectory = Join-Path $MonitorDirectory 'alerts'
 $HoldStatusPath = Join-Path $WorkspaceRoot ("work\hold-refresh-status\{0}.json" -f $ReportDate)
 $AppReceiptPath = Join-Path $WorkspaceRoot ("work\app-feed-status\{0}.json" -f $ReportDate)
 $RunManifestPath = Join-Path $WorkspaceRoot ("work\run-status\{0}.json" -f $ReportDate)
+$PublicationReconciliationPath = Join-Path $WorkspaceRoot 'work\app-feed-status\publication-reconciliation.json'
 
 function Read-JsonFile {
   param([Parameter(Mandatory)][string]$Path)
@@ -134,6 +135,8 @@ function Get-ReceiptHealth {
   $statusFile = Read-JsonFile -Path $HoldStatusPath
   $receiptFile = Read-JsonFile -Path $AppReceiptPath
   $manifestFile = Read-JsonFile -Path $RunManifestPath
+  $globalReconciliationEntryExists = Test-Path -LiteralPath $PublicationReconciliationPath
+  $globalReconciliationFile = Read-JsonFile -Path $PublicationReconciliationPath
   $reasons = [Collections.Generic.List[string]]::new()
 
   if (-not $statusFile.Exists) { $reasons.Add('hold_status_missing') }
@@ -148,6 +151,7 @@ function Get-ReceiptHealth {
   $failureCode = if ($statusFile.Valid) { [string]$status.failureCode } else { $null }
   $statusCandidateBundleSha256 = if ($statusFile.Valid) { Normalize-Hash $status.candidate.bundleSha256 } else { $null }
   $manifestCandidateBundleSha256 = if ($manifestFile.Valid) { Normalize-Hash $manifest.cloudflare_publish.expected_bundle_sha256 } else { $null }
+  $globalCandidateBundleSha256 = if ($globalReconciliationFile.Valid) { Normalize-Hash $globalReconciliationFile.Value.candidate.bundleSha256 } else { $null }
   $statusRequiresReconciliation = $statusFile.Valid -and (
     $status.reconciliationRequired -eq $true -or
     $holdStatus -ceq 'intraday_holds_publication_outcome_unknown' -or
@@ -157,13 +161,24 @@ function Get-ReceiptHealth {
     $manifest.cloudflare_publish.reconciliation_required -eq $true -or
     [string]$manifest.cloudflare_publish.status -ceq 'publication_outcome_unknown'
   )
-  $reconciliationRequired = $statusRequiresReconciliation -or $manifestRequiresReconciliation
-  $candidateBundleSha256 = if ($manifestRequiresReconciliation -and $null -ne $manifestCandidateBundleSha256) {
+  $globalRequiresReconciliation = $globalReconciliationEntryExists
+  $reconciliationRequired = $globalRequiresReconciliation -or $statusRequiresReconciliation -or $manifestRequiresReconciliation
+  $candidateBundleSha256 = if ($globalRequiresReconciliation -and $null -ne $globalCandidateBundleSha256) {
+    $globalCandidateBundleSha256
+  } elseif ($manifestRequiresReconciliation -and $null -ne $manifestCandidateBundleSha256) {
     $manifestCandidateBundleSha256
   } else {
     $statusCandidateBundleSha256
   }
-  $reconciliationSource = if ($statusRequiresReconciliation -and $manifestRequiresReconciliation) {
+  $reconciliationSource = if ($globalRequiresReconciliation -and $statusRequiresReconciliation -and $manifestRequiresReconciliation) {
+    'global_marker_status_and_manifest'
+  } elseif ($globalRequiresReconciliation -and $manifestRequiresReconciliation) {
+    'global_marker_and_manifest'
+  } elseif ($globalRequiresReconciliation -and $statusRequiresReconciliation) {
+    'global_marker_and_status'
+  } elseif ($globalRequiresReconciliation) {
+    'global_marker'
+  } elseif ($statusRequiresReconciliation -and $manifestRequiresReconciliation) {
     'status_and_manifest'
   } elseif ($manifestRequiresReconciliation) {
     'manifest'
@@ -178,9 +193,15 @@ function Get-ReceiptHealth {
   }
   if ($reconciliationRequired) {
     $reasons.Add('publication_reconciliation_required')
+    if ($globalRequiresReconciliation -and (-not $globalReconciliationFile.Valid -or
+        [string]$globalReconciliationFile.Value.status -cne 'publication_reconciliation_required' -or
+        $globalReconciliationFile.Value.reconciliationRequired -ne $true)) {
+      $reasons.Add('publication_reconciliation_marker_invalid')
+    }
     if ($null -eq $candidateBundleSha256) { $reasons.Add('candidate_bundle_hash_missing_or_invalid') }
-    if ($null -ne $statusCandidateBundleSha256 -and $null -ne $manifestCandidateBundleSha256 -and
-        $statusCandidateBundleSha256 -cne $manifestCandidateBundleSha256) {
+    $observedCandidateHashes = @($globalCandidateBundleSha256, $statusCandidateBundleSha256, $manifestCandidateBundleSha256) |
+      Where-Object { $null -ne $_ } | Select-Object -Unique
+    if ($observedCandidateHashes.Count -gt 1) {
       $reasons.Add('reconciliation_candidate_hash_mismatch')
     }
   }
@@ -459,9 +480,9 @@ if ($receiptHealth.ReconciliationRequired) {
     "The intraday hold publication outcome requires reconciliation for candidate SHA-256 $candidateHash."
   }
   $action = if ([string]::IsNullOrWhiteSpace($candidateHash)) {
-    'Do not start the hold-refresh task. Repair the reconciliation status so it records the exact candidate bundle SHA-256, then compare that hash with the protected /internal/status and /internal/readiness responses.'
+    'Do not start the hold-refresh task or edit/delete the marker. Preserve the retained candidate and follow the exact-hash recovery in DAILY_AUTOMATION_RUNBOOK.md; recovery remains blocked until the marker is valid and protected /internal/status and /internal/readiness prove its candidate.'
   } else {
-    "Do not start the hold-refresh task. Compare exact candidate SHA-256 $candidateHash with the protected /internal/status and /internal/readiness responses, then finish its receipt and follow-ups or document the superseding verified release."
+    "Do not start the hold-refresh task or edit/delete the marker. Follow the guarded recovery command in DAILY_AUTOMATION_RUNBOOK.md; it clears only after protected /internal/status and /internal/readiness prove exact candidate SHA-256 $candidateHash."
   }
   $newAlert = Publish-Alert `
     -Code 'intraday_hold_publication_reconciliation_required' `

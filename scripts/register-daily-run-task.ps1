@@ -45,7 +45,9 @@ $action = New-ScheduledTaskAction `
 
 # Starts before store opening and retries every 30 minutes for six hours. The
 # command is idempotent: once app-feed-status\YYYY-MM-DD.json is
-# published_and_verified, later runs validate and skip without recapturing.
+# published_and_verified, later runs validate and skip without recapturing. A
+# durable cross-date publication-reconciliation marker blocks before capture,
+# including forced starts, until the exact retained candidate is reconciled.
 $startAt = (Get-Date -Hour 7 -Minute 30 -Second 0)
 $trigger = New-ScheduledTaskTrigger -Daily -At $startAt
 $repeatSource = New-ScheduledTaskTrigger -Once -At $startAt `
@@ -73,7 +75,7 @@ Register-ScheduledTask `
   -Trigger $trigger `
   -Settings $settings `
   -Principal $principal `
-  -Description 'Bob Maxey Inventory Flow: app-first daily data collector and Cloudflare release publisher. Excel workbook generation is optional and outside the critical app/API/MCP path.' `
+  -Description 'Bob Maxey Inventory Flow: app-first daily data collector and Cloudflare release publisher. Fails closed before capture while an exact-hash publication reconciliation is pending.' `
   -Force | Out-Null
 
 $task = Get-ScheduledTask -TaskName $TaskName

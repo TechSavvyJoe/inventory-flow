@@ -10,7 +10,7 @@ import { OASIS_VEHICLE_TEXT_FIELDS } from '../../server/oasis-fields.mjs'
 import { resourceProvenanceSha256 } from '../../server/resource-validation.mjs'
 import { validateReleaseBundle } from '../../cloudflare/src/release-validation.mjs'
 import { datasetFromRelease } from '../../cloudflare/src/repository.mjs'
-import { accessHeaders, base64Key, cloudBundleSha256, cloudReleaseFrom, encryptBundle, portableMetadata, publicationEndpoint, publishEnvelope, publisherFailureMessage } from '../../scripts/publish-cloud-release.mjs'
+import { accessHeaders, base64Key, cloudBundleSha256, cloudReleaseFrom, encryptBundle, main as publisherMain, portableMetadata, publicationEndpoint, publishEnvelope, publisherFailureMessage } from '../../scripts/publish-cloud-release.mjs'
 
 const storeNames = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
 const encryptionKey = Buffer.alloc(32, 7)
@@ -682,6 +682,14 @@ describe('portable cloud release validation', () => {
 })
 
 describe('private release publisher', () => {
+  it('routes every advertised and compatibility executable through the guarded sync coordinator', async () => {
+    const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
+    expect(packageJson.scripts['cloud:publish-release']).toBe('node scripts/sync-cloud-release.mjs')
+    const syncMain = vi.fn().mockResolvedValue(undefined)
+    await publisherMain({ syncMain })
+    expect(syncMain).toHaveBeenCalledOnce()
+  })
+
   it('uses stable canonical content hashes with fresh encryption nonces', () => {
     const bundle = completeBundle()
     const first = encryptBundle(bundle, encryptionKey)
@@ -798,6 +806,7 @@ describe('private release publisher', () => {
     ['malformed 500 response', async () => new Response('{', { status: 500 })],
     ['unstructured JSON 500 response', async () => Response.json({ message: 'truncated after commit' }, { status: 500 })],
     ['unrecognized structured rejection', async () => Response.json({ code: 'RELEASE_REJECTED' }, { status: 409 })],
+    ['post-write D1 conflict response', async () => Response.json({ code: 'PUBLISH_CONFLICT_RETRY' }, { status: 409 })],
     ['internal error after possible commit', async () => Response.json({ code: 'INTERNAL_ERROR' }, { status: 500 })],
   ])('preserves the exact candidate hash when the POST has an unknown outcome: %s', async (_label, fetchImpl) => {
     const bundleSha256 = 'A'.repeat(64)

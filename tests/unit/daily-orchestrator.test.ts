@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import { loadLatestCompletedRelease } from '../../server/importer.mjs'
 import { cloudBundleSha256, cloudReleaseFrom } from '../../scripts/publish-cloud-release.mjs'
-import { publicationFailureMessage, syncCloudRelease } from '../../scripts/sync-cloud-release.mjs'
+import { publicationFailureMessage, publicationReconciliationPath, syncCloudRelease, writePublicationReconciliation } from '../../scripts/sync-cloud-release.mjs'
 
 let workspaceRoot: string
 let previousWorkspaceRoot: string | undefined
@@ -95,6 +95,79 @@ describe('app-first daily orchestrator helpers', () => {
       })
     } finally {
       rmSync(lockPath, { force: true })
+    }
+  })
+
+  it('blocks a forced next-day ordinary run before source capture when durable reconciliation is pending or malformed', async () => {
+    const internals = await loadInternals()
+    const markerPath = publicationReconciliationPath(workspaceRoot)
+    const nextReportDate = '2026-10-03'
+    const nextPublicPath = path.join(workspaceRoot, 'work', 'inventory-history', 'snapshots', `${nextReportDate}-public.json`)
+    const sourceHashes = {
+      public: '1'.repeat(64), dealerMail: '2'.repeat(64), resources: '3'.repeat(64),
+      managerDisposition: null, managerDispositionBinding: null,
+    }
+    try {
+      writePublicationReconciliation(workspaceRoot, {
+        reportDate: '2026-10-02',
+        bundleSha256: 'a'.repeat(64),
+        failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+        sourceHashes,
+        now: new Date('2026-10-02T15:00:00.000Z'),
+      })
+
+      await expect(internals.runDaily(internals.parseArgs(['--date', nextReportDate, '--force-publish'])))
+        .resolves.toMatchObject({
+          ok: false,
+          failureCode: 'PUBLICATION_RECONCILIATION_REQUIRED',
+          reconciliationRequired: true,
+          candidate: { bundleSha256: 'a'.repeat(64), dealerMailSha256: '2'.repeat(64) },
+        })
+      expect(existsSync(nextPublicPath)).toBe(false)
+
+      writeFileSync(markerPath, '{truncated reconciliation marker')
+      await expect(internals.runDaily(internals.parseArgs(['--date', nextReportDate, '--force-publish'])))
+        .resolves.toMatchObject({
+          ok: false,
+          failureCode: 'PUBLICATION_RECONCILIATION_STATE_INVALID',
+          reconciliationRequired: true,
+        })
+      expect(existsSync(nextPublicPath)).toBe(false)
+    } finally {
+      rmSync(markerPath, { force: true })
+    }
+  })
+
+  it('binds a post-publisher reconciliation guard to the exact intraday candidate before deciding rollback', async () => {
+    const internals = await loadInternals()
+    const markerPath = publicationReconciliationPath(workspaceRoot)
+    const sourceHashes = {
+      public: '1'.repeat(64), dealerMail: '2'.repeat(64), resources: '3'.repeat(64),
+      managerDisposition: null, managerDispositionBinding: null,
+    }
+    try {
+      writePublicationReconciliation(workspaceRoot, {
+        reportDate: '2026-09-25',
+        bundleSha256: 'a'.repeat(64),
+        failureCode: 'CLOUD_PUBLICATION_ATTEMPT_IN_PROGRESS',
+        sourceHashes,
+        holdRefresh: true,
+        now: new Date('2026-09-25T15:00:00.000Z'),
+      })
+      expect(internals.publicationAttemptForCandidate({
+        reportDate: '2026-09-25',
+        bundleSha256: 'A'.repeat(64),
+        sourceHashes,
+        holdRefresh: true,
+      })).toMatchObject({ present: true, consistent: true })
+      expect(internals.publicationAttemptForCandidate({
+        reportDate: '2026-09-25',
+        bundleSha256: 'A'.repeat(64),
+        sourceHashes: { ...sourceHashes, dealerMail: 'f'.repeat(64) },
+        holdRefresh: true,
+      })).toMatchObject({ present: true, consistent: false })
+    } finally {
+      rmSync(markerPath, { force: true })
     }
   })
 

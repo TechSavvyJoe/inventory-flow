@@ -201,6 +201,10 @@ export function buildOverviewVehicleFact(
 
 function population(facts: OverviewVehicleFact[], store: StoreName): Record<OverviewPopulation, OverviewVehicleFact[]> {
   const inventory = facts.filter(fact => fact.homeStore === store)
+  const openIssueFacts = facts.flatMap(fact => {
+    const openIssues = fact.openIssues.filter(issue => issue.reportStore === store)
+    return openIssues.length ? [{ ...fact, openIssues }] : []
+  })
   return {
     inventory,
     on_lot: inventory.filter(fact => fact.onLot),
@@ -216,7 +220,7 @@ function population(facts: OverviewVehicleFact[], store: StoreName): Record<Over
     records_incomplete: inventory.filter(fact => fact.records.captured < fact.records.applicable),
     manager_log_sold: inventory.filter(fact => Boolean(fact.vehicle.managerDisposition?.soldManagerLog)),
     manager_log_delivered: inventory.filter(fact => fact.vehicle.managerDisposition?.deliveredManagerLog === true),
-    open_issues: inventory.filter(fact => fact.openIssues.length > 0),
+    open_issues: openIssueFacts,
   }
 }
 
@@ -230,7 +234,7 @@ export function buildOverviewModel(data: BootstrapData): OverviewModel {
     store,
     populations: population(facts, store),
     attention: data.attention.filter(item => item.status !== 'resolved' && attentionStore(item) === store),
-    openIssues: (data.vehicleIssues ?? []).filter(issue => issue.status !== 'completed' && issue.homeStore === store),
+    openIssues: (data.vehicleIssues ?? []).filter(issue => issue.status !== 'completed' && issue.reportStore === store),
   }))
   return { facts, stores }
 }
