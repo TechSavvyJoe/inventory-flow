@@ -151,7 +151,8 @@ describe('intraday hold task monitor', () => {
     expect(result).toEqual({ started: 0, events: 0 })
     expect(existsSync(path.join(root, 'work/hold-refresh-monitor/active-alert.json'))).toBe(false)
     expect(JSON.parse(readFileSync(path.join(root, 'work/hold-refresh-monitor/state.json'), 'utf8'))).toMatchObject({
-      taskState: 'Ready', lastTaskResult: 0, receiptStatus: 'verified', receiptLinkMode: 'explicit',
+      taskState: 'Ready', lastTaskResult: 0, lastTaskRunAt: '2026-09-25T15:55:00.0000000Z',
+      receiptStatus: 'verified', receiptLinkMode: 'explicit',
     })
   })
 
@@ -192,7 +193,7 @@ describe('intraday hold task monitor', () => {
       initial: ready(1, '2026-09-25T12:00:00-04:00'),
     })
     expect(second).toEqual({ started: 0, events: 0 })
-    expect(JSON.parse(readFileSync(alertPath, 'utf8')).createdAt).toBe('2026-09-25T12:00:00.0000000-04:00')
+    expect(JSON.parse(readFileSync(alertPath, 'utf8')).createdAt).toBe('2026-09-25T16:00:00.0000000Z')
   })
 
   it('alerts on the first reconciliation-required observation and never starts the writer for that candidate', () => {
@@ -331,7 +332,7 @@ describe('intraday hold task monitor', () => {
     expect(first).toEqual({ started: 1, events: 0 })
     const recoveryState = JSON.parse(readFileSync(path.join(root, 'work/hold-refresh-monitor/state.json'), 'utf8'))
     expect(recoveryState).toMatchObject({
-      lastRecoveryTaskRunAt: '2026-09-25T12:00:00.0000000-04:00',
+      lastRecoveryTaskRunAt: '2026-09-25T16:00:00.0000000Z',
       taskState: 'Running',
     })
     expect(recoveryState.lastRecoveryReceiptFingerprint).toMatch(/^[a-f0-9]{64}$/)

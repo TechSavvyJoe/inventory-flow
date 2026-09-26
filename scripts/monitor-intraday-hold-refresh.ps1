@@ -95,6 +95,13 @@ function Parse-Instant {
   return $parsed
 }
 
+function Format-UtcInstant {
+  param($Value)
+  $instant = Parse-Instant $Value
+  if ($null -eq $instant) { return $null }
+  return $instant.UtcDateTime.ToString('o', [Globalization.CultureInfo]::InvariantCulture)
+}
+
 function Test-SameInstant {
   param($Left, $Right)
   $leftInstant = Parse-Instant $Left
@@ -229,8 +236,8 @@ function Get-ReceiptHealth {
     Verified = $verified
     Stale = $stale
     Period = $period
-    CheckedAt = if ($null -ne $checkedAt) { $checkedAt.ToString('o') } else { $null }
-    VerifiedAt = if ($null -ne $verifiedAt) { $verifiedAt.ToString('o') } else { $null }
+    CheckedAt = Format-UtcInstant $checkedAt
+    VerifiedAt = Format-UtcInstant $verifiedAt
     AgeMinutes = $ageMinutes
     LinkMode = $linkMode
     HoldStatus = $holdStatus
@@ -287,7 +294,7 @@ function Get-TargetTaskState {
     Available = $state -in @('Ready', 'Running', 'Queued')
     State = $state
     LastResult = $lastResult
-    LastRunTime = if ($null -ne $lastRun) { $lastRun.ToString('o') } else { $null }
+    LastRunTime = Format-UtcInstant $lastRun
     LastCompletedSucceeded = $hasCompletedRun -and $lastResult -eq 0
     HasCompletedRun = $hasCompletedRun
   }
@@ -356,7 +363,7 @@ function Save-MonitorState {
       schemaVersion = 1
       monitor = $MonitorName
       reportDate = $ReportDate
-      observedAt = $Now.ToString('o')
+      observedAt = Format-UtcInstant $Now
       taskState = $TaskState.State
       lastTaskResult = $TaskState.LastResult
       lastTaskRunAt = $TaskState.LastRunTime
@@ -390,7 +397,7 @@ function Publish-Alert {
     monitor = $MonitorName
     taskName = $TargetTaskName
     reportDate = $ReportDate
-    createdAt = $Now.ToString('o')
+    createdAt = Format-UtcInstant $Now
     code = $Code
     summary = $Summary
     action = $Action

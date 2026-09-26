@@ -33,7 +33,10 @@ existing comparison (`maxDiffPixels: 0`, `threshold: 0.05`).
 
 1. Dispatch **Validate Inventory Flow** on the reviewed branch with
    `target=update-visual-baselines`. The manual job renders in the prescribed
-   container and produces the `visual-baseline-candidate` Actions artifact.
+   container and produces the `visual-baseline-candidate` Actions artifact. The
+   artifact contains the 32 review PNGs and their packaged
+   `visual-baselines.json` bundle in one staged directory so the container and
+   runner cannot disagree about either upload path.
 2. Download the candidate outside the checkout. Inspect all 32 images for
    hierarchy, density, readable text, overflow, controls and disclosure state.
    Passing generation only means the images were produced; it is not a passed

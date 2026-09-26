@@ -241,16 +241,15 @@ jobs:
 
       - name: Package candidate with source provenance and hashes
         run: |
-          mkdir -p "$RUNNER_TEMP/inventory-flow-visual-candidate"
-          node scripts/visual-baselines.mjs pack --dir "$INVENTORY_VISUAL_BASELINE_DIR" --out "$RUNNER_TEMP/inventory-flow-visual-candidate/visual-baselines.json"
+          node scripts/visual-baselines.mjs pack --dir "$INVENTORY_VISUAL_BASELINE_DIR" --out "$INVENTORY_VISUAL_BASELINE_DIR/visual-baselines.json"
+          test -s "$INVENTORY_VISUAL_BASELINE_DIR/visual-baselines.json"
 
       - name: Upload regenerated snapshots
         uses: actions/upload-artifact@v4
         with:
           name: visual-baseline-candidate
-          path: |
-            ${{ runner.temp }}/inventory-flow-visual-baselines/
-            ${{ runner.temp }}/inventory-flow-visual-candidate/visual-baselines.json
+          path: ${{ runner.temp }}/inventory-flow-visual-baselines/
+          if-no-files-found: error
           retention-days: 14
 
   cross-browser-nightly:
