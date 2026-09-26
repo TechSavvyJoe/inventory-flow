@@ -67,14 +67,14 @@ Query strings are redacted from platform error telemetry.
 
 ## Deployment
 
-Production Worker deployment and migration-ledger backfill are Joe-only operations. From the reviewed clean app checkout on Joe's controlled deployment host:
+Production Worker deployment and migration-ledger backfill require Joe's explicit authorization for the exact release in the current session. They run only from the reviewed clean app checkout on the controlled deployment host after every checklist gate passes:
 
 ```powershell
 pnpm install --frozen-lockfile
 pnpm cloud:release
 ```
 
-This is a Joe-only paired release (`pnpm cloud:deploy` and `pnpm integrations:deploy`
+This is one explicitly authorized paired release (`pnpm cloud:deploy` and `pnpm integrations:deploy`
 are aliases for the same pair; do not run both for one release). The wrapper runs
 `pnpm check` (including the production build), then `pnpm cloud:validate`, records
 the source in `dist/build.json`, then verifies the existing D1 migration ledger with
@@ -82,7 +82,7 @@ one read-only `SELECT` through the named `INVENTORY_DB` binding and the app Wran
 config: every local migration filename must be recorded, and nothing else may be.
 A missing ledger, a pending or unexpected filename, malformed output, or a failed
 query stops the release before either deploy. It never applies schema files or
-backfills the ledger, and a filename check does not replace Joe's verification of
+backfills the ledger, and a filename check does not replace the authorized operator's verification of
 the actual schema.
 
 After those gates, the wrapper deploys the app Worker and then integrations with
@@ -102,15 +102,15 @@ Cloudflare or writes to D1.
 Do **not** run `pnpm cloud:d1:migrate` or a generic
 `wrangler d1 migrations apply` against the current production database. Its
 original migrations were applied outside Wrangler's migration ledger. An empty
-or absent ledger now intentionally blocks the release wrapper: Joe must verify
+or absent ledger now intentionally blocks the release wrapper: the authorized operator must verify
 the installed schema and complete a separately reviewed ledger backfill first.
 This repository change does not claim that production backfill is complete.
 In particular,
 `0003_transport_assignment_identity.sql` contains non-idempotent column adds;
 a generic apply would stop partway through and leave a misleading partial
-ledger. Joe must apply a reviewed future schema file as one explicit, authorized
+ledger. The authorized operator must apply a reviewed future schema file as one explicit, authorized
 single-file operation, verify the resulting schema and record the exact filename
-in the reviewed migration ledger, then deploy. Until Joe completes the verified
+in the reviewed migration ledger, then deploy. Until the authorized operator completes the verified
 backfill below, the release command deliberately refuses to deploy. For the
 service-readiness release, apply `0007_service_readiness.sql` first and
 `0008_service_intake.sql` second before deploying the Worker that reads them.
@@ -323,8 +323,8 @@ Still required before a broader production rollout:
 
 ### D1 Migration Ledger Backfill
 
-**Joe-only production work; not performed by this code change or by the release
-wrapper.** Historical migrations were applied outside Wrangler's ledger.
+**Release-authorized production work; not performed by this code change or by the release
+wrapper.** Joe must explicitly authorize the exact release in the current session. Historical migrations were applied outside Wrangler's ledger.
 Creating ledger rows does not apply or verify their SQL. Never run a blanket
 backfill or generic migration apply merely to unblock deployment.
 
@@ -334,7 +334,7 @@ backfill or generic migration apply merely to unblock deployment.
    required data changes. Record the evidence of prior application. A table's
    existence alone is insufficient. Apply any genuinely missing migration as
    its separately reviewed single-file operation before marking it complete.
-3. After that review, Joe may create the standard `d1_migrations` ledger if it
+3. After that review, the authorized operator may create the standard `d1_migrations` ledger if it
    is absent and insert **only the filenames individually verified as applied**.
    Resolve unexpected or duplicate entries through the same review. Do not
    record invented names or assume `INSERT OR IGNORE` verifies anything.
@@ -374,10 +374,10 @@ Missing-table, authentication, malformed-output, or filename-mismatch errors
 stop the release before either Worker deploys. The wrapper does not use
 `wrangler d1 migrations list`, which can initialize the migration table.
 
-### Tunnel Cleanup and Custom Domain Move (Joe-only)
+### Tunnel Cleanup and Custom Domain Move (explicit authorization required)
 Moving `inventory-ops.joegallant.me` to a Workers `custom_domain` is an
-account-level change that only Joe performs, in a quiet window, after a
-verified paired release. Agents run no step of it. The hostname's DNS still
+account-level change performed only after Joe explicitly authorizes that exact domain move in the current session, in a quiet window, after a
+verified paired release. The hostname's DNS still
 points at the retired PC tunnel, which is why removing the route is not a
 rollback step (see item 6 under Saved activity and recovery: Error 1033).
 Order matters: read-only confirmation first, the Worker route second,
@@ -392,4 +392,4 @@ deletion last.
 3. Deploy the worker to claim the custom domain.
 4. Delete the legacy tunnel CNAME and tunnel from the Cloudflare dashboard.
 5. Uninstall `cloudflared` on the PC.
-6. Re-run the post-deploy verification. If the hostname stops answering, restore the CNAME before anything else; every rollback here is Joe-only.
+6. Re-run the post-deploy verification. If the hostname stops answering, restore the CNAME before anything else; every rollback requires the same move-specific authorization.
