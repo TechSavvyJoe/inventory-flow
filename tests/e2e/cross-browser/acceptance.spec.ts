@@ -156,7 +156,7 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     await page.evaluate(() => window.scrollTo(0, 0))
     await expectNoOverflow(page)
     const freshnessTimestamp = page.locator('.freshness-chip small')
-    if (width > 1180 && await freshnessTimestamp.isVisible()) {
+    if (width > 880 && await freshnessTimestamp.isVisible()) {
       const freshnessWidth = await freshnessTimestamp.evaluate(element => ({
         client: element.clientWidth,
         scroll: element.scrollWidth,
