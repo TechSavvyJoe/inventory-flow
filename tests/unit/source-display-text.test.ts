@@ -4,6 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { sourceDisplayText as appText } from '../../src/lib/source-text';
 import { sourceDisplayText as companionText } from '../../extension/sidepanel/lib/source-text.mjs';
 
+it('uses the same source-text implementation in the app and companion', () => {
+  expect(appText).toBe(companionText);
+});
+
 describe.each([['site', appText], ['companion', companionText]])('%s source text presentation', (_, displayText) => {
   it.each([
     ['REAR AXLE &#x25B4; &amp; HUB', 'REAR AXLE ▴ & HUB'],

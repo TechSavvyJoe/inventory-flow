@@ -29,6 +29,7 @@ function requestFor(workspace, settings, path) {
 
 export function bootstrapRequest(workspace, settings) { return requestFor(workspace, settings, '/api/bootstrap') }
 export function vehicleRequest(workspace, settings, vin) { return requestFor(workspace, settings, `/api/vehicles/${encodeURIComponent(String(vin).toUpperCase())}`) }
+export function companionReleaseRequest(workspace, settings) { return requestFor(workspace, settings, '/downloads/companion-version.json') }
 
 // The panel polls the same one or two documents repeatedly (bootstrap on an
 // interval, the open vehicle on demand). Keep only the last payload and its
@@ -103,4 +104,12 @@ export async function fetchVehicle(workspace, settings, vin, { fetchImpl = globa
   const payload = await fetchJson(vehicleRequest(workspace, settings, vin), { fetchImpl, signal })
   if (typeof payload.vin !== 'string' || payload.vin.toUpperCase() !== String(vin).toUpperCase()) throw new PanelApiError('invalid')
   return payload
+}
+
+export async function fetchCompanionRelease(workspace, settings, { fetchImpl = globalThis.fetch, signal } = {}) {
+  const payload = await fetchJson(companionReleaseRequest(workspace, settings), { fetchImpl, signal })
+  if (!/^\d+\.\d+\.\d+$/.test(String(payload.version ?? '')) || payload.downloadPath !== '/downloads/inventory-flow-deal-desk.zip') {
+    throw new PanelApiError('invalid')
+  }
+  return { version: payload.version, downloadPath: payload.downloadPath }
 }
