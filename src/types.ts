@@ -24,6 +24,7 @@ export interface PublicChangeCounts {
 export interface SourceMeta {
   reportDate: string
   completedAt: string
+  publicCapturedAt?: string
   dealerMailCapturedAt?: string
   timezone: string
   manifestPath?: string

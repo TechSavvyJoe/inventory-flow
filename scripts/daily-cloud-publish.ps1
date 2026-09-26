@@ -47,6 +47,8 @@ if (-not (Test-Path -LiteralPath $PythonExecutable)) {
   $PythonExecutable = (Get-Command python -ErrorAction Stop).Source
 }
 $LogDir        = Join-Path $WorkspaceRoot 'work\app-feed-status'
+$PublicationLockPath = Join-Path $LogDir '.publication.lock'
+$PublicationLockOwnerEnvironment = 'INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID'
 $SecretPath    = Join-Path $AppRoot 'runtime\cloud-secrets\publisher.dpapi'
 $IntegrationExpectedPath = Join-Path $AppRoot 'runtime\integration-expected-release.json'
 $IntegrationCredentialPath = Join-Path $AppRoot 'runtime\integration-credentials\joe-app-development.json'
@@ -59,6 +61,75 @@ function Write-Log {
   $line = "{0} [{1}] {2}" -f (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssK'), $Level, $Message
   Add-Content -Path $LogPath -Value $line -Encoding UTF8
   Write-Output $line
+}
+
+function Enter-PublicationPipelineLock {
+  $previousOwner = [System.Environment]::GetEnvironmentVariable($PublicationLockOwnerEnvironment)
+  if (-not [string]::IsNullOrWhiteSpace($previousOwner)) {
+    if (-not (Test-Path -LiteralPath $PublicationLockPath -PathType Leaf)) {
+      throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+    }
+    $item = Get-Item -LiteralPath $PublicationLockPath -Force
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+    }
+    try { $recorded = Get-Content -LiteralPath $PublicationLockPath -Raw | ConvertFrom-Json }
+    catch { throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW' }
+    if ([string]$recorded.ownerId -cne $previousOwner) {
+      throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+    }
+    return [pscustomobject]@{ Owns = $false; Content = $null; PreviousOwner = $previousOwner }
+  }
+
+  $ownerId = [Guid]::NewGuid().ToString()
+  $content = [ordered]@{
+    pid = $PID
+    startedAt = [DateTimeOffset]::UtcNow.ToString('o')
+    ownerId = $ownerId
+  } | ConvertTo-Json -Compress
+  try {
+    $stream = [System.IO.File]::Open(
+      $PublicationLockPath,
+      [System.IO.FileMode]::CreateNew,
+      [System.IO.FileAccess]::Write,
+      [System.IO.FileShare]::Read
+    )
+    try {
+      $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($content)
+      $stream.Write($bytes, 0, $bytes.Length)
+      $stream.Flush($true)
+    } finally {
+      $stream.Dispose()
+    }
+  } catch [System.IO.IOException] {
+    throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+  }
+  [System.Environment]::SetEnvironmentVariable($PublicationLockOwnerEnvironment, $ownerId)
+  return [pscustomobject]@{ Owns = $true; Content = $content; PreviousOwner = $null }
+}
+
+function Exit-PublicationPipelineLock {
+  param($Lock)
+  if (-not $Lock) { return }
+  try {
+    if ($Lock.Owns) {
+      if (-not (Test-Path -LiteralPath $PublicationLockPath -PathType Leaf)) {
+        throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+      }
+      $item = Get-Item -LiteralPath $PublicationLockPath -Force
+      $current = Get-Content -LiteralPath $PublicationLockPath -Raw
+      if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or $current -cne $Lock.Content) {
+        throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+      }
+      Remove-Item -LiteralPath $PublicationLockPath -Force
+    }
+  } finally {
+    if ($null -eq $Lock.PreviousOwner) {
+      Remove-Item -LiteralPath "Env:$PublicationLockOwnerEnvironment" -ErrorAction SilentlyContinue
+    } else {
+      [System.Environment]::SetEnvironmentVariable($PublicationLockOwnerEnvironment, [string]$Lock.PreviousOwner)
+    }
+  }
 }
 
 # Windows PowerShell 5.1 can promote a native program's stderr stream to a
@@ -258,12 +329,19 @@ function Complete-PublicationFollowups {
 $exitCode = 0
 $originalEnv = @{}
 $secretNames = @()
+$pipelineLock = $null
+$verifiedPublicationAvailable = $false
 
 try {
+  $pipelineLock = Enter-PublicationPipelineLock
   Write-Log "=== daily-cloud-publish start (host=$env:COMPUTERNAME user=$env:USERNAME) ==="
 
   $date = Resolve-ReportDate
   Write-Log "report date: $date"
+
+  if ($HoldRefresh -and [string]::IsNullOrWhiteSpace($env:INVENTORY_OPS_EXPECTED_SOURCE_HASHES_JSON)) {
+    throw 'HOLD_REFRESH_SOURCE_BINDINGS_REQUIRED'
+  }
 
   if (-not (Test-Path $SecretPath)) { throw 'SECRET_STORE_MISSING' }
 
@@ -294,6 +372,7 @@ try {
     }
     if ($receipt -and $receipt.status -eq 'published_and_verified' -and $receipt.reportDate -eq $date) {
       if (Test-ReceiptMatchesManagerOverlay -Receipt $receipt -Date $date) {
+        $verifiedPublicationAvailable = $true
         Push-Location $AppRoot
         try {
           Complete-PublicationFollowups -Receipt $receipt -Date $date
@@ -441,7 +520,7 @@ try {
       if ($invoiceMergeRun.ExitCode -ne 0) { Write-Log "resources: invoice merge FAILED: $($invoiceMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_INVOICE_MERGE_FAILED' }
       Write-Log "resources: $($invoiceMergeOut.Trim())"
     } else {
-      Write-Log 'resources: reusing the hold-refresh bundle already rebuilt by the daily orchestrator'
+      Write-Log 'resources: reusing receipt-bound enrichment already validated by the daily orchestrator'
     }
     Write-Log 'resources: validating against release validators'
     $enrichCheckRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\dryrun_resource_enrichment_check.mjs', $date)
@@ -462,6 +541,7 @@ try {
       Write-Log 'cloud publish did not report published_and_verified' 'ERROR'
       throw 'PUBLISH_NOT_VERIFIED'
     }
+    $verifiedPublicationAvailable = $true
     $verifiedReceipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
     Complete-PublicationFollowups -Receipt $verifiedReceipt -Date $date -ReuseDocuments:$HoldRefresh
     Write-Log '=== daily-cloud-publish SUCCESS ==='
@@ -470,7 +550,11 @@ try {
   }
 } catch {
   $exitCode = 1
-  Write-Log ("=== daily-cloud-publish FAILED: {0} ===" -f $_.Exception.Message) 'ERROR'
+  if ($verifiedPublicationAvailable) {
+    Write-Log ("=== daily-cloud-publish RELEASE PUBLISHED; FOLLOWUPS FAILED: {0} ===" -f $_.Exception.Message) 'ERROR'
+  } else {
+    Write-Log ("=== daily-cloud-publish FAILED BEFORE VERIFIED PUBLICATION: {0} ===" -f $_.Exception.Message) 'ERROR'
+  }
 } finally {
   foreach ($key in $originalEnv.Keys) {
     # PowerShell 7.5+ converts a null setter argument to an empty value.
@@ -483,6 +567,8 @@ try {
   }
   $originalEnv = @{}
   $secrets = $null
+  Exit-PublicationPipelineLock -Lock $pipelineLock
+  $pipelineLock = $null
 }
 
 exit $exitCode

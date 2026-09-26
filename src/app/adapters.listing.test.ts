@@ -141,6 +141,20 @@ describe('public-listing code adapter', () => {
     expect(transferStatusLanes(transfer('listed'), data('incomplete').meta).publicListing.code).toBe('source-incomplete');
     expect(transferStatusLanes(transfer('listed'), data('stale_unverified').meta).publicListing.code).toBe('retained-stale');
   });
+
+  it('keeps unchanged public and location timestamps stable across an intraday hold refresh', () => {
+    const refreshed = data();
+    refreshed.meta.completedAt = '2026-08-30T14:25:00-04:00';
+    refreshed.meta.publicCapturedAt = '2026-08-30T07:30:00-04:00';
+    refreshed.meta.dealerMailCapturedAt = '2026-08-30T14:24:00-04:00';
+
+    const mapped = toInventoryVehicle(vehicle('listed'), refreshed);
+    expect(mapped.publicListing.updatedAt).toBe('2026-08-30T07:30:00-04:00');
+    expect(mapped.dealerOn.updatedAt).toBe('2026-08-30T07:30:00-04:00');
+    expect(mapped.dealerMail.updatedAt).toBe('2026-08-30T14:24:00-04:00');
+    expect(toTransferVehicle(vehicle('listed'), refreshed.meta).currentLocation.confirmedAt)
+      .toBe('2026-08-30T07:30:00-04:00');
+  });
 });
 
 describe('deal status lane', () => {

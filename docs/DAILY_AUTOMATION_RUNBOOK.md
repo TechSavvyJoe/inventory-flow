@@ -85,11 +85,38 @@ The intraday hold task is deliberately narrower than the morning run. It does no
 recapture OASIS, Ford service history, invoices, stickers, vAuto, warranty, or
 public inventory, and it does not re-upload saved invoice or vAuto PDF documents.
 It validates the existing resource bundle before every publication. It requires
-the same-date morning `published_and_verified`
-receipt, reuses the morning source evidence, archives each prior DealerMail
-revision under `work\dealermail-history\intraday\YYYY-MM-DD\`, and fails closed
-without replacing the last verified cloud release when DealerMail or validation
-is incomplete.
+the same-date `published_and_verified` receipt and proves that the reused public
+snapshot, resource-enrichment file, and manager-disposition source and sanitized
+projection still match that receipt. Only the DealerMail hash may change. It
+archives each prior DealerMail revision under
+`work\dealermail-history\intraday\YYYY-MM-DD\`. The candidate manifest, release
+bundle, and DealerMail files are transactional: a capture, validation, or
+prepublication failure restores the last verified copies. A new receipt is
+never rolled back merely because a later integration, pointer, document, or
+archive follow-up failed.
+
+The daily publisher and intraday orchestrator hold the same
+`work\app-feed-status\.publication.lock` for their entire pipeline. A child
+publisher may reuse the lock only with the exact inherited random owner ID, and
+the cloud-sync process rechecks every expected source hash immediately before
+publication. An overlapping intraday slot records `waiting_for_pipeline_writer`
+and lets the next scheduled slot retry; it never starts a second writer.
+
+`work\hold-refresh-status\{date}.json` uses these operator-facing states:
+
+- `intraday_holds_published_and_verified`: the exact success contract. Its
+  `receipt` object contains `bundleSha256`, `verifiedAt`, and
+  `dealerMailSha256`, which link it to the corresponding
+  `work\app-feed-status\{date}.json` `published_and_verified` receipt.
+- `intraday_holds_published_followups_pending`: the new hold release is already
+  live and verified, but a post-publication follow-up failed. Retry the existing
+  Windows task; do not describe the prior cloud release as still live.
+- `publish_failed_last_verified_release_preserved` or
+  `intraday_refresh_failed_last_verified_release_preserved`: no matching new
+  receipt was written and the canonical local files were restored.
+- `failed_receipt_bound_source_validation`: a supposedly unchanged public,
+  resource, or manager input no longer matches the verified receipt; operator
+  review is required rather than silently broadening the refresh.
 
 ## Windows scheduled tasks
 
@@ -142,7 +169,11 @@ Error codes the log can end with, and what they mean:
 | `SOURCE_NOT_CURRENT` | Day's public+DealerMail release not complete yet | Usually, on a later retry |
 | `PHOTO_CACHE_FAILED` | Fresh VDP extraction failed | Retry; check dealer sites |
 | `PHOTO_CACHE_REUSE_FAILED` | Embedded resources exist but failed validation; refused to overwrite | **No** - needs a person |
-| `CLOUD_PUBLISH_FAILED` | `sync-cloud-release.mjs` exited non-zero; the real code is in the log line above it (`WRITER_LOCKED`, `PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW`, `CLOUD_*_MISMATCH`, `CLOUD_NOT_READY`) | Depends on the inner code |
+| `CLOUD_PUBLISH_FAILED` | `sync-cloud-release.mjs` exited non-zero; the real code is in the log line above it (`PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW`, `HOLD_REFRESH_SOURCE_BINDING_MISMATCH`, `CLOUD_*_MISMATCH`, `CLOUD_NOT_READY`) | Depends on the inner code |
+| `HOLD_REFRESH_SOURCE_BINDINGS_REQUIRED` | A hold-only publish was invoked outside the receipt-bound intraday orchestrator. Nothing was published. | Run the existing intraday scheduled task instead |
+| `HOLD_REFRESH_SOURCE_BINDING_MISMATCH` | One of the public, DealerMail, resource, or manager hashes changed after the intraday candidate was built. Nothing was published. | No - inspect the named source lane |
+| `CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED` | The new hold release and matching receipt are already published, but integration verification, latest-pointer advancement, or archiving failed. The candidate remains canonical. | Retry the existing intraday task; do not recapture other sources |
+| `POST_PUBLISH_STATE_RECORD_FAILED` | Cloud publication and publisher follow-ups completed, but the orchestrator could not finish its local manifest/status recording. The published candidate remains canonical. | Retry the existing intraday task; inspect local disk/status-file errors if it persists |
 | `PUBLICATION_NOT_VERIFIED` | The bundle did not pass the stricter Cloudflare validator, so nothing verified. Real causes seen: (1) the manifest is not `complete: true`, or (2) `dealermail_snapshot_path` points at the `-deep.json` instead of the `-deep-cloud-ready.json` - i.e. `finalize_cloud_snapshot.mjs` was skipped, so every row is missing the dual 22-cell arrays (`rawCellInnerText` / `rawCellControlValues`) and the `excludeActiveHoldsValidationSet`. 09/12/2026: 10:43 and 10:45 failed this way; 10:47 succeeded two minutes after finalize ran | Yes, once finalize has run and the manifest names the cloud-ready file |
 | `INTEGRATION_VERIFICATION_FAILED` | The main release is published, but the private REST API or protected OAuth/MCP discovery did not return the same hash, total and four store counts. The publisher preserves the verified release and retries this read-only check later. | Often; deploy the current integration Worker if a new validated release schema was added |
 | `INTEGRATION_CREDENTIAL_MISSING` | The owner-only local development verification key is missing, so the task cannot prove an authenticated API read. The release and cloud access controls are not weakened. | No - restore or replace the scoped key through the owner provisioning workflow |

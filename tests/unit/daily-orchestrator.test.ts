@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 
 let workspaceRoot: string
 let previousWorkspaceRoot: string | undefined
@@ -74,6 +75,25 @@ describe('app-first daily orchestrator helpers', () => {
     })
   })
 
+  it('defers the entire hold refresh behind an active shared pipeline writer', async () => {
+    const internals = await loadInternals()
+    const reportDate = '2026-09-25'
+    const lockPath = path.join(workspaceRoot, 'work', 'app-feed-status', '.publication.lock')
+    const statusPath = path.join(workspaceRoot, 'work', 'hold-refresh-status', `${reportDate}.json`)
+    mkdirSync(path.dirname(lockPath), { recursive: true })
+    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), ownerId: 'active-synthetic-writer' }))
+    try {
+      const result = await internals.runDaily(internals.parseArgs(['--date', reportDate, '--refresh-holds']))
+      expect(result.ok).toBe(true)
+      expect(JSON.parse(readFileSync(statusPath, 'utf8'))).toMatchObject({
+        reportDate,
+        status: 'waiting_for_pipeline_writer',
+      })
+    } finally {
+      rmSync(lockPath, { force: true })
+    }
+  })
+
   it('archives the prior DealerMail revision before an intraday refresh', async () => {
     const internals = await loadInternals()
     const reportDate = '2026-09-25'
@@ -96,11 +116,179 @@ describe('app-first daily orchestrator helpers', () => {
     const publisher = readFileSync(new URL('../../scripts/daily-cloud-publish.ps1', import.meta.url), 'utf8')
 
     expect(orchestrator).toContain("if (holdRefresh) args.push('-HoldRefresh')")
-    expect(orchestrator).toContain("status: current.ok ? 'reused_validated' : 'failed_blocking'")
+    expect(orchestrator).toContain("status: resources.ok ? 'reused_receipt_bound' : 'failed_blocking'")
     expect(publisher).toContain('[switch]$HoldRefresh')
     expect(publisher).toContain('reusing saved vAuto, AutoCheck, PDF, sticker, invoice, photo, and warranty data')
     expect(publisher).toContain('invoice documents: reused for hold-only refresh')
     expect(publisher).toContain("@('scripts\\dryrun_resource_enrichment_check.mjs', $date)")
+    expect(publisher).toContain('HOLD_REFRESH_SOURCE_BINDINGS_REQUIRED')
+    expect(orchestrator).toContain('INVENTORY_OPS_EXPECTED_SOURCE_HASHES_JSON')
+  })
+
+  function hash(value: string | Buffer) {
+    return createHash('sha256').update(value).digest('hex').toUpperCase()
+  }
+
+  async function receiptBoundFixture(reportDate: string) {
+    const internals = await loadInternals()
+    const publicPath = path.join(workspaceRoot, 'work', 'inventory-history', 'snapshots', `${reportDate}-public.json`)
+    const resourcePath = path.join(workspaceRoot, 'apps', 'inventory-ops', 'data', 'vin-document-enrichment.json')
+    const manifestPath = path.join(workspaceRoot, 'work', 'run-status', `${reportDate}.json`)
+    mkdirSync(path.dirname(publicPath), { recursive: true })
+    mkdirSync(path.dirname(resourcePath), { recursive: true })
+    writeFileSync(publicPath, '{"public":"morning"}\n')
+    writeFileSync(resourcePath, '{"resources":"morning"}\n')
+    const manifest = {
+      report_date: reportDate,
+      complete: true,
+      public_snapshot_path: publicPath,
+      public_snapshot_sha256: hash(readFileSync(publicPath)),
+    }
+    writeFileSync(manifestPath, JSON.stringify(manifest))
+    const receipt = {
+      reportDate,
+      complete: true,
+      status: 'published_and_verified',
+      bundleSha256: 'E'.repeat(64),
+      verifiedAt: `${reportDate}T14:00:00Z`,
+      sourceHashes: {
+        public: hash(readFileSync(publicPath)),
+        dealerMail: 'D'.repeat(64),
+        resources: hash(readFileSync(resourcePath)),
+        managerDisposition: null,
+        managerDispositionBinding: null,
+      },
+    }
+    return { internals, reportDate, publicPath, resourcePath, manifestPath, manifest, receipt }
+  }
+
+  it('refuses a hold refresh when the reused public snapshot no longer matches the verified receipt', async () => {
+    const fixture = await receiptBoundFixture('2026-09-26')
+    writeFileSync(fixture.publicPath, '{"public":"replaced"}\n')
+
+    expect(() => fixture.internals.verifyHoldRefreshBaseline(fixture)).toThrow('PUBLIC_SNAPSHOT_RECEIPT_MISMATCH')
+  })
+
+  it('refuses a hold refresh when resource enrichment no longer matches the verified receipt', async () => {
+    const fixture = await receiptBoundFixture('2026-09-27')
+    writeFileSync(fixture.resourcePath, '{"resources":"partially-rebuilt"}\n')
+
+    expect(() => fixture.internals.verifyHoldRefreshBaseline(fixture)).toThrow('RESOURCE_ENRICHMENT_RECEIPT_MISMATCH')
+  })
+
+  it('reuses only the receipt-bound manager overlay and fails if its source changes', async () => {
+    const fixture = await receiptBoundFixture('2026-09-28')
+    const managerPath = path.join(workspaceRoot, 'work', 'manager-supplied', 'sold-logs', '2026-09-howell-operational.json')
+    mkdirSync(path.dirname(managerPath), { recursive: true })
+    writeFileSync(managerPath, '{"manager":"morning"}\n')
+    const binding = { status: 'complete', path: managerPath, sha256: hash(readFileSync(managerPath)) }
+    fixture.manifest.manager_disposition_overlay = binding
+    writeFileSync(fixture.manifestPath, JSON.stringify(fixture.manifest))
+    fixture.receipt.sourceHashes.managerDisposition = 'A'.repeat(64)
+    fixture.receipt.sourceHashes.managerDispositionBinding = binding.sha256
+
+    expect(fixture.internals.verifyHoldRefreshBaseline(fixture).managerBinding).toEqual(binding)
+    const candidateRelease = {
+      sourceRuns: {
+        public: { sha256: fixture.receipt.sourceHashes.public },
+        dealerMail: { sha256: 'F'.repeat(64) },
+        resources: { sha256: fixture.receipt.sourceHashes.resources },
+        managerDisposition: {
+          sha256: fixture.receipt.sourceHashes.managerDisposition,
+          metadata: { boundSourceSha256: binding.sha256 },
+        },
+      },
+    }
+    expect(fixture.internals.assertCandidatePreservesReceiptSources(candidateRelease, fixture.receipt))
+      .toMatchObject({ managerDisposition: fixture.receipt.sourceHashes.managerDisposition })
+    candidateRelease.sourceRuns.managerDisposition.sha256 = 'C'.repeat(64)
+    expect(() => fixture.internals.assertCandidatePreservesReceiptSources(candidateRelease, fixture.receipt))
+      .toThrow('MANAGER_DISPOSITION_CHANGED_DURING_HOLD_REFRESH')
+
+    writeFileSync(managerPath, '{"manager":"changed"}\n')
+    expect(() => fixture.internals.verifyHoldRefreshBaseline(fixture)).toThrow('MANAGER_OVERLAY_SOURCE_MISMATCH')
+  })
+
+  it('restores the canonical manifest, release, and source files after a failed candidate', async () => {
+    const internals = await loadInternals()
+    const directory = path.join(workspaceRoot, 'transaction-test')
+    const manifestPath = path.join(directory, 'manifest.json')
+    const releasePath = path.join(directory, 'release.json')
+    const newlyCreatedPath = path.join(directory, 'new-source.json')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(manifestPath, 'verified manifest')
+    writeFileSync(releasePath, 'verified release')
+    const transaction = internals.captureFileTransaction([manifestPath, releasePath, newlyCreatedPath])
+    writeFileSync(manifestPath, 'candidate manifest')
+    writeFileSync(releasePath, 'candidate release')
+    writeFileSync(newlyCreatedPath, 'candidate source')
+
+    transaction.rollback()
+
+    expect(readFileSync(manifestPath, 'utf8')).toBe('verified manifest')
+    expect(readFileSync(releasePath, 'utf8')).toBe('verified release')
+    expect(existsSync(newlyCreatedPath)).toBe(false)
+  })
+
+  it('distinguishes a verified cloud publication with failed followups from a prepublication failure', async () => {
+    const internals = await loadInternals()
+    const sourceHashes = {
+      public: 'A'.repeat(64), dealerMail: 'B'.repeat(64), resources: 'C'.repeat(64),
+      managerDisposition: null, managerDispositionBinding: null,
+    }
+    const receipt = {
+      reportDate: '2026-09-25', complete: true, status: 'published_and_verified',
+      bundleSha256: 'D'.repeat(64), verifiedAt: '2026-09-25T14:25:00Z', sourceHashes,
+    }
+
+    expect(internals.classifyPublicationOutcome({
+      processOk: false,
+      beforeRaw: '{"old":true}',
+      afterState: { raw: JSON.stringify(receipt), receipt },
+      expectedHashes: sourceHashes,
+      reportDate: '2026-09-25',
+    })).toBe('published_followups_pending')
+    expect(internals.classifyPublicationOutcome({
+      processOk: false,
+      beforeRaw: JSON.stringify(receipt),
+      afterState: { raw: JSON.stringify(receipt), receipt },
+      expectedHashes: sourceHashes,
+      reportDate: '2026-09-25',
+    })).toBe('not_published')
+
+    expect(internals.classifyPublicationOutcome({
+      processOk: true,
+      beforeRaw: '{"old":true}',
+      afterState: { raw: JSON.stringify({ ...receipt, reportDate: '2026-09-24' }), receipt: { ...receipt, reportDate: '2026-09-24' } },
+      expectedHashes: sourceHashes,
+      reportDate: '2026-09-25',
+    })).toBe('not_published')
+  })
+
+  it('links a successful hold status to its verified app-feed receipt without source data', async () => {
+    const internals = await loadInternals()
+    const statusPath = path.join(workspaceRoot, 'work', 'hold-refresh-status', 'linked.json')
+    internals.writeIntradayStatus(statusPath, {
+      reportDate: '2026-09-25',
+      status: 'intraday_holds_published_and_verified',
+      summary: 'synthetic success',
+      published: true,
+      receipt: {
+        reportDate: '2026-09-25',
+        complete: true,
+        status: 'published_and_verified',
+        bundleSha256: 'A'.repeat(64),
+        verifiedAt: '2026-09-25T14:25:00Z',
+        sourceHashes: { dealerMail: 'B'.repeat(64) },
+      },
+    })
+    const status = JSON.parse(readFileSync(statusPath, 'utf8'))
+    expect(status.receipt).toEqual({
+      bundleSha256: 'A'.repeat(64),
+      verifiedAt: '2026-09-25T14:25:00Z',
+      dealerMailSha256: 'B'.repeat(64),
+    })
+    expect(JSON.stringify(status)).not.toMatch(/customer|comment|alert|reason/i)
   })
 
   it('reuses a complete existing OASIS capture when the browser is unavailable, and only then', async () => {

@@ -19,6 +19,27 @@ export function reportDate(now = new Date()) {
 }
 function check(condition, code) { if (!condition) throw new Error(code) }
 
+function normalizedSourceHash(value) {
+  if (value === null) return null
+  check(typeof value === 'string' && /^[a-fA-F0-9]{64}$/.test(value), 'HOLD_REFRESH_SOURCE_BINDINGS_INVALID')
+  return value.toLowerCase()
+}
+
+export function assertExpectedSourceHashes(release, environment = process.env) {
+  const raw = String(environment.INVENTORY_OPS_EXPECTED_SOURCE_HASHES_JSON ?? '').trim()
+  if (!raw) return false
+  let expected
+  try { expected = JSON.parse(raw) } catch { throw new Error('HOLD_REFRESH_SOURCE_BINDINGS_INVALID') }
+  check(expected && typeof expected === 'object' && !Array.isArray(expected), 'HOLD_REFRESH_SOURCE_BINDINGS_INVALID')
+  const keys = ['public', 'dealerMail', 'resources', 'managerDisposition', 'managerDispositionBinding']
+  check(Object.keys(expected).length === keys.length && keys.every((key) => Object.hasOwn(expected, key)), 'HOLD_REFRESH_SOURCE_BINDINGS_INVALID')
+  const actual = receiptSourceHashes(release)
+  for (const key of keys) {
+    check(normalizedSourceHash(expected[key]) === normalizedSourceHash(actual[key] ?? null), 'HOLD_REFRESH_SOURCE_BINDING_MISMATCH')
+  }
+  return true
+}
+
 export function receiptSourceHashes(release) {
   return {
     ...Object.fromEntries(['public', 'dealerMail', 'resources', 'managerDisposition'].map(name => [name, release.sourceRuns?.[name]?.sha256 ?? null])),
@@ -47,6 +68,7 @@ export function verifyPublishedRelease({ envelope, expected, status, readiness }
 export async function syncCloudRelease({ release, environment = process.env, fetchImpl = fetch, now = new Date() }) {
   check(release.reportDate === reportDate(now), 'NO_COMPLETED_CURRENT_DAY_RELEASE')
   check(release.sourceRuns?.public?.status === 'current' && release.sourceRuns?.dealerMail?.status === 'current', 'SOURCE_NOT_CURRENT')
+  assertExpectedSourceHashes(release, environment)
   const bundle = cloudReleaseFrom(release)
   const expected = validateReleaseBundle(bundle)
   const envelope = encryptBundle(bundle, base64Key(environment.INVENTORY_OPS_RELEASE_ENCRYPTION_KEY_BASE64 ?? ''))
@@ -134,18 +156,33 @@ export function acquirePublicationLock(lockPath) {
   finally { releasePublicationLock(guard) }
 }
 
+export function assertInheritedPublicationLock(lockPath, environment = process.env) {
+  const ownerId = String(environment.INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID ?? '').trim()
+  if (!ownerId) return false
+  try {
+    const identity = lstatSync(lockPath)
+    check(identity.isFile() && !identity.isSymbolicLink(), WRITER_LOCKED)
+    const recorded = JSON.parse(readFileSync(lockPath, 'utf8'))
+    check(recorded?.ownerId === ownerId, WRITER_LOCKED)
+    return true
+  } catch {
+    throw new Error(WRITER_LOCKED)
+  }
+}
+
 export async function main() {
   const workspaceRoot = resolveWorkspaceRoot(import.meta.url)
   const directory = path.join(workspaceRoot, 'work/app-feed-status')
   mkdirSync(directory, { recursive: true })
   const lockPath = path.join(directory, '.publication.lock')
-  const lock = acquirePublicationLock(lockPath)
+  const inheritedLock = assertInheritedPublicationLock(lockPath)
+  const lock = inheritedLock ? null : acquirePublicationLock(lockPath)
   try {
     const release = loadLatestCompletedRelease({ workspaceRoot })
     const receipt = await syncCloudRelease({ release })
     const receiptPath = writeReceipt(directory, receipt)
     process.stdout.write(JSON.stringify({ status: receipt.status, reportDate: receipt.reportDate, counts: receipt.counts, receiptPath }) + '\n')
-  } finally { releasePublicationLock(lock) }
+  } finally { if (lock) releasePublicationLock(lock) }
 }
 if (process.argv[1] && path.basename(process.argv[1]) === 'sync-cloud-release.mjs') main().catch(error => {
   // Never forward raw HTTP payloads, authentication details, or source rows.

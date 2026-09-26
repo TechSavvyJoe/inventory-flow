@@ -6,7 +6,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildSyntheticCloudBundle } from '../../fixtures/synthetic-cloud-bundle.mjs'
 import { validateReleaseBundle } from '../../cloudflare/src/release-validation.mjs'
-import { acquirePublicationLock, receiptSourceHashes, releasePublicationLock, reportDate, syncCloudRelease, verifyPublishedRelease, writeReceipt } from '../../scripts/sync-cloud-release.mjs'
+import { acquirePublicationLock, assertExpectedSourceHashes, assertInheritedPublicationLock, receiptSourceHashes, releasePublicationLock, reportDate, syncCloudRelease, verifyPublishedRelease, writeReceipt } from '../../scripts/sync-cloud-release.mjs'
 
 const environment = { INVENTORY_OPS_CLOUD_URL:'https://inventory-ops.joegallant.me', INVENTORY_OPS_RELEASE_ENCRYPTION_KEY_BASE64:Buffer.alloc(32, 7).toString('base64'), CF_ACCESS_CLIENT_ID:'synthetic', CF_ACCESS_CLIENT_SECRET:'synthetic', INVENTORY_OPS_RELEASE_PUBLISHER_TOKEN:'synthetic' }
 const now = new Date('2026-08-30T15:00:00Z')
@@ -20,6 +20,13 @@ describe('verified daily cloud publication',()=>{
   it('keeps the raw manager binding separate from the sanitized overlay hash',()=>{
     const release={sourceRuns:{managerDisposition:{sha256:'a'.repeat(64),metadata:{boundSourceSha256:'B'.repeat(64)}}}}
     expect(receiptSourceHashes(release)).toMatchObject({managerDisposition:'a'.repeat(64),managerDispositionBinding:'B'.repeat(64)})
+  })
+  it('rechecks all receipt-bound source hashes immediately before a hold publication',()=>{
+    const {bundle}=fixture()
+    const expected=receiptSourceHashes(bundle.release)
+    expect(assertExpectedSourceHashes(bundle.release,{INVENTORY_OPS_EXPECTED_SOURCE_HASHES_JSON:JSON.stringify(expected)})).toBe(true)
+    expect(()=>assertExpectedSourceHashes(bundle.release,{INVENTORY_OPS_EXPECTED_SOURCE_HASHES_JSON:JSON.stringify({...expected,public:'f'.repeat(64)})})).toThrow('HOLD_REFRESH_SOURCE_BINDING_MISMATCH')
+    expect(()=>assertExpectedSourceHashes(bundle.release,{INVENTORY_OPS_EXPECTED_SOURCE_HASHES_JSON:JSON.stringify({public:expected.public})})).toThrow('HOLD_REFRESH_SOURCE_BINDINGS_INVALID')
   })
   it('uses the New York date across UTC midnight',()=>expect(reportDate(new Date('2026-09-10T02:00:00Z'))).toBe('2026-09-09'))
   it('requires exact content as well as date and aggregate/store counts',()=>{
@@ -93,6 +100,15 @@ describe('publication writer ownership and crash recovery', () => {
     expect(readFileSync(target, 'utf8')).toBe(lock.content)
     releasePublicationLock(lock)
     expect(existsSync(target)).toBe(false)
+  })
+  it('lets a child publisher reuse only the exact outer pipeline-lock owner', () => {
+    const target = file(), lock = acquirePublicationLock(target)
+    const ownerId = JSON.parse(lock.content).ownerId
+    expect(assertInheritedPublicationLock(target, { INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID: ownerId })).toBe(true)
+    expect(() => assertInheritedPublicationLock(target, { INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID: 'different-owner' }))
+      .toThrow('PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW')
+    expect(readFileSync(target, 'utf8')).toBe(lock.content)
+    releasePublicationLock(lock)
   })
   it('recovers only a proven exited PID under an exclusive recovery guard', () => {
     const target = file()

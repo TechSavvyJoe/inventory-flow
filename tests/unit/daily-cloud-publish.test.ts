@@ -49,6 +49,9 @@ if ($global:HarnessScenario.secretPresent) {
   $syntheticSecrets | ConvertTo-Json -Compress | ConvertTo-SecureString -AsPlainText -Force | ConvertFrom-SecureString |
     Set-Content -NoNewline -LiteralPath (Join-Path $AppRoot 'runtime/cloud-secrets/publisher.dpapi')
 }
+if ($global:HarnessScenario.lockPresent) {
+  Set-Content -NoNewline -LiteralPath (Join-Path $WorkspaceRoot 'work/app-feed-status/.publication.lock') -Value '{"pid":999999,"ownerId":"synthetic-other-task"}'
+}
 
 function global:Get-Command {
   param([string]$Name, [string]$ErrorAction)
@@ -135,11 +138,11 @@ function fixture(cached = false) {
   writeFileSync(harnessPath, harness)
   const readManifest = () => JSON.parse(readFileSync(manifestPath, 'utf8'))
   let runNumber = 0
-  function run(options: { invoiceExit?: number; integrationExit?: number; secretPresent?: boolean; force?: boolean } = {}) {
+  function run(options: { invoiceExit?: number; integrationExit?: number; secretPresent?: boolean; force?: boolean; lockPresent?: boolean } = {}) {
     const prefix = path.join(root, `attempt-${++runNumber}`)
     const scenario = {
       profile: path.join(root, 'profile'), events: `${prefix}.events`, result: `${prefix}.result`,
-      receipt, receiptPath, invoiceExit: 0, integrationExit: 0, secretPresent: true, force: false, ...options,
+      receipt, receiptPath, invoiceExit: 0, integrationExit: 0, secretPresent: true, force: false, lockPresent: false, ...options,
     }
     const scenarioPath = `${prefix}.json`
     writeFileSync(scenarioPath, JSON.stringify(scenario))
@@ -175,6 +178,7 @@ describe('daily PowerShell publisher document retries', () => {
     expect(first.exitCode).toBe(1)
     expect(first.helpers.slice(-2), first.output).toEqual(['sync-cloud-release.mjs', 'publish-invoice-documents.mjs'])
     expect(first.output).toContain('INVOICE_DOCUMENT_PUBLISH_FAILED')
+    expect(first.output).toContain('RELEASE PUBLISHED; FOLLOWUPS FAILED')
     expect(first.output).not.toMatch(/SUCCESS|SKIPPED/)
     expect(test.readManifest()).not.toHaveProperty('cloudflare_publish')
     const savedReceipt = readFileSync(test.receiptPath, 'utf8')
@@ -196,6 +200,7 @@ describe('daily PowerShell publisher document retries', () => {
     const result = test.run({ invoiceExit: 1 })
     expect(result.exitCode).toBe(1)
     expect(result.helpers, result.output).toEqual(['publish-invoice-documents.mjs'])
+    expect(result.output).toContain('RELEASE PUBLISHED; FOLLOWUPS FAILED')
     expect(result.output).not.toMatch(/SUCCESS|SKIPPED/)
     expect(test.readManifest()).not.toHaveProperty('latest_pointers_advanced')
     expect(existsSync(path.join(test.appRoot, 'runtime/integration-expected-release.json'))).toBe(false)
@@ -217,6 +222,14 @@ describe('daily PowerShell publisher document retries', () => {
     expect(result.helpers).toEqual([])
     expect(result.output).toContain('SECRET_STORE_MISSING')
     expect(result.output).not.toMatch(/SUCCESS|SKIPPED/)
+  }, 30_000)
+
+  it('serializes the whole publisher behind the shared pipeline lock', () => {
+    const test = fixture(true)
+    const result = test.run({ lockPresent: true })
+    expect(result.exitCode).toBe(1)
+    expect(result.helpers).toEqual([])
+    expect(result.output).toContain('PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW')
   }, 30_000)
 
   it('keeps an explicit forced republish on the normal path and runs the same follow-ups', () => {

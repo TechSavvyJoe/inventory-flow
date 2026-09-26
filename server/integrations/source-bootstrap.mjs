@@ -151,7 +151,7 @@ export function integrationBootstrapFromSource(bootstrap, release) {
   }
   const meta = {
     ...pick(bootstrap.meta, [
-      'reportDate', 'completedAt', 'timezone', 'publicFreshness', 'dealerMailFreshness', 'resourceFreshness',
+      'reportDate', 'completedAt', 'publicCapturedAt', 'dealerMailCapturedAt', 'timezone', 'publicFreshness', 'dealerMailFreshness', 'resourceFreshness',
       'managerDispositionFreshness', 'managerDispositionCoverageStatus', 'publicCount', 'crmCount', 'heldVinCount',
       'managerDispositionCount', 'managerDeliveredCount', 'managerDispositionReviewCount', 'publicChangeBaselineDate', 'holdChangeStatus',
     ]),

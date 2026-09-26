@@ -172,7 +172,7 @@ export function toTransferVehicle(vehicle: VehicleRecord, meta: SourceMeta): Tra
       label: vehicle.movement.currentLocation || vehicle.sourceReportedLocation,
       type: 'store',
       confidence: vehicle.movement.locationConfidence,
-      confirmedAt: vehicle.movement.lastConfirmedAt || meta.completedAt,
+      confirmedAt: vehicle.movement.lastConfirmedAt || meta.publicCapturedAt || meta.completedAt,
       confirmedBy: vehicle.movement.currentCustodian,
     },
     listedPriceLabel: formatCurrency(vehicle.listedPrice),
