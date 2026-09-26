@@ -466,7 +466,6 @@
   #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link.is-compact { min-height:var(--ifx-control-height-md); padding:var(--ifx-space-1); border-radius:var(--ifx-radius-xs); }
   #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link__detail { justify-content:center; gap:0 4px; }
   #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link__detail > span { min-width:0; white-space:normal; overflow-wrap:anywhere; }
-  #inventory-vehicle-workspace .vdp-focus-service .inventory-service-link__prefix { display:none; }
   #inventory-vehicle-workspace .vdp-focus-scroll { padding:10px; scrollbar-gutter:auto; background:var(--surface); }
   #inventory-vehicle-workspace .vdp-focus-scroll:has(.vdp-focus-overview) { padding-inline:0; }
   #inventory-vehicle-workspace .vdp-focus-scroll .vdp-focus-resources { border-inline:0; border-radius:0; }
