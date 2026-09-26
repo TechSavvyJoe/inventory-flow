@@ -71,7 +71,6 @@ function sourceRow(source, loadedAt) {
     status: source.status,
     stale_reason: nullable(source.staleReason),
     row_count: source.rowCount,
-    metadata_json: json(source.metadata),
     metadata: source.metadata ?? {},
     manifest_path: '',
   }
@@ -134,13 +133,13 @@ export function datasetFromRelease(release, homeAssignments = [], { loadedAt } =
       listed_price: publicRecord.listed_price ?? null,
       mileage: publicRecord.mileage ?? null,
       inventory_date: nullable(publicRecord.inventory_date),
-      payload_json: json(publicRecord), payload: publicRecord,
+      payload: publicRecord,
     })
     if (crmRecord) dataset.crmRows.push({
       source_run_id: sourceRuns.dealerMail.id, vin,
       stock_number: String(crmRecord.stockNumber ?? ''), crm_store_id: crmRecord.storeName,
       hold_state: crmRecord.holdStateFromRowClass || 'unknown',
-      payload_json: json(crmRecord), payload: crmRecord,
+      payload: crmRecord,
     })
     if (holdRecord) {
       const active = (holdRecord.holdDetailRows ?? []).filter((row) => row?.lifecycleStatus === 'active')
@@ -153,12 +152,12 @@ export function datasetFromRelease(release, homeAssignments = [], { loadedAt } =
         crm_store_id: holdRecord.store?.name, active_hold_count: active.length, backup_count: backups.length,
         primary_salesperson: nullable(primary?.salespersonRaw), expected_date: nullable(primary?.expectedDeliveryDateRaw),
         comments_count: comments, alerts_count: (holdRecord.alerts ?? []).length,
-        payload_json: json(holdRecord), payload: holdRecord,
-        cdk_json: cdkRecord ? json(cdkRecord) : null, cdk: cdkRecord ?? null,
+        payload: holdRecord,
+        cdk: cdkRecord ?? null,
       })
     }
     if (sourceRuns.resources && resourceRecord) dataset.resourceRows.push({
-      source_run_id: sourceRuns.resources.id, vin, payload_json: json(resourceRecord), payload: resourceRecord,
+      source_run_id: sourceRuns.resources.id, vin, payload: resourceRecord,
     })
   }
   return dataset

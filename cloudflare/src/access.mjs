@@ -1,10 +1,13 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose'
+import { humanErrorMessage } from './error-messages.mjs'
+
 
 export class AccessError extends Error {
-  constructor(code = 'ACCESS_AUTHENTICATION_REQUIRED', status = 401) { super(code); this.code = code; this.status = status }
+  constructor(code = 'ACCESS_AUTHENTICATION_REQUIRED', status = 401) { super(code); this.code = code; this.status = status; this.humanMessage = humanErrorMessage(code, 'Access denied.'); }
 }
 
-// Only public signing keys are cached. User claims and data never live in a module cache.
+// This cache holds public signing keys only. The Worker separately caches a
+// decrypted release by object key and bundle hash; user claims are never cached.
 const keySets = new Map()
 export async function verifyAccess(request, env, audience = env.ACCESS_AUDIENCE) {
   const issuer = env.ACCESS_ISSUER

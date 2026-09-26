@@ -28,6 +28,48 @@ function request(path='/api/health',jwt,options={}) {return new Request(`https:/
 describe('Cloud Worker authentication boundary',()=>{
   it('rejects alternate hosts before data access',async()=>expect((await worker.fetch(new Request('https://other.example/api/health'),env)).status).toBe(403))
   it('requires sign in',async()=>expect((await worker.fetch(request(),env)).status).toBe(401))
+  it('keeps the machine code while explaining sign-in failures to employees',async()=>{
+    const response=await worker.fetch(request(),env)
+    expect(await response.json()).toMatchObject({code:'ACCESS_AUTHENTICATION_REQUIRED',error:'Please sign in to access this application.'})
+  })
+  it.each([
+    ['/assets/app-synthetic.js',200,'private, max-age=31536000, immutable'],
+    ['/assets/missing-synthetic.js',404,'private, no-store'],
+    ['/',200,'private, no-store'],
+    ['/inventory',200,'private, no-store'],
+    ['/downloads/companion.zip',200,'private, no-store'],
+  ])('sets one cache policy for %s (%s)',async(path,status,cacheControl)=>{
+    const configured={...env,ASSETS:{fetch:async()=>new Response('synthetic content',{status,headers:{'cache-control':'public, max-age=0','content-type':'text/plain','x-content-type-options':'unsafe-upstream'}})}}
+    const response=await worker.fetch(request(path,await token()),configured)
+    expect(response.status).toBe(status)
+    expect(response.headers.get('cache-control')).toBe(cacheControl)
+    expect(response.headers.get('content-type')).toBe('text/plain')
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+  })
+  it('never caches the single-page fallback as an immutable asset',async()=>{
+    // With not_found_handling=single-page-application the asset binding answers a
+    // missing hashed chunk with index.html and 200; that must not be cached for a year.
+    const fetch=vi.fn(async()=>new Response('<!doctype html><title>synthetic</title>',{status:200,headers:{'content-type':'text/html; charset=utf-8'}}))
+    const configured={...env,ASSETS:{fetch}}
+    const response=await worker.fetch(request('/assets/missing-synthetic-chunk.js',await token()),configured)
+    expect(response.status).toBe(404)
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+    const page=await worker.fetch(request('/inventory',await token()),configured)
+    expect(page.status).toBe(200)
+    expect(page.headers.get('cache-control')).toBe('private, no-store')
+  })
+  it('authenticates immutable assets and keeps API responses non-cacheable',async()=>{
+    const fetch=vi.fn(async()=>new Response('synthetic asset'))
+    const configured={...env,ASSETS:{fetch}}
+    const denied=await worker.fetch(request('/assets/app-synthetic.js'),configured)
+    expect(denied.status).toBe(401)
+    expect(denied.headers.get('cache-control')).toBe('private, no-store')
+    expect(fetch).not.toHaveBeenCalled()
+    const health=await worker.fetch(request('/api/health',await token()),configured)
+    expect(health.status).toBe(200)
+    expect(health.headers.get('cache-control')).toBe('private, no-store')
+  })
   it('rejects a forged header',async()=>expect((await worker.fetch(request('/api/health','forged'),env)).status).toBe(401))
   it.each([{aud:'wrong'}, {iss:'https://wrong.cloudflareaccess.com'}, {exp:1}, {nbf:9999999999}])('rejects invalid signed claims %j',async claims=>expect((await worker.fetch(request('/api/health',await token(claims)),env)).status).toBe(401))
   it('accepts valid employee signatures and registered membership',async()=>expect((await worker.fetch(request('/api/health',await token()),env)).status).toBe(200))
@@ -95,6 +137,41 @@ describe('Cloud Worker authentication boundary',()=>{
     const failed={...env,INVENTORY_DB:{prepare(){throw new Error('SYNTHETIC-PRIVATE-NOTE')}}}
     const response=await worker.fetch(request('/api/health',await token()),failed)
     expect(response.status).toBe(500);expect(await response.text()).not.toContain('SYNTHETIC-PRIVATE-NOTE')
+  })
+  it('logs route templates without private identifiers, queries, or exception text',async()=>{
+    const log=vi.spyOn(console,'error').mockImplementation(()=>{})
+    try {
+      const failed={...env,INVENTORY_DB:{prepare(){throw Object.assign(new Error('SYNTHETIC-PRIVATE-MESSAGE'),{name:'SYNTHETIC-PRIVATE-NAME',code:'SYNTHETIC-PRIVATE-CODE'})}}}
+      for (const [path,route] of [
+        ['/api/vehicles/TESTDATAHWELL0001?q=SYNTHETIC-PRIVATE-QUERY','/api/vehicles/:id'],
+        ['/assets/SYNTHETIC-PRIVATE-FILENAME.js','/assets/:file'],
+        ['/unknown/SYNTHETIC-PRIVATE-PATH','/other'],
+      ]) {
+        const response=await worker.fetch(request(path,await token()),failed)
+        const body=await response.json()
+        expect(response.status).toBe(500)
+        expect(log).toHaveBeenLastCalledWith({requestId:body.requestId,name:'Error',code:'INTERNAL_ERROR',route})
+        expect(JSON.stringify(body)).not.toContain('SYNTHETIC-PRIVATE')
+      }
+      expect(JSON.stringify(log.mock.calls)).not.toContain('SYNTHETIC-PRIVATE')
+      expect(JSON.stringify(log.mock.calls)).not.toContain('TESTDATAHWELL0001')
+    } finally { log.mockRestore() }
+  })
+  it('reports a decryption stage with the request ID without logging the upload',async()=>{
+    const log=vi.spyOn(console,'error').mockImplementation(()=>{})
+    try {
+      const jwt=await token({aud:env.ACCESS_PUBLISHER_AUDIENCE,sub:'',email:undefined,common_name:env.PUBLISHER_CLIENT_ID})
+      const envelope={version:'inventory-flow-private-release-v1',reportDate:'2026-09-09',bundleSha256:'a'.repeat(64),iv:'A'.repeat(16),ciphertext:'B'.repeat(64)}
+      const response=await worker.fetch(request('/internal/releases?note=SYNTHETIC-PRIVATE-QUERY',jwt,{
+        method:'POST',headers:{Authorization:`Bearer ${env.RELEASE_PUBLISHER_TOKEN}`,'content-type':'application/json'},body:JSON.stringify(envelope),
+      }),{...env,RELEASE_ENCRYPTION_KEY_BASE64:'A'.repeat(43)+'='})
+      expect(response.status).toBe(400)
+      const body=await response.json()
+      expect(body).toMatchObject({code:'INVALID_OR_INCOMPLETE_RELEASE',error:'The release data is invalid or incomplete.'})
+      expect(log).toHaveBeenCalledWith({requestId:body.requestId,name:'Error',code:'INVALID_OR_INCOMPLETE_RELEASE',route:'/internal/releases',stage:'decrypt'})
+      expect(JSON.stringify(log.mock.calls)).not.toContain(envelope.ciphertext)
+      expect(JSON.stringify(log.mock.calls)).not.toContain('SYNTHETIC-PRIVATE')
+    } finally { log.mockRestore() }
   })
   it('rejects cross-origin writes before body or data access',async()=>expect((await worker.fetch(request('/api/transfers',await token(),{method:'POST',headers:{Origin:'https://wrong.example'}}),env)).status).toBe(403))
   it('bounds streamed input even without Content-Length',async()=>{
