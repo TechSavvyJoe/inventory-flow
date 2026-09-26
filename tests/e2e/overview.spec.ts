@@ -24,6 +24,19 @@ test('management overview stays dense, navigable, and printable at every canonic
     expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport + 1)
     const targets = await page.locator('.ov-page button, .ov-page a').evaluateAll(elements => elements.filter(element => !(element as HTMLButtonElement).disabled).map(element => element.getBoundingClientRect().height))
     expect(Math.min(...targets)).toBeGreaterThanOrEqual(44)
+    if (viewport.width === 390) {
+      const storeStrip = page.getByRole('region', { name: 'Store inventory summaries' })
+      const stripLayout = await storeStrip.evaluate(element => ({
+        bottom: element.getBoundingClientRect().bottom,
+        height: element.getBoundingClientRect().height,
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      }))
+      expect(stripLayout.height).toBeLessThan(360)
+      expect(stripLayout.scrollWidth).toBeGreaterThan(stripLayout.clientWidth)
+      const populationTop = await page.getByRole('heading', { name: 'Howell · Home inventory' }).evaluate(element => element.closest('section')!.getBoundingClientRect().top)
+      expect(populationTop - stripLayout.bottom).toBeLessThan(24)
+    }
     await page.screenshot({ path: testInfo.outputPath(`overview-${viewport.width}x${viewport.height}.png`), fullPage: true })
   }
 

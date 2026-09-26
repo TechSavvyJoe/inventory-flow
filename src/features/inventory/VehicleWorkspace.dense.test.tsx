@@ -255,6 +255,11 @@ describe('focused vehicle workspace', () => {
     expect(screen.getByRole('button', { name: 'Copy VIN: TESTDATASYN000002' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Back to inventory' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Close vehicle details' })).toBeVisible();
+    const quickStatus = screen.getByRole('group', { name: 'Quick vehicle status' });
+    expect(quickStatus).toHaveTextContent('Fowlerville');
+    expect(quickStatus).toHaveTextContent('On hold');
+    expect(within(quickStatus).getByRole('link', { name: 'Service: Waiting for service' })).toBeVisible();
+    expect(quickStatus).not.toHaveTextContent('123,328 mi');
     expect(document.querySelector('.inventory-workspace-backdrop')).toHaveAttribute('aria-hidden', 'true');
     const scroll = document.querySelector('.vdp-focus-scroll')!;
     expect(scroll.contains(screen.getByRole('tablist'))).toBe(false);

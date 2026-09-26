@@ -53,13 +53,13 @@ const POPULATION_LABELS: Record<OverviewPopulation, string> = {
   open_issues: 'Open vehicle issues',
 }
 
-const STORE_METRICS: Array<{ population: OverviewPopulation; shortLabel: string; tone?: string }> = [
+const STORE_METRICS: Array<{ population: OverviewPopulation; shortLabel: string; tone?: 'danger' | 'warning' }> = [
   { population: 'on_lot', shortLabel: 'On lot' },
   { population: 'away', shortLabel: 'Away' },
   { population: 'visiting', shortLabel: 'Visiting' },
   { population: 'in_transit', shortLabel: 'In transit' },
-  { population: 'holds', shortLabel: 'Holds' },
-  { population: 'waiting_service', shortLabel: 'Waiting service' },
+  { population: 'holds', shortLabel: 'Holds', tone: 'warning' },
+  { population: 'waiting_service', shortLabel: 'Waiting service', tone: 'warning' },
   { population: 'return_overdue', shortLabel: 'Return overdue', tone: 'danger' },
   { population: 'location_review', shortLabel: 'Check location', tone: 'warning' },
   { population: 'open_issues', shortLabel: 'Open issues', tone: 'warning' },
@@ -81,6 +81,26 @@ function selectedPopulation(
 
 function metricName(store: StoreName, count: number, label: string): string {
   return `${store}: ${count} ${label.toLowerCase()}`
+}
+
+function metricClass(count: number, active: boolean, tone?: 'danger' | 'warning'): string {
+  return [
+    count === 0 ? 'is-zero' : 'has-value',
+    active ? 'is-active' : '',
+    count > 0 && tone ? `ov-tone-${tone}` : '',
+  ].filter(Boolean).join(' ')
+}
+
+function vehicleLocationSummary(fact: OverviewVehicleFact): string {
+  const stores = fact.currentStore && fact.currentStore !== fact.homeStore
+    ? `Current: ${fact.currentLocation} · Home: ${fact.homeStore}`
+    : `Current: ${fact.currentLocation}`
+  const elapsed = fact.away
+    ? fact.awayDays === null
+      ? 'Away · departure time not recorded'
+      : `${fact.awayDays} day${fact.awayDays === 1 ? '' : 's'} away`
+    : null
+  return [stores, elapsed, fact.locationBasisLabel].filter(Boolean).join(' · ')
 }
 
 function StoreCard({
@@ -121,7 +141,7 @@ function StoreCard({
             <button
               type="button"
               key={metric.population}
-              className={`${active ? 'is-active' : ''}${metric.tone ? ` ov-tone-${metric.tone}` : ''}`}
+              className={metricClass(count, active, metric.tone)}
               aria-label={metricName(summary.store, count, metric.shortLabel)}
               aria-pressed={active}
               disabled={count === 0}
@@ -140,7 +160,9 @@ function StoreCard({
           ['records_incomplete', 'Records incomplete'],
         ] as Array<[OverviewPopulation, string]>).map(([population, label]) => {
           const count = summary.populations[population].length
-          return <button key={population} type="button" aria-label={metricName(summary.store, count, label)} aria-pressed={selected.store === summary.store && selected.population === population} disabled={count === 0} onClick={() => onSelect({ store: summary.store, population })}><span>{label}</span><strong>{count}</strong></button>
+          const active = selected.store === summary.store && selected.population === population
+          const tone = population === 'records_incomplete' ? 'warning' : undefined
+          return <button className={metricClass(count, active, tone)} key={population} type="button" aria-label={metricName(summary.store, count, label)} aria-pressed={active} disabled={count === 0} onClick={() => onSelect({ store: summary.store, population })}><span>{label}</span><strong>{count}</strong></button>
         })}
         <p>Source-reported locations are labeled in the vehicle drilldown.</p>
       </div>
@@ -161,25 +183,17 @@ function PopulationRows({ facts, returnTo }: { facts: OverviewVehicleFact[]; ret
             <div className="ov-vehicle-identity">
               <strong>{vehicle.vehicleName}</strong>
               <span>#{vehicle.stockNumber} · VIN {vehicle.vin}</span>
-              <span>Home: {fact.homeStore} · Current: {fact.currentLocation}</span>
-              <small>{fact.locationBasisLabel}</small>
+              <small className="ov-vehicle-location"><MapPin aria-hidden="true" />{vehicleLocationSummary(fact)}</small>
             </div>
-            <div className="ov-vehicle-signals">
-              {fact.away
-                ? <span>{fact.awayDays === null ? 'Away · departure time not recorded' : `${fact.awayDays} day${fact.awayDays === 1 ? '' : 's'} away`}</span>
-                : fact.locationBasis === 'move_ledger'
-                  ? <span>Confirmed at home store</span>
-                  : fact.locationBasis === 'source_reported'
-                    ? <span>Source reports home store · custody not confirmed</span>
-                    : <span>Location needs checking</span>}
-              <span>{fact.holdActive ? fact.vehicle.hold.label : 'No current DealerMail hold found · confirm with home store'}</span>
-              <span>{serviceStatusLabel(fact.vehicle.serviceReadiness)}</span>
-              {fact.returnOverdue ? <strong className="ov-tone-danger">Return overdue</strong> : null}
-              {fact.openIssues.length ? <strong className="ov-tone-warning">{fact.openIssues.length} open issue{fact.openIssues.length === 1 ? '' : 's'}</strong> : null}
+            <div className="ov-vehicle-signals" aria-label={`Status for ${vehicle.vehicleName}`}>
+              <span><small>Hold</small><strong>{fact.holdActive ? fact.vehicle.hold.label : 'No current DealerMail hold found · confirm with home store'}</strong></span>
+              <span><small>Service</small><strong>{serviceStatusLabel(fact.vehicle.serviceReadiness)}</strong></span>
+              {fact.returnOverdue ? <span className="ov-tone-danger"><small>Movement</small><strong>Return overdue</strong></span> : null}
+              {fact.openIssues.length ? <span className="ov-tone-warning"><small>Attention</small><strong>{fact.openIssues.length} open issue{fact.openIssues.length === 1 ? '' : 's'}</strong></span> : null}
             </div>
             <div className="ov-vehicle-actions">
+              <Link className="ov-vehicle-action--primary" to={detailPath}><CarFront aria-hidden="true" />View vehicle</Link>
               <Link to={recordsPath}><FileText aria-hidden="true" />Records {fact.records.captured}/{fact.records.applicable}</Link>
-              <Link to={detailPath}>Vehicle details</Link>
               {vehicle.movement.transferId ? <Link to={withWorkspaceReturnPath(`/transfers?id=${encodeURIComponent(vehicle.movement.transferId)}`, returnTo)}><ArrowLeftRight aria-hidden="true" />Move</Link> : null}
               <Link to={withWorkspaceReturnPath(`/service?vin=${encodeURIComponent(vehicle.vin)}`, returnTo)}><Wrench aria-hidden="true" />Service</Link>
               {fact.openIssues[0] ? <Link to={`/attention?issue=${encodeURIComponent(fact.openIssues[0].id)}`}><CircleAlert aria-hidden="true" />Issue</Link> : null}
@@ -260,7 +274,7 @@ export function OverviewPage() {
 
       <p className="ov-boundary"><AlertTriangle aria-hidden="true" /><span><strong>Operational evidence, not an availability promise.</strong> Listing, DealerMail hold, manager-log disposition, service, and physical location remain separate. Confirm availability and custody with the home store.</span></p>
 
-      <section className="ov-stores" aria-label="Store inventory summaries">
+      <section className={`ov-stores${visibleStores.length === 1 ? ' ov-stores--single' : ''}`} aria-label="Store inventory summaries">
         {visibleStores.map(summary => <StoreCard key={summary.store} summary={summary} homeStore={homeStore} selected={activeSelection} onSelect={setSelection} />)}
       </section>
 

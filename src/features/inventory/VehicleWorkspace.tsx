@@ -832,11 +832,20 @@ export function VehicleWorkspace({
         data-active-section={activePage} data-active-target={activeTarget} data-has-issues={Boolean(issueContext)}>
         <header className="vdp-focus-header">
           <button type="button" className="vdp-focus-back" onClick={closeWorkspace} aria-label={returnLabel}><ChevronLeft size={20} aria-hidden="true" /><span>{returnLabel}</span></button>
-          <div className="vdp-focus-identity"><h2 id="inventory-workspace-title">{displayName}</h2><strong>{formatMoney(vehicle.price)}</strong></div>
-          <dl className="vdp-focus-identifiers">
-            <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} /></dd></div>
-            <div><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} /></dd></div>
-          </dl>
+          <div className="vdp-focus-primary">
+            <div className="vdp-focus-identity"><h2 id="inventory-workspace-title">{displayName}</h2><strong>{formatMoney(vehicle.price)}</strong></div>
+            <div className="vdp-focus-subline">
+              <dl className="vdp-focus-identifiers">
+                <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} /></dd></div>
+                <div><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} /></dd></div>
+              </dl>
+              <div className="vdp-focus-glance" role="group" aria-label="Quick vehicle status">
+                <span aria-label={`Location: ${currentLocation.label}`}><strong>{currentLocation.label}</strong></span>
+                <span aria-label={`Hold status: ${holdLabel}`}><strong>{holdLabel}</strong></span>
+                <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} labelPrefix="Service" detailed compact />
+              </div>
+            </div>
+          </div>
           <button type="button" className="vdp-focus-close" onClick={closeWorkspace} aria-label="Close vehicle details"><X size={20} aria-hidden="true" /></button>
         </header>
         <div className="vdp-focus-navigation">
@@ -847,7 +856,6 @@ export function VehicleWorkspace({
               onKeyDown={event => onSectionKeyDown(event, index)}
               onClick={() => openAndFocusSection(section.id)} key={section.id}>{section.label}</button>)}
           </div>
-          <div className="vdp-focus-service"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} labelPrefix="Service" detailed compact /></div>
         </div>
         <div className="vdp-focus-scroll" ref={scrollRef}>
           <VehicleDetailStatus state={detailState} onRetry={onRetryDetail} />
@@ -870,11 +878,6 @@ export function VehicleWorkspace({
                 <Fact label="Base MSRP"><span className="vdp-focus-reference-value">{baseMsrpDisplay}</span>{baseMsrpQualifier ? <small>{baseMsrpQualifier}</small> : null}</Fact>
                 <Fact label="Inventory date"><span className="vdp-focus-reference-date">{vehicle.inventoryDate ? formatDate(vehicle.inventoryDate) : "—"}</span></Fact>
               </dl></section>
-            <section className="vdp-focus-highlights" aria-label="Key equipment">
-              <div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
-              {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
-            </section>
-                <CustomerSummary key={vehicle.id} vehicle={vehicle} onRecords={() => openAndFocusSection("data")} onTakeHome={(button) => { takeHomeOpenerRef.current = button; setTakeHomeOpen(true); }} />
               </div>
               <section className="vdp-focus-operations" aria-label="Vehicle operational summary">
                 <h3>Operations</h3>
@@ -896,7 +899,11 @@ export function VehicleWorkspace({
                 {hasMovement ? <div className="vdp-focus-next-action"><strong>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div> : null}
                 {issueContext ? <VehicleIssuesSummary issues={vehicleIssues} canReport={canReportIssue} enabled={issueContext.enabled} onOpen={() => openAndFocusSection('issues')} onReport={reportIssue} /> : null}
               </section>
-
+              <section className="vdp-focus-highlights" aria-label="Key equipment">
+                <div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
+                {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
+              </section>
+              <CustomerSummary key={vehicle.id} vehicle={vehicle} onRecords={() => openAndFocusSection("data")} onTakeHome={(button) => { takeHomeOpenerRef.current = button; setTakeHomeOpen(true); }} />
             </div>
             <section className="vdp-focus-resources" aria-label="Documents and vehicle records">
               <div className="vdp-focus-section-heading vdp-document-heading">

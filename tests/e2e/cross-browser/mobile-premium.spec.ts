@@ -105,10 +105,20 @@ test('a phone vehicle workspace remains usable after rotation and a keyboard-siz
       const bounds = (await workspace.boundingBox())!
       expect(Math.abs(bounds.x)).toBeLessThanOrEqual(1)
       expect(Math.abs(bounds.width - viewport.width)).toBeLessThanOrEqual(1)
+      const header = (await workspace.locator('.vdp-focus-header').boundingBox())!
+      const navigation = (await workspace.locator('.vdp-focus-navigation').boundingBox())!
+      expect(header.height, 'compact phone identity and status header').toBeLessThanOrEqual(96)
+      expect(header.height + navigation.height, 'vehicle content remains in the first phone viewport').toBeLessThanOrEqual(144)
+      const tabRail = workspace.getByRole('tablist', { name: 'Vehicle workspace sections' })
+      const tabRailDimensions = await tabRail.evaluate(element => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }))
+      expect(tabRailDimensions.scrollWidth).toBeGreaterThan(tabRailDimensions.clientWidth)
       for (const name of ['Overview', 'Equipment', 'Records', 'Holds & moves', 'Activity']) {
-        await expect(workspace.getByRole('tab', { name, exact: true })).toBeInViewport()
+        const tab = workspace.getByRole('tab', { name, exact: true })
+        await tab.scrollIntoViewIfNeeded()
+        await expect(tab).toBeInViewport()
       }
       for (const value of await workspace.locator('.vdp-focus-identifiers .copyable-value__content').all()) {
+        await value.scrollIntoViewIfNeeded()
         const content = (await value.boundingBox())!
         expect(content.x + content.width).toBeLessThanOrEqual(viewport.width)
         await expect(value).toHaveCSS('white-space', 'nowrap')

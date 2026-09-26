@@ -63,18 +63,23 @@ describe('OverviewPage', () => {
     render(<MemoryRouter><OverviewPage /></MemoryRouter>)
 
     expect(screen.getByRole('heading', { name: 'Inventory overview' })).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Store inventory summaries' })).toBeInTheDocument()
+    const summaries = screen.getByRole('region', { name: 'Store inventory summaries' })
+    expect(summaries).toHaveClass('ov-stores--single')
     expect(screen.getByRole('heading', { name: 'Howell', level: 2 })).toBeVisible()
     expect(screen.queryByRole('heading', { name: 'Lincoln', level: 2 })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Howell: 0 holds' })).toHaveClass('is-zero')
+    expect(screen.getByRole('button', { name: 'Howell: 1 open issues' })).toHaveClass('has-value', 'ov-tone-warning')
 
     fireEvent.click(screen.getByRole('button', { name: 'Howell: 1 away' }))
     const population = screen.getByRole('heading', { name: 'Howell · Away from home' }).closest('section')!
     expect(within(population).getByText('2026 Ford F-150 Howell')).toBeVisible()
-    expect(within(population).getByText('Inventory Flow move ledger')).toBeVisible()
+    expect(within(population).getAllByText(/Inventory Flow move ledger/)).toHaveLength(1)
+    expect(within(population).getByRole('link', { name: 'View vehicle' })).toHaveClass('ov-vehicle-action--primary')
     expect(within(population).getByRole('link', { name: 'Records 0/6' })).toHaveAttribute('href', expect.stringContaining('tab=data'))
     expect(within(population).getByRole('link', { name: /Move/ })).toHaveAttribute('href', expect.stringContaining('/transfers?id=move-1'))
 
     fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
+    expect(summaries).not.toHaveClass('ov-stores--single')
     expect(screen.getByRole('heading', { name: 'Lincoln', level: 2 })).toBeVisible()
     expect(screen.getAllByRole('heading', { level: 2 }).some(heading => heading.textContent === 'Fowlerville')).toBe(true)
   })
