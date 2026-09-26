@@ -34,6 +34,10 @@ function canonicalJson(value) {
   return JSON.stringify(value)
 }
 
+export function cloudBundleSha256(bundle) {
+  return sha256(Buffer.from(canonicalJson(bundle), 'utf8'))
+}
+
 // Keep provenance labels and filenames while removing machine-specific path
 // prefixes. Restrict this transformation to metadata: exact vehicle/customer
 // text and complete raw snapshots are preserved without rewriting their values.
@@ -105,7 +109,7 @@ export function cloudReleaseFrom(release) {
 export function encryptBundle(bundle, key) {
   validateReleaseBundle(bundle)
   const plaintext = Buffer.from(canonicalJson(bundle), 'utf8')
-  const bundleSha256 = sha256(plaintext)
+  const bundleSha256 = cloudBundleSha256(bundle)
   const iv = randomBytes(12)
   const aad = Buffer.from(`${RELEASE_FORMAT}:${bundle.reportDate}:${bundleSha256}`, 'utf8')
   const cipher = createCipheriv('aes-256-gcm', key, iv)

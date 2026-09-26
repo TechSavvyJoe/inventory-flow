@@ -88,6 +88,43 @@ describe('verified daily cloud publication',()=>{
       expect(()=>writeReceipt(dir,{...receipt,reportDate:'../../unsafe'})).toThrow('INVALID_PUBLICATION_RECEIPT')
     } finally {rmSync(dir,{recursive:true,force:true})}
   })
+  it('requeries the exact candidate hash after a transient verification lookup failure',async()=>{
+    const {bundle,expected}=fixture(); let hash; let statusCalls=0; let readinessCalls=0
+    const fetchImpl=async(url,options)=>{
+      const route=new URL(url).pathname
+      if(route==='/internal/releases') {hash=JSON.parse(options.body).bundleSha256;return Response.json({status:'published',reportDate:bundle.reportDate})}
+      if(route==='/internal/status') {
+        statusCalls+=1
+        if(statusCalls===1) return Response.json({code:'TEMPORARY'}, {status:503})
+        return Response.json({ready:true,reportDate:bundle.reportDate,bundleSha256:hash,metadata:expected})
+      }
+      readinessCalls+=1
+      return Response.json({ready:true,reportDate:bundle.reportDate,bundleSha256:hash,counts:{inventory:expected.activeInventoryCount,managerDispositions:expected.managerDispositionRecordCount},bootstrapBytes:123})
+    }
+
+    const receipt=await syncCloudRelease({release:bundle.release,environment,fetchImpl,now})
+
+    expect(receipt).toMatchObject({status:'published_and_verified',bundleSha256:hash})
+    expect(statusCalls).toBe(2)
+    expect(readinessCalls).toBe(2)
+  })
+  it('reports an unknown publication outcome when an accepted candidate cannot be reverified',async()=>{
+    const {bundle}=fixture(); let publicationCalls=0; let verificationCalls=0
+    const fetchImpl=async(url)=>{
+      const route=new URL(url).pathname
+      if(route==='/internal/releases') {
+        publicationCalls+=1
+        return Response.json({status:'published',reportDate:bundle.reportDate})
+      }
+      verificationCalls+=1
+      return Response.json({code:'TEMPORARY'}, {status:503})
+    }
+
+    await expect(syncCloudRelease({release:bundle.release,environment,fetchImpl,now}))
+      .rejects.toThrow('CLOUD_PUBLICATION_OUTCOME_UNKNOWN')
+    expect(publicationCalls).toBe(1)
+    expect(verificationCalls).toBe(4)
+  })
 })
 
 describe('publication writer ownership and crash recovery', () => {

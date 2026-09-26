@@ -86,8 +86,10 @@ recapture OASIS, Ford service history, invoices, stickers, vAuto, warranty, or
 public inventory, and it does not re-upload saved invoice or vAuto PDF documents.
 It validates the existing resource bundle before every publication. It requires
 the same-date `published_and_verified` receipt and proves that the reused public
-snapshot, resource-enrichment file, and manager-disposition source and sanitized
-projection still match that receipt. Only the DealerMail hash may change. It
+snapshot, current canonical DealerMail snapshot, resource-enrichment file, and
+manager-disposition source and sanitized projection still match that receipt
+before any file is archived or replaced. Only a newly captured DealerMail hash
+may then change. It
 archives each prior DealerMail revision under
 `work\dealermail-history\intraday\YYYY-MM-DD\`. The candidate manifest, release
 bundle, and DealerMail files are transactional: a capture, validation, or
@@ -111,6 +113,15 @@ and lets the next scheduled slot retry; it never starts a second writer.
 - `intraday_holds_published_followups_pending`: the new hold release is already
   live and verified, but a post-publication follow-up failed. Retry the existing
   Windows task; do not describe the prior cloud release as still live.
+- `intraday_holds_publication_outcome_unknown`: the publish request was accepted
+  or may have completed, but two exact-hash status/readiness checks or the local
+  receipt handoff could not prove the final cloud state. The locally validated
+  candidate remains canonical and the status records its `bundleSha256` and
+  `dealerMailSha256`. Do not start another capture or publication. Compare that
+  exact bundle hash with the protected `/internal/status` and
+  `/internal/readiness` responses through the existing owner-authorized
+  verification procedure, then either finish the receipt/follow-ups for that
+  candidate or document that a different verified release superseded it.
 - `publish_failed_last_verified_release_preserved` or
   `intraday_refresh_failed_last_verified_release_preserved`: no matching new
   receipt was written and the canonical local files were restored.
@@ -172,6 +183,8 @@ Error codes the log can end with, and what they mean:
 | `CLOUD_PUBLISH_FAILED` | `sync-cloud-release.mjs` exited non-zero; the real code is in the log line above it (`PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW`, `HOLD_REFRESH_SOURCE_BINDING_MISMATCH`, `CLOUD_*_MISMATCH`, `CLOUD_NOT_READY`) | Depends on the inner code |
 | `HOLD_REFRESH_SOURCE_BINDINGS_REQUIRED` | A hold-only publish was invoked outside the receipt-bound intraday orchestrator. Nothing was published. | Run the existing intraday scheduled task instead |
 | `HOLD_REFRESH_SOURCE_BINDING_MISMATCH` | One of the public, DealerMail, resource, or manager hashes changed after the intraday candidate was built. Nothing was published. | No - inspect the named source lane |
+| `CLOUD_PUBLICATION_OUTCOME_UNKNOWN` | The release POST was accepted, but two exact candidate-hash status/readiness checks did not establish the final cloud state. The validated candidate and its reconciliation hashes are retained. | No - reconcile the recorded candidate hash before any new capture or publish |
+| `CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED` | The exact candidate was verified in cloud, but its local app-feed receipt could not be written. The orchestrator treats this as reconciliation-required rather than rolling back or claiming the prior release stayed live. | No - repair local receipt storage and reconcile the recorded candidate hash |
 | `CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED` | The new hold release and matching receipt are already published, but integration verification, latest-pointer advancement, or archiving failed. The candidate remains canonical. | Retry the existing intraday task; do not recapture other sources |
 | `POST_PUBLISH_STATE_RECORD_FAILED` | Cloud publication and publisher follow-ups completed, but the orchestrator could not finish its local manifest/status recording. The published candidate remains canonical. | Retry the existing intraday task; inspect local disk/status-file errors if it persists |
 | `PUBLICATION_NOT_VERIFIED` | The bundle did not pass the stricter Cloudflare validator, so nothing verified. Real causes seen: (1) the manifest is not `complete: true`, or (2) `dealermail_snapshot_path` points at the `-deep.json` instead of the `-deep-cloud-ready.json` - i.e. `finalize_cloud_snapshot.mjs` was skipped, so every row is missing the dual 22-cell arrays (`rawCellInnerText` / `rawCellControlValues`) and the `excludeActiveHoldsValidationSet`. 09/12/2026: 10:43 and 10:45 failed this way; 10:47 succeeded two minutes after finalize ran | Yes, once finalize has run and the manifest names the cloud-ready file |

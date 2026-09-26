@@ -79,8 +79,21 @@ export async function syncCloudRelease({ release, environment = process.env, fet
     check(response.ok, 'CLOUD_VERIFICATION_REQUEST_FAILED')
     return response.json()
   }
-  const [status, readiness] = await Promise.all([read('/internal/status'), read('/internal/readiness')])
-  const counts = verifyPublishedRelease({ envelope, expected, status, readiness })
+  let counts
+  let verificationError
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const [status, readiness] = await Promise.all([read('/internal/status'), read('/internal/readiness')])
+      counts = verifyPublishedRelease({ envelope, expected, status, readiness })
+      verificationError = null
+      break
+    } catch (error) {
+      verificationError = error
+    }
+  }
+  if (verificationError) {
+    throw new Error('CLOUD_PUBLICATION_OUTCOME_UNKNOWN', { cause: verificationError })
+  }
   return {
     schemaVersion: 1,
     reportDate: envelope.reportDate,
@@ -180,7 +193,12 @@ export async function main() {
   try {
     const release = loadLatestCompletedRelease({ workspaceRoot })
     const receipt = await syncCloudRelease({ release })
-    const receiptPath = writeReceipt(directory, receipt)
+    let receiptPath
+    try {
+      receiptPath = writeReceipt(directory, receipt)
+    } catch (error) {
+      throw new Error('CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED', { cause: error })
+    }
     process.stdout.write(JSON.stringify({ status: receipt.status, reportDate: receipt.reportDate, counts: receipt.counts, receiptPath }) + '\n')
   } finally { if (lock) releasePublicationLock(lock) }
 }

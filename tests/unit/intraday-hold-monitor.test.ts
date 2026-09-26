@@ -248,11 +248,12 @@ describe('intraday hold task monitor', () => {
       checkedAt: '2026-09-25T13:01:00.000Z',
       verifiedAt: '2026-09-25T13:00:00.000Z',
     })
-    expect(run(root, {
+    const first = run(root, {
       now: '2026-09-25T12:00:00-04:00',
       initial: ready(),
       afterStart: { state: 'Running', lastResult: 267009, lastRunTime: '2026-09-25T12:00:00-04:00' },
-    })).toEqual({ started: 1, events: 0 })
+    })
+    expect(first).toEqual({ started: 1, events: 0 })
     const recoveryState = JSON.parse(readFileSync(path.join(root, 'work/hold-refresh-monitor/state.json'), 'utf8'))
     expect(recoveryState).toMatchObject({
       lastRecoveryTaskRunAt: '2026-09-25T12:00:00.0000000-04:00',
@@ -260,10 +261,20 @@ describe('intraday hold task monitor', () => {
     })
     expect(recoveryState.lastRecoveryReceiptFingerprint).toMatch(/^[a-f0-9]{64}$/)
 
-    expect(run(root, {
+    // The failed recovery may rewrite status evidence before Task Scheduler
+    // exposes its final result. That new fingerprint must not permit a second
+    // start of the exact same recovery run.
+    writeReceipts(root, {
+      checkedAt: '2026-09-25T13:02:00.000Z',
+      verifiedAt: '2026-09-25T13:00:00.000Z',
+      status: 'intraday_holds_publication_outcome_unknown',
+    })
+    const second = run(root, {
       now: '2026-09-25T12:15:00-04:00',
       initial: ready(1, '2026-09-25T12:00:00-04:00'),
-    })).toEqual({ started: 0, events: 1 })
+    })
+    expect(second).toEqual({ started: 0, events: 1 })
+    expect(first.started + second.started).toBe(1)
   })
 
   it('alerts when the task is disabled even if its last receipt is fresh', () => {

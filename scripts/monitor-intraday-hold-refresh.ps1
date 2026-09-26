@@ -413,12 +413,13 @@ if ($taskState.QueryFailed -or -not $taskState.Present) {
 $scheduledRunFailed = $taskState.HasCompletedRun -and -not $taskState.LastCompletedSucceeded
 $taskFailureFingerprint = Get-TaskFailureFingerprint -TaskState $taskState
 $receiptIssueFingerprint = Get-ReceiptIssueFingerprint -ReceiptHealth $receiptHealth
+$currentRunWasRecovery = Test-SameInstant $previousState.lastRecoveryTaskRunAt $taskState.LastRunTime
 $taskFailureAlreadyAttempted = $null -ne $taskFailureFingerprint -and (
   [string]$previousState.lastRecoveryTaskFailureFingerprint -ceq $taskFailureFingerprint -or
-  (Test-SameInstant $previousState.lastRecoveryTaskRunAt $taskState.LastRunTime)
+  $currentRunWasRecovery
 )
 $receiptIssueAlreadyAttempted = $null -ne $receiptIssueFingerprint -and [string]$previousState.lastRecoveryReceiptFingerprint -ceq $receiptIssueFingerprint
-$needsRepair = $receiptHealth.Period -eq 'inside' -and -not $taskState.Running -and (
+$needsRepair = $receiptHealth.Period -eq 'inside' -and -not $taskState.Running -and -not $currentRunWasRecovery -and (
   ($scheduledRunFailed -and -not $taskFailureAlreadyAttempted) -or
   ($receiptHealth.Stale -and -not $receiptIssueAlreadyAttempted)
 )

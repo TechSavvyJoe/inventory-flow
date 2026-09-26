@@ -132,17 +132,22 @@ describe('app-first daily orchestrator helpers', () => {
   async function receiptBoundFixture(reportDate: string) {
     const internals = await loadInternals()
     const publicPath = path.join(workspaceRoot, 'work', 'inventory-history', 'snapshots', `${reportDate}-public.json`)
+    const dealerPath = path.join(workspaceRoot, 'work', 'dealermail-history', 'snapshots', `${reportDate}-complete-used-inventory-deep-cloud-ready.json`)
     const resourcePath = path.join(workspaceRoot, 'apps', 'inventory-ops', 'data', 'vin-document-enrichment.json')
     const manifestPath = path.join(workspaceRoot, 'work', 'run-status', `${reportDate}.json`)
     mkdirSync(path.dirname(publicPath), { recursive: true })
+    mkdirSync(path.dirname(dealerPath), { recursive: true })
     mkdirSync(path.dirname(resourcePath), { recursive: true })
     writeFileSync(publicPath, '{"public":"morning"}\n')
+    writeFileSync(dealerPath, '{"dealermail":"morning"}\n')
     writeFileSync(resourcePath, '{"resources":"morning"}\n')
     const manifest = {
       report_date: reportDate,
       complete: true,
       public_snapshot_path: publicPath,
       public_snapshot_sha256: hash(readFileSync(publicPath)),
+      dealermail_snapshot_path: dealerPath,
+      dealermail_snapshot_sha256: hash(readFileSync(dealerPath)),
     }
     writeFileSync(manifestPath, JSON.stringify(manifest))
     const receipt = {
@@ -153,13 +158,13 @@ describe('app-first daily orchestrator helpers', () => {
       verifiedAt: `${reportDate}T14:00:00Z`,
       sourceHashes: {
         public: hash(readFileSync(publicPath)),
-        dealerMail: 'D'.repeat(64),
+        dealerMail: hash(readFileSync(dealerPath)),
         resources: hash(readFileSync(resourcePath)),
         managerDisposition: null,
         managerDispositionBinding: null,
       },
     }
-    return { internals, reportDate, publicPath, resourcePath, manifestPath, manifest, receipt }
+    return { internals, reportDate, publicPath, dealerPath, resourcePath, manifestPath, manifest, receipt }
   }
 
   it('refuses a hold refresh when the reused public snapshot no longer matches the verified receipt', async () => {
@@ -174,6 +179,44 @@ describe('app-first daily orchestrator helpers', () => {
     writeFileSync(fixture.resourcePath, '{"resources":"partially-rebuilt"}\n')
 
     expect(() => fixture.internals.verifyHoldRefreshBaseline(fixture)).toThrow('RESOURCE_ENRICHMENT_RECEIPT_MISMATCH')
+  })
+
+  it('refuses to archive or refresh a canonical DealerMail snapshot that no longer matches the receipt or manifest', async () => {
+    const corrupted = await receiptBoundFixture('2026-09-29')
+    writeFileSync(corrupted.dealerPath, '{"dealermail":"corrupted-before-refresh"}\n')
+    expect(() => corrupted.internals.verifyHoldRefreshBaseline(corrupted))
+      .toThrow('DEALERMAIL_SNAPSHOT_RECEIPT_MISMATCH')
+
+    const rebound = await receiptBoundFixture('2026-09-30')
+    rebound.manifest.dealermail_snapshot_sha256 = 'C'.repeat(64)
+    writeFileSync(rebound.manifestPath, JSON.stringify(rebound.manifest))
+    expect(() => rebound.internals.verifyHoldRefreshBaseline(rebound))
+      .toThrow('DEALERMAIL_MANIFEST_RECEIPT_MISMATCH')
+
+    const redirected = await receiptBoundFixture('2026-10-02')
+    const alternatePath = path.join(path.dirname(redirected.dealerPath), 'alternate-copy.json')
+    writeFileSync(alternatePath, readFileSync(redirected.dealerPath))
+    redirected.manifest.dealermail_snapshot_path = alternatePath
+    writeFileSync(redirected.manifestPath, JSON.stringify(redirected.manifest))
+    expect(() => redirected.internals.verifyHoldRefreshBaseline(redirected))
+      .toThrow('DEALERMAIL_MANIFEST_PATH_MISMATCH')
+  })
+
+  it('restores the verified DealerMail snapshot when an intraday candidate is rolled back', async () => {
+    const fixture = await receiptBoundFixture('2026-10-01')
+    const before = readFileSync(fixture.dealerPath)
+    expect(fixture.internals.dealerMailRevisionPaths(fixture.reportDate)).toContain(fixture.dealerPath)
+    const transaction = fixture.internals.captureFileTransaction([
+      fixture.manifestPath,
+      ...fixture.internals.dealerMailRevisionPaths(fixture.reportDate),
+    ])
+    writeFileSync(fixture.dealerPath, '{"dealermail":"partial-refresh"}\n')
+    writeFileSync(fixture.manifestPath, '{"complete":false}\n')
+
+    transaction.rollback()
+
+    expect(readFileSync(fixture.dealerPath).equals(before)).toBe(true)
+    expect(() => fixture.internals.verifyHoldRefreshBaseline(fixture)).not.toThrow()
   })
 
   it('reuses only the receipt-bound manager overlay and fails if its source changes', async () => {
@@ -262,7 +305,60 @@ describe('app-first daily orchestrator helpers', () => {
       afterState: { raw: JSON.stringify({ ...receipt, reportDate: '2026-09-24' }), receipt: { ...receipt, reportDate: '2026-09-24' } },
       expectedHashes: sourceHashes,
       reportDate: '2026-09-25',
-    })).toBe('not_published')
+    })).toBe('publication_outcome_unknown')
+    expect(internals.classifyPublicationOutcome({
+      processOk: false,
+      beforeRaw: JSON.stringify(receipt),
+      afterState: { raw: JSON.stringify(receipt), receipt },
+      expectedHashes: { ...sourceHashes, dealerMail: 'E'.repeat(64) },
+      reportDate: '2026-09-25',
+      publisherOutput: 'Cloud sync incomplete: CLOUD_PUBLICATION_OUTCOME_UNKNOWN.',
+    })).toBe('publication_outcome_unknown')
+    expect(internals.classifyPublicationOutcome({
+      processOk: false,
+      beforeRaw: JSON.stringify(receipt),
+      afterState: { raw: null, receipt: null },
+      expectedHashes: { ...sourceHashes, dealerMail: 'F'.repeat(64) },
+      reportDate: '2026-09-25',
+      publisherOutput: 'daily-cloud-publish RELEASE PUBLISHED; FOLLOWUPS FAILED: RECEIPT_LOOKUP_FAILED',
+    })).toBe('publication_outcome_unknown')
+  })
+
+  it('records exact candidate evidence when publication requires reconciliation', async () => {
+    const internals = await loadInternals()
+    const statusPath = path.join(workspaceRoot, 'work', 'hold-refresh-status', 'unknown.json')
+    internals.writeIntradayStatus(statusPath, {
+      reportDate: '2026-09-25',
+      status: 'intraday_holds_publication_outcome_unknown',
+      failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+      summary: 'Synthetic reconciliation required',
+      reconciliationRequired: true,
+      candidate: {
+        bundleSha256: 'A'.repeat(64),
+        dealerMailSha256: 'B'.repeat(64),
+      },
+    })
+
+    expect(JSON.parse(readFileSync(statusPath, 'utf8'))).toMatchObject({
+      status: 'intraday_holds_publication_outcome_unknown',
+      reconciliationRequired: true,
+      candidate: {
+        bundleSha256: 'A'.repeat(64),
+        dealerMailSha256: 'B'.repeat(64),
+      },
+    })
+  })
+
+  it('treats an unreadable post-publish receipt as unavailable evidence', async () => {
+    const internals = await loadInternals()
+    const unreadableReceiptPath = path.join(workspaceRoot, 'work', 'app-feed-status', 'receipt-directory')
+    mkdirSync(unreadableReceiptPath, { recursive: true })
+
+    expect(internals.readReceiptStateAfterPublication(unreadableReceiptPath)).toEqual({
+      raw: null,
+      receipt: null,
+      lookupFailed: true,
+    })
   })
 
   it('links a successful hold status to its verified app-feed receipt without source data', async () => {

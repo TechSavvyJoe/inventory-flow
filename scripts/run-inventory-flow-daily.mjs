@@ -4,7 +4,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { loadLatestCompletedRelease, validateVinDocumentEnrichment } from '../server/importer.mjs'
 import { sanitizeManagerDispositionDocuments } from '../server/manager-disposition-schema.mjs'
-import { cloudReleaseFrom } from './publish-cloud-release.mjs'
+import { cloudBundleSha256, cloudReleaseFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 import { assessOasisCapture } from './lib/oasis-parser.mjs'
@@ -147,6 +147,16 @@ function readReceiptState(receiptPath) {
   try { return { raw, receipt: JSON.parse(raw) } } catch { return { raw, receipt: null } }
 }
 
+function readReceiptStateAfterPublication(receiptPath) {
+  try {
+    return { ...readReceiptState(receiptPath), lookupFailed: false }
+  } catch {
+    // Once the publisher has run, losing access to the local receipt cannot be
+    // treated as proof that the remote candidate was never accepted.
+    return { raw: null, receipt: null, lookupFailed: true }
+  }
+}
+
 function verifiedReceiptIdentityIsValid(receipt, expectedReportDate) {
   return receipt?.status === 'published_and_verified' &&
     receipt?.complete === true &&
@@ -166,16 +176,18 @@ function assertReceiptHashes(receipt, expectedHashes, expectedReportDate = null)
     })
 }
 
-function classifyPublicationOutcome({ processOk, beforeRaw, afterState, expectedHashes, reportDate }) {
+function classifyPublicationOutcome({ processOk, beforeRaw, afterState, expectedHashes, reportDate, publisherOutput = '' }) {
   const matchesCandidate = assertReceiptHashes(afterState.receipt, expectedHashes, reportDate)
   if (processOk && matchesCandidate) return 'published_and_followups_complete'
   if (!processOk && afterState.raw !== null && afterState.raw !== beforeRaw && matchesCandidate) {
     return 'published_followups_pending'
   }
+  const publicationMayHaveSucceeded = processOk || /CLOUD_PUBLICATION_OUTCOME_UNKNOWN|CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED|RELEASE PUBLISHED; FOLLOWUPS FAILED/i.test(publisherOutput)
+  if (publicationMayHaveSucceeded) return 'publication_outcome_unknown'
   return 'not_published'
 }
 
-function verifyHoldRefreshBaseline({ reportDate, receipt, manifestPath, publicPath, resourcePath }) {
+function verifyHoldRefreshStableSources({ reportDate, receipt, manifestPath, publicPath, resourcePath }) {
   if (!verifiedReceiptIdentityIsValid(receipt, reportDate)) {
     throw new Error('VERIFIED_RECEIPT_REQUIRED')
   }
@@ -207,6 +219,24 @@ function verifyHoldRefreshBaseline({ reportDate, receipt, manifestPath, publicPa
     }
   }
   return { manifest, managerBinding }
+}
+
+function verifyHoldRefreshBaseline({ reportDate, receipt, manifestPath, publicPath, dealerPath, resourcePath }) {
+  const baseline = verifyHoldRefreshStableSources({ reportDate, receipt, manifestPath, publicPath, resourcePath })
+  const canonicalDealerPath = dealerPath ?? dealerCloudSnapshotPath(reportDate)
+  if (!existsSync(canonicalDealerPath)) throw new Error('DEALERMAIL_SNAPSHOT_MISSING')
+  const receiptDealerHash = receipt.sourceHashes?.dealerMail
+  if (!sameHash(sha256(canonicalDealerPath), receiptDealerHash)) {
+    throw new Error('DEALERMAIL_SNAPSHOT_RECEIPT_MISMATCH')
+  }
+  if (!sameHash(baseline.manifest.dealermail_snapshot_sha256, receiptDealerHash)) {
+    throw new Error('DEALERMAIL_MANIFEST_RECEIPT_MISMATCH')
+  }
+  const manifestDealerPath = resolveBoundWorkspacePath(baseline.manifest.dealermail_snapshot_path, 'DEALERMAIL_SNAPSHOT')
+  if (path.relative(path.resolve(canonicalDealerPath), manifestDealerPath) !== '') {
+    throw new Error('DEALERMAIL_MANIFEST_PATH_MISMATCH')
+  }
+  return { ...baseline, dealerPath: canonicalDealerPath }
 }
 
 function assertCandidatePreservesReceiptSources(release, receipt) {
@@ -679,6 +709,7 @@ function buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath, { rec
   const sourceHashes = receipt ? assertCandidatePreservesReceiptSources(release, receipt) : receiptSourceHashes(release)
   const bundle = cloudReleaseFrom(release)
   const validation = validateReleaseBundle(bundle)
+  const bundleSha256 = cloudBundleSha256(bundle)
   writeJson(releasePath, bundle)
   const manifest = readJson(manifestPath)
   manifest.release_bundle_path = releasePath
@@ -691,7 +722,7 @@ function buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath, { rec
     passed: true,
   }
   writeJson(manifestPath, manifest)
-  return { validation, sourceHashes }
+  return { validation, sourceHashes, bundleSha256 }
 }
 
 function publish(reportDate, forcePublish, steps, { holdRefresh = false, expectedSourceHashes = null } = {}) {
@@ -752,12 +783,17 @@ function writeIntradayStatus(filePath, {
   steps = [],
   published = false,
   receipt = null,
+  reconciliationRequired = false,
+  candidate = null,
 }) {
   if (receipt && !verifiedReceiptIdentityIsValid(receipt, reportDate)) {
     throw new Error('VERIFIED_RECEIPT_LINK_INVALID')
   }
   if (receipt && !normalizedHash(receipt.sourceHashes?.dealerMail)) {
     throw new Error('VERIFIED_RECEIPT_LINK_INVALID')
+  }
+  if (candidate && (!normalizedHash(candidate.bundleSha256) || !normalizedHash(candidate.dealerMailSha256))) {
+    throw new Error('PUBLICATION_RECONCILIATION_LINK_INVALID')
   }
   writeJson(filePath, {
     reportDate,
@@ -766,6 +802,7 @@ function writeIntradayStatus(filePath, {
     summary,
     ...(failureCode ? { failureCode } : {}),
     ...(published ? { published: true } : {}),
+    ...(reconciliationRequired ? { reconciliationRequired: true } : {}),
     ...(receipt ? {
       receipt: {
         bundleSha256: receipt.bundleSha256,
@@ -773,6 +810,7 @@ function writeIntradayStatus(filePath, {
         dealerMailSha256: receipt.sourceHashes?.dealerMail,
       },
     } : {}),
+    ...(candidate ? { candidate } : {}),
     ...(Object.keys(validation).length ? { counts: validation } : {}),
     warnings,
     steps,
@@ -817,6 +855,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
   }
 
   const publicPath = publicSnapshotPath(reportDate)
+  const dealerPath = dealerCloudSnapshotPath(reportDate)
   const resourcePath = path.join(APP_ROOT, 'data', 'vin-document-enrichment.json')
   let baseline
   try {
@@ -825,6 +864,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
       receipt: beforeReceipt.receipt,
       manifestPath,
       publicPath,
+      dealerPath,
       resourcePath,
     })
   } catch (error) {
@@ -848,14 +888,26 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
   let keepCandidate = false
   let publishedFailureCode = null
   let publishedReceipt = null
+  let candidateEvidence = null
   let result
   try {
     steps.push({ name: 'public_inventory', status: 'reused_receipt_bound', path: publicPath })
     steps.push({ name: 'manager_disposition', status: baseline.managerBinding ? 'reused_receipt_bound' : 'reused_none_receipt_bound' })
 
     const browserReady = options.skipAuthenticated ? false : await ensureAutomationBrowser(warnings)
-    const dealerPath = runDealerMail(reportDate, browserReady, warnings, steps, { refresh: true })
-    if (!dealerPath) {
+    // Browser startup can take long enough for a stray process or manual edit
+    // to replace the canonical file. Rebind it immediately before the archive
+    // and capture so only the receipt-proven morning snapshot is archived.
+    verifyHoldRefreshBaseline({
+      reportDate,
+      receipt: beforeReceipt.receipt,
+      manifestPath,
+      publicPath,
+      dealerPath,
+      resourcePath,
+    })
+    const refreshedDealerPath = runDealerMail(reportDate, browserReady, warnings, steps, { refresh: true })
+    if (!refreshedDealerPath) {
       const summary = `Inventory Flow ${reportDate}: intraday hold refresh failed; the last verified release was restored.`
       writeIntradayStatus(intradayStatusPath, {
         reportDate,
@@ -870,7 +922,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
 
     // Recheck immutable inputs after the authenticated capture so a concurrent
     // or manual file replacement cannot ride along with the hold-only release.
-    verifyHoldRefreshBaseline({
+    verifyHoldRefreshStableSources({
       reportDate,
       receipt: beforeReceipt.receipt,
       manifestPath,
@@ -889,7 +941,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
       baseline: baseline.manifest,
       reportDate,
       publicPath,
-      dealerPath,
+      dealerPath: refreshedDealerPath,
       warnings,
       steps,
       managerDispositionBinding: baseline.managerBinding,
@@ -911,13 +963,16 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
     }
 
     const publication = publish(reportDate, true, steps, { holdRefresh: true, expectedSourceHashes: built.sourceHashes })
-    const afterReceipt = readReceiptState(receiptPath)
+    const afterReceipt = readReceiptStateAfterPublication(receiptPath)
     const publicationOutcome = classifyPublicationOutcome({
       processOk: publication.ok,
       beforeRaw: beforeReceipt.raw,
       afterState: afterReceipt,
       expectedHashes: built.sourceHashes,
       reportDate,
+      publisherOutput: afterReceipt.lookupFailed
+        ? `${publication.output}\nCLOUD_PUBLICATION_OUTCOME_UNKNOWN`
+        : publication.output,
     })
 
     if (publicationOutcome === 'published_and_followups_complete') {
@@ -976,20 +1031,61 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
       return result
     }
 
+    if (publicationOutcome === 'publication_outcome_unknown') {
+      keepCandidate = true
+      publishedFailureCode = 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
+      candidateEvidence = {
+        bundleSha256: built.bundleSha256,
+        dealerMailSha256: built.sourceHashes.dealerMail,
+      }
+      steps.at(-1).status = 'publication_outcome_unknown'
+      manifest = readJson(manifestPath)
+      manifest.daily_steps = steps
+      manifest.cloudflare_publish = {
+        attempted: true,
+        status: 'publication_outcome_unknown',
+        reconciliation_required: true,
+        expected_bundle_sha256: built.bundleSha256,
+        receipt_path: receiptPath,
+        publisher: 'BobMaxey-InventoryFlow-DailyPublish',
+      }
+      writeJson(manifestPath, manifest)
+      const status = 'intraday_holds_publication_outcome_unknown'
+      const summary = `Inventory Flow ${reportDate}: the cloud publisher may have accepted the validated hold release, but the exact candidate could not be re-verified. The candidate was retained and requires reconciliation before another refresh.`
+      writeIntradayStatus(intradayStatusPath, {
+        reportDate,
+        status,
+        failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+        summary,
+        validation: built.validation,
+        warnings,
+        steps,
+        reconciliationRequired: true,
+        candidate: candidateEvidence,
+      })
+      result = { ok: false, failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN', summary, validation: built.validation, manifestPath, releasePath }
+      return result
+    }
+
     throw new Error('CLOUDFLARE_PUBLISH_FAILED')
   } catch (error) {
     if (keepCandidate) {
       const failureCode = publishedFailureCode ?? 'POST_PUBLISH_STATE_RECORD_FAILED'
-      const summary = `Inventory Flow ${reportDate}: the intraday hold release is published and verified, but post-publication state recording is incomplete.`
+      const outcomeUnknown = failureCode === 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
+      const summary = outcomeUnknown
+        ? `Inventory Flow ${reportDate}: the cloud publication outcome remains unknown and requires reconciliation before another refresh.`
+        : `Inventory Flow ${reportDate}: the intraday hold release is published and verified, but post-publication state recording is incomplete.`
       writeIntradayStatus(intradayStatusPath, {
         reportDate,
-        status: 'intraday_holds_published_followups_pending',
+        status: outcomeUnknown ? 'intraday_holds_publication_outcome_unknown' : 'intraday_holds_published_followups_pending',
         failureCode,
         summary,
         warnings,
         steps,
-        published: true,
-        receipt: publishedReceipt,
+        published: !outcomeUnknown,
+        receipt: outcomeUnknown ? null : publishedReceipt,
+        reconciliationRequired: outcomeUnknown,
+        candidate: outcomeUnknown ? candidateEvidence : null,
       })
       result = { ok: false, failureCode, summary, manifestPath, releasePath }
       return result
@@ -1195,14 +1291,17 @@ export const internals = {
   candidateManifestFromBaseline,
   captureFileTransaction,
   classifyPublicationOutcome,
+  dealerMailRevisionPaths,
   deriveManifest,
   exitCodeForResult,
   formatStores,
   parseArgs,
   publish,
+  readReceiptStateAfterPublication,
   reuseExistingOasisCapture,
   runDaily,
   verifyHoldRefreshBaseline,
+  verifyHoldRefreshStableSources,
   summarize,
   todayInNewYork,
   writeIntradayStatus,
