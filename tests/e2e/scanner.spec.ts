@@ -15,7 +15,7 @@ test('scanner is mobile-only and finds vehicles despite conflicting filters', as
   await page.goto('/inventory')
   await expect(page.getByRole('button', { name: /^No hold:/ })).toHaveAttribute('aria-pressed', 'true')
   const trigger = page.getByRole('button', { name: 'Scan vehicle', exact: true })
-  if ((page.viewportSize()?.width ?? 0) >= 1101) {
+  if ((page.viewportSize()?.width ?? 0) > 760) {
     await expect(trigger).not.toBeVisible()
     await expect(page.getByRole('dialog', { name: 'Scan vehicle', exact: true })).toHaveCount(0)
     expect(await page.evaluate(() => (window as unknown as { __syntheticCameraRequests: number }).__syntheticCameraRequests)).toBe(0)

@@ -101,6 +101,9 @@ describe('overview model', () => {
 
     const nonFord = vehicle('TESTDATA000000002', { make: 'Chevrolet', autoCheckReport: { dataState: 'stale_unverified' } })
     expect(overviewRecordCoverage(nonFord)).toEqual({ captured: 0, applicable: 3, missing: ['AutoCheck', 'Window sticker', 'Factory equipment'] })
+
+    const malformedLincoln = vehicle('TESTDATA000000003', { make: 'Lincol' })
+    expect(overviewRecordCoverage(malformedLincoln)).toEqual({ captured: 0, applicable: 3, missing: ['AutoCheck', 'Window sticker', 'Factory equipment'] })
   })
 
   it('builds store populations without treating holds, listings, or manager logs as location or availability', () => {

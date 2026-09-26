@@ -114,7 +114,7 @@ function resourceIsCurrent(resource: { dataState?: string } | null | undefined):
 }
 
 export function overviewRecordCoverage(vehicle: VehicleRecord): OverviewRecordCoverage {
-  const fordFamily = /^(ford|lincoln?)$/i.test(vehicle.make.trim())
+  const fordFamily = /^(ford|lincoln)$/i.test(vehicle.make.trim())
   const sources = [
     ['AutoCheck', resourceIsCurrent(vehicle.autoCheckReport)],
     ['Window sticker', resourceIsCurrent(vehicle.windowSticker)],
