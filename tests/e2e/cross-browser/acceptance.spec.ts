@@ -155,6 +155,14 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     await page.setViewportSize({ width, height: 900 })
     await page.evaluate(() => window.scrollTo(0, 0))
     await expectNoOverflow(page)
+    const freshnessTimestamp = page.locator('.freshness-chip small')
+    if (width > 1180 && await freshnessTimestamp.isVisible()) {
+      const freshnessWidth = await freshnessTimestamp.evaluate(element => ({
+        client: element.clientWidth,
+        scroll: element.scrollWidth,
+      }))
+      expect(freshnessWidth.scroll, `Freshness timestamp is complete at ${width}`).toBeLessThanOrEqual(freshnessWidth.client + 1)
+    }
     const mobileList = page.locator('.if-srp-mobile-list')
     const table = page.locator('.inventory-grid-shell--desk')
     await expect.poll(async () => Number(await mobileList.isVisible()) + Number(await table.isVisible()), {

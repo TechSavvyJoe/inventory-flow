@@ -550,7 +550,6 @@
 }
 
 .freshness-chip small {
-  max-width: 102px;
   overflow: hidden;
   color: var(--app-readable-support);
   font-size: var(--app-readable-meta-size);
