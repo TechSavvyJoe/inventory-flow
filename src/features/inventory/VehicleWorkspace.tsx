@@ -878,6 +878,10 @@ export function VehicleWorkspace({
                 <Fact label="Base MSRP"><span className="vdp-focus-reference-value">{baseMsrpDisplay}</span>{baseMsrpQualifier ? <small>{baseMsrpQualifier}</small> : null}</Fact>
                 <Fact label="Inventory date"><span className="vdp-focus-reference-date">{vehicle.inventoryDate ? formatDate(vehicle.inventoryDate) : "—"}</span></Fact>
               </dl></section>
+              <section className="vdp-focus-highlights" aria-label="Key equipment">
+                <div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
+                {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
+              </section>
               </div>
               <section className="vdp-focus-operations" aria-label="Vehicle operational summary">
                 <h3>Operations</h3>
@@ -898,10 +902,6 @@ export function VehicleWorkspace({
                 </div>
                 {hasMovement ? <div className="vdp-focus-next-action"><strong>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div> : null}
                 {issueContext ? <VehicleIssuesSummary issues={vehicleIssues} canReport={canReportIssue} enabled={issueContext.enabled} onOpen={() => openAndFocusSection('issues')} onReport={reportIssue} /> : null}
-              </section>
-              <section className="vdp-focus-highlights" aria-label="Key equipment">
-                <div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
-                {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
               </section>
               <CustomerSummary key={vehicle.id} vehicle={vehicle} onRecords={() => openAndFocusSection("data")} onTakeHome={(button) => { takeHomeOpenerRef.current = button; setTakeHomeOpen(true); }} />
             </div>

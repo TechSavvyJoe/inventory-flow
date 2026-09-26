@@ -128,6 +128,7 @@ describe('focused vehicle workspace', () => {
     const specifications = within(overview).getByRole('region',{name:'Vehicle specifications'});
     const equipment = within(overview).getByRole('region',{name:'Key equipment'});
     expect(reference.parentElement).toHaveClass('vdp-focus-vehicle-context');
+    expect(equipment.parentElement).toBe(reference.parentElement);
     expect(reference.compareDocumentPosition(equipment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(reference).getAllByRole('term').map(node=>node.textContent)).toEqual(['In-service','Base MSRP','Inventory date']);
     expect(within(reference).getByText('08/14/2024')).toBeVisible();
