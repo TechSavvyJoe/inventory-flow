@@ -23,6 +23,10 @@ describe('deploy tag', () => {
     expect(deployTag({ ...offMain, allowBranch: true })).toBe('abc1234-branch')
   })
 
+  it('keeps the plain tag when --allow-branch was not needed', () => {
+    expect(deployTag({ ...clean, allowBranch: true })).toBe('abc1234')
+  })
+
   it('refuses unresolved or inconsistent commit identifiers even with the override', () => {
     expect(() => deployTag({ ...clean, head: '', allowBranch: true })).toThrow(/COMMIT_SHA_UNRESOLVED/)
     expect(() => deployTag({ ...clean, shortHead: 'def5678' })).toThrow(/COMMIT_SHA_UNRESOLVED/)

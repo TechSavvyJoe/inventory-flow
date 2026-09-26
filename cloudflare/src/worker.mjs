@@ -538,7 +538,9 @@ export default {
     } catch(error) {
       const known=error instanceof HttpError || error instanceof AccessError || error instanceof WorkflowError || error instanceof RepositoryConflictError
       const stage = error instanceof HttpError ? error.stage : undefined
-      if (!known || stage) {
+      // Unknown errors, staged errors and known server-side failures are logged
+      // with route templates only; ordinary 4xx refusals stay quiet.
+      if (!known || stage || (error.status ?? 400) >= 500) {
         console.error({ requestId, name: known ? error.name : 'Error', code: known ? error.code : 'INTERNAL_ERROR', route: errorRoute(request.url), ...(stage ? { stage } : {}) })
       }
       return json(known?(error.status??400):500,{error:known?(error.humanMessage || error.message):'The request could not be completed. Please try again.',code:known?error.code:'INTERNAL_ERROR',requestId})
