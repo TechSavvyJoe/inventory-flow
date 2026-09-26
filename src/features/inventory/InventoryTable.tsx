@@ -956,7 +956,7 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
         }}
         aria-label={vehicleAccessibleSummary(vehicle)}
       >
-        <span className="inventory-mobile-row__thumbnail"><span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} priority={priority} /><PhotoCount vehicle={vehicle} /></span><small>{vehicle.stockNumber}</small></span>
+        <span className="inventory-mobile-row__thumbnail"><span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} priority={priority} /><PhotoCount vehicle={vehicle} /></span><small>{vehicle.stockNumber}</small><span className="inventory-mobile-row__view" aria-hidden="true">View vehicle</span></span>
         <span className="inventory-mobile-row__main">
           <span className="inventory-mobile-row__title">
             <strong>{name}</strong>
@@ -967,7 +967,6 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
           </span>
           <small className="inventory-mobile-row__specification" title={specification}>{specification}</small>
           <CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name}/>
-          <span className="inventory-mobile-row__view" aria-hidden="true">View vehicle<ChevronRight className="inventory-mobile-open-indicator" size={16} /></span>
         </span>
       </button>
       <div className="inventory-mobile-row__signals" aria-label="Operational vehicle signals">

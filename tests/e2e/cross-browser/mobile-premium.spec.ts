@@ -145,17 +145,25 @@ test('a phone vehicle workspace remains usable after rotation and a keyboard-siz
 
 test('equipment filters and photo gallery retain the vehicle workspace', async ({ page, browserName }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
+  const withGallery = (unit: { imageUrl?: string; imageUrls: string[] }) => {
+    // Keep the current summary and detail consistent: summary photo fields
+    // intentionally take precedence when retained detail is merged.
+    const photo = unit.imageUrl || unit.imageUrls[0]
+    return { ...unit, imageUrl: `${photo}?gallery=1`, imageUrls: [1, 2, 3].map(n => `${photo}?gallery=${n}`) }
+  }
+  await page.route('**/api/bootstrap?**', async route => {
+    const response = await route.fetch()
+    const payload = await response.json()
+    payload.vehicles = payload.vehicles.map((unit: { vin: string; imageUrls: string[] }) => unit.vin === 'TESTDATAHWELL0001' ? withGallery(unit) : unit)
+    await route.fulfill({ response, json: payload })
+  })
   await page.route('**/api/vehicles/TESTDATAHWELL0001', async route => {
     const response = await route.fetch()
-    const unit = await response.json()
-    // Repeat this synthetic vehicle's illustration with distinct URLs to
-    // exercise navigation without assigning another vehicle's photos to it.
-    const photo = unit.imageUrl || unit.imageUrls[0]
-    await route.fulfill({ response, json: { ...unit, imageUrl: `${photo}?gallery=1`, imageUrls: [1, 2, 3].map(n => `${photo}?gallery=${n}`) } })
+    await route.fulfill({ response, json: withGallery(await response.json()) })
   })
   await page.goto('/inventory?vin=TESTDATAHWELL0001&scope=home')
   const workspace = page.getByRole('dialog', { name: /vehicle workspace/ })
-  await expect(workspace.getByText('Loading the full vehicle record…')).toHaveCount(0)
+  await expect(workspace.getByRole('region', { name: 'Photos of 2024 Ford F-150 Lariat' })).toContainText('1 / 3')
   const opener = workspace.getByRole('button', { name: /Open photo gallery/ })
   await opener.click()
   const gallery = page.getByRole('dialog', { name: /photo gallery$/ })

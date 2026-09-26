@@ -710,7 +710,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
     })
   })
   await testInfo.attach('VDP computed layout', { body: JSON.stringify(layoutEvidence, null, 2), contentType: 'application/json' })
-  await expect(dialog.getByRole('tab')).toHaveText(['Overview', 'Equipment', 'Records', 'Holds & moves', 'Activity'])
+  await expect(dialog.getByRole('tab')).toHaveText(['Overview', 'Equipment', 'Records', 'Holds & moves', 'Activity', 'Issues'])
   const metrics = dialog.locator('.vdp-focus-specs')
   await expect(metrics).toContainText('12,450 mi')
   const header = dialog.locator('.vdp-focus-header')
