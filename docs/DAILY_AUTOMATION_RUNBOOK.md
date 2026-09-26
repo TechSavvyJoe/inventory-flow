@@ -104,6 +104,29 @@ the cloud-sync process rechecks every expected source hash immediately before
 publication. An overlapping intraday slot records `waiting_for_pipeline_writer`
 and lets the next scheduled slot retry; it never starts a second writer.
 
+The saved release artifact and encrypted POST share one immutable manifest
+projection. It retains source hashes, counts, change evidence, warnings, and QA
+validation, while excluding local release-path/hash fields, delivery receipts,
+latest-pointer state, and mutable pipeline-step logs. Those excluded fields may
+be recorded after a publish attempt without changing the candidate bundle hash.
+After a POST, only an allowlisted structured rejection known to occur before a
+commit is treated as definite; malformed, internal, or unrecognized responses
+require exact-hash reconciliation.
+
+The separate intraday monitor may start the existing hold-refresh task once for
+a newly observed ordinary task or receipt failure. If either the hold status or
+dated run manifest says reconciliation is required or the publication outcome
+is unknown, the monitor never starts that task. The manifest remains
+authoritative when the later status write is missing or unreadable. On its
+first observation the monitor writes one active and historical alert containing
+the exact candidate bundle SHA-256 and the protected status/readiness
+reconciliation action; identical later observations are deduplicated.
+
+The intraday writer also enforces this stop before reading the prior receipt or
+starting any capture. A later 30-minute scheduled invocation returns attention
+required and leaves the reconciliation status, candidate hashes, and manifest
+unchanged until an operator completes the exact-hash reconciliation.
+
 `work\hold-refresh-status\{date}.json` uses these operator-facing states:
 
 - `intraday_holds_published_and_verified`: the exact success contract. Its
@@ -183,7 +206,7 @@ Error codes the log can end with, and what they mean:
 | `CLOUD_PUBLISH_FAILED` | `sync-cloud-release.mjs` exited non-zero; the real code is in the log line above it (`PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW`, `HOLD_REFRESH_SOURCE_BINDING_MISMATCH`, `CLOUD_*_MISMATCH`, `CLOUD_NOT_READY`) | Depends on the inner code |
 | `HOLD_REFRESH_SOURCE_BINDINGS_REQUIRED` | A hold-only publish was invoked outside the receipt-bound intraday orchestrator. Nothing was published. | Run the existing intraday scheduled task instead |
 | `HOLD_REFRESH_SOURCE_BINDING_MISMATCH` | One of the public, DealerMail, resource, or manager hashes changed after the intraday candidate was built. Nothing was published. | No - inspect the named source lane |
-| `CLOUD_PUBLICATION_OUTCOME_UNKNOWN` | The release POST was accepted, but two exact candidate-hash status/readiness checks did not establish the final cloud state. The validated candidate and its reconciliation hashes are retained. | No - reconcile the recorded candidate hash before any new capture or publish |
+| `CLOUD_PUBLICATION_OUTCOME_UNKNOWN` | The release POST was attempted and may have been accepted, but its response was lost/malformed or two exact candidate-hash status/readiness checks did not establish the final cloud state. The validated candidate and its exact POST-envelope hash are retained. | No - reconcile the recorded candidate hash before any new capture or publish |
 | `CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED` | The exact candidate was verified in cloud, but its local app-feed receipt could not be written. The orchestrator treats this as reconciliation-required rather than rolling back or claiming the prior release stayed live. | No - repair local receipt storage and reconcile the recorded candidate hash |
 | `CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED` | The new hold release and matching receipt are already published, but integration verification, latest-pointer advancement, or archiving failed. The candidate remains canonical. | Retry the existing intraday task; do not recapture other sources |
 | `POST_PUBLISH_STATE_RECORD_FAILED` | Cloud publication and publisher follow-ups completed, but the orchestrator could not finish its local manifest/status recording. The published candidate remains canonical. | Retry the existing intraday task; inspect local disk/status-file errors if it persists |

@@ -4,7 +4,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadLatestCompletedRelease } from '../server/importer.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
-import { accessHeaders, publicationEndpoint, cloudReleaseFrom, encryptBundle, base64Key, publishEnvelope } from './publish-cloud-release.mjs'
+import { accessHeaders, publicationEndpoint, cloudReleaseFrom, encryptBundle, base64Key, publishEnvelope, CloudPublicationReconciliationError } from './publish-cloud-release.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 // The optional Ford OASIS and warranty channels are degradable: a deployed
@@ -92,7 +92,7 @@ export async function syncCloudRelease({ release, environment = process.env, fet
     }
   }
   if (verificationError) {
-    throw new Error('CLOUD_PUBLICATION_OUTCOME_UNKNOWN', { cause: verificationError })
+    throw new CloudPublicationReconciliationError('CLOUD_PUBLICATION_OUTCOME_UNKNOWN', envelope.bundleSha256, { cause: verificationError })
   }
   return {
     schemaVersion: 1,
@@ -197,14 +197,27 @@ export async function main() {
     try {
       receiptPath = writeReceipt(directory, receipt)
     } catch (error) {
-      throw new Error('CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED', { cause: error })
+      throw new CloudPublicationReconciliationError('CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED', receipt.bundleSha256, { cause: error })
     }
-    process.stdout.write(JSON.stringify({ status: receipt.status, reportDate: receipt.reportDate, counts: receipt.counts, receiptPath }) + '\n')
+    process.stdout.write(JSON.stringify({ status: receipt.status, reportDate: receipt.reportDate, bundleSha256: receipt.bundleSha256, counts: receipt.counts, receiptPath }) + '\n')
   } finally { if (lock) releasePublicationLock(lock) }
 }
+
+export function publicationFailureMessage(error) {
+  const code = /^[A-Z_]+$/.test(error?.message ?? '') ? error.message : 'PUBLICATION_NOT_VERIFIED'
+  const bundleSha256 = typeof error?.bundleSha256 === 'string' && /^[a-fA-F0-9]{64}$/.test(error.bundleSha256)
+    ? error.bundleSha256.toLowerCase()
+    : null
+  const reconciliationRequired = code === 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN' || code === 'CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED'
+  if (reconciliationRequired) {
+    const candidate = bundleSha256 ? ` candidate_bundle_sha256=${bundleSha256}.` : ''
+    return `Cloud sync incomplete: ${code}.${candidate} Reconcile the exact candidate before any new publication attempt.`
+  }
+  return `Cloud sync incomplete: ${code}. Existing verified receipt and audited report were preserved.`
+}
+
 if (process.argv[1] && path.basename(process.argv[1]) === 'sync-cloud-release.mjs') main().catch(error => {
   // Never forward raw HTTP payloads, authentication details, or source rows.
-  const code = /^[A-Z_]+$/.test(error.message) ? error.message : 'PUBLICATION_NOT_VERIFIED'
-  process.stderr.write(`Cloud sync incomplete: ${code}. Existing verified receipt and audited report were preserved.\n`)
+  process.stderr.write(`${publicationFailureMessage(error)}\n`)
   process.exitCode = 1
 })

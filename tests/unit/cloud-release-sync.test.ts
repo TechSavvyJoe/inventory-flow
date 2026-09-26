@@ -6,7 +6,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildSyntheticCloudBundle } from '../../fixtures/synthetic-cloud-bundle.mjs'
 import { validateReleaseBundle } from '../../cloudflare/src/release-validation.mjs'
-import { acquirePublicationLock, assertExpectedSourceHashes, assertInheritedPublicationLock, receiptSourceHashes, releasePublicationLock, reportDate, syncCloudRelease, verifyPublishedRelease, writeReceipt } from '../../scripts/sync-cloud-release.mjs'
+import { acquirePublicationLock, assertExpectedSourceHashes, assertInheritedPublicationLock, publicationFailureMessage, receiptSourceHashes, releasePublicationLock, reportDate, syncCloudRelease, verifyPublishedRelease, writeReceipt } from '../../scripts/sync-cloud-release.mjs'
 
 const environment = { INVENTORY_OPS_CLOUD_URL:'https://inventory-ops.joegallant.me', INVENTORY_OPS_RELEASE_ENCRYPTION_KEY_BASE64:Buffer.alloc(32, 7).toString('base64'), CF_ACCESS_CLIENT_ID:'synthetic', CF_ACCESS_CLIENT_SECRET:'synthetic', INVENTORY_OPS_RELEASE_PUBLISHER_TOKEN:'synthetic' }
 const now = new Date('2026-08-30T15:00:00Z')
@@ -120,10 +120,43 @@ describe('verified daily cloud publication',()=>{
       return Response.json({code:'TEMPORARY'}, {status:503})
     }
 
-    await expect(syncCloudRelease({release:bundle.release,environment,fetchImpl,now}))
-      .rejects.toThrow('CLOUD_PUBLICATION_OUTCOME_UNKNOWN')
+    let failure
+    try {
+      await syncCloudRelease({release:bundle.release,environment,fetchImpl,now})
+    } catch (error) {
+      failure=error
+    }
+    expect(failure).toMatchObject({
+      message:'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+      bundleSha256:expect.stringMatching(/^[a-f0-9]{64}$/),
+    })
+    expect(publicationFailureMessage(failure)).toContain(`candidate_bundle_sha256=${failure.bundleSha256}`)
+    expect(publicationFailureMessage(failure)).not.toContain('were preserved')
     expect(publicationCalls).toBe(1)
     expect(verificationCalls).toBe(4)
+  })
+
+  it('classifies a lost POST response as outcome unknown with the exact transmitted envelope hash',async()=>{
+    const {bundle}=fixture(); let postedHash
+    const fetchImpl=async(url,options)=>{
+      if(new URL(url).pathname==='/internal/releases') {
+        postedHash=JSON.parse(options.body).bundleSha256
+        throw new TypeError('synthetic response lost after request transmission')
+      }
+      throw new Error('verification must not run without a POST response')
+    }
+    let failure
+    try {
+      await syncCloudRelease({release:bundle.release,environment,fetchImpl,now})
+    } catch (error) {
+      failure=error
+    }
+
+    expect(failure).toMatchObject({
+      message:'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+      bundleSha256:postedHash,
+    })
+    expect(publicationFailureMessage(failure)).toContain(`candidate_bundle_sha256=${postedHash}`)
   })
 })
 

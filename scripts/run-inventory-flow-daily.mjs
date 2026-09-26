@@ -176,14 +176,44 @@ function assertReceiptHashes(receipt, expectedHashes, expectedReportDate = null)
     })
 }
 
+function publicationMayHaveSucceeded(publisherOutput = '') {
+  return /CLOUD_PUBLICATION_OUTCOME_UNKNOWN|CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED|RELEASE PUBLISHED; FOLLOWUPS FAILED/i.test(publisherOutput)
+}
+
+function publishedCandidateBundleSha256(publisherOutput = '', fallback = null) {
+  const matches = [...String(publisherOutput).matchAll(/\bcandidate_bundle_sha256=([a-f0-9]{64})\b/gi)]
+  const exactPostedHash = matches.at(-1)?.[1]
+  const candidate = normalizedHash(exactPostedHash) ?? normalizedHash(fallback)
+  return candidate?.toLowerCase() ?? null
+}
+
+function classifyFailedPublication({ publisherOutput = '', fallbackBundleSha256, dealerMailSha256 }) {
+  if (!publicationMayHaveSucceeded(publisherOutput)) {
+    return {
+      status: 'publish_failed_last_verified_release_preserved',
+      failureCode: 'CLOUDFLARE_PUBLISH_FAILED',
+      reconciliationRequired: false,
+      candidate: null,
+    }
+  }
+  return {
+    status: 'cloud_publication_outcome_unknown',
+    failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+    reconciliationRequired: true,
+    candidate: {
+      bundleSha256: publishedCandidateBundleSha256(publisherOutput, fallbackBundleSha256),
+      dealerMailSha256: normalizedHash(dealerMailSha256)?.toLowerCase() ?? null,
+    },
+  }
+}
+
 function classifyPublicationOutcome({ processOk, beforeRaw, afterState, expectedHashes, reportDate, publisherOutput = '' }) {
   const matchesCandidate = assertReceiptHashes(afterState.receipt, expectedHashes, reportDate)
   if (processOk && matchesCandidate) return 'published_and_followups_complete'
   if (!processOk && afterState.raw !== null && afterState.raw !== beforeRaw && matchesCandidate) {
     return 'published_followups_pending'
   }
-  const publicationMayHaveSucceeded = processOk || /CLOUD_PUBLICATION_OUTCOME_UNKNOWN|CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED|RELEASE PUBLISHED; FOLLOWUPS FAILED/i.test(publisherOutput)
-  if (publicationMayHaveSucceeded) return 'publication_outcome_unknown'
+  if (processOk || publicationMayHaveSucceeded(publisherOutput)) return 'publication_outcome_unknown'
   return 'not_published'
 }
 
@@ -701,28 +731,48 @@ function managerBindingFor(reportDate, publicRows = []) {
   }
 }
 
-function buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath, { receipt = null } = {}) {
-  const release = loadLatestCompletedRelease({ workspaceRoot: WORKSPACE_ROOT, now: validationClockFor(reportDate) })
+function buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath, {
+  receipt = null,
+  workspaceRoot = WORKSPACE_ROOT,
+  now = validationClockFor(reportDate),
+} = {}) {
+  const release = loadLatestCompletedRelease({ workspaceRoot, now })
   if (release.reportDate !== reportDate) {
     throw new Error(`Latest completed release is ${release.reportDate}, expected ${reportDate}`)
   }
-  const sourceHashes = receipt ? assertCandidatePreservesReceiptSources(release, receipt) : receiptSourceHashes(release)
-  const bundle = cloudReleaseFrom(release)
-  const validation = validateReleaseBundle(bundle)
-  const bundleSha256 = cloudBundleSha256(bundle)
-  writeJson(releasePath, bundle)
+  if (receipt) assertCandidatePreservesReceiptSources(release, receipt)
+  const preliminaryValidation = validateReleaseBundle(cloudReleaseFrom(release))
   const manifest = readJson(manifestPath)
-  manifest.release_bundle_path = releasePath
-  manifest.release_bundle_sha256 = sha256(releasePath)
   manifest.validation_results = {
     ...manifest.validation_results,
     app_release_validated: true,
     cloud_release_bundle_validated: true,
-    validate_release_bundle_summary: validation,
+    validate_release_bundle_summary: preliminaryValidation,
     passed: true,
   }
   writeJson(manifestPath, manifest)
-  return { validation, sourceHashes, bundleSha256 }
+
+  // Finalize self-attesting validation fields before writing the artifact.
+  // Local path/hash and delivery fields are outside cloudReleaseFrom(), so the
+  // saved bundle and every retry share the exact immutable POST identity.
+  const finalRelease = loadLatestCompletedRelease({ workspaceRoot, now })
+  if (finalRelease.reportDate !== reportDate) {
+    throw new Error(`Latest completed release is ${finalRelease.reportDate}, expected ${reportDate}`)
+  }
+  const finalSourceHashes = receipt
+    ? assertCandidatePreservesReceiptSources(finalRelease, receipt)
+    : receiptSourceHashes(finalRelease)
+  const finalBundle = cloudReleaseFrom(finalRelease)
+  const finalValidation = validateReleaseBundle(finalBundle)
+  if (JSON.stringify(finalValidation) !== JSON.stringify(preliminaryValidation)) {
+    throw new Error('RELEASE_VALIDATION_SUMMARY_CHANGED_DURING_FINALIZATION')
+  }
+  writeJson(releasePath, finalBundle)
+  const finalManifest = readJson(manifestPath)
+  finalManifest.release_bundle_path = releasePath
+  finalManifest.release_bundle_sha256 = sha256(releasePath)
+  writeJson(manifestPath, finalManifest)
+  return { validation: finalValidation, sourceHashes: finalSourceHashes, bundleSha256: cloudBundleSha256(finalBundle) }
 }
 
 function publish(reportDate, forcePublish, steps, { holdRefresh = false, expectedSourceHashes = null } = {}) {
@@ -846,7 +896,71 @@ function candidateManifestFromBaseline({ baseline, reportDate, publicPath, deale
   }
 }
 
+function retainedPublicationReconciliation({ reportDate, intradayStatusPath, manifestPath }) {
+  let status = null
+  let statusReadable = false
+  if (existsSync(intradayStatusPath)) {
+    try {
+      status = readJson(intradayStatusPath)
+      statusReadable = true
+    } catch {}
+  }
+  const statusRequiresReconciliation = statusReadable && (
+    status?.reconciliationRequired === true || status?.status === 'intraday_holds_publication_outcome_unknown'
+  )
+  const candidateBundleSha256 = normalizedHash(status?.candidate?.bundleSha256)
+  let manifest = null
+  let manifestReadable = false
+  let expectedBundleSha256 = null
+  let manifestExpectedHashPresent = false
+  try {
+    manifest = readJson(manifestPath)
+    manifestReadable = true
+    const expected = manifest?.cloudflare_publish?.expected_bundle_sha256
+    manifestExpectedHashPresent = expected !== undefined && expected !== null
+    expectedBundleSha256 = normalizedHash(expected)
+  } catch {
+    // Either artifact can independently stop another write. Repairing an
+    // unreadable counterpart remains an operator action.
+  }
+  const manifestRequiresReconciliation = manifestReadable && (
+    manifest?.cloudflare_publish?.reconciliation_required === true ||
+    manifest?.cloudflare_publish?.status === 'publication_outcome_unknown'
+  )
+  if (!statusRequiresReconciliation && !manifestRequiresReconciliation) return null
+
+  const consistent = statusRequiresReconciliation &&
+    status.reportDate === reportDate &&
+    candidateBundleSha256 !== null &&
+    (!manifestExpectedHashPresent || (expectedBundleSha256 !== null && candidateBundleSha256 === expectedBundleSha256))
+  return {
+    consistent,
+    candidate: status?.candidate ?? (expectedBundleSha256 ? { bundleSha256: expectedBundleSha256.toLowerCase() } : null),
+    candidateBundleSha256: (candidateBundleSha256 ?? expectedBundleSha256)?.toLowerCase() ?? null,
+  }
+}
+
 async function runIntradayHoldRefresh({ options, reportDate, manifestPath, releasePath, receiptPath, intradayStatusPath, warnings, steps }) {
+  const retainedReconciliation = retainedPublicationReconciliation({ reportDate, intradayStatusPath, manifestPath })
+  if (retainedReconciliation) {
+    const failureCode = retainedReconciliation.consistent
+      ? 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
+      : 'PUBLICATION_RECONCILIATION_STATE_INVALID'
+    const summary = retainedReconciliation.consistent
+      ? `Inventory Flow ${reportDate}: candidate SHA-256 ${retainedReconciliation.candidateBundleSha256} still requires reconciliation before another refresh.`
+      : `Inventory Flow ${reportDate}: the retained publication reconciliation state is incomplete or inconsistent; operator review is required before another refresh.`
+    return {
+      ok: false,
+      failureCode,
+      summary,
+      validation: {},
+      manifestPath,
+      releasePath,
+      reconciliationRequired: true,
+      candidate: retainedReconciliation.candidate,
+    }
+  }
+
   const beforeReceipt = readReceiptState(receiptPath)
   if (beforeReceipt.receipt?.status !== 'published_and_verified' || beforeReceipt.receipt?.reportDate !== reportDate || beforeReceipt.receipt?.complete !== true) {
     const summary = `Inventory Flow ${reportDate}: intraday hold refresh waiting for the morning verified release.`
@@ -1034,8 +1148,9 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
     if (publicationOutcome === 'publication_outcome_unknown') {
       keepCandidate = true
       publishedFailureCode = 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
+      const candidateBundleSha256 = publishedCandidateBundleSha256(publication.output, built.bundleSha256)
       candidateEvidence = {
-        bundleSha256: built.bundleSha256,
+        bundleSha256: candidateBundleSha256,
         dealerMailSha256: built.sourceHashes.dealerMail,
       }
       steps.at(-1).status = 'publication_outcome_unknown'
@@ -1045,7 +1160,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
         attempted: true,
         status: 'publication_outcome_unknown',
         reconciliation_required: true,
-        expected_bundle_sha256: built.bundleSha256,
+        expected_bundle_sha256: candidateBundleSha256,
         receipt_path: receiptPath,
         publisher: 'BobMaxey-InventoryFlow-DailyPublish',
       }
@@ -1216,21 +1331,58 @@ async function runDailyUnlocked(options) {
   manifest.validation_results = { ...manifest.validation_results, resource_enrichment_validated: true, passed: true }
   writeJson(manifestPath, manifest)
 
-  const { validation } = buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath)
+  const built = buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath)
+  const { validation } = built
   let publishStatus = 'publish_skipped_by_flag'
   let publishOk = true
+  let failureCode = null
+  let reconciliationRequired = false
+  let candidate = null
   if (!options.noPublish) {
-    publishOk = publish(reportDate, options.forcePublish, steps).ok
-    publishStatus = publishOk ? 'published_or_already_verified' : 'publish_failed_last_verified_release_preserved'
+    const publication = publish(reportDate, options.forcePublish, steps)
+    publishOk = publication.ok
+    if (publishOk) {
+      publishStatus = 'published_or_already_verified'
+    } else {
+      const failure = classifyFailedPublication({
+        publisherOutput: publication.output,
+        fallbackBundleSha256: built.bundleSha256,
+        dealerMailSha256: built.sourceHashes.dealerMail,
+      })
+      publishStatus = failure.status
+      failureCode = failure.failureCode
+      reconciliationRequired = failure.reconciliationRequired
+      candidate = failure.candidate
+      if (reconciliationRequired) steps.at(-1).status = 'publication_outcome_unknown'
+    }
     manifest = readJson(manifestPath)
     manifest.daily_steps = steps
+    if (reconciliationRequired) {
+      manifest.cloudflare_publish = {
+        attempted: true,
+        status: 'publication_outcome_unknown',
+        reconciliation_required: true,
+        expected_bundle_sha256: candidate.bundleSha256,
+        receipt_path: receiptPath,
+        publisher: 'BobMaxey-InventoryFlow-DailyPublish',
+      }
+    }
     writeJson(manifestPath, manifest)
   }
   const summary = summarize({ reportDate, validation, publishStatus, manifestPath, releasePath, warnings })
-  writeJson(summaryPath, { reportDate, status: publishStatus, summary, counts: validation, warnings, steps, checkedAt: new Date().toISOString() })
+  writeJson(summaryPath, {
+    reportDate,
+    status: publishStatus,
+    summary,
+    counts: validation,
+    warnings,
+    steps,
+    ...(reconciliationRequired ? { reconciliationRequired: true, candidate } : {}),
+    checkedAt: new Date().toISOString(),
+  })
   return {
     ok: publishOk,
-    failureCode: publishOk ? null : 'CLOUDFLARE_PUBLISH_FAILED',
+    failureCode: publishOk ? null : failureCode,
     summary,
     validation,
     manifestPath,
@@ -1288,8 +1440,10 @@ export const internals = {
   archiveDealerMailRevision,
   assertCandidatePreservesReceiptSources,
   assertReceiptHashes,
+  buildAndWriteReleaseBundle,
   candidateManifestFromBaseline,
   captureFileTransaction,
+  classifyFailedPublication,
   classifyPublicationOutcome,
   dealerMailRevisionPaths,
   deriveManifest,
@@ -1297,9 +1451,12 @@ export const internals = {
   formatStores,
   parseArgs,
   publish,
+  publishedCandidateBundleSha256,
   readReceiptStateAfterPublication,
+  retainedPublicationReconciliation,
   reuseExistingOasisCapture,
   runDaily,
+  runIntradayHoldRefresh,
   verifyHoldRefreshBaseline,
   verifyHoldRefreshStableSources,
   summarize,

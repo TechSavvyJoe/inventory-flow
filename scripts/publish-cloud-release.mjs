@@ -9,6 +9,36 @@ import { isMainModule } from './lib/is-main.mjs'
 const APP_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
 const PRIVATE_HOSTNAME = 'inventory-ops.joegallant.me'
 const MAX_ENVELOPE_BYTES = 25 * 1024 * 1024
+const LOCAL_MANIFEST_KEYS = new Set([
+  'cloudflare_publish',
+  'daily_steps',
+  'latest_pointers_advanced',
+  'release_bundle_path',
+  'release_bundle_sha256',
+])
+const DEFINITE_RELEASE_REJECTION_CODES = new Set([
+  'ACCESS_AUTHENTICATION_REQUIRED',
+  'ACCESS_NOT_CONFIGURED',
+  'ACCESS_TOKEN_INVALID',
+  'BODY_TOO_LARGE',
+  'CURRENT_RELEASE_METADATA_INVALID',
+  'DATABASE_NOT_CONFIGURED',
+  'EMPTY_BODY',
+  'INVALID_ENCRYPTED_CONTENT',
+  'INVALID_ENVELOPE',
+  'INVALID_JSON',
+  'INVALID_OR_INCOMPLETE_RELEASE',
+  'INVALID_RELEASE_COMPLETION_TIME',
+  'JSON_CONTENT_REQUIRED',
+  'METHOD_NOT_ALLOWED',
+  'NOT_FOUND',
+  'OLDER_RELEASE_REJECTED',
+  'PRIVATE_HOST_REQUIRED',
+  'PUBLISHER_AUTHENTICATION_REQUIRED',
+  'PUBLISHER_IDENTITY_REQUIRED',
+  'PUBLISH_CONFLICT_RETRY',
+  'RELEASE_KEY_NOT_CONFIGURED',
+])
 
 function requiredEnvironment(name, environment = process.env) {
   const value = environment[name]
@@ -56,6 +86,13 @@ export function portableMetadata(value, parentKey = '') {
   return value
 }
 
+export function publishedManifestFrom(manifest) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return portableMetadata(manifest)
+  return portableMetadata(Object.fromEntries(
+    Object.entries(manifest).filter(([key]) => !LOCAL_MANIFEST_KEYS.has(key)),
+  ))
+}
+
 function sourceRunForCloud(source) {
   if (!source) return null
   return {
@@ -88,7 +125,10 @@ export function cloudReleaseFrom(release) {
       completedAt: release.completedAt,
       // Preserve certified totals, change categories, and validation evidence.
       // App-owned transfers require the separate operational-ledger migration.
-      manifest: portableMetadata(release.manifest),
+      // Delivery receipts and local artifact bookkeeping change after a
+      // publish attempt. They are deliberately outside the immutable release
+      // identity; source bindings and validation evidence remain inside it.
+      manifest: publishedManifestFrom(release.manifest),
       warnings: release.warnings ?? [],
       sourceRuns: {
         public: sourceRunForCloud(release.sourceRuns?.public),
@@ -137,11 +177,25 @@ export function publicationEndpoint(value) {
   return new URL('/internal/releases', cloudUrl)
 }
 
+export class CloudPublicationReconciliationError extends Error {
+  constructor(code, bundleSha256, { cause } = {}) {
+    super(code, { cause })
+    this.name = 'CloudPublicationReconciliationError'
+    this.bundleSha256 = typeof bundleSha256 === 'string' && /^[a-fA-F0-9]{64}$/.test(bundleSha256)
+      ? bundleSha256.toLowerCase()
+      : null
+  }
+}
+
+function outcomeUnknown(envelope, cause) {
+  return new CloudPublicationReconciliationError('CLOUD_PUBLICATION_OUTCOME_UNKNOWN', envelope?.bundleSha256, { cause })
+}
+
 export async function publishEnvelope(envelope, { environment = process.env, fetchImpl = fetch } = {}) {
   const endpoint = publicationEndpoint(requiredEnvironment('INVENTORY_OPS_CLOUD_URL', environment))
   const body = JSON.stringify(envelope)
   if (Buffer.byteLength(body, 'utf8') > MAX_ENVELOPE_BYTES) throw new Error('Encrypted release exceeds the permitted upload size')
-  const response = await fetchImpl(endpoint, {
+  const request = {
     method: 'POST',
     redirect: 'error',
     signal: AbortSignal.timeout(120000),
@@ -151,13 +205,34 @@ export async function publishEnvelope(envelope, { environment = process.env, fet
       ...accessHeaders(environment),
     },
     body,
-  })
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    const code = typeof payload?.code === 'string' && /^[A-Z0-9_]+$/.test(payload.code) ? `: ${payload.code}` : ''
-    throw new Error(`Cloud release publish failed (${response.status}${code})`)
   }
-  if (!payload || !['published', 'already_published'].includes(payload.status) || payload.reportDate !== envelope.reportDate) throw new Error('Cloud release response did not confirm the expected report date and publication status')
+  let response
+  try {
+    response = await fetchImpl(endpoint, request)
+  } catch (error) {
+    // A transport error cannot prove whether the server accepted the POST.
+    throw outcomeUnknown(envelope, error)
+  }
+  if (!response || typeof response.ok !== 'boolean') throw outcomeUnknown(envelope)
+  let payload = null
+  try {
+    payload = await response.json()
+  } catch (error) {
+    // Once the POST has been attempted, an unparseable response cannot prove
+    // whether the server committed before returning or truncating the body.
+    throw outcomeUnknown(envelope, error)
+  }
+  if (!response.ok) {
+    const code = payload !== null && typeof payload === 'object' && !Array.isArray(payload) &&
+      typeof payload.code === 'string' && /^[A-Z0-9_]+$/.test(payload.code)
+      ? payload.code
+      : null
+    if (!code || !DEFINITE_RELEASE_REJECTION_CODES.has(code)) throw outcomeUnknown(envelope)
+    throw new Error(`Cloud release publish failed (${response.status}: ${code})`)
+  }
+  if (!payload || !['published', 'already_published'].includes(payload.status) || payload.reportDate !== envelope.reportDate) {
+    throw outcomeUnknown(envelope)
+  }
   return { status: payload.status, reportDate: payload.reportDate }
 }
 
@@ -177,9 +252,20 @@ export async function main() {
   process.stdout.write(`${payload.status}: ${payload.reportDate}\n`)
 }
 
+export function publisherFailureMessage(error) {
+  if (error?.message === 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN') {
+    const bundleSha256 = typeof error.bundleSha256 === 'string' && /^[a-fA-F0-9]{64}$/.test(error.bundleSha256)
+      ? error.bundleSha256.toLowerCase()
+      : null
+    const candidate = bundleSha256 ? ` candidate_bundle_sha256=${bundleSha256}.` : ''
+    return `Cloud release publication outcome is unknown: CLOUD_PUBLICATION_OUTCOME_UNKNOWN.${candidate} Reconcile the exact candidate before another publication attempt.`
+  }
+  return `Cloud release was not published: ${error.message}`
+}
+
 if (isMainModule(import.meta.url)) {
   main().catch((error) => {
-    process.stderr.write(`Cloud release was not published: ${error.message}\n`)
+    process.stderr.write(`${publisherFailureMessage(error)}\n`)
     process.exitCode = 1
   })
 }

@@ -1,6 +1,6 @@
 // @ts-nocheck -- Windows PowerShell behavior harness; no live tasks or data.
 // @vitest-environment node
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -34,6 +34,9 @@ function writeReceipts(root: string, options: {
   status?: string
   receiptStatus?: string
   complete?: boolean
+  reconciliationRequired?: boolean
+  candidateBundleSha256?: string
+  failureCode?: string
 } = {}) {
   const checkedAt = options.checkedAt ?? '2026-09-25T15:31:00.000Z'
   const verifiedAt = options.verifiedAt ?? '2026-09-25T15:30:00.000Z'
@@ -50,6 +53,9 @@ function writeReceipts(root: string, options: {
     status: options.status ?? 'intraday_holds_published_and_verified',
     checkedAt,
   }
+  if (options.reconciliationRequired !== undefined) status.reconciliationRequired = options.reconciliationRequired
+  if (options.candidateBundleSha256) status.candidate = { bundleSha256: options.candidateBundleSha256, dealerMailSha256 }
+  if (options.failureCode) status.failureCode = options.failureCode
   if (options.explicitLink !== false) {
     status.receipt = {
       bundleSha256: options.linkBundle ?? bundleSha256,
@@ -187,6 +193,75 @@ describe('intraday hold task monitor', () => {
     })
     expect(second).toEqual({ started: 0, events: 0 })
     expect(JSON.parse(readFileSync(alertPath, 'utf8')).createdAt).toBe('2026-09-25T12:00:00.0000000-04:00')
+  })
+
+  it('alerts on the first reconciliation-required observation and never starts the writer for that candidate', () => {
+    const root = workspace()
+    const candidateHash = 'C'.repeat(64)
+    writeReceipts(root, {
+      status: 'intraday_holds_publication_outcome_unknown',
+      reconciliationRequired: true,
+      candidateBundleSha256: candidateHash,
+      failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+    })
+    const scenario = {
+      now: '2026-09-25T12:00:00-04:00',
+      initial: ready(),
+    }
+
+    expect(run(root, scenario)).toEqual({ started: 0, events: 1 })
+    const alertPath = path.join(root, 'work/hold-refresh-monitor/active-alert.json')
+    expect(JSON.parse(readFileSync(alertPath, 'utf8'))).toMatchObject({
+      code: 'intraday_hold_publication_reconciliation_required',
+      summary: expect.stringContaining(candidateHash),
+      action: expect.stringContaining(candidateHash),
+      evidence: {
+        reconciliationRequired: true,
+        candidateBundleSha256: candidateHash,
+      },
+    })
+    expect(JSON.parse(readFileSync(alertPath, 'utf8')).action).toContain('/internal/status')
+    expect(JSON.parse(readFileSync(alertPath, 'utf8')).action).toContain('/internal/readiness')
+
+    expect(run(root, { ...scenario, now: '2026-09-25T12:15:00-04:00' })).toEqual({ started: 0, events: 0 })
+    expect(readdirSync(path.join(root, 'work/hold-refresh-monitor/alerts'))).toHaveLength(1)
+  })
+
+  it.each(['missing', 'corrupt'])('uses the reconciliation manifest when hold status is %s and never starts the writer', (statusCondition) => {
+    const root = workspace()
+    const candidateHash = 'D'.repeat(64)
+    writeReceipts(root)
+    const statusPath = path.join(root, `work/hold-refresh-status/${reportDate}.json`)
+    if (statusCondition === 'missing') rmSync(statusPath)
+    else writeFileSync(statusPath, '{truncated reconciliation status')
+    const manifestPath = path.join(root, `work/run-status/${reportDate}.json`)
+    mkdirSync(path.dirname(manifestPath), { recursive: true })
+    writeFileSync(manifestPath, JSON.stringify({
+      report_date: reportDate,
+      cloudflare_publish: {
+        status: 'publication_outcome_unknown',
+        reconciliation_required: true,
+        expected_bundle_sha256: candidateHash,
+      },
+    }))
+    const scenario = {
+      now: '2026-09-25T12:00:00-04:00',
+      initial: ready(),
+    }
+
+    expect(run(root, scenario)).toEqual({ started: 0, events: 1 })
+    const alertPath = path.join(root, 'work/hold-refresh-monitor/active-alert.json')
+    expect(JSON.parse(readFileSync(alertPath, 'utf8'))).toMatchObject({
+      code: 'intraday_hold_publication_reconciliation_required',
+      action: expect.stringContaining(candidateHash),
+      evidence: {
+        reconciliationRequired: true,
+        reconciliationSource: 'manifest',
+        candidateBundleSha256: candidateHash,
+      },
+    })
+    expect(run(root, { ...scenario, now: '2026-09-25T12:15:00-04:00' })).toEqual({ started: 0, events: 0 })
+    expect(readdirSync(path.join(root, 'work/hold-refresh-monitor/alerts'))).toHaveLength(1)
   })
 
   it('treats an explicit receipt-link mismatch as unverified and alerts after one repair attempt', () => {

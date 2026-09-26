@@ -46,6 +46,7 @@ $ActiveAlertPath = Join-Path $MonitorDirectory 'active-alert.json'
 $AlertHistoryDirectory = Join-Path $MonitorDirectory 'alerts'
 $HoldStatusPath = Join-Path $WorkspaceRoot ("work\hold-refresh-status\{0}.json" -f $ReportDate)
 $AppReceiptPath = Join-Path $WorkspaceRoot ("work\app-feed-status\{0}.json" -f $ReportDate)
+$RunManifestPath = Join-Path $WorkspaceRoot ("work\run-status\{0}.json" -f $ReportDate)
 
 function Read-JsonFile {
   param([Parameter(Mandatory)][string]$Path)
@@ -125,6 +126,7 @@ function Get-OperatingPeriod {
 function Get-ReceiptHealth {
   $statusFile = Read-JsonFile -Path $HoldStatusPath
   $receiptFile = Read-JsonFile -Path $AppReceiptPath
+  $manifestFile = Read-JsonFile -Path $RunManifestPath
   $reasons = [Collections.Generic.List[string]]::new()
 
   if (-not $statusFile.Exists) { $reasons.Add('hold_status_missing') }
@@ -134,9 +136,46 @@ function Get-ReceiptHealth {
 
   $status = $statusFile.Value
   $receipt = $receiptFile.Value
+  $manifest = $manifestFile.Value
+  $holdStatus = if ($statusFile.Valid) { [string]$status.status } else { $null }
+  $failureCode = if ($statusFile.Valid) { [string]$status.failureCode } else { $null }
+  $statusCandidateBundleSha256 = if ($statusFile.Valid) { Normalize-Hash $status.candidate.bundleSha256 } else { $null }
+  $manifestCandidateBundleSha256 = if ($manifestFile.Valid) { Normalize-Hash $manifest.cloudflare_publish.expected_bundle_sha256 } else { $null }
+  $statusRequiresReconciliation = $statusFile.Valid -and (
+    $status.reconciliationRequired -eq $true -or
+    $holdStatus -ceq 'intraday_holds_publication_outcome_unknown' -or
+    $failureCode -in @('CLOUD_PUBLICATION_OUTCOME_UNKNOWN', 'CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED')
+  )
+  $manifestRequiresReconciliation = $manifestFile.Valid -and (
+    $manifest.cloudflare_publish.reconciliation_required -eq $true -or
+    [string]$manifest.cloudflare_publish.status -ceq 'publication_outcome_unknown'
+  )
+  $reconciliationRequired = $statusRequiresReconciliation -or $manifestRequiresReconciliation
+  $candidateBundleSha256 = if ($manifestRequiresReconciliation -and $null -ne $manifestCandidateBundleSha256) {
+    $manifestCandidateBundleSha256
+  } else {
+    $statusCandidateBundleSha256
+  }
+  $reconciliationSource = if ($statusRequiresReconciliation -and $manifestRequiresReconciliation) {
+    'status_and_manifest'
+  } elseif ($manifestRequiresReconciliation) {
+    'manifest'
+  } elseif ($statusRequiresReconciliation) {
+    'status'
+  } else {
+    'none'
+  }
   if ($statusFile.Valid) {
-    if ([string]$status.status -cne 'intraday_holds_published_and_verified') { $reasons.Add('hold_status_not_verified') }
+    if ($holdStatus -cne 'intraday_holds_published_and_verified') { $reasons.Add('hold_status_not_verified') }
     if ([string]$status.reportDate -cne $ReportDate) { $reasons.Add('hold_status_report_date_mismatch') }
+  }
+  if ($reconciliationRequired) {
+    $reasons.Add('publication_reconciliation_required')
+    if ($null -eq $candidateBundleSha256) { $reasons.Add('candidate_bundle_hash_missing_or_invalid') }
+    if ($null -ne $statusCandidateBundleSha256 -and $null -ne $manifestCandidateBundleSha256 -and
+        $statusCandidateBundleSha256 -cne $manifestCandidateBundleSha256) {
+      $reasons.Add('reconciliation_candidate_hash_mismatch')
+    }
   }
   if ($receiptFile.Valid) {
     if ([string]$receipt.status -cne 'published_and_verified') { $reasons.Add('app_receipt_not_verified') }
@@ -194,6 +233,11 @@ function Get-ReceiptHealth {
     VerifiedAt = if ($null -ne $verifiedAt) { $verifiedAt.ToString('o') } else { $null }
     AgeMinutes = $ageMinutes
     LinkMode = $linkMode
+    HoldStatus = $holdStatus
+    FailureCode = $failureCode
+    ReconciliationRequired = $reconciliationRequired
+    ReconciliationSource = $reconciliationSource
+    CandidateBundleSha256 = $candidateBundleSha256
     Reasons = @($reasons)
   }
 }
@@ -277,6 +321,8 @@ function Get-ReceiptIssueFingerprint {
       $ReceiptHealth.CheckedAt,
       $ReceiptHealth.VerifiedAt,
       $ReceiptHealth.LinkMode,
+      $ReceiptHealth.ReconciliationRequired,
+      $ReceiptHealth.CandidateBundleSha256,
       ($ReceiptHealth.Reasons -join ',')
     ) -join '|')
 }
@@ -318,6 +364,9 @@ function Save-MonitorState {
       receiptCheckedAt = $ReceiptHealth.CheckedAt
       receiptVerifiedAt = $ReceiptHealth.VerifiedAt
       receiptLinkMode = $ReceiptHealth.LinkMode
+      reconciliationRequired = $ReceiptHealth.ReconciliationRequired
+      reconciliationSource = $ReceiptHealth.ReconciliationSource
+      candidateBundleSha256 = $ReceiptHealth.CandidateBundleSha256
       lastRecoveryTaskFailureFingerprint = $RecoveryTaskFailureFingerprint
       lastRecoveryReceiptFingerprint = $RecoveryReceiptFingerprint
       lastRecoveryTaskRunAt = $RecoveryTaskRunAt
@@ -354,6 +403,9 @@ function Publish-Alert {
       holdStatusCheckedAt = $ReceiptHealth.CheckedAt
       appReceiptVerifiedAt = $ReceiptHealth.VerifiedAt
       receiptLinkMode = $ReceiptHealth.LinkMode
+      reconciliationRequired = $ReceiptHealth.ReconciliationRequired
+      reconciliationSource = $ReceiptHealth.ReconciliationSource
+      candidateBundleSha256 = $ReceiptHealth.CandidateBundleSha256
       reasons = @($ReceiptHealth.Reasons)
     }
   }
@@ -383,6 +435,39 @@ $recoveryTaskFailureFingerprint = [string]$previousState.lastRecoveryTaskFailure
 $recoveryReceiptFingerprint = [string]$previousState.lastRecoveryReceiptFingerprint
 $recoveryTaskRunAt = [string]$previousState.lastRecoveryTaskRunAt
 $alertFingerprint = [string]$previousState.lastAlertFingerprint
+
+if ($receiptHealth.ReconciliationRequired) {
+  $candidateHash = [string]$receiptHealth.CandidateBundleSha256
+  $reconciliationFingerprint = Get-Sha256Text (@(
+      $ReportDate,
+      'publication_reconciliation_required',
+      $receiptHealth.HoldStatus,
+      $receiptHealth.FailureCode,
+      $receiptHealth.ReconciliationSource,
+      $candidateHash
+    ) -join '|')
+  $summary = if ([string]::IsNullOrWhiteSpace($candidateHash)) {
+    "The intraday hold publication outcome requires reconciliation, but its candidate bundle SHA-256 is missing or invalid."
+  } else {
+    "The intraday hold publication outcome requires reconciliation for candidate SHA-256 $candidateHash."
+  }
+  $action = if ([string]::IsNullOrWhiteSpace($candidateHash)) {
+    'Do not start the hold-refresh task. Repair the reconciliation status so it records the exact candidate bundle SHA-256, then compare that hash with the protected /internal/status and /internal/readiness responses.'
+  } else {
+    "Do not start the hold-refresh task. Compare exact candidate SHA-256 $candidateHash with the protected /internal/status and /internal/readiness responses, then finish its receipt and follow-ups or document the superseding verified release."
+  }
+  $newAlert = Publish-Alert `
+    -Code 'intraday_hold_publication_reconciliation_required' `
+    -Summary $summary `
+    -Action $action `
+    -TaskState $taskState `
+    -ReceiptHealth $receiptHealth `
+    -Fingerprint $reconciliationFingerprint `
+    -PreviousState $previousState
+  if ($newAlert) { $alertFingerprint = $reconciliationFingerprint }
+  Save-MonitorState -State $previousState -TaskState $taskState -ReceiptHealth $receiptHealth -RecoveryTaskFailureFingerprint $recoveryTaskFailureFingerprint -RecoveryReceiptFingerprint $recoveryReceiptFingerprint -RecoveryTaskRunAt $recoveryTaskRunAt -AlertFingerprint $alertFingerprint
+  return
+}
 
 if ($taskState.QueryFailed -or -not $taskState.Present) {
   $queryCode = if ($taskState.QueryFailed) { 'intraday_hold_task_query_failed' } else { 'intraday_hold_task_missing' }

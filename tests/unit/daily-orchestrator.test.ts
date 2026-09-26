@@ -5,6 +5,10 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
+import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
+import { loadLatestCompletedRelease } from '../../server/importer.mjs'
+import { cloudBundleSha256, cloudReleaseFrom } from '../../scripts/publish-cloud-release.mjs'
+import { publicationFailureMessage, syncCloudRelease } from '../../scripts/sync-cloud-release.mjs'
 
 let workspaceRoot: string
 let previousWorkspaceRoot: string | undefined
@@ -347,6 +351,226 @@ describe('app-first daily orchestrator helpers', () => {
         dealerMailSha256: 'B'.repeat(64),
       },
     })
+  })
+
+  it('preserves an unresolved candidate across the next scheduled intraday invocation without capture or publish', async () => {
+    const internals = await loadInternals()
+    const candidate = {
+      bundleSha256: 'A'.repeat(64),
+      dealerMailSha256: 'B'.repeat(64),
+    }
+    const statusPath = path.join(workspaceRoot, 'work', 'hold-refresh-status', 'sequential-unknown.json')
+    const manifestPath = path.join(workspaceRoot, 'work', 'run-status', 'sequential-unknown.json')
+    const releasePath = path.join(workspaceRoot, 'work', 'releases', 'sequential-unknown.json')
+    const receiptPath = path.join(workspaceRoot, 'work', 'app-feed-status', 'unreadable-receipt')
+    mkdirSync(receiptPath, { recursive: true })
+    internals.writeJson(manifestPath, {
+      cloudflare_publish: {
+        status: 'publication_outcome_unknown',
+        reconciliation_required: true,
+        expected_bundle_sha256: candidate.bundleSha256,
+      },
+    })
+    internals.writeIntradayStatus(statusPath, {
+      reportDate: '2026-09-25',
+      status: 'intraday_holds_publication_outcome_unknown',
+      failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+      summary: 'Synthetic first scheduled invocation retained this candidate.',
+      reconciliationRequired: true,
+      candidate,
+    })
+    const originalStatus = readFileSync(statusPath, 'utf8')
+    const originalManifest = readFileSync(manifestPath, 'utf8')
+    const steps = []
+    const invocation = () => internals.runIntradayHoldRefresh({
+      options: { skipAuthenticated: false, noPublish: false },
+      reportDate: '2026-09-25',
+      manifestPath,
+      releasePath,
+      receiptPath,
+      intradayStatusPath: statusPath,
+      warnings: [],
+      steps,
+    })
+
+    await expect(invocation()).resolves.toMatchObject({
+      ok: false,
+      failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+      reconciliationRequired: true,
+      candidate,
+    })
+    await expect(invocation()).resolves.toMatchObject({
+      ok: false,
+      failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+      candidate,
+    })
+    expect(readFileSync(statusPath, 'utf8')).toBe(originalStatus)
+    expect(readFileSync(manifestPath, 'utf8')).toBe(originalManifest)
+    expect(steps).toEqual([])
+    expect(existsSync(releasePath)).toBe(false)
+  })
+
+  it.each(['missing', 'corrupt'])('treats a reconciliation manifest as authoritative when hold status is %s', async (statusCondition) => {
+    const internals = await loadInternals()
+    const candidateHash = 'C'.repeat(64)
+    const stem = `manifest-only-${statusCondition}`
+    const statusPath = path.join(workspaceRoot, 'work', 'hold-refresh-status', `${stem}.json`)
+    const manifestPath = path.join(workspaceRoot, 'work', 'run-status', `${stem}.json`)
+    const releasePath = path.join(workspaceRoot, 'work', 'releases', `${stem}.json`)
+    const receiptPath = path.join(workspaceRoot, 'work', 'app-feed-status', `${stem}-unreadable-receipt`)
+    mkdirSync(receiptPath, { recursive: true })
+    internals.writeJson(manifestPath, {
+      cloudflare_publish: {
+        status: 'publication_outcome_unknown',
+        reconciliation_required: true,
+        expected_bundle_sha256: candidateHash,
+      },
+    })
+    if (statusCondition === 'corrupt') {
+      mkdirSync(path.dirname(statusPath), { recursive: true })
+      writeFileSync(statusPath, '{truncated reconciliation status')
+    }
+    const originalManifest = readFileSync(manifestPath, 'utf8')
+    const originalStatus = existsSync(statusPath) ? readFileSync(statusPath, 'utf8') : null
+    const steps = []
+
+    await expect(internals.runIntradayHoldRefresh({
+      options: { skipAuthenticated: false, noPublish: false },
+      reportDate: '2026-09-25',
+      manifestPath,
+      releasePath,
+      receiptPath,
+      intradayStatusPath: statusPath,
+      warnings: [],
+      steps,
+    })).resolves.toMatchObject({
+      ok: false,
+      failureCode: 'PUBLICATION_RECONCILIATION_STATE_INVALID',
+      reconciliationRequired: true,
+      candidate: { bundleSha256: candidateHash.toLowerCase() },
+    })
+    expect(readFileSync(manifestPath, 'utf8')).toBe(originalManifest)
+    if (originalStatus === null) expect(existsSync(statusPath)).toBe(false)
+    else expect(readFileSync(statusPath, 'utf8')).toBe(originalStatus)
+    expect(steps).toEqual([])
+    expect(existsSync(releasePath)).toBe(false)
+  })
+
+  it('records the exact final-manifest POST hash for a lost publication response', async () => {
+    const fixture = createSyntheticWorkspace()
+    try {
+      const internals = await loadInternals()
+      const manifestPath = path.join(fixture.workspaceRoot, 'work', 'run-status', `${fixture.reportDate}.json`)
+      const releasePath = path.join(fixture.workspaceRoot, 'work', 'releases', fixture.reportDate, 'inventory-flow-release.json')
+      const now = new Date(`${fixture.reportDate}T15:00:00Z`)
+      const fixtureManifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      const dealerMailPath = path.resolve(fixture.workspaceRoot, fixtureManifest.dealermail_snapshot_path)
+      const dealerMail = JSON.parse(readFileSync(dealerMailPath, 'utf8'))
+      const included = dealerMail.completeDealerMailUsedInventory.rows
+      const heldVins = new Set(dealerMail.vehicles.map((vehicle) => vehicle.mainRow.vin))
+      const counts = (rows) => Object.fromEntries(['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
+        .map((store) => [store, rows.filter((row) => row.storeName === store).length]))
+      for (const row of included) {
+        row.rawCellInnerText = Array(22).fill('SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS')
+        row.rawCellControlValues = Array.from({ length: 22 }, () => [])
+        row.holdStateFromRowClass = heldVins.has(row.vin) ? 'active_hold' : 'no_current_hold_found'
+      }
+      const excluded = included.filter((row) => !heldVins.has(row.vin))
+      dealerMail.excludeActiveHoldsValidationSet = {
+        readOnly: true,
+        rows: excluded,
+        summary: { totalRows: excluded.length, uniqueVinCount: excluded.length, uniqueStockCount: excluded.length, byStore: counts(excluded) },
+      }
+      dealerMail.completeInventorySetValidation.activeHoldDifferenceRows = included
+        .filter((row) => heldVins.has(row.vin))
+        .map(({ vin, stockNumber, storeName, storeCode }) => ({ vin, stockNumber, storeName, storeCode }))
+      dealerMail.crmInventoryControlValidation = {
+        completeInventoryRowsIncludingHolds: included.length,
+        inventoryRowsExcludingHolds: excluded.length,
+        activeHoldVINsRemovedByExcludeFilter: heldVins.size,
+        excludeFilterRemovedExactlyTheActiveHoldSet: true,
+        includingHoldsByStore: counts(included),
+        excludingHoldsByStore: counts(excluded),
+        lotReadyOnlyRowsIncludingHolds: included.length,
+        lotReadyOnlyVINSetEqualsAllVehiclesVINSet: true,
+      }
+      for (const held of dealerMail.vehicles) {
+        for (const detail of held.holdDetailRows) detail.orderRaw = String(detail.holdOrderNumber)
+      }
+      dealerMail.vehicles[0].holdDetailRows.push({
+        lifecycleStatus: 'deleted_history',
+        holdPosition: 'deleted',
+        orderRaw: 'DELETED',
+        customerOrReasonRaw: 'Synthetic deleted history',
+      })
+      dealerMail.summary.totalHoldDetailRows += 1
+      dealerMail.summary.deletedHistoricalHoldRows += 1
+      writeFileSync(dealerMailPath, JSON.stringify(dealerMail, null, 2) + '\n')
+      const built = internals.buildAndWriteReleaseBundle(fixture.reportDate, releasePath, manifestPath, {
+        workspaceRoot: fixture.workspaceRoot,
+        now,
+      })
+      const release = loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot, now })
+      const environment = {
+        INVENTORY_OPS_CLOUD_URL: 'https://inventory-ops.joegallant.me',
+        INVENTORY_OPS_RELEASE_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 7).toString('base64'),
+        CF_ACCESS_CLIENT_ID: 'synthetic',
+        CF_ACCESS_CLIENT_SECRET: 'synthetic',
+        INVENTORY_OPS_RELEASE_PUBLISHER_TOKEN: 'synthetic',
+      }
+      let postedHash
+      let failure
+      try {
+        await syncCloudRelease({
+          release,
+          environment,
+          now,
+          fetchImpl: async (_url, options) => {
+            postedHash = JSON.parse(options.body).bundleSha256
+            throw new TypeError('synthetic response lost after POST')
+          },
+        })
+      } catch (error) {
+        failure = error
+      }
+      const classification = internals.classifyFailedPublication({
+        publisherOutput: publicationFailureMessage(failure),
+        fallbackBundleSha256: built.bundleSha256,
+        dealerMailSha256: built.sourceHashes.dealerMail,
+      })
+
+      expect(built.bundleSha256).toBe(postedHash)
+      expect(cloudBundleSha256(JSON.parse(readFileSync(releasePath, 'utf8')))).toBe(postedHash)
+      expect(classification).toMatchObject({
+        status: 'cloud_publication_outcome_unknown',
+        failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+        reconciliationRequired: true,
+        candidate: { bundleSha256: postedHash },
+      })
+      expect(classification.status).not.toMatch(/preserved|not_published/)
+
+      const reconciledManifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      reconciledManifest.daily_steps = [{ name: 'cloudflare_publish', status: 'publication_outcome_unknown' }]
+      reconciledManifest.cloudflare_publish = {
+        attempted: true,
+        status: 'publication_outcome_unknown',
+        reconciliation_required: true,
+        expected_bundle_sha256: postedHash,
+      }
+      writeFileSync(manifestPath, JSON.stringify(reconciledManifest, null, 2) + '\n')
+      internals.writeIntradayStatus(path.join(fixture.workspaceRoot, 'work', 'hold-refresh-status', `${fixture.reportDate}.json`), {
+        reportDate: fixture.reportDate,
+        status: 'intraday_holds_publication_outcome_unknown',
+        failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+        summary: 'Synthetic exact-hash reconciliation state.',
+        reconciliationRequired: true,
+        candidate: { bundleSha256: postedHash, dealerMailSha256: built.sourceHashes.dealerMail },
+      })
+      const retainedRelease = loadLatestCompletedRelease({ workspaceRoot: fixture.workspaceRoot, now })
+      expect(cloudBundleSha256(cloudReleaseFrom(retainedRelease))).toBe(postedHash)
+    } finally {
+      fixture.cleanup()
+    }
   })
 
   it('treats an unreadable post-publish receipt as unavailable evidence', async () => {
