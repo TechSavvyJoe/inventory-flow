@@ -159,7 +159,7 @@ describe('AppShell account and update controls', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Account and app controls' })
     const close = within(dialog).getByRole('button', { name: 'Close app controls' })
-    const managerLink = within(dialog).getByRole('link', { name: /Manager overview/i })
+    const managerLink = within(dialog).getByRole('link', { name: /Group operations/i })
     await waitFor(() => expect(close).toHaveFocus())
 
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
@@ -191,6 +191,23 @@ describe('AppShell account and update controls', () => {
     expect(screen.getByRole('button', { name: 'Expand navigation' })).toHaveAttribute('aria-controls', 'application-navigation')
   })
 
+  it('adds the management overview without replacing transfer operations', () => {
+    const context = useAppDataMock()
+    useAppDataMock.mockReturnValue({ ...context, role: 'manager' })
+    render(
+      <MemoryRouter initialEntries={['/overview']}>
+        <AppShell><span>Overview content</span></AppShell>
+      </MemoryRouter>,
+    )
+
+    const primary = screen.getByRole('navigation', { name: 'Primary' })
+    const mobile = screen.getByRole('navigation', { name: 'Mobile primary' })
+    expect(within(primary).getByRole('link', { name: 'Inventory overview' })).toHaveAttribute('aria-current', 'page')
+    expect(within(mobile).getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page')
+    fireEvent.click(within(mobile).getByRole('button', { name: 'More app controls' }))
+    expect(within(screen.getByRole('dialog', { name: 'Account and app controls' })).getByRole('link', { name: /Group operations/ })).toHaveAttribute('href', '/manager')
+  })
+
   it('exposes Control center navigation only to group managers', () => {
     const baseContext = useAppDataMock()
     useAppDataMock.mockReturnValue({ ...baseContext, role: 'group_manager' })
@@ -203,15 +220,17 @@ describe('AppShell account and update controls', () => {
     const primary = screen.getByRole('navigation', { name: 'Primary' })
     const mobile = screen.getByRole('navigation', { name: 'Mobile primary' })
     expect(within(primary).getByRole('link', { name: 'Control center' })).toHaveAttribute('aria-current', 'page')
-    expect(within(mobile).getByRole('link', { name: 'Control center' })).toHaveAttribute('aria-current', 'page')
-    expect(within(mobile).getByRole('link', { name: 'Service' })).toHaveAttribute('href', '/service')
-    // The rail omits Action center and Inventory updates for this role, so the
-    // utility menu is the only phone route to them.
-    expect(within(mobile).queryByRole('link', { name: 'Actions' })).not.toBeInTheDocument()
+    expect(within(mobile).getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/overview')
+    expect(within(mobile).getByRole('link', { name: 'Actions' })).toHaveAttribute('href', '/attention')
+    // The rail keeps daily management destinations reachable in one tap. Less
+    // frequent administration, service, and update routes remain under More.
+    expect(within(mobile).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
+    expect(within(mobile).queryByRole('link', { name: 'Service' })).not.toBeInTheDocument()
     expect(within(mobile).queryByRole('link', { name: 'Updates' })).not.toBeInTheDocument()
     fireEvent.click(within(mobile).getByRole('button', { name: 'More app controls' }))
     const utility = screen.getByRole('dialog', { name: 'Account and app controls' })
-    expect(within(utility).getByRole('link', { name: /Action center/ })).toHaveAttribute('href', '/attention')
+    expect(within(utility).getByRole('link', { name: /Control center/ })).toHaveAttribute('href', '/admin')
+    expect(within(utility).getByRole('link', { name: /Service status/ })).toHaveAttribute('href', '/service')
     expect(within(utility).getByRole('link', { name: /Inventory updates/ })).toHaveAttribute('href', '/updates')
     unmount()
 

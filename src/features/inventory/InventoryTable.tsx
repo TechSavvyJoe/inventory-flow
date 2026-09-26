@@ -631,8 +631,8 @@ export function DeskRowActions({
     <div className="inv-desk-actions" role="group" aria-label={`Actions for ${name}`} onClick={stopRowSelection}>
       {variant === "desktop" ? <button type="button" className="inv-desk-action inv-desk-action--primary"
         data-row-action="open-details" data-inventory-vehicle-trigger={vehicle.id}
-        onClick={() => onSelectVehicle(vehicle)} aria-label={`Open vehicle details for ${name}`} title="Open vehicle">
-        Details
+        onClick={() => onSelectVehicle(vehicle)} aria-label={`Open vehicle details for ${name}`} title="View vehicle">
+        View vehicle
       </button> : null}
       {recordsAction}
       {!hideRecords && !recordsAction ? <button type="button" className={`inv-desk-action${recordsDisclosure ? " inv-desk-action--records" : ""}`} data-row-action="records"
@@ -956,11 +956,10 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
         }}
         aria-label={vehicleAccessibleSummary(vehicle)}
       >
-        <span className="inventory-mobile-row__thumbnail"><span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} priority={priority} /><PhotoCount vehicle={vehicle} /></span><small>{vehicle.stockNumber}</small></span>
+        <span className="inventory-mobile-row__thumbnail"><span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} priority={priority} /><PhotoCount vehicle={vehicle} /></span><small>{vehicle.stockNumber}</small><span className="inventory-mobile-row__view" aria-hidden="true">View vehicle</span></span>
         <span className="inventory-mobile-row__main">
           <span className="inventory-mobile-row__title">
             <strong>{name}</strong>
-            <ChevronRight className="inventory-mobile-open-indicator" size={16} aria-hidden="true" />
           </span>
           <span className="inventory-mobile-row__valuation">
             <b>{formatMoney(vehicle.price)}</b>

@@ -5,6 +5,7 @@ import path from 'node:path'
 import { pipeline } from 'node:stream'
 import { assertAdminOverviewAccess } from './admin-control-center.mjs'
 import { createIdentityResolver, IdentityError } from './identity.mjs'
+import { ISSUE_BODY_BYTES, prepareIssuePhotos } from './issue-photos.mjs'
 import { WorkflowError } from './workflow.mjs'
 
 const BODY_LIMIT = 64 * 1024
@@ -77,7 +78,7 @@ function errorPayload(error) {
   }
 }
 
-async function readJson(request) {
+async function readJson(request, limit = BODY_LIMIT) {
   const contentType = String(request.headers['content-type'] ?? '').toLowerCase()
   if (!contentType.startsWith('application/json')) {
     throw new HttpError('Content-Type must be application/json', 415, 'UNSUPPORTED_MEDIA_TYPE')
@@ -86,7 +87,7 @@ async function readJson(request) {
   let size = 0
   for await (const chunk of request) {
     size += chunk.length
-    if (size > BODY_LIMIT) {
+    if (size > limit) {
       throw new HttpError('Request body is too large', 413, 'BODY_TOO_LARGE')
     }
     chunks.push(chunk)
@@ -100,6 +101,24 @@ async function readJson(request) {
     return value
   } catch (error) {
     throw new HttpError('Request body must be valid JSON object', 400, 'INVALID_JSON', { cause: error.message })
+  }
+}
+
+function prepareIssueInput(input) {
+  const photos = prepareIssuePhotos(input.photos)
+  return {
+    input: { ...input, photos: photos.map((photo) => photo.metadata) },
+    photos,
+  }
+}
+
+function assertLocalWriteOrigin(request) {
+  const origin = String(request.headers.origin ?? '')
+  let originUrl
+  try { originUrl = new URL(origin) } catch { throw new HttpError('Use the local demo page to make this change.', 403, 'SAME_ORIGIN_REQUIRED') }
+  if (!['127.0.0.1', 'localhost'].includes(originUrl.hostname) ||
+      !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress)) {
+    throw new HttpError('Use the local demo page to make this change.', 403, 'SAME_ORIGIN_REQUIRED')
   }
 }
 
@@ -258,16 +277,11 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
         if (identityResolver.mode !== 'demo' || !adminDirectory?.readMembers || !adminDirectory?.saveMember) throw new HttpError('Employee editing is unavailable on this host.', 503, 'ADMIN_EDITING_UNAVAILABLE')
         if (request.method === 'GET') return sendJson(response, 200, await adminDirectory.readMembers(context))
         if (request.method !== 'POST') return sendJson(response, 405, { error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' })
-        const origin = String(request.headers.origin ?? '')
-        let originUrl
-        try { originUrl = new URL(origin) } catch { throw new HttpError('Use the local demo page to make this change.', 403, 'SAME_ORIGIN_REQUIRED') }
-        if (!['127.0.0.1', 'localhost'].includes(originUrl.hostname) || !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress)) throw new HttpError('Use the local demo page to make this change.', 403, 'SAME_ORIGIN_REQUIRED')
+        assertLocalWriteOrigin(request)
         return sendJson(response, 200, await adminDirectory.saveMember(await readJson(request), context, String(request.headers['idempotency-key'] ?? '')))
       }
       if (request.method === 'GET' && route === '/bootstrap') {
-        // Activate together with the two reviewed issue write branches after
-        // Joe approves extending the protected employee-write contract.
-        return sendJsonRevalidated(request, response, { ...service.bootstrap(context), vehicleIssuesEnabled: false })
+        return sendJsonRevalidated(request, response, service.bootstrap(context))
       }
       if (request.method === 'GET' && route === '/vehicles') {
         return sendJson(response, 200, service.listVehicles(queryObject(url), context))
@@ -278,6 +292,21 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
       const issueMatch = route.match(/^\/vehicle-issues\/([^/]+)$/)
       if (request.method === 'GET' && issueMatch) {
         return sendJson(response, 200, service.getVehicleIssue(pathSegment(issueMatch[1]), context))
+      }
+      const issueEventMatch = route.match(/^\/vehicle-issues\/([^/]+)\/events$/)
+      if (request.method === 'POST' && issueEventMatch) {
+        assertLocalWriteOrigin(request)
+        const prepared = prepareIssueInput(await readJson(request, ISSUE_BODY_BYTES))
+        const result = service.appendVehicleIssueEvent(
+          pathSegment(issueEventMatch[1]),
+          prepared.input,
+          context,
+          String(request.headers['idempotency-key'] ?? '') || undefined,
+        )
+        if (result.created) {
+          for (const photo of prepared.photos) issuePhotos.set(`${result.record.vin}/${photo.metadata.id}`, photo.bytes)
+        }
+        return sendJson(response, result.created ? 201 : 200, result.record)
       }
       const issuePhotoMatch = route.match(/^\/vehicle-issues\/([^/]+)\/photos\/([a-f0-9]{64})$/)
       if (request.method === 'GET' && issuePhotoMatch) {
@@ -296,6 +325,21 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
       const vehicleMatch = route.match(/^\/vehicles\/([^/]+)$/)
       if (request.method === 'GET' && vehicleMatch) {
         return sendJson(response, 200, service.getVehicle(pathSegment(vehicleMatch[1]), context))
+      }
+      const vehicleIssueMatch = route.match(/^\/vehicles\/([^/]+)\/issues$/)
+      if (request.method === 'POST' && vehicleIssueMatch) {
+        assertLocalWriteOrigin(request)
+        const prepared = prepareIssueInput(await readJson(request, ISSUE_BODY_BYTES))
+        const result = service.createVehicleIssue(
+          pathSegment(vehicleIssueMatch[1]),
+          prepared.input,
+          context,
+          String(request.headers['idempotency-key'] ?? '') || undefined,
+        )
+        if (result.created) {
+          for (const photo of prepared.photos) issuePhotos.set(`${result.record.vin}/${photo.metadata.id}`, photo.bytes)
+        }
+        return sendJson(response, result.created ? 201 : 200, result.record)
       }
       const equipmentPdfMatch = route.match(/^\/vehicles\/([^/]+)\/equipment-pdf$/)
       if (request.method === 'GET' && equipmentPdfMatch) {

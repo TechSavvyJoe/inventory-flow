@@ -76,6 +76,12 @@ function restore(options = {}) {
   })
 }
 
+function skipWhenWindowsDeniesSymlink(context, error) {
+  if (process.platform !== 'win32' || !['EPERM', 'EACCES'].includes(error?.code)) return false
+  context.skip()
+  return true
+}
+
 describe('reviewed external visual baseline bundles', () => {
   it('packs deterministic bytes and restores the complete validated set without overwriting', async () => {
     expect(packed.bundle.files.map((file) => file.name)).toEqual(EXPECTED_FILES)
@@ -148,12 +154,17 @@ describe('reviewed external visual baseline bundles', () => {
     await expect(stat(join(temporary, 'restored'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
-  it('refuses extra source files and source symlinks rather than packaging unrelated content', async () => {
+  it('refuses extra source files and source symlinks rather than packaging unrelated content', async (context) => {
     await writeFile(join(directory, 'extra.png'), png(7, 9))
     await expect(packVisualBaselines({ directory, sourceCommit, sourceRunId })).rejects.toThrow('exactly')
     await rm(join(directory, 'extra.png'))
     await rm(join(directory, EXPECTED_FILES[0]))
-    await symlink(join(directory, EXPECTED_FILES[1]), join(directory, EXPECTED_FILES[0]))
+    try {
+      await symlink(join(directory, EXPECTED_FILES[1]), join(directory, EXPECTED_FILES[0]))
+    } catch (error) {
+      if (skipWhenWindowsDeniesSymlink(context, error)) return
+      throw error
+    }
     await expect(packVisualBaselines({ directory, sourceCommit, sourceRunId })).rejects.toThrow('exactly')
   })
 
@@ -204,11 +215,16 @@ describe('reviewed external visual baseline bundles', () => {
     expect(cancel).toHaveBeenCalledOnce()
   })
 
-  it('rejects missing, relative, repository, Playwright-output and symlink-to-repository destinations', async () => {
+  it('rejects missing, relative, repository, Playwright-output and symlink-to-repository destinations', async (context) => {
     const output = join(temporary, 'playwright-output')
     await mkdir(output)
     const link = join(temporary, 'repo-link')
-    await symlink(repoRoot, link, 'dir')
+    try {
+      await symlink(repoRoot, link, 'dir')
+    } catch (error) {
+      if (skipWhenWindowsDeniesSymlink(context, error)) return
+      throw error
+    }
     for (const outputDirectory of [undefined, 'relative-baselines', join(repoRoot, 'baselines'), join(output, 'baselines'), join(link, 'baselines')]) {
       const fetchImpl = vi.fn()
       await expect(restore({ outputDirectory, playwrightOutputDirectories: [output], fetchImpl })).rejects.toThrow()

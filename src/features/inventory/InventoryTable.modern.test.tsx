@@ -436,6 +436,7 @@ describe('modern inventory result access', () => {
     const detailTarget = within(card).getByRole('button', { name: /^Open details for 2024 Ford F-150 XLT/ });
     expect(card.parentElement).toHaveClass('if-srp-mobile-list');
     for (const fact of ['2024 Ford F-150 XLT', '$46,995', '8,642 mi']) expect(detailTarget).toHaveTextContent(fact);
+    expect(detailTarget).toHaveTextContent('View vehicle');
     expect(card).toHaveTextContent('H240512');
     expect(detailTarget).not.toHaveTextContent(vehicle.vin);
     expect(detailTarget).toHaveAccessibleName(expect.stringContaining(vehicle.vin));
@@ -679,7 +680,8 @@ describe('modern inventory result access', () => {
     const props = { vehicles: [vehicle], sorts: [] as const, onSortChange: vi.fn(), onSelectVehicle, canRequestVehicle: () => true, onRequestVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord };
     const { rerender } = render(<InventoryTable {...props} sorts={[]} />);
     const actions = screen.getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' });
-    expect(within(actions).getAllByRole('button').map(button => button.getAttribute('title'))).toEqual(['Open vehicle', 'Open vehicle records', 'Track movement', 'Save to shortlist', 'Open listing']);
+    expect(within(actions).getAllByRole('button').map(button => button.getAttribute('title'))).toEqual(['View vehicle', 'Open vehicle records', 'Track movement', 'Save to shortlist', 'Open listing']);
+    expect(within(actions).getByRole('button', { name: /Open vehicle details/ })).toHaveTextContent('View vehicle');
     // The Operations column already carries the clickable hold signal and the
     // service link, so the action group does not duplicate them.
     expect(within(actions).queryByRole('button', { name: /Open hold and movement details/ })).toBeNull();

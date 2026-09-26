@@ -128,6 +128,7 @@ describe('focused vehicle workspace', () => {
     const specifications = within(overview).getByRole('region',{name:'Vehicle specifications'});
     const equipment = within(overview).getByRole('region',{name:'Key equipment'});
     expect(reference.parentElement).toHaveClass('vdp-focus-vehicle-context');
+    expect(equipment.parentElement).toBe(reference.parentElement);
     expect(reference.compareDocumentPosition(equipment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(reference).getAllByRole('term').map(node=>node.textContent)).toEqual(['In-service','Base MSRP','Inventory date']);
     expect(within(reference).getByText('08/14/2024')).toBeVisible();
@@ -255,6 +256,11 @@ describe('focused vehicle workspace', () => {
     expect(screen.getByRole('button', { name: 'Copy VIN: TESTDATASYN000002' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Back to inventory' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Close vehicle details' })).toBeVisible();
+    const quickStatus = screen.getByRole('group', { name: 'Quick vehicle status' });
+    expect(quickStatus).toHaveTextContent('Fowlerville');
+    expect(quickStatus).toHaveTextContent('On hold');
+    expect(within(quickStatus).getByRole('link', { name: 'Service: Waiting for service' })).toBeVisible();
+    expect(quickStatus).not.toHaveTextContent('123,328 mi');
     expect(document.querySelector('.inventory-workspace-backdrop')).toHaveAttribute('aria-hidden', 'true');
     const scroll = document.querySelector('.vdp-focus-scroll')!;
     expect(scroll.contains(screen.getByRole('tablist'))).toBe(false);

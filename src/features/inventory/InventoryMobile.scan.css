@@ -1,14 +1,14 @@
 /* Compact comparison rows; full source reports are one Records action away. */
 .if-srp-mobile-list .if-srp-mobile-row--scan { padding:var(--ifx-space-2) calc(var(--ifx-space-2) + var(--ifx-space-0-5)); border-bottom:1px solid var(--border-strong); box-shadow:none; scroll-margin-top:var(--ifx-space-16); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__open { grid-template-columns:calc(2 * var(--ifx-space-10)) minmax(0,1fr); gap:var(--ifx-space-2); align-items:start; }
-.if-srp-mobile-list .inventory-mobile-row__thumbnail { display:grid; gap:var(--ifx-space-0-5); min-width:0; }
+.if-srp-mobile-list .inventory-mobile-row__thumbnail { display:grid; gap:0; min-width:0; }
 .if-srp-mobile-list .inventory-mobile-row__thumbnail > small { color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.3 var(--font-app); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-vehicle-visual { width:calc(2 * var(--ifx-space-10)); height:calc(var(--ifx-space-12) + var(--ifx-space-2)); border-radius:var(--ifx-radius-xs); background:var(--surface-muted); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-vehicle-visual img { object-fit:contain; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__main { display:flex; flex-direction:column; gap:var(--ifx-space-0-5); min-width:0; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__title { display:flex; align-items:start; gap:var(--ifx-space-1); overflow:visible; white-space:normal; }
-.if-srp-mobile-list .inventory-mobile-open-indicator { flex-shrink:0; color:var(--blue-700); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__title strong { color:var(--ink-900); font:var(--ifx-weight-semibold) var(--ifx-text-lg)/1.2 var(--font-app); overflow:visible; white-space:normal; overflow-wrap:anywhere; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__view { align-items:center; align-self:flex-start; color:var(--blue-700); display:inline-flex; font:var(--ifx-weight-semibold) var(--ifx-text-xs)/1.3 var(--font-app); gap:var(--ifx-space-0-5); min-height:var(--ifx-space-4); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation { grid-column:auto; grid-row:auto; display:flex; align-items:baseline; flex-wrap:wrap; gap:0 var(--ifx-space-2); margin:0; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation > b { color:var(--navy-900); font:var(--ifx-weight-semibold) var(--ifx-text-lg)/1.25 var(--font-app); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__valuation > span { color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-sm)/1.3 var(--font-app); }
@@ -31,13 +31,12 @@
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-location > svg { flex-shrink:0; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-manager-disposition { grid-column:1 / -1; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__footer { display:block; }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__actions { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--ifx-space-1); margin:var(--ifx-space-1) 0 0; align-items:stretch; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__actions { display:grid; grid-template-columns:repeat(auto-fit,minmax(calc(2 * var(--ifx-space-10)),1fr)); gap:var(--ifx-space-1); margin:var(--ifx-space-1) 0 0; align-items:stretch; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__actions .inv-desk-actions { display:contents; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action { min-width:0; min-height:var(--ifx-control-height-md); height:var(--ifx-control-height-md); margin:0; padding:var(--ifx-space-1); border:1px solid var(--border-strong); border-radius:var(--ifx-radius-xs); color:var(--ink-900); background:var(--surface); font:var(--ifx-weight-semibold) var(--ifx-text-md)/1.3 var(--font-app); text-decoration:none; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action > svg { display:none; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action:hover { background:var(--blue-050); }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action--records { border-color:var(--blue-600); color:var(--surface); background:var(--blue-600); }
-.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action--records:is(:hover,:focus-visible,:active,[aria-expanded="true"]) { border-color:var(--blue-700); color:var(--surface); background:var(--blue-700); }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action--records:is(:hover,:focus-visible,:active,[aria-expanded="true"]) { border-color:var(--blue-600); color:var(--blue-700); background:var(--blue-050); }
 .if-srp-mobile-list .inventory-mobile-records { --records-toolbar-top:calc(var(--top-height, 56px) + var(--safe-top, 0px)); grid-column:1 / -1; min-width:0; margin-top:8px; border-top:1px solid var(--border-strong); }
 .if-srp-mobile-list .inventory-mobile-records > header {
   display:flex; justify-content:space-between; align-items:center; gap:8px; padding:4px 0;

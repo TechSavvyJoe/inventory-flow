@@ -1,12 +1,12 @@
 import { useWorkspaceState } from '../../lib/workspace-memory'
 import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { groupStores, inventoryStore, toInventoryVehicle } from '../../app/adapters'
 import { SourceWarning } from '../../components/SourceWarning'
 import { ApiError, getVehicle } from '../../lib/api'
-import type { VehicleRecord } from '../../types'
+import type { BootstrapData, VehicleRecord } from '../../types'
 import type { InventoryScope, InventoryVehicle, VehicleWorkspaceTab } from './types'
 import { InventoryExperience } from './InventoryExperience'
 import { canRequestVehicleMove, movementTrackingPath, transferByVin, vehicleMoveAction } from './inventory-utils'
@@ -21,6 +21,64 @@ import {
   workspaceReturnLabel,
 } from '../../lib/inventory-navigation'
 
+interface VehicleDetailEntry {
+  record: VehicleRecord
+  sourceRevision: number
+  protectedSignature: string
+}
+
+interface VehicleDetailCache {
+  context: string
+  records: Record<string, VehicleDetailEntry>
+}
+
+/**
+ * DealerMail details are protected evidence. A new daily CRM capture or any
+ * change in the authorized hold projection invalidates that evidence before
+ * React paints the replacement bootstrap. Other detail-only fields can remain
+ * visible while their background read catches up.
+ */
+function protectedDetailSignature(data: BootstrapData, vehicle: VehicleRecord): string {
+  return JSON.stringify({
+    reportDate: data.meta?.reportDate ?? null,
+    dealerMailCapturedAt: data.meta?.dealerMailCapturedAt ?? null,
+    dealerMailFreshness: data.meta?.dealerMailFreshness ?? null,
+    canViewPrivateEvidence: data.access?.canViewPrivateEvidence === true,
+    hold: vehicle.hold ?? null,
+  })
+}
+
+function withoutProtectedEvidence(record: VehicleRecord): VehicleRecord {
+  const { privateEvidence: _privateEvidence, ...safeRecord } = record
+  return safeRecord as VehicleRecord
+}
+
+function retainedDetail(entry: VehicleDetailEntry | undefined, data: BootstrapData, vehicle: VehicleRecord): VehicleRecord | undefined {
+  if (!entry) return undefined
+  const detail = entry.protectedSignature === protectedDetailSignature(data, vehicle)
+    ? entry.record
+    : withoutProtectedEvidence(entry.record)
+  const {
+    privateEvidence: _privateEvidence,
+    publicScan: _publicScan,
+    autoCheckReport: _autoCheckReport,
+    windowSticker: _windowSticker,
+    factoryEquipment: _factoryEquipment,
+    fordInvoice: _fordInvoice,
+    fordOasis: _fordOasis,
+    warrantyCheck: _warrantyCheck,
+    ...liveSummary
+  } = vehicle
+  // Keep detail-only evidence while the new read runs, but let every field in
+  // the authorized bootstrap projection win immediately. This includes its
+  // regenerated search text, so an old private hold term cannot remain in the
+  // index after the hold signature changes.
+  return {
+    ...detail,
+    ...liveSummary,
+  }
+}
+
 
 export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   const { data, homeStore, role, currentUser, refresh } = useAppData()
@@ -29,9 +87,16 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   const navigate = useNavigate()
   const accessContext = inventorySearchAccessContext(role, homeStore, currentUser)
   const [scope, setScope] = useWorkspaceState<InventoryScope>(accessContext, 'inventory.scope', 'home')
-  const [vehicleDetails, setVehicleDetails] = useState<{ context: string; source: typeof data; records: Record<string, VehicleRecord> }>({ context: accessContext, source: data, records: {} })
-  const [detailRequest, setDetailRequest] = useState<{ key: string; state: VehicleDetailLoadState }>({ key: '', state: 'loading' })
+  const [vehicleDetails, setVehicleDetails] = useState<VehicleDetailCache>({ context: accessContext, records: {} })
+  const [detailRequest, setDetailRequest] = useState<{ key: string; sourceRevision: number; state: VehicleDetailLoadState }>({ key: '', sourceRevision: -1, state: 'loading' })
   const [detailRetry, setDetailRetry] = useState(0)
+  const bootstrapRevisionRef = useRef<{ source: BootstrapData | null; revision: number }>({ source: data, revision: 0 })
+  if (bootstrapRevisionRef.current.source !== data) {
+    bootstrapRevisionRef.current = { source: data, revision: bootstrapRevisionRef.current.revision + 1 }
+  }
+  const bootstrapRevision = bootstrapRevisionRef.current.revision
+  const latestDetailContextRef = useRef({ accessContext, bootstrapRevision })
+  latestDetailContextRef.current = { accessContext, bootstrapRevision }
   const requestedScope: InventoryScope = params.has('scope') ? params.get('scope') === 'group' ? 'group' : 'home' : scope
   const nextSelectionScope = useRef(requestedScope)
   nextSelectionScope.current = requestedScope
@@ -60,10 +125,8 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
     if (!data) return []
     const transfers = transferByVin(data.transfers)
     return data.vehicles.map((vehicle) => {
-      const cachedDetail = vehicleDetails.context === accessContext && vehicleDetails.source === data ? vehicleDetails.records[vehicle.vin] : undefined
-      // Service is live operational data: do not let an earlier detail fetch
-      // mask a manager's newer update delivered by the bootstrap refresh.
-      const detailed = cachedDetail ? { ...cachedDetail, serviceReadiness: vehicle.serviceReadiness } : vehicle
+      const cachedDetail = vehicleDetails.context === accessContext ? vehicleDetails.records[vehicle.vin] : undefined
+      const detailed = retainedDetail(cachedDetail, data, vehicle) ?? vehicle
       return toInventoryVehicle(detailed, data, transfers.get(vehicle.vin))
     })
   }, [accessContext, data, vehicleDetails])
@@ -95,24 +158,71 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
   }, [requestedScope, setScope])
 
   const detailKey = `${accessContext}:${selectedVehicleId ?? ''}`
-  const activeDetail = vehicleDetails.context === accessContext && vehicleDetails.source === data && selectedVehicleId ? vehicleDetails.records[selectedVehicleId] : undefined
+  const selectedSummary = selectedVehicleId ? data?.vehicles.find(vehicle => vehicle.vin === selectedVehicleId) : undefined
+  const activeEntry = vehicleDetails.context === accessContext && selectedVehicleId ? vehicleDetails.records[selectedVehicleId] : undefined
+  const currentProtectedSignature = data && selectedSummary ? protectedDetailSignature(data, selectedSummary) : null
+  const activeDetail = data && selectedSummary ? retainedDetail(activeEntry, data, selectedSummary) : undefined
+  const hasActiveDetail = Boolean(activeDetail)
+  const detailIsFresh = Boolean(activeEntry && activeEntry.sourceRevision === bootstrapRevision && activeEntry.protectedSignature === currentProtectedSignature)
+
+  useLayoutEffect(() => {
+    setVehicleDetails(current => {
+      if (!data || current.context !== accessContext) {
+        return current.context === accessContext && Object.keys(current.records).length === 0
+          ? current
+          : { context: accessContext, records: {} }
+      }
+      const summaries = new Map(data.vehicles.map(vehicle => [vehicle.vin, vehicle]))
+      let records = current.records
+      for (const [vin, entry] of Object.entries(current.records)) {
+        const summary = summaries.get(vin)
+        if (!summary) {
+          if (records === current.records) records = { ...records }
+          delete records[vin]
+        } else if (entry.record.privateEvidence && entry.protectedSignature !== protectedDetailSignature(data, summary)) {
+          if (records === current.records) records = { ...records }
+          records[vin] = { ...entry, record: withoutProtectedEvidence(entry.record) }
+        }
+      }
+      return records === current.records ? current : { ...current, records }
+    })
+  }, [accessContext, data])
+
   useEffect(() => {
-    if (!selectedVehicleId || !data || activeDetail) return
+    if (!selectedVehicleId || !data || !selectedSummary || detailIsFresh) return
     let canceled = false
     const controller = new AbortController()
-    setDetailRequest({ key: detailKey, state: 'loading' })
+    const signature = protectedDetailSignature(data, selectedSummary)
+    setDetailRequest({ key: detailKey, sourceRevision: bootstrapRevision, state: hasActiveDetail ? 'refreshing' : 'loading' })
     void getVehicle(selectedVehicleId, role, homeStore, controller.signal)
       .then(detail => {
-        if (canceled) return
-        if (detail.vin !== selectedVehicleId) { setDetailRequest({ key: detailKey, state: 'failed' }); return }
-        setVehicleDetails(current => ({ context: accessContext, source: data, records: { ...(current.context === accessContext && current.source === data ? current.records : {}), [detail.vin]: detail } }))
-        setDetailRequest({ key: detailKey, state: 'ready' })
+        if (canceled || latestDetailContextRef.current.accessContext !== accessContext || latestDetailContextRef.current.bootstrapRevision !== bootstrapRevision) return
+        if (detail.vin !== selectedVehicleId) {
+          setDetailRequest({ key: detailKey, sourceRevision: bootstrapRevision, state: hasActiveDetail ? 'stale' : 'failed' })
+          return
+        }
+        setVehicleDetails(current => ({
+          context: accessContext,
+          records: {
+            ...(current.context === accessContext ? current.records : {}),
+            [detail.vin]: { record: detail, sourceRevision: bootstrapRevision, protectedSignature: signature },
+          },
+        }))
+        setDetailRequest({ key: detailKey, sourceRevision: bootstrapRevision, state: 'ready' })
       })
       .catch(error => {
-        if (!canceled) setDetailRequest({ key: detailKey, state: error instanceof ApiError && [401, 403, 404].includes(error.status) ? 'unavailable' : 'failed' })
+        if (canceled || latestDetailContextRef.current.accessContext !== accessContext || latestDetailContextRef.current.bootstrapRevision !== bootstrapRevision) return
+        const unavailable = error instanceof ApiError && [401, 403, 404].includes(error.status)
+        if (unavailable) {
+          setVehicleDetails(current => current.context !== accessContext ? current : {
+            context: current.context,
+            records: Object.fromEntries(Object.entries(current.records).filter(([vin]) => vin !== selectedVehicleId)),
+          })
+        }
+        setDetailRequest({ key: detailKey, sourceRevision: bootstrapRevision, state: unavailable ? 'unavailable' : hasActiveDetail ? 'stale' : 'failed' })
       })
     return () => { canceled = true; controller.abort() }
-  }, [detailKey, selectedVehicleId, data, activeDetail, role, homeStore, detailRetry])
+  }, [detailKey, selectedVehicleId, data, selectedSummary, hasActiveDetail, detailIsFresh, role, homeStore, detailRetry, accessContext, bootstrapRevision])
 
   if (!data) return null
 
@@ -190,7 +300,11 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
           ? { role, homeStore, currentUser, enabled: data.vehicleIssuesEnabled === true, issues: data.vehicleIssues ?? [], onChanged: refresh }
           : undefined}
         vehicles={vehicles}
-        detailState={activeDetail ? 'ready' : detailRequest.key === detailKey ? detailRequest.state : 'loading'}
+        detailState={activeDetail
+          ? detailRequest.key === detailKey && detailRequest.sourceRevision === bootstrapRevision && ['refreshing', 'stale'].includes(detailRequest.state)
+            ? detailRequest.state
+            : detailIsFresh ? 'ready' : 'refreshing'
+          : detailRequest.key === detailKey && detailRequest.sourceRevision === bootstrapRevision ? detailRequest.state : 'loading'}
         onRetryDetail={() => setDetailRetry(value => value + 1)}
         returnLabel={workspaceReturnLabel(workspaceReturnPath)}
         groupStores={groupStores(data, homeStore)}

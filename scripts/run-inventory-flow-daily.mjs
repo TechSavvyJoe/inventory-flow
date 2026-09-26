@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { loadLatestCompletedRelease, validateVinDocumentEnrichment } from '../server/importer.mjs'
 import { sanitizeManagerDispositionDocuments } from '../server/manager-disposition-schema.mjs'
-import { cloudReleaseFrom } from './publish-cloud-release.mjs'
+import { cloudBundleSha256, cloudReleaseFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 import { assessOasisCapture } from './lib/oasis-parser.mjs'
+import { acquirePublicationLock, assertInheritedPublicationLock, readPublicationReconciliation, receiptSourceHashes, releasePublicationLock } from './sync-cloud-release.mjs'
 
 const STORES = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
 const WORKSPACE_ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -18,6 +19,16 @@ const NODE = existsSync(path.join(RUNTIME_ROOT, 'node', 'bin', 'node.exe')) ? pa
 const PYTHON = existsSync(path.join(RUNTIME_ROOT, 'python', 'python.exe')) ? path.join(RUNTIME_ROOT, 'python', 'python.exe') : 'python'
 const POWERSHELL = process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell'
 const AVAILABILITY_CAVEAT = 'Public listings, source flags, expected dates, holds, CDK responses, manager sold logs, and resource records do not independently establish availability, a sale, delivery, funding, paperwork completion, or physical location. Confirm with the appropriate store before customer commitment.'
+const DEALERMAIL_REVISION_SUFFIXES = [
+  'deep-capture-raw.json',
+  'exclude-view-raw.json',
+  'hold-details-raw.json',
+  'complete-list-raw-cells.json',
+  'complete-inventory-raw.json',
+  'complete-used-inventory-deep-cloud-ready.json',
+]
+const PUBLICATION_LOCK_OWNER_ENV = 'INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID'
+const PUBLICATION_LOCKED = 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
 
 function parseArgs(argv) {
   const options = {
@@ -26,6 +37,7 @@ function parseArgs(argv) {
     noPublish: false,
     forcePublish: false,
     skipAuthenticated: false,
+    refreshHolds: false,
   }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -35,6 +47,7 @@ function parseArgs(argv) {
     else if (arg === '--no-publish') options.noPublish = true
     else if (arg === '--force-publish') options.forcePublish = true
     else if (arg === '--skip-authenticated') options.skipAuthenticated = true
+    else if (arg === '--refresh-holds') options.refreshHolds = true
     else if (arg === '--help' || arg === '-h') options.help = true
     else throw new Error(`Unknown option: ${arg}`)
   }
@@ -79,13 +92,203 @@ function writeJson(filePath, value) {
   renameSync(temporary, filePath)
 }
 
-function run(command, args, { cwd = WORKSPACE_ROOT, optional = false, label = command } = {}) {
+function writeBuffer(filePath, value) {
+  mkdirSync(path.dirname(filePath), { recursive: true })
+  const temporary = `${filePath}.${process.pid}.tmp`
+  writeFileSync(temporary, value)
+  renameSync(temporary, filePath)
+}
+
+function captureFileTransaction(filePaths) {
+  const before = new Map([...new Set(filePaths)].map((filePath) => [
+    filePath,
+    existsSync(filePath) ? readFileSync(filePath) : null,
+  ]))
+  let finished = false
+  return {
+    commit() { finished = true },
+    rollback() {
+      if (finished) return
+      for (const [filePath, content] of before) {
+        if (content === null) {
+          try { unlinkSync(filePath) } catch (error) { if (error.code !== 'ENOENT') throw error }
+        } else {
+          writeBuffer(filePath, content)
+        }
+      }
+      finished = true
+    },
+  }
+}
+
+function normalizedHash(value) {
+  const text = String(value ?? '').trim().toUpperCase()
+  return /^[A-F0-9]{64}$/.test(text) ? text : null
+}
+
+function sameHash(left, right) {
+  const normalizedLeft = normalizedHash(left)
+  return normalizedLeft !== null && normalizedLeft === normalizedHash(right)
+}
+
+function resolveBoundWorkspacePath(value, label) {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`${label}_PATH_MISSING`)
+  const resolved = path.resolve(WORKSPACE_ROOT, value)
+  const relative = path.relative(WORKSPACE_ROOT, resolved)
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`${label}_PATH_OUTSIDE_WORKSPACE`)
+  }
+  return resolved
+}
+
+function readReceiptState(receiptPath) {
+  if (!existsSync(receiptPath)) return { raw: null, receipt: null }
+  const raw = readFileSync(receiptPath, 'utf8')
+  try { return { raw, receipt: JSON.parse(raw) } } catch { return { raw, receipt: null } }
+}
+
+function readReceiptStateAfterPublication(receiptPath) {
+  try {
+    return { ...readReceiptState(receiptPath), lookupFailed: false }
+  } catch {
+    // Once the publisher has run, losing access to the local receipt cannot be
+    // treated as proof that the remote candidate was never accepted.
+    return { raw: null, receipt: null, lookupFailed: true }
+  }
+}
+
+function verifiedReceiptIdentityIsValid(receipt, expectedReportDate) {
+  return receipt?.status === 'published_and_verified' &&
+    receipt?.complete === true &&
+    (!expectedReportDate || receipt.reportDate === expectedReportDate) &&
+    normalizedHash(receipt.bundleSha256) !== null &&
+    typeof receipt.verifiedAt === 'string' &&
+    Number.isFinite(Date.parse(receipt.verifiedAt))
+}
+
+function assertReceiptHashes(receipt, expectedHashes, expectedReportDate = null) {
+  if (!verifiedReceiptIdentityIsValid(receipt, expectedReportDate)) return false
+  return ['public', 'dealerMail', 'resources', 'managerDisposition', 'managerDispositionBinding']
+    .every((key) => {
+      const expected = expectedHashes[key] ?? null
+      const actual = receipt.sourceHashes?.[key] ?? null
+      return expected === null ? actual === null || actual === undefined : sameHash(actual, expected)
+    })
+}
+
+function publicationMayHaveSucceeded(publisherOutput = '') {
+  return /CLOUD_PUBLICATION_OUTCOME_UNKNOWN|CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED|RELEASE PUBLISHED; FOLLOWUPS FAILED/i.test(publisherOutput)
+}
+
+function publishedCandidateBundleSha256(publisherOutput = '', fallback = null) {
+  const matches = [...String(publisherOutput).matchAll(/\bcandidate_bundle_sha256=([a-f0-9]{64})\b/gi)]
+  const exactPostedHash = matches.at(-1)?.[1]
+  const candidate = normalizedHash(exactPostedHash) ?? normalizedHash(fallback)
+  return candidate?.toLowerCase() ?? null
+}
+
+function classifyFailedPublication({ publisherOutput = '', fallbackBundleSha256, dealerMailSha256 }) {
+  if (!publicationMayHaveSucceeded(publisherOutput)) {
+    return {
+      status: 'publish_failed_last_verified_release_preserved',
+      failureCode: 'CLOUDFLARE_PUBLISH_FAILED',
+      reconciliationRequired: false,
+      candidate: null,
+    }
+  }
+  return {
+    status: 'cloud_publication_outcome_unknown',
+    failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+    reconciliationRequired: true,
+    candidate: {
+      bundleSha256: publishedCandidateBundleSha256(publisherOutput, fallbackBundleSha256),
+      dealerMailSha256: normalizedHash(dealerMailSha256)?.toLowerCase() ?? null,
+    },
+  }
+}
+
+function classifyPublicationOutcome({ processOk, beforeRaw, afterState, expectedHashes, reportDate, publisherOutput = '' }) {
+  const matchesCandidate = assertReceiptHashes(afterState.receipt, expectedHashes, reportDate)
+  if (processOk && matchesCandidate) return 'published_and_followups_complete'
+  if (!processOk && afterState.raw !== null && afterState.raw !== beforeRaw && matchesCandidate) {
+    return 'published_followups_pending'
+  }
+  if (processOk || publicationMayHaveSucceeded(publisherOutput)) return 'publication_outcome_unknown'
+  return 'not_published'
+}
+
+function verifyHoldRefreshStableSources({ reportDate, receipt, manifestPath, publicPath, resourcePath }) {
+  if (!verifiedReceiptIdentityIsValid(receipt, reportDate)) {
+    throw new Error('VERIFIED_RECEIPT_REQUIRED')
+  }
+  const manifest = readJson(manifestPath)
+  if (manifest?.complete !== true || manifest?.report_date !== reportDate) {
+    throw new Error('VERIFIED_MANIFEST_REQUIRED')
+  }
+  if (!existsSync(publicPath)) throw new Error('PUBLIC_SNAPSHOT_MISSING')
+  if (!sameHash(sha256(publicPath), receipt.sourceHashes?.public)) throw new Error('PUBLIC_SNAPSHOT_RECEIPT_MISMATCH')
+  if (manifest.public_snapshot_sha256 && !sameHash(manifest.public_snapshot_sha256, receipt.sourceHashes?.public)) {
+    throw new Error('PUBLIC_MANIFEST_RECEIPT_MISMATCH')
+  }
+  if (!existsSync(resourcePath)) throw new Error('RESOURCE_ENRICHMENT_MISSING')
+  if (!sameHash(sha256(resourcePath), receipt.sourceHashes?.resources)) throw new Error('RESOURCE_ENRICHMENT_RECEIPT_MISMATCH')
+
+  const managerBinding = manifest.manager_disposition_overlay ?? null
+  const expectedManagerBinding = receipt.sourceHashes?.managerDispositionBinding ?? null
+  const expectedManagerProjection = receipt.sourceHashes?.managerDisposition ?? null
+  if (expectedManagerBinding === null || expectedManagerBinding === undefined) {
+    if (managerBinding || expectedManagerProjection) throw new Error('MANAGER_OVERLAY_RECEIPT_MISMATCH')
+  } else {
+    if (!managerBinding || managerBinding.status !== 'complete' || !sameHash(managerBinding.sha256, expectedManagerBinding)) {
+      throw new Error('MANAGER_OVERLAY_RECEIPT_MISMATCH')
+    }
+    if (!normalizedHash(expectedManagerProjection)) throw new Error('MANAGER_OVERLAY_RECEIPT_MISMATCH')
+    const managerPath = resolveBoundWorkspacePath(managerBinding.path, 'MANAGER_OVERLAY')
+    if (!existsSync(managerPath) || !sameHash(sha256(managerPath), expectedManagerBinding)) {
+      throw new Error('MANAGER_OVERLAY_SOURCE_MISMATCH')
+    }
+  }
+  return { manifest, managerBinding }
+}
+
+function verifyHoldRefreshBaseline({ reportDate, receipt, manifestPath, publicPath, dealerPath, resourcePath }) {
+  const baseline = verifyHoldRefreshStableSources({ reportDate, receipt, manifestPath, publicPath, resourcePath })
+  const canonicalDealerPath = dealerPath ?? dealerCloudSnapshotPath(reportDate)
+  if (!existsSync(canonicalDealerPath)) throw new Error('DEALERMAIL_SNAPSHOT_MISSING')
+  const receiptDealerHash = receipt.sourceHashes?.dealerMail
+  if (!sameHash(sha256(canonicalDealerPath), receiptDealerHash)) {
+    throw new Error('DEALERMAIL_SNAPSHOT_RECEIPT_MISMATCH')
+  }
+  if (!sameHash(baseline.manifest.dealermail_snapshot_sha256, receiptDealerHash)) {
+    throw new Error('DEALERMAIL_MANIFEST_RECEIPT_MISMATCH')
+  }
+  const manifestDealerPath = resolveBoundWorkspacePath(baseline.manifest.dealermail_snapshot_path, 'DEALERMAIL_SNAPSHOT')
+  if (path.relative(path.resolve(canonicalDealerPath), manifestDealerPath) !== '') {
+    throw new Error('DEALERMAIL_MANIFEST_PATH_MISMATCH')
+  }
+  return { ...baseline, dealerPath: canonicalDealerPath }
+}
+
+function assertCandidatePreservesReceiptSources(release, receipt) {
+  const actual = receiptSourceHashes(release)
+  for (const key of ['public', 'resources', 'managerDisposition', 'managerDispositionBinding']) {
+    const expected = receipt.sourceHashes?.[key] ?? null
+    const candidate = actual[key] ?? null
+    if (expected === null ? candidate !== null : !sameHash(candidate, expected)) {
+      throw new Error(`${key.replace(/[A-Z]/g, (letter) => `_${letter}`).toUpperCase()}_CHANGED_DURING_HOLD_REFRESH`)
+    }
+  }
+  return actual
+}
+
+function run(command, args, { cwd = WORKSPACE_ROOT, optional = false, label = command, extraEnv = {} } = {}) {
   const result = spawnSync(command, args, {
     cwd,
     env: {
       ...process.env,
       BOB_MAXEY_WORKSPACE_ROOT: WORKSPACE_ROOT,
       INVENTORY_WORKSPACE_ROOT: WORKSPACE_ROOT,
+      ...extraEnv,
     },
     encoding: 'utf8',
     windowsHide: true,
@@ -135,6 +338,31 @@ function dealerCloudSnapshotPath(reportDate) {
   return path.join(WORK_ROOT, 'dealermail-history', 'snapshots', `${reportDate}-complete-used-inventory-deep-cloud-ready.json`)
 }
 
+function archiveDealerMailRevision(reportDate, archivedAt = new Date()) {
+  const snapshotDirectory = path.join(WORK_ROOT, 'dealermail-history', 'snapshots')
+  const existing = DEALERMAIL_REVISION_SUFFIXES
+    .map((suffix) => ({ suffix, source: path.join(snapshotDirectory, `${reportDate}-${suffix}`) }))
+    .filter(({ source }) => existsSync(source))
+  if (!existing.length) return null
+
+  const revision = archivedAt.toISOString().replace(/[:.]/g, '-')
+  const archiveDirectory = path.join(WORK_ROOT, 'dealermail-history', 'intraday', reportDate, revision)
+  mkdirSync(archiveDirectory, { recursive: true })
+  const files = []
+  for (const { suffix, source } of existing) {
+    const destination = path.join(archiveDirectory, `${reportDate}-${suffix}`)
+    copyFileSync(source, destination)
+    files.push({ name: path.basename(destination), sha256: sha256(destination) })
+  }
+  writeJson(path.join(archiveDirectory, 'archive-manifest.json'), {
+    schema: 'inventory-flow-dealermail-intraday-archive-v1',
+    reportDate,
+    archivedAt: archivedAt.toISOString(),
+    files,
+  })
+  return archiveDirectory
+}
+
 function runPublicInventory(reportDate, steps) {
   const target = publicSnapshotPath(reportDate)
   if (existsSync(target)) {
@@ -148,9 +376,9 @@ function runPublicInventory(reportDate, steps) {
   return target
 }
 
-function runDealerMail(reportDate, browserReady, warnings, steps) {
+function runDealerMail(reportDate, browserReady, warnings, steps, { refresh = false } = {}) {
   const target = dealerCloudSnapshotPath(reportDate)
-  if (existsSync(target)) {
+  if (existsSync(target) && !refresh) {
     steps.push({ name: 'dealermail', status: 'reused', path: target })
     return target
   }
@@ -158,6 +386,14 @@ function runDealerMail(reportDate, browserReady, warnings, steps) {
     warnings.push('sign in to DealerMail in the Work PC Automation Browser; DealerMail was not captured and the cloud release was not published.')
     steps.push({ name: 'dealermail', status: 'skipped_browser_unavailable' })
     return null
+  }
+  if (refresh) {
+    const archiveDirectory = archiveDealerMailRevision(reportDate)
+    steps.push({
+      name: 'dealermail_archive',
+      status: archiveDirectory ? 'complete' : 'skipped_no_prior_snapshot',
+      ...(archiveDirectory ? { path: archiveDirectory } : {}),
+    })
   }
   const capture = run(NODE, ['scripts\\capture-dealermail.mjs', 'run', reportDate, '--budget-ms', '900000'], {
     cwd: APP_ROOT,
@@ -371,7 +607,16 @@ function countByStore(rows, field = 'store') {
   return counts
 }
 
-function deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, managerDispositionValidated = false }) {
+function deriveManifest({
+  reportDate,
+  publicPath,
+  dealerPath,
+  warnings,
+  steps,
+  managerDispositionValidated = false,
+  managerDispositionBinding,
+  runMode = 'inventory_flow_background_pipeline',
+}) {
   const publicSnapshot = readJson(publicPath)
   const dealerSnapshot = readJson(dealerPath)
   const publicRows = rowsFromPublic(publicSnapshot)
@@ -379,7 +624,9 @@ function deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, m
   const excludeRows = dealerSnapshot.excludeActiveHoldsValidationSet?.rows ?? []
   const publicInfo = fileInfo(publicPath)
   const dealerInfo = fileInfo(dealerPath)
-  const managerBinding = managerDispositionValidated ? managerBindingFor(reportDate, publicRows) : null
+  const managerBinding = managerDispositionBinding === undefined
+    ? managerDispositionValidated ? managerBindingFor(reportDate, publicRows) : null
+    : managerDispositionBinding
   const sourceCounts = {
     public_unique_vins: publicRows.length,
     public_by_store: publicSnapshot.validation?.store_counts ?? countByStore(publicRows),
@@ -398,7 +645,7 @@ function deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps, m
   return {
     report_date: reportDate,
     timezone: 'America/New_York',
-    run_mode: 'inventory_flow_background_pipeline',
+    run_mode: runMode,
     required_daily_output: 'inventory_flow_app_api_mcp',
     public_inventory_status: 'complete',
     dealermail_status: 'complete_authenticated_read_only',
@@ -484,29 +731,51 @@ function managerBindingFor(reportDate, publicRows = []) {
   }
 }
 
-function buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath) {
-  const release = loadLatestCompletedRelease({ workspaceRoot: WORKSPACE_ROOT, now: validationClockFor(reportDate) })
+function buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath, {
+  receipt = null,
+  workspaceRoot = WORKSPACE_ROOT,
+  now = validationClockFor(reportDate),
+} = {}) {
+  const release = loadLatestCompletedRelease({ workspaceRoot, now })
   if (release.reportDate !== reportDate) {
     throw new Error(`Latest completed release is ${release.reportDate}, expected ${reportDate}`)
   }
-  const bundle = cloudReleaseFrom(release)
-  const validation = validateReleaseBundle(bundle)
-  writeJson(releasePath, bundle)
+  if (receipt) assertCandidatePreservesReceiptSources(release, receipt)
+  const preliminaryValidation = validateReleaseBundle(cloudReleaseFrom(release))
   const manifest = readJson(manifestPath)
-  manifest.release_bundle_path = releasePath
-  manifest.release_bundle_sha256 = sha256(releasePath)
   manifest.validation_results = {
     ...manifest.validation_results,
     app_release_validated: true,
     cloud_release_bundle_validated: true,
-    validate_release_bundle_summary: validation,
+    validate_release_bundle_summary: preliminaryValidation,
     passed: true,
   }
   writeJson(manifestPath, manifest)
-  return validation
+
+  // Finalize self-attesting validation fields before writing the artifact.
+  // Local path/hash and delivery fields are outside cloudReleaseFrom(), so the
+  // saved bundle and every retry share the exact immutable POST identity.
+  const finalRelease = loadLatestCompletedRelease({ workspaceRoot, now })
+  if (finalRelease.reportDate !== reportDate) {
+    throw new Error(`Latest completed release is ${finalRelease.reportDate}, expected ${reportDate}`)
+  }
+  const finalSourceHashes = receipt
+    ? assertCandidatePreservesReceiptSources(finalRelease, receipt)
+    : receiptSourceHashes(finalRelease)
+  const finalBundle = cloudReleaseFrom(finalRelease)
+  const finalValidation = validateReleaseBundle(finalBundle)
+  if (JSON.stringify(finalValidation) !== JSON.stringify(preliminaryValidation)) {
+    throw new Error('RELEASE_VALIDATION_SUMMARY_CHANGED_DURING_FINALIZATION')
+  }
+  writeJson(releasePath, finalBundle)
+  const finalManifest = readJson(manifestPath)
+  finalManifest.release_bundle_path = releasePath
+  finalManifest.release_bundle_sha256 = sha256(releasePath)
+  writeJson(manifestPath, finalManifest)
+  return { validation: finalValidation, sourceHashes: finalSourceHashes, bundleSha256: cloudBundleSha256(finalBundle) }
 }
 
-function publish(reportDate, forcePublish, steps) {
+function publish(reportDate, forcePublish, steps, { holdRefresh = false, expectedSourceHashes = null } = {}) {
   const args = [
     '-NoProfile',
     '-NonInteractive',
@@ -520,9 +789,16 @@ function publish(reportDate, forcePublish, steps) {
     WORKSPACE_ROOT,
   ]
   if (forcePublish) args.push('-Force')
-  const result = run(POWERSHELL, args, { optional: true, label: 'Cloudflare publisher' })
+  if (holdRefresh) args.push('-HoldRefresh')
+  const result = run(POWERSHELL, args, {
+    optional: true,
+    label: 'Cloudflare publisher',
+    extraEnv: expectedSourceHashes
+      ? { INVENTORY_OPS_EXPECTED_SOURCE_HASHES_JSON: JSON.stringify(expectedSourceHashes) }
+      : {},
+  })
   steps.push({ name: 'cloudflare_publish', status: result.ok ? 'complete' : 'failed', detail: safeDetail(result.output) })
-  return result.ok
+  return result
 }
 
 function summarize({ reportDate, validation, publishStatus, manifestPath, releasePath, warnings }) {
@@ -547,12 +823,468 @@ function exitCodeForResult(result) {
   return result?.ok === false ? 1 : 0
 }
 
-async function runDaily(options) {
+function writeIntradayStatus(filePath, {
+  reportDate,
+  status,
+  summary,
+  failureCode = null,
+  validation = {},
+  warnings = [],
+  steps = [],
+  published = false,
+  receipt = null,
+  reconciliationRequired = false,
+  candidate = null,
+}) {
+  if (receipt && !verifiedReceiptIdentityIsValid(receipt, reportDate)) {
+    throw new Error('VERIFIED_RECEIPT_LINK_INVALID')
+  }
+  if (receipt && !normalizedHash(receipt.sourceHashes?.dealerMail)) {
+    throw new Error('VERIFIED_RECEIPT_LINK_INVALID')
+  }
+  if (candidate && (!normalizedHash(candidate.bundleSha256) || !normalizedHash(candidate.dealerMailSha256))) {
+    throw new Error('PUBLICATION_RECONCILIATION_LINK_INVALID')
+  }
+  writeJson(filePath, {
+    reportDate,
+    status,
+    checkedAt: new Date().toISOString(),
+    summary,
+    ...(failureCode ? { failureCode } : {}),
+    ...(published ? { published: true } : {}),
+    ...(reconciliationRequired ? { reconciliationRequired: true } : {}),
+    ...(receipt ? {
+      receipt: {
+        bundleSha256: receipt.bundleSha256,
+        verifiedAt: receipt.verifiedAt,
+        dealerMailSha256: receipt.sourceHashes?.dealerMail,
+      },
+    } : {}),
+    ...(candidate ? { candidate } : {}),
+    ...(Object.keys(validation).length ? { counts: validation } : {}),
+    warnings,
+    steps,
+  })
+}
+
+function dealerMailRevisionPaths(reportDate) {
+  const directory = path.join(WORK_ROOT, 'dealermail-history', 'snapshots')
+  return DEALERMAIL_REVISION_SUFFIXES.map((suffix) => path.join(directory, `${reportDate}-${suffix}`))
+}
+
+function candidateManifestFromBaseline({ baseline, reportDate, publicPath, dealerPath, warnings, steps, managerDispositionBinding }) {
+  const preserved = { ...baseline }
+  for (const key of [
+    'cloudflare_publish',
+    'latest_pointers_advanced',
+    'release_bundle_path',
+    'release_bundle_sha256',
+    'completed_at',
+    'completion_time',
+  ]) delete preserved[key]
+  return {
+    ...preserved,
+    ...deriveManifest({
+      reportDate,
+      publicPath,
+      dealerPath,
+      warnings,
+      steps,
+      managerDispositionBinding,
+      runMode: 'inventory_flow_intraday_hold_refresh',
+    }),
+  }
+}
+
+function retainedPublicationReconciliation({ reportDate, intradayStatusPath, manifestPath }) {
+  let status = null
+  let statusReadable = false
+  if (existsSync(intradayStatusPath)) {
+    try {
+      status = readJson(intradayStatusPath)
+      statusReadable = true
+    } catch {}
+  }
+  const statusRequiresReconciliation = statusReadable && (
+    status?.reconciliationRequired === true || status?.status === 'intraday_holds_publication_outcome_unknown'
+  )
+  const candidateBundleSha256 = normalizedHash(status?.candidate?.bundleSha256)
+  let manifest = null
+  let manifestReadable = false
+  let expectedBundleSha256 = null
+  let manifestExpectedHashPresent = false
+  try {
+    manifest = readJson(manifestPath)
+    manifestReadable = true
+    const expected = manifest?.cloudflare_publish?.expected_bundle_sha256
+    manifestExpectedHashPresent = expected !== undefined && expected !== null
+    expectedBundleSha256 = normalizedHash(expected)
+  } catch {
+    // Either artifact can independently stop another write. Repairing an
+    // unreadable counterpart remains an operator action.
+  }
+  const manifestRequiresReconciliation = manifestReadable && (
+    manifest?.cloudflare_publish?.reconciliation_required === true ||
+    manifest?.cloudflare_publish?.status === 'publication_outcome_unknown'
+  )
+  if (!statusRequiresReconciliation && !manifestRequiresReconciliation) return null
+
+  const consistent = statusRequiresReconciliation &&
+    status.reportDate === reportDate &&
+    candidateBundleSha256 !== null &&
+    (!manifestExpectedHashPresent || (expectedBundleSha256 !== null && candidateBundleSha256 === expectedBundleSha256))
+  return {
+    consistent,
+    candidate: status?.candidate ?? (expectedBundleSha256 ? { bundleSha256: expectedBundleSha256.toLowerCase() } : null),
+    candidateBundleSha256: (candidateBundleSha256 ?? expectedBundleSha256)?.toLowerCase() ?? null,
+  }
+}
+
+function retainedGlobalPublicationReconciliation(workspaceRoot = WORKSPACE_ROOT) {
+  try {
+    const state = readPublicationReconciliation(workspaceRoot)
+    if (!state) return null
+    return {
+      consistent: true,
+      reportDate: state.reportDate,
+      failureCode: state.failureCode,
+      candidate: {
+        bundleSha256: state.candidate.bundleSha256,
+        dealerMailSha256: state.candidate.sourceHashes.dealerMail,
+      },
+    }
+  } catch {
+    return { consistent: false, reportDate: null, failureCode: 'PUBLICATION_RECONCILIATION_STATE_INVALID', candidate: null }
+  }
+}
+
+function publicationAttemptForCandidate({ reportDate, bundleSha256, sourceHashes, holdRefresh }) {
+  let state
+  try {
+    state = readPublicationReconciliation(WORKSPACE_ROOT)
+  } catch {
+    return { present: true, consistent: false, state: null }
+  }
+  if (!state) return null
+  const consistent = state.reportDate === reportDate &&
+    sameHash(state.candidate.bundleSha256, bundleSha256) &&
+    state.candidate.holdRefresh === holdRefresh &&
+    ['public', 'dealerMail', 'resources', 'managerDisposition', 'managerDispositionBinding'].every((field) => {
+      const expected = sourceHashes[field] ?? null
+      const actual = state.candidate.sourceHashes[field] ?? null
+      return expected === null ? actual === null : sameHash(actual, expected)
+    })
+  return { present: true, consistent, state }
+}
+
+async function runIntradayHoldRefresh({ options, reportDate, manifestPath, releasePath, receiptPath, intradayStatusPath, warnings, steps }) {
+  const retainedReconciliation = retainedPublicationReconciliation({ reportDate, intradayStatusPath, manifestPath })
+  if (retainedReconciliation) {
+    const failureCode = retainedReconciliation.consistent
+      ? 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
+      : 'PUBLICATION_RECONCILIATION_STATE_INVALID'
+    const summary = retainedReconciliation.consistent
+      ? `Inventory Flow ${reportDate}: candidate SHA-256 ${retainedReconciliation.candidateBundleSha256} still requires reconciliation before another refresh.`
+      : `Inventory Flow ${reportDate}: the retained publication reconciliation state is incomplete or inconsistent; operator review is required before another refresh.`
+    return {
+      ok: false,
+      failureCode,
+      summary,
+      validation: {},
+      manifestPath,
+      releasePath,
+      reconciliationRequired: true,
+      candidate: retainedReconciliation.candidate,
+    }
+  }
+
+  const beforeReceipt = readReceiptState(receiptPath)
+  if (beforeReceipt.receipt?.status !== 'published_and_verified' || beforeReceipt.receipt?.reportDate !== reportDate || beforeReceipt.receipt?.complete !== true) {
+    const summary = `Inventory Flow ${reportDate}: intraday hold refresh waiting for the morning verified release.`
+    writeIntradayStatus(intradayStatusPath, { reportDate, status: 'waiting_for_verified_morning_release', summary })
+    return { ok: true, summary, validation: {}, manifestPath, releasePath }
+  }
+
+  const publicPath = publicSnapshotPath(reportDate)
+  const dealerPath = dealerCloudSnapshotPath(reportDate)
+  const resourcePath = path.join(APP_ROOT, 'data', 'vin-document-enrichment.json')
+  let baseline
+  try {
+    baseline = verifyHoldRefreshBaseline({
+      reportDate,
+      receipt: beforeReceipt.receipt,
+      manifestPath,
+      publicPath,
+      dealerPath,
+      resourcePath,
+    })
+  } catch (error) {
+    const failureCode = /^[A-Z0-9_]+$/.test(error.message) ? error.message : 'RECEIPT_BOUND_SOURCE_VALIDATION_FAILED'
+    const summary = `Inventory Flow ${reportDate}: intraday hold refresh stopped because the last verified source bindings could not be proved.`
+    writeIntradayStatus(intradayStatusPath, {
+      reportDate,
+      status: 'failed_receipt_bound_source_validation',
+      failureCode,
+      summary,
+      steps,
+    })
+    return { ok: false, failureCode, summary, manifestPath, releasePath }
+  }
+
+  const transaction = captureFileTransaction([
+    manifestPath,
+    releasePath,
+    ...dealerMailRevisionPaths(reportDate),
+  ])
+  let keepCandidate = false
+  let publishedFailureCode = null
+  let publishedReceipt = null
+  let candidateEvidence = null
+  let result
+  try {
+    steps.push({ name: 'public_inventory', status: 'reused_receipt_bound', path: publicPath })
+    steps.push({ name: 'manager_disposition', status: baseline.managerBinding ? 'reused_receipt_bound' : 'reused_none_receipt_bound' })
+
+    const browserReady = options.skipAuthenticated ? false : await ensureAutomationBrowser(warnings)
+    // Browser startup can take long enough for a stray process or manual edit
+    // to replace the canonical file. Rebind it immediately before the archive
+    // and capture so only the receipt-proven morning snapshot is archived.
+    verifyHoldRefreshBaseline({
+      reportDate,
+      receipt: beforeReceipt.receipt,
+      manifestPath,
+      publicPath,
+      dealerPath,
+      resourcePath,
+    })
+    const refreshedDealerPath = runDealerMail(reportDate, browserReady, warnings, steps, { refresh: true })
+    if (!refreshedDealerPath) {
+      const summary = `Inventory Flow ${reportDate}: intraday hold refresh failed; the last verified release was restored.`
+      writeIntradayStatus(intradayStatusPath, {
+        reportDate,
+        status: 'failed_dealermail_refresh',
+        failureCode: 'DEALERMAIL_INCOMPLETE',
+        summary,
+        warnings,
+        steps,
+      })
+      return { ok: false, failureCode: 'DEALERMAIL_INCOMPLETE', summary, manifestPath, releasePath }
+    }
+
+    // Recheck immutable inputs after the authenticated capture so a concurrent
+    // or manual file replacement cannot ride along with the hold-only release.
+    verifyHoldRefreshStableSources({
+      reportDate,
+      receipt: beforeReceipt.receipt,
+      manifestPath,
+      publicPath,
+      resourcePath,
+    })
+    const resources = validateCurrentResourceFile()
+    steps.push({
+      name: 'resources',
+      status: resources.ok ? 'reused_receipt_bound' : 'failed_blocking',
+      detail: safeDetail(resources.output),
+    })
+    if (!resources.ok) throw new Error('RESOURCE_VALIDATION_FAILED')
+
+    let manifest = candidateManifestFromBaseline({
+      baseline: baseline.manifest,
+      reportDate,
+      publicPath,
+      dealerPath: refreshedDealerPath,
+      warnings,
+      steps,
+      managerDispositionBinding: baseline.managerBinding,
+    })
+    manifest.validation_results = {
+      ...manifest.validation_results,
+      resource_enrichment_validated: true,
+      oasis_capture_validated: true,
+      passed: true,
+    }
+    writeJson(manifestPath, manifest)
+
+    const built = buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath, { receipt: beforeReceipt.receipt })
+    if (options.noPublish) {
+      const status = 'intraday_holds_validated_no_publish_last_verified_release_preserved'
+      const summary = summarize({ reportDate, validation: built.validation, publishStatus: status, manifestPath, releasePath, warnings })
+      writeIntradayStatus(intradayStatusPath, { reportDate, status, summary, validation: built.validation, warnings, steps })
+      return { ok: true, summary, validation: built.validation, manifestPath, releasePath }
+    }
+
+    const publication = publish(reportDate, true, steps, { holdRefresh: true, expectedSourceHashes: built.sourceHashes })
+    const durableAttempt = publicationAttemptForCandidate({
+      reportDate,
+      bundleSha256: built.bundleSha256,
+      sourceHashes: built.sourceHashes,
+      holdRefresh: true,
+    })
+    const afterReceipt = readReceiptStateAfterPublication(receiptPath)
+    const publicationOutcome = classifyPublicationOutcome({
+      processOk: publication.ok,
+      beforeRaw: beforeReceipt.raw,
+      afterState: afterReceipt,
+      expectedHashes: built.sourceHashes,
+      reportDate,
+      publisherOutput: afterReceipt.lookupFailed || durableAttempt
+        ? `${publication.output}\nCLOUD_PUBLICATION_OUTCOME_UNKNOWN`
+        : publication.output,
+    })
+
+    if (publicationOutcome === 'published_and_followups_complete') {
+      keepCandidate = true
+      publishedFailureCode = 'POST_PUBLISH_STATE_RECORD_FAILED'
+      publishedReceipt = afterReceipt.receipt
+      manifest = readJson(manifestPath)
+      manifest.daily_steps = steps
+      writeJson(manifestPath, manifest)
+      const status = 'intraday_holds_published_and_verified'
+      const summary = summarize({ reportDate, validation: built.validation, publishStatus: status, manifestPath, releasePath, warnings })
+      writeIntradayStatus(intradayStatusPath, {
+        reportDate,
+        status,
+        summary,
+        validation: built.validation,
+        warnings,
+        steps,
+        published: true,
+        receipt: afterReceipt.receipt,
+      })
+      result = { ok: true, summary, validation: built.validation, manifestPath, releasePath }
+      return result
+    }
+
+    if (publicationOutcome === 'published_followups_pending') {
+      keepCandidate = true
+      publishedFailureCode = 'CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED'
+      publishedReceipt = afterReceipt.receipt
+      steps.at(-1).status = 'published_followups_failed'
+      manifest = readJson(manifestPath)
+      manifest.daily_steps = steps
+      manifest.cloudflare_publish = {
+        attempted: true,
+        status: 'published_and_verified_followups_pending',
+        receipt_path: receiptPath,
+        bundle_sha256: afterReceipt.receipt.bundleSha256,
+        verified_at: afterReceipt.receipt.verifiedAt,
+        publisher: 'BobMaxey-InventoryFlow-DailyPublish',
+      }
+      writeJson(manifestPath, manifest)
+      const status = 'intraday_holds_published_followups_pending'
+      const summary = summarize({ reportDate, validation: built.validation, publishStatus: status, manifestPath, releasePath, warnings })
+      writeIntradayStatus(intradayStatusPath, {
+        reportDate,
+        status,
+        failureCode: 'CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED',
+        summary,
+        validation: built.validation,
+        warnings,
+        steps,
+        published: true,
+        receipt: afterReceipt.receipt,
+      })
+      result = { ok: false, failureCode: 'CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED', summary, validation: built.validation, manifestPath, releasePath }
+      return result
+    }
+
+    if (publicationOutcome === 'publication_outcome_unknown') {
+      keepCandidate = true
+      publishedFailureCode = durableAttempt && !durableAttempt.consistent
+        ? 'PUBLICATION_RECONCILIATION_STATE_INVALID'
+        : 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
+      const candidateBundleSha256 = publishedCandidateBundleSha256(publication.output, built.bundleSha256)
+      candidateEvidence = {
+        bundleSha256: candidateBundleSha256,
+        dealerMailSha256: built.sourceHashes.dealerMail,
+      }
+      steps.at(-1).status = 'publication_outcome_unknown'
+      manifest = readJson(manifestPath)
+      manifest.daily_steps = steps
+      manifest.cloudflare_publish = {
+        attempted: true,
+        status: 'publication_outcome_unknown',
+        reconciliation_required: true,
+        expected_bundle_sha256: candidateBundleSha256,
+        receipt_path: receiptPath,
+        publisher: 'BobMaxey-InventoryFlow-DailyPublish',
+      }
+      writeJson(manifestPath, manifest)
+      const status = 'intraday_holds_publication_outcome_unknown'
+      const summary = `Inventory Flow ${reportDate}: the cloud publisher may have accepted the validated hold release, but the exact candidate could not be re-verified. The candidate was retained and requires reconciliation before another refresh.`
+      writeIntradayStatus(intradayStatusPath, {
+        reportDate,
+        status,
+        failureCode: publishedFailureCode,
+        summary,
+        validation: built.validation,
+        warnings,
+        steps,
+        reconciliationRequired: true,
+        candidate: candidateEvidence,
+      })
+      result = { ok: false, failureCode: publishedFailureCode, summary, validation: built.validation, manifestPath, releasePath }
+      return result
+    }
+
+    throw new Error('CLOUDFLARE_PUBLISH_FAILED')
+  } catch (error) {
+    if (keepCandidate) {
+      const failureCode = publishedFailureCode ?? 'POST_PUBLISH_STATE_RECORD_FAILED'
+      const outcomeUnknown = ['CLOUD_PUBLICATION_OUTCOME_UNKNOWN', 'PUBLICATION_RECONCILIATION_STATE_INVALID'].includes(failureCode)
+      const summary = outcomeUnknown
+        ? `Inventory Flow ${reportDate}: the cloud publication outcome remains unknown and requires reconciliation before another refresh.`
+        : `Inventory Flow ${reportDate}: the intraday hold release is published and verified, but post-publication state recording is incomplete.`
+      writeIntradayStatus(intradayStatusPath, {
+        reportDate,
+        status: outcomeUnknown ? 'intraday_holds_publication_outcome_unknown' : 'intraday_holds_published_followups_pending',
+        failureCode,
+        summary,
+        warnings,
+        steps,
+        published: !outcomeUnknown,
+        receipt: outcomeUnknown ? null : publishedReceipt,
+        reconciliationRequired: outcomeUnknown,
+        candidate: outcomeUnknown ? candidateEvidence : null,
+      })
+      result = { ok: false, failureCode, summary, manifestPath, releasePath }
+      return result
+    }
+    const failureCode = /^[A-Z0-9_]+$/.test(error.message) ? error.message : 'INTRADAY_REFRESH_VALIDATION_FAILED'
+    const status = failureCode === 'CLOUDFLARE_PUBLISH_FAILED'
+      ? 'publish_failed_last_verified_release_preserved'
+      : 'intraday_refresh_failed_last_verified_release_preserved'
+    const summary = `Inventory Flow ${reportDate}: intraday hold refresh failed before a new verified publication; the last verified release was restored.`
+    writeIntradayStatus(intradayStatusPath, { reportDate, status, failureCode, summary, warnings, steps })
+    result = { ok: false, failureCode, summary, manifestPath, releasePath }
+    return result
+  } finally {
+    if (keepCandidate) transaction.commit()
+    else {
+      try { transaction.rollback() } catch (error) {
+        const summary = `Inventory Flow ${reportDate}: intraday rollback failed; operator review is required before another publication attempt.`
+        writeIntradayStatus(intradayStatusPath, {
+          reportDate,
+          status: 'failed_rollback_requires_attention',
+          failureCode: 'INTRADAY_ROLLBACK_FAILED',
+          summary,
+          warnings,
+          steps,
+        })
+        throw new Error('INTRADAY_ROLLBACK_FAILED', { cause: error })
+      }
+    }
+  }
+}
+
+async function runDailyUnlocked(options) {
   const reportDate = options.date ?? todayInNewYork()
   const manifestPath = path.join(WORK_ROOT, 'run-status', `${reportDate}.json`)
   const releaseDirectory = path.join(WORK_ROOT, 'releases', reportDate)
   const releasePath = path.join(releaseDirectory, 'inventory-flow-release.json')
   const receiptPath = path.join(WORK_ROOT, 'app-feed-status', `${reportDate}.json`)
+  const intradayStatusPath = path.join(WORK_ROOT, 'hold-refresh-status', `${reportDate}.json`)
+  const summaryPath = path.join(releaseDirectory, 'daily-summary.json')
   const warnings = []
   const steps = []
 
@@ -569,6 +1301,39 @@ async function runDaily(options) {
       warnings: release.warnings ?? [],
     })
     return { ok: true, summary, validation, manifestPath, releasePath }
+  }
+
+  const retainedGlobalReconciliation = retainedGlobalPublicationReconciliation()
+  if (retainedGlobalReconciliation) {
+    const failureCode = retainedGlobalReconciliation.consistent
+      ? 'PUBLICATION_RECONCILIATION_REQUIRED'
+      : 'PUBLICATION_RECONCILIATION_STATE_INVALID'
+    const summary = retainedGlobalReconciliation.consistent
+      ? `Inventory Flow publication is blocked: the ${retainedGlobalReconciliation.reportDate} candidate SHA-256 ${retainedGlobalReconciliation.candidate.bundleSha256} requires exact-hash reconciliation before any new capture, rebuild, or publish.`
+      : 'Inventory Flow publication is blocked: the durable publication-reconciliation marker is malformed or unreadable and requires operator repair before any new capture, rebuild, or publish.'
+    return {
+      ok: false,
+      failureCode,
+      summary,
+      validation: {},
+      manifestPath,
+      releasePath,
+      reconciliationRequired: true,
+      candidate: retainedGlobalReconciliation.candidate,
+    }
+  }
+
+  if (options.refreshHolds) {
+    return runIntradayHoldRefresh({
+      options,
+      reportDate,
+      manifestPath,
+      releasePath,
+      receiptPath,
+      intradayStatusPath,
+      warnings,
+      steps,
+    })
   }
 
   if (!options.forcePublish && existsSync(receiptPath)) {
@@ -606,7 +1371,7 @@ async function runDaily(options) {
     }
     writeJson(manifestPath, incomplete)
     const summary = summarize({ reportDate, validation: {}, publishStatus: 'not_published_dealermail_incomplete', manifestPath, releasePath, warnings })
-    writeJson(path.join(releaseDirectory, 'daily-summary.json'), { reportDate, status: 'not_published_dealermail_incomplete', summary })
+    writeJson(summaryPath, { reportDate, status: 'not_published_dealermail_incomplete', summary })
     return { ok: false, failureCode: 'DEALERMAIL_INCOMPLETE', summary, manifestPath, releasePath }
   }
 
@@ -625,27 +1390,82 @@ async function runDaily(options) {
     writeJson(manifestPath, manifest)
     const status = !oasisComplete ? 'not_published_oasis_incomplete' : 'not_published_resource_validation_failed'
     const summary = summarize({ reportDate, validation: {}, publishStatus: status, manifestPath, releasePath, warnings })
-    writeJson(path.join(releaseDirectory, 'daily-summary.json'), { reportDate, status, summary })
+    writeJson(summaryPath, { reportDate, status, summary, warnings, steps, checkedAt: new Date().toISOString() })
     return { ok: false, failureCode: !oasisComplete ? 'OASIS_INCOMPLETE' : 'RESOURCE_VALIDATION_FAILED', summary, manifestPath, releasePath }
   }
   manifest.validation_results = { ...manifest.validation_results, resource_enrichment_validated: true, passed: true }
   writeJson(manifestPath, manifest)
 
-  const validation = buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath)
+  const built = buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath)
+  const { validation } = built
   let publishStatus = 'publish_skipped_by_flag'
   let publishOk = true
+  let failureCode = null
+  let reconciliationRequired = false
+  let candidate = null
   if (!options.noPublish) {
-    publishOk = publish(reportDate, options.forcePublish, steps)
-    publishStatus = publishOk ? 'published_or_already_verified' : 'publish_failed_last_verified_release_preserved'
+    const publication = publish(reportDate, options.forcePublish, steps)
+    const durableAttempt = publicationAttemptForCandidate({
+      reportDate,
+      bundleSha256: built.bundleSha256,
+      sourceHashes: built.sourceHashes,
+      holdRefresh: false,
+    })
+    publishOk = publication.ok
+    if (publishOk) {
+      publishStatus = 'published_or_already_verified'
+    } else {
+      const failure = durableAttempt
+        ? {
+            status: 'cloud_publication_outcome_unknown',
+            failureCode: durableAttempt.consistent
+              ? 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
+              : 'PUBLICATION_RECONCILIATION_STATE_INVALID',
+            reconciliationRequired: true,
+            candidate: {
+              bundleSha256: built.bundleSha256,
+              dealerMailSha256: built.sourceHashes.dealerMail,
+            },
+          }
+        : classifyFailedPublication({
+            publisherOutput: publication.output,
+            fallbackBundleSha256: built.bundleSha256,
+            dealerMailSha256: built.sourceHashes.dealerMail,
+          })
+      publishStatus = failure.status
+      failureCode = failure.failureCode
+      reconciliationRequired = failure.reconciliationRequired
+      candidate = failure.candidate
+      if (reconciliationRequired) steps.at(-1).status = 'publication_outcome_unknown'
+    }
     manifest = readJson(manifestPath)
     manifest.daily_steps = steps
+    if (reconciliationRequired) {
+      manifest.cloudflare_publish = {
+        attempted: true,
+        status: 'publication_outcome_unknown',
+        reconciliation_required: true,
+        expected_bundle_sha256: candidate.bundleSha256,
+        receipt_path: receiptPath,
+        publisher: 'BobMaxey-InventoryFlow-DailyPublish',
+      }
+    }
     writeJson(manifestPath, manifest)
   }
   const summary = summarize({ reportDate, validation, publishStatus, manifestPath, releasePath, warnings })
-  writeJson(path.join(releaseDirectory, 'daily-summary.json'), { reportDate, status: publishStatus, summary, counts: validation, warnings })
+  writeJson(summaryPath, {
+    reportDate,
+    status: publishStatus,
+    summary,
+    counts: validation,
+    warnings,
+    steps,
+    ...(reconciliationRequired ? { reconciliationRequired: true, candidate } : {}),
+    checkedAt: new Date().toISOString(),
+  })
   return {
     ok: publishOk,
-    failureCode: publishOk ? null : 'CLOUDFLARE_PUBLISH_FAILED',
+    failureCode: publishOk ? null : failureCode,
     summary,
     validation,
     manifestPath,
@@ -653,20 +1473,80 @@ async function runDaily(options) {
   }
 }
 
+async function runDaily(options) {
+  if (options.dryRun) return runDailyUnlocked(options)
+  const reportDate = options.date ?? todayInNewYork()
+  const lockDirectory = path.join(WORK_ROOT, 'app-feed-status')
+  const lockPath = path.join(lockDirectory, '.publication.lock')
+  const previousOwner = process.env[PUBLICATION_LOCK_OWNER_ENV]
+  let lock = null
+  try {
+    mkdirSync(lockDirectory, { recursive: true })
+    const inherited = assertInheritedPublicationLock(lockPath)
+    lock = inherited ? null : acquirePublicationLock(lockPath)
+    if (lock) process.env[PUBLICATION_LOCK_OWNER_ENV] = JSON.parse(lock.content).ownerId
+    return await runDailyUnlocked(options)
+  } catch (error) {
+    if (error.message === PUBLICATION_LOCKED && options.refreshHolds) {
+      const intradayStatusPath = path.join(WORK_ROOT, 'hold-refresh-status', `${reportDate}.json`)
+      const summary = `Inventory Flow ${reportDate}: intraday hold refresh deferred while the protected publication pipeline is active.`
+      writeIntradayStatus(intradayStatusPath, {
+        reportDate,
+        status: 'waiting_for_pipeline_writer',
+        summary,
+      })
+      return {
+        ok: true,
+        summary,
+        validation: {},
+        manifestPath: path.join(WORK_ROOT, 'run-status', `${reportDate}.json`),
+        releasePath: path.join(WORK_ROOT, 'releases', reportDate, 'inventory-flow-release.json'),
+      }
+    }
+    throw error
+  } finally {
+    if (previousOwner === undefined) delete process.env[PUBLICATION_LOCK_OWNER_ENV]
+    else process.env[PUBLICATION_LOCK_OWNER_ENV] = previousOwner
+    if (lock) releasePublicationLock(lock)
+  }
+}
+
 function printHelp() {
-  console.log(`Usage: run-inventory-flow-daily --date YYYY-MM-DD [--dry-run] [--no-publish] [--force-publish] [--skip-authenticated]
+  console.log(`Usage: run-inventory-flow-daily --date YYYY-MM-DD [--dry-run] [--no-publish] [--force-publish] [--skip-authenticated] [--refresh-holds]
 
 Runs the app-first daily pipeline: source collection, validation, local release bundle, and Cloudflare publish.
+--refresh-holds archives and refreshes DealerMail only after the morning release is verified, then republishes a validated revision through the protected publisher.
 Excel workbook generation is intentionally outside this command.`)
 }
 
 export const internals = {
+  archiveDealerMailRevision,
+  assertCandidatePreservesReceiptSources,
+  assertReceiptHashes,
+  buildAndWriteReleaseBundle,
+  candidateManifestFromBaseline,
+  captureFileTransaction,
+  classifyFailedPublication,
+  classifyPublicationOutcome,
+  dealerMailRevisionPaths,
   deriveManifest,
   exitCodeForResult,
   formatStores,
+  parseArgs,
+  publish,
+  publicationAttemptForCandidate,
+  publishedCandidateBundleSha256,
+  readReceiptStateAfterPublication,
+  retainedGlobalPublicationReconciliation,
+  retainedPublicationReconciliation,
   reuseExistingOasisCapture,
+  runDaily,
+  runIntradayHoldRefresh,
+  verifyHoldRefreshBaseline,
+  verifyHoldRefreshStableSources,
   summarize,
   todayInNewYork,
+  writeIntradayStatus,
   writeJson,
 }
 

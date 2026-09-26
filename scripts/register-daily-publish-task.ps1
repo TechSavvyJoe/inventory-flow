@@ -48,7 +48,9 @@ $action = New-ScheduledTaskAction `
 # docs/CLOUDFLARE_PRIVATE_RELEASE_RUNBOOK.md ("follows report completion"), and
 # keeps retrying past it as insurance. The script's idempotency guard makes every
 # attempt after a verified publish a cheap no-op, so the extra slots cost nothing
-# and a late-finishing morning build still publishes the same day.
+# and a late-finishing morning build still publishes the same day. An unresolved
+# publication-reconciliation marker blocks before secrets or enrichment and is
+# never bypassed by the scheduled retry or -Force.
 $startAt = (Get-Date -Hour 9 -Minute 15 -Second 0)
 $trigger = New-ScheduledTaskTrigger -Daily -At $startAt
 $repeatSource = New-ScheduledTaskTrigger -Once -At $startAt `
@@ -76,7 +78,7 @@ Register-ScheduledTask `
   -Trigger $trigger `
   -Settings $settings `
   -Principal $principal `
-  -Description 'Bob Maxey Inventory Flow: builds the vehicle resource/photo cache and publishes the verified release to Cloudflare. Runs as the automation account so the DPAPI secret store decrypts. Idempotent - skips if the day is already published_and_verified.' `
+  -Description 'Bob Maxey Inventory Flow: builds the resource cache and publishes to Cloudflare. Fails closed before secrets or enrichment while exact-hash publication reconciliation is pending.' `
   -Force | Out-Null
 
 $task = Get-ScheduledTask -TaskName $TaskName

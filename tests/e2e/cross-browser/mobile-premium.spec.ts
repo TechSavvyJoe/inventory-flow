@@ -105,10 +105,20 @@ test('a phone vehicle workspace remains usable after rotation and a keyboard-siz
       const bounds = (await workspace.boundingBox())!
       expect(Math.abs(bounds.x)).toBeLessThanOrEqual(1)
       expect(Math.abs(bounds.width - viewport.width)).toBeLessThanOrEqual(1)
+      const header = (await workspace.locator('.vdp-focus-header').boundingBox())!
+      const navigation = (await workspace.locator('.vdp-focus-navigation').boundingBox())!
+      expect(header.height, 'compact phone identity and status header').toBeLessThanOrEqual(96)
+      expect(header.height + navigation.height, 'vehicle content remains in the first phone viewport').toBeLessThanOrEqual(144)
+      const tabRail = workspace.getByRole('tablist', { name: 'Vehicle workspace sections' })
+      const tabRailDimensions = await tabRail.evaluate(element => ({ clientWidth: element.clientWidth, scrollWidth: element.scrollWidth }))
+      expect(tabRailDimensions.scrollWidth).toBeGreaterThan(tabRailDimensions.clientWidth)
       for (const name of ['Overview', 'Equipment', 'Records', 'Holds & moves', 'Activity']) {
-        await expect(workspace.getByRole('tab', { name, exact: true })).toBeInViewport()
+        const tab = workspace.getByRole('tab', { name, exact: true })
+        await tab.scrollIntoViewIfNeeded()
+        await expect(tab).toBeInViewport()
       }
       for (const value of await workspace.locator('.vdp-focus-identifiers .copyable-value__content').all()) {
+        await value.scrollIntoViewIfNeeded()
         const content = (await value.boundingBox())!
         expect(content.x + content.width).toBeLessThanOrEqual(viewport.width)
         await expect(value).toHaveCSS('white-space', 'nowrap')
@@ -135,17 +145,25 @@ test('a phone vehicle workspace remains usable after rotation and a keyboard-siz
 
 test('equipment filters and photo gallery retain the vehicle workspace', async ({ page, browserName }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
+  const withGallery = (unit: { imageUrl?: string; imageUrls: string[] }) => {
+    // Keep the current summary and detail consistent: summary photo fields
+    // intentionally take precedence when retained detail is merged.
+    const photo = unit.imageUrl || unit.imageUrls[0]
+    return { ...unit, imageUrl: `${photo}?gallery=1`, imageUrls: [1, 2, 3].map(n => `${photo}?gallery=${n}`) }
+  }
+  await page.route('**/api/bootstrap?**', async route => {
+    const response = await route.fetch()
+    const payload = await response.json()
+    payload.vehicles = payload.vehicles.map((unit: { vin: string; imageUrls: string[] }) => unit.vin === 'TESTDATAHWELL0001' ? withGallery(unit) : unit)
+    await route.fulfill({ response, json: payload })
+  })
   await page.route('**/api/vehicles/TESTDATAHWELL0001', async route => {
     const response = await route.fetch()
-    const unit = await response.json()
-    // Repeat this synthetic vehicle's illustration with distinct URLs to
-    // exercise navigation without assigning another vehicle's photos to it.
-    const photo = unit.imageUrl || unit.imageUrls[0]
-    await route.fulfill({ response, json: { ...unit, imageUrl: `${photo}?gallery=1`, imageUrls: [1, 2, 3].map(n => `${photo}?gallery=${n}`) } })
+    await route.fulfill({ response, json: withGallery(await response.json()) })
   })
   await page.goto('/inventory?vin=TESTDATAHWELL0001&scope=home')
   const workspace = page.getByRole('dialog', { name: /vehicle workspace/ })
-  await expect(workspace.getByText('Loading the full vehicle record…')).toHaveCount(0)
+  await expect(workspace.getByRole('region', { name: 'Photos of 2024 Ford F-150 Lariat' })).toContainText('1 / 3')
   const opener = workspace.getByRole('button', { name: /Open photo gallery/ })
   await opener.click()
   const gallery = page.getByRole('dialog', { name: /photo gallery$/ })
@@ -254,7 +272,11 @@ async function openVehicleService(page: Page) {
 test('workflow returns keep the filtered inventory vehicle through service and a move form', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const workspace = await openFilteredVehicle(page)
-  const documentStarted = await page.evaluate(() => performance.timeOrigin)
+  const documentMarker = await page.evaluate(() => {
+    const marker = crypto.randomUUID()
+    Object.defineProperty(window, '__inventoryFlowE2EDocumentMarker', { value: marker, configurable: true })
+    return marker
+  })
   await openVehicleService(page)
   const origin = new URL(page.url()).searchParams.get('returnTo')!
   expect(new URL(origin, page.url()).searchParams.get('vin')).toBe(workflowVin)
@@ -269,7 +291,7 @@ test('workflow returns keep the filtered inventory vehicle through service and a
   await expect(workspace).toHaveCount(0)
   await expect(page.getByRole('combobox', { name: /Search inventory/i })).toHaveValue(workflowSearch)
   expect(new URL(page.url()).searchParams.has('q')).toBe(false)
-  expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentStarted)
+  expect(await page.evaluate(() => Reflect.get(window, '__inventoryFlowE2EDocumentMarker'))).toBe(documentMarker)
 })
 
 test('native Back and Forward restore vehicle selection and the private inventory search', async ({ page }) => {

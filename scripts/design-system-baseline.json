@@ -74,7 +74,7 @@
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 0,
-      "idSelectors": 2
+      "idSelectors": 1
     },
     "src/components/PredictiveSearchInput.css": {
       "smallText": 0,
@@ -130,6 +130,13 @@
       "rawColors": 6,
       "rgbHslColors": 0,
       "important": 1,
+      "idSelectors": 0
+    },
+    "src/features/overview/overview.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
       "idSelectors": 0
     },
     "src/features/issues/issues.css": {
@@ -207,7 +214,7 @@
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 503
+      "idSelectors": 492
     },
     "src/features/inventory/WarrantyOutlook.css": {
       "smallText": 0,

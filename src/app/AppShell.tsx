@@ -11,6 +11,7 @@ import {
   CircleUserRound,
   Download,
   Ellipsis,
+  Gauge,
   LayoutDashboard,
   RefreshCw,
   Search,
@@ -43,6 +44,14 @@ const NAV_ITEMS = [
   { id: 'service', to: '/service', label: 'Service status', shortLabel: 'Service', icon: Wrench },
 ] as const
 
+const OVERVIEW_NAV_ITEM = {
+  id: 'overview',
+  to: '/overview',
+  label: 'Inventory overview',
+  shortLabel: 'Overview',
+  icon: Gauge,
+} as const
+
 const ADMIN_NAV_ITEM = {
   id: 'admin',
   to: '/admin',
@@ -51,7 +60,7 @@ const ADMIN_NAV_ITEM = {
   icon: LayoutDashboard,
 } as const
 
-type NavigationItemId = (typeof NAV_ITEMS)[number]['id'] | typeof ADMIN_NAV_ITEM.id
+type NavigationItemId = (typeof NAV_ITEMS)[number]['id'] | typeof OVERVIEW_NAV_ITEM.id | typeof ADMIN_NAV_ITEM.id
 
 const ROLE_LABELS: Record<UserRole, string> = {
   sales: 'Salesperson',
@@ -67,9 +76,11 @@ const ROLE_PREVIEW_OPTIONS: UserRole[] = ['sales', 'manager', 'group_manager']
 // The bottom rail holds four destinations plus More. Whatever it leaves out has
 // no other link on a phone, so the utility menu carries it with its page help.
 const MOBILE_UTILITY_HINTS: Partial<Record<NavigationItemId, string>> = {
+  overview: 'Store and group inventory, location, service, and attention',
   today: 'The next step for your store, in one place',
   updates: 'New arrivals and price changes for your inventory',
   service: 'Waiting, in service, and completed work',
+  admin: 'Employee access, source health, and audit activity',
 }
 
 const NAV_STORAGE_KEY = 'maxey-inventory-flow:expanded-navigation-v3'
@@ -114,14 +125,21 @@ export function AppShell({ children }: { children: ReactNode }) {
   const storeBrand = STORE_BRANDING[homeStore]
   const canSeeManager = role === 'manager' || role === 'group_manager'
   const canSeeAdmin = role === 'group_manager'
-  const desktopNavigationItems = canSeeAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS
-  const mobileNavigationIds: NavigationItemId[] = canSeeAdmin
-    ? ['admin', 'inventory', 'moves', 'service']
+  const desktopNavigationItems = [
+    ...(canSeeManager ? [OVERVIEW_NAV_ITEM] : []),
+    ...NAV_ITEMS,
+    ...(canSeeAdmin ? [ADMIN_NAV_ITEM] : []),
+  ]
+  const mobileNavigationIds: NavigationItemId[] = canSeeManager
+    ? ['overview', 'inventory', 'moves', 'today']
     : ['inventory', 'moves', 'today', 'updates']
-  const mobileNavigationItems = [ADMIN_NAV_ITEM, ...NAV_ITEMS]
+  const availableMobileItems = [OVERVIEW_NAV_ITEM, ...NAV_ITEMS, ADMIN_NAV_ITEM]
+    .filter((item) => item.id !== 'overview' || canSeeManager)
+    .filter((item) => item.id !== 'admin' || canSeeAdmin)
+  const mobileNavigationItems = availableMobileItems
     .filter((item) => mobileNavigationIds.includes(item.id))
     .sort((left, right) => mobileNavigationIds.indexOf(left.id) - mobileNavigationIds.indexOf(right.id))
-  const mobileUtilityItems = NAV_ITEMS.filter((item) => !mobileNavigationIds.includes(item.id))
+  const mobileUtilityItems = availableMobileItems.filter((item) => !mobileNavigationIds.includes(item.id))
   const rolePreviewEnabled = data?.access?.canPreviewRoles === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
   const storePreviewEnabled = data?.access?.canPreviewStores === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
   const productionRolePreview = data?.access?.rolePreviewActive === true
@@ -291,8 +309,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <NavLink className="utility-manager-link" to="/manager" onClick={() => setUtilityOpen(false)}>
             <Users aria-hidden="true" />
             <span>
-              <strong>Manager overview</strong>
-              <small>Group inventory, holds, movement, and exceptions</small>
+              <strong>Group operations</strong>
+              <small>Manage transfers, movement, and return work</small>
             </span>
             <ChevronRight aria-hidden="true" />
           </NavLink>

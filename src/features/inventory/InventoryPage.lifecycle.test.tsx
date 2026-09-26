@@ -12,10 +12,14 @@ vi.mock('../../lib/api', async original => ({ ...await original<typeof import('.
 vi.mock('../../components/SourceWarning', () => ({ SourceWarning: () => null }))
 vi.mock('../../app/adapters', () => ({
   groupStores: () => [], inventoryStore: () => ({ id: 'howell', name: 'Howell' }),
-  toInventoryVehicle: (vehicle: VehicleRecord) => ({ id: vehicle.vin, vin: vehicle.vin, vehicleName: vehicle.vehicleName }),
+  toInventoryVehicle: (vehicle: VehicleRecord) => ({ ...vehicle, id: vehicle.vin }),
 }))
 vi.mock('./InventoryExperience', () => ({ InventoryExperience: (props: InventoryExperienceProps) => <>
   <output data-testid="vehicles">{props.vehicles.map(vehicle => vehicle.vehicleName).join(',')}</output>
+  <output data-testid="detail">{props.vehicles.map(vehicle => (vehicle as unknown as VehicleRecord).publicScan?.dealerName ?? '').join(',')}</output>
+  <output data-testid="protected">{props.vehicles.map(vehicle => (vehicle as unknown as VehicleRecord).privateEvidence?.primary?.customerOrReason ?? '').join(',')}</output>
+  <output data-testid="search">{props.vehicles.map(vehicle => (vehicle as unknown as VehicleRecord).searchText ?? '').join(',')}</output>
+  <output data-testid="service">{props.vehicles.map(vehicle => (vehicle as unknown as VehicleRecord).serviceReadiness?.version ?? '').join(',')}</output>
   <output data-testid="selected">{props.selectedVehicleId ?? 'none'}</output>
   <output data-testid="detail-state">{props.detailState}</output>
   <output data-testid="query">{props.initialQuery}</output>
@@ -32,7 +36,24 @@ vi.mock('./InventoryExperience', () => ({ InventoryExperience: (props: Inventory
 function vehicle(suffix: string, name: string): VehicleRecord { return { vin: `TESTDATAVEHICLE${suffix}`, vehicleName: name } as VehicleRecord }
 const first = vehicle('001', 'First summary')
 const second = vehicle('002', 'Second summary')
-function data(): BootstrapData { return { vehicles: [first, second], transfers: [] } as unknown as BootstrapData }
+function detailVehicle(base: VehicleRecord, marker: string, patch: Partial<VehicleRecord> = {}): VehicleRecord {
+  return {
+    ...base,
+    publicScan: {
+      actualLocation: null, locationCity: null, dealerLocationId: null, dealerName: marker,
+      vehicleId: null, genericColor: null, sourceSites: [], sourceCount: null, firstSeen: null, lastSeen: null,
+    },
+    ...patch,
+  }
+}
+function data(firstPatch: Partial<VehicleRecord> = {}, metaPatch: Partial<BootstrapData['meta']> = {}): BootstrapData {
+  return {
+    access: { user: 'Synthetic Employee', role: 'manager', store: 'Howell', canViewPrivateEvidence: true, canCreateTransfer: true },
+    meta: { reportDate: '2026-09-25', dealerMailCapturedAt: '2026-09-25T12:00:00Z', dealerMailFreshness: 'current', ...metaPatch },
+    vehicles: [{ ...first, hold: { state: 'none_observed', label: 'No hold', backupCount: 0 }, ...firstPatch }, second],
+    transfers: [],
+  } as unknown as BootstrapData
+}
 function Navigation() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -59,63 +80,145 @@ afterEach(cleanup)
 
 describe('inventory detail and navigation lifecycle', () => {
   it('keeps the summary after a failed detail read and retries explicitly', async () => {
-    mocked.get.mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce({ ...first, vehicleName: 'First complete record' })
+    mocked.get.mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce(detailVehicle(first, 'First complete record'))
     show()
     fireEvent.click(screen.getByRole('button', { name: 'First vehicle' }))
     await waitFor(() => expect(screen.getByTestId('detail-state')).toHaveTextContent('failed'))
     expect(screen.getByTestId('vehicles')).toHaveTextContent('First summary')
     fireEvent.click(screen.getByRole('button', { name: 'Retry record' }))
     await waitFor(() => expect(screen.getByTestId('detail-state')).toHaveTextContent('ready'))
-    expect(screen.getByTestId('vehicles')).toHaveTextContent('First complete record')
+    expect(screen.getByTestId('detail')).toHaveTextContent('First complete record')
   })
 
   it('cancels selection changes and ignores the late response from the previous vehicle', async () => {
     const old = deferred<VehicleRecord>()
-    mocked.get.mockReturnValueOnce(old.promise).mockResolvedValueOnce({ ...second, vehicleName: 'Second complete record' })
+    mocked.get.mockReturnValueOnce(old.promise).mockResolvedValueOnce(detailVehicle(second, 'Second complete record'))
     show()
     fireEvent.click(screen.getByRole('button', { name: 'First vehicle' }))
     const signal = mocked.get.mock.calls[0][3] as AbortSignal
     fireEvent.click(screen.getByRole('button', { name: 'Second vehicle' }))
     expect(signal.aborted).toBe(true)
     await waitFor(() => expect(screen.getByTestId('detail-state')).toHaveTextContent('ready'))
-    await act(async () => old.resolve({ ...first, vehicleName: 'Late old detail' }))
-    expect(screen.getByTestId('vehicles')).not.toHaveTextContent('Late old detail')
-    expect(screen.getByTestId('vehicles')).toHaveTextContent('Second complete record')
+    await act(async () => old.resolve(detailVehicle(first, 'Late old detail')))
+    expect(screen.getByTestId('detail')).not.toHaveTextContent('Late old detail')
+    expect(screen.getByTestId('detail')).toHaveTextContent('Second complete record')
   })
 
-  it('discards detail cache when a newer bootstrap replaces the inventory projection', async () => {
-    mocked.get.mockResolvedValueOnce({ ...first, vehicleName: 'Older full record' })
+  it('retains full detail through a benign bootstrap replacement, overlays operations, and revalidates in the background', async () => {
+    mocked.context.data = data({ serviceReadiness: { version: 1 } as VehicleRecord['serviceReadiness'] })
+    mocked.get.mockResolvedValueOnce(detailVehicle(first, 'Retained full record', { privateEvidence: { primary: null, backups: [], comments: [], alerts: [] } }))
     const page = show()
     fireEvent.click(screen.getByRole('button', { name: 'First vehicle' }))
-    await waitFor(() => expect(screen.getByTestId('vehicles')).toHaveTextContent('Older full record'))
+    await waitFor(() => expect(screen.getByTestId('detail')).toHaveTextContent('Retained full record'))
     const pending = deferred<VehicleRecord>()
     mocked.get.mockReturnValueOnce(pending.promise)
-    mocked.context.data = data()
-    page.rerender(<MemoryRouter><InventoryPage /></MemoryRouter>)
-    expect(screen.getByTestId('vehicles')).toHaveTextContent('First summary')
-    expect(screen.getByTestId('vehicles')).not.toHaveTextContent('Older full record')
-    await act(async () => pending.resolve({ ...first, vehicleName: 'Newest complete record' }))
-    expect(screen.getByTestId('vehicles')).toHaveTextContent('Newest complete record')
+    mocked.context.data = data({ serviceReadiness: { version: 2 } as VehicleRecord['serviceReadiness'] })
+    page.rerender(<MemoryRouter><Navigation /><InventoryPage /></MemoryRouter>)
+    expect(screen.getByTestId('detail')).toHaveTextContent('Retained full record')
+    expect(screen.getByTestId('service')).toHaveTextContent('2')
+    expect(screen.getByTestId('detail-state')).toHaveTextContent('refreshing')
+    await act(async () => pending.resolve(detailVehicle(first, 'Newest complete record')))
+    expect(screen.getByTestId('detail')).toHaveTextContent('Newest complete record')
+  })
+
+  it('ignores a detail refresh from an older bootstrap generation that finishes last', async () => {
+    mocked.get.mockResolvedValueOnce(detailVehicle(first, 'Initial full record'))
+    const page = show()
+    fireEvent.click(screen.getByRole('button', { name: 'First vehicle' }))
+    await waitFor(() => expect(screen.getByTestId('detail')).toHaveTextContent('Initial full record'))
+
+    const olderRefresh = deferred<VehicleRecord>()
+    const newestRefresh = deferred<VehicleRecord>()
+    mocked.get.mockReturnValueOnce(olderRefresh.promise).mockReturnValueOnce(newestRefresh.promise)
+    mocked.context.data = data({ serviceReadiness: { version: 2 } as VehicleRecord['serviceReadiness'] })
+    page.rerender(<MemoryRouter><Navigation /><InventoryPage /></MemoryRouter>)
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(2))
+    mocked.context.data = data({ serviceReadiness: { version: 3 } as VehicleRecord['serviceReadiness'] })
+    page.rerender(<MemoryRouter><Navigation /><InventoryPage /></MemoryRouter>)
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(3))
+
+    await act(async () => newestRefresh.resolve(detailVehicle(first, 'Newest generation detail')))
+    expect(screen.getByTestId('detail')).toHaveTextContent('Newest generation detail')
+    expect(screen.getByTestId('detail-state')).toHaveTextContent('ready')
+    await act(async () => olderRefresh.resolve(detailVehicle(first, 'Late obsolete detail')))
+    expect(screen.getByTestId('detail')).toHaveTextContent('Newest generation detail')
+    expect(screen.getByTestId('detail')).not.toHaveTextContent('Late obsolete detail')
+    expect(screen.getByTestId('detail-state')).toHaveTextContent('ready')
+  })
+
+  it('keeps retained detail after a temporary background failure and retries explicitly', async () => {
+    mocked.get.mockResolvedValueOnce(detailVehicle(first, 'Previously verified detail'))
+    const page = show()
+    fireEvent.click(screen.getByRole('button', { name: 'First vehicle' }))
+    await waitFor(() => expect(screen.getByTestId('detail')).toHaveTextContent('Previously verified detail'))
+    mocked.get.mockRejectedValueOnce(new Error('Temporary failure'))
+    mocked.context.data = data({ serviceReadiness: { version: 2 } as VehicleRecord['serviceReadiness'] })
+    page.rerender(<MemoryRouter><Navigation /><InventoryPage /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByTestId('detail-state')).toHaveTextContent('stale'))
+    expect(screen.getByTestId('detail')).toHaveTextContent('Previously verified detail')
+    expect(screen.getByTestId('service')).toHaveTextContent('2')
+    mocked.get.mockResolvedValueOnce(detailVehicle(first, 'Recovered detail'))
+    fireEvent.click(screen.getByRole('button', { name: 'Retry record' }))
+    await waitFor(() => expect(screen.getByTestId('detail')).toHaveTextContent('Recovered detail'))
+    expect(screen.getByTestId('detail-state')).toHaveTextContent('ready')
+  })
+
+  it('withholds cached private evidence immediately when the hold signature changes', async () => {
+    mocked.get.mockResolvedValueOnce(detailVehicle(first, 'Safe retained detail', {
+      searchText: 'protected old reason',
+      privateEvidence: { primary: { customerOrReason: 'Protected old reason' }, backups: [], comments: [], alerts: [] },
+    }))
+    const page = show()
+    fireEvent.click(screen.getByRole('button', { name: 'First vehicle' }))
+    await waitFor(() => expect(screen.getByTestId('protected')).toHaveTextContent('Protected old reason'))
+    const pending = deferred<VehicleRecord>()
+    mocked.get.mockReturnValueOnce(pending.promise)
+    mocked.context.data = data({ hold: { state: 'primary', label: 'DealerMail hold', backupCount: 0 }, searchText: 'safe current terms' })
+    page.rerender(<MemoryRouter><Navigation /><InventoryPage /></MemoryRouter>)
+    expect(screen.getByTestId('detail')).toHaveTextContent('Safe retained detail')
+    expect(screen.getByTestId('protected')).not.toHaveTextContent('Protected old reason')
+    expect(screen.getByTestId('search')).toHaveTextContent('safe current terms')
+    expect(screen.getByTestId('search')).not.toHaveTextContent('protected old reason')
+    expect(screen.getByTestId('detail-state')).toHaveTextContent('refreshing')
+    await act(async () => pending.resolve(detailVehicle(first, 'Updated full detail', {
+      privateEvidence: { primary: { customerOrReason: 'Protected new reason' }, backups: [], comments: [], alerts: [] },
+    })))
+    expect(screen.getByTestId('protected')).toHaveTextContent('Protected new reason')
   })
 
   it('does not retain cached protected details if the access identity changes with the same data object', async () => {
-    mocked.get.mockResolvedValueOnce({ ...first, vehicleName: 'Manager-only detail' })
+    mocked.get.mockResolvedValueOnce(detailVehicle(first, 'Manager-only detail'))
     const page = show()
     fireEvent.click(screen.getByRole('button', { name: 'First vehicle' }))
-    await waitFor(() => expect(screen.getByTestId('vehicles')).toHaveTextContent('Manager-only detail'))
+    await waitFor(() => expect(screen.getByTestId('detail')).toHaveTextContent('Manager-only detail'))
     mocked.context.role = 'sales'
-    page.rerender(<MemoryRouter><InventoryPage /></MemoryRouter>)
-    expect(screen.getByTestId('vehicles')).not.toHaveTextContent('Manager-only detail')
+    page.rerender(<MemoryRouter><Navigation /><InventoryPage /></MemoryRouter>)
+    expect(screen.getByTestId('detail')).not.toHaveTextContent('Manager-only detail')
     expect(screen.getByTestId('selected')).toHaveTextContent(first.vin)
     expect(mocked.get).toHaveBeenLastCalledWith(first.vin, 'sales', 'Howell', expect.any(AbortSignal))
   })
 
+  it('ignores a late protected response from an earlier access identity', async () => {
+    const managerRead = deferred<VehicleRecord>()
+    mocked.get.mockReturnValueOnce(managerRead.promise).mockResolvedValueOnce(detailVehicle(first, 'Sales-projected detail'))
+    const page = show()
+    fireEvent.click(screen.getByRole('button', { name: 'First vehicle' }))
+    mocked.context.role = 'sales'
+    page.rerender(<MemoryRouter><Navigation /><InventoryPage /></MemoryRouter>)
+    await waitFor(() => expect(screen.getByTestId('detail')).toHaveTextContent('Sales-projected detail'))
+    await act(async () => managerRead.resolve(detailVehicle(first, 'Late manager detail', {
+      privateEvidence: { primary: { customerOrReason: 'Late protected reason' }, backups: [], comments: [], alerts: [] },
+    })))
+    expect(screen.getByTestId('detail')).not.toHaveTextContent('Late manager detail')
+    expect(screen.getByTestId('protected')).not.toHaveTextContent('Late protected reason')
+  })
+
   it('rejects a response for a different vehicle', async () => {
-    mocked.get.mockResolvedValueOnce({ ...second, vehicleName: 'Unexpected record' })
+    mocked.get.mockResolvedValueOnce(detailVehicle(second, 'Unexpected record'))
     show()
     fireEvent.click(screen.getByRole('button', { name: 'First vehicle' }))
     await waitFor(() => expect(screen.getByTestId('detail-state')).toHaveTextContent('failed'))
-    expect(screen.getByTestId('vehicles')).not.toHaveTextContent('Unexpected record')
+    expect(screen.getByTestId('detail')).not.toHaveTextContent('Unexpected record')
   })
 
   it('restores a navigation-provided search after leaving and reopening inventory', async () => {

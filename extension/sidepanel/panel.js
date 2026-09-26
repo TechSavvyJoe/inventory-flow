@@ -1,5 +1,5 @@
 import { ROLE_PICKER_ROLES, STALE_AFTER_MS, STORES, WORKSPACES, grantedWorkspaces, workspaceFor } from './lib/config.mjs'
-import { PanelApiError, clearApiCache, fetchBootstrap, fetchVehicle } from './lib/api.mjs'
+import { PanelApiError, clearApiCache, fetchBootstrap, fetchCompanionRelease, fetchVehicle } from './lib/api.mjs'
 import { buildPanelData, copyFields, dealSheetText, mergeDetail, requestBlockedReason, roleLabel, toPanelVehicle, vehicleMoveAction } from './lib/model.mjs'
 import { buildEntry, buildIndex, rank } from './lib/search.mjs'
 import { EMPTY_FILTERS, SORTS, activeFilterCount, applyFilters, describeFilters, filterOptions, normalizeFilters, sortMatches } from './lib/filters.mjs'
@@ -18,6 +18,7 @@ import { sourceDisplayText } from './lib/source-text.mjs'
 import { dealerMailTabId, checkLiveDealerMailHold, withLiveDealerMailHold } from './lib/live-dealermail-hold.mjs'
 import { resourceSummaries } from './lib/resources.mjs'
 import { syntheticPreviewPhotos } from './lib/synthetic-photos.mjs'
+import { compareVersions } from './lib/version.mjs'
 
 const $ = (id) => document.getElementById(id)
 const ui = {
@@ -1642,6 +1643,33 @@ function renderSheet() {
       el('div', { class: 'field' }, el('label', { class: 'field-label', for: 'demo-store', text: 'Demo store' }), Object.assign(select(STORES, s.demoStore, (demoStore) => updateSettings({ demoStore }, { reload: true })), { id: 'demo-store' })),
     )
   }
+  const installedVersion = host === 'extension' ? String(globalThis.chrome?.runtime?.getManifest?.()?.version ?? '') : ''
+  const versionStatus = el('p', { class: 'field-help', role: 'status', 'aria-live': 'polite', text: installedVersion ? `Installed version ${installedVersion}.` : 'Preview build.' })
+  const versionActions = el('div', { class: 'status-actions' })
+  const checkVersion = el('button', { type: 'button', class: 'btn', onclick: async () => {
+    checkVersion.disabled = true
+    versionActions.querySelector('[data-companion-update]')?.remove()
+    versionStatus.textContent = 'Checking the supported companion version…'
+    try {
+      const release = await fetchCompanionRelease(state.workspace, state.settings)
+      const comparison = installedVersion ? compareVersions(release.version, installedVersion) : null
+      if (comparison === 1) {
+        versionStatus.textContent = `Version ${release.version} is ready. Download it, then reload the unpacked extension in Chrome.`
+        if (!versionActions.querySelector('[data-companion-update]')) versionActions.append(el('button', {
+          type: 'button', class: 'btn btn-primary', dataset: { companionUpdate: '' },
+          onclick: () => openUrl(new URL(release.downloadPath, state.workspace.origin).href),
+        }, 'Download update'))
+      } else if (comparison === 0) versionStatus.textContent = `Installed version ${installedVersion} is current.`
+      else if (comparison === -1) versionStatus.textContent = `Installed version ${installedVersion} is newer than the published package.`
+      else versionStatus.textContent = `Latest packaged version: ${release.version}.`
+    } catch {
+      versionStatus.textContent = 'The update check could not finish. Your current companion can keep working; try again.'
+    } finally {
+      checkVersion.disabled = false
+    }
+  } }, 'Check for update')
+  versionActions.append(checkVersion)
+  ui.sheetBody.append(el('div', { class: 'field', dataset: { companionVersion: '' } }, el('span', { class: 'field-label', text: 'Companion version' }), versionStatus, versionActions))
   ui.sheetBody.append(el('div', { class: 'field' }, el('span', { class: 'field-label', text: 'Keyboard' }), el('dl', { class: 'keys' },
     el('dt', {}, el('kbd', { text: '/' })), el('dd', { text: 'Focus search' }),
     el('dt', {}, el('kbd', { text: '↑' }), el('kbd', { text: '↓' })), el('dd', { text: 'Move through results' }),

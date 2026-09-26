@@ -1,10 +1,10 @@
 // @ts-nocheck -- portable ESM release script; every external command is mocked.
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, realpathSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { assertMigrationLedger, deploymentVersion, resolvePnpmEntry, runRelease } from '../../scripts/deploy-worker.mjs'
+import { assertMigrationLedger, deploymentVersion, resolvePnpmCommand, runRelease } from '../../scripts/deploy-worker.mjs'
 
 const roots = []
 const commit = 'a'.repeat(40)
@@ -24,11 +24,11 @@ function harness(overrides = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'inventory-release-test-'))
   roots.push(root)
   for (const dir of ['docs', 'cloudflare/migrations']) mkdirSync(path.join(root, dir), { recursive: true })
-  writeFileSync(path.join(root, 'docs/SHARED_DATA_DEPLOYMENT.md'), 'SYNTHETIC release log\n')
+  writeFileSync(path.join(root, 'docs/SHARED_DATA_DEPLOYMENT.md'), '# SYNTHETIC deployment log\n\n## Deployment - 2026-01-01 (older synthetic entry)\n\nSYNTHETIC release log\n')
   for (const file of migrationNames) writeFileSync(path.join(root, 'cloudflare/migrations', file), '-- SYNTHETIC\n')
-  const pnpm = path.join(root, 'pnpm.cjs')
+  writeFileSync(path.join(root, 'pnpm.cjs'), '')
+  const pnpm = realpathSync(path.join(root, 'pnpm.cjs'))
   const wrangler = path.join(root, 'wrangler.js')
-  writeFileSync(pnpm, '')
   writeFileSync(wrangler, '')
   const state = { head: commit, status: '', ...overrides }
   const spawn = vi.fn((command, args, options) => {
@@ -47,6 +47,7 @@ function harness(overrides = {}) {
     if (args[1] === 'deploy') {
       const isApp = args.includes('cloudflare/wrangler.jsonc')
       const target = isApp ? 'app' : 'integrations'
+      if (isApp && state.changeHeadDuringApp) state.head = 'b'.repeat(40)
       if (state.omitReceipt !== target) {
         writeFileSync(options.env.WRANGLER_OUTPUT_FILE_PATH, JSON.stringify({ type: 'wrangler-session', version: 1 }) + '\n' + JSON.stringify({
           type: 'deploy', worker_name: isApp ? 'inventory-ops-production' : 'inventory-flow-integrations',
@@ -58,7 +59,7 @@ function harness(overrides = {}) {
     throw new Error('Unexpected mocked command')
   })
   const log = vi.fn()
-  return { root, pnpm, spawn, log, run: args => runRelease(args, { root, spawn, env: { npm_execpath: pnpm }, wranglerEntry: wrangler, log }),
+  return { root, pnpm, spawn, log, run: (args, env = { npm_execpath: pnpm }) => runRelease(args, { root, spawn, env, wranglerEntry: wrangler, log }),
     receipt: () => JSON.parse(readFileSync(path.join(root, 'test-results', readdirSync(path.join(root, 'test-results'))[0], 'release.json'), 'utf8')) }
 }
 
@@ -82,7 +83,12 @@ describe('release runner boundaries', () => {
     expect(result.workers.integrations.versionId).toBe(integrationVersion)
     expect(h.receipt().status).toBe('deployed')
     expect(JSON.parse(readFileSync(path.join(h.root, 'dist/build.json'), 'utf8'))).toEqual({ commit, tag: 'aaaaaaa', dirty: false })
-    expect(readFileSync(path.join(h.root, 'docs/SHARED_DATA_DEPLOYMENT.md'), 'utf8')).toContain(appVersion)
+    const deployLog = readFileSync(path.join(h.root, 'docs/SHARED_DATA_DEPLOYMENT.md'), 'utf8')
+    expect(deployLog).toContain(appVersion)
+    expect(deployLog.indexOf(appVersion)).toBeLessThan(deployLog.indexOf('older synthetic entry'))
+    expect(deployLog.startsWith('# SYNTHETIC deployment log\n\n## Deployment - ')).toBe(true)
+    expect(commands[3][1].slice(-4)).toEqual(['--config', 'cloudflare/wrangler.jsonc', '--tag', 'aaaaaaa'])
+    expect(commands[4][1].slice(-4)).toEqual(['--config', 'cloudflare/integrations.wrangler.jsonc', '--tag', 'aaaaaaa'])
   })
 
   it.each(['check', 'cloud:validate'])('stops before remote commands if %s fails', failCheck => {
@@ -139,11 +145,44 @@ describe('migration ledger and deploy receipt parsing', () => {
     expect(() => deploymentVersion(JSON.stringify({ type: 'deploy', worker_name: 'synthetic-worker', version_id: 'unknown' }), 'synthetic-worker')).toThrow(/UNVERIFIED/)
   })
 
-  it('resolves the package-manager JS entry and refuses .cmd launchers', () => {
+  it('resolves the package-manager launcher pnpm really passes, and refuses shell shims', () => {
     const h = harness()
-    expect(resolvePnpmEntry({ npm_execpath: h.pnpm })).toBe(h.pnpm)
-    expect(() => resolvePnpmEntry({ npm_execpath: h.pnpm.replace('.cjs', '.cmd') })).toThrow(/PNPM_NODE_ENTRY_REQUIRED/)
-    expect(() => resolvePnpmEntry({})).toThrow(/PNPM_NODE_ENTRY_REQUIRED/)
+    const node = '/synthetic/node'
+    expect(resolvePnpmCommand({ npm_execpath: h.pnpm }, node)).toEqual({ command: node, prefix: [h.pnpm] })
+    // Homebrew and npm-global on macOS/Linux pass an extensionless symlink to pnpm.mjs.
+    mkdirSync(path.join(h.root, 'lib/pnpm/bin'), { recursive: true })
+    writeFileSync(path.join(h.root, 'lib/pnpm/bin/pnpm.mjs'), '')
+    symlinkSync(path.join(h.root, 'lib/pnpm/bin/pnpm.mjs'), path.join(h.root, 'pnpm'))
+    expect(resolvePnpmCommand({ npm_execpath: path.join(h.root, 'pnpm') }, node)).toEqual({ command: node, prefix: [realpathSync(path.join(h.root, 'lib/pnpm/bin/pnpm.mjs'))] })
+    // The standalone installer passes a native executable, which runs directly.
+    writeFileSync(path.join(h.root, 'pnpm.exe'), '')
+    expect(resolvePnpmCommand({ npm_execpath: path.join(h.root, 'pnpm.exe') }, node)).toEqual({ command: realpathSync(path.join(h.root, 'pnpm.exe')), prefix: [] })
+    for (const refused of ['pnpm.cmd', 'pnpm.ps1', 'npm-cli.js']) {
+      writeFileSync(path.join(h.root, refused), '')
+      expect(() => resolvePnpmCommand({ npm_execpath: path.join(h.root, refused) }, node)).toThrow(/PNPM_NODE_ENTRY_REQUIRED/)
+    }
+    expect(() => resolvePnpmCommand({ npm_execpath: path.join(h.root, 'missing-pnpm.cjs') }, node)).toThrow(/PNPM_NODE_ENTRY_REQUIRED/)
+    expect(() => resolvePnpmCommand({}, node)).toThrow(/PNPM_NODE_ENTRY_REQUIRED/)
+  })
+
+  it('runs a full release through an extensionless pnpm symlink', () => {
+    const h = harness()
+    symlinkSync(h.pnpm, path.join(h.root, 'pnpm-link'))
+    h.run([], { npm_execpath: path.join(h.root, 'pnpm-link') })
+    const checks = h.spawn.mock.calls.filter(([command]) => command === process.execPath).slice(0, 2).map(([, args]) => args)
+    expect(checks).toEqual([[h.pnpm, 'check'], [h.pnpm, 'cloud:validate']])
+  })
+
+  it('stops before the second upload when the checkout changes, recording it as not attempted and keeping the first version', () => {
+    const h = harness({ changeHeadDuringApp: true })
+    let failure
+    try { h.run([]) } catch (error) { failure = error }
+    expect(failure?.message).toMatch(/^RELEASE_STOPPED: integrations was not attempted \(RELEASE_CHECKOUT_CHANGED/)
+    expect(failure?.message).toContain(`Verified prior versions: app=${appVersion}`)
+    expect(h.receipt()).toMatchObject({ status: 'stopped', workers: {
+      app: { status: 'deployed', versionId: appVersion }, integrations: { status: 'not-attempted', versionId: null },
+    } })
+    expect(h.spawn.mock.calls.filter(([, args]) => args[1] === 'deploy')).toHaveLength(1)
   })
 })
 

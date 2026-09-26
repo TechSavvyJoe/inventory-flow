@@ -1,6 +1,6 @@
 {
   "name": "maxey-inventory-flow",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "private": true,
   "packageManager": "pnpm@11.19.0",
   "engines": {
@@ -22,7 +22,7 @@
     "cloud:d1:migrate": "node scripts/block-generic-d1-migrate.mjs",
     "cloud:deploy": "node scripts/deploy-worker.mjs",
     "cloud:release": "node scripts/deploy-worker.mjs",
-    "cloud:publish-release": "node scripts/publish-cloud-release.mjs",
+    "cloud:publish-release": "node scripts/sync-cloud-release.mjs",
     "daily:run": "node scripts/run-inventory-flow-daily.mjs",
     "integrations:client": "node scripts/manage-integration-client.mjs",
     "integrations:verify": "node scripts/verify-integration-deployment.mjs",

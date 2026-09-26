@@ -35,8 +35,12 @@ function snapshot(page: Page, name: string, root = page.locator('body')) {
   // the open dialog so images belonging to the inventory list behind the
   // modal never get masked — those masks would otherwise paint over live
   // dialog content (buttons, cells) that this gate is supposed to protect.
+  // Gallery controls sit on top of the main vehicle image. Masking that image
+  // paints over the controls as well, which would let expand/count/navigation
+  // regressions escape this gate. Synthetic gallery illustrations are frozen
+  // repository assets, so leave those visible and mask other image content.
   return expect(page).toHaveScreenshot(name, {
-    mask: [root.locator('img')],
+    mask: [root.locator('img:not(.inventory-workspace-gallery img)')],
     animations: 'disabled',
     fullPage: false,
   })

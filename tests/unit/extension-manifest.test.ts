@@ -9,6 +9,8 @@ import { WORKSPACES, grantedWorkspaces, workspaceFor } from '../../extension/sid
 
 const root = resolve(__dirname, '../../extension')
 const manifest = JSON.parse(readFileSync(resolve(root, 'manifest.json'), 'utf8'))
+const app = JSON.parse(readFileSync(resolve(root, '../package.json'), 'utf8'))
+const publishedVersion = JSON.parse(readFileSync(resolve(root, '../public/downloads/companion-version.json'), 'utf8'))
 
 function pngSize(file: string) {
   const bytes = readFileSync(file)
@@ -23,6 +25,11 @@ describe('Deal Desk extension manifest', () => {
     expect(existsSync(resolve(root, manifest.background.service_worker))).toBe(true)
     expect(manifest.action.default_popup).toBeUndefined()
     expect(readFileSync(resolve(root, manifest.background.service_worker), 'utf8')).toContain('openPanelOnActionClick: true')
+  })
+
+  it('publishes one matching app, manifest, and update-notice version', () => {
+    expect(manifest.version).toBe(app.version)
+    expect(publishedVersion).toEqual({ version: manifest.version, downloadPath: '/downloads/inventory-flow-deal-desk.zip' })
   })
 
   it('references only icon files that exist at their declared pixel size', () => {

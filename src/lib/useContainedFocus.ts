@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -37,22 +37,34 @@ export function useContainedFocus({
   onEscape,
 }: ContainedFocusOptions) {
   const onEscapeRef = useRef(onEscape)
+  const activationRef = useRef<{ container: HTMLElement; opener: HTMLElement | null } | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     onEscapeRef.current = onEscape
   }, [onEscape])
 
-  useEffect(() => {
+  // Capture before early Tab or background isolation moves focus. Retain the
+  // activation's opener through containment changes and StrictMode rehearsal.
+  useLayoutEffect(() => {
+    if (!active) {
+      activationRef.current = null
+      return
+    }
+    const container = containerRef.current
+    if (container && activationRef.current?.container !== container) {
+      activationRef.current = {
+        container,
+        opener: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+      }
+    }
+  }, [active, containerRef])
+
+  // A committed dialog can receive keyboard input before passive effects run.
+  // Install its handler before paint so a quick reopen/Escape is never lost.
+  useLayoutEffect(() => {
     if (!active) return
     const container = containerRef.current
     if (!container) return
-
-    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const focusInitial = () => {
-      const target = initialFocusRef?.current ?? focusableElements(container)[0] ?? container
-      target.focus()
-    }
-    const frame = window.requestAnimationFrame(focusInitial)
 
     // A dialog opened on top of this one owns the keyboard until it closes.
     const coveredByNestedModal = () => {
@@ -95,9 +107,22 @@ export function useContainedFocus({
     // Capture keyboard dismissal before browser controls or portal descendants
     // can stop propagation. This is especially important for WebKit dialogs.
     document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
+  }, [active, contain, containerRef])
+
+  // Focus restoration stays in the passive cleanup phase, after modal
+  // background isolation has had a chance to remove inertness.
+  useEffect(() => {
+    if (!active) return
+    const container = containerRef.current
+    if (!container) return
+    const returnFocus = activationRef.current?.opener ?? null
+    const frame = window.requestAnimationFrame(() => {
+      const target = initialFocusRef?.current ?? focusableElements(container)[0] ?? container
+      target.focus()
+    })
     return () => {
       window.cancelAnimationFrame(frame)
-      document.removeEventListener('keydown', handleKeyDown, true)
       const target = returnFocusRef?.current ?? returnFocus
       // Restore synchronously when possible, then retry after the next paint.
       // WebKit can otherwise keep focus on a removed portal while a surrounding

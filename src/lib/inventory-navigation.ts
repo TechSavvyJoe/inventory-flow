@@ -108,6 +108,7 @@ export function workspaceReturnLabel(path: string | null, fallback = 'Back to in
   if (url.pathname === '/transfers') return url.searchParams.has('id') ? 'Back to move' : 'Back to vehicle moves'
   if (url.pathname === '/attention') return 'Back to Action center'
   if (url.pathname === '/updates') return 'Back to inventory updates'
+  if (url.pathname === '/overview') return 'Back to inventory overview'
   if (url.pathname === '/manager') return 'Back to group operations'
   if (url.pathname === '/admin') return 'Back to Control center'
   return fallback

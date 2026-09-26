@@ -155,6 +155,14 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     await page.setViewportSize({ width, height: 900 })
     await page.evaluate(() => window.scrollTo(0, 0))
     await expectNoOverflow(page)
+    const freshnessTimestamp = page.locator('.freshness-chip small')
+    if (width > 880 && await freshnessTimestamp.isVisible()) {
+      const freshnessWidth = await freshnessTimestamp.evaluate(element => ({
+        client: element.clientWidth,
+        scroll: element.scrollWidth,
+      }))
+      expect(freshnessWidth.scroll, `Freshness timestamp is complete at ${width}`).toBeLessThanOrEqual(freshnessWidth.client + 1)
+    }
     const mobileList = page.locator('.if-srp-mobile-list')
     const table = page.locator('.inventory-grid-shell--desk')
     await expect.poll(async () => Number(await mobileList.isVisible()) + Number(await table.isVisible()), {
@@ -710,7 +718,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
     })
   })
   await testInfo.attach('VDP computed layout', { body: JSON.stringify(layoutEvidence, null, 2), contentType: 'application/json' })
-  await expect(dialog.getByRole('tab')).toHaveText(['Overview', 'Equipment', 'Records', 'Holds & moves', 'Activity'])
+  await expect(dialog.getByRole('tab')).toHaveText(['Overview', 'Equipment', 'Records', 'Holds & moves', 'Activity', 'Issues'])
   const metrics = dialog.locator('.vdp-focus-specs')
   await expect(metrics).toContainText('12,450 mi')
   const header = dialog.locator('.vdp-focus-header')

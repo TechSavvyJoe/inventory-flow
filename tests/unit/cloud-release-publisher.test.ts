@@ -10,7 +10,7 @@ import { OASIS_VEHICLE_TEXT_FIELDS } from '../../server/oasis-fields.mjs'
 import { resourceProvenanceSha256 } from '../../server/resource-validation.mjs'
 import { validateReleaseBundle } from '../../cloudflare/src/release-validation.mjs'
 import { datasetFromRelease } from '../../cloudflare/src/repository.mjs'
-import { accessHeaders, base64Key, cloudReleaseFrom, encryptBundle, portableMetadata, publicationEndpoint, publishEnvelope } from '../../scripts/publish-cloud-release.mjs'
+import { accessHeaders, base64Key, cloudBundleSha256, cloudReleaseFrom, encryptBundle, main as publisherMain, portableMetadata, publicationEndpoint, publishEnvelope, publisherFailureMessage } from '../../scripts/publish-cloud-release.mjs'
 
 const storeNames = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
 const encryptionKey = Buffer.alloc(32, 7)
@@ -682,6 +682,14 @@ describe('portable cloud release validation', () => {
 })
 
 describe('private release publisher', () => {
+  it('routes every advertised and compatibility executable through the guarded sync coordinator', async () => {
+    const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
+    expect(packageJson.scripts['cloud:publish-release']).toBe('node scripts/sync-cloud-release.mjs')
+    const syncMain = vi.fn().mockResolvedValue(undefined)
+    await publisherMain({ syncMain })
+    expect(syncMain).toHaveBeenCalledOnce()
+  })
+
   it('uses stable canonical content hashes with fresh encryption nonces', () => {
     const bundle = completeBundle()
     const first = encryptBundle(bundle, encryptionKey)
@@ -697,6 +705,38 @@ describe('private release publisher', () => {
     const recovered = JSON.parse(Buffer.concat([decipher.update(encrypted.subarray(0, -16)), decipher.final()]).toString())
     expect(recovered.release.dealerMailSnapshot).toEqual(bundle.release.dealerMailSnapshot)
     expect(recovered.release.vehicles).toEqual(bundle.release.vehicles)
+  })
+
+  it('keeps source and validation evidence in release identity while excluding mutable delivery bookkeeping', () => {
+    const release = structuredClone(completeBundle().release)
+    release.manifest.validation_results = {
+      public_sources_complete: true,
+      dealermail_complete: true,
+      resource_enrichment_validated: true,
+      oasis_capture_validated: true,
+      passed: true,
+    }
+    const before = cloudReleaseFrom(release)
+    const beforeHash = cloudBundleSha256(before)
+
+    Object.assign(release.manifest, {
+      release_bundle_path: '/synthetic/work/releases/release.json',
+      release_bundle_sha256: 'A'.repeat(64),
+      cloudflare_publish: { status: 'publication_outcome_unknown', reconciliation_required: true, expected_bundle_sha256: beforeHash },
+      latest_pointers_advanced: true,
+      daily_steps: [{ name: 'cloudflare_publish', status: 'publication_outcome_unknown' }],
+    })
+    const after = cloudReleaseFrom(release)
+
+    expect(cloudBundleSha256(after)).toBe(beforeHash)
+    expect(after.release.manifest).not.toHaveProperty('release_bundle_path')
+    expect(after.release.manifest).not.toHaveProperty('release_bundle_sha256')
+    expect(after.release.manifest).not.toHaveProperty('cloudflare_publish')
+    expect(after.release.manifest).not.toHaveProperty('latest_pointers_advanced')
+    expect(after.release.manifest).not.toHaveProperty('daily_steps')
+    expect(after.release.manifest.source_counts).toEqual(before.release.manifest.source_counts)
+    expect(after.release.manifest.public_change_counts).toEqual(before.release.manifest.public_change_counts)
+    expect(after.release.manifest.validation_results).toEqual(release.manifest.validation_results)
   })
 
   it('removes nested machine path prefixes but retains metadata, changes, and exact note text', () => {
@@ -742,7 +782,8 @@ describe('private release publisher', () => {
     expect(() => accessHeaders({})).toThrow(/CF_ACCESS_CLIENT_ID/)
     expect(() => accessHeaders({ CF_ACCESS_CLIENT_ID: 'synthetic' })).toThrow(/CF_ACCESS_CLIENT_SECRET/)
     const fetchImpl = vi.fn()
-    await expect(publishEnvelope({ reportDate: '2026-08-30' }, { environment: { ...environment, CF_ACCESS_CLIENT_SECRET: '' }, fetchImpl })).rejects.toThrow()
+    await expect(publishEnvelope({ reportDate: '2026-08-30' }, { environment: { ...environment, CF_ACCESS_CLIENT_SECRET: '' }, fetchImpl }))
+      .rejects.toThrow(/CF_ACCESS_CLIENT_SECRET/)
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
@@ -752,8 +793,35 @@ describe('private release publisher', () => {
     expect(fetchImpl.mock.calls[0][1]).toMatchObject({ redirect: 'error', method: 'POST' })
     expect(fetchImpl.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal)
     fetchImpl.mockResolvedValue(new Response(JSON.stringify({ status: 'published', reportDate: '2026-08-29' })))
-    await expect(publishEnvelope({ reportDate: '2026-08-30' }, { environment, fetchImpl })).rejects.toThrow(/did not confirm/)
+    await expect(publishEnvelope({ reportDate: '2026-08-30' }, { environment, fetchImpl })).rejects.toThrow('CLOUD_PUBLICATION_OUTCOME_UNKNOWN')
     fetchImpl.mockResolvedValue(new Response(JSON.stringify({ status: 'okay', reportDate: '2026-08-30' })))
-    await expect(publishEnvelope({ reportDate: '2026-08-30' }, { environment, fetchImpl })).rejects.toThrow(/did not confirm/)
+    await expect(publishEnvelope({ reportDate: '2026-08-30' }, { environment, fetchImpl })).rejects.toThrow('CLOUD_PUBLICATION_OUTCOME_UNKNOWN')
+    fetchImpl.mockResolvedValue(Response.json({ code: 'OLDER_RELEASE_REJECTED' }, { status: 409 }))
+    await expect(publishEnvelope({ reportDate: '2026-08-30' }, { environment, fetchImpl })).rejects.toThrow('Cloud release publish failed (409: OLDER_RELEASE_REJECTED)')
+  })
+
+  it.each([
+    ['lost response', async () => { throw new TypeError('synthetic connection reset') }],
+    ['malformed successful response', async () => new Response('{', { status: 201 })],
+    ['malformed 500 response', async () => new Response('{', { status: 500 })],
+    ['unstructured JSON 500 response', async () => Response.json({ message: 'truncated after commit' }, { status: 500 })],
+    ['unrecognized structured rejection', async () => Response.json({ code: 'RELEASE_REJECTED' }, { status: 409 })],
+    ['post-write D1 conflict response', async () => Response.json({ code: 'PUBLISH_CONFLICT_RETRY' }, { status: 409 })],
+    ['internal error after possible commit', async () => Response.json({ code: 'INTERNAL_ERROR' }, { status: 500 })],
+  ])('preserves the exact candidate hash when the POST has an unknown outcome: %s', async (_label, fetchImpl) => {
+    const bundleSha256 = 'A'.repeat(64)
+    let failure
+    try {
+      await publishEnvelope({ reportDate: '2026-08-30', bundleSha256 }, { environment, fetchImpl })
+    } catch (error) {
+      failure = error
+    }
+
+    expect(failure).toMatchObject({
+      message: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+      bundleSha256: bundleSha256.toLowerCase(),
+    })
+    expect(publisherFailureMessage(failure)).toContain(`candidate_bundle_sha256=${bundleSha256.toLowerCase()}`)
+    expect(publisherFailureMessage(failure)).not.toContain('was not published')
   })
 })

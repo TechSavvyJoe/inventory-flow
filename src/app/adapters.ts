@@ -659,14 +659,14 @@ export function toInventoryVehicle(
       isListed: isListed(vehicle.publicListing),
       websiteStatus: vehicle.websiteStatus,
       listingUrl: vehicle.listingUrl || null,
-      updatedAt: data.meta.completedAt,
+      updatedAt: data.meta.publicCapturedAt || data.meta.completedAt,
     },
     dealerOn: {
       dataState: publicState,
       inStock: vehicle.dealerOn.inStock,
       inTransit: vehicle.dealerOn.inTransit,
       inProduction: vehicle.dealerOn.inProduction,
-      updatedAt: data.meta.completedAt,
+      updatedAt: data.meta.publicCapturedAt || data.meta.completedAt,
     },
     managerDisposition: vehicle.managerDisposition
       ? {
@@ -701,7 +701,7 @@ export function toInventoryVehicle(
       canViewEvidence: vehicle.hold.canViewEvidence === true,
       canManageHold: vehicle.hold.canManage === true,
       redactionReason: vehicle.hold.canViewEvidence === true ? null : 'Exact DealerMail evidence is restricted for this role.',
-      updatedAt: data.meta.completedAt,
+      updatedAt: data.meta.dealerMailCapturedAt || data.meta.completedAt,
     },
     location: {
       homeStore: home,

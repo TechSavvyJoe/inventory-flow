@@ -7,6 +7,7 @@ const ROUTE_LABELS: ReadonlyArray<readonly [prefix: string, label: string]> = [
   ['/attention', 'action center'],
   ['/updates', 'inventory updates'],
   ['/service', 'service status'],
+  ['/overview', 'inventory overview'],
   ['/manager', 'manager workspace'],
 ]
 

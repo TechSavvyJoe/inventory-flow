@@ -32,7 +32,7 @@ run it, against authenticated dealer sources, over CDP.
 | `check-design-system.mjs` | local/CI (`check:design-system`) | The design-system ratchet: sub-12px text and raw-color counts must not regress. |
 | `check-repo-safety.mjs` | local/CI (`check:repo-safety`) | The repository safety gate documented above. |
 | `configure-integration-secrets.mjs` | local, owner-run | Configures the integrations Worker's Wrangler secrets through the protected secret-store wrapper. |
-| `deploy-worker.mjs` | local, owner-run (`cloud:deploy`, `integrations:deploy`) | Cross-platform `wrangler deploy` wrapper that tags every version. |
+| `deploy-worker.mjs` | local, owner-run (`cloud:release`; `cloud:deploy` and `integrations:deploy` are aliases) | Paired release of both Workers from `origin/main`: runs `pnpm check` and `pnpm cloud:validate`, verifies the D1 ledger read-only, deploys with one tag, and records version receipts. See [Deploy checklist](DEPLOY_CHECKLIST.md). |
 | `dryrun_manager_disposition_check.mjs` | Windows host | Dry-run oracle: runs the manager-disposition overlay through the real importer/validators without publishing. |
 | `dryrun_manifest_check.mjs` | Windows host | Dry-run oracle: verifies a run-status manifest passes the real gate functions before the scheduled publish attempts it. |
 | `dryrun_resource_enrichment_check.mjs` | Windows host | Dry-run oracle: exercises the real resource-enrichment validators end-to-end on a candidate file. |
@@ -45,14 +45,14 @@ run it, against authenticated dealer sources, over CDP.
 | `perplexity-inventory-mcp.mjs` | local (`integrations:perplexity-mcp`) | Runs the Perplexity inventory MCP bridge against the local integration credential file. |
 | `prepare-cloud-assets.mjs` | local/Windows host | Hashes and stages `dist/` assets for the cloud release's asset store. |
 | `preview-extension.mjs` | local (`extension:preview`) | Serves the side panel as a plain page for design review and screenshots. |
-| `publish-cloud-release.mjs` | local/Windows host (`cloud:publish-release`) | Builds, validates, encrypts, and publishes the daily release bundle to the private Worker. |
+| `publish-cloud-release.mjs` | internal library | Builds, validates, and encrypts the daily release bundle. Its compatibility executable delegates to the guarded sync coordinator and never publishes directly. |
 | `publish-invoice-documents.mjs` | Windows host | Uploads exact-VIN Ford/Lincoln invoice PDFs to the app's private R2 store. |
 | `publish-vauto-documents.mjs` | Windows host (`daily-cloud-publish.ps1`) | Stages the VIN-bound, hash-checked vAuto equipment PDFs from `work\vauto-documents\` in the app's private R2 store before a release publishes; posts only to the app's own Worker. |
 | `report-dead-css.mjs` | local (`report:dead-css`) | Read-only report of CSS selectors under `src/` that need a class no source file renders; judges each selector of a rule separately. |
 | `run-inventory-flow-daily.mjs` | Windows host (`daily:run`) | The daily pipeline orchestrator invoked by the Windows scheduled publish task. |
 | `run-recovery-drill.mjs` | local/CI | Exercises the real D1 recovery/decrypt paths against a synthetic release bundle; `pnpm cloud:validate`'s companion in CI. |
 | `start-synthetic-demo.mjs` | local/CI (`dev:demo`, `start:demo`, Playwright `webServer`) | The synthetic-demo-only Node server; refuses a file-backed database outside demo identity. |
-| `sync-cloud-release.mjs` | Windows host | Orchestrates build/validate/encrypt/publish/re-verify for the scheduled daily publish task. |
+| `sync-cloud-release.mjs` | Windows host (`cloud:publish-release`) | Holds the publication lock and orchestrates build/validate/encrypt, durable pre-POST candidate recording, publish, re-verification, and the verified receipt. |
 | `upload-cloud-assets.mjs` | Windows host/local | Uploads the assets `prepare-cloud-assets.mjs` staged to the cloud release's asset store. |
 | `validate-cloud-release.mjs` | local/CI (`cloud:validate`) | Offline Cloudflare release gate; opens only an in-memory database, never a live one. |
 | `vauto-factory-equipment.mjs` | Windows host | vAuto Factory Equipment capture over the read-only `WindowStickers` JSON endpoint; no appraisal form involved. |
@@ -70,6 +70,7 @@ not entry points run on their own.
 | 07:30 | Public inventory + resource enrichment, Vehicle Resources sheet, scripted DealerMail deep capture + snapshot build/finalize, scripted Ford OASIS and invoice capture, workbook merge/tidy/validate, complete the manifest, verify (never run) the publish, vAuto backup, message Joe | Claude scheduled task `Bob Maxey Used Inventory - Daily Report`, prompt `outputs\bob_maxey_task_prompt_2026-09-14.txt` | Claude Cowork |
 | 08:45, 09:45, 10:45 | Idempotent recovery: follow the same 09/14 prompt only when today's verified receipt is absent; defer to an active writer | Codex heartbeat `Daily Bob Maxey Used Inventory Report` | Codex recovery |
 | 09:15, then every 30 min to 15:15 | Build/reuse resource cache, publish to Cloudflare, verify live | Windows task `BobMaxey-InventoryFlow-DailyPublish` | Task Scheduler |
+| 09:25, then every 30 min to 19:25 | After the morning release is verified, archive the prior DealerMail revision, refresh current holds/comments/alerts, rebuild and validate the release, and republish through the same protected publisher | Windows task `BobMaxey-InventoryFlow-IntradayHolds` | Task Scheduler |
 | every 15 min, all day | Relaunch the isolated automation **Comet** if it is not running | Windows task `BobMaxey-AutomationBrowser` | Task Scheduler |
 | every 10 min, all day | Keep DealerMail, FMCDealer/OASIS, Ford invoices and vAuto sessions warm; recreate missing read-only service tabs and report each service's real failure signature | Windows task `BobMaxey-DealerMailKeeper` | Task Scheduler |
 
@@ -80,9 +81,117 @@ decrypt). The Claude task only *verifies* the publish by reading the receipt and
 the Windows task's log, and may `Start-ScheduledTask` it once if the manifest
 completed after the last scheduled slot.
 
+The intraday hold task is deliberately narrower than the morning run. It does not
+recapture OASIS, Ford service history, invoices, stickers, vAuto, warranty, or
+public inventory, and it does not re-upload saved invoice or vAuto PDF documents.
+It validates the existing resource bundle before every publication. It requires
+the same-date `published_and_verified` receipt and proves that the reused public
+snapshot, current canonical DealerMail snapshot, resource-enrichment file, and
+manager-disposition source and sanitized projection still match that receipt
+before any file is archived or replaced. Only a newly captured DealerMail hash
+may then change. It
+archives each prior DealerMail revision under
+`work\dealermail-history\intraday\YYYY-MM-DD\`. The candidate manifest, release
+bundle, and DealerMail files are transactional: a capture, validation, or
+prepublication failure restores the last verified copies. A new receipt is
+never rolled back merely because a later integration, pointer, document, or
+archive follow-up failed.
+
+The daily publisher and intraday orchestrator hold the same
+`work\app-feed-status\.publication.lock` for their entire pipeline. A child
+publisher may reuse the lock only with the exact inherited random owner ID, and
+the cloud-sync process rechecks every expected source hash immediately before
+publication. An overlapping intraday slot records `waiting_for_pipeline_writer`
+and lets the next scheduled slot retry; it never starts a second writer.
+
+The saved release artifact and encrypted POST share one immutable manifest
+projection. It retains source hashes, counts, change evidence, warnings, and QA
+validation, while excluding local release-path/hash fields, delivery receipts,
+latest-pointer state, and mutable pipeline-step logs. Those excluded fields may
+be recorded after a publish attempt without changing the candidate bundle hash.
+After a POST, only an allowlisted structured rejection known to occur before a
+commit is treated as definite; malformed, internal, or unrecognized responses
+require exact-hash reconciliation.
+
+After all local request preflight and before the first POST network call, the
+cloud-sync process creates and flushes
+`work\app-feed-status\publication-reconciliation.json` at its final path, then
+reads its strict schema back. It never removes a failed or torn write, so even
+malformed state blocks. This exact-candidate attempt marker binds the report
+date, POST bundle SHA-256, all five source hashes, daily or hold-refresh mode,
+the `CLOUD_PUBLICATION_ATTEMPT_IN_PROGRESS` guard reason, and recorded time.
+It remains in place if the process exits, the POST outcome is unknown, exact
+verification fails, or the verified receipt cannot be durably recorded. Only a
+definite allowlisted pre-commit rejection, or exact protected verification plus
+a flushed/read-back receipt, archives it. It is cross-date state:
+both the 7:30 ordinary runner and the standalone 9:15 publisher check it while
+holding the shared publication lock and before browser startup, source capture,
+secret loading, cache work, or enrichment. A malformed or unreadable marker
+also blocks. Neither a scheduled retry nor `-Force` bypasses it.
+
+The owner-authorized exact-hash recovery command is:
+
+```powershell
+pwsh -NoProfile -File scripts/daily-cloud-publish.ps1 -ReconcilePending -WorkspaceRoot <reporting-workspace>
+```
+
+This recovery path does not POST or rebuild inventory data. Under the same
+publication lock and DPAPI identity, it reconstructs the retained dated candidate, proves
+its bundle and five source hashes against the marker, and requires the protected
+`/internal/status` and `/internal/readiness` responses to report that exact hash
+and validated counts. Only then does it write/confirm the verified receipt,
+move the marker intact to `work\app-feed-status\reconciled\`, and run the normal
+idempotent follow-ups. Those follow-ups can upload already staged, app-owned
+invoice documents; they do not recapture a source or publish another release.
+If the local candidate changed, the cloud reports a
+different hash, the receipt conflicts, or any check is unavailable, recovery
+fails and leaves the marker in place. Do not delete or edit the marker to resume
+the schedule; investigate the retained candidate and live protected state.
+
+The separate intraday monitor may start the existing hold-refresh task once for
+a newly observed ordinary task or receipt failure. If the cross-date marker,
+hold status, or dated run manifest says reconciliation is required or the
+publication outcome is unknown, the monitor never starts that task. Any entry
+at the marker path blocks, including malformed state; the manifest remains
+authoritative when the later status write is missing or unreadable. On its
+first observation the monitor writes one active and historical alert containing
+the exact candidate bundle SHA-256 and the guarded recovery action; identical
+later observations are deduplicated.
+
+The intraday writer also enforces this stop before reading the prior receipt or
+starting any capture. A later 30-minute scheduled invocation returns attention
+required and leaves the reconciliation status, candidate hashes, and manifest
+unchanged until an operator completes the exact-hash reconciliation.
+
+`work\hold-refresh-status\{date}.json` uses these operator-facing states:
+
+- `intraday_holds_published_and_verified`: the exact success contract. Its
+  `receipt` object contains `bundleSha256`, `verifiedAt`, and
+  `dealerMailSha256`, which link it to the corresponding
+  `work\app-feed-status\{date}.json` `published_and_verified` receipt.
+- `intraday_holds_published_followups_pending`: the new hold release is already
+  live and verified, but a post-publication follow-up failed. Retry the existing
+  Windows task; do not describe the prior cloud release as still live.
+- `intraday_holds_publication_outcome_unknown`: the publish request was accepted
+  or may have completed, but two exact-hash status/readiness checks or the local
+  receipt handoff could not prove the final cloud state. The locally validated
+  candidate remains canonical and the status records its `bundleSha256` and
+  `dealerMailSha256`. Do not start another capture or publication. Compare that
+  exact bundle hash with the protected `/internal/status` and
+  `/internal/readiness` responses through the existing owner-authorized
+  verification procedure. The guarded command finishes the receipt/follow-ups
+  only when both protected responses prove that exact candidate; a different
+  live hash remains blocked for investigation and never authorizes marker deletion.
+- `publish_failed_last_verified_release_preserved` or
+  `intraday_refresh_failed_last_verified_release_preserved`: no matching new
+  receipt was written and the canonical local files were restored.
+- `failed_receipt_bound_source_validation`: a supposedly unchanged public,
+  resource, or manager input no longer matches the verified receipt; operator
+  review is required rather than silently broadening the refresh.
+
 ## Windows scheduled tasks
 
-All three are registered for the automation account with logon type **Interactive**: they
+All scheduled tasks are registered for the automation account with logon type **Interactive**: they
 run while Joe is logged on (a locked screen is fine; a full log-off or a reboot
 to the login screen is not). To run logged-off, open Task Scheduler, tick
 *Run whether user is logged on or not*, and enter the Windows password. DPAPI
@@ -131,7 +240,17 @@ Error codes the log can end with, and what they mean:
 | `SOURCE_NOT_CURRENT` | Day's public+DealerMail release not complete yet | Usually, on a later retry |
 | `PHOTO_CACHE_FAILED` | Fresh VDP extraction failed | Retry; check dealer sites |
 | `PHOTO_CACHE_REUSE_FAILED` | Embedded resources exist but failed validation; refused to overwrite | **No** - needs a person |
-| `CLOUD_PUBLISH_FAILED` | `sync-cloud-release.mjs` exited non-zero; the real code is in the log line above it (`WRITER_LOCKED`, `PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW`, `CLOUD_*_MISMATCH`, `CLOUD_NOT_READY`) | Depends on the inner code |
+| `CLOUD_PUBLISH_FAILED` | `sync-cloud-release.mjs` exited non-zero; the real code is in the log line above it (`PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW`, `HOLD_REFRESH_SOURCE_BINDING_MISMATCH`, `CLOUD_*_MISMATCH`, `CLOUD_NOT_READY`) | Depends on the inner code |
+| `HOLD_REFRESH_SOURCE_BINDINGS_REQUIRED` | A hold-only publish was invoked outside the receipt-bound intraday orchestrator. Nothing was published. | Run the existing intraday scheduled task instead |
+| `HOLD_REFRESH_SOURCE_BINDING_MISMATCH` | One of the public, DealerMail, resource, or manager hashes changed after the intraday candidate was built. Nothing was published. | No - inspect the named source lane |
+| `CLOUD_PUBLICATION_ATTEMPT_IN_PROGRESS` | The exact candidate guard was durably installed before POST. If it remains after the process exits, the process may have stopped before, during, or after the request; do not infer that nothing was published. | No - reconcile the recorded candidate hash before any new capture or publish |
+| `CLOUD_PUBLICATION_OUTCOME_UNKNOWN` | The release POST was attempted and may have been accepted, but its response was lost/malformed or two exact candidate-hash status/readiness checks did not establish the final cloud state. The validated candidate and its exact POST-envelope hash are retained. | No - reconcile the recorded candidate hash before any new capture or publish |
+| `CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED` | The exact candidate was verified in cloud, but its local app-feed receipt could not be written. The orchestrator treats this as reconciliation-required rather than rolling back or claiming the prior release stayed live. | No - repair local receipt storage and reconcile the recorded candidate hash |
+| `PUBLICATION_RECONCILIATION_REQUIRED` | A strict durable marker retains an unresolved candidate from this or an earlier report date. Ordinary and forced runs stop before capture, secrets, rebuild, or publish. | No - run the exact-hash recovery command above under the automation account |
+| `PUBLICATION_RECONCILIATION_STATE_INVALID` | The durable marker exists but is malformed, unreadable, a reparse point, or missing required hash evidence. | No - preserve it for investigation; do not delete or overwrite it to force a run |
+| `PUBLICATION_RECONCILIATION_NOT_VERIFIED` | The protected cloud status/readiness responses did not prove the exact retained candidate and counts, so recovery did not clear the marker. | No - investigate the retained candidate and protected live state |
+| `CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED` | The new hold release and matching receipt are already published, but integration verification, latest-pointer advancement, or archiving failed. The candidate remains canonical. | Retry the existing intraday task; do not recapture other sources |
+| `POST_PUBLISH_STATE_RECORD_FAILED` | Cloud publication and publisher follow-ups completed, but the orchestrator could not finish its local manifest/status recording. The published candidate remains canonical. | Retry the existing intraday task; inspect local disk/status-file errors if it persists |
 | `PUBLICATION_NOT_VERIFIED` | The bundle did not pass the stricter Cloudflare validator, so nothing verified. Real causes seen: (1) the manifest is not `complete: true`, or (2) `dealermail_snapshot_path` points at the `-deep.json` instead of the `-deep-cloud-ready.json` - i.e. `finalize_cloud_snapshot.mjs` was skipped, so every row is missing the dual 22-cell arrays (`rawCellInnerText` / `rawCellControlValues`) and the `excludeActiveHoldsValidationSet`. 09/12/2026: 10:43 and 10:45 failed this way; 10:47 succeeded two minutes after finalize ran | Yes, once finalize has run and the manifest names the cloud-ready file |
 | `INTEGRATION_VERIFICATION_FAILED` | The main release is published, but the private REST API or protected OAuth/MCP discovery did not return the same hash, total and four store counts. The publisher preserves the verified release and retries this read-only check later. | Often; deploy the current integration Worker if a new validated release schema was added |
 | `INTEGRATION_CREDENTIAL_MISSING` | The owner-only local development verification key is missing, so the task cannot prove an authenticated API read. The release and cloud access controls are not weakened. | No - restore or replace the scoped key through the owner provisioning workflow |

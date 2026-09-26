@@ -12,6 +12,8 @@
 param(
   [string]$ReportDate,
   [switch]$SkipPhotoCache,
+  [switch]$HoldRefresh,
+  [switch]$ReconcilePending,
   [switch]$Force,
   [string]$WorkspaceRoot
 )
@@ -46,6 +48,9 @@ if (-not (Test-Path -LiteralPath $PythonExecutable)) {
   $PythonExecutable = (Get-Command python -ErrorAction Stop).Source
 }
 $LogDir        = Join-Path $WorkspaceRoot 'work\app-feed-status'
+$PublicationLockPath = Join-Path $LogDir '.publication.lock'
+$PublicationReconciliationPath = Join-Path $LogDir 'publication-reconciliation.json'
+$PublicationLockOwnerEnvironment = 'INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID'
 $SecretPath    = Join-Path $AppRoot 'runtime\cloud-secrets\publisher.dpapi'
 $IntegrationExpectedPath = Join-Path $AppRoot 'runtime\integration-expected-release.json'
 $IntegrationCredentialPath = Join-Path $AppRoot 'runtime\integration-credentials\joe-app-development.json'
@@ -58,6 +63,75 @@ function Write-Log {
   $line = "{0} [{1}] {2}" -f (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssK'), $Level, $Message
   Add-Content -Path $LogPath -Value $line -Encoding UTF8
   Write-Output $line
+}
+
+function Enter-PublicationPipelineLock {
+  $previousOwner = [System.Environment]::GetEnvironmentVariable($PublicationLockOwnerEnvironment)
+  if (-not [string]::IsNullOrWhiteSpace($previousOwner)) {
+    if (-not (Test-Path -LiteralPath $PublicationLockPath -PathType Leaf)) {
+      throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+    }
+    $item = Get-Item -LiteralPath $PublicationLockPath -Force
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+    }
+    try { $recorded = Get-Content -LiteralPath $PublicationLockPath -Raw | ConvertFrom-Json }
+    catch { throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW' }
+    if ([string]$recorded.ownerId -cne $previousOwner) {
+      throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+    }
+    return [pscustomobject]@{ Owns = $false; Content = $null; PreviousOwner = $previousOwner }
+  }
+
+  $ownerId = [Guid]::NewGuid().ToString()
+  $content = [ordered]@{
+    pid = $PID
+    startedAt = [DateTimeOffset]::UtcNow.ToString('o')
+    ownerId = $ownerId
+  } | ConvertTo-Json -Compress
+  try {
+    $stream = [System.IO.File]::Open(
+      $PublicationLockPath,
+      [System.IO.FileMode]::CreateNew,
+      [System.IO.FileAccess]::Write,
+      [System.IO.FileShare]::Read
+    )
+    try {
+      $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($content)
+      $stream.Write($bytes, 0, $bytes.Length)
+      $stream.Flush($true)
+    } finally {
+      $stream.Dispose()
+    }
+  } catch [System.IO.IOException] {
+    throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+  }
+  [System.Environment]::SetEnvironmentVariable($PublicationLockOwnerEnvironment, $ownerId)
+  return [pscustomobject]@{ Owns = $true; Content = $content; PreviousOwner = $null }
+}
+
+function Exit-PublicationPipelineLock {
+  param($Lock)
+  if (-not $Lock) { return }
+  try {
+    if ($Lock.Owns) {
+      if (-not (Test-Path -LiteralPath $PublicationLockPath -PathType Leaf)) {
+        throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+      }
+      $item = Get-Item -LiteralPath $PublicationLockPath -Force
+      $current = Get-Content -LiteralPath $PublicationLockPath -Raw
+      if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or $current -cne $Lock.Content) {
+        throw 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+      }
+      Remove-Item -LiteralPath $PublicationLockPath -Force
+    }
+  } finally {
+    if ($null -eq $Lock.PreviousOwner) {
+      Remove-Item -LiteralPath "Env:$PublicationLockOwnerEnvironment" -ErrorAction SilentlyContinue
+    } else {
+      [System.Environment]::SetEnvironmentVariable($PublicationLockOwnerEnvironment, [string]$Lock.PreviousOwner)
+    }
+  }
 }
 
 # Windows PowerShell 5.1 can promote a native program's stderr stream to a
@@ -83,6 +157,50 @@ function Invoke-NativeCapture {
   [pscustomobject]@{
     Output   = [string]$output
     ExitCode = [int]$nativeExitCode
+  }
+}
+
+function Get-PendingPublicationReconciliation {
+  if (-not (Test-Path -LiteralPath $PublicationReconciliationPath)) { return $null }
+  try {
+    $item = Get-Item -LiteralPath $PublicationReconciliationPath -Force
+    if ($item.PSIsContainer -or ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+      throw 'invalid marker type'
+    }
+    $state = Get-Content -LiteralPath $PublicationReconciliationPath -Raw | ConvertFrom-Json
+    $parsedRecordedAt = [DateTimeOffset]::MinValue
+    $recordedAtValid = [DateTimeOffset]::TryParse([string]$state.recordedAt, [ref]$parsedRecordedAt)
+    $expectedStateFields = @('candidate', 'failureCode', 'reconciliationRequired', 'recordedAt', 'reportDate', 'schemaVersion', 'status')
+    $actualStateFields = @($state.PSObject.Properties.Name | Sort-Object)
+    if ((Compare-Object $expectedStateFields $actualStateFields) -or
+        $state.schemaVersion -ne 1 -or
+        $state.status -cne 'publication_reconciliation_required' -or
+        $state.reconciliationRequired -ne $true -or
+        [string]$state.reportDate -notmatch '^\d{4}-\d{2}-\d{2}$' -or
+        -not $recordedAtValid -or
+        [string]$state.failureCode -notin @('CLOUD_PUBLICATION_ATTEMPT_IN_PROGRESS', 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN', 'CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED')) {
+      throw 'invalid marker schema'
+    }
+    $expectedCandidateFields = @('bundleSha256', 'holdRefresh', 'sourceHashes')
+    $actualCandidateFields = @($state.candidate.PSObject.Properties.Name | Sort-Object)
+    if ((Compare-Object $expectedCandidateFields $actualCandidateFields) -or
+        [string]$state.candidate.bundleSha256 -notmatch '^[a-fA-F0-9]{64}$' -or
+        $state.candidate.holdRefresh -isnot [bool]) {
+      throw 'invalid candidate schema'
+    }
+    $sourceFields = @($state.candidate.sourceHashes.PSObject.Properties.Name | Sort-Object)
+    $expectedSourceFields = @('dealerMail', 'managerDisposition', 'managerDispositionBinding', 'public', 'resources')
+    if (Compare-Object $expectedSourceFields $sourceFields) { throw 'invalid source-hash schema' }
+    foreach ($required in @('public', 'dealerMail', 'resources')) {
+      if ([string]$state.candidate.sourceHashes.$required -notmatch '^[a-fA-F0-9]{64}$') { throw 'invalid required source hash' }
+    }
+    foreach ($optional in @('managerDisposition', 'managerDispositionBinding')) {
+      $value = $state.candidate.sourceHashes.$optional
+      if ($null -ne $value -and [string]$value -notmatch '^[a-fA-F0-9]{64}$') { throw 'invalid optional source hash' }
+    }
+    return $state
+  } catch {
+    throw 'PUBLICATION_RECONCILIATION_STATE_INVALID'
   }
 }
 
@@ -231,15 +349,20 @@ function Complete-VerifiedPublicationState {
 function Complete-PublicationFollowups {
   param(
     [Parameter(Mandatory)]$Receipt,
-    [Parameter(Mandatory)][string]$Date
+    [Parameter(Mandatory)][string]$Date,
+    [switch]$ReuseDocuments
   )
 
   # The inventory receipt is written before document uploads. Retry these
   # idempotent uploads even when the inventory release is already verified.
-  Write-Log 'invoice documents: publishing private saved copies'
-  $invoicePublishRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\publish-invoice-documents.mjs', $Date)
-  if ($invoicePublishRun.ExitCode -ne 0) { Write-Log "invoice documents FAILED: $($invoicePublishRun.Output.Trim())" 'ERROR'; throw 'INVOICE_DOCUMENT_PUBLISH_FAILED' }
-  Write-Log "invoice documents: $($invoicePublishRun.Output.Trim())"
+  if (-not $ReuseDocuments) {
+    Write-Log 'invoice documents: publishing private saved copies'
+    $invoicePublishRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\publish-invoice-documents.mjs', $Date)
+    if ($invoicePublishRun.ExitCode -ne 0) { Write-Log "invoice documents FAILED: $($invoicePublishRun.Output.Trim())" 'ERROR'; throw 'INVOICE_DOCUMENT_PUBLISH_FAILED' }
+    Write-Log "invoice documents: $($invoicePublishRun.Output.Trim())"
+  } else {
+    Write-Log 'invoice documents: reused for hold-only refresh'
+  }
   Update-IntegrationExpectedMetadata -Receipt $Receipt
   Assert-IntegrationDeployment
   Complete-VerifiedPublicationState -Receipt $Receipt -Date $Date
@@ -252,12 +375,31 @@ function Complete-PublicationFollowups {
 $exitCode = 0
 $originalEnv = @{}
 $secretNames = @()
+$pipelineLock = $null
+$verifiedPublicationAvailable = $false
 
 try {
+  $pipelineLock = Enter-PublicationPipelineLock
   Write-Log "=== daily-cloud-publish start (host=$env:COMPUTERNAME user=$env:USERNAME) ==="
 
-  $date = Resolve-ReportDate
+  # sync-cloud-release.mjs installs this cross-date exact-candidate marker
+  # before its first POST network call. Check it before loading secrets,
+  # rebuilding enrichment, or honoring -Force so no scheduled lane can create
+  # a second candidate while the first attempt still needs reconciliation.
+  $pendingReconciliation = Get-PendingPublicationReconciliation
+  if ($pendingReconciliation -and -not $ReconcilePending) {
+    throw ("PUBLICATION_RECONCILIATION_REQUIRED candidate_bundle_sha256={0}" -f ([string]$pendingReconciliation.candidate.bundleSha256).ToLowerInvariant())
+  }
+  if ($ReconcilePending -and -not $pendingReconciliation) {
+    throw 'PUBLICATION_RECONCILIATION_NOT_FOUND'
+  }
+
+  $date = if ($ReconcilePending) { [string]$pendingReconciliation.reportDate } else { Resolve-ReportDate }
   Write-Log "report date: $date"
+
+  if ($HoldRefresh -and [string]::IsNullOrWhiteSpace($env:INVENTORY_OPS_EXPECTED_SOURCE_HASHES_JSON)) {
+    throw 'HOLD_REFRESH_SOURCE_BINDINGS_REQUIRED'
+  }
 
   if (-not (Test-Path $SecretPath)) { throw 'SECRET_STORE_MISSING' }
 
@@ -276,6 +418,27 @@ try {
   }
   Write-Log ("secrets loaded: {0} ({1})" -f $secretNames.Count, ($secretNames -join ', '))
 
+  if ($ReconcilePending) {
+    Push-Location $AppRoot
+    try {
+      Write-Log ("publication reconciliation: verifying exact retained candidate {0}" -f ([string]$pendingReconciliation.candidate.bundleSha256).ToLowerInvariant())
+      $reconcileRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\sync-cloud-release.mjs', '--reconcile-pending')
+      if ($reconcileRun.ExitCode -ne 0 -or $reconcileRun.Output -notmatch '"publication"\s*:\s*"reconciled_exact_candidate"') {
+        Write-Log "publication reconciliation FAILED: $($reconcileRun.Output.Trim())" 'ERROR'
+        throw 'PUBLICATION_RECONCILIATION_NOT_VERIFIED'
+      }
+      $receiptPath = Join-Path $LogDir ("{0}.json" -f ([string]$pendingReconciliation.reportDate))
+      $verifiedReceipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
+      if ([string]$verifiedReceipt.bundleSha256 -cne ([string]$pendingReconciliation.candidate.bundleSha256).ToLowerInvariant()) {
+        throw 'PUBLICATION_RECONCILIATION_RECEIPT_MISMATCH'
+      }
+      $verifiedPublicationAvailable = $true
+      Complete-PublicationFollowups -Receipt $verifiedReceipt -Date ([string]$pendingReconciliation.reportDate) -ReuseDocuments:([bool]$pendingReconciliation.candidate.holdRefresh)
+      Write-Log '=== daily-cloud-publish RECONCILED EXACT CANDIDATE ==='
+      exit 0
+    } finally { Pop-Location }
+  }
+
   # A verified inventory release still needs its document and completion
   # follow-ups. Reuse the receipt without re-scraping or republishing sources.
   $receiptPath = Join-Path $LogDir ("{0}.json" -f $date)
@@ -288,6 +451,7 @@ try {
     }
     if ($receipt -and $receipt.status -eq 'published_and_verified' -and $receipt.reportDate -eq $date) {
       if (Test-ReceiptMatchesManagerOverlay -Receipt $receipt -Date $date) {
+        $verifiedPublicationAvailable = $true
         Push-Location $AppRoot
         try {
           Complete-PublicationFollowups -Receipt $receipt -Date $date
@@ -302,7 +466,7 @@ try {
 
   Push-Location $AppRoot
   try {
-    if (-not $SkipPhotoCache) {
+    if (-not $SkipPhotoCache -and -not $HoldRefresh) {
       # Step 1 - vehicle resource cache (photos / AutoCheck / window stickers).
       # Prefer reusing resources already embedded in the hash-bound snapshot;
       # fall back to a fresh VDP extraction when that yields nothing.
@@ -327,9 +491,10 @@ try {
       }
       Write-Log "photo cache: $($cacheOut.Trim())"
     } else {
-      Write-Log 'photo cache: skipped by flag'
+      Write-Log $(if ($HoldRefresh) { 'photo cache: reused for hold-only refresh' } else { 'photo cache: skipped by flag' })
     }
 
+    if (-not $HoldRefresh) {
     # Step 1.4 - vAuto Factory Equipment (CAI label) capture, API path.
     # Silent and headless: an authenticated fetch inside the automation browser's own
     # vAuto tab (127.0.0.1:9222), ~0.2 s per VIN, no form, no popup, nothing on screen.
@@ -407,28 +572,35 @@ try {
     } catch {
       Write-Log "warranty: skipped - $($_.Exception.Message)" 'WARN'
     }
+    } else {
+      Write-Log 'stable enrichment: reusing saved vAuto, AutoCheck, PDF, sticker, invoice, photo, and warranty data for hold-only refresh'
+    }
 
     # Step 1.5 - per-VIN resource enrichment (window sticker / invoice / vAuto CAI label)
     # Rebuilds data\vin-document-enrichment.json from whatever the morning captured,
     # values copied as printed, then proves it against the REAL validators before
     # anything is published. A failure here stops the publish - never ships a bad file.
-    Write-Log 'resources: building vin-document-enrichment.json'
-    $enrichRun = Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @((Join-Path $WorkspaceRoot 'work\build_vin_document_enrichment.py'), '--report-date', $date)
-    $enrichOut = $enrichRun.Output
-    if ($enrichRun.ExitCode -ne 0) { Write-Log "resources: build FAILED: $($enrichOut.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_BUILD_FAILED' }
-    Write-Log "resources: $($enrichOut.Trim())"
-    $serviceHistoryMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-ford-service-history.mjs', $date)
-    $serviceHistoryMergeOut = $serviceHistoryMergeRun.Output
-    if ($serviceHistoryMergeRun.ExitCode -ne 0) { Write-Log "resources: Ford service history merge FAILED: $($serviceHistoryMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_SERVICE_HISTORY_MERGE_FAILED' }
-    Write-Log "resources: $($serviceHistoryMergeOut.Trim())"
-    $autoCheckMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-vauto-autocheck.mjs', $date)
-    $autoCheckMergeOut = $autoCheckMergeRun.Output
-    if ($autoCheckMergeRun.ExitCode -ne 0) { Write-Log "resources: AutoCheck merge FAILED: $($autoCheckMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_AUTOCHECK_MERGE_FAILED' }
-    Write-Log "resources: $($autoCheckMergeOut.Trim())"
-    $invoiceMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-invoice-metadata.mjs', $date)
-    $invoiceMergeOut = $invoiceMergeRun.Output
-    if ($invoiceMergeRun.ExitCode -ne 0) { Write-Log "resources: invoice merge FAILED: $($invoiceMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_INVOICE_MERGE_FAILED' }
-    Write-Log "resources: $($invoiceMergeOut.Trim())"
+    if (-not $HoldRefresh) {
+      Write-Log 'resources: building vin-document-enrichment.json'
+      $enrichRun = Invoke-NativeCapture -FilePath $PythonExecutable -Arguments @((Join-Path $WorkspaceRoot 'work\build_vin_document_enrichment.py'), '--report-date', $date)
+      $enrichOut = $enrichRun.Output
+      if ($enrichRun.ExitCode -ne 0) { Write-Log "resources: build FAILED: $($enrichOut.Trim())" 'ERROR'; throw 'RESOURCE_ENRICHMENT_BUILD_FAILED' }
+      Write-Log "resources: $($enrichOut.Trim())"
+      $serviceHistoryMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-ford-service-history.mjs', $date)
+      $serviceHistoryMergeOut = $serviceHistoryMergeRun.Output
+      if ($serviceHistoryMergeRun.ExitCode -ne 0) { Write-Log "resources: Ford service history merge FAILED: $($serviceHistoryMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_SERVICE_HISTORY_MERGE_FAILED' }
+      Write-Log "resources: $($serviceHistoryMergeOut.Trim())"
+      $autoCheckMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-vauto-autocheck.mjs', $date)
+      $autoCheckMergeOut = $autoCheckMergeRun.Output
+      if ($autoCheckMergeRun.ExitCode -ne 0) { Write-Log "resources: AutoCheck merge FAILED: $($autoCheckMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_AUTOCHECK_MERGE_FAILED' }
+      Write-Log "resources: $($autoCheckMergeOut.Trim())"
+      $invoiceMergeRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\merge-invoice-metadata.mjs', $date)
+      $invoiceMergeOut = $invoiceMergeRun.Output
+      if ($invoiceMergeRun.ExitCode -ne 0) { Write-Log "resources: invoice merge FAILED: $($invoiceMergeOut.Trim())" 'ERROR'; throw 'RESOURCE_INVOICE_MERGE_FAILED' }
+      Write-Log "resources: $($invoiceMergeOut.Trim())"
+    } else {
+      Write-Log 'resources: reusing receipt-bound enrichment already validated by the daily orchestrator'
+    }
     Write-Log 'resources: validating against release validators'
     $enrichCheckRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\dryrun_resource_enrichment_check.mjs', $date)
     $enrichCheck = $enrichCheckRun.Output
@@ -448,15 +620,20 @@ try {
       Write-Log 'cloud publish did not report published_and_verified' 'ERROR'
       throw 'PUBLISH_NOT_VERIFIED'
     }
+    $verifiedPublicationAvailable = $true
     $verifiedReceipt = Get-Content $receiptPath -Raw | ConvertFrom-Json
-    Complete-PublicationFollowups -Receipt $verifiedReceipt -Date $date
+    Complete-PublicationFollowups -Receipt $verifiedReceipt -Date $date -ReuseDocuments:$HoldRefresh
     Write-Log '=== daily-cloud-publish SUCCESS ==='
   } finally {
     Pop-Location
   }
 } catch {
   $exitCode = 1
-  Write-Log ("=== daily-cloud-publish FAILED: {0} ===" -f $_.Exception.Message) 'ERROR'
+  if ($verifiedPublicationAvailable) {
+    Write-Log ("=== daily-cloud-publish RELEASE PUBLISHED; FOLLOWUPS FAILED: {0} ===" -f $_.Exception.Message) 'ERROR'
+  } else {
+    Write-Log ("=== daily-cloud-publish FAILED BEFORE VERIFIED PUBLICATION: {0} ===" -f $_.Exception.Message) 'ERROR'
+  }
 } finally {
   foreach ($key in $originalEnv.Keys) {
     # PowerShell 7.5+ converts a null setter argument to an empty value.
@@ -469,6 +646,8 @@ try {
   }
   $originalEnv = @{}
   $secrets = $null
+  Exit-PublicationPipelineLock -Lock $pipelineLock
+  $pipelineLock = $null
 }
 
 exit $exitCode

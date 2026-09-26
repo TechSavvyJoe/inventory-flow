@@ -4,6 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { sourceDistanceText as appDistance, statesKilometres as appStates } from '../../src/lib/source-distance';
 import { sourceDistanceText as companionDistance, statesKilometres as companionStates } from '../../extension/sidepanel/lib/source-distance.mjs';
 
+it('uses the same source-distance implementation in the app and companion', () => {
+  expect(appDistance).toBe(companionDistance);
+  expect(appStates).toBe(companionStates);
+});
+
 describe.each([['site', appDistance], ['companion', companionDistance]])('%s source distance presentation', (_, distanceText) => {
   it.each([
     ['12,000 km', '7,456 mi (12,000 km in the source)'],

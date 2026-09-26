@@ -3,7 +3,7 @@
 // performs no commands.
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { existsSync, writeFileSync, readFileSync, appendFileSync, readdirSync, mkdirSync, mkdtempSync } from 'node:fs'
+import { existsSync, writeFileSync, readFileSync, readdirSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { isMainModule } from './lib/is-main.mjs'
@@ -29,15 +29,24 @@ export function deployTag({ head, shortHead, originMain, dirty, allowBranch }) {
   if (![head, shortHead, originMain].every(value => typeof value === 'string' && SHA.test(value)) || !head.startsWith(shortHead)) throw new Error('COMMIT_SHA_UNRESOLVED')
   if (dirty && !allowBranch) throw new Error('WORKING_TREE_DIRTY: commit or set aside changes before releasing.')
   if (head !== originMain && !allowBranch) throw new Error('NOT_ON_ORIGIN_MAIN: HEAD does not match origin/main. An intentional hotfix requires --allow-branch.')
-  return allowBranch ? `${shortHead}-branch` : shortHead
+  // The suffix marks a build the default gate would have refused, not the flag.
+  return dirty || head !== originMain ? `${shortHead}-branch` : shortHead
 }
 
-export function resolvePnpmEntry(env = process.env) {
-  // pnpm supplies its JS entry to package scripts. Run it with Node because
-  // Windows .cmd files cannot be spawned with shell:false.
+export function resolvePnpmCommand(env = process.env, node = process.execPath) {
+  // pnpm passes its own launcher to package scripts. A Homebrew or npm-global
+  // install passes an extensionless symlink to pnpm.mjs, npm-global on Windows
+  // and corepack pass a .cjs/.js file, and the standalone installer passes a
+  // native executable. JS entries run through Node and native executables run
+  // directly, both with shell:false; .cmd/.bat/.ps1 shims are refused because
+  // they would need a shell.
   const entry = env.npm_execpath
-  if (typeof entry === 'string' && /(?:^|[\\/])pnpm\.(?:cjs|mjs|js)$/i.test(entry) && existsSync(entry)) return entry
-  throw new Error('PNPM_NODE_ENTRY_REQUIRED: invoke this release through pnpm cloud:release.')
+  let resolved = null
+  try { resolved = typeof entry === 'string' && entry ? realpathSync(entry) : null } catch { resolved = null }
+  const name = resolved ? path.basename(resolved) : ''
+  if (/^pnpm\.(?:cjs|mjs|js)$/i.test(name)) return { command: node, prefix: [resolved] }
+  if (/^pnpm(?:\.exe)?$/i.test(name)) return { command: resolved, prefix: [] }
+  throw new Error('PNPM_NODE_ENTRY_REQUIRED: run this release as pnpm cloud:release from a pnpm installed through npm, Homebrew, corepack or the standalone installer.')
 }
 
 export function assertMigrationLedger(output, expected) {
@@ -70,9 +79,12 @@ export function runRelease(argv, options = {}) {
   const node = options.node ?? process.execPath
   const spawn = options.spawn ?? spawnSync
   const log = options.log ?? (message => process.stdout.write(`${message}\n`))
-  const pnpm = options.pnpmEntry ?? resolvePnpmEntry(env)
-  const wrangler = options.wranglerEntry ?? path.join(path.dirname(require.resolve('wrangler/package.json')), 'bin', 'wrangler.js')
-  if (!existsSync(pnpm) || !existsSync(wrangler)) throw new Error('RELEASE_TOOL_NOT_INSTALLED')
+  const pnpm = resolvePnpmCommand(env, node)
+  let wrangler = options.wranglerEntry
+  if (!wrangler) {
+    try { wrangler = path.join(path.dirname(require.resolve('wrangler/package.json')), 'bin', 'wrangler.js') } catch { wrangler = null }
+  }
+  if (!wrangler || !existsSync(wrangler)) throw new Error('RELEASE_TOOL_NOT_INSTALLED: wrangler is not installed; run pnpm install --frozen-lockfile.')
   const run = (command, args, { capture = false, commandEnv = env, timeout = 20 * 60 * 1000, step = 'command' } = {}) => {
     const result = spawn(command, args, { cwd, env: commandEnv, shell: false, windowsHide: true, timeout, maxBuffer: 4 * 1024 * 1024,
       ...(capture ? { encoding: 'utf8' } : { stdio: 'inherit' }) })
@@ -93,9 +105,9 @@ export function runRelease(argv, options = {}) {
   if (!existsSync(deployLog)) throw new Error('DEPLOY_LOG_MISSING')
 
   log('Running pnpm check...')
-  run(node, [pnpm, 'check'], { step: 'pnpm check' })
+  run(pnpm.command, [...pnpm.prefix, 'check'], { step: 'pnpm check' })
   log('Running pnpm cloud:validate...')
-  run(node, [pnpm, 'cloud:validate'], { step: 'pnpm cloud:validate' })
+  run(pnpm.command, [...pnpm.prefix, 'cloud:validate'], { step: 'pnpm cloud:validate' })
   assertUnchanged()
   const buildInfo = { commit: initial.head, tag, dirty: Boolean(initial.status) }
   const buildPath = path.join(cwd, 'dist', 'build.json')
@@ -128,13 +140,23 @@ export function runRelease(argv, options = {}) {
   const receiptPath = path.join(receiptDirectory, 'release.json')
   const receipt = { ...buildInfo, startedAt: new Date().toISOString(), status: 'started', workers: {} }
   const saveReceipt = () => writeFileSync(receiptPath, JSON.stringify(receipt, null, 2))
+  const verifiedVersions = () => Object.entries(receipt.workers).filter(([, result]) => result.status === 'deployed').map(([name, result]) => `${name}=${result.versionId}`).join(', ') || 'none'
   saveReceipt()
   for (const [target, config] of Object.entries(CONFIGS)) {
     const outputPath = path.join(receiptDirectory, `${target}.jsonl`)
+    try {
+      assertUnchanged()
+    } catch (error) {
+      // Nothing was uploaded for this Worker; record that honestly, but keep
+      // any Worker already deployed in this run visible.
+      receipt.workers[target] = { status: 'not-attempted', versionId: null }
+      receipt.status = 'stopped'
+      saveReceipt()
+      throw new Error(`RELEASE_STOPPED: ${target} was not attempted (${error.message}). Verified prior versions: ${verifiedVersions()}. Inspect ${receiptPath} before retrying. No automatic rollback was attempted.`)
+    }
     receipt.workers[target] = { status: 'started', versionId: null }
     saveReceipt()
     try {
-      assertUnchanged()
       log(`Deploying ${target} Worker tagged ${tag}...`)
       run(node, [wrangler, 'deploy', '--config', config.file, '--tag', tag], { commandEnv: { ...env, WRANGLER_OUTPUT_FILE_PATH: outputPath }, step: `wrangler deploy ${target}` })
       receipt.workers[target] = { status: 'deployed', versionId: deploymentVersion(readFileSync(outputPath, 'utf8'), config.name) }
@@ -147,15 +169,18 @@ export function runRelease(argv, options = {}) {
       receipt.workers[target] = { status: 'unverified', versionId: reportedVersion }
       receipt.status = 'stopped'
       saveReceipt()
-      const verified = Object.entries(receipt.workers).filter(([, result]) => result.status === 'deployed').map(([name, result]) => `${name}=${result.versionId}`).join(', ') || 'none'
-      throw new Error(`RELEASE_STOPPED: ${target} did not complete verification (${error.message}). Verified prior versions: ${verified}. Production may have changed; inspect ${receiptPath} and current Worker versions before retrying. No automatic rollback was attempted.`)
+      throw new Error(`RELEASE_STOPPED: ${target} did not complete verification (${error.message}). Verified prior versions: ${verifiedVersions()}. Production may have changed; inspect ${receiptPath} and current Worker versions before retrying. No automatic rollback was attempted.`)
     }
   }
   receipt.status = 'deployed'
   saveReceipt()
   const versions = Object.fromEntries(Object.entries(receipt.workers).map(([target, result]) => [target, result.versionId]))
   try {
-    appendFileSync(deployLog, `\n- ${receipt.startedAt} | Tag: ${tag} | App Version: ${versions.app} | Integrations Version: ${versions.integrations}\n`)
+    // The log is newest-first: insert a dated entry above the first section.
+    const current = readFileSync(deployLog, 'utf8')
+    const entry = `## Deployment - ${receipt.startedAt.slice(0, 10)} (pnpm cloud:release)\n\n- ${receipt.startedAt} | Commit: ${buildInfo.commit} | Tag: ${tag} | App Version: ${versions.app} | Integrations Version: ${versions.integrations}\n\n`
+    const firstSection = current.search(/^## /m)
+    writeFileSync(deployLog, firstSection === -1 ? `${current.replace(/\n*$/, '\n\n')}${entry}` : `${current.slice(0, firstSection)}${entry}${current.slice(firstSection)}`)
   } catch {
     receipt.status = 'deployed-log-pending'
     saveReceipt()

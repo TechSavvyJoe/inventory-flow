@@ -26,11 +26,10 @@
 .if-srp .if-srp-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; margin-bottom:var(--ifx-space-1-5); }
 .if-srp .if-srp-service-filters { padding-left: 18px; border-left: 1px solid var(--border-strong); }
 .if-srp .if-srp-tools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.inventory-scan-entry { display:inline-flex; }
+.inventory-scan-entry { display:none; }
 .inventory-scan-entry > button { min-height:var(--ifx-control-height-md); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--border-strong); border-radius:var(--ifx-radius-xs); background:var(--surface); color:var(--ink-900); font:var(--ifx-weight-semibold) var(--ifx-text-md)/1.3 var(--font-app); }
 .inventory-scan-entry > button:hover { border-color:var(--blue-600); background:var(--blue-050); color:var(--blue-700); }
-@media (max-width:760px) { .inventory-scan-entry { margin-right:auto; } }
-@media (min-width:1101px) { .inventory-scan-entry { display:none; } }
+@media (max-width:760px) { .inventory-scan-entry { display:inline-flex; margin-right:auto; } }
 .if-srp .inventory-results-count { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 .if-srp .inventory-toolbar__left, .if-srp .inventory-toolbar__right { display: flex; align-items: center; gap: 6px; width: auto; flex: 0 0 auto; }
 .if-srp .if-srp-tools .inv-btn { width: auto; min-width: var(--ifx-control-height-md); max-width: none; flex: 0 0 auto; white-space: nowrap; }

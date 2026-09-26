@@ -2,6 +2,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, extname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { countIdSelectors } from './lib/css-metrics.mjs'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const baselinePath = resolve(projectRoot, 'scripts/design-system-baseline.json')
@@ -139,25 +140,6 @@ const nextGlobalStyleImports = accept
 // ---------------------------------------------------------------------------
 function countMatches(content, pattern) {
   return Array.from(content.matchAll(pattern)).length
-}
-
-function countIdSelectors(content) {
-  const withoutComments = content.replace(/\/\*[\s\S]*?\*\//g, '')
-  // The text between one `}` (or the start of the file) and the next `{` is a
-  // selector list (or an at-rule prelude, which never starts with `#`). An ID
-  // selector can appear anywhere in a compound selector, not only as its
-  // leading component (e.g. `.shell #inventory-vehicle-workspace .x`), so the
-  // whole selector list is scanned rather than just each selector's first
-  // compound.
-  let count = 0
-  for (const chunk of withoutComments.split('{').slice(0, -1)) {
-    const selectorList = (chunk.split('}').pop() ?? '').trim()
-    if (selectorList.startsWith('@')) continue
-    for (const selector of selectorList.split(',')) {
-      if (/#[A-Za-z_-]/.test(selector)) count += 1
-    }
-  }
-  return count
 }
 
 function measureCss(content, filePath) {

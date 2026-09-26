@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import markup from '../../extension/sidepanel/index.html?raw'
 import { DEFAULT_SETTINGS, normalizeSettings } from '../../extension/sidepanel/lib/config.mjs'
 
-const mock = vi.hoisted(() => ({ bootstrap: vi.fn(), vehicle: vi.fn(), saveSettings: vi.fn(), saveFilters: vi.fn(), settings: {} }))
-vi.mock('../../extension/sidepanel/lib/api.mjs', async (importOriginal) => ({ ...(await importOriginal()), fetchBootstrap: mock.bootstrap, fetchVehicle: mock.vehicle }))
+const mock = vi.hoisted(() => ({ bootstrap: vi.fn(), vehicle: vi.fn(), release: vi.fn(), saveSettings: vi.fn(), saveFilters: vi.fn(), settings: {} }))
+vi.mock('../../extension/sidepanel/lib/api.mjs', async (importOriginal) => ({ ...(await importOriginal()), fetchBootstrap: mock.bootstrap, fetchVehicle: mock.vehicle, fetchCompanionRelease: mock.release }))
 vi.mock('../../extension/sidepanel/lib/host.mjs', () => ({
   host: 'extension', previewFlags: { photos: false }, placeholderPhotos: () => [], copyText: vi.fn(), openUrl: vi.fn(), openExtensionPage: vi.fn(),
   storage: {
@@ -29,7 +29,7 @@ const originalScrollIntoView = Object.getOwnPropertyDescriptor(HTMLElement.proto
 // Only the dev-only build (pnpm extension:dev) grants the loopback demo origin.
 const DEV_BUILD_HOSTS = ['https://inventory-ops.joegallant.me/*', 'http://127.0.0.1:4173/*', 'http://localhost:4173/*']
 const SHIPPED_HOSTS = ['https://inventory-ops.joegallant.me/*']
-const grantHosts = (hostPermissions) => vi.stubGlobal('chrome', { runtime: { getManifest: () => ({ host_permissions: hostPermissions }) } })
+const grantHosts = (hostPermissions) => vi.stubGlobal('chrome', { runtime: { getManifest: () => ({ host_permissions: hostPermissions, version: '1.3.1' }) } })
 
 beforeEach(() => {
   vi.resetModules(); vi.clearAllMocks()
@@ -45,6 +45,7 @@ beforeEach(() => {
   mock.saveFilters.mockResolvedValue(undefined)
   mock.bootstrap.mockResolvedValue(bootstrap())
   mock.vehicle.mockResolvedValue(vehicles[0])
+  mock.release.mockResolvedValue({ version: '1.3.2', downloadPath: '/downloads/inventory-flow-deal-desk.zip' })
 })
 
 afterEach(() => {
@@ -113,6 +114,17 @@ describe('extension settings compatibility', () => {
     const legacy = document.querySelector('#demo-role option[value="porter"]')
     expect(legacy).toBeDisabled()
     expect(legacy).toHaveTextContent('Porter · Legacy')
+  })
+
+  it('shows the installed version and offers the verified newer companion package', async () => {
+    const { openUrl } = await import('../../extension/sidepanel/lib/host.mjs')
+    await boot(); open('settings-btn')
+    const version = document.querySelector('[data-companion-version]')
+    expect(version).toHaveTextContent('Installed version 1.3.1')
+    version.querySelector('button').click()
+    await vi.waitFor(() => expect(version).toHaveTextContent('Version 1.3.2 is ready'))
+    version.querySelector('[data-companion-update]').click()
+    expect(openUrl).toHaveBeenCalledWith('http://127.0.0.1:4173/downloads/inventory-flow-deal-desk.zip')
   })
 })
 
