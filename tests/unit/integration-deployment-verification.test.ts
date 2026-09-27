@@ -72,6 +72,8 @@ describe('integration deployment verification gates', () => {
     )
     expect(expectedMetadata).toContain('$Receipt.counts.publicStoreCounts')
     expect(expectedMetadata).toContain('$Receipt.counts.publicRowCount')
+    expect(expectedMetadata).toContain('managerDispositionOverlay.records')
+    expect(expectedMetadata).toContain('deliveredManagerLog')
     expect(expectedMetadata).not.toContain('activeStoreCounts')
     expect(expectedMetadata).not.toContain('activeInventoryCount')
   })

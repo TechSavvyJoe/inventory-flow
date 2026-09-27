@@ -150,7 +150,7 @@ function fixture(cached = false) {
   for (const directory of [
     path.join(appRoot, 'scripts'), path.join(appRoot, 'runtime/cloud-secrets'),
     path.join(appRoot, 'runtime/integration-credentials'), path.join(root, 'profile'),
-    ...['work/run-status', 'work/app-feed-status', 'outputs', 'apps/inventory-ops'].map(part => path.join(workspaceRoot, part)),
+    ...['work/run-status', 'work/app-feed-status', `work/releases/${reportDate}`, 'outputs', 'apps/inventory-ops'].map(part => path.join(workspaceRoot, part)),
   ]) mkdirSync(directory, { recursive: true })
   copyFileSync(fileURLToPath(new URL('../../scripts/daily-cloud-publish.ps1', import.meta.url)), path.join(appRoot, 'scripts/daily-cloud-publish.ps1'))
   writeFileSync(path.join(appRoot, 'runtime/integration-credentials/joe-app-development.json'), '{}')
@@ -158,9 +158,13 @@ function fixture(cached = false) {
   const receiptPath = path.join(workspaceRoot, 'work/app-feed-status', `${reportDate}.json`)
   writeFileSync(manifestPath, JSON.stringify({ complete: true, report_date: reportDate, manager_disposition_overlay: null }))
   if (cached) writeFileSync(receiptPath, JSON.stringify(receipt))
+  const releasePath = path.join(workspaceRoot, 'work/releases', reportDate, 'inventory-flow-release.json')
+  const expectedMetadataPath = path.join(appRoot, 'runtime/integration-expected-release.json')
   const harnessPath = path.join(root, 'harness.ps1')
   writeFileSync(harnessPath, harness)
   const readManifest = () => JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const readExpectedMetadata = () => JSON.parse(readFileSync(expectedMetadataPath, 'utf8'))
+  const writeRelease = (release: object) => writeFileSync(releasePath, JSON.stringify({ release }))
   let runNumber = 0
   function run(options: { invoiceExit?: number; integrationExit?: number; secretPresent?: boolean; force?: boolean; reconcile?: boolean; lockPresent?: boolean; syncExit?: number; syncOutput?: string; syncReconciliationMarker?: object; preexistingReconciliationMarker?: object } = {}) {
     const prefix = path.join(root, `attempt-${++runNumber}`)
@@ -189,7 +193,7 @@ function fixture(cached = false) {
     expect(events.every(event => event.credentialsLoaded)).toBe(true)
     return { output, events, helpers: events.map(event => event.helper), exitCode: result.exitCode }
   }
-  return { run, readManifest, receiptPath, appRoot, workspaceRoot }
+  return { run, readManifest, readExpectedMetadata, writeRelease, receiptPath, appRoot, workspaceRoot }
 }
 
 afterEach(() => {
@@ -238,6 +242,53 @@ describe('daily PowerShell publisher document retries', () => {
     expect(result.helpers, result.output).toEqual(['publish-invoice-documents.mjs', 'verify-integration-deployment.mjs'])
     expect(result.output).not.toMatch(/SUCCESS|SKIPPED/)
     expect(test.readManifest()).not.toHaveProperty('cloudflare_publish')
+  }, 30_000)
+
+  it('reconciles integration counts after exact-VIN manager deliveries without double-counting or hiding review rows', () => {
+    const test = fixture(true)
+    const howellVin = '1FMCU9GDXRUA00001'
+    const fowlervilleVin = '1FMCU9GDXRUA00002'
+    const fordDetroitVin = '1FMCU9GDXRUA00003'
+    const lincolnVin = '1FMCU9GDXRUA00004'
+    test.writeRelease({
+      vehicles: [
+        { publicRecord: { vin: howellVin, store: 'Howell' } },
+        { publicRecord: { vin: fowlervilleVin, store: 'Fowlerville' } },
+        { publicRecord: { vin: fordDetroitVin, store: 'Ford Detroit' } },
+        { publicRecord: { vin: lincolnVin, store: 'Lincoln' } },
+      ],
+      managerDispositionOverlay: {
+        records: [
+          { vin: howellVin, deliveredManagerLog: true, matchMethod: 'vin', matchStatus: 'matched' },
+          { vin: howellVin, deliveredManagerLog: true, matchMethod: 'vin', matchStatus: 'matched' },
+          { vin: fowlervilleVin, deliveredManagerLog: true, matchMethod: 'vin', matchStatus: 'matched_vin_stock_review' },
+          { vin: fordDetroitVin, deliveredManagerLog: true, matchMethod: 'unique_stock', matchStatus: 'matched' },
+          { vin: lincolnVin, deliveredManagerLog: false, matchMethod: 'vin', matchStatus: 'matched' },
+        ],
+      },
+    })
+
+    const result = test.run()
+
+    expect(result.exitCode, result.output).toBe(0)
+    expect(test.readExpectedMetadata()).toEqual({
+      bundleSha256: receipt.bundleSha256,
+      total: 3,
+      byStore: { Howell: 0, Fowlerville: 1, 'Ford Detroit': 1, Lincoln: 1 },
+    })
+  }, 30_000)
+
+  it('keeps the verified receipt public counts when the dated release is unavailable', () => {
+    const test = fixture(true)
+
+    const result = test.run()
+
+    expect(result.exitCode, result.output).toBe(0)
+    expect(test.readExpectedMetadata()).toEqual({
+      bundleSha256: receipt.bundleSha256,
+      total: 4,
+      byStore: { Howell: 1, Fowlerville: 1, 'Ford Detroit': 1, Lincoln: 1 },
+    })
   }, 30_000)
 
   it('fails closed when cached publication has no publisher secret bundle', () => {

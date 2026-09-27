@@ -205,7 +205,10 @@ function Get-PendingPublicationReconciliation {
 }
 
 function Update-IntegrationExpectedMetadata {
-  param([Parameter(Mandatory = $true)]$Receipt)
+  param(
+    [Parameter(Mandatory = $true)]$Receipt,
+    [Parameter(Mandatory = $true)][string]$Date
+  )
 
   if ($Receipt.status -ne 'published_and_verified' -or
       $Receipt.bundleSha256 -notmatch '^[a-fA-F0-9]{64}$' -or
@@ -213,10 +216,42 @@ function Update-IntegrationExpectedMetadata {
     throw 'VERIFIED_RECEIPT_METADATA_INVALID'
   }
 
-  # The external integration projection is intentionally public-only. The app's
-  # active inventory can also include DealerMail-only pre-listing vehicles.
-  $sourceCounts = $Receipt.counts.publicStoreCounts
-  $sourceTotal = $Receipt.counts.publicRowCount
+  # The external integration projection is public-only, after manager-delivered
+  # listed vehicles are hidden from the API. The app's active inventory can also
+  # include DealerMail-only pre-listing vehicles, so do not use active counts.
+  $sourceCounts = [ordered]@{}
+  foreach ($store in @('Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln')) {
+    $sourceCounts[$store] = [int64]$Receipt.counts.publicStoreCounts.$store
+  }
+  $sourceTotal = [int64]$Receipt.counts.publicRowCount
+  $releasePath = Join-Path $WorkspaceRoot ("work\releases\{0}\inventory-flow-release.json" -f $Date)
+  if (Test-Path -LiteralPath $releasePath) {
+    $releaseEnvelope = Get-Content -LiteralPath $releasePath -Raw | ConvertFrom-Json
+    $publicStoresByVin = @{}
+    foreach ($vehicle in @($releaseEnvelope.release.vehicles)) {
+      if ($null -eq $vehicle.publicRecord) { continue }
+      $vin = ([string]$vehicle.publicRecord.vin).Trim().ToUpperInvariant()
+      $store = [string]$vehicle.publicRecord.store
+      if ($vin -match '^[A-HJ-NPR-Z0-9]{17}$' -and $sourceCounts.Contains($store)) {
+        $publicStoresByVin[$vin] = $store
+      }
+    }
+    $excludedVins = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($record in @($releaseEnvelope.release.managerDispositionOverlay.records)) {
+      $vin = ([string]$record.vin).Trim().ToUpperInvariant()
+      $conflicting = @('matched_vin_stock_review', 'stock_ambiguous') -contains [string]$record.matchStatus
+      $qualifies = $record.deliveredManagerLog -eq $true -and
+        [string]$record.matchMethod -eq 'vin' -and
+        $vin -match '^[A-HJ-NPR-Z0-9]{17}$' -and
+        -not $conflicting -and
+        $publicStoresByVin.ContainsKey($vin)
+      if ($qualifies -and $excludedVins.Add($vin)) {
+        $store = $publicStoresByVin[$vin]
+        $sourceCounts[$store] = [int64]$sourceCounts[$store] - 1
+        $sourceTotal -= 1
+      }
+    }
+  }
   if (-not $sourceCounts) { throw 'VERIFIED_RECEIPT_METADATA_INVALID' }
 
   $stores = [ordered]@{}
@@ -363,7 +398,7 @@ function Complete-PublicationFollowups {
   } else {
     Write-Log 'invoice documents: reused for hold-only refresh'
   }
-  Update-IntegrationExpectedMetadata -Receipt $Receipt
+  Update-IntegrationExpectedMetadata -Receipt $Receipt -Date $Date
   Assert-IntegrationDeployment
   Complete-VerifiedPublicationState -Receipt $Receipt -Date $Date
   # Preserve report-ready evidence only after the publication follow-ups pass.
