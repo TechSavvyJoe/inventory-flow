@@ -143,6 +143,9 @@ function locationFact(vehicle: VehicleRecord) {
     return { currentStore, currentLocation: vehicle.movement.currentLocation || 'Location not confirmed', basis: 'move_ledger' as const, label: 'Inventory Flow move ledger' }
   }
   if (confidence === 'stale') {
+    if (state === 'source_reported') {
+      return { currentStore, currentLocation: vehicle.movement.currentLocation || 'Last location not confirmed', basis: 'source_reported' as const, label: 'Website feed not current; custody not confirmed' }
+    }
     return { currentStore, currentLocation: vehicle.movement.currentLocation || 'Last location not confirmed', basis: 'stale_move_record' as const, label: 'Last move confirmation is stale' }
   }
   if (confidence === 'reported' && currentStore) {

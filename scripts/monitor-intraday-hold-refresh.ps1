@@ -161,6 +161,21 @@ function Get-ReceiptHealth {
     $manifest.cloudflare_publish.reconciliation_required -eq $true -or
     [string]$manifest.cloudflare_publish.status -ceq 'publication_outcome_unknown'
   )
+  # A guarded recovery that proved the candidate live archives the global
+  # marker and writes this date's verified receipt for that exact hash. A
+  # status or manifest still naming that same candidate is then resolved, not
+  # a reason to keep blocking. Any other hash keeps the stop in place.
+  $receiptProvenBundleSha256 = if (-not $globalReconciliationEntryExists -and $receiptFile.Valid -and
+      [string]$receipt.status -ceq 'published_and_verified' -and $receipt.complete -eq $true -and
+      [string]$receipt.reportDate -ceq $ReportDate) { Normalize-Hash $receipt.bundleSha256 } else { $null }
+  if ($statusRequiresReconciliation -and $null -ne $receiptProvenBundleSha256 -and
+      $statusCandidateBundleSha256 -ceq $receiptProvenBundleSha256) {
+    $statusRequiresReconciliation = $false
+  }
+  if ($manifestRequiresReconciliation -and $null -ne $receiptProvenBundleSha256 -and
+      $manifestCandidateBundleSha256 -ceq $receiptProvenBundleSha256) {
+    $manifestRequiresReconciliation = $false
+  }
   $globalRequiresReconciliation = $globalReconciliationEntryExists
   $reconciliationRequired = $globalRequiresReconciliation -or $statusRequiresReconciliation -or $manifestRequiresReconciliation
   $candidateBundleSha256 = if ($globalRequiresReconciliation -and $null -ne $globalCandidateBundleSha256) {
@@ -188,7 +203,10 @@ function Get-ReceiptHealth {
     'none'
   }
   if ($statusFile.Valid) {
-    if ($holdStatus -cne 'intraday_holds_published_and_verified') { $reasons.Add('hold_status_not_verified') }
+    # intraday_holds_reconciled is written by guarded recovery with the same
+    # explicit receipt link as a normal verified refresh; the link checks below
+    # still apply to it.
+    if ($holdStatus -cnotin @('intraday_holds_published_and_verified', 'intraday_holds_reconciled')) { $reasons.Add('hold_status_not_verified') }
     if ([string]$status.reportDate -cne $ReportDate) { $reasons.Add('hold_status_report_date_mismatch') }
   }
   if ($reconciliationRequired) {

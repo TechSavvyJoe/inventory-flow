@@ -17,7 +17,7 @@ import { formatDate, formatDateTime } from '../../lib/format'
 import { vehicleWorkspacePath, withWorkspaceReturnPath } from '../../lib/inventory-navigation'
 import { serviceStatusLabel } from '../../lib/service-readiness'
 import { useWorkspaceState } from '../../lib/workspace-memory'
-import type { StoreName } from '../../types'
+import type { StoreName, VehicleRecord } from '../../types'
 import {
   buildOverviewModel,
   overviewMedian,
@@ -170,7 +170,7 @@ function StoreCard({
   )
 }
 
-function PopulationRows({ facts, returnTo }: { facts: OverviewVehicleFact[]; returnTo: string }) {
+function PopulationRows({ facts, returnTo, holdFreshness }: { facts: OverviewVehicleFact[]; returnTo: string; holdFreshness: string | undefined }) {
   if (!facts.length) return <p className="ov-empty">No vehicles are in this population.</p>
   return (
     <ul className="ov-vehicle-list">
@@ -186,7 +186,7 @@ function PopulationRows({ facts, returnTo }: { facts: OverviewVehicleFact[]; ret
               <small className="ov-vehicle-location"><MapPin aria-hidden="true" />{vehicleLocationSummary(fact)}</small>
             </div>
             <div className="ov-vehicle-signals" aria-label={`Status for ${vehicle.vehicleName}`}>
-              <span><small>Hold</small><strong>{fact.holdActive ? fact.vehicle.hold.label : 'No current DealerMail hold found · confirm with home store'}</strong></span>
+              <span><small>Hold</small><strong>{overviewHoldLabel(fact.vehicle.hold, holdFreshness)}</strong></span>
               <span><small>Service</small><strong>{serviceStatusLabel(fact.vehicle.serviceReadiness)}</strong></span>
               {fact.returnOverdue ? <span className="ov-tone-danger"><small>Movement</small><strong>Return overdue</strong></span> : null}
               {fact.openIssues.length ? <span className="ov-tone-warning"><small>Attention</small><strong>{fact.openIssues.length} open issue{fact.openIssues.length === 1 ? '' : 's'}</strong></span> : null}
@@ -208,6 +208,15 @@ function PopulationRows({ facts, returnTo }: { facts: OverviewVehicleFact[]; ret
 function durationText(value: number | null, sample: number, empty: string): string {
   if (value === null) return empty
   return `${value} day${value === 1 ? '' : 's'} median · ${sample} measured`
+}
+
+// Same wording as the Inventory row (dealerMailHoldLabel): the no-hold string
+// appears only for a current DealerMail capture that observed no hold.
+function overviewHoldLabel(hold: VehicleRecord['hold'], freshness: string | undefined): string {
+  if (freshness !== 'current' || hold.state === 'stale') return hold.lastKnownActiveHold ? 'Last verified hold — confirm in DealerMail' : 'Hold status not verified'
+  if (hold.loaner?.active) return hold.loaner.serviceDate ? `${hold.loaner.label} · ${hold.loaner.serviceDate}` : hold.loaner.label
+  if (hold.state === 'none_observed') return 'No current DealerMail hold found'
+  return hold.label
 }
 
 export function OverviewPage() {
@@ -286,7 +295,7 @@ export function OverviewPage() {
           </div>
           <strong role="status" aria-live="polite">{populationFacts.length} vehicle{populationFacts.length === 1 ? '' : 's'}</strong>
         </header>
-        <PopulationRows facts={populationFacts} returnTo={returnTo} />
+        <PopulationRows facts={populationFacts} returnTo={returnTo} holdFreshness={data.meta.dealerMailFreshness} />
       </section>
 
       <div className="ov-two-column">

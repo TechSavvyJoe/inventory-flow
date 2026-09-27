@@ -204,6 +204,71 @@ function Get-PendingPublicationReconciliation {
   }
 }
 
+# After guarded recovery proves the retained candidate live, the same day's
+# hold-refresh status must stop reporting reconciliation-required, or every
+# later intraday slot and the monitor stay blocked on a resolved candidate.
+# Only a status that names this exact candidate is rewritten; its candidate
+# hash is kept for the record.
+function Clear-ReconciledHoldRefreshStatus {
+  param(
+    [Parameter(Mandatory)]$Receipt,
+    [Parameter(Mandatory)][string]$Date
+  )
+  $statusPath = Join-Path $WorkspaceRoot ("work\hold-refresh-status\{0}.json" -f $Date)
+  if (-not (Test-Path -LiteralPath $statusPath -PathType Leaf)) { return }
+  try { $status = Get-Content -LiteralPath $statusPath -Raw | ConvertFrom-Json }
+  catch {
+    Write-Log 'hold-refresh status: unreadable after reconciliation; left for operator review' 'WARN'
+    return
+  }
+  # Set-StrictMode rejects reads of absent properties; read only named fields.
+  $names = @($status.PSObject.Properties.Name)
+  $field = { param($Name) if ($names -contains $Name) { $status.$Name } else { $null } }
+  $requiresReconciliation = (& $field 'reconciliationRequired') -eq $true -or
+    [string](& $field 'status') -ceq 'intraday_holds_publication_outcome_unknown'
+  if (-not $requiresReconciliation) { return }
+  $receiptHash = ([string]$Receipt.bundleSha256).ToLowerInvariant()
+  $receiptDealerMail = ''
+  if (@($Receipt.PSObject.Properties.Name) -contains 'sourceHashes' -and $null -ne $Receipt.sourceHashes -and
+      @($Receipt.sourceHashes.PSObject.Properties.Name) -contains 'dealerMail') {
+    $receiptDealerMail = [string]$Receipt.sourceHashes.dealerMail
+  }
+  # PowerShell 7 ConvertFrom-Json turns ISO strings into DateTime; keep ISO.
+  $receiptVerifiedAt = $Receipt.verifiedAt
+  if ($receiptVerifiedAt -is [DateTime]) { $receiptVerifiedAt = $receiptVerifiedAt.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ', [Globalization.CultureInfo]::InvariantCulture) }
+  else { $receiptVerifiedAt = [string]$receiptVerifiedAt }
+  $statusCandidate = & $field 'candidate'
+  $statusHash = ''
+  if ($null -ne $statusCandidate -and @($statusCandidate.PSObject.Properties.Name) -contains 'bundleSha256') {
+    $statusHash = ([string]$statusCandidate.bundleSha256).ToLowerInvariant()
+  }
+  if ([string](& $field 'reportDate') -cne $Date -or $statusHash -cne $receiptHash) {
+    Write-Log 'hold-refresh status: names a different candidate than the reconciled receipt; left unchanged' 'WARN'
+    return
+  }
+  $cleared = [ordered]@{
+    reportDate = $Date
+    status = 'intraday_holds_reconciled'
+    checkedAt = [DateTimeOffset]::UtcNow.ToString('o')
+    summary = ("Inventory Flow {0}: candidate SHA-256 {1} was proved live by guarded reconciliation; the hold refresh may resume." -f $Date, $receiptHash)
+    published = $true
+    reconciliationRequired = $false
+    receipt = [ordered]@{
+      bundleSha256 = $receiptHash
+      verifiedAt = $receiptVerifiedAt
+      dealerMailSha256 = $receiptDealerMail
+    }
+    candidate = $statusCandidate
+    warnings = @()
+    steps = @()
+  }
+  $temporary = "$statusPath.tmp"
+  $json = $cleared | ConvertTo-Json -Depth 8
+  [System.IO.File]::WriteAllText($temporary, $json + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
+  Move-Item -LiteralPath $temporary -Destination $statusPath -Force
+  Write-Log 'hold-refresh status: recorded reconciled candidate; same-day hold refresh unblocked'
+}
+
 function Update-IntegrationExpectedMetadata {
   param(
     [Parameter(Mandatory = $true)]$Receipt,
@@ -458,7 +523,7 @@ try {
     try {
       Write-Log ("publication reconciliation: verifying exact retained candidate {0}" -f ([string]$pendingReconciliation.candidate.bundleSha256).ToLowerInvariant())
       $reconcileRun = Invoke-NativeCapture -FilePath $NodeExecutable -Arguments @('scripts\sync-cloud-release.mjs', '--reconcile-pending')
-      if ($reconcileRun.ExitCode -ne 0 -or $reconcileRun.Output -notmatch '"publication"\s*:\s*"reconciled_exact_candidate"') {
+      if ($reconcileRun.ExitCode -ne 0 -or $reconcileRun.Output -notmatch '"publication"\s*:\s*"(reconciled|reposted)_exact_candidate"') {
         Write-Log "publication reconciliation FAILED: $($reconcileRun.Output.Trim())" 'ERROR'
         throw 'PUBLICATION_RECONCILIATION_NOT_VERIFIED'
       }
@@ -468,6 +533,7 @@ try {
         throw 'PUBLICATION_RECONCILIATION_RECEIPT_MISMATCH'
       }
       $verifiedPublicationAvailable = $true
+      Clear-ReconciledHoldRefreshStatus -Receipt $verifiedReceipt -Date ([string]$pendingReconciliation.reportDate)
       Complete-PublicationFollowups -Receipt $verifiedReceipt -Date ([string]$pendingReconciliation.reportDate) -ReuseDocuments:([bool]$pendingReconciliation.candidate.holdRefresh)
       Write-Log '=== daily-cloud-publish RECONCILED EXACT CANDIDATE ==='
       exit 0

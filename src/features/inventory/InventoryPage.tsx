@@ -58,24 +58,17 @@ function retainedDetail(entry: VehicleDetailEntry | undefined, data: BootstrapDa
   const detail = entry.protectedSignature === protectedDetailSignature(data, vehicle)
     ? entry.record
     : withoutProtectedEvidence(entry.record)
-  const {
-    privateEvidence: _privateEvidence,
-    publicScan: _publicScan,
-    autoCheckReport: _autoCheckReport,
-    windowSticker: _windowSticker,
-    factoryEquipment: _factoryEquipment,
-    fordInvoice: _fordInvoice,
-    fordOasis: _fordOasis,
-    warrantyCheck: _warrantyCheck,
-    ...liveSummary
-  } = vehicle
-  // Keep detail-only evidence while the new read runs, but let every field in
-  // the authorized bootstrap projection win immediately. This includes its
-  // regenerated search text, so an old private hold term cannot remain in the
-  // index after the hold signature changes.
+  // Keep only the detail-only evidence while the new read runs; every other
+  // field in the authorized bootstrap projection wins immediately, including
+  // autoCheckReport, windowSticker, factoryEquipment, fordInvoice, fordOasis
+  // and warrantyCheck, and its regenerated search text, so an old private
+  // hold term cannot remain in the index after the hold signature changes.
+  // Building from the live vehicle (rather than spreading the cached detail)
+  // also drops any cached key the new bootstrap no longer sends.
   return {
-    ...detail,
-    ...liveSummary,
+    ...vehicle,
+    ...(detail.publicScan !== undefined ? { publicScan: detail.publicScan } : {}),
+    ...(detail.privateEvidence !== undefined ? { privateEvidence: detail.privateEvidence } : {}),
   }
 }
 

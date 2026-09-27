@@ -207,6 +207,54 @@ function classifyFailedPublication({ publisherOutput = '', fallbackBundleSha256,
   }
 }
 
+// The ordinary (non-hold) publisher rebuilds the photo cache and resource
+// enrichment before its POST, so Node's pre-publisher bundle hash is never the
+// posted hash. Evidence of what was posted comes only from the publisher: its
+// durable exact-candidate marker, or the candidate hash it printed.
+function classifyOrdinaryPublicationFailure({ publisherOutput = '', beforeRaw = null, afterState = { raw: null, receipt: null }, durableAttempt = null, reportDate, builtSourceHashes = {} }) {
+  if (durableAttempt) {
+    const state = durableAttempt.state
+    const postedHash = normalizedHash(state?.candidate?.bundleSha256) ?? normalizedHash(publishedCandidateBundleSha256(publisherOutput))
+    return {
+      status: 'cloud_publication_outcome_unknown',
+      failureCode: durableAttempt.consistent ? 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN' : 'PUBLICATION_RECONCILIATION_STATE_INVALID',
+      reconciliationRequired: true,
+      receipt: null,
+      candidate: {
+        bundleSha256: postedHash?.toLowerCase() ?? null,
+        dealerMailSha256: (normalizedHash(state?.candidate?.sourceHashes?.dealerMail) ?? normalizedHash(builtSourceHashes.dealerMail))?.toLowerCase() ?? null,
+      },
+    }
+  }
+  // No marker remains, so the publisher either never reached its POST or
+  // archived the marker after exact verification and a flushed receipt. When it
+  // reports the release published and this date's receipt is verified for the
+  // sources this run captured (and for the printed candidate, if any), only the
+  // follow-ups failed; mirror classifyPublicationOutcome's hold-path rule.
+  if (/RELEASE PUBLISHED; FOLLOWUPS FAILED/i.test(publisherOutput) && !afterState.lookupFailed) {
+    const receipt = afterState.receipt
+    const printedHash = normalizedHash(publishedCandidateBundleSha256(publisherOutput))
+    const sameSources = ['public', 'dealerMail'].every((field) => sameHash(receipt?.sourceHashes?.[field], builtSourceHashes[field]))
+    if (verifiedReceiptIdentityIsValid(receipt, reportDate) && receipt.complete === true && sameSources &&
+        (printedHash === null || printedHash === normalizedHash(receipt.bundleSha256)) &&
+        afterState.raw !== beforeRaw) {
+      return {
+        status: 'published_followups_pending',
+        failureCode: 'CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED',
+        reconciliationRequired: false,
+        receipt,
+        candidate: null,
+      }
+    }
+  }
+  const failure = classifyFailedPublication({
+    publisherOutput,
+    fallbackBundleSha256: null,
+    dealerMailSha256: builtSourceHashes.dealerMail,
+  })
+  return { ...failure, receipt: null }
+}
+
 function classifyPublicationOutcome({ processOk, beforeRaw, afterState, expectedHashes, reportDate, publisherOutput = '' }) {
   const matchesCandidate = assertReceiptHashes(afterState.receipt, expectedHashes, reportDate)
   if (processOk && matchesCandidate) return 'published_and_followups_complete'
@@ -896,7 +944,30 @@ function candidateManifestFromBaseline({ baseline, reportDate, publicPath, deale
   }
 }
 
-function retainedPublicationReconciliation({ reportDate, intradayStatusPath, manifestPath }) {
+// A successful guarded recovery writes this date's verified receipt for the
+// exact candidate and archives the global marker. That receipt is proof the
+// candidate is live, so a hold status or run manifest still naming that same
+// candidate no longer blocks the day. Any other hash, an unreadable receipt, or
+// a remaining (or malformed) global marker keeps the stop in place.
+function reconciliationClearedByReceipt({ reportDate, receiptPath, candidateHashes }) {
+  if (!receiptPath || candidateHashes.length === 0) return false
+  try {
+    if (readPublicationReconciliation(WORKSPACE_ROOT) !== null) return false
+  } catch {
+    return false
+  }
+  let receipt
+  try {
+    receipt = readReceiptState(receiptPath).receipt
+  } catch {
+    return false
+  }
+  if (!verifiedReceiptIdentityIsValid(receipt, reportDate)) return false
+  const receiptHash = normalizedHash(receipt.bundleSha256)
+  return candidateHashes.every((hash) => hash !== null && hash === receiptHash)
+}
+
+function retainedPublicationReconciliation({ reportDate, intradayStatusPath, manifestPath, receiptPath = null }) {
   let status = null
   let statusReadable = false
   if (existsSync(intradayStatusPath)) {
@@ -928,6 +999,11 @@ function retainedPublicationReconciliation({ reportDate, intradayStatusPath, man
     manifest?.cloudflare_publish?.status === 'publication_outcome_unknown'
   )
   if (!statusRequiresReconciliation && !manifestRequiresReconciliation) return null
+  const candidateHashes = [
+    ...(statusRequiresReconciliation ? [candidateBundleSha256] : []),
+    ...(manifestRequiresReconciliation ? [expectedBundleSha256] : []),
+  ]
+  if (reconciliationClearedByReceipt({ reportDate, receiptPath, candidateHashes })) return null
 
   const consistent = statusRequiresReconciliation &&
     status.reportDate === reportDate &&
@@ -958,7 +1034,7 @@ function retainedGlobalPublicationReconciliation(workspaceRoot = WORKSPACE_ROOT)
   }
 }
 
-function publicationAttemptForCandidate({ reportDate, bundleSha256, sourceHashes, holdRefresh }) {
+function publicationAttemptForCandidate({ reportDate, bundleSha256, sourceHashes, holdRefresh, sourceFields = ['public', 'dealerMail', 'resources', 'managerDisposition', 'managerDispositionBinding'] }) {
   let state
   try {
     state = readPublicationReconciliation(WORKSPACE_ROOT)
@@ -969,7 +1045,7 @@ function publicationAttemptForCandidate({ reportDate, bundleSha256, sourceHashes
   const consistent = state.reportDate === reportDate &&
     sameHash(state.candidate.bundleSha256, bundleSha256) &&
     state.candidate.holdRefresh === holdRefresh &&
-    ['public', 'dealerMail', 'resources', 'managerDisposition', 'managerDispositionBinding'].every((field) => {
+    sourceFields.every((field) => {
       const expected = sourceHashes[field] ?? null
       const actual = state.candidate.sourceHashes[field] ?? null
       return expected === null ? actual === null : sameHash(actual, expected)
@@ -978,7 +1054,7 @@ function publicationAttemptForCandidate({ reportDate, bundleSha256, sourceHashes
 }
 
 async function runIntradayHoldRefresh({ options, reportDate, manifestPath, releasePath, receiptPath, intradayStatusPath, warnings, steps }) {
-  const retainedReconciliation = retainedPublicationReconciliation({ reportDate, intradayStatusPath, manifestPath })
+  const retainedReconciliation = retainedPublicationReconciliation({ reportDate, intradayStatusPath, manifestPath, receiptPath })
   if (retainedReconciliation) {
     const failureCode = retainedReconciliation.consistent
       ? 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
@@ -1403,40 +1479,42 @@ async function runDailyUnlocked(options) {
   let failureCode = null
   let reconciliationRequired = false
   let candidate = null
+  let publishedReceipt = null
   if (!options.noPublish) {
+    const beforeReceipt = readReceiptStateAfterPublication(receiptPath)
     const publication = publish(reportDate, options.forcePublish, steps)
-    const durableAttempt = publicationAttemptForCandidate({
-      reportDate,
-      bundleSha256: built.bundleSha256,
-      sourceHashes: built.sourceHashes,
-      holdRefresh: false,
-    })
+    const retainedMarker = retainedGlobalPublicationReconciliation()
+    const durableAttempt = retainedMarker
+      ? publicationAttemptForCandidate({
+          reportDate,
+          // The hash the publisher printed must be the marker's own hash.
+          bundleSha256: publishedCandidateBundleSha256(publication.output, retainedMarker.candidate?.bundleSha256 ?? null),
+          sourceHashes: built.sourceHashes,
+          holdRefresh: false,
+          // The publisher rebuilds resources (and so the bundle) before POST;
+          // only the captured public and DealerMail sources are Node's to bind.
+          sourceFields: ['public', 'dealerMail'],
+        })
+      : null
     publishOk = publication.ok
     if (publishOk) {
       publishStatus = 'published_or_already_verified'
     } else {
-      const failure = durableAttempt
-        ? {
-            status: 'cloud_publication_outcome_unknown',
-            failureCode: durableAttempt.consistent
-              ? 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN'
-              : 'PUBLICATION_RECONCILIATION_STATE_INVALID',
-            reconciliationRequired: true,
-            candidate: {
-              bundleSha256: built.bundleSha256,
-              dealerMailSha256: built.sourceHashes.dealerMail,
-            },
-          }
-        : classifyFailedPublication({
-            publisherOutput: publication.output,
-            fallbackBundleSha256: built.bundleSha256,
-            dealerMailSha256: built.sourceHashes.dealerMail,
-          })
+      const failure = classifyOrdinaryPublicationFailure({
+        publisherOutput: publication.output,
+        beforeRaw: beforeReceipt.raw,
+        afterState: readReceiptStateAfterPublication(receiptPath),
+        durableAttempt,
+        reportDate,
+        builtSourceHashes: built.sourceHashes,
+      })
       publishStatus = failure.status
       failureCode = failure.failureCode
       reconciliationRequired = failure.reconciliationRequired
       candidate = failure.candidate
       if (reconciliationRequired) steps.at(-1).status = 'publication_outcome_unknown'
+      else if (failure.receipt) steps.at(-1).status = 'published_followups_failed'
+      publishedReceipt = failure.receipt
     }
     manifest = readJson(manifestPath)
     manifest.daily_steps = steps
@@ -1447,6 +1525,15 @@ async function runDailyUnlocked(options) {
         reconciliation_required: true,
         expected_bundle_sha256: candidate.bundleSha256,
         receipt_path: receiptPath,
+        publisher: 'BobMaxey-InventoryFlow-DailyPublish',
+      }
+    } else if (publishedReceipt) {
+      manifest.cloudflare_publish = {
+        attempted: true,
+        status: 'published_and_verified_followups_pending',
+        receipt_path: receiptPath,
+        bundle_sha256: publishedReceipt.bundleSha256,
+        verified_at: publishedReceipt.verifiedAt,
         publisher: 'BobMaxey-InventoryFlow-DailyPublish',
       }
     }
@@ -1527,6 +1614,7 @@ export const internals = {
   candidateManifestFromBaseline,
   captureFileTransaction,
   classifyFailedPublication,
+  classifyOrdinaryPublicationFailure,
   classifyPublicationOutcome,
   dealerMailRevisionPaths,
   deriveManifest,

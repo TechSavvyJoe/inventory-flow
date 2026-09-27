@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildSyntheticCloudBundle } from '../../fixtures/synthetic-cloud-bundle.mjs'
 import { validateReleaseBundle } from '../../cloudflare/src/release-validation.mjs'
 import { cloudBundleSha256, cloudReleaseFrom } from '../../scripts/publish-cloud-release.mjs'
-import { acquirePublicationLock, assertExpectedSourceHashes, assertInheritedPublicationLock, main, publicationFailureMessage, publicationReconciliationPath, readPublicationReconciliation, receiptSourceHashes, reconcilePendingPublication, releasePublicationLock, reportDate, syncCloudRelease, verifyPublishedRelease, writePublicationReconciliation, writeReceipt } from '../../scripts/sync-cloud-release.mjs'
+import { acquirePublicationLock, assertExpectedSourceHashes, assertInheritedPublicationLock, main, publicationFailureMessage, publicationReconciliationPath, readPublicationReconciliation, receiptSourceHashes, reconcilePendingPublication, releasePublicationLock, reportDate, retainedEnvelopePath, syncCloudRelease, verifyPublishedRelease, writePublicationReconciliation, writeReceipt } from '../../scripts/sync-cloud-release.mjs'
 
 const environment = { INVENTORY_OPS_CLOUD_URL:'https://inventory-ops.joegallant.me', INVENTORY_OPS_RELEASE_ENCRYPTION_KEY_BASE64:Buffer.alloc(32, 7).toString('base64'), CF_ACCESS_CLIENT_ID:'synthetic', CF_ACCESS_CLIENT_SECRET:'synthetic', INVENTORY_OPS_RELEASE_PUBLISHER_TOKEN:'synthetic' }
 const now = new Date('2026-08-30T15:00:00Z')
@@ -293,6 +293,8 @@ describe('verified daily cloud publication',()=>{
       rmSync(receiptDirectory, { recursive: true, force: true })
       const mismatchedFetch = async (url) => {
         const route = new URL(url).pathname
+        // The cloud accepts the exact re-POST but still reports another hash.
+        if (route === '/internal/releases') return Response.json({ status: 'already_published', reportDate: bundle.reportDate })
         if (route === '/internal/status') return Response.json({ ready: true, reportDate: bundle.reportDate, bundleSha256: 'f'.repeat(64), metadata: expected })
         return Response.json({ ready: true, reportDate: bundle.reportDate, bundleSha256: 'f'.repeat(64), counts: { inventory: expected.activeInventoryCount, managerDispositions: expected.managerDispositionRecordCount }, bootstrapBytes: 100 })
       }
@@ -310,6 +312,113 @@ describe('verified daily cloud publication',()=>{
       expect(existsSync(reconciled.archivedStatePath)).toBe(true)
       expect(JSON.parse(readFileSync(reconciled.receiptPath, 'utf8'))).toMatchObject({ bundleSha256: postedHash })
     } finally { rmSync(workspaceRoot, { recursive: true, force: true }) }
+  })
+
+  describe('guarded exact-candidate recovery', () => {
+    const roots = []
+    afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
+    const quiet = async (operation) => {
+      const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+      try { return await operation() } finally { output.mockRestore() }
+    }
+    const liveFetch = (bundle, expected, liveHash, routes = []) => async (url, options) => {
+      const route = new URL(url).pathname
+      routes.push({ route, body: options?.body ?? null })
+      if (route === '/internal/releases') return Response.json({ status: 'published', reportDate: bundle.reportDate })
+      if (route === '/internal/status') return Response.json({ ready: true, reportDate: bundle.reportDate, bundleSha256: liveHash(), metadata: expected })
+      return Response.json({ ready: true, reportDate: bundle.reportDate, bundleSha256: liveHash(), counts: { inventory: expected.activeInventoryCount, managerDispositions: expected.managerDispositionRecordCount }, bootstrapBytes: 100 })
+    }
+    // Leaves a real pre-POST marker and retained envelope exactly as a lost
+    // POST response would, and returns the transmitted body.
+    async function lostResponse() {
+      const workspaceRoot = mkdtempSync(path.join(os.tmpdir(), 'inventory-sync-recovery-'))
+      roots.push(workspaceRoot)
+      const { bundle, expected } = fixture()
+      let postedBody
+      await expect(main({
+        workspaceRoot, environment, now, loadRelease: () => bundle.release,
+        fetchImpl: async (_url, options) => { postedBody = options.body; throw new TypeError('synthetic response lost') },
+      })).rejects.toThrow('CLOUD_PUBLICATION_OUTCOME_UNKNOWN')
+      const postedHash = JSON.parse(postedBody).bundleSha256
+      const receiptPath = path.join(workspaceRoot, 'work', 'app-feed-status', `${bundle.reportDate}.json`)
+      return { workspaceRoot, bundle, expected, postedBody, postedHash, receiptPath }
+    }
+
+    it('replaces a parseable same-date receipt of a different hash once both endpoints prove the candidate', async () => {
+      const { workspaceRoot, bundle, expected, postedHash, receiptPath } = await lostResponse()
+      const morning = { schemaVersion: 1, reportDate: bundle.reportDate, complete: true, status: 'published_and_verified', bundleSha256: 'e'.repeat(64), verifiedAt: '2026-08-30T13:15:00.000Z' }
+      writeFileSync(receiptPath, JSON.stringify(morning))
+      const routes = []
+      const reconciled = await reconcilePendingPublication({ workspaceRoot, environment, now, loadRelease: () => bundle.release, fetchImpl: liveFetch(bundle, expected, () => postedHash, routes) })
+      expect(reconciled.receipt).toMatchObject({ publication: 'reconciled_exact_candidate', bundleSha256: postedHash })
+      expect(routes.map(entry => entry.route)).not.toContain('/internal/releases')
+      expect(JSON.parse(readFileSync(receiptPath, 'utf8'))).toMatchObject({ status: 'published_and_verified', bundleSha256: postedHash })
+      expect(existsSync(publicationReconciliationPath(workspaceRoot))).toBe(false)
+      expect(existsSync(retainedEnvelopePath(workspaceRoot))).toBe(false)
+    })
+
+    it('keeps the marker and refuses only a receipt file that cannot be parsed', async () => {
+      const { workspaceRoot, bundle, expected, postedHash, receiptPath } = await lostResponse()
+      writeFileSync(receiptPath, '{"status":"published_and_ver')
+      await expect(reconcilePendingPublication({ workspaceRoot, environment, now, loadRelease: () => bundle.release, fetchImpl: liveFetch(bundle, expected, () => postedHash) }))
+        .rejects.toThrow('PUBLICATION_RECONCILIATION_RECEIPT_CONFLICT')
+      expect(readPublicationReconciliation(workspaceRoot)?.candidate.bundleSha256).toBe(postedHash)
+      expect(readFileSync(receiptPath, 'utf8')).toBe('{"status":"published_and_ver')
+    })
+
+    it('re-POSTs the byte-identical retained envelope when the candidate is not live, then verifies it', async () => {
+      const { workspaceRoot, bundle, expected, postedBody, postedHash, receiptPath } = await lostResponse()
+      writeFileSync(receiptPath, JSON.stringify({ complete: true, status: 'published_and_verified', reportDate: bundle.reportDate, bundleSha256: 'e'.repeat(64) }))
+      let live = 'e'.repeat(64)
+      const routes = []
+      const fetchImpl = async (url, options) => {
+        if (new URL(url).pathname === '/internal/releases') live = JSON.parse(options.body).bundleSha256
+        return liveFetch(bundle, expected, () => live, routes)(url, options)
+      }
+      const reconciled = await quiet(() => reconcilePendingPublication({ workspaceRoot, environment, now, loadRelease: () => bundle.release, fetchImpl }))
+      const posts = routes.filter(entry => entry.route === '/internal/releases')
+      expect(posts).toHaveLength(1)
+      expect(posts[0].body).toBe(postedBody)
+      expect(reconciled.receipt).toMatchObject({ status: 'published_and_verified', publication: 'reposted_exact_candidate', bundleSha256: postedHash })
+      expect(JSON.parse(readFileSync(receiptPath, 'utf8'))).toMatchObject({ bundleSha256: postedHash })
+      expect(existsSync(publicationReconciliationPath(workspaceRoot))).toBe(false)
+      expect(existsSync(retainedEnvelopePath(workspaceRoot))).toBe(false)
+    })
+
+    it.each([
+      ['a definite rejection', () => Response.json({ code: 'OLDER_RELEASE_REJECTED' }, { status: 409 }), 'PUBLICATION_RECONCILIATION_REPOST_REJECTED'],
+      ['an ambiguous 409', () => Response.json({ code: 'PUBLISH_CONFLICT_RETRY' }, { status: 409 }), 'PUBLICATION_RECONCILIATION_REPOST_OUTCOME_UNKNOWN'],
+      ['a lost response', () => { throw new TypeError('synthetic transport loss') }, 'PUBLICATION_RECONCILIATION_REPOST_OUTCOME_UNKNOWN'],
+    ])('keeps the marker and fails closed after %s to the exact re-POST', async (_label, answer, code) => {
+      const { workspaceRoot, bundle, expected, postedHash } = await lostResponse()
+      const fetchImpl = async (url, options) => new URL(url).pathname === '/internal/releases'
+        ? answer()
+        : liveFetch(bundle, expected, () => 'e'.repeat(64))(url, options)
+      let failure
+      try { await reconcilePendingPublication({ workspaceRoot, environment, now, loadRelease: () => bundle.release, fetchImpl }) } catch (error) { failure = error }
+      expect(failure).toMatchObject({ message: code, bundleSha256: postedHash })
+      expect(publicationFailureMessage(failure)).toContain(`${code}. candidate_bundle_sha256=${postedHash}`)
+      expect(publicationFailureMessage(failure)).toContain('marker was kept')
+      expect(readPublicationReconciliation(workspaceRoot)?.candidate.bundleSha256).toBe(postedHash)
+      expect(existsSync(retainedEnvelopePath(workspaceRoot))).toBe(true)
+    })
+
+    it('never builds or posts a different release when the retained envelope is missing or does not prove the candidate', async () => {
+      const { workspaceRoot, bundle, expected, postedBody, postedHash } = await lostResponse()
+      const routes = []
+      const notLive = liveFetch(bundle, expected, () => 'e'.repeat(64), routes)
+      rmSync(retainedEnvelopePath(workspaceRoot))
+      const missing = await reconcilePendingPublication({ workspaceRoot, environment, now, loadRelease: () => bundle.release, fetchImpl: notLive }).catch(error => error)
+      expect(missing.message).toBe('PUBLICATION_RECONCILIATION_ENVELOPE_NOT_RETAINED')
+      expect(publicationFailureMessage(missing)).toContain(`candidate_bundle_sha256=${postedHash}`)
+      const tampered = JSON.parse(postedBody)
+      const sealed = Buffer.from(tampered.ciphertext, 'base64url'); sealed[0] ^= 1
+      writeFileSync(retainedEnvelopePath(workspaceRoot), JSON.stringify({ ...tampered, ciphertext: sealed.toString('base64url') }))
+      await expect(reconcilePendingPublication({ workspaceRoot, environment, now, loadRelease: () => bundle.release, fetchImpl: notLive }))
+        .rejects.toThrow('PUBLICATION_RECONCILIATION_ENVELOPE_INVALID')
+      expect(routes.map(entry => entry.route)).not.toContain('/internal/releases')
+      expect(readPublicationReconciliation(workspaceRoot)?.candidate.bundleSha256).toBe(postedHash)
+    })
   })
 
   it('fails closed on malformed reconciliation state and refuses to replace a different pending candidate', () => {

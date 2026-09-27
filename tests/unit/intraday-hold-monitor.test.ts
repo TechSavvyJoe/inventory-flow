@@ -228,6 +228,47 @@ describe('intraday hold task monitor', () => {
     expect(readdirSync(path.join(root, 'work/hold-refresh-monitor/alerts'))).toHaveLength(1)
   })
 
+  it('stays silent on a status the guarded recovery rewrote as reconciled with its verified receipt link', () => {
+    const root = workspace()
+    writeReceipts(root, {
+      status: 'intraday_holds_reconciled',
+      reconciliationRequired: false,
+      candidateBundleSha256: bundleSha256,
+    })
+    expect(run(root, { now: '2026-09-25T12:00:00-04:00', initial: ready() })).toEqual({ started: 0, events: 0 })
+    expect(existsSync(path.join(root, 'work/hold-refresh-monitor/active-alert.json'))).toBe(false)
+  })
+
+  it('stops treating a candidate as unresolved once the marker is gone and the receipt proves that exact hash', () => {
+    const root = workspace()
+    writeReceipts(root, {
+      status: 'intraday_holds_publication_outcome_unknown',
+      reconciliationRequired: true,
+      candidateBundleSha256: bundleSha256,
+      failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+      explicitLink: false,
+    })
+    const manifestPath = path.join(root, `work/run-status/${reportDate}.json`)
+    mkdirSync(path.dirname(manifestPath), { recursive: true })
+    writeFileSync(manifestPath, JSON.stringify({
+      report_date: reportDate,
+      cloudflare_publish: { status: 'publication_outcome_unknown', reconciliation_required: true, expected_bundle_sha256: bundleSha256 },
+    }))
+
+    // The day is no longer reconciliation-blocked, so the monitor may make its
+    // one ordinary repair start of the existing hold-refresh task.
+    const result = run(root, {
+      now: '2026-09-25T12:00:00-04:00',
+      initial: ready(1, '2026-09-25T11:25:00-04:00'),
+      afterStart: ready(0, '2026-09-25T12:00:00-04:00'),
+    })
+    expect(result.started).toBe(1)
+    const alertPath = path.join(root, 'work/hold-refresh-monitor/active-alert.json')
+    if (existsSync(alertPath)) expect(JSON.parse(readFileSync(alertPath, 'utf8')).code).not.toBe('intraday_hold_publication_reconciliation_required')
+    expect(JSON.parse(readFileSync(path.join(root, 'work/hold-refresh-monitor/state.json'), 'utf8')))
+      .toMatchObject({ reconciliationRequired: false, reconciliationSource: 'none' })
+  })
+
   it('uses the cross-date publisher marker as authoritative and never starts the writer', () => {
     const root = workspace()
     const candidateHash = 'E'.repeat(64)
