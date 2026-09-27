@@ -51,6 +51,15 @@ function Edit-Field([string]$json, [string]$field) {
   $envelope[$field] = [Convert]::ToBase64String($bytes)
   return ($envelope | ConvertTo-Json -Compress)
 }
+function Edit-Payload($rsa, [string]$json) {
+  # Re-seal a payload containing NODE_OPTIONS as an attacker holding the public key would.
+  $fingerprint = Get-HandoffKeyFingerprint -PublicKeyBase64 (Get-PublicKey $rsa)
+  $payload = [Text.Encoding]::UTF8.GetBytes('{"settings":{"NODE_OPTIONS":"--require x"},"files":{}}')
+  $key = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32); $nonce = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(12)
+  $tag = [byte[]]::new(16); $cipher = [byte[]]::new($payload.Length)
+  $aes = [System.Security.Cryptography.AesGcm]::new($key, 16); $aes.Encrypt($nonce, $payload, $cipher, $tag, [Text.Encoding]::UTF8.GetBytes("inventory-flow-secret-handoff-v2|$fingerprint"))
+  return ([ordered]@{ format = 'inventory-flow-secret-handoff-v2'; recipient = $fingerprint; wrappedKey = [Convert]::ToBase64String($rsa.Encrypt($key, [System.Security.Cryptography.RSAEncryptionPadding]::OaepSHA256)); nonce = [Convert]::ToBase64String($nonce); tag = [Convert]::ToBase64String($tag); ciphertext = [Convert]::ToBase64String($cipher) } | ConvertTo-Json -Compress)
+}
 $recipient = [System.Security.Cryptography.RSA]::Create(3072)
 $stranger = [System.Security.Cryptography.RSA]::Create(3072)
 $small = [System.Security.Cryptography.RSA]::Create(2048)
@@ -88,7 +97,8 @@ $settingsMatch = $opened.Settings.Count -eq $settings.Count
 foreach ($name in $settings.Keys) { if ($opened.Settings[$name] -cne $settings[$name]) { $settingsMatch = $false } }
 $legacyMatch = $legacyOpened.Settings.Count -eq $settings.Count
 foreach ($name in $settings.Keys) { if ($legacyOpened.Settings[$name] -cne $settings[$name]) { $legacyMatch = $false } }
-$leaks = @($settings.Values) + @('SYNTHETIC-FILE-SECRET', 'SYNTHETIC-CLIENT') | Where-Object { $envelope.Contains($_) }
+$decoded = ($parsed.Values | ForEach-Object { try { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([string]$_)) } catch { [string]$_ } }) -join '|'
+$leaks = @($settings.Values) + @('SYNTHETIC-FILE-SECRET', 'SYNTHETIC-CLIENT') | Where-Object { $envelope.Contains($_) -or $decoded.Contains($_) }
 [ordered]@{
   format = $parsed.format
   recipientMatches = $parsed.recipient -ceq (Get-HandoffKeyFingerprint -PublicKeyBase64 $public)
@@ -97,7 +107,7 @@ $leaks = @($settings.Values) + @('SYNTHETIC-FILE-SECRET', 'SYNTHETIC-CLIENT') | 
   fileMatches = [Text.Encoding]::UTF8.GetString($opened.Files['synthetic-probe.json']) -ceq $fileText
   openedFormat = $opened.Format
   envelopeLeaks = @($leaks).Count
-  codeShape = $senderCode -cmatch '^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$'
+  codeShape = $senderCode -cmatch '^[0-9A-F]{4}(-[0-9A-F]{4}){3}$'
   codesMatch = $senderCode -ceq $receiverCode
   codeOrderIndependent = $senderCode -ceq (Get-HandoffTransferCode -Settings $reversed -Files $files)
   codeDetectsChange = $senderCode -cne (Get-HandoffTransferCode -Settings $changed -Files $files)
@@ -114,6 +124,10 @@ $leaks = @($settings.Values) + @('SYNTHETIC-FILE-SECRET', 'SYNTHETIC-CLIENT') | 
   lowercaseName = Get-ErrorCode { New-SecretHandoff -Settings @{ token = 'x' } -Files @{} -PublicKeyBase64 $public }
   hyphenName = Get-ErrorCode { New-SecretHandoff -Settings @{ 'BAD-NAME' = 'x' } -Files @{} -PublicKeyBase64 $public }
   shortName = Get-ErrorCode { New-SecretHandoff -Settings @{ A = 'x' } -Files @{} -PublicKeyBase64 $public }
+  reservedNames = @('PATH', 'NODE_OPTIONS', 'NODE_EXTRA_CA_CERTS', 'COMSPEC', 'HTTPS_PROXY', 'PSMODULEPATH', 'TEMP', 'PYTHONPATH' | Where-Object { (Get-ErrorCode { New-SecretHandoff -Settings @{ $_ = 'x' } -Files @{} -PublicKeyBase64 $public }) -ne 'HANDOFF_RESERVED_SETTING_NAME' }).Count
+  reservedInEnvelope = Get-ErrorCode { Read-SecretHandoff -Json (Edit-Payload $recipient $envelope) -PrivateKey $recipient }
+  deviceNames = @('con.json', 'nul.json', 'aux.json', 'prn.json', 'com1.json', 'lpt1.json' | Where-Object { (Get-ErrorCode { New-SecretHandoff -Settings @{} -Files @{ $_ = [byte[]](1) } -PublicKeyBase64 $public }) -ne 'HANDOFF_INVALID_FILE_NAME' }).Count
+  missingField = Get-ErrorCode { $e = $envelope | ConvertFrom-Json -AsHashtable; $e.Remove('recipient'); Read-SecretHandoff -Json ($e | ConvertTo-Json -Compress) -PrivateKey $recipient }
   oversizedValue = Get-ErrorCode { New-SecretHandoff -Settings @{ BIG_VALUE = ('x' * 8193) } -Files @{} -PublicKeyBase64 $public }
   traversalFile = Get-ErrorCode { New-SecretHandoff -Settings @{} -Files @{ '..\x.json' = [byte[]](1) } -PublicKeyBase64 $public }
   slashFile = Get-ErrorCode { New-SecretHandoff -Settings @{} -Files @{ 'a/b.json' = [byte[]](1) } -PublicKeyBase64 $public }
@@ -177,6 +191,9 @@ describe('publisher secret handoff envelope', () => {
   it('refuses setting names and credential file names that could escape their place', () => {
     for (const key of ['lowercaseName', 'hyphenName', 'shortName']) expect(results[key], key).toBe('HANDOFF_INVALID_SETTING_NAME')
     expect(results.oversizedValue).toBe('HANDOFF_INVALID_SETTING_VALUE')
+    expect(results.reservedNames).toBe(0)
+    expect(results.reservedInEnvelope).toBe('HANDOFF_RESERVED_SETTING_NAME')
+    expect(results.deviceNames).toBe(0)
     for (const key of ['traversalFile', 'slashFile', 'driveFile', 'wrongExtension', 'uppercaseFile']) expect(results[key], key).toBe('HANDOFF_INVALID_FILE_NAME')
     expect(results.emptyFile).toBe('HANDOFF_INVALID_FILE_CONTENT')
     expect(results.oversizedFile).toBe('HANDOFF_INVALID_FILE_CONTENT')
@@ -185,6 +202,7 @@ describe('publisher secret handoff envelope', () => {
   it('rejects malformed input and unknown formats', () => {
     expect(results.malformed).toBe('HANDOFF_MALFORMED')
     expect(results.unsupportedFormat).toBe('HANDOFF_FORMAT_UNSUPPORTED')
+    expect(results.missingField).toBe('HANDOFF_MALFORMED')
   })
 
   it('still opens the original chunked handoff format for settings', () => {
@@ -211,6 +229,7 @@ function Invoke-Store([string]$side, [string[]]$arguments) {
   return @{ Output = $output; Exit = $LASTEXITCODE }
 }
 function Get-Code([string]$text) { if ($text -match 'Transfer code: ([0-9A-F-]+)') { return $Matches[1] } return $null }
+$initStdout = $null
 function Get-Canonical([string]$json) {
   $table = $json | ConvertFrom-Json -AsHashtable; $sorted = [ordered]@{}
   foreach ($name in ([string[]]@($table.Keys) | Sort-Object -CaseSensitive)) { $sorted[$name] = $table[$name] }
@@ -225,14 +244,17 @@ $credentialText = '{"secret":"SYNTHETIC-FILE-SECRET"}'
 $handoff = Join-Path $Root 'publisher.handoff.json'
 $publicKey = Join-Path $target 'runtime\cloud-secrets\handoff-public.txt'
 $init = Invoke-Store 'target' @('-Mode', 'Initialize')
+$initStdout = (& pwsh -NoLogo -NoProfile -NonInteractive -Command "Get-Content -Raw -LiteralPath '$(Join-Path $target 'runtime\cloud-secrets\handoff-public.txt')'").Trim()
 $export = Invoke-Store 'source' @('-Mode', 'Export', '-PublicKeyPath', $publicKey, '-OutputPath', $handoff)
 $again = Invoke-Store 'source' @('-Mode', 'Export', '-PublicKeyPath', $publicKey, '-OutputPath', $handoff)
 $inside = Invoke-Store 'source' @('-Mode', 'Export', '-PublicKeyPath', $publicKey, '-OutputPath', (Join-Path $source 'publisher.handoff.json'))
-$accept = Invoke-Store 'target' @('-Mode', 'Accept', '-InputPath', $handoff)
+$wrongCode = Invoke-Store 'target' @('-Mode', 'Accept', '-InputPath', $handoff, '-TransferCode', '0000-0000-0000-0000')
+$wroteOnMismatch = (Test-Path -LiteralPath (Join-Path $target 'runtime\cloud-secrets\publisher.dpapi')) -or (Test-Path -LiteralPath (Join-Path $target 'runtime\integration-credentials'))
+$accept = Invoke-Store 'target' @('-Mode', 'Accept', '-InputPath', $handoff, '-TransferCode', (Get-Code $export.Output))
 $checkSource = Invoke-Store 'source' @('-Mode', 'Check')
 $checkTarget = Invoke-Store 'target' @('-Mode', 'Check')
 [IO.File]::WriteAllText((Join-Path $target 'runtime\integration-credentials\synthetic-probe.json'), '{"secret":"SYNTHETIC-OTHER"}')
-$conflict = Invoke-Store 'target' @('-Mode', 'Accept', '-InputPath', $handoff)
+$conflict = Invoke-Store 'target' @('-Mode', 'Accept', '-InputPath', $handoff, '-TransferCode', (Get-Code $export.Output))
 $targetStore = [System.Net.NetworkCredential]::new('', (ConvertTo-SecureString ([IO.File]::ReadAllText((Join-Path $target 'runtime\cloud-secrets\publisher.dpapi'))))).Password
 $allOutput = $init.Output + $export.Output + $accept.Output + $checkSource.Output + $checkTarget.Output + $conflict.Output
 [ordered]@{
@@ -240,6 +262,8 @@ $allOutput = $init.Output + $export.Output + $accept.Output + $checkSource.Outpu
   exportCode = Get-Code $export.Output; acceptCode = Get-Code $accept.Output
   checkSourceCode = Get-Code $checkSource.Output; checkTargetCode = Get-Code $checkTarget.Output
   storesEqual = (Get-Canonical $targetStore) -ceq (Get-Canonical $storeJson)
+  mismatchRefused = ($wrongCode.Exit -ne 0) -and ($wrongCode.Output -match 'HANDOFF_TRANSFER_CODE_MISMATCH') -and -not $wroteOnMismatch
+  initStdoutIsKey = ($init.Output -split '\r?\n' | Where-Object { $_ -and $_ -notmatch 'fingerprint' } | Select-Object -First 1).Trim() -ceq $initStdout
   refusesOverwrite = $again.Exit -ne 0
   refusesRepositoryOutput = ($inside.Exit -ne 0) -and ($inside.Output -match 'HANDOFF_OUTPUT_INSIDE_REPOSITORY')
   refusesDifferentCredential = ($conflict.Exit -ne 0) -and ($conflict.Output -match 'CREDENTIAL_FILE_EXISTS')
@@ -256,12 +280,14 @@ describe.skipIf(process.platform !== 'win32')('publisher secret handoff on Windo
 
   it('moves every setting and credential file from one Windows user store to another with matching codes', () => {
     expect([results.initExit, results.exportExit, results.acceptExit]).toEqual([0, 0, 0])
-    expect(results.exportCode).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/)
+    expect(results.exportCode).toMatch(/^[0-9A-F]{4}(-[0-9A-F]{4}){3}$/)
+    expect(results.initStdoutIsKey).toBe(true)
     expect(new Set([results.exportCode, results.acceptCode, results.checkSourceCode, results.checkTargetCode]).size).toBe(1)
     expect(results.storesEqual).toBe(true)
   })
 
   it('refuses to overwrite a handoff, to write one inside the repository, or to replace a different credential file', () => {
+    expect(results.mismatchRefused).toBe(true)
     expect(results.refusesOverwrite).toBe(true)
     expect(results.refusesRepositoryOutput).toBe(true)
     expect(results.refusesDifferentCredential).toBe(true)

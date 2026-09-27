@@ -3,6 +3,7 @@ param(
   [string]$InputPath,
   [string]$PublicKeyPath,
   [string]$OutputPath,
+  [string]$TransferCode,
   [string]$Script,
   [string[]]$ScriptArguments = @()
 )
@@ -13,16 +14,24 @@ $credentialDirectory = Join-Path $appRoot 'runtime\integration-credentials'
 $privatePath = Join-Path $secretDirectory 'handoff-private.dpapi'
 $storePath = Join-Path $secretDirectory 'publisher.dpapi'
 if (-not $IsWindows) { throw 'This secret store requires Windows current-user protection.' }
-Import-Module (Join-Path $PSScriptRoot 'lib\secret-handoff.psm1') -Force
+if ($Mode -ne 'Run') { Import-Module (Join-Path $PSScriptRoot 'lib\secret-handoff.psm1') -Force }
 $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+$userSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 function Protect-Directory([string]$path) {
+  # Only this Windows user may use a secret directory: no links, no inherited
+  # rules, no rule for any other identity. Rebuild the ACL when that is not so.
   New-Item -ItemType Directory -Force -Path $path | Out-Null
+  if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw ("SECRET_DIRECTORY_IS_LINK: {0}" -f $path) }
   $acl = Get-Acl -LiteralPath $path
-  if (-not $acl.AreAccessRulesProtected) {
-    $acl.SetAccessRuleProtection($true, $false)
-    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($identity,'FullControl','ContainerInherit,ObjectInherit','None','Allow')
-    $acl.SetAccessRule($rule)
-    Set-Acl -LiteralPath $path -AclObject $acl
+  $rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
+  $private = $acl.AreAccessRulesProtected -and $rules.Count -gt 0 -and -not ($rules | Where-Object { $_.IdentityReference -ne $userSid -or $_.IsInherited })
+  if (-not $private) {
+    $fresh = [System.Security.AccessControl.DirectorySecurity]::new()
+    $fresh.SetAccessRuleProtection($true, $false)
+    $fresh.SetOwner($userSid)
+    $fresh.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($userSid,'FullControl','ContainerInherit,ObjectInherit','None','Allow'))
+    Set-Acl -LiteralPath $path -AclObject $fresh
+    foreach ($child in Get-ChildItem -LiteralPath $path -Force -Recurse) { Set-Acl -LiteralPath $child.FullName -AclObject (Get-Acl -LiteralPath $path) -ErrorAction SilentlyContinue }
   }
 }
 Protect-Directory $secretDirectory
@@ -37,7 +46,7 @@ function Read-CredentialFiles {
   $files = @{}; $skipped = @()
   if (Test-Path -LiteralPath $credentialDirectory) {
     foreach ($item in Get-ChildItem -LiteralPath $credentialDirectory -File -Filter '*.json') {
-      if ($item.Name -cmatch '^[a-z0-9][a-z0-9._-]{0,80}\.json$') { $files[$item.Name] = [IO.File]::ReadAllBytes($item.FullName) }
+      if (Test-HandoffCredentialFileName -Name $item.Name) { $files[$item.Name] = [IO.File]::ReadAllBytes($item.FullName) }
       else { $skipped += $item.Name }
     }
   }
@@ -58,7 +67,7 @@ if ($Mode -eq 'Initialize') {
     $public = [Convert]::ToBase64String($rsa.ExportSubjectPublicKeyInfo())
     [IO.File]::WriteAllText((Join-Path $secretDirectory 'handoff-public.txt'),$public)
     Write-Output $public
-    Write-Host ("Recipient key fingerprint: {0}" -f (Get-HandoffKeyFingerprint -PublicKeyBase64 $public))
+    [Console]::Error.WriteLine(("Recipient key fingerprint: {0}" -f (Get-HandoffKeyFingerprint -PublicKeyBase64 $public)))
   } finally { $rsa.Dispose() }
   exit
 }
@@ -88,13 +97,18 @@ if ($Mode -eq 'Export') {
   exit
 }
 if ($Mode -eq 'Accept') {
-  if (-not $InputPath) { throw 'Accept requires -InputPath.' }
+  if (-not $InputPath -or -not $TransferCode) { throw 'Accept requires -InputPath and -TransferCode (the code Export printed on the sending PC).' }
   if (-not (Test-Path -LiteralPath $privatePath)) { throw 'HANDOFF_KEY_MISSING: run -Mode Initialize on this PC first.' }
   $rsa = [System.Security.Cryptography.RSA]::Create()
   try {
     $keyBytes = [Convert]::FromBase64String((Unprotect-Local ([IO.File]::ReadAllText($privatePath))))
     try { $rsa.ImportPkcs8PrivateKey($keyBytes,[ref]$null) } finally { [Array]::Clear($keyBytes,0,$keyBytes.Length) }
     $received = Read-SecretHandoff -Json (Get-Content -LiteralPath $InputPath -Raw) -PrivateKey $rsa
+    # Verify before anything is written: a handoff forged with the public key
+    # changes the code, and a mismatch must leave this PC untouched.
+    if ((Get-HandoffTransferCode -Settings $received.Settings -Files $received.Files) -cne $TransferCode.Trim().ToUpperInvariant()) {
+      throw 'HANDOFF_TRANSFER_CODE_MISMATCH: nothing was written. Delete this handoff file and repeat the export.'
+    }
     # Refuse to replace a different credential file before anything is written.
     foreach ($name in $received.Files.Keys) {
       $target = Join-Path $credentialDirectory $name
@@ -111,7 +125,7 @@ if ($Mode -eq 'Accept') {
     }
     Write-Output 'Encrypted settings received and protected for this Windows user.'
     Write-Summary $received.Settings $received.Files
-    Write-Output 'Compare the transfer code with the sending PC. If it differs, stop and repeat the transfer. Delete the handoff file from both PCs.'
+    Write-Output 'Transfer code verified. Delete the handoff file from both PCs, then delete runtime\cloud-secrets\handoff-private.dpapi and handoff-public.txt on this PC.'
   } finally { $rsa.Dispose() }
   exit
 }

@@ -20,6 +20,10 @@ Set-StrictMode -Version Latest
 $script:HandoffFormat = 'inventory-flow-secret-handoff-v2'
 $script:SettingNamePattern = '^[A-Z][A-Z0-9_]{1,90}$'
 $script:CredentialFilePattern = '^[a-z0-9][a-z0-9._-]{0,80}\.json$'
+# Names that steer process startup, lookup or networking must never ride in a
+# store that Run mode exports into the environment before launching node.
+$script:ReservedSettingPattern = '^(PATH|PATHEXT|COMSPEC|SYSTEMROOT|SYSTEMDRIVE|WINDIR|TEMP|TMP|HOME|USERPROFILE|APPDATA|LOCALAPPDATA|PROGRAMDATA|PSMODULEPATH|NODE_[A-Z0-9_]*|NPM_[A-Z0-9_]*|PYTHON[A-Z0-9_]*|HTTPS?_PROXY|ALL_PROXY|NO_PROXY|SSL_CERT_[A-Z_]*|DYLD_[A-Z_]*|LD_[A-Z_]*)$'
+$script:ReservedDevicePattern = '^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)'
 $script:MaxSettings = 64
 $script:MaxSettingLength = 8192
 $script:MaxFiles = 16
@@ -40,11 +44,12 @@ function Assert-HandoffContent {
   if ($Files.Count -gt $script:MaxFiles) { throw 'HANDOFF_TOO_MANY_FILES' }
   foreach ($name in $Settings.Keys) {
     if ([string]$name -cnotmatch $script:SettingNamePattern) { throw 'HANDOFF_INVALID_SETTING_NAME' }
+    if ([string]$name -match $script:ReservedSettingPattern) { throw 'HANDOFF_RESERVED_SETTING_NAME' }
     $value = $Settings[$name]
     if ($null -eq $value -or ([string]$value).Length -gt $script:MaxSettingLength) { throw 'HANDOFF_INVALID_SETTING_VALUE' }
   }
   foreach ($name in $Files.Keys) {
-    if ([string]$name -cnotmatch $script:CredentialFilePattern) { throw 'HANDOFF_INVALID_FILE_NAME' }
+    if ([string]$name -cnotmatch $script:CredentialFilePattern -or [string]$name -match $script:ReservedDevicePattern) { throw 'HANDOFF_INVALID_FILE_NAME' }
     $bytes = $Files[$name]
     if ($bytes -isnot [byte[]] -or $bytes.Length -eq 0 -or $bytes.Length -gt $script:MaxFileBytes) { throw 'HANDOFF_INVALID_FILE_CONTENT' }
   }
@@ -73,7 +78,7 @@ function Get-HandoffTransferCode {
   foreach ($name in $Files.Keys) { $lines.Add("file:${name}:$(Get-Sha256Hex ([byte[]]$Files[$name]))") }
   $sorted = [string[]]$lines.ToArray()
   [Array]::Sort($sorted, [StringComparer]::Ordinal)
-  $hex = (Get-Sha256Hex ([Text.Encoding]::UTF8.GetBytes(($sorted -join "`n")))).Substring(0, 12).ToUpperInvariant()
+  $hex = (Get-Sha256Hex ([Text.Encoding]::UTF8.GetBytes(($sorted -join "`n")))).Substring(0, 16).ToUpperInvariant()
   return ($hex -split '(.{4})' | Where-Object { $_ }) -join '-'
 }
 
@@ -139,9 +144,10 @@ function Read-SecretHandoff {
   $settings = @{}; $files = @{}
 
   if (@($envelope.Keys) -ccontains 'format') {
-    if ($envelope.format -cne $script:HandoffFormat) { throw 'HANDOFF_FORMAT_UNSUPPORTED' }
+    if ($envelope['format'] -cne $script:HandoffFormat) { throw 'HANDOFF_FORMAT_UNSUPPORTED' }
+    foreach ($field in 'recipient', 'wrappedKey', 'nonce', 'tag', 'ciphertext') { if (-not $envelope.Contains($field) -or $envelope[$field] -isnot [string]) { throw 'HANDOFF_MALFORMED' } }
     $recipient = Get-HandoffKeyFingerprint -PublicKeyBase64 ([Convert]::ToBase64String($PrivateKey.ExportSubjectPublicKeyInfo()))
-    if ($envelope.recipient -cne $recipient) { throw 'HANDOFF_NOT_FOR_THIS_PC' }
+    if ($envelope['recipient'] -cne $recipient) { throw 'HANDOFF_NOT_FOR_THIS_PC' }
     $dataKey = $null; $payload = $null
     try {
       try {
@@ -153,11 +159,11 @@ function Read-SecretHandoff {
         $aes = New-AesGcm $dataKey
         try { $aes.Decrypt($nonce, $ciphertext, $tag, $payload, [Text.Encoding]::UTF8.GetBytes("$($script:HandoffFormat)|$recipient")) } finally { $aes.Dispose() }
       } catch { throw 'HANDOFF_DECRYPTION_FAILED' }
-      $content = [Text.Encoding]::UTF8.GetString($payload) | ConvertFrom-Json -AsHashtable
-      if ($content -isnot [System.Collections.IDictionary] -or $content.settings -isnot [System.Collections.IDictionary] -or $content.files -isnot [System.Collections.IDictionary]) { throw 'HANDOFF_MALFORMED' }
-      foreach ($name in $content.settings.Keys) { $settings[$name] = [string]$content.settings[$name] }
-      foreach ($name in $content.files.Keys) {
-        try { $files[$name] = [Convert]::FromBase64String([string]$content.files[$name]) } catch { throw 'HANDOFF_INVALID_FILE_CONTENT' }
+      try { $content = [Text.Encoding]::UTF8.GetString($payload) | ConvertFrom-Json -AsHashtable } catch { throw 'HANDOFF_MALFORMED' }
+      if ($content -isnot [System.Collections.IDictionary] -or -not $content.Contains('settings') -or -not $content.Contains('files') -or $content['settings'] -isnot [System.Collections.IDictionary] -or $content['files'] -isnot [System.Collections.IDictionary]) { throw 'HANDOFF_MALFORMED' }
+      foreach ($name in $content['settings'].Keys) { $settings[$name] = [string]$content['settings'][$name] }
+      foreach ($name in $content['files'].Keys) {
+        try { $files[$name] = [Convert]::FromBase64String([string]$content['files'][$name]) } catch { throw 'HANDOFF_INVALID_FILE_CONTENT' }
       }
     } finally { Clear-Bytes $dataKey; Clear-Bytes $payload }
     Assert-HandoffContent -Settings $settings -Files $files
@@ -179,4 +185,9 @@ function Read-SecretHandoff {
   return @{ Settings = $settings; Files = $files; Format = 'v1' }
 }
 
-Export-ModuleMember -Function Get-HandoffKeyFingerprint, Get-HandoffTransferCode, New-SecretHandoff, Read-SecretHandoff
+function Test-HandoffCredentialFileName {
+  param([Parameter(Mandatory)][string]$Name)
+  return ($Name -cmatch $script:CredentialFilePattern -and $Name -notmatch $script:ReservedDevicePattern)
+}
+
+Export-ModuleMember -Function Get-HandoffKeyFingerprint, Get-HandoffTransferCode, New-SecretHandoff, Read-SecretHandoff, Test-HandoffCredentialFileName

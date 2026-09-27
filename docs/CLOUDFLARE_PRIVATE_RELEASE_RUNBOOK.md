@@ -237,21 +237,25 @@ the Windows user who will run the scheduled tasks on that PC.
    not secret.
 2. On the current publisher PC, run
    `pwsh -NoProfile -File scripts/cloud-secret-store.ps1 -Mode Export -PublicKeyPath <copied handoff-public.txt> -OutputPath <folder outside the repository>\publisher.handoff.json`.
-   Confirm the printed recipient fingerprint matches step 1 and note the
-   transfer code.
+   Confirm the printed recipient fingerprint matches step 1. Read the transfer
+   code off this screen; never send it with the file (say it aloud or look at
+   both screens).
 3. Move `publisher.handoff.json` to the new PC by any channel. Only the new
    PC's protected key can open it.
 4. On the new PC, run
-   `pwsh -NoProfile -File scripts/cloud-secret-store.ps1 -Mode Accept -InputPath <path>\publisher.handoff.json`.
-   Its transfer code must match step 2. Anyone holding the public key could
-   make a handoff, so a different code means stop, delete the file, and repeat
-   from step 2.
-5. Delete `publisher.handoff.json` from both PCs. At any time,
+   `pwsh -NoProfile -File scripts/cloud-secret-store.ps1 -Mode Accept -InputPath <path>\publisher.handoff.json -TransferCode <code from step 2>`.
+   Accept opens the file and compares the code before writing anything.
+   Anyone holding the public key could make a handoff, so a mismatch writes
+   nothing; delete the file and repeat from step 2.
+5. Delete `publisher.handoff.json` from both PCs, and delete
+   `runtime\cloud-secrets\handoff-private.dpapi` and `handoff-public.txt` on
+   the new PC so an old handoff can never be replayed. At any time,
    `-Mode Check` prints the setting names, credential file names and transfer
    code; the codes on two PCs match while they hold the same values.
 
 The handoff carries the same release encryption key the Worker already holds,
-so no Worker secret changes. No mode prints a value. Export refuses to write
+so no Worker secret changes. No mode prints a value. Settings that steer
+process startup (such as PATH or NODE_OPTIONS) and Windows device names are refused. Export refuses to write
 inside the repository (other than `runtime\`) or to overwrite a file, and Accept
 refuses to replace a different credential file.
 

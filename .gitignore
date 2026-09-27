@@ -65,3 +65,4 @@ exports/
 # lockfile builds a different dependency tree from the one pnpm test/build use.
 package-lock.json
 yarn.lock
+*.handoff.json
