@@ -20,6 +20,7 @@ vi.mock('./InventoryExperience', () => ({ InventoryExperience: (props: Inventory
   <output data-testid="protected">{props.vehicles.map(vehicle => (vehicle as unknown as VehicleRecord).privateEvidence?.primary?.customerOrReason ?? '').join(',')}</output>
   <output data-testid="search">{props.vehicles.map(vehicle => (vehicle as unknown as VehicleRecord).searchText ?? '').join(',')}</output>
   <output data-testid="service">{props.vehicles.map(vehicle => (vehicle as unknown as VehicleRecord).serviceReadiness?.version ?? '').join(',')}</output>
+  <output data-testid="oasis">{props.vehicles.map(vehicle => (vehicle as unknown as VehicleRecord).fordOasis?.vehicleDescription ?? '').join(',')}</output>
   <output data-testid="selected">{props.selectedVehicleId ?? 'none'}</output>
   <output data-testid="detail-state">{props.detailState}</output>
   <output data-testid="query">{props.initialQuery}</output>
@@ -46,11 +47,11 @@ function detailVehicle(base: VehicleRecord, marker: string, patch: Partial<Vehic
     ...patch,
   }
 }
-function data(firstPatch: Partial<VehicleRecord> = {}, metaPatch: Partial<BootstrapData['meta']> = {}): BootstrapData {
+function data(firstPatch: Partial<VehicleRecord> = {}, metaPatch: Partial<BootstrapData['meta']> = {}, secondPatch: Partial<VehicleRecord> = {}): BootstrapData {
   return {
     access: { user: 'Synthetic Employee', role: 'manager', store: 'Howell', canViewPrivateEvidence: true, canCreateTransfer: true },
     meta: { reportDate: '2026-09-25', dealerMailCapturedAt: '2026-09-25T12:00:00Z', dealerMailFreshness: 'current', ...metaPatch },
-    vehicles: [{ ...first, hold: { state: 'none_observed', label: 'No hold', backupCount: 0 }, ...firstPatch }, second],
+    vehicles: [{ ...first, hold: { state: 'none_observed', label: 'No hold', backupCount: 0 }, ...firstPatch }, { ...second, ...secondPatch }],
     transfers: [],
   } as unknown as BootstrapData
 }
@@ -211,6 +212,21 @@ describe('inventory detail and navigation lifecycle', () => {
     })))
     expect(screen.getByTestId('detail')).not.toHaveTextContent('Late manager detail')
     expect(screen.getByTestId('protected')).not.toHaveTextContent('Late protected reason')
+  })
+
+  it('shows fresh fordOasis evidence for a non-selected cached vehicle after a bootstrap refresh', async () => {
+    mocked.context.data = data({}, {}, { fordOasis: { vehicleDescription: 'Old OASIS description' } as VehicleRecord['fordOasis'] })
+    mocked.get.mockResolvedValueOnce(detailVehicle(second, 'Second detail marker', {
+      fordOasis: { vehicleDescription: 'Old OASIS description' } as VehicleRecord['fordOasis'],
+    }))
+    const page = show()
+    fireEvent.click(screen.getByRole('button', { name: 'Second vehicle' }))
+    await waitFor(() => expect(screen.getByTestId('oasis')).toHaveTextContent('Old OASIS description'))
+    fireEvent.click(screen.getByRole('button', { name: 'Close vehicle' }))
+    mocked.context.data = data({}, {}, { fordOasis: { vehicleDescription: 'New OASIS description' } as VehicleRecord['fordOasis'] })
+    page.rerender(<MemoryRouter><Navigation /><InventoryPage /></MemoryRouter>)
+    expect(screen.getByTestId('oasis')).toHaveTextContent('New OASIS description')
+    expect(screen.getByTestId('oasis')).not.toHaveTextContent('Old OASIS description')
   })
 
   it('rejects a response for a different vehicle', async () => {

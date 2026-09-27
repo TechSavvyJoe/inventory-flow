@@ -98,6 +98,31 @@ describe('OverviewPage', () => {
     expect(screen.queryByText('Available', { exact: true })).not.toBeInTheDocument()
   })
 
+  it('shows the server hold label instead of the no-hold string when DealerMail data is stale', () => {
+    const data = bootstrap()
+    data.meta.dealerMailFreshness = 'stale_unverified'
+    data.vehicles[0].hold = { state: 'stale', label: 'Hold status stale — confirm in DealerMail', backupCount: 0 }
+    useAppDataMock.mockReturnValue({ data, homeStore: 'Howell', role: 'manager', currentUser: 'Synthetic Manager' })
+    render(<MemoryRouter><OverviewPage /></MemoryRouter>)
+
+    const section = screen.getByRole('heading', { name: 'Howell · Home inventory' }).closest('section')!
+    const row = within(section).getByText(new RegExp(data.vehicles[0].vin)).closest('li')!
+    expect(within(row).getByText('Hold status not verified')).toBeVisible()
+    expect(within(row).queryByText('No current DealerMail hold found')).not.toBeInTheDocument()
+  })
+
+  it('shows the server hold label instead of the no-hold string when the vehicle is unknown to the CRM', () => {
+    const data = bootstrap()
+    data.vehicles[0].hold = { state: 'unknown', label: 'Not found in current CRM inventory', backupCount: 0 }
+    useAppDataMock.mockReturnValue({ data, homeStore: 'Howell', role: 'manager', currentUser: 'Synthetic Manager' })
+    render(<MemoryRouter><OverviewPage /></MemoryRouter>)
+
+    const section = screen.getByRole('heading', { name: 'Howell · Home inventory' }).closest('section')!
+    const row = within(section).getByText(new RegExp(data.vehicles[0].vin)).closest('li')!
+    expect(within(row).getByText('Not found in current CRM inventory')).toBeVisible()
+    expect(within(row).queryByText('No current DealerMail hold found')).not.toBeInTheDocument()
+  })
+
   it('defaults a group manager to all stores and exposes a print-friendly snapshot action', () => {
     useAppDataMock.mockReturnValue({ data: bootstrap(), homeStore: 'Howell', role: 'group_manager', currentUser: 'Synthetic Group Manager' })
     const print = vi.spyOn(window, 'print').mockImplementation(() => undefined)

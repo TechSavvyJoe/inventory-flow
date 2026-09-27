@@ -78,6 +78,18 @@ function global:Invoke-SyntheticNative {
   switch ($helper) {
     'sync-cloud-release.mjs' {
       if ($HelperArguments -contains '--reconcile-pending') {
+        # Mirror sync-cloud-release.mjs: a parseable same-date receipt (of any
+        # hash) is replaced once the candidate is proved live; only a receipt
+        # that cannot be parsed stops recovery and keeps the marker.
+        if (Test-Path -LiteralPath $global:HarnessScenario.receiptPath) {
+          $receiptParses = $true
+          try { $null = Get-Content -LiteralPath $global:HarnessScenario.receiptPath -Raw | ConvertFrom-Json } catch { $receiptParses = $false }
+          if (-not $receiptParses) {
+            $global:LASTEXITCODE = 1
+            'Publication reconciliation incomplete: PUBLICATION_RECONCILIATION_RECEIPT_CONFLICT.'
+            break
+          }
+        }
         $global:HarnessScenario.receipt | ConvertTo-Json -Depth 8 |
           Set-Content -LiteralPath $global:HarnessScenario.receiptPath
         $markerPath = Join-Path $WorkspaceRoot 'work/app-feed-status/publication-reconciliation.json'
@@ -85,7 +97,7 @@ function global:Invoke-SyntheticNative {
         New-Item -ItemType Directory -Path $archiveDirectory -Force | Out-Null
         Move-Item -LiteralPath $markerPath -Destination (Join-Path $archiveDirectory 'synthetic-reconciled.json')
         $global:LASTEXITCODE = 0
-        '{"status":"published_and_verified","publication":"reconciled_exact_candidate"}'
+        '{"status":"published_and_verified","publication":"' + [string]$global:HarnessScenario.reconcilePublication + '"}'
         break
       }
       if ($global:HarnessScenario.syncReconciliationMarker) {
@@ -166,12 +178,13 @@ function fixture(cached = false) {
   const readExpectedMetadata = () => JSON.parse(readFileSync(expectedMetadataPath, 'utf8'))
   const writeRelease = (release: object) => writeFileSync(releasePath, JSON.stringify({ release }))
   let runNumber = 0
-  function run(options: { invoiceExit?: number; integrationExit?: number; secretPresent?: boolean; force?: boolean; reconcile?: boolean; lockPresent?: boolean; syncExit?: number; syncOutput?: string; syncReconciliationMarker?: object; preexistingReconciliationMarker?: object } = {}) {
+  function run(options: { invoiceExit?: number; integrationExit?: number; secretPresent?: boolean; force?: boolean; reconcile?: boolean; lockPresent?: boolean; syncExit?: number; syncOutput?: string; syncReconciliationMarker?: object; preexistingReconciliationMarker?: object; reconcilePublication?: string; receipt?: object } = {}) {
     const prefix = path.join(root, `attempt-${++runNumber}`)
     const scenario = {
       profile: path.join(root, 'profile'), events: `${prefix}.events`, result: `${prefix}.result`,
       receipt, receiptPath, invoiceExit: 0, integrationExit: 0, secretPresent: true, force: false, reconcile: false, lockPresent: false,
-      syncExit: 0, syncOutput: '', syncReconciliationMarker: null, preexistingReconciliationMarker: null, ...options,
+      syncExit: 0, syncOutput: '', syncReconciliationMarker: null, preexistingReconciliationMarker: null,
+      reconcilePublication: 'reconciled_exact_candidate', ...options,
     }
     const scenarioPath = `${prefix}.json`
     writeFileSync(scenarioPath, JSON.stringify(scenario))
@@ -193,7 +206,8 @@ function fixture(cached = false) {
     expect(events.every(event => event.credentialsLoaded)).toBe(true)
     return { output, events, helpers: events.map(event => event.helper), exitCode: result.exitCode }
   }
-  return { run, readManifest, readExpectedMetadata, writeRelease, receiptPath, appRoot, workspaceRoot }
+  const holdStatusPath = path.join(workspaceRoot, 'work/hold-refresh-status', `${reportDate}.json`)
+  return { run, readManifest, readExpectedMetadata, writeRelease, receiptPath, holdStatusPath, appRoot, workspaceRoot }
 }
 
 afterEach(() => {
@@ -393,4 +407,89 @@ describe('daily PowerShell publisher document retries', () => {
     expect(existsSync(path.join(test.workspaceRoot, 'work/app-feed-status/publication-reconciliation.json'))).toBe(false)
     expect(existsSync(path.join(test.workspaceRoot, 'work/app-feed-status/reconciled/synthetic-reconciled.json'))).toBe(true)
   }, 30_000)
+
+  describe('guarded recovery of a same-day hold-refresh candidate', () => {
+    const candidateHash = 'c'.repeat(64)
+    const candidateReceipt = { ...receipt, bundleSha256: candidateHash, sourceHashes: { dealerMail: '2'.repeat(64), managerDispositionBinding: null } }
+    const marker = {
+      schemaVersion: 1,
+      status: 'publication_reconciliation_required',
+      reconciliationRequired: true,
+      reportDate,
+      failureCode: 'CLOUD_PUBLICATION_ATTEMPT_IN_PROGRESS',
+      recordedAt: '2026-09-25T16:30:00.000Z',
+      candidate: {
+        bundleSha256: candidateHash,
+        holdRefresh: true,
+        sourceHashes: {
+          public: '1'.repeat(64), dealerMail: '2'.repeat(64), resources: '3'.repeat(64),
+          managerDisposition: null, managerDispositionBinding: null,
+        },
+      },
+    }
+    const blockedStatus = {
+      reportDate,
+      status: 'intraday_holds_publication_outcome_unknown',
+      failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+      checkedAt: '2026-09-25T16:31:00.000Z',
+      summary: 'Synthetic unresolved intraday candidate.',
+      reconciliationRequired: true,
+      candidate: { bundleSha256: candidateHash, dealerMailSha256: '2'.repeat(64) },
+      warnings: [],
+      steps: [],
+    }
+    function withMorningReceiptAndBlockedStatus(test: ReturnType<typeof fixture>, morningReceipt: string, status: object = blockedStatus) {
+      writeFileSync(test.receiptPath, morningReceipt)
+      mkdirSync(path.dirname(test.holdStatusPath), { recursive: true })
+      writeFileSync(test.holdStatusPath, JSON.stringify(status))
+    }
+    const markerPath = (test: ReturnType<typeof fixture>) => path.join(test.workspaceRoot, 'work/app-feed-status/publication-reconciliation.json')
+
+    it.each(['reconciled_exact_candidate', 'reposted_exact_candidate'])('replaces the morning receipt and unblocks the same-day hold refresh after %s', (publication) => {
+      const test = fixture()
+      withMorningReceiptAndBlockedStatus(test, JSON.stringify(receipt))
+      const result = test.run({ reconcile: true, preexistingReconciliationMarker: marker, receipt: candidateReceipt, reconcilePublication: publication })
+
+      expect(result.exitCode, result.output).toBe(0)
+      expect(result.output).toContain('RECONCILED EXACT CANDIDATE')
+      expect(JSON.parse(readFileSync(test.receiptPath, 'utf8'))).toMatchObject({ status: 'published_and_verified', bundleSha256: candidateHash })
+      expect(existsSync(markerPath(test))).toBe(false)
+      expect(JSON.parse(readFileSync(test.holdStatusPath, 'utf8'))).toMatchObject({
+        reportDate,
+        status: 'intraday_holds_reconciled',
+        reconciliationRequired: false,
+        published: true,
+        receipt: { bundleSha256: candidateHash, dealerMailSha256: '2'.repeat(64) },
+        candidate: { bundleSha256: candidateHash },
+      })
+      expect(JSON.parse(readFileSync(test.holdStatusPath, 'utf8'))).not.toHaveProperty('failureCode')
+      expect(Date.parse(JSON.parse(readFileSync(test.holdStatusPath, 'utf8')).receipt.verifiedAt)).toBe(Date.parse(candidateReceipt.verifiedAt))
+    }, 30_000)
+
+    it('leaves a hold status that names a different candidate untouched', () => {
+      const test = fixture()
+      const otherStatus = { ...blockedStatus, candidate: { bundleSha256: 'd'.repeat(64), dealerMailSha256: '2'.repeat(64) } }
+      withMorningReceiptAndBlockedStatus(test, JSON.stringify(receipt), otherStatus)
+      const before = readFileSync(test.holdStatusPath, 'utf8')
+      const result = test.run({ reconcile: true, preexistingReconciliationMarker: marker, receipt: candidateReceipt })
+      expect(result.exitCode, result.output).toBe(0)
+      expect(readFileSync(test.holdStatusPath, 'utf8')).toBe(before)
+      expect(result.output).toContain('names a different candidate')
+    }, 30_000)
+
+    it('keeps the marker, receipt, and hold status when the same-date receipt cannot be parsed', () => {
+      const test = fixture()
+      withMorningReceiptAndBlockedStatus(test, '{"status":"published_and_ver')
+      const status = readFileSync(test.holdStatusPath, 'utf8')
+      const result = test.run({ reconcile: true, preexistingReconciliationMarker: marker, receipt: candidateReceipt })
+
+      expect(result.exitCode).toBe(1)
+      expect(result.helpers).toEqual(['sync-cloud-release.mjs'])
+      expect(result.output).toContain('PUBLICATION_RECONCILIATION_RECEIPT_CONFLICT')
+      expect(result.output).toContain('FAILED BEFORE VERIFIED PUBLICATION')
+      expect(existsSync(markerPath(test))).toBe(true)
+      expect(readFileSync(test.receiptPath, 'utf8')).toBe('{"status":"published_and_ver')
+      expect(readFileSync(test.holdStatusPath, 'utf8')).toBe(status)
+    }, 30_000)
+  })
 })

@@ -135,18 +135,59 @@ The owner-authorized exact-hash recovery command is:
 pwsh -NoProfile -File scripts/daily-cloud-publish.ps1 -ReconcilePending -WorkspaceRoot <reporting-workspace>
 ```
 
-This recovery path does not POST or rebuild inventory data. Under the same
-publication lock and DPAPI identity, it reconstructs the retained dated candidate, proves
-its bundle and five source hashes against the marker, and requires the protected
-`/internal/status` and `/internal/readiness` responses to report that exact hash
-and validated counts. Only then does it write/confirm the verified receipt,
-move the marker intact to `work\app-feed-status\reconciled\`, and run the normal
-idempotent follow-ups. Those follow-ups can upload already staged, app-owned
-invoice documents; they do not recapture a source or publish another release.
-If the local candidate changed, the cloud reports a
-different hash, the receipt conflicts, or any check is unavailable, recovery
-fails and leaves the marker in place. Do not delete or edit the marker to resume
-the schedule; investigate the retained candidate and live protected state.
+This recovery path never rebuilds, re-encrypts, or posts a different release.
+Under the same publication lock and DPAPI identity, it reconstructs the retained
+dated candidate, proves its bundle and five source hashes against the marker,
+and then asks the protected `/internal/status` and `/internal/readiness`
+endpoints (two attempts) whether that exact hash and its validated counts are
+live.
+
+- **Candidate live.** The receipt is written with
+  `publication: reconciled_exact_candidate`. A parseable same-date receipt for
+  an earlier hash (for example the morning release before an intraday hold
+  refresh, a drift republish, or a `-Force` republish) is replaced, exactly as a
+  normal verified publish would replace it: the marker blocked every later
+  writer, so that receipt is older evidence.
+- **Candidate not live.** Before the first POST the publisher also retains the
+  exact encrypted POST body at
+  `work\app-feed-status\publication-reconciliation.envelope.json`. Recovery
+  re-sends those bytes unchanged (same ciphertext, same bundle SHA-256) through
+  the normal publish path, after decrypting them locally to prove they hash to
+  the marker's candidate. It then runs the same exact verification and, on
+  success, writes the receipt with `publication: reposted_exact_candidate`.
+  The Worker treats a second POST of an already committed hash as
+  `already_published`, so a lost response on the original POST cannot produce a
+  second release.
+
+Only after exact verification does recovery write the verified receipt, move
+the marker intact to `work\app-feed-status\reconciled\` (the retained envelope
+is deleted with it), and run the normal idempotent follow-ups. Those follow-ups
+can upload already staged, app-owned invoice documents; they do not recapture a
+source. For a hold-refresh candidate, recovery also rewrites that date's
+`work\hold-refresh-status\{date}.json` to `intraday_holds_reconciled` with
+`reconciliationRequired: false`, the verified receipt link, and the original
+candidate hash kept for the record. The intraday writer and the monitor also
+treat a status or run manifest that still names the candidate as resolved when
+no marker remains and that date's receipt is `published_and_verified` for the
+same hash, so the rest of the day's hold refreshes resume even if a follow-up
+failed after the receipt was written.
+
+Recovery fails, keeps the marker in place, and prints
+`Publication reconciliation incomplete: <CODE>. candidate_bundle_sha256=<hash>.`
+when:
+
+| Code | Meaning | Next step |
+|---|---|---|
+| `PUBLICATION_RECONCILIATION_CANDIDATE_MISMATCH` | The dated release on disk no longer hashes to the retained candidate. | Investigate; do not rebuild the dated release. |
+| `PUBLICATION_RECONCILIATION_RECEIPT_CONFLICT` | This date's receipt file exists but cannot be parsed. | Preserve the torn receipt for review; move it aside only with owner approval, then rerun recovery. |
+| `PUBLICATION_RECONCILIATION_ENVELOPE_NOT_RETAINED` | The candidate is not live and no retained POST body exists (a marker written before this recovery existed, or the file was removed). | Owner decision; recovery will not build a replacement body. |
+| `PUBLICATION_RECONCILIATION_ENVELOPE_INVALID` | The retained body does not decrypt to the marker's exact candidate. | Preserve it for investigation. |
+| `PUBLICATION_RECONCILIATION_REPOST_REJECTED` | The Worker definitively rejected the exact re-POST (for example `OLDER_RELEASE_REJECTED` after a newer date went live). | Investigate the live release; the marker stays. |
+| `PUBLICATION_RECONCILIATION_REPOST_OUTCOME_UNKNOWN` | The re-POST response was lost, malformed, or an unlisted error such as `PUBLISH_CONFLICT_RETRY`. | Rerun the same recovery command later; it re-sends the same bytes. |
+| `PUBLICATION_RECONCILIATION_NOT_VERIFIED` | The re-POST was accepted but the protected endpoints still do not report the exact hash and counts. | Investigate the protected live state. |
+
+Do not delete or edit the marker or the retained envelope to resume the
+schedule.
 
 The separate intraday monitor may start the existing hold-refresh task once for
 a newly observed ordinary task or receipt failure. If the cross-date marker,
@@ -180,8 +221,14 @@ unchanged until an operator completes the exact-hash reconciliation.
   exact bundle hash with the protected `/internal/status` and
   `/internal/readiness` responses through the existing owner-authorized
   verification procedure. The guarded command finishes the receipt/follow-ups
-  only when both protected responses prove that exact candidate; a different
-  live hash remains blocked for investigation and never authorizes marker deletion.
+  only when both protected responses prove that exact candidate. If the
+  candidate is not live, it re-sends the exact retained POST body once and
+  verifies again; any other outcome keeps the marker and never authorizes its
+  deletion.
+- `intraday_holds_reconciled`: written by the guarded recovery once the retained
+  candidate was proved live. It carries the same `receipt` link as a verified
+  refresh plus the original `candidate`, has `reconciliationRequired: false`,
+  and lets the next scheduled slot run normally.
 - `publish_failed_last_verified_release_preserved` or
   `intraday_refresh_failed_last_verified_release_preserved`: no matching new
   receipt was written and the canonical local files were restored.
@@ -248,7 +295,8 @@ Error codes the log can end with, and what they mean:
 | `CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED` | The exact candidate was verified in cloud, but its local app-feed receipt could not be written. The orchestrator treats this as reconciliation-required rather than rolling back or claiming the prior release stayed live. | No - repair local receipt storage and reconcile the recorded candidate hash |
 | `PUBLICATION_RECONCILIATION_REQUIRED` | A strict durable marker retains an unresolved candidate from this or an earlier report date. Ordinary and forced runs stop before capture, secrets, rebuild, or publish. | No - run the exact-hash recovery command above under the automation account |
 | `PUBLICATION_RECONCILIATION_STATE_INVALID` | The durable marker exists but is malformed, unreadable, a reparse point, or missing required hash evidence. | No - preserve it for investigation; do not delete or overwrite it to force a run |
-| `PUBLICATION_RECONCILIATION_NOT_VERIFIED` | The protected cloud status/readiness responses did not prove the exact retained candidate and counts, so recovery did not clear the marker. | No - investigate the retained candidate and protected live state |
+| `PUBLICATION_RECONCILIATION_NOT_VERIFIED` | Recovery re-sent the exact retained POST body but the protected cloud status/readiness responses still did not prove the exact candidate and counts, so the marker stays. See the recovery table above for the other recovery codes. | No - investigate the retained candidate and protected live state |
+| `CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED` | The ordinary run's publisher verified the release and wrote its receipt, then a follow-up (invoice upload, integration check, pointers, archive) failed. Recorded as `published_and_verified_followups_pending`; no reconciliation is required. | Yes - rerun the publisher; it reuses the verified receipt and retries only the follow-ups |
 | `CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED` | The new hold release and matching receipt are already published, but integration verification, latest-pointer advancement, or archiving failed. The candidate remains canonical. | Retry the existing intraday task; do not recapture other sources |
 | `POST_PUBLISH_STATE_RECORD_FAILED` | Cloud publication and publisher follow-ups completed, but the orchestrator could not finish its local manifest/status recording. The published candidate remains canonical. | Retry the existing intraday task; inspect local disk/status-file errors if it persists |
 | `PUBLICATION_NOT_VERIFIED` | The bundle did not pass the stricter Cloudflare validator, so nothing verified. Real causes seen: (1) the manifest is not `complete: true`, or (2) `dealermail_snapshot_path` points at the `-deep.json` instead of the `-deep-cloud-ready.json` - i.e. `finalize_cloud_snapshot.mjs` was skipped, so every row is missing the dual 22-cell arrays (`rawCellInnerText` / `rawCellControlValues`) and the `excludeActiveHoldsValidationSet`. 09/12/2026: 10:43 and 10:45 failed this way; 10:47 succeeded two minutes after finalize ran | Yes, once finalize has run and the manifest names the cloud-ready file |

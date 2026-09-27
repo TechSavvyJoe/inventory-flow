@@ -74,6 +74,22 @@ describe('overview model', () => {
     expect(conflict).toMatchObject({ onLot: false, away: false, locationNeedsReview: true, locationBasis: 'conflict' })
   })
 
+  it('labels a stale website feed as unconfirmed custody, not a stale move confirmation', () => {
+    const staleFeed = buildOverviewVehicleFact(vehicle('TESTDATA000000005', {
+      movement: { state: 'source_reported', label: 'Source-reported location', currentLocation: 'Howell', locationConfidence: 'stale' },
+    }), { meta })
+    expect(staleFeed).toMatchObject({
+      locationBasis: 'source_reported',
+      locationBasisLabel: 'Website feed not current; custody not confirmed',
+    })
+    expect(staleFeed.locationBasisLabel).not.toBe('Last move confirmation is stale')
+
+    const staleMove = buildOverviewVehicleFact(vehicle('TESTDATA000000006', {
+      movement: { state: 'at_requesting_store', label: 'At requesting store', currentLocation: 'Lincoln', locationConfidence: 'stale' },
+    }), { meta })
+    expect(staleMove).toMatchObject({ locationBasis: 'stale_move_record', locationBasisLabel: 'Last move confirmation is stale' })
+  })
+
   it('uses explicit service dates for duration and labels listing age only as a waiting-unit fallback', () => {
     const inService = buildOverviewVehicleFact(vehicle('TESTDATA000000001', {
       serviceReadiness: { vin: 'TESTDATA000000001', status: 'in_service', version: 1, serviceEnteredAt: '2026-09-21', completedAt: null, updatedAt: '2026-09-21T12:00:00Z', updatedBy: 'Synthetic manager', updatedByRole: 'manager', updatedAtStore: 'Howell', store: 'Howell', canManage: true },

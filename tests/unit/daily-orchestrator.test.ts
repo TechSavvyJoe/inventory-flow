@@ -401,6 +401,176 @@ describe('app-first daily orchestrator helpers', () => {
     })).toBe('publication_outcome_unknown')
   })
 
+  describe('ordinary morning publication failures', () => {
+    const built = {
+      bundleSha256: 'B'.repeat(64),
+      sourceHashes: { public: '1'.repeat(64), dealerMail: '2'.repeat(64), resources: '3'.repeat(64), managerDisposition: null, managerDispositionBinding: null },
+    }
+    const verified = (bundleSha256, overrides = {}) => ({
+      reportDate: '2026-09-25', complete: true, status: 'published_and_verified', bundleSha256,
+      verifiedAt: '2026-09-25T13:20:00.000Z', sourceHashes: { ...built.sourceHashes, resources: '9'.repeat(64) }, ...overrides,
+    })
+
+    it('records followups pending, not reconciliation, when the publisher verified the release and only followups failed', async () => {
+      const internals = await loadInternals()
+      const receipt = verified('d'.repeat(64))
+      const result = internals.classifyOrdinaryPublicationFailure({
+        publisherOutput: 'cloud publish: {"status":"published_and_verified"}\n=== daily-cloud-publish RELEASE PUBLISHED; FOLLOWUPS FAILED: INTEGRATION_VERIFICATION_FAILED ===',
+        beforeRaw: null,
+        afterState: { raw: JSON.stringify(receipt), receipt, lookupFailed: false },
+        durableAttempt: null,
+        reportDate: '2026-09-25',
+        builtSourceHashes: built.sourceHashes,
+      })
+      expect(result).toMatchObject({
+        status: 'published_followups_pending',
+        failureCode: 'CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED',
+        reconciliationRequired: false,
+        candidate: null,
+        receipt: { bundleSha256: 'd'.repeat(64) },
+      })
+    })
+
+    it('stays conservative when followups failed but no new verified receipt for these sources was written', async () => {
+      const internals = await loadInternals()
+      const receipt = verified('d'.repeat(64))
+      const output = '=== daily-cloud-publish RELEASE PUBLISHED; FOLLOWUPS FAILED: INVOICE_DOCUMENT_PUBLISH_FAILED ==='
+      for (const afterState of [
+        { raw: JSON.stringify(receipt), receipt, lookupFailed: false },
+        { raw: 'changed', receipt: { ...receipt, sourceHashes: { ...receipt.sourceHashes, dealerMail: 'f'.repeat(64) } }, lookupFailed: false },
+      ]) {
+        expect(internals.classifyOrdinaryPublicationFailure({
+          publisherOutput: output,
+          beforeRaw: JSON.stringify(receipt),
+          afterState,
+          durableAttempt: null,
+          reportDate: '2026-09-25',
+          builtSourceHashes: built.sourceHashes,
+        })).toMatchObject({ reconciliationRequired: true, status: 'cloud_publication_outcome_unknown' })
+      }
+    })
+
+    it('records the publisher marker hash, not the pre-publisher Node hash, and binds only the sources Node captured', async () => {
+      const internals = await loadInternals()
+      const markerPath = publicationReconciliationPath(workspaceRoot)
+      const postedHash = 'e'.repeat(64)
+      try {
+        // The publisher rebuilt enrichment, so the posted resources hash and
+        // bundle hash both differ from what Node built.
+        writePublicationReconciliation(workspaceRoot, {
+          reportDate: '2026-09-25',
+          bundleSha256: postedHash,
+          failureCode: 'CLOUD_PUBLICATION_ATTEMPT_IN_PROGRESS',
+          sourceHashes: { ...built.sourceHashes, resources: '9'.repeat(64) },
+          holdRefresh: false,
+          now: new Date('2026-09-25T13:15:00.000Z'),
+        })
+        const output = `cloud publish FAILED: Cloud sync incomplete: CLOUD_PUBLICATION_OUTCOME_UNKNOWN. candidate_bundle_sha256=${postedHash}.`
+        const durableAttempt = internals.publicationAttemptForCandidate({
+          reportDate: '2026-09-25',
+          bundleSha256: internals.publishedCandidateBundleSha256(output, postedHash),
+          sourceHashes: built.sourceHashes,
+          holdRefresh: false,
+          sourceFields: ['public', 'dealerMail'],
+        })
+        const result = internals.classifyOrdinaryPublicationFailure({
+          publisherOutput: output,
+          afterState: { raw: null, receipt: null, lookupFailed: false },
+          durableAttempt,
+          reportDate: '2026-09-25',
+          builtSourceHashes: built.sourceHashes,
+        })
+        expect(result).toMatchObject({
+          failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+          reconciliationRequired: true,
+          candidate: { bundleSha256: postedHash, dealerMailSha256: '2'.repeat(64) },
+        })
+        expect(result.candidate.bundleSha256).not.toBe(built.bundleSha256.toLowerCase())
+
+        const mismatchedPrint = internals.publicationAttemptForCandidate({
+          reportDate: '2026-09-25',
+          bundleSha256: 'a'.repeat(64),
+          sourceHashes: built.sourceHashes,
+          holdRefresh: false,
+          sourceFields: ['public', 'dealerMail'],
+        })
+        expect(internals.classifyOrdinaryPublicationFailure({
+          publisherOutput: output, durableAttempt: mismatchedPrint, reportDate: '2026-09-25', builtSourceHashes: built.sourceHashes,
+        })).toMatchObject({ failureCode: 'PUBLICATION_RECONCILIATION_STATE_INVALID', candidate: { bundleSha256: postedHash } })
+      } finally {
+        rmSync(markerPath, { force: true })
+      }
+    })
+  })
+
+  describe('same-day hold refresh after a successful guarded reconciliation', () => {
+    const candidateHash = 'C'.repeat(64)
+    function unresolvedDay(stem) {
+      const statusPath = path.join(workspaceRoot, 'work', 'hold-refresh-status', `${stem}.json`)
+      const manifestPath = path.join(workspaceRoot, 'work', 'run-status', `${stem}.json`)
+      const receiptPath = path.join(workspaceRoot, 'work', 'app-feed-status', `${stem}.json`)
+      mkdirSync(path.dirname(receiptPath), { recursive: true })
+      internals0.writeJson(manifestPath, { cloudflare_publish: { status: 'publication_outcome_unknown', reconciliation_required: true, expected_bundle_sha256: candidateHash } })
+      internals0.writeIntradayStatus(statusPath, {
+        reportDate: '2026-09-25',
+        status: 'intraday_holds_publication_outcome_unknown',
+        failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+        summary: 'Synthetic unresolved candidate.',
+        reconciliationRequired: true,
+        candidate: { bundleSha256: candidateHash, dealerMailSha256: 'B'.repeat(64) },
+      })
+      const writeReceiptFor = (bundleSha256) => writeFileSync(receiptPath, JSON.stringify({
+        reportDate: '2026-09-25', complete: true, status: 'published_and_verified', publication: 'reconciled_exact_candidate',
+        bundleSha256: bundleSha256.toLowerCase(), verifiedAt: '2026-09-25T17:00:00.000Z', sourceHashes: { dealerMail: 'B'.repeat(64) },
+      }))
+      return { statusPath, manifestPath, receiptPath, writeReceiptFor, args: { reportDate: '2026-09-25', intradayStatusPath: statusPath, manifestPath, receiptPath } }
+    }
+    let internals0
+    beforeAll(async () => { internals0 = await loadInternals() })
+
+    it('treats the day as cleared only when the date receipt proves the exact retained candidate and no marker remains', async () => {
+      const day = unresolvedDay('reconciled-day')
+      expect(internals0.retainedPublicationReconciliation(day.args)).toMatchObject({ consistent: true })
+
+      day.writeReceiptFor('F'.repeat(64))
+      expect(internals0.retainedPublicationReconciliation(day.args)).toMatchObject({ consistent: true, candidateBundleSha256: candidateHash.toLowerCase() })
+
+      day.writeReceiptFor(candidateHash)
+      expect(internals0.retainedPublicationReconciliation(day.args)).toBeNull()
+
+      const markerPath = publicationReconciliationPath(workspaceRoot)
+      try {
+        writePublicationReconciliation(workspaceRoot, {
+          reportDate: '2026-09-25', bundleSha256: candidateHash, failureCode: 'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
+          sourceHashes: { public: '1'.repeat(64), dealerMail: 'B'.repeat(64), resources: '3'.repeat(64), managerDisposition: null, managerDispositionBinding: null },
+          holdRefresh: true, now: new Date('2026-09-25T16:00:00.000Z'),
+        })
+        expect(internals0.retainedPublicationReconciliation(day.args)).not.toBeNull()
+      } finally {
+        rmSync(markerPath, { force: true })
+      }
+    })
+
+    it('lets the next intraday slot proceed past the reconciliation stop once the receipt proves the candidate', async () => {
+      const day = unresolvedDay('reconciled-slot')
+      day.writeReceiptFor(candidateHash)
+      const result = await internals0.runIntradayHoldRefresh({
+        options: { skipAuthenticated: false, noPublish: false },
+        reportDate: '2026-09-25',
+        manifestPath: day.manifestPath,
+        releasePath: path.join(workspaceRoot, 'work', 'releases', 'reconciled-slot.json'),
+        receiptPath: day.receiptPath,
+        intradayStatusPath: day.statusPath,
+        warnings: [],
+        steps: [],
+      })
+      // It now reaches the receipt-bound source validation instead of stopping
+      // on the already-resolved candidate.
+      expect(result).not.toHaveProperty('reconciliationRequired')
+      expect(result.failureCode).not.toMatch(/RECONCILIATION|OUTCOME_UNKNOWN/)
+    })
+  })
+
   it('records exact candidate evidence when publication requires reconciliation', async () => {
     const internals = await loadInternals()
     const statusPath = path.join(workspaceRoot, 'work', 'hold-refresh-status', 'unknown.json')

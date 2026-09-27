@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, openSync, closeSync, writeFileSync, readFileSync, fstatSync, fsyncSync, lstatSync, renameSync, unlinkSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { createDecipheriv, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { loadLatestCompletedRelease } from '../server/importer.mjs'
@@ -14,11 +14,24 @@ import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 const COUNT_FIELDS = ['publicRowCount', 'dealerMailRowCount', 'dealerMailVinReconciledCount', 'dealerMailVinReviewCount', 'heldVinCount', 'activeHoldRecordCount', 'backupCount', 'deletedHoldRecordCount', 'resourceRecordCount', 'fordOasisRecordCount', 'warrantyCheckRecordCount', 'managerDispositionRecordCount', 'managerSoldRecordCount', 'managerDeliveredRecordCount', 'managerDispositionReviewCount', 'activeInventoryCount', 'managerDeliveredExclusionCount', 'managerPendingCarryoverCount', 'managerPendingIdentityReviewCount', 'vehicleCount']
 const STORES = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
 const RECONCILIATION_FILE = 'publication-reconciliation.json'
+// The exact encrypted POST body retained beside the marker. Guarded recovery may
+// re-send these bytes, and only these bytes, when the candidate is not live.
+const RETAINED_ENVELOPE_FILE = 'publication-reconciliation.envelope.json'
 const PUBLICATION_ATTEMPT_IN_PROGRESS = 'CLOUD_PUBLICATION_ATTEMPT_IN_PROGRESS'
 const RECONCILIATION_FAILURE_CODES = new Set([
   PUBLICATION_ATTEMPT_IN_PROGRESS,
   'CLOUD_PUBLICATION_OUTCOME_UNKNOWN',
   'CLOUD_PUBLICATION_VERIFIED_RECEIPT_NOT_RECORDED',
+])
+// Guarded-recovery failures that leave the exact-candidate marker in place.
+const RECOVERY_RETAINED_CODES = new Set([
+  'PUBLICATION_RECONCILIATION_NOT_VERIFIED',
+  'PUBLICATION_RECONCILIATION_REPOST_REJECTED',
+  'PUBLICATION_RECONCILIATION_REPOST_OUTCOME_UNKNOWN',
+  'PUBLICATION_RECONCILIATION_ENVELOPE_NOT_RETAINED',
+  'PUBLICATION_RECONCILIATION_ENVELOPE_INVALID',
+  'PUBLICATION_RECONCILIATION_RECEIPT_CONFLICT',
+  'PUBLICATION_RECONCILIATION_CANDIDATE_MISMATCH',
 ])
 const SOURCE_HASH_FIELDS = ['public', 'dealerMail', 'resources', 'managerDisposition', 'managerDispositionBinding']
 export function reportDate(now = new Date()) {
@@ -69,6 +82,69 @@ function validatePublicationReconciliation(value) {
 
 export function publicationReconciliationPath(workspaceRoot) {
   return path.join(workspaceRoot, 'work', 'app-feed-status', RECONCILIATION_FILE)
+}
+
+export function retainedEnvelopePath(workspaceRoot) {
+  return path.join(workspaceRoot, 'work', 'app-feed-status', RETAINED_ENVELOPE_FILE)
+}
+
+// Called before the marker is installed, so an existing file can only be an
+// orphan from an attempt that never reached its POST; it is replaced atomically.
+export function writeRetainedEnvelope(workspaceRoot, envelope) {
+  const destination = retainedEnvelopePath(workspaceRoot)
+  mkdirSync(path.dirname(destination), { recursive: true })
+  const serialized = JSON.stringify(envelope)
+  const temporary = `${destination}.${process.pid}.tmp`
+  let descriptor = null
+  try {
+    descriptor = openSync(temporary, 'w', 0o600)
+    writeFileSync(descriptor, serialized)
+    fsyncSync(descriptor)
+    closeSync(descriptor)
+    descriptor = null
+    renameSync(temporary, destination)
+    syncDirectory(path.dirname(destination))
+    check(readFileSync(destination, 'utf8') === serialized, 'PUBLICATION_RETAINED_ENVELOPE_WRITE_FAILED')
+  } finally {
+    if (descriptor !== null) try { closeSync(descriptor) } catch {}
+    try { unlinkSync(temporary) } catch {}
+  }
+  return destination
+}
+
+function removeRetainedEnvelope(workspaceRoot) {
+  try { unlinkSync(retainedEnvelopePath(workspaceRoot)) } catch {}
+}
+
+// Returns the exact retained POST body only when its identity and ciphertext
+// both prove the marker's candidate: the AES-GCM tag binds the report date and
+// bundle hash, and the decrypted canonical bundle must hash to the same value.
+function readRetainedEnvelope(workspaceRoot, state, environment) {
+  const filePath = retainedEnvelopePath(workspaceRoot)
+  let body
+  try {
+    const identity = lstatSync(filePath)
+    check(identity.isFile() && !identity.isSymbolicLink(), 'PUBLICATION_RECONCILIATION_ENVELOPE_NOT_RETAINED')
+    body = readFileSync(filePath, 'utf8')
+  } catch {
+    throw new CloudPublicationReconciliationError('PUBLICATION_RECONCILIATION_ENVELOPE_NOT_RETAINED', state.candidate.bundleSha256)
+  }
+  try {
+    const envelope = JSON.parse(body)
+    check(envelope && typeof envelope === 'object' && !Array.isArray(envelope), 'INVALID')
+    check(envelope.reportDate === state.reportDate && envelope.bundleSha256 === state.candidate.bundleSha256, 'INVALID')
+    check(typeof envelope.iv === 'string' && typeof envelope.ciphertext === 'string', 'INVALID')
+    const sealed = Buffer.from(envelope.ciphertext, 'base64url')
+    check(sealed.length > 16, 'INVALID')
+    const decipher = createDecipheriv('aes-256-gcm', base64Key(environment.INVENTORY_OPS_RELEASE_ENCRYPTION_KEY_BASE64 ?? ''), Buffer.from(envelope.iv, 'base64url'))
+    decipher.setAAD(Buffer.from(`${envelope.version}:${envelope.reportDate}:${envelope.bundleSha256}`, 'utf8'))
+    decipher.setAuthTag(sealed.subarray(sealed.length - 16))
+    const plaintext = Buffer.concat([decipher.update(sealed.subarray(0, sealed.length - 16)), decipher.final()])
+    check(cloudBundleSha256(JSON.parse(plaintext.toString('utf8'))) === state.candidate.bundleSha256, 'INVALID')
+    return envelope
+  } catch {
+    throw new CloudPublicationReconciliationError('PUBLICATION_RECONCILIATION_ENVELOPE_INVALID', state.candidate.bundleSha256)
+  }
 }
 
 export function readPublicationReconciliation(workspaceRoot) {
@@ -174,6 +250,9 @@ export function archivePublicationReconciliation(workspaceRoot, expectedBundleSh
   syncDirectory(archiveDirectory)
   const archived = validatePublicationReconciliation(JSON.parse(readFileSync(destination, 'utf8')))
   check(archived.candidate.bundleSha256 === state.candidate.bundleSha256 && !existsSync(source), 'PUBLICATION_RECONCILIATION_ARCHIVE_FAILED')
+  // The retained ciphertext is only a recovery input for this marker. A later
+  // attempt overwrites any copy left by a failed unlink before its own marker.
+  removeRetainedEnvelope(workspaceRoot)
   return destination
 }
 
@@ -383,6 +462,12 @@ async function readProtectedReleaseState(environment, fetchImpl) {
 }
 
 function assertReconciliationCandidateMatchesRelease(state, release) {
+  try { return assertCandidateSources(state, release) } catch (error) {
+    throw new CloudPublicationReconciliationError(error.message, state.candidate.bundleSha256)
+  }
+}
+
+function assertCandidateSources(state, release) {
   check(release.reportDate === state.reportDate, 'PUBLICATION_RECONCILIATION_CANDIDATE_MISMATCH')
   const bundle = cloudReleaseFrom(release)
   check(cloudBundleSha256(bundle) === state.candidate.bundleSha256, 'PUBLICATION_RECONCILIATION_CANDIDATE_MISMATCH')
@@ -412,31 +497,46 @@ export async function reconcilePendingPublication({
     const candidateClock = new Date(`${state.reportDate}T16:00:00-04:00`)
     const release = loadRelease({ workspaceRoot, now: candidateClock })
     const { expected } = assertReconciliationCandidateMatchesRelease(state, release)
-    let counts
-    let verificationError
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        const [status, readiness] = await readProtectedReleaseState(environment, fetchImpl)
-        counts = verifyPublishedRelease({
-          envelope: { reportDate: state.reportDate, bundleSha256: state.candidate.bundleSha256 },
-          expected,
-          status,
-          readiness,
-        })
-        verificationError = null
-        break
-      } catch (error) {
-        verificationError = error
+    const candidateIdentity = { reportDate: state.reportDate, bundleSha256: state.candidate.bundleSha256 }
+    const verifyLive = async () => {
+      let verificationError
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const [status, readiness] = await readProtectedReleaseState(environment, fetchImpl)
+          return { counts: verifyPublishedRelease({ envelope: candidateIdentity, expected, status, readiness }) }
+        } catch (error) {
+          verificationError = error
+        }
       }
+      return { verificationError }
     }
-    if (verificationError) throw new Error('PUBLICATION_RECONCILIATION_NOT_VERIFIED', { cause: verificationError })
+    let publication = 'reconciled_exact_candidate'
+    let { counts, verificationError } = await verifyLive()
+    if (verificationError) {
+      // The candidate is not proven live. Re-send the exact retained encrypted
+      // POST body (same bytes, same bundle hash) through the normal publish
+      // path; never rebuild or re-encrypt. Every non-verified outcome keeps the
+      // marker in place.
+      const envelope = readRetainedEnvelope(workspaceRoot, state, environment)
+      try {
+        await publishEnvelope(envelope, { environment, fetchImpl })
+      } catch (error) {
+        const code = error?.definiteNoCommit === true
+          ? 'PUBLICATION_RECONCILIATION_REPOST_REJECTED'
+          : 'PUBLICATION_RECONCILIATION_REPOST_OUTCOME_UNKNOWN'
+        throw new CloudPublicationReconciliationError(code, state.candidate.bundleSha256, { cause: error })
+      }
+      ;({ counts, verificationError } = await verifyLive())
+      if (verificationError) throw new CloudPublicationReconciliationError('PUBLICATION_RECONCILIATION_NOT_VERIFIED', state.candidate.bundleSha256, { cause: verificationError })
+      publication = 'reposted_exact_candidate'
+    }
 
     const receipt = {
       schemaVersion: 1,
       reportDate: state.reportDate,
       complete: true,
       status: 'published_and_verified',
-      publication: 'reconciled_exact_candidate',
+      publication,
       bundleSha256: state.candidate.bundleSha256,
       verifiedAt: now.toISOString(),
       counts,
@@ -445,9 +545,12 @@ export async function reconcilePendingPublication({
     }
     const receiptPath = path.join(directory, `${receipt.reportDate}.json`)
     if (existsSync(receiptPath)) {
-      let existing
-      try { existing = JSON.parse(readFileSync(receiptPath, 'utf8')) } catch { throw new Error('PUBLICATION_RECONCILIATION_RECEIPT_CONFLICT') }
-      check(existing?.complete === true && existing?.status === 'published_and_verified' && existing.reportDate === receipt.reportDate && normalizedBundleHash(existing.bundleSha256) === receipt.bundleSha256, 'PUBLICATION_RECONCILIATION_RECEIPT_CONFLICT')
+      // Both protected endpoints have just proved this exact candidate live, and
+      // the marker blocked every later writer, so a parseable same-date receipt
+      // (for example the morning release before an intraday hold refresh) is
+      // older evidence and is replaced exactly as a normal publish would. Only a
+      // torn or unreadable receipt stops recovery for operator review.
+      try { JSON.parse(readFileSync(receiptPath, 'utf8')) } catch { throw new CloudPublicationReconciliationError('PUBLICATION_RECONCILIATION_RECEIPT_CONFLICT', state.candidate.bundleSha256) }
     }
     writeReceipt(directory, receipt)
     const archivedStatePath = archivePublicationReconciliation(workspaceRoot, receipt.bundleSha256, now)
@@ -481,6 +584,7 @@ export async function main({
         fetchImpl,
         now,
         beforePublish: ({ envelope, sourceHashes }) => {
+          writeRetainedEnvelope(workspaceRoot, envelope)
           publicationAttempt = writeReconciliation(workspaceRoot, {
             reportDate: release.reportDate,
             bundleSha256: envelope.bundleSha256,
@@ -516,6 +620,10 @@ export function publicationFailureMessage(error) {
     ? error.bundleSha256.toLowerCase()
     : null
   const reconciliationRequired = RECONCILIATION_FAILURE_CODES.has(code) || code === 'PUBLICATION_RECONCILIATION_REQUIRED'
+  if (RECOVERY_RETAINED_CODES.has(code)) {
+    const candidate = bundleSha256 ? ` candidate_bundle_sha256=${bundleSha256}.` : ''
+    return `Publication reconciliation incomplete: ${code}.${candidate} The exact-candidate marker was kept; follow the guarded recovery in DAILY_AUTOMATION_RUNBOOK.md.`
+  }
   if (reconciliationRequired) {
     const candidate = bundleSha256 ? ` candidate_bundle_sha256=${bundleSha256}.` : ''
     return `Cloud sync incomplete: ${code}.${candidate} Reconcile the exact candidate before any new publication attempt.`
