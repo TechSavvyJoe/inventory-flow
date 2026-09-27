@@ -222,6 +222,47 @@ Resource-link availability and parsed AutoCheck/equipment-summary completeness
 are separate. Missing or partial resources remain explicitly flagged; a
 successful core inventory publication is not a claim that every document exists.
 
+### Moving the publisher to another Windows PC
+
+The publisher's settings (`runtime\cloud-secrets\publisher.dpapi`) and its
+integration credential files (`runtime\integration-credentials\*.json`) are
+protected for one Windows user on one PC, so copying them does not work. Move
+them with the sealed handoff. Run every command from the repository folder as
+the Windows user who will run the scheduled tasks on that PC.
+
+1. On the new PC, run
+   `pwsh -NoProfile -File scripts/cloud-secret-store.ps1 -Mode Initialize`.
+   It saves `runtime\cloud-secrets\handoff-public.txt` and prints the recipient
+   key fingerprint. Copy that public key file to the current publisher PC; it is
+   not secret.
+2. On the current publisher PC, run
+   `pwsh -NoProfile -File scripts/cloud-secret-store.ps1 -Mode Export -PublicKeyPath <copied handoff-public.txt> -OutputPath <folder outside the repository>\publisher.handoff.json`.
+   Confirm the printed recipient fingerprint matches step 1 and note the
+   transfer code.
+3. Move `publisher.handoff.json` to the new PC by any channel. Only the new
+   PC's protected key can open it.
+4. On the new PC, run
+   `pwsh -NoProfile -File scripts/cloud-secret-store.ps1 -Mode Accept -InputPath <path>\publisher.handoff.json`.
+   Its transfer code must match step 2. Anyone holding the public key could
+   make a handoff, so a different code means stop, delete the file, and repeat
+   from step 2.
+5. Delete `publisher.handoff.json` from both PCs. At any time,
+   `-Mode Check` prints the setting names, credential file names and transfer
+   code; the codes on two PCs match while they hold the same values.
+
+The handoff carries the same release encryption key the Worker already holds,
+so no Worker secret changes. No mode prints a value. Export refuses to write
+inside the repository (other than `runtime\`) or to overwrite a file, and Accept
+refuses to replace a different credential file.
+
+Moving the scheduled publishing is a separate, explicitly authorized cutover:
+only one PC may publish at a time. Disable the tasks on the old PC before
+registering them on the new one, confirm one verified publication from the new
+PC, and only then remove the old PC's `runtime\cloud-secrets` and
+`runtime\integration-credentials`. The new PC also needs the operational
+workspace (`work\run-status`, `outputs`, `apps\inventory-ops`) and the host
+builder scripts the daily runner calls from `work\`.
+
 ## Saved activity and recovery
 
 D1 is the sole writable production ledger. New daily releases never replace
