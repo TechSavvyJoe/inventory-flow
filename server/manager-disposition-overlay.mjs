@@ -9,6 +9,7 @@ import {
 } from './manager-disposition-schema.mjs'
 
 const SOURCE_DIRECTORY = ['work', 'manager-supplied', 'sold-logs']
+const RELEASE_DIRECTORY = ['work', 'releases']
 const STORE_FILES = Object.freeze({
   Howell: 'howell',
   Fowlerville: 'fowlerville',
@@ -92,10 +93,14 @@ export function loadManagerDispositionOverlay({ workspaceRoot, reportDate, vehic
   ensure(typeof manifestBinding.sha256 === 'string' && /^[A-Fa-f0-9]{64}$/.test(manifestBinding.sha256), 'Manager disposition manifest checksum is invalid')
 
   const sourceDirectory = ensureWithin(root, path.join(root, ...SOURCE_DIRECTORY))
+  const releaseDirectory = ensureWithin(root, path.join(root, ...RELEASE_DIRECTORY, reportDate))
   const expectedName = `${manifestBinding.source_period}-${STORE_FILES[manifestBinding.source_store]}-operational.json`
   const boundCandidate = path.isAbsolute(manifestBinding.path) ? manifestBinding.path : path.join(root, manifestBinding.path)
   const sourcePath = ensureWithin(root, boundCandidate)
-  ensure(path.dirname(sourcePath) === sourceDirectory && path.basename(sourcePath) === expectedName, 'Manager disposition manifest path is not an approved operational source')
+  const releaseSnapshotName = `manager-disposition-source-${manifestBinding.sha256.toLowerCase()}.json`
+  const isLegacyOperationalSource = path.dirname(sourcePath) === sourceDirectory && path.basename(sourcePath) === expectedName
+  const isReleaseSnapshot = path.dirname(sourcePath) === releaseDirectory && path.basename(sourcePath) === releaseSnapshotName
+  ensure(isLegacyOperationalSource || isReleaseSnapshot, 'Manager disposition manifest path is not an approved operational source')
   const source = readOperationalSource(sourcePath, root)
   ensure(source.sha256 === manifestBinding.sha256.toUpperCase(), 'Manager disposition source checksum differs from the completed manifest')
   const documents = [{ expectedStore: manifestBinding.source_store, data: source.data }]
@@ -114,7 +119,7 @@ export function loadManagerDispositionOverlay({ workspaceRoot, reportDate, vehic
     type: 'manager_disposition_overlay',
     reportDate,
     extractedAt: null,
-    snapshotPath: sourceDirectory,
+    snapshotPath: sourcePath,
     sha256,
     bytes,
     schemaVersion: MANAGER_DISPOSITION_SCHEMA,
