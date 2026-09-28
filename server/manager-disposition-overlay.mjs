@@ -98,8 +98,11 @@ export function loadManagerDispositionOverlay({ workspaceRoot, reportDate, vehic
   const expectedName = `${manifestBinding.source_period}-${STORE_FILES[manifestBinding.source_store]}-operational.json`
   const boundCandidate = path.isAbsolute(manifestBinding.path) ? manifestBinding.path : path.join(root, manifestBinding.path)
   const sourcePath = ensureWithin(root, boundCandidate)
-  const isLegacyOperationalSource = path.dirname(sourcePath) === sourceDirectory && path.basename(sourcePath) === expectedName
-  const isReleaseSnapshot = path.dirname(sourcePath) === snapshotDirectory && path.basename(sourcePath) === expectedName
+  // path.relative is case-insensitive on Windows, so a drive letter spelled
+  // c: in one place and C: in another does not reject an approved source.
+  const sameDirectory = (left, right) => path.relative(left, right) === ''
+  const isLegacyOperationalSource = sameDirectory(path.dirname(sourcePath), sourceDirectory) && path.basename(sourcePath) === expectedName
+  const isReleaseSnapshot = sameDirectory(path.dirname(sourcePath), snapshotDirectory) && path.basename(sourcePath) === expectedName
   ensure(isLegacyOperationalSource || isReleaseSnapshot, 'Manager disposition manifest path is not an approved operational source')
   const source = readOperationalSource(sourcePath, root)
   ensure(source.sha256 === manifestBinding.sha256.toUpperCase(), 'Manager disposition source checksum differs from the completed manifest')

@@ -2374,6 +2374,10 @@ export function loadLatestCompletedRelease({ workspaceRoot, now = new Date() }) 
       manifestBinding: manifest.manager_disposition_overlay ?? null,
     })
   } catch (error) {
+    // Only releases bound to the mutable monthly log (before content-addressed
+    // copies) can lose their source this way. A release bound to its copy under
+    // work\releases\<date>\manager-disposition\ is immutable, so a missing or
+    // unapproved copy still fails loudly: never prune those folders.
     const staleRelease = release.sourceRuns.public.status === 'stale_unverified'
     if (!staleRelease || error?.message !== 'Manager disposition source checksum differs from the completed manifest') throw error
     // Older releases bound the mutable monthly manager log directly. Do not

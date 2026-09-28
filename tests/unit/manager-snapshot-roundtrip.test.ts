@@ -6,6 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import { loadLatestCompletedRelease } from '../../server/importer.mjs'
 import { cloudReleaseFrom } from '../../scripts/publish-cloud-release.mjs'
@@ -101,6 +102,21 @@ describe('manager log bound to a release', () => {
     const reloaded = loadLatestCompletedRelease({ workspaceRoot: root, now })
     expect(reloaded.managerDispositionOverlay.coverageStatus).toBe('provided')
     expect(reloaded.managerDispositionOverlay.summary.soldRecordCount).toBe(loaded.managerDispositionOverlay.summary.soldRecordCount)
+
+    // A truncated copy left by an interrupted earlier run is rewritten from the
+    // verified bytes instead of failing every later run for that date.
+    const logBytes = readFileSync(soldLog)
+    const rerunPath = path.join(root, 'work', 'releases', reportDate, 'manager-disposition', createHash('sha256').update(logBytes).digest('hex'), `${month}-howell-operational.json`)
+    mkdirSync(path.dirname(rerunPath), { recursive: true })
+    writeFileSync(rerunPath, logBytes.subarray(0, Math.floor(logBytes.length / 2)))
+    const rerun = internals.deriveManifest({
+      reportDate,
+      publicPath: path.resolve(root, baseManifest.public_snapshot_path),
+      dealerPath: path.resolve(root, baseManifest.dealermail_snapshot_path),
+      warnings: [], steps: [], managerDispositionValidated: true,
+    }).manager_disposition_overlay
+    expect(rerun.path).toBe(rerunPath)
+    expect(readFileSync(rerunPath).equals(logBytes)).toBe(true)
 
     // Tampering with the bound copy is still caught.
     writeFileSync(binding.path, JSON.stringify({ ...managerLog, records: [] }))

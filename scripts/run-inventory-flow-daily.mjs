@@ -765,11 +765,14 @@ function managerBindingFor(reportDate, publicRows = []) {
   // update cannot invalidate an otherwise verified inventory and hold view.
   // The copy keeps the approved file name (the cloud validator publishes and
   // checks only the basename); the lowercase content hash is the folder name.
-  const sourceSha256 = sha256(target)
+  // Hash and copy the same bytes (no read-then-copy race), write atomically,
+  // and repair a truncated or damaged copy: the folder name is the content
+  // hash, so rewriting it with bytes that match that hash is always safe.
+  const sourceBytes = readFileSync(target)
+  const sourceSha256 = createHash('sha256').update(sourceBytes).digest('hex').toUpperCase()
   const snapshotDirectory = path.join(WORK_ROOT, 'releases', reportDate, 'manager-disposition', sourceSha256.toLowerCase())
   const releaseSource = path.join(snapshotDirectory, path.basename(target))
-  mkdirSync(snapshotDirectory, { recursive: true })
-  if (!existsSync(releaseSource)) copyFileSync(target, releaseSource)
+  if (!existsSync(releaseSource) || !sameHash(sha256(releaseSource), sourceSha256)) writeBuffer(releaseSource, sourceBytes)
   if (!sameHash(sha256(releaseSource), sourceSha256)) throw new Error('MANAGER_DISPOSITION_RELEASE_SNAPSHOT_MISMATCH')
   return {
     status: 'complete',
