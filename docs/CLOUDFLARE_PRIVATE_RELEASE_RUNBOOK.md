@@ -388,6 +388,61 @@ backfill or generic migration apply merely to unblock deployment.
    extend that requirement automatically. Keep the generic apply path unused
    while historic non-idempotent migrations could be replayed.
 
+Read-only schema evidence for step 2. Save both query outputs outside the
+repository (they describe the production schema; never commit them). Both are
+`SELECT` statements; when the ledger query reports that `d1_migrations` does
+not exist, skip it and omit `--ledger`. Run the block from the repository root;
+its first line creates a private temporary folder outside the repository for
+the evidence:
+
+```sh
+EVIDENCE_DIR="$(mktemp -d)"
+wrangler d1 execute INVENTORY_DB --remote --config cloudflare/wrangler.jsonc --json --command "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type, name" > "$EVIDENCE_DIR/d1-live-schema.json"
+wrangler d1 execute INVENTORY_DB --remote --config cloudflare/wrangler.jsonc --json --command "SELECT name FROM d1_migrations ORDER BY name" > "$EVIDENCE_DIR/d1-ledger.json"
+node scripts/verify-d1-schema.mjs --live "$EVIDENCE_DIR/d1-live-schema.json" --ledger "$EVIDENCE_DIR/d1-ledger.json"
+```
+
+`scripts/verify-d1-schema.mjs` never writes. It reads only the files it is
+given and `cloudflare/migrations/*.sql`, opens only in-memory SQLite databases,
+and never contacts the network, runs Wrangler, or changes D1. It applies the
+migrations in order to record each file's delta (tables, indexes, triggers,
+views, and `ALTER TABLE` columns), rebuilds the live schema from its `CREATE`
+statements, and compares them structurally: column type, `NOT NULL`, default,
+and key; table constraints; index columns, uniqueness, and partial `WHERE`;
+trigger and view SQL. Each file is reported `APPLIED`, `MISSING`, `PARTIAL`, or
+`MODIFIED` with every differing object, and live objects that no migration
+creates are listed. Add `--json` for a machine-readable report. Exit 0 means
+every migration is `APPLIED` and nothing is modified, unexplained, or
+inconsistent with the ledger; 1 means a difference was found; 2 means an input
+was unusable, including Wrangler output that is not exactly one successful
+result set, or a live schema that has a `d1_migrations` table when `--ledger`
+was not supplied (its rows must be checked too).
+
+Schema presence cannot prove data changes. Migrations that contain `INSERT`,
+`UPDATE`, or `DELETE` (currently `0002`, `0003`, `0005`, and `0010`) are
+flagged `DATA_REVIEW_REQUIRED`; `0005` also leaves the schema identical to
+`0004`, so only data evidence can show that it ran. Review those data changes
+with read-only queries before attesting to them.
+
+The verifier can compare only against the current file text, and `0004`'s
+operation `CHECK` was widened in Git (adding `manager_dispositions_list`, in the
+same commit that added `0005`) after `0004` was first applied. So if `0004`,
+`0005`, and `0010` all show `MODIFIED` with `manager_dispositions_list` absent
+from the live `CHECK` on `integration_access_audit.operation`, the original
+`0004` is live and `0005` and `0010` have not run: do not re-apply `0004`.
+Review and apply `0010` (which supersedes `0005`) as its own single-file
+operation, then re-verify.
+
+For step 3, `--print-ledger-sql` prints, for review only, Wrangler's exact
+`CREATE TABLE IF NOT EXISTS "d1_migrations"` statement and one
+`INSERT INTO d1_migrations (name) VALUES ('<file>');` line for each migration
+that is `APPLIED` and not already in the ledger. It leaves out
+`DATA_REVIEW_REQUIRED` migrations unless the operator attests to their review
+with `--data-reviewed <file>,<file>` (it stops with exit 2 if a named file is
+not `DATA_REVIEW_REQUIRED`, so a mistyped attestation is never silently
+accepted), and never prints a line for a migration that is not `APPLIED`. Printing executes nothing; running the reviewed
+statements remains the Joe-authorized release work described above.
+
 Current filenames (reference list, not an executable backfill):
 
 - `0001_initial.sql`
