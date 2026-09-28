@@ -763,10 +763,12 @@ function managerBindingFor(reportDate, publicRows = []) {
   // A monthly manager log can legitimately change after a daily release has
   // been published. Bind the release to a content-addressed copy so a later
   // update cannot invalidate an otherwise verified inventory and hold view.
+  // The copy keeps the approved file name (the cloud validator publishes and
+  // checks only the basename); the lowercase content hash is the folder name.
   const sourceSha256 = sha256(target)
-  const releaseDirectory = path.join(WORK_ROOT, 'releases', reportDate)
-  const releaseSource = path.join(releaseDirectory, `manager-disposition-source-${sourceSha256}.json`)
-  mkdirSync(releaseDirectory, { recursive: true })
+  const snapshotDirectory = path.join(WORK_ROOT, 'releases', reportDate, 'manager-disposition', sourceSha256.toLowerCase())
+  const releaseSource = path.join(snapshotDirectory, path.basename(target))
+  mkdirSync(snapshotDirectory, { recursive: true })
   if (!existsSync(releaseSource)) copyFileSync(target, releaseSource)
   if (!sameHash(sha256(releaseSource), sourceSha256)) throw new Error('MANAGER_DISPOSITION_RELEASE_SNAPSHOT_MISMATCH')
   return {
