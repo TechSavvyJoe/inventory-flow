@@ -760,12 +760,21 @@ function managerBindingFor(reportDate, publicRows = []) {
     vehicles: currentVehicles,
   })
   const matchStats = sanitized.summary ?? {}
+  // A monthly manager log can legitimately change after a daily release has
+  // been published. Bind the release to a content-addressed copy so a later
+  // update cannot invalidate an otherwise verified inventory and hold view.
+  const sourceSha256 = sha256(target)
+  const releaseDirectory = path.join(WORK_ROOT, 'releases', reportDate)
+  const releaseSource = path.join(releaseDirectory, `manager-disposition-source-${sourceSha256}.json`)
+  mkdirSync(releaseDirectory, { recursive: true })
+  if (!existsSync(releaseSource)) copyFileSync(target, releaseSource)
+  if (!sameHash(sha256(releaseSource), sourceSha256)) throw new Error('MANAGER_DISPOSITION_RELEASE_SNAPSHOT_MISMATCH')
   return {
     status: 'complete',
     classification: 'operational-redacted',
     source_type: 'manager-log',
-    path: target,
-    sha256: sha256(target),
+    path: releaseSource,
+    sha256: sourceSha256,
     source_store: overlay.sourceStore ?? overlay.source_store ?? 'Howell',
     source_period: overlay.sourcePeriod ?? overlay.source_period ?? month,
     sold_records: stats.soldRecords ?? stats.sold_records ?? stats.recordCount ?? 0,

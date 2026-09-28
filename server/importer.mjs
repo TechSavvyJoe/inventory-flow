@@ -2364,13 +2364,28 @@ export function loadLatestCompletedRelease({ workspaceRoot, now = new Date() }) 
     documentEnrichmentLoadWarning,
     now,
   })
-  const managerDisposition = loadManagerDispositionOverlay({
-    workspaceRoot: resolvedWorkspace,
-    reportDate,
-    vehicles: release.vehicles,
-    current: release.sourceRuns.public.status === 'current',
-    manifestBinding: manifest.manager_disposition_overlay ?? null,
-  })
+  let managerDisposition
+  try {
+    managerDisposition = loadManagerDispositionOverlay({
+      workspaceRoot: resolvedWorkspace,
+      reportDate,
+      vehicles: release.vehicles,
+      current: release.sourceRuns.public.status === 'current',
+      manifestBinding: manifest.manager_disposition_overlay ?? null,
+    })
+  } catch (error) {
+    const staleRelease = release.sourceRuns.public.status === 'stale_unverified'
+    if (!staleRelease || error?.message !== 'Manager disposition source checksum differs from the completed manifest') throw error
+    // Older releases bound the mutable monthly manager log directly. Do not
+    // discard their verified public inventory or DealerMail holds merely
+    // because a newer manager update replaced that monthly source.
+    managerDisposition = {
+      overlay: sanitizeManagerDispositionDocuments({ documents: [], reportDate, vehicles: release.vehicles }),
+      sourceRun: null,
+      sourcePaths: [],
+    }
+    release.warnings.push('Manager disposition source changed after this verified release; retained the verified inventory and DealerMail holds without the superseded manager-only overlay.')
+  }
   release.managerDispositionOverlay = managerDisposition.overlay
   release.sourceRuns.managerDisposition = managerDisposition.sourceRun
   if (managerDisposition.overlay.summary.reviewRecordCount > 0) {

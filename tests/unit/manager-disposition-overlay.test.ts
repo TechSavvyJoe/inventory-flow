@@ -111,6 +111,20 @@ describe('strict manager disposition overlay', () => {
     expect(() => loadManagerDispositionOverlay({ workspaceRoot: root, reportDate: bundle.reportDate, vehicles: bundle.release.vehicles, manifestBinding: { ...binding, sha256: '0'.repeat(64) } })).toThrow(/checksum differs/)
   })
 
+  it('loads a content-addressed manager snapshot stored with its release', () => {
+    const { bundle, source } = fixtures()
+    const root = mkdtempSync(path.join(os.tmpdir(), 'manager-release-snapshot-')); directories.push(root)
+    const raw = Buffer.from(JSON.stringify(source))
+    const sha256 = createHash('sha256').update(raw).digest('hex').toUpperCase()
+    const directory = path.join(root, 'work', 'releases', bundle.reportDate); mkdirSync(directory, { recursive: true })
+    const sourcePath = path.join(directory, `manager-disposition-source-${sha256.toLowerCase()}.json`)
+    writeFileSync(sourcePath, raw)
+    const binding = { status: 'complete', classification: 'operational-redacted', source_type: 'manager-log', path: sourcePath, sha256, source_store: 'Howell', source_period: bundle.reportDate.slice(0, 7), sold_records: 3, delivered_records: 1, sold_not_marked_delivered: 2, matched_current_public_vins: 2, unmatched_records: 1, conflicting_records: 0, review_records: 1, cloud_upload_allowed: true }
+    const loaded = loadManagerDispositionOverlay({ workspaceRoot: root, reportDate: bundle.reportDate, vehicles: bundle.release.vehicles, manifestBinding: binding })
+    expect(loaded.sourceRun.snapshotPath).toBe(sourcePath)
+    expect(loaded.sourceRun.metadata.boundSourceSha256).toBe(sha256)
+  })
+
   it('accepts a workspace reached through a symlinked ancestor but rejects any symlink inside it', () => {
     // macOS resolves its default temp directory through /var -> /private/var,
     // and a deployment can mount the workspace behind a symlink too. Neither

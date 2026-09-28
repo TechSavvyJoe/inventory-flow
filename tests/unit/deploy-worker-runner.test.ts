@@ -13,6 +13,25 @@ const integrationVersion = '22222222-2222-4222-8222-222222222222'
 const migrationNames = ['0001_initial.sql', '0002_app_access.sql']
 const ledger = names => JSON.stringify([{ success: true, results: names.map(name => ({ name })) }])
 
+function supportsFileSymlinks() {
+  const root = mkdtempSync(path.join(tmpdir(), 'inventory-release-symlink-probe-'))
+  try {
+    const target = path.join(root, 'target.mjs')
+    writeFileSync(target, '')
+    symlinkSync(target, path.join(root, 'link'))
+    return true
+  } catch {
+    // Some managed Windows sessions deny file-symlink creation without an
+    // elevation policy. The release runner still tests these paths in CI and
+    // on developer machines that support symlinks.
+    return false
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}
+
+const symlinkIt = supportsFileSymlinks() ? it : it.skip
+
 afterEach(() => {
   for (const root of roots.splice(0)) {
     if (!root.startsWith(path.join(tmpdir(), 'inventory-release-test-'))) throw new Error('Unexpected test directory')
@@ -145,7 +164,7 @@ describe('migration ledger and deploy receipt parsing', () => {
     expect(() => deploymentVersion(JSON.stringify({ type: 'deploy', worker_name: 'synthetic-worker', version_id: 'unknown' }), 'synthetic-worker')).toThrow(/UNVERIFIED/)
   })
 
-  it('resolves the package-manager launcher pnpm really passes, and refuses shell shims', () => {
+  symlinkIt('resolves the package-manager launcher pnpm really passes, and refuses shell shims', () => {
     const h = harness()
     const node = '/synthetic/node'
     expect(resolvePnpmCommand({ npm_execpath: h.pnpm }, node)).toEqual({ command: node, prefix: [h.pnpm] })
@@ -165,7 +184,7 @@ describe('migration ledger and deploy receipt parsing', () => {
     expect(() => resolvePnpmCommand({}, node)).toThrow(/PNPM_NODE_ENTRY_REQUIRED/)
   })
 
-  it('runs a full release through an extensionless pnpm symlink', () => {
+  symlinkIt('runs a full release through an extensionless pnpm symlink', () => {
     const h = harness()
     symlinkSync(h.pnpm, path.join(h.root, 'pnpm-link'))
     h.run([], { npm_execpath: path.join(h.root, 'pnpm-link') })
