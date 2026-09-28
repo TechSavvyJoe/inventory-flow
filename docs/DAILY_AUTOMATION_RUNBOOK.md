@@ -436,7 +436,14 @@ Two things happen alongside the prompt rather than inside it:
   binds `manifest.manager_disposition_overlay` (path + sha256 + counts). It
   runs the pipeline's own sanitizer and manifest-bound loader via
   `ingest_sold_delivered_helper.mjs`, never publishes, and backs the manifest
-  up first. Pink/highlighted rows are explicit manager evidence that delivery
+  up first. The next DailyRun copies that exact file to
+  `work\releases\{date}\manager-disposition\{sha256 lowercase}\{YYYY-MM}-{store}-operational.json`
+  and rebinds the manifest to that copy, so a later manager update cannot
+  invalidate a verified release. The loader accepts only those two locations.
+  Never prune a `manager-disposition` folder while its date's manifest can still
+  be loaded. On `MANAGER_DISPOSITION_RELEASE_SNAPSHOT_MISMATCH`, the run has
+  already tried to rewrite the copy from the verified bytes; if it persists,
+  check the disk and permissions of that one hash folder. Pink/highlighted rows are explicit manager evidence that delivery
   is complete; unhighlighted rows remain sold / delivery pending even when a
   handwritten date is present. The app's active view removes a delivered VIN
   only when the log row named that exact VIN, without deleting its public/CRM

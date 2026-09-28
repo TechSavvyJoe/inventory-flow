@@ -116,13 +116,25 @@ describe('strict manager disposition overlay', () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'manager-release-snapshot-')); directories.push(root)
     const raw = Buffer.from(JSON.stringify(source))
     const sha256 = createHash('sha256').update(raw).digest('hex').toUpperCase()
-    const directory = path.join(root, 'work', 'releases', bundle.reportDate); mkdirSync(directory, { recursive: true })
-    const sourcePath = path.join(directory, `manager-disposition-source-${sha256.toLowerCase()}.json`)
+    const approvedName = `${bundle.reportDate.slice(0, 7)}-howell-operational.json`
+    const directory = path.join(root, 'work', 'releases', bundle.reportDate, 'manager-disposition', sha256.toLowerCase()); mkdirSync(directory, { recursive: true })
+    const sourcePath = path.join(directory, approvedName)
     writeFileSync(sourcePath, raw)
     const binding = { status: 'complete', classification: 'operational-redacted', source_type: 'manager-log', path: sourcePath, sha256, source_store: 'Howell', source_period: bundle.reportDate.slice(0, 7), sold_records: 3, delivered_records: 1, sold_not_marked_delivered: 2, matched_current_public_vins: 2, unmatched_records: 1, conflicting_records: 0, review_records: 1, cloud_upload_allowed: true }
     const loaded = loadManagerDispositionOverlay({ workspaceRoot: root, reportDate: bundle.reportDate, vehicles: bundle.release.vehicles, manifestBinding: binding })
     expect(loaded.sourceRun.snapshotPath).toBe(sourcePath)
     expect(loaded.sourceRun.metadata.boundSourceSha256).toBe(sha256)
+
+    // A copy under another hash folder, another date, or a non-approved name is refused.
+    const load = (candidate) => () => loadManagerDispositionOverlay({ workspaceRoot: root, reportDate: bundle.reportDate, vehicles: bundle.release.vehicles, manifestBinding: { ...binding, path: candidate } })
+    for (const candidate of [
+      path.join(root, 'work', 'releases', bundle.reportDate, 'manager-disposition', '0'.repeat(64), approvedName),
+      path.join(root, 'work', 'releases', '2000-01-01', 'manager-disposition', sha256.toLowerCase(), approvedName),
+      path.join(directory, `manager-disposition-source-${sha256}.json`),
+    ]) {
+      mkdirSync(path.dirname(candidate), { recursive: true }); writeFileSync(candidate, raw)
+      expect(load(candidate)).toThrow(/not an approved operational source/)
+    }
   })
 
   it('accepts a workspace reached through a symlinked ancestor but rejects any symlink inside it', () => {
