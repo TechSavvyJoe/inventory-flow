@@ -189,8 +189,8 @@
       "idSelectors": 39
     },
     "src/features/inventory/inventory-modern.css": {
-      "smallText": 51,
-      "rawColors": 188,
+      "smallText": 50,
+      "rawColors": 186,
       "rgbHslColors": 44,
       "important": 1,
       "idSelectors": 0
@@ -214,7 +214,7 @@
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 492
+      "idSelectors": 479
     },
     "src/features/inventory/WarrantyOutlook.css": {
       "smallText": 0,

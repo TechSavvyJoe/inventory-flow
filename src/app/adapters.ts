@@ -733,6 +733,8 @@ export function toInventoryVehicle(
           lastEventAt: vehicle.movement.lastConfirmedAt || openJoined?.lastConfirmedAt || null,
           lastEventLabel: openJoined?.events.at(-1)?.label || null,
           nextAction: vehicle.movement.nextAction || openJoined?.nextAction || null,
+          nextActionOwner: vehicle.movement.nextActionOwner || openJoined?.nextActionOwner || null,
+          nextActionStore: vehicle.movement.nextActionStore || openJoined?.nextActionStore || null,
           dueAt: vehicle.movement.dueAt || openJoined?.dueAt || null,
           overdue:
             Boolean(vehicle.movement.dueAt && new Date(vehicle.movement.dueAt).getTime() < Date.now()) ||

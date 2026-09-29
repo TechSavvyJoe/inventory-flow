@@ -1,4 +1,5 @@
 import { displayDate } from '../../lib/date-display';
+import { slaLabel as slaStatus } from '../../lib/sla-label';
 import type {
   LocationConfidence,
   SlaState,
@@ -47,19 +48,13 @@ export function humanizeStatusLabel(label: string): string {
   return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : label;
 }
 
+/**
+ * Group operations (src/features/manager) still imports this through the
+ * transfers barrel. It is the shared src/lib/sla-label wording, not a second
+ * vocabulary; delete it when that page is retired.
+ */
 export function slaLabel(sla: SlaState): string {
-  switch (sla) {
-    case 'on-track':
-      return 'On track';
-    case 'due-soon':
-      return 'Due soon';
-    case 'overdue':
-      return 'Overdue';
-    case 'breached':
-      return 'Well past due';
-    default:
-      return 'No due time';
-  }
+  return slaStatus({ sla }).label;
 }
 
 export function locationConfidenceLabel(confidence: LocationConfidence): string {

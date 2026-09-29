@@ -259,9 +259,6 @@ export function HoldEvidenceRecord({
               : evidence.lifecycleStatus || "Active"}
           </small>
         </span>
-        <span className="inventory-hold-evidence__position">
-          {evidence.position || "Active"}
-        </span>
       </header>
       {isLastVerified ? (
         <p className="inventory-hold-evidence__stale-note" role="note">
@@ -280,23 +277,13 @@ export function HoldEvidenceRecord({
           <Fact label="Backup holds">{backupCount}</Fact>
         ) : null}
       </dl>
-      <div
-        className="inventory-hold-evidence__flags"
-        aria-label="Hold communication flags"
-      >
-        <span className={evidence.commentFlag ? "is-present" : undefined}>
-          <MessageSquare
-            size={15}
-            strokeWidth={1.75}
-            aria-hidden="true"
-          />
-          {evidence.commentFlag ? "Comments present" : "No comments"}
-        </span>
-        <span className={evidence.alertFlag ? "is-present" : undefined}>
-          <Bell size={15} strokeWidth={1.75} aria-hidden="true" />
-          {evidence.alertFlag ? "Alerts present" : "No alerts"}
-        </span>
-      </div>
+      {/* Captured comments and alerts are listed below; a count without its
+          text is the only case that still needs a pointer. */}
+      {!messages.length && (evidence.commentFlag || evidence.alertFlag) ? (
+        <p className="inventory-workspace-section-note">
+          {[evidence.commentFlag ? "Comments" : null, evidence.alertFlag ? "Alerts" : null].filter(Boolean).join(" and ")} recorded in DealerMail.
+        </p>
+      ) : null}
       {messages.length ? (
         <details className="inventory-hold-evidence__messages" open>
           <summary>

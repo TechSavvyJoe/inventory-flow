@@ -16,9 +16,11 @@
 .inventory-dealermail-handoff__identity dt { font-size: 13px; color: var(--v10-support); }
 .inventory-dealermail-handoff__identity dd { margin: 0; font: 600 14px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; user-select: text; overflow-wrap: anywhere; }
 .inventory-dealermail-handoff__note { color: var(--v10-support); }
+/* A secondary, outlined handoff: the hold evidence above it is the content. */
 .inventory-dealermail-handoff .inventory-dealermail-handoff__launch {
-  display: flex;
-  width: 100%;
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
   min-height: 44px;
   align-items: center;
   justify-content: center;
@@ -26,15 +28,15 @@
   padding: 10px 14px;
   border: 1px solid var(--blue-600);
   border-radius: 6px;
-  background: var(--blue-600);
-  color: var(--surface);
+  background: var(--surface);
+  color: var(--blue-700);
   -webkit-text-fill-color: currentColor;
   font: 600 14px/1.4 var(--font-app);
   white-space: normal;
   cursor: pointer;
 }
 .inventory-dealermail-handoff__launch svg { flex: 0 0 auto; }
-.inventory-dealermail-handoff .inventory-dealermail-handoff__launch:hover { background: var(--blue-700); border-color: var(--blue-700); }
+.inventory-dealermail-handoff .inventory-dealermail-handoff__launch:hover { background: var(--blue-050); border-color: var(--blue-700); }
 .inventory-dealermail-handoff .inventory-dealermail-handoff__launch:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 .inventory-dealermail-handoff .inventory-dealermail-handoff__launch:disabled { background: var(--surface-muted); border-color: var(--border-strong); color: var(--ink-600); cursor: not-allowed; }
 .inventory-dealermail-handoff__feedback { padding: 12px; margin-top: 12px; border: 1px solid var(--v10-border); border-radius: 6px; background: var(--v10-surface-subtle); }
