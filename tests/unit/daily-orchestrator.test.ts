@@ -854,11 +854,11 @@ describe('app-first daily orchestrator helpers', () => {
     expect(JSON.stringify(status)).not.toMatch(/customer|comment|alert|reason/i)
   })
 
-  it('reuses a complete existing OASIS capture when the browser is unavailable, and only then', async () => {
+  it('reuses an existing OASIS capture when the browser is unavailable and reports gaps instead of blocking', async () => {
     const internals = await loadInternals()
     const reportDate = '2026-09-22'
     const steps = []
-    expect(internals.reuseExistingOasisCapture(reportDate, steps)).toBe(false)
+    expect(internals.reuseExistingOasisCapture(reportDate, steps)).toMatchObject({ validated: false, systemic: true })
     expect(steps.at(-1)).toMatchObject({ name: 'oasis', status: 'skipped_browser_unavailable' })
 
     mkdirSync(path.join(workspaceRoot, 'work', 'oasis-history'), { recursive: true })
@@ -866,11 +866,11 @@ describe('app-first daily orchestrator helpers', () => {
     writeFileSync(path.join(workspaceRoot, 'work', `oasis-vin-worklist-${reportDate}.json`), JSON.stringify(worklist))
     const complete = (vin) => ({ vin, openActionsCaptured: true, openFieldServiceActionCount: 0, openFieldServiceActions: [] })
     writeFileSync(path.join(workspaceRoot, 'work', 'oasis-history', `${reportDate}-oasis.json`), JSON.stringify({ records: [complete(worklist[0].vin)] }))
-    expect(internals.reuseExistingOasisCapture(reportDate, steps)).toBe(false)
-    expect(steps.at(-1)).toMatchObject({ name: 'oasis', status: 'existing_capture_incomplete' })
+    expect(internals.reuseExistingOasisCapture(reportDate, steps)).toMatchObject({ validated: false, systemic: false, missingVehicles: 1, incompleteVehicles: 0 })
+    expect(steps.at(-1)).toMatchObject({ name: 'oasis', status: 'reused_existing_capture_with_gaps' })
 
     writeFileSync(path.join(workspaceRoot, 'work', 'oasis-history', `${reportDate}-oasis.json`), JSON.stringify({ records: worklist.map((item) => complete(item.vin)) }))
-    expect(internals.reuseExistingOasisCapture(reportDate, steps)).toBe(true)
+    expect(internals.reuseExistingOasisCapture(reportDate, steps)).toMatchObject({ validated: true, systemic: false })
     expect(steps.at(-1)).toMatchObject({ name: 'oasis', status: 'reused_existing_capture' })
   })
 

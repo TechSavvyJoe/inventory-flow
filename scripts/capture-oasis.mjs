@@ -25,7 +25,7 @@ import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { closeDuplicateTabs, closeOwnedTab, closeUnresponsiveOriginTabs, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
-import { assessOasisCapture, parseOasisFull } from './lib/oasis-parser.mjs'
+import { assessOasisCapture, diagnoseOasisActions, parseOasisFull } from './lib/oasis-parser.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -97,35 +97,64 @@ if (queue.length && !ctx) {
 }
 
 const tally = { OK: 0, NO_OASIS: 0, ERROR: 0 }
+// Why each vehicle is still unconfirmed after its last attempt (local review only).
+const issues = new Map()
+const isConfirmed = vin => out.records.some(record => record.vin === vin &&
+  (record.openActionsCaptured === true || record.actionResultLimit === 'canadian_service_info_warning'))
 
 let stopped = null
-for (const vin of queue) {
-  if (Date.now() - t0 > budgetMs) { stopped = 'BUDGET_EXHAUSTED'; break }
-  try {
-    const r = await fetchInTab(ctx.page, OASIS_URL(vin), { timeoutMs: 45000 })
-    if (r.status === 0 || r.error) { state = 'session_expired'; stopped = 'SESSION_EXPIRED'; break }
-    if (r.status !== 200 || !r.text) { tally.ERROR++; continue }
-    if (/type=["']?password/i.test(r.text) || /login\.microsoftonline\.com/i.test(r.text)) {
-      state = 'session_expired'; stopped = 'SESSION_EXPIRED'; break
-    }
-    const parsed = parseOasisFull(r.text)
-    if (!parsed) { tally.NO_OASIS++; continue }
-    state = 'ok'
-    out.records = out.records.filter(previous => previous.vin !== vin)
-    out.records.push({ vin, ...parsed, capturedAt: new Date().toISOString() })
-    tally.OK++
-    if (out.records.length % 10 === 0) save()
-  } catch (e) { tally.ERROR++ }
-  await sleep(80)
+// One vehicle never stops the run: fetch every queued VIN, then give each one
+// that failed or stayed unconfirmed one more try at the end, while the session
+// and budget last. Only a session or budget stop ends the capture early.
+async function capturePass(vins) {
+  for (const vin of vins) {
+    if (Date.now() - t0 > budgetMs) { stopped = 'BUDGET_EXHAUSTED'; return }
+    try {
+      const r = await fetchInTab(ctx.page, OASIS_URL(vin), { timeoutMs: 45000 })
+      if (r.status === 0 || r.error) { state = 'session_expired'; stopped = 'SESSION_EXPIRED'; return }
+      if (r.status !== 200 || !r.text) { tally.ERROR++; issues.set(vin, { reason: `http_${r.status}`, excerpt: '' }); continue }
+      if (/type=["']?password/i.test(r.text) || /login\.microsoftonline\.com/i.test(r.text)) {
+        state = 'session_expired'; stopped = 'SESSION_EXPIRED'; return
+      }
+      const parsed = parseOasisFull(r.text)
+      if (!parsed) { tally.NO_OASIS++; issues.set(vin, { reason: 'no_oasis_report', excerpt: '' }); continue }
+      state = 'ok'
+      out.records = out.records.filter(previous => previous.vin !== vin)
+      out.records.push({ vin, ...parsed, capturedAt: new Date().toISOString() })
+      tally.OK++
+      if (isConfirmed(vin)) issues.delete(vin)
+      else issues.set(vin, diagnoseOasisActions(r.text))
+      if (out.records.length % 10 === 0) save()
+    } catch (e) { tally.ERROR++; issues.set(vin, { reason: 'fetch_error', excerpt: '' }) }
+    await sleep(80)
+  }
 }
+
+await capturePass(queue)
+const retryQueue = stopped ? [] : queue.filter(vin => !isConfirmed(vin))
+if (retryQueue.length) {
+  await sleep(2000)
+  await capturePass(retryQueue)
+}
+const recovered = retryQueue.filter(vin => isConfirmed(vin)).length
 
 save()
 await closeDuplicateTabs(ORIGIN, { pathIncludes: '/oasis/Index', keepTabId: ctx?.tab?.id })
 await closeOwnedTab(ctx)
 const quality = assessOasisCapture(worklist, out.records)
-if (!stopped && !Number.isFinite(max) && !quality.complete) stopped = 'INCOMPLETE_OASIS_CAPTURE'
+// Vehicles still missing or unconfirmed go to a local review list with a reason,
+// so the parser can be fixed; it is never published and never blocks the run.
+const recordsByVin = new Map(out.records.map(record => [record.vin, record]))
+const needsReview = worklist.map(({ vin }) => vin).filter(vin => {
+  const record = recordsByVin.get(vin)
+  return !record || (record.openActionsCaptured !== true && record.actionResultLimit !== 'canadian_service_info_warning')
+}).map(vin => ({ vin, ...(issues.get(vin) ?? { reason: recordsByVin.has(vin) ? 'carried_unconfirmed' : 'not_captured', excerpt: '' }) }))
+const reviewPath = path.join(ROOT, 'work', 'oasis-history', `${reportDate}-needs-review.json`)
+writeFileSync(reviewPath, JSON.stringify({ reportDate, checkedAt: new Date().toISOString(), vehicles: needsReview }, null, 1))
 console.log(JSON.stringify({
   sessionStatus: state, records: out.records.length, worklist: worklist.length,
-  tally, ...quality, stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), out: outPath
+  tally, ...quality, retried: retryQueue.length, recovered, needsReview: needsReview.length,
+  stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), out: outPath, review: reviewPath,
 }))
+// Per-vehicle gaps are not a failure; only a session or budget stop is.
 process.exit(stopped ? 1 : 0)

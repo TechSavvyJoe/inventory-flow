@@ -143,6 +143,29 @@ export function parseOasisFull(html) {
   }
 }
 
+/**
+ * Why a vehicle's open actions were not confirmed, for the local review list.
+ * Returns a reason code and a short excerpt of the section after the heading.
+ * It never changes parseOasisActions and is never published.
+ */
+export function diagnoseOasisActions(text) {
+  const source = stripTags(String(text ?? ''))
+  const heading = /OUTSTANDING FIELD SERVICE ACTIONS\s*:?/i.exec(source)
+  if (!heading) return { reason: 'heading_not_found', excerpt: '' }
+  const remainder = source.slice(heading.index + heading[0].length)
+  const excerpt = remainder.replace(/\s+/g, ' ').trim().slice(0, 160)
+  const boundary = /NO WARNING MESSAGES|WARNING MESSAGES|GENERAL WARRANTY INFORMATION|WARRANTY COVERAGE|End of OASIS report/i.exec(remainder)
+  if (!boundary) return { reason: 'no_boundary', excerpt }
+  if (/^WARNING MESSAGES\b/i.test(remainder.slice(boundary.index, boundary.index + 350))) return { reason: 'warning_section', excerpt }
+  const block = remainder.slice(0, boundary.index).trim()
+  if (block.length > 20000) return { reason: 'over_20000_chars', excerpt }
+  const codes = [...block.matchAll(/\b\d{2}[A-Z]\d{2,3}\b/g)]
+  if (!codes.length) return { reason: 'zero_codes_unrecognized_text', excerpt }
+  if (codes.length > 60) return { reason: 'over_60_codes', excerpt }
+  if (new Set(codes.map(code => code[0])).size !== codes.length) return { reason: 'duplicate_code', excerpt }
+  return { reason: 'unparsed_action_row', excerpt }
+}
+
 export function assessOasisCapture(worklist, records) {
   const byVin = new Map(records.map(record => [record.vin, record]))
   let missingVinCount = 0
