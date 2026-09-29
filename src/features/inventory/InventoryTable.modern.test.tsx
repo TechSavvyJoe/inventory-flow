@@ -625,7 +625,8 @@ describe('modern inventory result access', () => {
     };
     render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} onTrackMovement={vi.fn()} viewerStore="Howell" />);
     const update = document.querySelector('.inventory-mobile-update');
-    expect(update).toHaveTextContent('Overdue · waiting on Fowlerville salesperson');
+    expect(update).toHaveTextContent('Overdue · on Fowlerville');
+    expect(update).toHaveAttribute('title', expect.stringContaining('Overdue · waiting on Fowlerville salesperson'));
     expect(update).not.toHaveClass('inventory-mobile-update--warning');
   });
 
@@ -653,7 +654,8 @@ describe('modern inventory result access', () => {
     };
     render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} viewerStore="Howell" />);
     const statusCell = document.querySelector('td[data-column="status"]') as HTMLElement;
-    expect(statusCell).toHaveTextContent('Overdue · waiting on Fowlerville salesperson');
+    expect(statusCell).toHaveTextContent('Overdue · on Fowlerville');
+    expect(document.querySelector('.inv-desk-move')).toHaveAttribute('title', 'Overdue · waiting on Fowlerville salesperson');
     expect(document.querySelector('.inv-desk-move')).not.toHaveClass('is-warning');
   });
 

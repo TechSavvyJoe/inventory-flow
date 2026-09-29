@@ -388,7 +388,9 @@ export function vehicleOperationalStatus(vehicle: InventoryVehicle): Operational
  * The shared src/lib/sla-label wording, so the list, the vehicle page and
  * Moves read the same. Overdue is urgent (the warning tone) only when the
  * viewer's own store owns the next step; another store's overdue move stays
- * a plain fact naming who it is waiting on.
+ * a plain fact naming who it is waiting on. A list row names only the owning
+ * store ("Overdue · on Fowlerville") so it stays one line; the full wording is
+ * its detail, shown on hover and in the vehicle page.
  */
 export function vehicleMovementStatus(vehicle: InventoryVehicle, viewerStore?: string | null): OperationalStatus | null {
   const movement = vehicle.movement;
@@ -399,9 +401,10 @@ export function vehicleMovementStatus(vehicle: InventoryVehicle, viewerStore?: s
     nextActionOwner: movement.nextActionOwner,
     viewerStore,
   });
+  const waitingOnOtherStore = status.overdue && status.ownedByViewer === false && Boolean(movement.nextActionStore?.trim());
   return {
-    label: status.overdue ? status.label : movement.state || movement.requestStatus || "Being moved",
-    detail: movement.nextAction || movement.lastEventLabel || "Movement in progress",
+    label: waitingOnOtherStore ? `Overdue · on ${movement.nextActionStore!.trim()}` : status.overdue ? status.label : movement.state || movement.requestStatus || "Being moved",
+    detail: waitingOnOtherStore ? status.label : movement.nextAction || movement.lastEventLabel || "Movement in progress",
     tone: status.overdue ? (status.tone === "danger" ? "warning" : "move") : "move",
     icon: Truck,
   };
