@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { diagnoseOasisActions } from '../../scripts/lib/oasis-parser.mjs'
+import { diagnoseOasisActions, reviewOasisForPublish } from '../../scripts/lib/oasis-parser.mjs'
 
 let workspaceRoot
 let previousRoot
@@ -63,6 +63,32 @@ describe('OASIS never blocks the daily release', () => {
     const output = 'progress text\n{"not":"this"}\n{"sessionStatus":"ok","missingVinCount":0,"incompleteActionResults":1,"complete":false}\n'
     expect(internals.lastJsonLine(output)).toMatchObject({ incompleteActionResults: 1 })
     expect(internals.lastJsonLine('no json here')).toBeNull()
+  })
+})
+
+describe('the publisher pre-publish check reports OASIS gaps without failing', () => {
+  const published = (record) => ({ fordOasis: { capturedAt: record.capturedAt, openActionsCaptured: record.openActionsCaptured, openFieldServiceActions: record.openFieldServiceActions } })
+
+  it('warns for one unconfirmed vehicle that is published as not confirmed', () => {
+    const worklist = [{ vin: vin(1) }, { vin: vin(2) }]
+    const records = [
+      { ...captured(vin(1)), capturedAt: '2026-09-28T11:00:00Z' },
+      { vin: vin(2), openActionsCaptured: false, openFieldServiceActionCount: null, openFieldServiceActions: [], capturedAt: '2026-09-28T11:01:00Z' },
+    ]
+    const review = reviewOasisForPublish({ worklist, records, recordsByVin: Object.fromEntries(records.map((r) => [r.vin, published(r)])) })
+    expect(review.quality).toMatchObject({ complete: false, incompleteActionResults: 1 })
+    expect(review.parity).toMatchObject({ complete: true })
+    expect(review.warnings).toEqual(['OASIS open actions unconfirmed for 1 vehicle(s)'])
+  })
+
+  it('warns when the capture is missing or unreadable instead of throwing', () => {
+    expect(reviewOasisForPublish({ worklist: null, records: undefined, recordsByVin: {} }).warnings[0]).toMatch(/missing or unreadable/)
+  })
+
+  it('warns when the published enrichment lacks a captured vehicle', () => {
+    const records = [{ ...captured(vin(3)), capturedAt: '2026-09-28T11:00:00Z' }]
+    const review = reviewOasisForPublish({ worklist: [{ vin: vin(3) }], records, recordsByVin: {} })
+    expect(review.warnings).toEqual(["published OASIS differs from today's capture for 1 vehicle(s)"])
   })
 })
 

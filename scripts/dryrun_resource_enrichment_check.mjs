@@ -14,7 +14,7 @@ import { loadLatestCompletedRelease, validateVinDocumentEnrichmentForPublish } f
 import { cloudReleaseFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
-import { assessOasisCapture, compareOasisEnrichment } from './lib/oasis-parser.mjs'
+import { reviewOasisForPublish } from './lib/oasis-parser.mjs'
 
 const APP_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)))
 const WORKSPACE_ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -58,16 +58,19 @@ async function main() {
     }
     const oasisPath = path.join(WORKSPACE_ROOT, 'work', 'oasis-history', `${REPORT_DATE}-oasis.json`)
     const worklistPath = path.join(WORKSPACE_ROOT, 'work', `oasis-vin-worklist-${REPORT_DATE}.json`)
-    if (existsSync(oasisPath) && existsSync(worklistPath)) {
-      const capture = JSON.parse(readFileSync(oasisPath, 'utf8'))
-      const worklist = JSON.parse(readFileSync(worklistPath, 'utf8'))
-      if (!Array.isArray(capture.records) || !Array.isArray(worklist)) throw new Error('OASIS_CAPTURE_INVALID')
-      out.oasisCaptureQuality = assessOasisCapture(worklist, capture.records)
-      out.oasisEnrichmentParity = compareOasisEnrichment(capture.records, validated.recordsByVin)
-      if (!out.oasisCaptureQuality.complete || !out.oasisEnrichmentParity.complete) failed = true
-    } else if (existsSync(oasisPath) || existsSync(worklistPath) || records.some(record => record.fordOasis)) {
-      out.oasisCaptureQuality = { complete: false, reason: 'Current OASIS capture or worklist is missing' }
-      failed = true
+    // OASIS gaps are reported, never fatal: see reviewOasisForPublish.
+    if (existsSync(oasisPath) || existsSync(worklistPath) || records.some(record => record.fordOasis)) {
+      const readJson = (file) => {
+        try { return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null } catch { return null }
+      }
+      const review = reviewOasisForPublish({
+        worklist: readJson(worklistPath),
+        records: readJson(oasisPath)?.records,
+        recordsByVin: validated.recordsByVin,
+      })
+      out.oasisCaptureQuality = review.quality
+      out.oasisEnrichmentParity = review.parity
+      out.oasisWarnings = review.warnings
     }
   } catch (error) {
     failed = true
