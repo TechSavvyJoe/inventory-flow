@@ -29,12 +29,15 @@ import { useAppData } from './AppDataContext'
 import { STORE_BRANDING } from './storeBranding'
 import { openStoreActionCount } from '../features/attention/action-center'
 
+// Daily work first: staff spend their day on their own inventory, its service
+// and the actions it needs. Moving vehicles between stores is occasional, so
+// Vehicle moves sits last among the daily pages.
 const NAV_ITEMS = [
   { id: 'inventory', to: '/inventory', label: 'Inventory', shortLabel: 'Inventory', icon: CarFront },
-  { id: 'moves', to: '/transfers', label: 'Vehicle moves', shortLabel: 'Moves', icon: ArrowLeftRight },
   { id: 'today', to: '/attention', label: 'Action center', shortLabel: 'Actions', icon: Bell },
-  { id: 'updates', to: '/updates', label: 'Inventory updates', shortLabel: 'Updates', icon: ListChecks },
   { id: 'service', to: '/service', label: 'Service status', shortLabel: 'Service', icon: Wrench },
+  { id: 'updates', to: '/updates', label: 'Inventory updates', shortLabel: 'Updates', icon: ListChecks },
+  { id: 'moves', to: '/transfers', label: 'Vehicle moves', shortLabel: 'Moves', icon: ArrowLeftRight },
 ] as const
 
 const OVERVIEW_NAV_ITEM = {
@@ -69,11 +72,13 @@ const ROLE_PREVIEW_OPTIONS: UserRole[] = ['sales', 'manager', 'group_manager']
 // Overview is computed on the server for managers (full) and sales (read-only).
 const OVERVIEW_ROLES: ReadonlySet<UserRole> = new Set(['manager', 'group_manager', 'sales'])
 
-// The bottom rail holds four destinations plus More: Overview, Inventory, Moves
-// and Actions. Whatever it leaves out has no other link on a phone, so the
-// utility menu carries it with its page help.
+// The bottom rail holds four destinations plus More: Overview, Inventory,
+// Actions and Service. Vehicle moves, Inventory updates and Control center sit
+// under More, which carries each with its page help. Retired transport roles
+// keep Moves in the rail because moving vehicles was their whole job.
 const MOBILE_UTILITY_HINTS: Partial<Record<NavigationItemId, string>> = {
   overview: 'Store and group inventory, location, service, and attention',
+  moves: 'Requests, trips, and returns between stores',
   today: 'The next step for your store, in one place',
   updates: 'New arrivals and price changes for your inventory',
   service: 'Waiting, in service, and completed work',
@@ -123,7 +128,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     ...(canSeeAdmin ? [ADMIN_NAV_ITEM] : []),
   ]
   const mobileNavigationIds: NavigationItemId[] = canSeeOverview
-    ? ['overview', 'inventory', 'moves', 'today']
+    ? ['overview', 'inventory', 'today', 'service']
     : ['inventory', 'moves', 'today', 'updates']
   const availableMobileItems = [OVERVIEW_NAV_ITEM, ...NAV_ITEMS, ADMIN_NAV_ITEM]
     .filter((item) => item.id !== 'overview' || canSeeOverview)

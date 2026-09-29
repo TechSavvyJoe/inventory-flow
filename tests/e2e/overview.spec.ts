@@ -112,15 +112,15 @@ test('sales open the Overview read-only, with no manager actions', async ({ page
   await expect(page.getByRole('link', { name: /back home$/ })).toHaveCount(0)
 })
 
-test('the phone rail is Overview · Inventory · Moves · Actions · More, with the rest under More', async ({ page }) => {
+test('the phone rail is Overview · Inventory · Actions · Service · More, with Moves and the rest under More', async ({ page }) => {
   await signInAs(page, 'sales')
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/overview')
   const rail = page.getByRole('navigation', { name: 'Mobile primary' })
-  await expect(rail.getByRole('link')).toHaveText([/Overview/, /Inventory/, /Moves/, /Actions/])
+  await expect(rail.getByRole('link')).toHaveText([/Overview/, /Inventory/, /Actions/, /Service/])
   await expect(rail.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page')
   await rail.getByRole('button', { name: 'More app controls' }).click()
   const more = page.getByRole('dialog', { name: 'Account and app controls' })
   await expect(more.getByRole('link', { name: /Inventory updates/ })).toBeVisible()
-  await expect(more.getByRole('link', { name: /Service status/ })).toBeVisible()
+  await expect(more.getByRole('link', { name: /Vehicle moves/ })).toBeVisible()
 })
