@@ -1,5 +1,10 @@
 // @ts-nocheck -- exercises the plain ESM daily merge helper.
 import { describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { mergeInvoiceMetadata } from '../../scripts/merge-invoice-metadata.mjs'
 import { invoiceFiles, invoicePublicationEndpoint } from '../../scripts/publish-invoice-documents.mjs'
 
@@ -85,5 +90,19 @@ describe('saved Ford invoice metadata', () => {
       folder: 'SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS/private-invoices',
       fileExists: () => { throw new Error('INELIGIBLE_DOCUMENT_SHOULD_NOT_BE_OPENED') },
     })).toEqual([])
+  })
+
+  it('skips cleanly when non-blocking invoice parsing produced nothing for the day', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'invoice-none-'))
+    try {
+      for (const dir of ['work/run-status', 'outputs', 'apps/inventory-ops']) mkdirSync(path.join(root, dir), { recursive: true })
+      const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+      const output = execFileSync(process.execPath, [path.join(repo, 'scripts', 'publish-invoice-documents.mjs'), '2026-09-29'], {
+        cwd: repo, env: { ...process.env, BOB_MAXEY_WORKSPACE_ROOT: root }, encoding: 'utf8', timeout: 10_000,
+      })
+      expect(JSON.parse(output)).toEqual({ reportDate: '2026-09-29', invoices: 0, stored: 0, alreadyStored: 0, skipped: 'no_parsed_invoices' })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
