@@ -159,7 +159,8 @@ describe('AppShell account and update controls', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Account and app controls' })
     const close = within(dialog).getByRole('button', { name: 'Close app controls' })
-    const lastLink = within(dialog).getByRole('link', { name: /Service status/i })
+    // The last destination under More: Vehicle moves, now that Service sits in the rail.
+    const lastLink = within(dialog).getByRole('link', { name: /Vehicle moves/i })
     await waitFor(() => expect(close).toHaveFocus())
 
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
@@ -210,7 +211,7 @@ describe('AppShell account and update controls', () => {
     expect(within(screen.getByRole('dialog', { name: 'Account and app controls' })).queryByRole('link', { name: /Group operations/ })).not.toBeInTheDocument()
   })
 
-  it.each(['sales', 'manager', 'group_manager'] as const)('gives a %s the rail Overview · Inventory · Moves · Actions · More, with the rest under More', (role) => {
+  it.each(['sales', 'manager', 'group_manager'] as const)('gives a %s the rail Overview · Inventory · Actions · Service · More, with Moves and the rest under More', (role) => {
     const context = useAppDataMock()
     const vehicles = [{ vin: 'TESTDATAHWELL0001', stockNumber: 'SYN-H01', vehicleName: 'Synthetic Ford H01', homeStore: 'Howell', serviceReadiness: { status: 'needs_service', store: 'Howell', canManage: true } }]
     const hold = { id: 'synthetic-hold', type: 'hold_alert', severity: 'warning', status: 'open', priority: 'high', label: 'Synthetic hold alert', vin: 'TESTDATAHWELL0001', store: 'Howell', actionability: 'actionable', allowedActions: [], events: [] }
@@ -223,11 +224,11 @@ describe('AppShell account and update controls', () => {
 
     const primary = screen.getByRole('navigation', { name: 'Primary' })
     expect(within(primary).getAllByRole('link').map((link) => link.textContent?.replace(/\d+$/, ''))).toEqual([
-      'Overview', 'Inventory', 'Vehicle moves', 'Action center', 'Inventory updates', 'Service status',
+      'Overview', 'Inventory', 'Action center', 'Service status', 'Inventory updates', 'Vehicle moves',
       ...(role === 'group_manager' ? ['Control center'] : []),
     ])
     const mobile = screen.getByRole('navigation', { name: 'Mobile primary' })
-    expect(within(mobile).getAllByRole('link').map((link) => link.querySelector('span')?.textContent)).toEqual(['Overview', 'Inventory', 'Moves', 'Actions'])
+    expect(within(mobile).getAllByRole('link').map((link) => link.querySelector('span')?.textContent)).toEqual(['Overview', 'Inventory', 'Actions', 'Service'])
     expect(within(mobile).getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/overview')
     // Actions is in the rail, so its count stays on Actions and never doubles on More.
     const more = within(mobile).getByRole('button', { name: 'More app controls' })
@@ -235,7 +236,9 @@ describe('AppShell account and update controls', () => {
     fireEvent.click(more)
     const utility = screen.getByRole('dialog', { name: 'Account and app controls' })
     expect(within(utility).getByRole('link', { name: /Inventory updates/ })).toHaveAttribute('href', '/updates')
-    expect(within(utility).getByRole('link', { name: /Service status/ })).toHaveAttribute('href', '/service')
+    // Moving vehicles is occasional work, so Vehicle moves lives under More.
+    expect(within(utility).getByRole('link', { name: /Vehicle moves/ })).toHaveAttribute('href', '/transfers')
+    expect(within(utility).queryByRole('link', { name: /Service status/ })).not.toBeInTheDocument()
     expect(within(utility).queryByRole('link', { name: /Control center/ }) !== null).toBe(role === 'group_manager')
     expect(within(utility).queryByRole('link', { name: /^Overview/ })).not.toBeInTheDocument()
   })
@@ -281,15 +284,16 @@ describe('AppShell account and update controls', () => {
     expect(within(primary).getByRole('link', { name: 'Control center' })).toHaveAttribute('aria-current', 'page')
     expect(within(mobile).getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/overview')
     expect(within(mobile).getByRole('link', { name: 'Actions' })).toHaveAttribute('href', '/attention')
-    // The rail keeps daily management destinations reachable in one tap. Less
-    // frequent administration, service, and update routes remain under More.
+    // The rail keeps daily destinations reachable in one tap. Administration,
+    // updates and vehicle moves, which are occasional, remain under More.
+    expect(within(mobile).getByRole('link', { name: 'Service' })).toHaveAttribute('href', '/service')
     expect(within(mobile).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
-    expect(within(mobile).queryByRole('link', { name: 'Service' })).not.toBeInTheDocument()
+    expect(within(mobile).queryByRole('link', { name: 'Moves' })).not.toBeInTheDocument()
     expect(within(mobile).queryByRole('link', { name: 'Updates' })).not.toBeInTheDocument()
     fireEvent.click(within(mobile).getByRole('button', { name: 'More app controls' }))
     const utility = screen.getByRole('dialog', { name: 'Account and app controls' })
     expect(within(utility).getByRole('link', { name: /Control center/ })).toHaveAttribute('href', '/admin')
-    expect(within(utility).getByRole('link', { name: /Service status/ })).toHaveAttribute('href', '/service')
+    expect(within(utility).getByRole('link', { name: /Vehicle moves/ })).toHaveAttribute('href', '/transfers')
     expect(within(utility).getByRole('link', { name: /Inventory updates/ })).toHaveAttribute('href', '/updates')
     unmount()
 
@@ -305,7 +309,7 @@ describe('AppShell account and update controls', () => {
     expect(within(storeMobile).queryByRole('link', { name: 'Control center' })).not.toBeInTheDocument()
     fireEvent.click(within(storeMobile).getByRole('button', { name: 'More app controls' }))
     const storeUtility = screen.getByRole('dialog', { name: 'Account and app controls' })
-    expect(within(storeUtility).getByRole('link', { name: /Service status/ })).toHaveAttribute('href', '/service')
+    expect(within(storeUtility).getByRole('link', { name: /Vehicle moves/ })).toHaveAttribute('href', '/transfers')
     expect(within(storeUtility).queryByRole('link', { name: /Action center/ })).not.toBeInTheDocument()
   })
 
