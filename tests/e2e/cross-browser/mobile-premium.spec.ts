@@ -342,29 +342,19 @@ for (const workflow of ['service', 'move'] as const) {
   })
 }
 
-test('a fresh global search overrides local query edits while a normal return preserves them', async ({ page }) => {
+test('a local inventory query survives a trip to another page and stays out of the URL', async ({ page }) => {
+  // The shell's global search is gone (one search box per page); the inventory
+  // page's own search keeps its text across a normal return, privately.
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto('/service')
-  await expect(page.getByRole('heading', { name: 'Service status', exact: true })).toBeVisible()
-  async function globalSearch() {
-    const input = page.getByRole('textbox', { name: 'Search inventory', exact: true })
-    await input.fill('DEMO-H01')
-    await input.press('Enter')
-    await expect(page.getByRole('combobox', { name: /Search inventory/i })).toHaveValue('DEMO-H01')
-    await expect(page).toHaveURL(url => url.pathname === '/inventory' && !url.searchParams.has('q'))
-  }
-  await globalSearch()
+  await page.goto('/inventory')
   const local = page.getByRole('combobox', { name: /Search inventory/i })
   await local.fill('DEMO-H02')
   await expect(local).toHaveValue('DEMO-H02')
   await local.press('Escape')
   await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Service status' }).click()
   await expect(page.getByRole('heading', { name: 'Service status', exact: true })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Search inventory', exact: true })).toHaveCount(0)
   await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Inventory', exact: true }).click()
   await expect(page.getByRole('combobox', { name: /Search inventory/i })).toHaveValue('DEMO-H02')
-  await page.getByRole('navigation', { name: 'Primary', exact: true }).getByRole('link', { name: 'Service status' }).click()
-  await expect(page.getByRole('heading', { name: 'Service status', exact: true })).toBeVisible()
-  await globalSearch()
-  await expect(page.locator('[data-inventory-vehicle-trigger="TESTDATAHWELL0001"]:visible').first()).toBeVisible()
-  expect(await page.evaluate(() => JSON.stringify(history.state))).not.toContain('DEMO-H01')
+  await expect(page).toHaveURL(url => url.pathname === '/inventory' && !url.searchParams.has('q') && !url.href.includes('DEMO-H02'))
 })
