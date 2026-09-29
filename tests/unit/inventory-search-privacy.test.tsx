@@ -1,16 +1,18 @@
 // PRODUCT-RULE TEST
 import { useLocation } from 'react-router-dom'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AppShell } from '../../src/app/AppShell'
+import { AttentionPage } from '../../src/features/attention/AttentionPage'
 import { InventoryPage } from '../../src/features/inventory/InventoryPage'
+import { ServicePage } from '../../src/features/service/ServicePage'
+import { TransfersPage } from '../../src/features/transfers/TransfersPage'
 import {
   createInventorySearchNavigation,
   inventorySearchAccessContext,
 } from '../../src/lib/inventory-navigation'
-import type { BootstrapData, StoreName, UserRole } from '../../src/types'
+import type { BootstrapData, StoreName, TransferRecord, UserRole, VehicleRecord } from '../../src/types'
 
 const mockState = vi.hoisted(() => ({
   role: 'manager' as UserRole,
@@ -45,9 +47,55 @@ const bootstrapData: BootstrapData = {
   attention: [],
 }
 
+// Each workflow page lists one synthetic row, so its own search box renders.
+const pageVehicle = {
+  vin: 'TESTDATAHWELL0002', stockNumber: 'SYNTHETIC-002', vehicleName: 'Synthetic Ford 002', homeStore: 'Howell', publicStore: 'Howell',
+  serviceReadiness: { vin: 'TESTDATAHWELL0002', status: 'needs_service', version: 0, serviceEnteredAt: null, completedAt: null, updatedAt: null, updatedBy: null, updatedByRole: null, updatedAtStore: null, store: 'Howell', canManage: true },
+} as VehicleRecord
+
+const pageTransfer: TransferRecord = {
+  id: 'synthetic-move-1',
+  vin: 'TESTDATAHWELL0003',
+  stockNumber: 'SYNTHETIC-003',
+  vehicleName: 'Synthetic Ford 003',
+  homeStore: 'Howell',
+  requestingStore: 'Fowlerville',
+  currentLocation: 'Howell',
+  destination: 'Fowlerville',
+  requestStatus: 'approved',
+  movementStatus: 'release approved',
+  dealStatus: 'decision pending',
+  deliveryStatus: 'not confirmed',
+  dealerMailHoldState: 'none',
+  publicListingState: 'listed',
+  cdkStatus: 'unknown',
+  priority: 'normal',
+  requestedBy: 'Synthetic salesperson',
+  requestedAt: '2026-08-29T14:00:00.000Z',
+  custodian: 'Synthetic custodian',
+  transportAssignee: 'Synthetic driver',
+  nextAction: 'Assign a driver',
+  nextActionOwner: 'Synthetic manager',
+  dueAt: '2026-09-01T15:00:00.000Z',
+  returnRequired: true,
+  returnDueAt: '2026-09-02T15:00:00.000Z',
+  lastConfirmedAt: '2026-08-29T15:00:00.000Z',
+  locationConfidence: 'verified',
+  allowedActions: [],
+  events: [],
+}
+
+const pageData: BootstrapData = {
+  ...bootstrapData,
+  vehicles: [pageVehicle],
+  transfers: [pageTransfer],
+}
+
+const dataState = vi.hoisted(() => ({ usePageData: false }))
+
 vi.mock('../../src/app/AppDataContext', () => ({
   useAppData: () => ({
-    data: bootstrapData,
+    data: dataState.usePageData ? pageData : bootstrapData,
     loading: false,
     error: null,
     role: mockState.role,
@@ -81,63 +129,7 @@ describe('inventory search privacy flow', () => {
   beforeEach(() => {
     mockState.role = 'manager'
     mockState.homeStore = 'Howell'
-  })
-
-  it('keeps the duplicate shell search off the inventory route', () => {
-    render(
-      <MemoryRouter initialEntries={['/inventory']}>
-        <AppShell><LocationProbe /></AppShell>
-      </MemoryRouter>,
-    )
-
-    expect(screen.queryByLabelText('Search inventory')).not.toBeInTheDocument()
-  })
-
-  it('submits AppShell search through router state without putting it in the URL', async () => {
-    const user = userEvent.setup()
-    render(
-      <MemoryRouter initialEntries={['/transfers']}>
-        <AppShell><LocationProbe /></AppShell>
-      </MemoryRouter>,
-    )
-
-    await user.type(screen.getByLabelText('Search inventory'), 'Customer asks for evening call')
-    await user.click(screen.getByRole('button', { name: 'Search my store inventory' }))
-
-    const location = JSON.parse(screen.getByTestId('location').textContent || '{}') as {
-      pathname: string
-      search: string
-      state: { inventorySearchRequest: { query: string } }
-    }
-    expect(`${location.pathname}${location.search}`).toBe('/inventory?scope=home')
-    expect(location.search).not.toContain('Customer')
-    expect(location.state.inventorySearchRequest.query).toBe('Customer asks for evening call')
-    expect(screen.queryByLabelText('Search inventory')).not.toBeInTheDocument()
-  })
-
-  it.each([
-    ['role', 'porter', 'Howell'],
-    ['home store', 'manager', 'Lincoln'],
-  ] as const)('clears an unsubmitted query when the %s changes', async (_label, nextRole, nextStore) => {
-    const user = userEvent.setup()
-    const view = render(
-      <MemoryRouter initialEntries={['/transfers']}>
-        <AppShell><LocationProbe /></AppShell>
-      </MemoryRouter>,
-    )
-
-    await user.type(screen.getByLabelText('Search inventory'), 'private comment text')
-    expect(screen.getByLabelText('Search inventory')).toHaveValue('private comment text')
-
-    mockState.role = nextRole
-    mockState.homeStore = nextStore
-    view.rerender(
-      <MemoryRouter initialEntries={['/transfers']}>
-        <AppShell><LocationProbe /></AppShell>
-      </MemoryRouter>,
-    )
-
-    await waitFor(() => expect(screen.getByLabelText('Search inventory')).toHaveValue(''))
+    dataState.usePageData = false
   })
 
   it('consumes and then clears the transient query state', async () => {
@@ -229,21 +221,33 @@ describe('inventory search privacy flow', () => {
     expect(screen.getByTestId('inventory-query')).toHaveTextContent('')
   })
 
-  it('allows the global search form to submit by Enter', async () => {
+  it.each([
+    ['/transfers', 'textbox', 'Search vehicle moves', TransfersPage],
+    ['/service', 'searchbox', 'Search service vehicles', ServicePage],
+    ['/attention', 'textbox', 'Search work queue', AttentionPage],
+  ] as const)('keeps a typed %s page search in memory and out of the URL', async (route, searchRole, searchName, Page) => {
+    dataState.usePageData = true
+    const user = userEvent.setup()
     render(
-        <MemoryRouter initialEntries={['/transfers']}>
-        <AppShell><LocationProbe /></AppShell>
+      <MemoryRouter initialEntries={[route]}>
+        <Routes>
+          <Route path={route} element={<><Page /><LocationProbe /></>} />
+        </Routes>
       </MemoryRouter>,
     )
-    const input = screen.getByLabelText('Search inventory')
-    fireEvent.change(input, { target: { value: 'stock W5863' } })
-    fireEvent.submit(input.closest('form')!)
 
-    await waitFor(() => {
-      const location = JSON.parse(screen.getByTestId('location').textContent || '{}') as {
-        search: string
-      }
-      expect(location.search).toBe('?scope=home')
-    })
+    const search = screen.getByRole(searchRole, { name: searchName })
+    await user.type(search, 'Customer asks for evening call')
+    expect(search).toHaveValue('Customer asks for evening call')
+
+    const location = JSON.parse(screen.getByTestId('location').textContent || '{}') as {
+      pathname: string
+      search: string
+      state: unknown
+    }
+    expect(location.pathname).toBe(route)
+    expect(`${location.search}${JSON.stringify(location.state)}`).not.toMatch(/Customer|evening/i)
+    expect(window.location.href).not.toMatch(/Customer|evening/i)
   })
+
 })

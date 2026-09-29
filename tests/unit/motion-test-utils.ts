@@ -1,5 +1,5 @@
-// One media-query object per test file, just like a browser subscription. Motion
-// initializes its global preference listener once; swapping unrelated vi.fn()
+// One media-query object per test file, just like a browser subscription. A
+// reduced-motion hook subscribes to its query once; swapping unrelated vi.fn()
 // objects after mounting cannot update that already-subscribed preference.
 export function createMotionPreference() {
   const original = window.matchMedia

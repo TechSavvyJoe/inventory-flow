@@ -13,7 +13,6 @@ describe('RouteLoadingState', () => {
     ['/updates', 'Preparing inventory updates'],
     ['/service', 'Preparing service status'],
     ['/overview', 'Preparing inventory overview'],
-    ['/manager', 'Preparing manager workspace'],
   ])('announces the destination for %s without moving focus', (pathname, announcement) => {
     render(
       <MemoryRouter initialEntries={[pathname]}>

@@ -51,7 +51,7 @@ test('management overview stays dense, navigable, and printable at every canonic
   await expect(page.locator('.desktop-nav')).toBeHidden()
 })
 
-test('management roles keep Overview and Group operations as separate destinations', async ({ page }) => {
+test('the retired Group operations route opens the management overview', async ({ page }) => {
   await page.goto('/overview')
   const navigation = (page.viewportSize()?.width ?? 1440) <= 700
     ? page.getByRole('navigation', { name: 'Mobile primary' })
@@ -59,10 +59,11 @@ test('management roles keep Overview and Group operations as separate destinatio
   await expect(navigation.getByRole('link', { name: (page.viewportSize()?.width ?? 1440) <= 700 ? 'Overview' : 'Inventory overview' })).toHaveAttribute('aria-current', 'page')
 
   await page.getByRole('button', { name: 'Open account and app controls' }).click()
-  await expect(page.getByRole('dialog', { name: 'Account and app controls' }).getByRole('link', { name: /Group operations/ })).toHaveAttribute('href', '/manager')
+  await expect(page.getByRole('dialog', { name: 'Account and app controls' }).getByRole('link', { name: /Group operations/ })).toHaveCount(0)
   await page.keyboard.press('Escape')
   await page.goto('/manager')
-  await expect(page.getByRole('heading', { name: 'Group operations' })).toBeVisible()
+  await expect(page).toHaveURL(/\/overview$/)
+  await expect(page.getByRole('heading', { name: 'Inventory overview' })).toBeVisible()
 })
 
 test('sales roles cannot open the management overview', async ({ page }) => {

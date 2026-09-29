@@ -1,4 +1,3 @@
-import { AnimatePresence, motion } from 'framer-motion'
 import { CalendarDays, ChevronDown, ClipboardCheck, ExternalLink, Gauge, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -148,9 +147,9 @@ export function SourceServiceHistory({ vehicle, recordsHref }: { vehicle: Vehicl
             <span>{showRecordedVisits ? 'Hide additional reported visits' : `View ${recordedOnlyVisits.length} additional reported visit${recordedOnlyVisits.length === 1 ? '' : 's'}`}</span>
             <ChevronDown size={16} aria-hidden="true" />
           </button>
-          <AnimatePresence initial={false}>{showRecordedVisits ? <motion.ol className="service-source-orders service-source-orders--earlier" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18, ease: 'easeOut' }}>
+          {showRecordedVisits ? <ol className="service-source-orders service-source-orders--earlier">
             {recordedOnlyVisits.map((visit, index) => <FordRecordedVisit key={`${visit.openDate}-${visit.closeDate}-${visit.odometer ?? index}`} visit={visit} />)}
-          </motion.ol> : null}</AnimatePresence>
+          </ol> : null}
         </> : null}
       </> : null}
       {history?.checkedAt ? <p className="service-source-history-meta">Checked {formatDateTime(history.checkedAt)}</p> : null}
