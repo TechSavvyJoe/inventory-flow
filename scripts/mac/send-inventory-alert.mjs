@@ -14,7 +14,7 @@
 // from the caller, so a caller cannot choose the recipient or point Joe at
 // another machine. No password ever goes in the link.
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const SITES = {
@@ -69,9 +69,17 @@ function main() {
     console.log(JSON.stringify({ ok: false, error: 'chat_not_configured' }))
     return 3
   }
-  const sent = spawnSync(IMSG, ['send', '--chat-id', String(config.chatId), '--text', alertText(alert, config)], { encoding: 'utf8', timeout: 30000 })
+  // imsg hands the text to Messages; allow a slow Messages up to 90 s and keep
+  // the timing (never the text) in send.log beside this file, so a caller's
+  // timeout can be told apart from a slow send.
+  const started = Date.now()
+  const sent = spawnSync(IMSG, ['send', '--chat-id', String(config.chatId), '--text', alertText(alert, config)], { encoding: 'utf8', timeout: 90000 })
+  const ms = Date.now() - started
   const ok = sent.status === 0
-  console.log(JSON.stringify(ok ? { ok: true, kind: alert.kind } : { ok: false, error: 'imsg_failed', status: sent.status }))
+  try {
+    appendFileSync(new URL('./send.log', import.meta.url), `${new Date().toISOString()} ${alert.kind} ${ok ? 'sent' : 'failed'} ${ms}ms status=${sent.status}${sent.error ? ` error=${sent.error.code}` : ''}\n`)
+  } catch {}
+  console.log(JSON.stringify(ok ? { ok: true, kind: alert.kind, ms } : { ok: false, error: sent.error?.code === 'ETIMEDOUT' ? 'imsg_timeout' : 'imsg_failed', status: sent.status, ms }))
   return ok ? 0 : 1
 }
 
