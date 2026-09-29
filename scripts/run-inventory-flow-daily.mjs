@@ -468,27 +468,60 @@ function reuseExistingOasisCapture(reportDate, steps) {
   const capturePath = path.join(WORK_ROOT, 'oasis-history', `${reportDate}-oasis.json`)
   if (!existsSync(worklistPath) || !existsSync(capturePath)) {
     steps.push({ name: 'oasis', status: 'skipped_browser_unavailable' })
-    return false
+    return oasisOutcome({ systemic: true })
   }
   try {
     const worklist = readJson(worklistPath)
     const records = readJson(capturePath).records
     if (!Array.isArray(worklist) || !Array.isArray(records)) throw new Error('unexpected OASIS capture shape')
     const quality = assessOasisCapture(worklist, records)
-    steps.push({ name: 'oasis', status: quality.complete ? 'reused_existing_capture' : 'existing_capture_incomplete', detail: safeDetail(JSON.stringify(quality)) })
-    return quality.complete === true
+    steps.push({ name: 'oasis', status: quality.complete ? 'reused_existing_capture' : 'reused_existing_capture_with_gaps', detail: safeDetail(JSON.stringify(quality)) })
+    return oasisOutcome({ quality })
   } catch (error) {
     steps.push({ name: 'oasis', status: 'existing_capture_unreadable', detail: safeDetail(String(error?.message ?? error)) })
-    return false
+    return oasisOutcome({ systemic: true })
   }
+}
+
+// OASIS never blocks the release (Joe, 2026-09-28): one vehicle's unreadable
+// report, or even an unavailable Ford session, must not hold back inventory and
+// holds. Every vehicle keeps its own flag (openActionsCaptured false or no
+// record), so nothing unconfirmed is shown as "no recalls". The counts go into
+// the manifest and a warning so the gap stays visible.
+function oasisOutcome({ quality = null, systemic = false } = {}) {
+  const incompleteVehicles = quality ? quality.incompleteActionResults : null
+  const missingVehicles = quality ? quality.missingVinCount : null
+  return {
+    validated: !systemic && quality?.complete === true,
+    systemic,
+    incompleteVehicles,
+    missingVehicles,
+  }
+}
+
+function lastJsonLine(output) {
+  const lines = String(output ?? '').split(/\r?\n/).map(line => line.trim()).filter(line => line.startsWith('{'))
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    try { return JSON.parse(lines[index]) } catch { /* keep looking */ }
+  }
+  return null
+}
+
+function oasisWarning(outcome) {
+  if (outcome.systemic) return 'Ford OASIS was not captured for this run (sign in to FMCDealer in the Work PC Automation Browser). Inventory and holds were published; OASIS shows as not captured.'
+  const gaps = (outcome.incompleteVehicles ?? 0) + (outcome.missingVehicles ?? 0)
+  return gaps ? `Ford OASIS open actions are unconfirmed for ${gaps} vehicle(s); they show as not confirmed in the app. See work\\oasis-history\\<date>-needs-review.json.` : null
 }
 
 function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps) {
   if (!browserReady) {
     steps.push({ name: 'authenticated_optional_sources', status: 'skipped_browser_unavailable' })
-    return reuseExistingOasisCapture(reportDate, steps)
+    const reused = reuseExistingOasisCapture(reportDate, steps)
+    const warning = oasisWarning(reused)
+    if (warning) warnings.push(warning)
+    return reused
   }
-  let oasisComplete = true
+  let oasis = oasisOutcome({ systemic: true })
   const optionalRuns = [
     {
       name: 'oasis',
@@ -544,21 +577,25 @@ function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, ste
   ]
   for (const item of optionalRuns) {
     const result = run(item.command, item.args, { cwd: item.cwd ?? WORKSPACE_ROOT, optional: true, label: item.name })
+    if (item.name === 'oasis') {
+      const report = lastJsonLine(result.output)
+      const systemic = !result.ok || item.expired?.test(result.output) || !report || typeof report.missingVinCount !== 'number'
+      oasis = oasisOutcome({ quality: report && typeof report.missingVinCount === 'number' ? report : null, systemic })
+      const warning = oasisWarning(oasis)
+      if (warning) warnings.push(warning)
+      steps.push({ name: 'oasis', status: systemic ? 'failed_non_blocking' : oasis.validated ? 'complete' : 'completed_with_warning', detail: safeDetail(result.output) })
+      continue
+    }
     if (!result.ok || item.expired?.test(result.output)) {
-      if (item.name === 'oasis') {
-        oasisComplete = false
-        warnings.push(item.expired?.test(result.output)
-          ? item.warning
-          : 'Ford OASIS action-result capture is incomplete; review the source and retry before publishing.')
-      } else if (item.warning) {
+      if (item.warning) {
         warnings.push(item.warning)
       }
-      steps.push({ name: item.name, status: item.name === 'oasis' ? 'failed_blocking' : result.ok ? 'completed_with_warning' : 'failed_non_blocking', detail: safeDetail(result.output) })
+      steps.push({ name: item.name, status: result.ok ? 'completed_with_warning' : 'failed_non_blocking', detail: safeDetail(result.output) })
     } else {
       steps.push({ name: item.name, status: 'complete' })
     }
   }
-  return oasisComplete
+  return oasis
 }
 
 function runManagerDisposition(reportDate, warnings, steps) {
@@ -1465,7 +1502,12 @@ async function runDailyUnlocked(options) {
     return { ok: false, failureCode: 'DEALERMAIL_INCOMPLETE', summary, manifestPath, releasePath }
   }
 
-  const oasisComplete = runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps)
+  const oasis = runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps)
+  const oasisValidation = {
+    oasis_capture_validated: oasis.validated,
+    oasis_incomplete_vehicles: oasis.incompleteVehicles,
+    oasis_missing_vehicles: oasis.missingVehicles,
+  }
   let manifest = deriveManifest({ reportDate, publicPath, dealerPath, warnings, steps })
   writeJson(manifestPath, manifest)
   const managerDispositionValidated = runManagerDisposition(reportDate, warnings, steps)
@@ -1474,16 +1516,16 @@ async function runDailyUnlocked(options) {
 
   const resourcesOk = runResourceBuild(reportDate, warnings, steps)
   manifest = { ...readJson(manifestPath), warnings: [...new Set([...warnings, AVAILABILITY_CAVEAT])], daily_steps: steps }
-  if (!resourcesOk || !oasisComplete) {
+  if (!resourcesOk) {
     manifest.complete = false
-    manifest.validation_results = { ...manifest.validation_results, passed: false, resource_enrichment_validated: resourcesOk, oasis_capture_validated: oasisComplete }
+    manifest.validation_results = { ...manifest.validation_results, passed: false, resource_enrichment_validated: false, ...oasisValidation }
     writeJson(manifestPath, manifest)
-    const status = !oasisComplete ? 'not_published_oasis_incomplete' : 'not_published_resource_validation_failed'
+    const status = 'not_published_resource_validation_failed'
     const summary = summarize({ reportDate, validation: {}, publishStatus: status, manifestPath, releasePath, warnings })
     writeJson(summaryPath, { reportDate, status, summary, warnings, steps, checkedAt: new Date().toISOString() })
-    return { ok: false, failureCode: !oasisComplete ? 'OASIS_INCOMPLETE' : 'RESOURCE_VALIDATION_FAILED', summary, manifestPath, releasePath }
+    return { ok: false, failureCode: 'RESOURCE_VALIDATION_FAILED', summary, manifestPath, releasePath }
   }
-  manifest.validation_results = { ...manifest.validation_results, resource_enrichment_validated: true, passed: true }
+  manifest.validation_results = { ...manifest.validation_results, resource_enrichment_validated: true, passed: true, ...oasisValidation }
   writeJson(manifestPath, manifest)
 
   const built = buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath)
@@ -1621,6 +1663,10 @@ Excel workbook generation is intentionally outside this command.`)
 }
 
 export const internals = {
+  lastJsonLine,
+  oasisOutcome,
+  oasisWarning,
+  reuseExistingOasisCapture,
   archiveDealerMailRevision,
   assertCandidatePreservesReceiptSources,
   assertReceiptHashes,
