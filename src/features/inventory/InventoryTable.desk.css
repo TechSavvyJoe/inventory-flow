@@ -114,18 +114,20 @@
 .if-srp-grid .inv-desk-hold--unknown .inv-desk-hold__dot { background: var(--red); }
 .if-srp-grid .inv-desk-status .inventory-service-link { min-height: var(--inv-hit); font-size: var(--ifx-text-md); line-height: 1.3; }
 .if-srp-grid .inventory-recall-chip { display: inline-flex; align-items: center; gap: var(--ifx-space-1); min-height: var(--inv-hit); padding: 0; border: 0; background: transparent; color: var(--red); font: var(--ifx-weight-medium) var(--ifx-text-sm)/1.3 var(--font-app); cursor: pointer; }
-/* Narrower comparison widths: tighter gutters and a smaller photo keep the
-   full VIN beside its copy control; Operations gains width from Configuration
-   and Actions so a service status such as Waiting for service stays one line. */
+/* Narrower comparison widths (1280-1320px screens): tighter gutters, and
+   Vehicle takes width from Configuration and Actions so the 96x64 photo and
+   the full VIN beside its copy control both fit, while a service status such
+   as Waiting for service stays one line in Operations. */
 @container inventory-table (max-width: 1100px) {
-  .if-srp-grid .if-srp-table-wrap { --inv-col-configuration: 20%; --inv-col-status: 23%; --inv-col-actions: 15%; --inv-pad-inline: var(--ifx-space-2); --inv-photo-width: calc(var(--ifx-space-16) + var(--ifx-space-4)); --inv-photo-height: calc(var(--ifx-space-12) + var(--ifx-space-1-5)); }
+  .if-srp-grid .if-srp-table-wrap { --inv-col-vehicle: 33%; --inv-col-price: 12%; --inv-col-configuration: 18%; --inv-col-status: 22%; --inv-col-actions: 15%; --inv-pad-inline: var(--ifx-space-2); }
 }
-/* Tablet landscape (a 1024px screen): four priority columns. Configuration
-   and equipment stay one tap away in the vehicle workspace. The records strip
+/* Tablet landscape (a 1024px screen): four priority columns and a smaller
+   photo. Configuration and equipment stay one tap away in the vehicle
+   workspace. The records strip
    follows: AutoCheck under Vehicle, the equipment source under Price and
    Operations, OASIS under Actions. */
 @container inventory-table (max-width: 960px) {
-  .if-srp-grid .if-srp-table-wrap { --inv-col-vehicle: 37%; --inv-col-price: 15%; --inv-col-status: 26%; --inv-col-actions: 22%; }
+  .if-srp-grid .if-srp-table-wrap { --inv-col-vehicle: 37%; --inv-col-price: 15%; --inv-col-status: 26%; --inv-col-actions: 22%; --inv-photo-width: calc(var(--ifx-space-16) + var(--ifx-space-4)); --inv-photo-height: calc(var(--ifx-space-12) + var(--ifx-space-1-5)); }
   .if-srp-grid :is(.inv-desk-th--configuration, .inv-desk-td[data-column="configuration"]) { display: none; }
   .if-srp-grid .inv-desk-scan-row .vehicle-resources--scan { grid-template-columns: var(--inv-col-vehicle) calc(var(--inv-col-price) + var(--inv-col-status)) var(--inv-col-actions); }
 }
