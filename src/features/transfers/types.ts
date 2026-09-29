@@ -1,3 +1,5 @@
+import type { SlaState } from '../../lib/sla-label';
+
 import type { ServiceReadiness } from '../../types';
 
 export type StoreName =
@@ -101,12 +103,7 @@ export type LocationConfidence =
   | 'conflicting'
   | 'unknown';
 
-export type SlaState =
-  | 'none'
-  | 'on-track'
-  | 'due-soon'
-  | 'overdue'
-  | 'breached';
+export type { SlaState };
 
 export type TransferActionKind =
   | 'review-request'

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { copyExactText } from '../../components/CopyableValue'
 import { dealerMailInteractiveVehicleUrl } from './vehicle-document-utils'
@@ -21,10 +21,7 @@ export function CapturedDealerMailMessages({ vehicle, kind }: { vehicle: Invento
   </section>
 }
 
-export function DealerMailHandoff({ vehicle, panelRef }: {
-  vehicle: InventoryVehicle
-  panelRef: RefObject<HTMLElement | null>
-}) {
+export function DealerMailHandoff({ vehicle }: { vehicle: InventoryVehicle }) {
   const [feedback, setFeedback] = useState<string | null>(null)
   const identity = `${vehicle.id}|${vehicle.stockNumber}|${vehicle.vin}`
   const currentIdentity = useRef(identity)
@@ -62,14 +59,14 @@ export function DealerMailHandoff({ vehicle, panelRef }: {
     })
   }
 
-  return <section className="inventory-dealermail-handoff inventory-workspace-dealermail-rail" aria-label="DealerMail vehicle tools" ref={panelRef} tabIndex={-1}>
+  return <section className="inventory-dealermail-handoff inventory-workspace-dealermail-rail" aria-label="DealerMail vehicle tools">
     <header><h3>Continue in DealerMail</h3><p>Review or update the live hold.</p></header>
     <dl className="inventory-dealermail-handoff__identity">
       <div><dt>Stock</dt><dd>{vehicle.stockNumber || 'Not supplied'}</dd></div>
       <div><dt>Verify full VIN</dt><dd>{vehicle.vin}</dd></div>
     </dl>
     <button type="button" className="inventory-dealermail-handoff__launch" onClick={launch} disabled={!url}>
-      <ExternalLink size={17} aria-hidden="true" /> Open DealerMail &amp; copy stock
+      <ExternalLink size={17} aria-hidden="true" /> Open in DealerMail (copies stock)
     </button>
     <p>Paste the stock number into DealerMail and verify the VIN before updating the record.</p>
     {vehicle.dealerMail.dataState !== 'current' ? <p role="note">Confirm the current hold before acting.</p> : null}

@@ -654,6 +654,10 @@ function transferView(row, events, source, context, meta, { includePrivate = fal
     transportAssignee: cleanText(row.transport_assignee),
     nextAction: next.label,
     nextActionOwner: next.owner ?? 'Unassigned',
+    // The store that owns the next step: the same rule the Action center uses
+    // to decide actionability, so a client colors overdue work red only for
+    // the store that has to act on it.
+    nextActionStore: transferNextActionStore(row),
     dueAt: cleanText(row.due_at),
     returnRequired: Boolean(row.return_required),
     returnDueAt: cleanText(row.return_due_at),
@@ -754,6 +758,7 @@ function movementSummary(source, activeTransfer, transfer, publicFreshness, even
       locationConfidence: transfer.locationConfidence,
       nextAction: transfer.nextAction,
       nextActionOwner: transfer.nextActionOwner,
+      nextActionStore: transfer.nextActionStore,
       dueAt: transfer.dueAt,
       returnRequired: transfer.returnRequired,
       returnDueAt: transfer.returnDueAt,

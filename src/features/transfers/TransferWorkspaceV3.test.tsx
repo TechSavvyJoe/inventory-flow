@@ -1165,6 +1165,60 @@ describe('transfer workspace v3 layout', () => {
     expect(screen.getByText('Hold')).toBeInTheDocument();
   });
 
+  it('colors an overdue step red only for the store that owns it and names who another store waits on', () => {
+    const data = bootstrap(2);
+    data.transfers[0] = { ...data.transfers[0], nextActionStore: 'Ford Detroit', nextActionOwner: 'Ford Detroit manager' };
+    data.transfers[1] = { ...data.transfers[1], nextActionStore: 'Fowlerville', nextActionOwner: 'Fowlerville sales' };
+    renderPage(data);
+    const own = screen.getByRole('button', { name: /MOVE1/ });
+    const other = screen.getByRole('button', { name: /MOVE2/ });
+    expect(within(own).getByText(/^Overdue 09\/01\/2026/)).toHaveClass('is-overdue');
+    const waiting = within(other).getByText('Overdue · waiting on Fowlerville salesperson');
+    expect(waiting).not.toHaveClass('is-overdue');
+    expect(within(other).queryByText(/^Overdue 09\/01\/2026/)).not.toBeInTheDocument();
+  });
+
+  it('counts one move in the singular', () => {
+    renderPage(bootstrap(2));
+    expect(screen.getByText('2 moves shown')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search vehicle moves' }), { target: { value: 'MOVE2' } });
+    expect(screen.getByText('1 move shown')).toBeInTheDocument();
+  });
+
+  it('offers the Group operations manager views only to managers on Moves > All stores', () => {
+    // Judged at the current time, as the server's rule is: the clock is 08/30/2026
+    // 1:00 PM UTC, so an active return due at noon is overdue, an approved move due
+    // 09/02 is not, and a sold-pending deal's return clock is paused as the server pauses it.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-30T13:00:00.000Z'));
+    const data = bootstrap(3);
+    data.transfers[0] = { ...data.transfers[0], returnDueAt: '2026-08-30T12:00:00.000Z' };
+    data.transfers[2] = { ...data.transfers[2], requestStatus: 'sale_confirmed', dealStatus: 'sold_pending', returnDueAt: '2026-08-30T12:00:00.000Z' };
+    data.transfers[1] = { ...data.transfers[1], locationConfidence: 'conflicting' };
+    renderPage(data);
+    const filter = screen.getByRole('combobox', { name: 'Filter vehicle moves' });
+    expect(within(filter).queryByRole('option', { name: 'Overdue returns' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }));
+    expect(within(filter).getByRole('option', { name: 'Location exceptions' })).toBeInTheDocument();
+    fireEvent.change(filter, { target: { value: 'overdue-returns' } });
+    expect(screen.getByRole('button', { name: /MOVE1/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /MOVE2/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /MOVE3/ })).not.toBeInTheDocument();
+    fireEvent.change(filter, { target: { value: 'location-exceptions' } });
+    expect(screen.getByText('1 move shown')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /MOVE2/ })).toBeInTheDocument();
+    // Back in My store the manager view never silently narrows the queue.
+    fireEvent.click(screen.getByRole('button', { name: /My store/ }));
+    expect(filter).toHaveValue('all');
+    expect(screen.getByText('3 moves shown')).toBeInTheDocument();
+    cleanup();
+
+    renderPage(data, '/transfers', { role: 'sales' });
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }));
+    expect(within(screen.getByRole('combobox', { name: 'Filter vehicle moves' })).queryByRole('option', { name: 'Overdue returns' })).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
   it('shows the exact inter-store approval chain before driver assignment', () => {
     const waiting = detail(['review-request']);
     waiting.status.request = { code: 'submitted', label: 'Waiting on my manager', tone: 'info' };

@@ -10,7 +10,7 @@ const dealerMailVehicleUrl = (stock: string) =>
   dealerMailInteractiveVehicleUrl(stock)!
 
 function openDealerMailTools() {
-  fireEvent.click(screen.getByRole('button', { name: 'DealerMail tools' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Hold status' }))
   return screen.getByRole('region', { name: 'DealerMail vehicle tools' })
 }
 
@@ -197,7 +197,7 @@ describe('manager-friendly inventory UI', () => {
     fireEvent.click(within(row).getByRole('button', { name: /Review DealerMail handoff for stock/ }))
     await waitFor(() => expect(screen.getByRole('tabpanel', { name: 'Holds & moves' })).toBeVisible())
     expect(screen.getByRole('region', { name: 'DealerMail vehicle tools' })).toHaveTextContent(current.stockNumber)
-    expect(screen.getByRole('button', { name: 'Open DealerMail & copy stock' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Open in DealerMail (copies stock)' })).toBeVisible()
     expect(openSpy).not.toHaveBeenCalled()
     expect(external).not.toHaveBeenCalled()
   })
@@ -210,7 +210,7 @@ describe('manager-friendly inventory UI', () => {
     const current = vehicle(7)
     render(<VehicleWorkspace vehicle={current} homeStore={{ id: 'Howell', name: 'Howell' }} onClose={vi.fn()} />)
     const panel = openDealerMailTools()
-    const action = within(panel).getByRole('button', { name: 'Open DealerMail & copy stock' })
+    const action = within(panel).getByRole('button', { name: 'Open in DealerMail (copies stock)' })
     expect(within(panel).getAllByRole('button')).toHaveLength(1)
     expect(panel).toHaveTextContent('Paste the stock number into DealerMail')
     expect(panel.querySelector('dl')).toHaveTextContent(current.stockNumber)
@@ -320,7 +320,7 @@ describe('manager-friendly inventory UI', () => {
     const current = vehicle(9)
     render(<VehicleWorkspace vehicle={current} homeStore={{ id: 'Howell', name: 'Howell' }} onClose={vi.fn()} />)
     const panel = openDealerMailTools()
-    fireEvent.click(within(panel).getByRole('button', { name: 'Open DealerMail & copy stock' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Open in DealerMail (copies stock)' }))
     await waitFor(() => {
       const status = within(panel).getByRole('status')
       expect(status).toHaveTextContent('could not request a new tab')
@@ -351,7 +351,7 @@ describe('manager-friendly inventory UI', () => {
     expect(screen.getByText('Hold details are restricted')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /in DealerMail$|Find Vehicle in DealerMail/i })).not.toBeInTheDocument()
     expect(document.querySelector('.inventory-dealermail-handoff')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Open DealerMail & copy stock' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open in DealerMail (copies stock)' })).not.toBeInTheDocument()
   })
 
   it('keeps photo thumbnails as tactile buttons rather than overriding their semantics', () => {

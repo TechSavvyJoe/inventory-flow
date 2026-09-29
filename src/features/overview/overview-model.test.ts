@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BootstrapData, StoreName, VehicleRecord } from '../../types'
 import {
   buildOverviewModel,
@@ -54,6 +54,8 @@ function data(vehicles: VehicleRecord[]): BootstrapData {
 }
 
 describe('overview model', () => {
+  afterEach(() => { vi.useRealTimers() })
+
   it('separates source-reported location from verified custody and starts time away only on departure evidence', () => {
     const sourceReported = buildOverviewVehicleFact(vehicle('TESTDATA000000001'), { meta })
     expect(sourceReported).toMatchObject({ onLot: true, away: false, awayDays: null, locationBasis: 'source_reported' })
@@ -128,7 +130,8 @@ describe('overview model', () => {
       managerDisposition: { stockNumber: 'SYN-1', vin: 'TESTDATA000000001', vehicleName: 'Synthetic', soldManagerLog: true, deliveredManagerLog: false, deliveryDate: null, confidence: 'high', sourceStore: 'Howell', sourcePeriod: '2026-09', matchMethod: 'vin', matchStatus: 'matched', physicalStore: null, reviewRequired: false, soldLabel: 'Sold — manager log', deliveryLabel: 'Not marked delivered — manager log', dataState: 'current' },
     })
     const away = vehicle('TESTDATA000000002', {
-      movement: { state: 'at_requesting_store', label: 'At requesting store', currentLocation: 'Lincoln', locationConfidence: 'verified', departedAt: '2026-09-20T16:00:00Z', returnDueAt: '2026-09-24' },
+      // The shape service-core movementSummary emits for an active move.
+      movement: { requestStatus: 'customer_showing', state: 'at_requesting_store', label: 'At requesting store', currentLocation: 'Lincoln', locationConfidence: 'verified', departedAt: '2026-09-20T16:00:00Z', returnRequired: true, returnDueAt: '2026-09-24' },
     })
     const fixture = data([homeHeld, away])
     fixture.vehicleIssues = [
@@ -156,6 +159,46 @@ describe('overview model', () => {
     expect(howell.attention).toHaveLength(1)
     expect(homeHeld.managerDisposition?.soldManagerLog).toBe(true)
     expect(howell.populations.on_lot.map(fact => fact.vehicle.vin)).toContain(homeHeld.vin)
+  })
+
+  it('counts a return overdue exactly as the server store summary does: never while a sale waits on delivery', () => {
+    const away = (vin: string, movement: Partial<VehicleRecord['movement']>) => vehicle(vin, {
+      movement: { requestStatus: 'customer_showing', state: 'at_requesting_store', label: 'At requesting store', currentLocation: 'Lincoln', locationConfidence: 'verified', departedAt: '2026-09-20T16:00:00Z', returnRequired: true, returnDueAt: '2026-09-24T19:00:00Z', ...movement },
+    })
+    const overdue = away('TESTDATA000000001', {})
+    const soldPending = away('TESTDATA000000002', { requestStatus: 'sale_confirmed' })
+    const delivered = away('TESTDATA000000003', { requestStatus: 'delivery_confirmed' })
+    const returnedHome = away('TESTDATA000000004', { requestStatus: 'returned_home', state: 'returned_home', currentLocation: 'Howell' })
+    const noReturn = away('TESTDATA000000005', { returnRequired: false })
+    const notYetDue = away('TESTDATA000000006', { returnDueAt: '2026-09-26T19:00:00Z' })
+    const unwound = away('TESTDATA000000007', { requestStatus: 'not_sold' })
+    // 09/25/2026 1:00 PM Detroit: after the 09/24 due times, before notYetDue's 09/26.
+    const NOW = Date.parse('2026-09-25T17:00:00Z')
+    const facts = [overdue, soldPending, delivered, returnedHome, noReturn, notYetDue, unwound]
+      .map(unit => buildOverviewVehicleFact(unit, { meta }, NOW))
+    expect(facts.filter(fact => fact.returnOverdue).map(fact => fact.vehicle.vin)).toEqual([overdue.vin, unwound.vin])
+    const howell = buildOverviewModel(data([overdue, soldPending, delivered, returnedHome, noReturn, notYetDue, unwound]), NOW)
+      .stores.find(summary => summary.store === 'Howell')!
+    expect(howell.populations.return_overdue.map(fact => fact.vehicle.vin)).toEqual([overdue.vin, unwound.vin])
+  })
+
+  it('judges return overdue at the current time, as the server does at request time', () => {
+    // The server's storeSummaries compares return_due_at with the request time,
+    // so a return that falls due after the morning release shows as overdue the
+    // same day rather than waiting for the next release.
+    const dueThisAfternoon = vehicle('TESTDATA000000001', {
+      movement: { requestStatus: 'customer_showing', state: 'at_requesting_store', label: 'At requesting store', currentLocation: 'Lincoln', locationConfidence: 'verified', departedAt: '2026-09-20T16:00:00Z', returnRequired: true, returnDueAt: '2026-09-25T21:00:00Z' },
+    })
+    const howell = (at?: number) => buildOverviewModel(data([dueThisAfternoon]), at).stores.find(summary => summary.store === 'Howell')!
+    expect(howell(Date.parse('2026-09-25T17:00:00Z')).populations.return_overdue).toEqual([])
+    expect(howell(Date.parse('2026-09-25T21:30:00Z')).populations.return_overdue.map(fact => fact.vehicle.vin)).toEqual([dueThisAfternoon.vin])
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-09-25T22:00:00Z'))
+      expect(howell().populations.return_overdue.map(fact => fact.vehicle.vin)).toEqual([dueThisAfternoon.vin])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('calculates medians without filling unknown durations with zero', () => {
