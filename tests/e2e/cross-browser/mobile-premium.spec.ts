@@ -73,7 +73,7 @@ test('every operational page fits a compact phone and a short landscape viewport
   page.on('pageerror', error => errors.push(error.message))
   for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
     await page.setViewportSize(viewport)
-    for (const route of ['/inventory', '/attention', '/updates', '/transfers', '/service', '/manager', '/admin']) {
+    for (const route of ['/inventory', '/attention', '/updates', '/transfers', '/service', '/overview', '/admin']) {
       await page.goto(route)
       await expect(page.locator('main h1').first()).toBeVisible()
       await fits(page)

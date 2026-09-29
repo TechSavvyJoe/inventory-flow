@@ -43,7 +43,6 @@
     "@tesseract.js-data/eng": "1.0.0",
     "@zxing/browser": "0.2.1",
     "@zxing/library": "^0.23.0",
-    "framer-motion": "^12.0.0",
     "jose": "^6.2.10",
     "lucide-react": "^1.35.0",
     "react": "^19.2.8",

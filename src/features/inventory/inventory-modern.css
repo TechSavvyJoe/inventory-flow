@@ -1,9 +1,3 @@
-@media (min-width: 881px) {
-  .top-bar.is-inventory-route .store-control-region { grid-column: 1; }
-  .top-bar.is-inventory-route .freshness-chip { grid-column: 3; }
-  .top-bar.is-inventory-route .profile-button { grid-column: 4; }
-}
-
 .inventory-toolbar__left,
 .inventory-toolbar__right,
 .inventory-page-size {

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-const coreRoutes = ['/inventory', '/transfers', '/attention', '/manager'] as const
+const coreRoutes = ['/inventory', '/transfers', '/attention', '/overview'] as const
 
 type ReadabilityViolation = {
   fontSize: number
