@@ -69,12 +69,12 @@ function whereMatches({ vehicle, facts }: OverviewRow, filter: WhereFilter, stor
 function whereOrder(left: OverviewRow, right: OverviewRow, filter: WhereFilter): number {
   if (filter === 'waiting') {
     return (right.facts.service.waitingDays ?? -1) - (left.facts.service.waitingDays ?? -1) ||
-      left.vehicle.vehicleName.localeCompare(right.vehicle.vehicleName)
+      left.vehicle.vehicleName.localeCompare(right.vehicle.vehicleName, 'en-US')
   }
   return Number(right.facts.returnOverdue === true) - Number(left.facts.returnOverdue === true) ||
     Number(Boolean(right.facts.unaccounted)) - Number(Boolean(left.facts.unaccounted)) ||
     (right.facts.daysAway ?? -1) - (left.facts.daysAway ?? -1) ||
-    left.vehicle.vehicleName.localeCompare(right.vehicle.vehicleName)
+    left.vehicle.vehicleName.localeCompare(right.vehicle.vehicleName, 'en-US')
 }
 
 /** "Where is my inventory": the scope's vehicles matching one filter, most urgent first. */
@@ -98,7 +98,7 @@ export function returnVerification(rows: readonly OverviewRow[], store: StoreNam
     returning: home.filter(({ facts }) => facts.custody === 'in_transit' && facts.returnLeg === 'return'),
     received: home
       .filter(({ facts }) => Boolean(facts.receivedHomeAt))
-      .sort((left, right) => (right.facts.receivedHomeAt ?? '').localeCompare(left.facts.receivedHomeAt ?? '')),
+      .sort((left, right) => (right.facts.receivedHomeAt ?? '').localeCompare(left.facts.receivedHomeAt ?? '', 'en-US')),
   }
 }
 
