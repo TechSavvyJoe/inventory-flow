@@ -27,6 +27,7 @@ import { writeFileSync, mkdirSync, appendFileSync, readdirSync, readFileSync } f
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
+import { sendSignInAlert, sendTestAlert } from './lib/signin-alert.mjs'
 
 const PORT = 9222
 const ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -161,6 +162,14 @@ function sampleFordVin() {
   } catch { return null }
 }
 
+// `node keep-dealermail-alive.mjs --test-alert` sends one test iMessage and
+// checks nothing else, to prove the alert path after setup.
+if (process.argv.includes('--test-alert')) {
+  const result = await sendTestAlert()
+  console.log(JSON.stringify(result))
+  process.exit(result.status === 'sent' ? 0 : 1)
+}
+
 const status = { checkedAt: new Date().toISOString(), automationBrowser: await ensureAutomationBrowser() }
 
 // ---- DealerMail: 200, no "Session Ended", and the grid's own function present -------------
@@ -289,9 +298,13 @@ status.action = status.expired.length
   : null
 
 mkdirSync(DIR, { recursive: true })
+// Tells Joe by iMessage when a site newly needs him (see lib/signin-alert.mjs).
+status.alert = await sendSignInAlert({ status, statePath: path.join(DIR, 'signin-alert-state.json') })
+  .catch(error => ({ status: 'error', error: String(error?.message || error).slice(0, 160) }))
 writeFileSync(OUT, JSON.stringify(status, null, 2))
 appendFileSync(LOG, `${status.checkedAt} ` +
   services.map(s => `${s}=${(status[s] || {}).status}`).join(' ') +
-  (status.action ? ` :: ${status.action}` : '') + '\n')
+  (status.action ? ` :: ${status.action}` : '') +
+  (['unchanged', 'not_configured'].includes(status.alert.status) ? '' : ` :: alert ${status.alert.status}`) + '\n')
 console.log(JSON.stringify(status))
 process.exitCode = status.status === 'OK' ? 0 : 1
