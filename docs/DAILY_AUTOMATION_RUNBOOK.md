@@ -36,7 +36,7 @@ run it, against authenticated dealer sources, over CDP.
 | `dryrun_manager_disposition_check.mjs` | Windows host | Dry-run oracle: runs the manager-disposition overlay through the real importer/validators without publishing. |
 | `dryrun_manifest_check.mjs` | Windows host | Dry-run oracle: verifies a run-status manifest passes the real gate functions before the scheduled publish attempts it. |
 | `dryrun_resource_enrichment_check.mjs` | Windows host | Dry-run oracle: exercises the real resource-enrichment validators end-to-end on a candidate file. |
-| `keep-dealermail-alive.mjs` | Windows host | The `BobMaxey-DealerMailKeeper` task: pings DealerMail/FMCDealer/vAuto over CDP every 10 min to keep sessions warm. |
+| `keep-dealermail-alive.mjs` | Windows host | The `BobMaxey-DealerMailKeeper` task: pings DealerMail/FMCDealer/vAuto over CDP every 10 min to keep sessions warm, and texts Joe through OpenClaw when a site needs a sign-in (`lib/signin-alert.mjs`). |
 | `manage-integration-client.mjs` | local, owner-run (`integrations:client`) | Inspects or narrowly updates the dedicated MCP Access application; never part of the public API. |
 | `merge-ford-service-history.mjs` | Windows host | Merges exact-VIN Ford PTS service history into the daily resource-enrichment file. |
 | `merge-invoice-metadata.mjs` | Windows host | Attaches exact-VIN Ford/Lincoln invoice availability to the daily resource-enrichment file. |
@@ -395,6 +395,48 @@ DealerMail's timeout is activity-based. Two keepers now overlap on purpose:
 Neither ever logs in or touches credentials. `SESSION_EXPIRED` means Joe has
 to sign in to DealerMail in the automation Comet again; the next keeper run
 turns `OK` by itself.
+
+### Sign-in alerts by iMessage
+
+After each check the keeper texts Joe through OpenClaw on his Mac
+(`scripts/lib/signin-alert.mjs`). It sends one message when a site newly
+needs a sign-in (or the automation browser could not be restarted). It
+repeats every six hours while that site stays broken. Once every site reads
+OK again, it sends one all-clear. A check that merely errors is not
+counted as a recovery. Only site names and the PC name leave the PC. The
+state advances only after the gateway answers `200` with `ok: true`. Any
+other answer, including `204` (the transform skipped it), retries on the
+next check. The result is recorded as `alert` in `dealermail-keeper.json`
+and in the keeper log. The state is kept in
+`work\app-feed-status\signin-alert-state.json`.
+
+Setup (Joe, once; nothing here goes in Git):
+
+1. Mac: copy `scripts/openclaw/inventory-signin.mjs` to
+   `~/.openclaw/hooks/transforms/`. In OpenClaw, enable webhooks with
+   their own token. Add a mapping with `match.path` `inventory-signin`,
+   `action` `agent`, `transform.module` `inventory-signin.mjs`,
+   `deliver` true, `channel` `imessage`, `to` set to Joe's own handle, and
+   `allowUnsafeExternalContent` true. The last one is safe only because this
+   transform emits fixed text. Without it, the agent may paraphrase the
+   alert instead of passing it on. Turn on the iMessage channel. With
+   `dmPolicy` `disabled` it only sends. The transform accepts nothing but
+   known site names, so this path always hands the agent fixed text. The
+   hooks token itself still unlocks OpenClaw's general `/hooks/agent`
+   endpoint, so treat it like a password. Optionally, add
+   `inventory-signin.config.json` next to it with
+   `{"rustdeskId": "<publisher PC RustDesk ID>"}`. The message then ends with
+   `rustdesk://connection/new/<id>`, which opens the RustDesk phone app on
+   that PC. Never put a password in it.
+2. Publisher PC: set the user environment variables
+   `INVENTORY_ALERT_URL` (the gateway's Tailscale address plus
+   `/hooks/inventory-signin`, https only) and `INVENTORY_ALERT_TOKEN` (the
+   hooks token). Joe types the token himself. Unset means alerts are off.
+
+The Mac must be awake with OpenClaw running for the text to go out. Until
+it is, the keeper keeps retrying every 10 minutes. Before relying on it,
+send one test alert from the publisher PC and confirm the iMessage arrives
+on the phone and the RustDesk link opens.
 
 ## The daily Cowork task, step by step
 
