@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { sendSignInAlert, sendTestAlert, signInProblems, sshArgs } from '../../scripts/lib/signin-alert.mjs'
+import { sendSignInAlert, sendTestAlert, signInProblems, sshArgs, sshSend } from '../../scripts/lib/signin-alert.mjs'
 import { alertText, parseAlertArgs } from '../../scripts/mac/send-inventory-alert.mjs'
 
 const SITES = ['dealermail', 'fmcdealer', 'fordvisions', 'vauto']
@@ -174,3 +174,56 @@ describe('the sender on the Messages Mac', () => {
     expect(parseAlertArgs(['needs_sign_in', 'vauto', 'JOE-PC;rm']).host).toBe('the publisher PC')
   })
 })
+
+describe('the ssh call on the publisher PC', () => {
+  // A stand-in for ssh.exe: behaviour comes from FAKE_SSH_MODE; the last
+  // argument is the alert word list's final word, as the real call sends it.
+  const fake = () => {
+    const file = path.join(dir, 'fake-ssh.mjs')
+    writeFileSync(file, `
+      import { existsSync, writeFileSync } from 'node:fs'
+      const mode = process.env.FAKE_SSH_MODE
+      const marker = process.env.FAKE_SSH_MARKER
+      if (mode === 'ok') { console.log(JSON.stringify({ ok: true, kind: 'test', ms: 5 })); console.error('** WARNING: connection is not using a post-quantum key exchange algorithm.') }
+      else if (mode === 'refused') { console.log(JSON.stringify({ ok: false, error: 'refused' })); process.exit(2) }
+      else if (mode === 'hang') { console.log(JSON.stringify({ ok: true })); setInterval(() => {}, 1000) }
+      else if (mode === 'silent-hang') { setInterval(() => {}, 1000) }
+      else if (mode === 'connect-then-ok') { if (!existsSync(marker)) { writeFileSync(marker, '1'); console.error('ssh: connect to host mac port 22: Connection timed out'); process.exit(255) } console.log(JSON.stringify({ ok: true })) }
+      else { console.error('ssh: connect to host mac port 22: Connection timed out'); process.exit(255) }
+    `)
+    return [process.execPath, file]
+  }
+  const call = (mode, timeoutMs = 10000) => {
+    process.env.FAKE_SSH_MODE = mode
+    process.env.FAKE_SSH_MARKER = path.join(dir, 'fake-ssh-marker')
+    return sshSend({ target: 'macuser@messages-mac.example.ts.net', key: 'k', words: ['test', '-', 'JOE-PC'], command: fake(), timeoutMs })
+  }
+
+  it('reads the reply even when a warning follows it', async () => {
+    expect(await call('ok')).toEqual({ ok: true })
+  })
+
+  it('passes on the Mac refusing a request', async () => {
+    expect(await call('refused')).toEqual({ ok: false, error: 'refused' })
+  })
+
+  it('still reads the answer when ssh has to be stopped after the Mac replied', async () => {
+    const started = Date.now()
+    expect(await call('hang', 1500)).toEqual({ ok: true })
+    expect(Date.now() - started).toBeLessThan(8000)
+  })
+
+  it('reports a timeout when ssh hangs without any answer', async () => {
+    expect(await call('silent-hang', 1500)).toEqual({ ok: false, error: 'timeout' })
+  })
+
+  it('retries a failed connection once', async () => {
+    expect(await call('connect-then-ok')).toEqual({ ok: true })
+    expect(existsSync(path.join(dir, 'fake-ssh-marker'))).toBe(true)
+  })
+
+  it('names a connection that fails twice', async () => {
+    expect(await call('connect-fail')).toEqual({ ok: false, error: 'ssh_connect_failed' })
+  })
+})
+

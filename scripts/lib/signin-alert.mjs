@@ -27,8 +27,9 @@
 // means alerts are off:
 //   INVENTORY_ALERT_SSH_TARGET  user@host of the Messages Mac (tailnet name)
 //   INVENTORY_ALERT_SSH_KEY     path to the private key made for this alert only
-import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 
 export const ALERT_PROBLEMS = ['browser', 'dealermail', 'fmcdealer', 'fordvisions', 'vauto']
@@ -99,18 +100,60 @@ export function sshArgs({ target, key, words }) {
   return ['-n', '-i', key, '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15', target, ...words]
 }
 
-// Runs the forced script on the Mac; resolves true only when it reports ok.
-export function sshSend({ target, key, words, env = process.env }) {
-  const args = sshArgs({ target, key, words })
+// One ssh attempt. Output goes to a temporary file, never a pipe: Windows
+// ssh.exe returns the Mac's answer and then does not exit while its stdout is
+// a pipe (Node execFile or spawn), however long it is given (Joe-PC,
+// 2026-09-29: the Mac answered in 287 ms, ssh was still running at 45 s; with
+// a file it exits in about 2 s).
+function sshAttempt({ command, args, timeoutMs }) {
+  const outPath = path.join(os.tmpdir(), `inventory-alert-${process.pid}-${Date.now()}.txt`)
+  const fd = openSync(outPath, 'w')
   return new Promise((resolve) => {
-    execFile(sshExecutable(env), args, { timeout: SEND_TIMEOUT_MS, windowsHide: true }, (error, stdout) => {
-      const last = String(stdout || '').trim().split(/\r?\n/).pop()
-      let reply = null
-      try { reply = JSON.parse(last) } catch {}
-      if (reply?.ok === true) resolve({ ok: true })
-      else resolve({ ok: false, error: reply?.error || (error?.killed ? 'timeout' : error ? `ssh_exit_${error.code ?? 'unknown'}` : 'no_reply') })
-    })
+    let timedOut = false
+    const finish = (code, spawnError) => {
+      clearTimeout(timer)
+      try { closeSync(fd) } catch {}
+      let output = ''
+      try { output = readFileSync(outPath, 'utf8') } catch {}
+      rmSync(outPath, { force: true })
+      resolve({ code, output, timedOut, spawnError })
+    }
+    let child
+    try {
+      child = spawn(command[0], [...command.slice(1), ...args], { stdio: ['ignore', fd, fd], windowsHide: true })
+    } catch (error) {
+      finish(null, error)
+      return
+    }
+    const timer = setTimeout(() => { timedOut = true; child.kill() }, timeoutMs)
+    child.on('error', (error) => finish(null, error))
+    child.on('exit', (code) => finish(code, null))
   })
+}
+
+function readReply(output) {
+  for (const line of String(output).trim().split(/\r?\n/).reverse()) {
+    try {
+      const reply = JSON.parse(line)
+      if (reply && typeof reply === 'object' && 'ok' in reply) return reply
+    } catch {}
+  }
+  return null
+}
+
+// Runs the forced script on the Mac; resolves ok only when it reports ok. One
+// retry covers a failed connection (ssh exit 255), which the Tailscale relay
+// between the two machines occasionally produces.
+export async function sshSend({ target, key, words, env = process.env, command = [sshExecutable(env)], timeoutMs = SEND_TIMEOUT_MS }) {
+  const args = sshArgs({ target, key, words })
+  let attempt = await sshAttempt({ command, args, timeoutMs })
+  if (!attempt.timedOut && attempt.code === 255 && !readReply(attempt.output)) attempt = await sshAttempt({ command, args, timeoutMs })
+  const reply = readReply(attempt.output)
+  if (reply?.ok === true) return { ok: true }
+  if (reply?.error) return { ok: false, error: reply.error }
+  if (attempt.timedOut) return { ok: false, error: 'timeout' }
+  if (attempt.spawnError) return { ok: false, error: `ssh_unavailable_${attempt.spawnError.code ?? 'error'}` }
+  return { ok: false, error: attempt.code === 255 ? 'ssh_connect_failed' : `ssh_exit_${attempt.code ?? 'unknown'}` }
 }
 
 function alertConfig(env) {
