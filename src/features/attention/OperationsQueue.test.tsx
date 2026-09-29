@@ -229,3 +229,10 @@ describe('Action center store workflow', () => {
     expect(screen.queryByRole('button', { name: 'Mark reviewed' })).not.toBeInTheDocument()
   })
 })
+
+it('opens the category an Overview link names, once', async () => {
+  const hold = task()
+  const inventory = task({ id: 'synthetic-inventory', type: 'manager_identity_review', label: 'Synthetic identity review' })
+  render(<MemoryRouter initialEntries={['/attention?category=inventory']}><OperationsQueue items={[hold, inventory]} vehicles={[]} homeStore="Howell" role="manager" currentUser="Synthetic Manager" reportDate="2026-09-14" onAction={vi.fn()}/></MemoryRouter>)
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Inventory checks/ })).toHaveAttribute('aria-pressed', 'true'))
+})

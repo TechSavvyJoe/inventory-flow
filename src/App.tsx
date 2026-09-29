@@ -27,7 +27,7 @@ function AppRoutes() {
             <Route path="/attention" element={<AttentionPage />} />
             <Route path="/updates" element={<InventoryUpdatesPage key={`${currentUser}:${role}:${homeStore}`} />} />
             <Route path="/service" element={<ServicePage key={`${currentUser}:${role}:${homeStore}`} />} />
-            <Route path="/overview" element={role === 'manager' || role === 'group_manager' ? <OverviewPage /> : <Navigate to="/attention" replace />} />
+            <Route path="/overview" element={role === 'manager' || role === 'group_manager' || role === 'sales' ? <OverviewPage key={`${currentUser}:${role}:${homeStore}`} /> : <Navigate to="/attention" replace />} />
             <Route path="/manager" element={<Navigate to="/overview" replace />} />
             <Route path="/admin" element={role === 'group_manager' ? <AdminPage /> : <Navigate to="/attention" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />

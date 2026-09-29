@@ -244,6 +244,38 @@ export function dealerMailHoldLabel(signal: DealerMailHoldSignal): string {
   return "DealerMail hold not provided";
 }
 
+/**
+ * One Overview view of one store, judged only from the server's day-level
+ * facts (never a label). Custody, aging, unaccounted, return and records views
+ * are by home store; Visiting by the store the vehicle is at; holds by the
+ * DealerMail store the Action center counts them under.
+ */
+export function vehicleMatchesOverviewView(
+  vehicle: InventoryVehicle,
+  { view, store }: NonNullable<InventoryFilters["overviewView"]>,
+): boolean {
+  const facts = vehicle.overview;
+  const home = vehicle.location.homeStore.name === store;
+  if (!facts) return view === "on-lot" && home;
+  switch (view) {
+    case "on-lot": return home && facts.custody === "on_lot";
+    case "away": return home && facts.custody === "away";
+    case "visiting": return !home && facts.custody === "away" && facts.currentStore === store;
+    case "in-transit": return home && facts.custody === "in_transit";
+    case "conflict": return home && facts.custody === "conflict";
+    case "unaccounted": return home && Boolean(facts.unaccounted);
+    case "return-overdue": return home && facts.returnOverdue === true;
+    case "aged-60": return home && Boolean(facts.agedBucket);
+    case "aged-90": return home && facts.agedBucket === 90;
+    case "records-incomplete": return home && facts.recordsCaptured < facts.recordsApplicable;
+    case "holds":
+    case "holds-past-expected": {
+      const holdStore = vehicle.location.crmStore?.name ?? vehicle.location.homeStore.name;
+      return holdStore === store && facts.holdActive === true && (view === "holds" || facts.holdPastExpected === true);
+    }
+  }
+}
+
 export function vehicleMatchesFilters(
   vehicle: InventoryVehicle,
   filters: InventoryFilters,
@@ -297,6 +329,9 @@ export function vehicleMatchesFilters(
   if (filters.movement === "active" && !hasMovement) return false;
   if (filters.movement === "none" && hasMovement) return false;
   if (filters.movement === "overdue" && movement?.overdue !== true) return false;
+
+  if (filters.overviewView && !vehicleMatchesOverviewView(vehicle, filters.overviewView)) return false;
+  if (filters.vins && !filters.vins.includes(vehicle.vin)) return false;
 
   // Only an explicit manager service record establishes completion. Website
   // status, a hold, physical location, or a warranty date cannot imply service.
@@ -482,6 +517,8 @@ export function updateMultiSort(
 
 export function activeFilterCount(filters: InventoryFilters): number {
   return [
+    Boolean(filters.overviewView),
+    Boolean(filters.vins),
     filters.storeId !== "all",
     filters.publicListing !== "all",
     filters.dealerOn !== "all",

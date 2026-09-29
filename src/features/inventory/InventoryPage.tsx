@@ -7,7 +7,8 @@ import { groupStores, inventoryStore, toInventoryVehicle } from '../../app/adapt
 import { SourceWarning } from '../../components/SourceWarning'
 import { ApiError, getVehicle } from '../../lib/api'
 import type { BootstrapData, VehicleRecord } from '../../types'
-import type { InventoryScope, InventoryVehicle, VehicleWorkspaceTab } from './types'
+import type { InventoryFilters, InventoryScope, InventoryVehicle, VehicleWorkspaceTab } from './types'
+import { hasOverviewInventoryParams, readOverviewInventoryRequest, withoutOverviewInventoryParams, type OverviewInventoryRequest } from '../overview/overview-links'
 import { InventoryExperience } from './InventoryExperience'
 import { canRequestVehicleMove, movementTrackingPath, transferByVin, vehicleMoveAction } from './inventory-utils'
 import {
@@ -20,6 +21,17 @@ import {
   withWorkspaceReturnPath,
   workspaceReturnLabel,
 } from '../../lib/inventory-navigation'
+
+/** An Overview link's Inventory parameters as initial filters for one request. */
+function overviewRequestFilters(request: OverviewInventoryRequest | null): Partial<InventoryFilters> | null {
+  if (!request) return null
+  return {
+    ...(request.overviewView ? { overviewView: request.overviewView } : {}),
+    ...(request.store ? { storeId: inventoryStore(request.store).id } : {}),
+    ...(request.serviceReadiness ? { serviceReadiness: request.serviceReadiness } : {}),
+    ...(request.vins ? { vins: request.vins } : {}),
+  }
+}
 
 interface VehicleDetailEntry {
   record: VehicleRecord
@@ -105,14 +117,31 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
       ? (params.get('q') || '').trim()
       : null
   const incomingQuery = navigationRequest?.query ?? legacyQuery
+  // Overview count links (store, view, service, vins) are read on entry, kept
+  // in memory for this signed-in context, and stripped like the legacy q.
+  const overviewParamsPresent = hasOverviewInventoryParams(params)
+  const incomingFilters =
+    overviewParamsPresent && previousAccessContextRef.current === accessContext
+      ? overviewRequestFilters(readOverviewInventoryRequest(params))
+      : null
+  const incomingFiltersKey = incomingFilters ? JSON.stringify(incomingFilters) : null
+  const [rememberedFilters, setRememberedFilters] = useWorkspaceState<{ accessContext: string; requestKey: string; filters: Partial<InventoryFilters> | null }>(
+    accessContext,
+    'inventory.overviewFilters',
+    () => ({ accessContext, requestKey: incomingFilters ? location.key : 'initial', filters: incomingFilters }),
+  )
+  const filterRequest = incomingFilters
+    ? { requestKey: location.key, filters: incomingFilters }
+    : rememberedFilters.accessContext === accessContext ? rememberedFilters : { requestKey: 'initial', filters: null }
   const [rememberedSearch, setRememberedSearch] = useWorkspaceState(accessContext, 'inventory.navigationSearch', () => ({
     accessContext,
     query: incomingQuery ?? '',
     requestKey: incomingQuery !== null ? location.key : 'initial',
   }))
-  const queryRequestKey = incomingQuery !== null ? location.key : rememberedSearch.requestKey
+  const queryRequestKey = incomingQuery !== null || incomingFilters ? location.key : rememberedSearch.requestKey
   const query =
-    incomingQuery ?? (rememberedSearch.accessContext === accessContext ? rememberedSearch.query : '')
+    incomingQuery ?? (incomingFilters ? '' : rememberedSearch.accessContext === accessContext ? rememberedSearch.query : '')
+  const filterRequestActive = filterRequest.requestKey !== 'initial' && filterRequest.requestKey === queryRequestKey
 
   const vehicles = useMemo(() => {
     if (!data) return []
@@ -128,15 +157,17 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
     const contextChanged = previousAccessContextRef.current !== accessContext
     if (contextChanged) {
       setRememberedSearch({ accessContext, query: '', requestKey: 'initial' })
-    } else if (incomingQuery !== null) {
-      setRememberedSearch({ accessContext, query: incomingQuery, requestKey: location.key })
+      setRememberedFilters({ accessContext, requestKey: 'initial', filters: null })
+    } else if (incomingQuery !== null || incomingFiltersKey !== null) {
+      setRememberedSearch({ accessContext, query: incomingQuery ?? '', requestKey: location.key })
+      if (incomingFiltersKey !== null) setRememberedFilters({ accessContext, requestKey: location.key, filters: JSON.parse(incomingFiltersKey) })
     }
 
-    if (params.has('q') || hasInventorySearchRequest(location.state)) {
+    if (params.has('q') || overviewParamsPresent || hasInventorySearchRequest(location.state)) {
       navigate(
         {
           pathname: location.pathname,
-          search: stripLegacyInventorySearchQuery(location.search),
+          search: withoutOverviewInventoryParams(stripLegacyInventorySearchQuery(location.search)),
           hash: location.hash,
         },
         { replace: true, state: null },
@@ -144,7 +175,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
     }
 
     previousAccessContextRef.current = accessContext
-  }, [accessContext, incomingQuery, location.key, location.hash, location.pathname, location.search, location.state, navigate, params])
+  }, [accessContext, incomingFiltersKey, incomingQuery, location.key, location.hash, location.pathname, location.search, location.state, navigate, overviewParamsPresent, params])
 
   useEffect(() => {
     setScope(requestedScope)
@@ -303,8 +334,10 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         groupStores={groupStores(data, homeStore)}
         scope={requestedScope}
         initialQuery={query}
-        initialQuickView={query.trim() || requestedVin ? "all" : "no-hold"}
+        initialQuickView={query.trim() || requestedVin || filterRequestActive ? "all" : "no-hold"}
         queryRequestKey={queryRequestKey}
+        initialFilters={filterRequest.filters ?? undefined}
+        filterRequestKey={filterRequest.requestKey}
         initialWorkspaceTab={(['overview', 'equipment', 'movement', 'hold', 'timeline', 'data', 'issues'] as VehicleWorkspaceTab[]).find(tab => tab === params.get('tab') && (tab !== 'issues' || data.vehicleIssuesEnabled === true || Boolean(data.vehicleIssues?.length))) ?? 'overview'}
         searchPersistenceKey={accessContext}
         selectedVehicleId={selectedVehicleId}

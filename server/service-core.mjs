@@ -25,6 +25,8 @@ import { buildVehicleIssue, buildVehicleIssueEvent, canReportVehicleIssue, vehic
 import { allowedAttentionActions, attentionInputHash, buildAttentionMutation, canSeePersistedAssignee, isTransportItem } from './attention-workflow.mjs'
 import { assertAdminOverviewAccess, buildAdminOverview } from './admin-control-center.mjs'
 import { STORE_NAMES } from './constants.mjs'
+import { dateInTimeZone, dateIsBeforeReport, daysBetween } from './calendar-days.mjs'
+import { buildOverviewSummary, overviewAccess } from './overview-summary.mjs'
 import { normalizePublicChangeCounts } from './public-change-counts.mjs'
 import { MANAGER_DISPOSITION_COVERAGE_CAVEAT } from './manager-disposition-schema.mjs'
 import { allowedEventTypes, buildTransferEvent, buildTransferRequest, roleContext, WorkflowError } from './workflow.mjs'
@@ -143,37 +145,6 @@ function publicScanAudit(publicRecord) {
     firstSeen: cleanText(publicRecord.first_seen) ?? null,
     lastSeen: cleanText(publicRecord.last_seen) ?? null,
   }
-}
-
-function dateInTimeZone(date, timeZone) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date)
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
-  return `${values.year}-${values.month}-${values.day}`
-}
-
-function daysBetween(start, end) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(start ?? '')) || !/^\d{4}-\d{2}-\d{2}$/.test(String(end ?? ''))) {
-    return null
-  }
-  const startTime = Date.parse(`${start}T00:00:00Z`)
-  const endTime = Date.parse(`${end}T00:00:00Z`)
-  if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) return null
-  return Math.max(0, Math.floor((endTime - startTime) / 86_400_000))
-}
-
-function dateIsBeforeReport(value, reportDate) {
-  if (!value || !reportDate) return false
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value)) && /^\d{4}-\d{2}-\d{2}$/.test(String(reportDate))) {
-    return String(value) < String(reportDate)
-  }
-  const valueTime = Date.parse(String(value))
-  const reportTime = Date.parse(`${reportDate}T00:00:00`)
-  return Number.isFinite(valueTime) && Number.isFinite(reportTime) && valueTime < reportTime
 }
 
 function currentFreshness(sourceRun, { now, timeZone, loadStatus }) {
@@ -1398,19 +1369,21 @@ function integerQuery(value, fallback, { min = 0, max = 500 } = {}) {
   return Math.min(max, Math.max(min, parsed))
 }
 
+/** The one return-overdue rule: the stores summary and the Overview both count it. */
+function transferReturnOverdue(row, now) {
+  return isActiveTransfer(row) &&
+    Boolean(row.return_required) &&
+    Boolean(row.return_due_at) &&
+    new Date(row.return_due_at) < now &&
+    !RETURN_COMPLETE_STATES.has(row.status) &&
+    !RETURN_PAUSED_STATES.has(row.status) &&
+    !RETURN_COMPLETE_STATES.has(row.movement_status)
+}
+
 function storeSummaries(vehicles, holdRows, transferRows, now) {
   return STORE_NAMES.map((store) => {
     const storeTransfers = transferRows.filter((row) => isActiveTransfer(row))
-    const returnOverdue = storeTransfers.filter(
-      (row) =>
-        row.home_store_id === store &&
-        Boolean(row.return_required) &&
-        row.return_due_at &&
-        new Date(row.return_due_at) < now &&
-        !RETURN_COMPLETE_STATES.has(row.status) &&
-        !RETURN_PAUSED_STATES.has(row.status) &&
-        !RETURN_COMPLETE_STATES.has(row.movement_status),
-    ).length
+    const returnOverdue = storeTransfers.filter((row) => row.home_store_id === store && transferReturnOverdue(row, now)).length
     const sourceConflicts = vehicles.filter(
       (vehicle) => vehicle.publicStore === store && vehicle.crmStore && vehicle.crmStore !== vehicle.publicStore,
     ).length
@@ -1963,7 +1936,11 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       })
     },
 
-    bootstrap(contextInput = {}) {
+    /**
+     * `overview: false` skips the Overview projection. The integration Worker
+     * passes it: that path never exposes the projection.
+     */
+    bootstrap(contextInput = {}, { overview = true } = {}) {
       const state = snapshot(contextInput)
       const issueState = issueSnapshot(contextInput)
       if (!state.dataset.publicRows.length) {
@@ -1978,11 +1955,12 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         .filter(Boolean)
       sortVehicles(vehicles)
       const visibleTransferRows = state.allTransferRows.filter((row) => transferVisible(row, state.context))
+      const transferEventsById = new Map(visibleTransferRows.map((row) => [row.id, getTransferEvents(database, row.id)]))
       const transfers = visibleTransferRows.map((row) => {
         const source = sourceVehicle(state.indexes, row.vin)
         return transferView(
           row,
-          getTransferEvents(database, row.id),
+          transferEventsById.get(row.id),
           source,
           state.context,
           state.meta,
@@ -1990,6 +1968,27 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         )
       })
       const stores = storeSummaries(vehicles, state.dataset.holdRows, visibleTransferRows, state.currentNow)
+      const holdSignals = holdSignalSummaries(state.dataset.holdRows, state.meta)
+      const asOfDay = dateInTimeZone(state.currentNow, state.meta.timezone)
+      // Built only from what this role already receives: the role-filtered
+      // vehicles and visible transfer rows, never state.allTransferRows.
+      const overviewView = overview && overviewAccess(state.context.role)
+        ? buildOverviewSummary({
+            context: state.context,
+            meta: state.meta,
+            asOfDay,
+            vehicles,
+            visibleTransferRows,
+            transferEventsById,
+            returnOverdueTransferIds: new Set(visibleTransferRows
+              .filter((row) => transferReturnOverdue(row, state.currentNow)).map((row) => row.id)),
+            holdRows: state.dataset.holdRows,
+            holdSignals,
+            serviceRowByVin: new Map([...state.serviceEventsByVin].map(([vin, rows]) => [vin, rows.at(-1)])),
+            serviceIntakeByVin: state.serviceIntakeByVin,
+            managerIdentityReviews: state.indexes.managerDispositionRecords.filter(managerIdentityReviewRecord),
+          })
+        : null
       return {
         access: {
           user: state.context.user,
@@ -2004,7 +2003,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         transfers,
         vehicleIssuesEnabled: issueState.enabled,
         vehicleIssues: issueRecords(issueState),
-        holdSignals: holdSignalSummaries(state.dataset.holdRows, state.meta),
+        holdSignals,
         managerDispositions: state.indexes.managerDispositionRecords.map((record) => ({
           ...record,
           dataState: state.meta.managerDispositionFreshness,
@@ -2016,11 +2015,12 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
           visibleTransferRows,
           database,
           state.context,
-          dateInTimeZone(state.currentNow, state.meta.timezone),
+          asOfDay,
           state.indexes.managerDispositionRecords,
           state.sources,
         ),
         publicChanges: state.publicChanges,
+        ...(overviewView ? { overview: overviewView } : {}),
       }
     },
 

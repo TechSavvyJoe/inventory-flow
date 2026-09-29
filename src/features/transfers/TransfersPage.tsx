@@ -11,6 +11,7 @@ import {
   ListFilter,
   MapPin,
   Plus,
+  X,
 } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
@@ -19,7 +20,7 @@ import { SourceWarning } from '../../components/SourceWarning'
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
 import { getTransfer } from '../../lib/api'
 import { vehiclePhotoDisplaySources } from '../../lib/vehicle-photos'
-import type { BootstrapData, StoreName, TransferRecord, UserRole } from '../../types'
+import { STORE_NAMES, type BootstrapData, type StoreName, type TransferRecord, type UserRole } from '../../types'
 import { formatDateTime, humanizeStatusLabel } from './presentation'
 import { TransferActionDialog } from './TransferActionDialog'
 import { TransferEmptyState } from './TransferEmptyState'
@@ -67,6 +68,16 @@ const TERMINAL_TRANSFER_STATES = new Set(['closed', 'declined', 'canceled', 'exp
 // The two saved views Group operations offered managers, now filters on
 // Moves > All stores. They are shown only to managers in that scope.
 const MANAGER_GROUP_FILTERS = new Set<TransferQueueFilter>(['overdue-returns', 'location-exceptions'])
+// Overview links (OVERVIEW_SPEC §8.2): `view` picks a queue filter in Active;
+// it is read once on entry and never persisted as a URL.
+const LINK_QUEUE_FILTERS: Partial<Record<string, TransferQueueFilter>> = {
+  moving: 'moving',
+  planned: 'ready-to-collect',
+  'return-due': 'return-due',
+  'sold-pending': 'sold-pending',
+  issues: 'issues',
+  'return-overdue': 'overdue-returns',
+}
 const LOCATION_EXCEPTION_CONFIDENCE = new Set(['conflicting', 'unknown', 'stale'])
 const PASSIVE_TRANSFER_ACTIONS = new Set<TransferActionKind>(['open-source', 'report-condition', 'mark-exception', 'escalate'])
 
@@ -367,6 +378,26 @@ export function TransfersPage() {
   const [queueFilter, setQueueFilter] = useWorkspaceState<TransferQueueFilter>(accessContext, 'transfers.filter', 'all')
   const [storeScope, setStoreScope] = useWorkspaceState<'home' | 'group'>(accessContext, 'transfers.scope', 'home')
   const [queueSort, setQueueSort] = useWorkspaceState<TransferQueueSort>(accessContext, 'transfers.sort', 'urgency')
+  // An Overview store count narrows the queue to that home store for this
+  // visit only (one-shot, not persisted).
+  const [linkedHomeStore, setLinkedHomeStore] = useState<StoreName | null>(null)
+  const linkView = requestMode ? null : params.get('view')
+  const linkStore = requestMode ? null : params.get('store')
+  useEffect(() => {
+    if (linkView === null && linkStore === null) return
+    const filter = linkView ? LINK_QUEUE_FILTERS[linkView] : undefined
+    const store = STORE_NAMES.includes(linkStore as StoreName) ? linkStore as StoreName : null
+    if (filter || store) setQueueView('active')
+    if (filter) setQueueFilter(filter)
+    if (store) {
+      setStoreScope('group')
+      setLinkedHomeStore(store)
+    }
+    const next = new URLSearchParams(location.search)
+    next.delete('view')
+    next.delete('store')
+    navigate({ pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : '', hash: location.hash }, { replace: true })
+  }, [linkView, linkStore]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
 
   const details = useMemo(() => {
     if (!data) return []
@@ -384,7 +415,9 @@ export function TransfersPage() {
   const requestedVin = params.get('vin')?.toUpperCase()
   const managerGroupFilters = storeScope === 'group' && (role === 'manager' || role === 'group_manager')
   // A manager filter saved in All stores never silently narrows My store.
-  const activeFilter: TransferQueueFilter = MANAGER_GROUP_FILTERS.has(queueFilter) && !managerGroupFilters ? 'all' : queueFilter
+  // An Overview link may open a manager view for any role that can see the count.
+  const managerFiltersAvailable = managerGroupFilters || linkedHomeStore !== null
+  const activeFilter: TransferQueueFilter = MANAGER_GROUP_FILTERS.has(queueFilter) && !managerFiltersAvailable ? 'all' : queueFilter
   const statusFor = ({ record, detail }: { record: TransferRecord; detail: TransferDetail }) => nextStepStatus(record, detail, homeStore)
   // Overdue returns are judged at the bootstrap's time, as the server's store summary is.
   // The server judges overdue at request time, so the filter uses the clock too.
@@ -416,6 +449,7 @@ export function TransfersPage() {
       if (activeFilter === 'issues' && !transferIssueLabel(detail) && !isOwnOverdue(statusFor({ record, detail }))) return false
       if (activeFilter === 'overdue-returns' && !isReturnOverdue(record, referenceNow)) return false
       if (activeFilter === 'location-exceptions' && !isLocationException(record)) return false
+      if (linkedHomeStore && record.homeStore !== linkedHomeStore) return false
       return searchFieldsMatch(query, [
         record.stockNumber,
         record.vin,
@@ -615,8 +649,8 @@ export function TransfersPage() {
       </header>
 
       <div className="move-store-scope" role="group" aria-label="Vehicle move stores">
-        <button type="button" aria-pressed={storeScope === 'home'} onClick={() => setStoreScope('home')}>My store <span>{homeStore}</span></button>
-        <button type="button" aria-pressed={storeScope === 'group'} onClick={() => setStoreScope('group')}>All stores</button>
+        <button type="button" aria-pressed={storeScope === 'home'} onClick={() => { setStoreScope('home'); setLinkedHomeStore(null) }}>My store <span>{homeStore}</span></button>
+        <button type="button" aria-pressed={storeScope === 'group'} onClick={() => { setStoreScope('group'); setLinkedHomeStore(null) }}>All stores</button>
         <p>{storeScope === 'home' ? `Vehicles requested by, owned by, or currently at ${homeStore}.` : 'Moves you can access across the group.'}</p>
       </div>
 
@@ -665,7 +699,7 @@ export function TransfersPage() {
                   <option value="return-due">Returns to follow up</option>
                   {!simple ? <option value="sold-pending">Sold pending · not delivered</option> : null}
                   <option value="issues">Issues to review</option>
-                  {managerGroupFilters ? <optgroup label="Manager views">
+                  {managerFiltersAvailable ? <optgroup label="Manager views">
                     <option value="overdue-returns">Overdue returns</option>
                     <option value="location-exceptions">Location exceptions</option>
                   </optgroup> : null}
@@ -686,6 +720,7 @@ export function TransfersPage() {
                   <option value="route">Route</option>
                 </select>
               </label>
+                {linkedHomeStore ? <button type="button" className="transfer-list-link-filter" aria-label={`Clear home store filter: ${linkedHomeStore}`} onClick={() => setLinkedHomeStore(null)}>Home store: {linkedHomeStore}<X aria-hidden="true" /></button> : null}
                 <div className="transfer-list-count" aria-live="polite">{filteredDetails.length} {filteredDetails.length === 1 ? 'move' : 'moves'} shown</div>
               </div>
             </div>
@@ -729,7 +764,7 @@ export function TransfersPage() {
                   </button>
                 )
               })}
-              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores or reset this view.' : 'Reset the view to show active moves.'}</p>{query || queueView !== 'active' || activeFilter !== 'all' ? <button type="button" onClick={() => { setQuery(''); setQueueView('active'); setQueueFilter('all') }}>Reset view</button> : null}</div> : null}
+              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores or reset this view.' : 'Reset the view to show active moves.'}</p>{query || queueView !== 'active' || activeFilter !== 'all' || linkedHomeStore ? <button type="button" onClick={() => { setQuery(''); setQueueView('active'); setQueueFilter('all'); setLinkedHomeStore(null) }}>Reset view</button> : null}</div> : null}
             </div>
           </aside>
           <div className="transfer-detail-surface" id="transfer-detail-workspace">

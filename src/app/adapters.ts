@@ -668,6 +668,7 @@ export function toInventoryVehicle(
       inProduction: vehicle.dealerOn.inProduction,
       updatedAt: data.meta.publicCapturedAt || data.meta.completedAt,
     },
+    ...(data.overview?.vehicleFacts[vehicle.vin] ? { overview: data.overview.vehicleFacts[vehicle.vin] } : {}),
     managerDisposition: vehicle.managerDisposition
       ? {
           dataState: managerDispositionState,

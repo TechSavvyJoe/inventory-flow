@@ -202,12 +202,54 @@ describe('AppShell account and update controls', () => {
 
     const primary = screen.getByRole('navigation', { name: 'Primary' })
     const mobile = screen.getByRole('navigation', { name: 'Mobile primary' })
-    expect(within(primary).getByRole('link', { name: 'Inventory overview' })).toHaveAttribute('aria-current', 'page')
+    expect(within(primary).getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page')
     expect(within(mobile).getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page')
     fireEvent.click(within(mobile).getByRole('button', { name: 'More app controls' }))
     // Group operations is retired: /manager redirects to Overview, so the
     // account controls no longer carry a second management destination.
     expect(within(screen.getByRole('dialog', { name: 'Account and app controls' })).queryByRole('link', { name: /Group operations/ })).not.toBeInTheDocument()
+  })
+
+  it.each(['sales', 'manager', 'group_manager'] as const)('gives a %s the rail Overview · Inventory · Moves · Actions · More, with the rest under More', (role) => {
+    const context = useAppDataMock()
+    const vehicles = [{ vin: 'TESTDATAHWELL0001', stockNumber: 'SYN-H01', vehicleName: 'Synthetic Ford H01', homeStore: 'Howell', serviceReadiness: { status: 'needs_service', store: 'Howell', canManage: true } }]
+    const hold = { id: 'synthetic-hold', type: 'hold_alert', severity: 'warning', status: 'open', priority: 'high', label: 'Synthetic hold alert', vin: 'TESTDATAHWELL0001', store: 'Howell', actionability: 'actionable', allowedActions: [], events: [] }
+    useAppDataMock.mockReturnValue({ ...context, role, data: { ...context.data, attention: [hold], vehicles } })
+    render(
+      <MemoryRouter initialEntries={['/inventory']}>
+        <AppShell><span>Inventory content</span></AppShell>
+      </MemoryRouter>,
+    )
+
+    const primary = screen.getByRole('navigation', { name: 'Primary' })
+    expect(within(primary).getAllByRole('link').map((link) => link.textContent?.replace(/\d+$/, ''))).toEqual([
+      'Overview', 'Inventory', 'Vehicle moves', 'Action center', 'Inventory updates', 'Service status',
+      ...(role === 'group_manager' ? ['Control center'] : []),
+    ])
+    const mobile = screen.getByRole('navigation', { name: 'Mobile primary' })
+    expect(within(mobile).getAllByRole('link').map((link) => link.querySelector('span')?.textContent)).toEqual(['Overview', 'Inventory', 'Moves', 'Actions'])
+    expect(within(mobile).getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/overview')
+    // Actions is in the rail, so its count stays on Actions and never doubles on More.
+    const more = within(mobile).getByRole('button', { name: 'More app controls' })
+    expect(within(more).queryByLabelText(/items need attention today/)).not.toBeInTheDocument()
+    fireEvent.click(more)
+    const utility = screen.getByRole('dialog', { name: 'Account and app controls' })
+    expect(within(utility).getByRole('link', { name: /Inventory updates/ })).toHaveAttribute('href', '/updates')
+    expect(within(utility).getByRole('link', { name: /Service status/ })).toHaveAttribute('href', '/service')
+    expect(within(utility).queryByRole('link', { name: /Control center/ }) !== null).toBe(role === 'group_manager')
+    expect(within(utility).queryByRole('link', { name: /^Overview/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps a retired transport role off the Overview', () => {
+    const context = useAppDataMock()
+    useAppDataMock.mockReturnValue({ ...context, role: 'driver' })
+    render(
+      <MemoryRouter initialEntries={['/transfers']}>
+        <AppShell><span>Moves content</span></AppShell>
+      </MemoryRouter>,
+    )
+    expect(within(screen.getByRole('navigation', { name: 'Primary' })).queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('navigation', { name: 'Mobile primary' })).queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument()
   })
 
   it.each(['/transfers', '/service', '/attention', '/inventory'])('leaves %s with only its own page search in the shell header', (route) => {
