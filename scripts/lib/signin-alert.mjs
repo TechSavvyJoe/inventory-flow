@@ -34,7 +34,9 @@ import path from 'node:path'
 export const ALERT_PROBLEMS = ['browser', 'dealermail', 'fmcdealer', 'fordvisions', 'vauto']
 export const REMIND_AFTER_MS = 6 * 60 * 60 * 1000
 export const PRERUN_DEFAULT_LOCAL_TIME = '05:00'
-const SEND_TIMEOUT_MS = 45000
+// Above the Mac sender's own 90 s allowance for Messages, plus SSH setup, so a
+// slow but successful send is never recorded as a failure (and re-sent).
+const SEND_TIMEOUT_MS = 120000
 const SSH_TARGET = /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+$/
 
 // Only an explicit OK clears a site that was broken before; ERROR, NO_TAB or
