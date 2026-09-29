@@ -427,6 +427,7 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
         <VehiclePhoto vehicle={vehicle} className="inv-desk-vehicle__img" priority={priority} />
         <PhotoCount vehicle={vehicle} />
       </span>
+      {/* Name, certification, then Stock and VIN directly beneath the name. */}
       <div className="inv-desk-vehicle__body">
         <span className="inv-desk-vehicle__title"><strong title={name}>{title}</strong></span>
         <div className="inv-desk-vehicle__links"><CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name} />
@@ -436,11 +437,11 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
           {change.shortLabel}
         </button> : null}
         </div>
+        <dl className="inv-desk-vehicle__facts">
+          <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy" /></dd></div>
+          <div className="inv-desk-vehicle__vin"><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy" /></dd></div>
+        </dl>
       </div>
-      <dl className="inv-desk-vehicle__facts">
-        <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy" /></dd></div>
-        <div className="inv-desk-vehicle__vin"><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy" /></dd></div>
-      </dl>
     </div>
   );
 }
@@ -482,12 +483,15 @@ function RecallChip({ vehicle, onSelectVehicle }: { vehicle: InventoryVehicle; o
 function DeskPriceCell({ vehicle }: { vehicle: InventoryVehicle }) {
   const hasPrice = typeof vehicle.price === "number" && Number.isFinite(vehicle.price);
   const inventoryDate = compactInventoryDate(vehicle.inventoryDate);
+  // Price is the primary figure; mileage and age sit tightly beneath it.
   return <div className={`inv-desk-price${hasPrice ? "" : " is-unavailable"}`}>
     <strong>{formatMoney(vehicle.price)}</strong>
-    {typeof vehicle.mileage === "number" && Number.isFinite(vehicle.mileage)
-      ? <CopyableValue compact label="mileage" text={String(vehicle.mileage)} className="inv-desk-price__mileage">{formatMileage(vehicle.mileage)}</CopyableValue>
-      : <span>{formatMileage(vehicle.mileage)}</span>}
-    <span title={inventoryDate ? `Inventory date ${inventoryDate}` : undefined}>{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : "Age unavailable"}</span>
+    <span className="inv-desk-price__facts">
+      {typeof vehicle.mileage === "number" && Number.isFinite(vehicle.mileage)
+        ? <CopyableValue compact label="mileage" text={String(vehicle.mileage)} className="inv-desk-price__mileage">{formatMileage(vehicle.mileage)}</CopyableValue>
+        : <span>{formatMileage(vehicle.mileage)}</span>}
+      <span className="inv-desk-price__age" title={inventoryDate ? `Inventory date ${inventoryDate}` : undefined}>{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : "Age unavailable"}</span>
+    </span>
   </div>;
 }
 
@@ -520,20 +524,23 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord }: {
       showHeldBy ? `Held by ${heldBy}` : null].filter(Boolean).join(" · ") || holdStatus.detail
     : null;
   // Fixed Operations order: Location, Hold (its expected date and backups
-  // directly beneath), Move, Service. Each family stays its own signal.
-  return <div className="inv-desk-status">
-    <DeskLocationCell vehicle={vehicle} />
-    <button type="button" className={`inv-desk-hold inv-desk-hold--${holdStatus.tone}`} data-inventory-vehicle-trigger={vehicle.id}
-      aria-label={canOpenDealerMail ? `Review DealerMail handoff for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}` : `Open hold details for ${name}`}
-      title={holdStatus.detail} onClick={event => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); if (canOpenDealerMail) onOpenSourceRecord?.(vehicle, "dealermail"); else onSelectVehicle(vehicle, "hold"); }}>
-      <span className="inv-desk-hold__dot" aria-hidden="true" /><span>{holdStatus.label}</span>
-    </button>
-    {holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
-    {movement ? <span className={`inv-desk-move${movement.tone === "warning" ? " is-warning" : ""}`} title={movement.detail}>{humanizeStatusLabel(movement.label)}</span> : null}
-    <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed />
-    {vehicle.managerDisposition ? <small className="inv-desk-disposition" data-state={vehicle.managerDisposition.dataState}>{vehicle.managerDisposition.soldLabel} · {vehicle.managerDisposition.deliveryLabel}</small> : null}
-    <RecallChip vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
-  </div>;
+  // directly beneath), Move, Service. Each family stays its own labelled
+  // signal; none is inferred from another.
+  return <dl className="inv-desk-status">
+    <div className="inv-desk-status__row" data-fact="location"><dt>Location</dt><dd><DeskLocationCell vehicle={vehicle} /></dd></div>
+    <div className="inv-desk-status__row" data-fact="hold"><dt>Hold</dt><dd>
+      <button type="button" className={`inv-desk-hold inv-desk-hold--${holdStatus.tone}`} data-inventory-vehicle-trigger={vehicle.id}
+        aria-label={canOpenDealerMail ? `Review DealerMail handoff for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}` : `Open hold details for ${name}`}
+        title={holdStatus.detail} onClick={event => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); if (canOpenDealerMail) onOpenSourceRecord?.(vehicle, "dealermail"); else onSelectVehicle(vehicle, "hold"); }}>
+        <span className="inv-desk-hold__dot" aria-hidden="true" /><span>{holdStatus.label}</span>
+      </button>
+      {holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
+    </dd></div>
+    {movement ? <div className="inv-desk-status__row" data-fact="move"><dt>Move</dt><dd><span className={`inv-desk-move${movement.tone === "warning" ? " is-warning" : ""}`} title={movement.detail}>{humanizeStatusLabel(movement.label)}</span></dd></div> : null}
+    <div className="inv-desk-status__row" data-fact="service"><dt>Service</dt><dd><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed /></dd></div>
+    {vehicle.managerDisposition ? <div className="inv-desk-status__row" data-fact="sale"><dt>Sale</dt><dd><small className="inv-desk-disposition" data-state={vehicle.managerDisposition.dataState}>{vehicle.managerDisposition.soldLabel} · {vehicle.managerDisposition.deliveryLabel}</small></dd></div> : null}
+    {openRecallCount(vehicle) ? <div className="inv-desk-status__row" data-fact="recall"><dt>OASIS</dt><dd><RecallChip vehicle={vehicle} onSelectVehicle={onSelectVehicle} /></dd></div> : null}
+  </dl>;
 }
 
 function DeskEquipmentCell({ vehicle, onSelectVehicle }: {
@@ -671,11 +678,11 @@ export function DeskRowActions({
         <Heart size={14} aria-hidden="true" fill={saved ? "currentColor" : "none"} />{saved ? "Saved" : "Save"}
       </button>
       {listingUrl ? onOpenListing ? (
-        <button type="button" className="inv-desk-action inv-desk-action--quiet" data-row-action="listing"
+        <button type="button" className="inv-desk-action inv-desk-action--listing" data-row-action="listing"
           title="Open listing" aria-label={`Open listing for ${name}`} onClick={() => onOpenListing(vehicle)}>
           Listing <ExternalLink size={13} aria-hidden="true" />
         </button>
-      ) : <a className="inv-desk-action inv-desk-action--quiet" data-row-action="listing" href={listingUrl}
+      ) : <a className="inv-desk-action inv-desk-action--listing" data-row-action="listing" href={listingUrl}
         target="_blank" rel="noopener noreferrer" title="Open listing" aria-label={`Open listing for ${name} in a new tab`}>
         Listing <ExternalLink size={13} aria-hidden="true" />
       </a> : null}

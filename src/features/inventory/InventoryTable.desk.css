@@ -1,127 +1,152 @@
 /* Inventory SRP: one stylesheet owns desktop rows and the compact mobile list.
    Retired prototype modifiers are deliberately absent from the rendered markup. */
+/* Desktop grid: every row and column is a 1px hairline, cells are top-aligned
+   and packed on one vertical rhythm, and the records strip beneath each vehicle
+   reuses the column widths so its dividers continue the column lines. */
 .if-srp-grid {
   container: inventory-table / inline-size;
+  --inv-col-vehicle: 30%;
+  --inv-col-price: 12%;
+  --inv-col-configuration: 20%;
+  --inv-col-status: 22%;
+  --inv-col-actions: 16%;
+  --inv-line: var(--border);
+  --inv-unit-line: var(--border-strong);
+  --inv-pad-block: var(--ifx-space-1-5);
+  --inv-pad-inline: var(--ifx-space-3);
+  --inv-rhythm: var(--ifx-space-1);
+  --inv-photo-width: calc(var(--ifx-space-16) + var(--ifx-space-8));
+  --inv-photo-height: var(--ifx-space-16);
+  /* Row actions and inline controls: compact for a mouse, 44px for touch. */
+  --inv-action-height: calc(var(--ifx-space-6) + var(--ifx-space-1));
+  --inv-hit: var(--ifx-space-6);
   width: 100%;
   min-width: 0;
   color: var(--ink-900);
   background: var(--surface);
 }
-.if-srp-table-wrap { box-sizing: border-box; width: 100%; overflow: visible; border: 1px solid var(--border); border-radius: 6px; }
+@media (any-pointer: coarse) {
+  .if-srp-grid { --inv-action-height: var(--ifx-control-height-md); --inv-hit: var(--ifx-control-height-md); }
+}
+.if-srp-table-wrap { box-sizing: border-box; width: 100%; overflow: visible; border: 1px solid var(--inv-line); border-radius: var(--ifx-radius-xs); }
 .if-srp-table-wrap:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
-.if-srp-grid .inv-desk-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font: 400 14px/1.4 var(--font-app); }
-.if-srp-grid .inv-desk-th { position: relative; padding: 0 var(--ifx-space-3); height: var(--ifx-control-height-md); color: var(--ink-700); background: var(--surface-muted); border-bottom: 1px solid var(--border-strong); border-left: 1px solid var(--border); text-align: left; font: 600 14px/1.25 var(--font-app); }
-.if-srp-grid .inv-desk-th:first-child { border-left:0; }
-.if-srp-grid .inv-desk-th:first-child { border-radius: 5px 0 0 0; }
-.if-srp-grid .inv-desk-th:last-child { border-radius: 0 5px 0 0; }
-.if-srp-grid .inv-desk-th--vehicle { width: 32%; }
-.if-srp-grid .inv-desk-th--price { width: 12%; }
-.if-srp-grid .inv-desk-th--configuration { width: 21%; }
-.if-srp-grid .inv-desk-th--status { width: 21%; }
-.if-srp-grid .inv-desk-th--actions { width: 14%; }
-.if-srp-grid .inv-desk-td { padding: 8px 12px; vertical-align: top; border-bottom: 1px solid var(--border); border-left:1px solid var(--border-strong); background: var(--surface); }
-.if-srp-grid .inv-desk-td:first-child { border-left:0; }
-.if-srp-grid .inv-desk-row:last-child .inv-desk-td { border-bottom: 0; }
-.if-srp-grid .inv-desk-row[data-has-resources="true"] .inv-desk-td { border-bottom: 0; padding-top: 8px; padding-bottom: 2px; }
-.if-srp-grid .inv-desk-row[data-has-resources="true"] .inv-desk-td--actions { border-bottom: 0; vertical-align: top; padding-bottom: 2px; }
-/* Each vehicle owns one tbody (main row + optional source-signal row), so the
-   stripe, hover and selection treatments are one rule per vehicle. */
-.if-srp-grid .inv-desk-vehicle-rows:nth-of-type(even) > tr > td { background:var(--surface-soft); }
-.if-srp-grid .inv-desk-vehicle-rows + .inv-desk-vehicle-rows > .inv-desk-row > .inv-desk-td { border-top:1px solid var(--border-strong); }
-.if-srp-grid .inv-desk-vehicle-rows:last-of-type > tr:last-child > td { border-bottom: 0; }
+.if-srp-grid .inv-desk-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font: var(--ifx-weight-regular) var(--ifx-text-md)/1.35 var(--font-app); }
+.if-srp-grid .inv-desk-th { position: relative; padding: var(--ifx-space-1) var(--inv-pad-inline); color: var(--ink-700); background: var(--surface-muted); border-bottom: 1px solid var(--inv-unit-line); border-left: 1px solid var(--inv-line); text-align: left; vertical-align: middle; font: var(--ifx-weight-semibold) var(--ifx-text-md)/1.25 var(--font-app); }
+.if-srp-grid .inv-desk-th:first-child { border-left: 0; border-top-left-radius: var(--ifx-radius-xs); }
+.if-srp-grid .inv-desk-th:last-child { border-top-right-radius: var(--ifx-radius-xs); }
+.if-srp-grid .inv-desk-th--vehicle { width: var(--inv-col-vehicle); }
+.if-srp-grid .inv-desk-th--price { width: var(--inv-col-price); }
+.if-srp-grid .inv-desk-th--configuration { width: var(--inv-col-configuration); }
+.if-srp-grid .inv-desk-th--status { width: var(--inv-col-status); }
+.if-srp-grid .inv-desk-th--actions { width: var(--inv-col-actions); }
+.if-srp-grid .inv-desk-td { padding: var(--inv-pad-block) var(--inv-pad-inline); vertical-align: top; border-left: 1px solid var(--inv-line); background: var(--surface); }
+.if-srp-grid .inv-desk-td:first-child { border-left: 0; }
+/* One vehicle = one bordered unit: a hairline between its main row and its
+   records strip, a stronger hairline between vehicles. */
+.if-srp-grid .inv-desk-row[data-has-resources="true"] > .inv-desk-td { border-bottom: 1px solid var(--inv-line); }
+.if-srp-grid .inv-desk-vehicle-rows + .inv-desk-vehicle-rows > tr:first-child > td { border-top: 1px solid var(--inv-unit-line); }
+.if-srp-grid .inv-desk-vehicle-rows:nth-of-type(even) > tr > td { background: var(--surface-soft); }
 .if-srp-grid .inv-desk-vehicle-rows:is(:hover,.is-selected) > tr > td { background: var(--blue-050); }
-/* The component owns provider typography and field alignment. The table only
-   places the shared ledger across the width beneath the comparison row. */
-.if-srp-grid .inv-desk-scan-row > td { padding:var(--ifx-space-0-5) var(--ifx-space-3) var(--ifx-space-1); border-bottom:2px solid var(--border-strong); background:var(--surface); }
-.if-srp-grid .inventory-desktop-records { --records-toolbar-top:calc(var(--top-height, 64px) + var(--safe-top, 0px)); }
-.if-srp-grid .inventory-desktop-records > header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
-.if-srp-grid .inventory-desktop-records > header > strong { font-size:14px; color:var(--ink-900); }
-.if-srp-grid .inventory-desktop-records > header > strong > span { font-weight:500; color:var(--ink-600); }
-.if-srp-grid .inventory-desktop-records > header > div { display:flex; align-items:center; gap:8px; }
-.if-srp-grid .inventory-desktop-records > header .inv-desk-action { width:auto; padding-inline:10px; }
+/* The records strip spans the table; its three source cells sit on the
+   column lines: AutoCheck under Vehicle, the equipment source under Price and
+   Configuration, OASIS under Operations and Actions. */
+.if-srp-grid .inv-desk-scan-row > td { padding: 0; }
+.if-srp-grid .inv-desk-scan-row .vehicle-resources--scan { grid-template-columns: var(--inv-col-vehicle) calc(var(--inv-col-price) + var(--inv-col-configuration)) calc(var(--inv-col-status) + var(--inv-col-actions)); }
+.if-srp-grid .inv-desk-scan-row .vehicle-resource-scan { padding-inline: var(--inv-pad-inline); }
 .if-srp-grid .inv-desk-action .is-expanded { transform:rotate(180deg); }
 .if-srp-grid .inv-desk-action--records[aria-expanded="true"] { background:var(--blue-050); border-color:var(--blue-600); color:var(--blue-700); }
 .if-srp-grid .inv-desk-row { cursor: pointer; }
-.if-srp-grid .inv-desk-vehicle { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 2px 10px; align-items: start; }
+/* Vehicle: photo, then name, certification, Stock and VIN packed beneath. */
+.if-srp-grid .inv-desk-vehicle { display: grid; grid-template-columns: var(--inv-photo-width) minmax(0, 1fr); gap: 0 var(--ifx-space-2); align-items: start; }
 .if-srp-grid .inv-desk-vehicle__photo, .if-srp-mobile-list .inventory-vehicle-visual { display: block; position: relative; flex-shrink: 0; overflow: hidden; width: 96px; height: 64px; background: var(--surface-muted); border: 1px solid var(--border); border-radius: 5px; }
+.if-srp-grid .inv-desk-vehicle__photo { width: var(--inv-photo-width); height: var(--inv-photo-height); }
 .if-srp-grid .inv-desk-vehicle__img, .if-srp-mobile-list .inventory-vehicle-visual img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .if-srp-grid .inventory-vehicle-visual__placeholder, .if-srp-mobile-list .inventory-vehicle-visual__placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-500); background: var(--surface-muted); }
 .if-srp-grid .inventory-vehicle-visual__placeholder--loading, .if-srp-mobile-list .inventory-vehicle-visual__placeholder--loading { z-index: 1; }
 .if-srp-grid .inventory-photo-count, .if-srp-mobile-list .inventory-photo-count { position: absolute; right: 4px; bottom: 4px; padding: 2px 5px; color: var(--surface); background: var(--navy-900); border-radius: 3px; font-size: 12px; line-height: 16px; }
-.if-srp-grid .inv-desk-vehicle__body { display: grid; gap: 3px; min-width: 0; }
-.if-srp-grid .inv-desk-vehicle__links { display:flex; align-items:center; gap:0 var(--ifx-space-1); }
-.if-srp-grid .inv-desk-vehicle__title strong { display: block; white-space: normal; overflow: visible; color: var(--ink-900); font: var(--ifx-weight-semibold) var(--ifx-text-body)/1.35 var(--font-app); }
-/* Labels and values align vertically; copy targets occupy both text rows. */
-.if-srp-grid .inv-desk-vehicle__facts { grid-column:1 / -1; display:grid; grid-template-columns:minmax(0,.7fr) minmax(0,1.3fr); gap:0 var(--ifx-space-1); margin:var(--ifx-space-1) 0 0; }
-.if-srp-grid .inv-desk-vehicle__facts > div { display:grid; grid-template-columns:minmax(0,1fr) var(--ifx-control-height-md); grid-template-rows:1fr 1fr; gap:0 var(--ifx-space-1); min-height:var(--ifx-control-height-md); min-width:0; }
-.if-srp-grid .inv-desk-vehicle__facts dt { grid-column:1; grid-row:1; align-self:end; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.4 var(--font-app); }
-.if-srp-grid .inv-desk-vehicle__facts dd, .if-srp-grid .inv-desk-copy { display:contents; }
-.if-srp-grid .inv-desk-copy .copyable-value__content { grid-column:1; grid-row:2; align-self:start; min-width:0; white-space:nowrap; color:var(--ink-900); font:var(--ifx-weight-medium) var(--ifx-text-sm)/1.4 var(--font-app); font-variant-numeric:tabular-nums; }
-.if-srp-grid .inv-desk-copy .copyable-value__button { grid-column:2; grid-row:1 / span 2; align-self:center; }
-.if-srp-grid .inv-desk-vehicle__facts > .inv-desk-vehicle__vin { grid-column:2; }
-.if-srp-grid .copyable-value__button { display: inline-flex; justify-content: center; align-items: center; width: var(--ifx-control-height-md); height: var(--ifx-control-height-md); min-width: var(--ifx-control-height-md); min-height: var(--ifx-control-height-md); padding: 0; border: 0; color: var(--ink-500); background: transparent; }
+.if-srp-grid .inv-desk-vehicle__body { display: flex; flex-direction: column; align-items: flex-start; gap: var(--inv-rhythm); min-width: 0; }
+.if-srp-grid .inv-desk-vehicle__title strong { display: block; color: var(--ink-900); font: var(--ifx-weight-semibold) var(--ifx-text-body)/1.3 var(--font-app); }
+.if-srp-grid .inv-desk-vehicle__links { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--ifx-space-2); min-width: 0; }
+.if-srp-grid .inv-desk-vehicle__links:empty { display: none; }
+.if-srp-grid .inv-desk-vehicle__links .vehicle-certified-badge > img { height: var(--ifx-space-5); }
+.if-srp-grid .inv-desk-vehicle__links .vehicle-certified-badge--lincoln > img { height: var(--ifx-space-4); }
+/* Stock and VIN: one aligned label column, each value with its copy control. */
+.if-srp-grid .inv-desk-vehicle__facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 0 var(--ifx-space-1-5); margin: 0; }
+.if-srp-grid .inv-desk-vehicle__facts > div { display: contents; }
+.if-srp-grid .inv-desk-vehicle__facts dt { color: var(--ink-600); font: var(--ifx-weight-regular) var(--ifx-text-xs)/1.3 var(--font-app); }
+.if-srp-grid .inv-desk-vehicle__facts dd { display: flex; min-width: 0; margin: 0; }
+.if-srp-grid .inv-desk-copy { display: inline-flex; align-items: center; gap: var(--ifx-space-0-5); min-width: 0; }
+.if-srp-grid .inv-desk-copy .copyable-value__content { min-width: 0; white-space: nowrap; color: var(--ink-900); font: var(--ifx-weight-medium) var(--ifx-text-sm)/1.3 var(--font-app); font-variant-numeric: tabular-nums; }
+.if-srp-grid .copyable-value__button { display: inline-flex; justify-content: center; align-items: center; width: var(--inv-hit); height: var(--inv-hit); min-width: var(--inv-hit); min-height: var(--inv-hit); padding: 0; border: 0; border-radius: var(--ifx-radius-xs); color: var(--ink-500); background: transparent; }
 .if-srp-grid .copyable-value__button:hover { color: var(--blue-700); background: var(--blue-100); }
-.if-srp-grid .inv-desk-change { flex:1 1 0; min-width:0; min-height: var(--ifx-control-height-md); justify-self: start; border: 0; padding: 0; background: transparent; color: var(--blue-700); font: 500 14px/20px var(--font-app); text-align: left; cursor: pointer; }
+.if-srp-grid .inv-desk-change { min-width: 0; min-height: var(--inv-hit); border: 0; padding: 0; background: transparent; color: var(--blue-700); font: var(--ifx-weight-medium) var(--ifx-text-sm)/1.3 var(--font-app); text-align: left; cursor: pointer; }
 .if-srp-grid .inv-desk-change:hover { text-decoration: underline; }
-.if-srp-grid :is(.inv-desk-price, .inv-desk-location, .inv-desk-configuration, .inv-desk-status) { display: grid; align-content: start; gap: var(--ifx-space-1); min-width: 0; text-align: left; }
-.if-srp-grid :is(.inv-desk-price, .inv-desk-location, .inv-desk-configuration, .inv-desk-status) :is(span,small) { font-size: var(--ifx-text-sm); line-height: 1.4; }
-.if-srp-grid .inv-desk-price > strong { color: var(--ink-900); font-size: 20px; line-height: 1.3; font-weight: 700; font-variant-numeric: tabular-nums; }
-.if-srp-grid .inv-desk-price > span { font-variant-numeric: tabular-nums; }
-.if-srp-grid .inv-desk-price > small, .if-srp-grid .inv-desk-location > small { color: var(--ink-600); }
-.if-srp-grid .inv-desk-location > strong { color: var(--ink-900); font-size: 14px; line-height: 1.4; }
+/* Price & age: price first, mileage and days listed tightly beneath. */
+.if-srp-grid :is(.inv-desk-price, .inv-desk-configuration) { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ifx-space-0-5); min-width: 0; text-align: left; }
+.if-srp-grid .inv-desk-price > strong { color: var(--ink-900); font: var(--ifx-weight-bold) var(--ifx-text-xl)/1.25 var(--font-app); font-variant-numeric: tabular-nums; }
+.if-srp-grid .inv-desk-price__facts { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--ifx-space-2); min-width: 0; color: var(--ink-700); font: var(--ifx-weight-regular) var(--ifx-text-sm)/1.3 var(--font-app); font-variant-numeric: tabular-nums; }
+.if-srp-grid .inv-desk-price__mileage { display: inline-flex; align-items: center; gap: 0; min-width: 0; }
+.if-srp-grid .inv-desk-price__age { white-space: nowrap; }
+/* Configuration: powertrain, colors, transmission, then the equipment cue. */
+.if-srp-grid .inv-desk-configuration { color: var(--ink-700); }
+.if-srp-grid .inv-desk-configuration > :is(span,small) { font: var(--ifx-weight-regular) var(--ifx-text-sm)/1.35 var(--font-app); }
+.if-srp-grid .inv-desk-configuration > span:first-child { color: var(--ink-900); }
+.if-srp-grid .inv-desk-equipment { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--ifx-space-2); min-height: var(--inv-hit); padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ink-700); text-align: left; font: var(--ifx-weight-regular) var(--ifx-text-sm)/1.35 var(--font-app); cursor: pointer; }
+.if-srp-grid .inv-desk-equipment__item { color: var(--ink-900); }
+.if-srp-grid .inv-desk-equipment__more { color: var(--blue-700); white-space: nowrap; }
+.if-srp-grid .inv-desk-equipment:hover { color: var(--blue-700); text-decoration: underline; text-underline-offset: 3px; }
+.if-srp-grid .inv-desk-quiet { color: var(--ink-500); font-size: var(--ifx-text-sm); }
+/* Operations: a labelled list in the fixed order Location, Hold, Move, Service. */
+.if-srp-grid .inv-desk-status { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-content: start; align-items: baseline; gap: var(--ifx-space-0-5) var(--ifx-space-2); min-width: 0; margin: 0; }
+.if-srp-grid .inv-desk-status__row { display: contents; }
+.if-srp-grid .inv-desk-status > .inv-desk-status__row > dt { color: var(--ink-600); font: var(--ifx-weight-regular) var(--ifx-text-xs)/1.3 var(--font-app); }
+.if-srp-grid .inv-desk-status > .inv-desk-status__row > dd { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; margin: 0; font: var(--ifx-weight-regular) var(--ifx-text-md)/1.3 var(--font-app); }
+.if-srp-grid .inv-desk-location { display: flex; flex-direction: column; min-width: 0; }
+.if-srp-grid .inv-desk-location > strong { color: var(--ink-900); font: var(--ifx-weight-semibold) var(--ifx-text-md)/1.3 var(--font-app); }
+.if-srp-grid :is(.inv-desk-location > small, .inv-desk-status__detail, .inv-desk-disposition) { color: var(--ink-600); font: var(--ifx-weight-regular) var(--ifx-text-xs)/1.3 var(--font-app); }
 .if-srp-grid .inv-desk-location .is-warning { color: var(--red); }
 .if-srp-grid .inv-desk-move { color: var(--blue-700); }
 .if-srp-grid .inv-desk-move.is-warning { color: var(--red); }
-.if-srp-grid .inv-desk-configuration { color: var(--ink-700); gap: 2px; }
-.if-srp-grid .inv-desk-configuration > small { font-size:var(--ifx-text-sm); }
-.if-srp-grid .inv-desk-equipment { min-height: var(--ifx-control-height-md); display: block; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ink-700); text-align: left; font: var(--ifx-weight-regular) var(--ifx-text-sm)/1.4 var(--font-app); cursor: pointer; }
-.if-srp-grid .inv-desk-equipment__item { display:block; margin-top:3px; }
-.if-srp-grid .inv-desk-equipment__more { display:block; margin-top:3px; color:var(--blue-700); white-space:nowrap; }
-.if-srp-grid .inv-desk-equipment:hover { color: var(--blue-700); text-decoration: underline; text-underline-offset: 3px; }
-.if-srp-grid .inv-desk-quiet { color: var(--ink-500); font-size: 14px; }
-.if-srp-grid .inv-desk-hold { display: flex; align-items: baseline; gap: 6px; width: 100%; padding: 0; min-height: var(--ifx-control-height-md); border: 0; border-radius: 0; background: transparent; color: var(--ink-900); font: 600 14px/1.4 var(--font-app); text-align: left; cursor: pointer; }
+.if-srp-grid .inv-desk-hold { display: inline-flex; align-items: center; gap: var(--ifx-space-1-5); max-width: 100%; min-height: var(--inv-hit); padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ink-900); font: var(--ifx-weight-semibold) var(--ifx-text-md)/1.3 var(--font-app); text-align: left; cursor: pointer; }
 .if-srp-grid .inv-desk-hold:hover { text-decoration: underline; text-underline-offset: 3px; }
-.if-srp-grid .inv-desk-hold__dot { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-500); }
+.if-srp-grid .inv-desk-hold__dot { flex: 0 0 auto; width: var(--ifx-space-1-5); height: var(--ifx-space-1-5); border-radius: var(--ifx-radius-full); background: var(--ink-500); }
 .if-srp-grid .inv-desk-hold--hold .inv-desk-hold__dot { background: var(--amber); }
 .if-srp-grid .inv-desk-hold--unknown .inv-desk-hold__dot { background: var(--red); }
-.if-srp-grid .inv-desk-status__detail, .if-srp-grid .inv-desk-disposition { color: var(--ink-600); }
-.if-srp-grid .inventory-service-link { justify-self: start; min-height: var(--ifx-control-height-md); }
-.if-srp-grid .inv-desk-status { gap: 2px; }
-.if-srp-grid .inv-desk-location { gap: 0; }
-/* Operations are decisions, not secondary metadata: at a full comparison
-   width they take the space configuration can spare. */
-@container inventory-table (min-width: 980px) {
-  .if-srp-grid .inv-desk-th--vehicle { width: 33%; }
-  .if-srp-grid .inv-desk-th--configuration { width: 19%; }
-  .if-srp-grid .inv-desk-th--status { width: 21%; }
+.if-srp-grid .inv-desk-status .inventory-service-link { min-height: var(--inv-hit); font-size: var(--ifx-text-md); line-height: 1.3; }
+.if-srp-grid .inventory-recall-chip { display: inline-flex; align-items: center; gap: var(--ifx-space-1); min-height: var(--inv-hit); padding: 0; border: 0; background: transparent; color: var(--red); font: var(--ifx-weight-medium) var(--ifx-text-sm)/1.3 var(--font-app); cursor: pointer; }
+/* Narrower comparison widths (1280-1320px screens): tighter gutters, and
+   Vehicle takes width from Configuration and Actions so the 96x64 photo and
+   the full VIN beside its copy control both fit, while a service status such
+   as Waiting for service stays one line in Operations. */
+@container inventory-table (max-width: 1100px) {
+  .if-srp-grid .if-srp-table-wrap { --inv-col-vehicle: 33%; --inv-col-price: 12%; --inv-col-configuration: 18%; --inv-col-status: 22%; --inv-col-actions: 15%; --inv-pad-inline: var(--ifx-space-2); }
 }
-/* Tablet landscape (a 1024px screen): four priority columns. Configuration
-   and equipment stay one tap away in the vehicle workspace. */
+/* Tablet landscape (a 1024px screen): four priority columns and a smaller
+   photo. Configuration and equipment stay one tap away in the vehicle
+   workspace. The records strip
+   follows: AutoCheck under Vehicle, the equipment source under Price and
+   Operations, OASIS under Actions. */
 @container inventory-table (max-width: 960px) {
+  .if-srp-grid .if-srp-table-wrap { --inv-col-vehicle: 37%; --inv-col-price: 15%; --inv-col-status: 26%; --inv-col-actions: 22%; --inv-photo-width: calc(var(--ifx-space-16) + var(--ifx-space-4)); --inv-photo-height: calc(var(--ifx-space-12) + var(--ifx-space-1-5)); }
   .if-srp-grid :is(.inv-desk-th--configuration, .inv-desk-td[data-column="configuration"]) { display: none; }
-  .if-srp-grid .inv-desk-th--vehicle { width: 38%; }
-  .if-srp-grid .inv-desk-th--price { width: 15%; }
-  .if-srp-grid .inv-desk-th--status { width: 29%; }
-  .if-srp-grid .inv-desk-th--actions { width: 18%; }
+  .if-srp-grid .inv-desk-scan-row .vehicle-resources--scan { grid-template-columns: var(--inv-col-vehicle) calc(var(--inv-col-price) + var(--inv-col-status)) var(--inv-col-actions); }
 }
-.if-srp-grid .inventory-recall-chip { min-height: var(--ifx-control-height-md); display: inline-flex; align-items: center; justify-self: start; gap: 4px; border: 0; padding: 2px 0; background: transparent; color: var(--red); font: 500 14px/1.4 var(--font-app); cursor: pointer; }
-/* Direct details, records, movement, save, and listing actions retain 44px
-   targets. Hold and service open from their Operations signals. */
-.if-srp-grid .inv-desk-actions { display: grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap: var(--ifx-space-1); width: 100%; }
-.if-srp-grid .inv-desk-action { display:inline-flex; justify-content:center; align-items:center; gap:var(--ifx-space-1); width:100%; min-height:var(--ifx-control-height-md); height:var(--ifx-control-height-md); padding:var(--ifx-space-1) var(--ifx-space-2); color:var(--ink-900); border:1px solid var(--border-strong); border-radius:var(--ifx-radius-xs); background:var(--surface); box-shadow:none; font:var(--ifx-weight-semibold) var(--ifx-text-md)/1.3 var(--font-app); text-decoration:none; white-space:nowrap; cursor:pointer; }
-.if-srp-grid .inv-desk-action--primary { grid-column:1 / -1; border-color:var(--blue-600); background:var(--blue-600); color:var(--surface); }
-.if-srp-grid .inv-desk-action--quiet { border-color: transparent; min-height: 44px; padding-block: 5px; color: var(--ink-600); background: transparent; box-shadow: none; }
-.if-srp-grid .inv-desk-action--quiet:nth-child(3):last-child { grid-column: 1 / -1; }
-.if-srp-grid .inv-desk-action:hover { border-color:var(--blue-600); background:var(--blue-050); color:var(--blue-700); }
+/* Actions: the primary View vehicle, then the secondary actions as one set of
+   consistent compact buttons, two per line. */
+.if-srp-grid .inv-desk-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ifx-space-1); width: 100%; }
+.if-srp-grid .inv-desk-action { display: inline-flex; justify-content: center; align-items: center; gap: var(--ifx-space-1); width: 100%; min-width: 0; height: var(--inv-action-height); min-height: var(--inv-action-height); padding: 0 var(--ifx-space-1); color: var(--ink-900); border: 1px solid var(--border-strong); border-radius: var(--ifx-radius-xs); background: var(--surface); box-shadow: none; font: var(--ifx-weight-semibold) var(--ifx-text-sm)/1.2 var(--font-app); text-decoration: none; white-space: nowrap; cursor: pointer; }
+.if-srp-grid .inv-desk-action--primary { grid-column: 1 / -1; border-color: var(--blue-600); background: var(--blue-600); color: var(--surface); }
+.if-srp-grid .inv-desk-action:last-child:nth-child(even) { grid-column: 1 / -1; }
+.if-srp-grid .inv-desk-action:hover { border-color: var(--blue-600); background: var(--blue-050); color: var(--blue-700); }
 .if-srp-grid .inv-desk-action--primary:hover { background: var(--blue-700); color: var(--surface); }
-.if-srp-grid .inventory-sort-header-group__controls { display: flex; align-items: center; gap: 2px; min-width: 0; }
-.if-srp-grid .inventory-sort-header { display: inline-flex; align-items: center; gap: 4px; padding: 0; min-width: var(--ifx-control-height-md); min-height: var(--ifx-control-height-md); border: 0; border-radius: 3px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.if-srp-grid .inventory-sort-header-group__controls { display: flex; align-items: center; gap: var(--ifx-space-0-5); min-width: 0; }
+.if-srp-grid .inventory-sort-header { display: inline-flex; align-items: center; gap: var(--ifx-space-1); padding: 0; min-width: var(--inv-action-height); min-height: var(--inv-action-height); border: 0; border-radius: 3px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .if-srp-grid .inventory-sort-header.is-active { color: var(--blue-700); border-color: var(--border-strong); background: var(--blue-050); }
 .if-srp-grid .inventory-sort-header__state { display: inline-flex; align-items: center; gap: 2px; color: var(--blue-700); }
 .if-srp-grid .inventory-sort-header__direction { display: none; }
 .if-srp-grid .inventory-sort-header__priority { width: auto; height: auto; min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--blue-700); font: 500 14px/1 var(--font-app); }
 .if-srp-grid .inventory-sort-header-group__more { position: relative; display: flex; }
-.if-srp-grid .inventory-sort-header-group__more-trigger { display: inline-flex; align-items: center; justify-content: center; padding: 0; width: var(--ifx-control-height-md); height: var(--ifx-control-height-md); border: 0; border-radius: 3px; background: transparent; color: var(--ink-500); opacity: 1; cursor: pointer; }
+.if-srp-grid .inventory-sort-header-group__more-trigger { display: inline-flex; align-items: center; justify-content: center; padding: 0; width: var(--inv-action-height); height: var(--inv-action-height); border: 0; border-radius: 3px; background: transparent; color: var(--ink-500); opacity: 1; cursor: pointer; }
 .if-srp-grid .inv-desk-th:hover .inventory-sort-header-group__more-trigger, .if-srp-grid .inv-desk-th:focus-within .inventory-sort-header-group__more-trigger { opacity: 1; }
 .if-srp-grid .inventory-sort-header-group__menu { position: absolute; z-index: 30; left: 0; top: 100%; display: grid; width: 220px; max-height: min(440px, 65vh); overflow-y: auto; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow-drawer); }
 .if-srp-grid .inventory-sort-header-group__menu[hidden] { display: none; }
@@ -130,10 +155,6 @@
 .if-srp-grid :is(button,a):focus-visible, .if-srp-mobile-list :is(button,a):focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
 .if-srp-mobile-list { display: none; }
-@container inventory-table (max-width: 1100px) {
-  .if-srp-grid .inv-desk-th, .if-srp-grid .inv-desk-td { padding-inline: 8px; }
-  .if-srp-grid .inv-desk-vehicle { grid-template-columns: 96px minmax(0,1fr); gap: 2px 8px; }
-}
 /* Same width as CARD_SURFACE_MAX_WIDTH in InventoryExperience.tsx. */
 @container inventory-surface (max-width: 820px) {
   .if-srp-grid { display: none; }
@@ -177,7 +198,6 @@
 .if-srp-mobile-list .inv-desk-actions { display: grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items: center; gap: 6px; margin-top: 5px; }
 .if-srp-mobile-list .inv-desk-action { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; padding: 6px 14px; border: 1px solid var(--blue-600); border-radius: 5px; background: var(--surface); color: var(--blue-700); font: 600 14px/1.25 var(--font-app); text-decoration: none; }
 .if-srp-mobile-list .inv-desk-action--primary { background: var(--blue-600); color: var(--surface); }
-.if-srp-mobile-list .inv-desk-action--quiet { margin-left: auto; border-color: transparent; padding-inline: 2px; }
 @media (min-width: 761px) {
   .if-srp-mobile-row { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); align-items: start; gap: 4px 18px; }
   .if-srp-mobile-list .inventory-mobile-row__open { grid-column: 1; grid-template-columns: 96px minmax(0,1fr); gap: 4px 10px; }
@@ -203,7 +223,6 @@
 .inventory-records-launch { display:inline-flex; align-items:center; justify-content:center; gap:var(--ifx-space-1); min-height:var(--ifx-control-height-md); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--border-strong); border-radius:var(--ifx-radius-xs); color:var(--ink-900); background:var(--surface); box-shadow:none; font:var(--ifx-weight-semibold) var(--ifx-text-md)/1.3 var(--font-app); white-space:nowrap; cursor:pointer; }
 .inventory-records-launch:is(:hover,[aria-expanded="true"]) { border-color:var(--blue-700); background:var(--blue-050); }
 .inventory-records-launch:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
-.inv-desk-vehicle__links { display:flex; align-items:center; flex-wrap:wrap; gap:4px 10px; }
 @media (pointer:coarse) { .inventory-records-launch { min-height:44px; } }
 @media (prefers-reduced-motion:reduce) {
   .if-srp-grid .inv-desk-action,.inventory-records-launch { transition:none; }
@@ -212,8 +231,5 @@
 .inv-desk-action--save[aria-pressed="true"] { color:var(--blue-700); background:var(--blue-050); border-color:var(--blue-600); }
 
 .inv-desk-action > svg, .inventory-records-launch > svg { width:var(--ifx-space-4); height:var(--ifx-space-4); flex-shrink:0; }
-.if-srp-grid .inv-desk-action { padding-inline:var(--ifx-space-1); }
 .if-srp-grid .inv-desk-action > svg { display:none; }
 .inv-desk-action:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
-
-.if-srp-grid .inv-desk-price__mileage { display:flex; align-items:center; gap:0; min-width:0; font-size:var(--ifx-text-sm); }

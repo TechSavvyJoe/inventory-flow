@@ -489,19 +489,21 @@ test('five-column comparison uses each row for a clear photo and high-value scan
       expect(element.scrollHeight, `${width}px ${element.selector} not vertically clipped`).toBeLessThanOrEqual(element.clientHeight + 1)
     }
     expect(dimensions.rowHeight, `${width}px row keeps scroll density`).toBeGreaterThanOrEqual(84)
-    // A held/moving vehicle needs up to 180px for real evidence and 44px actions.
+    // A held/moving vehicle needs up to 180px for real evidence and its actions.
     // Budget the full group too, so a short primary row cannot hide a tall report strip.
     expect(dimensions.rowHeight, `${width}px comparison row stays compact`).toBeLessThanOrEqual(180)
     expect(dimensions.vehicleGroupHeight, `${width}px complete vehicle including providers`).toBeLessThanOrEqual(width <1320 ?300 :280)
     for (const name of ['Copy stock number: DEMO-H01', 'Copy mileage: 12450', 'Copy VIN: TESTDATAHWELL0001']) {
       await expect(main.getByRole('button', { name, exact: true })).toBeVisible()
     }
+    // This project is a mouse (fine pointer): row actions are compact but stay
+    // above the 24px WCAG 2.5.8 floor. Touch keeps 44px; see the touch test below.
     const actionTargets = main.locator('td[data-column="actions"] .inv-desk-actions').locator('button, a')
     expect(await actionTargets.count()).toBeGreaterThan(0)
     for (const target of await actionTargets.all()) {
       await expect(target).toBeVisible()
       const box = await target.boundingBox()
-      expect(box!.height, `${width}px action target height`).toBeGreaterThanOrEqual(44)
+      expect(box!.height, `${width}px action target height`).toBeGreaterThanOrEqual(24)
       expect(box!.width, `${width}px action target width`).toBeGreaterThanOrEqual(44)
     }
     expect(dimensions.photo.width, `${width}px photo is no longer a tiny thumbnail`).toBeGreaterThanOrEqual(84)
@@ -535,6 +537,27 @@ test('five-column comparison uses each row for a clear photo and high-value scan
   await expect(page.getByRole('tab', { name: 'Holds & moves', exact: true })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: 'Close vehicle details' }).click()
   await expect(holdTrigger).toBeFocused()
+})
+
+test.describe('touch-capable desktop', () => {
+  test.use({ hasTouch: true })
+
+  test('a touchscreen keeps 44px row actions in the desktop table', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'The phone uses its dedicated vehicle list; this covers a touch laptop or landscape tablet.')
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await page.goto('/inventory')
+    await page.getByRole('button', { name: /^All:/ }).click()
+    expect(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches)).toBe(true)
+    const main = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-H01"]')
+    const actionTargets = main.locator('td[data-column="actions"] .inv-desk-actions').locator('button, a')
+    expect(await actionTargets.count()).toBeGreaterThan(0)
+    for (const target of await actionTargets.all()) {
+      const box = await target.boundingBox()
+      expect(box!.height, 'touch action target height').toBeGreaterThanOrEqual(44)
+      expect(box!.width, 'touch action target width').toBeGreaterThanOrEqual(44)
+    }
+    await expectNoOverflow(page)
+  })
 })
 
 test('phone cards show exact equipment and document facts with direct detail actions', async ({ page, isMobile }, testInfo) => {
