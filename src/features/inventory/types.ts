@@ -1,7 +1,8 @@
 import type { RefObject } from "react";
 import type { VehicleIssueContext } from '../issues/issue-model';
+import type { DispositionContext } from '../overview/disposition-model';
 import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus';
-import type { DealerMailEvidenceMessage, DealerMailHistoryRecord, OverviewVehicleFacts, ServiceReadiness, ServiceReadinessStatus, StoreName } from "../../types";
+import type { AppDisposition, DealerMailEvidenceMessage, DealerMailHistoryRecord, OverviewVehicleFacts, ServiceReadiness, ServiceReadinessStatus, StoreName } from "../../types";
 import type { OverviewInventoryView } from "../overview/overview-links";
 
 export type InventoryScope = "home" | "group";
@@ -484,6 +485,8 @@ export interface InventoryVehicle {
   publicListing: PublicListingSignal;
   dealerOn: DealerOnSignal;
   managerDisposition?: ManagerDispositionSignal | null;
+  /** The disposition recorded in Inventory Flow, beside (never replacing) the imported manager log. */
+  appDisposition?: AppDisposition | null;
   dealerMail: DealerMailHoldSignal;
   location: VehicleLocationSignal;
   movement?: VehicleMovementSignal | null;
@@ -599,6 +602,7 @@ export interface InventoryVehicleActionProps {
  */
 export interface InventoryExperienceProps extends InventoryVehicleActionProps {
   issueContext?: VehicleIssueContext;
+  dispositionContext?: DispositionContext;
   homeStore: InventoryStore;
   vehicles: InventoryVehicle[];
   groupStores?: InventoryGroupStore[];
@@ -638,6 +642,8 @@ export interface VehicleWorkspaceProps extends Pick<
   "onRequestVehicle" | "onMoveVehicle" | "onTrackMovement" | "onOpenListing"
 > {
   issueContext?: VehicleIssueContext;
+  /** Who is viewing, for the Operations block's Disposition control. */
+  dispositionContext?: DispositionContext;
   returnLabel?: string;
   detailState?: VehicleDetailLoadState;
   onRetryDetail?: () => void;

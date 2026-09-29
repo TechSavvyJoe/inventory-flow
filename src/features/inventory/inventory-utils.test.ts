@@ -230,4 +230,19 @@ describe("Overview views in Inventory (OVERVIEW_SPEC §8.1)", () => {
     expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, vins: ["TESTDATAHWELL0009"] })).toBe(false);
     expect(activeFilterCount({ ...DEFAULT_INVENTORY_FILTERS, vins: [base.vin], overviewView: { view: "away", store: "Howell" } })).toBe(2);
   });
+
+  it("matches disposition views by the recorded code and the server's owner store, never the manager log", () => {
+    const disposition = { vin: "TESTDATAHWELL0001", code: "sold_pending" as const, version: 1, effectiveDate: "2026-08-29", destinationStore: null, updatedAt: "2026-08-30T12:00:00Z", updatedByRole: "manager" as const, store: "Howell" as const, ownerStore: "Lincoln" as const, canManage: false };
+    const recorded = vehicle({ overview: facts(), appDisposition: disposition });
+    expect(matches(recorded, "disposition-sold-pending", "Lincoln")).toBe(true);
+    // Owner store, not the view's home store, decides.
+    expect(matches(recorded, "disposition-sold-pending", "Howell")).toBe(false);
+    expect(matches(recorded, "disposition-none", "Lincoln")).toBe(false);
+    const none = vehicle({ overview: facts(), appDisposition: { ...disposition, code: null, version: 0, ownerStore: "Howell" } });
+    expect(matches(none, "disposition-none")).toBe(true);
+    // A manager-log sale alone is not a recorded disposition.
+    const logOnly = vehicle({ overview: facts(), managerDisposition: { dataState: "current", sold: true, delivered: true, sourceStore: { id: "howell", name: "Howell" }, sourcePeriod: "2026-08", confidence: "high", soldLabel: "Sold — manager log", deliveryLabel: "Delivered — manager log" } });
+    expect(matches(logOnly, "disposition-delivered")).toBe(false);
+    expect(matches(logOnly, "disposition-none")).toBe(true);
+  });
 });

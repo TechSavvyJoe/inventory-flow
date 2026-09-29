@@ -30,6 +30,7 @@ import type { SelectOption, TransferActionKind, TransferDetail, TransferRequestD
 import { awayFromHomeSummary } from './moveSummary'
 import { selectRequestedTransfer } from './transfer-selection'
 import { VehicleLocationOverview } from './VehicleLocationOverview'
+import { readBoardRoute, transferMatchesBoardRoute, type BoardRoute } from '../overview/overview-links'
 import { simpleTransferActions } from './SimpleTransferTracker'
 import { currentWorkspaceReturnPath, readWorkspaceReturnPath, vehicleWorkspacePath, withWorkspaceReturnPath, workspaceReturnLabel } from '../../lib/inventory-navigation'
 import { searchFieldsMatch } from '../../lib/search'
@@ -381,8 +382,24 @@ export function TransfersPage() {
   // An Overview store count narrows the queue to that home store for this
   // visit only (one-shot, not persisted).
   const [linkedHomeStore, setLinkedHomeStore] = useState<StoreName | null>(null)
+  // A store-board arrow narrows the queue to exactly that arrow's moves, once.
+  const [linkedRoute, setLinkedRoute] = useState<BoardRoute | null>(null)
   const linkView = requestMode ? null : params.get('view')
   const linkStore = requestMode ? null : params.get('store')
+  const linkRoute = requestMode ? null : [params.get('from'), params.get('to'), params.get('leg')].join('|')
+  useEffect(() => {
+    if (requestMode || (!params.has('from') && !params.has('to') && !params.has('leg'))) return
+    const route = readBoardRoute(params)
+    if (route) {
+      setQueueView('active')
+      setQueueFilter('all')
+      setStoreScope('group')
+      setLinkedRoute(route)
+    }
+    const next = new URLSearchParams(location.search)
+    for (const key of ['from', 'to', 'leg']) next.delete(key)
+    navigate({ pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : '', hash: location.hash }, { replace: true })
+  }, [linkRoute]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
   useEffect(() => {
     if (linkView === null && linkStore === null) return
     const filter = linkView ? LINK_QUEUE_FILTERS[linkView] : undefined
@@ -450,6 +467,7 @@ export function TransfersPage() {
       if (activeFilter === 'overdue-returns' && !isReturnOverdue(record, referenceNow)) return false
       if (activeFilter === 'location-exceptions' && !isLocationException(record)) return false
       if (linkedHomeStore && record.homeStore !== linkedHomeStore) return false
+      if (linkedRoute && !transferMatchesBoardRoute(record, linkedRoute)) return false
       return searchFieldsMatch(query, [
         record.stockNumber,
         record.vin,
@@ -721,6 +739,7 @@ export function TransfersPage() {
                 </select>
               </label>
                 {linkedHomeStore ? <button type="button" className="transfer-list-link-filter" aria-label={`Clear home store filter: ${linkedHomeStore}`} onClick={() => setLinkedHomeStore(null)}>Home store: {linkedHomeStore}<X aria-hidden="true" /></button> : null}
+                {linkedRoute ? <button type="button" className="transfer-list-link-filter" aria-label={`Clear route filter: ${linkedRoute.from} to ${linkedRoute.to}, ${linkedRoute.leg}`} onClick={() => setLinkedRoute(null)}>Route: {linkedRoute.from} → {linkedRoute.to} · {linkedRoute.leg}<X aria-hidden="true" /></button> : null}
                 <div className="transfer-list-count" aria-live="polite">{filteredDetails.length} {filteredDetails.length === 1 ? 'move' : 'moves'} shown</div>
               </div>
             </div>
@@ -764,7 +783,7 @@ export function TransfersPage() {
                   </button>
                 )
               })}
-              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores or reset this view.' : 'Reset the view to show active moves.'}</p>{query || queueView !== 'active' || activeFilter !== 'all' || linkedHomeStore ? <button type="button" onClick={() => { setQuery(''); setQueueView('active'); setQueueFilter('all'); setLinkedHomeStore(null) }}>Reset view</button> : null}</div> : null}
+              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores or reset this view.' : 'Reset the view to show active moves.'}</p>{query || queueView !== 'active' || activeFilter !== 'all' || linkedHomeStore || linkedRoute ? <button type="button" onClick={() => { setQuery(''); setQueueView('active'); setQueueFilter('all'); setLinkedHomeStore(null); setLinkedRoute(null) }}>Reset view</button> : null}</div> : null}
             </div>
           </aside>
           <div className="transfer-detail-surface" id="transfer-detail-workspace">

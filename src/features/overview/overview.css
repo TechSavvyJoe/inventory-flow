@@ -232,6 +232,24 @@
 .ov-tone-warning dd a,
 .ov-tone-warning { color: var(--ifx-warning); }
 
+.ov-card-dispositions {
+  border-top: 1px solid var(--ifx-border-subtle);
+  display: grid;
+  gap: var(--ifx-space-0-5);
+  padding-top: var(--ifx-space-2);
+}
+
+.ov-card-dispositions h4 {
+  font-size: var(--ifx-text-sm);
+  font-weight: var(--ifx-weight-semibold);
+}
+
+.ov-card-dispositions h4 small {
+  color: var(--ifx-neutral-600);
+  font-size: var(--ifx-text-xs);
+  font-weight: var(--ifx-weight-regular);
+}
+
 .ov-returns {
   border-top: 1px solid var(--ifx-border-subtle);
   display: grid;
@@ -270,6 +288,8 @@
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
 }
 
+.ov-grid--even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
 .ov-section {
   background: var(--ifx-neutral-0);
   border: 1px solid var(--ifx-border-subtle);
@@ -288,6 +308,17 @@
 }
 
 .ov-section-heading h2 { font-size: var(--ifx-text-xl); }
+
+.ov-section-note {
+  color: var(--ifx-neutral-600);
+  font-size: var(--ifx-text-xs);
+}
+
+.ov-status {
+  color: var(--ifx-success);
+  font-size: var(--ifx-text-sm);
+  font-weight: var(--ifx-weight-semibold);
+}
 
 .ov-subheading {
   font-size: var(--ifx-text-body);
@@ -390,6 +421,7 @@
 
 .ov-row-link {
   align-items: center;
+  background: var(--ifx-neutral-0);
   border: 1px solid var(--ifx-border-control);
   border-radius: var(--ifx-radius-sm);
   color: var(--ifx-oem-accent-strong);
@@ -405,6 +437,16 @@
 
 .ov-row-link:hover { background: var(--ifx-neutral-50); }
 .ov-row-link svg { height: 15px; width: 15px; }
+button.ov-row-link { cursor: pointer; }
+
+/* The imported manager log, beside the app's own disposition. */
+.ov-row-evidence {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--ifx-space-1);
+}
+
+.ov-row-evidence svg { flex: none; height: 14px; width: 14px; }
 
 .ov-show-all {
   align-items: center;
@@ -468,23 +510,23 @@
 
 .ov-table-wrap { min-width: 0; }
 
-.ov-service-table {
+.ov-table {
   border-collapse: collapse;
   font-size: var(--ifx-text-md);
   width: 100%;
 }
 
-.ov-service-table th,
-.ov-service-table td {
+.ov-table th,
+.ov-table td {
   border-bottom: 1px solid var(--ifx-border-subtle);
   padding: 0 var(--ifx-space-2);
   text-align: right;
   vertical-align: middle;
 }
 
-.ov-service-table th:first-child { text-align: left; }
+.ov-table th:first-child { text-align: left; }
 
-.ov-service-table thead th {
+.ov-table thead th {
   color: var(--ifx-neutral-600);
   font-size: var(--ifx-text-xs);
   font-weight: var(--ifx-weight-semibold);
@@ -492,10 +534,10 @@
   vertical-align: bottom;
 }
 
-.ov-service-table tbody th { font-weight: var(--ifx-weight-semibold); }
+.ov-table tbody th { font-weight: var(--ifx-weight-semibold); }
 
-.ov-service-table td a,
-.ov-service-table .ov-zero {
+.ov-table td a,
+.ov-table .ov-zero {
   align-items: center;
   display: inline-flex;
   font-size: var(--ifx-text-md);
@@ -505,7 +547,7 @@
   min-width: 44px;
 }
 
-.ov-service-table td a { color: var(--ifx-oem-accent-strong); }
+.ov-table td a { color: var(--ifx-oem-accent-strong); }
 
 .ov-service-group th,
 .ov-service-group td { font-weight: var(--ifx-weight-bold); }
@@ -520,7 +562,8 @@
 }
 
 @media (max-width: 1180px) {
-  .ov-grid { grid-template-columns: minmax(0, 1fr); }
+  .ov-grid,
+  .ov-grid--even { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 880px) {
@@ -555,13 +598,13 @@
   .ov-exception-list > div { grid-template-columns: minmax(0, 1fr); }
 
   /* The service table becomes one stacked card per store. */
-  .ov-service-table thead { display: none; }
-  .ov-service-table,
-  .ov-service-table tbody,
-  .ov-service-table tr,
-  .ov-service-table th,
-  .ov-service-table td { display: block; }
-  .ov-service-table tr {
+  .ov-table thead { display: none; }
+  .ov-table,
+  .ov-table tbody,
+  .ov-table tr,
+  .ov-table th,
+  .ov-table td { display: block; }
+  .ov-table tr {
     border: 1px solid var(--ifx-border-subtle);
     border-radius: var(--ifx-radius-sm);
     display: grid;
@@ -569,10 +612,10 @@
     margin-bottom: var(--ifx-space-2);
     padding: var(--ifx-space-2) var(--ifx-space-3);
   }
-  .ov-service-table th,
-  .ov-service-table td { border: 0; padding: 0; text-align: left; }
-  .ov-service-table tbody th { font-size: var(--ifx-text-body); grid-column: 1 / -1; padding-bottom: var(--ifx-space-1); }
-  .ov-service-table td {
+  .ov-table th,
+  .ov-table td { border: 0; padding: 0; text-align: left; }
+  .ov-table tbody th { font-size: var(--ifx-text-body); grid-column: 1 / -1; padding-bottom: var(--ifx-space-1); }
+  .ov-table td {
     align-items: center;
     display: flex;
     font-size: var(--ifx-text-sm);
@@ -581,7 +624,7 @@
     min-height: 44px;
     padding-right: var(--ifx-space-3);
   }
-  .ov-service-table td::before {
+  .ov-table td::before {
     color: var(--ifx-neutral-600);
     content: attr(data-label);
     font-size: var(--ifx-text-xs);
@@ -629,9 +672,10 @@
   .ov-grid > * { margin-bottom: 4mm; }
   .ov-store-card,
   .ov-exceptions,
+  .ov-dispositions,
   .ov-service { break-inside: avoid; }
   /* PRINT_ROWS in OverviewPage.tsx; .ov-print-more names how many were left off. */
   .ov-where .ov-rows > li:nth-child(n + 16) { display: none; }
-  .ov-service-table { font-size: 10pt; }
+  .ov-table { font-size: 10pt; }
   .ov-page.is-service-report > :not(.ov-service):not(.ov-print-header) { display: none; }
 }

@@ -60,6 +60,13 @@ const SERVICE_AUDIT_ACTIVITY = Object.freeze({
   in_service: 'Service started',
   serviced: 'Vehicle marked ready',
 })
+const DISPOSITION_AUDIT_ACTIVITY = Object.freeze({
+  keep: 'Disposition: keep',
+  sold_pending: 'Disposition: sold pending',
+  delivered: 'Disposition: delivered',
+  wholesale: 'Disposition: wholesale',
+  transfer_out: 'Disposition: transfer out',
+})
 const ATTENTION_SCOPE_LABEL = Object.freeze({
   source_freshness: 'Source feed',
   return_overdue: 'Overdue return',
@@ -300,6 +307,23 @@ function serviceAuditEntries(rows) {
   }).filter(Boolean)
 }
 
+// Actor, role, store and time only: the disposition note never reaches the audit.
+function dispositionAuditEntries(rows) {
+  return (rows ?? []).map((event) => {
+    const vin = safeVin(event?.vin)
+    const store = safeStore(event?.store_id)
+    return auditEntry({
+      kind: 'disposition',
+      sourceId: event?.id,
+      // `updated_at` is generated from the server clock.
+      occurredAt: event?.updated_at,
+      actor: event?.actor,
+      activity: mappedActivity(DISPOSITION_AUDIT_ACTIVITY, event?.disposition, 'Disposition recorded'),
+      scope: vin ? vehicleScope(vin, store) : null,
+    })
+  }).filter(Boolean)
+}
+
 export function assertAdminOverviewAccess(context) {
   if (context?.role !== ADMIN_OVERVIEW_ROLE) {
     throw new WorkflowError('Group-manager access is required for the Admin Control Center.', {
@@ -323,6 +347,7 @@ export function buildAdminOverview({
   transferRows = [],
   attentionRows = [],
   serviceEvents = [],
+  dispositionEvents = [],
   getTransferEvents = () => [],
   getAttentionEvents = () => [],
 } = {}) {
@@ -340,6 +365,7 @@ export function buildAdminOverview({
     ...transferAuditEntries(transferRows, getTransferEvents),
     ...attentionAuditEntries(attentionRows, getAttentionEvents),
     ...serviceAuditEntries(serviceEvents),
+    ...dispositionAuditEntries(dispositionEvents),
   ]
     .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt) || left.id.localeCompare(right.id))
     .slice(0, ADMIN_OVERVIEW_AUDIT_LIMIT)

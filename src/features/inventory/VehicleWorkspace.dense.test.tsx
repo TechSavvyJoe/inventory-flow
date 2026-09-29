@@ -5,6 +5,9 @@ import { VehicleWorkspace } from './VehicleWorkspace';
 import type { InventoryVehicle } from './types';
 import { createMotionPreference } from '../../../tests/unit/motion-test-utils';
 
+const dispositionApi = vi.hoisted(() => ({ getDisposition: vi.fn(), updateDisposition: vi.fn() }));
+vi.mock('../../lib/api', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../lib/api')>()), ...dispositionApi }));
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -735,5 +738,37 @@ describe('focused vehicle workspace', () => {
       if (clipboardDescriptor) Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
       else Reflect.deleteProperty(navigator, 'clipboard');
     }
+  });
+
+  it('shows the recorded disposition in Operations and opens the one dialog to change it, then refreshes', async () => {
+    const unit = {
+      ...vehicle(),
+      appDisposition: { vin: 'TESTDATASYN000002', code: 'sold_pending' as const, version: 1, effectiveDate: '2026-08-29', destinationStore: null, updatedAt: '2026-08-29T15:00:00Z', updatedByRole: 'manager' as const, store: 'Howell' as const, ownerStore: 'Howell' as const, canManage: true },
+    };
+    dispositionApi.getDisposition.mockResolvedValue({ ...unit.appDisposition, updatedBy: 'Synthetic Howell Manager', note: null, history: [] });
+    dispositionApi.updateDisposition.mockResolvedValue({ ...unit.appDisposition, code: 'delivered', version: 2, effectiveDate: '2026-08-30', history: [] });
+    const onChanged = vi.fn().mockResolvedValue(undefined);
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}
+      dispositionContext={{ role: 'manager', homeStore: 'Howell', reportDate: '2026-08-30', onChanged }} />);
+    const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
+    expect(operations).toHaveTextContent('Sold pending');
+    expect(operations).toHaveTextContent('recorded in Inventory Flow');
+    fireEvent.click(within(operations).getByRole('button', { name: 'Change disposition' }));
+    const dialog = await screen.findByRole('dialog', { name: /^Disposition · / });
+    fireEvent.click(await within(dialog).findByRole('radio', { name: 'Delivered' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save disposition' }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    expect(dispositionApi.updateDisposition).toHaveBeenCalledWith('TESTDATASYN000002', { disposition: 'delivered', expectedVersion: 1, effectiveDate: '2026-08-30' }, 'manager', 'Howell');
+    expect(await screen.findByText('Delivered recorded for #W5863Q.')).toBeInTheDocument();
+  });
+
+  it('offers no disposition control without a viewer context or to a viewer who cannot record an empty one', () => {
+    const unit = { ...vehicle(), appDisposition: { vin: 'TESTDATASYN000002', code: null, version: 0, effectiveDate: null, destinationStore: null, updatedAt: null, updatedByRole: null, store: null, ownerStore: 'Howell' as const, canManage: false } };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}
+      dispositionContext={{ role: 'sales', homeStore: 'Howell', onChanged: vi.fn() }} />);
+    expect(screen.queryByRole('button', { name: /disposition/i })).not.toBeInTheDocument();
+    cleanup();
+    render(<VehicleWorkspace vehicle={{ ...unit, appDisposition: { ...unit.appDisposition, canManage: true } }} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /disposition/i })).not.toBeInTheDocument();
   });
 });

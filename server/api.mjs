@@ -384,6 +384,17 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
         const result = service.updateServiceReadiness(pathSegment(serviceMatch[1]), input, context, String(request.headers['idempotency-key'] ?? '') || undefined)
         return sendJson(response, result.created ? 201 : 200, result.record)
       }
+      // The app-owned disposition ledger: a manager's own record, never a
+      // write to DealerMail, CDK, the listing or the imported manager log.
+      const dispositionMatch = route.match(/^\/vehicles\/([^/]+)\/disposition$/)
+      if (request.method === 'GET' && dispositionMatch) {
+        return sendJson(response, 200, service.getDisposition(pathSegment(dispositionMatch[1]), context))
+      }
+      if (request.method === 'POST' && dispositionMatch) {
+        const input = await readJson(request)
+        const result = service.updateDisposition(pathSegment(dispositionMatch[1]), input, context, String(request.headers['idempotency-key'] ?? '') || undefined)
+        return sendJson(response, result.created ? 201 : 200, result.record)
+      }
       if (request.method === 'GET' && route === '/attention') {
         return sendJson(response, 200, service.listAttention(queryObject(url), context))
       }

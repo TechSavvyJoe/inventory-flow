@@ -25,7 +25,7 @@ const database = new DatabaseSync(':memory:')
 try {
   database.exec('PRAGMA foreign_keys = ON')
   for (const file of files) database.exec(readFileSync(path.join(migrationsDirectory, file), 'utf8'))
-  for (const table of ['cloud_app_revision', 'vehicle_service_events', 'vehicle_service_intake']) {
+  for (const table of ['cloud_app_revision', 'vehicle_service_events', 'vehicle_service_intake', 'vehicle_disposition_events']) {
     if (!database.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?").get(table)) {
       throw new Error(`Cloudflare migration validation did not create required table ${table}.`)
     }

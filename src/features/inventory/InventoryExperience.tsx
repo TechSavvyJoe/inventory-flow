@@ -391,6 +391,7 @@ export function InventoryExperience({
   initialSorts = DEFAULT_INVENTORY_SORTS,
   initialWorkspaceTab = "overview",
   issueContext,
+  dispositionContext,
   pageSize = 10,
   canRequestVehicle,
   moveActionFor,
@@ -863,6 +864,7 @@ export function InventoryExperience({
         <VehicleWorkspace
           vehicle={selectedVehicle}
           issueContext={issueContext}
+          dispositionContext={dispositionContext}
           detailState={detailState}
           returnLabel={returnLabel}
           onRetryDetail={onRetryDetail}

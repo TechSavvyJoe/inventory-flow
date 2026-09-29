@@ -38,7 +38,10 @@ const PLANNED_TRANSFER_STATES = new Set(['approved', 'transport_assigned'])
 const EXCEPTION_KINDS = [
   'location_conflict', 'source_conflict', 'no_app_record', 'stale_confirmation', 'return_overdue',
   'hold_past_expected', 'identity_review', 'records_incomplete', 'service_date_order',
+  'listed_but_delivered', 'delivered_move_no_disposition',
 ]
+const DISPOSITION_KEYS = ['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out', 'none']
+const CANCELED_TRANSFER_STATES = new Set(['declined', 'canceled'])
 const EXCEPTION_VIN_LIMIT = 50
 const AGED_WAITING_LIMIT = 100
 
@@ -164,6 +167,10 @@ function emptyStoreCounts() {
   }
 }
 
+function emptyDispositionCounts() {
+  return Object.fromEntries(DISPOSITION_KEYS.map((key) => [key, 0]))
+}
+
 function emptyServiceMetrics() {
   return {
     counts: { waitingForService: 0, inService: 0, ready: 0 },
@@ -250,7 +257,12 @@ export function buildOverviewSummary({
   // count is ever derived from hold label text.
   const activeHoldRowsByVin = new Map(holdRows.filter((row) => Number(row.active_hold_count) > 0).map((row) => [row.vin, row]))
 
+  const access = overviewAccess(context.role)
   const stores = new Map(STORE_NAMES.map((store) => [store, emptyStoreCounts()]))
+  // Dispositions count under the role-independent owner store (the store
+  // whose manager may record one), so every viewer's card agrees with who can write.
+  const dispositionCounts = new Map(STORE_NAMES.map((store) => [store, emptyDispositionCounts()]))
+  const vehiclesByVin = new Map(vehicles.map((vehicle) => [vehicle.vin, vehicle]))
   const exceptions = new Map()
   const addException = (kind, store, vin, transferId) => {
     if (!STORE_NAMES.includes(store)) return
@@ -360,9 +372,35 @@ export function buildOverviewSummary({
       agedWaiting.push({ vin: vehicle.vin, store: service.store, waitingDays: service.waitingDays, arrivalBasis: service.arrivalBasis })
     }
 
+    // The app's own disposition, shown beside (never replacing) the imported
+    // manager log. It never hides a vehicle and is never inferred here.
+    const disposition = vehicle.appDisposition ?? null
+    const dispositionStore = disposition?.ownerStore ?? home
+    if (disposition?.code) facts.disposition = disposition.code
+    const dispositionTally = dispositionCounts.get(dispositionStore)
+    if (dispositionTally) dispositionTally[disposition?.code ?? 'none'] += 1
+    const deliveredDay = disposition?.code === 'delivered' ? isoDay(disposition.effectiveDate) : null
+    if (deliveredDay && vehicle.publicListing === 'listed' && deliveredDay <= asOfDay &&
+        daysBetween(deliveredDay, asOfDay) >= thresholds.listedAfterDeliveredDays) {
+      addException('listed_but_delivered', dispositionStore, vehicle.vin)
+    }
+
     if (facts.unaccounted) addException(facts.unaccounted.reason, home, vehicle.vin)
     if (facts.recordsCaptured < facts.recordsApplicable) addException('records_incomplete', home, vehicle.vin)
     if (service.dateOrderIssue) addException('service_date_order', service.store ?? home, vehicle.vin)
+  }
+
+  // A move that recorded customer delivery with no delivered disposition: a
+  // prompt for the managers who can record one, never an inference.
+  if (access === 'full') {
+    const prompted = new Set()
+    for (const row of visibleTransferRows) {
+      if (row.delivery_status !== 'delivery_confirmed' || CANCELED_TRANSFER_STATES.has(row.status) || prompted.has(row.vin)) continue
+      const vehicle = vehiclesByVin.get(row.vin)
+      if (!vehicle || vehicle.appDisposition?.code === 'delivered') continue
+      prompted.add(row.vin)
+      addException('delivered_move_no_disposition', vehicle.appDisposition?.ownerStore ?? vehicle.homeStore, row.vin, row.id)
+    }
   }
 
   // Return overdue is attributed to the home store, one per ledger row, the
@@ -388,9 +426,12 @@ export function buildOverviewSummary({
   // Manager-log rows that cannot be placed on an exact VIN: a count only.
   for (const record of managerIdentityReviews) addException('identity_review', record?.sourceStore)
 
-  const storeCounts = STORE_NAMES.map((store) => ({ store, ...stores.get(store) }))
-  const group = emptyStoreCounts()
-  for (const counts of storeCounts) for (const key of Object.keys(group)) group[key] += counts[key]
+  const storeCounts = STORE_NAMES.map((store) => ({ store, ...stores.get(store), dispositions: dispositionCounts.get(store) }))
+  const group = { ...emptyStoreCounts(), dispositions: emptyDispositionCounts() }
+  for (const counts of storeCounts) {
+    for (const key of Object.keys(group)) if (key !== 'dispositions') group[key] += counts[key]
+    for (const key of DISPOSITION_KEYS) group.dispositions[key] += counts.dispositions[key]
+  }
 
   const exceptionList = [...exceptions.values()]
     .sort((left, right) => EXCEPTION_KINDS.indexOf(left.kind) - EXCEPTION_KINDS.indexOf(right.kind) ||
@@ -405,7 +446,7 @@ export function buildOverviewSummary({
     asOfDay,
     scopeStore: context.store,
     role: context.role,
-    access: overviewAccess(context.role),
+    access,
     thresholds: {
       unaccountedAfterDays: thresholds.unaccountedAfterDays,
       agedListingDays: [...thresholds.agedListingDays],

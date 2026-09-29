@@ -14,6 +14,9 @@ import {
   createRepositoryContext,
   listServiceEvents,
   insertServiceEvent,
+  dispositionsEnabled,
+  listDispositionEvents,
+  insertDispositionEvent,
   vehicleIssuesEnabled,
   listVehicleIssueRows,
   listVehicleIssueEvents,
@@ -21,6 +24,7 @@ import {
   appendVehicleIssueEvent,
 } from './repository-dispatch.mjs'
 import { buildServiceReadinessEvent, serviceReadinessView } from './service-readiness.mjs'
+import { buildDispositionEvent, dispositionDetail, dispositionView } from './vehicle-disposition.mjs'
 import { buildVehicleIssue, buildVehicleIssueEvent, canReportVehicleIssue, vehicleIssueView, VEHICLE_ISSUE_CATEGORIES, VEHICLE_ISSUE_STATUSES } from './vehicle-issues.mjs'
 import { allowedAttentionActions, attentionInputHash, buildAttentionMutation, canSeePersistedAssignee, isTransportItem } from './attention-workflow.mjs'
 import { assertAdminOverviewAccess, buildAdminOverview } from './admin-control-center.mjs'
@@ -1833,6 +1837,15 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       values.push(row)
       serviceEventsByVin.set(row.vin, values)
     }
+    // The app's own disposition ledger. Nothing here derives a row from a
+    // source, a move event or the manager log; only updateDisposition writes.
+    const dispositionStorage = dispositionsEnabled(database)
+    const dispositionEventsByVin = new Map()
+    for (const row of listDispositionEvents(database)) {
+      const values = dispositionEventsByVin.get(row.vin) ?? []
+      values.push(row)
+      dispositionEventsByVin.set(row.vin, values)
+    }
     const transfersByVin = new Map()
     for (const row of allTransferRows) {
       const values = transfersByVin.get(row.vin) ?? []
@@ -1849,6 +1862,8 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       allTransferRows,
       serviceEventsByVin,
       serviceIntakeByVin: new Map((dataset.serviceIntake ?? []).map((row) => [row.vin, row])),
+      dispositionStorage,
+      dispositionEventsByVin,
       transfersByVin,
       sources,
       publicChanges: Array.isArray(publicChanges) ? publicChanges : [],
@@ -1873,6 +1888,11 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         fordOasis: state.dataset.sourceRuns.resources?.status === 'current' ? source.resourceRecord?.fordOasis : undefined,
       } })
       vehicle.serviceReadiness = serviceReadinessView(vehicle, state.serviceEventsByVin.get(source.vin)?.at(-1), state.context)
+      // Codes, dates and stores only: the note and writer's name are read
+      // through getDisposition, never in a list view.
+      vehicle.appDisposition = dispositionView(source, state.dispositionEventsByVin.get(source.vin)?.at(-1) ?? null, state.context, {
+        enabled: state.dispositionStorage,
+      })
       vehicle.canReportIssue = vehicleIssuesEnabled(database) && canReportVehicleIssue(vehicle, state.context)
     }
     return vehicle
@@ -1931,6 +1951,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         transferRows: state.allTransferRows,
         attentionRows,
         serviceEvents: listServiceEvents(database),
+        dispositionEvents: listDispositionEvents(database),
         getTransferEvents: (transfer) => getTransferEvents(database, transfer.id),
         getAttentionEvents: (attention) => getAttentionEvents(database, attention.attention_key),
       })
@@ -2031,6 +2052,35 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const vehicle = source && vehicleFromSnapshot(state, source)
       if (!vehicle) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
       return serviceDetail(vehicle, state.serviceEventsByVin.get(vin) ?? [], state.context)
+    },
+
+    getDisposition(vinInput, contextInput = {}) {
+      const state = snapshot(contextInput)
+      const vin = normalizedVin(vinInput)
+      const source = state.sources.find((candidate) => candidate.vin === vin)
+      const vehicle = source && vehicleFromSnapshot(state, source)
+      if (!vehicle) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
+      return dispositionDetail(source, state.dispositionEventsByVin.get(vin) ?? [], state.context, { enabled: state.dispositionStorage })
+    },
+
+    updateDisposition(vinInput, input, contextInput = {}, idempotencyKey) {
+      const state = snapshot(contextInput)
+      const vin = normalizedVin(vinInput)
+      const source = state.sources.find((candidate) => candidate.vin === vin)
+      const vehicle = source && vehicleFromSnapshot(state, source)
+      if (!vehicle) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
+      const rows = state.dispositionEventsByVin.get(vin) ?? []
+      const result = buildDispositionEvent(source, rows, input, state.context, {
+        now: state.currentNow,
+        today: dateInTimeZone(state.currentNow, state.meta.timezone),
+        idempotencyKey,
+        enabled: state.dispositionStorage,
+      })
+      if (result.created) {
+        insertDispositionEvent(database, result.row)
+        rows.push(result.row)
+      }
+      return { created: result.created, record: dispositionDetail(source, rows, state.context, { enabled: state.dispositionStorage }) }
     },
 
     listVehicleIssues(query = {}, contextInput = {}) {

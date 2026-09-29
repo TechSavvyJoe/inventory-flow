@@ -1,4 +1,5 @@
 import { SERVICE_EVENT_COLUMNS } from '../../server/service-readiness.mjs'
+import { DISPOSITION_EVENT_COLUMNS } from '../../server/vehicle-disposition.mjs'
 import { VEHICLE_ISSUE_COLUMNS, VEHICLE_ISSUE_EVENT_COLUMNS } from '../../server/vehicle-issues.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
 
@@ -281,6 +282,16 @@ export const d1SnapshotRepository = Object.freeze({
     database.serviceEvents.push(clone(row))
     return clone(row)
   },
+  dispositionsEnabled(database) { return database.dispositionsEnabled === true },
+  listDispositionEvents(database) {
+    return [...(database.dispositionEvents ?? [])].sort((a, b) => compare(a.vin, b.vin) || a.version - b.version).map(clone)
+  },
+  insertDispositionEvent(database, row) {
+    if (!database.dispositionsEnabled) throw new WorkflowError('Disposition storage is not enabled yet.', { status: 503, code: 'MIGRATION_REQUIRED' })
+    insert(database, 'vehicle_disposition_events', DISPOSITION_EVENT_COLUMNS, row)
+    database.dispositionEvents.push(clone(row))
+    return clone(row)
+  },
   getCurrentDataset(database) { return database.dataset },
   listTransferRows(database, { vin, status, store } = {}) {
     return database.transfers.filter((row) => (!vin || row.vin === String(vin).toUpperCase()) && (!status || row.status === status) &&
@@ -385,40 +396,50 @@ export const d1SnapshotRepository = Object.freeze({
 /** D1 batch executes this read set against a single consistent transaction. */
 export async function loadD1Repository(d1, release, options = {}) {
   // Migrations are an operator-owned step. Existing inventory remains readable
-  // while the new feature is unavailable; never create production schema here.
-  const capability = await d1.batch([d1.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('vehicle_issues', 'vehicle_issue_events')")])
+  // while a newer feature's table is absent: that feature reads empty and
+  // refuses writes (503 MIGRATION_REQUIRED). Never create production schema here.
+  const capability = await d1.batch([d1.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('vehicle_issues', 'vehicle_issue_events', 'vehicle_disposition_events')")])
   if (capability.length !== 1 || capability[0].success === false || !Array.isArray(capability[0].results)) {
     throw new Error('Unable to read workflow storage capabilities')
   }
-  const issuesEnabled = capability[0].results.length === 2
-  const statements = [
-    'SELECT revision FROM cloud_app_revision WHERE id = 1',
-    'SELECT * FROM transfer_requests ORDER BY updated_at DESC, id',
-    'SELECT * FROM transfer_events ORDER BY occurred_at, created_at, rowid',
-    'SELECT * FROM attention_work_items ORDER BY updated_at DESC, attention_key',
-    'SELECT * FROM attention_events ORDER BY occurred_at, created_at, rowid',
-    'SELECT * FROM home_assignments WHERE effective_to IS NULL ORDER BY effective_from DESC',
-    'SELECT * FROM vehicle_service_events ORDER BY vin, version',
-    'SELECT * FROM vehicle_service_intake',
+  const tables = new Set(capability[0].results.map((row) => row?.name))
+  const issuesEnabled = tables.has('vehicle_issues') && tables.has('vehicle_issue_events')
+  const dispositionsEnabled = tables.has('vehicle_disposition_events')
+  // Each read is keyed by name, so an optional table never shifts another's result.
+  const reads = [
+    ['revision', 'SELECT revision FROM cloud_app_revision WHERE id = 1'],
+    ['transfers', 'SELECT * FROM transfer_requests ORDER BY updated_at DESC, id'],
+    ['transferEvents', 'SELECT * FROM transfer_events ORDER BY occurred_at, created_at, rowid'],
+    ['attention', 'SELECT * FROM attention_work_items ORDER BY updated_at DESC, attention_key'],
+    ['attentionEvents', 'SELECT * FROM attention_events ORDER BY occurred_at, created_at, rowid'],
+    ['homeAssignments', 'SELECT * FROM home_assignments WHERE effective_to IS NULL ORDER BY effective_from DESC'],
+    ['serviceEvents', 'SELECT * FROM vehicle_service_events ORDER BY vin, version'],
+    ['serviceIntake', 'SELECT * FROM vehicle_service_intake'],
     ...(issuesEnabled ? [
-      'SELECT * FROM vehicle_issues ORDER BY created_at DESC, id',
-      'SELECT * FROM vehicle_issue_events ORDER BY issue_id, version',
+      ['vehicleIssues', 'SELECT * FROM vehicle_issues ORDER BY created_at DESC, id'],
+      ['vehicleIssueEvents', 'SELECT * FROM vehicle_issue_events ORDER BY issue_id, version'],
+    ] : []),
+    ...(dispositionsEnabled ? [
+      ['dispositionEvents', 'SELECT * FROM vehicle_disposition_events ORDER BY vin, version'],
     ] : []),
   ]
-  const results = await d1.batch(statements.map((sql) => d1.prepare(sql)))
-  if (results.length !== statements.length || results.some((result) => result.success === false || !Array.isArray(result.results))) {
+  const results = await d1.batch(reads.map(([, sql]) => d1.prepare(sql)))
+  if (results.length !== reads.length || results.some((result) => result.success === false || !Array.isArray(result.results))) {
     throw new Error('Unable to read the shared workflow snapshot')
   }
-  const revision = results[0].results[0]?.revision
+  const rows = Object.fromEntries(reads.map(([key], index) => [key, results[index].results]))
+  const revision = rows.revision[0]?.revision
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('The shared workflow revision is not initialized')
   const database = {
-    dataset: { ...datasetFromRelease(release, results[5].results, options), serviceIntake: results[7].results },
-    transfers: results[1].results, transferEvents: results[2].results,
-    attention: results[3].results, attentionEvents: results[4].results,
-    serviceEvents: results[6].results,
+    dataset: { ...datasetFromRelease(release, rows.homeAssignments, options), serviceIntake: rows.serviceIntake },
+    transfers: rows.transfers, transferEvents: rows.transferEvents,
+    attention: rows.attention, attentionEvents: rows.attentionEvents,
+    serviceEvents: rows.serviceEvents,
     vehicleIssuesEnabled: issuesEnabled,
-    vehicleIssues: issuesEnabled ? results[8].results : [],
-    vehicleIssueEvents: issuesEnabled ? results[9].results : [],
+    vehicleIssues: rows.vehicleIssues ?? [],
+    vehicleIssueEvents: rows.vehicleIssueEvents ?? [],
+    dispositionsEnabled,
+    dispositionEvents: rows.dispositionEvents ?? [],
     pending: [], closed: false,
   }
   return {

@@ -99,6 +99,18 @@ function seedSyntheticWorkflow() {
     { role: 'sales', store: 'Ford Detroit', user: 'Demo Detroit Salesperson' },
     'synthetic-demo-pending-request',
   )
+
+  // App-owned dispositions recorded by synthetic managers. They sit beside the
+  // imported manager log; nothing here is inferred from a source or a move.
+  app.service.updateDisposition('TESTDATAFWELL0002', {
+    disposition: 'sold_pending', effectiveDate: '2026-08-29', note: 'Synthetic deposit — training data only', expectedVersion: 0,
+  }, { role: 'manager', store: 'Fowlerville', user: 'Demo Fowlerville Manager' }, 'synthetic-demo-disposition-sold-pending')
+  app.service.updateDisposition('TESTDATADETRT0002', {
+    disposition: 'wholesale', effectiveDate: '2026-08-28', expectedVersion: 0,
+  }, { role: 'group_manager', store: 'Howell', user: 'Demo Group Manager' }, 'synthetic-demo-disposition-wholesale')
+  app.service.updateDisposition('TESTDATAHWELL0002', {
+    disposition: 'keep', expectedVersion: 0,
+  }, { role: 'manager', store: 'Howell', user: 'Demo Howell Manager' }, 'synthetic-demo-disposition-keep')
 }
 
 try {

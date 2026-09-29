@@ -124,3 +124,100 @@ test('the phone rail is Overview · Inventory · Actions · Service · More, wit
   await expect(more.getByRole('link', { name: /Inventory updates/ })).toBeVisible()
   await expect(more.getByRole('link', { name: /Vehicle moves/ })).toBeVisible()
 })
+
+// Slice B (OVERVIEW_SPEC §4, §6.10, §15.8): the store board, the disposition dialog and its two entry points.
+
+test('store-board pins and arrows open exactly the list behind them', async ({ page }) => {
+  await signInAs(page, 'group_manager')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/overview')
+  const board = page.getByRole('region', { name: 'Store board' })
+  await expect(board.getByRole('img', { name: /^Store board Schematic of the four stores, not a map\./ })).toBeVisible()
+  const pin = board.getByRole('link', { name: /^Store board pin, Howell: \d+ vehicles? away from home$/ })
+  await expect(pin).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=away')
+  await pin.click()
+  await expect(page).toHaveURL(/\/inventory\?scope=group$/)
+  await expect(page.getByRole('button', { name: 'Clear Overview view: Away from home · Howell' })).toBeVisible()
+  await page.goBack()
+  await expect(page).toHaveURL(/\/overview$/)
+
+  // The demo's approved Howell request draws a planned arrow unless an earlier spec moved it on.
+  const arrows = board.getByRole('listitem').getByRole('link')
+  if (await arrows.count()) {
+    const name = (await arrows.first().getAttribute('aria-label'))!
+    const [, from, to, leg] = /^\d+ vehicles? (.+) to (.+), (outbound|returning home|planned)$/.exec(name)!
+    await arrows.first().click()
+    await expect(page).toHaveURL(/\/transfers$/)
+    await expect(page.getByRole('button', { name: `Clear route filter: ${from} to ${to}, ${leg === 'returning home' ? 'return' : leg}` })).toBeVisible()
+  }
+})
+
+test('the disposition dialog traps focus, locks scroll, closes on Escape and restores focus at every viewport', async ({ page }, testInfo) => {
+  await signInAs(page, 'group_manager')
+  await page.goto('/overview')
+  const section = page.getByRole('region', { name: 'Dispositions' })
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize(viewport)
+    const opener = section.getByRole('button', { name: /^(Change|Record) disposition for / }).first()
+    await opener.scrollIntoViewIfNeeded()
+    await opener.click()
+    const dialog = page.getByRole('dialog', { name: /^Disposition · / })
+    await expect(dialog.getByRole('group', { name: /Change to|Record as/ })).toBeVisible()
+    expect(await page.evaluate(() => getComputedStyle(document.body).overflow)).toBe('hidden')
+    const targets = await dialog.locator('button, a, label, select, textarea, input:not([type="radio"])').evaluateAll(elements => elements
+      .filter(element => element.getBoundingClientRect().width > 0)
+      .map(element => element.getBoundingClientRect().height))
+    expect(Math.min(...targets)).toBeGreaterThanOrEqual(44)
+    const dimensions = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }))
+    expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport + 1)
+    await page.screenshot({ path: testInfo.outputPath(`disposition-dialog-${viewport.width}x${viewport.height}.png`) })
+    // Tab cycles inside the dialog.
+    for (let step = 0; step < 12; step++) {
+      await page.keyboard.press('Tab')
+      expect(await dialog.evaluate(element => element.contains(document.activeElement))).toBe(true)
+    }
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(opener).toBeFocused()
+  }
+})
+
+test('a store manager records a disposition from the vehicle workspace and the Overview count follows', async ({ page }) => {
+  await signInAs(page, 'manager')
+  await page.setViewportSize({ width: 1320, height: 820 })
+  const soldPending = async () => {
+    await page.goto('/overview')
+    const section = page.getByRole('region', { name: 'Dispositions' })
+    await expect(section.getByRole('row', { name: /^Howell/ })).toBeVisible()
+    const link = section.getByRole('link', { name: /^Howell: \d+ vehicles? with the disposition sold pending$/ })
+    return await link.count() ? Number(await link.textContent()) : 0
+  }
+  const before = await soldPending()
+
+  await page.goto('/inventory?scope=group&vin=TESTDATAHWELL0001')
+  const operations = page.getByRole('region', { name: 'Vehicle operational summary' })
+  let wasSoldPending = false
+  const record = async (choice: 'Sold pending' | 'Keep') => {
+    await operations.getByRole('button', { name: /^(Record|Change) disposition$/ }).click()
+    const dialog = page.getByRole('dialog', { name: /^Disposition · / })
+    // The choices render once the latest record has loaded.
+    await expect(dialog.getByRole('group', { name: /Change to|Record as/ })).toBeVisible()
+    const radio = dialog.getByRole('radio', { name: choice })
+    if (!await radio.count()) {
+      // A retried run left it Sold pending: reopen from Keep so the path is the same.
+      wasSoldPending = true
+      await dialog.getByRole('radio', { name: 'Keep' }).check()
+      await dialog.getByRole('button', { name: 'Save disposition' }).click()
+      await expect(dialog).toBeHidden()
+      return record(choice)
+    }
+    await radio.check()
+    await dialog.getByRole('button', { name: 'Save disposition' }).click()
+    await expect(dialog).toBeHidden()
+  }
+  await record('Sold pending')
+  await expect(operations.getByRole('status')).toHaveText(/^Sold pending recorded for #/)
+  await expect(operations).toContainText('recorded in Inventory Flow')
+
+  await expect.poll(soldPending).toBe(wasSoldPending ? before : before + 1)
+})

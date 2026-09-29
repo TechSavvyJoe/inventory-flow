@@ -1,23 +1,27 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
-import { ChevronDown, FileText, MapPin, Printer, Wrench } from 'lucide-react'
+import { ChevronDown, ClipboardCheck, FileText, MapPin, Printer, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { SourceWarning } from '../../components/SourceWarning'
 import { formatDate, formatDateTime } from '../../lib/format'
 import { useWorkspaceState } from '../../lib/workspace-memory'
 import type {
+  AppDispositionCode,
   BootstrapData,
   OverviewException,
   OverviewExceptionKind,
   OverviewServiceStoreMetrics,
   OverviewSummary,
+  OverviewThresholds,
   OverviewVehicleFacts,
   StoreName,
   UserRole,
+  VehicleRecord,
 } from '../../types'
 import {
   actionCenterHref,
+  dispositionView,
   exceptionHref,
   inventoryViewHref,
   locationHref,
@@ -45,6 +49,9 @@ import {
   type StoreCounts,
   type WhereFilter,
 } from './overview-selectors'
+import { DispositionDialog } from './DispositionDialog'
+import { defaultDispositionDate, DISPOSITION_LABELS, DISPOSITION_QUALIFIER, dispositionSummary, managerLogLine } from './disposition-model'
+import { StoreBoard } from './StoreBoard'
 import './overview.css'
 
 const ROLE_LABELS: Partial<Record<UserRole, string>> = {
@@ -104,18 +111,25 @@ const MORE_COUNTS: CountSpec[] = [
   { key: 'recordsIncomplete', label: 'Records incomplete', phrase: 'with records incomplete', href: inventory('records-incomplete') },
 ]
 
-/** OVERVIEW_SPEC §11: fixed copy, never source text. */
-const EXCEPTION_COPY: Record<OverviewExceptionKind, { label: string; why: (days: number) => string }> = {
+/** OVERVIEW_SPEC §11: fixed copy, never source text. The two disposition kinds are prompts, never inferences. */
+const EXCEPTION_COPY: Record<OverviewExceptionKind, { label: string; why: (thresholds: OverviewThresholds) => string }> = {
   location_conflict: { label: 'Location needs checking', why: () => 'The app’s own move records disagree about where this vehicle is.' },
   source_conflict: { label: 'Website and DealerMail disagree on store', why: () => 'The public feed and the CRM list different stores; confirm which lot has it.' },
   no_app_record: { label: 'Listed at another store · no move recorded', why: () => 'The website lists it away from its home store and Inventory Flow has no move for it.' },
-  stale_confirmation: { label: 'Not confirmed for 7+ days', why: (days) => `Away from home with no custody confirmation for ${days}+ days.` },
+  stale_confirmation: { label: 'Not confirmed for 7+ days', why: (thresholds) => `Away from home with no custody confirmation for ${thresholds.unaccountedAfterDays}+ days.` },
   return_overdue: { label: 'Return overdue', why: () => 'Due back and not confirmed received.' },
   hold_past_expected: { label: 'Hold past expected date', why: () => 'The DealerMail expected date has passed; a review signal, not proof of sale or release.' },
   identity_review: { label: 'Manager log needs an exact VIN', why: () => 'A sold-board row could not be placed on a VIN.' },
   records_incomplete: { label: 'Records not all captured', why: () => 'One or more of AutoCheck, OASIS, sticker, invoice or Ford service history has not been captured for this unit.' },
   service_date_order: { label: 'Service dates before arrival', why: () => 'A recorded service date is earlier than the arrival date; check the record.' },
+  listed_but_delivered: { label: 'Recorded delivered · still listed', why: (thresholds) => `Delivered in Inventory Flow ${thresholds.listedAfterDeliveredDays}+ days ago; the website still lists it. Confirm with the store; the listing is not changed here.` },
+  delivered_move_no_disposition: { label: 'Move says delivered · no disposition', why: () => 'A move records customer delivery; no disposition has been recorded.' },
 }
+
+/** Store-card disposition counts, most decision-relevant first (OVERVIEW_SPEC §3). */
+const CARD_DISPOSITIONS: AppDispositionCode[] = ['sold_pending', 'delivered', 'wholesale', 'transfer_out']
+const TABLE_DISPOSITIONS: Array<AppDispositionCode | 'none'> = ['sold_pending', 'delivered', 'wholesale', 'transfer_out', 'keep', 'none']
+const DISPOSITION_ROWS = 8
 
 const UNACCOUNTED_TEXT: Record<NonNullable<OverviewVehicleFacts['unaccounted']>['reason'], string> = {
   location_conflict: 'Location needs checking',
@@ -182,6 +196,7 @@ function WhereRow({ row, filter, holdsVerified }: { row: OverviewRow; filter: Wh
     })
   }
   if (facts.holdActive) details.push({ text: `${vehicle.hold.label}${holdsVerified ? '' : ' (last verified)'}${facts.holdPastExpected ? ' · past expected' : ''}`, tone: facts.holdPastExpected ? 'warning' : undefined })
+  if (vehicle.appDisposition?.code) details.push({ text: `${dispositionSummary(vehicle.appDisposition)} · recorded` })
   if (filter === 'waiting' && facts.service.waitingDays !== undefined) {
     details.push({ text: [`Waiting ${plural(facts.service.waitingDays, 'day')}`, arrivalText(facts.service)].filter(Boolean).join(' · ') })
   }
@@ -235,10 +250,24 @@ function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, c
     holds: holdsVerified ? null : 'last verified',
   }
   // On a phone the secondary counts fold away so the where list reaches the first viewport (OVERVIEW_SPEC §3).
+  const dispositions = counts.dispositions
   const moreCounts = (
-    <dl className="ov-counts ov-counts--more">
-      {MORE_COUNTS.map((spec) => <CountLink key={spec.key} store={store} count={counts[spec.key] as number} spec={spec} />)}
-    </dl>
+    <>
+      <dl className="ov-counts ov-counts--more">
+        {MORE_COUNTS.map((spec) => <CountLink key={spec.key} store={store} count={counts[spec.key] as number} spec={spec} />)}
+      </dl>
+      {dispositions ? (
+        <div className="ov-card-dispositions">
+          <h4>Dispositions <small>{DISPOSITION_QUALIFIER}</small></h4>
+          <dl className="ov-counts ov-counts--more">
+            {CARD_DISPOSITIONS.map((code) => (
+              <CountLink key={code} store={store} count={dispositions[code]}
+                spec={{ key: 'dispositions', label: DISPOSITION_LABELS[code], phrase: `with the disposition ${DISPOSITION_LABELS[code].toLowerCase()}`, href: (target) => inventoryViewHref(target, dispositionView(code)) }} />
+            ))}
+          </dl>
+        </div>
+      ) : null}
+    </>
   )
   return (
     <section className={`ov-store-card${otherStore ? '' : ' is-home'}`} aria-labelledby={titleId}>
@@ -310,7 +339,7 @@ function ServiceSection({ data, overview, stores, fullAccess, reportMode, onRepo
         <button type="button" className="ov-button" onClick={onReport}><Printer aria-hidden="true" />Open report</button>
       </header>
       <div className="ov-table-wrap">
-        <table className="ov-service-table" aria-labelledby="ov-service-title">
+        <table className="ov-table" aria-labelledby="ov-service-title">
           <thead>
             <tr>
               <th scope="col">Store</th>
@@ -381,7 +410,7 @@ function ExceptionsSection({ overview, stores, data }: { overview: OverviewSumma
                 <dt>{label}<small>{exception.store}</small></dt>
                 <dd>
                   <Link to={exceptionHref(exception)} aria-label={`${exception.store}: ${plural(exception.count, 'vehicle')} · ${label}`}>{exception.count}</Link>
-                  <p>{copy.why(overview.thresholds.unaccountedAfterDays)}</p>
+                  <p>{copy.why(overview.thresholds)}</p>
                   {exception.kind === 'hold_past_expected' ? <Link className="ov-row-link" to={actionCenterHref('holds')}>Open in Action center</Link> : null}
                 </dd>
               </div>
@@ -394,8 +423,7 @@ function ExceptionsSection({ overview, stores, data }: { overview: OverviewSumma
   )
 }
 
-function WhereSection({ rows, stores, holdsVerified, printing }: { rows: OverviewRow[]; stores: StoreName[]; holdsVerified: boolean; printing: boolean }) {
-  const [filter, setFilter] = useState<WhereFilter>('away')
+function WhereSection({ rows, stores, holdsVerified, printing, filter, onFilter }: { rows: OverviewRow[]; stores: StoreName[]; holdsVerified: boolean; printing: boolean; filter: WhereFilter; onFilter: (filter: WhereFilter) => void }) {
   const [showAll, setShowAll] = useState(false)
   const counts = useMemo(() => whereCounts(rows, stores), [rows, stores])
   const matches = useMemo(() => whereRows(rows, filter, stores), [rows, filter, stores])
@@ -407,7 +435,7 @@ function WhereSection({ rows, stores, holdsVerified, printing }: { rows: Overvie
       <header className="ov-section-heading"><h2 id="ov-where-title">Where is my inventory</h2></header>
       <div className="ov-chips ov-where-controls" role="group" aria-label="Show vehicles">
         {WHERE_FILTERS.map((entry) => (
-          <button key={entry.value} type="button" aria-pressed={filter === entry.value} onClick={() => { setFilter(entry.value); setShowAll(false) }}>
+          <button key={entry.value} type="button" aria-pressed={filter === entry.value} onClick={() => { onFilter(entry.value); setShowAll(false) }}>
             {entry.label} <span>{counts[entry.value]}</span>
           </button>
         ))}
@@ -424,12 +452,126 @@ function WhereSection({ rows, stores, holdsVerified, printing }: { rows: Overvie
   )
 }
 
+interface DispositionRow {
+  vehicle: VehicleRecord
+  ownerStore: StoreName
+  moveDelivered: boolean
+}
+
+/** Owner store the server counted the vehicle's disposition under. */
+function dispositionOwner(vehicle: VehicleRecord): StoreName {
+  return vehicle.appDisposition?.ownerStore ?? vehicle.homeStore
+}
+
+/**
+ * Vehicles that carry a decision: a recorded disposition, an imported
+ * manager-log sale, or a move that recorded delivery. Prompts come first;
+ * nothing here is inferred or written — each row only opens the dialog.
+ */
+function dispositionRows(rows: OverviewRow[], overview: OverviewSummary, stores: readonly StoreName[]): DispositionRow[] {
+  const inScope = new Set(stores)
+  const moveDelivered = new Set(overview.exceptions.filter((entry) => entry.kind === 'delivered_move_no_disposition').flatMap((entry) => entry.vins))
+  const needsDecision = (row: DispositionRow) => !row.vehicle.appDisposition?.code
+  return rows
+    .map(({ vehicle }) => ({ vehicle, ownerStore: dispositionOwner(vehicle), moveDelivered: moveDelivered.has(vehicle.vin) }))
+    .filter((row) => inScope.has(row.ownerStore) && (row.vehicle.appDisposition?.code || row.vehicle.managerDisposition || row.moveDelivered))
+    .sort((left, right) => Number(needsDecision(right)) - Number(needsDecision(left)) ||
+      (right.vehicle.appDisposition?.updatedAt ?? '').localeCompare(left.vehicle.appDisposition?.updatedAt ?? '', 'en-US') ||
+      left.vehicle.vehicleName.localeCompare(right.vehicle.vehicleName, 'en-US'))
+}
+
+function DispositionCount({ store, code, count }: { store: StoreName; code: AppDispositionCode | 'none'; count: number }) {
+  if (!count) return <span className="ov-zero">0</span>
+  const label = code === 'none' ? 'with no disposition recorded' : `with the disposition ${DISPOSITION_LABELS[code].toLowerCase()}`
+  return <Link to={inventoryViewHref(store, dispositionView(code))} aria-label={`${store}: ${plural(count, 'vehicle')} ${label}`}>{count}</Link>
+}
+
+function DispositionsSection({ data, overview, rows, stores, status, onOpen }: {
+  data: BootstrapData
+  overview: OverviewSummary
+  rows: OverviewRow[]
+  stores: StoreName[]
+  status: string
+  onOpen: (vin: string) => void
+}) {
+  const [showAll, setShowAll] = useState(false)
+  const entries = useMemo(() => dispositionRows(rows, overview, stores), [rows, overview, stores])
+  const visible = showAll ? entries : entries.slice(0, DISPOSITION_ROWS)
+  const storeCounts = storeCards(overview, stores)
+  return (
+    <section className="ov-section ov-dispositions" aria-labelledby="ov-dispositions-title">
+      <header className="ov-section-heading">
+        <h2 id="ov-dispositions-title">Dispositions</h2>
+        <p className="ov-section-note">{DISPOSITION_QUALIFIER}</p>
+      </header>
+      <div className="ov-table-wrap">
+        <table className="ov-table ov-disposition-table" aria-labelledby="ov-dispositions-title">
+          <thead>
+            <tr>
+              <th scope="col">Store</th>
+              {TABLE_DISPOSITIONS.map((code) => <th key={code} scope="col">{code === 'none' ? 'None recorded' : DISPOSITION_LABELS[code]}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {storeCounts.map((counts) => (
+              <tr key={counts.store}>
+                <th scope="row">{counts.store}</th>
+                {TABLE_DISPOSITIONS.map((code) => (
+                  <td key={code} data-label={code === 'none' ? 'None recorded' : DISPOSITION_LABELS[code]}>
+                    <DispositionCount store={counts.store} code={code} count={counts.dispositions?.[code] ?? 0} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {status ? <p className="ov-status" role="status">{status}</p> : null}
+      <h3 className="ov-subheading">Decisions and evidence</h3>
+      {visible.length ? (
+        <ul className="ov-rows">
+          {visible.map(({ vehicle, ownerStore, moveDelivered }) => {
+            const disposition = vehicle.appDisposition
+            const evidence = managerLogLine(vehicle.managerDisposition)
+            const action = disposition?.canManage
+              ? disposition.code ? 'Change disposition' : 'Record disposition'
+              : disposition?.code ? 'View disposition' : null
+            return (
+              <li key={vehicle.vin} className="ov-row">
+                <div className="ov-row-main">
+                  <strong>{vehicle.vehicleName}</strong>
+                  <span className="ov-row-meta">#{vehicle.stockNumber} · {ownerStore}</span>
+                  <span className="ov-row-details">
+                    <span>{dispositionSummary(disposition)}{disposition?.effectiveDate ? ` · effective ${formatDate(disposition.effectiveDate)}` : ''}</span>
+                    {evidence ? <span className="ov-row-evidence"><ClipboardCheck aria-hidden="true" />{evidence}</span> : null}
+                    {moveDelivered ? <span className="ov-tone-warning">A move records customer delivery</span> : null}
+                  </span>
+                </div>
+                <div className="ov-row-actions">
+                  {action ? <button type="button" className="ov-row-link" aria-label={`${action} for ${vehicle.vehicleName}`} onClick={() => onOpen(vehicle.vin)}>{action}</button> : null}
+                  <RecordsLink vin={vehicle.vin} facts={overview.vehicleFacts[vehicle.vin]} name={vehicle.vehicleName} />
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      ) : <p className="ov-empty">No dispositions or manager-log sales in this scope.</p>}
+      {entries.length > DISPOSITION_ROWS && !showAll ? <button type="button" className="ov-button ov-show-all" onClick={() => setShowAll(true)}>Show all {entries.length}</button> : null}
+      <p className="ov-source">Inventory Flow · live; manager log {freshnessWord(data.meta.managerDispositionFreshness).toLowerCase()}. A disposition never changes DealerMail, CDK, the listing or the manager log, and never hides a vehicle.</p>
+    </section>
+  )
+}
+
 export function OverviewPage() {
-  const { data, homeStore, role, currentUser } = useAppData()
+  const { data, homeStore, role, currentUser, refresh } = useAppData()
   const accessContext = `${currentUser}:${role}:${homeStore}`
   const [scope, setScope] = useWorkspaceState<OverviewScope>(accessContext, 'overview.scope', role === 'group_manager' ? 'group' : 'home')
   const [serviceReport, setServiceReport] = useState(false)
   const [printing, setPrinting] = useState(false)
+  // One filter drives the where list and the store board's pin numbers.
+  const [whereFilter, setWhereFilter] = useState<WhereFilter>('away')
+  const [dispositionVin, setDispositionVin] = useState<string | null>(null)
+  const [dispositionStatus, setDispositionStatus] = useState('')
   const phone = useSyncExternalStore(subscribeToPhone, phoneSnapshot, () => false)
   // Printing from the browser menu gets the same full snapshot as the button.
   useEffect(() => {
@@ -456,6 +598,7 @@ export function OverviewPage() {
   }
 
   const fullAccess = overview.access === 'full'
+  const dispositionVehicle = dispositionVin ? data.vehicles.find((vehicle) => vehicle.vin === dispositionVin) ?? null : null
   const holdsVerified = data.meta.dealerMailFreshness === 'current'
   const scopeLabel = scope === 'home' ? homeStore : 'All stores'
   const roleLabel = ROLE_LABELS[role] ?? role
@@ -499,13 +642,34 @@ export function OverviewPage() {
       </section>
 
       <div className="ov-grid">
-        <WhereSection rows={rows} stores={stores} holdsVerified={holdsVerified} printing={printing} />
+        <WhereSection rows={rows} stores={stores} holdsVerified={holdsVerified} printing={printing} filter={whereFilter} onFilter={setWhereFilter} />
+        <StoreBoard overview={overview} homeStore={homeStore} role={role} metric={whereFilter} collapsible={phone && !printing} />
+      </div>
+
+      <div className="ov-grid ov-grid--even">
         <ExceptionsSection overview={overview} stores={stores} data={data} />
+        <DispositionsSection data={data} overview={overview} rows={rows} stores={stores} status={dispositionStatus} onOpen={(vin) => { setDispositionStatus(''); setDispositionVin(vin) }} />
       </div>
 
       <ServiceSection data={data} overview={overview} stores={stores} fullAccess={fullAccess} reportMode={serviceReport} onReport={printServiceReport} />
 
       <footer className="ov-print-only ov-print-footer">Counts are app records and source evidence as of the times shown. Nothing here asserts availability; confirm holds and location with the home store.</footer>
+      {dispositionVehicle ? (
+        <DispositionDialog
+          vehicle={{ vin: dispositionVehicle.vin, name: dispositionVehicle.vehicleName, stockNumber: dispositionVehicle.stockNumber }}
+          disposition={dispositionVehicle.appDisposition}
+          evidence={dispositionVehicle.managerDisposition}
+          role={role}
+          store={homeStore}
+          defaultDate={defaultDispositionDate(dispositionVehicle.vin, data.meta.reportDate)}
+          onClose={() => setDispositionVin(null)}
+          onSaved={async (saved) => {
+            setDispositionVin(null)
+            setDispositionStatus(`${dispositionSummary(saved)} recorded for #${dispositionVehicle.stockNumber}.`)
+            await refresh()
+          }}
+        />
+      ) : null}
     </section>
   )
 }

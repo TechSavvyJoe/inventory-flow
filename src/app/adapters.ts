@@ -669,6 +669,9 @@ export function toInventoryVehicle(
       updatedAt: data.meta.publicCapturedAt || data.meta.completedAt,
     },
     ...(data.overview?.vehicleFacts[vehicle.vin] ? { overview: data.overview.vehicleFacts[vehicle.vin] } : {}),
+    // Passed through unchanged: the app ledger's own code, never derived from
+    // the manager log, the listing or a move.
+    ...(vehicle.appDisposition !== undefined ? { appDisposition: vehicle.appDisposition } : {}),
     managerDisposition: vehicle.managerDisposition
       ? {
           dataState: managerDispositionState,

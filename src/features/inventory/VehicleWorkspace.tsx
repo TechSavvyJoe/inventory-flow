@@ -3,6 +3,8 @@ import { VehicleIssues, VehicleIssuesSummary } from '../issues/VehicleIssues';
 import { IssueReportDialog } from '../issues/IssueReportDialog';
 import { canReportVehicleIssue } from '../issues/issue-model';
 import { confirmUnsavedWork } from '../../lib/useUnsavedChanges';
+import { DispositionDialog } from '../overview/DispositionDialog';
+import { defaultDispositionDate, DISPOSITION_QUALIFIER, dispositionSummary } from '../overview/disposition-model';
 import type { VehicleIssueDetail } from '../../types';
 import { EQUIPMENT_CATEGORIES, equipmentFinderItems, type EquipmentCategoryId, type EquipmentFinderItem } from "./vehicle-equipment";
 import { CertifiedBadge } from "../../components/CertifiedBadge";
@@ -653,7 +655,7 @@ function TimelineDetails({ vehicle }: { vehicle: InventoryVehicle }) {
 
 export function VehicleWorkspace({
   vehicle, homeStore, canRequestVehicle = false, moveAction, initialTab = "overview", returnFocusRef, returnLabel = "Back to inventory", detailState, onRetryDetail,
-  issueContext,
+  issueContext, dispositionContext,
   onClose, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing,
 }: VehicleWorkspaceProps) {
   // Inherits the inventory list's signed-in shortlist; a standalone workspace
@@ -663,6 +665,13 @@ export function VehicleWorkspace({
   const [activeTarget, setActiveTarget] = useState<WorkspaceSectionId>(initialTab);
   const [takeHomeOpen, setTakeHomeOpen] = useState(false);
   const [issueReportOpen, setIssueReportOpen] = useState(false);
+  const [dispositionOpen, setDispositionOpen] = useState(false);
+  const [dispositionStatus, setDispositionStatus] = useState("");
+  const dispositionOpenerRef = useRef<HTMLButtonElement>(null);
+  const appDisposition = vehicle.appDisposition ?? null;
+  const dispositionAction = !dispositionContext || !appDisposition ? null
+    : appDisposition.canManage ? appDisposition.code ? "Change disposition" : "Record disposition"
+    : appDisposition.code ? "View disposition" : null;
   const [createdIssueId, setCreatedIssueId] = useState<string>();
   const [issueUpdates, setIssueUpdates] = useState<{ context: string; items: VehicleIssueDetail[] }>({ context: '', items: [] });
   const closeWorkspace = () => { if (confirmUnsavedWork()) onClose(); };
@@ -812,6 +821,8 @@ export function VehicleWorkspace({
     setActiveTarget(initialTab);
     setTakeHomeOpen(false);
     setIssueReportOpen(false);
+    setDispositionOpen(false);
+    setDispositionStatus("");
     setCreatedIssueId(undefined);
     setExpandedDocumentsVin(null);
     pendingFocus.current = null;
@@ -876,13 +887,16 @@ export function VehicleWorkspace({
                   {primaryHold?.expectedDeliveryDate ? <Fact label="Expected">{formatDate(primaryHold.expectedDeliveryDate)}</Fact> : null}
                   {holdCount > 1 ? <Fact label="Backup holds" className="vdp-focus-desktop-field">{holdCount - 1}</Fact> : null}
                   <Fact label="Service" className="vdp-focus-service-fact"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} compact /></Fact>
+                  {appDisposition ? <Fact label="Disposition"><strong>{dispositionSummary(appDisposition)}</strong><small>{appDisposition.effectiveDate ? `${formatDate(appDisposition.effectiveDate)} · ` : ""}{DISPOSITION_QUALIFIER}</small></Fact> : null}
                 </dl>
                 <div className="vdp-focus-actions">
                   {movementAction}
                   <button type="button" onClick={() => openAndFocusSection("hold")} data-action="hold-details"><MessageSquare size={18} aria-hidden="true" />Hold status</button>
                   {serviceStatus === "needs_service" ? <WorkspaceLink to={serviceHref + "&action=in_service"} preserveOrigin>Start service</WorkspaceLink> : null}
                   {serviceStatus !== "serviced" ? <WorkspaceLink to={serviceHref + "&action=serviced"} preserveOrigin>Mark Ready</WorkspaceLink> : <WorkspaceLink to={serviceHref} preserveOrigin>Service history</WorkspaceLink>}
+                  {dispositionAction ? <button type="button" ref={dispositionOpenerRef} onClick={() => { setDispositionStatus(""); setDispositionOpen(true); }} data-action="disposition"><ClipboardCheck size={18} aria-hidden="true" />{dispositionAction}</button> : null}
                 </div>
+                {dispositionStatus ? <p className="vdp-focus-next-action" role="status">{dispositionStatus}</p> : null}
                 {hasMovement ? <div className="vdp-focus-next-action"><strong className={nextStepStatus?.tone === "danger" ? "vdp-focus-next-action__overdue" : undefined}>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div> : null}
                 {issueContext ? <VehicleIssuesSummary issues={vehicleIssues} canReport={canReportIssue} enabled={issueContext.enabled} onOpen={() => openAndFocusSection('issues')} onReport={reportIssue} /> : null}
               </section>
@@ -983,6 +997,22 @@ export function VehicleWorkspace({
         </footer>
       </aside>
       {takeHomeOpen ? <TakeHomeSheet vehicle={vehicle} onClose={() => setTakeHomeOpen(false)} returnFocusRef={takeHomeOpenerRef} /> : null}
+      {dispositionOpen && dispositionContext ? <DispositionDialog
+        key={`${dispositionContext.role}:${dispositionContext.homeStore}:${vehicle.vin}`}
+        vehicle={{ vin: vehicle.vin, name: displayName, stockNumber: vehicle.stockNumber }}
+        disposition={appDisposition}
+        evidence={vehicle.managerDisposition ? { ...vehicle.managerDisposition, sourceStore: vehicle.managerDisposition.sourceStore.name } : null}
+        role={dispositionContext.role}
+        store={dispositionContext.homeStore}
+        defaultDate={defaultDispositionDate(vehicle.vin, dispositionContext.reportDate)}
+        returnFocusRef={dispositionOpenerRef}
+        onClose={() => setDispositionOpen(false)}
+        onSaved={async (saved) => {
+          setDispositionOpen(false);
+          setDispositionStatus(`${dispositionSummary(saved)} recorded for #${vehicle.stockNumber}.`);
+          await dispositionContext.onChanged();
+        }}
+      /> : null}
       {issueReportOpen && issueContext ? <IssueReportDialog key={issueAccessKey} vehicle={vehicle} context={issueContext} returnFocusRef={issueOpenerRef} onClose={() => setIssueReportOpen(false)} onSaved={issue => { issueSaved(issue); setIssueReportOpen(false); setCreatedIssueId(issue.id); openAndFocusSection('issues'); }} /> : null}
     </>, document.body,
   );

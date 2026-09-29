@@ -499,6 +499,42 @@ export interface ServiceReadinessInput {
   expectedVersion: number
 }
 
+export type AppDispositionCode = 'keep' | 'sold_pending' | 'delivered' | 'wholesale' | 'transfer_out'
+
+/**
+ * A manager's disposition recorded in Inventory Flow (server/vehicle-disposition.mjs).
+ * It sits beside the imported manager log and never changes a source. The note
+ * and writer's name arrive only in the detail read, for sales and managers.
+ */
+export interface AppDisposition {
+  vin: string
+  code: AppDispositionCode | null
+  version: number
+  effectiveDate: string | null
+  destinationStore: StoreName | null
+  updatedAt: string | null
+  updatedByRole: 'manager' | 'group_manager' | null
+  /** The writer's store. */
+  store: StoreName | null
+  /** The store whose manager may record this vehicle's disposition. */
+  ownerStore: StoreName | null
+  canManage: boolean
+  updatedBy?: string | null
+  note?: string | null
+}
+
+export interface AppDispositionDetail extends AppDisposition {
+  history: AppDisposition[]
+}
+
+export interface AppDispositionInput {
+  disposition: AppDispositionCode
+  effectiveDate?: string
+  destinationStore?: StoreName
+  note?: string
+  expectedVersion: number
+}
+
 export interface VehicleRecord {
   canReportIssue?: boolean
   vin: string
@@ -545,6 +581,7 @@ export interface VehicleRecord {
   privateEvidence?: DealerMailPrivateEvidence
   movement: MovementSummary
   serviceReadiness?: ServiceReadiness
+  appDisposition?: AppDisposition | null
   changeSummary?: string
   searchText?: string
   dataStatus?: string
@@ -857,6 +894,8 @@ export interface OverviewStoreCounts {
   recordsIncomplete: number
   listed: number
   preListing: number
+  /** App dispositions by the vehicle's owner store. */
+  dispositions?: Record<AppDispositionCode | 'none', number>
 }
 
 export interface OverviewBoardFlow {
@@ -921,6 +960,8 @@ export interface OverviewVehicleFacts {
   recordsCaptured: number
   recordsApplicable: 3 | 5
   service: OverviewVehicleService
+  /** The app disposition's code; absent when none is recorded. */
+  disposition?: AppDispositionCode
   holdState?: HoldSummary['state']
 }
 
@@ -955,6 +996,8 @@ export type OverviewExceptionKind =
   | 'identity_review'
   | 'records_incomplete'
   | 'service_date_order'
+  | 'listed_but_delivered'
+  | 'delivered_move_no_disposition'
 
 export interface OverviewException {
   kind: OverviewExceptionKind

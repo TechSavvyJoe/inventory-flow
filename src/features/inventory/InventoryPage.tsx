@@ -323,6 +323,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         issueContext={data.vehicleIssuesEnabled === true || Boolean(data.vehicleIssues?.length)
           ? { role, homeStore, currentUser, enabled: data.vehicleIssuesEnabled === true, issues: data.vehicleIssues ?? [], onChanged: refresh }
           : undefined}
+        dispositionContext={{ role, homeStore, reportDate: data.meta.reportDate, onChanged: refresh }}
         vehicles={vehicles}
         detailState={activeDetail
           ? detailRequest.key === detailKey && detailRequest.sourceRevision === bootstrapRevision && ['refreshing', 'stale'].includes(detailRequest.state)

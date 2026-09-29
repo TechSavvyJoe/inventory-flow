@@ -4,6 +4,7 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { WorkflowError } from './workflow.mjs'
 import { SERVICE_EVENT_COLUMNS } from './service-readiness.mjs'
+import { DISPOSITION_EVENT_COLUMNS } from './vehicle-disposition.mjs'
 import { serviceIntakeRows } from './service-intake.mjs'
 import { VEHICLE_ISSUE_COLUMNS, VEHICLE_ISSUE_EVENT_COLUMNS } from './vehicle-issues.mjs'
 
@@ -261,6 +262,24 @@ export function migrate(database) {
     BEFORE UPDATE ON vehicle_service_events BEGIN SELECT RAISE(ABORT, 'Service history is append-only'); END;
     CREATE TRIGGER IF NOT EXISTS vehicle_service_events_no_delete
     BEFORE DELETE ON vehicle_service_events BEGIN SELECT RAISE(ABORT, 'Service history is append-only'); END;
+
+    -- App-owned manager dispositions (cloudflare/migrations/0013). Never
+    -- inferred from a source, a move event or the imported manager log.
+    CREATE TABLE IF NOT EXISTS vehicle_disposition_events (
+      id TEXT PRIMARY KEY, vin TEXT NOT NULL, version INTEGER NOT NULL CHECK (version > 0),
+      disposition TEXT NOT NULL CHECK (disposition IN ('keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out')),
+      effective_date TEXT,
+      destination_store TEXT CHECK (destination_store IS NULL OR destination_store IN ('Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln')),
+      note TEXT, updated_at TEXT NOT NULL, actor TEXT NOT NULL, actor_user_id TEXT,
+      actor_role TEXT NOT NULL CHECK (actor_role IN ('manager', 'group_manager')),
+      store_id TEXT NOT NULL, input_hash TEXT NOT NULL, idempotency_key TEXT NOT NULL,
+      UNIQUE (vin, version), UNIQUE (vin, idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS vehicle_disposition_events_vin_idx ON vehicle_disposition_events(vin, version DESC);
+    CREATE TRIGGER IF NOT EXISTS vehicle_disposition_events_no_update
+    BEFORE UPDATE ON vehicle_disposition_events BEGIN SELECT RAISE(ABORT, 'Disposition history is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS vehicle_disposition_events_no_delete
+    BEFORE DELETE ON vehicle_disposition_events BEGIN SELECT RAISE(ABORT, 'Disposition history is append-only'); END;
 
     -- App-owned operational reports. Listing, holds, service readiness, and
     -- physical custody remain independent. Reporting and history survive releases.
@@ -968,6 +987,24 @@ export function insertServiceEvent(database, row) {
     if ((latest.version ?? 0) + 1 !== row.version) throw new WorkflowError('Another manager updated this vehicle. Reload and try again.', { status: 409, code: 'SERVICE_VERSION_CONFLICT' })
     database.prepare(`INSERT INTO vehicle_service_events (${SERVICE_EVENT_COLUMNS.join(', ')}) VALUES (${SERVICE_EVENT_COLUMNS.map(() => '?').join(', ')})`)
       .run(...SERVICE_EVENT_COLUMNS.map((key) => row[key] ?? null))
+    return row
+  })
+}
+
+export function dispositionsEnabled() { return true }
+
+export function listDispositionEvents(database) {
+  return database.prepare('SELECT * FROM vehicle_disposition_events ORDER BY vin, version').all()
+}
+
+export function insertDispositionEvent(database, row) {
+  return withTransaction(database, () => {
+    const latest = database.prepare('SELECT MAX(version) AS version FROM vehicle_disposition_events WHERE vin = ?').get(row.vin)
+    if ((latest.version ?? 0) + 1 !== row.version) {
+      throw new WorkflowError('Another manager updated this vehicle’s disposition. Review the latest and save again.', { status: 409, code: 'DISPOSITION_VERSION_CONFLICT' })
+    }
+    database.prepare(`INSERT INTO vehicle_disposition_events (${DISPOSITION_EVENT_COLUMNS.join(', ')}) VALUES (${DISPOSITION_EVENT_COLUMNS.map(() => '?').join(', ')})`)
+      .run(...DISPOSITION_EVENT_COLUMNS.map((key) => row[key] ?? null))
     return row
   })
 }

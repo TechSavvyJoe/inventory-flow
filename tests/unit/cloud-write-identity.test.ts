@@ -66,4 +66,26 @@ describe('Worker write identity comes from the D1 membership', () => {
     expect(cloud.database.prepare("SELECT actor, actor_user_id, actor_role FROM transfer_events WHERE transfer_request_id=? AND event_type='request_approved'").get(created.json.id))
       .toEqual({ actor: manager.name, actor_user_id: manager.userId, actor_role: 'manager' })
   })
+
+  it('persists the disposition actor from the D1 membership and rejects claimed identity fields', async () => {
+    const path = '/api/vehicles/TESTDATAFWELL0001/disposition'
+    // Every call carries group_manager/Lincoln token claims and forged identity headers.
+    const claimed = await cloud.call('POST', path, manager.email, { disposition: 'keep', expectedVersion: 0, actorRole: 'group_manager' })
+    expect(claimed).toMatchObject({ status: 422, json: { code: 'INVALID_DISPOSITION_INPUT' } })
+    expect(cloud.count('vehicle_disposition_events')).toBe(0)
+
+    const recorded = await cloud.call('POST', path, manager.email, { disposition: 'keep', expectedVersion: 0 })
+    expect(recorded.status).toBe(201)
+    expect(recorded.json).toMatchObject({ code: 'keep', version: 1, updatedBy: manager.name, updatedByRole: 'manager', store: 'Fowlerville' })
+    expect(cloud.database.prepare('SELECT actor, actor_user_id, actor_role, store_id FROM vehicle_disposition_events').all())
+      .toEqual([{ actor: manager.name, actor_user_id: manager.userId, actor_role: 'manager', store_id: 'Fowlerville' }])
+
+    // Another store's manager cannot record on a Fowlerville vehicle, whatever the request claims.
+    const howell = { email: 'howell-manager@example.invalid', userId: 'manager-howell-1', name: 'Synthetic Howell Manager', role: 'manager', store: 'Howell' }
+    cloud.database.prepare('INSERT INTO cloud_memberships (email,user_id,name,role,home_store,enabled) VALUES (?,?,?,?,?,1)')
+      .run(howell.email, howell.userId, howell.name, howell.role, howell.store)
+    const otherStore = await cloud.call('POST', path, howell.email, { disposition: 'sold_pending', expectedVersion: 1 })
+    expect(otherStore).toMatchObject({ status: 403, json: { code: 'DISPOSITION_MANAGER_REQUIRED' } })
+    expect(cloud.count('vehicle_disposition_events')).toBe(1)
+  })
 })

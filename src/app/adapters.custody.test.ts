@@ -292,6 +292,17 @@ describe('app custody adapter', () => {
     });
   });
 
+  it('never reads a recorded disposition as custody or location', () => {
+    for (const code of ['delivered', 'transfer_out', 'sold_pending'] as const) {
+      const appDisposition = { vin: 'TESTDATASYN000001', code, version: 1, effectiveDate: '2026-08-29', destinationStore: code === 'transfer_out' ? 'Lincoln' as const : null, updatedAt: '2026-08-30T12:00:00Z', updatedByRole: 'manager' as const, store: 'Fowlerville' as const, ownerStore: 'Fowlerville' as const, canManage: true };
+      const mapped = toInventoryVehicle({ ...sourceVehicle(sourceReported), appDisposition }, sourceData());
+      expect(mapped.appDisposition).toEqual(appDisposition);
+      expect(mapped.location).toMatchObject({ appConfirmedLocation: null, appConfirmedStore: null, conflict: false });
+      expect(mapped.movement).toBeNull();
+      expect(resolveCurrentLocation(mapped)).toMatchObject({ label: 'Fowlerville', provenance: 'source-reported' });
+    }
+  });
+
   it('keeps a plain source report as source-reported with no movement', () => {
     for (const movement of [sourceReported, { ...sourceReported, label: 'Last verified source location', locationConfidence: 'stale' as const }]) {
       const mapped = toInventoryVehicle(sourceVehicle(movement), sourceData());

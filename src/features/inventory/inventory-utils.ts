@@ -254,6 +254,12 @@ export function vehicleMatchesOverviewView(
   vehicle: InventoryVehicle,
   { view, store }: NonNullable<InventoryFilters["overviewView"]>,
 ): boolean {
+  if (view.startsWith("disposition-")) {
+    // By the role-independent owner store the server counted it under.
+    const owner = vehicle.appDisposition?.ownerStore ?? vehicle.location.homeStore.name;
+    const code = vehicle.appDisposition?.code ?? "none";
+    return owner === store && view === `disposition-${code.replaceAll("_", "-")}`;
+  }
   const facts = vehicle.overview;
   const home = vehicle.location.homeStore.name === store;
   if (!facts) return view === "on-lot" && home;
@@ -273,6 +279,7 @@ export function vehicleMatchesOverviewView(
       const holdStore = vehicle.location.crmStore?.name ?? vehicle.location.homeStore.name;
       return holdStore === store && facts.holdActive === true && (view === "holds" || facts.holdPastExpected === true);
     }
+    default: return false;
   }
 }
 

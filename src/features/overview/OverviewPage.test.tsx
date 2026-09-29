@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import type {
+  AppDisposition,
   BootstrapData,
   OverviewServiceStoreMetrics,
   OverviewStoreCounts,
@@ -17,6 +18,8 @@ import { OverviewPage } from './OverviewPage'
 const { useAppDataMock } = vi.hoisted(() => ({ useAppDataMock: vi.fn() }))
 
 vi.mock('../../app/AppDataContext', () => ({ useAppData: () => useAppDataMock() }))
+const api = vi.hoisted(() => ({ getDisposition: vi.fn(), updateDisposition: vi.fn() }))
+vi.mock('../../lib/api', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../lib/api')>()), ...api }))
 
 const STORES: StoreName[] = ['Howell', 'Fowlerville', 'Ford Detroit', 'Lincoln']
 
@@ -125,7 +128,7 @@ function bootstrap(role: UserRole = 'manager'): BootstrapData {
 }
 
 function renderAs(role: UserRole, data = bootstrap(role)) {
-  useAppDataMock.mockReturnValue({ data, homeStore: 'Howell', role, currentUser: `Synthetic ${role}` })
+  useAppDataMock.mockReturnValue({ data, homeStore: 'Howell', role, currentUser: `Synthetic ${role}`, refresh: vi.fn().mockResolvedValue(undefined) })
   return render(<MemoryRouter><OverviewPage /></MemoryRouter>)
 }
 
@@ -310,5 +313,141 @@ describe('OverviewPage (server projection)', () => {
     delete data.overview
     renderAs('manager', data)
     expect(screen.getByText('The Overview is not available for this account.')).toBeVisible()
+  })
+})
+
+function disposition(vin: string, ownerStore: StoreName, code: AppDisposition['code'], canManage: boolean): AppDisposition {
+  return { vin, code, version: code ? 1 : 0, effectiveDate: code ? '2026-09-20' : null, destinationStore: null, updatedAt: code ? '2026-09-20T15:00:00Z' : null, updatedByRole: code ? 'manager' : null, store: code ? ownerStore : null, ownerStore, canManage }
+}
+
+/** The Slice B additions: recorded dispositions, one manager-log sale, board arrows and the two disposition prompts. */
+function withDispositions(role: UserRole): BootstrapData {
+  const data = bootstrap(role)
+  const manages = (store: StoreName) => role === 'group_manager' || (role === 'manager' && store === 'Howell')
+  const [local, away, returning, lincoln] = data.vehicles
+  local.appDisposition = disposition(local.vin, 'Howell', 'sold_pending', manages('Howell'))
+  away.appDisposition = disposition(away.vin, 'Howell', null, manages('Howell'))
+  returning.appDisposition = disposition(returning.vin, 'Howell', null, manages('Howell'))
+  returning.managerDisposition = {
+    stockNumber: returning.stockNumber, vin: returning.vin, vehicleName: returning.vehicleName, soldManagerLog: true, deliveredManagerLog: false, deliveryDate: null,
+    confidence: 'high', sourceStore: 'Howell', sourcePeriod: '2026-09', matchMethod: 'vin', matchStatus: 'matched', physicalStore: 'Howell', reviewRequired: false,
+    soldLabel: 'Sold — manager log', deliveryLabel: 'Not marked delivered — manager log', dataState: 'current',
+  }
+  lincoln.vehicleName = '2026 Lincoln Nautilus Reserve'
+  lincoln.appDisposition = disposition(lincoln.vin, 'Lincoln', 'wholesale', manages('Lincoln'))
+  const overview = data.overview!
+  for (const entry of overview.stores) {
+    entry.dispositions = { keep: 0, sold_pending: entry.store === 'Howell' ? 1 : 0, delivered: 0, wholesale: entry.store === 'Lincoln' ? 1 : 0, transfer_out: 0, none: entry.store === 'Howell' ? 2 : 0 }
+  }
+  overview.vehicleFacts[local.vin].disposition = 'sold_pending'
+  overview.vehicleFacts[lincoln.vin].disposition = 'wholesale'
+  overview.board.flows = [
+    { from: 'Howell', to: 'Lincoln', kind: 'outbound', count: 1, vins: [away.vin] },
+    { from: 'Lincoln', to: 'Howell', kind: 'return', count: 1, vins: [returning.vin] },
+  ]
+  overview.exceptions.push(
+    { kind: 'listed_but_delivered', store: 'Howell', count: 1, vins: [local.vin] },
+    ...(role === 'sales' ? [] : [{ kind: 'delivered_move_no_disposition' as const, store: 'Howell' as StoreName, count: 1, vins: [away.vin], transferIds: ['move-1'] }]),
+  )
+  return data
+}
+
+describe('Overview store board and dispositions (Slice B)', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    api.getDisposition.mockReset()
+  })
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('draws a schematic whose pins link to the list behind their number and whose arrows link to exactly their moves', () => {
+    renderAs('group_manager', withDispositions('group_manager'))
+    const board = screen.getByRole('region', { name: 'Store board' })
+    expect(within(board).getByRole('img', { name: /^Store board Schematic of the four stores, not a map\./ })).toBeInTheDocument()
+    expect(within(board).getByRole('link', { name: 'Store board pin, Howell: 1 vehicle away from home' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=away')
+    expect(within(board).getByRole('link', { name: 'Store board pin, Lincoln: 0 vehicles away from home' })).toHaveAttribute('href', '/inventory?scope=group&store=Lincoln&view=away')
+    // Each arrow is drawn and also listed as text, both linking to its leg.
+    for (const [name, href] of [
+      ['1 vehicle Howell to Lincoln, outbound', '/transfers?from=Howell&to=Lincoln&leg=outbound'],
+      ['1 vehicle Lincoln to Howell, returning home', '/transfers?from=Lincoln&to=Howell&leg=return'],
+    ]) {
+      const links = within(board).getAllByRole('link', { name })
+      expect(links).toHaveLength(2)
+      for (const link of links) expect(link).toHaveAttribute('href', href)
+    }
+    expect(within(board).getByRole('table', { name: 'Store board counts by home store' })).toBeInTheDocument()
+    expect(within(board).getByText('Arrows: moves in progress · Inventory Flow move ledger · live')).toBeInTheDocument()
+
+    // One filter drives the list and the pins.
+    fireEvent.click(within(screen.getByRole('region', { name: 'Where is my inventory' })).getByRole('button', { name: /^Holds/ }))
+    expect(within(board).getByRole('link', { name: 'Store board pin, Howell: 1 vehicle with holds' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=holds')
+  })
+
+  it('lets a group manager record or change any disposition, beside the manager log, with no note on the page', () => {
+    renderAs('group_manager', withDispositions('group_manager'))
+    const section = screen.getByRole('region', { name: 'Dispositions' })
+    expect(within(section).getByRole('link', { name: 'Howell: 1 vehicle with the disposition sold pending' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=disposition-sold-pending')
+    expect(within(section).getByRole('link', { name: 'Lincoln: 1 vehicle with the disposition wholesale' })).toHaveAttribute('href', '/inventory?scope=group&store=Lincoln&view=disposition-wholesale')
+    expect(within(section).getByRole('link', { name: 'Howell: 2 vehicles with no disposition recorded' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=disposition-none')
+    expect(within(section).getByRole('button', { name: 'Change disposition for 2026 Lincoln Nautilus Reserve' })).toBeEnabled()
+    expect(within(section).getByRole('button', { name: 'Change disposition for 2026 Ford F-150 001' }).closest('li')).toHaveTextContent('Sold pending')
+    // The manager-log sale is a prompt beside the app record, never a recorded disposition.
+    const logRow = within(section).getByRole('button', { name: 'Record disposition for 2026 Ford F-150 003' }).closest('li')!
+    expect(logRow).toHaveTextContent('No disposition recorded')
+    expect(logRow).toHaveTextContent('Sold — manager log · Not marked delivered — manager log · Howell · 2026-09')
+    // A move that recorded delivery prompts; it does not record anything.
+    expect(within(section).getByRole('button', { name: 'Record disposition for 2026 Ford F-150 002' }).closest('li')).toHaveTextContent('A move records customer delivery')
+    const summary = screen.getByRole('region', { name: 'Store summary' })
+    expect(within(summary).getByRole('link', { name: 'Howell: 1 vehicle with the disposition sold pending' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=disposition-sold-pending')
+    expect(screen.queryByText(/Deposit|customer name/i)).not.toBeInTheDocument()
+  })
+
+  it('shows the two disposition prompts with fixed copy, never as inferences', () => {
+    renderAs('manager', withDispositions('manager'))
+    const exceptions = screen.getByRole('region', { name: 'Exceptions' })
+    expect(within(exceptions).getByRole('link', { name: 'Howell: 1 vehicle · Recorded delivered · still listed' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=disposition-delivered')
+    expect(exceptions).toHaveTextContent('Delivered in Inventory Flow 3+ days ago; the website still lists it. Confirm with the store; the listing is not changed here.')
+    expect(within(exceptions).getByRole('link', { name: 'Howell: 1 vehicle · Move says delivered · no disposition' })).toHaveAttribute('href', '/transfers?id=move-1&returnTo=%2Foverview')
+    expect(exceptions).toHaveTextContent('A move records customer delivery; no disposition has been recorded.')
+  })
+
+  it('lets a store manager record only for their own store and view another store read-only', () => {
+    renderAs('manager', withDispositions('manager'))
+    let section = screen.getByRole('region', { name: 'Dispositions' })
+    expect(within(section).getByRole('button', { name: 'Change disposition for 2026 Ford F-150 001' })).toBeVisible()
+    // My store scope lists only Howell-owned rows.
+    expect(within(section).queryByText('2026 Lincoln Nautilus Reserve')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
+    section = screen.getByRole('region', { name: 'Dispositions' })
+    expect(within(section).getByRole('button', { name: 'View disposition for 2026 Lincoln Nautilus Reserve' })).toBeVisible()
+    expect(within(section).queryByRole('button', { name: /^(Change|Record) disposition for 2026 Lincoln Nautilus Reserve/ })).not.toBeInTheDocument()
+  })
+
+  it('gives sales dispositions read-only, with the note in the detail', async () => {
+    api.getDisposition.mockResolvedValue({ ...disposition('TESTDATAHWELL0001', 'Howell', 'sold_pending', false), updatedBy: 'Synthetic Howell Manager', note: 'Delivery Friday', history: [] })
+    renderAs('sales', withDispositions('sales'))
+    const section = screen.getByRole('region', { name: 'Dispositions' })
+    expect(within(section).queryByRole('button', { name: /^(Change|Record) disposition/ })).not.toBeInTheDocument()
+    fireEvent.click(within(section).getByRole('button', { name: 'View disposition for 2026 Ford F-150 001' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Disposition · 2026 Ford F-150 001' })
+    await waitFor(() => expect(dialog).toHaveTextContent('Delivery Friday'))
+    expect(within(dialog).queryByRole('button', { name: 'Save disposition' })).not.toBeInTheDocument()
+    expect(api.getDisposition).toHaveBeenCalledWith('TESTDATAHWELL0001', 'sales', 'Howell')
+  })
+
+  it('puts the board in a closed disclosure below the list on a phone', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(max-width: 880px)', media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
+    renderAs('manager', withDispositions('manager'))
+    const board = screen.getByRole('region', { name: 'Store board' })
+    const toggle = board.querySelector('summary')!
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(board.querySelector('details')).not.toHaveAttribute('open')
+    fireEvent.click(toggle)
+    expect(board.querySelector('details')).toHaveAttribute('open')
+    const where = screen.getByRole('region', { name: 'Where is my inventory' })
+    expect(where.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

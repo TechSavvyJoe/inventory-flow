@@ -15,6 +15,9 @@ const REQUIRED_METHODS = Object.freeze([
   "listTransferRows",
   "listServiceEvents",
   "insertServiceEvent",
+  "dispositionsEnabled",
+  "listDispositionEvents",
+  "insertDispositionEvent",
   "vehicleIssuesEnabled",
   "listVehicleIssueRows",
   "listVehicleIssueEvents",
@@ -89,6 +92,18 @@ export function listServiceEvents(context, ...args) {
 
 export function insertServiceEvent(context, ...args) {
   return invoke(context, 'insertServiceEvent', args)
+}
+
+export function dispositionsEnabled(context, ...args) {
+  return invoke(context, 'dispositionsEnabled', args)
+}
+
+export function listDispositionEvents(context, ...args) {
+  return invoke(context, 'listDispositionEvents', args)
+}
+
+export function insertDispositionEvent(context, ...args) {
+  return invoke(context, 'insertDispositionEvent', args)
 }
 
 export function vehicleIssuesEnabled(context, ...args) {
