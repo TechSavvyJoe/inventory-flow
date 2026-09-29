@@ -277,3 +277,4 @@
 @media(max-width:500px) {
  .service-autocheck-history dl { grid-template-columns:minmax(0,1fr); }
 }
+.service-store-filter { margin:0 0 10px; }

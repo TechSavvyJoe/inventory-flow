@@ -157,6 +157,19 @@ describe('Service readiness workspace', () => {
     expect(screen.queryByText('Synthetic Ford 001')).not.toBeInTheDocument()
   })
 
+  it('opens an Overview store count on that service store once, then lets the list widen again', async () => {
+    mocked.context.data = { meta: { reportDate: '2026-08-30' }, vehicles: [record('serviced', 'Howell', '001'), record('serviced', 'Lincoln', '003'), record('serviced', 'Fowlerville', '004')] }
+    show('/service?status=serviced&store=Lincoln')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Clear service store filter: Lincoln' })).toBeInTheDocument())
+    expect(screen.getByText('Synthetic Ford 003')).toBeInTheDocument()
+    expect(screen.queryByText('Synthetic Ford 001')).not.toBeInTheDocument()
+    expect(screen.queryByText('Synthetic Ford 004')).not.toBeInTheDocument()
+    expect(screen.getByText('1 vehicle · Lincoln')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear service store filter: Lincoln' }))
+    expect(screen.getByText('Synthetic Ford 001')).toBeInTheDocument()
+    expect(screen.getByText('Synthetic Ford 004')).toBeInTheDocument()
+  })
+
   it('matches service search terms across separate authorized fields and clears the search', () => {
     show()
     const search = screen.getByRole('searchbox', { name: 'Search service vehicles' })

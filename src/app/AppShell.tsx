@@ -40,7 +40,7 @@ const NAV_ITEMS = [
 const OVERVIEW_NAV_ITEM = {
   id: 'overview',
   to: '/overview',
-  label: 'Inventory overview',
+  label: 'Overview',
   shortLabel: 'Overview',
   icon: Gauge,
 } as const
@@ -66,8 +66,12 @@ const ROLE_LABELS: Record<UserRole, string> = {
 
 const ROLE_PREVIEW_OPTIONS: UserRole[] = ['sales', 'manager', 'group_manager']
 
-// The bottom rail holds four destinations plus More. Whatever it leaves out has
-// no other link on a phone, so the utility menu carries it with its page help.
+// Overview is computed on the server for managers (full) and sales (read-only).
+const OVERVIEW_ROLES: ReadonlySet<UserRole> = new Set(['manager', 'group_manager', 'sales'])
+
+// The bottom rail holds four destinations plus More: Overview, Inventory, Moves
+// and Actions. Whatever it leaves out has no other link on a phone, so the
+// utility menu carries it with its page help.
 const MOBILE_UTILITY_HINTS: Partial<Record<NavigationItemId, string>> = {
   overview: 'Store and group inventory, location, service, and attention',
   today: 'The next step for your store, in one place',
@@ -111,23 +115,25 @@ export function AppShell({ children }: { children: ReactNode }) {
   const previousRouteUrlRef = useRef(routeUrl)
   const attentionCount = openStoreActionCount(data, { store: homeStore, role })
   const storeBrand = STORE_BRANDING[homeStore]
-  const canSeeManager = role === 'manager' || role === 'group_manager'
+  const canSeeOverview = OVERVIEW_ROLES.has(role)
   const canSeeAdmin = role === 'group_manager'
   const desktopNavigationItems = [
-    ...(canSeeManager ? [OVERVIEW_NAV_ITEM] : []),
+    ...(canSeeOverview ? [OVERVIEW_NAV_ITEM] : []),
     ...NAV_ITEMS,
     ...(canSeeAdmin ? [ADMIN_NAV_ITEM] : []),
   ]
-  const mobileNavigationIds: NavigationItemId[] = canSeeManager
+  const mobileNavigationIds: NavigationItemId[] = canSeeOverview
     ? ['overview', 'inventory', 'moves', 'today']
     : ['inventory', 'moves', 'today', 'updates']
   const availableMobileItems = [OVERVIEW_NAV_ITEM, ...NAV_ITEMS, ADMIN_NAV_ITEM]
-    .filter((item) => item.id !== 'overview' || canSeeManager)
+    .filter((item) => item.id !== 'overview' || canSeeOverview)
     .filter((item) => item.id !== 'admin' || canSeeAdmin)
   const mobileNavigationItems = availableMobileItems
     .filter((item) => mobileNavigationIds.includes(item.id))
     .sort((left, right) => mobileNavigationIds.indexOf(left.id) - mobileNavigationIds.indexOf(right.id))
   const mobileUtilityItems = availableMobileItems.filter((item) => !mobileNavigationIds.includes(item.id))
+  // When Actions is not in the rail, its count rides on More so it is never lost.
+  const moreAttentionCount = mobileUtilityItems.some((item) => item.id === 'today') ? attentionCount : 0
   const rolePreviewEnabled = data?.access?.canPreviewRoles === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
   const storePreviewEnabled = data?.access?.canPreviewStores === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
   const productionRolePreview = data?.access?.rolePreviewActive === true
@@ -419,6 +425,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         >
           <Ellipsis aria-hidden="true" />
           <span>More</span>
+          {moreAttentionCount > 0 ? <b aria-label={`${moreAttentionCount} items need attention today`}>{moreAttentionCount}</b> : null}
         </button>
       </nav>
 

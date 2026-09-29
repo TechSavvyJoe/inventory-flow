@@ -27,6 +27,9 @@ vi.mock('./InventoryExperience', () => ({ InventoryExperience: (props: Inventory
   <output data-testid="scope">{props.scope}</output>
   <output data-testid="return-label">{props.returnLabel}</output>
   <output data-testid="page-size">{props.pageSize}</output>
+  <output data-testid="initial-filters">{JSON.stringify(props.initialFilters ?? null)}</output>
+  <output data-testid="quick-view">{props.initialQuickView}</output>
+  <output data-testid="filter-request">{props.filterRequestKey}</output>
   <button onClick={() => props.onSelectedVehicleChange?.(props.vehicles[0].id)}>First vehicle</button>
   <button onClick={() => props.onSelectedVehicleChange?.(props.vehicles[1].id)}>Second vehicle</button>
   <button onClick={props.onRetryDetail}>Retry record</button>
@@ -321,5 +324,29 @@ describe('inventory detail and navigation lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Browser back' }))
     expect(screen.getByTestId('selected')).toHaveTextContent('none')
     expect(screen.getByTestId('scope')).toHaveTextContent('group')
+  })
+
+  it('reads an Overview count link once, strips it from the URL, and keeps Back on the Overview', () => {
+    render(<MemoryRouter initialEntries={['/overview', '/inventory?scope=group&store=Howell&view=away']} initialIndex={1}><Navigation /><InventoryPage /></MemoryRouter>)
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/inventory\?scope=group$/)
+    expect(JSON.parse(screen.getByTestId('initial-filters').textContent!)).toEqual({ overviewView: { view: 'away', store: 'Howell' } })
+    expect(screen.getByTestId('quick-view')).toHaveTextContent('all')
+    expect(screen.getByTestId('query')).toHaveTextContent('')
+    expect(screen.getByTestId('scope')).toHaveTextContent('group')
+    const request = screen.getByTestId('filter-request').textContent
+    expect(request).not.toBe('initial')
+
+    // Returning to Inventory keeps the same request (and so its chip) until cleared.
+    fireEvent.click(screen.getByRole('button', { name: 'Inventory list' }))
+    expect(screen.getByTestId('filter-request')).toHaveTextContent(request!)
+    fireEvent.click(screen.getByRole('button', { name: 'Browser back' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Browser back' }))
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/overview$/)
+  })
+
+  it('opens an exception VIN list and ignores unknown Overview values', () => {
+    show('/inventory?scope=group&vins=TESTDATAHWELL0001,not+a+vin&view=everything&store=Nowhere')
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/inventory\?scope=group$/)
+    expect(JSON.parse(screen.getByTestId('initial-filters').textContent!)).toEqual({ vins: ['TESTDATAHWELL0001'] })
   })
 })

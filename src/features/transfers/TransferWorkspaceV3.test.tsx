@@ -1219,6 +1219,28 @@ describe('transfer workspace v3 layout', () => {
     vi.useRealTimers();
   });
 
+  it('opens an Overview return-overdue count as exactly that store\'s overdue returns, once, for managers and sales', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-30T13:00:00.000Z'));
+    const data = bootstrap(3);
+    data.transfers[0] = { ...data.transfers[0], returnDueAt: '2026-08-30T12:00:00.000Z' };
+    data.transfers[1] = { ...data.transfers[1], returnDueAt: '2026-08-30T12:00:00.000Z' };
+    for (const role of ['manager', 'sales']) {
+      renderPage(data, '/transfers?view=return-overdue&store=Howell', { role }, true);
+      expect(screen.getByTestId('router-location')).toHaveTextContent(/^\/transfers$/);
+      expect(screen.getByRole('button', { name: /^Active/ })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('combobox', { name: 'Filter vehicle moves' })).toHaveValue('overdue-returns');
+      expect(screen.getByRole('button', { name: /MOVE1/ })).toBeInTheDocument();
+      // MOVE2 is overdue but belongs to Fowlerville; MOVE3 is not overdue.
+      expect(screen.queryByRole('button', { name: /MOVE2/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /MOVE3/ })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Clear home store filter: Howell' }));
+      expect(screen.getByRole('button', { name: /MOVE2/ })).toBeInTheDocument();
+      cleanup();
+    }
+    vi.useRealTimers();
+  });
+
   it('shows the exact inter-store approval chain before driver assignment', () => {
     const waiting = detail(['review-request']);
     waiting.status.request = { code: 'submitted', label: 'Waiting on my manager', tone: 'info' };

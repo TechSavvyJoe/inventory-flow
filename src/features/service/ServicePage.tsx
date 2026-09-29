@@ -2,7 +2,7 @@ import { confirmUnsavedWork, useUnsavedChanges } from '../../lib/useUnsavedChang
 import { useWorkspaceLifetime } from '../../lib/useWorkspaceLifetime'
 import { useWorkspaceState, useWorkspaceScroll } from '../../lib/workspace-memory'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { ArrowLeft, CarFront, CheckCircle2, Wrench } from 'lucide-react'
+import { ArrowLeft, CarFront, CheckCircle2, Wrench, X } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { ApiError, getServiceReadiness, updateServiceReadiness } from '../../lib/api'
@@ -10,7 +10,7 @@ import { formatDate, formatNumber } from '../../lib/format'
 import { SERVICE_STATUS_OPTIONS, serviceWorkflowStatus, serviceStatusLabel } from '../../lib/service-readiness'
 import { vehiclePhotoDisplaySources } from '../../lib/vehicle-photos'
 import { currentWorkspaceReturnPath, vehicleWorkspacePath, readWorkspaceReturnPath, workspaceReturnLabel } from '../../lib/inventory-navigation'
-import type { ServiceReadinessDetail, ServiceReadinessStatus, ServiceWorkflowStatus, StoreName, UserRole, VehicleRecord } from '../../types'
+import { STORE_NAMES, type ServiceReadinessDetail, type ServiceReadinessStatus, type ServiceWorkflowStatus, type StoreName, type UserRole, type VehicleRecord } from '../../types'
 import { SourceWarning } from '../../components/SourceWarning'
 import { CopyableValue } from '../../components/CopyableValue'
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
@@ -241,12 +241,28 @@ export function ServicePage() {
   useWorkspaceScroll(accessContext, 'service')
   const [scope, setScope] = useWorkspaceState<'my_store' | 'all'>(accessContext, 'service.scope', 'my_store')
   const [search, setSearch] = useWorkspaceState(accessContext, 'service.search', '')
+  // An Overview count (`?store=`) narrows the list to one service store for
+  // this visit only; the parameter is read once and stripped.
+  const [storeFilter, setStoreFilter] = useState<StoreName | null>(null)
+  const storeParam = params.get('store')
+  useEffect(() => {
+    if (storeParam === null) return
+    if (STORE_NAMES.includes(storeParam as StoreName)) {
+      const linked = storeParam as StoreName
+      setScope(linked === homeStore ? 'my_store' : 'all')
+      setStoreFilter(linked === homeStore ? null : linked)
+    }
+    setParams((current) => { const next = new URLSearchParams(current); next.delete('store'); return next }, { replace: true })
+  }, [storeParam]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
   const statusParam = params.get('status') as ServiceWorkflowStatus
   const actionParam = params.get('action') as ServiceWorkflowStatus
   const selectedVin = params.get('vin')
   const selected = data?.vehicles.find((vehicle) => vehicle.vin === selectedVin)
   const status = STATUSES.includes(statusParam) ? statusParam : selected ? serviceWorkflowStatus(selected.serviceReadiness) : 'needs_service'
-  const scoped = useMemo(() => (data?.vehicles ?? []).filter((vehicle) => scope === 'all' || (vehicle.serviceReadiness?.store ?? vehicle.homeStore) === homeStore), [data, scope, homeStore])
+  const scoped = useMemo(() => (data?.vehicles ?? []).filter((vehicle) => {
+    const serviceStore = vehicle.serviceReadiness?.store ?? vehicle.homeStore
+    return scope === 'all' ? !storeFilter || serviceStore === storeFilter : serviceStore === homeStore
+  }), [data, scope, homeStore, storeFilter])
   const counts = useMemo(() => Object.fromEntries(STATUSES.map((value) => [value, scoped.filter((vehicle) => serviceWorkflowStatus(vehicle.serviceReadiness) === value).length])) as Record<ServiceWorkflowStatus, number>, [scoped])
   const statusVehicles = scoped.filter((vehicle) => serviceWorkflowStatus(vehicle.serviceReadiness) === status)
   const vehicles = statusVehicles.filter((vehicle) => searchFieldsMatch(search, [vehicle.vehicleName, vehicle.stockNumber, vehicle.vin, vehicle.searchText]))
@@ -258,14 +274,15 @@ export function ServicePage() {
   if (!data) return null
   return <section className={`service-page${selected ? ' service-has-selection' : ''}${selected && returnTo ? ' service-from-vehicle' : ''}`}>
     <SourceWarning meta={data.meta} />
-    <header className="service-page-heading"><h1><Wrench aria-hidden="true" size={25} />Service status</h1><div className="service-heading-controls"><div className="service-scope" role="group" aria-label="Service inventory scope"><button type="button" aria-pressed={scope === 'my_store'} onClick={() => setScope('my_store')}>My store · {homeStore}</button><button type="button" aria-pressed={scope === 'all'} onClick={() => setScope('all')}>All stores</button></div></div></header>
+    <header className="service-page-heading"><h1><Wrench aria-hidden="true" size={25} />Service status</h1><div className="service-heading-controls"><div className="service-scope" role="group" aria-label="Service inventory scope"><button type="button" aria-pressed={scope === 'my_store'} onClick={() => { setScope('my_store'); setStoreFilter(null) }}>My store · {homeStore}</button><button type="button" aria-pressed={scope === 'all' && !storeFilter} onClick={() => { setScope('all'); setStoreFilter(null) }}>All stores</button></div></div></header>
     <div className="service-tabs" role="group" aria-label="Service status">
       {STATUSES.map((value) => <button key={value} type="button" aria-pressed={status === value} onClick={() => setParams({ status: value, ...(returnTo ? { returnTo } : {}) })}>{SERVICE_LABELS[value]}{' '}<span>{counts[value]}</span></button>)}
     </div>
     {selectedVin && !selected && <p role="status" className="service-permission">This vehicle is not in the current inventory. Select a vehicle below to review service status.</p>}
     <div className="service-content"><div className="service-list-panel">
       <div className="service-list-toolbar"><p>{STATUS_HELP[status]}</p><PredictiveSearchInput className="service-search" inputType="search" value={search} onChange={setSearch} ariaLabel="Search service vehicles" clearLabel="Clear service search" placeholder="Search stock, VIN, model" candidates={statusVehicles.map(vehicle => ({ id: vehicle.vin, label: vehicle.vehicleName, detail: `#${vehicle.stockNumber}`, value: vehicle.stockNumber, searchValues: [vehicle.vehicleName, vehicle.stockNumber, vehicle.vin, vehicle.searchText] }))} /></div>
-      <p className="service-result-count" role="status">{vehicles.length} {vehicles.length === 1 ? 'vehicle' : 'vehicles'} · {scope === 'all' ? 'All stores' : homeStore}</p>
+      <p className="service-result-count" role="status">{vehicles.length} {vehicles.length === 1 ? 'vehicle' : 'vehicles'} · {scope === 'all' ? storeFilter ?? 'All stores' : homeStore}</p>
+      {scope === 'all' && storeFilter ? <button type="button" className="service-store-filter" aria-label={`Clear service store filter: ${storeFilter}`} onClick={() => setStoreFilter(null)}>Store: {storeFilter}<X size={14} aria-hidden="true" /></button> : null}
       {vehicles.length ? <ul className="service-list">{vehicles.map((vehicle) => <li key={vehicle.vin}><button className="service-vehicle-row" type="button" aria-pressed={selectedVin === vehicle.vin} onClick={() => selectVin(vehicle.vin)}>
         <ServicePhoto key={vehicle.vin} vehicle={vehicle} /><span className="service-vehicle-info"><strong>{vehicle.vehicleName}</strong><span>Stock {vehicle.stockNumber} · {vehicle.serviceReadiness?.store ?? vehicle.homeStore}</span><small>{vehicle.vin}</small></span>
         <span className="service-row-numbers"><strong>{vehicle.mileage != null ? `${formatNumber(vehicle.mileage)} mi` : 'Mileage unavailable'}</strong><span>{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : vehicle.inventoryDate ? `Listed ${displayDate(vehicle.inventoryDate)}` : ''}</span></span>

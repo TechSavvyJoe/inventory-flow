@@ -56,6 +56,7 @@ import type {
   InventoryVehicle,
   VehicleWorkspaceTab,
 } from "./types";
+import { OVERVIEW_VIEW_LABELS } from "../overview/overview-links";
 import "./inventory.css";
 import "./inventory-modern.css";
 import "./InventoryServiceFilter.css";
@@ -383,6 +384,8 @@ export function InventoryExperience({
   returnLabel,
   initialQuery = "",
   queryRequestKey,
+  initialFilters,
+  filterRequestKey = "initial",
   searchPersistenceKey,
   initialQuickView = "all",
   initialSorts = DEFAULT_INVENTORY_SORTS,
@@ -409,11 +412,16 @@ export function InventoryExperience({
   useWorkspaceScroll(searchPersistenceKey, "inventory");
   const [query, setQuery] = useWorkspaceState(searchPersistenceKey, `inventory.query:${queryRequestKey ?? initialQuery}`, initialQuery);
   const filterContext = `inventory-service:v1:${searchPersistenceKey || "session"}:${homeStore.id}`;
-  const contextFilters = () => ({ ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: initialServiceFilter(filterContext) });
-  const [filterState, setFilterState] = useWorkspaceState<{ context: string; value: InventoryFilters }>(searchPersistenceKey, "inventory.filters", () => ({ context: filterContext, value: contextFilters() }));
-  const fallbackFilters = useMemo(contextFilters, [filterContext]);
-  const filters: InventoryFilters = filterState.context === filterContext ? filterState.value : fallbackFilters;
-  const setFilters = (next: SetStateAction<InventoryFilters>) => setFilterState(current => ({ context: filterContext, value: typeof next === "function" ? next(current.context === filterContext ? current.value : contextFilters()) : next }));
+  // An Overview link starts one request with exactly its filters; the list
+  // keeps them (with their chips) until they are cleared or a new link opens.
+  const contextFilters = (): InventoryFilters => filterRequestKey !== "initial" && initialFilters
+    ? { ...DEFAULT_INVENTORY_FILTERS, ...initialFilters }
+    : { ...DEFAULT_INVENTORY_FILTERS, serviceReadiness: initialServiceFilter(filterContext) };
+  const [filterState, setFilterState] = useWorkspaceState<{ context: string; requestKey?: string; value: InventoryFilters }>(searchPersistenceKey, "inventory.filters", () => ({ context: filterContext, requestKey: filterRequestKey, value: contextFilters() }));
+  const fallbackFilters = useMemo(contextFilters, [filterContext, filterRequestKey]);
+  const filterStateCurrent = (state: { context: string; requestKey?: string }) => state.context === filterContext && (state.requestKey ?? "initial") === filterRequestKey;
+  const filters: InventoryFilters = filterStateCurrent(filterState) ? filterState.value : fallbackFilters;
+  const setFilters = (next: SetStateAction<InventoryFilters>) => setFilterState(current => ({ context: filterContext, requestKey: filterRequestKey, value: typeof next === "function" ? next(filterStateCurrent(current) ? current.value : contextFilters()) : next }));
   const [sorts, setSorts] = useWorkspaceState<InventorySort[]>(searchPersistenceKey, "inventory.sorts", initialSorts);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -591,6 +599,7 @@ export function InventoryExperience({
   const selectedVehicle = selectedVehicleId ? allVehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null : null;
   const filterCount = activeFilterCount(filters) + (["moving", "new", "price"].includes(quickView) ? 1 : 0);
   const selectedServiceLabel = SERVICE_FILTERS.find(([value]) => value === filters.serviceReadiness && value !== "all")?.[1];
+  const overviewViewLabel = filters.overviewView ? `${OVERVIEW_VIEW_LABELS[filters.overviewView.view]} · ${filters.overviewView.store}` : null;
   const secondaryViewLabel = quickView === "moving" ? "Moving" : quickView === "new" ? "New today" : quickView === "price" ? "Price changed" : null;
   const canRequestSelected = selectedVehicle ? canRequestVehicle?.(selectedVehicle) ?? false : false;
   const selectedMoveAction = selectedVehicle ? moveActionFor?.(selectedVehicle) ?? null : null;
@@ -751,6 +760,8 @@ export function InventoryExperience({
 
         {!filtersOpen && (activeFilterCount(filters) > 0 || secondaryViewLabel) ? <div className="if-srp-active-filters" role="group" aria-label="Active inventory filters">
           {selectedServiceLabel ? <button type="button" aria-label={`Clear service filter: ${selectedServiceLabel}`} onClick={() => { setFilters(current => ({ ...current, serviceReadiness: "all" })); returnToFilterTrigger(); }}>Service: {selectedServiceLabel}<X size={14} aria-hidden="true" /></button> : null}
+          {overviewViewLabel ? <button type="button" aria-label={`Clear Overview view: ${overviewViewLabel}`} onClick={() => { setFilters(current => ({ ...current, overviewView: undefined })); returnToFilterTrigger(); }}>View: {overviewViewLabel}<X size={14} aria-hidden="true" /></button> : null}
+          {filters.vins ? <button type="button" aria-label={`Clear selected vehicles: ${filters.vins.length}`} onClick={() => { setFilters(current => ({ ...current, vins: undefined })); returnToFilterTrigger(); }}>Vehicles: {filters.vins.length} selected<X size={14} aria-hidden="true" /></button> : null}
           {secondaryViewLabel ? <button type="button" aria-label={`Clear view filter: ${secondaryViewLabel}`} onClick={() => { setQuickView("all"); returnToFilterTrigger(); }}>{secondaryViewLabel}<X size={14} aria-hidden="true" /></button> : null}
           {filters.minimumPrice != null ? <button type="button" aria-label={`Clear minimum price filter: ${formatMoney(filters.minimumPrice)}`} onClick={() => { setFilters(current => ({ ...current, minimumPrice: undefined })); returnToFilterTrigger(); }}>From {formatMoney(filters.minimumPrice)}<X size={14} aria-hidden="true" /></button> : null}
           {filters.maximumPrice != null ? <button type="button" aria-label={`Clear maximum price filter: ${formatMoney(filters.maximumPrice)}`} onClick={() => { setFilters(current => ({ ...current, maximumPrice: undefined })); returnToFilterTrigger(); }}>Up to {formatMoney(filters.maximumPrice)}<X size={14} aria-hidden="true" /></button> : null}

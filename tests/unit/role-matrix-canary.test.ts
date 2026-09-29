@@ -297,3 +297,63 @@ describe('role-matrix canary (integration Worker projection)', () => {
     expect(seeded.size).toBeGreaterThan(10)
   })
 })
+
+describe.each(['simple', 'advanced'])('role-matrix canary (Overview projection, %s moves)', (workflowMode) => {
+  it('never attaches bootstrap.overview for a legacy transport role and never carries a marker for any role', async () => {
+    const { baseUrl, seeded } = await harness(workflowMode)
+    const howell = (await get(baseUrl, groupManager, '/api/bootstrap')).vehicles
+      .filter((vehicle) => vehicle.publicStore === 'Howell')
+      .map((vehicle) => vehicle.vin)
+    if (workflowMode === 'advanced') await seedAdvancedMoves(baseUrl, seeded, howell)
+    else await seedSimpleMoves(baseUrl, seeded, howell)
+
+    // Evidence roles receive the projection; it holds only codes, days,
+    // counts, stores and VINs, so not even they receive a marker through it.
+    for (const context of [groupManager, manager, homeManager, sales]) {
+      const bootstrap = await get(baseUrl, context, '/api/bootstrap')
+      expect(JSON.stringify(bootstrap).toLowerCase(), `${context.role}@${context.store} bootstrap carries evidence`).toContain(MARK)
+      expect(bootstrap.overview, `${context.role}@${context.store} overview`).toBeTruthy()
+      expect(Object.keys(bootstrap.overview.vehicleFacts).length).toBeGreaterThan(0)
+      expectNoMarker(`${context.role}@${context.store} bootstrap.overview`, bootstrap.overview)
+    }
+    for (const context of [porter, driver, coordinator, { ...porter, store: 'Howell' }, { ...driver, store: 'Howell' }, { ...coordinator, store: 'Howell' }]) {
+      const bootstrap = await get(baseUrl, context, '/api/bootstrap')
+      expect(bootstrap, `${context.role}@${context.store} bootstrap`).not.toHaveProperty('overview')
+      expectNoMarker(`${context.role}@${context.store} bootstrap`, bootstrap)
+    }
+  })
+})
+
+describe('role-matrix canary (integration projection never carries the Overview)', () => {
+  it('has no overview key on the integration bootstrap for any role, with or without the app projection', async () => {
+    const { release, service } = await harness('simple')
+    for (const role of ['group_manager', 'manager', 'sales']) {
+      const principal = {
+        clientId: 'a'.repeat(32), userId: `canary-${role}`, role, store: 'Howell', user: `Canary integration ${role}`,
+        stores: [...STORE_NAMES], scopes: ['inventory.read', 'changes.read', 'health.read', 'holds.aggregate.read'],
+      }
+      // The integration Worker disables the projection (integration-worker.mjs).
+      const disabled = service.bootstrap(principal, { overview: false })
+      expect(disabled, `${role} app bootstrap with overview disabled`).not.toHaveProperty('overview')
+      // Even an app bootstrap that carries it cannot pass it through the allowlist.
+      const withOverview = service.bootstrap(principal)
+      expect(withOverview.overview, `${role} app bootstrap overview`).toBeTruthy()
+      for (const [label, source] of [['disabled', disabled], ['app', withOverview]]) {
+        const projected = integrationBootstrapFromSource(source, release)
+        expect(projected, `${role} ${label} integration bootstrap`).not.toHaveProperty('overview')
+        expectNoMarker(`${role} ${label} integration bootstrap`, projected)
+        for (const vehicle of projected.vehicles) {
+          expect(vehicle, `${role} ${label} integration vehicle ${vehicle.vin}`).not.toHaveProperty('overview')
+          expect(vehicle, `${role} ${label} integration vehicle ${vehicle.vin}`).not.toHaveProperty('appDisposition')
+        }
+        const read = createIntegrationReadService({
+          bootstrap: projected, principal, bundleSha256: 'c'.repeat(64),
+          cursorSecret: 'synthetic-canary-cursor-secret-0123456789abcdef',
+        })
+        for (const [where, body] of [['daily operations', read.dailyOperations()], ['data quality', read.dataQuality()], ['capabilities', read.capabilities]]) {
+          expect(JSON.stringify(body), `${role} ${label} integration ${where}`).not.toContain('vehicleFacts')
+        }
+      }
+    }
+  })
+})

@@ -1,8 +1,8 @@
 import { confirmUnsavedWork, useUnsavedChanges } from '../../lib/useUnsavedChanges'
 import { useWorkspaceState, useWorkspaceScroll } from '../../lib/workspace-memory'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, CheckCircle2 } from 'lucide-react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { CopyableValue } from '../../components/CopyableValue'
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
@@ -96,6 +96,16 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
   const [category, setCategory] = useWorkspaceState<ActionCategory>(accessContext, 'attention.category', 'all')
   const [status, setStatus] = useWorkspaceState(accessContext, 'attention.status', 'open')
   const [query, setQuery] = useWorkspaceState(accessContext, 'attention.query', '')
+  // An Overview link (`?category=`) picks the task category once on entry.
+  const navigate = useNavigate()
+  const categoryParam = new URLSearchParams(location.search).get('category')
+  useEffect(() => {
+    if (categoryParam === null) return
+    if (CATEGORIES.some(([key]) => key === categoryParam)) setCategory(categoryParam as ActionCategory)
+    const next = new URLSearchParams(location.search)
+    next.delete('category')
+    navigate({ pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : '', hash: location.hash }, { replace: true })
+  }, [categoryParam]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
   const scoped = useMemo(() => items.filter(item => scope === 'group' || belongsToActionStore(item, homeStore)), [items, scope, homeStore])
   const statusItems = scoped.filter(item => status === 'reviewed' ? item.status === 'resolved' : item.status !== 'resolved')
   const matchesSearch = (item: AttentionItem) =>

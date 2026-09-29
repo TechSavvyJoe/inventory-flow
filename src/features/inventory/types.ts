@@ -1,7 +1,8 @@
 import type { RefObject } from "react";
 import type { VehicleIssueContext } from '../issues/issue-model';
 import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus';
-import type { DealerMailEvidenceMessage, DealerMailHistoryRecord, ServiceReadiness, ServiceReadinessStatus } from "../../types";
+import type { DealerMailEvidenceMessage, DealerMailHistoryRecord, OverviewVehicleFacts, ServiceReadiness, ServiceReadinessStatus, StoreName } from "../../types";
+import type { OverviewInventoryView } from "../overview/overview-links";
 
 export type InventoryScope = "home" | "group";
 
@@ -438,6 +439,8 @@ export interface InventoryVehicle {
   canReportIssue?: boolean;
   id: string;
   vin: string;
+  /** The server Overview's day-level facts for this VIN, when the bootstrap carried them. */
+  overview?: OverviewVehicleFacts;
   serviceReadiness?: ServiceReadiness;
   stockNumber: string;
   year: number | string;
@@ -518,6 +521,10 @@ export interface InventoryFilters {
   minimumPrice?: number;
   maximumPrice?: number;
   maximumMileage?: number;
+  /** An Overview count opened here: one view of one store, read from the server's facts. */
+  overviewView?: { view: OverviewInventoryView; store: StoreName };
+  /** An Overview exception opened here: exactly these VINs. */
+  vins?: string[];
 }
 
 export type InventorySortKey =
@@ -606,6 +613,9 @@ export interface InventoryExperienceProps extends InventoryVehicleActionProps {
   initialQuickView?: "all" | "no-hold";
   /** A fresh explicit search must override prior local edits to the same text. */
   queryRequestKey?: string;
+  /** Filters an Overview link opened with; applied once per `filterRequestKey`. */
+  initialFilters?: Partial<InventoryFilters>;
+  filterRequestKey?: string;
   /** Separates session-only recent searches by the current signed-in/preview context. */
   searchPersistenceKey?: string;
   initialSorts?: InventorySort[];

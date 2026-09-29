@@ -30,6 +30,8 @@ export interface SourceMeta {
   manifestPath?: string
   publicFreshness: SourceFreshness
   dealerMailFreshness: SourceFreshness
+  /** Freshness of the independent resources channel (AutoCheck fallback, vAuto, Ford invoice/OASIS). */
+  resourceFreshness?: SourceFreshness
   managerDispositionFreshness?: SourceFreshness
   managerDispositionCoverageStatus?: 'provided' | 'not_provided'
   managerDispositionCoveredSourceStores?: StoreName[]
@@ -815,6 +817,174 @@ export interface BootstrapData {
   publicChanges?: PublicChangeEvent[]
   vehicleIssues?: VehicleIssue[]
   vehicleIssuesEnabled?: boolean
+  overview?: OverviewSummary
+}
+
+/** Overview thresholds published by the server (`OVERVIEW_THRESHOLDS`, server/overview-summary.mjs). */
+export interface OverviewThresholds {
+  unaccountedAfterDays: number
+  agedListingDays: [number, number]
+  serviceWaitingDays: [number, number]
+  listedAfterDeliveredDays: number
+  recentReceiptDays: number
+}
+
+/**
+ * Per-store counts. Custody, aging, unaccounted and records counts are by the
+ * vehicle's home store; `visiting` by the store it is at; service counts by
+ * the service store; holds equal the Action center's `holdSignals`.
+ */
+export interface OverviewStoreCounts {
+  store?: StoreName
+  onLot: number
+  /** Of `onLot`, the vehicles with no move ledger whose location is the website's store. */
+  onLotSourceReported: number
+  away: number
+  visiting: number
+  inTransit: number
+  conflict: number
+  /** Equal to `holdSignals[store].activeHoldVins` / `pastExpected`. */
+  holds: number
+  holdsPastExpected: number
+  waitingForService: number
+  inService: number
+  ready: number
+  /** Listed vehicles only. `aged60` counts 60+ days and so includes `aged90`. */
+  aged60: number
+  aged90: number
+  unaccounted: number
+  returnOverdue: number
+  recordsIncomplete: number
+  listed: number
+  preListing: number
+}
+
+export interface OverviewBoardFlow {
+  from: StoreName
+  to: StoreName
+  kind: 'outbound' | 'return' | 'planned'
+  count: number
+  vins: string[]
+}
+
+export type OverviewServiceBasis =
+  | 'manager_updated'
+  | 'ford_service_history_inspection'
+  | 'autocheck_post_intake_inspection'
+  | 'new_arrival'
+  | 'unconfirmed'
+  | 'legacy_review'
+
+export type OverviewArrivalBasis = 'intake' | 'listing_date' | 'unknown'
+
+export interface OverviewVehicleService {
+  status: ServiceWorkflowStatus
+  basis: OverviewServiceBasis
+  store: StoreName | null
+  arrivalDate?: string
+  arrivalBasis: OverviewArrivalBasis
+  waitingDays?: number
+  receiptToStartDays?: number
+  inServiceDays?: number
+  receiptToReadyDays?: number
+  sinceServiceUpdateDays?: number
+  dateOrderIssue?: true
+}
+
+export type OverviewUnaccountedReason = 'location_conflict' | 'source_conflict' | 'no_app_record' | 'stale_confirmation'
+
+/** Day-level facts per VIN. Optional keys are omitted when they do not apply. */
+export interface OverviewVehicleFacts {
+  custody: 'on_lot' | 'away' | 'in_transit' | 'conflict'
+  /** `source_reported` means the location is the website's store, not a recorded move. */
+  custodyBasis: 'ledger' | 'source_reported'
+  currentStore?: StoreName
+  returnLeg?: 'return'
+  daysAway?: number
+  /** Away or in transit with no recorded departure: days away are unknown. */
+  daysAwayBasis?: 'unknown'
+  departedAt?: string
+  lastConfirmedAt?: string
+  returnDueAt?: string
+  returnOverdue?: true
+  /** ISO day of the latest recorded return home, only within `recentReceiptDays`. */
+  receivedHomeAt?: string
+  unaccounted?: { reason: OverviewUnaccountedReason; days?: number }
+  /** From DealerMail hold rows with an active hold count above zero, never from hold label text. */
+  holdActive?: true
+  holdPastExpected?: true
+  /** Listed vehicles only (`publicListing === 'listed'`). */
+  agedBucket?: 60 | 90
+  /** Pre-listing rows carry CRM age, not listing age, and have no bucket. */
+  agedBasis?: 'crm_age'
+  records: { autoCheck: boolean; oasis: boolean; sticker: boolean; invoice: boolean; fordHistory: boolean }
+  recordsCaptured: number
+  recordsApplicable: 3 | 5
+  service: OverviewVehicleService
+  holdState?: HoldSummary['state']
+}
+
+export interface OverviewMedian {
+  value: number | null
+  n: number
+}
+
+export interface OverviewServiceStoreMetrics {
+  counts: { waitingForService: number; inService: number; ready: number }
+  basis: Record<OverviewServiceBasis, number>
+  arrivalBasis: Record<OverviewArrivalBasis, number>
+  medians: { receiptToStartDays: OverviewMedian; inServiceDays: OverviewMedian; receiptToReadyDays: OverviewMedian }
+  agedWaiting14: number
+  agedWaiting30: number
+}
+
+export interface OverviewServiceMetrics {
+  perStore: Array<OverviewServiceStoreMetrics & { store: StoreName }>
+  group: OverviewServiceStoreMetrics
+  /** Waiting at least `serviceWaitingDays[0]` days, longest first, at most 100. */
+  agedWaiting: Array<{ vin: string; store: StoreName | null; waitingDays: number; arrivalBasis: OverviewArrivalBasis }>
+}
+
+export type OverviewExceptionKind =
+  | 'location_conflict'
+  | 'source_conflict'
+  | 'no_app_record'
+  | 'stale_confirmation'
+  | 'return_overdue'
+  | 'hold_past_expected'
+  | 'identity_review'
+  | 'records_incomplete'
+  | 'service_date_order'
+
+export interface OverviewException {
+  kind: OverviewExceptionKind
+  store: StoreName
+  count: number
+  /** At most 50; `identity_review` is a count only. */
+  vins: string[]
+  transferIds?: string[]
+}
+
+/**
+ * The server-computed Overview (server/overview-summary.mjs). Present for
+ * managers and group managers (`access: 'full'`) and for sales
+ * (`access: 'read_only'`); never for retired transport roles or the
+ * integration API.
+ */
+export interface OverviewSummary {
+  /** YYYY-MM-DD in `meta.timezone`. */
+  asOfDay: string
+  scopeStore: StoreName
+  role: UserRole
+  access: 'full' | 'read_only'
+  thresholds: OverviewThresholds
+  /** Always four entries, in store order. */
+  stores: Array<OverviewStoreCounts & { store: StoreName }>
+  group: OverviewStoreCounts
+  board: { flows: OverviewBoardFlow[] }
+  vehicleFacts: Record<string, OverviewVehicleFacts>
+  service?: OverviewServiceMetrics
+  exceptions: OverviewException[]
 }
 
 interface TransferRequestInputBase {

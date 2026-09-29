@@ -100,7 +100,7 @@ export async function loadIntegrationReadService(env, principal) {
   const repo = await loadD1Repository(env.INVENTORY_DB, selected.release)
   const service = createInventoryServiceCore({ database: repo.database, repository: repo.repository, initialLoadStatus: { status: 'loaded' } })
   const readService = createIntegrationReadService({
-    bootstrap: integrationBootstrapFromSource(service.bootstrap(principal), selected.release), principal, bundleSha256: selected.bundleSha256,
+    bootstrap: integrationBootstrapFromSource(service.bootstrap(principal, { overview: false }), selected.release), principal, bundleSha256: selected.bundleSha256,
     cursorSecret: env.INTEGRATION_CURSOR_SECRET,
   })
   // Tagged with the snapshot's own revision, so a write that landed between

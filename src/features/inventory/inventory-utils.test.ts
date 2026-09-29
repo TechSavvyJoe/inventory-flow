@@ -184,3 +184,50 @@ describe("inventory source-safe selectors", () => {
     ]);
   });
 });
+
+describe("Overview views in Inventory (OVERVIEW_SPEC §8.1)", () => {
+  const records = { autoCheck: true, oasis: true, sticker: true, invoice: true, fordHistory: true };
+  const service = { status: "needs_service" as const, basis: "unconfirmed" as const, store: "Howell" as const, arrivalBasis: "unknown" as const };
+  const facts = (overrides: Partial<NonNullable<InventoryVehicle["overview"]>> = {}): NonNullable<InventoryVehicle["overview"]> => ({
+    custody: "on_lot", custodyBasis: "source_reported", currentStore: "Howell", records, recordsCaptured: 5, recordsApplicable: 5, service, ...overrides,
+  });
+  const matches = (candidate: InventoryVehicle, view: NonNullable<Parameters<typeof vehicleMatchesFilters>[1]["overviewView"]>["view"], store: "Howell" | "Lincoln" = "Howell") =>
+    vehicleMatchesFilters(candidate, { ...DEFAULT_INVENTORY_FILTERS, overviewView: { view, store } }, { ignoreStore: true });
+
+  it("reads custody by the home store name, and Visiting by the store the vehicle is at", () => {
+    const away = vehicle({ overview: facts({ custody: "away", custodyBasis: "ledger", currentStore: "Lincoln" }) });
+    expect(matches(away, "away")).toBe(true);
+    expect(matches(away, "on-lot")).toBe(false);
+    expect(matches(away, "visiting", "Lincoln")).toBe(true);
+    expect(matches(away, "visiting", "Howell")).toBe(false);
+    expect(matches(away, "away", "Lincoln")).toBe(false);
+    expect(matches(vehicle({ overview: facts({ custody: "in_transit", currentStore: undefined }) }), "in-transit")).toBe(true);
+    expect(matches(vehicle({ overview: facts({ custody: "conflict" }) }), "conflict")).toBe(true);
+    // A vehicle without facts matches only On lot at its home store.
+    expect(matches(vehicle(), "on-lot")).toBe(true);
+    expect(matches(vehicle(), "away")).toBe(false);
+  });
+
+  it("uses the server facts for aging, unaccounted, returns, records and holds, never a label", () => {
+    expect(matches(vehicle({ overview: facts({ agedBucket: 90 }) }), "aged-60")).toBe(true);
+    expect(matches(vehicle({ overview: facts({ agedBucket: 60 }) }), "aged-90")).toBe(false);
+    expect(matches(vehicle({ overview: facts({ agedBasis: "crm_age" }) }), "aged-60")).toBe(false);
+    expect(matches(vehicle({ overview: facts({ unaccounted: { reason: "no_app_record" } }) }), "unaccounted")).toBe(true);
+    expect(matches(vehicle({ overview: facts({ returnOverdue: true }) }), "return-overdue")).toBe(true);
+    expect(matches(vehicle({ overview: facts({ recordsCaptured: 4 }) }), "records-incomplete")).toBe(true);
+    expect(matches(vehicle({ overview: facts() }), "records-incomplete")).toBe(false);
+    const labelledOnly = vehicle({ overview: facts(), dealerMail: { dataState: "current", hasActiveHold: true, position: "primary" } });
+    expect(matches(labelledOnly, "holds")).toBe(false);
+    const held = vehicle({ overview: facts({ holdActive: true, holdPastExpected: true }), location: { homeStore: { id: "howell", name: "Howell" }, crmStore: { id: "lincoln", name: "Lincoln" } } });
+    expect(matches(held, "holds", "Lincoln")).toBe(true);
+    expect(matches(held, "holds-past-expected", "Lincoln")).toBe(true);
+    expect(matches(held, "holds", "Howell")).toBe(false);
+  });
+
+  it("narrows to an exact VIN list and counts both as active filters", () => {
+    const base = vehicle();
+    expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, vins: [base.vin] })).toBe(true);
+    expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, vins: ["TESTDATAHWELL0009"] })).toBe(false);
+    expect(activeFilterCount({ ...DEFAULT_INVENTORY_FILTERS, vins: [base.vin], overviewView: { view: "away", store: "Howell" } })).toBe(2);
+  });
+});

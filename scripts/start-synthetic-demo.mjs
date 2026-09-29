@@ -32,7 +32,7 @@ const app = startInventoryServer({
 // This launcher never reads dealership data. Keep illustrative assets here,
 // outside the production service and its exact-VIN photo validation.
 const syntheticBootstrap = app.service.bootstrap.bind(app.service)
-app.service.bootstrap = (context) => withSyntheticIllustrations(syntheticBootstrap(context))
+app.service.bootstrap = (context, options) => withSyntheticIllustrations(syntheticBootstrap(context, options))
 const syntheticVehicleDetail = app.service.getVehicle.bind(app.service)
 app.service.getVehicle = (vin, context) => withSyntheticVehicleIllustration(syntheticVehicleDetail(vin, context))
 

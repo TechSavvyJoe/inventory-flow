@@ -1,18 +1,17 @@
 import { expect, test } from '@playwright/test'
 
-test('manager overview preserves its hierarchy and controls across browser engines', async ({ page }) => {
+test('the Overview preserves its hierarchy and count links across browser engines', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('maxey-role', 'group_manager')
     localStorage.setItem('maxey-home-store', 'Howell')
   })
   await page.goto('/overview')
 
-  await expect(page.getByRole('heading', { name: 'Inventory overview' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible()
   await expect(page.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('button', { name: 'Howell: 2 home inventory vehicles' })).toBeVisible()
-  await page.getByRole('button', { name: 'Howell: 2 home inventory vehicles' }).click()
-  await expect(page.getByRole('heading', { name: 'Howell · Home inventory' })).toBeVisible()
-  await expect(page.getByRole('link', { name: /^Records \d\/6$/ }).first()).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Store summary' }).getByRole('heading', { level: 3 })).toHaveCount(4)
+  await expect(page.getByRole('link', { name: /^Howell: \d+ vehicles? on lot$/ })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=on-lot')
+  await expect(page.getByRole('region', { name: 'Service' })).toBeVisible()
 
   const dimensions = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,

@@ -326,3 +326,21 @@
   #root .vehicle-moves-page .transfers-page-header h1 { margin-top: 0; font-size: 20px; line-height: 1.2; }
   #root .vehicle-moves-page .transfers-page-header p { margin-top: 2px; font-size: 13px; line-height: 1.4; }
 }
+
+/* One-shot home-store filter opened from an Overview count. */
+.vehicle-moves-page .transfer-list-link-filter {
+  align-items: center;
+  background: var(--ifx-info-surface);
+  border: 1px solid var(--ifx-border-control);
+  border-radius: var(--ifx-radius-sm);
+  color: var(--ifx-neutral-900);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--ifx-text-sm);
+  font-weight: var(--ifx-weight-semibold);
+  gap: var(--ifx-space-1);
+  min-height: 44px;
+  padding: 0 var(--ifx-space-3);
+}
+
+.vehicle-moves-page .transfer-list-link-filter svg { height: 14px; width: 14px; }
