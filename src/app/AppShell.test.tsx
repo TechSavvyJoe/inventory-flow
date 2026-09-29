@@ -159,11 +159,11 @@ describe('AppShell account and update controls', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Account and app controls' })
     const close = within(dialog).getByRole('button', { name: 'Close app controls' })
-    const managerLink = within(dialog).getByRole('link', { name: /Group operations/i })
+    const lastLink = within(dialog).getByRole('link', { name: /Service status/i })
     await waitFor(() => expect(close).toHaveFocus())
 
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
-    expect(managerLink).toHaveFocus()
+    expect(lastLink).toHaveFocus()
     fireEvent.keyDown(document, { key: 'Tab' })
     expect(close).toHaveFocus()
 
@@ -205,7 +205,24 @@ describe('AppShell account and update controls', () => {
     expect(within(primary).getByRole('link', { name: 'Inventory overview' })).toHaveAttribute('aria-current', 'page')
     expect(within(mobile).getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page')
     fireEvent.click(within(mobile).getByRole('button', { name: 'More app controls' }))
-    expect(within(screen.getByRole('dialog', { name: 'Account and app controls' })).getByRole('link', { name: /Group operations/ })).toHaveAttribute('href', '/manager')
+    // Group operations is retired: /manager redirects to Overview, so the
+    // account controls no longer carry a second management destination.
+    expect(within(screen.getByRole('dialog', { name: 'Account and app controls' })).queryByRole('link', { name: /Group operations/ })).not.toBeInTheDocument()
+  })
+
+  it.each(['/transfers', '/service', '/attention', '/inventory'])('leaves %s with only its own page search in the shell header', (route) => {
+    const context = useAppDataMock()
+    useAppDataMock.mockReturnValue({ ...context, role: 'manager' })
+    render(
+      <MemoryRouter initialEntries={[route]}>
+        <AppShell><span>Page content</span></AppShell>
+      </MemoryRouter>,
+    )
+
+    const header = screen.getByRole('banner')
+    expect(within(header).queryByRole('search')).not.toBeInTheDocument()
+    expect(within(header).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Search inventory' })).not.toBeInTheDocument()
   })
 
   it('exposes Control center navigation only to group managers', () => {
@@ -251,7 +268,7 @@ describe('AppShell account and update controls', () => {
   })
 
   it.each([
-    ['/manager', '/transfers?id=move-1'],
+    ['/overview', '/transfers?id=move-1'],
     ['/transfers?id=move-1', '/transfers?id=move-2'],
     ['/transfers?id=move-1', '/transfers?id=move-1#history'],
   ])('moves focus after the URL changes from %s to %s without moving focus on initial load', async (initialUrl, nextUrl) => {
@@ -300,7 +317,7 @@ describe('AppShell account and update controls', () => {
 
   it('does not take focus from an active modal when the location changes', async () => {
     render(
-      <MemoryRouter initialEntries={['/manager']}>
+      <MemoryRouter initialEntries={['/overview']}>
         <AppShell>
           <div role="dialog" aria-modal="true" aria-label="Active workflow">
             <Link to="/transfers?id=move-1">Open transfer record</Link>

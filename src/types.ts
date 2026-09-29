@@ -414,6 +414,8 @@ export interface MovementSummary {
   locationConfidence: 'verified' | 'reported' | 'stale' | 'conflicting' | 'unknown'
   nextAction?: string
   nextActionOwner?: string
+  /** Store that owns the next step (the Action center's actionability rule). */
+  nextActionStore?: StoreName
   dueAt?: string
   returnRequired?: boolean
   returnDueAt?: string
@@ -593,6 +595,8 @@ export interface TransferRecord {
   transportAssignee?: string
   nextAction: string
   nextActionOwner: string
+  /** Store that owns the next step (the Action center's actionability rule). */
+  nextActionStore?: StoreName
   dueAt?: string
   returnRequired: boolean
   returnDueAt?: string

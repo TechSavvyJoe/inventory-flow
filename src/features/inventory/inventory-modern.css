@@ -1,9 +1,3 @@
-@media (min-width: 881px) {
-  .top-bar.is-inventory-route .store-control-region { grid-column: 1; }
-  .top-bar.is-inventory-route .freshness-chip { grid-column: 3; }
-  .top-bar.is-inventory-route .profile-button { grid-column: 4; }
-}
-
 .inventory-toolbar__left,
 .inventory-toolbar__right,
 .inventory-page-size {
@@ -1184,9 +1178,6 @@
   line-height: 1.4;
 }
 .inventory-hold-evidence__stale-note svg { flex: 0 0 auto; margin-top: 1px; }
-.inventory-hold-evidence__flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.inventory-hold-evidence__flags > span { display: inline-flex; align-items: center; gap: 4px; color: #7a8998; font-size: 9px; }
-.inventory-hold-evidence__flags > span.is-present { color: #9a5600; font-weight: 720; }
 
 .inventory-evidence-messages { display: flex; flex-direction: column; gap: 6px; }
 .inventory-evidence-messages > article { padding: 8px; border: 1px solid #e0e6ec; border-radius: 7px; background: var(--ifx-neutral-0); }

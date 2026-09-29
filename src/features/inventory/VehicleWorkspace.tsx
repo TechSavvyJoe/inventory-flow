@@ -9,7 +9,8 @@ import { CertifiedBadge } from "../../components/CertifiedBadge";
 import { ServiceStatusLink } from "./ServiceStatusLink";
 import { WorkspaceLink } from "../../components/WorkspaceLink";
 import { VehicleDetailStatus } from "../../components/VehicleDetailStatus";
-import { serviceStatusLabel, serviceWorkflowStatus } from "../../lib/service-readiness";
+import { serviceWorkflowStatus } from "../../lib/service-readiness";
+import { slaLabel, slaState, type SlaStatus } from "../../lib/sla-label";
 import { VehicleGallery } from "./VehicleGallery";
 import {
   useEffect,
@@ -424,7 +425,18 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
   );
 }
 
-function MovementDetails({ vehicle }: { vehicle: InventoryVehicle }) {
+function movementStatus(vehicle: InventoryVehicle, viewerStore: string): SlaStatus | null {
+  const movement = vehicle.movement;
+  if (!movement) return null;
+  return slaLabel({
+    sla: slaState(movement.dueAt),
+    nextActionStore: movement.nextActionStore,
+    nextActionOwner: movement.nextActionOwner,
+    viewerStore,
+  });
+}
+
+function MovementDetails({ vehicle, status }: { vehicle: InventoryVehicle; status: SlaStatus | null }) {
   const movement = vehicle.movement;
   const location = vehicle.location;
   const current = resolveCurrentLocation(vehicle);
@@ -502,14 +514,19 @@ function MovementDetails({ vehicle }: { vehicle: InventoryVehicle }) {
             {movement.customerOutcome ? <Fact label="Customer outcome">{humanizeWorkflowValue(movement.customerOutcome)}</Fact> : null}
             {movement.deliveryConfirmation ? <Fact label="Delivery">{humanizeWorkflowValue(movement.deliveryConfirmation)}</Fact> : null}
           </dl>
-          {movement.overdue ? (
-            <div className="inventory-availability-note inventory-availability-note--danger">
-              <Clock3 size={17} strokeWidth={1.75} aria-hidden="true" />
-              <span>
-                <strong>Action overdue.</strong> Confirm custody and assign the
-                next responsible person.
-              </span>
-            </div>
+          {status?.overdue ? (
+            status.tone === "danger" ? (
+              <div className="inventory-availability-note inventory-availability-note--danger">
+                <Clock3 size={17} strokeWidth={1.75} aria-hidden="true" />
+                <span>
+                  <strong>{status.label}.</strong> Confirm custody and assign the
+                  next responsible person.
+                </span>
+              </div>
+            ) : (
+              // Another store owns this step: a plain fact, not a warning.
+              <p className="inventory-workspace-section-note">{status.label}</p>
+            )
           ) : null}
         </>
       ) : (
@@ -635,7 +652,7 @@ function TimelineDetails({ vehicle }: { vehicle: InventoryVehicle }) {
 }
 
 export function VehicleWorkspace({
-  vehicle, canRequestVehicle = false, moveAction, initialTab = "overview", returnFocusRef, returnLabel = "Back to inventory", detailState, onRetryDetail,
+  vehicle, homeStore, canRequestVehicle = false, moveAction, initialTab = "overview", returnFocusRef, returnLabel = "Back to inventory", detailState, onRetryDetail,
   issueContext,
   onClose, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing,
 }: VehicleWorkspaceProps) {
@@ -673,9 +690,8 @@ export function VehicleWorkspace({
   const takeHomeOpenerRef = useRef<HTMLButtonElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
   const activeTabRef = useRef<HTMLButtonElement>(null);
-  const dealerMailActionsRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const pendingFocus = useRef<"tab" | "dealermail" | null>(null);
+  const pendingFocus = useRef<"tab" | null>(null);
   const activePage = workspacePage(activeTarget);
   const displayName = vehicleDisplayName(vehicle);
   const listingUrl = vehicle.publicListing.listingUrl;
@@ -706,7 +722,8 @@ export function VehicleWorkspace({
       ? "On hold"
       : vehicle.dealerMail.hasActiveHold === false ? "No current hold" : "Hold status not provided";
   const hasMovement = Boolean(vehicle.movement?.requestId || vehicle.movement?.state);
-  const movementLabel = vehicle.movement?.overdue ? "Move needs action"
+  const nextStepStatus = movementStatus(vehicle, homeStore.name);
+  const movementLabel = nextStepStatus?.overdue ? nextStepStatus.label
     : humanizeWorkflowValue(vehicle.movement?.state) || humanizeWorkflowValue(vehicle.movement?.requestStatus) || "No tracked move";
   const serviceStatus = serviceWorkflowStatus(vehicle.serviceReadiness);
   const serviceHref = `/service?vin=${encodeURIComponent(vehicle.vin)}`;
@@ -781,13 +798,6 @@ export function VehicleWorkspace({
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     if (target === activeTarget) activeTabRef.current?.focus({ preventScroll: true });
   }
-  function focusDealerMailActions() {
-    pendingFocus.current = "dealermail";
-    setActiveTarget("hold");
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-    if (activeTarget === "hold") dealerMailActionsRef.current
-      ?.querySelector<HTMLButtonElement>(".inventory-dealermail-handoff__launch")?.focus({ preventScroll: true });
-  }
   function onSectionKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
     let next: number;
     if (event.key === "ArrowRight") next = (index + 1) % workspaceSections.length;
@@ -809,11 +819,7 @@ export function VehicleWorkspace({
   }, [initialTab, vehicle.id, vehicle.vin]);
   useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-    if (pendingFocus.current === "dealermail") {
-      dealerMailActionsRef.current?.querySelector<HTMLButtonElement>(".inventory-dealermail-handoff__launch")?.focus({ preventScroll: true });
-    } else if (pendingFocus.current === "tab") {
-      activeTabRef.current?.focus({ preventScroll: true });
-    }
+    if (pendingFocus.current === "tab") activeTabRef.current?.focus({ preventScroll: true });
     pendingFocus.current = null;
   }, [activeTarget, vehicle.id]);
   useContainedFocus({
@@ -861,6 +867,25 @@ export function VehicleWorkspace({
           <VehicleDetailStatus state={detailState} onRetry={onRetryDetail} />
           <WorkspacePanel id="overview" label="Overview" active={activePage === "overview"}>
             <div className="vdp-focus-overview">
+              <section className="vdp-focus-operations" aria-label="Vehicle operational summary">
+                <h3>Operations</h3>
+                <dl>
+                  <Fact label="Location"><strong>{currentLocation.label}</strong>{vehicle.location.conflict ? <small>Location conflict — review needed</small> : null}</Fact>
+                  <Fact label="Hold status"><strong>{loanerLabel || (holdCurrent && vehicle.dealerMail.hasActiveHold ? "Held" : holdLabel)}</strong>{vehicle.dealerMail.loaner?.rawAlert && loanerLabel ? <small>{vehicle.dealerMail.loaner.rawAlert}</small> : null}{holdCount > 1 ? <small className="vdp-focus-mobile-backup">{holdCount - 1} backup {holdCount === 2 ? "hold" : "holds"}</small> : null}</Fact>
+                  {primaryHold?.salesperson ? <Fact label="Salesperson">{primaryHold.salesperson}</Fact> : null}
+                  {primaryHold?.expectedDeliveryDate ? <Fact label="Expected">{formatDate(primaryHold.expectedDeliveryDate)}</Fact> : null}
+                  {holdCount > 1 ? <Fact label="Backup holds" className="vdp-focus-desktop-field">{holdCount - 1}</Fact> : null}
+                  <Fact label="Service" className="vdp-focus-service-fact"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} compact /></Fact>
+                </dl>
+                <div className="vdp-focus-actions">
+                  {movementAction}
+                  <button type="button" onClick={() => openAndFocusSection("hold")} data-action="hold-details"><MessageSquare size={18} aria-hidden="true" />Hold status</button>
+                  {serviceStatus === "needs_service" ? <WorkspaceLink to={serviceHref + "&action=in_service"} preserveOrigin>Start service</WorkspaceLink> : null}
+                  {serviceStatus !== "serviced" ? <WorkspaceLink to={serviceHref + "&action=serviced"} preserveOrigin>Mark Ready</WorkspaceLink> : <WorkspaceLink to={serviceHref} preserveOrigin>Service history</WorkspaceLink>}
+                </div>
+                {hasMovement ? <div className="vdp-focus-next-action"><strong className={nextStepStatus?.tone === "danger" ? "vdp-focus-next-action__overdue" : undefined}>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div> : null}
+                {issueContext ? <VehicleIssuesSummary issues={vehicleIssues} canReport={canReportIssue} enabled={issueContext.enabled} onOpen={() => openAndFocusSection('issues')} onReport={reportIssue} /> : null}
+              </section>
               <div className="vdp-focus-vehicle-context">
               <div className="vdp-focus-photo"><VehicleGallery vehicle={vehicle} /></div>
               <section className="vdp-focus-specs" aria-label="Vehicle specifications">
@@ -883,26 +908,6 @@ export function VehicleWorkspace({
                 {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
               </section>
               </div>
-              <section className="vdp-focus-operations" aria-label="Vehicle operational summary">
-                <h3>Operations</h3>
-                <dl>
-                  <Fact label="Location"><strong>{currentLocation.label}</strong>{vehicle.location.conflict ? <small>Location conflict — review needed</small> : null}</Fact>
-                  <Fact label="Hold status"><strong>{loanerLabel || (holdCurrent && vehicle.dealerMail.hasActiveHold ? "Held" : holdLabel)}</strong>{vehicle.dealerMail.loaner?.rawAlert && loanerLabel ? <small>{vehicle.dealerMail.loaner.rawAlert}</small> : null}{holdCount > 1 ? <small className="vdp-focus-mobile-backup">{holdCount - 1} backup {holdCount === 2 ? "hold" : "holds"}</small> : null}</Fact>
-                  {primaryHold?.salesperson ? <Fact label="Salesperson">{primaryHold.salesperson}</Fact> : null}
-                  {primaryHold?.expectedDeliveryDate ? <Fact label="Expected">{formatDate(primaryHold.expectedDeliveryDate)}</Fact> : null}
-                  {holdCount > 1 ? <Fact label="Backup holds" className="vdp-focus-desktop-field">{holdCount - 1}</Fact> : null}
-                  <Fact label="Service" className="vdp-focus-service-fact"><span className={"vdp-focus-service-text--" + serviceStatus}>{serviceStatusLabel(vehicle.serviceReadiness)}</span></Fact>
-                </dl>
-                <div className="vdp-focus-actions">
-                  {movementAction}
-                  <button type="button" onClick={canManageDealerMail ? focusDealerMailActions : () => openAndFocusSection("hold")}
-                    data-action={canManageDealerMail ? "dealermail-tools" : "hold-details"}><MessageSquare size={18} aria-hidden="true" />{canManageDealerMail ? "DealerMail tools" : "View hold status"}</button>
-                  {serviceStatus === "needs_service" ? <WorkspaceLink to={serviceHref + "&action=in_service"} preserveOrigin>Start service</WorkspaceLink> : null}
-                  {serviceStatus !== "serviced" ? <WorkspaceLink to={serviceHref + "&action=serviced"} preserveOrigin>Mark Ready</WorkspaceLink> : <WorkspaceLink to={serviceHref} preserveOrigin>Service history</WorkspaceLink>}
-                </div>
-                {hasMovement ? <div className="vdp-focus-next-action"><strong>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div> : null}
-                {issueContext ? <VehicleIssuesSummary issues={vehicleIssues} canReport={canReportIssue} enabled={issueContext.enabled} onOpen={() => openAndFocusSection('issues')} onReport={reportIssue} /> : null}
-              </section>
               <CustomerSummary key={vehicle.id} vehicle={vehicle} onRecords={() => openAndFocusSection("data")} onTakeHome={(button) => { takeHomeOpenerRef.current = button; setTakeHomeOpen(true); }} />
             </div>
             <section className="vdp-focus-resources" aria-label="Documents and vehicle records">
@@ -945,11 +950,14 @@ export function VehicleWorkspace({
           </WorkspacePanel>
           <WorkspacePanel id="hold" label="Holds & moves" active={activePage === "hold"}>
             <div className="vdp-focus-section-heading"><h3>Holds &amp; moves</h3><div className="vdp-focus-actions">{movementAction}</div></div>
-            {canManageDealerMail ? <div className="vdp-focus-handoff"><DealerMailHandoff key={vehicle.id + "|" + vehicle.stockNumber + "|" + vehicle.vin} vehicle={vehicle} panelRef={dealerMailActionsRef} /></div> : null}
             <div className="vdp-focus-hold-grid inventory-workspace-hold-center" data-hold-state={vehicle.holdEvidence?.length ? "held" : "no-evidence"}>
-              <div><HoldDetails vehicle={vehicle} /></div>
               <div>
-                <section id="inventory-section-movement" tabIndex={-1} aria-labelledby="inventory-movement-heading" className="vdp-focus-movement"><h3 id="inventory-movement-heading">Location &amp; movement</h3><MovementDetails vehicle={vehicle} /></section>
+                <HoldDetails vehicle={vehicle} />
+                {/* Evidence first; DealerMail is a secondary, read-only handoff. */}
+                {canManageDealerMail ? <div className="vdp-focus-handoff"><DealerMailHandoff key={vehicle.id + "|" + vehicle.stockNumber + "|" + vehicle.vin} vehicle={vehicle} /></div> : null}
+              </div>
+              <div>
+                <section id="inventory-section-movement" tabIndex={-1} aria-labelledby="inventory-movement-heading" className="vdp-focus-movement"><h3 id="inventory-movement-heading">Location &amp; movement</h3><MovementDetails vehicle={vehicle} status={nextStepStatus} /></section>
               </div>
             </div>
           </WorkspacePanel>

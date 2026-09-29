@@ -309,7 +309,7 @@ describe('focused vehicle workspace', () => {
       'Black / Black Leather',
     ]);
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
-    const hold = within(operations).getByText('Hold status').closest('.inventory-workspace-fact')!;
+    const hold = within(operations).getByText('Hold status', { selector: 'dt' }).closest('.inventory-workspace-fact')!;
     expect(hold).toHaveTextContent('Held');
     expect(within(operations).getByText('Salesperson').closest('.inventory-workspace-fact')).toHaveTextContent('Jamie Howell');
     expect(hold.querySelector('.vdp-focus-mobile-backup')).toHaveTextContent('2 backup holds');
@@ -439,7 +439,8 @@ describe('focused vehicle workspace', () => {
     expect(screen.queryByText('PRIVATE SALES PERSON')).not.toBeInTheDocument();
     expect(screen.queryByText('STATUS: S')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Hold details are restricted' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'DealerMail tools' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'DealerMail vehicle tools' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open in DealerMail (copies stock)' })).not.toBeInTheDocument();
   });
 
   it('renders service confirmation links with an exact VIN and keeps missing status waiting', () => {
@@ -611,13 +612,53 @@ describe('focused vehicle workspace', () => {
     } finally { HTMLElement.prototype.scrollIntoView = original; }
   });
 
-  it('opens the in-app handoff and focuses its action without opening or editing CRM records', async () => {
+  it('opens Hold status on the hold evidence, with DealerMail as a secondary handoff after it', async () => {
     const user = userEvent.setup(); const openSpy = vi.spyOn(window, 'open');
     render(<VehicleWorkspace vehicle={vehicle()} homeStore={vehicle().location.homeStore} onClose={vi.fn()} />);
-    await user.click(screen.getByRole('button', { name: 'DealerMail tools' }));
-    expect(screen.getByRole('tabpanel', { name: 'Holds & moves' })).toBeVisible();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Open DealerMail & copy stock' })).toHaveFocus());
+    await user.click(screen.getByRole('button', { name: 'Hold status' }));
+    const pane = screen.getByRole('tabpanel', { name: 'Holds & moves' });
+    expect(pane).toBeVisible();
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Holds & moves' })).toHaveFocus());
+    const evidence = within(pane).getByText('Customer appointment');
+    const handoff = within(pane).getByRole('button', { name: 'Open in DealerMail (copies stock)' });
+    expect(evidence.compareDocumentPosition(handoff) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The duplicated position chip and Comments/Alerts chips are gone.
+    expect(within(pane).queryByText('No comments')).not.toBeInTheDocument();
+    expect(within(pane).queryByText('No alerts')).not.toBeInTheDocument();
     expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it('puts Operations, with its labeled service line, before the gallery in reading order', () => {
+    render(<VehicleWorkspace vehicle={vehicle()} homeStore={vehicle().location.homeStore} onClose={vi.fn()} />);
+    const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
+    const specs = screen.getByRole('region', { name: 'Vehicle specifications' });
+    expect(operations.compareDocumentPosition(specs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(operations).getByRole('link', { name: /^Waiting for service\. Open service status for VIN TESTDATASYN000002$/ }))
+      .toHaveAttribute('href', '/service?vin=TESTDATASYN000002');
+  });
+
+  it('shows another store\'s overdue move neutrally with who it waits on, and the viewer\'s own overdue step as urgent', async () => {
+    const user = userEvent.setup();
+    const unit = vehicle();
+    unit.movement = {
+      requestId: 'synthetic-move-1', state: 'at_requesting_store', requestStatus: 'customer_showing',
+      nextAction: 'Show the vehicle, then start its return', nextActionOwner: 'Fowlerville sales', nextActionStore: 'Fowlerville',
+      dueAt: '2026-08-30T15:00:00Z', overdue: true,
+    };
+    const { unmount } = render(<VehicleWorkspace vehicle={unit} homeStore={{ id: 'howell', name: 'Howell' }} onClose={vi.fn()} />);
+    const waiting = within(screen.getByRole('region', { name: 'Vehicle operational summary' })).getByText('Overdue · waiting on Fowlerville salesperson');
+    expect(waiting).not.toHaveClass('vdp-focus-next-action__overdue');
+    await user.click(screen.getByRole('tab', { name: 'Holds & moves' }));
+    const movement = screen.getByRole('region', { name: 'Location & movement' });
+    expect(within(movement).getByText('Overdue · waiting on Fowlerville salesperson').closest('.inventory-availability-note')).toBeNull();
+    unmount();
+
+    render(<VehicleWorkspace vehicle={unit} homeStore={{ id: 'fowlerville', name: 'Fowlerville' }} onClose={vi.fn()} />);
+    const own = within(screen.getByRole('region', { name: 'Vehicle operational summary' })).getByText('Overdue');
+    expect(own).toHaveClass('vdp-focus-next-action__overdue');
+    expect(screen.queryByText(/waiting on/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Holds & moves' }));
+    expect(within(screen.getByRole('region', { name: 'Location & movement' })).getByText('Overdue.').closest('.inventory-availability-note')).toHaveClass('inventory-availability-note--danger');
   });
 
   it('gives manual stock guidance when clipboard copying is blocked', async () => {
@@ -638,7 +679,7 @@ describe('focused vehicle workspace', () => {
           onClose={vi.fn()}
         />,
       );
-      await user.click(screen.getByRole('button', { name: 'Open DealerMail & copy stock' }));
+      await user.click(screen.getByRole('button', { name: 'Open in DealerMail (copies stock)' }));
       expect(openSpy).toHaveBeenCalledWith(
         expect.stringContaining('dealermail.com'),
         '_blank',
@@ -679,7 +720,7 @@ describe('focused vehicle workspace', () => {
           onClose={vi.fn()}
         />,
       );
-      await user.click(screen.getByRole('button', { name: 'Open DealerMail & copy stock' }));
+      await user.click(screen.getByRole('button', { name: 'Open in DealerMail (copies stock)' }));
       rerender(
         <VehicleWorkspace
           vehicle={second}

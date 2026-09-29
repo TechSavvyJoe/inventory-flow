@@ -15,7 +15,13 @@ async function expectFocusedLayout(page: Page) {
 
 test('move route, owner and next action precede optional vehicle records', async ({ page }) => {
   await page.goto('/transfers')
-  await page.locator('.transfer-list-item').first().click()
+  // Open the seeded Fowlerville showing move by what it is, not by list position:
+  // the list puts the viewer's own next steps first, and earlier specs in the
+  // same run (desktop, then mobile) add moves that can outrank it.
+  await page.locator('.transfer-list-items').getByRole('button')
+    .filter({ hasText: 'TESTDATAHWELL0001' })
+    .filter({ hasText: 'Demo Fowlerville Salesperson' })
+    .first().click()
   const next = page.getByRole('region', { name: 'Next step' })
   await expect(next).toContainText('Demo Fowlerville Salesperson')
   await expect(next.getByRole('button', { name: 'Update the showing outcome' })).toBeVisible()

@@ -74,8 +74,6 @@
 #inventory-vehicle-workspace .vdp-focus-tabs button { flex:0 0 auto; min-height:44px; padding:0 12px; border:0; border-radius:0; background:transparent; color:var(--ink-700); box-shadow:none; font:var(--ifx-weight-semibold) var(--ifx-text-md)/1.3 var(--font-app); white-space:nowrap; }
 #inventory-vehicle-workspace .vdp-focus-tabs button:hover { background:var(--blue-050); color:var(--blue-700); }
 #inventory-vehicle-workspace .vdp-focus-tabs button[aria-selected="true"] { background:var(--blue-050); color:var(--blue-700); box-shadow:inset 0 -3px 0 var(--blue-600); }
-#inventory-vehicle-workspace .vdp-focus-service-text--needs_service { color:var(--ifx-warning); }
-#inventory-vehicle-workspace .vdp-focus-service-text--in_service { color:var(--ifx-info); }
 #inventory-vehicle-workspace .vdp-focus-scroll { flex:1; min-height:0; overflow:auto; padding:12px 14px; overscroll-behavior:contain; scrollbar-gutter:stable; }
 #inventory-vehicle-workspace .inventory-workspace-panel { margin:0; padding:0; border:0; border-radius:0; background:none; box-shadow:none; }
 #inventory-vehicle-workspace .inventory-workspace-panel__body { padding:0; }
@@ -354,8 +352,6 @@
 #inventory-vehicle-workspace .inventory-hold-evidence__facts,
 #inventory-vehicle-workspace .inventory-workspace-no-hold__facts,
 #inventory-vehicle-workspace .inventory-workspace-hold-context { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px 16px; margin: 10px 0; }
-#inventory-vehicle-workspace .inventory-hold-evidence__flags { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; }
-#inventory-vehicle-workspace .inventory-hold-evidence__flags span { display: inline-flex; gap: 5px; align-items: center; }
 #inventory-vehicle-workspace .inventory-hold-evidence__messages > summary { display: flex; gap: 10px; align-items: center; font-weight: 600; font-size: 14px; }
 #inventory-vehicle-workspace .inventory-hold-evidence__messages > summary small { font-size: 12px; font-weight: 400; }
 #inventory-vehicle-workspace .inventory-evidence-messages article { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 3px 8px; padding: 8px 0; border-bottom: 1px solid var(--v10-border-soft); font-size: 14px; }
@@ -374,27 +370,19 @@
 #inventory-vehicle-workspace .inventory-timeline__copy strong { color:var(--v10-ink); font-size:14px; line-height:1.4; font-weight:600; }
 #inventory-vehicle-workspace .inventory-timeline__copy p { margin:2px 0 0; color:var(--v10-support); font-size:14px; line-height:1.4; }
 #inventory-vehicle-workspace .inventory-hold-evidence > header strong { font-size:14px; }
-#inventory-vehicle-workspace :is(.inventory-hold-evidence__position,.inventory-hold-evidence__flags > span) { font-size:12px; }
 #inventory-vehicle-workspace .inventory-evidence-messages { gap:6px; margin-top:4px; }
 #inventory-vehicle-workspace .inventory-evidence-messages article > strong { font-size:14px; line-height:1.4; font-weight:500; }
 #inventory-vehicle-workspace .inventory-evidence-messages article > small { font-size:12px; line-height:1.4; }
-#inventory-vehicle-workspace .vdp-focus-handoff { margin-bottom:12px; padding:10px 12px; border:1px solid var(--v10-border); border-radius:5px; }
-#inventory-vehicle-workspace .vdp-focus-handoff .inventory-dealermail-handoff { display:grid; grid-template-columns:minmax(180px,1fr) minmax(260px,1fr) auto; gap:4px 16px; align-items:center; padding:0; border:0; }
+#inventory-vehicle-workspace .vdp-focus-handoff { margin-top:16px; padding-top:12px; border-top:1px solid var(--v10-border); }
+#inventory-vehicle-workspace .vdp-focus-handoff .inventory-dealermail-handoff { display:grid; grid-template-columns:minmax(0,1fr); gap:6px; align-items:start; padding:0; border:0; }
 #inventory-vehicle-workspace .vdp-focus-handoff .inventory-dealermail-handoff h3 { margin:0 0 3px; font-size:16px; }
 #inventory-vehicle-workspace .vdp-focus-handoff .inventory-dealermail-handoff p { margin:0; font-size:12px; color:var(--v10-support); }
-#inventory-vehicle-workspace .vdp-focus-handoff .inventory-dealermail-handoff > p,
-#inventory-vehicle-workspace .vdp-focus-handoff .inventory-dealermail-handoff__feedback { grid-column:1 / -1; }
-#inventory-vehicle-workspace .vdp-focus-handoff .inventory-dealermail-handoff__identity { margin:0; }
+#inventory-vehicle-workspace .vdp-focus-handoff .inventory-dealermail-handoff__identity { display:flex; flex-wrap:wrap; gap:4px 16px; margin:0; }
+#inventory-vehicle-workspace .vdp-focus-handoff .inventory-dealermail-handoff__identity > div { display:flex; flex-wrap:wrap; gap:4px 8px; }
 @media (max-width:1000px) {
   #inventory-vehicle-workspace .vdp-focus-photo { grid-row:auto; }
   #inventory-vehicle-workspace .vdp-focus-keyfacts { grid-column:1 / -1; }
 }
-@media (max-width:850px) {
-  #inventory-vehicle-workspace .vdp-focus-handoff .inventory-dealermail-handoff { grid-template-columns:minmax(0,1fr); gap:6px; }
-  #inventory-vehicle-workspace .vdp-focus-handoff .inventory-dealermail-handoff__identity { display:flex; flex-wrap:wrap; gap:4px 16px; }
-  #inventory-vehicle-workspace .vdp-focus-handoff .inventory-dealermail-handoff__identity > div { display:flex; flex-wrap:wrap; gap:4px 8px; }
-}
-
 #inventory-vehicle-workspace .inventory-workspace-mobile-section-title { display: none; }
 
 
@@ -439,7 +427,6 @@
   .inventory-workspace--focused .vdp-focus-glance { font-size:var(--ifx-text-xs); }
   .inventory-workspace--focused .vdp-focus-glance > :is(span,a) { gap:4px; padding-inline:5px; }
   .inventory-workspace--focused .vdp-focus-glance :is(strong,.inventory-service-link) { font-size:var(--ifx-text-xs); }
-  .inventory-workspace--focused .vdp-focus-glance .inventory-service-link__prefix { display:none; }
   #inventory-vehicle-workspace .vdp-focus-navigation { gap:8px; }
   #inventory-vehicle-workspace .vdp-focus-overview { grid-template-columns:180px 1fr; }
   #inventory-vehicle-workspace .vdp-focus-vehicle-context { display:contents; }
@@ -492,14 +479,13 @@
   #inventory-vehicle-workspace .vdp-focus-mobile-specs { display:grid; gap:5px; }
   #inventory-vehicle-workspace .vdp-focus-mobile-specs p { margin:0; color:var(--ink-700); font:400 13px/1.35 var(--font-app); overflow-wrap:anywhere; }
   #inventory-vehicle-workspace .vdp-focus-mobile-specs p:first-child { color:var(--navy-900); font-weight:600; }
-  /* Location, hold, and the decisive actions lead the phone overview; the
-     gallery and specifications follow. */
-  #inventory-vehicle-workspace .vdp-focus-operations { order:-1; padding:8px 10px; border:1px solid var(--border-strong); border-radius:4px; background:var(--surface); }
+  /* Operations (location, hold, service, decisive actions) comes first in the
+     DOM, so it leads the phone overview; gallery and specifications follow. */
+  #inventory-vehicle-workspace .vdp-focus-operations { padding:8px 10px; border:1px solid var(--border-strong); border-radius:4px; background:var(--surface); }
   #inventory-vehicle-workspace .vdp-focus-operations h3 { margin-bottom:4px; font-size:15px; }
   #inventory-vehicle-workspace .vdp-focus-operations > dl { grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 12px; }
   #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact { grid-template-columns:minmax(0,1fr); gap:var(--ifx-space-0-5); padding:var(--ifx-space-1-5) 0; }
   #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact dd { overflow-wrap:normal; word-break:normal; }
-  #inventory-vehicle-workspace .vdp-focus-operations .vdp-focus-service-fact { display:none; }
   #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact dt { font-size:12px; }
   #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact dd { font-size:14px; }
   #inventory-vehicle-workspace .vdp-focus-operations .vdp-focus-desktop-field { display:none; }
@@ -547,7 +533,6 @@
   #inventory-vehicle-workspace .inventory-hold-evidence__facts .inventory-workspace-fact { display:grid; grid-template-columns:100px minmax(0,1fr); gap:8px; align-items:baseline; padding:7px 0; border-bottom:1px solid var(--border); }
   #inventory-vehicle-workspace .inventory-hold-evidence__facts .inventory-workspace-fact :is(dt,dd) { margin:0; font-size:13px; line-height:1.4; overflow-wrap:normal; }
   #inventory-vehicle-workspace .inventory-hold-evidence__facts .inventory-workspace-fact dd { font-weight:600; }
-  #inventory-vehicle-workspace .inventory-hold-evidence__position { display:none; }
   #inventory-vehicle-workspace .inventory-dealermail-handoff { padding:10px; border-radius:4px; }
   #inventory-vehicle-workspace .inventory-dealermail-handoff h3 { font-size:16px; margin-bottom:3px; }
   #inventory-vehicle-workspace .inventory-dealermail-handoff p { margin:4px 0; font-size:12px; }
@@ -570,7 +555,7 @@
 #inventory-vehicle-workspace .vdp-focus-utilities > button[aria-pressed="true"] { background:var(--blue-050); border-color:var(--v10-blue); }
 #inventory-vehicle-workspace .vdp-focus-next-action { display:flex; flex-wrap:wrap; gap:2px 8px; margin-top:8px; padding:7px 0 0; border-top:1px solid var(--v10-border); font-size:13px; }
 #inventory-vehicle-workspace .vdp-focus-next-action p { margin:2px 0 0; }
-#inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact dd > a { color:var(--v10-blue); text-underline-offset:3px; }
+.inventory-workspace--focused .vdp-focus-next-action__overdue { color:var(--ifx-danger); }
 @media (max-width:680px) {
   #inventory-vehicle-workspace .vdp-focus-utilities > button { width:44px; min-width:44px; padding:0; font-size:0; gap:0; }
   #inventory-vehicle-workspace .vdp-focus-utilities > button svg { width:18px; height:18px; }
@@ -578,7 +563,6 @@
 
 @media (max-width:360px) {
   #inventory-vehicle-workspace .vdp-focus-operations > dl { grid-template-columns:minmax(0,1fr); }
-  #inventory-vehicle-workspace .vdp-focus-operations .vdp-focus-service-fact { display:none; }
   #inventory-vehicle-workspace .vdp-focus-actions :is(a,button) { padding:5px 3px; font-size:13px; }
   #inventory-vehicle-workspace .vdp-focus-footer > div { gap:3px; }
   #inventory-vehicle-workspace .vdp-focus-footer :is(a,button) { padding-inline:2px; font-size:12px; }

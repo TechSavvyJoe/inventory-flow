@@ -32,6 +32,7 @@ import { VehicleLocationOverview } from './VehicleLocationOverview'
 import { simpleTransferActions } from './SimpleTransferTracker'
 import { currentWorkspaceReturnPath, readWorkspaceReturnPath, vehicleWorkspacePath, withWorkspaceReturnPath, workspaceReturnLabel } from '../../lib/inventory-navigation'
 import { searchFieldsMatch } from '../../lib/search'
+import { isReturnOverdue, slaLabel, type SlaStatus } from '../../lib/sla-label'
 import './transfers-page.css'
 import './transfer-workspace-v3.css'
 import './transfer-workspace-v4.css'
@@ -58,9 +59,15 @@ type TransferQueueFilter =
   | 'return-due'
   | 'sold-pending'
   | 'issues'
+  | 'overdue-returns'
+  | 'location-exceptions'
 type TransferQueueSort = 'urgency' | 'needed-by' | 'recent' | 'stock' | 'route'
 
 const TERMINAL_TRANSFER_STATES = new Set(['closed', 'declined', 'canceled', 'expired'])
+// The two saved views Group operations offered managers, now filters on
+// Moves > All stores. They are shown only to managers in that scope.
+const MANAGER_GROUP_FILTERS = new Set<TransferQueueFilter>(['overdue-returns', 'location-exceptions'])
+const LOCATION_EXCEPTION_CONFIDENCE = new Set(['conflicting', 'unknown', 'stale'])
 const PASSIVE_TRANSFER_ACTIONS = new Set<TransferActionKind>(['open-source', 'report-condition', 'mark-exception', 'escalate'])
 
 function TransferListPhoto({ vehicle }: { vehicle: TransferDetail['vehicle'] }) {
@@ -113,14 +120,40 @@ function needsTransferAction(detail: TransferDetail): boolean {
 function transferIssueLabel(detail: TransferDetail): string | null {
   if (detail.exception) return detail.exception.label
   if (detail.timeline.some((event) => event.exception)) return 'Vehicle issue reported'
-  if (detail.nextAction.sla === 'breached' || detail.nextAction.sla === 'overdue') return 'Action overdue'
   return null
 }
 
-function dueLabel(detail: TransferDetail): string {
-  if (!detail.nextAction.dueAt) return 'No due time'
-  const prefix = detail.nextAction.sla === 'breached' || detail.nextAction.sla === 'overdue' ? 'Overdue' : 'Due'
-  return `${prefix} ${formatDateTime(detail.nextAction.dueAt)}`
+function nextStepStatus(record: TransferRecord, detail: TransferDetail, viewerStore: StoreName): SlaStatus {
+  return slaLabel({
+    sla: detail.nextAction.sla,
+    nextActionStore: record.nextActionStore,
+    nextActionOwner: record.nextActionOwner,
+    viewerStore,
+  })
+}
+
+/** Overdue work the viewer's own store has to act on, or whose owner was not published. */
+function isOwnOverdue(status: SlaStatus): boolean {
+  return status.overdue && status.tone === 'danger'
+}
+
+function dueLabel(detail: TransferDetail, status: SlaStatus): string {
+  if (!detail.nextAction.dueAt) return status.label
+  // Another store's overdue step names who it is waiting on instead of the owner column.
+  if (status.overdue && !isOwnOverdue(status)) return status.label
+  return `${status.overdue ? 'Overdue' : 'Due'} ${formatDateTime(detail.nextAction.dueAt)}`
+}
+
+const DUE_TONE_CLASS: Record<SlaStatus['tone'], string | undefined> = {
+  danger: 'is-overdue',
+  warning: 'is-due-soon',
+  ok: 'is-on-track',
+  neutral: undefined,
+  none: undefined,
+}
+
+function isLocationException(record: TransferRecord): boolean {
+  return LOCATION_EXCEPTION_CONFIDENCE.has(record.locationConfidence) || normalizedStatus(record.movementStatus) === 'location-exception'
 }
 
 function workflowStage(status: string): number {
@@ -349,6 +382,13 @@ export function TransfersPage() {
 
   const requestedId = params.get('id')
   const requestedVin = params.get('vin')?.toUpperCase()
+  const managerGroupFilters = storeScope === 'group' && (role === 'manager' || role === 'group_manager')
+  // A manager filter saved in All stores never silently narrows My store.
+  const activeFilter: TransferQueueFilter = MANAGER_GROUP_FILTERS.has(queueFilter) && !managerGroupFilters ? 'all' : queueFilter
+  const statusFor = ({ record, detail }: { record: TransferRecord; detail: TransferDetail }) => nextStepStatus(record, detail, homeStore)
+  // Overdue returns are judged at the bootstrap's time, as the server's store summary is.
+  // The server judges overdue at request time, so the filter uses the clock too.
+  const referenceNow = Date.now()
   const scopedDetails = details.filter(({ record }) => storeScope === 'group' ||
     [record.homeStore, record.requestingStore, record.currentLocation, record.destination].includes(homeStore))
   const filteredDetails = scopedDetails
@@ -357,23 +397,25 @@ export function TransfersPage() {
       const needsAction = needsTransferAction(detail)
       if (queueView === 'history' ? !terminal : queueView === 'active' ? terminal : !needsAction || terminal) return false
       if (
-        queueFilter === 'my-location' &&
+        activeFilter === 'my-location' &&
         ![record.homeStore, record.requestingStore, record.currentLocation, record.destination].includes(homeStore)
       ) return false
-      if (queueFilter === 'my-home-inventory' && record.homeStore !== homeStore) return false
-      if (queueFilter === 'requested-by-my-store' && record.requestingStore !== homeStore) return false
-      if (queueFilter === 'away-from-home' && !awayFromHomeSummary(record.homeStore, record.currentLocation, record.events, { destination: record.destination }).isAway) return false
-      if (queueFilter === 'awaiting-approval' && !isAwaitingApproval(record)) return false
-      if (queueFilter === 'ready-to-collect' && !['approved', 'transport-assigned', 'pickup-scheduled'].includes(normalizedStatus(record.requestStatus))) return false
-      if (queueFilter === 'at-requesting-store' && !['arrived', 'customer-showing', 'sale-outcome-pending', 'sale-confirmed', 'not-sold'].includes(normalizedStatus(record.requestStatus))) return false
+      if (activeFilter === 'my-home-inventory' && record.homeStore !== homeStore) return false
+      if (activeFilter === 'requested-by-my-store' && record.requestingStore !== homeStore) return false
+      if (activeFilter === 'away-from-home' && !awayFromHomeSummary(record.homeStore, record.currentLocation, record.events, { destination: record.destination }).isAway) return false
+      if (activeFilter === 'awaiting-approval' && !isAwaitingApproval(record)) return false
+      if (activeFilter === 'ready-to-collect' && !['approved', 'transport-assigned', 'pickup-scheduled'].includes(normalizedStatus(record.requestStatus))) return false
+      if (activeFilter === 'at-requesting-store' && !['arrived', 'customer-showing', 'sale-outcome-pending', 'sale-confirmed', 'not-sold'].includes(normalizedStatus(record.requestStatus))) return false
       if (
-        queueFilter === 'driver-needed' &&
+        activeFilter === 'driver-needed' &&
         (terminal || Boolean(record.transportAssignee) || workflowStage(record.requestStatus) < 3 || workflowStage(record.requestStatus) > 4)
       ) return false
-      if (queueFilter === 'moving' && !isMoving(record)) return false
-      if (queueFilter === 'return-due' && !needsReturnAttention(record)) return false
-      if (queueFilter === 'sold-pending' && !isSoldPendingNotDelivered(record)) return false
-      if (queueFilter === 'issues' && !transferIssueLabel(detail)) return false
+      if (activeFilter === 'moving' && !isMoving(record)) return false
+      if (activeFilter === 'return-due' && !needsReturnAttention(record)) return false
+      if (activeFilter === 'sold-pending' && !isSoldPendingNotDelivered(record)) return false
+      if (activeFilter === 'issues' && !transferIssueLabel(detail) && !isOwnOverdue(statusFor({ record, detail }))) return false
+      if (activeFilter === 'overdue-returns' && !isReturnOverdue(record, referenceNow)) return false
+      if (activeFilter === 'location-exceptions' && !isLocationException(record)) return false
       return searchFieldsMatch(query, [
         record.stockNumber,
         record.vin,
@@ -408,8 +450,11 @@ export function TransfersPage() {
       const leftIssue = transferIssueLabel(left.detail) ? 1 : 0
       const rightIssue = transferIssueLabel(right.detail) ? 1 : 0
       if (leftIssue !== rightIssue) return rightIssue - leftIssue
-      const slaRank = { breached: 4, overdue: 3, 'due-soon': 2, 'on-track': 1, none: 0 }
-      const slaDifference = slaRank[right.detail.nextAction.sla] - slaRank[left.detail.nextAction.sla]
+      // Another store's overdue step is waiting, not urgent, for this viewer.
+      const slaRank = (status: SlaStatus) => status.overdue && !isOwnOverdue(status)
+        ? 1.5
+        : { breached: 4, overdue: 3, 'due-soon': 2, 'on-track': 1, none: 0 }[status.state]
+      const slaDifference = slaRank(statusFor(right)) - slaRank(statusFor(left))
       if (slaDifference) return slaDifference
       const priorityDifference = transferPriorityScore(right.record) - transferPriorityScore(left.record)
       if (priorityDifference) return priorityDifference
@@ -597,7 +642,7 @@ export function TransfersPage() {
                   ['needs-action', 'Needs me'],
                   ['history', 'Completed'],
                 ] as Array<[TransferQueueView, string]>).map(([value, label]) => (
-                  <button type="button" key={value} aria-label={value === 'needs-action' ? `Your next steps, ${queueCounts[value]} moves` : undefined} className={queueView === value ? 'is-active' : undefined} onClick={() => setQueueView(value)} aria-pressed={queueView === value}>
+                  <button type="button" key={value} aria-label={value === 'needs-action' ? `Your next steps, ${queueCounts[value]} ${queueCounts[value] === 1 ? 'move' : 'moves'}` : undefined} className={queueView === value ? 'is-active' : undefined} onClick={() => setQueueView(value)} aria-pressed={queueView === value}>
                     {label}<span>{queueCounts[value]}</span>
                   </button>
                 ))}
@@ -608,7 +653,7 @@ export function TransfersPage() {
                 <span className="sr-only">Filter vehicle moves</span>
                 <select
                   aria-label="Filter vehicle moves"
-                  value={queueFilter}
+                  value={activeFilter}
                   onChange={(event) => setQueueFilter(event.target.value as TransferQueueFilter)}
                 >
                   <option value="all">All moves</option>
@@ -620,6 +665,10 @@ export function TransfersPage() {
                   <option value="return-due">Returns to follow up</option>
                   {!simple ? <option value="sold-pending">Sold pending · not delivered</option> : null}
                   <option value="issues">Issues to review</option>
+                  {managerGroupFilters ? <optgroup label="Manager views">
+                    <option value="overdue-returns">Overdue returns</option>
+                    <option value="location-exceptions">Location exceptions</option>
+                  </optgroup> : null}
                 </select>
               </label>
               <label className="transfer-list-sort" title="Sort vehicle moves">
@@ -637,7 +686,7 @@ export function TransfersPage() {
                   <option value="route">Route</option>
                 </select>
               </label>
-                <div className="transfer-list-count" aria-live="polite">{filteredDetails.length} moves shown</div>
+                <div className="transfer-list-count" aria-live="polite">{filteredDetails.length} {filteredDetails.length === 1 ? 'move' : 'moves'} shown</div>
               </div>
             </div>
             <div className="transfer-list-items">
@@ -647,11 +696,7 @@ export function TransfersPage() {
                 const simpleRecord = record.workflowMode === 'simple'
                 const away = awayFromHomeSummary(record.homeStore, record.currentLocation, record.events, { destination: record.destination })
                 const issueLabel = transferIssueLabel(detail)
-                const dueTone = detail.nextAction.sla === 'breached' || detail.nextAction.sla === 'overdue'
-                  ? 'is-overdue'
-                  : detail.nextAction.sla === 'due-soon'
-                    ? 'is-due-soon'
-                    : 'is-on-track'
+                const nextStatus = statusFor({ record, detail })
                 return (
                   <button
                     type="button"
@@ -676,7 +721,7 @@ export function TransfersPage() {
                       <span className="move-row-next">
                         <span className="transfer-list-stage">{simpleRecord ? compactRequestStatus(record.requestStatus, true) : `Step ${step} of 5 · ${compactRequestStatus(record.requestStatus)}`}</span>
                         <span className="transfer-next"><small>Next</small><strong>{compactNextAction(record.nextAction, { homeStore: record.homeStore, destination: record.destination })}</strong></span>
-                        <span className="transfer-list-owner-row"><span>{record.nextActionOwner || 'Responsible person not recorded'}</span><span className={dueTone}>{dueLabel(detail)}</span></span>
+                        <span className="transfer-list-owner-row">{nextStatus.overdue && !isOwnOverdue(nextStatus) ? null : <span>{record.nextActionOwner || 'Responsible person not recorded'}</span>}<span className={DUE_TONE_CLASS[nextStatus.tone]}>{dueLabel(detail, nextStatus)}</span></span>
                         {issueLabel ? <span className="transfer-list-alert"><CircleAlert aria-hidden="true" />{issueLabel}</span> : record.returnRequired && away.isAway ? <span className="transfer-list-return">{returnTimingLabel(record)}</span> : null}
                       </span>
                     </span>
@@ -684,7 +729,7 @@ export function TransfersPage() {
                   </button>
                 )
               })}
-              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores or reset this view.' : 'Reset the view to show active moves.'}</p>{query || queueView !== 'active' || queueFilter !== 'all' ? <button type="button" onClick={() => { setQuery(''); setQueueView('active'); setQueueFilter('all') }}>Reset view</button> : null}</div> : null}
+              {filteredDetails.length === 0 ? <div className="transfer-list-no-results"><strong>{queueView === 'needs-action' ? 'No move updates assigned to you' : 'No moves match this view and search.'}</strong><p>{queueView === 'needs-action' ? 'Active shows moves waiting on another person.' : storeScope === 'home' ? 'Try All stores or reset this view.' : 'Reset the view to show active moves.'}</p>{query || queueView !== 'active' || activeFilter !== 'all' ? <button type="button" onClick={() => { setQuery(''); setQueueView('active'); setQueueFilter('all') }}>Reset view</button> : null}</div> : null}
             </div>
           </aside>
           <div className="transfer-detail-surface" id="transfer-detail-workspace">

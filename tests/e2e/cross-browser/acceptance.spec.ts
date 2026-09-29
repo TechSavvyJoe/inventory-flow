@@ -751,7 +751,7 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await expect(holdPanel).toContainText('Backup Demo Salesperson')
   await capture(page, testInfo, 'vehicle-hold')
   const handoff = holdPanel.getByRole('region', { name: 'DealerMail vehicle tools' })
-  const launch = handoff.getByRole('button', { name: 'Open DealerMail & copy stock' })
+  const launch = handoff.getByRole('button', { name: 'Open in DealerMail (copies stock)' })
   await launch.scrollIntoViewIfNeeded()
   await expect(launch).toBeVisible()
   await expect(launch).toBeEnabled()

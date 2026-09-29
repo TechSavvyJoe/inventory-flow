@@ -773,6 +773,25 @@ describe('simple manager-led vehicle moves', () => {
     expect(service.getVehicle(request.vin, unrelated).movement.departedAt).toBeUndefined()
   })
 
+  it('publishes the store that owns the next step on the movement signal, from the Action center actionability rule', () => {
+    const { service, id, tick } = harness()
+    const ownerStore = (context) => ({
+      movement: service.getVehicle(request.vin, context).movement.nextActionStore,
+      transfer: service.getTransfer(id, context).nextActionStore,
+      attention: service.bootstrap(context).attention.find((item) => item.sourceId === id)?.actionStore,
+    })
+    // Waiting on the requesting store's manager, then its salesperson.
+    expect(ownerStore(sales)).toEqual({ movement: 'Fowlerville', transfer: 'Fowlerville', attention: 'Fowlerville' })
+    approve(service, id)
+    tick()
+    expect(ownerStore(homeManager)).toEqual({ movement: 'Fowlerville', transfer: 'Fowlerville', attention: 'Fowlerville' })
+    // A return already travelling is the home store's to confirm.
+    service.appendTransferEvent(id, { type: 'return_started' }, sales)
+    expect(ownerStore(sales)).toEqual({ movement: 'Howell', transfer: 'Howell', attention: 'Howell' })
+    // Stores outside the move still get only the group-safe location summary.
+    expect(service.getVehicle(request.vin, unrelatedSales).movement.nextActionStore).toBeUndefined()
+  })
+
   it('does not invent elapsed time for source-only, unknown or conflicting vehicle locations', () => {
     const { service, database, id, tick } = harness()
     expect(service.getVehicle('TESTDATAHWELL0002', unrelated).movement).toMatchObject({ state: 'source_reported', locationConfidence: 'reported' })

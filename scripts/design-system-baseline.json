@@ -15,7 +15,7 @@
   "files": {
     "src/styles/shell.css": {
       "smallText": 0,
-      "rawColors": 23,
+      "rawColors": 22,
       "rgbHslColors": 20,
       "important": 3,
       "idSelectors": 0
@@ -83,55 +83,6 @@
       "important": 0,
       "idSelectors": 0
     },
-    "src/features/manager/manager.css": {
-      "smallText": 0,
-      "rawColors": 73,
-      "rgbHslColors": 1,
-      "important": 25,
-      "idSelectors": 0
-    },
-    "src/features/transfers/transfers-page.css": {
-      "smallText": 3,
-      "rawColors": 36,
-      "rgbHslColors": 2,
-      "important": 0,
-      "idSelectors": 0
-    },
-    "src/features/transfers/transfer-workspace-v3.css": {
-      "smallText": 47,
-      "rawColors": 145,
-      "rgbHslColors": 9,
-      "important": 29,
-      "idSelectors": 0
-    },
-    "src/features/transfers/transfers.css": {
-      "smallText": 22,
-      "rawColors": 68,
-      "rgbHslColors": 6,
-      "important": 13,
-      "idSelectors": 0
-    },
-    "src/features/transfers/transfer-vehicle-context.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 0,
-      "idSelectors": 29
-    },
-    "src/features/transfers/transfer-simple.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 4,
-      "idSelectors": 123
-    },
-    "src/components/CopyableValue.css": {
-      "smallText": 1,
-      "rawColors": 6,
-      "rgbHslColors": 0,
-      "important": 1,
-      "idSelectors": 0
-    },
     "src/features/overview/overview.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -151,6 +102,13 @@
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 0,
+      "idSelectors": 0
+    },
+    "src/components/CopyableValue.css": {
+      "smallText": 1,
+      "rawColors": 6,
+      "rgbHslColors": 0,
+      "important": 1,
       "idSelectors": 0
     },
     "src/features/service/ServiceDesk.css": {
@@ -181,6 +139,41 @@
       "important": 62,
       "idSelectors": 7
     },
+    "src/features/transfers/transfer-workspace-v3.css": {
+      "smallText": 47,
+      "rawColors": 145,
+      "rgbHslColors": 9,
+      "important": 29,
+      "idSelectors": 0
+    },
+    "src/features/transfers/transfers-page.css": {
+      "smallText": 3,
+      "rawColors": 36,
+      "rgbHslColors": 2,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/transfers/transfer-vehicle-context.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 29
+    },
+    "src/features/transfers/transfer-simple.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 4,
+      "idSelectors": 123
+    },
+    "src/features/transfers/transfers.css": {
+      "smallText": 22,
+      "rawColors": 68,
+      "rgbHslColors": 6,
+      "important": 13,
+      "idSelectors": 0
+    },
     "src/features/inventory/InventoryServiceFilter.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -189,8 +182,8 @@
       "idSelectors": 39
     },
     "src/features/inventory/inventory-modern.css": {
-      "smallText": 51,
-      "rawColors": 188,
+      "smallText": 50,
+      "rawColors": 186,
       "rgbHslColors": 44,
       "important": 1,
       "idSelectors": 0
@@ -214,7 +207,7 @@
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 492
+      "idSelectors": 479
     },
     "src/features/inventory/WarrantyOutlook.css": {
       "smallText": 0,

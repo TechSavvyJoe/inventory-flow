@@ -256,7 +256,7 @@
 .service-source-history-expand svg:last-child { margin-left:auto; transition:transform .18s ease; }
 .service-source-history-expand[aria-expanded=true] svg:last-child { transform:rotate(180deg); }
 .service-source-history-expand:hover:not(:disabled) { border:0; border-bottom:1px solid var(--ifx-border-subtle); background:var(--ifx-info-surface); color:var(--navy-900); }
-.service-source-orders--earlier { overflow:hidden; background:var(--ifx-neutral-0); }
+.service-source-orders--earlier { background:var(--ifx-neutral-0); }
 .service-source-history-meta,.service-source-history-empty { margin:0; padding:9px 12px; }
 .service-source-history-empty { color:var(--ink-600); font-size:13px; }
 .service-autocheck-history { padding:10px 12px; }

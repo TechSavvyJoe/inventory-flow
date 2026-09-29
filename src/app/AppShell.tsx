@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ArrowLeftRight,
-  ArrowRight,
   Bell,
   CarFront,
   ChevronDown,
@@ -14,24 +13,18 @@ import {
   Gauge,
   LayoutDashboard,
   RefreshCw,
-  Search,
   Settings2,
-  Users,
   ListChecks,
   Wrench,
   X,
 } from 'lucide-react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { formatDateTime } from '../lib/format'
 import { FlowBrandLockup } from '../design-system'
 import { runInterfaceTransition } from '../lib/interfaceTransition'
 import { useContainedFocus } from '../lib/useContainedFocus'
 import { useModalBackgroundIsolation } from '../lib/useModalBackgroundIsolation'
 import { STORE_NAMES, type StoreName, type UserRole } from '../types'
-import {
-  createInventorySearchNavigation,
-  inventorySearchAccessContext,
-} from '../lib/inventory-navigation'
 import { useAppData } from './AppDataContext'
 import { STORE_BRANDING } from './storeBranding'
 import { openStoreActionCount } from '../features/attention/action-center'
@@ -107,20 +100,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [navExpanded, setNavExpanded] = useState(readStoredNavigationState)
   const [utilityOpen, setUtilityOpen] = useState(false)
   const [storeSwitching, setStoreSwitching] = useState(false)
-  const searchAccessContext = inventorySearchAccessContext(role, homeStore, currentUser)
-  const [searchDraft, setSearchDraft] = useState(() => ({ accessContext: searchAccessContext, query: '' }))
-  const query = searchDraft.accessContext === searchAccessContext ? searchDraft.query : ''
   const utilityDialogRef = useRef<HTMLDivElement>(null)
   const utilityCloseRef = useRef<HTMLButtonElement>(null)
   const utilityOpenerRef = useRef<HTMLButtonElement>(null)
   const appShellRef = useRef<HTMLDivElement>(null)
   const mainContentRef = useRef<HTMLElement>(null)
   const previousHomeStoreRef = useRef(homeStore)
-  const navigate = useNavigate()
   const location = useLocation()
   const routeUrl = `${location.pathname}${location.search}${location.hash}`
   const previousRouteUrlRef = useRef(routeUrl)
-  const isInventoryRoute = location.pathname === '/' || location.pathname.startsWith('/inventory')
   const attentionCount = openStoreActionCount(data, { store: homeStore, role })
   const storeBrand = STORE_BRANDING[homeStore]
   const canSeeManager = role === 'manager' || role === 'group_manager'
@@ -191,10 +179,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [homeStore])
 
   useEffect(() => {
-    setSearchDraft({ accessContext: searchAccessContext, query: '' })
-  }, [searchAccessContext])
-
-  useEffect(() => {
     // Consuming a private search request replaces router state at the same
     // URL. It must not steal focus from someone already editing that search.
     if (previousRouteUrlRef.current === routeUrl) return
@@ -206,16 +190,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 
     mainContentRef.current?.focus({ preventScroll: true })
   }, [routeUrl])
-
-  function handleSearch(event: FormEvent) {
-    event.preventDefault()
-    const destination = createInventorySearchNavigation(query, searchAccessContext)
-    navigate(
-      { pathname: destination.pathname, search: destination.search },
-      { state: destination.state },
-    )
-    setSearchDraft({ accessContext: searchAccessContext, query: '' })
-  }
 
   function openUtility(event: MouseEvent<HTMLButtonElement>) {
     utilityOpenerRef.current = event.currentTarget
@@ -304,17 +278,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         {mobileUtilityItems.map(({ id, to, label, icon: Icon }) => (
           <NavLink key={id} className="utility-service-link" to={to} onClick={() => setUtilityOpen(false)}><Icon aria-hidden="true"/><span><strong>{label}</strong><small>{MOBILE_UTILITY_HINTS[id]}</small></span><ChevronRight aria-hidden="true"/></NavLink>
         ))}
-
-        {canSeeManager ? (
-          <NavLink className="utility-manager-link" to="/manager" onClick={() => setUtilityOpen(false)}>
-            <Users aria-hidden="true" />
-            <span>
-              <strong>Group operations</strong>
-              <small>Manage transfers, movement, and return work</small>
-            </span>
-            <ChevronRight aria-hidden="true" />
-          </NavLink>
-        ) : null}
       </section>
     </div>
   ) : null
@@ -355,7 +318,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <header className={`top-bar${isInventoryRoute ? ' is-inventory-route' : ''}`}>
+      <header className="top-bar">
         <div className="mobile-brand" aria-label="Inventory Flow, Maxey workspace">
           <FlowBrandLockup tenantLabel="Maxey" compact />
         </div>
@@ -390,22 +353,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
           ) : null}
         </div>
-
-        {isInventoryRoute ? null : (
-          <form className="global-search" onSubmit={handleSearch} role="search">
-            <Search aria-hidden="true" />
-            <input
-              value={query}
-              onChange={(event) => setSearchDraft({ accessContext: searchAccessContext, query: event.target.value })}
-              placeholder="Find a vehicle: stock, VIN, or model"
-              aria-label="Search inventory"
-              autoComplete="off"
-            />
-            <button type="submit" aria-label="Search my store inventory">
-              <ArrowRight aria-hidden="true" />
-            </button>
-          </form>
-        )}
 
         <button
           type="button"

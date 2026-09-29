@@ -7,7 +7,6 @@ import type {
   MovementStatusCode,
   PublicStatusCode,
   RequestStatusCode,
-  SlaState,
   StatusTone,
   TransferActionKind,
   TransferDetail,
@@ -15,6 +14,7 @@ import type {
   TransferVehicleSummary,
 } from '../features/transfers'
 import { formatCurrency, formatNumber } from '../lib/format'
+import { slaState } from '../lib/sla-label'
 import type { PublicListingCode, SourceMeta, TransferRecord, UserRole, VehicleRecord } from '../types'
 
 function code(value: string): string {
@@ -148,15 +148,6 @@ function cdkStatus(value: string): ExplicitStatus<CdkStatusCode> {
   const normalized = code(value)
   const mapped: CdkStatusCode = normalized.includes('not-checked') || !normalized ? 'not-checked' : normalized.includes('processing') ? 'processing' : normalized.includes('closed') ? 'closed' : normalized.includes('open') ? 'open' : normalized.includes('exception') ? 'exception' : 'raw'
   return explicit(mapped, value || 'Not checked', mapped === 'exception' ? 'danger' : 'neutral', mapped === 'raw' ? 'Raw source value retained; business meaning not inferred.' : undefined)
-}
-
-function sla(dueAt?: string): SlaState {
-  if (!dueAt) return 'none'
-  const delta = new Date(dueAt).getTime() - Date.now()
-  if (delta < -60 * 60 * 1000) return 'breached'
-  if (delta < 0) return 'overdue'
-  if (delta < 60 * 60 * 1000) return 'due-soon'
-  return 'on-track'
 }
 
 export function toTransferVehicle(vehicle: VehicleRecord, meta: SourceMeta): TransferVehicleSummary {
@@ -308,7 +299,7 @@ export function toTransferDetail(
       label: transfer.nextAction || 'Manager review',
       ownerLabel: transfer.nextActionOwner || 'Manager',
       dueAt: transfer.dueAt,
-      sla: sla(transfer.dueAt),
+      sla: slaState(transfer.dueAt),
     },
     exception:
       transfer.locationConfidence === 'conflicting' || transfer.locationConfidence === 'unknown'

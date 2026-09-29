@@ -279,7 +279,7 @@
   grid-row: 1;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(178px, 220px) minmax(300px, 1fr) auto minmax(156px, 186px);
+  grid-template-columns: minmax(208px, 1fr) auto minmax(168px, 196px);
   align-items: center;
   gap: 14px;
   padding: 0 18px;
@@ -288,19 +288,6 @@
   color: #163149;
   box-shadow: 0 1px 3px rgb(11 38 65 / 5%);
   transition: border-color 320ms ease;
-}
-
-.top-bar.is-inventory-route {
-  grid-template-columns: minmax(208px, 1fr) auto minmax(168px, 196px);
-}
-
-@media (min-width: 881px) {
-  /* Inventory's search lives in its results controls. Pin the three visible
-     header controls to this three-column layout; legacy inventory styles
-     otherwise reserve a phantom search track and squeeze freshness to 44px. */
-  .app-shell .top-bar.is-inventory-route > .store-control-region { grid-column: 1; }
-  .app-shell .top-bar.is-inventory-route > .freshness-chip { grid-column: 2; }
-  .app-shell .top-bar.is-inventory-route > .profile-button { grid-column: 3; }
 }
 
 .top-bar::after {
@@ -442,81 +429,6 @@
   white-space: nowrap;
   pointer-events: none;
   animation: store-status-in 760ms cubic-bezier(.2, .78, .2, 1) both;
-}
-
-/* A compact "find a vehicle" field: the page's own list filter stays the
-   dominant search on every workflow screen. */
-.global-search {
-  height: 40px;
-  min-width: 0;
-  width: min(100%, 360px);
-  justify-self: start;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 5px 0 12px;
-  border: 1px solid var(--app-control-border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: #163149;
-  box-shadow: none;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
-}
-
-.global-search:focus-within {
-  border-color: var(--store-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--store-accent) 17%, transparent);
-}
-
-.global-search > svg {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  color: var(--ink-500);
-}
-
-.global-search input {
-  height: 38px;
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  background: transparent;
-  color: var(--app-text-primary);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 400;
-}
-
-.global-search input::placeholder {
-  color: var(--app-text-muted);
-}
-
-.global-search > button {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink-600);
-  cursor: pointer;
-  transition: transform 130ms ease, background-color 130ms ease, color 130ms ease;
-}
-
-.global-search > button:hover,
-.global-search:focus-within > button {
-  background: var(--surface-soft);
-  color: var(--store-accent-strong);
-}
-
-.global-search > button:active {
-  transform: scale(0.96);
-}
-
-.global-search > button svg {
-  width: 15px;
-  height: 15px;
 }
 
 .freshness-chip,
@@ -814,8 +726,7 @@
   height: 14px;
 }
 
-.utility-role-control,
-.utility-manager-link {
+.utility-role-control {
   min-height: 60px;
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) 18px;
@@ -829,36 +740,31 @@
   cursor: pointer;
 }
 
-.utility-role-control:hover,
-.utility-manager-link:hover {
+.utility-role-control:hover {
   background: var(--surface-soft);
 }
 
-.utility-role-control > svg:first-child,
-.utility-manager-link > svg:first-child {
+.utility-role-control > svg:first-child {
   width: 18px;
   height: 18px;
   justify-self: center;
   color: var(--store-accent);
 }
 
-.utility-role-control > svg:last-child,
-.utility-manager-link > svg:last-child {
+.utility-role-control > svg:last-child {
   width: 15px;
   height: 15px;
   color: var(--ink-500);
 }
 
-.utility-role-control > span,
-.utility-manager-link > span {
+.utility-role-control > span {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
-.utility-role-control small,
-.utility-manager-link small {
+.utility-role-control small {
   color: var(--app-text-secondary);
   font-size: 13px;
 }
@@ -875,20 +781,11 @@
   cursor: pointer;
 }
 
-.utility-manager-link strong {
-  color: var(--ink-900);
-  font-size: 14px;
-}
-
 @media (max-width: 1180px) {
   .top-bar {
-    grid-template-columns: minmax(164px, 188px) minmax(250px, 1fr) auto 43px;
+    grid-template-columns: minmax(184px, 1fr) auto 44px;
     gap: 10px;
     padding-inline: 14px;
-  }
-
-  .top-bar.is-inventory-route {
-    grid-template-columns: minmax(184px, 1fr) auto 44px;
   }
 
   .profile-copy,
@@ -919,8 +816,7 @@
     display: none;
   }
 
-  .top-bar,
-  .top-bar.is-inventory-route {
+  .top-bar {
     position: sticky;
     height: calc(var(--top-height) + var(--safe-top));
     padding-top: var(--safe-top);
@@ -995,7 +891,6 @@
     left: auto;
   }
 
-  .global-search,
   .freshness-chip {
     display: none;
   }
@@ -1145,8 +1040,7 @@
 }
 
 @media (max-width: 359px) {
-  .top-bar,
-  .top-bar.is-inventory-route {
+  .top-bar {
     grid-template-columns: 32px minmax(0, 1fr) 42px;
   }
 
@@ -1259,13 +1153,11 @@ html[data-interface-transition='oem']::view-transition-new(root) {
   .desktop-nav,
   .top-bar,
   .store-brand-frame,
-  .global-search,
   .freshness-chip,
   .profile-button,
   .utility-panel,
   .utility-update-card,
-  .utility-role-control,
-  .utility-manager-link {
+  .utility-role-control {
     border: 1px solid CanvasText;
     box-shadow: none;
   }
@@ -1310,7 +1202,7 @@ html[data-interface-transition='oem']::view-transition-new(root) {
     opacity: .72;
   }
 
-  :where(.button, .ifx-button, .ifx-icon-button, .nav-link, .nav-collapse-button, .freshness-chip, .profile-button, .global-search) {
+  :where(.button, .ifx-button, .ifx-icon-button, .nav-link, .nav-collapse-button, .freshness-chip, .profile-button) {
     border: 1px solid CanvasText;
     box-shadow: none;
   }

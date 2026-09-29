@@ -8,7 +8,6 @@ const ROUTE_LABELS: ReadonlyArray<readonly [prefix: string, label: string]> = [
   ['/updates', 'inventory updates'],
   ['/service', 'service status'],
   ['/overview', 'inventory overview'],
-  ['/manager', 'manager workspace'],
 ]
 
 function routeLabel(pathname: string): string {

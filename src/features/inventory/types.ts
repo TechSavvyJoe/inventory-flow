@@ -363,6 +363,13 @@ export interface VehicleMovementSignal {
   lastEventAt?: string | null;
   lastEventLabel?: string | null;
   nextAction?: string | null;
+  /** Person or role named for the next step. */
+  nextActionOwner?: string | null;
+  /**
+   * Store that owns the next step, as the server published it from the Action
+   * center's actionability rule. Overdue work is urgent only for that store.
+   */
+  nextActionStore?: string | null;
   dueAt?: string | null;
   overdue?: boolean;
   custodian?: string | null;

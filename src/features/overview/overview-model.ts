@@ -1,4 +1,5 @@
 import { serviceWorkflowStatus } from '../../lib/service-readiness'
+import { isReturnOverdue } from '../../lib/sla-label'
 import {
   STORE_NAMES,
   type AttentionItem,
@@ -157,6 +158,7 @@ function locationFact(vehicle: VehicleRecord) {
 export function buildOverviewVehicleFact(
   vehicle: VehicleRecord,
   data: Pick<BootstrapData, 'meta' | 'vehicleIssues'>,
+  now: number = Date.now(),
 ): OverviewVehicleFact {
   const location = locationFact(vehicle)
   const state = vehicle.movement.state?.trim() || 'source_reported'
@@ -196,7 +198,15 @@ export function buildOverviewVehicleFact(
     serviceStatus,
     serviceDays: serviceStatus !== 'needs_service' && serviceEnteredDay ? overviewDaysBetween(serviceEnteredDay, serviceEnd) : null,
     waitingListingDays: serviceStatus === 'needs_service' && vehicle.publicListing === 'listed' ? vehicle.daysListed ?? null : null,
-    returnOverdue: away && isBeforeDay(vehicle.movement.returnDueAt, data.meta.reportDate),
+    // The server's storeSummaries rule: a sold-pending or delivered move is
+    // waiting on its customer, not on a trip home, so it is never overdue.
+    // Judged at the bootstrap's own time, never the browser clock.
+    returnOverdue: isReturnOverdue({
+      requestStatus: vehicle.movement.requestStatus,
+      movementStatus: vehicle.movement.state,
+      returnRequired: vehicle.movement.returnRequired,
+      returnDueAt: vehicle.movement.returnDueAt,
+    }, now),
     records,
     openIssues: (data.vehicleIssues ?? []).filter(issue => issue.vin === vehicle.vin && issue.status !== 'completed'),
   }
@@ -231,8 +241,8 @@ function attentionStore(item: AttentionItem): StoreName | null {
   return validStore(item.actionStore ?? item.store)
 }
 
-export function buildOverviewModel(data: BootstrapData): OverviewModel {
-  const facts = data.vehicles.map(vehicle => buildOverviewVehicleFact(vehicle, data))
+export function buildOverviewModel(data: BootstrapData, now: number = Date.now()): OverviewModel {
+  const facts = data.vehicles.map(vehicle => buildOverviewVehicleFact(vehicle, data, now))
   const stores = STORE_NAMES.map(store => ({
     store,
     populations: population(facts, store),
