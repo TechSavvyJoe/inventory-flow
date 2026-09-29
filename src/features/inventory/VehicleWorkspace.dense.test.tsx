@@ -292,8 +292,9 @@ describe('focused vehicle workspace', () => {
     expect(screen.getByText('$20,988')).toBeVisible();
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
     expect(operations).toHaveTextContent('Hold statusHeld');
-    expect(operations).toHaveTextContent('Held byJamie Howell');
-    expect(operations).toHaveTextContent('Jamie Howell');
+    // The hold record's salesperson is 'Salesperson'; 'Held by' is reserved for DealerMail's evidence.heldBy.
+    expect(within(operations).getByText('Salesperson').closest('.inventory-workspace-fact')).toHaveTextContent('Jamie Howell');
+    expect(within(operations).queryByText('Held by')).not.toBeInTheDocument();
     expect(operations).not.toHaveTextContent(/sold|delivered|CDK/);
   });
 
@@ -310,7 +311,7 @@ describe('focused vehicle workspace', () => {
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
     const hold = within(operations).getByText('Hold status', { selector: 'dt' }).closest('.inventory-workspace-fact')!;
     expect(hold).toHaveTextContent('Held');
-    expect(within(operations).getByText('Held by').closest('.inventory-workspace-fact')).toHaveTextContent('Jamie Howell');
+    expect(within(operations).getByText('Salesperson').closest('.inventory-workspace-fact')).toHaveTextContent('Jamie Howell');
     expect(hold.querySelector('.vdp-focus-mobile-backup')).toHaveTextContent('2 backup holds');
     for (const label of ['Backup holds']) {
       expect(within(operations).getByText(label).closest('.inventory-workspace-fact')).toHaveClass('vdp-focus-desktop-field');

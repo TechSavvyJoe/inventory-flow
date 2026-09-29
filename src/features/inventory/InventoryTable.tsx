@@ -356,8 +356,10 @@ export function vehicleOperationalStatus(vehicle: InventoryVehicle): Operational
     const primary = visibleEvidence?.find((record) => record.position === "primary") ?? visibleEvidence?.[0];
     const backupCount = Math.max(0, (vehicle.dealerMail.activeRecordCount ?? 1) - 1);
     const owner = primary?.salesperson?.trim();
+    // The salesperson owns the hold record; "Held by" is reserved for
+    // DealerMail's own heldBy evidence, shown beside the hold detail.
     return {
-      label: owner ? `Held by ${owner}` : backupCount ? `Held · ${backupCount} backup${backupCount === 1 ? "" : "s"}` : "Held",
+      label: owner ? `Hold · ${owner}` : backupCount ? `Held · ${backupCount} backup${backupCount === 1 ? "" : "s"}` : "Held",
       detail: primary?.customerOrReason || vehicle.dealerMail.conciseState || "Current hold",
       tone: "hold",
       icon: UserRound,
@@ -491,10 +493,8 @@ function DeskPriceCell({ vehicle }: { vehicle: InventoryVehicle }) {
 
 function DeskLocationCell({ vehicle }: { vehicle: InventoryVehicle }) {
   const current = resolveCurrentLocation(vehicle);
-  const movement = vehicleMovementStatus(vehicle);
   return <div className="inv-desk-location" title={current.detail}>
     <strong>{current.label}</strong>
-    {movement ? <span className={movement.tone === "warning" ? "is-warning" : undefined} title={movement.detail}>{humanizeStatusLabel(movement.label)}</span> : null}
     {current.store?.id !== vehicle.location.homeStore.id ? <small>Home: {vehicle.location.homeStore.name}</small> : null}
     {vehicle.location.conflict ? <small className="is-warning">Confirm location</small> : null}
   </div>;
@@ -507,14 +507,20 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord }: {
 }) {
   const name = vehicleDisplayName(vehicle);
   const holdStatus = vehicleOperationalStatus(vehicle);
+  const movement = vehicleMovementStatus(vehicle);
   const canOpenDealerMail = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
   const visibleEvidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
   const primaryEvidence = visibleEvidence?.find((record) => record.position === "primary") ?? visibleEvidence?.[0];
   const backupCount = Math.max(0, (vehicle.dealerMail.activeRecordCount ?? 0) - 1);
+  const heldBy = primaryEvidence?.heldBy?.trim();
+  const showHeldBy = heldBy && heldBy.toLocaleLowerCase() !== primaryEvidence?.salesperson?.trim().toLocaleLowerCase();
   const holdDetail = vehicle.dealerMail.lastKnownActiveHold || (vehicle.dealerMail.dataState === "current" && vehicle.dealerMail.hasActiveHold === true)
     ? [primaryEvidence?.expectedDeliveryDate ? `Expected ${compactInventoryDate(primaryEvidence.expectedDeliveryDate) ?? primaryEvidence.expectedDeliveryDate}` : null,
-      backupCount ? `${backupCount} backup${backupCount === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") || holdStatus.detail
+      backupCount ? `${backupCount} backup${backupCount === 1 ? "" : "s"}` : null,
+      showHeldBy ? `Held by ${heldBy}` : null].filter(Boolean).join(" · ") || holdStatus.detail
     : null;
+  // Fixed Operations order: Location, Hold (its expected date and backups
+  // directly beneath), Move, Service. Each family stays its own signal.
   return <div className="inv-desk-status">
     <DeskLocationCell vehicle={vehicle} />
     <button type="button" className={`inv-desk-hold inv-desk-hold--${holdStatus.tone}`} data-inventory-vehicle-trigger={vehicle.id}
@@ -522,8 +528,9 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord }: {
       title={holdStatus.detail} onClick={event => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); if (canOpenDealerMail) onOpenSourceRecord?.(vehicle, "dealermail"); else onSelectVehicle(vehicle, "hold"); }}>
       <span className="inv-desk-hold__dot" aria-hidden="true" /><span>{holdStatus.label}</span>
     </button>
-    <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed />
     {holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
+    {movement ? <span className={`inv-desk-move${movement.tone === "warning" ? " is-warning" : ""}`} title={movement.detail}>{humanizeStatusLabel(movement.label)}</span> : null}
+    <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed />
     {vehicle.managerDisposition ? <small className="inv-desk-disposition" data-state={vehicle.managerDisposition.dataState}>{vehicle.managerDisposition.soldLabel} · {vehicle.managerDisposition.deliveryLabel}</small> : null}
     <RecallChip vehicle={vehicle} onSelectVehicle={onSelectVehicle} />
   </div>;
@@ -709,7 +716,7 @@ export function vehicleAccessibleSummary(vehicle: InventoryVehicle): string {
     `VIN ${vehicle.vin}`,
     formatMoney(vehicle.price),
     formatMileage(vehicle.mileage),
-    `Hold: ${hold.label}`,
+    hold.label.startsWith("Hold") ? hold.label : `Hold: ${hold.label}`,
     `Current location: ${location.label}`,
     movement ? `Movement: ${movement.label}` : null,
     change ? `Recent change: ${change.shortLabel}` : null,

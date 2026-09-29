@@ -1,6 +1,10 @@
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 import { describe, expect, it } from 'vitest'
-import { inventoryInLocationScope, matchesInventoryQuickView } from './inventory-quick-views'
+import {
+  filterPanelHoldValue, filterPanelMovementValue, inventoryInLocationScope, matchesInventoryQuickView,
+  selectHoldFilter, selectMovementFilter, selectQuickView, type InventoryViewState,
+} from './inventory-quick-views'
+import { DEFAULT_INVENTORY_FILTERS } from './inventory-utils'
 import type { InventoryScope, InventoryVehicle } from './types'
 
 const howell = { id: 'howell', name: 'Howell' }
@@ -137,5 +141,40 @@ describe('inventory quick views use independent hold and location evidence', () 
     expect(matches(vehicle({ changeSummary: 'New arrival · price changed' }), 'price')).toBe(true)
     expect(matches(vehicle(), 'new')).toBe(false)
     expect(matches(vehicle(), 'price')).toBe(false)
+  })
+})
+
+describe('quick-view chips and Filters-panel selects are one state', () => {
+  const start = (quickView: InventoryViewState['quickView'] = 'all', filters: Partial<InventoryViewState['filters']> = {}): InventoryViewState =>
+    ({ quickView, filters: { ...DEFAULT_INVENTORY_FILTERS, ...filters } })
+
+  it('stores Held once, whichever control chose it, and reads it back in both', () => {
+    const fromSelect = selectHoldFilter(start(), 'held')
+    expect(fromSelect.quickView).toBe('held')
+    expect(fromSelect.filters.dealerMail).toBe('all')
+    expect(filterPanelHoldValue(fromSelect)).toBe('held')
+    const fromChip = selectQuickView(start(), 'held')
+    expect(fromChip).toEqual(fromSelect)
+    expect(selectHoldFilter(fromChip, 'all')).toEqual(start())
+  })
+
+  it('stores Being moved once and keeps the narrower overdue refinement', () => {
+    const fromSelect = selectMovementFilter(start(), 'active')
+    expect(fromSelect).toEqual(selectQuickView(start(), 'moving'))
+    expect(filterPanelMovementValue(fromSelect)).toBe('active')
+    const overdue = selectMovementFilter(fromSelect, 'overdue')
+    expect(overdue.quickView).toBe('moving')
+    expect(filterPanelMovementValue(overdue)).toBe('overdue')
+    expect(selectMovementFilter(fromSelect, 'none').quickView).toBe('all')
+  })
+
+  it('clears a chip a select contradicts instead of leaving an empty list', () => {
+    expect(selectHoldFilter(start('held'), 'not-held')).toEqual(start('all', { dealerMail: 'not-held' }))
+    expect(selectHoldFilter(start('no-hold'), 'unverified')).toEqual(start('all', { dealerMail: 'unverified' }))
+    expect(selectHoldFilter(start('no-hold'), 'not-held').quickView).toBe('no-hold')
+    expect(selectHoldFilter(start('offsite'), 'unverified').quickView).toBe('offsite')
+    expect(selectQuickView(start('all', { dealerMail: 'unverified' }), 'no-hold').filters.dealerMail).toBe('all')
+    expect(selectQuickView(start('all', { dealerMail: 'not-held' }), 'offsite').filters.dealerMail).toBe('not-held')
+    expect(selectQuickView(start('all', { movement: 'none' }), 'moving').filters.movement).toBe('all')
   })
 })

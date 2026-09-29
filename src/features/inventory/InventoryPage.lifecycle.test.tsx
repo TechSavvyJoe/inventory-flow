@@ -26,6 +26,7 @@ vi.mock('./InventoryExperience', () => ({ InventoryExperience: (props: Inventory
   <output data-testid="query">{props.initialQuery}</output>
   <output data-testid="scope">{props.scope}</output>
   <output data-testid="return-label">{props.returnLabel}</output>
+  <output data-testid="page-size">{props.pageSize}</output>
   <button onClick={() => props.onSelectedVehicleChange?.(props.vehicles[0].id)}>First vehicle</button>
   <button onClick={() => props.onSelectedVehicleChange?.(props.vehicles[1].id)}>Second vehicle</button>
   <button onClick={props.onRetryDetail}>Retry record</button>
@@ -80,6 +81,11 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('inventory detail and navigation lifecycle', () => {
+  it('asks for 50 rows per page by default; the rows selector keeps its other choices', () => {
+    show()
+    expect(screen.getByTestId('page-size')).toHaveTextContent('50')
+  })
+
   it('keeps the summary after a failed detail read and retries explicitly', async () => {
     mocked.get.mockRejectedValueOnce(new Error('Offline')).mockResolvedValueOnce(detailVehicle(first, 'First complete record'))
     show()

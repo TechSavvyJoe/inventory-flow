@@ -106,7 +106,7 @@ describe('modern inventory result access', () => {
       expect(link).toHaveAttribute('href', `/service?vin=${vehicle.vin}`);
       expect(link).toHaveTextContent(label);
       expect(link.closest('button')).toBeNull();
-      expect(row).toHaveTextContent('Held by Alex Morgan');
+      expect(row).toHaveTextContent('Hold · Alex Morgan');
       expect(row).toHaveTextContent('In transit outbound');
     });
 
@@ -129,6 +129,32 @@ describe('modern inventory result access', () => {
     });
   });
 
+  it('orders Operations as Location, Hold with its expected date and backups, Move, then Service', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.dealerMail = { ...vehicle.dealerMail, activeRecordCount: 3 };
+    vehicle.holdEvidence = [{ id: 'hold-1', position: 'primary', salesperson: 'Alex Morgan', customerOrReason: 'Customer appointment', expectedDeliveryDate: '2026-10-02' }];
+    render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+    const operations = document.querySelector('tr.inv-desk-row td[data-column="status"]') as HTMLElement;
+    const text = operations.textContent ?? '';
+    const order = ['Fowlerville', 'Hold · Alex Morgan', 'Expected 10/02/2026 · 2 backups', 'In transit outbound', 'Waiting for service']
+      .map((fact) => text.indexOf(fact));
+    order.forEach((position) => expect(position).toBeGreaterThanOrEqual(0));
+    expect(order).toEqual([...order].sort((left, right) => left - right));
+    expect(operations).not.toHaveTextContent('Held by');
+    // Everyone may read hold details, so the hover detail keeps the reason.
+    expect(within(operations).getByRole('button', { name: /Open hold details for 2024 Ford F-150 XLT/ })).toHaveAttribute('title', 'Customer appointment');
+  });
+
+  it("says 'Held by' only for DealerMail's own heldBy evidence", () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.holdEvidence = [{ id: 'hold-1', position: 'primary', salesperson: 'Alex Morgan', heldBy: 'Jamie Howell', customerOrReason: 'Customer appointment' }];
+    render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+    const operations = document.querySelector('tr.inv-desk-row td[data-column="status"]') as HTMLElement;
+    expect(operations).toHaveTextContent('Hold · Alex Morgan');
+    expect(operations.querySelector('.inv-desk-status__detail')).toHaveTextContent('Held by Jamie Howell');
+    expect(operations).not.toHaveTextContent('Held by Alex Morgan');
+  });
+
   it('keeps existing inventory without service metadata waiting until manager confirmation', () => {
     render(<InventoryTable vehicles={[heldMovingVehicle()]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
     expect(screen.getByRole('link', { name: /^Waiting for service\. Open service status/ })).toBeVisible();
@@ -145,7 +171,7 @@ describe('modern inventory result access', () => {
       />,
     );
 
-    expect(screen.getByText('Held by Alex Morgan')).toBeInTheDocument();
+    expect(screen.getByText('Hold · Alex Morgan')).toBeInTheDocument();
     expect(screen.getByText('In transit outbound')).toBeInTheDocument();
     const sticker = within(document.querySelector('.vehicle-resource-scan[data-resource-kind="window-sticker"]') as HTMLElement);
     expect(sticker.getByText('MSRP')).toBeVisible();
@@ -159,7 +185,7 @@ describe('modern inventory result access', () => {
     expect(screen.getByRole('button', { name: /Open hold details for 2024 Ford F-150 XLT/i })).toBeInTheDocument();
     const row = screen.getByRole('button', { name: /Open vehicle details for 2024 Ford F-150 XLT/i }).closest('tr') as HTMLTableRowElement;
     expect(row).toHaveClass('inv-desk-row');
-    expect(row).toHaveTextContent('Held by Alex Morgan');
+    expect(row).toHaveTextContent('Hold · Alex Morgan');
     expect(row).toHaveTextContent('Fowlerville');
     expect(row).toHaveTextContent('In transit outbound');
     expect(document.querySelector('.inventory-grid-shell--desk')).toBeInTheDocument();
@@ -440,14 +466,15 @@ describe('modern inventory result access', () => {
     expect(card).toHaveTextContent('H240512');
     expect(detailTarget).not.toHaveTextContent(vehicle.vin);
     expect(detailTarget).toHaveAccessibleName(expect.stringContaining(vehicle.vin));
-    expect(card).toHaveTextContent('Held by Alex Morgan');
+    expect(card).toHaveTextContent('Hold · Alex Morgan');
     expect(card).toHaveTextContent('Fowlerville');
     expect(card).toHaveTextContent('In transit outbound');
     expect(detailTarget.querySelector('button')).toBeNull();
     fireEvent.click(detailTarget);
     expect(onSelectVehicle).toHaveBeenCalledExactlyOnceWith(vehicle);
     const hold = within(card).getByRole('button', { name: /Open DealerMail hold tools/ });
-    expect(hold).toHaveAttribute('title', expect.stringContaining('Held by Alex Morgan'));
+    expect(hold).toHaveAttribute('title', expect.stringContaining('Hold · Alex Morgan'));
+    expect(hold).toHaveAttribute('title', expect.stringContaining('Customer appointment'));
     fireEvent.click(hold);
     expect(onOpenSourceRecord).toHaveBeenCalledExactlyOnceWith(vehicle, 'dealermail');
     const records = within(card).getByRole('button', { name: /Open vehicle records/ });
@@ -597,7 +624,7 @@ describe('modern inventory result access', () => {
     render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} />);
     const card = screen.getByRole('article');
     expect(card).toHaveTextContent('Hold status unverified');
-    expect(card).not.toHaveTextContent('Held · Alex Morgan');
+    expect(card).not.toHaveTextContent('Hold · Alex Morgan');
     expect(card).not.toHaveTextContent('No current hold');
   });
 
@@ -832,7 +859,7 @@ describe('modern inventory result access', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Open hold details for 2024 Ford F-150 XLT/i })).toHaveTextContent('Held');
+    expect(screen.getByRole('button', { name: /Open hold details for 2024 Ford F-150 XLT/i })).toHaveTextContent('Hold · Alex Morgan');
   });
 
   it('opens the whole row by pointer and keeps a native keyboard-safe View details control', () => {
