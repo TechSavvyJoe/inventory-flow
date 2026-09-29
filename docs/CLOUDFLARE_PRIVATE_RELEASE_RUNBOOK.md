@@ -302,7 +302,7 @@ working recovery plan. Do not put plaintext recovery secrets into Git.
 
 The table's DealerMail control opens the vehicle's Hold tab inside Inventory
 Flow. Saved holds, comments and alerts are separate read-only views. One
-`Open DealerMail & copy stock` control then requests DealerMail's full four-store
+`Open in DealerMail (copies stock)` control then requests DealerMail's full four-store
 inventory screen and copies the displayed stock before the page loses focus.
 Users paste it into LAST8 / STOCK, select Search, and verify the full VIN.
 DealerMail's top-level `byItem` and hold-edit responses are fragments whose

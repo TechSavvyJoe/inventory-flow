@@ -357,13 +357,15 @@ function holdPill(vehicle, { long = false } = {}) {
   const hold = vehicle.hold
   const tone = hold.tone === 'held' ? 'pill-held' : hold.tone === 'clear' ? '' : 'pill-moving'
   const primary = hold.canViewEvidence ? hold.evidence.find((item) => item.position === 'primary') ?? hold.evidence[0] : null
+  // The salesperson owns the hold record; "Held by" is reserved for
+  // DealerMail's own heldBy evidence (see holdDetail in renderRow).
   const label = hold.lastKnownActiveHold ? fmt.joinFacts(['Last verified hold', primary?.salesperson]) : hold.tone === 'held'
-    ? primary?.salesperson ? `Held by ${primary.salesperson}`
+    ? primary?.salesperson ? `Hold · ${primary.salesperson}`
       : hold.position === 'backup' ? 'Held · backup'
         : hold.position === 'multiple' ? `Held · ${hold.backupCount + 1}`
           : long ? hold.label : hold.liveCheckStatus === 'verified' ? 'Held' : 'Held at capture'
     : hold.tone === 'clear' ? (hold.liveCheckStatus === 'verified' ? 'No active hold' : 'No hold at capture') : 'Hold unverified'
-  return el('span', { class: `pill ${tone}`.trim(), title: fmt.joinFacts([hold.label, primary?.salesperson ? `Held by ${primary.salesperson}` : null]) }, hold.tone === 'held' ? icon('lock') : null, label)
+  return el('span', { class: `pill ${tone}`.trim(), title: fmt.joinFacts([hold.label, primary?.salesperson ? `Hold · ${primary.salesperson}` : null]) }, hold.tone === 'held' ? icon('lock') : null, label)
 }
 
 function movementPill(vehicle) {
@@ -405,7 +407,11 @@ function renderRow(match, position) {
   const config = fmt.joinFacts([vehicle.exteriorColor, vehicle.daysListed !== null ? `${fmt.formatNumber(vehicle.daysListed)} days listed` : null])
   const powertrain = fmt.joinFacts([vehicle.engine, vehicle.drivetrain])
   const primaryHold = vehicle.hold.canViewEvidence ? vehicle.hold.evidence[0] : null
-  const holdDetail = vehicle.hold.hasActiveHold === true || vehicle.hold.lastKnownActiveHold ? fmt.joinFacts([primaryHold?.salesperson ? `Held by ${primaryHold.salesperson}` : null, primaryHold?.expectedDate ? `Expected ${fmt.formatDate(primaryHold.expectedDate)}` : null, vehicle.hold.backupCount ? `${vehicle.hold.backupCount} backup${vehicle.hold.backupCount === 1 ? '' : 's'}` : null]) : null
+  // The salesperson is already named in the Hold pill; this line adds only
+  // what the pill omits. "Held by" is reserved for DealerMail's own heldBy
+  // evidence, shown only when it names someone other than the salesperson.
+  const heldByDistinct = primaryHold?.heldBy && primaryHold.heldBy.trim().toLowerCase() !== (primaryHold?.salesperson ?? '').trim().toLowerCase()
+  const holdDetail = vehicle.hold.hasActiveHold === true || vehicle.hold.lastKnownActiveHold ? fmt.joinFacts([primaryHold?.expectedDate ? `Expected ${fmt.formatDate(primaryHold.expectedDate)}` : null, vehicle.hold.backupCount ? `${vehicle.hold.backupCount} backup${vehicle.hold.backupCount === 1 ? '' : 's'}` : null, heldByDistinct ? `Held by ${primaryHold.heldBy}` : null]) : null
   return el('li', {
     class: `row ${position === state.activeIndex ? 'is-active' : ''} ${inCompare ? 'is-compared' : ''}`.trim(), role: 'option', id: `row-${vehicle.vin}`,
     'aria-selected': String(position === state.activeIndex), dataset: { vin: vehicle.vin, index: String(position) },
@@ -776,7 +782,9 @@ function signal({ tone, iconName, label, value, sub, onClick, title }) {
 function statusGrid(vehicle) {
   const hold = vehicle.hold, loc = vehicle.location, move = vehicle.movement, listing = vehicle.listing
   const primary = hold.evidence[0]
-  const holdValue = hold.lastKnownActiveHold ? 'Last verified hold' : hold.tone === 'held' ? (primary?.salesperson ? `Held by ${primary.salesperson}` : hold.position === 'backup' ? 'Backup hold' : hold.position === 'multiple' ? `${hold.backupCount + 1} holds` : 'On hold') : hold.tone === 'clear' ? 'No hold found' : 'Not verified'
+  // The salesperson owns the hold record; "Held by" is reserved for
+  // DealerMail's own heldBy evidence.
+  const holdValue = hold.lastKnownActiveHold ? 'Last verified hold' : hold.tone === 'held' ? (primary?.salesperson ? `Hold · ${primary.salesperson}` : hold.position === 'backup' ? 'Backup hold' : hold.position === 'multiple' ? `${hold.backupCount + 1} holds` : 'On hold') : hold.tone === 'clear' ? 'No hold found' : 'Not verified'
   const holdSub = hold.tone === 'held' || hold.lastKnownActiveHold
     ? fmt.joinFacts([hold.liveCheckStatus === 'verified' ? 'Verified in DealerMail' : 'At daily capture', primary?.expectedDate ? `Expected ${fmt.formatDate(primary.expectedDate)}` : null, hold.backupCount ? `${hold.backupCount} backup${hold.backupCount === 1 ? '' : 's'}` : null]) || (hold.canViewEvidence ? 'DealerMail hold' : 'Details restricted')
     : hold.tone === 'clear' ? 'Confirm before promising' : 'Needs review'

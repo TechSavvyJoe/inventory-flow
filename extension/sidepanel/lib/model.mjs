@@ -72,6 +72,7 @@ function holdSignal(record, dealerMailState) {
       customerOrReason: text(primary?.customerOrReason) || text(hold.reason),
       holdDate: text(primary?.holdDate),
       expectedDate: text(primary?.expectedDate) || text(hold.expectedDate),
+      heldBy: text(primary?.heldBy),
     })
     for (const backup of record.privateEvidence?.backups ?? []) {
       evidence.push({ position: 'backup', salesperson: text(backup.salesperson), customerOrReason: text(backup.customerOrReason), holdDate: text(backup.holdDate), expectedDate: text(backup.expectedDate) })

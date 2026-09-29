@@ -191,8 +191,19 @@ for (const route of coreRoutes) {
     // under a parallel run, white-on-pale-blue read as a 1.1:1 contrast
     // failure that the finished interface does not have.
     await page.emulateMedia({ reducedMotion: 'reduce' })
+    if (route === '/overview') {
+      // /overview is manager-only (see tests/e2e/overview.spec.ts); without a
+      // seeded role the visit redirects to /attention and this route's own
+      // content is never checked.
+      await page.addInitScript(() => {
+        localStorage.setItem('maxey-role', 'group_manager')
+        localStorage.setItem('maxey-home-store', 'Howell')
+      })
+    }
     await page.goto(route)
     await expect(page.locator('main')).toBeVisible()
+    // A role redirect would let this pass while measuring a different page.
+    await expect(page).toHaveURL(new RegExp(`${route}(\\?|$)`))
     // Measure the loaded page, not the loading one. Primary actions are
     // disabled (and so skipped) until bootstrap lands, which let a fast load
     // pass while a slow one measured the real controls.

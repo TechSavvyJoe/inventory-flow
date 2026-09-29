@@ -283,6 +283,38 @@ describe('extension working-store workflow and identity reset', () => {
     expect(search.value).toBe('Ford')
   })
 
+  it('renders "Hold · <salesperson>" in the row pill and detail header, keeping a distinct DealerMail heldBy name separate', async () => {
+    const held = {
+      ...vehicle(),
+      hold: { state: 'primary', canViewEvidence: true, primarySalesperson: 'Demo Salesperson', backupCount: 0 },
+      privateEvidence: { primary: { salesperson: 'Demo Salesperson', heldBy: 'Other DealerMail User' } },
+    }
+    api.bootstrap.mockResolvedValue({ ...bootstrap(), vehicles: [held] })
+    api.vehicle.mockResolvedValue(held)
+    await import('../../extension/sidepanel/panel.js')
+    await waitForText('#rows', 'Demo Salesperson')
+    expect(document.querySelector('.row .pill').textContent).toBe('Hold · Demo Salesperson')
+    expect(document.querySelector('.row-hold-detail').textContent).toContain('Held by Other DealerMail User')
+    expect(document.body.textContent).not.toContain('Held by Demo Salesperson')
+    document.querySelector('.row').click()
+    await waitForText('.detail-status-line', 'Hold · Demo Salesperson')
+    expect(document.querySelector('.detail-status-line .pill').textContent).toBe('Hold · Demo Salesperson')
+    expect(document.body.textContent).not.toContain('Held by Demo Salesperson')
+  })
+
+  it('shows no salesperson name for a role without hold-evidence access, even while a hold is active', async () => {
+    const redacted = { ...vehicle(), hold: { state: 'primary', canViewEvidence: false, backupCount: 0 } }
+    api.bootstrap.mockResolvedValue({ ...bootstrap(), vehicles: [redacted] })
+    api.vehicle.mockResolvedValue(redacted)
+    await import('../../extension/sidepanel/panel.js')
+    await waitForText('#rows', 'DEMO-H01')
+    expect(document.querySelector('.row .pill').textContent).not.toContain('Demo Salesperson')
+    expect(document.body.textContent).not.toContain('Demo Salesperson')
+    document.querySelector('.row').click()
+    await waitForText('.detail-status-line', 'Held')
+    expect(document.body.textContent).not.toContain('Demo Salesperson')
+  })
+
   it('removes prior private content when a refresh fails authentication', async () => {
     const { PanelApiError } = await import('../../extension/sidepanel/lib/api.mjs')
     await import('../../extension/sidepanel/panel.js')

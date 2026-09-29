@@ -73,6 +73,14 @@ describe('deal desk view model', () => {
     expect(hidden.hold.tone).toBe('held')
   })
 
+  it('carries DealerMail\'s own heldBy evidence on the primary hold entry, separate from the salesperson', () => {
+    const record = base({ hold: { state: 'primary', label: 'Held', backupCount: 0, canViewEvidence: true, primarySalesperson: 'Demo Salesperson' }, privateEvidence: { primary: { salesperson: 'Demo Salesperson', customerOrReason: 'Appointment', heldBy: 'Other DealerMail User' }, backups: [], comments: [], alerts: [] } })
+    const vehicle = toPanelVehicle(record, data(record))
+    expect(vehicle.hold.evidence[0].heldBy).toBe('Other DealerMail User')
+    const withoutHeldBy = base({ hold: { state: 'primary', label: 'Held', backupCount: 0, canViewEvidence: true, primarySalesperson: 'Demo Salesperson' }, privateEvidence: { primary: { salesperson: 'Demo Salesperson', customerOrReason: 'Appointment' }, backups: [], comments: [], alerts: [] } })
+    expect(toPanelVehicle(withoutHeldBy, data(withoutHeldBy)).hold.evidence[0].heldBy).toBeNull()
+  })
+
   it('only reports an app-confirmed location when the app actually holds custody', () => {
     // A bare source report with a currentLocation is still just a report.
     expect(resolveLocation(base({ movement: { currentLocation: 'Fowlerville', locationConfidence: 'reported' } }))).toMatchObject({ label: 'Howell', provenance: 'source-reported' })

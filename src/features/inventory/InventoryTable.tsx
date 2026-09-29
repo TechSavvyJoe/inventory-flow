@@ -42,6 +42,7 @@ import { compactEquipmentScanLabel, publishedEquipment, standoutEquipment } from
 import { useCustomerShortlist } from "./useCustomerShortlist";
 import { useInventoryDisclosure } from "./useInventoryDisclosure";
 import { sourceDistanceText } from "../../lib/source-distance";
+import { slaLabel, slaState } from "../../lib/sla-label";
 import { vehiclePhotoDisplaySources } from "../../lib/vehicle-photos";
 import type {
   InventorySortKey,
@@ -383,13 +384,29 @@ export function vehicleOperationalStatus(vehicle: InventoryVehicle): Operational
   };
 }
 
-export function vehicleMovementStatus(vehicle: InventoryVehicle): OperationalStatus | null {
+/**
+ * The shared src/lib/sla-label wording, so the list, the vehicle page and
+ * Moves read the same. Overdue is urgent (the warning tone) only when the
+ * viewer's own store owns the next step; another store's overdue move stays
+ * a plain fact naming who it is waiting on. A list row names only the owning
+ * store ("Overdue · Fowlerville", as wide as the old "Move needs attention")
+ * so it stays one line; the full wording is its hover detail, as on the
+ * vehicle page and Moves.
+ */
+export function vehicleMovementStatus(vehicle: InventoryVehicle, viewerStore?: string | null): OperationalStatus | null {
   const movement = vehicle.movement;
   if (!movement || !(movement.state || movement.requestStatus || movement.requestId)) return null;
+  const status = slaLabel({
+    sla: slaState(movement.dueAt),
+    nextActionStore: movement.nextActionStore,
+    nextActionOwner: movement.nextActionOwner,
+    viewerStore,
+  });
+  const waitingOnOtherStore = status.overdue && status.ownedByViewer === false && Boolean(movement.nextActionStore?.trim());
   return {
-    label: movement.overdue ? "Move needs attention" : movement.state || movement.requestStatus || "Being moved",
-    detail: movement.nextAction || movement.lastEventLabel || "Movement in progress",
-    tone: movement.overdue ? "warning" : "move",
+    label: waitingOnOtherStore ? `Overdue · ${movement.nextActionStore!.trim()}` : status.overdue ? status.label : movement.state || movement.requestStatus || "Being moved",
+    detail: waitingOnOtherStore ? status.label : movement.nextAction || movement.lastEventLabel || "Movement in progress",
+    tone: status.overdue ? (status.tone === "danger" ? "warning" : "move") : "move",
     icon: Truck,
   };
 }
@@ -504,14 +521,15 @@ function DeskLocationCell({ vehicle }: { vehicle: InventoryVehicle }) {
   </div>;
 }
 
-function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord }: {
+function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerStore }: {
   vehicle: InventoryVehicle;
   onSelectVehicle: InventoryTableProps["onSelectVehicle"];
   onOpenSourceRecord?: InventoryTableProps["onOpenSourceRecord"];
+  viewerStore?: string | null;
 }) {
   const name = vehicleDisplayName(vehicle);
   const holdStatus = vehicleOperationalStatus(vehicle);
-  const movement = vehicleMovementStatus(vehicle);
+  const movement = vehicleMovementStatus(vehicle, viewerStore);
   const canOpenDealerMail = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
   const visibleEvidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
   const primaryEvidence = visibleEvidence?.find((record) => record.position === "primary") ?? visibleEvidence?.[0];
@@ -711,10 +729,10 @@ function PhotoCount({ vehicle }: { vehicle: InventoryVehicle }) {
   return count > 0 ? <span className="inventory-photo-count" aria-label={`${count} vehicle photos`}>{count}</span> : null;
 }
 
-export function vehicleAccessibleSummary(vehicle: InventoryVehicle): string {
+export function vehicleAccessibleSummary(vehicle: InventoryVehicle, viewerStore?: string | null): string {
   const name = vehicleDisplayName(vehicle);
   const hold = vehicleOperationalStatus(vehicle);
-  const movement = vehicleMovementStatus(vehicle);
+  const movement = vehicleMovementStatus(vehicle, viewerStore);
   const location = resolveCurrentLocation(vehicle);
   const change = primaryVehicleChangeSignal(vehicle.changeSummary);
   return [
@@ -799,9 +817,11 @@ interface VehicleRowProps {
   recordsExpanded: boolean;
   onOpenRecords: OpenRecords;
   handlers: RowActionHandlers;
+  /** The viewer's working store, for owner-aware overdue-move coloring. */
+  viewerStore?: string | null;
 }
 
-const DeskRow = memo(function DeskRow({ vehicle, selected, priority, recordsExpanded, onOpenRecords, handlers }: VehicleRowProps) {
+const DeskRow = memo(function DeskRow({ vehicle, selected, priority, recordsExpanded, onOpenRecords, handlers, viewerStore }: VehicleRowProps) {
   const hasResources = vehicleResourceCatalog(vehicle).some((resource) => resource.href || resource.hasCapturedData);
   // One tbody per vehicle keeps its main row and source-signal row together, so
   // striping, hover and selection are one rule and a filtered list never
@@ -827,7 +847,7 @@ const DeskRow = memo(function DeskRow({ vehicle, selected, priority, recordsExpa
           <DeskConfigurationCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} />
         </td>
         <td className="inv-desk-td" data-column="status">
-          <DeskStatusCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} onOpenSourceRecord={handlers.onOpenSourceRecord} />
+          <DeskStatusCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} onOpenSourceRecord={handlers.onOpenSourceRecord} viewerStore={viewerStore} />
         </td>
         <td className="inv-desk-td inv-desk-td--actions" data-column="actions">
           <DeskRowActions
@@ -879,6 +899,7 @@ export function InventoryTable({
   onTrackMovement,
   onOpenListing,
   onOpenSourceRecord,
+  viewerStore,
 }: InventoryTableProps) {
   const handlers = useStableRowHandlers({ onSelectVehicle, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord });
   const records = useRecordsPanel(vehicles);
@@ -927,6 +948,7 @@ export function InventoryTable({
               recordsExpanded={records.expandedVehicleId === vehicle.id}
               onOpenRecords={records.openRecords}
               handlers={handlers}
+              viewerStore={viewerStore}
             />
           ))}
         </table>
@@ -936,11 +958,11 @@ export function InventoryTable({
   );
 }
 
-const MobileRow = memo(function MobileRow({ vehicle, selected, priority, recordsExpanded, onOpenRecords, handlers }: VehicleRowProps) {
+const MobileRow = memo(function MobileRow({ vehicle, selected, priority, recordsExpanded, onOpenRecords, handlers, viewerStore }: VehicleRowProps) {
   const { onSelectVehicle, onOpenSourceRecord } = handlers;
   const name = vehicleDisplayName(vehicle);
   const recentChange = primaryVehicleChangeSignal(vehicle.changeSummary);
-  const movementStatus = vehicleMovementStatus(vehicle);
+  const movementStatus = vehicleMovementStatus(vehicle, viewerStore);
   const holdStatus = vehicleOperationalStatus(vehicle);
   const currentLocation = resolveCurrentLocation(vehicle);
   const specification = [
@@ -968,7 +990,7 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
           event.currentTarget.focus({ preventScroll: true });
           onSelectVehicle(vehicle);
         }}
-        aria-label={vehicleAccessibleSummary(vehicle)}
+        aria-label={vehicleAccessibleSummary(vehicle, viewerStore)}
       >
         <span className="inventory-mobile-row__thumbnail"><span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} priority={priority} /><PhotoCount vehicle={vehicle} /></span><small>{vehicle.stockNumber}</small><span className="inventory-mobile-row__view" aria-hidden="true">View vehicle</span></span>
         <span className="inventory-mobile-row__main">
@@ -1042,7 +1064,8 @@ export function InventoryMobileList({
   onMoveVehicle,
   onTrackMovement,
   onOpenListing,
-}: Pick<InventoryTableProps, "vehicles" | "selectedVehicleId" | "onSelectVehicle" | "onOpenSourceRecord" | "canRequestVehicle" | "moveActionFor" | "onRequestVehicle" | "onMoveVehicle" | "onTrackMovement" | "onOpenListing">) {
+  viewerStore,
+}: Pick<InventoryTableProps, "vehicles" | "selectedVehicleId" | "onSelectVehicle" | "onOpenSourceRecord" | "canRequestVehicle" | "moveActionFor" | "onRequestVehicle" | "onMoveVehicle" | "onTrackMovement" | "onOpenListing" | "viewerStore">) {
   const handlers = useStableRowHandlers({ onSelectVehicle, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord });
   const records = useRecordsPanel(vehicles);
   records.openWorkspaceRef.current = onSelectVehicle;
@@ -1057,6 +1080,7 @@ export function InventoryMobileList({
           recordsExpanded={records.expandedVehicleId === vehicle.id}
           onOpenRecords={records.openRecords}
           handlers={handlers}
+          viewerStore={viewerStore}
         />
       ))}
       {records.panel}
