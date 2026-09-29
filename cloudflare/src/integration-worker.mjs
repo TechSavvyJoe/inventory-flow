@@ -52,14 +52,66 @@ function errorInfo(error) {
   return { status: 503, code: 'INTEGRATION_DATA_UNAVAILABLE' }
 }
 
+// The decrypted release is already cached per isolate (worker.mjs), but every
+// request still rebuilt the D1 snapshot, the full app bootstrap and the scoped
+// projection, nearly all of a page's CPU. Paging the inventory repeated that
+// build once per page and could exceed the Worker CPU limit after a publish.
+// One built read service is kept per principal, valid only for the same
+// decoded release, the same ledger revision (every app write bumps it), the
+// same report day (source freshness is judged against it) and the same cursor
+// secret; the lifetime bound also caps any input none of those keys cover.
+const READ_SERVICE_CACHE_LIMIT = 4
+const READ_SERVICE_CACHE_TTL_MS = 60 * 1000
+const readServiceCache = new Map()
+export function resetIntegrationReadServiceCache() { readServiceCache.clear() }
+
+// Every principal field, lists order-free: a different client, identity, role,
+// store, grant or scope set is a different entry and never shares a projection.
+function principalKey(principal) {
+  return JSON.stringify(Object.keys(principal).sort().map(key => [key, Array.isArray(principal[key]) ? [...principal[key]].sort() : principal[key]]))
+}
+// Mirrors the service core's freshness clock: the date in the release time zone.
+function reportDay(release, now) {
+  const timeZone = release?.manifest?.timezone || 'America/New_York'
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
+}
+async function ledgerRevision(env) {
+  const revision = (await env.INVENTORY_DB.prepare('SELECT revision FROM cloud_app_revision WHERE id = 1').first())?.revision
+  if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('The shared workflow revision is not initialized')
+  return revision
+}
+
+/** Callers authenticate and charge quota before this and audit after; it never authorizes. */
 export async function loadIntegrationReadService(env, principal) {
   const selected = await readReleaseWithIdentity(env)
+  const revision = await ledgerRevision(env)
+  const now = Date.now()
+  const day = reportDay(selected.release, new Date(now))
+  // Drop entries for a superseded release first, so its projections are freed
+  // before the new release's first build allocates.
+  for (const [key, entry] of readServiceCache) if (entry.release !== selected.release || entry.expiresAt <= now) readServiceCache.delete(key)
+  const key = principalKey(principal)
+  const cached = readServiceCache.get(key)
+  if (cached && cached.bundleSha256 === selected.bundleSha256 && cached.revision === revision && cached.day === day && cached.cursorSecret === env.INTEGRATION_CURSOR_SECRET) {
+    readServiceCache.delete(key)
+    readServiceCache.set(key, cached)
+    return cached.service
+  }
   const repo = await loadD1Repository(env.INVENTORY_DB, selected.release)
   const service = createInventoryServiceCore({ database: repo.database, repository: repo.repository, initialLoadStatus: { status: 'loaded' } })
-  return createIntegrationReadService({
+  const readService = createIntegrationReadService({
     bootstrap: integrationBootstrapFromSource(service.bootstrap(principal), selected.release), principal, bundleSha256: selected.bundleSha256,
     cursorSecret: env.INTEGRATION_CURSOR_SECRET,
   })
+  // Tagged with the snapshot's own revision, so a write that landed between
+  // the two reads is not mistaken for the state it built from.
+  readServiceCache.delete(key)
+  readServiceCache.set(key, {
+    release: selected.release, bundleSha256: selected.bundleSha256, revision: repo.revision, day,
+    cursorSecret: env.INTEGRATION_CURSOR_SECRET, expiresAt: now + READ_SERVICE_CACHE_TTL_MS, service: readService,
+  })
+  while (readServiceCache.size > READ_SERVICE_CACHE_LIMIT) readServiceCache.delete(readServiceCache.keys().next().value)
+  return readService
 }
 
 /** Separate read-only gateway: never delegates to the app's mutable route handler.
@@ -89,7 +141,8 @@ export function createIntegrationWorker({
         principal = await authenticate(request, env)
         const consumed = await quota(env, principal)
         quotaHeaders = { 'RateLimit-Limit': String(consumed.limit), 'RateLimit-Remaining': String(consumed.remaining), 'RateLimit-Reset': String(Math.ceil(consumed.resetAt / 1000)) }
-        // A new selected release/principal for every request. No cross-client cache.
+        // Authentication and quota above run on every request before any cached
+        // read service is used; that cache is per principal, never shared.
         let readService
         const getReadService = () => readService ??= Promise.resolve(loadReadService(env, principal))
         if (isMcp) {
