@@ -81,7 +81,16 @@ export async function main(reportDate = process.argv[2]) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate ?? '')) throw new Error('usage: publish-invoice-documents.mjs <YYYY-MM-DD>')
   const root = workspaceRoot()
   const folder = path.join(root, 'work', 'invoice-history', reportDate)
-  const parsed = JSON.parse(readFileSync(path.join(folder, 'parsed.json'), 'utf8'))
+  const parsedPath = path.join(folder, 'parsed.json')
+  // Invoice capture and parsing are non-blocking; when they produced nothing
+  // there is nothing to upload. Failing here would hold back the pointer
+  // advance and archive of an already verified release (merge-invoice-metadata
+  // treats the same missing file as an empty day).
+  if (!existsSync(parsedPath)) {
+    process.stdout.write(`${JSON.stringify({ reportDate, invoices: 0, stored: 0, alreadyStored: 0, skipped: 'no_parsed_invoices' })}\n`)
+    return
+  }
+  const parsed = JSON.parse(readFileSync(parsedPath, 'utf8'))
   const enrichment = JSON.parse(readFileSync(path.join(APP_ROOT, 'data', 'vin-document-enrichment.json'), 'utf8'))
   if (parsed.reportDate !== reportDate) throw new Error('Ford invoice report date mismatch')
   const files = invoiceFiles({ parsed, enrichment, folder })
