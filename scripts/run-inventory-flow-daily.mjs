@@ -35,6 +35,17 @@ const PUBLICATION_LOCKED = 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
 // "sessionStatus":"incomplete" - that must still surface as a warning, not disappear as
 // 'complete'. See scripts/lib/invoice-capture-outcome.mjs computeSessionStatus/computeExitCode.
 const INVOICE_CAPTURE_EXPIRED_PATTERN = /session_expired|FETCH_ERROR|"sessionStatus":"incomplete"/i
+const DEALERMAIL_SNAPSHOT_REJECTED = 'DEALERMAIL_SNAPSHOT_REJECTED'
+const DEALERMAIL_ATTEMPTS = 2
+
+// Process, clock, and browser seams. Production always uses the real ones;
+// tests swap them through internals.runtime.
+const runtime = {
+  run: (...args) => run(...args),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  ensureAutomationBrowser: (warnings) => ensureAutomationBrowser(warnings),
+  dealerMailRetryDelayMs: 20000,
+}
 
 function parseArgs(argv) {
   const options = {
@@ -430,7 +441,13 @@ function runPublicInventory(reportDate, steps) {
   return target
 }
 
-function runDealerMail(reportDate, browserReady, warnings, steps, { refresh = false } = {}) {
+// The host builder and finalizer reject a whole snapshot when DealerMail moved
+// under the ~45 s capture (a hold placed or released mid-read shows up as a
+// hold-state or row-count mismatch). One fresh capture after a short wait
+// usually settles it; a second rejection stops the run with the finalizer's
+// own words in the steps. Nothing that failed validation is ever published,
+// and an expired session is never retried.
+async function runDealerMail(reportDate, browserReady, warnings, steps, { refresh = false } = {}) {
   const target = dealerCloudSnapshotPath(reportDate)
   if (existsSync(target) && !refresh) {
     steps.push({ name: 'dealermail', status: 'reused', path: target })
@@ -449,21 +466,34 @@ function runDealerMail(reportDate, browserReady, warnings, steps, { refresh = fa
       ...(archiveDirectory ? { path: archiveDirectory } : {}),
     })
   }
-  const capture = run(NODE, ['scripts\\capture-dealermail.mjs', 'run', reportDate, '--budget-ms', '900000'], {
-    cwd: APP_ROOT,
-    optional: true,
-    label: 'DealerMail capture',
-  })
-  if (!capture.ok || /session_expired/i.test(capture.output)) {
-    warnings.push('sign in to DealerMail in the Work PC Automation Browser; DealerMail session was not usable and the cloud release was not published.')
-    steps.push({ name: 'dealermail', status: 'session_expired_or_failed', detail: safeDetail(capture.output) })
-    return null
+  let rejection = null
+  for (let attempt = 1; attempt <= DEALERMAIL_ATTEMPTS; attempt += 1) {
+    if (attempt > 1) await runtime.sleep(runtime.dealerMailRetryDelayMs)
+    const capture = runtime.run(NODE, ['scripts\\capture-dealermail.mjs', 'run', reportDate, '--budget-ms', '900000'], {
+      cwd: APP_ROOT,
+      optional: true,
+      label: 'DealerMail capture',
+    })
+    if (!capture.ok || /session_expired/i.test(capture.output)) {
+      warnings.push('sign in to DealerMail in the Work PC Automation Browser; DealerMail session was not usable and the cloud release was not published.')
+      steps.push({ name: 'dealermail', status: 'session_expired_or_failed', attempt, detail: safeDetail(capture.output) })
+      return null
+    }
+    try {
+      runtime.run(NODE, ['work\\build_v2_snapshot.mjs', reportDate], { label: 'DealerMail snapshot builder' })
+      runtime.run(NODE, ['work\\finalize_cloud_snapshot.mjs', reportDate], { label: 'DealerMail cloud snapshot finalizer' })
+      if (!existsSync(target)) throw new Error('DealerMail finalized snapshot was not created')
+    } catch (error) {
+      rejection = error
+      steps.push({ name: 'dealermail_attempt', status: 'snapshot_rejected', attempt, detail: failureDetailFor(error) })
+      continue
+    }
+    steps.push({ name: 'dealermail', status: 'captured', attempt, path: target })
+    return target
   }
-  run(NODE, ['work\\build_v2_snapshot.mjs', reportDate], { label: 'DealerMail snapshot builder' })
-  run(NODE, ['work\\finalize_cloud_snapshot.mjs', reportDate], { label: 'DealerMail cloud snapshot finalizer' })
-  if (!existsSync(target)) throw new Error('DealerMail finalized snapshot was not created')
-  steps.push({ name: 'dealermail', status: 'captured', path: target })
-  return target
+  warnings.push(`DealerMail snapshot was rejected by validation on ${DEALERMAIL_ATTEMPTS} captures; the last verified release stays in place.`)
+  steps.push({ name: 'dealermail', status: 'snapshot_rejected', attempts: DEALERMAIL_ATTEMPTS, detail: failureDetailFor(rejection) })
+  throw new Error(DEALERMAIL_SNAPSHOT_REJECTED, { cause: rejection })
 }
 
 // Without a browser (--skip-authenticated, or the automation browser is down)
@@ -680,6 +710,34 @@ function validateCurrentResourceFile() {
 
 function safeDetail(value) {
   return String(value || '').replace(/\s+/g, ' ').slice(0, 500)
+}
+
+function redactSecrets(text) {
+  return String(text)
+    .replace(/\b(cookie|set-cookie)\s*[:=][^\r\n]*/gi, '$1: [redacted]')
+    .replace(/\bbearer\s+[\w.~+/=-]+/gi, 'Bearer [redacted]')
+    .replace(/\b([\w-]*(?:token|secret|password|passwd|api[_-]?key|authorization|session[_-]?id)[\w-]*)(["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi, '$1$2[redacted]')
+}
+
+const FAILURE_DETAIL_MAX = 500
+const FAILURE_DETAIL_HEAD = 120
+
+// A failure code stays machine-readable; the underlying message rides along so
+// a catch-all code is still diagnosable. Credential-shaped values are masked
+// before bounding. A step failure reads "<label> failed: <stdout + stderr>", so
+// the thrown error (stderr) sits at the END after any progress output: an
+// over-long detail keeps the label head and the tail, never the head alone.
+// A bare code that is already the failure code adds nothing and is omitted.
+function failureDetailFor(error, failureCode = null) {
+  if (!error) return null
+  const message = String(error?.message ?? error)
+  const cause = error?.cause ? String(error.cause?.message ?? error.cause) : ''
+  const parts = [message === failureCode ? '' : message, cause].filter(Boolean)
+  if (!parts.length) return null
+  const text = redactSecrets(parts.join(' | ')).replace(/\s+/g, ' ').trim()
+  if (text.length <= FAILURE_DETAIL_MAX) return text
+  const tail = FAILURE_DETAIL_MAX - FAILURE_DETAIL_HEAD - 3
+  return `${text.slice(0, FAILURE_DETAIL_HEAD)} … ${text.slice(-tail)}`
 }
 
 function rowsFromPublic(snapshot) {
@@ -933,6 +991,7 @@ function writeIntradayStatus(filePath, {
   status,
   summary,
   failureCode = null,
+  failureDetail = null,
   validation = {},
   warnings = [],
   steps = [],
@@ -956,6 +1015,7 @@ function writeIntradayStatus(filePath, {
     checkedAt: new Date().toISOString(),
     summary,
     ...(failureCode ? { failureCode } : {}),
+    ...(failureDetail ? { failureDetail: safeDetail(redactSecrets(failureDetail)) } : {}),
     ...(published ? { published: true } : {}),
     ...(reconciliationRequired ? { reconciliationRequired: true } : {}),
     ...(receipt ? {
@@ -1153,15 +1213,17 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
     })
   } catch (error) {
     const failureCode = /^[A-Z0-9_]+$/.test(error.message) ? error.message : 'RECEIPT_BOUND_SOURCE_VALIDATION_FAILED'
+    const failureDetail = failureDetailFor(error, failureCode)
     const summary = `Inventory Flow ${reportDate}: intraday hold refresh stopped because the last verified source bindings could not be proved.`
     writeIntradayStatus(intradayStatusPath, {
       reportDate,
       status: 'failed_receipt_bound_source_validation',
       failureCode,
+      failureDetail,
       summary,
       steps,
     })
-    return { ok: false, failureCode, summary, manifestPath, releasePath }
+    return { ok: false, failureCode, ...(failureDetail ? { failureDetail } : {}), summary, manifestPath, releasePath }
   }
 
   const transaction = captureFileTransaction([
@@ -1178,7 +1240,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
     steps.push({ name: 'public_inventory', status: 'reused_receipt_bound', path: publicPath })
     steps.push({ name: 'manager_disposition', status: baseline.managerBinding ? 'reused_receipt_bound' : 'reused_none_receipt_bound' })
 
-    const browserReady = options.skipAuthenticated ? false : await ensureAutomationBrowser(warnings)
+    const browserReady = options.skipAuthenticated ? false : await runtime.ensureAutomationBrowser(warnings)
     // Browser startup can take long enough for a stray process or manual edit
     // to replace the canonical file. Rebind it immediately before the archive
     // and capture so only the receipt-proven morning snapshot is archived.
@@ -1190,7 +1252,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
       dealerPath,
       resourcePath,
     })
-    const refreshedDealerPath = runDealerMail(reportDate, browserReady, warnings, steps, { refresh: true })
+    const refreshedDealerPath = await runDealerMail(reportDate, browserReady, warnings, steps, { refresh: true })
     if (!refreshedDealerPath) {
       const summary = `Inventory Flow ${reportDate}: intraday hold refresh failed; the last verified release was restored.`
       writeIntradayStatus(intradayStatusPath, {
@@ -1364,6 +1426,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
   } catch (error) {
     if (keepCandidate) {
       const failureCode = publishedFailureCode ?? 'POST_PUBLISH_STATE_RECORD_FAILED'
+      const failureDetail = failureDetailFor(error, failureCode)
       const outcomeUnknown = ['CLOUD_PUBLICATION_OUTCOME_UNKNOWN', 'PUBLICATION_RECONCILIATION_STATE_INVALID'].includes(failureCode)
       const summary = outcomeUnknown
         ? `Inventory Flow ${reportDate}: the cloud publication outcome remains unknown and requires reconciliation before another refresh.`
@@ -1372,6 +1435,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
         reportDate,
         status: outcomeUnknown ? 'intraday_holds_publication_outcome_unknown' : 'intraday_holds_published_followups_pending',
         failureCode,
+        failureDetail,
         summary,
         warnings,
         steps,
@@ -1380,16 +1444,17 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
         reconciliationRequired: outcomeUnknown,
         candidate: outcomeUnknown ? candidateEvidence : null,
       })
-      result = { ok: false, failureCode, summary, manifestPath, releasePath }
+      result = { ok: false, failureCode, ...(failureDetail ? { failureDetail } : {}), summary, manifestPath, releasePath }
       return result
     }
     const failureCode = /^[A-Z0-9_]+$/.test(error.message) ? error.message : 'INTRADAY_REFRESH_VALIDATION_FAILED'
+    const failureDetail = failureDetailFor(error, failureCode)
     const status = failureCode === 'CLOUDFLARE_PUBLISH_FAILED'
       ? 'publish_failed_last_verified_release_preserved'
       : 'intraday_refresh_failed_last_verified_release_preserved'
     const summary = `Inventory Flow ${reportDate}: intraday hold refresh failed before a new verified publication; the last verified release was restored.`
-    writeIntradayStatus(intradayStatusPath, { reportDate, status, failureCode, summary, warnings, steps })
-    result = { ok: false, failureCode, summary, manifestPath, releasePath }
+    writeIntradayStatus(intradayStatusPath, { reportDate, status, failureCode, failureDetail, summary, warnings, steps })
+    result = { ok: false, failureCode, ...(failureDetail ? { failureDetail } : {}), summary, manifestPath, releasePath }
     return result
   } finally {
     if (keepCandidate) transaction.commit()
@@ -1400,6 +1465,7 @@ async function runIntradayHoldRefresh({ options, reportDate, manifestPath, relea
           reportDate,
           status: 'failed_rollback_requires_attention',
           failureCode: 'INTRADAY_ROLLBACK_FAILED',
+          failureDetail: failureDetailFor(error, 'INTRADAY_ROLLBACK_FAILED'),
           summary,
           warnings,
           steps,
@@ -1486,26 +1552,37 @@ async function runDailyUnlocked(options) {
     }
   }
 
-  const browserReady = options.skipAuthenticated ? false : await ensureAutomationBrowser(warnings)
+  const browserReady = options.skipAuthenticated ? false : await runtime.ensureAutomationBrowser(warnings)
   const publicPath = runPublicInventory(reportDate, steps)
-  const dealerPath = runDealerMail(reportDate, browserReady, warnings, steps)
+  let dealerPath = null
+  let dealerMailRejection = null
+  try {
+    dealerPath = await runDealerMail(reportDate, browserReady, warnings, steps)
+  } catch (error) {
+    if (error.message !== DEALERMAIL_SNAPSHOT_REJECTED) throw error
+    dealerMailRejection = error
+  }
   if (!dealerPath) {
+    const failureCode = dealerMailRejection ? DEALERMAIL_SNAPSHOT_REJECTED : 'DEALERMAIL_INCOMPLETE'
+    const failureDetail = failureDetailFor(dealerMailRejection, failureCode)
+    const status = dealerMailRejection ? 'not_published_dealermail_snapshot_rejected' : 'not_published_dealermail_incomplete'
     const incomplete = {
       report_date: reportDate,
       timezone: 'America/New_York',
       run_mode: 'inventory_flow_background_pipeline',
       public_inventory_status: existsSync(publicPath) ? 'complete' : 'incomplete',
-      dealermail_status: 'skipped_no_authenticated_session',
+      dealermail_status: dealerMailRejection ? 'snapshot_rejected' : 'skipped_no_authenticated_session',
       complete: false,
       public_snapshot_path: existsSync(publicPath) ? publicPath : null,
+      ...(failureDetail ? { failure_code: failureCode, failure_detail: failureDetail } : {}),
       warnings,
       daily_steps: steps,
       completion_time: new Date().toISOString(),
     }
     writeJson(manifestPath, incomplete)
-    const summary = summarize({ reportDate, validation: {}, publishStatus: 'not_published_dealermail_incomplete', manifestPath, releasePath, warnings })
-    writeJson(summaryPath, { reportDate, status: 'not_published_dealermail_incomplete', summary })
-    return { ok: false, failureCode: 'DEALERMAIL_INCOMPLETE', summary, manifestPath, releasePath }
+    const summary = summarize({ reportDate, validation: {}, publishStatus: status, manifestPath, releasePath, warnings })
+    writeJson(summaryPath, { reportDate, status, summary, ...(failureDetail ? { failureCode, failureDetail } : {}) })
+    return { ok: false, failureCode, ...(failureDetail ? { failureDetail } : {}), summary, manifestPath, releasePath }
   }
 
   const oasis = runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps)
@@ -1674,6 +1751,9 @@ export const internals = {
   oasisOutcome,
   oasisWarning,
   reuseExistingOasisCapture,
+  runtime,
+  runDealerMail,
+  failureDetailFor,
   archiveDealerMailRevision,
   assertCandidatePreservesReceiptSources,
   assertReceiptHashes,
@@ -1712,9 +1792,11 @@ if (process.argv[1] && path.basename(process.argv[1]).toLowerCase() === 'run-inv
   } else {
     runDaily(options).then((result) => {
       console.log(result.summary)
+      if (result.failureDetail) console.error(`${result.failureCode}: ${result.failureDetail}`)
       process.exitCode = exitCodeForResult(result)
     }).catch((error) => {
-      console.error(`run-inventory-flow-daily failed: ${error.message}`)
+      const detail = error?.cause ? failureDetailFor(error.cause) : null
+      console.error(`run-inventory-flow-daily failed: ${error.message}${detail ? ` (${detail})` : ''}`)
       process.exitCode = 1
     })
   }
