@@ -15,12 +15,26 @@
 // invoice data. NAVIGATING the tab once lets the MSAL javascript run and complete the silent
 // SSO against the existing FMCDealer session (it lands on /FordEntraDealer/callback.html and
 // then on the real document). After that handshake, in-tab fetches return the PDF bytes.
+//
+// ONE VIN NEVER STOPS THE REST. On 2026-09-29 a single VIN's thrown exception stopped 41
+// queued invoices with 0 processed. A per-vehicle problem is recorded and the loop moves on;
+// only a lost session, the time budget, or (in the main pass) a run of consecutive
+// per-vehicle failures (which reads as a session that died mid-run without ever rendering
+// the msal-browser shell) stops the whole capture. Failures left over after the main pass
+// get one retry pass, which does NOT stop on a consecutive-failure streak - that queue is
+// built entirely from VINs that already failed once, so failing again back-to-back there is
+// expected, not a systemic signal. See scripts/lib/invoice-capture-outcome.mjs for the
+// response decision and stop/continue policy - it is the pure, unit-tested half of this script.
 import { copyFileSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { closeDuplicateTabs, closeOwnedTab, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
 import { reusableInvoices, savedInvoicePdf } from './lib/invoice-cache.mjs'
+import {
+  classifyCaptureException, classifyInvoiceResponse, computeExitCode, computeSessionStatus,
+  isBudgetExhausted, nextCaptureStep,
+} from './lib/invoice-capture-outcome.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -98,53 +112,77 @@ if (queue.length) {
 }
 
 const results = [...prior]
-const tally = { pdf: prior.length, unavailable: 0, error: 0 }
+const tally = { pdf: prior.length, unavailable: 0, failed: 0 }
+// VINs whose most recent attempt was a per-vehicle failure (not a real pdf/unavailable
+// answer). Cleared of a VIN as soon as it resolves; whatever is left after the main pass
+// gets one retry. Never written to index.json - downstream extract/parse/merge scripts
+// expect only pdf/unavailable rows there.
+const failedVins = []
+// Counts of the reason string for whichever VIN's most recent attempt is a failure, so
+// the printed summary can say *why* (e.g. {"FETCH_ERROR":1,"UNEXPECTED_RESPONSE":1})
+// instead of only how many. Keyed the same as outcome.reason from classifyInvoiceResponse
+// / classifyCaptureException / the WRITE_ERROR case below.
+const failureReasons = {}
 let stopped = null
 
-for (const vin of queue) {
-  if (Date.now() - t0 > budgetMs) { stopped = 'BUDGET_EXHAUSTED'; break }
-  try {
-    const r = await fetchInTab(page, INV_URL(vin), { binary: true, timeoutMs: 60000 })
-    if (r.status === 0 || r.error) {
-      stopped = 'FETCH_ERROR'
-      break
+// One VIN's problem never stops the rest: every queued VIN gets an attempt, and a
+// per-vehicle failure just moves on to the next one. Only a lost fordvisions session, the
+// time budget, or (in the main pass only - see stopOnConsecutiveFailures) a run of
+// CONSECUTIVE_FAILURE_LIMIT per-vehicle failures in a row (which looks like a dead session
+// that never rendered the msal-browser shell) stops the pass.
+async function capturePass(vins, { stopOnConsecutiveFailures = true } = {}) {
+  let consecutiveFailures = 0
+  for (const vin of vins) {
+    if (isBudgetExhausted(Date.now() - t0, budgetMs)) { stopped = 'BUDGET_EXHAUSTED'; return }
+    let outcome
+    try {
+      const r = await fetchInTab(page, INV_URL(vin), { binary: true, timeoutMs: 60000 })
+      outcome = classifyInvoiceResponse(r)
+    } catch {
+      outcome = classifyCaptureException()
     }
-    if (r.status !== 200) {
-      stopped = `HTTP_${r.status}`
-      break
-    } else if (r.base64) {
-      const buf = Buffer.from(r.base64, 'base64')
-      if (buf.length >= 8 && buf.length <= 8 * 1024 * 1024 &&
-          buf.subarray(0, 5).toString('latin1') === '%PDF-' &&
-          buf.subarray(Math.max(0, buf.length - 2048)).toString('latin1').includes('%%EOF')) {
-        writeFileSync(path.join(folder, `${vin}.pdf`), buf)
-        results.push({ vin, status: 'pdf', bytes: buf.length,
-          sha256: createHash('sha256').update(buf).digest('hex'), capturedAtUtc: new Date().toISOString() }); tally.pdf++
-      } else {
-        results.push({ vin, status: 'unavailable', reason: 'response was not a PDF' }); tally.unavailable++
+    if (outcome.kind === 'pdf') {
+      // Writing the PDF (antivirus locks, a stale damaged file being replaced) can fail on
+      // its own even though the fetch succeeded. Keep that failure scoped to this VIN -
+      // never let it escape and abort the whole pass - and never record a pdf result row
+      // unless the write actually landed.
+      try {
+        writeFileSync(path.join(folder, `${vin}.pdf`), outcome.buf)
+        results.push({ vin, status: 'pdf', bytes: outcome.buf.length,
+          sha256: createHash('sha256').update(outcome.buf).digest('hex'), capturedAtUtc: new Date().toISOString() })
+        tally.pdf++
+      } catch {
+        outcome = { kind: 'failure', reason: 'WRITE_ERROR' }
       }
+    } else if (outcome.kind === 'unavailable') {
+      results.push({ vin, status: 'unavailable', reason: outcome.reason })
+      tally.unavailable++
+    }
+    if (outcome.kind === 'failure') {
+      if (!failedVins.includes(vin)) failedVins.push(vin)
+      failureReasons[outcome.reason] = (failureReasons[outcome.reason] || 0) + 1
     } else {
-      const t = (r.text || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-      if (/msal-browser/i.test(r.text || '')) {
-        stopped = 'SESSION_EXPIRED'
-        break
-      }
-      let reason = null
-      if (/not retail/i.test(t)) reason = 'Document Type is not retail'
-      else if (/not found in our system/i.test(t)) reason = 'The VIN entered was not found in our system.'
-      if (!reason) {
-        stopped = 'UNEXPECTED_RESPONSE'
-        break
-      }
-      results.push({ vin, status: 'unavailable', reason }); tally.unavailable++
+      const at = failedVins.indexOf(vin)
+      if (at !== -1) failedVins.splice(at, 1)
     }
-  } catch (e) {
-    tally.error++
-    stopped = 'CAPTURE_ERROR'
-    break
+    const step = nextCaptureStep(consecutiveFailures, outcome, { stopOnConsecutiveFailures })
+    consecutiveFailures = step.consecutiveFailures
+    if (step.action === 'stop') { stopped = step.stoppedReason; return }
+    await sleep(120)
   }
-  await sleep(120)
 }
+
+await capturePass(queue)
+const retryQueue = stopped ? [] : failedVins.slice()
+if (retryQueue.length) {
+  await sleep(500)
+  // A retry queue is built only from VINs that already failed once, so several of them
+  // failing back-to-back here is expected, not a sign the fordvisions session died -
+  // never let that streak abort the retry. Only a lost session or the time budget still can.
+  await capturePass(retryQueue, { stopOnConsecutiveFailures: false })
+}
+const recovered = retryQueue.filter(vin => !failedVins.includes(vin)).length
+tally.failed = failedVins.length
 
 results.sort((a, b) => a.vin.localeCompare(b.vin))
 writeFileSync(indexPath, JSON.stringify({
@@ -152,12 +190,13 @@ writeFileSync(indexPath, JSON.stringify({
   capturedAtUtc: new Date().toISOString(), results }, null, 1))
 
 console.log(JSON.stringify({
-  sessionStatus: stopped === 'SESSION_EXPIRED' ? 'session_expired' : stopped ? 'incomplete' : 'ok',
+  sessionStatus: computeSessionStatus({ stoppedReason: stopped, anyVinStillFailed: failedVins.length > 0 }),
   fordLincolnVins: vins.length, attempted: queue.length, processed: results.length - prior.length,
-  reused: reused.size, tally, stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), folder
+  reused: reused.size, failed: tally.failed, retried: retryQueue.length, recovered, tally,
+  failureReasons, stoppedReason: stopped, seconds: Math.round((Date.now() - t0) / 1000), folder
 }))
 if (context) {
   await closeDuplicateTabs(ORIGIN, { pathIncludes: '/vinv/GetInvoice.aspx', keepTabId: context.tab?.id })
   await closeOwnedTab(context)
 }
-process.exit(stopped ? 1 : 0)
+process.exit(computeExitCode(stopped))

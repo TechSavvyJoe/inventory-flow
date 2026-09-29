@@ -902,4 +902,41 @@ describe('app-first daily orchestrator helpers', () => {
     expect(manifest.source_counts.dealermail_used_rows).toBe(1)
     expect(manifest).not.toHaveProperty('manager_disposition_overlay')
   })
+
+  // PRODUCT-RULE TEST
+  // Regression for 2026-09-29: a run of scripts/capture-invoices.mjs that ends with only
+  // per-vehicle failures left over (some VINs never resolve, even after the retry pass)
+  // exits 0 and prints sessionStatus "incomplete" - see
+  // scripts/lib/invoice-capture-outcome.mjs computeExitCode/computeSessionStatus. Before
+  // this fix, run-inventory-flow-daily.mjs's expired-source regex only matched
+  // session_expired/FETCH_ERROR, so that run was reported as a plain 'complete' step with
+  // no warning even though invoices were missing. The regex must widen to also catch
+  // "sessionStatus":"incomplete", and must still ignore a clean run.
+  describe('invoices_capture expired-source detection (2026-09-29 regression)', () => {
+    it('matches a run that finished with only per-vehicle failures left over (exit 0, sessionStatus incomplete)', async () => {
+      const internals = await loadInternals()
+      const output = JSON.stringify({
+        sessionStatus: 'incomplete', fordLincolnVins: 41, attempted: 41, processed: 39,
+        failed: 2, retried: 2, recovered: 0, tally: { pdf: 39, unavailable: 0, failed: 2 },
+        failureReasons: { FETCH_ERROR: 1, UNEXPECTED_RESPONSE: 1 }, stoppedReason: null,
+      })
+      expect(internals.INVOICE_CAPTURE_EXPIRED_PATTERN.test(output)).toBe(true)
+    })
+
+    it('still matches a systemic stop (session_expired or FETCH_ERROR in stoppedReason)', async () => {
+      const internals = await loadInternals()
+      expect(internals.INVOICE_CAPTURE_EXPIRED_PATTERN.test(JSON.stringify({ sessionStatus: 'session_expired', stoppedReason: 'SESSION_EXPIRED' }))).toBe(true)
+      expect(internals.INVOICE_CAPTURE_EXPIRED_PATTERN.test(JSON.stringify({ sessionStatus: 'incomplete', stoppedReason: 'CONSECUTIVE_FAILURES:FETCH_ERROR' }))).toBe(true)
+    })
+
+    it('does not match a clean run that resolved every VIN', async () => {
+      const internals = await loadInternals()
+      const output = JSON.stringify({
+        sessionStatus: 'ok', fordLincolnVins: 41, attempted: 41, processed: 41,
+        failed: 0, retried: 0, recovered: 0, tally: { pdf: 41, unavailable: 0, failed: 0 },
+        failureReasons: {}, stoppedReason: null,
+      })
+      expect(internals.INVOICE_CAPTURE_EXPIRED_PATTERN.test(output)).toBe(false)
+    })
+  })
 })

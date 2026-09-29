@@ -29,6 +29,12 @@ const DEALERMAIL_REVISION_SUFFIXES = [
 ]
 const PUBLICATION_LOCK_OWNER_ENV = 'INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID'
 const PUBLICATION_LOCKED = 'PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW'
+// Matches capture-invoices.mjs's non-blocking, non-zero-exit outcomes: a systemic stop
+// (session_expired / FETCH_ERROR in the stoppedReason) as well as a run that finished the
+// queue with only per-vehicle failures left over, which exits 0 but prints
+// "sessionStatus":"incomplete" - that must still surface as a warning, not disappear as
+// 'complete'. See scripts/lib/invoice-capture-outcome.mjs computeSessionStatus/computeExitCode.
+const INVOICE_CAPTURE_EXPIRED_PATTERN = /session_expired|FETCH_ERROR|"sessionStatus":"incomplete"/i
 
 function parseArgs(argv) {
   const options = {
@@ -544,7 +550,7 @@ function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, ste
       command: NODE,
       args: ['scripts\\capture-invoices.mjs', 'run', reportDate, '--budget-ms', '1800000'],
       cwd: APP_ROOT,
-      expired: /session_expired|FETCH_ERROR/i,
+      expired: INVOICE_CAPTURE_EXPIRED_PATTERN,
       warning: 'Ford invoice capture is incomplete; check the fordvisions session or source response and retry this source.',
     },
     { name: 'invoice_text', command: PYTHON, args: ['work\\extract_invoice_text.py', '--report-date', reportDate] },
@@ -1663,6 +1669,7 @@ Excel workbook generation is intentionally outside this command.`)
 }
 
 export const internals = {
+  INVOICE_CAPTURE_EXPIRED_PATTERN,
   lastJsonLine,
   oasisOutcome,
   oasisWarning,
