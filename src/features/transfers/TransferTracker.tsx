@@ -17,10 +17,10 @@ import {
   humanizeStatusLabel,
   locationConfidenceLabel,
   primaryTransferActions,
-  slaLabel,
   toneClass,
   transferActionLabels,
 } from './presentation';
+import { slaLabel as slaStatus } from '../../lib/sla-label';
 import { TransferEmptyState } from './TransferEmptyState';
 import { TransferTimeline } from './TransferTimeline';
 import { SimpleTransferTracker } from './SimpleTransferTracker';
@@ -216,7 +216,7 @@ export function TransferTracker({
         </div>
         <div className="mif-action-console__due">
           <CalendarClock aria-hidden="true" size={18} strokeWidth={1.75} />
-          <span><strong>{formatDateTime(action.dueAt)}</strong><small>{slaLabel(action.sla)}</small></span>
+          <span><strong>{formatDateTime(action.dueAt)}</strong><small>{slaStatus({ sla: action.sla }).label}</small></span>
         </div>
 
         {transfer.allowedActions.length > 0 ? (

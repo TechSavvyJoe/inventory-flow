@@ -619,6 +619,8 @@ export interface InventoryTableProps extends InventoryVehicleActionProps {
   sorts: InventorySort[];
   onSortChange: (sorts: InventorySort[]) => void;
   onSelectVehicle: (vehicle: InventoryVehicle, section?: VehicleWorkspaceTab) => void;
+  /** The viewer's working store, for owner-aware overdue-move coloring (see src/lib/sla-label). */
+  viewerStore?: string | null;
 }
 
 export interface VehicleWorkspaceProps extends Pick<

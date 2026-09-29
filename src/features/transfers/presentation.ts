@@ -1,8 +1,6 @@
 import { displayDate } from '../../lib/date-display';
-import { slaLabel as slaStatus } from '../../lib/sla-label';
 import type {
   LocationConfidence,
-  SlaState,
   StatusTone,
   TransferActionKind,
 } from './types';
@@ -46,15 +44,6 @@ export function humanizeStatusLabel(label: string): string {
   if (!label.includes('_')) return label;
   const words = label.trim().replace(/_+/g, ' ').toLowerCase();
   return words ? `${words.charAt(0).toUpperCase()}${words.slice(1)}` : label;
-}
-
-/**
- * Group operations (src/features/manager) still imports this through the
- * transfers barrel. It is the shared src/lib/sla-label wording, not a second
- * vocabulary; delete it when that page is retired.
- */
-export function slaLabel(sla: SlaState): string {
-  return slaStatus({ sla }).label;
 }
 
 export function locationConfidenceLabel(confidence: LocationConfidence): string {

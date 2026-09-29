@@ -781,6 +781,7 @@ export function InventoryExperience({
               onMoveVehicle={onMoveVehicle}
               onTrackMovement={onTrackMovement}
               onOpenListing={onOpenListing}
+              viewerStore={homeStore.name}
             /> :
               <InventoryTable
                 vehicles={pageVehicles}
@@ -795,6 +796,7 @@ export function InventoryExperience({
                 onTrackMovement={onTrackMovement}
                 onOpenListing={onOpenListing}
                 onOpenSourceRecord={openSourceRecord}
+                viewerStore={homeStore.name}
               />
           ) : (
             <div className="inventory-empty-results">

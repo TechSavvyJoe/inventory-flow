@@ -602,13 +602,59 @@ describe('modern inventory result access', () => {
   });
 
   it('retains an overdue mobile movement warning independently of hold and service status', () => {
+    // No viewerStore/nextActionStore published: the shared sla-label vocabulary
+    // keeps the conservative, urgent reading (src/lib/sla-label).
     const vehicle = heldMovingVehicle();
-    vehicle.movement = { ...vehicle.movement!, overdue: true };
+    vehicle.movement = { ...vehicle.movement!, dueAt: '2020-01-01T00:00:00.000Z' };
     render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} onTrackMovement={vi.fn()} />);
-    expect(document.querySelector('.inventory-mobile-update--warning')).toHaveTextContent('Move needs attention');
+    expect(document.querySelector('.inventory-mobile-update--warning')).toHaveTextContent('Overdue');
     expect(screen.getByRole('button', { name: /Track movement for/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /^Waiting for service\. Open service status/ })).toBeInTheDocument();
     expect(screen.getByRole('article')).toHaveAttribute('data-hold-state', 'held');
+  });
+
+  it('keeps an overdue mobile move neutral, naming who it waits on, when another store owns the next step', () => {
+    // Same shared vocabulary as the vehicle page and Moves (src/lib/sla-label):
+    // red is reserved for the viewer's own store.
+    const vehicle = heldMovingVehicle();
+    vehicle.movement = {
+      ...vehicle.movement!,
+      dueAt: '2020-01-01T00:00:00.000Z',
+      nextActionStore: 'Fowlerville',
+      nextActionOwner: 'Fowlerville sales',
+    };
+    render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} onTrackMovement={vi.fn()} viewerStore="Howell" />);
+    const update = document.querySelector('.inventory-mobile-update');
+    expect(update).toHaveTextContent('Overdue · waiting on Fowlerville salesperson');
+    expect(update).not.toHaveClass('inventory-mobile-update--warning');
+  });
+
+  it('shows an owner-aware overdue move as urgent in the desktop Operations column when the viewer\'s store owns it', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.movement = {
+      ...vehicle.movement!,
+      dueAt: '2020-01-01T00:00:00.000Z',
+      nextActionStore: 'Howell',
+      nextActionOwner: 'Howell sales',
+    };
+    render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} viewerStore="Howell" />);
+    const statusCell = document.querySelector('td[data-column="status"]') as HTMLElement;
+    expect(statusCell).toHaveTextContent('Overdue');
+    expect(document.querySelector('.inv-desk-move')).toHaveClass('is-warning');
+  });
+
+  it('shows an owner-aware overdue move as a plain fact in the desktop Operations column when another store owns it', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.movement = {
+      ...vehicle.movement!,
+      dueAt: '2020-01-01T00:00:00.000Z',
+      nextActionStore: 'Fowlerville',
+      nextActionOwner: 'Fowlerville sales',
+    };
+    render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} viewerStore="Howell" />);
+    const statusCell = document.querySelector('td[data-column="status"]') as HTMLElement;
+    expect(statusCell).toHaveTextContent('Overdue · waiting on Fowlerville salesperson');
+    expect(document.querySelector('.inv-desk-move')).not.toHaveClass('is-warning');
   });
 
   it.each([true, false])('marks a retained hold signal of %s as unverified when its source is stale', (previousHold) => {
