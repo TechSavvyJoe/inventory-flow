@@ -145,6 +145,17 @@ describe('modern inventory result access', () => {
     expect(within(operations).getByRole('button', { name: /Open hold details for 2024 Ford F-150 XLT/ })).toHaveAttribute('title', 'Customer appointment');
   });
 
+  it('labels each Operations fact in the fixed order Location, Hold, Move, Service', () => {
+    render(<InventoryTable vehicles={[heldMovingVehicle()]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+    const operations = document.querySelector('tr.inv-desk-row td[data-column="status"]') as HTMLElement;
+    expect(within(operations).getAllByRole('term').map((term) => term.textContent)).toEqual(['Location', 'Hold', 'Move', 'Service']);
+    const definitions = within(operations).getAllByRole('definition');
+    expect(definitions[0]).toHaveTextContent('Fowlerville');
+    expect(within(definitions[1]).getByRole('button', { name: /Open hold details for 2024 Ford F-150 XLT/ })).toHaveTextContent('Hold · Alex Morgan');
+    expect(definitions[2]).toHaveTextContent('In transit outbound');
+    expect(within(definitions[3]).getByRole('link', { name: /^Waiting for service\. Open service status/ })).toBeVisible();
+  });
+
   it("says 'Held by' only for DealerMail's own heldBy evidence", () => {
     const vehicle = heldMovingVehicle();
     vehicle.holdEvidence = [{ id: 'hold-1', position: 'primary', salesperson: 'Alex Morgan', heldBy: 'Jamie Howell', customerOrReason: 'Customer appointment' }];

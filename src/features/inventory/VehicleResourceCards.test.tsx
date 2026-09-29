@@ -148,6 +148,17 @@ describe('source-backed vehicle resource cards', () => {
     expect(screen.getByText('Action status unconfirmed')).toBeVisible();
   });
 
+  it('names a missing scan source in its own cell instead of leaving it blank', () => {
+    const vehicle = sources();
+    const page = render(<VehicleResourceCards vehicle={{...vehicle,make:'Chevrolet',windowSticker:null,factoryEquipment:null}} variant="scan"/>);
+    expect(screen.getByText('OASIS covers Ford and Lincoln only')).toBeVisible();
+    expect(screen.getByText('Equipment not captured')).toBeVisible();
+    expect(screen.queryByText('History not captured')).not.toBeInTheDocument();
+    page.rerender(<VehicleResourceCards vehicle={vehicle} variant="scan"/>);
+    expect(screen.queryByText('OASIS covers Ford and Lincoln only')).not.toBeInTheDocument();
+    expect(screen.queryByText('Equipment not captured')).not.toBeInTheDocument();
+  });
+
   it('fills the inventory overview with source-backed equipment, key checks, all exceptions, and OASIS facts', () => {
     const vehicle = sources();
     vehicle.windowSticker = {...vehicle.windowSticker!,pricingCurrency:'USD',equipmentGroupContents:Array.from({length:8},(_,i)=>`Included feature ${i + 1}`),options:[

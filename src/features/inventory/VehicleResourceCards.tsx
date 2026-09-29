@@ -169,7 +169,7 @@ function ScanFields({ rows, resource, synthetic }: { rows: VehicleResourceSummar
   return <dl className="vehicle-resource-scan__fields">{rows.map((row, index) => {
     const label = resource.id === 'autocheck' ? HISTORY_LABELS[row.label.toLowerCase()] ?? row.label : row.label === 'Warranty start' ? 'In service' : row.label;
     const specificHistoryResult = resource.id === 'autocheck' && row.detail && /^(?:no issues?|no problems?|clear|normal|events reported)$/i.test(row.values.join(' '));
-    return <div key={`${row.label}-${index}`}>
+    return <div key={`${row.label}-${index}`} data-field={label.toLowerCase()}>
       <dt>{label}</dt>
       <dd>{specificHistoryResult ? <span>{reportDisplayText(row.detail!, synthetic)}</span> : <>{row.values.map((value, valueIndex) => <span key={valueIndex}>{reportDisplayText(value, synthetic)}</span>)}{row.detail && row.label !== 'Score' ? <span>{reportDisplayText(row.detail, synthetic)}</span> : null}</>}</dd>
     </div>;
@@ -305,7 +305,9 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
     const equipment = resources.find(resource => ['window-sticker','vauto'].includes(resource.id));
     const sources = [history, equipment, oasis].filter((resource): resource is VehicleResource => Boolean(resource));
     return <div className={`vehicle-resources vehicle-resources--scan${onSelectResource ? ' is-interactive' : ''}`} aria-label="Captured source signals; complete reports in Records" onClick={event => event.stopPropagation()} onKeyDown={event => { if (onSelectResource && (event.key === 'Enter' || event.key === ' ')) event.stopPropagation(); }}>
-      {!history ? <p className="vehicle-resource-scan__missing">History not captured</p> : null}
+      {!history ? <p className="vehicle-resource-scan__missing" data-missing="history">History not captured</p> : null}
+      {!equipment ? <p className="vehicle-resource-scan__missing" data-missing="equipment">Equipment not captured</p> : null}
+      {!oasis ? <p className="vehicle-resource-scan__missing" data-missing="oasis">{/^(ford|lincoln)$/i.test(vehicle.make?.trim() ?? '') ? 'OASIS not captured' : 'OASIS covers Ford and Lincoln only'}</p> : null}
       {sources.map(resource => {
         const rows = scanRows(resource, vehicle);
         const label = resource.id === 'autocheck' ? 'AutoCheck' : resource.id === 'oasis' ? 'OASIS' : resource.id === 'vauto' ? 'Equipment' : 'Sticker';
