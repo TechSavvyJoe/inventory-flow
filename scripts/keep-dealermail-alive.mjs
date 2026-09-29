@@ -27,7 +27,7 @@ import { writeFileSync, mkdirSync, appendFileSync, readdirSync, readFileSync } f
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
-import { sendSignInAlert } from './lib/signin-alert.mjs'
+import { sendSignInAlert, sendTestAlert } from './lib/signin-alert.mjs'
 
 const PORT = 9222
 const ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -160,6 +160,14 @@ function sampleFordVin() {
     const list = JSON.parse(readFileSync(path.join(ROOT, 'work', f), 'utf8'))
     return Array.isArray(list) && list.length ? list[0].vin : null
   } catch { return null }
+}
+
+// `node keep-dealermail-alive.mjs --test-alert` sends one test iMessage and
+// checks nothing else, to prove the alert path after setup.
+if (process.argv.includes('--test-alert')) {
+  const result = await sendTestAlert()
+  console.log(JSON.stringify(result))
+  process.exit(result.status === 'sent' ? 0 : 1)
 }
 
 const status = { checkedAt: new Date().toISOString(), automationBrowser: await ensureAutomationBrowser() }

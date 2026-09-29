@@ -36,7 +36,7 @@ run it, against authenticated dealer sources, over CDP.
 | `dryrun_manager_disposition_check.mjs` | Windows host | Dry-run oracle: runs the manager-disposition overlay through the real importer/validators without publishing. |
 | `dryrun_manifest_check.mjs` | Windows host | Dry-run oracle: verifies a run-status manifest passes the real gate functions before the scheduled publish attempts it. |
 | `dryrun_resource_enrichment_check.mjs` | Windows host | Dry-run oracle: exercises the real resource-enrichment validators end-to-end on a candidate file. |
-| `keep-dealermail-alive.mjs` | Windows host | The `BobMaxey-DealerMailKeeper` task: pings DealerMail/FMCDealer/vAuto over CDP every 10 min to keep sessions warm, and texts Joe through OpenClaw when a site needs a sign-in (`lib/signin-alert.mjs`). |
+| `keep-dealermail-alive.mjs` | Windows host | The `BobMaxey-DealerMailKeeper` task: pings DealerMail/FMCDealer/vAuto over CDP every 10 min to keep sessions warm, and texts Joe from his Messages Mac over SSH when a site needs a sign-in (`lib/signin-alert.mjs`, `--test-alert` to check it). |
 | `manage-integration-client.mjs` | local, owner-run (`integrations:client`) | Inspects or narrowly updates the dedicated MCP Access application; never part of the public API. |
 | `merge-ford-service-history.mjs` | Windows host | Merges exact-VIN Ford PTS service history into the daily resource-enrichment file. |
 | `merge-invoice-metadata.mjs` | Windows host | Attaches exact-VIN Ford/Lincoln invoice availability to the daily resource-enrichment file. |
@@ -398,45 +398,46 @@ turns `OK` by itself.
 
 ### Sign-in alerts by iMessage
 
-After each check the keeper texts Joe through OpenClaw on his Mac
-(`scripts/lib/signin-alert.mjs`). It sends one message when a site newly
-needs a sign-in (or the automation browser could not be restarted). It
+After each check the keeper texts Joe from his Intel Mac, the Mac that runs
+Messages (`scripts/lib/signin-alert.mjs`). It sends one message when a site
+newly needs a sign-in (or the automation browser could not be restarted). It
 repeats every six hours while that site stays broken. Once every site reads
-OK again, it sends one all-clear. A check that merely errors is not
-counted as a recovery. Only site names and the PC name leave the PC. The
-state advances only after the gateway answers `200` with `ok: true`. Any
-other answer, including `204` (the transform skipped it), retries on the
-next check. The result is recorded as `alert` in `dealermail-keeper.json`
-and in the keeper log. The state is kept in
+OK again, it sends one all-clear. A check that merely errors is not counted
+as a recovery. Only the alert kind, site names and the PC name leave the PC.
+The state advances only when the Mac replies `{"ok":true}`; anything else
+retries on the next check. The result is recorded as `alert` in
+`dealermail-keeper.json` and in the keeper log. The state is kept in
 `work\app-feed-status\signin-alert-state.json`.
 
-Setup (Joe, once; nothing here goes in Git):
+The PC reaches the Mac over SSH (Tailscale) with a key made only for this.
+The Mac's `authorized_keys` entry forces
+`scripts/mac/send-inventory-alert.mjs`, so the key can do nothing else. That
+script accepts only known site names, builds a fixed sentence, and sends it
+with `imsg` into Joe's note-to-self thread. It uses the same thread and tool
+as his OpenClaw iMessage bot, and the bot ignores messages the Mac sends
+itself. The chat and the optional RustDesk ID come only from
+`send-inventory-alert.config.json` next to the script on the Mac, never from
+the caller. With `rustdeskId` set, the text ends with
+`rustdesk://connection/new/<id>`, which opens the RustDesk phone app on the
+PC. Never put a password in it.
 
-1. Mac: copy `scripts/openclaw/inventory-signin.mjs` to
-   `~/.openclaw/hooks/transforms/`. In OpenClaw, enable webhooks with
-   their own token. Add a mapping with `match.path` `inventory-signin`,
-   `action` `agent`, `transform.module` `inventory-signin.mjs`,
-   `deliver` true, `channel` `imessage`, `to` set to Joe's own handle, and
-   `allowUnsafeExternalContent` true. The last one is safe only because this
-   transform emits fixed text. Without it, the agent may paraphrase the
-   alert instead of passing it on. Turn on the iMessage channel. With
-   `dmPolicy` `disabled` it only sends. The transform accepts nothing but
-   known site names, so this path always hands the agent fixed text. The
-   hooks token itself still unlocks OpenClaw's general `/hooks/agent`
-   endpoint, so treat it like a password. Optionally, add
-   `inventory-signin.config.json` next to it with
-   `{"rustdeskId": "<publisher PC RustDesk ID>"}`. The message then ends with
-   `rustdesk://connection/new/<id>`, which opens the RustDesk phone app on
-   that PC. Never put a password in it.
-2. Publisher PC: set the user environment variables
-   `INVENTORY_ALERT_URL` (the gateway's Tailscale address plus
-   `/hooks/inventory-signin`, https only) and `INVENTORY_ALERT_TOKEN` (the
-   hooks token). Joe types the token himself. Unset means alerts are off.
+Setup (once; nothing here goes in Git):
 
-The Mac must be awake with OpenClaw running for the text to go out. Until
-it is, the keeper keeps retrying every 10 minutes. Before relying on it,
-send one test alert from the publisher PC and confirm the iMessage arrives
-on the phone and the RustDesk link opens.
+1. Mac: `~/inventory-alert/send-inventory-alert.mjs` (from `scripts/mac/`)
+   plus `send-inventory-alert.config.json` holding
+   `{"chatId": 224, "rustdeskId": "<PC RustDesk ID>"}`.
+2. PC: `ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\inventory_alert" -N "" -C inventory-alert`.
+3. Mac: append one line to `~/.ssh/authorized_keys` (Joe does this):
+   `command="/usr/local/bin/node /Users/<mac-user>/inventory-alert/send-inventory-alert.mjs",restrict <contents of inventory_alert.pub>`
+4. PC: set the user environment variables `INVENTORY_ALERT_SSH_TARGET`
+   (`<mac-user>@<messages-mac>.<tailnet>.ts.net`) and
+   `INVENTORY_ALERT_SSH_KEY` (the private key path). Unset means alerts are off.
+5. PC: `node scripts\keep-dealermail-alive.mjs --test-alert` sends one test
+   text and records nothing. The first send may raise a macOS "control
+   Messages" prompt on the Mac; allow it once.
+
+The Mac must be awake for the text to go out. Until it is, the keeper keeps
+retrying every 10 minutes.
 
 ## The daily Cowork task, step by step
 
