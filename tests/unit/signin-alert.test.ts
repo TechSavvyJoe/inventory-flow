@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { sendSignInAlert, sendTestAlert, signInProblems } from '../../scripts/lib/signin-alert.mjs'
+import { sendSignInAlert, sendTestAlert, signInProblems, sshArgs } from '../../scripts/lib/signin-alert.mjs'
 import { alertText, parseAlertArgs } from '../../scripts/mac/send-inventory-alert.mjs'
 
 const SITES = ['dealermail', 'fmcdealer', 'fordvisions', 'vauto']
@@ -127,6 +127,13 @@ describe('sign-in alerts from the session keeper', () => {
     expect(failed).toMatchObject({ status: 'send_failed', error: 'timeout' })
     expect(existsSync(statePath)).toBe(false)
     expect((await alert(keeper(['fmcdealer']), recorder().send)).status).toBe('sent')
+  })
+
+  it('never leaves ssh waiting on input and sends only the three alert words', () => {
+    const args = sshArgs({ target: 'macuser@messages-mac.example.ts.net', key: 'C:/keys/inventory_alert', words: ['needs_sign_in', 'vauto', 'JOE-PC'] })
+    expect(args[0]).toBe('-n')
+    expect(args).toContain('BatchMode=yes')
+    expect(args.slice(-4)).toEqual(['macuser@messages-mac.example.ts.net', 'needs_sign_in', 'vauto', 'JOE-PC'])
   })
 
   it('sends a test through the same path without touching the alert state', async () => {

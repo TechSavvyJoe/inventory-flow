@@ -90,9 +90,16 @@ function sshExecutable(env) {
   return windowsSsh && existsSync(windowsSsh) ? windowsSsh : 'ssh'
 }
 
+// -n: the alert sends no input, and Windows ssh.exe otherwise waits for its
+// open stdin pipe to close after the Mac has already answered (seen on
+// Joe-PC 2026-09-29: without it every alert would hit the send timeout).
+export function sshArgs({ target, key, words }) {
+  return ['-n', '-i', key, '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15', target, ...words]
+}
+
 // Runs the forced script on the Mac; resolves true only when it reports ok.
 export function sshSend({ target, key, words, env = process.env }) {
-  const args = ['-i', key, '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15', target, ...words]
+  const args = sshArgs({ target, key, words })
   return new Promise((resolve) => {
     execFile(sshExecutable(env), args, { timeout: SEND_TIMEOUT_MS, windowsHide: true }, (error, stdout) => {
       const last = String(stdout || '').trim().split(/\r?\n/).pop()
