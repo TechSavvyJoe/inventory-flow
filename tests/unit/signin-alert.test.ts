@@ -86,6 +86,34 @@ describe('sign-in alerts from the session keeper', () => {
     expect(calls).toHaveLength(3)
   })
 
+  it('reminds once each morning before the run while a site is still broken', async () => {
+    const { calls, send } = recorder()
+    const local = (time) => new Date(`2026-09-29T${time}:00`)
+    // Overnight expiry: the first text lands at 02:00, when nobody reads it.
+    expect((await alert(keeper(['dealermail']), send, local('02:00'))).status).toBe('sent')
+    expect((await alert(keeper(['dealermail']), send, local('04:59'))).status).toBe('unchanged')
+    const morning = await alert(keeper(['dealermail']), send, local('05:00'))
+    expect(morning).toMatchObject({ status: 'sent', kind: 'before_run' })
+    expect(calls.at(-1).words).toEqual(['before_run', 'dealermail', 'JOE-PC'])
+    expect((await alert(keeper(['dealermail']), send, local('05:10'))).status).toBe('unchanged')
+    expect(calls).toHaveLength(2)
+    // The next morning reminds again, and an all-clear still wins over it.
+    expect((await alert(keeper(['dealermail']), send, new Date('2026-09-30T05:00:00'))).kind).toBe('before_run')
+    expect((await alert(keeper([]), send, new Date('2026-09-30T05:30:00'))).kind).toBe('all_clear')
+    expect(calls).toHaveLength(4)
+  })
+
+  it('honours a custom pre-run time and leaves the reminder off when told to', async () => {
+    const quiet = recorder()
+    await alert(keeper(['vauto']), quiet.send, new Date('2026-09-29T02:00:00'), { INVENTORY_ALERT_PRERUN_LOCAL_TIME: 'off' })
+    expect((await alert(keeper(['vauto']), quiet.send, new Date('2026-09-29T05:00:00'), { INVENTORY_ALERT_PRERUN_LOCAL_TIME: 'off' })).status).toBe('unchanged')
+    expect(quiet.calls).toHaveLength(1)
+    rmSync(statePath, { force: true })
+    const early = recorder()
+    await alert(keeper(['vauto']), early.send, new Date('2026-09-29T02:00:00'), { INVENTORY_ALERT_PRERUN_LOCAL_TIME: '04:15' })
+    expect((await alert(keeper(['vauto']), early.send, new Date('2026-09-29T04:15:00'), { INVENTORY_ALERT_PRERUN_LOCAL_TIME: '04:15' })).kind).toBe('before_run')
+  })
+
   it('reminds after six hours while a site is still broken', async () => {
     const { calls, send } = recorder()
     await alert(keeper(['fordvisions']), send)
@@ -115,6 +143,8 @@ describe('the sender on the Messages Mac', () => {
       .toBe('Inventory Flow needs you: sign in to DealerMail, vAuto in the automation browser on JOE-PC.')
     expect(alertText(parseAlertArgs(['needs_sign_in', 'browser', 'JOE-PC'])))
       .toBe('Inventory Flow needs you: the automation browser on JOE-PC is not running; sign in to Windows there so it can start.')
+    expect(alertText(parseAlertArgs(['before_run', 'dealermail,vauto', 'JOE-PC'])))
+      .toBe("Inventory Flow, before this morning's run: sign in to DealerMail, vAuto in the automation browser on JOE-PC.")
     expect(alertText(parseAlertArgs(['all_clear', '-', 'JOE-PC']))).toBe('Inventory Flow: every sign-in on JOE-PC is working again.')
     expect(alertText(parseAlertArgs(['test', '-', 'JOE-PC']))).toBe('Inventory Flow test: sign-in alerts from JOE-PC reach you.')
   })

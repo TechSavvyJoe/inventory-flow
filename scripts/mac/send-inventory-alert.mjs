@@ -29,10 +29,10 @@ const IMSG = '/usr/local/bin/imsg'
 
 export function parseAlertArgs(words) {
   const [kind, list = '-', host = ''] = Array.isArray(words) ? words : []
-  if (!['needs_sign_in', 'all_clear', 'test'].includes(kind)) return null
+  if (!['needs_sign_in', 'before_run', 'all_clear', 'test'].includes(kind)) return null
   const services = list === '-' ? [] : [...new Set(String(list).split(','))]
   if (services.some((name) => !KNOWN.has(name))) return null
-  if (kind === 'needs_sign_in' && !services.length) return null
+  if (['needs_sign_in', 'before_run'].includes(kind) && !services.length) return null
   return { kind, services, host: /^[A-Za-z0-9-]{1,32}$/.test(host) ? host : 'the publisher PC' }
 }
 
@@ -43,7 +43,8 @@ export function alertText({ kind, services, host }, config = {}) {
   if (services.includes('browser')) parts.push(`the automation browser on ${host} is not running; sign in to Windows there so it can start`)
   const sites = services.filter((name) => Object.hasOwn(SITES, name)).map((name) => SITES[name])
   if (sites.length) parts.push(`sign in to ${sites.join(', ')} in the automation browser on ${host}`)
-  const text = `Inventory Flow needs you: ${parts.join('. Then ')}.`
+  const lead = kind === 'before_run' ? "Inventory Flow, before this morning's run" : 'Inventory Flow needs you'
+  const text = `${lead}: ${parts.join('. Then ')}.`
   const id = typeof config.rustdeskId === 'string' && RUSTDESK_ID.test(config.rustdeskId) ? config.rustdeskId : null
   return id ? `${text}\nOpen ${host} in RustDesk: rustdesk://connection/new/${id}` : text
 }

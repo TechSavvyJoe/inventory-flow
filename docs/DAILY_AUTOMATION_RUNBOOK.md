@@ -401,9 +401,11 @@ turns `OK` by itself.
 After each check the keeper texts Joe from his Intel Mac, the Mac that runs
 Messages (`scripts/lib/signin-alert.mjs`). It sends one message when a site
 newly needs a sign-in (or the automation browser could not be restarted). It
-repeats every six hours while that site stays broken. Once every site reads
-OK again, it sends one all-clear. A check that merely errors is not counted
-as a recovery. Only the alert kind, site names and the PC name leave the PC.
+repeats every six hours while that site stays broken, and once each morning
+at `INVENTORY_ALERT_PRERUN_LOCAL_TIME` (local, default 05:00, `off` to
+disable) so an overnight expiry is fixed before DailyRun rather than
+discovered after it. Once every site reads OK again, it sends one all-clear.
+A check that merely errors is not counted as a recovery. Only the alert kind, site names and the PC name leave the PC.
 The state advances only when the Mac replies `{"ok":true}`; anything else
 retries on the next check. The result is recorded as `alert` in
 `dealermail-keeper.json` and in the keeper log. The state is kept in
@@ -431,7 +433,9 @@ Setup (once; nothing here goes in Git):
    `command="/usr/local/bin/node /Users/<mac-user>/inventory-alert/send-inventory-alert.mjs",restrict <contents of inventory_alert.pub>`
 4. PC: set the user environment variables `INVENTORY_ALERT_SSH_TARGET`
    (`<mac-user>@<messages-mac>.<tailnet>.ts.net`) and
-   `INVENTORY_ALERT_SSH_KEY` (the private key path). Unset means alerts are off.
+   `INVENTORY_ALERT_SSH_KEY` (the private key path). Unset means alerts are
+   off. Optionally set `INVENTORY_ALERT_PRERUN_LOCAL_TIME` (default 05:00),
+   which should stay at least 20 minutes before the DailyRun trigger.
 5. PC: `node scripts\keep-dealermail-alive.mjs --test-alert` sends one test
    text and records nothing. The first send may raise a macOS "control
    Messages" prompt on the Mac; allow it once.
