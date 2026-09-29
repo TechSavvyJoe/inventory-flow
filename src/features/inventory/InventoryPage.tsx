@@ -309,7 +309,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         searchPersistenceKey={accessContext}
         selectedVehicleId={selectedVehicleId}
         onSelectedVehicleChange={selectVehicle}
-        pageSize={25}
+        pageSize={50}
         canRequestVehicle={(vehicle) => canRequestVehicleMove(vehicle, role, store.id)}
         moveActionFor={(vehicle) => vehicleMoveAction(vehicle, role, store)}
         onScopeChange={changeScope}

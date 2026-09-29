@@ -43,7 +43,10 @@
 .if-srp .inventory-pagination button:disabled { opacity: .45; cursor: default; }
 .if-srp .inventory-page-size { display: flex; align-items: center; gap: 6px; margin-right: auto; }
 .if-srp .inventory-page-size select { min-height: var(--ifx-control-height-md); padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--ink-700); font: 400 14px/1.3 var(--font-app); }
-.if-srp .if-srp-secondary-views { margin-bottom: 10px; }
+/* The chip-row wrapper only takes part in layout at tablet widths; the
+   secondary views (open Filters only) always follow the other controls. */
+.if-srp .if-srp-chip-rows { display: contents; }
+.if-srp .if-srp-controls .if-srp-secondary-views { order: 4; flex-basis: 100%; }
 .if-srp .inventory-filter-panel { margin: 0 0 14px; padding: 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-soft); box-shadow: none; }
 .if-srp .inventory-filter-panel__heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 .if-srp .inventory-filter-panel__heading > span { display: flex; align-items: center; gap: 6px; font: 600 14px/1.3 var(--font-app); }
@@ -286,6 +289,7 @@
   .if-srp .if-srp-quickviews { padding-inline:var(--ifx-space-2); }
   .if-srp .inventory-experience__content > :not(.if-srp-heading-grid,.if-srp-controls) { grid-column:1 / -1; }
   .if-srp .if-srp-service-filters { display:none; grid-column:1 / -1; grid-row:auto; }
+  .if-srp .if-srp-controls .if-srp-secondary-views { order:0; grid-column:1 / -1; padding-inline:var(--ifx-space-2); }
   .if-srp .if-srp-tools:has(> .button) { grid-column:1 / -1; grid-row:4; padding-inline:var(--ifx-space-2); }
   .if-srp .if-srp-tools > .button { margin-right:auto; min-height:var(--ifx-control-height-md); }
 }
@@ -294,4 +298,13 @@
 @media (min-width:761px) and (max-width:1399px) {
   .if-srp .if-srp-service-filters { display:none; }
   .if-srp[data-filters-open="true"] .if-srp-service-filters { display:flex; width:100%; grid-column:1 / -1; order:3; padding-left:0; border-left:0; }
+}
+/* Tablet widths (761-1100px, a 1024px screen included): collapse the service
+   and view chips into one flowing chip row instead of two stacked rows. */
+@media (min-width:761px) and (max-width:1100px) {
+  .if-srp[data-filters-open="true"] .if-srp-chip-rows { display:flex; flex-wrap:wrap; align-items:center; gap:var(--ifx-space-1); grid-column:1 / -1; grid-row:2; }
+  .if-srp[data-filters-open="true"] .if-srp-chip-rows > :is(.if-srp-service-filters, .if-srp-secondary-views) { display:flex; flex:0 1 auto; width:auto; gap:var(--ifx-space-1); }
+  .if-srp .if-srp-chip-rows > :is(.if-srp-service-filters, .if-srp-secondary-views) > button { padding-inline:var(--ifx-space-2); }
+  .if-srp .if-srp-chip-rows .service-filter-label--full { display:none; }
+  .if-srp .if-srp-chip-rows .service-filter-label--short { display:inline; }
 }

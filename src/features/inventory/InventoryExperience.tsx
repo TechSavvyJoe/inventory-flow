@@ -15,7 +15,17 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
-import { inventoryInLocationScope, matchesInventoryQuickView, type QuickView } from "./inventory-quick-views";
+import {
+  filterPanelHoldValue,
+  filterPanelMovementValue,
+  inventoryInLocationScope,
+  matchesInventoryQuickView,
+  selectHoldFilter,
+  selectMovementFilter,
+  selectQuickView,
+  type InventoryViewState,
+  type QuickView,
+} from "./inventory-quick-views";
 import { ScanVehicleDialog } from "./ScanVehicleDialog";
 import { InventoryPredictiveSearch } from "./InventoryPredictiveSearch";
 import { serviceWorkflowStatus } from "../../lib/service-readiness";
@@ -51,6 +61,11 @@ import "./inventory-modern.css";
 import "./InventoryServiceFilter.css";
 
 const PAGE_SIZE_OPTIONS = [10, 15, 20, 25, 50, 100] as const;
+/** Phones always get cards; any wider results surface above this width gets
+ *  the desk table (a 1024px landscape tablet included). The CSS container
+ *  query in InventoryTable.desk.css uses the same width: change both together. */
+const PHONE_QUERY = "(max-width: 760px)";
+const CARD_SURFACE_MAX_WIDTH = 820;
 const MAX_SORT_LEVELS = 5;
 type ServiceFilter = NonNullable<InventoryFilters["serviceReadiness"]>;
 const SERVICE_FILTERS: Array<[ServiceFilter, string]> = [["all", "All service"], ["needs_service", "Waiting for service"], ["in_service", "In service"], ["serviced", "Ready"]];
@@ -253,7 +268,11 @@ function FiltersPanel({
   stores,
   homeStore,
   scope,
+  holdValue,
+  movementValue,
   onChange,
+  onHoldChange,
+  onMovementChange,
   onClear,
 }: {
   id: string;
@@ -261,7 +280,12 @@ function FiltersPanel({
   stores: InventoryGroupStore[];
   homeStore: InventoryStore;
   scope: InventoryScope;
+  /** Hold and movement read through the quick-view chips: one state, two controls. */
+  holdValue: InventoryFilters["dealerMail"];
+  movementValue: InventoryFilters["movement"];
   onChange: (filters: InventoryFilters) => void;
+  onHoldChange: (value: InventoryFilters["dealerMail"]) => void;
+  onMovementChange: (value: InventoryFilters["movement"]) => void;
   onClear: () => void;
 }) {
   const update = <Key extends keyof InventoryFilters>(key: Key, value: InventoryFilters[Key]) => onChange({ ...filters, [key]: value });
@@ -288,7 +312,7 @@ function FiltersPanel({
         )}
         <label>
           <span>Hold</span>
-          <select value={filters.dealerMail} onChange={(event) => update("dealerMail", event.target.value as InventoryFilters["dealerMail"])}>
+          <select value={holdValue} onChange={(event) => onHoldChange(event.target.value as InventoryFilters["dealerMail"])}>
             <option value="all">Any hold status</option>
             <option value="held">Held</option>
             <option value="not-held">No current hold</option>
@@ -297,7 +321,7 @@ function FiltersPanel({
         </label>
         <label>
           <span>Vehicle movement</span>
-          <select value={filters.movement} onChange={(event) => update("movement", event.target.value as InventoryFilters["movement"])}>
+          <select value={movementValue} onChange={(event) => onMovementChange(event.target.value as InventoryFilters["movement"])}>
             <option value="all">Any movement status</option>
             <option value="active">Being moved</option>
             <option value="overdue">Needs movement attention</option>
@@ -410,7 +434,7 @@ export function InventoryExperience({
   const filterTriggerRef = useRef<HTMLButtonElement>(null);
   const workspaceReturnFocusRef = useRef<HTMLElement | null>(null);
   const pendingWorkspaceReturnFocusRef = useRef<{ vehicleId: string; trigger: HTMLElement | null } | null>(null);
-  const [compactResults, setCompactResults] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 760px)").matches);
+  const [compactResults, setCompactResults] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(PHONE_QUERY).matches);
   const stores = useMemo(() => uniqueStores(homeStore, vehicles, groupStores), [groupStores, homeStore, vehicles]);
   const scopedStore = scope === "group" && filters.storeId !== "all" ? stores.find(store => store.id === filters.storeId) ?? homeStore : homeStore;
   const locationScope: InventoryScope = scope === "home" || filters.storeId !== "all" ? "home" : "group";
@@ -426,6 +450,12 @@ export function InventoryExperience({
     onScopeChange(next);
   };
   const setSelectedVehicleId = (next: string | null) => onSelectedVehicleChange(next);
+  const viewState: InventoryViewState = { quickView, filters };
+  const applyViewState = (next: InventoryViewState) => {
+    if (next.quickView !== quickView) setQuickView(next.quickView);
+    if (next.filters !== filters) setFilters(next.filters);
+  };
+  const chooseQuickView = (view: QuickView) => applyViewState(selectQuickView(viewState, view));
   const setSearchQuery = (nextQuery: string) => {
     // Filtering must move to the first result page in the same update. Leaving
     // this until an effect ran made an active later page look unchanged.
@@ -436,10 +466,10 @@ export function InventoryExperience({
   useLayoutEffect(() => {
     const surface = resultsSurfaceRef.current;
     if (!surface || typeof window === "undefined") return;
-    const media = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 760px)") : null;
+    const media = typeof window.matchMedia === "function" ? window.matchMedia(PHONE_QUERY) : null;
     const update = () => {
       const width = surface.getBoundingClientRect().width;
-      const next = Boolean(media?.matches || width > 0 && width <= 1000);
+      const next = Boolean(media?.matches || width > 0 && width <= CARD_SURFACE_MAX_WIDTH);
       setCompactResults(current => current === next ? current : next);
     };
     update();
@@ -674,7 +704,7 @@ export function InventoryExperience({
               ["held", "Held", "Held"],
               ["offsite", locationScope === "home" ? "Offsite" : "Away from home", "Offsite"],
             ] as Array<[QuickView, string, string]>).map(([value, label, compactLabel]) => (
-              <button key={value} type="button" className={quickView === value ? "is-active" : undefined} aria-label={`${label}: ${quickViewCounts[value]} vehicles`} aria-pressed={quickView === value} onClick={() => setQuickView(value)}>
+              <button key={value} type="button" className={quickView === value ? "is-active" : undefined} aria-label={`${label}: ${quickViewCounts[value]} vehicles`} aria-pressed={quickView === value} onClick={() => chooseQuickView(value)}>
                 <span className="inventory-quick-filter-label inventory-quick-filter-label--full" aria-hidden="true">{label}</span>
                 <span className="inventory-quick-filter-label inventory-quick-filter-label--compact" aria-hidden="true">{compactLabel}</span>
                 <span className="inventory-quick-filter-count" aria-hidden="true">{quickViewCounts[value]}</span>
@@ -682,11 +712,18 @@ export function InventoryExperience({
             ))}
           </div>
 
-          <div id={`${filterPanelId}-service`} className="if-srp-service-filters" role="group" aria-label="Inventory service status" onKeyDown={event => { if (filtersOpen && event.key === "Escape") { event.preventDefault(); closeFilters(); } }}>
-            <strong className="if-srp-service-heading">Service status</strong>
-            {SERVICE_FILTERS.map(([value, label]) => <button key={value} type="button" aria-label={`${label}: ${serviceCounts[value]} vehicles`} aria-pressed={(filters.serviceReadiness ?? "all") === value} onClick={() => setFilters(current => ({ ...current, serviceReadiness: value }))}>
-              <span className="service-filter-label--full">{label}</span><span className="service-filter-label--short" aria-hidden="true">{value === 'needs_service' ? 'Waiting' : label}</span><span>{serviceCounts[value]}</span>
-            </button>)}
+          {/* Service chips and, while Filters is open, the secondary views share
+              one wrapper so tablet widths can flow them as one chip row. */}
+          <div id={`${filterPanelId}-service`} className="if-srp-chip-rows" onKeyDown={event => { if (filtersOpen && event.key === "Escape") { event.preventDefault(); closeFilters(); } }}>
+            <div className="if-srp-service-filters" role="group" aria-label="Inventory service status">
+              <strong className="if-srp-service-heading">Service status</strong>
+              {SERVICE_FILTERS.map(([value, label]) => <button key={value} type="button" aria-label={`${label}: ${serviceCounts[value]} vehicles`} aria-pressed={(filters.serviceReadiness ?? "all") === value} onClick={() => setFilters(current => ({ ...current, serviceReadiness: value }))}>
+                <span className="service-filter-label--full">{label}</span><span className="service-filter-label--short" aria-hidden="true">{value === 'needs_service' ? 'Waiting' : label}</span><span>{serviceCounts[value]}</span>
+              </button>)}
+            </div>
+            {filtersOpen ? <div className="if-srp-secondary-views" role="group" aria-label="More inventory views">
+              {([["moving", "Being moved"], ["new", "New today"], ["price", "Price changed"]] as Array<[QuickView, string]>).map(([value, label]) => <button key={value} type="button" aria-pressed={quickView === value} onClick={() => chooseQuickView(quickView === value ? "all" : value)}>{label} <span>{quickViewCounts[value]}</span></button>)}
+            </div> : null}
           </div>
 
           <div className="if-srp-tools">
@@ -723,10 +760,10 @@ export function InventoryExperience({
 
         <div id={filterPanelId} hidden={!filtersOpen} onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); closeFilters(); } }}>
         {filtersOpen ? <>
-          <div className="if-srp-secondary-views" role="group" aria-label="More inventory views">
-            {([["moving", "Being moved"], ["new", "New today"], ["price", "Price changed"]] as Array<[QuickView, string]>).map(([value, label]) => <button key={value} type="button" aria-pressed={quickView === value} onClick={() => setQuickView(quickView === value ? "all" : value)}>{label} <span>{quickViewCounts[value]}</span></button>)}
-          </div>
-          <FiltersPanel id={`${filterPanelId}-details`} filters={filters} stores={stores} homeStore={homeStore} scope={scope} onChange={setFilters} onClear={clearFilters} />
+          <FiltersPanel id={`${filterPanelId}-details`} filters={filters} stores={stores} homeStore={homeStore} scope={scope}
+            holdValue={filterPanelHoldValue(viewState)} movementValue={filterPanelMovementValue(viewState)}
+            onChange={setFilters} onHoldChange={value => applyViewState(selectHoldFilter(viewState, value))}
+            onMovementChange={value => applyViewState(selectMovementFilter(viewState, value))} onClear={clearFilters} />
           <button type="button" className="if-srp-show-results inv-btn" onClick={closeFilters}>Show {scopedVehicles.length} {scopedVehicles.length === 1 ? "vehicle" : "vehicles"}</button>
         </> : null}
         </div>

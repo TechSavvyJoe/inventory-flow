@@ -69,8 +69,9 @@
 .if-srp-grid .inv-desk-price > span { font-variant-numeric: tabular-nums; }
 .if-srp-grid .inv-desk-price > small, .if-srp-grid .inv-desk-location > small { color: var(--ink-600); }
 .if-srp-grid .inv-desk-location > strong { color: var(--ink-900); font-size: 14px; line-height: 1.4; }
-.if-srp-grid .inv-desk-location > span { color: var(--blue-700); }
 .if-srp-grid .inv-desk-location .is-warning { color: var(--red); }
+.if-srp-grid .inv-desk-move { color: var(--blue-700); }
+.if-srp-grid .inv-desk-move.is-warning { color: var(--red); }
 .if-srp-grid .inv-desk-configuration { color: var(--ink-700); gap: 2px; }
 .if-srp-grid .inv-desk-configuration > small { font-size:var(--ifx-text-sm); }
 .if-srp-grid .inv-desk-equipment { min-height: var(--ifx-control-height-md); display: block; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ink-700); text-align: left; font: var(--ifx-weight-regular) var(--ifx-text-sm)/1.4 var(--font-app); cursor: pointer; }
@@ -87,17 +88,21 @@
 .if-srp-grid .inventory-service-link { justify-self: start; min-height: var(--ifx-control-height-md); }
 .if-srp-grid .inv-desk-status { gap: 2px; }
 .if-srp-grid .inv-desk-location { gap: 0; }
-/* At a true comparison-table width, location and its movement signal fit on
-   one readable line. Keeping them together saves a full row of vertical scan
-   space without reducing type or hiding either operational fact. */
+/* Operations are decisions, not secondary metadata: at a full comparison
+   width they take the space configuration can spare. */
 @container inventory-table (min-width: 980px) {
-  /* Allocate the saved sixth-column space to operations: its location, move,
-     hold, and service signals are decisions, not secondary metadata. */
   .if-srp-grid .inv-desk-th--vehicle { width: 33%; }
   .if-srp-grid .inv-desk-th--configuration { width: 19%; }
   .if-srp-grid .inv-desk-th--status { width: 21%; }
-  .if-srp-grid .inv-desk-location { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; }
-  .if-srp-grid .inv-desk-location > span::before { content: "·"; margin-right: 6px; color: var(--ink-500); }
+}
+/* Tablet landscape (a 1024px screen): four priority columns. Configuration
+   and equipment stay one tap away in the vehicle workspace. */
+@container inventory-table (max-width: 960px) {
+  .if-srp-grid :is(.inv-desk-th--configuration, .inv-desk-td[data-column="configuration"]) { display: none; }
+  .if-srp-grid .inv-desk-th--vehicle { width: 38%; }
+  .if-srp-grid .inv-desk-th--price { width: 15%; }
+  .if-srp-grid .inv-desk-th--status { width: 29%; }
+  .if-srp-grid .inv-desk-th--actions { width: 18%; }
 }
 .if-srp-grid .inventory-recall-chip { min-height: var(--ifx-control-height-md); display: inline-flex; align-items: center; justify-self: start; gap: 4px; border: 0; padding: 2px 0; background: transparent; color: var(--red); font: 500 14px/1.4 var(--font-app); cursor: pointer; }
 /* Direct details, records, movement, save, and listing actions retain 44px
@@ -129,7 +134,8 @@
   .if-srp-grid .inv-desk-th, .if-srp-grid .inv-desk-td { padding-inline: 8px; }
   .if-srp-grid .inv-desk-vehicle { grid-template-columns: 96px minmax(0,1fr); gap: 2px 8px; }
 }
-@container inventory-surface (max-width: 1000px) {
+/* Same width as CARD_SURFACE_MAX_WIDTH in InventoryExperience.tsx. */
+@container inventory-surface (max-width: 820px) {
   .if-srp-grid { display: none; }
   .if-srp-mobile-list { display: grid; gap: 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
 }

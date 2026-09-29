@@ -127,6 +127,64 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument();
   });
 
+  it('keeps the Held chip and the Hold select as one state', () => {
+    const held = { ...vehicle(1), dealerMail: { dataState: 'current' as const, hasActiveHold: true, position: null } };
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[held, vehicle(2)]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const hold = screen.getByRole('combobox', { name: 'Hold' });
+    expect(hold).toHaveValue('all');
+    fireEvent.change(hold, { target: { value: 'held' } });
+    expect(screen.getByRole('button', { name: /^Held:/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Show 1 vehicle' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^All:/ }));
+    expect(screen.getByRole('combobox', { name: 'Hold' })).toHaveValue('all');
+    fireEvent.click(screen.getByRole('button', { name: /^Held:/ }));
+    expect(screen.getByRole('combobox', { name: 'Hold' })).toHaveValue('held');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Hold' }), { target: { value: 'not-held' } });
+    expect(screen.getByRole('button', { name: /^Held:/ })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: /^All:/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Show 1 vehicle' })).toBeInTheDocument();
+  });
+
+  it('keeps the Being moved chip and the Vehicle movement select as one state', () => {
+    const moving = { ...vehicle(1), movement: { state: 'in_transit', requestId: 'synthetic-move' } };
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[moving, vehicle(2)]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Vehicle movement' }), { target: { value: 'active' } });
+    expect(screen.getByRole('button', { name: 'Being moved 1' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Being moved 1' }));
+    expect(screen.getByRole('combobox', { name: 'Vehicle movement' })).toHaveValue('all');
+    fireEvent.click(screen.getByRole('button', { name: 'Being moved 1' }));
+    expect(screen.getByRole('combobox', { name: 'Vehicle movement' })).toHaveValue('active');
+    fireEvent.click(screen.getByRole('button', { name: 'Show 1 vehicle' }));
+    expect(screen.getByRole('button', { name: 'Filters 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear view filter: Moving' })).toBeInTheDocument();
+  });
+
+  it.each([
+    [1000, 'table'],
+    [900, 'table'],
+    [821, 'table'],
+    [820, 'cards'],
+    [768, 'cards'],
+  ] as const)('renders a %ipx results surface as %s', (width, layout) => {
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { width: this.classList.contains('inventory-results-surface') ? width : 0, height: 0, top: 0, left: 0, right: width, bottom: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+    });
+    try {
+      render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[vehicle(1)]} />);
+      if (layout === 'table') {
+        expect(screen.getByRole('region', { name: 'Inventory results table' })).toBeInTheDocument();
+        expect(screen.queryByRole('article')).not.toBeInTheDocument();
+      } else {
+        expect(screen.getByRole('article')).toBeInTheDocument();
+        expect(screen.queryByRole('region', { name: 'Inventory results table' })).not.toBeInTheDocument();
+      }
+    } finally {
+      rect.mockRestore();
+    }
+  });
+
   it('restores a saved service filter with its visible summary, and persists clearing it', () => {
     const key = 'inventory-service:v1:session:howell';
     window.sessionStorage.setItem(key, 'serviced');
