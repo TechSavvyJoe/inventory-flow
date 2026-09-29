@@ -208,3 +208,24 @@ export function compareOasisEnrichment(capturedRecords, resourcesByVin) {
   }
   return { complete: missing === 0 && mismatched === 0, missing, mismatched }
 }
+
+// The publisher's pre-publish check reports OASIS gaps and never fails on
+// them: one vehicle's report, or a missed capture, must not stop the release
+// (Joe, 2026-09-28). Unconfirmed vehicles are published with
+// openActionsCaptured false, so nothing reads as confirmed that is not.
+export function reviewOasisForPublish({ worklist, records, recordsByVin }) {
+  if (!Array.isArray(worklist) || !Array.isArray(records)) {
+    return {
+      quality: { complete: false, reason: 'Current OASIS capture or worklist is missing or unreadable' },
+      parity: null,
+      warnings: ['OASIS capture missing or unreadable; open field service actions are unconfirmed in this release'],
+    }
+  }
+  const quality = assessOasisCapture(worklist, records)
+  const parity = compareOasisEnrichment(records, recordsByVin ?? {})
+  const warnings = []
+  if (quality.missingVinCount) warnings.push(`OASIS not captured for ${quality.missingVinCount} vehicle(s)`)
+  if (quality.incompleteActionResults) warnings.push(`OASIS open actions unconfirmed for ${quality.incompleteActionResults} vehicle(s)`)
+  if (!parity.complete) warnings.push(`published OASIS differs from today's capture for ${parity.missing + parity.mismatched} vehicle(s)`)
+  return { quality, parity, warnings }
+}
