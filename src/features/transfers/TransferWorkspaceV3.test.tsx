@@ -1241,6 +1241,31 @@ describe('transfer workspace v3 layout', () => {
     vi.useRealTimers();
   });
 
+  it('opens a store-board arrow as exactly that leg\'s moves across all stores, once', () => {
+    const data = bootstrap(3);
+    data.transfers[0] = { ...data.transfers[0], homeStore: 'Howell', destination: 'Ford Detroit', currentLocation: 'Ford Detroit', requestStatus: 'arrived', movementStatus: 'at_requesting_store' };
+    data.transfers[1] = { ...data.transfers[1], homeStore: 'Howell', destination: 'Ford Detroit', currentLocation: 'Howell', requestStatus: 'approved', movementStatus: 'release approved' };
+    data.transfers[2] = { ...data.transfers[2], homeStore: 'Fowlerville', destination: 'Ford Detroit', currentLocation: 'In transit', requestStatus: 'return_in_transit', movementStatus: 'return_in_transit' };
+    renderPage(data, '/transfers?from=Howell&to=Ford+Detroit&leg=outbound', { homeStore: 'Lincoln' }, true);
+    expect(screen.getByTestId('router-location')).toHaveTextContent(/^\/transfers$/);
+    expect(screen.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /MOVE1/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /MOVE2/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /MOVE3/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear route filter: Howell to Ford Detroit, outbound' }));
+    expect(screen.getByRole('button', { name: /MOVE2/ })).toBeInTheDocument();
+    cleanup();
+
+    renderPage(data, '/transfers?from=Ford+Detroit&to=Fowlerville&leg=return', { homeStore: 'Lincoln' });
+    expect(screen.getByRole('button', { name: /MOVE3/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /MOVE1/ })).not.toBeInTheDocument();
+    cleanup();
+
+    renderPage(data, '/transfers?from=Howell&to=Ford+Detroit&leg=planned', { homeStore: 'Lincoln' });
+    expect(screen.getByRole('button', { name: /MOVE2/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /MOVE1/ })).not.toBeInTheDocument();
+  });
+
   it('shows the exact inter-store approval chain before driver assignment', () => {
     const waiting = detail(['review-request']);
     waiting.status.request = { code: 'submitted', label: 'Waiting on my manager', tone: 'info' };

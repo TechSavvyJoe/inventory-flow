@@ -25,7 +25,7 @@ The generated concepts establish layout, density, component anatomy, and visual 
 - **Inventory**: full searchable inventory table, home-store-first scope, advanced sorting/filtering, selected vehicle drawer.
 - **Transfers**: requests, transport/custody stages, outcome and return tasks.
 - **Attention**: one actionable queue ordered by due time and risk.
-- **Manager**: group operations table, saved views, exceptions, next-action ownership.
+- **Overview** (`/overview`, replaces Group operations): store cards, where-is-my-inventory list, a schematic store board (configured positions, not a map; every pin and arrow is a link), exceptions, service metrics, and the app's own disposition ledger beside the imported manager log.
 
 ## Source and status boundaries
 
@@ -73,7 +73,8 @@ Never display **Available** solely because a public listing exists, DealerOn say
 - Vehicle row/mobile row, source-status label, location treatment, next-action label.
 - Vehicle workspace/drawer with Overview, Movement, Hold evidence, Timeline.
 - Transfer request form, handoff/accountability preview, confirmation state.
-- Group Operations queue, custody timeline, manager actions.
+- Overview store cards, store board, exceptions, and the disposition dialog (one dialog, opened from the Overview or the vehicle workspace's Operations block).
+- Custody timeline, manager actions.
 - Empty, stale-source, conflict, permission-redaction, and offline states.
 
 ## Icon inventory
@@ -124,6 +125,7 @@ The shared service defaults to `workflowMode: 'simple'`. Earlier dual-approval a
 - Drivers, porters, and coordinators receive logistics with customer-sensitive fields redacted by the server. Frontend hiding is not the privacy boundary.
 - Store and role membership comes from the server. Revocation clears protected workspaces and caches; a temporary refresh failure retains the last verified data with its as-of date.
 - The frontend never receives raw DealerMail arrays or unrestricted snapshot files.
+- A disposition is recorded in Inventory Flow only: it never changes DealerMail, CDK, the listing or the manager log, is never inferred from them or from a move, and never hides a vehicle. Its note and writer's name reach sales and managers only in the disposition detail — never the Overview page, its print, list views or the Control center audit — and the server refuses a note that repeats the vehicle's hold names or reasons.
 
 ## Responsive acceptance
 

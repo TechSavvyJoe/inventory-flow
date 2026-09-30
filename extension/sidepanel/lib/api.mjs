@@ -1,6 +1,6 @@
-// The panel's only network path: a GET of the app's own bootstrap document,
-// sent with the browser's cookies so the user's existing Cloudflare Access
-// session carries it. The panel never posts; actions deep-link into the app.
+// Reads use the app's authenticated JSON API. The sole write is a user-clicked
+// saved-list mutation brokered through the service worker into the app origin;
+// no general-purpose write proxy exists.
 
 export class PanelApiError extends Error {
   constructor(kind, { status = 0, code = null } = {}) {
@@ -22,7 +22,7 @@ function requestFor(workspace, settings, path) {
     url.searchParams.set('role', settings.demoRole)
     headers['x-inventory-demo-role'] = settings.demoRole
     headers['x-inventory-demo-store'] = settings.demoStore
-    headers['x-inventory-demo-user'] = 'Deal desk panel'
+    headers['x-inventory-demo-user'] = 'Local prototype user'
   }
   return { url: url.href, init: { method: 'GET', headers, credentials: 'include', redirect: 'manual', cache: 'no-store' } }
 }
@@ -30,6 +30,7 @@ function requestFor(workspace, settings, path) {
 export function bootstrapRequest(workspace, settings) { return requestFor(workspace, settings, '/api/bootstrap') }
 export function vehicleRequest(workspace, settings, vin) { return requestFor(workspace, settings, `/api/vehicles/${encodeURIComponent(String(vin).toUpperCase())}`) }
 export function companionReleaseRequest(workspace, settings) { return requestFor(workspace, settings, '/downloads/companion-version.json') }
+export function savedListsRequest(workspace, settings) { return requestFor(workspace, settings, '/api/saved-lists') }
 
 // The panel polls the same one or two documents repeatedly (bootstrap on an
 // interval, the open vehicle on demand). Keep only the last payload and its
@@ -103,6 +104,54 @@ export async function fetchBootstrap(workspace, settings, { fetchImpl = globalTh
 export async function fetchVehicle(workspace, settings, vin, { fetchImpl = globalThis.fetch, signal } = {}) {
   const payload = await fetchJson(vehicleRequest(workspace, settings, vin), { fetchImpl, signal })
   if (typeof payload.vin !== 'string' || payload.vin.toUpperCase() !== String(vin).toUpperCase()) throw new PanelApiError('invalid')
+  return payload
+}
+
+function validSavedList(value) {
+  return value && typeof value === 'object' && typeof value.id === 'string' &&
+    typeof value.label === 'string' && Number.isSafeInteger(value.revision) &&
+    typeof value.createdAt === 'string' && typeof value.updatedAt === 'string' && Array.isArray(value.items) &&
+    value.items.every((item) => item && typeof item.vin === 'string' && typeof item.addedAt === 'string' && typeof item.available === 'boolean')
+}
+
+export async function fetchSavedLists(workspace, settings, { fetchImpl = globalThis.fetch, signal } = {}) {
+  const payload = await fetchJson(savedListsRequest(workspace, settings), { fetchImpl, signal })
+  if (!Array.isArray(payload.lists) || !payload.lists.every(validSavedList)) throw new PanelApiError('invalid')
+  return payload
+}
+
+export async function mutateSavedList(workspace, settings, input, { idempotencyKey, signal, runtime = globalThis.chrome?.runtime } = {}) {
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  if (!runtime?.sendMessage) {
+    // Browser preview and unit tests run on the demo page origin, so their
+    // ordinary fetch is same-origin. The shipped extension uses the guarded
+    // service-worker path below.
+    const request = requestFor(workspace, settings, '/api/saved-lists')
+    const response = await fetch(request.url, {
+      ...request.init, method: 'POST', signal,
+      headers: { ...request.init.headers, 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(input),
+    }).catch((error) => { if (error?.name === 'AbortError') throw error; throw new PanelApiError('offline') })
+    if (response.status === 401 || response.type === 'opaqueredirect') throw new PanelApiError('signin', { status: response.status })
+    if (response.status === 403) throw new PanelApiError('forbidden', { status: 403 })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) throw new PanelApiError('server', { status: response.status, code: payload?.code ?? null })
+    if (!(payload?.deleted === true ? typeof payload.id === 'string' && Number.isSafeInteger(payload.revision) : validSavedList(payload))) throw new PanelApiError('invalid')
+    clearApiCache()
+    return payload
+  }
+  const outcome = await runtime.sendMessage({
+    type: 'inventory-flow:saved-list-mutation', origin: workspace.origin, input, idempotencyKey,
+    ...(workspace.demo ? { demo: { role: settings.demoRole, store: settings.demoStore } } : {}),
+  })
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  if (outcome?.kind === 'signin' || outcome?.redirected || outcome?.status === 401) throw new PanelApiError('signin', { status: outcome?.status ?? 0 })
+  if (outcome?.kind === 'offline') throw new PanelApiError('offline')
+  if (outcome?.status === 403) throw new PanelApiError('forbidden', { status: 403, code: outcome.payload?.code ?? null })
+  if (!outcome || outcome.status < 200 || outcome.status >= 300) throw new PanelApiError('server', { status: outcome?.status ?? 0, code: outcome?.payload?.code ?? null })
+  const payload = outcome.payload
+  if (!(payload?.deleted === true ? typeof payload.id === 'string' && Number.isSafeInteger(payload.revision) : validSavedList(payload))) throw new PanelApiError('invalid')
+  clearApiCache()
   return payload
 }
 

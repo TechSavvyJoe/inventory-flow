@@ -12,7 +12,7 @@ export const MAX_PNG_BYTES = 8 * 1024 * 1024
 export const MAX_BUNDLE_BYTES = 64 * 1024 * 1024
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const VIEWPORTS = ['390x844', '1024x768', '1320x820', '1440x900']
-const STATES = ['inventory-list', 'inventory-filters-open', 'vehicle-workspace-overview', 'vehicle-workspace-holds', 'moves-list', 'moves-tracker', 'service', 'admin']
+const STATES = ['inventory-list', 'inventory-filters-open', 'vehicle-workspace-overview', 'vehicle-workspace-holds', 'moves-list', 'moves-tracker', 'service', 'overview', 'overview-sales', 'admin']
 export const EXPECTED_FILES = Object.freeze(STATES.flatMap((state) => VIEWPORTS.map((viewport) => `${state}-visual-${viewport}-linux.png`)).sort())
 const EXPECTED_NAMES = new Set(EXPECTED_FILES)
 const SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
@@ -124,7 +124,7 @@ export function validateVisualBaselineBundle(raw, { pin } = {}) {
     fail('The visual baseline bundle provenance does not match the reviewed pin.')
   }
   for (let index = 0; index < EXPECTED_FILES.length; index++) {
-    if (bundle.files[index]?.name !== EXPECTED_FILES[index]) fail('The visual baseline bundle must contain the exact sorted set of 32 PNGs.')
+    if (bundle.files[index]?.name !== EXPECTED_FILES[index]) fail(`The visual baseline bundle must contain the exact sorted set of ${EXPECTED_FILES.length} PNGs.`)
     decodeFile(bundle.files[index])
   }
   return bundle
@@ -177,7 +177,7 @@ export async function packVisualBaselines({ directory, sourceCommit, sourceRunId
     if (typeof directory !== 'string' || !isAbsolute(directory) || !(await lstat(directory)).isDirectory()) fail('An absolute screenshot directory is required.')
     const entries = (await readdir(directory, { withFileTypes: true })).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)
     if (entries.length !== EXPECTED_FILES.length || entries.some((entry, index) => !entry.isFile() || entry.name !== EXPECTED_FILES[index])) {
-      fail('The screenshot directory must contain exactly the 32 expected PNGs.')
+      fail(`The screenshot directory must contain exactly the ${EXPECTED_FILES.length} expected PNGs.`)
     }
     const files = []
     let total = 0

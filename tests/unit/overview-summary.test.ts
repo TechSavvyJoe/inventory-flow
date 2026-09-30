@@ -595,6 +595,51 @@ describe('overview projection through bootstrap()', () => {
     expect(after.vehicleFacts.TESTDATAFWELL0002.daysAway).toBe(before.vehicleFacts.TESTDATAFWELL0002.daysAway + 1)
   })
 
+  it('counts app dispositions under the owner store for every viewer, beside (never from) the manager log', () => {
+    const { service } = harness()
+    service.updateDisposition('TESTDATAFWELL0002', { disposition: 'sold_pending', effectiveDate: '2026-08-29', expectedVersion: 0 }, fowlervilleManager, 'overview-disposition-sold')
+    service.updateDisposition('TESTDATADETRT0002', { disposition: 'wholesale', effectiveDate: '2026-08-28', expectedVersion: 0 }, groupManager, 'overview-disposition-wholesale')
+    for (const context of [groupManager, howellManager, fowlervilleSales]) {
+      const summary = service.bootstrap(context).overview
+      expect(store(summary, 'Fowlerville').dispositions, `${context.role}@${context.store}`).toMatchObject({ sold_pending: 1, wholesale: 0 })
+      expect(store(summary, 'Ford Detroit').dispositions).toMatchObject({ wholesale: 1 })
+      expect(summary.group.dispositions).toMatchObject({ sold_pending: 1, wholesale: 1, keep: 0, delivered: 0, transfer_out: 0 })
+      expect(summary.group.dispositions.none).toBe(Object.keys(summary.vehicleFacts).length - 2)
+      expect(summary.vehicleFacts.TESTDATAFWELL0002.disposition).toBe('sold_pending')
+      expect(summary.vehicleFacts.TESTDATAHWELL0002).not.toHaveProperty('disposition')
+    }
+  })
+
+  it('prompts on a delivered disposition still listed after 3 days, and never hides the vehicle', () => {
+    const { service } = harness()
+    service.updateDisposition('TESTDATAFWELL0002', { disposition: 'delivered', effectiveDate: '2026-08-28', expectedVersion: 0 }, fowlervilleManager, 'overview-delivered-2')
+    const twoDays = service.bootstrap(groupManager)
+    expect(twoDays.vehicles.map((vehicle) => vehicle.vin)).toContain('TESTDATAFWELL0002')
+    expect(twoDays.overview.exceptions.map((entry) => entry.kind)).not.toContain('listed_but_delivered')
+    service.updateDisposition('TESTDATAFWELL0001', { disposition: 'delivered', effectiveDate: '2026-08-27', expectedVersion: 0 }, fowlervilleManager, 'overview-delivered-3')
+    const threeDays = service.bootstrap(groupManager)
+    expect(threeDays.vehicles.map((vehicle) => vehicle.vin)).toEqual(expect.arrayContaining(['TESTDATAFWELL0001', 'TESTDATAFWELL0002']))
+    expect(threeDays.overview.exceptions.find((entry) => entry.kind === 'listed_but_delivered'))
+      .toEqual({ kind: 'listed_but_delivered', store: 'Fowlerville', count: 1, vins: ['TESTDATAFWELL0001'] })
+  })
+
+  it('prompts managers, not sales, when a move records delivery with no delivered disposition, and never writes one', () => {
+    const { service, database } = harness()
+    const move = directMove(service, { vin: 'TESTDATAFWELL0002', from: 'Fowlerville', to: 'Ford Detroit', movedAt: new Date(SYNTHETIC_NOW.getTime() - 2 * DAY).toISOString(), returnDueAt: new Date(SYNTHETIC_NOW.getTime() + 2 * DAY).toISOString(), context: fowlervilleManager, key: 'overview-delivered-move' })
+    service.appendTransferEvent(move.id, { type: 'sale_confirmed' }, detroitManager, 'overview-delivered-sale')
+    service.appendTransferEvent(move.id, { type: 'delivery_confirmed' }, detroitManager, 'overview-delivered-delivery')
+    // The move events are evidence only: no disposition row exists.
+    expect(database.prepare('SELECT COUNT(*) AS n FROM vehicle_disposition_events').get().n).toBe(0)
+    const prompt = { kind: 'delivered_move_no_disposition', store: 'Fowlerville', count: 1, vins: ['TESTDATAFWELL0002'], transferIds: [move.id] }
+    expect(service.bootstrap(groupManager).overview.exceptions).toContainEqual(prompt)
+    expect(service.bootstrap(fowlervilleManager).overview.exceptions).toContainEqual(prompt)
+    expect(service.bootstrap(fowlervilleSales).overview.exceptions.map((entry) => entry.kind)).not.toContain('delivered_move_no_disposition')
+    expect(service.bootstrap(groupManager).overview.vehicleFacts.TESTDATAFWELL0002).not.toHaveProperty('disposition')
+
+    service.updateDisposition('TESTDATAFWELL0002', { disposition: 'delivered', effectiveDate: '2026-08-30', expectedVersion: 0 }, fowlervilleManager, 'overview-delivered-recorded')
+    expect(service.bootstrap(groupManager).overview.exceptions.map((entry) => entry.kind)).not.toContain('delivered_move_no_disposition')
+  })
+
   it('stays a small fixed part plus a bounded per-vehicle fact', () => {
     const { service } = harness()
     const data = service.bootstrap(groupManager)

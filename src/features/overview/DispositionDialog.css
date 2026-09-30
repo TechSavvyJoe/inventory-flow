@@ -1,0 +1,309 @@
+/* Disposition dialog (DispositionDialog.tsx): tokens only, class prefix disposition-.
+   It renders in a body portal, outside the app shell's OEM scope, so primary
+   colors use the app's primary-action tokens (--blue-*) like inventory buttons,
+   never --ifx-oem-accent, which falls back to the default violet out here. */
+
+.disposition-overlay {
+  background: var(--ifx-modal-scrim);
+  display: grid;
+  inset: 0;
+  padding: var(--ifx-space-3);
+  place-items: center;
+  position: fixed;
+  z-index: var(--ifx-layer-nested-modal);
+}
+
+.disposition-dialog {
+  background: var(--ifx-neutral-0);
+  border: 1px solid var(--ifx-border-subtle);
+  border-radius: var(--ifx-radius-md);
+  box-shadow: var(--ifx-elevation-3);
+  color: var(--ifx-neutral-900);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - var(--ifx-space-6));
+  min-width: 0;
+  width: min(100%, calc(var(--ifx-space-16) * 9));
+}
+
+.disposition-dialog *,
+.disposition-dialog *::before,
+.disposition-dialog *::after { box-sizing: border-box; }
+
+.disposition-dialog :is(h2, h3, p, dl, dd, ol, fieldset) { margin: 0; }
+
+.disposition-dialog :is(button, input, select, textarea) { font: inherit; }
+
+.disposition-dialog :is(button, input, select, textarea, [tabindex]):focus-visible {
+  box-shadow: var(--ifx-focus-ring);
+  outline: 2px solid var(--ifx-focus-color);
+  outline-offset: 1px;
+}
+
+.disposition-dialog__header {
+  align-items: start;
+  border-bottom: 1px solid var(--ifx-border-subtle);
+  display: flex;
+  flex: none;
+  gap: var(--ifx-space-3);
+  justify-content: space-between;
+  padding: var(--ifx-space-3) var(--ifx-space-4);
+}
+
+.disposition-dialog__header h2 {
+  font-size: var(--ifx-text-lg);
+  font-weight: var(--ifx-weight-semibold);
+  line-height: var(--ifx-leading-heading);
+}
+
+.disposition-dialog__header p,
+.disposition-muted {
+  color: var(--ifx-neutral-600);
+  font-size: var(--ifx-text-sm);
+}
+
+.disposition-dialog__body {
+  display: grid;
+  gap: var(--ifx-space-3);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--ifx-space-3) var(--ifx-space-4) var(--ifx-space-4);
+}
+
+.disposition-icon-button,
+.disposition-button {
+  align-items: center;
+  background: var(--ifx-neutral-0);
+  border: 1px solid var(--ifx-border-control);
+  border-radius: var(--ifx-radius-sm);
+  color: var(--ifx-neutral-800);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--ifx-text-md);
+  font-weight: var(--ifx-weight-semibold);
+  gap: var(--ifx-space-1-5);
+  justify-content: center;
+  min-height: var(--ifx-control-height-md);
+  min-width: var(--ifx-control-height-md);
+  padding: 0 var(--ifx-space-3);
+}
+
+.disposition-icon-button { flex: none; padding: 0; }
+.disposition-icon-button svg { height: var(--ifx-space-5); width: var(--ifx-space-5); }
+
+.disposition-button:hover:not(:disabled),
+.disposition-icon-button:hover:not(:disabled) { background: var(--ifx-neutral-50); }
+
+.disposition-button--primary {
+  background: var(--blue-600);
+  border-color: var(--blue-600);
+  color: var(--surface);
+}
+
+.disposition-button--primary:hover:not(:disabled) {
+  background: var(--blue-700);
+  border-color: var(--blue-700);
+}
+
+.disposition-dialog button:disabled {
+  cursor: default;
+  opacity: var(--ifx-disabled-opacity);
+}
+
+/* The app's record and the imported manager log, side by side with distinct labels. */
+.disposition-facts {
+  border: 1px solid var(--ifx-border-subtle);
+  border-radius: var(--ifx-radius-sm);
+  display: grid;
+}
+
+.disposition-facts > div {
+  display: grid;
+  gap: var(--ifx-space-0-5);
+  padding: var(--ifx-space-2) var(--ifx-space-3);
+}
+
+.disposition-facts > div + div { border-top: 1px solid var(--ifx-border-subtle); }
+
+.disposition-facts dt {
+  color: var(--ifx-neutral-600);
+  font-size: var(--ifx-text-xs);
+  font-weight: var(--ifx-weight-semibold);
+  letter-spacing: var(--ifx-tracking-label);
+}
+
+.disposition-facts dd {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--ifx-text-sm);
+  gap: var(--ifx-space-1) var(--ifx-space-3);
+}
+
+.disposition-facts dd strong { font-size: var(--ifx-text-body); }
+
+.disposition-evidence {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--ifx-space-1-5);
+}
+
+.disposition-evidence svg { flex: none; height: var(--ifx-space-4); width: var(--ifx-space-4); }
+
+.disposition-current-note {
+  border-left: 3px solid var(--ifx-border-control);
+  display: grid;
+  font-size: var(--ifx-text-body);
+  gap: var(--ifx-space-0-5);
+  padding-left: var(--ifx-space-3);
+}
+
+.disposition-current-note span {
+  color: var(--ifx-neutral-600);
+  font-size: var(--ifx-text-xs);
+  font-weight: var(--ifx-weight-semibold);
+}
+
+.disposition-alert {
+  align-items: center;
+  background: var(--ifx-danger-surface);
+  border: 1px solid var(--ifx-danger);
+  border-radius: var(--ifx-radius-sm);
+  color: var(--ifx-danger);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--ifx-text-sm);
+  gap: var(--ifx-space-2);
+  justify-content: space-between;
+  padding: var(--ifx-space-2) var(--ifx-space-3);
+}
+
+.disposition-form {
+  display: grid;
+  gap: var(--ifx-space-3);
+}
+
+.disposition-form fieldset {
+  border: 0;
+  display: grid;
+  gap: var(--ifx-space-2);
+  min-width: 0;
+  padding: 0;
+}
+
+.disposition-form legend,
+.disposition-field > span {
+  font-size: var(--ifx-text-sm);
+  font-weight: var(--ifx-weight-semibold);
+  padding: 0;
+}
+
+.disposition-choices {
+  display: grid;
+  gap: var(--ifx-space-2);
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--ifx-space-16) * 2.25), 1fr));
+}
+
+.disposition-choice {
+  align-items: center;
+  border: 1px solid var(--ifx-border-control);
+  border-radius: var(--ifx-radius-sm);
+  cursor: pointer;
+  display: flex;
+  font-size: var(--ifx-text-body);
+  gap: var(--ifx-space-2);
+  min-height: var(--ifx-control-height-md);
+  padding: 0 var(--ifx-space-3);
+}
+
+.disposition-choice:has(input:checked) {
+  background: var(--ifx-info-surface);
+  border-color: var(--blue-600);
+  color: var(--blue-700);
+  font-weight: var(--ifx-weight-semibold);
+}
+
+.disposition-choice input {
+  accent-color: var(--blue-600);
+  height: var(--ifx-space-4);
+  margin: 0;
+  width: var(--ifx-space-4);
+}
+
+.disposition-fields {
+  display: grid;
+  gap: var(--ifx-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--ifx-space-16) * 3), 1fr));
+}
+
+.disposition-field {
+  display: grid;
+  gap: var(--ifx-space-1);
+  min-width: 0;
+}
+
+.disposition-field :is(input, select, textarea) {
+  background: var(--ifx-neutral-0);
+  border: 1px solid var(--ifx-border-control);
+  border-radius: var(--ifx-radius-sm);
+  color: var(--ifx-neutral-900);
+  font-size: var(--ifx-text-body);
+  min-height: var(--ifx-control-height-md);
+  min-width: 0;
+  padding: var(--ifx-space-2);
+  width: 100%;
+}
+
+.disposition-field textarea { resize: vertical; }
+
+.disposition-field textarea[aria-invalid="true"] { border-color: var(--ifx-danger); }
+
+.disposition-field-error {
+  color: var(--ifx-danger);
+  font-size: var(--ifx-text-sm);
+  font-weight: var(--ifx-weight-semibold);
+}
+
+.disposition-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ifx-space-2);
+}
+
+.disposition-history {
+  border-top: 1px solid var(--ifx-border-subtle);
+  display: grid;
+  gap: var(--ifx-space-2);
+  padding-top: var(--ifx-space-3);
+}
+
+.disposition-history h3 { font-size: var(--ifx-text-body); }
+
+.disposition-history ol {
+  display: grid;
+  gap: var(--ifx-space-2);
+  list-style: none;
+  padding: 0;
+}
+
+.disposition-history li {
+  display: grid;
+  font-size: var(--ifx-text-sm);
+  gap: var(--ifx-space-0-5);
+}
+
+.disposition-history li span { color: var(--ifx-neutral-600); }
+
+@media (max-width: 760px) {
+  .disposition-overlay { align-items: end; padding: 0; }
+  .disposition-dialog {
+    border-radius: var(--ifx-radius-md) var(--ifx-radius-md) 0 0;
+    max-height: calc(100dvh - var(--ifx-space-8));
+    width: 100%;
+  }
+  .disposition-dialog__header,
+  .disposition-dialog__body { padding-left: var(--ifx-space-3); padding-right: var(--ifx-space-3); }
+  .disposition-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .disposition-actions .disposition-button { flex: 1 1 0; }
+}

@@ -64,7 +64,7 @@ afterEach(async () => {
 function pinFor(bytes = packed.bytes, extra = {}) {
   return {
     schemaVersion: 1, repository: REPOSITORY, renderer: RENDERER, playwrightVersion: PLAYWRIGHT_VERSION,
-    sourceCommit, sourceRunId, assetId: '987654321', sha256: digest(bytes), fileCount: 32,
+    sourceCommit, sourceRunId, assetId: '987654321', sha256: digest(bytes), fileCount: EXPECTED_FILES.length,
     reviewedAt: '2026-09-25T17:00:00Z', ...extra,
   }
 }
@@ -89,7 +89,7 @@ describe('reviewed external visual baseline bundles', () => {
     expect((await packVisualBaselines({ directory, sourceCommit, sourceRunId })).bytes).toEqual(packed.bytes)
     expect(validateVisualBaselineBundle(packed.bytes, { pin: pinFor() })).toEqual(packed.bundle)
     const result = await restore()
-    expect(result).toMatchObject({ fileCount: 32, sha256: packed.sha256 })
+    expect(result).toMatchObject({ fileCount: EXPECTED_FILES.length, sha256: packed.sha256 })
     expect((await readdir(result.directory)).sort()).toEqual(EXPECTED_FILES)
     for (const file of packed.bundle.files) expect(await readFile(join(result.directory, file.name))).toEqual(Buffer.from(file.data, 'base64'))
     await expect(restore()).rejects.toThrow('already exists')
@@ -243,7 +243,7 @@ describe('reviewed external visual baseline bundles', () => {
   it('packages the actual CLI inputs on any platform using only explicit source-run provenance', async () => {
     const destination = join(temporary, 'bundle.json')
     const result = await main(['pack', '--dir', directory, '--out', destination], { GITHUB_SHA: sourceCommit, GITHUB_RUN_ID: sourceRunId })
-    expect(result).toMatchObject({ sha256: packed.sha256, fileCount: 32, sourceCommit, sourceRunId })
+    expect(result).toMatchObject({ sha256: packed.sha256, fileCount: EXPECTED_FILES.length, sourceCommit, sourceRunId })
     expect(await readFile(destination)).toEqual(packed.bytes)
     await expect(main(['pack', '--dir', directory, '--out', join(temporary, 'missing-provenance.json')], {})).rejects.toThrow('provenance')
     await expect(main(['pack', '--dir', directory, '--out', destination], { GITHUB_SHA: sourceCommit, GITHUB_RUN_ID: sourceRunId })).rejects.toThrow('already exists')

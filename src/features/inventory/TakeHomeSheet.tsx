@@ -1,7 +1,7 @@
 import { CertifiedBadge } from "../../components/CertifiedBadge";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Printer, X } from "lucide-react";
+import { Check, Download, Printer, Share2, X } from "lucide-react";
 import { useContainedFocus } from "../../lib/useContainedFocus";
 import { formatDate, formatMileage, formatMoney } from "./inventory-utils";
 import type { InventoryVehicle } from "./types";
@@ -9,6 +9,51 @@ import { takeHomeModel, type TakeHomeModel } from '../sales/customer-summary';
 export { takeHomeModel } from '../sales/customer-summary';
 export type { TakeHomeModel } from '../sales/customer-summary';
 import "./TakeHomeSheet.css";
+
+const safeDocumentUrl = (value: string, image = false) => {
+  try {
+    const url = new URL(value, window.location.href);
+    return url.protocol === "https:" || url.origin === window.location.origin || image && url.protocol === "data:" && /^data:image\//i.test(value);
+  } catch { return false; }
+};
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" })[character]!);
+
+export async function takeHomeDocumentHtml(root: HTMLElement, title: string) {
+  const clone = root.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((link) => { if (!safeDocumentUrl(link.href)) link.removeAttribute('href'); });
+  await Promise.all([...clone.querySelectorAll<HTMLImageElement>('img[src]')].map(async (image) => {
+    if (!safeDocumentUrl(image.src, true)) { image.removeAttribute('src'); return; }
+    if (image.src.startsWith('data:image/')) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+    try {
+      const response = await fetch(image.src, { signal: controller.signal }); const blob = await response.blob();
+      if (!response.ok || !blob.type.startsWith('image/') || blob.size > 6 * 1024 * 1024) return;
+      image.src = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(blob); });
+    } catch { /* Keep a vetted HTTPS URL when CORS prevents embedding. */ }
+    finally { clearTimeout(timeout); }
+  }));
+  const css = [...document.styleSheets].flatMap((sheet) => { try { return [...sheet.cssRules].map((rule) => rule.cssText); } catch { return []; } }).join('\n');
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${css}</style></head><body>${clone.outerHTML}</body></html>`;
+}
+
+function saveHtml(html: string, fileName: string) {
+  const url = URL.createObjectURL(new Blob([html], { type:'text/html;charset=utf-8' }));
+  const link = document.createElement('a'); link.href = url; link.download = fileName; link.click(); URL.revokeObjectURL(url);
+}
+
+export async function shareTakeHomeHtml(html: string, title: string, listingUrls: string[]) {
+  const fileName = `${title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'vehicle-list'}.html`;
+  const file = new File([html], fileName, { type:'text/html' });
+  if (navigator.share && (!navigator.canShare || navigator.canShare({ files:[file] }))) {
+    try { await navigator.share({ title, files:[file] }); return 'shared' as const; }
+    catch (error) { if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled' as const; }
+  }
+  if (listingUrls.length && navigator.clipboard?.writeText) {
+    try { await navigator.clipboard.writeText(listingUrls.join('\n')); return 'copied' as const; } catch { /* Save when clipboard permission is denied. */ }
+  }
+  saveHtml(html, fileName); return 'saved' as const;
+}
 
 export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeHomeModel; now?: Date }) {
   const heroPhoto = model.photos[0] ?? null;
@@ -35,9 +80,10 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
         </div>
       </section>
       <section className={`th-hero${heroPhoto ? " has-photo" : ""}`}>
-          {heroPhoto ? (
-            <img className="th-photo" src={heroPhoto} alt={model.name} referrerPolicy="no-referrer" />
-          ) : null}
+        {heroPhoto ? <div className="th-photos">
+          <img className="th-photo" src={heroPhoto} alt={model.name} referrerPolicy="no-referrer" />
+          {model.photos.length > 1 ? <div className="th-thumbs">{model.photos.slice(1,4).map((photo,index) => <img key={photo} src={photo} alt={`${model.name} view ${index + 2}`} referrerPolicy="no-referrer" />)}</div> : null}
+        </div> : null}
         <dl className="th-price">
           <div className="th-price-main"><dt>Price</dt><dd>{model.price !== null ? formatMoney(model.price) : "Call for price"}</dd></div>
           {model.msrp !== null ? <div><dt>MSRP</dt><dd>{formatMoney(model.msrp)}</dd></div> : null}
@@ -101,32 +147,49 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
   );
 }
 
-export function TakeHomeSheet({ vehicle, onClose, returnFocusRef }: { vehicle: InventoryVehicle; onClose: () => void; returnFocusRef?: React.RefObject<HTMLElement | null> }) {
-  const model = useMemo(() => takeHomeModel(vehicle), [vehicle]);
+export function TakeHomeSheet({ vehicle, vehicles, listLabel, onClose, returnFocusRef }: { vehicle?: InventoryVehicle; vehicles?: InventoryVehicle[]; listLabel?: string; onClose: () => void; returnFocusRef?: React.RefObject<HTMLElement | null> }) {
+  const models = useMemo(() => {
+    const selected = vehicles?.length ? vehicles : vehicle ? [vehicle] : [];
+    return [...new Map(selected.map((item) => [item.vin, item])).values()].map(takeHomeModel);
+  }, [vehicle, vehicles]);
+  const title = listLabel?.trim() || (models.length === 1 ? `${models[0].name} · ${models[0].stockNumber}` : `Customer vehicle list · ${models.length} vehicles`);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const documentRef = useRef<HTMLDivElement>(null);
   const printRef = useRef<HTMLButtonElement>(null);
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
   useContainedFocus({ active: true, contain: true, containerRef: dialogRef, initialFocusRef: printRef, returnFocusRef, onEscape: onClose });
   useEffect(() => {
     document.body.classList.add("takehome-open");
     return () => document.body.classList.remove("takehome-open");
   }, []);
+  if (!models.length) return null;
+  const html = () => takeHomeDocumentHtml(documentRef.current!, title);
+  const fileName = `${title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'vehicle-list'}.html`;
   return createPortal(
     <div className="takehome-portal">
       <div className="takehome-backdrop" onClick={onClose} aria-hidden="true" />
       <div className="takehome-dialog" role="dialog" aria-modal="true" aria-labelledby="takehome-title" ref={dialogRef}>
         <div className="takehome-toolbar">
-          <span id="takehome-title" className="takehome-toolbar__title">Take-home page · {model.stockNumber}</span>
+          <span id="takehome-title" className="takehome-toolbar__title">Take-home page · {title}</span>
           <span className="takehome-toolbar__actions">
             <button type="button" className="takehome-btn takehome-btn--primary" ref={printRef} onClick={() => window.print()}>
               <Printer size={16} strokeWidth={1.85} aria-hidden="true" /> Print / Save as PDF
+            </button>
+            <button type="button" className="takehome-btn" onClick={() => void html().then((content) => { saveHtml(content, fileName); setActionStatus('Saved HTML document'); })}>
+              <Download size={16} strokeWidth={1.85} aria-hidden="true" /> Save HTML
+            </button>
+            <button type="button" className="takehome-btn" onClick={() => void html().then((content) => shareTakeHomeHtml(content, title, models.flatMap((model) => model.listingUrl ? [model.listingUrl] : [])).then((status) => setActionStatus(status === 'copied' ? 'Public listing links copied' : status === 'saved' ? 'Saved HTML document' : status === 'shared' ? 'Shared document' : null)))}>
+              <Share2 size={16} strokeWidth={1.85} aria-hidden="true" /> Share
             </button>
             <button type="button" className="takehome-btn" onClick={onClose}>
               <X size={16} strokeWidth={1.85} aria-hidden="true" /> Close
             </button>
           </span>
+          {actionStatus ? <span className="takehome-toolbar__status" role="status">{actionStatus}</span> : null}
         </div>
-        <div className="takehome-stage">
-          <TakeHomeSheetContent model={model} />
+        <div className="takehome-stage" ref={documentRef}>
+          {listLabel && models.length > 1 ? <h1 className="takehome-list-title">{listLabel}</h1> : null}
+          {models.map((model) => <TakeHomeSheetContent key={model.vin} model={model} />)}
         </div>
       </div>
     </div>,

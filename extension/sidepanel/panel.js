@@ -1,5 +1,7 @@
 import { ROLE_PICKER_ROLES, STALE_AFTER_MS, STORES, WORKSPACES, grantedWorkspaces, workspaceFor } from './lib/config.mjs'
-import { PanelApiError, clearApiCache, fetchBootstrap, fetchCompanionRelease, fetchVehicle } from './lib/api.mjs'
+import { PanelApiError, clearApiCache, fetchBootstrap, fetchCompanionRelease, fetchVehicle, fetchSavedLists, mutateSavedList } from './lib/api.mjs'
+import { createCustomerListSession, customerListWritesReady } from './lib/customer-lists.mjs'
+import { bindPhotoSwipe } from './lib/photo-swipe.mjs'
 import { buildPanelData, copyFields, dealSheetText, mergeDetail, requestBlockedReason, roleLabel, toPanelVehicle, vehicleMoveAction } from './lib/model.mjs'
 import { buildEntry, buildIndex, rank } from './lib/search.mjs'
 import { EMPTY_FILTERS, SORTS, activeFilterCount, applyFilters, describeFilters, filterOptions, normalizeFilters, sortMatches } from './lib/filters.mjs'
@@ -41,7 +43,16 @@ const state = {
   loading: false, error: null, fetchedAt: null, controller: null, toastTimer: null, sheetReturnFocus: null, previousView: 'list',
   dataGeneration: 0,
   liveHoldChecks: new Map(),
+  customerDraft: '', customerRename: false, customerRenameDraft: '', customerDelete: false,
 }
+
+const customerLists = createCustomerListSession({
+  read: () => fetchSavedLists(state.workspace, state.settings),
+  write: (input, idempotencyKey) => mutateSavedList(state.workspace, state.settings, input, { idempotencyKey }),
+  onChange: () => renderCustomerControls(),
+})
+const customerButton = el('button', { type: 'button', class: 'customer-lists-button', 'aria-haspopup': 'dialog', onclick: openCustomerLists, hidden: true }, 'Customer lists')
+ui.sticky.querySelector('.results-toolbar').append(customerButton)
 
 /* Icons that live in static markup */
 ui.searchIcon.append(icon('search'))
@@ -153,6 +164,8 @@ function hydrate(bootstrap, fetchedAt) {
   renderScopes()
   renderList()
   renderFreshness()
+  renderCustomerControls()
+  if (bootstrap.savedListsEnabled === true) customerLists.refresh()
   if (state.view === 'detail' && state.selectedVin) {
     const vehicle = vehicleByVin(state.selectedVin)
     if (vehicle) { loadDetail(vehicle.vin); renderDetail(vehicle, { keepScroll: true }); verifyLiveHold(vehicle.vin, vehicle.stockNumber) }
@@ -194,11 +207,13 @@ function invalidateAccess(error) {
   state.controller?.abort()
   clearApiCache()
   resetIdentityView()
+  customerLists.reset()
   state.error = error
   state.data = null; state.bootstrap = null; state.index = []; state.results = []
   state.liveHoldChecks.clear(); state.detailStatus = null; state.fetchedAt = null
   clear(ui.rows); clear(ui.detail); clear(ui.compare); clear(ui.tray)
   renderScopes(); renderStorePicker(); renderWorkspaceLinks(); renderWho()
+  renderCustomerControls()
   ui.resultContext.hidden = true; ui.expandStores.hidden = true; ui.more.hidden = true; ui.tray.hidden = true
   storage.clearCache().catch(() => {})
   hideSkeleton(); renderStatus(); renderFreshness()
@@ -221,6 +236,9 @@ function renderWho() {
 }
 
 function resetIdentityView() {
+  customerLists.reset()
+  state.customerDraft = ''; state.customerRename = false; state.customerRenameDraft = ''; state.customerDelete = false
+  if (sheetOpen && ['customers', 'photos'].includes(state.sheetKind)) closeSheet()
   state.dataGeneration += 1; state.detailPending.clear()
   state.storeScope = 'home'; state.scope = 'inventory'; state.query = ''; state.selectedVin = null; state.activeIndex = -1
   state.filters = { ...EMPTY_FILTERS }; state.sort = 'relevance'; state.compare = []; state.odometer.clear(); state.details.clear(); state.detailFailed.clear()
@@ -401,11 +419,13 @@ function rowThumb(vehicle) {
 
 function renderRow(match, position) {
   const vehicle = match.vehicle
-  const metaParts = [fmt.formatMoney(vehicle.price), vehicle.mileage !== null ? fmt.formatMileage(vehicle.mileage) : null]
+  const metaParts = [fmt.formatMoney(vehicle.price), vehicle.mileage !== null ? fmt.formatMileage(vehicle.mileage) : null, vehicle.daysListed !== null ? `${fmt.formatNumber(vehicle.daysListed)}d listed` : null]
   const via = state.query && match.matchedLabels.find((label) => !['Stock', 'VIN', 'Vehicle', 'Make', 'Model', 'Year', 'Trim'].includes(label))
   const inCompare = state.compare.includes(vehicle.vin)
-  const config = fmt.joinFacts([vehicle.exteriorColor, vehicle.daysListed !== null ? `${fmt.formatNumber(vehicle.daysListed)} days listed` : null])
+  const config = fmt.joinFacts([vehicle.bodyStyle, vehicle.exteriorColor, vehicle.interiorColor ? `Interior ${vehicle.interiorColor}` : null])
   const powertrain = fmt.joinFacts([vehicle.engine, vehicle.drivetrain])
+  const economy = vehicle.specs.mpgCity !== null || vehicle.specs.mpgHighway !== null ? `${vehicle.specs.mpgCity ?? '—'} city / ${vehicle.specs.mpgHighway ?? '—'} hwy MPG` : null
+  const specification = fmt.joinFacts([vehicle.transmission, vehicle.fuelType, economy])
   const primaryHold = vehicle.hold.canViewEvidence ? vehicle.hold.evidence[0] : null
   // The salesperson is already named in the Hold pill; this line adds only
   // what the pill omits. "Held by" is reserved for DealerMail's own heldBy
@@ -417,17 +437,21 @@ function renderRow(match, position) {
     'aria-selected': String(position === state.activeIndex), dataset: { vin: vehicle.vin, index: String(position) },
     onclick: () => openDetail(vehicle),
   },
-    el('span', { class: 'plate' }, rowThumb(vehicle), el('b', { text: vehicle.stockNumber, title: `Stock ${vehicle.stockNumber}` })),
+    el('span', { class: 'plate' }, rowThumb(vehicle), el('b', { text: vehicle.stockNumber, title: `Stock ${vehicle.stockNumber}` }), certifiedBadge(vehicle)),
     el('span', { class: 'row-main' },
       el('span', { class: 'row-title', text: vehicle.name, title: vehicle.name }),
       el('span', { class: 'row-meta', title: fmt.joinFacts([metaParts[0], metaParts[1], fmt.formatDays(vehicle.daysListed)]) }, el('strong', { text: metaParts[0] }), metaParts.slice(1).some(Boolean) ? ' · ' : '', fmt.joinFacts(metaParts.slice(1))),
       powertrain ? el('span', { class: 'row-spec row-powertrain', text: powertrain, title: powertrain }) : null,
-      config ? el('span', { class: 'row-spec', text: config, title: config }) : null,
       via ? el('span', { class: 'row-match', text: `Matched ${via.toLowerCase()}` }) : null,
     ),
     inCompare ? el('span', { class: 'row-cmp', title: 'In the compare set' }, icon('columns', { size: 13 })) : icon('chevron-right', { size: 14 }),
+    el('span', { class: 'row-configuration' },
+      el('span', { class: 'row-vin', text: `VIN ${vehicle.vin}` }),
+      config ? el('span', { class: 'row-spec', text: config }) : null,
+      specification ? el('span', { class: 'row-spec', text: specification }) : null,
+    ),
     el('span', { class: 'row-operations' },
-      el('span', { class: 'row-status' }, el('strong', { class: 'row-store', text: vehicle.homeStore }), certifiedBadge(vehicle), holdPill(vehicle), servicePill(vehicle)),
+      el('span', { class: 'row-status' }, el('strong', { class: 'row-store', text: vehicle.homeStore }), holdPill(vehicle), servicePill(vehicle)),
       vehicle.movement ? el('span', { class: 'row-movement' }, movementPill(vehicle), vehicle.movement.destination ? el('span', { text: `To ${vehicle.movement.destination}` }) : null) : null,
       holdDetail ? el('span', { class: 'row-spec row-hold-detail', text: holdDetail, title: holdDetail }) : null,
       vehicle.location.store !== vehicle.homeStore || vehicle.location.provenance === 'app-confirmed' || vehicle.location.conflict ? locationNode(vehicle) : null,
@@ -466,6 +490,28 @@ function scanFact(resource) {
   )
 }
 
+function primaryEquipmentResource(vehicle, resources) {
+  const sticker = resources.find(resource => resource.id === 'window-sticker')
+  const equipment = resources.find(resource => resource.id === 'vauto')
+  const usableSticker = !['incomplete', 'unavailable', 'unknown'].includes(vehicle.documents.windowSticker?.dataState)
+    && (vehicle.documents.windowSticker?.totalMsrp != null || vehicle.documents.windowSticker?.options?.length || vehicle.documents.windowSticker?.equipmentGroup || vehicle.documents.windowSticker?.equipmentGroupContents?.length)
+  return usableSticker && sticker?.hasCapturedData ? sticker
+    : equipment && !['incomplete', 'unavailable', 'unknown'].includes(vehicle.documents.factoryEquipment?.dataState) && (equipment.hasCapturedData || equipment.url) ? equipment : sticker ?? equipment
+}
+
+function scanResource(resource, vehicle, { omitWarranty = false } = {}) {
+  if (resource.id !== 'oasis') return scanFact(resource)
+  const actions = vehicle.documents.fordOasis?.openFieldServiceActions ?? []
+  if (!actions.length) return scanFact(omitWarranty ? { ...resource, compactFacts: resource.compactFacts.filter(fact => !/^Warranty start/.test(fact)) } : resource)
+  const count = `${vehicle.documents.fordOasis?.openActionsCaptured === false ? 'At least ' : ''}${actions.length} captured action${actions.length === 1 ? '' : 's'}`
+  const codes = actions.map(action => action.code).filter(Boolean).join(', ')
+  return el('span', { class: 'row-doc-facts', title: resource.facts.join(' · ') },
+    el('span', { text: fmt.joinFacts([count, codes ? `Open FSA ${codes}` : null]) }),
+    !omitWarranty && resource.facts.find(fact => /^Warranty start/.test(fact)) ? el('span', { class: 'row-doc-secondary', text: resource.facts.find(fact => /^Warranty start/.test(fact)) }) : null,
+    el('span', { class: 'visually-hidden', text: actions.map(action => fmt.joinFacts([action.code, action.description])).join(' · ') }),
+  )
+}
+
 function sourceNoteBadge(note) {
   if (!importantSourceNote(note)) return null
   return el('span', { class: 'row-doc-note', title: note, 'aria-label': note },
@@ -475,8 +521,10 @@ function sourceNoteBadge(note) {
 }
 
 function rowDocumentFacts(vehicle) {
-  const summaries = resourceSummaries(vehicle).filter(resource => resource.hasCapturedData && resource.id !== 'invoice'
-    && (resource.id !== 'window-sticker' || !['incomplete', 'unavailable', 'unknown'].includes(vehicle.documents.windowSticker?.dataState)))
+  const resources = resourceSummaries(vehicle)
+  const equipment = primaryEquipmentResource(vehicle, resources)
+  const summaries = resources.filter(resource => resource.hasCapturedData && resource.id !== 'invoice'
+    && (!['window-sticker', 'vauto'].includes(resource.id) || resource === equipment))
   const prioritized = [...summaries.filter(resource => resource.id === 'oasis' && resource.compactFacts.some(fact => /Open FSA/i.test(fact))), ...summaries.filter(resource => !(resource.id === 'oasis' && resource.compactFacts.some(fact => /Open FSA/i.test(fact))))].slice(0, 3)
   if (!prioritized.length) return null
   // Listbox options keep one coherent keyboard action: open this vehicle.
@@ -484,7 +532,7 @@ function rowDocumentFacts(vehicle) {
   return el('span', { class: 'row-documents', 'aria-label': 'Vehicle record highlights. Open the vehicle for complete details.' }, ...prioritized.map(resource =>
     el('span', { class: 'row-doc-summary', dataset: { resource: resource.id } },
       el('span', { class: 'row-doc-provider' }, resource.brand ? resourceBrand(resource.brand, 'row-doc-brand') : icon('file-text'), resource.brand === 'autocheck' || resource.brand === 'vauto' ? null : el('b', { text: resource.id === 'oasis' ? 'OASIS' : 'Sticker' }), sourceNoteBadge(resource.sourceNote)),
-      el('span', { class: 'row-doc-content' }, scanFact(resource)),
+      el('span', { class: 'row-doc-content' }, scanResource(resource, vehicle)),
     )),
   )
 }
@@ -742,14 +790,36 @@ function hero(vehicle) {
     thumbs?.setAttribute('hidden', '')
   } })
   if (thumbs) photos.slice(0, 16).forEach((src, index) => thumbs.append(el('button', { type: 'button', class: `hero-thumb ${index === state.photoIndex ? 'is-on' : ''}`.trim(), dataset: { index: String(index) }, 'aria-label': `Photo ${index + 1}`, 'aria-pressed': String(index === state.photoIndex), onclick: () => show(index) }, el('img', { src, alt: '', loading: 'lazy', decoding: 'async', referrerpolicy: 'no-referrer' }))))
+  let suppressPhotoClick = () => false
   const frame = el('div', { class: 'hero-frame', tabindex: '0', 'aria-label': 'Vehicle photos, use the arrow keys', onkeydown: (event) => { if (event.key === 'ArrowLeft') { event.preventDefault(); show(state.photoIndex - 1) } if (event.key === 'ArrowRight') { event.preventDefault(); show(state.photoIndex + 1) } } },
-    img, logo, count,
+    el('button', { type: 'button', class: 'hero-photo-open', 'aria-label': `Enlarge photos of ${vehicle.name}`, onclick: () => { if (!suppressPhotoClick()) openPhotoViewer(vehicle, photos, state.photoIndex) } }, img), logo, count,
     photos.length > 1 ? el('button', { type: 'button', class: 'hero-nav hero-prev', 'aria-label': 'Previous photo', onclick: () => show(state.photoIndex - 1) }, icon('chevron-left', { size: 18 })) : null,
     photos.length > 1 ? el('button', { type: 'button', class: 'hero-nav hero-next', 'aria-label': 'Next photo', onclick: () => show(state.photoIndex + 1) }, icon('chevron-right', { size: 18 })) : null,
   )
+  suppressPhotoClick = bindPhotoSwipe(frame, direction => show(state.photoIndex + direction))
   return el('section', { class: 'hero detail-gallery', 'aria-label': 'Vehicle photos' },
     el('div', { class: 'detail-section-head' }, el('h3', { text: `Photos (${photos.length})` }), vehicle.listing.url ? el('button', { type: 'button', class: 'link-btn', onclick: () => openUrl(vehicle.listing.url) }, 'View listing', icon('external', { size: 13 })) : null),
     el('div', { class: `detail-gallery-body ${thumbs ? 'has-thumbs' : ''}` }, frame, thumbs))
+}
+
+function openPhotoViewer(vehicle, photos, initialIndex) {
+  clearTimeout(sheetCloseTimer)
+  sheetOpen = true; state.sheetKind = 'photos'; state.sheetReturnFocus = document.activeElement
+  document.getElementById('sheet-title').textContent = `${vehicle.name} · Photos`
+  ui.sheetClose.setAttribute('aria-label', 'Close photos')
+  ui.sheet.dataset.kind = 'photos'
+  clear(ui.sheetBody)
+  let index = initialIndex
+  const image = el('img', { class: 'photo-viewer-image', src: photos[index], alt: `${vehicle.name}, photo ${index + 1}`, referrerpolicy: 'no-referrer' })
+  const count = el('span', { text: `${index + 1} / ${photos.length}` })
+  const change = direction => { index = (index + direction + photos.length) % photos.length; image.src = photos[index]; image.alt = `${vehicle.name}, photo ${index + 1}`; count.textContent = `${index + 1} / ${photos.length}` }
+  const frame = el('div', { class: 'photo-viewer', tabindex: '0', onkeydown: event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); change(event.key === 'ArrowRight' ? 1 : -1) } } }, image,
+    el('div', { class: 'photo-viewer-controls' }, el('button', { type: 'button', class: 'btn', disabled: photos.length < 2, 'aria-label': 'Previous enlarged photo', onclick: () => change(-1) }, icon('chevron-left')), count,
+      el('button', { type: 'button', class: 'btn', disabled: photos.length < 2, 'aria-label': 'Next enlarged photo', onclick: () => change(1) }, icon('chevron-right'))))
+  bindPhotoSwipe(frame, change)
+  ui.sheetBody.append(frame)
+  ui.backdrop.hidden = false; ui.sheet.hidden = false; ui.sheet.removeAttribute('inert'); ui.sheet.setAttribute('aria-hidden', 'false'); setSheetBackgroundInert(true)
+  requestAnimationFrame(() => { if (!sheetOpen) return; ui.backdrop.classList.add('is-in'); ui.sheet.classList.add('is-in'); ui.sheetClose.focus() })
 }
 
 function identity(vehicle) {
@@ -810,6 +880,7 @@ function dock(vehicle) {
     moveAction ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.requestVehicleUrl(origin, vehicle.vin, moveAction)) }, canReroute ? 'Move again' : moveAction === 'direct' ? 'Move vehicle' : 'Request vehicle', icon('arrow-right')) : null,
   )
   const utils = el('nav', { class: 'd-utilities', 'aria-label': 'Vehicle utilities' },
+    state.bootstrap?.savedListsEnabled === true ? el('button', { type: 'button', class: 'chip customer-save-toggle', dataset: { vin: vehicle.vin }, 'aria-pressed': String(Boolean(customerLists.active()?.items.some(item => item.vin === vehicle.vin))), onclick: () => customerLists.toggle(vehicle.vin) }, icon('heart', { size: 14 }), 'Save vehicle') : null,
     chip('Deal sheet', 'copy', (button) => copy(dealSheetText(vehicle, (field) => fieldText(field, vehicle)), 'Deal sheet', button), { title: 'Copy every identifying and pricing fact as text' }),
     chip('Take-home page', 'file-text', () => openTakeHome(vehicle), { title: 'Customer sheet to print or save as PDF' }),
     vehicle.hold.canManage ? chip('DealerMail', 'mail', async (button) => { await copy(vehicle.stockNumber, 'Stock number', button); openUrl(links.DEALERMAIL_INVENTORY_URL) }, { title: 'Copies the stock number, then opens DealerMail inventory' }) : null,
@@ -829,6 +900,98 @@ async function openTakeHome(vehicle) {
   if (host === 'preview') openExtensionPage(path)
   await handoff
   if (host !== 'preview') openExtensionPage(path)
+}
+
+function openCustomerDocument(vehicles, listLabel) {
+  if (!vehicles.length) return
+  const id = crypto.randomUUID()
+  const payload = { version: 2, id, listLabel, models: vehicles.map(vehicle => takeHomeModel(vehicle, photosFor(vehicle))) }
+  const handoff = storage.setTakeHome(id, payload)
+  const path = `print.html#${encodeURIComponent(id)}`
+  if (host === 'preview') openExtensionPage(path)
+  handoff.then(() => { if (host !== 'preview') openExtensionPage(path) }).catch(() => toast('Customer sheet could not be opened. Try again.', { iconName: 'alert' }))
+}
+
+function renderCustomerControls() {
+  const enabled = Boolean(state.data && state.bootstrap?.savedListsEnabled === true)
+  customerButton.hidden = !enabled
+  const snapshot = customerLists.snapshot, list = customerLists.active()
+  const canWrite = customerListWritesReady(snapshot)
+  customerButton.textContent = list ? `${list.label} · ${list.items.length} saved` : 'Customer lists'
+  for (const button of ui.detail.parentElement.querySelectorAll('.customer-save-toggle')) {
+    const saved = Boolean(list?.items.some(item => item.vin === button.dataset.vin))
+    button.textContent = snapshot.saving ? 'Saving…' : saved ? 'Saved · remove' : 'Save vehicle'
+    button.setAttribute('aria-label', `${saved ? 'Remove vehicle from' : 'Save vehicle to'} ${list?.label ?? 'customer shortlist'}`)
+    button.setAttribute('aria-pressed', String(saved))
+    button.disabled = !canWrite
+  }
+  if (sheetOpen && state.sheetKind === 'customers') renderCustomerSheet()
+}
+
+function renderCustomerSheet() {
+  const snapshot = customerLists.snapshot, list = customerLists.active()
+  const busy = snapshot.saving
+  const canWrite = customerListWritesReady(snapshot)
+  const focused = ui.sheetBody.contains(document.activeElement) ? document.activeElement : null
+  const focusLabel = focused?.getAttribute('aria-label')
+  const selection = focused && 'selectionStart' in focused ? [focused.selectionStart, focused.selectionEnd] : null
+  const scrollTop = ui.sheetBody.scrollTop
+  const restoreInput = () => {
+    ui.sheetBody.scrollTop = scrollTop
+    if (!focusLabel) return
+    const replacement = [...ui.sheetBody.querySelectorAll('input, select')].find(node => node.getAttribute('aria-label') === focusLabel)
+    if (!replacement || replacement.disabled) return
+    replacement.focus({ preventScroll: true })
+    if (selection && replacement.setSelectionRange) replacement.setSelectionRange(...selection)
+  }
+  clear(ui.sheetBody)
+  const selector = el('select', { 'aria-label': 'Customer list', disabled: busy || Boolean(snapshot.pending), onchange: event => { state.customerRename = false; state.customerDelete = false; customerLists.select(event.target.value) } },
+    ...snapshot.lists.map(item => el('option', { value: item.id, text: `${item.label} (${item.items.length})` })))
+  selector.value = list?.id ?? ''
+  const status = snapshot.error ?? (busy ? 'Saving changes…' : snapshot.loading ? 'Checking your lists…' : snapshot.checkedAt ? 'Saved to your account · available on your other devices' : 'Your private customer lists')
+  ui.sheetBody.append(el('div', { class: 'customer-lists-status', role: snapshot.error ? 'alert' : 'status' }, el('p', { text: status }),
+    el('button', { type: 'button', class: 'btn', disabled: busy || snapshot.loading, onclick: () => customerLists.retry() }, snapshot.pending ? 'Retry unfinished action' : snapshot.readyForWrites ? 'Refresh lists' : 'Retry list check')),
+  el('p', { class: 'field-help', text: 'Use initials or a nickname. Customer contact details stay in DealerMail.' }))
+  if (snapshot.lists.length) ui.sheetBody.append(el('label', { class: 'customer-list-selector' }, el('span', { text: 'Save vehicles to' }), selector))
+  const createInput = el('input', { type: 'text', 'aria-label': 'New customer list name', maxlength: '80', value: state.customerDraft, disabled: !canWrite, oninput: event => { state.customerDraft = event.target.value } })
+  ui.sheetBody.append(el('form', { class: 'customer-list-create', onsubmit: async event => { event.preventDefault(); const label = state.customerDraft.trim(); if (!label) return; if (await customerLists.mutate('create', { label })) { state.customerDraft = ''; renderCustomerSheet() } } },
+    createInput, el('button', { type: 'submit', class: 'btn btn-primary', disabled: !canWrite }, 'New list')))
+  if (!list) { ui.sheetBody.append(el('p', { text: 'Create a list, then save vehicles from their detail view.' })); restoreInput(); return }
+  const present = list.items.map(item => vehicleByVin(item.vin)).filter(Boolean)
+  ui.sheetBody.append(el('div', { class: 'customer-list-actions' },
+    el('button', { type: 'button', class: 'btn', disabled: busy, onclick: () => openCustomerDocument(present, list.label) }, `Customer sheet (${present.length})`),
+    el('button', { type: 'button', class: 'btn', disabled: !canWrite, onclick: () => { state.customerRename = !state.customerRename; state.customerRenameDraft = list.label; renderCustomerSheet() } }, 'Rename'),
+    el('button', { type: 'button', class: 'btn', disabled: !canWrite, onclick: () => { state.customerDelete = !state.customerDelete; renderCustomerSheet() } }, 'Delete list')))
+  if (state.customerRename) {
+    const input = el('input', { type: 'text', 'aria-label': 'Rename customer list', maxlength: '80', value: state.customerRenameDraft, disabled: !canWrite, oninput: event => { state.customerRenameDraft = event.target.value } })
+    ui.sheetBody.append(el('form', { class: 'customer-list-create', onsubmit: event => { event.preventDefault(); const label = input.value.trim(); if (label) { state.customerRename = false; customerLists.mutate('rename', { label }) } } }, input, el('button', { type: 'submit', class: 'btn', disabled: !canWrite }, 'Save name')))
+  }
+  if (state.customerDelete) ui.sheetBody.append(el('div', { class: 'customer-lists-status' }, el('p', { text: `Delete ${list.label} and its ${list.items.length} saved references?` }),
+    el('button', { type: 'button', class: 'btn', disabled: !canWrite, onclick: () => { state.customerDelete = false; customerLists.mutate('delete') } }, 'Confirm delete list')))
+  if (!list.items.length) ui.sheetBody.append(el('p', { text: 'No vehicles saved to this list yet.' }))
+  ui.sheetBody.append(el('ul', { class: 'customer-list-items' }, ...list.items.map(item => {
+    const vehicle = item.available ? vehicleByVin(item.vin) : null
+    return el('li', {}, vehicle ? el('button', { type: 'button', class: 'customer-list-vehicle', onclick: () => { closeSheet(); openDetail(vehicle) } },
+      vehicle.photos[0] ? el('img', { src: vehicle.photos[0], alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : null,
+      el('span', {}, el('strong', { text: vehicle.name }), el('small', { text: `${vehicle.stockNumber} · ${vehicle.price != null ? fmt.formatMoney(vehicle.price) : 'Price not published'}` })))
+      : el('span', { class: 'customer-list-vehicle' }, el('strong', { text: 'Vehicle unavailable in current inventory' }), el('small', { text: `Saved reference · VIN ending ${item.vin.slice(-6)}` })),
+    el('button', { type: 'button', class: 'icon-btn', 'aria-label': `Remove ${vehicle?.stockNumber ?? 'VIN ending ' + item.vin.slice(-6)} from ${list.label}`, disabled: !canWrite, onclick: () => customerLists.mutate('remove', { vin: item.vin }) }, icon('x', { size: 16 })))
+  })))
+  restoreInput()
+}
+
+function openCustomerLists() {
+  clearTimeout(sheetCloseTimer)
+  sheetOpen = true; state.sheetKind = 'customers'; state.sheetReturnFocus = document.activeElement
+  state.customerRename = false; state.customerDelete = false
+  document.getElementById('sheet-title').textContent = 'Customer lists'
+  ui.sheetClose.setAttribute('aria-label', 'Close customer lists')
+  ui.sheet.dataset.kind = 'customers'
+  renderCustomerSheet()
+  ui.backdrop.hidden = false; ui.sheet.hidden = false; ui.sheet.removeAttribute('inert'); ui.sheet.setAttribute('aria-hidden', 'false')
+  setSheetBackgroundInert(true)
+  requestAnimationFrame(() => { if (!sheetOpen) return; ui.backdrop.classList.add('is-in'); ui.sheet.classList.add('is-in'); ui.sheetClose.focus() })
+  customerLists.refresh()
 }
 
 function tabsBar(vehicle) {
@@ -890,6 +1053,7 @@ function tabPanel(vehicle) {
 function openRecord(id) {
   switchTab('records')
   const target = [...ui.detail.querySelectorAll('[data-record]')].find((node) => node.dataset.record === id)
+  if (target?.tagName === 'DETAILS') target.open = true
   if (!target) return
   const bar = ui.detail.querySelector('.detail-tabs')
   ui.detail.scrollTop = Math.max(0, ui.detail.scrollTop + target.getBoundingClientRect().top - ui.detail.getBoundingClientRect().top - (bar?.offsetHeight ?? 0) - 8)
@@ -990,11 +1154,7 @@ function documentSummaryFacts(resource, vehicle) {
 function documentsGrid(vehicle) {
   const sourceResources = resourceSummaries(vehicle)
   const sticker = sourceResources.find(resource => resource.id === 'window-sticker')
-  const equipment = sourceResources.find(resource => resource.id === 'vauto')
-  const usableSticker = !['incomplete', 'unavailable', 'unknown'].includes(vehicle.documents.windowSticker?.dataState)
-    && (vehicle.documents.windowSticker?.totalMsrp != null || vehicle.documents.windowSticker?.options?.length || vehicle.documents.windowSticker?.equipmentGroup || vehicle.documents.windowSticker?.equipmentGroupContents?.length)
-  const selectedEquipment = usableSticker && sticker?.hasCapturedData
-    ? sticker : equipment && !['incomplete', 'unavailable', 'unknown'].includes(vehicle.documents.factoryEquipment?.dataState) && (equipment.hasCapturedData || equipment.url) ? equipment : sticker ?? equipment
+  const selectedEquipment = primaryEquipmentResource(vehicle, sourceResources)
   const resources = sourceResources.filter(resource => !['window-sticker', 'vauto'].includes(resource.id) || resource === selectedEquipment)
   const cards = resources.filter(resource => resource.hasCapturedData).map(resource => {
     const captured = resource.hasCapturedData
@@ -1007,14 +1167,22 @@ function documentsGrid(vehicle) {
         el('span', { class: 'doc-body' }, el('strong', { text: resource.id === 'window-sticker' ? 'Sticker & equipment' : resource.title })),
         icon(captured ? 'arrow-right' : 'external', { size: 14 })),
       resource.id === 'vauto' ? el('p', { class: 'doc-source-note', text: 'vAuto equipment label · not an original window sticker' }) : null,
-      resource.facts.length ? documentSummaryFacts(resource, vehicle) : null,
+      resource.facts.length ? el('div', { class: 'doc-overview-highlights' }, scanResource(resource, vehicle, { omitWarranty: true })) : null,
+      resource.facts.length ? el('div', { class: 'doc-expanded-facts', hidden: true }, documentSummaryFacts(resource, vehicle)) : null,
       resource.id === 'vauto' && sticker?.url ? el('button', { type: 'button', class: 'doc-source-supplement', onclick: () => openUrl(sticker.url) }, 'Open window sticker', icon('external', { size: 14 })) : null,
       resource.sourceNote ? el('p', { class: 'doc-source-note', text: resource.sourceNote }) : null,
       captured && resource.url ? el('button', { type: 'button', class: 'doc-source-open', 'aria-label': `Open ${resource.title} for ${vehicle.stockNumber}`, onclick: () => openUrl(resource.url) }, 'Open document', icon('external', { size: 14 })) : null,
     )
   })
-  return el('section', { class: 'document-summaries', 'aria-label': 'Vehicle documents and records' },
-    el('h3', { class: 'card-title', text: 'Documents & records' }),
+  const section = el('section', { class: 'document-summaries', 'aria-label': 'Vehicle documents and records' },
+    el('div', { class: 'detail-section-head' }, el('h3', { class: 'card-title', text: 'Documents & records' }),
+      cards.length ? el('button', { type: 'button', class: 'link-btn', 'aria-expanded': 'false', onclick: (event) => {
+        const expanded = event.currentTarget.getAttribute('aria-expanded') !== 'true'
+        event.currentTarget.setAttribute('aria-expanded', String(expanded))
+        event.currentTarget.textContent = expanded ? 'Hide details' : 'Show details'
+        for (const node of section.querySelectorAll('.doc-expanded-facts')) node.hidden = !expanded
+        for (const node of section.querySelectorAll('.doc-overview-highlights')) node.hidden = expanded
+      } }, 'Show details') : null),
     cards.length ? el('div', { class: 'doc-grid doc-grid--summaries' }, ...cards) : null,
     el('div', { class: 'doc-grid doc-grid--utilities' },
       ...resources.filter(resource => !resource.hasCapturedData).map(resource => docTile({
@@ -1024,6 +1192,7 @@ function documentsGrid(vehicle) {
       })),
       vehicle.listing.url ? docTile({ title: 'Listing', sub: 'Open dealer website', iconName: 'globe', url: vehicle.listing.url }) : null),
   )
+  return section
 }
 
 function dealSheet(vehicle) {
@@ -1102,12 +1271,15 @@ function warrantyCard(vehicle) {
 
 function highlights(vehicle) {
   const standout = vehicle.equipment.standout
-  const total = vehicle.equipment.byCategory.reduce((sum, group) => sum + group.items.length, 0)
+  const all = vehicle.equipment.byCategory.flatMap(group => group.items)
+  const total = all.length
   if (!total) return null
-  const items = (standout.length ? standout : vehicle.equipment.byCategory.flatMap((group) => group.items).slice(0, 6))
-  return el('section', { class: 'card' },
+  const factory = all.filter(item => ['factory-option', 'factory-equipment-group', 'vauto-equipment-package'].includes(item.source))
+  const seen = new Set()
+  const items = [...factory, ...standout, ...all].filter(item => { const key = item.label.replace(/\([^)]*\)/g, '').split(' · ')[0].trim().toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true }).slice(0, 6)
+  return el('section', { class: 'card detail-highlights' },
     el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, icon('sparkles', { size: 13 }), 'Stands out'), el('button', { type: 'button', class: 'link-btn', onclick: () => switchTab('equipment') }, `All ${fmt.formatNumber(total)}`, icon('chevron-right', { size: 12 }))),
-    el('div', { class: 'd-features' }, ...items.map((item) => el('span', { class: `d-feature ${item.standout ? 'is-standout' : ''}`.trim(), text: item.label }))),
+    el('div', { class: 'd-features' }, ...items.map((item) => el('span', { class: `d-feature ${item.standout ? 'is-standout' : ''}`.trim(), dataset: { source: item.source, category: item.category }, text: item.label }))),
   )
 }
 
@@ -1143,14 +1315,18 @@ function overviewTab(vehicle) {
     el('h3', { text: 'Specifications' }),
     kv([['Engine', vehicle.engine], ['Drive', vehicle.drivetrain], ['Exterior', vehicle.exteriorColor], ['Interior', vehicle.interiorColor], ['MSRP', vehicle.msrp !== null ? fmt.formatMoney(vehicle.msrp) : null], ['Fuel', vehicle.fuelType]]))
   const fullSpecifications = el('section', { class: 'detail-specification detail-full-specs' }, el('h3', { text: 'Vehicle details' }),
-    kv([['Stock', vehicle.stockNumber], ['VIN', vehicle.vin], ['Transmission', vehicle.transmission], ['Body', vehicle.bodyStyle], ['Vehicle class', vehicle.documents.autoCheck?.vehicleClass], ['Location', vehicle.location.label], ['Model code', vehicle.specs.modelCode], ['Inventory date', vehicle.specs.inventoryDate ? fmt.formatDate(vehicle.specs.inventoryDate) : null], ['Under MSRP', vehicle.savings ? fmt.formatMoney(vehicle.savings) : null], ['Fuel economy', vehicle.specs.mpgCity !== null || vehicle.specs.mpgHighway !== null ? `${vehicle.specs.mpgCity ?? '—'} city / ${vehicle.specs.mpgHighway ?? '—'} highway` : null]]))
+    kv([['Transmission', vehicle.transmission], ['Body', vehicle.bodyStyle], ['Vehicle class', vehicle.documents.autoCheck?.vehicleClass], ['Location', vehicle.location.label], ['Model code', vehicle.specs.modelCode], ['Inventory date', vehicle.specs.inventoryDate ? fmt.formatDate(vehicle.specs.inventoryDate) : null], ['Under MSRP', vehicle.savings ? fmt.formatMoney(vehicle.savings) : null], ['Fuel economy', vehicle.specs.mpgCity !== null || vehicle.specs.mpgHighway !== null ? `${vehicle.specs.mpgCity ?? '—'} city / ${vehicle.specs.mpgHighway ?? '—'} highway` : null]]))
+  const identifiers = el('div', { class: 'detail-identity-band' }, ...[['Stock', vehicle.stockNumber], ['VIN', vehicle.vin]].map(([label, value]) =>
+    el('button', { type: 'button', class: 'detail-identity-copy', 'aria-label': `Copy ${label === 'Stock' ? 'stock number' : 'VIN'} ${value}`, onclick: (event) => copy(value, label, event.currentTarget) },
+      el('span', { class: 'detail-identity-label', text: label }), el('strong', { class: 'detail-identity-value', text: value }), icon('copy', { size: 14 }))))
+  const context = el('div', { class: 'detail-vehicle-context' }, hero(vehicle), specification, identifiers)
   const calculator = el('section', { class: 'detail-calculator' }, el('button', { type: 'button', class: 'detail-calculator-toggle', 'aria-expanded': 'false', onclick: (event) => {
     const expanded = event.currentTarget.getAttribute('aria-expanded') === 'true'
     event.currentTarget.setAttribute('aria-expanded', String(!expanded))
     if (expanded) calculator.querySelector('.warr')?.remove()
     else calculator.append(warrantyCard(vehicle))
   } }, icon('shield', { size: 15 }), 'Warranty calculator', icon('chevron-right', { size: 14 })))
-  return [hero(vehicle), frequentFacts(vehicle), specification, documentsGrid(vehicle), fullSpecifications, highlights(vehicle), calculator, readOnlyNote()]
+  return [context, highlights(vehicle), frequentFacts(vehicle), calculator, documentsGrid(vehicle), fullSpecifications, readOnlyNote()]
 }
 
 function readOnlyNote() {
@@ -1341,7 +1517,7 @@ function recordsTab(vehicle) {
   }
   const label = docs.factoryEquipment
   if (label) {
-    children.push(el('section', { class: 'card rec', dataset: { record: 'vauto' }, tabindex: '-1' },
+    const equipmentSection = el('section', { class: 'card rec', dataset: { record: 'vauto' }, tabindex: '-1' },
       recordHead('Equipment', { brand: 'vauto', url: label.url, action: 'Open equipment details', missing: 'Equipment details unavailable.', dataState: label.dataState }),
       note(sourceNote(label, 'vauto')),
       note(label.vehicleDescription),
@@ -1354,7 +1530,11 @@ function recordsTab(vehicle) {
       ))) : null,
       ...label.sections.map((group) => recordSection(group.name, [el('ul', { class: 'rec-list rec-priced-list' }, ...group.items.map((item) => el('li', { class: 'rec-line' }, el('span', { text: item.label }), hasNumber(item.price) ? el('span', { class: 'num', text: referencePrice(item.price) }) : null)))])),
       note(label.disclaimer || 'The vAuto label is informational, not an original Monroney window sticker. Confirm installed equipment on the vehicle.'),
-    ))
+    )
+    if (primaryEquipmentResource(vehicle, resourceSummaries(vehicle))?.id === 'window-sticker') {
+      delete equipmentSection.dataset.record
+      children.push(el('details', { class: 'rec-vauto-supplement', dataset: { record: 'vauto' }, tabindex: '-1' }, el('summary', { text: 'Additional vAuto equipment' }), equipmentSection))
+    } else children.push(equipmentSection)
   }
   const oasis = docs.fordOasis
   if (oasis || vehicle.links.oasis) children.push(el('section', { class: 'card rec rec-oasis', dataset: { record: 'oasis' }, tabindex: '-1' },
@@ -1459,6 +1639,7 @@ function renderDetail(vehicle, { keepScroll = false } = {}) {
   ui.detail.parentElement.querySelector(':scope > .d-utilities')?.remove()
   ui.detail.append(identity(vehicle), actions, tabsBar(vehicle), tabPanel(vehicle))
   if (utilities) ui.detail.after(utilities)
+  renderCustomerControls()
   requestAnimationFrame(() => { const bar = ui.detail.querySelector('.tabs'); if (bar) positionIndicator(bar, bar.querySelector('.tabs-ind'), '.tab') })
   ui.detail.scrollTop = keepScroll ? top : 0
 }
@@ -1937,7 +2118,8 @@ ui.sheetClose.addEventListener('click', closeSheet)
 ui.backdrop.addEventListener('click', closeSheet)
 
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state.data && isStale() && !state.loading) load({ silent: true }) })
-window.addEventListener('focus', () => { if (state.data && isStale() && !state.loading) load({ silent: true }) })
+window.addEventListener('focus', () => { if (state.data && isStale() && !state.loading) load({ silent: true }); if (state.data && state.bootstrap?.savedListsEnabled === true) customerLists.refresh() })
+setInterval(() => { if (document.visibilityState === 'visible' && state.data && state.bootstrap?.savedListsEnabled === true) customerLists.refresh() }, 30_000)
 setInterval(() => {
   if (document.visibilityState !== 'visible') return
   renderFreshness()

@@ -13,11 +13,11 @@ import { d1SnapshotRepository, datasetFromRelease, loadD1Repository, RepositoryC
 const openDatabases = []
 afterEach(() => { while (openDatabases.length) openDatabases.pop().close() })
 
-function fakeD1() {
+function fakeD1({ dispositions = true } = {}) {
   const sqlite = new DatabaseSync(':memory:')
   openDatabases.push(sqlite)
   sqlite.exec('PRAGMA foreign_keys = ON')
-  for (const name of ['0001_initial.sql', '0002_app_access.sql', '0003_transport_assignment_identity.sql', '0007_service_readiness.sql', '0008_service_intake.sql', '0011_vehicle_issues.sql', '0012_attention_event_input_hash.sql']) {
+  for (const name of ['0001_initial.sql', '0002_app_access.sql', '0003_transport_assignment_identity.sql', '0007_service_readiness.sql', '0008_service_intake.sql', '0011_vehicle_issues.sql', '0012_attention_event_input_hash.sql', ...(dispositions ? ['0013_vehicle_dispositions.sql'] : [])]) {
     sqlite.exec(readFileSync(new URL(`../../cloudflare/migrations/${name}`, import.meta.url), 'utf8'))
   }
   return {
@@ -359,6 +359,40 @@ describe('D1 shared operational repository', () => {
       expect(cloudService.bootstrap(context)).toEqual(nodeService.bootstrap(context))
       for (const vehicle of release.vehicles) expect(cloudService.getVehicle(vehicle.vin, context)).toEqual(nodeService.getVehicle(vehicle.vin, context))
     }
+  })
+
+  it('commits a disposition through the real service and restores it, with its actor, on a fresh request', async () => {
+    const d1 = fakeD1()
+    const manager = { role: 'manager', store: 'Fowlerville', user: 'Synthetic Fowlerville manager', userId: 'synthetic-fowlerville-manager' }
+    const first = await loadD1Repository(d1, buildSyntheticRelease(), { loadedAt: requestAt })
+    const firstService = createInventoryServiceCore({ database: first.database, repository: first.repository, now: () => SYNTHETIC_NOW })
+    const saved = firstService.updateDisposition('TESTDATAFWELL0002', { disposition: 'sold_pending', effectiveDate: '2026-08-29', expectedVersion: 0 }, manager, 'synthetic-d1-disposition')
+    expect(saved).toMatchObject({ created: true, record: { code: 'sold_pending', version: 1, updatedBy: manager.user } })
+    expect(d1.sqlite.prepare('SELECT count(*) AS count FROM vehicle_disposition_events').get().count).toBe(0)
+    expect(await first.commit()).toEqual({ committed: true, revision: 1 })
+    expect(d1.sqlite.prepare('SELECT actor, actor_user_id, actor_role, store_id, disposition FROM vehicle_disposition_events').get())
+      .toEqual({ actor: manager.user, actor_user_id: manager.userId, actor_role: 'manager', store_id: 'Fowlerville', disposition: 'sold_pending' })
+    const next = await loadD1Repository(d1, buildSyntheticRelease(), { loadedAt: requestAt })
+    const nextService = createInventoryServiceCore({ database: next.database, repository: next.repository, now: () => SYNTHETIC_NOW })
+    expect(nextService.getVehicle('TESTDATAFWELL0002', manager).appDisposition).toMatchObject({ code: 'sold_pending', version: 1, canManage: true })
+    expect(nextService.bootstrap(manager).dispositionsEnabled).toBe(true)
+    const replay = nextService.updateDisposition('TESTDATAFWELL0002', { disposition: 'sold_pending', effectiveDate: '2026-08-29', expectedVersion: 0 }, manager, 'synthetic-d1-disposition')
+    expect(replay.created).toBe(false)
+    expect(await next.commit()).toEqual({ committed: false, revision: 1 })
+  })
+
+  it('keeps inventory readable and refuses disposition writes until 0013 is applied', async () => {
+    const d1 = fakeD1({ dispositions: false })
+    const repo = await loadD1Repository(d1, buildSyntheticRelease(), { loadedAt: requestAt })
+    const service = createInventoryServiceCore({ database: repo.database, repository: repo.repository, now: () => SYNTHETIC_NOW })
+    const groupManager = { role: 'group_manager', store: 'Howell', user: 'Synthetic group manager' }
+    const bootstrap = service.bootstrap(groupManager)
+    expect(bootstrap.dispositionsEnabled).toBe(false)
+    expect(bootstrap.vehicles.length).toBeGreaterThan(0)
+    for (const vehicle of bootstrap.vehicles) expect(vehicle.appDisposition).toMatchObject({ code: null, version: 0, canManage: false })
+    expect(() => service.updateDisposition('TESTDATAHWELL0002', { disposition: 'keep', expectedVersion: 0 }, groupManager, 'synthetic-no-table'))
+      .toThrow(expect.objectContaining({ status: 503, code: 'MIGRATION_REQUIRED' }))
+    expect(repo.database.pending).toEqual([])
   })
 
   it('commits a request and its audit event together and restores it on a fresh request', async () => {

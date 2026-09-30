@@ -34,6 +34,7 @@ import { InventoryMobileList, InventoryTable, inventorySortSummary } from "./Inv
 import { VehicleWorkspace } from "./VehicleWorkspace";
 import { CustomerShortlistDrawer } from "./CustomerShortlistDrawer";
 import { ShortlistContext, useCustomerShortlist } from "./useCustomerShortlist";
+import { useSyncedCustomerLists } from "./useSyncedCustomerLists";
 import { useInventoryDisclosure } from "./useInventoryDisclosure";
 import { buildInventorySearchIndexes, rankInventorySearchWithAuthorizedFallback } from "./inventory-search";
 import {
@@ -391,6 +392,7 @@ export function InventoryExperience({
   initialSorts = DEFAULT_INVENTORY_SORTS,
   initialWorkspaceTab = "overview",
   issueContext,
+  dispositionContext,
   pageSize = 10,
   canRequestVehicle,
   moveActionFor,
@@ -399,11 +401,21 @@ export function InventoryExperience({
   onTrackMovement,
   onOpenListing,
   onOpenSourceRecord,
+  savedLists,
 }: InventoryExperienceProps) {
   const title = `${homeStore.name} inventory`;
   // The customer shortlist is session memory for this signed-in context only;
   // it filters the list but never an already open, still-authorized record.
-  const shortlist = useCustomerShortlist(searchPersistenceKey ?? `inventory:${homeStore.id}`, allVehicles);
+  const shortlistContext = searchPersistenceKey ?? `inventory:${homeStore.id}`;
+  const localShortlist = useCustomerShortlist(shortlistContext, allVehicles);
+  const syncedShortlist = useSyncedCustomerLists({
+    enabled: savedLists?.enabled === true,
+    role: savedLists?.role ?? "sales",
+    store: savedLists?.store ?? "Howell",
+    context: shortlistContext,
+    authorizedVehicles: allVehicles,
+  });
+  const shortlist = savedLists?.enabled === true ? syncedShortlist : localShortlist;
   const [onlyShortlisted, setOnlyShortlisted] = useWorkspaceState(searchPersistenceKey, "inventory.shortlistOnly", false);
   const vehicles = useMemo(
     () => onlyShortlisted ? allVehicles.filter((vehicle) => shortlist.isShortlisted(vehicle)) : allVehicles,
@@ -855,14 +867,16 @@ export function InventoryExperience({
         }} /> : null}
       <CustomerShortlistDrawer entries={shortlist.entries}
         onRemove={shortlist.remove} onClear={shortlist.clear}
+        management={shortlist.management} authorizedVehicles={allVehicles} accessContext={shortlist.context}
         onSelectVehicle={(entry, opener) => {
-          const vehicle = allVehicles.find(candidate => candidate.id === entry.id);
+          const vehicle = allVehicles.find(candidate => candidate.id === entry.id || candidate.vin === entry.id);
           if (vehicle) openVehicleWorkspace(vehicle, "overview", opener);
         }} />
       {selectedVehicle ? (
         <VehicleWorkspace
           vehicle={selectedVehicle}
           issueContext={issueContext}
+          dispositionContext={dispositionContext}
           detailState={detailState}
           returnLabel={returnLabel}
           onRetryDetail={onRetryDetail}

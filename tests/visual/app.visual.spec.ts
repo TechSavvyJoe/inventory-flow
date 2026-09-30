@@ -119,6 +119,29 @@ test.describe('service', () => {
   })
 })
 
+test.describe('overview', () => {
+  // The Overview is the first rail item and is computed on the server, so its
+  // density and hierarchy are worth pinning for both the full manager view and
+  // the read-only one sales get.
+  test('overview all stores', async ({ page }) => {
+    await signInAs(page, 'group_manager')
+    await freeze(page)
+    await page.goto('/overview')
+    await settle(page)
+    await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible()
+    await snapshot(page, 'overview.png')
+  })
+
+  test('overview read-only for sales', async ({ page }) => {
+    await signInAs(page, 'sales')
+    await freeze(page)
+    await page.goto('/overview')
+    await settle(page)
+    await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible()
+    await snapshot(page, 'overview-sales.png')
+  })
+})
+
 test.describe('admin', () => {
   test('control center', async ({ page }) => {
     await signInAs(page, 'group_manager')

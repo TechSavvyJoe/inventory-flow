@@ -157,6 +157,18 @@ describe('public-listing code adapter', () => {
   });
 });
 
+describe('public-listing code beside an app disposition', () => {
+  it('passes the disposition through unchanged and never lets it decide listed', () => {
+    const disposition = { vin: 'TESTDATASYN000001', code: 'delivered' as const, version: 2, effectiveDate: '2026-08-26', destinationStore: null, updatedAt: '2026-08-30T12:00:00Z', updatedByRole: 'manager' as const, store: 'Howell' as const, ownerStore: 'Howell' as const, canManage: true }
+    const listed = toInventoryVehicle({ ...vehicle('listed'), appDisposition: disposition }, data())
+    expect(listed.appDisposition).toEqual(disposition)
+    expect(listed.publicListing.isListed).toBe(true)
+    const preListing = toInventoryVehicle({ ...vehicle('pre_listing'), appDisposition: { ...disposition, code: 'keep' } }, data())
+    expect(preListing.publicListing.isListed).toBe(false)
+    expect(toInventoryVehicle(vehicle('listed'), data())).not.toHaveProperty('appDisposition')
+  })
+})
+
 describe('deal status lane', () => {
   it.each([
     ['not_confirmed', 'no-outcome'],

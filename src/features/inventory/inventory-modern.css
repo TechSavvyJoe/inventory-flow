@@ -48,7 +48,10 @@
 }
 
 .inventory-page-size select {
-  width: 50px;
+  /* Size to the widest option ("100") so the native arrow never clips the
+     value; a fixed 50px showed "5(" in Chromium on Linux and Windows. */
+  width: auto;
+  min-width: var(--ifx-space-16);
 }
 
 .inventory-filter-panel--modern {

@@ -180,6 +180,7 @@ async function readEverything(baseUrl, context) {
   ]
   for (const vehicle of bootstrap.vehicles) {
     reads.push([`vehicle ${vehicle.vin}`, await get(baseUrl, context, `/api/vehicles/${vehicle.vin}`)])
+    reads.push([`disposition ${vehicle.vin}`, await get(baseUrl, context, `/api/vehicles/${vehicle.vin}/disposition`)])
   }
   const transfers = await get(baseUrl, context, '/api/transfers')
   reads.push(['transfers', transfers])
@@ -353,6 +354,70 @@ describe('role-matrix canary (integration projection never carries the Overview)
         for (const [where, body] of [['daily operations', read.dailyOperations()], ['data quality', read.dataQuality()], ['capabilities', read.capabilities]]) {
           expect(JSON.stringify(body), `${role} ${label} integration ${where}`).not.toContain('vehicleFacts')
         }
+      }
+    }
+  })
+})
+
+describe.each(['simple', 'advanced'])('role-matrix canary (disposition ledger, %s moves)', (workflowMode) => {
+  it('keeps the disposition note and actor out of transport roles, list views, the Overview and the integration projection', async () => {
+    const { baseUrl, release, service, seeded } = await harness(workflowMode)
+    // A dedicated identity that records only dispositions. An identity that
+    // also posted service or move events would reach transport roles through
+    // those records' own actor fields and read as a false positive here.
+    const dispositionActor = { role: 'manager', store: 'Fowlerville', user: marker(seeded, 'disposition actor') }
+    // A Fowlerville vehicle with no DealerMail hold rows or released history,
+    // so the seeded note cannot collide with the hold-evidence guard (every
+    // hold row carries the marker). The fixture's only unheld Howell unit
+    // carries the released history.
+    const releasedVin = release.releasedHoldHistory?.[0]?.vin
+    const target = release.vehicles.find((vehicle) => vehicle.publicRecord?.store === 'Fowlerville' && !vehicle.holdRecord && vehicle.vin !== releasedVin)
+    expect(target, 'an unheld Fowlerville vehicle').toBeTruthy()
+    const response = await fetch(`${baseUrl}/api/vehicles/${target.vin}/disposition`, {
+      method: 'POST',
+      headers: { ...headers(dispositionActor), 'idempotency-key': `canary-disposition-${workflowMode}` },
+      body: JSON.stringify({ disposition: 'sold_pending', effectiveDate: '2026-08-29', note: marker(seeded, 'disposition note'), expectedVersion: 0 }),
+    })
+    expect(response.status, JSON.stringify(await response.clone().json())).toBe(201)
+
+    // Positive control: evidence roles read the note and the writer's name.
+    for (const context of [groupManager, sales, manager, homeManager]) {
+      const detail = await get(baseUrl, context, `/api/vehicles/${target.vin}/disposition`)
+      expect(detail, `${context.role}@${context.store} disposition detail`).toMatchObject({ code: 'sold_pending', updatedBy: dispositionActor.user, note: 'ZQCANARY disposition note' })
+      expect(detail.history, `${context.role}@${context.store} disposition history`).toHaveLength(1)
+      // List views and the Overview carry codes, dates and stores only.
+      const bootstrap = await get(baseUrl, context, '/api/bootstrap')
+      expect(bootstrap.vehicles.find((vehicle) => vehicle.vin === target.vin).appDisposition).toMatchObject({ code: 'sold_pending' })
+      expectNoMarker(`${context.role}@${context.store} bootstrap vehicle dispositions`, bootstrap.vehicles.map((vehicle) => vehicle.appDisposition))
+      expectNoMarker(`${context.role}@${context.store} bootstrap.overview`, bootstrap.overview)
+      expect(bootstrap.overview.vehicleFacts[target.vin].disposition).toBe('sold_pending')
+      const list = await get(baseUrl, context, '/api/vehicles?limit=100')
+      expect(list.items.length).toBeGreaterThan(0)
+      expectNoMarker(`${context.role}@${context.store} vehicle list dispositions`, list.items.map((vehicle) => vehicle.appDisposition))
+    }
+
+    for (const context of [porter, driver, coordinator, { ...porter, store: 'Howell' }, { ...driver, store: 'Howell' }, { ...coordinator, store: 'Howell' }]) {
+      const reads = await readEverything(baseUrl, context)
+      for (const [where, body] of reads) expectNoMarker(`${context.role}@${context.store} ${where}`, body)
+      const bootstrap = reads.find(([where]) => where === 'bootstrap')[1]
+      expect(bootstrap, `${context.role}@${context.store} bootstrap`).not.toHaveProperty('overview')
+      const detail = reads.find(([where]) => where === `disposition ${target.vin}`)[1]
+      // Code and date only: no note, no writer, no history.
+      expect(detail).toMatchObject({ code: 'sold_pending', effectiveDate: '2026-08-29', history: [] })
+      expect(detail).not.toHaveProperty('note')
+      expect(detail).not.toHaveProperty('updatedBy')
+    }
+
+    for (const role of ['group_manager', 'manager', 'sales']) {
+      const principal = {
+        clientId: 'a'.repeat(32), userId: `canary-${role}`, role, store: 'Howell', user: `Canary integration ${role}`,
+        stores: [...STORE_NAMES], scopes: ['inventory.read', 'changes.read', 'health.read', 'holds.aggregate.read'],
+      }
+      for (const source of [service.bootstrap(principal, { overview: false }), service.bootstrap(principal)]) {
+        const projected = integrationBootstrapFromSource(source, release)
+        expect(projected).not.toHaveProperty('overview')
+        expectNoMarker(`${role} integration bootstrap with a recorded disposition`, projected)
+        for (const vehicle of projected.vehicles) expect(vehicle, `${role} integration vehicle ${vehicle.vin}`).not.toHaveProperty('appDisposition')
       }
     }
   })

@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Inventory Flow Deal Desk
 
-> Last Updated: 2026-09-23
+> Last Updated: 2026-09-30
 
 This file is the single source of truth for the store listing. Update it whenever
 `manifest.json`, permissions, data handling, or user-facing behavior change, and add a
@@ -21,7 +21,7 @@ Search by stock number, VIN, vehicle, trim, color, price, mileage, or equipment 
 
 Compare up to three vehicles side by side, print a customer take-home sheet, or copy stock/VIN/deal details with one action. Select any text on any page and right-click to search Inventory Flow for it instantly.
 
-The panel is read-only by design. Any action that changes something — requesting a vehicle transfer, tracking a move — opens the matching screen in Inventory Flow itself, pre-filled, so the app's own sign-in, role rules, and validation apply exactly as if you had clicked the same button inside Inventory Flow. The extension never submits data anywhere on its own.
+The panel reads source inventory, holds and documents. Employees can create private customer vehicle lists, label them with initials or a nickname, and add or remove vehicles. Those deliberate actions send authenticated POST requests only to Inventory Flow's saved-list endpoints, where employee ownership and access are enforced. Contact details belong in DealerMail and must not be entered as list labels. Transfer, service and administrative actions open the matching Inventory Flow screen. DealerMail and other source systems remain read-only.
 
 The panel reuses your existing sign-in: it reads Inventory Flow's own API using the Cloudflare Access session cookie you already have from signing into the app in your browser. It does not collect analytics, does not use tracking, and does not load any code from outside the extension package.
 
@@ -61,7 +61,7 @@ tab, (3) the compare view with two or three vehicles.
 | Permission | Type | Justification |
 |------------|------|---------------|
 | `sidePanel` | permissions | The extension's entire UI is a Chrome side panel; this permission is what lets the extension register and open it. |
-| `storage` | permissions | Saves the user's display preferences (theme, density, home store) via `chrome.storage.sync`, and keeps a session-only copy of the fetched inventory list, the compare set, active filters, and a take-home-page handoff via `chrome.storage.session`. Nothing here is synced or sent anywhere outside the user's own Chrome profile. |
+| `storage` | permissions | Saves display preferences via Chrome storage and keeps transient inventory, comparison, filter, and take-home state in the browser session. Customer vehicle lists synchronize separately through authenticated Inventory Flow endpoints; Chrome storage does not own those lists. |
 | `contextMenus` | permissions | Adds the single "Search Inventory Flow for …" entry that appears when the user selects text and right-clicks, letting them open the panel pre-filled with that selection. |
 | `scripting` | permissions | Runs one read-only check inside an already open, signed-in DealerMail inventory tab (`/prospect_manager/`): it fetches the selected stock's hold-detail page and returns only the hold status, the active-order count and the check time. It never submits, holds, releases or comments, and no names, notes, cookies or page HTML leave that tab. |
 | `https://inventory-ops.joegallant.me/*` | host_permissions | The dealership group's own production Inventory Flow application — the panel's source for inventory, the daily hold snapshot, and vehicle-status data. |
@@ -76,26 +76,20 @@ user already selected, via Chrome's built-in `selectionText`.
 
 ### Data Collection
 
-**Does the extension collect user data?** No.
+**Does the extension collect user data?** Yes: employee-owned list labels and selected vehicle references, solely for the saved-list feature.
 
-The extension does not collect, transmit, or store any data of its own. It reads the
-dealership's existing Inventory Flow application using the browser's own Cloudflare Access
-sign-in session, exactly as a browser tab open to that application would. It sends no
-analytics, telemetry, or crash reports, and it never submits (`POST`/`PUT`/`PATCH`/`DELETE`)
-data to Inventory Flow or anywhere else — every action that changes something opens the
-matching Inventory Flow screen instead, in a normal browser tab, where the app's own sign-in
-and validation apply.
+The extension reads the dealership's Inventory Flow application using the browser's existing Cloudflare Access session. User-initiated customer-list actions send list labels, vehicle references and action/revision identifiers to authenticated saved-list POST endpoints on that same origin. The server owns employee attribution and access control. Lists synchronize through Inventory Flow across devices; the extension does not copy full vehicle records or customer contact details into those lists. No analytics, telemetry, crash reporting, remote code or source-system writes are used.
 
 | Data Type | Collected? | Transmitted Off-Device? | Purpose | Shared with Third Parties? |
 |-----------|-----------|------------------------|---------|---------------------------|
-| Personally identifiable info | No | No | — | No |
+| Personally identifiable info | List labels may identify a customer if the employee enters a name; use initials or nicknames and never contact details | Yes — only the dealership's Inventory Flow service | Private employee-owned customer vehicle lists across devices | No |
 | Health info | No | No | — | No |
 | Financial info | No | No | — | No |
 | Authentication info | No (reused, not collected) | Yes — the existing Cloudflare Access session cookie, sent only to the dealership's own `inventory-ops.joegallant.me` origin, the same way it would be from a browser tab | Lets the panel read inventory data the signed-in user is already authorized to see | No |
 | Personal communications | No | No | — | No |
 | Location | No | No | — | No |
 | Web history | No | No | — | No |
-| User activity | No | No | — | No |
+| User activity | Saved-list actions, revision and employee attribution | Yes — only the dealership's Inventory Flow service | Reliable ownership, conflict recovery and synchronization | No |
 | Website content | No | No | The context-menu action reads only text the user has actively selected on the current page, to prefill a search; it is not stored beyond that single search and is never sent anywhere but the extension's own panel. The live hold check reads the selected stock's DealerMail hold-detail page inside the user's own DealerMail tab and returns only the hold status and active-order count to the panel; nothing is sent elsewhere | No |
 
 ### Data Use Certification
@@ -113,7 +107,7 @@ This is an internal tool distributed to one dealership group's own staff (unlist
 `ExtensionInstallForcelist`, per `extension/README.md` "Distribution"), so a general public
 privacy policy has not been published. Before any **public** Chrome Web Store listing, publish
 a short policy (see the skill's `references/webstore/privacy-policy.md`) stating plainly: the
-extension collects no data of its own; it reuses the browser's existing Cloudflare Access
+extension stores employee-owned list labels and vehicle references in Inventory Flow; it reuses the browser's existing Cloudflare Access
 sign-in to read the dealership's own inventory system; a selected-text search query is read
 locally and never leaves the browser except as a search inside the panel; no analytics, no
 advertising, no data sale, no remote code. Host it at a stable, publicly reachable URL (e.g. a
@@ -145,6 +139,7 @@ Contact your Inventory Flow administrator (internal tool; no public support chan
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
+| 1.4.0 | 2026-09-30 | Synced employee-owned customer lists, richer vehicle workspace, warranty visibility and customer documents | Direct internal ZIP; not submitted |
 | 1.2.1 | 2026-09-15 | Focus workflows and vehicle records pass (commit `75a3733`) | Not submitted |
 | 1.2.0 | 2026-09-15 | Finished workflow and access polish for the 1.2.0 release (commit `d65cb2c`) | Not submitted |
 | 1.2.0 | 2026-09-15 | Inventory Flow production redesign the panel mirrors (commit `052f70a`) | Not submitted |

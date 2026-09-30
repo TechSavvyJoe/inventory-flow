@@ -1,5 +1,5 @@
 import { vehicleWorkspacePath, withWorkspaceReturnPath } from '../../lib/inventory-navigation'
-import { STORE_NAMES, type OverviewException, type ServiceWorkflowStatus, type StoreName } from '../../types'
+import { STORE_NAMES, type AppDispositionCode, type OverviewBoardFlow, type OverviewException, type ServiceWorkflowStatus, type StoreName } from '../../types'
 
 /**
  * Every href the Overview renders (OVERVIEW_SPEC §8.4). Links carry only
@@ -20,6 +20,12 @@ export const OVERVIEW_INVENTORY_VIEWS = [
   'holds',
   'holds-past-expected',
   'records-incomplete',
+  'disposition-keep',
+  'disposition-sold-pending',
+  'disposition-delivered',
+  'disposition-wholesale',
+  'disposition-transfer-out',
+  'disposition-none',
 ] as const
 
 export type OverviewInventoryView = (typeof OVERVIEW_INVENTORY_VIEWS)[number]
@@ -78,8 +84,59 @@ export function serviceVehicleHref(vin: string, returnTo = OVERVIEW_RETURN_PATH)
   return withWorkspaceReturnPath(`/service?vin=${encodeURIComponent(vin)}`, returnTo)
 }
 
+/** The Inventory view for one disposition code (or none recorded) by owner store. */
+export function dispositionView(code: AppDispositionCode | 'none'): OverviewInventoryView {
+  return `disposition-${code.replaceAll('_', '-')}` as OverviewInventoryView
+}
+
+export type BoardLeg = OverviewBoardFlow['kind']
+const BOARD_LEGS: readonly BoardLeg[] = ['outbound', 'return', 'planned']
+
+/**
+ * A store-board arrow: Vehicle moves narrowed to exactly that arrow's leg.
+ * `from`/`to` are the arrow's drawn direction (a return runs from the
+ * destination back to the home store).
+ */
+export function boardFlowHref(flow: Pick<OverviewBoardFlow, 'from' | 'to' | 'kind'>): string {
+  return query('/transfers', [['from', flow.from], ['to', flow.to], ['leg', flow.kind]])
+}
+
+export interface BoardRoute { from: StoreName; to: StoreName; leg: BoardLeg }
+
+/** Reads a board arrow's Moves parameters; null unless all three are valid. */
+export function readBoardRoute(params: URLSearchParams): BoardRoute | null {
+  const from = params.get('from')
+  const to = params.get('to')
+  const leg = params.get('leg') as BoardLeg | null
+  return isStoreName(from) && isStoreName(to) && from !== to && leg && BOARD_LEGS.includes(leg) ? { from, to, leg } : null
+}
+
+export interface BoardRouteRecord {
+  homeStore: string
+  destination: string
+  currentLocation: string
+  requestStatus: string
+  movementStatus: string
+  locationConfidence: string
+}
+
+/**
+ * The server's arrow rule (server/overview-summary.mjs boardFlows) applied to
+ * one move, so an arrow's count and the Moves list it opens agree.
+ */
+export function transferMatchesBoardRoute(record: BoardRouteRecord, { from, to, leg }: BoardRoute): boolean {
+  if (['declined', 'canceled', 'closed', 'delivery_confirmed'].includes(record.requestStatus) ||
+      record.movementStatus === 'returned_home' || ['unknown', 'conflicting'].includes(record.locationConfidence)) return false
+  const inTransit = record.currentLocation === 'In transit'
+  const returning = inTransit && record.movementStatus.includes('return')
+  if (leg === 'return') return returning && record.destination === from && record.homeStore === to
+  if (record.homeStore !== from || record.destination !== to) return false
+  if (leg === 'outbound') return !returning && (inTransit || (isStoreName(record.currentLocation) && record.currentLocation !== record.homeStore))
+  return record.currentLocation === record.homeStore && ['approved', 'transport_assigned'].includes(record.requestStatus)
+}
+
 /** OVERVIEW_SPEC §11: where each exception count leads. */
-export function exceptionHref(exception: Pick<OverviewException, 'kind' | 'store' | 'vins'>): string {
+export function exceptionHref(exception: Pick<OverviewException, 'kind' | 'store' | 'vins' | 'transferIds'>): string {
   switch (exception.kind) {
     case 'location_conflict': return inventoryViewHref(exception.store, 'conflict')
     case 'no_app_record':
@@ -90,6 +147,11 @@ export function exceptionHref(exception: Pick<OverviewException, 'kind' | 'store
     case 'records_incomplete': return inventoryViewHref(exception.store, 'records-incomplete')
     case 'source_conflict':
     case 'service_date_order': return inventoryVinsHref(exception.vins)
+    case 'listed_but_delivered': return inventoryViewHref(exception.store, 'disposition-delivered')
+    case 'delivered_move_no_disposition':
+      return exception.transferIds?.length === 1
+        ? withWorkspaceReturnPath(`/transfers?id=${encodeURIComponent(exception.transferIds[0])}`, OVERVIEW_RETURN_PATH)
+        : inventoryVinsHref(exception.vins)
   }
 }
 
@@ -106,6 +168,12 @@ export const OVERVIEW_VIEW_LABELS: Record<OverviewInventoryView, string> = {
   holds: 'Holds',
   'holds-past-expected': 'Holds past expected',
   'records-incomplete': 'Records incomplete',
+  'disposition-keep': 'Disposition: Keep',
+  'disposition-sold-pending': 'Disposition: Sold pending',
+  'disposition-delivered': 'Disposition: Delivered',
+  'disposition-wholesale': 'Disposition: Wholesale',
+  'disposition-transfer-out': 'Disposition: Transfer out',
+  'disposition-none': 'No disposition recorded',
 }
 
 /** The Inventory entry parameters an Overview link may carry; all are stripped on entry. */

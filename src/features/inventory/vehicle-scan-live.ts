@@ -2,7 +2,7 @@ type Reading = { text: string; barcode: boolean }
 type Reader = (canvas: HTMLCanvasElement, progress: (message: string) => void, signal: AbortSignal) => Promise<Reading>
 
 /** Read a steady tag in the guide while the separate barcode reader stays live. */
-export function scanStockVideo(video: HTMLVideoElement, read: Reader, found: (reading: Reading) => boolean, signal: AbortSignal): () => void {
+export function scanStockVideo(video: HTMLVideoElement, read: Reader, found: (reading: Reading) => boolean, signal: AbortSignal, progress: (message: string) => void = () => {}): () => void {
   let stopped = false
   let timer: number | undefined
   let deadline: number | undefined
@@ -47,12 +47,26 @@ export function scanStockVideo(video: HTMLVideoElement, read: Reader, found: (re
       frameContext.drawImage(video, sx, sy, sw, sh, 0, 0, frame.width, frame.height)
       attempt = new AbortController()
       const currentAttempt = attempt
-      // Keep a cold OCR load bounded; the fast barcode reader continues throughout.
-      deadline = window.setTimeout(() => currentAttempt.abort(), 15000)
-      const result = await read(frame, () => {}, currentAttempt.signal)
+      // A first visit must finish downloading the reader before the shorter
+      // frame budget starts. Barcode scanning remains independent throughout.
+      deadline = window.setTimeout(() => currentAttempt.abort(), 90_000)
+      let recognizing = false
+      const result = await read(frame, message => {
+        if (stopped || currentAttempt.signal.aborted) return
+        if (!recognizing && message.startsWith('Reading tag')) {
+          recognizing = true
+          window.clearTimeout(deadline)
+          deadline = window.setTimeout(() => currentAttempt.abort(), 15_000)
+        }
+        progress(message)
+      }, currentAttempt.signal)
       if (!stopped && !currentAttempt.signal.aborted && result.text && found(result)) { stop(); return }
+      if (!stopped) progress('Point at a VIN barcode or stock tag. Hold steady to read automatically.')
     } catch {
-      // A frame without a readable stock tag is normal. Keep the viewfinder open.
+      // Do not silently restart a failed download forever. The independent
+      // barcode reader stays usable; Scan again can explicitly retry OCR.
+      if (!stopped) progress('Stock-tag reader paused. Scan a barcode, choose a photo, or enter the number.')
+      stop()
     } finally {
       window.clearTimeout(deadline)
       attempt = undefined

@@ -15,6 +15,9 @@ const REQUIRED_METHODS = Object.freeze([
   "listTransferRows",
   "listServiceEvents",
   "insertServiceEvent",
+  "dispositionsEnabled",
+  "listDispositionEvents",
+  "insertDispositionEvent",
   "vehicleIssuesEnabled",
   "listVehicleIssueRows",
   "listVehicleIssueEvents",
@@ -37,6 +40,11 @@ function invoke(context, method, args) {
     throw new TypeError(`Inventory repository method ${method} must be synchronous; preload storage before creating the service`)
   }
   return result
+}
+
+function invokeOptional(context, method, args, fallback) {
+  if (typeof context.repository[method] !== 'function') return fallback
+  return invoke(context, method, args)
 }
 
 export function appendTransferEvent(context, ...args) {
@@ -91,6 +99,18 @@ export function insertServiceEvent(context, ...args) {
   return invoke(context, 'insertServiceEvent', args)
 }
 
+export function dispositionsEnabled(context, ...args) {
+  return invoke(context, 'dispositionsEnabled', args)
+}
+
+export function listDispositionEvents(context, ...args) {
+  return invoke(context, 'listDispositionEvents', args)
+}
+
+export function insertDispositionEvent(context, ...args) {
+  return invoke(context, 'insertDispositionEvent', args)
+}
+
 export function vehicleIssuesEnabled(context, ...args) {
   return invoke(context, 'vehicleIssuesEnabled', args)
 }
@@ -109,4 +129,16 @@ export function insertVehicleIssue(context, ...args) {
 
 export function appendVehicleIssueEvent(context, ...args) {
   return invoke(context, 'appendVehicleIssueEvent', args)
+}
+
+export function savedVehicleListsEnabled(context, ...args) {
+  return invokeOptional(context, 'savedVehicleListsEnabled', args, false)
+}
+
+export function listSavedVehicleLists(context, ...args) {
+  return invokeOptional(context, 'listSavedVehicleLists', args, [])
+}
+
+export function mutateSavedVehicleList(context, ...args) {
+  return invoke(context, 'mutateSavedVehicleList', args)
 }

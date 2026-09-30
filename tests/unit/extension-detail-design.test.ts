@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // @ts-nocheck -- Synthetic-only tests for the unbundled companion workspace.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { within } from '@testing-library/react'
 import markup from '../../extension/sidepanel/index.html?raw'
 import { renderTakeHome, takeHomeModel } from '../../extension/sidepanel/lib/takehome.mjs'
 import { toPanelVehicle } from '../../extension/sidepanel/lib/model.mjs'
@@ -366,5 +367,38 @@ describe('customer take-home usability and privacy', () => {
     expect(printCss).toContain('overflow: visible; display: block')
     expect(printCss).not.toContain('height: 11in; min-height: 0')
     expect(printCss).toContain('min-height: 44px')
+  })
+})
+
+describe('quick companion overview interactions', () => {
+  it('puts captured packages before the collapsed calculator and documents', async () => {
+    await boot([{ ...record(), windowSticker: { dataState:'current', equipmentGroup:'Synthetic premium package', options:['Synthetic towing option'] } }])
+    const heading = within(document.body).getByRole('heading', { name:'Stands out' })
+    const calculator = within(document.body).getByRole('button', { name:'Warranty calculator' })
+    const documents = within(document.body).getByRole('region', { name:'Vehicle documents and records' })
+    expect(heading.compareDocumentPosition(calculator) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(calculator.compareDocumentPosition(documents) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(calculator).toHaveAttribute('aria-expanded','false')
+    expect(heading.parentElement.parentElement).toHaveTextContent('Synthetic premium package')
+  })
+  it('opens and closes captured document details together', async () => {
+    await boot([{ ...record(), windowSticker: { dataState:'current', equipmentGroup:'Synthetic group', options:['Synthetic additional roof'] }, autoCheckReport:{ dataState:'current',score:91, ownerCount:1, checks:[{ label:'Title',status:'Synthetic clean title' }] }, fordOasis:{ dataState:'current', warrantyStartDate:'2024-03-01', warrantyCoverages:[{type:'Synthetic manufacturer coverage',description:'Synthetic coverage detail'}] } }])
+    const documents = within(document.body).getByRole('region', { name:'Vehicle documents and records' })
+    const details = [...documents.querySelectorAll('.doc-expanded-facts')]
+    expect(details).toHaveLength(3)
+    expect(details.every(node => node.hidden)).toBe(true)
+    within(documents).getByRole('button', { name:'Show details' }).click()
+    expect(details.every(node => !node.hidden)).toBe(true)
+    within(documents).getByRole('button', { name:'Hide details' }).click()
+    expect(details.every(node => node.hidden)).toBe(true)
+  })
+  it('enlarges the photo and restores focus when the viewer closes', async () => {
+    await boot([{ ...record(), imageUrls:['https://images.dealer.com/synthetic-one.jpg','https://images.dealer.com/synthetic-two.jpg'] }])
+    const enlarge = within(document.body).getByRole('button', { name:/Enlarge photos of/ }); enlarge.focus(); enlarge.click()
+    const dialog = within(document.body).getByRole('dialog', { name:/Photos/ })
+    within(dialog).getByRole('button', { name:'Next enlarged photo' }).click()
+    expect(within(dialog).getByRole('img')).toHaveAttribute('src','https://images.dealer.com/synthetic-two.jpg')
+    within(dialog).getByRole('button', { name:'Close photos' }).click()
+    expect(document.activeElement).toBe(enlarge)
   })
 })

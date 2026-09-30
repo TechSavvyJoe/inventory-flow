@@ -104,7 +104,7 @@ async function capture(page: Page, width: number, state: string) {
 test.use({ deviceScaleFactor: 1 })
 
 async function expectCompactReportColumns(records: Locator, width: number) {
-  const sections = await records.locator('[data-record-section]').evaluateAll(elements => elements.map(element => {
+  const sections = await records.locator('.inventory-vehicle-documents__grid > [data-record-section]').evaluateAll(elements => elements.map(element => {
     const box = element.getBoundingClientRect()
     return { id: element.getAttribute('data-record-section'), x: box.x, y: box.y, bottom: box.bottom, fragments: element.getClientRects().length }
   }))
@@ -130,7 +130,7 @@ async function expectCompactReportColumns(records: Locator, width: number) {
 
 async function expectReportHeadingVisible(workspace: Locator, section: Locator) {
   const scroll = await workspace.locator('.vdp-focus-scroll').boundingBox()
-  const heading = await section.locator('.inventory-vehicle-document__heading').boundingBox()
+  const heading = await section.locator('.inventory-vehicle-document__heading').first().boundingBox()
   expect(heading, 'The jumped-to report has a visible heading').not.toBeNull()
   expect(heading!.y, 'Jump lands below the fixed workspace navigation').toBeGreaterThanOrEqual(scroll!.y - 1)
   expect(heading!.y + heading!.height, 'The full heading remains above the fixed footer').toBeLessThanOrEqual(scroll!.y + scroll!.height + 1)
@@ -164,6 +164,8 @@ for (const size of [
     const records = workspace.getByRole('region', { name: 'Vehicle documents' })
     await expect(records.locator('[data-record-section]')).toHaveCount(5)
     expect(await records.locator('[data-record-section]').evaluateAll(sections => sections.map(section => section.getAttribute('data-record-section')))).toEqual(['autocheck', 'oasis', 'warranty', 'sticker', 'equipment'])
+    await expect(records.locator('[data-record-section="equipment"]')).not.toHaveAttribute('open', '')
+    await expect(records.locator('[data-record-section="equipment"] .inventory-vehicle-document')).toBeHidden()
     await expect(workspace.locator('.vdp-records-summary')).toContainText('Base MSRP')
     await expect(workspace.locator('.vdp-records-summary')).toContainText('63,420')
     // The top-of-workspace summary never carries the sticker-currency qualifier
@@ -238,7 +240,8 @@ for (const size of [
     await expect(stickerPricing).toContainText('Original MSRP')
     await expect(stickerPricing).toContainText('68,420')
     await expect(stickerPricing).not.toContainText('63,420')
-    await expect(sticker.getByText('Base MSRP', { exact: true })).toHaveCount(0)
+    await expect(stickerPricing.getByText('Base MSRP', { exact: true })).toHaveCount(0)
+    await expect(equipment.getByLabel('Base MSRP')).toContainText('63,420')
     await expect(sticker.getByText('Options', { exact: true })).toHaveCount(0)
     await expect(sticker.getByText('Destination', { exact: true })).toHaveCount(0)
     await expect(sticker).not.toContainText('Synthetic source has no printed currency symbol.')

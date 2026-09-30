@@ -1,5 +1,7 @@
 import { apiAccessGeneration, recordConfirmedMutation, reportAccessFailure } from './apiSession'
 import type {
+  AppDispositionDetail,
+  AppDispositionInput,
   AttentionEventInput,
   AttentionItem,
   BootstrapData,
@@ -20,11 +22,14 @@ import type { AdminOverview, MembershipDirectory, MembershipInput } from '../fea
 
 export class ApiError extends Error {
   status: number
+  /** The server's error code (for example `DISPOSITION_VERSION_CONFLICT`), when it sent one. */
+  code?: string
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    if (code) this.code = code
   }
 }
 
@@ -153,7 +158,7 @@ function revalidatedEntry(path: string, generation: number): RevalidatedEntry | 
   return entry
 }
 
-async function request<T>(path: string, options: RequestInit = {}, timing: RequestTiming = {}): Promise<T> {
+export async function request<T>(path: string, options: RequestInit = {}, timing: RequestTiming = {}): Promise<T> {
   const accessGeneration = apiAccessGeneration()
   const headers = new Headers(options.headers)
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
@@ -213,7 +218,7 @@ async function request<T>(path: string, options: RequestInit = {}, timing: Reque
       confirmed = response.status >= 400 && response.status < 500 && ![408, 425, 429].includes(response.status)
       const payload = isJson ? await response.json().catch(() => null) : null
       const message = typeof payload?.error === 'string' ? payload.error : response.statusText || 'Request failed'
-      throw new ApiError(message, response.status)
+      throw new ApiError(message, response.status, typeof payload?.code === 'string' ? payload.code : undefined)
     }
     let payload: T
     try {
@@ -250,7 +255,7 @@ async function request<T>(path: string, options: RequestInit = {}, timing: Reque
   }
 }
 
-function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, string> {
+export function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, string> {
   return {
     'x-inventory-demo-role': role,
     // Production honors this only for a server-authenticated group manager.
@@ -332,6 +337,18 @@ export function getServiceReadiness(vin: string, role: UserRole, store: StoreNam
 
 export function updateServiceReadiness(vin: string, input: ServiceReadinessInput, role: UserRole, store: StoreName): Promise<ServiceReadinessDetail> {
   return request<ServiceReadinessDetail>(`/api/vehicles/${encodeURIComponent(vin)}/service`, {
+    method: 'POST', headers: demoIdentityHeaders(role, store), body: JSON.stringify(input),
+  })
+}
+
+export function getDisposition(vin: string, role: UserRole, store: StoreName): Promise<AppDispositionDetail> {
+  return request<AppDispositionDetail>(`/api/vehicles/${encodeURIComponent(vin)}/disposition`, {
+    headers: demoIdentityHeaders(role, store),
+  })
+}
+
+export function updateDisposition(vin: string, input: AppDispositionInput, role: UserRole, store: StoreName): Promise<AppDispositionDetail> {
+  return request<AppDispositionDetail>(`/api/vehicles/${encodeURIComponent(vin)}/disposition`, {
     method: 'POST', headers: demoIdentityHeaders(role, store), body: JSON.stringify(input),
   })
 }

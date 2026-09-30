@@ -22,6 +22,8 @@ export function VehicleGallery({ vehicle }: { vehicle: GalleryVehicle }) {
   const returnFocusRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const touchOrigin = useRef<{ x: number; y: number } | null>(null);
+  const previewTouchOrigin = useRef<{ x: number; y: number } | null>(null);
+  const previewSwipeAt = useRef(0);
   const stageRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
@@ -144,6 +146,22 @@ export function VehicleGallery({ vehicle }: { vehicle: GalleryVehicle }) {
     const dy = touch.clientY - origin.y;
     if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) moveGallery(dx < 0 ? 1 : -1);
   };
+  const startPreviewSwipe = (event: TouchEvent) => {
+    const touch = event.touches.length === 1 ? event.touches[0] : null;
+    previewTouchOrigin.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+  };
+  const finishPreviewSwipe = (event: TouchEvent) => {
+    const origin = previewTouchOrigin.current;
+    previewTouchOrigin.current = null;
+    const touch = event.changedTouches[0];
+    if (!origin || !touch || event.touches.length) return;
+    const dx = touch.clientX - origin.x;
+    const dy = touch.clientY - origin.y;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      previewSwipeAt.current = Date.now();
+      moveGallery(dx < 0 ? 1 : -1);
+    }
+  };
 
   if (!activeImage) {
     return (
@@ -177,9 +195,15 @@ export function VehicleGallery({ vehicle }: { vehicle: GalleryVehicle }) {
       data-photo-state="available"
       data-photo-count={usableImages.length}
     >
-      <div className="inventory-workspace-gallery__stage">
+      <div className="inventory-workspace-gallery__stage" onTouchStart={startPreviewSwipe} onTouchEnd={finishPreviewSwipe} onTouchCancel={() => { previewTouchOrigin.current = null; }}>
         <button type="button" className="inventory-workspace-gallery__open" ref={setOpenRef}
-          aria-label={`Open photo gallery for ${displayName}`} onClick={() => setExpanded(true)}>
+          aria-label={`Open photo gallery for ${displayName}`} onClick={(event) => {
+            if (Date.now() - previewSwipeAt.current < 500) {
+              event.preventDefault();
+              return;
+            }
+            setExpanded(true);
+          }}>
         <img
           key={activeImage}
           src={activeImage}

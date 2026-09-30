@@ -22,6 +22,49 @@ function expandDetails(kind: 'equipment' | 'history' | 'OASIS') {
 }
 
 describe('source-backed vehicle resource cards', () => {
+  it('combines provider shortcuts with supplied row actions without repeating the AutoCheck summary', () => {
+    const vehicle = sources();
+    render(<VehicleResourceCards vehicle={vehicle} variant="shortcuts" onOpenSection={vi.fn()} shortcutActions={<>
+      <button type="button">Records</button><button type="button">Save</button><button type="button">Request</button>
+    </>}/>);
+    const rail = screen.getByLabelText('Vehicle report and row actions');
+    expect(rail).toHaveClass('is-action-rail');
+    expect(within(rail).getByRole('link', { name:'Open AutoCheck source in a new tab' })).toHaveTextContent('Score 91 · 1 owner');
+    expect(within(rail).getByRole('link', { name:'Open Sticker source in a new tab' })).toHaveTextContent('Sticker MSRP CAD 68,420');
+    expect(within(rail).getByRole('link', { name:'Open OASIS source in a new tab' })).toHaveTextContent('At least 1 captured service action · result incomplete');
+    expect(within(rail).getAllByRole('button')).toHaveLength(3);
+    expect(within(rail).queryByLabelText('AutoCheck captured summary')).not.toBeInTheDocument();
+  });
+
+  it('keeps supplied shortcut actions when the vehicle has no usable provider resources', () => {
+    render(<VehicleResourceCards vehicle={{vin:'',make:'Chevrolet'}} variant="shortcuts" shortcutActions={<>
+      <button type="button">Records</button><button type="button">Save</button><button type="button">Request</button>
+    </>}/>);
+    const rail = screen.getByLabelText('Vehicle report and row actions');
+    expect(within(rail).getAllByRole('button')).toHaveLength(3);
+    expect(within(rail).queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('keeps the default shortcuts summary when no combined row actions are supplied', () => {
+    render(<VehicleResourceCards vehicle={sources()} variant="shortcuts" onOpenSection={vi.fn()}/>);
+    expect(screen.getByLabelText('AutoCheck captured summary')).toHaveTextContent('Score 91');
+    expect(screen.getByLabelText('Vehicle report shortcuts')).not.toHaveClass('is-action-rail');
+  });
+
+  it.each(['scan', 'shortcuts'] as const)('makes %s source branding open the exact document or captured record without selecting the row', variant => {
+    const vehicle = sources();
+    vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, url: null };
+    const onOpenSection = vi.fn();
+    const onRowClick = vi.fn();
+    render(<div onClick={onRowClick}><VehicleResourceCards vehicle={vehicle} variant={variant} onOpenSection={onOpenSection}/></div>);
+    const sticker = screen.getByRole('link', { name: 'Open Sticker source in a new tab' });
+    expect(sticker).toHaveAttribute('href', vehicle.windowSticker!.url);
+    expect(sticker).toHaveAttribute('rel', 'noopener noreferrer');
+    fireEvent.click(screen.getByRole('button', { name: 'View captured AutoCheck records' }));
+    expect(onOpenSection).toHaveBeenCalledExactlyOnceWith('data');
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
   it('keeps desktop workspace reports compact until the user requests details', () => {
     const media = {matches:true,addEventListener:vi.fn(),removeEventListener:vi.fn()};
     vi.stubGlobal('matchMedia',vi.fn(() => media));
@@ -418,6 +461,7 @@ describe('source-backed vehicle resource cards', () => {
     const page = render(<VehicleResourceCards vehicle={vehicle} variant="scan"/>);
     for (const provider of document.querySelectorAll('.vehicle-resource-scan__fields')) expect(provider.children.length).toBeLessThanOrEqual(3);
     expect(screen.queryByText('Adaptive cruise control')).not.toBeInTheDocument();
+    expect(screen.queryByText('Trailer Tow Package')).not.toBeInTheDocument();
     page.rerender(<VehicleResourceCards vehicle={vehicle} variant="preview"/>);
     expandDetails('history');
     expect(screen.getByText('No title brands reported')).toBeVisible();

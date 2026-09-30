@@ -323,6 +323,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         issueContext={data.vehicleIssuesEnabled === true || Boolean(data.vehicleIssues?.length)
           ? { role, homeStore, currentUser, enabled: data.vehicleIssuesEnabled === true, issues: data.vehicleIssues ?? [], onChanged: refresh }
           : undefined}
+        dispositionContext={{ role, homeStore, reportDate: data.meta.reportDate, enabled: data.dispositionsEnabled !== false, onChanged: refresh }}
         vehicles={vehicles}
         detailState={activeDetail
           ? detailRequest.key === detailKey && detailRequest.sourceRevision === bootstrapRevision && ['refreshing', 'stale'].includes(detailRequest.state)
@@ -340,6 +341,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         filterRequestKey={filterRequest.requestKey}
         initialWorkspaceTab={(['overview', 'equipment', 'movement', 'hold', 'timeline', 'data', 'issues'] as VehicleWorkspaceTab[]).find(tab => tab === params.get('tab') && (tab !== 'issues' || data.vehicleIssuesEnabled === true || Boolean(data.vehicleIssues?.length))) ?? 'overview'}
         searchPersistenceKey={accessContext}
+        savedLists={{ enabled: data.savedListsEnabled === true, role, store: homeStore }}
         selectedVehicleId={selectedVehicleId}
         onSelectedVehicleChange={selectVehicle}
         pageSize={50}

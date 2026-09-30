@@ -5,13 +5,15 @@
 //
 // The write surface is a contract. Sources (DealerMail, public inventory, CDK,
 // AutoCheck, factory equipment, window stickers) are read-only evidence, so the
-// app accepts exactly seven employee write branches and nothing else. The two
+// app accepts exactly nine employee write branches and nothing else. The two
 // vehicle-issue branches were explicitly approved with the manager-confirmed
-// completion workflow; they write only the app-owned operational ledger:
+// completion workflow; the disposition branch arrived with the Overview ledger
+// (OVERVIEW_SPEC §6). All of them write only the app-owned operational ledger:
 //   POST /api/transfers                    create a move request
 //   POST /api/transfers/:id/events         record a move event
 //   POST /api/attention/:id/events         record an action-center event
 //   POST /api/vehicles/:vin/service        record service readiness
+//   POST /api/vehicles/:vin/disposition    record a manager disposition (never a source write)
 //   POST /api/admin/members                edit employee access (group manager)
 //   POST /api/vehicles/:vin/issues          report a vehicle issue
 //   POST /api/vehicle-issues/:id/events     update an issue; manager confirms completion
@@ -32,7 +34,7 @@ const VIN = 'TESTDATAHWELL0001'
 const SERVICE_VIN = 'TESTDATAHWELL0002'
 
 // The only branches that may accept a POST, with the actor and a valid payload.
-const WRITE_BRANCHES = ['/api/transfers', '/api/transfers/:transfer/events', '/api/attention/:attention/events', '/api/vehicles/:vin/service', '/api/admin/members', '/api/vehicles/:vin/issues', '/api/vehicle-issues/:issue/events']
+const WRITE_BRANCHES = ['/api/transfers', '/api/transfers/:transfer/events', '/api/attention/:attention/events', '/api/vehicles/:vin/service', '/api/vehicles/:vin/disposition', '/api/admin/members', '/api/vehicles/:vin/issues', '/api/vehicle-issues/:issue/events', '/api/saved-lists']
 
 // Every path the app serves, plus write-shaped paths that must never exist.
 const READ_PATHS = [
@@ -73,22 +75,26 @@ function validWrite(branch, ids, revision) {
     case '/api/transfers/:transfer/events': return { as: 'manager', path: fill(branch, ids), body: { type: 'request_approved', availabilityConfirmed: true } }
     case '/api/attention/:attention/events': return { as: 'group', path: fill(branch, ids), body: { type: 'acknowledge' } }
     case '/api/vehicles/:vin/service': return { as: 'howell', path: branch.replace(':vin', SERVICE_VIN), body: { status: 'needs_service', expectedVersion: 0 } }
+    case '/api/vehicles/:vin/disposition': return { as: 'howell', path: branch.replace(':vin', SERVICE_VIN), body: { disposition: 'keep', expectedVersion: 0 } }
     case '/api/admin/members': return { as: 'group', path: branch, body: { email: 'new-member@example.invalid', name: 'Synthetic New Member', role: 'manager', homeStore: 'Howell', enabled: true, reason: 'SYNTHETIC onboarding', expectedRevision: revision } }
     case '/api/vehicles/:vin/issues': return { as: 'howell', path: branch.replace(':vin', VIN), body: { category: 'cleaning', priority: 'normal', description: 'SYNTHETIC windshield needs cleaning' } }
     case '/api/vehicle-issues/:issue/events': return { as: 'howell', path: fill(branch, ids), body: { type: 'add_note', expectedVersion: 1, note: 'SYNTHETIC detail team notified' } }
+    case '/api/saved-lists': return { as: 'sales', path: branch, body: { action: 'create', label: 'SYNTHETIC customer initials' } }
     default: throw new Error(`No valid write for ${branch}`)
   }
 }
 
 describe('the source pins exactly the documented write branches', () => {
-  it('the Worker treats only POST as a write and branches on exactly five employee writes and three publisher uploads', () => {
+  it('the Worker treats only POST as a write and pins seven write branches in appApi plus the admin-members save — nine employee paths — and three publisher uploads', () => {
     const source = readFileSync(path.join(root, 'cloudflare/src/worker.mjs'), 'utf8')
     expect(source).toContain("const read=request.method==='GET', write=request.method==='POST'")
     expect(source).toContain("if(!read && !write) throw new HttpError('METHOD_NOT_ALLOWED',405)")
     expect(source.match(/else if\(write && [^{]+\{/g)).toEqual([
+      'else if(write && savedListsRoute) {',
       'else if(write && /^\\/vehicles\\/[^/]+\\/issues$/.test(route)) {',
       'else if(write && /^\\/vehicle-issues\\/[^/]+\\/events$/.test(route)) {',
       'else if(write && /^\\/vehicles\\/[^/]+\\/service$/.test(route)) {',
+      'else if(write && /^\\/vehicles\\/[^/]+\\/disposition$/.test(route)) {',
       "else if(write && route==='/transfers') {",
       'else if(write && /^\\/(transfers|attention)\\/[^/]+\\/events$/.test(route)) {',
     ])
@@ -103,9 +109,11 @@ describe('the source pins exactly the documented write branches', () => {
   it('the Node demo server branches on the same writes', () => {
     const source = readFileSync(path.join(root, 'server/api.mjs'), 'utf8')
     expect(source.match(/request\.method === 'POST' && [^)]+\)/g)).toEqual([
+      "request.method === 'POST' && route === '/saved-lists')",
       "request.method === 'POST' && issueEventMatch)",
       "request.method === 'POST' && vehicleIssueMatch)",
       "request.method === 'POST' && serviceMatch)",
+      "request.method === 'POST' && dispositionMatch)",
       "request.method === 'POST' && attentionEventMatch)",
       "request.method === 'POST' && route === '/transfers')",
       "request.method === 'POST' && eventMatch)",
@@ -117,7 +125,7 @@ describe('the source pins exactly the documented write branches', () => {
 describe('Worker write surface', () => {
   let cloud
   const ids = {}
-  const tables = ['transfer_requests', 'transfer_events', 'attention_events', 'vehicle_service_events', 'vehicle_issues', 'vehicle_issue_events', 'cloud_memberships', 'cloud_membership_events']
+  const tables = ['transfer_requests', 'transfer_events', 'attention_events', 'vehicle_service_events', 'vehicle_disposition_events', 'vehicle_issues', 'vehicle_issue_events', 'saved_vehicle_lists', 'saved_vehicle_list_items', 'saved_vehicle_list_actions', 'cloud_memberships', 'cloud_membership_events']
   const snapshot = () => ({ revision: cloud.revision(), ...Object.fromEntries(tables.map((table) => [table, cloud.count(table)])) })
 
   beforeAll(async () => {
@@ -179,7 +187,7 @@ describe('Node demo server write surface', () => {
   let baseUrl
   const ids = {}
   const headersFor = (member) => ({ 'x-inventory-demo-role': member.role, 'x-inventory-demo-store': member.store, 'x-inventory-demo-user': member.name })
-  const tables = ['transfer_requests', 'transfer_events', 'attention_events', 'vehicle_service_events', 'vehicle_issues', 'vehicle_issue_events']
+  const tables = ['transfer_requests', 'transfer_events', 'attention_events', 'vehicle_service_events', 'vehicle_disposition_events', 'vehicle_issues', 'vehicle_issue_events', 'saved_vehicle_lists', 'saved_vehicle_list_items', 'saved_vehicle_list_actions']
   const snapshot = () => Object.fromEntries(tables.map((table) => [table, app.database.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n]))
   let keys = 0
   async function call(method, pathname, member, body) {

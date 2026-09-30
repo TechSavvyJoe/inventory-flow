@@ -1,4 +1,5 @@
 import { SERVICE_EVENT_COLUMNS } from '../../server/service-readiness.mjs'
+import { DISPOSITION_EVENT_COLUMNS } from '../../server/vehicle-disposition.mjs'
 import { VEHICLE_ISSUE_COLUMNS, VEHICLE_ISSUE_EVENT_COLUMNS } from '../../server/vehicle-issues.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
 
@@ -230,6 +231,20 @@ function attentionEventRow(key, event) {
   }
 }
 
+function savedListRaw(database, row) {
+  return {
+    id: row.id,
+    label: row.label,
+    revision: row.revision,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    items: database.savedVehicleListItems
+      .filter((item) => item.list_id === row.id)
+      .sort((left, right) => compare(left.added_at, right.added_at) || compare(left.vin, right.vin))
+      .map((item) => ({ vin: item.vin, addedAt: item.added_at })),
+  }
+}
+
 // Bootstrap builds a view for every visible transfer and each view needs that
 // transfer's events, so filtering the whole ledger per transfer is quadratic —
 // and this Worker runs under a 1,000 ms CPU cap. The snapshot is per request,
@@ -256,6 +271,101 @@ function recordTransferEvent(database, row) {
 }
 
 export const d1SnapshotRepository = Object.freeze({
+  savedVehicleListsEnabled(database) { return database.savedVehicleListsEnabled === true },
+  listSavedVehicleLists(database, ownerUserId) {
+    if (!database.savedVehicleListsEnabled) return []
+    return database.savedVehicleLists
+      .filter((row) => row.owner_user_id === ownerUserId && !row.deleted_at)
+      .sort((left, right) => compare(right.updated_at, left.updated_at) || compare(left.id, right.id))
+      .map((row) => savedListRaw(database, row))
+  },
+  mutateSavedVehicleList(database, mutation) {
+    if (!database.savedVehicleListsEnabled) {
+      throw new WorkflowError('Saved-list storage is not enabled yet.', { status: 503, code: 'MIGRATION_REQUIRED' })
+    }
+    const replay = database.savedVehicleListActions.find((row) =>
+      row.owner_user_id === mutation.ownerUserId && row.idempotency_key === mutation.idempotencyKey)
+    if (replay) {
+      if (replay.input_hash !== mutation.inputHash) {
+        throw new WorkflowError('This idempotency key was already used for a different saved-list action.', {
+          status: 409, code: 'IDEMPOTENCY_CONFLICT',
+        })
+      }
+      return { replayed: true, result: JSON.parse(replay.result_json) }
+    }
+
+    let row
+    if (mutation.action === 'create') {
+      const total = database.savedVehicleLists.filter((candidate) =>
+        candidate.owner_user_id === mutation.ownerUserId && !candidate.deleted_at).length
+      if (total >= 20) throw new WorkflowError('You can save up to 20 vehicle lists.', { status: 409, code: 'SAVED_LIST_LIMIT_REACHED' })
+      row = {
+        id: mutation.newId, owner_user_id: mutation.ownerUserId, label: mutation.label,
+        revision: 1, created_at: mutation.at, updated_at: mutation.at, deleted_at: null,
+      }
+      insert(database, 'saved_vehicle_lists', ['id', 'owner_user_id', 'label', 'revision', 'created_at', 'updated_at', 'deleted_at'], row)
+      database.savedVehicleLists.push(row)
+    } else {
+      row = database.savedVehicleLists.find((candidate) =>
+        candidate.id === mutation.listId && candidate.owner_user_id === mutation.ownerUserId && !candidate.deleted_at)
+      if (!row) throw new WorkflowError('Saved list was not found.', { status: 404, code: 'SAVED_LIST_NOT_FOUND' })
+      if (row.revision !== mutation.expectedRevision) {
+        throw new WorkflowError('This saved list changed. Reload it and try again.', {
+          status: 409, code: 'SAVED_LIST_CONFLICT', details: { currentRevision: row.revision },
+        })
+      }
+      let changed = false
+      if (mutation.action === 'rename' && row.label !== mutation.label) {
+        stage(database, 'UPDATE saved_vehicle_lists SET label = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND owner_user_id = ? AND revision = ?',
+          [mutation.label, mutation.at, row.id, mutation.ownerUserId, row.revision])
+        row.label = mutation.label
+        changed = true
+      } else if (mutation.action === 'delete') {
+        stage(database, 'UPDATE saved_vehicle_lists SET revision = revision + 1, updated_at = ?, deleted_at = ? WHERE id = ? AND owner_user_id = ? AND revision = ?',
+          [mutation.at, mutation.at, row.id, mutation.ownerUserId, row.revision])
+        stage(database, 'DELETE FROM saved_vehicle_list_items WHERE list_id = ?', [row.id])
+        database.savedVehicleListItems = database.savedVehicleListItems.filter((item) => item.list_id !== row.id)
+        row.deleted_at = mutation.at
+        changed = true
+      } else if (mutation.action === 'add') {
+        const exists = database.savedVehicleListItems.some((item) => item.list_id === row.id && item.vin === mutation.vin)
+        if (!exists) {
+          const total = database.savedVehicleListItems.filter((item) => item.list_id === row.id).length
+          if (total >= 200) throw new WorkflowError('A saved list can contain up to 200 vehicles.', { status: 409, code: 'SAVED_LIST_ITEM_LIMIT_REACHED' })
+          const item = { list_id: row.id, vin: mutation.vin, added_at: mutation.at }
+          insert(database, 'saved_vehicle_list_items', ['list_id', 'vin', 'added_at'], item)
+          database.savedVehicleListItems.push(item)
+          changed = true
+        }
+      } else if (mutation.action === 'remove') {
+        const before = database.savedVehicleListItems.length
+        database.savedVehicleListItems = database.savedVehicleListItems.filter((item) => !(item.list_id === row.id && item.vin === mutation.vin))
+        changed = database.savedVehicleListItems.length !== before
+        if (changed) stage(database, 'DELETE FROM saved_vehicle_list_items WHERE list_id = ? AND vin = ?', [row.id, mutation.vin])
+      }
+      if (changed) {
+        row.revision += 1
+        row.updated_at = mutation.at
+        if (!['rename', 'delete'].includes(mutation.action)) {
+          stage(database, 'UPDATE saved_vehicle_lists SET revision = revision + 1, updated_at = ? WHERE id = ? AND owner_user_id = ? AND revision = ?',
+            [mutation.at, row.id, mutation.ownerUserId, mutation.expectedRevision])
+        }
+      }
+    }
+
+    const result = mutation.action === 'delete'
+      ? { id: row.id, deleted: true, revision: row.revision }
+      : savedListRaw(database, row)
+    const actionRow = {
+      owner_user_id: mutation.ownerUserId, idempotency_key: mutation.idempotencyKey,
+      input_hash: mutation.inputHash, action: mutation.action, list_id: row.id,
+      result_revision: row.revision, result_json: JSON.stringify(result), created_at: mutation.at,
+    }
+    insert(database, 'saved_vehicle_list_actions',
+      ['owner_user_id', 'idempotency_key', 'input_hash', 'action', 'list_id', 'result_revision', 'result_json', 'created_at'], actionRow)
+    database.savedVehicleListActions.push(actionRow)
+    return { replayed: false, result }
+  },
   vehicleIssuesEnabled(database) { return database.vehicleIssuesEnabled === true },
   listVehicleIssueRows(database) { return (database.vehicleIssues ?? []).map(clone) },
   listVehicleIssueEvents(database) { return (database.vehicleIssueEvents ?? []).map(clone) },
@@ -279,6 +389,16 @@ export const d1SnapshotRepository = Object.freeze({
   insertServiceEvent(database, row) {
     insert(database, 'vehicle_service_events', SERVICE_EVENT_COLUMNS, row)
     database.serviceEvents.push(clone(row))
+    return clone(row)
+  },
+  dispositionsEnabled(database) { return database.dispositionsEnabled === true },
+  listDispositionEvents(database) {
+    return [...(database.dispositionEvents ?? [])].sort((a, b) => compare(a.vin, b.vin) || a.version - b.version).map(clone)
+  },
+  insertDispositionEvent(database, row) {
+    if (!database.dispositionsEnabled) throw new WorkflowError('Disposition storage is not enabled yet.', { status: 503, code: 'MIGRATION_REQUIRED' })
+    insert(database, 'vehicle_disposition_events', DISPOSITION_EVENT_COLUMNS, row)
+    database.dispositionEvents.push(clone(row))
     return clone(row)
   },
   getCurrentDataset(database) { return database.dataset },
@@ -385,40 +505,76 @@ export const d1SnapshotRepository = Object.freeze({
 /** D1 batch executes this read set against a single consistent transaction. */
 export async function loadD1Repository(d1, release, options = {}) {
   // Migrations are an operator-owned step. Existing inventory remains readable
-  // while the new feature is unavailable; never create production schema here.
-  const capability = await d1.batch([d1.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('vehicle_issues', 'vehicle_issue_events')")])
+  // while a newer feature's table is absent: that feature reads empty and
+  // refuses writes (503 MIGRATION_REQUIRED). Never create production schema here.
+  const ownerUserId = typeof options.ownerUserId === 'string' && options.ownerUserId ? options.ownerUserId : null
+  const idempotencyKey = typeof options.idempotencyKey === 'string' && options.idempotencyKey ? options.idempotencyKey : null
+  // Machine readiness has no employee owner and must never load anyone's list
+  // rows, but it still needs to prove that the feature's complete schema is
+  // present. Ordinary ownerless diagnostics retain their established read set.
+  const probeSavedLists = ownerUserId !== null || options.probeSavedLists === true
+  const capabilityTables = probeSavedLists
+    ? "'vehicle_issues', 'vehicle_issue_events', 'vehicle_disposition_events', 'saved_vehicle_lists', 'saved_vehicle_list_items', 'saved_vehicle_list_actions'"
+    : "'vehicle_issues', 'vehicle_issue_events', 'vehicle_disposition_events'"
+  const capability = await d1.batch([d1.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${capabilityTables})`)])
   if (capability.length !== 1 || capability[0].success === false || !Array.isArray(capability[0].results)) {
     throw new Error('Unable to read workflow storage capabilities')
   }
-  const issuesEnabled = capability[0].results.length === 2
-  const statements = [
-    'SELECT revision FROM cloud_app_revision WHERE id = 1',
-    'SELECT * FROM transfer_requests ORDER BY updated_at DESC, id',
-    'SELECT * FROM transfer_events ORDER BY occurred_at, created_at, rowid',
-    'SELECT * FROM attention_work_items ORDER BY updated_at DESC, attention_key',
-    'SELECT * FROM attention_events ORDER BY occurred_at, created_at, rowid',
-    'SELECT * FROM home_assignments WHERE effective_to IS NULL ORDER BY effective_from DESC',
-    'SELECT * FROM vehicle_service_events ORDER BY vin, version',
-    'SELECT * FROM vehicle_service_intake',
+  const tables = new Set(capability[0].results.map((row) => row?.name))
+  const issuesEnabled = tables.has('vehicle_issues') && tables.has('vehicle_issue_events')
+  const dispositionsEnabled = tables.has('vehicle_disposition_events')
+  const savedListsEnabled = tables.has('saved_vehicle_lists') && tables.has('saved_vehicle_list_items') && tables.has('saved_vehicle_list_actions')
+  // Each read is keyed by name, so an optional table never shifts another's result.
+  const reads = [
+    ['revision', 'SELECT revision FROM cloud_app_revision WHERE id = 1'],
+    ['transfers', 'SELECT * FROM transfer_requests ORDER BY updated_at DESC, id'],
+    ['transferEvents', 'SELECT * FROM transfer_events ORDER BY occurred_at, created_at, rowid'],
+    ['attention', 'SELECT * FROM attention_work_items ORDER BY updated_at DESC, attention_key'],
+    ['attentionEvents', 'SELECT * FROM attention_events ORDER BY occurred_at, created_at, rowid'],
+    ['homeAssignments', 'SELECT * FROM home_assignments WHERE effective_to IS NULL ORDER BY effective_from DESC'],
+    ['serviceEvents', 'SELECT * FROM vehicle_service_events ORDER BY vin, version'],
+    ['serviceIntake', 'SELECT * FROM vehicle_service_intake'],
     ...(issuesEnabled ? [
-      'SELECT * FROM vehicle_issues ORDER BY created_at DESC, id',
-      'SELECT * FROM vehicle_issue_events ORDER BY issue_id, version',
+      ['vehicleIssues', 'SELECT * FROM vehicle_issues ORDER BY created_at DESC, id'],
+      ['vehicleIssueEvents', 'SELECT * FROM vehicle_issue_events ORDER BY issue_id, version'],
+    ] : []),
+    ...(dispositionsEnabled ? [
+      ['dispositionEvents', 'SELECT * FROM vehicle_disposition_events ORDER BY vin, version'],
+    ] : []),
+    ...(savedListsEnabled && ownerUserId ? [
+      ['savedVehicleLists', 'SELECT * FROM saved_vehicle_lists WHERE owner_user_id = ? ORDER BY updated_at DESC, id', [ownerUserId]],
+      ['savedVehicleListItems', `SELECT item.* FROM saved_vehicle_list_items AS item
+        JOIN saved_vehicle_lists AS list ON list.id = item.list_id
+        WHERE list.owner_user_id = ? ORDER BY item.added_at, item.vin`, [ownerUserId]],
+      ['savedVehicleListActions', idempotencyKey
+        ? 'SELECT * FROM saved_vehicle_list_actions WHERE owner_user_id = ? AND idempotency_key = ?'
+        : 'SELECT * FROM saved_vehicle_list_actions WHERE 0', idempotencyKey ? [ownerUserId, idempotencyKey] : []],
     ] : []),
   ]
-  const results = await d1.batch(statements.map((sql) => d1.prepare(sql)))
-  if (results.length !== statements.length || results.some((result) => result.success === false || !Array.isArray(result.results))) {
+  const results = await d1.batch(reads.map(([, sql, params = []]) => {
+    const statement = d1.prepare(sql)
+    return params.length ? statement.bind(...params) : statement
+  }))
+  if (results.length !== reads.length || results.some((result) => result.success === false || !Array.isArray(result.results))) {
     throw new Error('Unable to read the shared workflow snapshot')
   }
-  const revision = results[0].results[0]?.revision
+  const rows = Object.fromEntries(reads.map(([key], index) => [key, results[index].results]))
+  const revision = rows.revision[0]?.revision
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error('The shared workflow revision is not initialized')
   const database = {
-    dataset: { ...datasetFromRelease(release, results[5].results, options), serviceIntake: results[7].results },
-    transfers: results[1].results, transferEvents: results[2].results,
-    attention: results[3].results, attentionEvents: results[4].results,
-    serviceEvents: results[6].results,
+    dataset: { ...datasetFromRelease(release, rows.homeAssignments, options), serviceIntake: rows.serviceIntake },
+    transfers: rows.transfers, transferEvents: rows.transferEvents,
+    attention: rows.attention, attentionEvents: rows.attentionEvents,
+    serviceEvents: rows.serviceEvents,
     vehicleIssuesEnabled: issuesEnabled,
-    vehicleIssues: issuesEnabled ? results[8].results : [],
-    vehicleIssueEvents: issuesEnabled ? results[9].results : [],
+    vehicleIssues: rows.vehicleIssues ?? [],
+    vehicleIssueEvents: rows.vehicleIssueEvents ?? [],
+    dispositionsEnabled,
+    dispositionEvents: rows.dispositionEvents ?? [],
+    savedVehicleListsEnabled: savedListsEnabled,
+    savedVehicleLists: rows.savedVehicleLists ?? [],
+    savedVehicleListItems: rows.savedVehicleListItems ?? [],
+    savedVehicleListActions: rows.savedVehicleListActions ?? [],
     pending: [], closed: false,
   }
   return {

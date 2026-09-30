@@ -116,6 +116,7 @@ function recognizeTagText(canvas: HTMLCanvasElement, progress: (label: string) =
       await request('loadLanguage', { langs: 'eng', options: { langPath: assetPath, cacheMethod: 'none', gzip: true, lstmOnly: true } })
       await request('initialize', { langs: 'eng', oem: 1, config: {} })
       await request('setParameters', { params: { tessedit_pageseg_mode: '11', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789- ', preserve_interword_spaces: '1' } })
+      progress('Reading tag…')
       // Canvas pixels become local PNG bytes. Never pass a URL to the OCR
       // worker (which would allow its image loader to fetch another origin).
       const blob = await new Promise<Blob>((blobResolve, blobReject) => {
