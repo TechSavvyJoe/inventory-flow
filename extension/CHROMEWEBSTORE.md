@@ -63,13 +63,13 @@ tab, (3) the compare view with two or three vehicles.
 | `sidePanel` | permissions | The extension's entire UI is a Chrome side panel; this permission is what lets the extension register and open it. |
 | `storage` | permissions | Saves display preferences via Chrome storage and keeps transient inventory, comparison, filter, and take-home state in the browser session. Customer vehicle lists synchronize separately through authenticated Inventory Flow endpoints; Chrome storage does not own those lists. |
 | `contextMenus` | permissions | Adds the single "Search Inventory Flow for …" entry that appears when the user selects text and right-clicks, letting them open the panel pre-filled with that selection. |
-| `scripting` | permissions | Runs one read-only check inside an already open, signed-in DealerMail inventory tab (`/prospect_manager/`): it fetches the selected stock's hold-detail page and returns only the hold status, the active-order count and the check time. It never submits, holds, releases or comments, and no names, notes, cookies or page HTML leave that tab. |
+| `scripting` | permissions | Brokers deliberate employee-owned saved-list actions into the signed-in Inventory Flow app tab, restricted to `/api/saved-lists` with an expected-owner check. Also runs one read-only check inside an already open, signed-in DealerMail inventory tab (`/prospect_manager/`): it fetches the selected stock's hold-detail page and returns only the hold status, the active-order count and the check time. It never submits, holds, releases or comments, and no names, notes, cookies or page HTML leave that tab. |
 | `https://inventory-ops.joegallant.me/*` | host_permissions | The dealership group's own production Inventory Flow application — the panel's source for inventory, the daily hold snapshot, and vehicle-status data. |
 | `https://www.dealermail.com/*`, `https://dealermail.com/*` | host_permissions | Lets the panel find the user's open DealerMail inventory tab and run the live hold check above there. DealerMail stays read-only evidence. |
 
 No `tabs`, `activeTab`, `<all_urls>`, or declared content scripts are requested. The panel
 never reads the content of the page the user is on, except the live hold check above, which
-runs only in a DealerMail inventory tab — the context-menu handler only receives the text the
+runs only in a DealerMail inventory tab; the separate saved-list broker executes only the fixed Inventory Flow request — the context-menu handler only receives the text the
 user already selected, via Chrome's built-in `selectionText`.
 
 ## Privacy & Data Use

@@ -173,7 +173,8 @@ describe('Worker write surface', () => {
       // branch uses; see membership-admin.mjs's readMembershipAdmin.
       const write = validWrite(branch, ids, branch === '/api/admin/members' ? cloud.count('cloud_membership_events') : cloud.revision())
       const before = cloud.revision()
-      const response = await cloud.call('POST', write.path, members[write.as].email, write.body)
+      const response = await cloud.call('POST', write.path, members[write.as].email, write.body,
+        branch === '/api/saved-lists' ? { 'x-inventory-saved-list-owner': members[write.as].userId } : {})
       expect(response.status, `${branch}: ${JSON.stringify(response.json)}`).toBeGreaterThanOrEqual(200)
       expect(response.status, `${branch}: ${JSON.stringify(response.json)}`).toBeLessThan(300)
       if (branch === '/api/vehicles/:vin/issues') ids.issue = response.json.id
@@ -196,6 +197,7 @@ describe('Node demo server write surface', () => {
       method,
       headers: {
         ...headersFor(member),
+        ...(pathname.endsWith('/saved-lists') ? { 'x-inventory-saved-list-owner': 'demo:local-prototype-user' } : {}),
         ...(write ? { origin: baseUrl, 'content-type': 'application/json', 'idempotency-key': `synthetic-node-write-${++keys}` } : {}),
       },
       ...(write && body !== undefined ? { body: JSON.stringify(body) } : {}),

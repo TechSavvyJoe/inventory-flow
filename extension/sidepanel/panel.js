@@ -47,8 +47,8 @@ const state = {
 }
 
 const customerLists = createCustomerListSession({
-  read: () => fetchSavedLists(state.workspace, state.settings),
-  write: (input, idempotencyKey) => mutateSavedList(state.workspace, state.settings, input, { idempotencyKey }),
+  read: (expectedOwnerId) => fetchSavedLists(state.workspace, state.settings, { expectedOwnerId }),
+  write: (input, idempotencyKey, expectedOwnerId) => mutateSavedList(state.workspace, state.settings, input, { idempotencyKey, expectedOwnerId }),
   onChange: () => renderCustomerControls(),
 })
 const customerButton = el('button', { type: 'button', class: 'customer-lists-button', 'aria-haspopup': 'dialog', onclick: openCustomerLists, hidden: true }, 'Customer lists')
@@ -152,6 +152,7 @@ function hydrate(bootstrap, fetchedAt) {
   state.detailPending.clear()
   state.bootstrap = bootstrap
   state.data = buildPanelData(bootstrap, { origin: appOrigin() })
+  customerLists.setOwner(bootstrap.savedListsEnabled === true ? after?.userId : null)
   state.index = buildIndex(state.data.vehicles)
   state.details.clear()
   state.detailFailed.clear()
@@ -165,7 +166,7 @@ function hydrate(bootstrap, fetchedAt) {
   renderList()
   renderFreshness()
   renderCustomerControls()
-  if (bootstrap.savedListsEnabled === true) customerLists.refresh()
+  if (bootstrap.savedListsEnabled === true && after?.userId) customerLists.refresh()
   if (state.view === 'detail' && state.selectedVin) {
     const vehicle = vehicleByVin(state.selectedVin)
     if (vehicle) { loadDetail(vehicle.vin); renderDetail(vehicle, { keepScroll: true }); verifyLiveHold(vehicle.vin, vehicle.stockNumber) }
@@ -236,6 +237,7 @@ function renderWho() {
 }
 
 function resetIdentityView() {
+  clearApiCache()
   customerLists.reset()
   state.customerDraft = ''; state.customerRename = false; state.customerRenameDraft = ''; state.customerDelete = false
   if (sheetOpen && ['customers', 'photos'].includes(state.sheetKind)) closeSheet()
@@ -880,7 +882,7 @@ function dock(vehicle) {
     moveAction ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.requestVehicleUrl(origin, vehicle.vin, moveAction)) }, canReroute ? 'Move again' : moveAction === 'direct' ? 'Move vehicle' : 'Request vehicle', icon('arrow-right')) : null,
   )
   const utils = el('nav', { class: 'd-utilities', 'aria-label': 'Vehicle utilities' },
-    state.bootstrap?.savedListsEnabled === true ? el('button', { type: 'button', class: 'chip customer-save-toggle', dataset: { vin: vehicle.vin }, 'aria-pressed': String(Boolean(customerLists.active()?.items.some(item => item.vin === vehicle.vin))), onclick: () => customerLists.toggle(vehicle.vin) }, icon('heart', { size: 14 }), 'Save vehicle') : null,
+    state.bootstrap?.savedListsEnabled === true && state.data?.access?.userId ? el('button', { type: 'button', class: 'chip customer-save-toggle', dataset: { vin: vehicle.vin }, 'aria-pressed': String(Boolean(customerLists.active()?.items.some(item => item.vin === vehicle.vin))), onclick: () => customerLists.toggle(vehicle.vin) }, icon('heart', { size: 14 }), 'Save vehicle') : null,
     chip('Deal sheet', 'copy', (button) => copy(dealSheetText(vehicle, (field) => fieldText(field, vehicle)), 'Deal sheet', button), { title: 'Copy every identifying and pricing fact as text' }),
     chip('Take-home page', 'file-text', () => openTakeHome(vehicle), { title: 'Customer sheet to print or save as PDF' }),
     vehicle.hold.canManage ? chip('DealerMail', 'mail', async (button) => { await copy(vehicle.stockNumber, 'Stock number', button); openUrl(links.DEALERMAIL_INVENTORY_URL) }, { title: 'Copies the stock number, then opens DealerMail inventory' }) : null,
@@ -913,7 +915,7 @@ function openCustomerDocument(vehicles, listLabel) {
 }
 
 function renderCustomerControls() {
-  const enabled = Boolean(state.data && state.bootstrap?.savedListsEnabled === true)
+  const enabled = Boolean(state.data?.access?.userId && state.bootstrap?.savedListsEnabled === true)
   customerButton.hidden = !enabled
   const snapshot = customerLists.snapshot, list = customerLists.active()
   const canWrite = customerListWritesReady(snapshot)

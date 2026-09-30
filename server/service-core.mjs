@@ -2018,6 +2018,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       return {
         access: {
           user: state.context.user,
+          userId: savedListOwnerId(state.context, { required: false }),
           role: state.context.role,
           store: state.context.store,
           canViewPrivateEvidence: state.context.canViewPrivateEvidence,

@@ -30,7 +30,15 @@ function requestFor(workspace, settings, path) {
 export function bootstrapRequest(workspace, settings) { return requestFor(workspace, settings, '/api/bootstrap') }
 export function vehicleRequest(workspace, settings, vin) { return requestFor(workspace, settings, `/api/vehicles/${encodeURIComponent(String(vin).toUpperCase())}`) }
 export function companionReleaseRequest(workspace, settings) { return requestFor(workspace, settings, '/downloads/companion-version.json') }
-export function savedListsRequest(workspace, settings) { return requestFor(workspace, settings, '/api/saved-lists') }
+function savedListOwnerHeaders(expectedOwnerId) {
+  if (typeof expectedOwnerId !== 'string' || !expectedOwnerId.trim() || expectedOwnerId !== expectedOwnerId.trim() || expectedOwnerId.length > 160 || /[\u0000-\u001f\u007f]/u.test(expectedOwnerId)) throw new PanelApiError('forbidden', { status: 403 })
+  return { 'x-inventory-saved-list-owner': expectedOwnerId }
+}
+export function savedListsRequest(workspace, settings, expectedOwnerId) {
+  const request = requestFor(workspace, settings, '/api/saved-lists')
+  request.init.headers = { ...request.init.headers, ...savedListOwnerHeaders(expectedOwnerId) }
+  return request
+}
 
 // The panel polls the same one or two documents repeatedly (bootstrap on an
 // interval, the open vehicle on demand). Keep only the last payload and its
@@ -114,37 +122,42 @@ function validSavedList(value) {
     value.items.every((item) => item && typeof item.vin === 'string' && typeof item.addedAt === 'string' && typeof item.available === 'boolean')
 }
 
-export async function fetchSavedLists(workspace, settings, { fetchImpl = globalThis.fetch, signal } = {}) {
-  const payload = await fetchJson(savedListsRequest(workspace, settings), { fetchImpl, signal })
+export async function fetchSavedLists(workspace, settings, { fetchImpl = globalThis.fetch, signal, expectedOwnerId } = {}) {
+  const payload = await fetchJson(savedListsRequest(workspace, settings, expectedOwnerId), { fetchImpl, signal })
   if (!Array.isArray(payload.lists) || !payload.lists.every(validSavedList)) throw new PanelApiError('invalid')
   return payload
 }
 
-export async function mutateSavedList(workspace, settings, input, { idempotencyKey, signal, runtime = globalThis.chrome?.runtime } = {}) {
+export async function mutateSavedList(workspace, settings, input, { idempotencyKey, signal, expectedOwnerId, runtime = globalThis.chrome?.runtime } = {}) {
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  savedListOwnerHeaders(expectedOwnerId)
+  const generation = cacheGeneration
   if (!runtime?.sendMessage) {
     // Browser preview and unit tests run on the demo page origin, so their
     // ordinary fetch is same-origin. The shipped extension uses the guarded
     // service-worker path below.
-    const request = requestFor(workspace, settings, '/api/saved-lists')
+    const request = savedListsRequest(workspace, settings, expectedOwnerId)
     const response = await fetch(request.url, {
       ...request.init, method: 'POST', signal,
       headers: { ...request.init.headers, 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(input),
     }).catch((error) => { if (error?.name === 'AbortError') throw error; throw new PanelApiError('offline') })
+    assertCurrentGeneration(generation)
     if (response.status === 401 || response.type === 'opaqueredirect') throw new PanelApiError('signin', { status: response.status })
     if (response.status === 403) throw new PanelApiError('forbidden', { status: 403 })
     const payload = await response.json().catch(() => null)
+    assertCurrentGeneration(generation)
     if (!response.ok) throw new PanelApiError('server', { status: response.status, code: payload?.code ?? null })
     if (!(payload?.deleted === true ? typeof payload.id === 'string' && Number.isSafeInteger(payload.revision) : validSavedList(payload))) throw new PanelApiError('invalid')
     clearApiCache()
     return payload
   }
   const outcome = await runtime.sendMessage({
-    type: 'inventory-flow:saved-list-mutation', origin: workspace.origin, input, idempotencyKey,
+    type: 'inventory-flow:saved-list-mutation', origin: workspace.origin, input, idempotencyKey, expectedOwnerId,
     ...(workspace.demo ? { demo: { role: settings.demoRole, store: settings.demoStore } } : {}),
   })
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  assertCurrentGeneration(generation)
   if (outcome?.kind === 'signin' || outcome?.redirected || outcome?.status === 401) throw new PanelApiError('signin', { status: outcome?.status ?? 0 })
   if (outcome?.kind === 'offline') throw new PanelApiError('offline')
   if (outcome?.status === 403) throw new PanelApiError('forbidden', { status: 403, code: outcome.payload?.code ?? null })

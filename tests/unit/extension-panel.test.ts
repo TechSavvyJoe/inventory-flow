@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 // @ts-nocheck -- Exercise the unbundled panel with synthetic, role-projected data.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { within } from '@testing-library/react'
 import markup from '../../extension/sidepanel/index.html?raw'
 
-const api = vi.hoisted(() => ({ bootstrap: vi.fn(), vehicle: vi.fn() }))
-vi.mock('../../extension/sidepanel/lib/api.mjs', async (importOriginal) => ({ ...(await importOriginal()), fetchBootstrap: api.bootstrap, fetchVehicle: api.vehicle }))
+const api = vi.hoisted(() => ({ bootstrap: vi.fn(), vehicle: vi.fn(), lists:vi.fn(), write:vi.fn() }))
+vi.mock('../../extension/sidepanel/lib/api.mjs', async (importOriginal) => ({ ...(await importOriginal()), fetchBootstrap: api.bootstrap, fetchVehicle: api.vehicle, fetchSavedLists:api.lists, mutateSavedList:api.write }))
 vi.mock('../../extension/sidepanel/lib/host.mjs', () => ({
   host: 'preview', previewFlags: { photos: false }, placeholderPhotos: () => [], copyText: vi.fn(), openUrl: vi.fn(), openExtensionPage: vi.fn(),
   storage: { getSettings: async () => ({ workspace: 'demo', theme: 'light', density: 'comfortable', demoRole: 'sales', demoStore: 'Howell' }), getCompare: async () => [], getFilters: async () => null, takePendingQuery: async () => null, onPendingQuery: () => {}, getCache: async () => null, setCache: async () => {}, clearCache: vi.fn(async () => {}), setCompare: async () => {}, setFilters: async () => {} },
@@ -38,6 +39,29 @@ afterEach(() => {
 })
 
 describe('extension working-store workflow and identity reset', () => {
+  it('closes the previous employee customer sheet and drops its draft on a same-name owner switch', async () => {
+    const a = { ...bootstrap(), savedListsEnabled:true, access:{ ...bootstrap().access, userId:'synthetic-owner-a' } }
+    const saved = { id:'list-a', label:'AB', revision:1, createdAt:'2026-09-30', updatedAt:'2026-09-30', items:[{ vin:'TESTDATAHWELL0001', addedAt:'2026-09-30', available:true }] }
+    api.bootstrap.mockResolvedValueOnce(a)
+    api.lists.mockImplementation((_workspace, _settings, options) => options.expectedOwnerId === 'synthetic-owner-a' ? Promise.resolve({ lists:[saved] }) : Promise.reject(new Error('B is offline')))
+    await import('../../extension/sidepanel/panel.js')
+    const view = within(document.body)
+    await vi.waitFor(() => expect(view.getByRole('button', { name:'AB · 1 saved' })).toBeVisible())
+    view.getByRole('button', { name:'AB · 1 saved' }).click()
+    const draft = view.getByRole('textbox', { name:'New customer list name' })
+    draft.value = 'Previous owner draft'
+    draft.dispatchEvent(new Event('input', { bubbles:true }))
+    api.bootstrap.mockResolvedValueOnce({ ...a, access:{ ...a.access, userId:'synthetic-owner-b' } })
+    view.getByRole('button', { name:'Refresh inventory' }).click()
+    await vi.waitFor(() => expect(api.lists.mock.calls.some(call => call[2].expectedOwnerId === 'synthetic-owner-b')).toBe(true))
+    expect(view.queryByRole('textbox', { name:'New customer list name' })).toBeNull()
+    expect(document.body.textContent).not.toContain('AB · 1 saved')
+    view.getByRole('button', { name:'Customer lists' }).click()
+    expect(view.getByRole('textbox', { name:'New customer list name' }).value).toBe('')
+    expect(view.queryByRole('option', { name:/AB/ })).toBeNull()
+    expect(api.lists.mock.calls.at(-1)[2].expectedOwnerId).toBe('synthetic-owner-b')
+  })
+
   it('keeps the vehicle list in the normal keyboard tab order with a visible focus rule', async () => {
     await import('../../extension/sidepanel/panel.js')
     await waitForText('#rows', 'DEMO-H01')

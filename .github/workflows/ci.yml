@@ -83,8 +83,10 @@ jobs:
     # Per-push coverage is Chromium and WebKit only (desktop/mobile plus the
     # chromium-desktop/webkit-mobile cross-browser projects). Firefox, the
     # Chromium-Android emulation, and the WebKit-desktop project run once a
-    # night in cross-browser-nightly below, not on every push.
-    timeout-minutes: 15
+    # night in cross-browser-nightly below, not on every push. Cold browser
+    # installation took seven minutes on September 30; allow both complete
+    # suites to finish without changing their per-test limits or coverage.
+    timeout-minutes: 25
     steps:
       - name: Check out source
         uses: actions/checkout@v4

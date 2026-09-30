@@ -86,11 +86,11 @@ function retainedDetail(entry: VehicleDetailEntry | undefined, data: BootstrapDa
 
 
 export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
-  const { data, homeStore, role, currentUser, refresh } = useAppData()
+  const { data, homeStore, role, currentUser, currentUserId, refresh } = useAppData()
   const [params] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const accessContext = inventorySearchAccessContext(role, homeStore, currentUser)
+  const accessContext = inventorySearchAccessContext(role, homeStore, currentUserId ?? currentUser)
   const [scope, setScope] = useWorkspaceState<InventoryScope>(accessContext, 'inventory.scope', 'home')
   const [vehicleDetails, setVehicleDetails] = useState<VehicleDetailCache>({ context: accessContext, records: {} })
   const [detailRequest, setDetailRequest] = useState<{ key: string; sourceRevision: number; state: VehicleDetailLoadState }>({ key: '', sourceRevision: -1, state: 'loading' })
@@ -341,7 +341,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         filterRequestKey={filterRequest.requestKey}
         initialWorkspaceTab={(['overview', 'equipment', 'movement', 'hold', 'timeline', 'data', 'issues'] as VehicleWorkspaceTab[]).find(tab => tab === params.get('tab') && (tab !== 'issues' || data.vehicleIssuesEnabled === true || Boolean(data.vehicleIssues?.length))) ?? 'overview'}
         searchPersistenceKey={accessContext}
-        savedLists={{ enabled: data.savedListsEnabled === true, role, store: homeStore }}
+        savedLists={{ enabled: data.savedListsEnabled === true && Boolean(currentUserId), ownerId: currentUserId, role, store: homeStore }}
         selectedVehicleId={selectedVehicleId}
         onSelectedVehicleChange={selectVehicle}
         pageSize={50}

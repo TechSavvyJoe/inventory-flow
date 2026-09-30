@@ -1,10 +1,52 @@
 import { describe, expect, it, vi } from 'vitest'
 // @ts-expect-error The companion remains unbundled JavaScript.
-import { createCustomerListSession, customerListWritesReady } from '../../extension/sidepanel/lib/customer-lists.mjs'
+import { createCustomerListSession as createSession, customerListWritesReady } from '../../extension/sidepanel/lib/customer-lists.mjs'
+
+const createCustomerListSession = (options: Record<string, unknown>) => createSession({ ownerId: 'synthetic-owner-a', ...options })
 
 const list = (revision = 1) => ({ id: 'list-one', label: 'Customer initials', revision, createdAt: '2026-09-30', updatedAt: '2026-09-30', items: [{ vin: 'TESTDATAHWELL0001', addedAt: '2026-09-30', available: true }] })
 
 describe('companion customer lists', () => {
+  it('clears labels and references immediately on owner change even if the next refresh fails', async () => {
+    const read = vi.fn().mockResolvedValueOnce({ lists:[list()] }).mockRejectedValueOnce(new Error('offline'))
+    const session = createCustomerListSession({ read, write:vi.fn() })
+    await session.refresh()
+    expect(session.active()?.label).toBe('Customer initials')
+    session.setOwner('synthetic-owner-b')
+    expect(session.snapshot.lists).toEqual([])
+    expect(session.snapshot.readyForWrites).toBe(false)
+    await session.refresh()
+    expect(session.snapshot.lists).toEqual([])
+    expect(read.mock.calls.map(call => call[0])).toEqual(['synthetic-owner-a', 'synthetic-owner-b'])
+  })
+
+  it('drops late owner reads and mutations including a pending create continuation', async () => {
+    let finishRead!: (value: unknown) => void, finishWrite!: (value: unknown) => void
+    const read = vi.fn().mockResolvedValueOnce({ lists:[] }).mockImplementationOnce(() => new Promise(resolve => { finishRead = resolve })).mockResolvedValueOnce({ lists:[] })
+    const write = vi.fn<(...args: unknown[]) => Promise<unknown>>(() => new Promise(resolve => { finishWrite = resolve }))
+    const session = createCustomerListSession({ read, write })
+    await session.refresh()
+    const pendingRead = session.refresh()
+    const pendingWrite = session.toggle('TESTDATAHWELL0001')
+    expect(write.mock.calls[0][2]).toBe('synthetic-owner-a')
+    session.setOwner('synthetic-owner-b')
+    await session.refresh()
+    finishRead({ lists:[list()] }); finishWrite({ ...list(), items:[] })
+    await Promise.all([pendingRead, pendingWrite])
+    expect(session.snapshot.lists).toEqual([])
+    expect(session.snapshot.pending).toBeNull()
+    expect(write).toHaveBeenCalledOnce()
+  })
+
+  it('does not fetch or mutate customer lists without an owner identity', async () => {
+    const read = vi.fn(), write = vi.fn()
+    const session = createCustomerListSession({ ownerId:null, read, write })
+    await session.refresh()
+    expect(await session.mutate('create', { label:'AB' })).toBe(false)
+    expect(read).not.toHaveBeenCalled()
+    expect(write).not.toHaveBeenCalled()
+  })
+
   it('blocks every write while the initial saved-list read is pending', async () => {
     let finishRead!: (value: unknown) => void
     const write = vi.fn().mockResolvedValue({ ...list(), items: [] })

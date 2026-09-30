@@ -33,6 +33,19 @@ export function savedListOwnerId(context, { required = true } = {}) {
   return null
 }
 
+export function assertSavedListOwner(context, expectedOwnerId) {
+  const expected = typeof expectedOwnerId === 'string' ? expectedOwnerId : ''
+  const valid = expected.length > 0 && expected.length <= 160 && expected === expected.trim() &&
+    !/[\u0000-\u001f\u007f]/u.test(expected)
+  if (!valid || expected !== savedListOwnerId(context)) {
+    throw new WorkflowError('Your signed-in employee changed. Reload Inventory Flow and try again.', {
+      status: 403,
+      code: 'ACCESS_CONTEXT_CHANGED',
+      details: { field: 'x-inventory-saved-list-owner' },
+    })
+  }
+}
+
 function labelValue(value) {
   const label = String(value ?? '').trim().normalize('NFC')
   if (!label || [...label].length > 80 || /[\u0000-\u001f\u007f]/u.test(label)) {

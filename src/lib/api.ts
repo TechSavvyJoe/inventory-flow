@@ -86,6 +86,7 @@ async function beginMutation(path: string, body: RequestInit['body'], headers: H
     headers.get('x-inventory-demo-user'),
     headers.get('x-inventory-preview-role'),
     headers.get('x-inventory-preview-store'),
+    headers.get('x-inventory-saved-list-owner'),
   ])
   let registration = mutationRegistrations.get(fingerprint)
   if (!registration) {

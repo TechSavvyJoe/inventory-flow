@@ -38,6 +38,7 @@ interface AppDataContextValue {
   role: UserRole
   setRole: (role: UserRole) => void
   currentUser: string
+  currentUserId: string | null
   refresh: () => Promise<void>
   submitTransfer: (input: TransferRequestInput) => Promise<TransferRecord>
   addTransferEvent: (transferId: string, input: TransferEventInput) => Promise<TransferRecord>
@@ -204,7 +205,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       try {
         const nextData = await getBootstrap(homeStore, role, controller.signal)
         if (requestId !== requestSequenceRef.current || latestAccessContextRef.current !== accessContext) return
-        const nextUser = nextData.access?.user ?? null
+        const nextUser = JSON.stringify([nextData.access?.userId ?? null, nextData.access?.user ?? null])
         // Only a change of identity clears the workspace. When the user is first
         // learned there is nothing stale: the mount effect and clearAccess already
         // cleared everything before this request, and clearing again would bump
@@ -338,6 +339,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       role,
       setRole,
       currentUser: data?.access?.user ?? 'Local prototype user',
+      currentUserId: data?.access?.userId ?? null,
       refresh,
       submitTransfer,
       addTransferEvent,
@@ -346,8 +348,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     [data, loading, error, accessErrorStatus, lastCheckedAt, savedChangesPending, homeStore, setHomeStore, role, setRole, refresh, submitTransfer, addTransferEvent, addAttentionEvent],
   )
 
-  return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>
+  // Remount every employee workspace, including open dialogs and local drafts,
+  // when membership changes even if the displayed name, role and store match.
+  const workspaceIdentity = JSON.stringify([data?.access?.userId ?? null, data?.access?.user ?? null, role, homeStore])
+  return <AppDataContext.Provider value={value}><EmployeeWorkspace key={workspaceIdentity}>{children}</EmployeeWorkspace></AppDataContext.Provider>
 }
+
+function EmployeeWorkspace({ children }: { children: ReactNode }) { return children }
 
 export function useAppData(): AppDataContextValue {
   const value = useContext(AppDataContext)

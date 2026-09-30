@@ -834,6 +834,8 @@ export interface BootstrapData {
   savedListsEnabled?: boolean
   access?: {
     user: string
+    /** Stable server-owned membership identity; never a display-name cache key. */
+    userId?: string | null
     role: UserRole
     store: StoreName
     authenticatedRole?: UserRole

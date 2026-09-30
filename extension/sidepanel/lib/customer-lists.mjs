@@ -15,7 +15,7 @@ export function customerListWritesReady(snapshot) {
   return snapshot?.readyForWrites === true && snapshot.saving !== true && !snapshot.pending
 }
 
-export function createCustomerListSession({ read, write, onChange = () => {} }) {
+export function createCustomerListSession({ read, write, ownerId = null, onChange = () => {} }) {
   let generation = 0
   let readPromise = null
   let saveAfterCreate = null
@@ -28,18 +28,25 @@ export function createCustomerListSession({ read, write, onChange = () => {} }) 
     publish({ error: error?.status === 409 ? 'This list changed on another device. Review the refreshed list and try the action again.' : 'Customer lists could not be updated. Your last confirmed list is still shown.' })
   }
   function reset() { generation += 1; readPromise = null; saveAfterCreate = null; value = empty(); onChange(value) }
+  function setOwner(nextOwnerId) {
+    const next = typeof nextOwnerId === 'string' && nextOwnerId.trim() && nextOwnerId.length <= 160 && !/[\u0000-\u001f\u007f]/u.test(nextOwnerId) ? nextOwnerId : null
+    if (next === ownerId) return
+    reset()
+    ownerId = next
+  }
   function select(id) {
     if (value.saving || value.pending) return
     publish({ activeId: value.lists.some(list => list.id === id) ? id : null })
   }
   function active() { return value.lists.find(list => list.id === value.activeId) ?? null }
   async function refresh() {
+    if (!ownerId) return
     if (readPromise || value.saving) return readPromise
     const version = generation
     publish({ loading: true })
     const promise = (async () => {
       try {
-        const result = await read()
+        const result = await read(ownerId)
         if (version !== generation) return
         const lists = result.lists
         const activeId = lists.some(list => list.id === value.activeId) ? value.activeId : lists[0]?.id ?? null
@@ -51,7 +58,7 @@ export function createCustomerListSession({ read, write, onChange = () => {} }) 
     return promise
   }
   function requireConfirmedRead() {
-    if (value.readyForWrites) return true
+    if (ownerId && value.readyForWrites) return true
     publish({ error: 'Check your customer lists before saving. Retry the list check.' })
     return false
   }
@@ -62,7 +69,7 @@ export function createCustomerListSession({ read, write, onChange = () => {} }) 
     const version = generation
     publish({ saving: true, loading: false, error: null, pending: { input, key } })
     try {
-      const result = await write(input, key)
+      const result = await write(input, key, ownerId)
       if (version !== generation) return false
       const lists = result.deleted ? value.lists.filter(list => list.id !== result.id)
         : [...value.lists.filter(list => list.id !== result.id), result].sort((a, b) => a.createdAt.localeCompare(b.createdAt, 'en-US'))
@@ -97,7 +104,7 @@ export function createCustomerListSession({ read, write, onChange = () => {} }) 
     return mutate('add', { vin: continuation.vin })
   }
   return {
-    get snapshot() { return value }, active, reset, select, refresh, mutate,
+    get snapshot() { return value }, active, reset, setOwner, select, refresh, mutate,
     async retry() {
       const pending = value.pending, continuation = saveAfterCreate
       if (!pending) return refresh()

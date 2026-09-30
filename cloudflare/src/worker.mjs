@@ -11,7 +11,7 @@ import { serviceIntakeRows } from '../../server/service-intake.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
 import { ISSUE_BODY_BYTES, prepareIssuePhotos } from '../../server/issue-photos.mjs'
 import { readIssuePhoto, storeIssuePhotos } from './issue-photo-storage.mjs'
-import { SAVED_LIST_BODY_BYTES } from '../../server/saved-vehicle-lists.mjs'
+import { assertSavedListOwner, SAVED_LIST_BODY_BYTES } from '../../server/saved-vehicle-lists.mjs'
 
 const FORMAT = 'inventory-flow-private-release-v1'
 const MAX_UPLOAD = 25 * 1024 * 1024
@@ -441,6 +441,8 @@ async function appApi(request,url,env,context,claims) {
   // Worker nothing and answer 400 rather than a 500 from deeper in the stack.
   const identifier=route.includes('/',1)?pathSegment(route.split('/')[2]):null
   if(write && request.headers.get('origin')!==url.origin) throw new AccessError('SAME_ORIGIN_REQUIRED',403)
+  const expectedSavedListOwner=savedListsRoute?request.headers.get('x-inventory-saved-list-owner'):null
+  if(savedListsRoute) assertSavedListOwner(context,expectedSavedListOwner)
   const idempotency=request.headers.get('idempotency-key')
   if(write && (!idempotency || idempotency.length>160 || /[\x00-\x1f]/.test(idempotency))) throw new HttpError('IDEMPOTENCY_KEY_REQUIRED')
   const input=write?await readJson(request,issueWriteRoute?ISSUE_BODY_BYTES:savedListsRoute?SAVED_LIST_BODY_BYTES:64*1024):null
@@ -457,6 +459,7 @@ async function appApi(request,url,env,context,claims) {
     // A conflicting commit may have been an employee access change. Resolve
     // the same verified Access identity again before replaying any operation.
     if(attempt>0) context=await memberContext(claims,env,request)
+    if(savedListsRoute) assertSavedListOwner(context,expectedSavedListOwner)
     const repo=await loadD1Repository(env.INVENTORY_DB,release,{ownerUserId:context.userId,idempotencyKey:idempotency})
     const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
     const query=Object.fromEntries(url.searchParams)
