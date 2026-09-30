@@ -35,7 +35,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   Clock3,
   ClipboardCheck,
   FileText,
@@ -55,8 +54,6 @@ import {
   X,
 } from "lucide-react";
 import { CopyableValue } from "../../components/CopyableValue";
-import { STORE_BRANDING } from "../../app/storeBranding";
-import type { StoreName } from "../../types";
 import { DealerMailHandoff } from "./DealerMailHandoff";
 import { VehicleResourceCards, displaySourceMoney } from "./VehicleResourceCards";
 import { oasisActionLabel, vehicleOverviewResources } from "./vehicle-resource-catalog";
@@ -658,7 +655,7 @@ function TimelineDetails({ vehicle }: { vehicle: InventoryVehicle }) {
 
 export function VehicleWorkspace({
   vehicle, homeStore, canRequestVehicle = false, moveAction, initialTab = "overview", returnFocusRef, returnLabel = "Back to inventory", detailState, onRetryDetail,
-  issueContext, dispositionContext, onPreviousVehicle, onNextVehicle,
+  issueContext, dispositionContext,
   onClose, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing,
 }: VehicleWorkspaceProps) {
   // Inherits the inventory list's signed-in shortlist; a standalone workspace
@@ -732,7 +729,7 @@ export function VehicleWorkspace({
     : loanerLabel
       ? loanerLabel
     : vehicle.dealerMail.hasActiveHold === true
-      ? "Held"
+      ? "On hold"
       : vehicle.dealerMail.hasActiveHold === false ? "No current hold" : "Hold status not provided";
   const hasMovement = Boolean(vehicle.movement?.requestId || vehicle.movement?.state);
   const nextStepStatus = movementStatus(vehicle, homeStore.name);
@@ -740,34 +737,6 @@ export function VehicleWorkspace({
     : humanizeWorkflowValue(vehicle.movement?.state) || humanizeWorkflowValue(vehicle.movement?.requestStatus) || "No tracked move";
   const serviceStatus = serviceWorkflowStatus(vehicle.serviceReadiness);
   const serviceHref = `/service?vin=${encodeURIComponent(vehicle.vin)}`;
-  // Header facts: only what staff act on. Each status family keeps its own
-  // label, tone and evidence; none is inferred from another.
-  const returnShortLabel = returnLabel.replace(/^Back to\s+/i, "").replace(/^./, (letter) => letter.toUpperCase());
-  const oemKey = (STORE_BRANDING as Partial<Record<string, { oemKey: string }>>)[homeStore.name as StoreName]?.oemKey;
-  const hasPublishedPrice = typeof vehicle.price === "number" && Number.isFinite(vehicle.price);
-  const hasMileage = typeof vehicle.mileage === "number" && Number.isFinite(vehicle.mileage);
-  const ageLabel = vehicle.daysListed != null ? `${vehicle.daysListed} ${vehicle.daysListed === 1 ? "day" : "days"}` : null;
-  const locationDetail = vehicle.location.conflict || currentLocation.store?.id !== vehicle.location.homeStore.id
-    ? `Home: ${vehicle.location.homeStore.name}` : "Home store";
-  const holdTone = !holdCurrent ? "unknown"
-    : loanerLabel ? "loaner"
-    : vehicle.dealerMail.hasActiveHold === true ? "hold"
-    : vehicle.dealerMail.hasActiveHold === false ? "none" : "unknown";
-  // When it is expected and who holds it come from visible evidence only, so
-  // role redaction carries through unchanged. Backups stay in Operations.
-  const holdDetail = holdTone === "hold"
-    ? [primaryHold?.expectedDeliveryDate ? `Expected ${formatDate(primaryHold.expectedDeliveryDate)}` : null,
-      primaryHold?.salesperson?.trim(), holdCount > 1 ? `${holdCount - 1} backup ${holdCount === 2 ? "hold" : "holds"}` : null].filter(Boolean).join(" · ")
-    : holdTone === "loaner" ? vehicle.dealerMail.loaner?.rawAlert || "Loaner vehicle"
-    : holdTone === "unknown" ? "Confirm in DealerMail" : "";
-  const serviceDetail = serviceStatus === "serviced"
-    ? vehicle.serviceReadiness?.completedAt ? `Completed ${formatDate(vehicle.serviceReadiness.completedAt)}` : ""
-    : serviceStatus === "in_service" && vehicle.serviceReadiness?.serviceEnteredAt ? `Since ${formatDate(vehicle.serviceReadiness.serviceEnteredAt)}` : "";
-  // The Move column exists only when a move does.
-  const moveValue = humanizeWorkflowValue(vehicle.movement?.state) || humanizeWorkflowValue(vehicle.movement?.requestStatus) || "Tracked move";
-  // Overdue is red only for the store that owns the next step (sla-label).
-  const moveTone = nextStepStatus?.overdue ? (nextStepStatus.tone === "danger" ? "danger" : "neutral") : "active";
-  const moveDetail = nextStepStatus?.overdue ? nextStepStatus.label : vehicle.movement?.nextAction || "";
   const { date: warrantyInServiceDate, label: warrantyInServiceLabel, source: warrantyInServiceSource } = resolveVehicleInService(vehicle);
   const hasStickerBase = vehicle.windowSticker?.basePrice != null;
   const baseMsrpLabel = "Base MSRP";
@@ -826,19 +795,9 @@ export function VehicleWorkspace({
     : null);
   const canTrackMovement = Boolean(vehicle.movement?.requestId && onTrackMovement);
   const canCreateMovement = Boolean(resolvedMoveAction && (onMoveVehicle || onRequestVehicle) && (!canTrackMovement || moveAction));
-  // A cross-store request is the only movement action promoted into the
-  // identity rail. Own-stock moves stay available in the operational tools.
-  const requestPrimary = canCreateMovement && resolvedMoveAction?.intent === "request" && vehicle.location.homeStore.id !== homeStore.id;
-  const servicePrimary = !requestPrimary && (serviceStatus === "needs_service" || serviceStatus === "in_service");
-  const holdAction = <button type="button" className={servicePrimary || requestPrimary ? undefined : "is-primary"} onClick={() => openAndFocusSection("hold")} data-action="hold-details">Hold status</button>;
-  const startServiceAction = serviceStatus === "needs_service"
-    ? <WorkspaceLink className={servicePrimary ? "is-primary" : undefined} to={serviceHref + "&action=in_service"} preserveOrigin>Start service</WorkspaceLink> : null;
-  const markReadyAction = serviceStatus !== "serviced"
-    ? <WorkspaceLink className={servicePrimary && serviceStatus === "in_service" ? "is-primary" : undefined} to={serviceHref + "&action=serviced"} preserveOrigin>Mark Ready</WorkspaceLink>
-    : <WorkspaceLink to={serviceHref} preserveOrigin>Service history</WorkspaceLink>;
   const movementAction = <>
     {canTrackMovement ? <button type="button" onClick={() => onTrackMovement?.(vehicle)} data-action="track-movement"><Truck size={18} aria-hidden="true" />Track movement</button> : null}
-    {canCreateMovement && !requestPrimary && resolvedMoveAction ? <button type="button" onClick={() => onMoveVehicle ? onMoveVehicle(vehicle, resolvedMoveAction.intent) : onRequestVehicle?.(vehicle)} aria-label={resolvedMoveAction.label} title={resolvedMoveAction.label} data-action={resolvedMoveAction.intent === "direct" ? "move-vehicle" : "request-vehicle"}><ArrowLeftRight size={18} aria-hidden="true" />{resolvedMoveAction.shortLabel}</button> : null}
+    {canCreateMovement && resolvedMoveAction ? <button type="button" onClick={() => onMoveVehicle ? onMoveVehicle(vehicle, resolvedMoveAction.intent) : onRequestVehicle?.(vehicle)} aria-label={resolvedMoveAction.label} title={resolvedMoveAction.label} data-action={resolvedMoveAction.intent === "direct" ? "move-vehicle" : "request-vehicle"}><ArrowLeftRight size={18} aria-hidden="true" />{resolvedMoveAction.shortLabel}</button> : null}
   </>;
 
   function openAndFocusSection(target: WorkspaceSectionId) {
@@ -887,61 +846,25 @@ export function VehicleWorkspace({
     <>
       <div className={`inventory-workspace-backdrop vdp-focus-backdrop${takeHomeOpen ? " is-take-home-open" : ""}`} onClick={closeWorkspace} aria-hidden="true" />
       <aside id="inventory-vehicle-workspace" className={`inventory-workspace inventory-workspace--focused${takeHomeOpen ? " is-take-home-open" : ""}`}
-        ref={workspaceRef} role="dialog" aria-modal="true" aria-label={displayName + " vehicle workspace"} tabIndex={-1} data-ifx-oem={oemKey}
+        ref={workspaceRef} role="dialog" aria-modal="true" aria-label={displayName + " vehicle workspace"} tabIndex={-1}
         data-active-section={activePage} data-active-target={activeTarget} data-has-issues={Boolean(issueContext)}>
         <header className="vdp-focus-header">
-          <div className="vdp-focus-masthead">
-            <button type="button" className="vdp-focus-back" onClick={closeWorkspace} aria-label={returnLabel}><ChevronLeft size={18} aria-hidden="true" /><span>{returnShortLabel}</span></button>
-            <div className="vdp-focus-identity">
-              <div className="vdp-focus-title-line">
-                <h2 id="inventory-workspace-title" className="vdp-focus-title" title={displayName}>{displayName}</h2>
-                {vehicle.certified ? <CertifiedBadge certified homeStore={vehicle.location.homeStore.name} /> : null}
-              </div>
+          <button type="button" className="vdp-focus-back" onClick={closeWorkspace} aria-label={returnLabel}><ChevronLeft size={20} aria-hidden="true" /><span>{returnLabel}</span></button>
+          <div className="vdp-focus-primary">
+            <div className="vdp-focus-identity"><h2 id="inventory-workspace-title">{displayName}</h2><strong>{formatMoney(vehicle.price)}</strong></div>
+            <div className="vdp-focus-subline">
               <dl className="vdp-focus-identifiers">
                 <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} /></dd></div>
                 <div><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} /></dd></div>
-                {hasMileage ? <div className="vdp-focus-identifiers__fact"><dt>Mileage</dt><dd>{formatMileage(vehicle.mileage)}</dd></div> : null}
-                {ageLabel ? <div className="vdp-focus-identifiers__fact"><dt>Listed</dt><dd>{ageLabel}</dd></div> : null}
               </dl>
-            </div>
-            <div className="vdp-focus-pricing">
-              <span className="vdp-focus-pricing__label">Internet price</span>
-              <p className="vdp-focus-price" data-state={hasPublishedPrice ? "published" : "unpublished"}>{formatMoney(vehicle.price)}</p>
-              <p className="vdp-focus-pricing__facts">{[hasMileage ? formatMileage(vehicle.mileage) : null, ageLabel ? `Listed ${ageLabel}` : null].filter(Boolean).join(" · ")}</p>
-            </div>
-            {requestPrimary && resolvedMoveAction ? <button type="button" className="vdp-focus-request" onClick={() => onMoveVehicle ? onMoveVehicle(vehicle, "request") : onRequestVehicle?.(vehicle)} aria-label={resolvedMoveAction.label} data-action="request-vehicle"><ArrowLeftRight size={17} aria-hidden="true" />Request</button> : null}
-            <div className="vdp-focus-controls">
-              {onPreviousVehicle || onNextVehicle ? <>
-                <button type="button" className="vdp-focus-step" onClick={() => { if (confirmUnsavedWork()) onPreviousVehicle?.(activeTarget); }} disabled={!onPreviousVehicle} aria-label="Previous vehicle" title="Previous vehicle"><ChevronUp size={18} aria-hidden="true" /></button>
-                <button type="button" className="vdp-focus-step" onClick={() => { if (confirmUnsavedWork()) onNextVehicle?.(activeTarget); }} disabled={!onNextVehicle} aria-label="Next vehicle" title="Next vehicle"><ChevronDown size={18} aria-hidden="true" /></button>
-              </> : null}
-              <button type="button" className="vdp-focus-close" onClick={closeWorkspace} aria-label="Close vehicle details"><X size={18} aria-hidden="true" /></button>
+              <div className="vdp-focus-glance" role="group" aria-label="Quick vehicle status">
+                <span aria-label={`Location: ${currentLocation.label}`}><strong>{currentLocation.label}</strong></span>
+                <span aria-label={`Hold status: ${holdLabel}`}><strong>{holdLabel}</strong></span>
+                <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} labelPrefix="Service" detailed compact />
+              </div>
             </div>
           </div>
-          <section className="vdp-focus-glance" aria-label="Vehicle operational summary">
-            <div role="group" aria-label="Quick vehicle status"><dl>
-              <div className="vdp-focus-status" data-family="location" data-tone={vehicle.location.conflict ? "danger" : "neutral"}>
-                <dt>Location</dt>
-                <dd className="vdp-focus-status__value"><MapPin size={15} aria-hidden="true" /><span className="sr-only">Location: </span><span>{currentLocation.label}</span></dd>
-                {locationDetail ? <dd className="vdp-focus-status__detail">{locationDetail}</dd> : null}
-              </div>
-              <div className="vdp-focus-status" data-family="hold" data-tone={holdTone}>
-                <dt>Hold status</dt>
-                <dd className="vdp-focus-status__value"><span className="vdp-focus-status__dot" aria-hidden="true" /><span className="sr-only">Hold status: </span><span>{holdLabel}</span></dd>
-                {holdDetail ? <dd className="vdp-focus-status__detail" title={holdDetail}>{holdDetail}</dd> : null}
-              </div>
-              <div className="vdp-focus-status vdp-focus-service-fact" data-family="service" data-tone={serviceStatus}>
-                <dt>Service</dt>
-                <dd className="vdp-focus-status__value"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} labelPrefix="Service" detailed compact /></dd>
-                {serviceDetail ? <dd className="vdp-focus-status__detail">{serviceDetail}</dd> : null}
-              </div>
-              {hasMovement ? <div className="vdp-focus-status" data-family="move" data-tone={moveTone}>
-                <dt>Move</dt>
-                <dd className="vdp-focus-status__value"><Truck size={15} aria-hidden="true" /><span>{moveValue}</span></dd>
-                {moveDetail ? <dd className={`vdp-focus-status__detail${nextStepStatus?.tone === "danger" ? " vdp-focus-next-action__overdue" : ""}`} title={moveDetail}>{moveDetail}</dd> : null}
-              </div> : null}
-            </dl></div>
-          </section>
+          <button type="button" className="vdp-focus-close" onClick={closeWorkspace} aria-label="Close vehicle details"><X size={20} aria-hidden="true" /></button>
         </header>
         <div className="vdp-focus-navigation">
           <div className="vdp-focus-tabs" role="tablist" aria-label="Vehicle workspace sections">
@@ -956,6 +879,30 @@ export function VehicleWorkspace({
           <VehicleDetailStatus state={detailState} onRetry={onRetryDetail} />
           <WorkspacePanel id="overview" label="Overview" active={activePage === "overview"}>
             <div className="vdp-focus-overview">
+              <section className="vdp-focus-operations" aria-label="Vehicle operational summary">
+                <h3>Operations</h3>
+                <dl>
+                  <Fact label="Location"><strong>{currentLocation.label}</strong>{vehicle.location.conflict ? <small>Location conflict — review needed</small> : null}</Fact>
+                  <Fact label="Hold status"><strong>{loanerLabel || (holdCurrent && vehicle.dealerMail.hasActiveHold ? "Held" : holdLabel)}</strong>{vehicle.dealerMail.loaner?.rawAlert && loanerLabel ? <small>{vehicle.dealerMail.loaner.rawAlert}</small> : null}{holdCount > 1 ? <small className="vdp-focus-mobile-backup">{holdCount - 1} backup {holdCount === 2 ? "hold" : "holds"}</small> : null}</Fact>
+                  {primaryHold?.salesperson ? <Fact label="Salesperson">{primaryHold.salesperson}</Fact> : null}
+                  {primaryHold?.expectedDeliveryDate ? <Fact label="Expected">{formatDate(primaryHold.expectedDeliveryDate)}</Fact> : null}
+                  {holdCount > 1 ? <Fact label="Backup holds" className="vdp-focus-desktop-field">{holdCount - 1}</Fact> : null}
+                  <Fact label="Service" className="vdp-focus-service-fact"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} compact /></Fact>
+                  {appDisposition ? <Fact label="Disposition">{dispositionStorageMissing
+                    ? <><strong>Not available</strong><small>Disposition storage is not enabled yet.</small></>
+                    : <><strong>{dispositionSummary(appDisposition)}</strong><small>{appDisposition.effectiveDate ? `${formatDate(appDisposition.effectiveDate)} · ` : ""}{DISPOSITION_QUALIFIER}</small></>}</Fact> : null}
+                </dl>
+                <div className="vdp-focus-actions">
+                  {movementAction}
+                  <button type="button" onClick={() => openAndFocusSection("hold")} data-action="hold-details"><MessageSquare size={18} aria-hidden="true" />Hold status</button>
+                  {serviceStatus === "needs_service" ? <WorkspaceLink to={serviceHref + "&action=in_service"} preserveOrigin>Start service</WorkspaceLink> : null}
+                  {serviceStatus !== "serviced" ? <WorkspaceLink to={serviceHref + "&action=serviced"} preserveOrigin>Mark Ready</WorkspaceLink> : <WorkspaceLink to={serviceHref} preserveOrigin>Service history</WorkspaceLink>}
+                  {dispositionAction ? <button type="button" ref={dispositionOpenerRef} onClick={() => { setDispositionStatus(""); setDispositionOpen(true); }} data-action="disposition"><ClipboardCheck size={18} aria-hidden="true" />{dispositionAction}</button> : null}
+                </div>
+                {dispositionStatus ? <p className="vdp-focus-next-action" role="status">{dispositionStatus}</p> : null}
+                {hasMovement ? <div className="vdp-focus-next-action"><strong className={nextStepStatus?.tone === "danger" ? "vdp-focus-next-action__overdue" : undefined}>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div> : null}
+                {issueContext ? <VehicleIssuesSummary issues={vehicleIssues} canReport={canReportIssue} enabled={issueContext.enabled} onOpen={() => openAndFocusSection('issues')} onReport={reportIssue} /> : null}
+              </section>
               <div className="vdp-focus-vehicle-context">
               <div className="vdp-focus-photo"><VehicleGallery vehicle={vehicle} /></div>
               <section className="vdp-focus-specs" aria-label="Vehicle specifications">
@@ -965,7 +912,7 @@ export function VehicleWorkspace({
                   {vehicle.fuelType ? <Fact label="Fuel">{vehicle.fuelType}</Fact> : null}
                 </dl>
                 <div className="vdp-focus-mobile-specs">{mobileSpecificationLines.map((line, index) => <p key={index}>{line}</p>)}</div>
-                {vehicle.publicListing.dataState !== "current" || vehicle.publicListing.isListed !== true ? <p className="vdp-focus-listing">{vehicle.publicListing.dataState !== "current" ? "Listing unverified" : vehicle.publicListing.isListed === false ? "Not publicly listed" : "Listing state not provided"}</p> : null}
+                <p className="vdp-focus-listing">{vehicle.location.homeStore.name} · {vehicle.publicListing.dataState !== "current" ? "Listing unverified" : vehicle.publicListing.isListed === true ? "Listed online" : vehicle.publicListing.isListed === false ? "Not publicly listed" : "Listing state not provided"}{vehicle.certified ? <> · <CertifiedBadge certified homeStore={vehicle.location.homeStore.name} /></> : null}</p>
 
               </section>
               <section className="vdp-focus-keyfacts" aria-label="Frequently used vehicle facts"><dl>
@@ -973,29 +920,11 @@ export function VehicleWorkspace({
                 <Fact label="Base MSRP"><span className="vdp-focus-reference-value">{baseMsrpDisplay}</span>{baseMsrpQualifier ? <small>{baseMsrpQualifier}</small> : null}</Fact>
                 <Fact label="Inventory date"><span className="vdp-focus-reference-date">{vehicle.inventoryDate ? formatDate(vehicle.inventoryDate) : "—"}</span></Fact>
               </dl></section>
-              </div>
-              <section className="vdp-focus-operations" aria-label="Vehicle actions">
-                {appDisposition ? <dl><Fact label="Disposition">{dispositionStorageMissing
-                  ? <><strong>Not available</strong><small>Disposition storage is not enabled yet.</small></>
-                  : <><strong>{dispositionSummary(appDisposition)}</strong><small>{appDisposition.effectiveDate ? `${formatDate(appDisposition.effectiveDate)} · ` : ""}{DISPOSITION_QUALIFIER}</small></>}</Fact></dl> : null}
-                {dispositionStatus ? <p className="vdp-focus-next-action" role="status">{dispositionStatus}</p> : null}
-                <div className="vdp-focus-actions">
-                  {servicePrimary ? <>{startServiceAction}{markReadyAction}{holdAction}</> : <>{holdAction}{startServiceAction}{markReadyAction}</>}
-                  {dispositionAction ? <button type="button" ref={dispositionOpenerRef} onClick={() => { setDispositionStatus(""); setDispositionOpen(true); }} data-action="disposition"><ClipboardCheck size={18} aria-hidden="true" />{dispositionAction}</button> : null}
-                </div>
-                {/* Moves are occasional: a quiet fact line with secondary links,
-                    never the panel's primary action. */}
-                {hasMovement || (canCreateMovement && !requestPrimary) ? <div className="vdp-focus-next-action" data-move={hasMovement ? "active" : "none"}>
-                  {hasMovement ? <div className="vdp-focus-next-action__fact"><strong className={nextStepStatus?.tone === "danger" ? "vdp-focus-next-action__overdue" : undefined}>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div>
-                    : null}
-                  <div className="vdp-focus-next-action__links">{movementAction}</div>
-                </div> : null}
-                {issueContext ? <VehicleIssuesSummary issues={vehicleIssues} canReport={canReportIssue} enabled={issueContext.enabled} onOpen={() => openAndFocusSection('issues')} onReport={reportIssue} /> : null}
-              </section>
               <section className="vdp-focus-highlights" aria-label="Key equipment">
                 <div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
                 {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
               </section>
+              </div>
               <CustomerSummary key={vehicle.id} vehicle={vehicle} onRecords={() => openAndFocusSection("data")} onTakeHome={(button) => { takeHomeOpenerRef.current = button; setTakeHomeOpen(true); }} />
             </div>
             <section className="vdp-focus-resources" aria-label="Documents and vehicle records">

@@ -598,18 +598,6 @@ export function InventoryExperience({
   const pageVehicles = scopedVehicles.slice(pageStart, pageStart + rowsPerPage);
   // List-only filters must not discard an already open, still-authorized record.
   const selectedVehicle = selectedVehicleId ? allVehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null : null;
-  // Previous / next follow the list exactly as sorted and filtered. Stepping
-  // keeps the open tab and returns focus to the stepped-to row on close.
-  const selectedListIndex = selectedVehicle ? scopedVehicles.findIndex((vehicle) => vehicle.id === selectedVehicle.id) : -1;
-  const stepWorkspace = (offset: -1 | 1) => {
-    const target = selectedListIndex >= 0 ? scopedVehicles[selectedListIndex + offset] : undefined;
-    if (!target) return undefined;
-    return (tab: VehicleWorkspaceTab) => {
-      setWorkspaceInitialTab(tab);
-      workspaceReturnFocusRef.current = visibleVehicleTrigger(target.id);
-      setSelectedVehicleId(target.id);
-    };
-  };
   const filterCount = activeFilterCount(filters) + (["moving", "new", "price"].includes(quickView) ? 1 : 0);
   const selectedServiceLabel = SERVICE_FILTERS.find(([value]) => value === filters.serviceReadiness && value !== "all")?.[1];
   const overviewViewLabel = filters.overviewView ? `${OVERVIEW_VIEW_LABELS[filters.overviewView.view]} · ${filters.overviewView.store}` : null;
@@ -885,8 +873,6 @@ export function InventoryExperience({
           canRequestVehicle={canRequestSelected}
           moveAction={selectedMoveAction}
           returnFocusRef={workspaceReturnFocusRef}
-          onPreviousVehicle={stepWorkspace(-1)}
-          onNextVehicle={stepWorkspace(1)}
           onClose={closeVehicleWorkspace}
           onRequestVehicle={onRequestVehicle}
           onMoveVehicle={onMoveVehicle}
