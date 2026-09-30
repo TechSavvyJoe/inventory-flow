@@ -14,15 +14,23 @@ const SECOND_VIN = 'TESTDATAHWELL0002'
 const MISSING_VIN = 'TESTDATAXXXX00001'
 const sales = { email: 'saved-sales@example.invalid', userId: 'saved-sales-1', name: 'Synthetic Saved Salesperson', role: 'sales', store: 'Howell' }
 const other = { email: 'saved-other@example.invalid', userId: 'saved-other-1', name: 'Synthetic Other Salesperson', role: 'sales', store: 'Fowlerville' }
+const sameNameOther = { email: 'saved-same-name@example.invalid', userId: 'saved-sales-2', name: sales.name, role: sales.role, store: sales.store }
 const group = { email: 'saved-group@example.invalid', userId: 'saved-group-1', name: 'Synthetic Saved Group Manager', role: 'group_manager', store: 'Lincoln' }
+const members = [sales, other, sameNameOther, group]
+const ownerFor = (email) => members.find((member) => member.email === email)?.userId ?? 'unknown-synthetic-owner'
 const nodeFetch = globalThis.fetch
 
 describe('Worker employee-owned saved vehicle lists', () => {
   let cloud
-  beforeEach(async () => { cloud = await createCloudWorkerHarness([sales, other, group]) })
+  beforeEach(async () => { cloud = await createCloudWorkerHarness(members) })
   afterEach(() => cloud.close())
 
-  const post = (email, body, key, headers = {}) => cloud.call('POST', '/api/saved-lists', email, body, { 'idempotency-key': key, ...headers })
+  const post = (email, body, key, headers = {}) => cloud.call('POST', '/api/saved-lists', email, body, {
+    'idempotency-key': key, 'x-inventory-saved-list-owner': ownerFor(email), ...headers,
+  })
+  const get = (email, headers = {}) => cloud.call('GET', '/api/saved-lists', email, undefined, {
+    'x-inventory-saved-list-owner': ownerFor(email), ...headers,
+  })
 
   it('isolates owners, keeps missing VIN references, and never returns a vehicle snapshot', async () => {
     const created = await post(sales.email, { action: 'create', label: 'AB' }, 'create-ab')
@@ -38,9 +46,9 @@ describe('Worker employee-owned saved vehicle lists', () => {
     ])
     expect(missing.json.items.every((item) => Object.keys(item).sort().join(',') === 'addedAt,available,vin')).toBe(true)
 
-    const own = await cloud.call('GET', '/api/saved-lists', sales.email)
+    const own = await get(sales.email)
     expect(own.json.lists).toHaveLength(1)
-    expect((await cloud.call('GET', '/api/saved-lists', other.email)).json).toEqual({ lists: [] })
+    expect((await get(other.email)).json).toEqual({ lists: [] })
     const hidden = await post(other.email, { action: 'rename', listId: created.json.id, label: 'Stolen', expectedRevision: 3 }, 'other-rename')
     expect(hidden).toMatchObject({ status: 404, json: { code: 'SAVED_LIST_NOT_FOUND' } })
 
@@ -48,7 +56,7 @@ describe('Worker employee-owned saved vehicle lists', () => {
     expect(removed).toMatchObject({ status: 200, json: { revision: 4, items: [{ vin: CURRENT_VIN, available: true }] } })
     const deleted = await post(sales.email, { action: 'delete', listId: created.json.id, expectedRevision: 4 }, 'delete-ab')
     expect(deleted).toMatchObject({ status: 200, json: { id: created.json.id, deleted: true, revision: 5 } })
-    expect((await cloud.call('GET', '/api/saved-lists', sales.email)).json).toEqual({ lists: [] })
+    expect((await get(sales.email)).json).toEqual({ lists: [] })
 
     const storedRevision = cloud.revision()
     const actionCount = cloud.count('saved_vehicle_list_actions')
@@ -79,17 +87,17 @@ describe('Worker employee-owned saved vehicle lists', () => {
   it('keeps the authenticated owner during permission preview and denies revoked or anonymous memberships', async () => {
     const created = await post(group.email, { action: 'create', label: 'GM' }, 'group-create')
     expect(created.status).toBe(201)
-    const preview = await cloud.call('GET', '/api/saved-lists', group.email, undefined, {
+    const preview = await get(group.email, {
       'x-inventory-preview-role': 'sales', 'x-inventory-preview-store': 'Howell',
     })
     expect(preview.json.lists.map((list) => list.id)).toEqual([created.json.id])
-    expect((await cloud.call('GET', '/api/saved-lists', sales.email)).json).toEqual({ lists: [] })
+    expect((await get(sales.email)).json).toEqual({ lists: [] })
 
     const employeeList = await post(sales.email, { action: 'create', label: 'Employee' }, 'employee-create')
     expect(employeeList.status).toBe(201)
     cloud.database.prepare('UPDATE cloud_memberships SET enabled=0 WHERE email=?').run(sales.email)
-    expect(await cloud.call('GET', '/api/saved-lists', sales.email)).toMatchObject({ status: 403, json: { code: 'EMPLOYEE_NOT_AUTHORIZED' } })
-    expect(await cloud.call('GET', '/api/saved-lists', 'unknown@example.invalid')).toMatchObject({ status: 403, json: { code: 'EMPLOYEE_NOT_AUTHORIZED' } })
+    expect(await get(sales.email)).toMatchObject({ status: 403, json: { code: 'EMPLOYEE_NOT_AUTHORIZED' } })
+    expect(await get('unknown@example.invalid')).toMatchObject({ status: 403, json: { code: 'EMPLOYEE_NOT_AUTHORIZED' } })
   })
 
   it('rejects wrong-origin and overbroad bodies before persisting anything', async () => {
@@ -115,7 +123,7 @@ describe('Worker employee-owned saved vehicle lists', () => {
       action: 'rename', listId: created.json.id, expectedRevision: 1, label,
     }, `invalid-rename-${_kind}`)
     expect(invalidRename).toMatchObject({ status: 422, json: { code: 'INVALID_SAVED_LIST_INPUT' } })
-    expect((await cloud.call('GET', '/api/saved-lists', sales.email)).json.lists)
+    expect((await get(sales.email)).json.lists)
       .toEqual([expect.objectContaining({ id: created.json.id, label: 'AB', revision: 1 })])
     expect(cloud.count('saved_vehicle_list_actions')).toBe(1)
   })
@@ -129,7 +137,7 @@ describe('Worker employee-owned saved vehicle lists', () => {
       post(sales.email, { action: 'remove', listId: created.json.id, vin: CURRENT_VIN, expectedRevision: 2 }, 'concurrent-remove'),
     ])
     expect(results.map((result) => result.status).sort()).toEqual([200, 409])
-    const list = (await cloud.call('GET', '/api/saved-lists', sales.email)).json.lists[0]
+    const list = (await get(sales.email)).json.lists[0]
     expect(list.revision).toBe(3)
     expect(list.items.map((item) => item.vin).sort()).toEqual(
       results[0].status === 200 ? [CURRENT_VIN, SECOND_VIN].sort() : [],
@@ -186,6 +194,53 @@ describe('Worker employee-owned saved vehicle lists', () => {
     const write = await post(sales.email, { action: 'create', label: 'AB' }, 'migration-missing')
     expect(write).toMatchObject({ status: 503, json: { code: 'MIGRATION_REQUIRED' } })
   })
+
+  it('changes bootstrap validators for different stable employee IDs even when display access is identical', async () => {
+    const first = await cloud.call('GET', '/api/bootstrap', sales.email)
+    expect(first).toMatchObject({ status: 200, json: { access: { user: sales.name, userId: sales.userId, role: sales.role, store: sales.store } } })
+    const second = await cloud.call('GET', '/api/bootstrap', sameNameOther.email, undefined, {
+      'if-none-match': first.headers.get('etag'),
+    })
+    expect(second).toMatchObject({ status: 200, json: { access: { user: sales.name, userId: sameNameOther.userId, role: sales.role, store: sales.store } } })
+    expect(second.headers.get('etag')).not.toBe(first.headers.get('etag'))
+  })
+
+  it('rejects missing or stale owner fences on reads and writes without changing saved rows', async () => {
+    expect((await post(sales.email, { action: 'create', label: 'Owner fence' }, 'owner-fence-seed')).status).toBe(201)
+    const before = {
+      revision: cloud.revision(), lists: cloud.count('saved_vehicle_lists'), actions: cloud.count('saved_vehicle_list_actions'),
+    }
+    const attempts = [
+      await cloud.call('GET', '/api/saved-lists', sales.email),
+      await cloud.call('GET', '/api/saved-lists', sales.email, undefined, { 'x-inventory-saved-list-owner': other.userId }),
+      await cloud.call('POST', '/api/saved-lists', sales.email, { action: 'create', label: 'Missing' }),
+      await cloud.call('POST', '/api/saved-lists', sales.email, { action: 'create', label: 'Stale' }, { 'x-inventory-saved-list-owner': other.userId }),
+    ]
+    for (const response of attempts) expect(response).toMatchObject({ status: 403, json: { code: 'ACCESS_CONTEXT_CHANGED' } })
+    expect({
+      revision: cloud.revision(), lists: cloud.count('saved_vehicle_lists'), actions: cloud.count('saved_vehicle_list_actions'),
+    }).toEqual(before)
+  })
+
+  it('rechecks the current D1 member after a transaction conflict and rejects the original owner fence', async () => {
+    const d1 = cloud.env.INVENTORY_DB
+    const originalBatch = d1.batch.bind(d1)
+    let changedDuringCommit = false
+    d1.batch = async (statements) => {
+      if (!changedDuringCommit && statements[0]?.sql.includes('UPDATE cloud_app_revision SET revision = CASE WHEN')) {
+        changedDuringCommit = true
+        cloud.database.prepare('UPDATE cloud_app_revision SET revision = revision + 1').run()
+        cloud.database.prepare('UPDATE cloud_memberships SET user_id=? WHERE email=?')
+          .run('saved-sales-reassigned', sales.email)
+      }
+      return originalBatch(statements)
+    }
+    const response = await post(sales.email, { action: 'create', label: 'Retry owner' }, 'retry-owner')
+    expect(changedDuringCommit).toBe(true)
+    expect(response).toMatchObject({ status: 403, json: { code: 'ACCESS_CONTEXT_CHANGED' } })
+    expect(cloud.count('saved_vehicle_lists')).toBe(0)
+    expect(cloud.count('saved_vehicle_list_actions')).toBe(0)
+  })
 })
 
 describe('Node and Worker saved-list HTTP parity', () => {
@@ -201,11 +256,12 @@ describe('Node and Worker saved-list HTTP parity', () => {
   })
   afterEach(async () => { await app.close(); cloud.close() })
 
-  async function nodeCall(method, path, body, key, origin = baseUrl) {
+  async function nodeCall(method, path, body, key, origin = baseUrl, expectedOwnerId = 'demo:local-prototype-user') {
     const response = await nodeFetch(`${baseUrl}${path}`, {
       method,
       headers: {
         'x-inventory-demo-role': 'sales', 'x-inventory-demo-store': 'Howell', 'x-inventory-demo-user': 'Local prototype user',
+        ...(expectedOwnerId === null ? {} : { 'x-inventory-saved-list-owner': expectedOwnerId }),
         ...(method === 'POST' ? { origin, 'content-type': 'application/json', 'idempotency-key': key } : {}),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
@@ -215,12 +271,16 @@ describe('Node and Worker saved-list HTTP parity', () => {
 
   it('returns the same list shape and item semantics from SQLite and D1', async () => {
     const nodeCreated = await nodeCall('POST', '/api/v1/saved-lists', { action: 'create', label: 'Parity' }, 'parity-create')
-    const cloudCreated = await cloud.call('POST', '/api/v1/saved-lists', sales.email, { action: 'create', label: 'Parity' }, { 'idempotency-key': 'parity-create' })
+    const cloudCreated = await cloud.call('POST', '/api/v1/saved-lists', sales.email, { action: 'create', label: 'Parity' }, {
+      'idempotency-key': 'parity-create', 'x-inventory-saved-list-owner': sales.userId,
+    })
     expect([nodeCreated.status, cloudCreated.status]).toEqual([201, 201])
 
     const nodeAdded = await nodeCall('POST', '/api/saved-lists', { action: 'add', listId: nodeCreated.json.id, vin: MISSING_VIN, expectedRevision: 1 }, 'parity-add')
     const cloudAdded = await cloud.call('POST', '/api/saved-lists', sales.email,
-      { action: 'add', listId: cloudCreated.json.id, vin: MISSING_VIN, expectedRevision: 1 }, { 'idempotency-key': 'parity-add' })
+      { action: 'add', listId: cloudCreated.json.id, vin: MISSING_VIN, expectedRevision: 1 }, {
+        'idempotency-key': 'parity-add', 'x-inventory-saved-list-owner': sales.userId,
+      })
     const comparable = (value) => ({ label: value.label, revision: value.revision, items: value.items.map(({ vin, available }) => ({ vin, available })) })
     expect(comparable(nodeAdded.json)).toEqual(comparable(cloudAdded.json))
     expect(comparable(nodeAdded.json)).toEqual({ label: 'Parity', revision: 2, items: [{ vin: MISSING_VIN, available: false }] })
@@ -232,7 +292,21 @@ describe('Node and Worker saved-list HTTP parity', () => {
     const contactLabel = { action: 'create', label: 'customer@example.com' }
     expect(await nodeCall('POST', '/api/saved-lists', contactLabel, 'parity-contact-node'))
       .toMatchObject({ status: 422, json: { code: 'INVALID_SAVED_LIST_INPUT' } })
-    expect(await cloud.call('POST', '/api/saved-lists', sales.email, contactLabel, { 'idempotency-key': 'parity-contact-cloud' }))
+    expect(await cloud.call('POST', '/api/saved-lists', sales.email, contactLabel, {
+      'idempotency-key': 'parity-contact-cloud', 'x-inventory-saved-list-owner': sales.userId,
+    }))
       .toMatchObject({ status: 422, json: { code: 'INVALID_SAVED_LIST_INPUT' } })
+  })
+
+  it('applies the same missing and changed owner fence to the Node demo', async () => {
+    expect(await nodeCall('GET', '/api/bootstrap')).toMatchObject({
+      status: 200, json: { access: { userId: 'demo:local-prototype-user' } },
+    })
+    const before = app.database.prepare('SELECT COUNT(*) AS total FROM saved_vehicle_lists').get().total
+    expect(await nodeCall('GET', '/api/saved-lists', undefined, undefined, baseUrl, null))
+      .toMatchObject({ status: 403, json: { code: 'ACCESS_CONTEXT_CHANGED' } })
+    expect(await nodeCall('POST', '/api/saved-lists', { action: 'create', label: 'Wrong owner' }, 'wrong-owner', baseUrl, 'other-owner'))
+      .toMatchObject({ status: 403, json: { code: 'ACCESS_CONTEXT_CHANGED' } })
+    expect(app.database.prepare('SELECT COUNT(*) AS total FROM saved_vehicle_lists').get().total).toBe(before)
   })
 })

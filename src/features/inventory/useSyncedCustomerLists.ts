@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ApiError } from '../../lib/api'
 import { subscribeAccessFailures } from '../../lib/apiSession'
 import { getSavedVehicleLists, mutateSavedVehicleList, savedListLabelError, type SavedVehicleList } from '../../lib/saved-lists-api'
@@ -8,6 +8,7 @@ import type { ShortlistContextValue, ShortlistEntry } from './useCustomerShortli
 
 export interface SyncedCustomerListsOptions {
   enabled: boolean
+  ownerId: string | null
   role: UserRole
   store: StoreName
   context: string
@@ -54,7 +55,10 @@ function mutationOutcomeUncertain(error: unknown) {
   return !(error instanceof ApiError) || [408, 425, 429].includes(error.status) || error.status >= 500
 }
 
-export function useSyncedCustomerLists({ enabled, role, store, context, authorizedVehicles }: SyncedCustomerListsOptions): ShortlistContextValue {
+export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, role, store, context, authorizedVehicles }: SyncedCustomerListsOptions): ShortlistContextValue {
+  const enabled = requestedEnabled && Boolean(ownerId)
+  const accessKey = JSON.stringify([ownerId, role, store, context])
+  const boundAccessKey = useRef(accessKey)
   const [lists, setLists] = useState<SavedVehicleList[]>([])
   const [activeListId, setActiveListId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -77,7 +81,7 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
   listsRef.current = lists
 
   const refresh = useCallback(async (preserveError = false) => {
-    if (!enabled || revoked.current) return
+    if (!enabled || !ownerId || boundAccessKey.current !== accessKey || revoked.current) return
     abort.current?.abort()
     const controller = new AbortController()
     abort.current = controller
@@ -85,7 +89,7 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
     const requestWriteVersion = writeVersion.current
     setLoading(true)
     try {
-      const response = await getSavedVehicleLists(role, store, controller.signal)
+      const response = await getSavedVehicleLists(role, store, ownerId, controller.signal)
       if (controller.signal.aborted || requestGeneration !== generation.current || requestWriteVersion !== writeVersion.current) return
       setLists(response.lists)
       setActiveListId(current => current && response.lists.some(list => list.id === current) ? current : response.lists[0]?.id ?? null)
@@ -103,9 +107,10 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
     } finally {
       if (requestGeneration === generation.current && abort.current === controller) setLoading(false)
     }
-  }, [enabled, role, store])
+  }, [accessKey, enabled, ownerId, role, store])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    boundAccessKey.current = accessKey
     generation.current += 1
     revoked.current = false
     mutationBusy.current = false
@@ -127,8 +132,15 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
       window.clearInterval(interval)
       window.removeEventListener('focus', onFocus)
       abort.current?.abort()
+      // A late create must not issue its follow-up VIN add after unmount or
+      // account switch. Aborting GET alone cannot cancel a pending mutation.
+      generation.current += 1
+      initialReadConfirmed.current = false
+      mutationToken.current = null
+      pendingMutation.current = null
+      mutationBusy.current = false
     }
-  }, [context, enabled, refresh])
+  }, [accessKey, enabled, refresh])
 
   useEffect(() => subscribeAccessFailures(() => {
     if (!enabled) return
@@ -147,7 +159,9 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
     setLastConfirmedAt(null)
   }), [enabled])
 
-  const activeList = lists.find(list => list.id === activeListId) ?? null
+  const viewCurrent = enabled && boundAccessKey.current === accessKey
+  const visibleLists = viewCurrent ? lists : []
+  const activeList = visibleLists.find(list => list.id === activeListId) ?? null
   const vehiclesByVin = useMemo(() => new Map(authorizedVehicles.map(vehicle => [vehicle.vin, vehicle])), [authorizedVehicles])
   const entries = useMemo(() => (activeList?.items ?? []).map(item => {
     const vehicle = vehiclesByVin.get(item.vin)
@@ -159,7 +173,7 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
     input: Parameters<typeof mutateSavedVehicleList>[0],
     options: { retryPending?: boolean; continuation?: { type: 'add-after-create'; vin: string } } = {},
   ) => {
-    if (!enabled || !initialReadConfirmed.current || mutationBusy.current || revoked.current || pendingMutation.current && !options.retryPending) return null
+    if (!enabled || !ownerId || boundAccessKey.current !== accessKey || !initialReadConfirmed.current || mutationBusy.current || revoked.current || pendingMutation.current && !options.retryPending) return null
     const requestGeneration = generation.current
     const token = Symbol('saved-list-mutation')
     mutationBusy.current = true
@@ -167,7 +181,7 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
     setSaving(true)
     setError(null)
     try {
-      const result = await mutateSavedVehicleList(input, role, store)
+      const result = await mutateSavedVehicleList(input, role, store, ownerId)
       if (requestGeneration !== generation.current || token !== mutationToken.current) return null
       pendingMutation.current = null
       writeVersion.current += 1
@@ -204,7 +218,7 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
         setSaving(false)
       }
     }
-  }, [enabled, refresh, role, store])
+  }, [accessKey, enabled, ownerId, refresh, role, store])
 
   const createList = useCallback(async (rawLabel: string) => {
     const label = rawLabel.trim()
@@ -267,16 +281,16 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
     remove,
     clear,
     management: {
-      lists: lists.map(list => ({ id: list.id, label: list.label, count: list.items.length })),
-      activeListId,
+      lists: visibleLists.map(list => ({ id: list.id, label: list.label, count: list.items.length })),
+      activeListId: viewCurrent ? activeListId : null,
       activeLabel: activeList?.label ?? DEFAULT_LABEL,
-      loading,
-      saving,
-      error,
-      lastConfirmedAt,
-      pendingAction: pendingMutation.current?.generation === generation.current,
+      loading: viewCurrent && loading,
+      saving: viewCurrent && saving,
+      error: viewCurrent ? error : null,
+      lastConfirmedAt: viewCurrent ? lastConfirmedAt : null,
+      pendingAction: viewCurrent && pendingMutation.current?.generation === generation.current,
       accessRevoked: revoked.current,
-      readyForWrites: initialReadConfirmed.current,
+      readyForWrites: viewCurrent && initialReadConfirmed.current,
       selectList: setActiveListId,
       createList,
       renameActiveList: async (rawLabel) => {

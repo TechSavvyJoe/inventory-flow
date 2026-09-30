@@ -1,7 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppDataProvider, useAppData } from '../../src/app/AppDataContext'
-import { recordConfirmedMutation, reportAccessFailure } from '../../src/lib/apiSession'
+import { apiAccessGeneration, recordConfirmedMutation, reportAccessFailure } from '../../src/lib/apiSession'
 import type { BootstrapData, TransferRecord, TransferRequestInput } from '../../src/types'
 
 const apiMocks = vi.hoisted(() => ({
@@ -88,6 +89,25 @@ function ContextProbe() {
 }
 
 describe('AppDataProvider access-context isolation', () => {
+  it('clears mounted employee drafts and API generations when same-name memberships switch', async () => {
+    const a: BootstrapData = { ...bootstrap('2026-09-30'), access:{ user:'Synthetic Same Name', userId:'synthetic-owner-a', role:'manager', store:'Howell', canViewPrivateEvidence:true, canCreateTransfer:true } }
+    apiMocks.getBootstrap.mockResolvedValueOnce(a).mockResolvedValueOnce({ ...a, access:{ ...a.access!, userId:'synthetic-owner-b' } })
+    function EmployeeDraft() {
+      context = useAppData()
+      const [draft, setDraft] = useState('')
+      return <label>Private customer draft<input value={draft} onChange={event => setDraft(event.target.value)} /></label>
+    }
+    render(<AppDataProvider><EmployeeDraft /></AppDataProvider>)
+    await waitFor(() => expect(context.currentUserId).toBe('synthetic-owner-a'))
+    fireEvent.change(screen.getByRole('textbox', { name:'Private customer draft' }), { target:{ value:'Previous owner draft' } })
+    const priorGeneration = apiAccessGeneration()
+    await act(async () => { await context.refresh() })
+    expect(context.currentUserId).toBe('synthetic-owner-b')
+    expect(context.currentUser).toBe('Synthetic Same Name')
+    expect(screen.getByRole('textbox', { name:'Private customer draft' })).toHaveValue('')
+    expect(apiAccessGeneration()).toBeGreaterThan(priorGeneration)
+  })
+
   beforeEach(() => {
     Object.defineProperty(window, 'localStorage', { configurable: true, value: memoryStorage() })
     window.localStorage.clear()

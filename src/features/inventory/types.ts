@@ -625,7 +625,7 @@ export interface InventoryExperienceProps extends InventoryVehicleActionProps {
   initialSorts?: InventorySort[];
   initialWorkspaceTab?: VehicleWorkspaceTab;
   pageSize?: number;
-  savedLists?: { enabled: boolean; role: UserRole; store: StoreName };
+  savedLists?: { enabled: boolean; ownerId: string | null; role: UserRole; store: StoreName };
 }
 
 export interface InventoryTableProps extends InventoryVehicleActionProps {

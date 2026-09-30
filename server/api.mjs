@@ -7,7 +7,7 @@ import { assertAdminOverviewAccess } from './admin-control-center.mjs'
 import { createIdentityResolver, IdentityError } from './identity.mjs'
 import { ISSUE_BODY_BYTES, prepareIssuePhotos } from './issue-photos.mjs'
 import { WorkflowError } from './workflow.mjs'
-import { SAVED_LIST_BODY_BYTES } from './saved-vehicle-lists.mjs'
+import { assertSavedListOwner, SAVED_LIST_BODY_BYTES } from './saved-vehicle-lists.mjs'
 
 const BODY_LIMIT = 64 * 1024
 const TRANSPORT_ASSIGNMENT_EVENTS = new Set(['transport_assigned', 'return_assigned'])
@@ -285,10 +285,12 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
         return sendJsonRevalidated(request, response, service.bootstrap(context))
       }
       if (request.method === 'GET' && route === '/saved-lists') {
+        assertSavedListOwner(context, request.headers['x-inventory-saved-list-owner'])
         return sendJson(response, 200, service.listSavedVehicleLists(context))
       }
       if (request.method === 'POST' && route === '/saved-lists') {
         assertLocalWriteOrigin(request)
+        assertSavedListOwner(context, request.headers['x-inventory-saved-list-owner'])
         const result = service.mutateSavedVehicleList(
           await readJson(request, SAVED_LIST_BODY_BYTES),
           context,

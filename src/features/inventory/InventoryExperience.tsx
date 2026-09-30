@@ -410,6 +410,7 @@ export function InventoryExperience({
   const localShortlist = useCustomerShortlist(shortlistContext, allVehicles);
   const syncedShortlist = useSyncedCustomerLists({
     enabled: savedLists?.enabled === true,
+    ownerId: savedLists?.ownerId ?? null,
     role: savedLists?.role ?? "sales",
     store: savedLists?.store ?? "Howell",
     context: shortlistContext,

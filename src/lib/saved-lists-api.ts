@@ -1,4 +1,4 @@
-import { demoIdentityHeaders, request } from './api'
+import { ApiError, demoIdentityHeaders, request } from './api'
 import type { StoreName, UserRole } from '../types'
 
 export interface SavedVehicleListItem {
@@ -22,17 +22,22 @@ export type SavedListMutation =
   | { action: 'delete'; listId: string; expectedRevision: number }
   | { action: 'add' | 'remove'; listId: string; expectedRevision: number; vin: string }
 
-export function getSavedVehicleLists(role: UserRole, store: StoreName, signal?: AbortSignal) {
+function ownerHeaders(role: UserRole, store: StoreName, ownerId: string) {
+  if (!ownerId || ownerId.length > 160 || /[\u0000-\u001f\u007f]/u.test(ownerId)) throw new ApiError('Reload to verify your employee identity before using saved lists.', 403)
+  return { ...demoIdentityHeaders(role, store), 'x-inventory-saved-list-owner': ownerId }
+}
+
+export function getSavedVehicleLists(role: UserRole, store: StoreName, ownerId: string, signal?: AbortSignal) {
   return request<{ lists: SavedVehicleList[] }>('/api/saved-lists', {
-    headers: demoIdentityHeaders(role, store),
+    headers: ownerHeaders(role, store, ownerId),
     signal,
   })
 }
 
-export function mutateSavedVehicleList(input: SavedListMutation, role: UserRole, store: StoreName) {
+export function mutateSavedVehicleList(input: SavedListMutation, role: UserRole, store: StoreName, ownerId: string) {
   return request<SavedVehicleList | { id: string; deleted: true; revision: number }>('/api/saved-lists', {
     method: 'POST',
-    headers: demoIdentityHeaders(role, store),
+    headers: ownerHeaders(role, store, ownerId),
     body: JSON.stringify(input),
   })
 }

@@ -19,9 +19,12 @@ function validSavedListMessage(message, sender) {
       message?.type !== SAVED_LIST_MESSAGE || !ALLOWED_ORIGINS.has(message.origin)) return false
   const action = String(message.input?.action ?? '')
   const fields = ACTION_FIELDS[action]
+  const expectedOwnerId = message.expectedOwnerId
   return Boolean(fields && message.input && typeof message.input === 'object' && !Array.isArray(message.input) &&
     Object.keys(message.input).every((key) => fields.includes(key)) &&
     typeof message.idempotencyKey === 'string' && message.idempotencyKey.length > 0 && message.idempotencyKey.length <= 160 &&
+    typeof expectedOwnerId === 'string' && expectedOwnerId.length > 0 && expectedOwnerId.length <= 160 &&
+    expectedOwnerId === expectedOwnerId.trim() && !/[\u0000-\u001f\u007f]/u.test(expectedOwnerId) &&
     (message.origin !== 'http://127.0.0.1:4173' ||
       (DEMO_ROLES.has(message.demo?.role) && DEMO_STORES.has(message.demo?.store))))
 }
@@ -52,11 +55,14 @@ async function savedListMutation(message) {
     await waitForTab(tab.id)
     const [execution] = await chrome.scripting.executeScript({
       target: { tabId: tab.id }, world: 'MAIN',
-      args: [message.input, message.idempotencyKey, message.origin, message.demo ?? null],
-      func: async (input, idempotencyKey, expectedOrigin, demo) => {
+      args: [message.input, message.idempotencyKey, message.origin, message.demo ?? null, message.expectedOwnerId],
+      func: async (input, idempotencyKey, expectedOrigin, demo, expectedOwnerId) => {
         if (location.origin !== expectedOrigin) return { kind: 'signin', status: 0 }
         const endpoint = new URL('/api/saved-lists', expectedOrigin)
-        const requestHeaders = { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey }
+        const requestHeaders = {
+          Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey,
+          'x-inventory-saved-list-owner': expectedOwnerId,
+        }
         if (demo) {
           endpoint.searchParams.set('role', demo.role)
           endpoint.searchParams.set('homeStore', demo.store)
