@@ -132,8 +132,39 @@ describe('disposition ledger rules', () => {
     }
     // Operational words shared with a hold reason are not names.
     expect(build([], { disposition: 'sold_pending', note: 'Deposit taken; delivery Friday', expectedVersion: 0 }, context(fowlervilleManager), { source: held }).created).toBe(true)
-    // Tokens under four characters never match.
+    // Tokens under four characters never match (the spec's floor; a known limit for short names).
     expect(build([], { disposition: 'sold_pending', note: 'Bo Tan will call', expectedVersion: 0 }, context(fowlervilleManager), { source: held }).created).toBe(true)
+  })
+
+  it('never exempts a name: day names in the customer text and every salesperson token are evidence', () => {
+    const hold = (customerOrReasonRaw, salespersonRaw) => ({
+      vin: HELD, publicRecord: { store: 'Fowlerville' },
+      holdRecord: { holdDetailRows: [{ lifecycleStatus: 'active', customerOrReasonRaw, salespersonRaw }] },
+    })
+    const attempt = (source, note) => () => build([], { disposition: 'sold_pending', note, expectedVersion: 0 }, context(fowlervilleManager), { source })
+    const refused = expect.objectContaining({ status: 422, code: 'DISPOSITION_NOTE_CONTAINS_HOLD_EVIDENCE' })
+    // A customer named "Friday Sale": the day name is not exempt.
+    expect(attempt(hold('Friday Sale', 'Priya Raman'), 'Delivery Friday')).toThrow(refused)
+    // A salesperson field is always a name: nothing in it is exempt, not even "Will" or "Deal".
+    expect(attempt(hold('Deposit', 'Will Deal'), 'Will confirm Monday')).toThrow(refused)
+    expect(attempt(hold('Deposit', 'Will Deal'), 'Deal closed')).toThrow(refused)
+    // The allowlist applies only to the customer/reason text, never to the note.
+    expect(build([], { disposition: 'sold_pending', note: 'Deposit taken; delivery this week', expectedVersion: 0 }, context(fowlervilleManager), { source: hold('Smith — deposit, delivery this week', 'Priya Raman') }).created).toBe(true)
+    expect(attempt(hold('Smith — deposit', 'Priya Raman'), 'SMITH deposit taken')).toThrow(refused)
+  })
+
+  it('answers a retry from the ledger before re-judging the note, even after the hold changed', () => {
+    const input = { disposition: 'sold_pending', note: 'Call Okafor tomorrow', expectedVersion: 0 }
+    const first = build([], input, context(fowlervilleManager), { key: 'synthetic-retry' })
+    expect(first.created).toBe(true)
+    // A later release adds a hold naming the same person the note mentions.
+    const heldNow = { ...source, holdRecord: { holdDetailRows: [{ lifecycleStatus: 'active', customerOrReasonRaw: 'Okafor', salespersonRaw: 'Priya Raman' }] } }
+    expect(build([first.row], input, context(fowlervilleManager), { source: heldNow, key: 'synthetic-retry' })).toEqual({ row: first.row, created: false })
+    // A new request with the same note is refused.
+    expect(() => build([first.row], { ...input, disposition: 'delivered', effectiveDate: '2026-08-30', expectedVersion: 1 }, context(fowlervilleManager), { source: heldNow, key: 'synthetic-new' }))
+      .toThrow(expect.objectContaining({ code: 'DISPOSITION_NOTE_CONTAINS_HOLD_EVIDENCE' }))
+    // The replay also survives a later calendar day.
+    expect(buildDispositionEvent(source, [first.row], input, context(fowlervilleManager), { now: SYNTHETIC_NOW, today: '2027-01-01', idempotencyKey: 'synthetic-retry' }).created).toBe(false)
   })
 
   it('takes identity only from the server context and audits the signed-in role', () => {
@@ -177,6 +208,15 @@ describe('disposition ledger through the service', () => {
     const delivered = service.updateDisposition(UNHELD, { disposition: 'delivered', effectiveDate: '2026-08-30', expectedVersion: 1 }, groupManager, 'synthetic-delivered')
     expect(delivered.record).toMatchObject({ code: 'delivered', version: 2, updatedByRole: 'group_manager', store: 'Lincoln' })
     expect(delivered.record.history.map((entry) => entry.code)).toEqual(['delivered', 'sold_pending'])
+  })
+
+  it('refuses a request key reused by a different actor, even with the same body', () => {
+    const { db, service } = local()
+    const input = { disposition: 'keep', expectedVersion: 0 }
+    expect(service.updateDisposition(UNHELD, input, fowlervilleManager, 'synthetic-shared-key').created).toBe(true)
+    expect(() => service.updateDisposition(UNHELD, input, groupManager, 'synthetic-shared-key'))
+      .toThrow(expect.objectContaining({ status: 409, code: 'IDEMPOTENCY_CONFLICT' }))
+    expect(count(db)).toBe(1)
   })
 
   it('lets the owner store manager and group managers write; other stores, sales and transport roles cannot', () => {
@@ -323,6 +363,7 @@ describe('disposition ledger on D1 and over HTTP', () => {
     const members = [
       { email: 'fowlerville-manager@example.invalid', userId: 'manager-fowlerville', name: 'Synthetic Fowlerville Manager', role: 'manager', store: 'Fowlerville' },
       { email: 'fowlerville-sales@example.invalid', userId: 'sales-fowlerville', name: 'Synthetic Fowlerville Salesperson', role: 'sales', store: 'Fowlerville' },
+      { email: 'group-manager@example.invalid', userId: 'group-manager', name: 'Synthetic Group Manager', role: 'group_manager', store: 'Lincoln' },
     ]
     const cloud = await createCloudWorkerHarness(members)
     try {
@@ -336,6 +377,12 @@ describe('disposition ledger on D1 and over HTTP', () => {
       const read = await cloud.call('GET', path, members[1].email)
       expect(read).toMatchObject({ status: 200, json: { code: 'keep', version: 1, canManage: false, updatedBy: members[0].name } })
       expect((await cloud.call('GET', `${path}/history`, members[1].email)).status).toBe(404)
+      // A group manager previewing as sales is sales for this write.
+      const preview = { 'x-inventory-preview-role': 'sales', 'x-inventory-preview-store': 'Fowlerville' }
+      expect(await cloud.call('POST', path, members[2].email, { disposition: 'sold_pending', expectedVersion: 1 }, preview))
+        .toMatchObject({ status: 403, json: { code: 'DISPOSITION_MANAGER_REQUIRED' } })
+      expect(cloud.count('vehicle_disposition_events')).toBe(1)
+      expect((await cloud.call('POST', path, members[2].email, { disposition: 'sold_pending', expectedVersion: 1 })).status).toBe(201)
     } finally {
       cloud.close()
     }

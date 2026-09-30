@@ -1,5 +1,8 @@
 /* Store board (StoreBoard.tsx): an SVG schematic, not a map. Tokens only. */
 
+/* The board's own width decides its layout, whatever column it sits in. */
+.ov-board { container-type: inline-size; }
+
 .ov-board-body {
   display: grid;
   gap: var(--ifx-space-3);
@@ -144,22 +147,32 @@
 .ov-board-moves a {
   align-items: center;
   color: var(--ifx-neutral-900);
+  column-gap: var(--ifx-space-2);
   display: grid;
   font-size: var(--ifx-text-sm);
-  gap: var(--ifx-space-2);
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "swatch route count" "swatch kind count";
+  grid-template-columns: auto minmax(0, 1fr) auto;
   min-height: 44px;
+  padding: var(--ifx-space-1) 0;
   text-decoration: none;
 }
+
+.ov-board-moves a > .ov-board-swatch { grid-area: swatch; }
+.ov-board-moves a > strong { grid-area: count; }
 
 .ov-board-moves a:hover .ov-board-route { text-decoration: underline; }
 
 .ov-board-route {
   font-weight: var(--ifx-weight-semibold);
+  grid-area: route;
   min-width: 0;
 }
 
-.ov-board-kind { color: var(--ifx-neutral-600); }
+.ov-board-kind {
+  color: var(--ifx-neutral-600);
+  font-size: var(--ifx-text-xs);
+  grid-area: kind;
+}
 
 .ov-board-moves strong {
   color: var(--ifx-oem-accent-strong);
@@ -183,34 +196,24 @@
 .ov-board-swatch--return line { stroke: var(--ifx-oem-accent-strong); stroke-dasharray: 5 3; }
 .ov-board-swatch--planned line { stroke: var(--ifx-neutral-500); stroke-dasharray: 0.5 4; stroke-width: 2.5; }
 
-/* Key: line styles in words, never color alone. */
+/* Key: line styles in words, never color alone, in one wrapped row. */
 .ov-board-legend {
   border-top: 1px solid var(--ifx-border-subtle);
-  display: grid;
-  gap: var(--ifx-space-1);
-  margin: 0;
-  padding-top: var(--ifx-space-2);
-}
-
-.ov-board-legend > div {
-  align-items: baseline;
-  display: grid;
-  gap: var(--ifx-space-2);
-  grid-template-columns: minmax(calc(var(--ifx-space-16) * 2.4), auto) minmax(0, 1fr);
-}
-
-.ov-board-legend dt {
-  align-items: center;
+  color: var(--ifx-neutral-700);
   display: flex;
+  flex-wrap: wrap;
   font-size: var(--ifx-text-xs);
   font-weight: var(--ifx-weight-semibold);
-  gap: var(--ifx-space-1-5);
+  gap: var(--ifx-space-1) var(--ifx-space-3);
+  list-style: none;
+  margin: 0;
+  padding: var(--ifx-space-2) 0 0;
 }
 
-.ov-board-legend dd {
-  color: var(--ifx-neutral-600);
-  font-size: var(--ifx-text-xs);
-  margin: 0;
+.ov-board-legend li {
+  align-items: center;
+  display: flex;
+  gap: var(--ifx-space-1-5);
 }
 
 .ov-board-legend-home {
@@ -243,13 +246,23 @@
   font-size: var(--ifx-text-sm);
 }
 
-/* Tablet: the board spans the page, so the move list sits beside the drawing. */
-@media (min-width: 881px) and (max-width: 1180px) {
+/* A board at least this wide puts the move list and key beside the drawing
+   instead of under it, so it stays about as tall as the drawing itself. */
+@container (min-width: 480px) {
   .ov-board-body {
     align-items: start;
-    grid-template-columns: minmax(0, calc(var(--ifx-space-16) * 7.5)) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   }
-  .ov-board-body > .ov-source { grid-column: 1 / -1; }
+}
+
+/* Two-column Overview (overview.css): the board is secondary to the daily
+   lists above it. Where its half-width column is still too narrow for the
+   move list beside the drawing (about 1181–1310px, by navigation width), the
+   drawing stops at 320 × 224, labels about 14px, so it stays compact. */
+@media (min-width: 1181px) {
+  @container (width < 480px) {
+    .ov-board-svg { max-width: calc(var(--ifx-space-16) * 5); }
+  }
 }
 
 @media print {

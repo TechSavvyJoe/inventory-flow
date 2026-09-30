@@ -375,6 +375,7 @@ describe('D1 shared operational repository', () => {
     const next = await loadD1Repository(d1, buildSyntheticRelease(), { loadedAt: requestAt })
     const nextService = createInventoryServiceCore({ database: next.database, repository: next.repository, now: () => SYNTHETIC_NOW })
     expect(nextService.getVehicle('TESTDATAFWELL0002', manager).appDisposition).toMatchObject({ code: 'sold_pending', version: 1, canManage: true })
+    expect(nextService.bootstrap(manager).dispositionsEnabled).toBe(true)
     const replay = nextService.updateDisposition('TESTDATAFWELL0002', { disposition: 'sold_pending', effectiveDate: '2026-08-29', expectedVersion: 0 }, manager, 'synthetic-d1-disposition')
     expect(replay.created).toBe(false)
     expect(await next.commit()).toEqual({ committed: false, revision: 1 })
@@ -386,6 +387,7 @@ describe('D1 shared operational repository', () => {
     const service = createInventoryServiceCore({ database: repo.database, repository: repo.repository, now: () => SYNTHETIC_NOW })
     const groupManager = { role: 'group_manager', store: 'Howell', user: 'Synthetic group manager' }
     const bootstrap = service.bootstrap(groupManager)
+    expect(bootstrap.dispositionsEnabled).toBe(false)
     expect(bootstrap.vehicles.length).toBeGreaterThan(0)
     for (const vehicle of bootstrap.vehicles) expect(vehicle.appDisposition).toMatchObject({ code: null, version: 0, canManage: false })
     expect(() => service.updateDisposition('TESTDATAHWELL0002', { disposition: 'keep', expectedVersion: 0 }, groupManager, 'synthetic-no-table'))

@@ -2024,6 +2024,9 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         transfers,
         vehicleIssuesEnabled: issueState.enabled,
         vehicleIssues: issueRecords(issueState),
+        // False only on a D1 without migration 0013: the page says so instead
+        // of showing zero dispositions and no way to record one.
+        dispositionsEnabled: state.dispositionStorage,
         holdSignals,
         managerDispositions: state.indexes.managerDispositionRecords.map((record) => ({
           ...record,

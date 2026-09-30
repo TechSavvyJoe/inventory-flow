@@ -669,7 +669,8 @@ export function VehicleWorkspace({
   const [dispositionStatus, setDispositionStatus] = useState("");
   const dispositionOpenerRef = useRef<HTMLButtonElement>(null);
   const appDisposition = vehicle.appDisposition ?? null;
-  const dispositionAction = !dispositionContext || !appDisposition ? null
+  const dispositionStorageMissing = dispositionContext?.enabled === false;
+  const dispositionAction = !dispositionContext || !appDisposition || dispositionStorageMissing ? null
     : appDisposition.canManage ? appDisposition.code ? "Change disposition" : "Record disposition"
     : appDisposition.code ? "View disposition" : null;
   const [createdIssueId, setCreatedIssueId] = useState<string>();
@@ -887,7 +888,9 @@ export function VehicleWorkspace({
                   {primaryHold?.expectedDeliveryDate ? <Fact label="Expected">{formatDate(primaryHold.expectedDeliveryDate)}</Fact> : null}
                   {holdCount > 1 ? <Fact label="Backup holds" className="vdp-focus-desktop-field">{holdCount - 1}</Fact> : null}
                   <Fact label="Service" className="vdp-focus-service-fact"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} compact /></Fact>
-                  {appDisposition ? <Fact label="Disposition"><strong>{dispositionSummary(appDisposition)}</strong><small>{appDisposition.effectiveDate ? `${formatDate(appDisposition.effectiveDate)} · ` : ""}{DISPOSITION_QUALIFIER}</small></Fact> : null}
+                  {appDisposition ? <Fact label="Disposition">{dispositionStorageMissing
+                    ? <><strong>Not available</strong><small>Disposition storage is not enabled yet.</small></>
+                    : <><strong>{dispositionSummary(appDisposition)}</strong><small>{appDisposition.effectiveDate ? `${formatDate(appDisposition.effectiveDate)} · ` : ""}{DISPOSITION_QUALIFIER}</small></>}</Fact> : null}
                 </dl>
                 <div className="vdp-focus-actions">
                   {movementAction}

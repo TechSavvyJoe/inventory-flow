@@ -18,7 +18,7 @@ export interface StoreBoardPosition {
 export const STORE_BOARD_VIEWBOX = { width: 100, height: 70 } as const
 
 export const STORE_BOARD_POSITIONS: readonly StoreBoardPosition[] = [
-  { store: 'Fowlerville', x: 13, y: 24, anchor: 'middle' },
+  { store: 'Fowlerville', x: 14, y: 24, anchor: 'middle' },
   { store: 'Howell', x: 44, y: 24, anchor: 'middle' },
   { store: 'Ford Detroit', x: 70, y: 49, anchor: 'end' },
   { store: 'Lincoln', x: 88, y: 60, anchor: 'end' },

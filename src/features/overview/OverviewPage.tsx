@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
 import { flushSync } from 'react-dom'
 import { ChevronDown, ClipboardCheck, FileText, MapPin, Printer, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -64,19 +64,23 @@ const PHONE_ROWS = 5
 const AGED_ROWS = 10
 /** OVERVIEW_SPEC §10: the printed snapshot lists this many where-rows; `.ov-where .ov-rows` hides the rest in print. */
 const PRINT_ROWS = 15
+/** A media query as a useSyncExternalStore source; false where matchMedia is missing. */
+function mediaQuery(query: string) {
+  return {
+    subscribe(onChange: () => void) {
+      const media = typeof window !== 'undefined' ? window.matchMedia?.(query) : undefined
+      if (!media) return () => undefined
+      media.addEventListener?.('change', onChange)
+      return () => media.removeEventListener?.('change', onChange)
+    },
+    matches: () => typeof window !== 'undefined' && (window.matchMedia?.(query).matches ?? false),
+  }
+}
+
 /** Matches the stylesheet's single-column breakpoint. */
-const PHONE_QUERY = '(max-width: 880px)'
-
-function subscribeToPhone(onChange: () => void) {
-  const media = typeof window !== 'undefined' ? window.matchMedia?.(PHONE_QUERY) : undefined
-  if (!media) return () => undefined
-  media.addEventListener?.('change', onChange)
-  return () => media.removeEventListener?.('change', onChange)
-}
-
-function phoneSnapshot() {
-  return typeof window !== 'undefined' && (window.matchMedia?.(PHONE_QUERY).matches ?? false)
-}
+const PHONE = mediaQuery('(max-width: 880px)')
+/** Matches overview.css: from this width the sections sit in two columns. */
+const WIDE = mediaQuery('(min-width: 1181px)')
 
 type Tone = 'danger' | 'warning'
 
@@ -111,18 +115,22 @@ const MORE_COUNTS: CountSpec[] = [
   { key: 'recordsIncomplete', label: 'Records incomplete', phrase: 'with records incomplete', href: inventory('records-incomplete') },
 ]
 
-/** OVERVIEW_SPEC §11: fixed copy, never source text. The two disposition kinds are prompts, never inferences. */
+/**
+ * OVERVIEW_SPEC §11: fixed copy, never source text. The two disposition kinds
+ * are prompts, never inferences. Each line is shown once per type above the
+ * store counts, so it reads for one vehicle or many.
+ */
 const EXCEPTION_COPY: Record<OverviewExceptionKind, { label: string; why: (thresholds: OverviewThresholds) => string }> = {
-  location_conflict: { label: 'Location needs checking', why: () => 'The app’s own move records disagree about where this vehicle is.' },
-  source_conflict: { label: 'Website and DealerMail disagree on store', why: () => 'The public feed and the CRM list different stores; confirm which lot has it.' },
-  no_app_record: { label: 'Listed at another store · no move recorded', why: () => 'The website lists it away from its home store and Inventory Flow has no move for it.' },
+  location_conflict: { label: 'Location needs checking', why: () => 'The app’s own move records disagree about where the vehicle is.' },
+  source_conflict: { label: 'Website and DealerMail disagree on store', why: () => 'The public feed and the CRM list different stores; confirm which lot has the vehicle.' },
+  no_app_record: { label: 'Listed at another store · no move recorded', why: () => 'The website lists the vehicle away from its home store and Inventory Flow has no move for it.' },
   stale_confirmation: { label: 'Not confirmed for 7+ days', why: (thresholds) => `Away from home with no custody confirmation for ${thresholds.unaccountedAfterDays}+ days.` },
   return_overdue: { label: 'Return overdue', why: () => 'Due back and not confirmed received.' },
   hold_past_expected: { label: 'Hold past expected date', why: () => 'The DealerMail expected date has passed; a review signal, not proof of sale or release.' },
-  identity_review: { label: 'Manager log needs an exact VIN', why: () => 'A sold-board row could not be placed on a VIN.' },
-  records_incomplete: { label: 'Records not all captured', why: () => 'One or more of AutoCheck, OASIS, sticker, invoice or Ford service history has not been captured for this unit.' },
+  identity_review: { label: 'Manager log needs an exact VIN', why: () => 'Sold-board rows that could not be placed on a VIN.' },
+  records_incomplete: { label: 'Records not all captured', why: () => 'Vehicles missing one or more of AutoCheck, OASIS, sticker, invoice or Ford service history.' },
   service_date_order: { label: 'Service dates before arrival', why: () => 'A recorded service date is earlier than the arrival date; check the record.' },
-  listed_but_delivered: { label: 'Recorded delivered · still listed', why: (thresholds) => `Delivered in Inventory Flow ${thresholds.listedAfterDeliveredDays}+ days ago; the website still lists it. Confirm with the store; the listing is not changed here.` },
+  listed_but_delivered: { label: 'Recorded delivered · still listed', why: (thresholds) => `Delivered in Inventory Flow ${thresholds.listedAfterDeliveredDays}+ days ago and still listed on the website. Confirm with the store; the listing is not changed here.` },
   delivered_move_no_disposition: { label: 'Move says delivered · no disposition', why: () => 'A move records customer delivery; no disposition has been recorded.' },
 }
 
@@ -138,7 +146,6 @@ const UNACCOUNTED_TEXT: Record<NonNullable<OverviewVehicleFacts['unaccounted']>[
   stale_confirmation: 'Not confirmed recently',
 }
 
-const SERVICE_FOOTNOTE = 'Arrival is the earliest verified arrival or public listing date; listing dates can lag physical receipt. Ready from Ford or AutoCheck evidence uses the source’s dates. Days listed is listing age, not lot age. No service date is ever inferred from a listing, a hold, or a delivery.'
 
 function slug(store: string): string {
   return store.toLowerCase().replaceAll(' ', '-')
@@ -206,7 +213,7 @@ function WhereRow({ row, filter, holdsVerified }: { row: OverviewRow; filter: Wh
       <div className="ov-row-main">
         <strong>{vehicle.vehicleName}</strong>
         <span className="ov-row-meta">#{vehicle.stockNumber} · Home {vehicle.homeStore}</span>
-        <span className="ov-row-custody"><MapPin aria-hidden="true" />{custodyText(facts)} <em>{facts.custodyBasis === 'ledger' ? 'ledger' : 'source-reported'}</em></span>
+        <span className="ov-row-custody"><MapPin aria-hidden="true" />{custodyText(facts)}{facts.custodyBasis === 'ledger' ? null : <em title="The website’s store, not a confirmed location">source-reported</em>}</span>
         {details.length ? <span className="ov-row-details">{details.map((detail) => <span key={detail.text} className={detail.tone ? `ov-tone-${detail.tone}` : undefined}>{detail.text}</span>)}</span> : null}
       </div>
       <div className="ov-row-actions">
@@ -241,7 +248,9 @@ function ReturnVerification({ rows, store, fullAccess }: { rows: OverviewRow[]; 
   )
 }
 
-function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, collapseMore }: { counts: StoreCounts; homeStore: StoreName; role: UserRole; rows: OverviewRow[]; fullAccess: boolean; holdsVerified: boolean; collapseMore: boolean }) {
+const STORAGE_NOT_ENABLED = 'Disposition storage is not enabled yet.'
+
+function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, collapseMore, dispositionsEnabled }: { counts: StoreCounts; homeStore: StoreName; role: UserRole; rows: OverviewRow[]; fullAccess: boolean; holdsVerified: boolean; collapseMore: boolean; dispositionsEnabled: boolean }) {
   const store = counts.store
   const titleId = `ov-store-${slug(store)}`
   const otherStore = store !== homeStore
@@ -259,12 +268,14 @@ function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, c
       {dispositions ? (
         <div className="ov-card-dispositions">
           <h4>Dispositions <small>{DISPOSITION_QUALIFIER}</small></h4>
-          <dl className="ov-counts ov-counts--more">
-            {CARD_DISPOSITIONS.map((code) => (
-              <CountLink key={code} store={store} count={dispositions[code]}
-                spec={{ key: 'dispositions', label: DISPOSITION_LABELS[code], phrase: `with the disposition ${DISPOSITION_LABELS[code].toLowerCase()}`, href: (target) => inventoryViewHref(target, dispositionView(code)) }} />
-            ))}
-          </dl>
+          {dispositionsEnabled ? (
+            <dl className="ov-counts ov-counts--more">
+              {CARD_DISPOSITIONS.map((code) => (
+                <CountLink key={code} store={store} count={dispositions[code]}
+                  spec={{ key: 'dispositions', label: DISPOSITION_LABELS[code], phrase: `with the disposition ${DISPOSITION_LABELS[code].toLowerCase()}`, href: (target) => inventoryViewHref(target, dispositionView(code)) }} />
+              ))}
+            </dl>
+          ) : <p className="ov-storage-note">{STORAGE_NOT_ENABLED}</p>}
         </div>
       ) : null}
     </>
@@ -359,6 +370,7 @@ function ServiceSection({ data, overview, stores, fullAccess, reportMode, onRepo
           </tbody>
         </table>
       </div>
+      <p className="ov-section-note">Arrival uses verified arrival or public listing dates; listing dates can lag physical receipt. Days listed is listing age, not lot age.</p>
       <p className="ov-basis">
         Basis: {basis.manager_updated} manager-recorded · {basis.ford_service_history_inspection} Ford Certified Blue Oval · {basis.autocheck_post_intake_inspection} AutoCheck inspection · {basis.new_arrival} new arrival · {basis.unconfirmed} unconfirmed · {basis.legacy_review} legacy review
       </p>
@@ -389,36 +401,71 @@ function ServiceSection({ data, overview, stores, fullAccess, reportMode, onRepo
           <Link className="ov-row-link" to={serviceStatusHref('needs_service')}>Open Waiting for service</Link>
         </div>
       ) : null}
-      <p className="ov-footnote">{SERVICE_FOOTNOTE}</p>
-      <p className="ov-source">Inventory Flow service ledger · live; Ford/AutoCheck evidence {freshnessWord(data.meta.resourceFreshness).toLowerCase()}</p>
     </section>
   )
 }
 
-function ExceptionsSection({ overview, stores, data }: { overview: OverviewSummary; stores: StoreName[]; data: BootstrapData }) {
-  const exceptions = exceptionRows(overview, stores)
+/** Colour means urgency: vehicles not where they should be, then records that disagree, then paperwork. */
+const EXCEPTION_TONE: Record<OverviewExceptionKind, 'danger' | 'warning' | 'neutral'> = {
+  return_overdue: 'danger',
+  stale_confirmation: 'danger',
+  location_conflict: 'danger',
+  hold_past_expected: 'warning',
+  listed_but_delivered: 'warning',
+  delivered_move_no_disposition: 'warning',
+  source_conflict: 'warning',
+  no_app_record: 'warning',
+  identity_review: 'neutral',
+  service_date_order: 'neutral',
+  records_incomplete: 'neutral',
+}
+const TONE_ORDER = { danger: 0, warning: 1, neutral: 2 } as const
+
+/** One exception type: its explanation once, then one count per store in scope. */
+interface ExceptionGroup {
+  kind: OverviewExceptionKind
+  label: string
+  entries: OverviewException[]
+}
+
+function exceptionGroups(exceptions: OverviewException[], thresholds: OverviewThresholds): ExceptionGroup[] {
+  const groups = new Map<OverviewExceptionKind, ExceptionGroup>()
+  for (const exception of exceptions) {
+    const label = exception.kind === 'stale_confirmation' ? `Not confirmed for ${thresholds.unaccountedAfterDays}+ days` : EXCEPTION_COPY[exception.kind].label
+    const group = groups.get(exception.kind) ?? { kind: exception.kind, label, entries: [] }
+    group.entries.push(exception)
+    groups.set(exception.kind, group)
+  }
+  // Stable sort: urgency first, then the server's order.
+  return [...groups.values()].sort((left, right) => TONE_ORDER[EXCEPTION_TONE[left.kind]] - TONE_ORDER[EXCEPTION_TONE[right.kind]])
+}
+
+function ExceptionsSection({ overview, stores }: { overview: OverviewSummary; stores: StoreName[] }) {
+  const groups = exceptionGroups(exceptionRows(overview, stores), overview.thresholds)
   return (
     <section className="ov-section ov-exceptions" aria-labelledby="ov-exceptions-title">
       <header className="ov-section-heading"><h2 id="ov-exceptions-title">Exceptions</h2></header>
-      {exceptions.length ? (
-        <dl className="ov-exception-list">
-          {exceptions.map((exception: OverviewException) => {
-            const copy = EXCEPTION_COPY[exception.kind]
-            const label = exception.kind === 'stale_confirmation' ? `Not confirmed for ${overview.thresholds.unaccountedAfterDays}+ days` : copy.label
-            return (
-              <div key={`${exception.kind}:${exception.store}`}>
-                <dt>{label}<small>{exception.store}</small></dt>
-                <dd>
-                  <Link to={exceptionHref(exception)} aria-label={`${exception.store}: ${plural(exception.count, 'vehicle')} · ${label}`}>{exception.count}</Link>
-                  <p>{copy.why(overview.thresholds)}</p>
-                  {exception.kind === 'hold_past_expected' ? <Link className="ov-row-link" to={actionCenterHref('holds')}>Open in Action center</Link> : null}
-                </dd>
+      {groups.length ? (
+        <div className="ov-exception-groups">
+          {groups.map(({ kind, label, entries }) => (
+            <div key={kind} className={`ov-exception-group ov-exception-group--${EXCEPTION_TONE[kind]}`}>
+              <div className="ov-exception-head">
+                <h3 id={`ov-exception-${kind}`}>{label}</h3>
+                {kind === 'hold_past_expected' ? <Link className="ov-row-link" to={actionCenterHref('holds')}>Open in Action center</Link> : null}
               </div>
-            )
-          })}
-        </dl>
+              <p className="ov-exception-why">{EXCEPTION_COPY[kind].why(overview.thresholds)}</p>
+              <dl className="ov-counts" aria-labelledby={`ov-exception-${kind}`}>
+                {entries.map((exception) => (
+                  <div key={exception.store} className={`ov-count${EXCEPTION_TONE[kind] === 'neutral' ? '' : ` ov-tone-${EXCEPTION_TONE[kind]}`}`}>
+                    <dt>{exception.store}</dt>
+                    <dd><Link to={exceptionHref(exception)} aria-label={`${exception.store}: ${plural(exception.count, 'vehicle')} · ${label}`}>{exception.count}</Link></dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ))}
+        </div>
       ) : <p className="ov-empty">No exceptions in this scope.</p>}
-      <p className="ov-source">Holds as of {formatDateTime(data.meta.completedAt)} · DealerMail {freshnessWord(data.meta.dealerMailFreshness).toLowerCase()} · records captures {freshnessWord(data.meta.resourceFreshness).toLowerCase()}</p>
     </section>
   )
 }
@@ -447,9 +494,33 @@ function WhereSection({ rows, stores, holdsVerified, printing, filter, onFilter 
       {matches.length > visible.length && !showAll ? <button type="button" className="ov-button ov-show-all" onClick={() => setShowAll(true)}>Show all {Math.min(matches.length, OVERVIEW_ROW_LIMIT)}</button> : null}
       {showAll && matches.length > OVERVIEW_ROW_LIMIT ? <p className="ov-footnote">Showing the first {OVERVIEW_ROW_LIMIT}. Open Inventory from a store count for the full list.</p> : null}
       {unprinted > 0 ? <p className="ov-print-only ov-print-more">and {plural(unprinted, 'more vehicle')} {filter === 'away' ? 'away from home' : `in ${label.toLowerCase()}`}</p> : null}
-      <p className="ov-source">Locations: Inventory Flow move ledger · live. A location marked source-reported is the website’s store, not a confirmed location.</p>
     </section>
   )
+}
+
+/**
+ * On a wide screen the store board is secondary: it sits at the foot of
+ * whichever column of daily lists is shorter (where + exceptions, or
+ * dispositions). The board itself is never measured, so the choice cannot
+ * feed back on itself; the daily sections never change column.
+ */
+function useBoardUnderDispositions(columnsRef: RefObject<HTMLElement | null>, active: boolean) {
+  const [underDispositions, setUnderDispositions] = useState(false)
+  useLayoutEffect(() => {
+    const container = columnsRef.current
+    if (!active || !container || typeof ResizeObserver === 'undefined') return
+    const sections = ['.ov-where', '.ov-exceptions', '.ov-dispositions'].map((selector) => container.querySelector<HTMLElement>(selector))
+    const place = () => {
+      const [where, exceptions, dispositions] = sections.map((section) => section?.getBoundingClientRect().height ?? 0)
+      const gap = Number.parseFloat(getComputedStyle(container).rowGap) || 0
+      setUnderDispositions(dispositions < where + gap + exceptions)
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    for (const section of sections) if (section) observer.observe(section)
+    return () => observer.disconnect()
+  }, [columnsRef, active])
+  return active && underDispositions
 }
 
 interface DispositionRow {
@@ -486,13 +557,14 @@ function DispositionCount({ store, code, count }: { store: StoreName; code: AppD
   return <Link to={inventoryViewHref(store, dispositionView(code))} aria-label={`${store}: ${plural(count, 'vehicle')} ${label}`}>{count}</Link>
 }
 
-function DispositionsSection({ data, overview, rows, stores, status, onOpen }: {
-  data: BootstrapData
+function DispositionsSection({ overview, rows, stores, status, enabled, onOpen }: {
   overview: OverviewSummary
   rows: OverviewRow[]
   stores: StoreName[]
   status: string
-  onOpen: (vin: string) => void
+  /** False on a database without the disposition table: say so, never show zeros. */
+  enabled: boolean
+  onOpen: (vin: string, opener: HTMLElement) => void
 }) {
   const [showAll, setShowAll] = useState(false)
   const entries = useMemo(() => dispositionRows(rows, overview, stores), [rows, overview, stores])
@@ -504,7 +576,10 @@ function DispositionsSection({ data, overview, rows, stores, status, onOpen }: {
         <h2 id="ov-dispositions-title">Dispositions</h2>
         <p className="ov-section-note">{DISPOSITION_QUALIFIER}</p>
       </header>
-      <div className="ov-table-wrap">
+      {enabled ? null : (
+        <p className="ov-storage-note" role="status">{STORAGE_NOT_ENABLED} No disposition can be recorded or shown until it is; the manager log below is unchanged.</p>
+      )}
+      {enabled ? <div className="ov-table-wrap">
         <table className="ov-table ov-disposition-table" aria-labelledby="ov-dispositions-title">
           <thead>
             <tr>
@@ -525,7 +600,7 @@ function DispositionsSection({ data, overview, rows, stores, status, onOpen }: {
             ))}
           </tbody>
         </table>
-      </div>
+      </div> : null}
       {status ? <p className="ov-status" role="status">{status}</p> : null}
       <h3 className="ov-subheading">Decisions and evidence</h3>
       {visible.length ? (
@@ -533,7 +608,7 @@ function DispositionsSection({ data, overview, rows, stores, status, onOpen }: {
           {visible.map(({ vehicle, ownerStore, moveDelivered }) => {
             const disposition = vehicle.appDisposition
             const evidence = managerLogLine(vehicle.managerDisposition)
-            const action = disposition?.canManage
+            const action = !enabled ? null : disposition?.canManage
               ? disposition.code ? 'Change disposition' : 'Record disposition'
               : disposition?.code ? 'View disposition' : null
             return (
@@ -548,7 +623,7 @@ function DispositionsSection({ data, overview, rows, stores, status, onOpen }: {
                   </span>
                 </div>
                 <div className="ov-row-actions">
-                  {action ? <button type="button" className="ov-row-link" aria-label={`${action} for ${vehicle.vehicleName}`} onClick={() => onOpen(vehicle.vin)}>{action}</button> : null}
+                  {action ? <button type="button" className="ov-row-link" aria-label={`${action} for ${vehicle.vehicleName}`} onClick={(event) => onOpen(vehicle.vin, event.currentTarget)}>{action}</button> : null}
                   <RecordsLink vin={vehicle.vin} facts={overview.vehicleFacts[vehicle.vin]} name={vehicle.vehicleName} />
                 </div>
               </li>
@@ -557,7 +632,6 @@ function DispositionsSection({ data, overview, rows, stores, status, onOpen }: {
         </ul>
       ) : <p className="ov-empty">No dispositions or manager-log sales in this scope.</p>}
       {entries.length > DISPOSITION_ROWS && !showAll ? <button type="button" className="ov-button ov-show-all" onClick={() => setShowAll(true)}>Show all {entries.length}</button> : null}
-      <p className="ov-source">Inventory Flow · live; manager log {freshnessWord(data.meta.managerDispositionFreshness).toLowerCase()}. A disposition never changes DealerMail, CDK, the listing or the manager log, and never hides a vehicle.</p>
     </section>
   )
 }
@@ -572,7 +646,13 @@ export function OverviewPage() {
   const [whereFilter, setWhereFilter] = useState<WhereFilter>('away')
   const [dispositionVin, setDispositionVin] = useState<string | null>(null)
   const [dispositionStatus, setDispositionStatus] = useState('')
-  const phone = useSyncExternalStore(subscribeToPhone, phoneSnapshot, () => false)
+  // Focus returns to the exact row button that opened the dialog (Safari
+  // does not focus a clicked button, so the dialog cannot rely on activeElement).
+  const dispositionOpener = useRef<HTMLElement | null>(null)
+  const phone = useSyncExternalStore(PHONE.subscribe, PHONE.matches, () => false)
+  const wide = useSyncExternalStore(WIDE.subscribe, WIDE.matches, () => false)
+  const columnsRef = useRef<HTMLDivElement>(null)
+  const boardUnderDispositions = useBoardUnderDispositions(columnsRef, wide && !printing && Boolean(data?.overview))
   // Printing from the browser menu gets the same full snapshot as the button.
   useEffect(() => {
     const before = () => flushSync(() => setPrinting(true))
@@ -598,11 +678,14 @@ export function OverviewPage() {
   }
 
   const fullAccess = overview.access === 'full'
+  const dispositionsEnabled = data.dispositionsEnabled !== false
   const dispositionVehicle = dispositionVin ? data.vehicles.find((vehicle) => vehicle.vin === dispositionVin) ?? null : null
   const holdsVerified = data.meta.dealerMailFreshness === 'current'
   const scopeLabel = scope === 'home' ? homeStore : 'All stores'
   const roleLabel = ROLE_LABELS[role] ?? role
-  const asOf = `As of ${formatDate(overview.asOfDay)} · Holds ${freshnessWord(data.meta.dealerMailFreshness).toLowerCase()} · Website ${freshnessWord(data.meta.publicFreshness).toLowerCase()} · Locations from the move ledger`
+  const managerLog = data.meta.managerDispositionFreshness && data.meta.managerDispositionFreshness !== 'current'
+    ? ` · Manager log ${freshnessWord(data.meta.managerDispositionFreshness).toLowerCase()}` : ''
+  const asOf = `As of ${formatDate(overview.asOfDay)} · Holds ${freshnessWord(data.meta.dealerMailFreshness).toLowerCase()} · Website ${freshnessWord(data.meta.publicFreshness).toLowerCase()}${managerLog}`
 
   function printSnapshot() {
     flushSync(() => setPrinting(true))
@@ -615,6 +698,22 @@ export function OverviewPage() {
     window.print()
     setServiceReport(false)
   }
+
+  const where = <WhereSection key="where" rows={rows} stores={stores} holdsVerified={holdsVerified} printing={printing} filter={whereFilter} onFilter={setWhereFilter} />
+  const board = <StoreBoard key="board" overview={overview} homeStore={homeStore} role={role} metric={whereFilter} collapsible={phone && !printing} />
+  const exceptions = <ExceptionsSection key="exceptions" overview={overview} stores={stores} />
+  const dispositions = (
+    <DispositionsSection key="dispositions" overview={overview} rows={rows} stores={stores} status={dispositionStatus} enabled={dispositionsEnabled}
+      onOpen={(vin, opener) => { dispositionOpener.current = opener; setDispositionStatus(''); setDispositionVin(vin) }} />
+  )
+  // A wide screen keeps the daily lists in fixed columns (where and
+  // exceptions; dispositions) and puts the compact store board at the foot of
+  // the shorter one. Narrower screens and print stack the two wrappers as one
+  // column in phone reading order: where, board, exceptions, dispositions.
+  // Where and dispositions keep their wrapper and key in every layout, so
+  // their show-all state survives a switch.
+  const columns = !wide || printing ? [[where, board], [exceptions, dispositions]]
+    : boardUnderDispositions ? [[where, exceptions], [dispositions, board]] : [[where, exceptions, board], [dispositions]]
 
   return (
     <section className={`ov-page${serviceReport ? ' is-service-report' : ''}`} aria-labelledby="ov-title">
@@ -637,18 +736,12 @@ export function OverviewPage() {
 
       <section className={`ov-stores${stores.length === 1 ? ' ov-stores--single' : ''}`} aria-label="Store summary">
         {storeCards(overview, stores).map((counts) => (
-          <StoreCard key={counts.store} counts={counts} homeStore={homeStore} role={role} rows={rows} fullAccess={fullAccess} holdsVerified={holdsVerified} collapseMore={phone && !printing} />
+          <StoreCard key={counts.store} counts={counts} homeStore={homeStore} role={role} rows={rows} fullAccess={fullAccess} holdsVerified={holdsVerified} collapseMore={phone && !printing} dispositionsEnabled={dispositionsEnabled} />
         ))}
       </section>
 
-      <div className="ov-grid">
-        <WhereSection rows={rows} stores={stores} holdsVerified={holdsVerified} printing={printing} filter={whereFilter} onFilter={setWhereFilter} />
-        <StoreBoard overview={overview} homeStore={homeStore} role={role} metric={whereFilter} collapsible={phone && !printing} />
-      </div>
-
-      <div className="ov-grid ov-grid--even">
-        <ExceptionsSection overview={overview} stores={stores} data={data} />
-        <DispositionsSection data={data} overview={overview} rows={rows} stores={stores} status={dispositionStatus} onOpen={(vin) => { setDispositionStatus(''); setDispositionVin(vin) }} />
+      <div className="ov-columns" ref={columnsRef}>
+        {columns.map((sections, index) => <div key={index} className="ov-column">{sections}</div>)}
       </div>
 
       <ServiceSection data={data} overview={overview} stores={stores} fullAccess={fullAccess} reportMode={serviceReport} onReport={printServiceReport} />
@@ -662,6 +755,7 @@ export function OverviewPage() {
           role={role}
           store={homeStore}
           defaultDate={defaultDispositionDate(dispositionVehicle.vin, data.meta.reportDate)}
+          returnFocusRef={dispositionOpener}
           onClose={() => setDispositionVin(null)}
           onSaved={async (saved) => {
             setDispositionVin(null)

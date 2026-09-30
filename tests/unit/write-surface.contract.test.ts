@@ -84,7 +84,7 @@ function validWrite(branch, ids, revision) {
 }
 
 describe('the source pins exactly the documented write branches', () => {
-  it('the Worker treats only POST as a write and branches on exactly six employee writes and three publisher uploads', () => {
+  it('the Worker treats only POST as a write and pins six write branches in appApi plus the admin-members save — eight employee paths — and three publisher uploads', () => {
     const source = readFileSync(path.join(root, 'cloudflare/src/worker.mjs'), 'utf8')
     expect(source).toContain("const read=request.method==='GET', write=request.method==='POST'")
     expect(source).toContain("if(!read && !write) throw new HttpError('METHOD_NOT_ALLOWED',405)")

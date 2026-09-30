@@ -45,6 +45,8 @@ export interface DispositionContext {
   role: UserRole
   homeStore: StoreName
   reportDate?: string
+  /** False when the server's disposition table is not installed yet. */
+  enabled?: boolean
   onChanged: () => Promise<void>
 }
 

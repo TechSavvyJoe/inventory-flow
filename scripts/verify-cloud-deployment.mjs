@@ -13,4 +13,8 @@ if(mode==='equipment-status') {
 const response=await fetch(base+route,options)
 const data=await response.json().catch(()=>null)
 if(!response.ok) {console.log(JSON.stringify({status:response.status,code:data?.code??'UNEXPECTED_RESPONSE'}));process.exitCode=1}
-else console.log(JSON.stringify(data))
+else {
+  console.log(JSON.stringify(data))
+  // A reachable Worker that reports not ready (e.g. the 0013 disposition table is missing) fails the check.
+  if(mode==='readiness' && data?.ready!==true) process.exitCode=1
+}

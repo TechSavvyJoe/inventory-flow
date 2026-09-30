@@ -38,13 +38,14 @@ const WRITER_ROLES = new Set(['manager', 'group_manager'])
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
 const NOTE_CONTROL_CHARACTERS = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/
 
-// Operational and calendar words that appear in hold reasons without naming
-// anyone. Exempting them keeps "Deposit taken; delivery Friday" writable on a
-// held unit while a customer's or salesperson's name is still refused.
-const NOTE_GUARD_COMMON_WORDS = new Set((
+// Operational words a hold's customer/reason text uses without naming anyone.
+// They are dropped only from that text's evidence tokens, so "Deposit taken;
+// delivery this week" stays writable on a unit held for "Smith — deposit".
+// Nothing that can be a first name or surname belongs here (no day names, no
+// "will"); salesperson tokens and the note's own tokens are never filtered.
+const REASON_TEXT_COMMON_WORDS = new Set((
   'customer customers deposit deposits delivery deliver delivered sold sale hold holds held deal deals ' +
-  'pending wholesale transfer trade keep today tomorrow week weekend monday tuesday wednesday thursday ' +
-  'friday saturday sunday with from have will that this when after before until'
+  'pending wholesale transfer trade keep today tomorrow week weekend with from have that this when after before until'
 ).split(' '))
 
 /**
@@ -94,9 +95,9 @@ export function dispositionDetail(source, rows, context, { enabled = true } = {}
   }
 }
 
-function noteTokens(value) {
-  return String(value ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u)
-    .filter((token) => token.length >= 4 && !NOTE_GUARD_COMMON_WORDS.has(token))
+/** Lower-cased letter/number runs of four or more characters (the spec's floor). */
+function tokens(value) {
+  return String(value ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((token) => token.length >= 4)
 }
 
 /** Name and reason tokens from this VIN's DealerMail hold rows, active, deleted and released. */
@@ -105,13 +106,13 @@ function holdEvidenceTokens(source) {
     ...(source?.holdRecord?.holdDetailRows ?? []),
     ...(source?.releasedHistoryRecord?.holdDetailRows ?? []),
   ]
-  const tokens = new Set()
+  const evidence = new Set()
   for (const row of rows) {
-    for (const value of [row?.customerOrReasonRaw, row?.salespersonRaw]) {
-      for (const token of noteTokens(value)) tokens.add(token)
-    }
+    for (const token of tokens(row?.customerOrReasonRaw)) if (!REASON_TEXT_COMMON_WORDS.has(token)) evidence.add(token)
+    // A salesperson field is always a name: every token counts.
+    for (const token of tokens(row?.salespersonRaw)) evidence.add(token)
   }
-  return tokens
+  return evidence
 }
 
 function blank(value) {
@@ -155,6 +156,25 @@ export function buildDispositionEvent(source, rows, input, context, { now, today
     throw new WorkflowError('A valid idempotency key is required.', { code: 'IDEMPOTENCY_KEY_REQUIRED' })
   }
   const disposition = input.disposition
+  // A retry is answered from the ledger before the date, destination and note
+  // are judged again: a hold or a calendar day that changed since the original
+  // save must not turn a confirmed write into an error. The hash uses the same
+  // normalized values the original validation stored.
+  const inputHash = createHash('sha256').update(JSON.stringify({
+    disposition,
+    effectiveDate: blank(input.effectiveDate) ? null : input.effectiveDate,
+    destinationStore: blank(input.destinationStore) ? null : input.destinationStore,
+    note: typeof input.note === 'string' ? input.note.trim() || null : input.note ?? null,
+    expectedVersion: input.expectedVersion,
+    actor: context.userId || context.user, role: context.role, store: context.store,
+  })).digest('hex')
+  const replay = rows.find((row) => row.idempotency_key === idempotencyKey)
+  if (replay) {
+    if (replay.input_hash !== inputHash) {
+      throw new WorkflowError('This request key was already used for a different disposition.', { status: 409, code: 'IDEMPOTENCY_CONFLICT' })
+    }
+    return { row: replay, created: false }
+  }
   const effectiveDate = effectiveDay(input.effectiveDate, today, DATE_REQUIRED.has(disposition))
   const rawDestination = input.destinationStore
   let destinationStore = null
@@ -175,20 +195,10 @@ export function buildDispositionEvent(source, rows, input, context, { now, today
   const note = input.note?.trim() || null
   if (note) {
     const evidence = holdEvidenceTokens(source)
-    if (noteTokens(note).some((token) => evidence.has(token))) {
+    // Every note token is compared: the reason-text allowlist never applies here.
+    if (tokens(note).some((token) => evidence.has(token))) {
       throw new WorkflowError('Notes cannot repeat names or reasons from the DealerMail hold.', { code: 'DISPOSITION_NOTE_CONTAINS_HOLD_EVIDENCE' })
     }
-  }
-  const inputHash = createHash('sha256').update(JSON.stringify({
-    disposition, effectiveDate, destinationStore, note, expectedVersion: input.expectedVersion,
-    actor: context.userId || context.user, role: context.role, store: context.store,
-  })).digest('hex')
-  const replay = rows.find((row) => row.idempotency_key === idempotencyKey)
-  if (replay) {
-    if (replay.input_hash !== inputHash) {
-      throw new WorkflowError('This request key was already used for a different disposition.', { status: 409, code: 'IDEMPOTENCY_CONFLICT' })
-    }
-    return { row: replay, created: false }
   }
   if (input.expectedVersion !== view.version) {
     throw new WorkflowError('Another manager updated this vehicle’s disposition. Review the latest and save again.', { status: 409, code: 'DISPOSITION_VERSION_CONFLICT' })

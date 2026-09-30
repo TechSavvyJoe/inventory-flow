@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import type {
@@ -175,7 +175,8 @@ describe('OverviewPage (server projection)', () => {
     expect(awayRow).toHaveTextContent('3 days away · since 09/22/2026')
     expect(awayRow).toHaveTextContent('Return due 09/24/2026 · Overdue')
     expect(awayRow).toHaveTextContent('Unaccounted · not confirmed for 8 days')
-    expect(within(awayRow).getByText('ledger')).toBeVisible()
+    // A ledger-confirmed location carries no tag; only an unconfirmed one does.
+    expect(within(awayRow).queryByText('source-reported')).not.toBeInTheDocument()
     expect(within(awayRow).getByRole('link', { name: /Move for 2026 Ford F-150 002/ })).toHaveAttribute('href', '/transfers?id=move-1&returnTo=%2Foverview')
     expect(rows[1]).toHaveTextContent('In transit · returning home')
     for (const row of rows) {
@@ -206,6 +207,29 @@ describe('OverviewPage (server projection)', () => {
     expect(within(exceptions).getByRole('link', { name: 'Howell: 1 vehicle · Hold past expected date' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=holds-past-expected')
     expect(within(exceptions).getByRole('link', { name: 'Open in Action center' })).toHaveAttribute('href', '/attention?category=holds')
     expect(within(exceptions).getByRole('link', { name: 'Howell: 1 vehicle · Service dates before arrival' })).toHaveAttribute('href', '/inventory?scope=group&vins=TESTDATAHWELL0001')
+  })
+
+  it('groups exceptions by type: one heading and one explanation, then a count per store, most urgent first', () => {
+    const data = bootstrap('group_manager')
+    data.overview!.exceptions = [
+      ...STORES.map((store) => ({ kind: 'records_incomplete' as const, store, count: 2, vins: [] })),
+      { kind: 'hold_past_expected', store: 'Lincoln', count: 3, vins: [] },
+      { kind: 'return_overdue', store: 'Howell', count: 1, vins: [], transferIds: ['move-1'] },
+    ]
+    renderAs('group_manager', data)
+    const exceptions = screen.getByRole('region', { name: 'Exceptions' })
+    const types = within(exceptions).getAllByRole('heading', { level: 3 })
+    expect(types.map((heading) => heading.textContent)).toEqual(['Return overdue', 'Hold past expected date', 'Records not all captured'])
+    // The explanation reads for any count and appears once for the type, not once per store.
+    expect(within(exceptions).getAllByText('Vehicles missing one or more of AutoCheck, OASIS, sticker, invoice or Ford service history.')).toHaveLength(1)
+    expect(exceptions).not.toHaveTextContent('for this unit')
+    for (const store of STORES) {
+      expect(within(exceptions).getByRole('link', { name: `${store}: 2 vehicles · Records not all captured` })).toHaveAttribute('href', expect.stringMatching(/^\/inventory\?scope=group&store=.+&view=records-incomplete$/))
+    }
+    // The hold explanation stays exact, and the Action center link appears once, with its type.
+    expect(within(exceptions).getByText('The DealerMail expected date has passed; a review signal, not proof of sale or release.')).toBeVisible()
+    expect(within(exceptions).getAllByRole('link', { name: 'Open in Action center' })).toHaveLength(1)
+    expect(within(exceptions).getByRole('link', { name: 'Lincoln: 3 vehicles · Hold past expected date' })).toHaveTextContent('3')
   })
 
   it('reports service per store with medians and an aged list linked to Records and Service', () => {
@@ -379,7 +403,8 @@ describe('Overview store board and dispositions (Slice B)', () => {
       for (const link of links) expect(link).toHaveAttribute('href', href)
     }
     expect(within(board).getByRole('table', { name: 'Store board counts by home store' })).toBeInTheDocument()
-    expect(within(board).getByText('Arrows: moves in progress · Inventory Flow move ledger · live')).toBeInTheDocument()
+    // No provenance footer: the page header carries the one freshness line.
+    expect(board).not.toHaveTextContent(/move ledger · live/)
 
     // One filter drives the list and the pins.
     fireEvent.click(within(screen.getByRole('region', { name: 'Where is my inventory' })).getByRole('button', { name: /^Holds/ }))
@@ -409,7 +434,7 @@ describe('Overview store board and dispositions (Slice B)', () => {
     renderAs('manager', withDispositions('manager'))
     const exceptions = screen.getByRole('region', { name: 'Exceptions' })
     expect(within(exceptions).getByRole('link', { name: 'Howell: 1 vehicle · Recorded delivered · still listed' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=disposition-delivered')
-    expect(exceptions).toHaveTextContent('Delivered in Inventory Flow 3+ days ago; the website still lists it. Confirm with the store; the listing is not changed here.')
+    expect(exceptions).toHaveTextContent('Delivered in Inventory Flow 3+ days ago and still listed on the website. Confirm with the store; the listing is not changed here.')
     expect(within(exceptions).getByRole('link', { name: 'Howell: 1 vehicle · Move says delivered · no disposition' })).toHaveAttribute('href', '/transfers?id=move-1&returnTo=%2Foverview')
     expect(exceptions).toHaveTextContent('A move records customer delivery; no disposition has been recorded.')
   })
@@ -438,16 +463,88 @@ describe('Overview store board and dispositions (Slice B)', () => {
     expect(api.getDisposition).toHaveBeenCalledWith('TESTDATAHWELL0001', 'sales', 'Howell')
   })
 
+  it('returns focus to the exact row button that opened the dialog', async () => {
+    api.getDisposition.mockResolvedValue({ ...disposition('TESTDATALNCN00001', 'Lincoln', 'wholesale', true), history: [] })
+    renderAs('group_manager', withDispositions('group_manager'))
+    const section = screen.getByRole('region', { name: 'Dispositions' })
+    const opener = within(section).getByRole('button', { name: 'Change disposition for 2026 Lincoln Nautilus Reserve' })
+    fireEvent.click(opener)
+    const dialog = await screen.findByRole('dialog', { name: 'Disposition · 2026 Lincoln Nautilus Reserve' })
+    await waitFor(() => expect(within(dialog).getByRole('heading', { level: 2 })).toHaveFocus())
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(opener).toHaveFocus())
+    expect(within(section).getByRole('button', { name: 'Change disposition for 2026 Lincoln Nautilus Reserve' })).toBe(opener)
+  })
+
+  it('says disposition storage is not enabled instead of showing zeros or a way to record', () => {
+    const data = withDispositions('group_manager')
+    data.dispositionsEnabled = false
+    for (const vehicle of data.vehicles) if (vehicle.appDisposition) vehicle.appDisposition = { ...vehicle.appDisposition, code: null, version: 0, canManage: false }
+    renderAs('group_manager', data)
+    const section = screen.getByRole('region', { name: 'Dispositions' })
+    expect(within(section).getByRole('status')).toHaveTextContent('Disposition storage is not enabled yet.')
+    expect(within(section).queryByRole('table')).not.toBeInTheDocument()
+    expect(within(section).queryByRole('button', { name: /disposition for/ })).not.toBeInTheDocument()
+    // The manager-log evidence stays visible.
+    expect(section).toHaveTextContent('Sold — manager log')
+    const summary = screen.getByRole('region', { name: 'Store summary' })
+    expect(within(summary).getAllByText('Disposition storage is not enabled yet.')).toHaveLength(4)
+    expect(within(summary).queryByRole('link', { name: /with the disposition/ })).not.toBeInTheDocument()
+  })
+
   it('puts the board in a closed disclosure below the list on a phone', () => {
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(max-width: 880px)', media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
     renderAs('manager', withDispositions('manager'))
     const board = screen.getByRole('region', { name: 'Store board' })
-    const toggle = board.querySelector('summary')!
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(board.querySelector('details')).not.toHaveAttribute('open')
-    fireEvent.click(toggle)
-    expect(board.querySelector('details')).toHaveAttribute('open')
+    // The disclosure (a details group) is closed until its heading row is activated.
+    const disclosure = within(board).getByRole('group')
+    expect(disclosure).not.toHaveAttribute('open')
+    fireEvent.click(within(disclosure).getByRole('heading', { name: 'Store board', level: 2 }))
+    expect(disclosure).toHaveAttribute('open')
+    expect(within(disclosure).getByRole('img', { name: /^Store board Schematic/ })).toBeInTheDocument()
     const where = screen.getByRole('region', { name: 'Where is my inventory' })
     expect(where.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('drops the store board to the foot of the shorter column on a wide screen, never moving the daily lists', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(min-width: 1181px)', media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+    // Where + exceptions (2 × 300) run longer than dispositions (200).
+    const heights: Record<string, number> = { 'ov-where': 300, 'ov-exceptions': 300, 'ov-dispositions': 200 }
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const height = Object.entries(heights).find(([name]) => this.classList.contains(name))?.[1] ?? 0
+      return { height, width: 0, top: 0, left: 0, right: 0, bottom: height, x: 0, y: 0, toJSON: () => ({}) } as DOMRect
+    })
+    renderAs('group_manager', withDispositions('group_manager'))
+    const region = (name: string) => screen.getByRole('region', { name })
+    expect(region('Exceptions').parentElement).toBe(region('Where is my inventory').parentElement)
+    expect(region('Store board').parentElement).toBe(region('Dispositions').parentElement)
+    expect(Boolean(region('Dispositions').compareDocumentPosition(region('Store board')) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+  })
+
+  it('puts where, exceptions and the store board in one column beside dispositions on a wide screen, and phone reading order below it', () => {
+    let wide = true
+    const listeners = new Set<() => void>()
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      get matches() { return query === '(min-width: 1181px)' && wide },
+      media: query,
+      addEventListener: (_type: string, listener: () => void) => { listeners.add(listener) },
+      removeEventListener: (_type: string, listener: () => void) => { listeners.delete(listener) },
+    }))
+    renderAs('group_manager', withDispositions('group_manager'))
+    const sections = () => ['Where is my inventory', 'Store board', 'Exceptions', 'Dispositions'].map((name) => screen.getByRole('region', { name }))
+    const inOrder = (...elements: HTMLElement[]) => elements.every((element, index) => index === 0 || Boolean(elements[index - 1].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING))
+    let [where, board, exceptions, dispositions] = sections()
+    // Two column wrappers, each stacking on its own; the move board is secondary, below the daily lists.
+    expect(exceptions.parentElement).toBe(where.parentElement)
+    expect(board.parentElement).toBe(where.parentElement)
+    expect(dispositions.parentElement).not.toBe(where.parentElement)
+    expect(inOrder(where, exceptions, board, dispositions)).toBe(true)
+
+    wide = false
+    act(() => listeners.forEach((listener) => listener()))
+    ;[where, board, exceptions, dispositions] = sections()
+    expect(inOrder(where, board, exceptions, dispositions)).toBe(true)
   })
 })

@@ -854,6 +854,8 @@ export interface BootstrapData {
   publicChanges?: PublicChangeEvent[]
   vehicleIssues?: VehicleIssue[]
   vehicleIssuesEnabled?: boolean
+  /** False when the app's disposition table is not installed yet (D1 migration 0013). */
+  dispositionsEnabled?: boolean
   overview?: OverviewSummary
 }
 

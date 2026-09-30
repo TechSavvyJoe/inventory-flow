@@ -1,4 +1,7 @@
-/* Disposition dialog (DispositionDialog.tsx): tokens only, class prefix disposition-. */
+/* Disposition dialog (DispositionDialog.tsx): tokens only, class prefix disposition-.
+   It renders in a body portal, outside the app shell's OEM scope, so primary
+   colors use the app's primary-action tokens (--blue-*) like inventory buttons,
+   never --ifx-oem-accent, which falls back to the default violet out here. */
 
 .disposition-overlay {
   background: var(--ifx-modal-scrim);
@@ -93,12 +96,15 @@
 .disposition-icon-button:hover:not(:disabled) { background: var(--ifx-neutral-50); }
 
 .disposition-button--primary {
-  background: var(--ifx-oem-accent-strong);
-  border-color: var(--ifx-oem-accent-strong);
-  color: var(--ifx-neutral-0);
+  background: var(--blue-600);
+  border-color: var(--blue-600);
+  color: var(--surface);
 }
 
-.disposition-button--primary:hover:not(:disabled) { background: var(--ifx-oem-accent); }
+.disposition-button--primary:hover:not(:disabled) {
+  background: var(--blue-700);
+  border-color: var(--blue-700);
+}
 
 .disposition-dialog button:disabled {
   cursor: default;
@@ -213,13 +219,13 @@
 
 .disposition-choice:has(input:checked) {
   background: var(--ifx-info-surface);
-  border-color: var(--ifx-oem-accent-strong);
-  color: var(--ifx-oem-accent-strong);
+  border-color: var(--blue-600);
+  color: var(--blue-700);
   font-weight: var(--ifx-weight-semibold);
 }
 
 .disposition-choice input {
-  accent-color: var(--ifx-oem-accent-strong);
+  accent-color: var(--blue-600);
   height: var(--ifx-space-4);
   margin: 0;
   width: var(--ifx-space-4);

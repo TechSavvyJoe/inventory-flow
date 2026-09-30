@@ -50,10 +50,11 @@ describe('machine-only full app readiness',()=>{
     const {env,first,batch,get}=harness({issuesEnabled,dispositionsEnabled})
     const result=await appReadiness(env)
     expect(first).toHaveBeenCalledOnce();expect(get).toHaveBeenCalledOnce();expect(batch).toHaveBeenCalledTimes(2)
-    expect(Object.keys(result).sort()).toEqual(['bootstrapBytes','bundleSha256','counts','ready','reportDate'])
+    expect(Object.keys(result).sort()).toEqual(['bootstrapBytes','bundleSha256','counts','dispositionStorage','ready','reportDate'])
     const stored = JSON.parse(await (await env.RELEASE_SNAPSHOTS.get('synthetic-private-release')).text())
     expect(result.bundleSha256).toBe(stored.bundleSha256)
-    expect(result.ready).toBe(true);expect(result.reportDate).toBe('2026-08-30')
+    // Without the 0013 table the read path still works, but the deployment is not ready.
+    expect(result.dispositionStorage).toBe(dispositionsEnabled);expect(result.ready).toBe(dispositionsEnabled);expect(result.reportDate).toBe('2026-08-30')
     expect(Object.keys(result.counts).sort()).toEqual(['attention','inventory','managerDispositions','transfers'])
     expect(result.counts.inventory).toBe(8);expect(result.counts.managerDispositions).toBe(0);expect(result.counts.transfers).toBe(0)
     for(const value of Object.values(result.counts))expect(Number.isSafeInteger(value)&&value>=0).toBe(true)

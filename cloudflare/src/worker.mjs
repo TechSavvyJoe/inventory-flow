@@ -310,8 +310,11 @@ export async function appReadiness(env) {
   // Fixed least-privileged context exercises the real read pipeline without
   // accepting browser claims or exposing any employee/customer evidence.
   const bootstrap=service.bootstrap({role:'driver',store:'Howell',user:'Cloud readiness diagnostic'})
+  // Requests stay readable without the 0013 table, but a deployment missing it
+  // is not ready: disposition saves would answer 503 while the app looked healthy.
+  const dispositionStorage=repo.database.dispositionsEnabled===true
   return {
-    ready:true,reportDate:bootstrap.meta.reportDate,bundleSha256,
+    ready:dispositionStorage,dispositionStorage,reportDate:bootstrap.meta.reportDate,bundleSha256,
     counts:{inventory:bootstrap.vehicles.length,managerDispositions:bootstrap.managerDispositions?.length??0,transfers:bootstrap.transfers.length,attention:bootstrap.attention.length},
     bootstrapBytes:encoder.encode(JSON.stringify(bootstrap)).byteLength,
   }

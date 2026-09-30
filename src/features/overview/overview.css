@@ -123,7 +123,12 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.ov-stores--single { grid-template-columns: minmax(0, 560px); }
+/* One store in scope: the card spans the page and its counts run four across. */
+.ov-stores--single { grid-template-columns: minmax(0, 1fr); }
+
+@media (min-width: 881px) {
+  .ov-stores--single .ov-counts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 
 .ov-store-card {
   align-content: start;
@@ -281,14 +286,27 @@
 
 /* Sections ---------------------------------------------------------------- */
 
-.ov-grid {
-  align-items: start;
+/* Where, board, exceptions and dispositions, in two column wrappers that
+   OverviewPage fills. Below the wide breakpoint (and in print) the wrappers
+   stack as one column in phone reading order: where, board, exceptions,
+   dispositions. */
+.ov-columns,
+.ov-column {
+  align-content: start;
   display: grid;
   gap: var(--ifx-space-4);
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
 }
 
-.ov-grid--even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ov-storage-note {
+  background: var(--ifx-warning-surface);
+  border: 1px solid var(--ifx-warning);
+  border-radius: var(--ifx-radius-sm);
+  color: var(--ifx-neutral-900);
+  font-size: var(--ifx-text-sm);
+  padding: var(--ifx-space-2) var(--ifx-space-3);
+}
 
 .ov-section {
   background: var(--ifx-neutral-0);
@@ -339,17 +357,10 @@
 .ov-chips button span { font-variant-numeric: tabular-nums; }
 
 .ov-result,
-.ov-source,
 .ov-footnote,
 .ov-basis {
   color: var(--ifx-neutral-600);
   font-size: var(--ifx-text-sm);
-}
-
-.ov-source {
-  border-top: 1px solid var(--ifx-border-subtle);
-  font-size: var(--ifx-text-xs);
-  padding-top: var(--ifx-space-2);
 }
 
 .ov-empty {
@@ -458,51 +469,52 @@ button.ov-row-link { cursor: pointer; }
 
 /* Exceptions */
 
-.ov-exception-list {
+/* One group per exception type: heading, one explanation line, then the
+   store counts in the store cards' label/value rows. */
+.ov-exception-groups {
   display: grid;
-  margin: 0;
 }
 
-.ov-exception-list > div {
-  align-items: start;
+.ov-exception-group {
   border-top: 1px solid var(--ifx-border-subtle);
   display: grid;
-  gap: var(--ifx-space-1) var(--ifx-space-3);
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
-  padding: var(--ifx-space-2) 0;
+  gap: var(--ifx-space-0-5);
+  padding-top: var(--ifx-space-2);
 }
 
-.ov-exception-list dt {
-  display: grid;
+.ov-exception-group + .ov-exception-group { margin-top: var(--ifx-space-3); }
+
+.ov-exception-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ifx-space-1) var(--ifx-space-3);
+  justify-content: space-between;
+}
+
+.ov-exception-head h3 {
+  align-items: center;
+  display: flex;
   font-size: var(--ifx-text-md);
   font-weight: var(--ifx-weight-semibold);
+  gap: var(--ifx-space-2);
 }
 
-.ov-exception-list dt small {
+/* Urgency marker: vehicles not where they should be, records that disagree, paperwork. */
+.ov-exception-head h3::before {
+  background: var(--ifx-neutral-400);
+  border-radius: var(--ifx-radius-full);
+  content: "";
+  flex: none;
+  height: var(--ifx-space-2);
+  width: var(--ifx-space-2);
+}
+
+.ov-exception-group--danger h3::before { background: var(--ifx-danger); }
+.ov-exception-group--warning h3::before { background: var(--ifx-warning); }
+
+.ov-exception-why {
   color: var(--ifx-neutral-600);
-  font-size: var(--ifx-text-xs);
-  font-weight: var(--ifx-weight-regular);
-}
-
-.ov-exception-list dd {
-  display: grid;
-  gap: var(--ifx-space-1);
-  justify-items: start;
-  margin: 0;
-}
-
-.ov-exception-list dd > a:first-child {
-  align-items: center;
-  color: var(--ifx-oem-accent-strong);
-  display: inline-flex;
-  font-size: var(--ifx-text-lg);
-  font-weight: var(--ifx-weight-bold);
-  min-height: 44px;
-  min-width: 44px;
-}
-
-.ov-exception-list dd p {
-  color: var(--ifx-neutral-700);
   font-size: var(--ifx-text-sm);
 }
 
@@ -549,6 +561,11 @@ button.ov-row-link { cursor: pointer; }
 
 .ov-table td a { color: var(--ifx-oem-accent-strong); }
 
+/* Store plus six codes in half the page: narrow cells keep the table inside
+   its section down to the two-column breakpoint. */
+.ov-disposition-table th,
+.ov-disposition-table td { padding: 0 var(--ifx-space-1); }
+
 .ov-service-group th,
 .ov-service-group td { font-weight: var(--ifx-weight-bold); }
 
@@ -561,9 +578,14 @@ button.ov-row-link { cursor: pointer; }
   .ov-stores { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
-@media (max-width: 1180px) {
-  .ov-grid,
-  .ov-grid--even { grid-template-columns: minmax(0, 1fr); }
+/* Where, exceptions and the compact store board beside dispositions (WIDE
+   in OverviewPage.tsx). Each column stacks on its own, so a short list never
+   leaves a hole beside a long one. */
+@media (min-width: 1181px) {
+  .ov-columns {
+    align-items: start;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 880px) {
@@ -578,7 +600,8 @@ button.ov-row-link { cursor: pointer; }
 @media (max-width: 760px) {
   /* OVERVIEW_SPEC §3: the home card's core counts and the first where-rows share the first phone viewport. */
   .ov-page,
-  .ov-grid { gap: var(--ifx-space-2); }
+  .ov-columns,
+  .ov-column { gap: var(--ifx-space-2); }
   .ov-header { gap: var(--ifx-space-1-5) var(--ifx-space-4); padding-bottom: var(--ifx-space-2); }
   .ov-asof { font-size: var(--ifx-text-xs); }
   .ov-store-card { gap: var(--ifx-space-1); padding: var(--ifx-space-2) var(--ifx-space-3); }
@@ -595,7 +618,6 @@ button.ov-row-link { cursor: pointer; }
   /* Row actions stack beside the facts, so a row costs about two buttons of height. */
   .ov-row { align-items: start; }
   .ov-row-actions { flex-direction: column; flex-wrap: nowrap; }
-  .ov-exception-list > div { grid-template-columns: minmax(0, 1fr); }
 
   /* The service table becomes one stacked card per store. */
   .ov-table thead { display: none; }
@@ -668,8 +690,9 @@ button.ov-row-link { cursor: pointer; }
   .ov-page > * { margin-bottom: 4mm; }
   .ov-print-only { display: block; font-size: 9pt; }
   .ov-stores { display: grid; gap: 4mm; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ov-grid { display: block; }
-  .ov-grid > * { margin-bottom: 4mm; }
+  .ov-columns,
+  .ov-column { display: block; }
+  .ov-column > * { margin-bottom: 4mm; }
   .ov-store-card,
   .ov-exceptions,
   .ov-dispositions,

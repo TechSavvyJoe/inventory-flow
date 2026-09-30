@@ -30,11 +30,6 @@ const PIN_METRICS: Record<WhereFilter, PinMetric> = {
 }
 
 const KIND_WORDS: Record<OverviewBoardFlow['kind'], string> = { outbound: 'Outbound', return: 'Returning home', planned: 'Planned' }
-const LEGEND: Record<OverviewBoardFlow['kind'], string> = {
-  outbound: 'Left its home store; in transit or at the other store',
-  return: 'On its way back to its home store',
-  planned: 'Approved, not yet departed',
-}
 /**
  * The drawing uses 4 internal units per board unit, so SVG text carries a
  * real font size (computed and rendered stay at or above 12px) while the
@@ -43,12 +38,12 @@ const LEGEND: Record<OverviewBoardFlow['kind'], string> = {
 const SCALE = 4
 const PIN_RADIUS = 20
 const HIT_RADIUS = 36
-const LABEL_SIZE = 16.8
-const COUNT_SIZE = 17.6
-const BADGE_SIZE = 15.2
-const BADGE_RADIUS = 12.8
+const LABEL_SIZE = 17.6
+const COUNT_SIZE = 18.4
+const BADGE_SIZE = 17.6
+const BADGE_RADIUS = 14.4
 /** An invisible target around each arrow's count, about 44px at the board's narrowest width. */
-const BADGE_HIT_RADIUS = 28.8
+const BADGE_HIT_RADIUS = 32
 
 const round = (value: number) => Math.round(value * 100) / 100
 
@@ -166,7 +161,7 @@ export function StoreBoard({ overview, homeStore, role, metric, collapsible }: {
             )
           })}
         </svg>
-        <figcaption className="ov-board-caption">Pins: {pinMetric.label.toLowerCase()} by home store · schematic positions, not a map</figcaption>
+        <figcaption className="ov-board-caption">Pins: {pinMetric.label.toLowerCase()} by home store · schematic, not a map</figcaption>
       </figure>
       <div className="ov-board-moves">
         <h3 className="ov-subheading">Moves on the board</h3>
@@ -184,15 +179,13 @@ export function StoreBoard({ overview, homeStore, role, metric, collapsible }: {
             ))}
           </ul>
         ) : <p className="ov-empty">No moves in progress{role === 'group_manager' ? '' : ' that you can see'}.</p>}
-        <dl className="ov-board-legend" aria-label="Board key">
+        {/* Line styles in words, never colour alone; one compact row. */}
+        <ul className="ov-board-legend" aria-label="Board key">
           {(['outbound', 'return', 'planned'] as const).map((kind) => (
-            <div key={kind}>
-              <dt><svg className={`ov-board-swatch ov-board-swatch--${kind}`} viewBox="0 0 24 8" aria-hidden="true"><line x1="1" y1="4" x2="23" y2="4" /></svg>{KIND_WORDS[kind]}</dt>
-              <dd>{LEGEND[kind]}</dd>
-            </div>
+            <li key={kind}><svg className={`ov-board-swatch ov-board-swatch--${kind}`} viewBox="0 0 24 8" aria-hidden="true"><line x1="1" y1="4" x2="23" y2="4" /></svg>{KIND_WORDS[kind]}</li>
           ))}
-          <div><dt><span className="ov-board-legend-home" aria-hidden="true" />Your home store</dt><dd>Blue ring; pin numbers link to the list behind them</dd></div>
-        </dl>
+          <li><span className="ov-board-legend-home" aria-hidden="true" />Your home store</li>
+        </ul>
       </div>
       {/* A table ignores width:1px, so the clip lives on a wrapper. */}
       <div className="sr-only">
@@ -206,7 +199,6 @@ export function StoreBoard({ overview, homeStore, role, metric, collapsible }: {
         </tbody>
       </table>
       </div>
-      <p className="ov-source">Arrows: {role === 'group_manager' ? 'moves in progress' : 'moves as visible to you'} · Inventory Flow move ledger · live</p>
     </div>
   )
 

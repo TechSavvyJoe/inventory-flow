@@ -762,6 +762,15 @@ describe('focused vehicle workspace', () => {
     expect(await screen.findByText('Delivered recorded for #W5863Q.')).toBeInTheDocument();
   });
 
+  it('says disposition storage is not enabled yet instead of offering the control', () => {
+    const unit = { ...vehicle(), appDisposition: { vin: 'TESTDATASYN000002', code: null, version: 0, effectiveDate: null, destinationStore: null, updatedAt: null, updatedByRole: null, store: null, ownerStore: 'Howell' as const, canManage: false } };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}
+      dispositionContext={{ role: 'group_manager', homeStore: 'Howell', enabled: false, onChanged: vi.fn() }} />);
+    const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
+    expect(operations).toHaveTextContent('Disposition storage is not enabled yet.');
+    expect(within(operations).queryByRole('button', { name: /disposition/i })).not.toBeInTheDocument();
+  });
+
   it('offers no disposition control without a viewer context or to a viewer who cannot record an empty one', () => {
     const unit = { ...vehicle(), appDisposition: { vin: 'TESTDATASYN000002', code: null, version: 0, effectiveDate: null, destinationStore: null, updatedAt: null, updatedByRole: null, store: null, ownerStore: 'Howell' as const, canManage: false } };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}
