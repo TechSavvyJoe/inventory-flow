@@ -306,16 +306,17 @@ export async function appReadiness(env) {
   // Readiness must prove the artifact can still be read and decrypted now,
   // so it never answers from the per-isolate cache.
   const {release,bundleSha256}=await readReleaseWithIdentity(env,{fresh:true})
-  const repo=await loadD1Repository(env.INVENTORY_DB,release)
+  const repo=await loadD1Repository(env.INVENTORY_DB,release,{probeSavedLists:true})
   const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
   // Fixed least-privileged context exercises the real read pipeline without
   // accepting browser claims or exposing any employee/customer evidence.
   const bootstrap=service.bootstrap({role:'driver',store:'Howell',user:'Cloud readiness diagnostic'})
-  // Requests stay readable without the 0013 table, but a deployment missing it
-  // is not ready: disposition saves would answer 503 while the app looked healthy.
+  // Requests stay readable while a feature migration is absent, but deployment
+  // is not ready when either write surface would answer MIGRATION_REQUIRED.
   const dispositionStorage=repo.database.dispositionsEnabled===true
+  const savedListsStorage=repo.database.savedVehicleListsEnabled===true
   return {
-    ready:dispositionStorage,dispositionStorage,reportDate:bootstrap.meta.reportDate,bundleSha256,
+    ready:dispositionStorage&&savedListsStorage,dispositionStorage,savedListsStorage,reportDate:bootstrap.meta.reportDate,bundleSha256,
     counts:{inventory:bootstrap.vehicles.length,managerDispositions:bootstrap.managerDispositions?.length??0,transfers:bootstrap.transfers.length,attention:bootstrap.attention.length},
     bootstrapBytes:encoder.encode(JSON.stringify(bootstrap)).byteLength,
   }

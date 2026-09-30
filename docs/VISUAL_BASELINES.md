@@ -1,6 +1,6 @@
 # Reviewed visual baselines
 
-The visual gate compares 32 synthetic screens: eight states at 390×844,
+The visual gate compares 40 synthetic screens: ten states at 390×844,
 1024×768, 1320×820 and 1440×900. Both generation and comparison run in
 `mcr.microsoft.com/playwright:v1.62.1-noble`, using bundled Chromium and the
 production build. The fixture clock, locale, timezone and image masks are fixed.
@@ -16,7 +16,7 @@ expiry of the short-lived candidate artifacts from Actions.
 The visual job downloads the exact asset ID from the pin using its existing
 `contents: read` token. `scripts/visual-baselines.mjs` verifies the complete
 bundle's SHA-256, source commit/run and renderer, then checks every image's name,
-hash, PNG header and viewport dimensions. All 32 expected files must be present;
+hash, PNG header and viewport dimensions. All 40 expected files must be present;
 extra, duplicate and invalid files fail the job before any reference is written.
 
 Validated references are restored to `INVENTORY_VISUAL_BASELINE_DIR` under the
@@ -34,10 +34,10 @@ existing comparison (`maxDiffPixels: 0`, `threshold: 0.05`).
 1. Dispatch **Validate Inventory Flow** on the reviewed branch with
    `target=update-visual-baselines`. The manual job renders in the prescribed
    container and produces the `visual-baseline-candidate` Actions artifact. The
-   artifact contains the 32 review PNGs and their packaged
+   artifact contains the 40 review PNGs and their packaged
    `visual-baselines.json` bundle in one staged directory so the container and
    runner cannot disagree about either upload path.
-2. Download the candidate outside the checkout. Inspect all 32 images for
+2. Download the candidate outside the checkout. Inspect all 40 images for
    hierarchy, density, readable text, overflow, controls and disclosure state.
    Passing generation only means the images were produced; it is not a passed
    comparison or an approval of their appearance.
@@ -47,7 +47,7 @@ existing comparison (`maxDiffPixels: 0`, `threshold: 0.05`).
 4. Update only the metadata pin with the exact asset ID, bundle digest,
    provenance and review timestamp. Submit that change through the normal PR
    review. Do not publish or repin automatically from CI.
-5. Run a fresh ordinary visual job. Acceptance requires all 32 comparisons to
+5. Run a fresh ordinary visual job. Acceptance requires all 40 comparisons to
    pass without snapshot updates. Actual CI also verifies the read-only token
    can retrieve the private asset; a local owner-token download alone does not.
 
@@ -75,7 +75,7 @@ passed unit/build checks but failed two independent gates:
   now owns a separate test. All interactions, assertions and the 45-second
   timeout are preserved; the full local browser suite passed 44 tests with
   four intentional project/viewport skips.
-- All 32 visual comparisons lacked expected PNGs. The original manual generator
+- All 40 visual comparisons lacked expected PNGs. The original manual generator
   produced expiring Actions artifacts, while the comparison job never restored
   them. The external bundle and reviewed pin close that setup gap without
   admitting rasters to Git or relaxing screenshot comparisons.

@@ -1,6 +1,6 @@
 import { ROLE_PICKER_ROLES, STALE_AFTER_MS, STORES, WORKSPACES, grantedWorkspaces, workspaceFor } from './lib/config.mjs'
 import { PanelApiError, clearApiCache, fetchBootstrap, fetchCompanionRelease, fetchVehicle, fetchSavedLists, mutateSavedList } from './lib/api.mjs'
-import { createCustomerListSession } from './lib/customer-lists.mjs'
+import { createCustomerListSession, customerListWritesReady } from './lib/customer-lists.mjs'
 import { bindPhotoSwipe } from './lib/photo-swipe.mjs'
 import { buildPanelData, copyFields, dealSheetText, mergeDetail, requestBlockedReason, roleLabel, toPanelVehicle, vehicleMoveAction } from './lib/model.mjs'
 import { buildEntry, buildIndex, rank } from './lib/search.mjs'
@@ -916,13 +916,14 @@ function renderCustomerControls() {
   const enabled = Boolean(state.data && state.bootstrap?.savedListsEnabled === true)
   customerButton.hidden = !enabled
   const snapshot = customerLists.snapshot, list = customerLists.active()
+  const canWrite = customerListWritesReady(snapshot)
   customerButton.textContent = list ? `${list.label} · ${list.items.length} saved` : 'Customer lists'
   for (const button of ui.detail.parentElement.querySelectorAll('.customer-save-toggle')) {
     const saved = Boolean(list?.items.some(item => item.vin === button.dataset.vin))
     button.textContent = snapshot.saving ? 'Saving…' : saved ? 'Saved · remove' : 'Save vehicle'
     button.setAttribute('aria-label', `${saved ? 'Remove vehicle from' : 'Save vehicle to'} ${list?.label ?? 'customer shortlist'}`)
     button.setAttribute('aria-pressed', String(saved))
-    button.disabled = snapshot.saving || Boolean(snapshot.pending) || snapshot.loading && !snapshot.checkedAt
+    button.disabled = !canWrite
   }
   if (sheetOpen && state.sheetKind === 'customers') renderCustomerSheet()
 }
@@ -930,6 +931,7 @@ function renderCustomerControls() {
 function renderCustomerSheet() {
   const snapshot = customerLists.snapshot, list = customerLists.active()
   const busy = snapshot.saving
+  const canWrite = customerListWritesReady(snapshot)
   const focused = ui.sheetBody.contains(document.activeElement) ? document.activeElement : null
   const focusLabel = focused?.getAttribute('aria-label')
   const selection = focused && 'selectionStart' in focused ? [focused.selectionStart, focused.selectionEnd] : null
@@ -948,24 +950,24 @@ function renderCustomerSheet() {
   selector.value = list?.id ?? ''
   const status = snapshot.error ?? (busy ? 'Saving changes…' : snapshot.loading ? 'Checking your lists…' : snapshot.checkedAt ? 'Saved to your account · available on your other devices' : 'Your private customer lists')
   ui.sheetBody.append(el('div', { class: 'customer-lists-status', role: snapshot.error ? 'alert' : 'status' }, el('p', { text: status }),
-    el('button', { type: 'button', class: 'btn', disabled: busy || snapshot.loading, onclick: () => customerLists.retry() }, snapshot.pending ? 'Retry unfinished action' : 'Refresh lists')),
+    el('button', { type: 'button', class: 'btn', disabled: busy || snapshot.loading, onclick: () => customerLists.retry() }, snapshot.pending ? 'Retry unfinished action' : snapshot.readyForWrites ? 'Refresh lists' : 'Retry list check')),
   el('p', { class: 'field-help', text: 'Use initials or a nickname. Customer contact details stay in DealerMail.' }))
   if (snapshot.lists.length) ui.sheetBody.append(el('label', { class: 'customer-list-selector' }, el('span', { text: 'Save vehicles to' }), selector))
-  const createInput = el('input', { type: 'text', 'aria-label': 'New customer list name', maxlength: '80', value: state.customerDraft, disabled: busy, oninput: event => { state.customerDraft = event.target.value } })
+  const createInput = el('input', { type: 'text', 'aria-label': 'New customer list name', maxlength: '80', value: state.customerDraft, disabled: !canWrite, oninput: event => { state.customerDraft = event.target.value } })
   ui.sheetBody.append(el('form', { class: 'customer-list-create', onsubmit: async event => { event.preventDefault(); const label = state.customerDraft.trim(); if (!label) return; if (await customerLists.mutate('create', { label })) { state.customerDraft = ''; renderCustomerSheet() } } },
-    createInput, el('button', { type: 'submit', class: 'btn btn-primary', disabled: busy || Boolean(snapshot.pending) }, 'New list')))
+    createInput, el('button', { type: 'submit', class: 'btn btn-primary', disabled: !canWrite }, 'New list')))
   if (!list) { ui.sheetBody.append(el('p', { text: 'Create a list, then save vehicles from their detail view.' })); restoreInput(); return }
   const present = list.items.map(item => vehicleByVin(item.vin)).filter(Boolean)
   ui.sheetBody.append(el('div', { class: 'customer-list-actions' },
     el('button', { type: 'button', class: 'btn', disabled: busy, onclick: () => openCustomerDocument(present, list.label) }, `Customer sheet (${present.length})`),
-    el('button', { type: 'button', class: 'btn', disabled: busy, onclick: () => { state.customerRename = !state.customerRename; state.customerRenameDraft = list.label; renderCustomerSheet() } }, 'Rename'),
-    el('button', { type: 'button', class: 'btn', disabled: busy, onclick: () => { state.customerDelete = !state.customerDelete; renderCustomerSheet() } }, 'Delete list')))
+    el('button', { type: 'button', class: 'btn', disabled: !canWrite, onclick: () => { state.customerRename = !state.customerRename; state.customerRenameDraft = list.label; renderCustomerSheet() } }, 'Rename'),
+    el('button', { type: 'button', class: 'btn', disabled: !canWrite, onclick: () => { state.customerDelete = !state.customerDelete; renderCustomerSheet() } }, 'Delete list')))
   if (state.customerRename) {
-    const input = el('input', { type: 'text', 'aria-label': 'Rename customer list', maxlength: '80', value: state.customerRenameDraft, disabled: busy, oninput: event => { state.customerRenameDraft = event.target.value } })
-    ui.sheetBody.append(el('form', { class: 'customer-list-create', onsubmit: event => { event.preventDefault(); const label = input.value.trim(); if (label) { state.customerRename = false; customerLists.mutate('rename', { label }) } } }, input, el('button', { type: 'submit', class: 'btn', disabled: busy || Boolean(snapshot.pending) }, 'Save name')))
+    const input = el('input', { type: 'text', 'aria-label': 'Rename customer list', maxlength: '80', value: state.customerRenameDraft, disabled: !canWrite, oninput: event => { state.customerRenameDraft = event.target.value } })
+    ui.sheetBody.append(el('form', { class: 'customer-list-create', onsubmit: event => { event.preventDefault(); const label = input.value.trim(); if (label) { state.customerRename = false; customerLists.mutate('rename', { label }) } } }, input, el('button', { type: 'submit', class: 'btn', disabled: !canWrite }, 'Save name')))
   }
   if (state.customerDelete) ui.sheetBody.append(el('div', { class: 'customer-lists-status' }, el('p', { text: `Delete ${list.label} and its ${list.items.length} saved references?` }),
-    el('button', { type: 'button', class: 'btn', disabled: busy || Boolean(snapshot.pending), onclick: () => { state.customerDelete = false; customerLists.mutate('delete') } }, 'Confirm delete list')))
+    el('button', { type: 'button', class: 'btn', disabled: !canWrite, onclick: () => { state.customerDelete = false; customerLists.mutate('delete') } }, 'Confirm delete list')))
   if (!list.items.length) ui.sheetBody.append(el('p', { text: 'No vehicles saved to this list yet.' }))
   ui.sheetBody.append(el('ul', { class: 'customer-list-items' }, ...list.items.map(item => {
     const vehicle = item.available ? vehicleByVin(item.vin) : null
@@ -973,7 +975,7 @@ function renderCustomerSheet() {
       vehicle.photos[0] ? el('img', { src: vehicle.photos[0], alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : null,
       el('span', {}, el('strong', { text: vehicle.name }), el('small', { text: `${vehicle.stockNumber} · ${vehicle.price != null ? fmt.formatMoney(vehicle.price) : 'Price not published'}` })))
       : el('span', { class: 'customer-list-vehicle' }, el('strong', { text: 'Vehicle unavailable in current inventory' }), el('small', { text: `Saved reference · VIN ending ${item.vin.slice(-6)}` })),
-    el('button', { type: 'button', class: 'icon-btn', 'aria-label': `Remove ${vehicle?.stockNumber ?? 'VIN ending ' + item.vin.slice(-6)} from ${list.label}`, disabled: busy || Boolean(snapshot.pending), onclick: () => customerLists.mutate('remove', { vin: item.vin }) }, icon('x', { size: 16 })))
+    el('button', { type: 'button', class: 'icon-btn', 'aria-label': `Remove ${vehicle?.stockNumber ?? 'VIN ending ' + item.vin.slice(-6)} from ${list.label}`, disabled: !canWrite, onclick: () => customerLists.mutate('remove', { vin: item.vin }) }, icon('x', { size: 16 })))
   })))
   restoreInput()
 }

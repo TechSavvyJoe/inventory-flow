@@ -29,6 +29,7 @@ export interface ShortlistManagement {
   lastConfirmedAt: number | null;
   pendingAction: boolean;
   accessRevoked: boolean;
+  readyForWrites: boolean;
   selectList: (id: string) => void;
   createList: (label: string) => Promise<boolean>;
   renameActiveList: (label: string) => Promise<boolean>;

@@ -509,10 +509,11 @@ export async function loadD1Repository(d1, release, options = {}) {
   // refuses writes (503 MIGRATION_REQUIRED). Never create production schema here.
   const ownerUserId = typeof options.ownerUserId === 'string' && options.ownerUserId ? options.ownerUserId : null
   const idempotencyKey = typeof options.idempotencyKey === 'string' && options.idempotencyKey ? options.idempotencyKey : null
-  // Machine readiness and repository-only diagnostics deliberately have no
-  // employee owner. Preserve their established read set and only probe the
-  // owner-scoped saved-list schema when a request can actually consume it.
-  const capabilityTables = ownerUserId
+  // Machine readiness has no employee owner and must never load anyone's list
+  // rows, but it still needs to prove that the feature's complete schema is
+  // present. Ordinary ownerless diagnostics retain their established read set.
+  const probeSavedLists = ownerUserId !== null || options.probeSavedLists === true
+  const capabilityTables = probeSavedLists
     ? "'vehicle_issues', 'vehicle_issue_events', 'vehicle_disposition_events', 'saved_vehicle_lists', 'saved_vehicle_list_items', 'saved_vehicle_list_actions'"
     : "'vehicle_issues', 'vehicle_issue_events', 'vehicle_disposition_events'"
   const capability = await d1.batch([d1.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${capabilityTables})`)])

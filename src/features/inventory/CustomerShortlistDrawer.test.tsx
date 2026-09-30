@@ -13,7 +13,7 @@ const available = { id:'VIN1', vin:'VIN1', stockNumber:'H1', displayName:'2026 F
 const unavailable = { id:'VIN2', vin:'VIN2', stockNumber:'Unavailable', displayName:'Vehicle unavailable', price:null, imageUrl:null, exteriorColor:null, addedAt:2, available:false }
 const vehicle = { id:'vehicle-1', vin:'VIN1', stockNumber:'H1', year:2026, make:'Ford', model:'F-150' } as InventoryVehicle
 function management(overrides: Partial<ShortlistManagement> = {}): ShortlistManagement {
-  return { lists:[{ id:'one', label:'AB', count:2 }, { id:'two', label:'CD', count:0 }], activeListId:'one', activeLabel:'AB', loading:false, saving:false, error:null, lastConfirmedAt:1, pendingAction:false, accessRevoked:false, selectList:vi.fn(), createList:vi.fn(async () => true), renameActiveList:vi.fn(async () => true), deleteActiveList:vi.fn(async () => true), retry:vi.fn(), ...overrides }
+  return { lists:[{ id:'one', label:'AB', count:2 }, { id:'two', label:'CD', count:0 }], activeListId:'one', activeLabel:'AB', loading:false, saving:false, error:null, lastConfirmedAt:1, pendingAction:false, accessRevoked:false, readyForWrites:true, selectList:vi.fn(), createList:vi.fn(async () => true), renameActiveList:vi.fn(async () => true), deleteActiveList:vi.fn(async () => true), retry:vi.fn(), ...overrides }
 }
 
 describe('CustomerShortlistDrawer synced lists', () => {

@@ -101,6 +101,25 @@ describe('Worker employee-owned saved vehicle lists', () => {
     expect(cloud.count('saved_vehicle_list_actions')).toBe(0)
   })
 
+  it.each([
+    ['email', 'customer@example.com'],
+    ['URL', 'https://example.com/customer'],
+    ['www URL', 'www.example.com/customer'],
+    ['phone-like digits', 'Call 5551234'],
+  ])('rejects %s labels on both create and rename', async (_kind, label) => {
+    const invalidCreate = await post(sales.email, { action: 'create', label }, `invalid-create-${_kind}`)
+    expect(invalidCreate).toMatchObject({ status: 422, json: { code: 'INVALID_SAVED_LIST_INPUT' } })
+
+    const created = await post(sales.email, { action: 'create', label: 'AB' }, `valid-create-${_kind}`)
+    const invalidRename = await post(sales.email, {
+      action: 'rename', listId: created.json.id, expectedRevision: 1, label,
+    }, `invalid-rename-${_kind}`)
+    expect(invalidRename).toMatchObject({ status: 422, json: { code: 'INVALID_SAVED_LIST_INPUT' } })
+    expect((await cloud.call('GET', '/api/saved-lists', sales.email)).json.lists)
+      .toEqual([expect.objectContaining({ id: created.json.id, label: 'AB', revision: 1 })])
+    expect(cloud.count('saved_vehicle_list_actions')).toBe(1)
+  })
+
   it('serializes concurrent item changes without replacing the whole list', async () => {
     const created = await post(sales.email, { action: 'create', label: 'Concurrent' }, 'concurrent-create')
     const seeded = await post(sales.email, { action: 'add', listId: created.json.id, vin: CURRENT_VIN, expectedRevision: 1 }, 'concurrent-seed')
@@ -209,5 +228,11 @@ describe('Node and Worker saved-list HTTP parity', () => {
 
     expect(await nodeCall('POST', '/api/saved-lists', { action: 'create', label: 'Blocked' }, 'bad-origin', 'https://evil.example'))
       .toMatchObject({ status: 403, json: { code: 'SAME_ORIGIN_REQUIRED' } })
+
+    const contactLabel = { action: 'create', label: 'customer@example.com' }
+    expect(await nodeCall('POST', '/api/saved-lists', contactLabel, 'parity-contact-node'))
+      .toMatchObject({ status: 422, json: { code: 'INVALID_SAVED_LIST_INPUT' } })
+    expect(await cloud.call('POST', '/api/saved-lists', sales.email, contactLabel, { 'idempotency-key': 'parity-contact-cloud' }))
+      .toMatchObject({ status: 422, json: { code: 'INVALID_SAVED_LIST_INPUT' } })
   })
 })

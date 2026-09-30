@@ -38,6 +38,9 @@ function labelValue(value) {
   if (!label || [...label].length > 80 || /[\u0000-\u001f\u007f]/u.test(label)) {
     invalid('List label must be between 1 and 80 characters.', { field: 'label' })
   }
+  if (/@|https?:\/\/|www\./i.test(label) || (label.match(/\d/g)?.length ?? 0) >= 7) {
+    invalid('Use initials or a nickname, without contact information.', { field: 'label' })
+  }
   return label
 }
 

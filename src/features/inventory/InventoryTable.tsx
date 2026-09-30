@@ -694,6 +694,7 @@ export function DeskRowActions({
 }: DeskRowActionsProps) {
   const shortlist = useCustomerShortlist();
   const saved = shortlist.isShortlisted(vehicle);
+  const shortlistWriteBlocked = Boolean(shortlist.management && (!shortlist.management.readyForWrites || shortlist.management.saving || shortlist.management.pendingAction || shortlist.management.accessRevoked));
   const name = vehicleDisplayName(vehicle);
   const listingUrl = vehicle.publicListing.listingUrl?.trim() || null;
   const requestAllowed = canRequestVehicle?.(vehicle) === true;
@@ -734,7 +735,7 @@ export function DeskRowActions({
         title={moveAction?.label}><Truck size={16} aria-hidden="true" />{moveAction?.shortLabel}</button> : null}
       <button type="button" className="inv-desk-action inv-desk-action--save" data-row-action="shortlist"
         aria-label={saved ? `Remove ${vehicle.stockNumber} from shortlist` : `Save ${vehicle.stockNumber} to shortlist`}
-        aria-pressed={saved} title={saved ? "Remove from shortlist" : "Save to shortlist"} onClick={() => shortlist.toggle(vehicle)}>
+        aria-pressed={saved} title={shortlistWriteBlocked ? "Saved lists are not ready" : saved ? "Remove from shortlist" : "Save to shortlist"} disabled={shortlistWriteBlocked} onClick={() => shortlist.toggle(vehicle)}>
         <Heart size={14} aria-hidden="true" fill={saved ? "currentColor" : "none"} />{saved ? "Saved" : "Save"}
       </button>
       {listingUrl && !hideListing ? onOpenListing ? (

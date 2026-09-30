@@ -25,15 +25,16 @@ function encryptedFixture() {
   } finally {fixture.cleanup()}
 }
 
-function harness({ issuesEnabled = false, dispositionsEnabled = false } = {}) {
+function harness({ issuesEnabled = false, dispositionsEnabled = false, savedListsEnabled = false } = {}) {
   const {key,envelope}=encryptedFixture(),serialized=JSON.stringify(envelope)
   const first=vi.fn(async()=>({object_key:'synthetic-private-release',bundle_sha256:envelope.bundleSha256}))
   const batch=vi.fn(async statements=>{
     if (statements.length === 1) {
-      expect(statements[0].sql).toBe("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('vehicle_issues', 'vehicle_issue_events', 'vehicle_disposition_events')")
+      expect(statements[0].sql).toBe("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('vehicle_issues', 'vehicle_issue_events', 'vehicle_disposition_events', 'saved_vehicle_lists', 'saved_vehicle_list_items', 'saved_vehicle_list_actions')")
       return [{success:true,results:[
         ...(issuesEnabled?[{name:'vehicle_issues'},{name:'vehicle_issue_events'}]:[]),
         ...(dispositionsEnabled?[{name:'vehicle_disposition_events'}]:[]),
+        ...(savedListsEnabled?[{name:'saved_vehicle_lists'},{name:'saved_vehicle_list_items'},{name:'saved_vehicle_list_actions'}]:[]),
       ]}]
     }
     expect(statements).toHaveLength(8 + (issuesEnabled ? 2 : 0) + (dispositionsEnabled ? 1 : 0))
@@ -46,15 +47,17 @@ function harness({ issuesEnabled = false, dispositionsEnabled = false } = {}) {
 }
 
 describe('machine-only full app readiness',()=>{
-  it.each([[false,false],[true,false],[true,true]])('runs decrypt, source validation, read-only D1 snapshot and real bootstrap, returning only allowed summaries (issue schema %s, disposition schema %s)',async(issuesEnabled,dispositionsEnabled)=>{
-    const {env,first,batch,get}=harness({issuesEnabled,dispositionsEnabled})
+  it.each([[false,false,false],[true,false,false],[true,true,false],[true,true,true]])('runs decrypt, source validation, read-only D1 snapshot and real bootstrap, returning only allowed summaries (issue schema %s, disposition schema %s, saved-list schema %s)',async(issuesEnabled,dispositionsEnabled,savedListsEnabled)=>{
+    const {env,first,batch,get}=harness({issuesEnabled,dispositionsEnabled,savedListsEnabled})
     const result=await appReadiness(env)
     expect(first).toHaveBeenCalledOnce();expect(get).toHaveBeenCalledOnce();expect(batch).toHaveBeenCalledTimes(2)
-    expect(Object.keys(result).sort()).toEqual(['bootstrapBytes','bundleSha256','counts','dispositionStorage','ready','reportDate'])
+    expect(Object.keys(result).sort()).toEqual(['bootstrapBytes','bundleSha256','counts','dispositionStorage','ready','reportDate','savedListsStorage'])
     const stored = JSON.parse(await (await env.RELEASE_SNAPSHOTS.get('synthetic-private-release')).text())
     expect(result.bundleSha256).toBe(stored.bundleSha256)
-    // Without the 0013 table the read path still works, but the deployment is not ready.
-    expect(result.dispositionStorage).toBe(dispositionsEnabled);expect(result.ready).toBe(dispositionsEnabled);expect(result.reportDate).toBe('2026-08-30')
+    // Both feature schemas are required for deployment readiness, while their
+    // absence remains a readable, feature-gated state for ordinary requests.
+    expect(result.dispositionStorage).toBe(dispositionsEnabled);expect(result.savedListsStorage).toBe(savedListsEnabled)
+    expect(result.ready).toBe(dispositionsEnabled&&savedListsEnabled);expect(result.reportDate).toBe('2026-08-30')
     expect(Object.keys(result.counts).sort()).toEqual(['attention','inventory','managerDispositions','transfers'])
     expect(result.counts.inventory).toBe(8);expect(result.counts.managerDispositions).toBe(0);expect(result.counts.transfers).toBe(0)
     for(const value of Object.values(result.counts))expect(Number.isSafeInteger(value)&&value>=0).toBe(true)

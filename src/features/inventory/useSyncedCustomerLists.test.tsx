@@ -20,6 +20,43 @@ beforeEach(() => { api.get.mockReset(); api.mutate.mockReset() })
 afterEach(cleanup)
 
 describe('useSyncedCustomerLists', () => {
+  it('does not create a default list until the initial saved-list read is confirmed', async () => {
+    let resolveInitial!: (value: { lists: ReturnType<typeof list>[] }) => void
+    api.get.mockImplementationOnce(() => new Promise(resolve => { resolveInitial = resolve }))
+    api.mutate
+      .mockResolvedValueOnce({ ...list(1), items:[], label:'Customer shortlist' })
+      .mockResolvedValueOnce({ ...list(2), label:'Customer shortlist' })
+    const { result } = renderHook(() => useSyncedCustomerLists(options))
+    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1))
+    expect(result.current.management?.readyForWrites).toBe(false)
+
+    act(() => result.current.add(vehicle))
+    expect(api.mutate).not.toHaveBeenCalled()
+
+    await act(async () => resolveInitial({ lists:[] }))
+    await waitFor(() => expect(result.current.management?.readyForWrites).toBe(true))
+    act(() => result.current.add(vehicle))
+    await waitFor(() => expect(api.mutate).toHaveBeenCalledTimes(2))
+  })
+
+  it('keeps writes blocked after an initial read failure until retry confirms the lists', async () => {
+    api.get.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ lists:[] })
+    api.mutate
+      .mockResolvedValueOnce({ ...list(1), items:[], label:'Customer shortlist' })
+      .mockResolvedValueOnce({ ...list(2), label:'Customer shortlist' })
+    const { result } = renderHook(() => useSyncedCustomerLists(options))
+    await waitFor(() => expect(result.current.management?.error).toBe('offline'))
+    expect(result.current.management?.readyForWrites).toBe(false)
+
+    act(() => result.current.add(vehicle))
+    expect(api.mutate).not.toHaveBeenCalled()
+
+    act(() => result.current.management?.retry())
+    await waitFor(() => expect(result.current.management?.readyForWrites).toBe(true))
+    act(() => result.current.add(vehicle))
+    await waitFor(() => expect(api.mutate).toHaveBeenCalledTimes(2))
+  })
+
   it('retains last confirmed references when a refresh fails', async () => {
     api.get.mockResolvedValueOnce({ lists:[list()] }).mockRejectedValueOnce(new Error('offline'))
     const { result } = renderHook(() => useSyncedCustomerLists(options))
@@ -35,7 +72,7 @@ describe('useSyncedCustomerLists', () => {
       .mockResolvedValueOnce({ ...list(1), items:[], label:'Customer shortlist' })
       .mockResolvedValueOnce({ ...list(2), label:'Customer shortlist' })
     const { result } = renderHook(() => useSyncedCustomerLists(options))
-    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(result.current.management?.readyForWrites).toBe(true))
     expect(api.mutate).not.toHaveBeenCalled()
     act(() => result.current.add(vehicle))
     await waitFor(() => expect(api.mutate).toHaveBeenCalledTimes(2))
@@ -93,7 +130,7 @@ describe('useSyncedCustomerLists', () => {
     api.get.mockResolvedValue({ lists:[] })
     api.mutate.mockImplementationOnce(() => new Promise(resolve => { resolveCreate = resolve }))
     const { result, rerender } = renderHook(({ context }) => useSyncedCustomerLists({ ...options, context }), { initialProps:{ context:'employee-a' } })
-    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(result.current.management?.readyForWrites).toBe(true))
     act(() => result.current.add(vehicle))
     await waitFor(() => expect(api.mutate).toHaveBeenCalledTimes(1))
     rerender({ context:'employee-b' })
@@ -112,7 +149,7 @@ describe('useSyncedCustomerLists', () => {
       .mockImplementationOnce(() => new Promise(resolve => { resolveCreate = resolve }))
       .mockResolvedValueOnce(list(2))
     const { result } = renderHook(() => useSyncedCustomerLists(options))
-    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(result.current.management?.readyForWrites).toBe(true))
     act(() => { result.current.add(vehicle); result.current.add(vehicle) })
     expect(api.mutate).toHaveBeenCalledTimes(1)
     await act(async () => resolveCreate({ ...list(), label:'Customer shortlist', items:[] }))
@@ -150,7 +187,7 @@ describe('useSyncedCustomerLists', () => {
       .mockResolvedValueOnce({ ...list(1), label:'Customer shortlist', items:[] })
       .mockResolvedValueOnce({ ...list(2), label:'Customer shortlist' })
     const { result } = renderHook(() => useSyncedCustomerLists(options))
-    await waitFor(() => expect(api.get).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(result.current.management?.readyForWrites).toBe(true))
     act(() => result.current.add(vehicle))
     await waitFor(() => expect(result.current.management?.pendingAction).toBe(true))
     act(() => result.current.management?.retry())

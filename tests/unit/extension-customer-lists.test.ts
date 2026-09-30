@@ -1,10 +1,36 @@
 import { describe, expect, it, vi } from 'vitest'
 // @ts-expect-error The companion remains unbundled JavaScript.
-import { createCustomerListSession } from '../../extension/sidepanel/lib/customer-lists.mjs'
+import { createCustomerListSession, customerListWritesReady } from '../../extension/sidepanel/lib/customer-lists.mjs'
 
 const list = (revision = 1) => ({ id: 'list-one', label: 'Customer initials', revision, createdAt: '2026-09-30', updatedAt: '2026-09-30', items: [{ vin: 'TESTDATAHWELL0001', addedAt: '2026-09-30', available: true }] })
 
 describe('companion customer lists', () => {
+  it('blocks every write while the initial saved-list read is pending', async () => {
+    let finishRead!: (value: unknown) => void
+    const write = vi.fn().mockResolvedValue({ ...list(), items: [] })
+    const session = createCustomerListSession({ read: () => new Promise(resolve => { finishRead = resolve }), write })
+    const pending = session.refresh()
+    expect(customerListWritesReady(session.snapshot)).toBe(false)
+    expect(await session.mutate('create', { label: 'AB' })).toBe(false)
+    expect(await session.toggle('TESTDATAHWELL0002')).toBe(false)
+    expect(write).not.toHaveBeenCalled()
+    finishRead({ lists: [] }); await pending
+    expect(customerListWritesReady(session.snapshot)).toBe(true)
+    expect(await session.mutate('create', { label: 'AB' })).toBe(true)
+  })
+  it('keeps writes blocked after an initial failure until Retry confirms the read', async () => {
+    const read = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ lists: [] })
+    const write = vi.fn().mockResolvedValue({ ...list(), items: [] })
+    const session = createCustomerListSession({ read, write })
+    await session.refresh()
+    expect(session.snapshot.readyForWrites).toBe(false)
+    expect(await session.mutate('create', { label: 'AB' })).toBe(false)
+    expect(write).not.toHaveBeenCalled()
+    await session.retry()
+    expect(session.snapshot.readyForWrites).toBe(true)
+    expect(await session.mutate('create', { label: 'AB' })).toBe(true)
+    expect(write).toHaveBeenCalledOnce()
+  })
   it('finishes saving the requested vehicle after an uncertain first-list creation', async () => {
     const emptyList = { ...list(), items: [] }
     const write = vi.fn().mockRejectedValueOnce(new Error('timeout')).mockResolvedValueOnce(emptyList).mockResolvedValueOnce(list(2))
@@ -24,16 +50,21 @@ describe('companion customer lists', () => {
   })
   it('retains confirmed references through a temporary refresh failure', async () => {
     const read = vi.fn().mockResolvedValueOnce({ lists: [list()] }).mockRejectedValueOnce(new Error('network'))
-    const session = createCustomerListSession({ read, write: vi.fn() })
+    const write = vi.fn().mockResolvedValue({ ...list(2), label: 'Updated initials' })
+    const session = createCustomerListSession({ read, write })
     await session.refresh(); await session.refresh()
     expect(session.active()?.items).toHaveLength(1)
     expect(session.snapshot.error).toContain('last confirmed list')
+    expect(session.snapshot.readyForWrites).toBe(true)
+    expect(await session.mutate('rename', { label: 'Updated initials' })).toBe(true)
+    expect(write).toHaveBeenCalledOnce()
   })
   it('discards a response from the previous employee context', async () => {
     let resolve!: (value: unknown) => void
     const session = createCustomerListSession({ read: () => new Promise(done => { resolve = done }), write: vi.fn() })
     const pending = session.refresh(); session.reset(); resolve({ lists: [list()] }); await pending
     expect(session.snapshot.lists).toEqual([])
+    expect(session.snapshot.readyForWrites).toBe(false)
   })
   it('clears private references immediately when access is revoked', async () => {
     const read = vi.fn().mockResolvedValueOnce({ lists: [list()] }).mockRejectedValueOnce({ status: 403 })
@@ -50,6 +81,19 @@ describe('companion customer lists', () => {
     await session.retry()
     expect(write.mock.calls[1]).toEqual(write.mock.calls[0])
     expect(session.snapshot.pending).toBeNull()
+  })
+  it.each([
+    ['email', 'customer@example.com'],
+    ['URL', 'https://example.com/customer'],
+    ['phone-like digits', 'Call 5551234'],
+  ])('rejects a %s label before create or rename reaches the transport', async (_kind, labelValue) => {
+    const write = vi.fn()
+    const session = createCustomerListSession({ read: async () => ({ lists: [list()] }), write })
+    await session.refresh()
+    expect(await session.mutate('create', { label: labelValue })).toBe(false)
+    expect(await session.mutate('rename', { label: labelValue })).toBe(false)
+    expect(write).not.toHaveBeenCalled()
+    expect(session.snapshot.error).toContain('without contact information')
   })
   it('never lets an old refresh replace a newer confirmed write', async () => {
     let resolve!: (value: unknown) => void

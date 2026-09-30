@@ -458,14 +458,15 @@ Current filenames (reference list, not an executable backfill):
 - `0011_vehicle_issues.sql`
 - `0012_attention_event_input_hash.sql`
 - `0013_vehicle_dispositions.sql`
+- `0014_customer_vehicle_lists.sql`
 
-`0011`, `0012` and `0013` postdate the reviewed backfill. Apply each one as its own
+`0011`, `0012`, `0013` and `0014` postdate the reviewed backfill. Apply each one as its own
 single file (never `wrangler d1 migrations apply`), verify the objects it
 creates with a read-only `sqlite_master` query, then record its exact filename
 in `d1_migrations` the same way as the backfill. The release gate stops while
 any of those names is missing from the ledger. `0013` adds the append-only
 `vehicle_disposition_events` table; apply it before releasing the commit that
-reads it (see the deploy checklist).
+reads it (see the deploy checklist). `0014` adds employee-owned customer lists; verify all three tables, two indexes and two immutable action triggers before recording it. Protected readiness must verify saved-list storage before launch.
 
 The owner can inspect the existing ledger without creating it:
 

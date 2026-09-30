@@ -66,6 +66,7 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
   const revoked = useRef(false)
   const abort = useRef<AbortController | null>(null)
   const mutationBusy = useRef(false)
+  const initialReadConfirmed = useRef(false)
   const mutationToken = useRef<symbol | null>(null)
   const pendingMutation = useRef<{
     input: Parameters<typeof mutateSavedVehicleList>[0]
@@ -88,6 +89,7 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
       if (controller.signal.aborted || requestGeneration !== generation.current || requestWriteVersion !== writeVersion.current) return
       setLists(response.lists)
       setActiveListId(current => current && response.lists.some(list => list.id === current) ? current : response.lists[0]?.id ?? null)
+      initialReadConfirmed.current = true
       if (!preserveError) setError(null)
       setLastConfirmedAt(Date.now())
     } catch (cause) {
@@ -107,6 +109,7 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
     generation.current += 1
     revoked.current = false
     mutationBusy.current = false
+    initialReadConfirmed.current = false
     mutationToken.current = null
     pendingMutation.current = null
     abort.current?.abort()
@@ -132,6 +135,7 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
     generation.current += 1
     revoked.current = true
     mutationBusy.current = false
+    initialReadConfirmed.current = false
     mutationToken.current = null
     pendingMutation.current = null
     abort.current?.abort()
@@ -155,7 +159,7 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
     input: Parameters<typeof mutateSavedVehicleList>[0],
     options: { retryPending?: boolean; continuation?: { type: 'add-after-create'; vin: string } } = {},
   ) => {
-    if (!enabled || mutationBusy.current || revoked.current || pendingMutation.current && !options.retryPending) return null
+    if (!enabled || !initialReadConfirmed.current || mutationBusy.current || revoked.current || pendingMutation.current && !options.retryPending) return null
     const requestGeneration = generation.current
     const token = Symbol('saved-list-mutation')
     mutationBusy.current = true
@@ -272,6 +276,7 @@ export function useSyncedCustomerLists({ enabled, role, store, context, authoriz
       lastConfirmedAt,
       pendingAction: pendingMutation.current?.generation === generation.current,
       accessRevoked: revoked.current,
+      readyForWrites: initialReadConfirmed.current,
       selectList: setActiveListId,
       createList,
       renameActiveList: async (rawLabel) => {

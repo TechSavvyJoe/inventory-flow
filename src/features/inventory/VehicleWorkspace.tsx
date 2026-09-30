@@ -662,6 +662,7 @@ export function VehicleWorkspace({
   // keeps its own session-only one.
   const shortlist = useCustomerShortlist();
   const shortlisted = shortlist.isShortlisted(vehicle);
+  const shortlistWriteBlocked = Boolean(shortlist.management && (!shortlist.management.readyForWrites || shortlist.management.saving || shortlist.management.pendingAction || shortlist.management.accessRevoked));
   const [activeTarget, setActiveTarget] = useState<WorkspaceSectionId>(initialTab);
   const [takeHomeOpen, setTakeHomeOpen] = useState(false);
   const [issueReportOpen, setIssueReportOpen] = useState(false);
@@ -1023,6 +1024,7 @@ export function VehicleWorkspace({
             <div className="vdp-focus-utilities">
               <button type="button" aria-pressed={shortlisted}
                 aria-label={`${shortlisted ? "Remove" : "Add"} ${vehicle.stockNumber} ${shortlisted ? "from" : "to"} shortlist`}
+                disabled={shortlistWriteBlocked}
                 onClick={() => shortlist.toggle(vehicle)}>
                 <Heart size={18} aria-hidden="true" fill={shortlisted ? "currentColor" : "none"} />
                 {shortlisted ? "Shortlisted" : "Add to shortlist"}
