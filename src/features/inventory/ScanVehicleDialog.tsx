@@ -96,7 +96,7 @@ export function ScanVehicleDialog({ vehicles, onFind, onClose, returnFocusRef }:
         if (token !== generation.current || !matchScannedVehicles(result.text, currentVehicles.current).length) return false
         cancel(); setCamera(false); setBusy(false); recognized(result.text, result.barcode)
         return true
-      }, controller.signal)
+      }, controller.signal, message => { if (token === generation.current) setStatus(message) })
       setStatus('Point at a VIN barcode or stock tag. Hold steady to read automatically.')
     } catch (error) {
       if (token !== generation.current) return
@@ -130,7 +130,7 @@ export function ScanVehicleDialog({ vehicles, onFind, onClose, returnFocusRef }:
     if (!source) return
     cancel(); const token = generation.current
     const controller = new AbortController(); operation.current = controller
-    const timeout = window.setTimeout(() => { if (generation.current === token) { cancel(); setBusy(false); setStatus('Reading took too long. Try a closer crop or enter the number.'); } }, 45000)
+    const timeout = window.setTimeout(() => { if (generation.current === token) { cancel(); setBusy(false); setStatus('Reading took too long. Try a closer crop or enter the number.'); } }, 105000)
     setBusy(true); setStatus('Reading photo…')
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, Math.round(source.width * selection.width)); canvas.height = Math.max(1, Math.round(source.height * selection.height))

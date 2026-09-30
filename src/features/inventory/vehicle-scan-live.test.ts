@@ -96,23 +96,48 @@ describe('automatic live stock-tag reading', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('aborts a stalled frame after 15 seconds and retries sequentially', async () => {
+  it('allows a cold reader to load longer than 15 seconds, then accepts its result', async () => {
+    const pending = deferred<Reading>()
+    const scan = setup(vi.fn<Parameters<typeof scanStockVideo>[1]>().mockReturnValue(pending.promise), vi.fn(() => true))
+    await vi.advanceTimersByTimeAsync(1200)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(scan.read.mock.calls[0][2].aborted).toBe(false)
+    pending.resolve({ text: 'DEMO-H01', barcode: false })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(scan.found).toHaveBeenCalledOnce()
+    expect(scan.read).toHaveBeenCalledOnce()
+  })
+
+  it.each([false, true])('bounds stalled %s recognition and stops instead of restarting downloads', async recognizing => {
     const read = vi.fn<Parameters<typeof scanStockVideo>[1]>()
-      .mockImplementationOnce((_canvas, _progress, signal) => new Promise((_resolve, reject) => {
+      .mockImplementation((_canvas, progress, signal) => new Promise((_resolve, reject) => {
+        if (recognizing) progress('Reading tag…')
         signal.addEventListener('abort', () => reject(new DOMException('Synthetic frame timed out', 'AbortError')), { once: true })
       }))
-      .mockResolvedValue({ text: '', barcode: false })
     const scan = setup(read)
     await vi.advanceTimersByTimeAsync(1200)
     const signal = read.mock.calls[0][2]
-    await vi.advanceTimersByTimeAsync(14999)
+    await vi.advanceTimersByTimeAsync((recognizing ? 15_000 : 90_000) - 1)
     expect(signal.aborted).toBe(false)
-    expect(read).toHaveBeenCalledOnce()
     await vi.advanceTimersByTimeAsync(1)
     expect(signal.aborted).toBe(true)
     expect(scan.found).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1500)
-    expect(read).toHaveBeenCalledTimes(2)
+    expect(read).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('reports loading progress and a reader failure without surfacing worker internals', async () => {
+    const video = document.createElement('video')
+    Object.defineProperties(video, { videoWidth: { value: 1920 }, videoHeight: { value: 1080 }, readyState: { value: 4 } })
+    const progress = vi.fn()
+    cleanups.push(scanStockVideo(video, async (_canvas, report) => {
+      report('Loading text reader…')
+      throw new Error('Synthetic private worker internals')
+    }, vi.fn(), new AbortController().signal, progress))
+    await vi.advanceTimersByTimeAsync(1200)
+    expect(progress).toHaveBeenCalledWith('Loading text reader…')
+    expect(progress).toHaveBeenLastCalledWith('Stock-tag reader paused. Scan a barcode, choose a photo, or enter the number.')
   })
 
   it('does not start when already canceled', async () => {
