@@ -654,5 +654,8 @@ export interface VehicleWorkspaceProps extends Pick<
   moveAction?: InventoryMoveAction | null;
   initialTab?: VehicleWorkspaceTab;
   returnFocusRef?: RefObject<HTMLElement | null>;
+  /** Step to the neighbouring vehicle in the list order, keeping the open tab. Omitted at the ends. */
+  onPreviousVehicle?: (tab: VehicleWorkspaceTab) => void;
+  onNextVehicle?: (tab: VehicleWorkspaceTab) => void;
   onClose: () => void;
 }

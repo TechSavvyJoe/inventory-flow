@@ -131,7 +131,7 @@ describe('focused vehicle workspace', () => {
     const specifications = within(overview).getByRole('region',{name:'Vehicle specifications'});
     const equipment = within(overview).getByRole('region',{name:'Key equipment'});
     expect(reference.parentElement).toHaveClass('vdp-focus-vehicle-context');
-    expect(equipment.parentElement).toBe(reference.parentElement);
+    expect(equipment.parentElement).toBe(reference.parentElement?.parentElement);
     expect(reference.compareDocumentPosition(equipment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(reference).getAllByRole('term').map(node=>node.textContent)).toEqual(['In-service','Base MSRP','Inventory date']);
     expect(within(reference).getByText('08/14/2024')).toBeVisible();
@@ -261,7 +261,7 @@ describe('focused vehicle workspace', () => {
     expect(screen.getByRole('button', { name: 'Close vehicle details' })).toBeVisible();
     const quickStatus = screen.getByRole('group', { name: 'Quick vehicle status' });
     expect(quickStatus).toHaveTextContent('Fowlerville');
-    expect(quickStatus).toHaveTextContent('On hold');
+    expect(quickStatus).toHaveTextContent('Held');
     expect(within(quickStatus).getByRole('link', { name: 'Service: Waiting for service' })).toBeVisible();
     expect(quickStatus).not.toHaveTextContent('123,328 mi');
     expect(document.querySelector('.inventory-workspace-backdrop')).toHaveAttribute('aria-hidden', 'true');
@@ -294,9 +294,9 @@ describe('focused vehicle workspace', () => {
     for (const value of ['3.5L V6 EcoBoost', 'SuperCrew 4x4', '10-Speed Automatic', '4WD', '123,328 mi']) expect(specs).toHaveTextContent(value);
     expect(screen.getByText('$20,988')).toBeVisible();
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
-    expect(operations).toHaveTextContent('Hold statusHeld');
+    expect(operations.querySelector('[data-family="hold"]')).toHaveTextContent('Hold status: Held');
     // The hold record's salesperson is 'Salesperson'; 'Held by' is reserved for DealerMail's evidence.heldBy.
-    expect(within(operations).getByText('Salesperson').closest('.inventory-workspace-fact')).toHaveTextContent('Jamie Howell');
+    expect(operations.querySelector('[data-family="hold"]')).toHaveTextContent('Jamie Howell');
     expect(within(operations).queryByText('Held by')).not.toBeInTheDocument();
     expect(operations).not.toHaveTextContent(/sold|delivered|CDK/);
   });
@@ -312,14 +312,11 @@ describe('focused vehicle workspace', () => {
       'Black / Black Leather',
     ]);
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
-    const hold = within(operations).getByText('Hold status', { selector: 'dt' }).closest('.inventory-workspace-fact')!;
+    const hold = operations.querySelector('[data-family="hold"]')!;
     expect(hold).toHaveTextContent('Held');
-    expect(within(operations).getByText('Salesperson').closest('.inventory-workspace-fact')).toHaveTextContent('Jamie Howell');
-    expect(hold.querySelector('.vdp-focus-mobile-backup')).toHaveTextContent('2 backup holds');
-    for (const label of ['Backup holds']) {
-      expect(within(operations).getByText(label).closest('.inventory-workspace-fact')).toHaveClass('vdp-focus-desktop-field');
-    }
-    expect(document.querySelector('.vdp-focus-service-fact')).toHaveTextContent('ServiceWaiting for service');
+    expect(hold).toHaveTextContent('Jamie Howell');
+    expect(hold).toHaveTextContent('2 backup holds');
+    expect(document.querySelector('.vdp-focus-service-fact')).toHaveTextContent('Waiting for service');
   });
 
   it('renders only the selected pane and resets scroll without moving the header or navigation', async () => {
@@ -378,11 +375,11 @@ describe('focused vehicle workspace', () => {
     expect(screen.getByRole('dialog')).toHaveAttribute('data-active-target', initialTab);
   });
 
-  it('puts movement actions in the operational summary and enforces request eligibility', async () => {
+  it('puts movement actions in the compact action rail and enforces request eligibility', async () => {
     const user = userEvent.setup(); const unit = vehicle();
     const onRequestVehicle = vi.fn(); const onTrackMovement = vi.fn();
     const { rerender } = render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} canRequestVehicle onRequestVehicle={onRequestVehicle} onTrackMovement={onTrackMovement} onClose={vi.fn()} />);
-    await user.click(within(screen.getByRole('region', { name: 'Vehicle operational summary' })).getByRole('button', { name: 'Request vehicle' }));
+    await user.click(within(screen.getByRole('region', { name: 'Vehicle actions' })).getByRole('button', { name: 'Request vehicle' }));
     expect(onRequestVehicle).toHaveBeenCalledExactlyOnceWith(unit);
     rerender(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} canRequestVehicle={false} onRequestVehicle={onRequestVehicle} onClose={vi.fn()} />);
     expect(screen.queryByRole('button', { name: 'Request vehicle' })).not.toBeInTheDocument();
@@ -406,7 +403,7 @@ describe('focused vehicle workspace', () => {
         onClose={vi.fn()}
       />,
     );
-    await user.click(within(screen.getByRole('region', { name: 'Vehicle operational summary' })).getByRole('button', { name: 'Move to another store' }));
+    await user.click(within(screen.getByRole('region', { name: 'Vehicle actions' })).getByRole('button', { name: 'Move to another store' }));
     expect(onMoveVehicle).toHaveBeenCalledExactlyOnceWith(unit, 'direct');
   });
 
@@ -425,7 +422,7 @@ describe('focused vehicle workspace', () => {
         onClose={vi.fn()}
       />,
     );
-    const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
+    const operations = screen.getByRole('region', { name: 'Vehicle actions' });
     await user.click(within(operations).getByRole('button', { name: 'Track movement' }));
     await user.click(within(operations).getByRole('button', { name: 'Move again' }));
     expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(unit);
@@ -454,7 +451,7 @@ describe('focused vehicle workspace', () => {
     expect(screen.getByRole('link', { name: 'Mark Ready' })).toHaveAttribute('href', '/service?vin=TESTDATASYN000002&action=serviced');
     rerender(<VehicleWorkspace vehicle={{ ...unit, serviceReadiness: undefined }} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     expect(screen.getByRole('link', { name: 'Mark Ready' })).toBeVisible();
-    expect(document.querySelector('.vdp-focus-service-fact')).toHaveTextContent('ServiceWaiting for service');
+    expect(document.querySelector('.vdp-focus-service-fact')).toHaveTextContent('Waiting for service');
   });
 
   it('keeps every equipment item reachable without repeated source labels or tooltips', async () => {
@@ -631,12 +628,13 @@ describe('focused vehicle workspace', () => {
     expect(openSpy).not.toHaveBeenCalled();
   });
 
-  it('puts Operations, with its labeled service line, before the gallery in reading order', () => {
+  it('keeps persistent operational status before media and secondary actions after it', () => {
     render(<VehicleWorkspace vehicle={vehicle()} homeStore={vehicle().location.homeStore} onClose={vi.fn()} />);
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
     const specs = screen.getByRole('region', { name: 'Vehicle specifications' });
     expect(operations.compareDocumentPosition(specs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(operations).getByRole('link', { name: /^Waiting for service\. Open service status for VIN TESTDATASYN000002$/ }))
+    expect(specs.compareDocumentPosition(screen.getByRole('region', { name: 'Vehicle actions' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(operations).getByRole('link', { name: 'Service: Waiting for service' }))
       .toHaveAttribute('href', '/service?vin=TESTDATASYN000002');
   });
 
