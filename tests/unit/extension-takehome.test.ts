@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // @ts-nocheck -- dependency-free ESM; synthetic fixtures only.
-import { describe, expect, it } from 'vitest'
-import { takeHomeModel } from '../../extension/sidepanel/lib/takehome.mjs'
+import { describe, expect, it, vi } from 'vitest'
+import { renderTakeHome, takeHomeModel } from '../../extension/sidepanel/lib/takehome.mjs'
+import { normalizeTakeHomeDocument, publicListingLinks, shareTakeHomeHtml, standaloneTakeHomeHtml } from '../../extension/sidepanel/lib/takehome-export.mjs'
 import { toPanelVehicle } from '../../extension/sidepanel/lib/model.mjs'
 
 const meta = { reportDate: '2026-08-30', completedAt: '2026-08-30T10:00:00-04:00', publicFreshness: 'current', dealerMailFreshness: 'current' }
@@ -42,5 +43,43 @@ describe('take-home sheet model', () => {
     expect(model.certified.name).toBe('Lincoln Certified Pre-Owned')
     expect(model.brand.src).toBe('../brands/lincoln.png')
     expect(model.photos).toEqual([])
+  })
+
+  it('normalizes legacy and multi-vehicle handoffs while deduplicating VINs', () => {
+    const first = takeHomeModel(toPanelVehicle(record, { meta, transfers: [], vehicles: [record] }), [])
+    const secondRecord = { ...record, vin:'TESTDATAHWELL0002', stockNumber:'DEMO-H02', listingUrl:'https://www.bobmaxeyfordhowell.com/used-Synthetic-2' }
+    const second = takeHomeModel(toPanelVehicle(secondRecord, { meta, transfers: [], vehicles: [secondRecord] }), [])
+    expect(normalizeTakeHomeDocument(first).models).toEqual([first])
+    const payloadDocument = normalizeTakeHomeDocument({ version:2, listLabel:'Jamie choices', models:[first, second, first] })
+    expect(payloadDocument.listLabel).toBe('Jamie choices')
+    expect(payloadDocument.models.map((model) => model.vin)).toEqual([first.vin, second.vin])
+    expect(publicListingLinks(payloadDocument.models)).toEqual([first.listingUrl, second.listingUrl])
+    const stage = document.createElement('main')
+    stage.replaceChildren(...payloadDocument.models.map((model) => renderTakeHome(model)))
+    expect(stage.querySelectorAll('article.th')).toHaveLength(2)
+    expect([...stage.querySelectorAll('.th-listing-link')].map((link) => link.getAttribute('href'))).toEqual([first.listingUrl, second.listingUrl])
+  })
+
+  it('escapes standalone HTML and strips unsafe destinations', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<a href="javascript:alert(1)">Unsafe</a><p>&lt;customer&gt;</p>'
+    const html = standaloneTakeHomeHtml(root, '<script>alert(1)</script>', '.th{color:#102238}')
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html).not.toContain('href="javascript:')
+    expect(html).toContain('&lt;customer&gt;')
+  })
+
+  it('does not copy or download when native share is cancelled', async () => {
+    const writeText = vi.fn()
+    const environment = { navigator:{ share:vi.fn().mockRejectedValue({ name:'AbortError' }), canShare:vi.fn(() => true), clipboard:{ writeText } } }
+    await expect(shareTakeHomeHtml({ html:'<html></html>', title:'Choices', links:['https://example.com'], environment })).resolves.toBe('cancelled')
+    expect(writeText).not.toHaveBeenCalled()
+  })
+
+  it('copies public listing links when native file sharing is unavailable', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    const environment = { navigator:{ clipboard:{ writeText } } }
+    await expect(shareTakeHomeHtml({ html:'<html></html>', title:'Choices', links:['https://example.com/one','https://example.com/two'], environment })).resolves.toBe('copied')
+    expect(writeText).toHaveBeenCalledWith('https://example.com/one\nhttps://example.com/two')
   })
 })

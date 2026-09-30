@@ -68,7 +68,7 @@ function openVehicleDocuments() {
 }
 
 describe('vehicle document workspace', () => {
-  it('offers the VIN-linked vAuto profile instead of opening a Ford placeholder sticker', () => {
+  it('replaces an empty OEM placeholder with the full VIN-linked vAuto profile', () => {
     const complete = vehicle();
     complete.windowSticker = {
       dataState: 'incomplete',
@@ -77,26 +77,72 @@ describe('vehicle document workspace', () => {
     const equipmentUrl = 'https://assets.cai-media-management.com/window-stickers/d09817fc-332f-45c1-9e7f-86f0a9e16153.jpg';
     complete.factoryEquipment = { dataState: 'current', url: equipmentUrl, isOriginalWindowSticker: false, packages: [], sections: [] };
     render(<VehicleWorkspace vehicle={complete} homeStore={complete.location.homeStore} onClose={vi.fn()} initialTab="data" />);
-    const sticker = document.querySelector('[data-document-kind="window-sticker"]') as HTMLElement;
-    expect(sticker).toHaveAttribute('data-link-state', 'vauto-fallback');
-    expect(within(sticker).queryByRole('link', { name: /Open window sticker/ })).not.toBeInTheDocument();
-    expect(within(sticker).getByRole('link', { name: /Open vAuto equipment/ })).toHaveAttribute('href', equipmentUrl);
-    expect(sticker).toHaveTextContent('The original sticker is not available from the manufacturer');
+    expect(document.querySelector('[data-document-kind="window-sticker"]')).toBeNull();
     const equipment = document.querySelector('[data-document-kind="vauto-factory-equipment"]') as HTMLElement;
     expect(equipment).toHaveAttribute('data-original-window-sticker', 'false');
+    expect(equipment).toHaveTextContent("Original window sticker unavailable. Showing this VIN's vAuto equipment profile.");
     expect(within(equipment).getByRole('link', { name: /Open equipment details/ })).toHaveAttribute('href', equipmentUrl);
+    expect(document.querySelector('.vdp-record-vauto-supplement')).toBeNull();
+    expect(equipment).toBeVisible();
+  });
+
+  it('keeps partial OEM facts visible beside the full vAuto fallback', () => {
+    const complete = vehicle();
+    complete.windowSticker = {
+      dataState: 'incomplete',
+      equipmentGroup: 'Partially captured OEM package',
+      options: ['Captured OEM option'],
+    };
+    complete.factoryEquipment = {
+      dataState: 'current',
+      isOriginalWindowSticker: false,
+      packages: [{ name: 'Additional vAuto package' }],
+      sections: [],
+    };
+    render(<VehicleWorkspace vehicle={complete} homeStore={complete.location.homeStore} onClose={vi.fn()} initialTab="data" />);
+    const sticker = document.querySelector('[data-document-kind="window-sticker"]') as HTMLElement;
+    const equipment = document.querySelector('[data-document-kind="vauto-factory-equipment"]') as HTMLElement;
+    expect(sticker).toBeVisible();
+    expect(sticker).toHaveTextContent('Partially captured OEM package');
+    expect(sticker).toHaveTextContent('Captured OEM option');
+    expect(equipment).toBeVisible();
+    expect(equipment).toHaveTextContent('Additional vAuto package');
+    expect(equipment).not.toHaveTextContent('Original window sticker unavailable');
+  });
+
+  it('keeps cached vAuto facts visible when neither source is currently usable', () => {
+    const complete = vehicle();
+    complete.windowSticker = { dataState: 'unavailable' };
+    complete.factoryEquipment = {
+      dataState: 'unavailable',
+      isOriginalWindowSticker: false,
+      packages: [{ name: 'Cached vAuto package' }],
+      sections: [],
+    };
+    render(<VehicleWorkspace vehicle={complete} homeStore={complete.location.homeStore} onClose={vi.fn()} initialTab="data" />);
+    expect(document.querySelector('[data-document-kind="window-sticker"]')).toBeNull();
+    expect(document.querySelector('.vdp-record-vauto-supplement')).toBeNull();
+    const equipment = document.querySelector('[data-document-kind="vauto-factory-equipment"]') as HTMLElement;
+    expect(equipment).toBeVisible();
+    expect(equipment).toHaveTextContent('Cached vAuto package');
+    expect(equipment).toHaveTextContent('Original window sticker unavailable');
   });
 
   it('orders complete records by the working flow and moves keyboard focus to each named section', () => {
     const complete=vehicle();
     complete.fordOasis={dataState:'current',warrantyStartDate:'01-June-2026',openFieldServiceActions:[],warrantyCoverages:[],extendedCoverageExpirations:[]};
     complete.warrantyCheck={dataState:'current',mileageEntered:2052,autoCheck:null,fordOasis:{warrantyStartDate:'01-June-2026',monthsInService:3,coverages:[]}};
-    complete.factoryEquipment={dataState:'current',isOriginalWindowSticker:false,packages:[],sections:[]};
+    complete.factoryEquipment={dataState:'current',isOriginalWindowSticker:false,packages:[{name:'Supplemental tow package',features:['Supplemental trailer camera']}],sections:[]};
     render(<VehicleWorkspace vehicle={complete} homeStore={complete.location.homeStore} onClose={vi.fn()} initialTab="data"/>);
     const panel=screen.getByRole('region',{name:'Vehicle documents'});
     expect([...panel.querySelectorAll('[data-record-section]')].map(section=>section.getAttribute('data-record-section'))).toEqual(['autocheck','oasis','warranty','sticker','equipment']);
     const nav=within(panel).getByRole('navigation',{name:'Record sections'});
     expect(within(nav).getAllByRole('button').map(button=>button.textContent)).toEqual(['AutoCheck','OASIS','Warranty','Window sticker','Equipment']);
+    const supplement=panel.querySelector<HTMLDetailsElement>('.vdp-record-vauto-supplement')!;
+    expect(supplement).not.toBeNull();
+    expect(supplement).not.toHaveAttribute('open');
+    expect(within(supplement).getByText('Additional vAuto equipment')).toBeVisible();
+    expect(within(supplement).getByText('Supplemental tow package')).not.toBeVisible();
     const scroll=panel.closest<HTMLElement>('.vdp-focus-scroll')!;
     const dialog=panel.closest<HTMLElement>('[role="dialog"]')!;
     Object.defineProperty(scroll,'getBoundingClientRect',{configurable:true,value:()=>new DOMRect(0,100,500,500)});
@@ -112,6 +158,11 @@ describe('vehicle document workspace', () => {
         scroll.scrollTop=120;
         const focus=vi.spyOn(section,'focus');
         fireEvent.click(within(nav).getByRole('button',{name:label}));
+        if (id === 'equipment') {
+          expect(supplement).toHaveAttribute('open');
+          expect(within(supplement).getByText('Supplemental tow package')).toBeVisible();
+          expect(within(supplement).getByText('Supplemental trailer camera')).toBeVisible();
+        }
         expect(section).toHaveFocus();
         expect(focus).toHaveBeenCalledWith({preventScroll:true});
         expect(scroll.scrollTop).toBe(360+index*100);
@@ -408,6 +459,8 @@ describe('vehicle document workspace', () => {
     );
     expect(within(panel).queryByText('Factory window sticker')).not.toBeInTheDocument();
     const card = panel.querySelector('[data-document-kind="vauto-factory-equipment"]') as HTMLElement;
+    expect(panel.querySelector('.vdp-record-vauto-supplement')).toBeNull();
+    expect(card).toBeVisible();
     expect(card.querySelector('.vdp-record-source-details')).not.toBeVisible();
     expect(within(card).queryByText('66,360')).not.toBeInTheDocument();
     for (const value of ['Safety Package (PQB)', 'Blind Spot Monitor · Rear Cross Traffic Alert', 'Aerial View Display System', '0', '250']) expect(within(card).getByText(value)).toBeVisible();

@@ -191,7 +191,8 @@ describe('modern inventory result access', () => {
     expect(screen.getByText('2.7L EcoBoost V6 · 4x4')).toHaveAttribute('title', 'SuperCrew pickup · 10-speed automatic · Gasoline');
     expect(screen.getByText('10-speed auto · Gasoline')).toBeVisible();
     expect(screen.getByText('10-speed auto · Gasoline')).toHaveAttribute('title', '10-speed automatic · Gasoline');
-    expect(screen.getByText(/Oxford White \/ Black interior/i)).toBeInTheDocument();
+    expect(screen.getByText('Oxford White')).toBeVisible();
+    expect(screen.getByText('Black')).toBeVisible();
     expect(screen.getByText('2.7L EcoBoost V6 · 4x4')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Open hold details for 2024 Ford F-150 XLT/i })).toBeInTheDocument();
     const row = screen.getByRole('button', { name: /Open vehicle details for 2024 Ford F-150 XLT/i }).closest('tr') as HTMLTableRowElement;
@@ -221,9 +222,9 @@ describe('modern inventory result access', () => {
     expect(metricsCell).toHaveTextContent('21 days listed');
     const equipmentCell = row.querySelector('td[data-column="configuration"]') as HTMLElement;
     expect(equipmentCell).toHaveTextContent('Equipment Group 302A');
-    expect(equipmentCell.querySelectorAll('.inv-desk-equipment__item')).toHaveLength(1);
-    expect(equipmentCell).not.toHaveTextContent('XLT Sport Appearance Package');
-    expect(equipmentCell).not.toHaveTextContent('Trailer Tow Package');
+    expect(equipmentCell.querySelectorAll('.inv-desk-equipment__item')).toHaveLength(3);
+    expect(equipmentCell).toHaveTextContent('XLT Sport Appearance Package');
+    expect(equipmentCell).toHaveTextContent('Trailer Tow Package');
     expect(equipmentCell.querySelector('button')).toHaveAttribute('title', expect.stringContaining('XLT Sport Appearance Package'));
     expect(equipmentCell.querySelector('button')).toHaveAttribute('title', expect.stringContaining('Trailer Tow Package (53A)'));
     expect(row.querySelector('.inv-desk-status__detail')).toHaveTextContent('Customer appointment');
@@ -357,7 +358,7 @@ describe('modern inventory result access', () => {
     render(<InventoryTable vehicles={[vehicle]} sorts={[{ key: 'vehicle', direction: 'asc' }]}
       onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
     const trigger = screen.getByRole('button', { name: /View all 19 equipment items/ });
-    expect(trigger).toHaveTextContent('+18 more');
+    expect(trigger).toHaveTextContent('+16 more');
     expect(equipment.some(item => item.searchText.includes('demo-1'))).toBe(true);
   });
 
@@ -473,7 +474,7 @@ describe('modern inventory result access', () => {
     const detailTarget = within(card).getByRole('button', { name: /^Open details for 2024 Ford F-150 XLT/ });
     expect(card.parentElement).toHaveClass('if-srp-mobile-list');
     for (const fact of ['2024 Ford F-150 XLT', '$46,995', '8,642 mi']) expect(detailTarget).toHaveTextContent(fact);
-    expect(detailTarget).toHaveTextContent('View vehicle');
+    expect(detailTarget).toHaveAccessibleName(expect.stringContaining('Open details'));
     expect(card).toHaveTextContent('H240512');
     expect(detailTarget).not.toHaveTextContent(vehicle.vin);
     expect(detailTarget).toHaveAccessibleName(expect.stringContaining(vehicle.vin));
@@ -503,7 +504,11 @@ describe('modern inventory result access', () => {
     fireEvent.click(within(card).getByRole('button', { name: /Track movement for/ }));
     expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(vehicle);
     expect(within(card).queryByRole('button', { name: /More actions/ })).not.toBeInTheDocument();
-    expect(within(card).queryByRole('button', { name: /View all .* equipment items/ })).not.toBeInTheDocument();
+    // Highlights share the large identity launcher, avoiding another full touch row.
+    const identity = within(card).getByRole('button', { name: /Open details for/ });
+    expect(identity).toHaveTextContent('Equipment Group 302A');
+    fireEvent.click(identity);
+    expect(onSelectVehicle).toHaveBeenLastCalledWith(vehicle);
   });
 
   it('keeps row resources compact while moving long equipment into Records', () => {
@@ -520,7 +525,7 @@ describe('modern inventory result access', () => {
     expect(within(signals).getByText('MSRP')).toBeVisible();
     expect(within(signals as HTMLElement).getByText('CAD 52,995')).toBeVisible();
     expect(screen.getByRole('button', { name: /Open vehicle records/ })).toBeInTheDocument();
-    expect(within(screen.getByRole('article')).queryByText('Floor mats')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('article')).getByRole('button', { name: /Open details for/ })).toHaveTextContent('Trailer Tow Package');
   });
 
   it('keeps the full mobile equipment record in the panel and resets source selection for the next vehicle', () => {
@@ -551,7 +556,7 @@ describe('modern inventory result access', () => {
     vehicle.changeSummary = undefined;
     const onSelectVehicle = vi.fn();
     render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={onSelectVehicle} />);
-    expect(document.querySelector('.inventory-mobile-row__equipment')).toBeNull();
+    expect(screen.getByRole('button', { name: /Open details for/ })).toHaveTextContent('Trailer Tow Package');
     expect(screen.getByRole('button', { name: /Open vehicle records/ })).toBeVisible();
     expect(document.querySelector('[data-resource="window-sticker"]')).toBeNull();
     expect(document.querySelector('[data-resource="autocheck"]')).toBeNull();
@@ -575,7 +580,7 @@ describe('modern inventory result access', () => {
     render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={onSelectVehicle} />);
     const card = screen.getByRole('article');
     expect(card).toHaveAttribute('data-has-document-evidence', 'false');
-    expect(within(card).queryByText('Floor mats')).not.toBeInTheDocument();
+    expect(within(card).getByText('Floor mats')).toBeVisible();
     for (const id of ['window-sticker', 'autocheck', 'vauto']) expect(card.querySelector(`[data-resource="${id}"]`)).toBeNull();
     expect(card.querySelector('.inventory-mobile-update')).not.toBeNull();
     fireEvent.click(within(card).getByRole('button', { name: /Open vehicle records/ }));
@@ -961,5 +966,34 @@ describe('modern inventory result access', () => {
     expect(dealerMailInteractiveVehicleUrl('')).toBeNull();
     expect(dealerMailInteractiveVehicleUrl('H13578P')).not.toContain('USED_hold_edit');
     expect(dealerMailInteractiveVehicleUrl('H13578P')).not.toContain('byItem');
+  });
+});
+
+
+describe('captured inventory comparison facts', () => {
+  it.each(['desktop', 'mobile'] as const)('preserves sticker currency and partial fuel economy on %s', layout => {
+    const vehicle = heldMovingVehicle();
+    vehicle.windowSticker = { ...vehicle.windowSticker!, pricingCurrency: 'CAD' };
+    vehicle.mpgCity = null;
+    vehicle.mpgHighway = 25;
+    render(layout === 'desktop'
+      ? <InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()}/>
+      : <InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()}/>);
+    // MSRP belongs to the branded source summary, rather than repeating in the asking-price cell.
+    expect(screen.getByText(/CAD 52,995/)).toBeInTheDocument();
+    expect(screen.getByText('25 hwy MPG')).toBeVisible();
+    expect(screen.queryByText(/0 city/)).not.toBeInTheDocument();
+  });
+
+  it('does not invent a sticker price or fuel economy for missing values', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.windowSticker = undefined;
+    vehicle.msrp = null;
+    vehicle.mpgCity = null;
+    vehicle.mpgHighway = null;
+    render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()}/>);
+    expect(screen.queryByText('Sticker MSRP')).not.toBeInTheDocument();
+    expect(screen.queryByText('Listed MSRP')).not.toBeInTheDocument();
+    expect(screen.queryByText(/MPG/)).not.toBeInTheDocument();
   });
 });

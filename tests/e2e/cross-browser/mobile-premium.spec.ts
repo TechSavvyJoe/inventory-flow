@@ -117,11 +117,23 @@ test('a phone vehicle workspace remains usable after rotation and a keyboard-siz
         await tab.scrollIntoViewIfNeeded()
         await expect(tab).toBeInViewport()
       }
-      for (const value of await workspace.locator('.vdp-focus-identifiers .copyable-value__content').all()) {
+      // Phone identity keeps stock under price and the full copyable VIN near
+      // the photo; the desktop identifier rail is intentionally hidden.
+      await expect(workspace.locator('.vdp-focus-mobile-stock')).toHaveText('Stock DEMO-H02')
+      await expect(workspace.locator('.vdp-focus-mobile-stock')).toBeVisible()
+      const identifiers = workspace.locator('.vdp-focus-mobile-vin .copyable-value__content')
+      await expect(identifiers).toHaveText('TESTDATAHWELL0002')
+      const vinCopy = workspace.getByRole('button', { name: 'Copy VIN: TESTDATAHWELL0002', exact: true })
+      await vinCopy.scrollIntoViewIfNeeded()
+      const vinCopyBounds = (await vinCopy.boundingBox())!
+      expect(vinCopyBounds.x + vinCopyBounds.width, 'full VIN copy stays inside the phone').toBeLessThanOrEqual(viewport.width)
+      for (const value of await identifiers.all()) {
         await value.scrollIntoViewIfNeeded()
         const content = (await value.boundingBox())!
         expect(content.x + content.width).toBeLessThanOrEqual(viewport.width)
         await expect(value).toHaveCSS('white-space', 'nowrap')
+        const readable = await value.evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth }))
+        expect(readable.scroll, 'full VIN is readable without clipping').toBeLessThanOrEqual(readable.client + 1)
       }
       for (const fact of await workspace.locator('.vdp-focus-operations dd:visible').all()) {
         expect((await fact.boundingBox())!.width).toBeGreaterThan(120)

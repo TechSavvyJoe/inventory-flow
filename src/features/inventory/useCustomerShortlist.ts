@@ -10,6 +10,30 @@ export interface ShortlistEntry {
   imageUrl: string | null;
   exteriorColor: string | null;
   addedAt: number;
+  available?: boolean;
+}
+
+export interface SyncedShortlistSummary {
+  id: string;
+  label: string;
+  count: number;
+}
+
+export interface ShortlistManagement {
+  lists: SyncedShortlistSummary[];
+  activeListId: string | null;
+  activeLabel: string;
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  lastConfirmedAt: number | null;
+  pendingAction: boolean;
+  accessRevoked: boolean;
+  selectList: (id: string) => void;
+  createList: (label: string) => Promise<boolean>;
+  renameActiveList: (label: string) => Promise<boolean>;
+  deleteActiveList: () => Promise<boolean>;
+  retry: () => void;
 }
 
 // Browser memory only. Selection belongs to the authenticated user, role and
@@ -49,6 +73,7 @@ export interface ShortlistContextValue {
   add: (vehicle: InventoryVehicle) => void;
   remove: (id: string) => void;
   clear: () => void;
+  management?: ShortlistManagement;
 }
 export const ShortlistContext = createContext<ShortlistContextValue | null>(null);
 

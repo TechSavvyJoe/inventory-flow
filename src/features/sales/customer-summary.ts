@@ -13,11 +13,15 @@ const STORE_DISPLAY: Record<string, { name: string; site: string }> = {
 };
 
 const isHttps = (value: string | null | undefined): value is string => typeof value === "string" && /^https:\/\//i.test(value);
+// The synthetic demo uses reviewed bundled illustrations, never local report paths.
+const isCustomerPhoto = (value: string | null | undefined): value is string => isHttps(value)
+  || typeof value === 'string' && /^\/demo-vehicles\/[a-z0-9-]+\.(?:jpg|png|webp)$/i.test(value);
 const customerEquipmentLabel = (value: string): string => value
   .replace(/^[·|.]\s*/, "")
   .replace(/\s+[·|]\s*(?:USD|CAD)\s*\$?[\d,]+(?:\.\d{2})?$/i, "")
   .replace(/\s+[·|]\s*NO\s*CHARGE$/i, "")
   .replace(/\s+[·|]\s*[A-Z]{2,}-[A-Z0-9-]+$/, "")
+  .replace(/\s+\([A-Z0-9]{2,}(?:-[A-Z0-9]+)+\)$/, "")
   .trim();
 
 /**
@@ -29,7 +33,7 @@ export function takeHomeModel(vehicle: InventoryVehicle) {
   const store = vehicle.location.homeStore.name;
   const branding = STORE_BRANDING[store as StoreName] ?? null;
   const display = STORE_DISPLAY[store] ?? { name: store, site: "" };
-  const photos = [...new Set([...(vehicle.imageUrls ?? []), vehicle.imageUrl].filter(isHttps))].slice(0, 4);
+  const photos = [...new Set([...(vehicle.imageUrls ?? []), vehicle.imageUrl].filter(isCustomerPhoto))].slice(0, 4);
   const usable = (state?: string) => state === 'current' || state === 'stale';
   const published = publishedEquipment({
     ...vehicle,

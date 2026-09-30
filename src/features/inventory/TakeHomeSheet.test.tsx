@@ -1,10 +1,10 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VehicleWorkspace } from './VehicleWorkspace';
-import { TakeHomeSheetContent, takeHomeModel } from './TakeHomeSheet';
+import { TakeHomeSheet, TakeHomeSheetContent, shareTakeHomeHtml, takeHomeDocumentHtml, takeHomeModel } from './TakeHomeSheet';
 import type { InventoryVehicle } from './types';
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function vehicle(): InventoryVehicle {
   return {
@@ -79,6 +79,41 @@ describe('take-home sheet', () => {
     const unsafe = { ...vehicle(), publicListing: { ...vehicle().publicListing, listingUrl: 'javascript:alert(1)' } };
     const model = takeHomeModel(unsafe);
     expect(model.listingUrl).toBeNull();
+  });
+
+  it('renders each selected vehicle once in one labelled printable document', () => {
+    const first = vehicle();
+    const second = { ...vehicle(), id:'TESTDATASYN000002', vin:'TESTDATASYN000002', stockNumber:'HT0530A', model:'Escape', publicListing:{ ...vehicle().publicListing, listingUrl:'https://example.com/escape' } };
+    render(<TakeHomeSheet vehicle={first} vehicles={[first, second, first]} listLabel="Jamie vehicle choices" onClose={vi.fn()}/>);
+    expect(screen.getByRole('dialog', { name:'Take-home page · Jamie vehicle choices' })).toBeVisible();
+    expect(document.querySelectorAll('.takehome-stage > .th')).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name:'View full vehicle listing' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name:'Print / Save as PDF' })).toBeVisible();
+    expect(screen.getByRole('button', { name:'Save HTML' })).toBeVisible();
+    expect(screen.getByRole('button', { name:'Share' })).toBeVisible();
+  });
+
+  it('escapes the saved document title and removes unsafe links', async () => {
+    const root = document.createElement('div');
+    root.innerHTML = '<a href="javascript:alert(1)">Unsafe</a><p>&lt;customer&gt;</p>';
+    const html = await takeHomeDocumentHtml(root, '<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).not.toContain('href="javascript:');
+    expect(html).toContain('&lt;customer&gt;');
+  });
+
+  it('treats native share cancellation as a quiet cancel without copying links', async () => {
+    const clipboard = { writeText:vi.fn() };
+    Object.defineProperties(navigator, { share:{ configurable:true, value:vi.fn().mockRejectedValue(new DOMException('cancelled','AbortError')) }, canShare:{ configurable:true, value:vi.fn(() => true) }, clipboard:{ configurable:true, value:clipboard } });
+    await expect(shareTakeHomeHtml('<html></html>', 'Vehicle choices', ['https://example.com/listing'])).resolves.toBe('cancelled');
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  it('falls back to copying only public listing links when file sharing is unavailable', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperties(navigator, { share:{ configurable:true, value:undefined }, canShare:{ configurable:true, value:undefined }, clipboard:{ configurable:true, value:{ writeText } } });
+    await expect(shareTakeHomeHtml('<html></html>', 'Vehicle choices', ['https://example.com/one','https://example.com/two'])).resolves.toBe('copied');
+    expect(writeText).toHaveBeenCalledWith('https://example.com/one\nhttps://example.com/two');
   });
 
   it('preserves equipment qualifications and full customer notes without repeating highlights', () => {

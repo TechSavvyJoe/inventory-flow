@@ -22,6 +22,12 @@ The Today screen turns the daily report into an action layer. It opens on the em
 
 Design and implementation notes are in [Brand architecture](docs/BRAND_ARCHITECTURE.md), [Store brand assets](docs/BRAND_ASSETS.md), [Today and change center](docs/CHANGE_CENTER.md), and [Fidelity and interaction QA](docs/FIDELITY_QA.md).
 
+## Customer vehicle lists and customer documents
+
+Authenticated employee-owned customer lists retain VIN references in the central service and can be opened from the web app and companion. Labels use initials or nicknames; customer contacts stay in DealerMail. Missing vehicles remain saved with unavailable details. Transient network failures retain the last confirmed list; access changes clear protected views. This capability requires the saved-list migration and Worker deployment, which remain separate release operations.
+
+Customer take-home documents support one or multiple vehicles, larger photos, public specifications and equipment, dealership branding, Print/Save as PDF, downloadable HTML and native Share when available. Sharing falls back to public listing links or saving the document. Private hold, movement and manager evidence stays out of customer documents.
+
 ## Release 1.3.0: consistent workspaces and mobile reliability
 
 The default inventory, vehicle, move, and service screens use the established

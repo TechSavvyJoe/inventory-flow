@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 import type { VehicleIssueContext } from '../issues/issue-model';
 import type { DispositionContext } from '../overview/disposition-model';
 import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus';
-import type { AppDisposition, DealerMailEvidenceMessage, DealerMailHistoryRecord, OverviewVehicleFacts, ServiceReadiness, ServiceReadinessStatus, StoreName } from "../../types";
+import type { AppDisposition, DealerMailEvidenceMessage, DealerMailHistoryRecord, OverviewVehicleFacts, ServiceReadiness, ServiceReadinessStatus, StoreName, UserRole } from "../../types";
 import type { OverviewInventoryView } from "../overview/overview-links";
 
 export type InventoryScope = "home" | "group";
@@ -625,6 +625,7 @@ export interface InventoryExperienceProps extends InventoryVehicleActionProps {
   initialSorts?: InventorySort[];
   initialWorkspaceTab?: VehicleWorkspaceTab;
   pageSize?: number;
+  savedLists?: { enabled: boolean; role: UserRole; store: StoreName };
 }
 
 export interface InventoryTableProps extends InventoryVehicleActionProps {

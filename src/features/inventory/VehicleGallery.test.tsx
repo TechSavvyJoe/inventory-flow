@@ -39,6 +39,20 @@ describe('Vehicle photo gallery', () => {
     expect(within(viewer).getByRole('img',{name:/photo 2$/})).toBeInTheDocument();
   });
 
+  it('swipes the embedded photo horizontally while leaving vertical page gestures alone', () => {
+    render(<VehicleGallery vehicle={unit} />);
+    const stage=document.querySelector('.inventory-workspace-gallery__stage')!;
+    const trigger=screen.getByRole('button',{name:/Open photo gallery/});
+    fireEvent.touchStart(stage,{touches:[{clientX:260,clientY:120}]});
+    fireEvent.touchEnd(stage,{touches:[],changedTouches:[{clientX:50,clientY:125}]});
+    expect(trigger.querySelector('img')).toHaveAttribute('src',unit.imageUrls![1]);
+    fireEvent.click(trigger);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.touchStart(stage,{touches:[{clientX:220,clientY:80}]});
+    fireEvent.touchEnd(stage,{touches:[],changedTouches:[{clientX:210,clientY:250}]});
+    expect(trigger.querySelector('img')).toHaveAttribute('src',unit.imageUrls![1]);
+  });
+
   it('skips failed images and closes safely if all supplied photos fail', () => {
     render(<VehicleGallery vehicle={unit} />);
     fireEvent.click(screen.getByRole('button',{name:/Open photo gallery/}));

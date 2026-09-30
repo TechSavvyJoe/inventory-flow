@@ -445,7 +445,8 @@ test('five-column comparison uses each row for a clear photo and high-value scan
   await expect(page.locator('.inv-desk-table thead th')).toHaveCount(5)
   await expect(main).toContainText('TESTDATAHWELL0001')
   await expect(main).toContainText('3.5L EcoBoost V6')
-  await expect(main).toContainText('Black interior')
+  // The identity band now labels the captured color explicitly.
+  await expect(main.getByText(/^Interior\s*Black$/)).toBeVisible()
   await expect(main).toContainText('43 days listed')
   await expect(main.getByLabel('18 vehicle photos')).toBeAttached()
   // At 1024px this layout deliberately switches to the dedicated scan-card

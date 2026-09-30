@@ -14,6 +14,10 @@ const vehicle: InventoryVehicle = {
 }
 
 describe('customer-safe inventory summary', () => {
+  it('keeps bundled demo illustrations while excluding unsafe or private photo paths', () => {
+    const model = takeHomeModel({ ...vehicle, imageUrls: ['/demo-vehicles/bronco-sport.jpg', '/runtime/private.jpg', '/demo-vehicles/../private.jpg', 'http://example.com/photo.jpg', 'javascript:alert(1)'] })
+    expect(model.photos).toEqual(['/demo-vehicles/bronco-sport.jpg'])
+  })
   it('contains useful dated facts and a listing without operational or customer evidence', () => {
     const text = customerSummaryText(takeHomeModel(vehicle))
     expect(text).toContain('Recorded price: $42,000')

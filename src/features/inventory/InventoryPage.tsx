@@ -341,6 +341,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         filterRequestKey={filterRequest.requestKey}
         initialWorkspaceTab={(['overview', 'equipment', 'movement', 'hold', 'timeline', 'data', 'issues'] as VehicleWorkspaceTab[]).find(tab => tab === params.get('tab') && (tab !== 'issues' || data.vehicleIssuesEnabled === true || Boolean(data.vehicleIssues?.length))) ?? 'overview'}
         searchPersistenceKey={accessContext}
+        savedLists={{ enabled: data.savedListsEnabled === true, role, store: homeStore }}
         selectedVehicleId={selectedVehicleId}
         onSelectedVehicleChange={selectVehicle}
         pageSize={50}

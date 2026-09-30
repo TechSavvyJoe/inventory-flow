@@ -9,11 +9,28 @@ import { listingUrl as safeListingUrl } from './links.mjs'
 
 const STORE_NAMES = Object.freeze({ Howell: 'Bob Maxey Ford of Howell', Fowlerville: 'Bob Maxey Ford in Fowlerville', 'Ford Detroit': 'Bob Maxey Ford', Lincoln: 'Bob Maxey Lincoln' })
 const STORE_SITES = Object.freeze({ Howell: 'bobmaxeyfordhowell.com', Fowlerville: 'bobmaxeyfordinfowlerville.com', 'Ford Detroit': 'bobmaxeyford.com', Lincoln: 'bobmaxeylincoln.com' })
+const customerEquipmentLabel = (value) => value.replace(/^[·|.]\s*/, '')
+  .replace(/\s+[·|]\s*(?:USD|CAD)\s*\$?[\d,]+(?:\.\d{2})?$/i, '')
+  .replace(/\s+[·|]\s*NO\s*CHARGE$/i, '')
+  .replace(/\s+[·|]\s*[A-Z]{2,}-[A-Z0-9-]+$/, '')
+  .replace(/\s+\([A-Z0-9]{2,}(?:-[A-Z0-9]+)+\)$/, '').trim()
+const safePhoto = (value) => {
+  if (typeof value !== 'string') return false
+  if (/^https:\/\//i.test(value) || /^data:image\//i.test(value)) return true
+  // Repository-safe illustrations are served by the localhost preview only.
+  try {
+    const url = new URL(value)
+    return globalThis.location?.hostname === '127.0.0.1' && url.origin === location.origin
+      && /^\/demo-vehicles\/[a-z0-9-]+\.(?:jpg|png|webp)$/i.test(url.pathname)
+      && !url.search && !url.hash
+  } catch { return false }
+}
 
 /** The subset of a panel vehicle that may leave the building. */
 export function takeHomeModel(vehicle, photos = []) {
   const equipment = (vehicle.equipment?.byCategory ?? []).flatMap((group) => group.items.map((item) => ({ ...item, group: group.label })))
-  const standout = (vehicle.equipment?.standout ?? []).map((item) => item.label)
+  const labels = [...new Set(equipment.map(item => customerEquipmentLabel(item.label)).filter(Boolean))]
+  const standout = [...new Set((vehicle.equipment?.standout ?? []).map((item) => customerEquipmentLabel(item.label)).filter(Boolean))]
   const ac = vehicle.documents?.autoCheck
   return {
     store: vehicle.homeStore,
@@ -29,14 +46,14 @@ export function takeHomeModel(vehicle, photos = []) {
     savings: vehicle.savings,
     mileage: vehicle.mileage,
     certified: vehicle.certifiedProgram ? certifiedTerms(vehicle.certifiedProgram.store) : null,
-    photos: photos.slice(0, 4),
+    photos: [...new Set(photos.filter(safePhoto))].slice(0, 4),
     specs: [
       ['Body', vehicle.bodyStyle], ['Drivetrain', vehicle.drivetrain], ['Engine', vehicle.engine], ['Transmission', vehicle.transmission], ['Fuel', vehicle.fuelType],
       ['Fuel economy', vehicle.specs?.mpgCity !== null || vehicle.specs?.mpgHighway !== null ? `${vehicle.specs?.mpgCity ?? '—'} city / ${vehicle.specs?.mpgHighway ?? '—'} hwy` : null],
       ['Exterior', vehicle.exteriorColor], ['Interior', vehicle.interiorColor],
     ].filter(([, value]) => value),
-    highlights: standout.length ? standout.slice(0, 8) : equipment.slice(0, 8).map((item) => item.label),
-    equipment: equipment.map((item) => item.label),
+    highlights: [...new Set([...standout, ...labels])].slice(0, 8),
+    equipment: labels,
     history: ac ? fmt.joinFacts([ac.score !== null ? `AutoCheck score ${ac.score}` : null, ac.ownerCount !== null ? `${ac.ownerCount} owner${ac.ownerCount === 1 ? '' : 's'} reported` : null]) || null : null,
     description: vehicle.dealerComments,
     listingUrl: safeListingUrl(vehicle.listing?.url),
@@ -49,7 +66,8 @@ const money = (value) => (value === null || value === undefined ? null : fmt.for
 export function renderTakeHome(model, { now = new Date() } = {}) {
   const heroPhoto = model.photos[0] ?? null
   const equipmentCap = model.description ? 27 : 36
-  const hidden = Math.max(0, model.equipment.length - equipmentCap)
+  const additionalEquipment = model.equipment.filter(label => !model.highlights.includes(label))
+  const hidden = Math.max(0, additionalEquipment.length - equipmentCap)
   const site = model.storeSite
   const listing = safeListingUrl(model.listingUrl)
   return el('article', { class: 'th' },
@@ -80,7 +98,7 @@ export function renderTakeHome(model, { now = new Date() } = {}) {
       el('div', { class: 'th-block' }, el('h2', { text: 'Specifications' }), el('dl', { class: 'th-specs' }, ...model.specs.map(([label, value]) => el('div', {}, el('dt', { text: label }), el('dd', { text: value }))))),
       el('div', { class: 'th-block' }, el('h2', { text: 'Highlights' }), model.highlights.length ? el('ul', { class: 'th-chips' }, ...model.highlights.map((label) => el('li', { text: label }))) : el('p', { class: 'th-muted', text: 'Ask us about the equipment on this vehicle.' })),
     ),
-    model.equipment.length ? el('section', { class: 'th-block' }, el('h2', { text: `Equipment · ${model.equipment.length}` }), el('ul', { class: 'th-equipment' }, ...model.equipment.slice(0, equipmentCap).map((label) => el('li', { text: label })), hidden ? el('li', { class: 'th-muted', text: `+ ${hidden} more captured items · ask the store for the complete list` }) : null)) : null,
+    additionalEquipment.length ? el('section', { class: 'th-block' }, el('h2', { text: `Additional equipment · ${additionalEquipment.length}` }), el('ul', { class: 'th-equipment' }, ...additionalEquipment.slice(0, equipmentCap).map((label) => el('li', { text: label })), hidden ? el('li', { class: 'th-muted', text: `+ ${hidden} more captured items · ask the store for the complete list` }) : null)) : null,
     model.description ? el('section', { class: 'th-block' }, el('h2', { text: 'About this vehicle' }), el('p', { class: 'th-desc', text: model.description })) : null,
     model.certified ? el('section', { class: 'th-block th-cert-block' }, el('h2', { text: model.certified.name }), el('ul', { class: 'th-terms' }, ...model.certified.terms.map((term) => el('li', { text: term })))) : null,
     el('footer', { class: 'th-foot' },

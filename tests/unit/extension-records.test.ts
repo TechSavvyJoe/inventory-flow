@@ -62,14 +62,20 @@ describe('extension captured Records detail parity', () => {
     expect([...detail.querySelectorAll('.rec-autocheck .check.is-review')].some((node) => node.textContent.includes('Synthetic salvage record requires review'))).toBe(true)
     expect(detail.querySelector('.rec-autocheck .check.is-unknown').textContent).toContain('Not reported')
   })
-  it('keeps pricing concise while preserving useful sticker and equipment values', async () => {
+  it('keeps original sticker pricing visible and vAuto reference pricing in an optional supplement', async () => {
+    // The original sticker is authoritative; repeating the full vAuto block
+    // by default duplicated equipment and pricing in the old Records layout.
     const detail = await openRecords()
-    const referencePrices = detail.querySelector('[data-record="vauto"] .price-table')
-    expect(referencePrices.closest('details')).toBeNull()
+    const supplement = detail.querySelector('[data-record="vauto"]')
+    expect(supplement.tagName).toBe('DETAILS')
+    expect(supplement.open).toBe(false)
+    expect(supplement.querySelector('summary').textContent).toBe('Additional vAuto equipment')
     expect(detail.querySelector('[data-record="window-sticker"] .price-table').closest('details')).toBeNull()
-    expect(detail.querySelector('[data-record="vauto"] .rec-price-context').textContent).toBe('Reference pricing')
-    expect(detail.querySelector('[data-record="vauto"] .rec-price-context').closest('details')).toBeNull()
-    expect(detail.querySelector('[data-record="vauto"] .rec-priced-list').closest('details')).toBeNull()
+    supplement.querySelector('summary').click()
+    expect(supplement.open).toBe(true)
+    expect(supplement.querySelector('.price-table')).not.toBeNull()
+    expect(supplement.querySelector('.rec-price-context').textContent).toBe('Reference pricing')
+    expect(supplement.querySelector('.rec-priced-list')).not.toBeNull()
   })
   it('retains service counts from the status and keeps full findings visible beside the compact summary', async () => {
     const record = recordWithSources()

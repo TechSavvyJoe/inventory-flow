@@ -18,7 +18,7 @@ import {
   Info,
   MessageSquare,
 } from "lucide-react";
-import { formatSourceDateText, hasCapturedOasisActionResult, oasisActionLabel } from "./vehicle-resource-catalog";
+import { formatSourceDateText, hasCapturedOasisActionResult, oasisActionLabel, vehicleOverviewResources } from "./vehicle-resource-catalog";
 import { resolveVehicleInService } from "./vehicle-in-service";
 import { formatDate, formatDateTime, formatMileage, formatStickerMoney, vehicleDisplayName } from "./inventory-utils";
 import {
@@ -203,6 +203,86 @@ function VautoFactoryEquipmentWordmark() {
       <img src="/resource-brands/vauto.svg" alt="" />
     </span>
   );
+}
+
+function VautoEquipmentDocument({
+  vehicle,
+  href,
+  facts,
+  originalStickerUnavailable = false,
+}: {
+  vehicle: InventoryVehicle;
+  href: string | null;
+  facts: Array<{ label: string; value: string }>;
+  originalStickerUnavailable?: boolean;
+}) {
+  const equipment = vehicle.factoryEquipment;
+  if (!equipment) return null;
+  return <article
+    className="inventory-vehicle-document inventory-vehicle-document--vauto"
+    data-document-kind="vauto-factory-equipment"
+    data-link-state={href ? "available" : "unavailable"}
+    data-original-window-sticker="false"
+  >
+    <header className="inventory-vehicle-document__heading">
+      <VautoFactoryEquipmentWordmark />
+      <span className="inventory-vehicle-document__title">
+        <strong>vAuto factory-equipment profile</strong>
+        <small>{equipment.vehicleDescription || "VIN-linked equipment reference"}</small>
+      </span>
+      <DataState state={equipment.dataState} />
+    </header>
+
+    <RecordSourceAction href={href} label="Open equipment" accessibleLabel={`Open equipment details for ${vehicleDisplayName(vehicle)} in a new tab`} unavailableLabel="Equipment details unavailable" />
+    {originalStickerUnavailable ? <p className="inventory-vehicle-document__fallback">Original window sticker unavailable. Showing this VIN's vAuto equipment profile.</p> : null}
+    {equipment.basePrice != null ? (
+      <dl className="inventory-vehicle-document__metrics inventory-vehicle-document__metrics--sticker" aria-label="Base MSRP">
+        <Fact label="Base MSRP" emphasize>{compactSourcePrice(equipment.basePrice)}</Fact>
+      </dl>
+    ) : null}
+    {facts.length || equipment.disclaimer ? <RecordSourceDetails>
+      {facts.length ? (
+        <dl className="inventory-vehicle-document__facts">
+          {facts.map((fact) => <Fact label={fact.label} key={fact.label}>{fact.value}</Fact>)}
+        </dl>
+      ) : null}
+      {equipment.disclaimer ? <p>{equipment.disclaimer}</p> : null}
+    </RecordSourceDetails> : null}
+
+    {equipment.packages?.length ? (
+      <CapturedRecordSection title="Packages & priced equipment" count={countLabel(equipment.packages.length, "VIN-linked item")}>
+        <ul aria-label="vAuto package details">
+          {equipment.packages.map((item, index) => {
+            const name = [item.name, item.code ? `(${item.code})` : null].filter(Boolean).join(" ");
+            return <li key={`${name}-${index}`}>
+              <span><strong>{name}</strong>{item.price != null ? <b>{compactSourcePrice(item.price)}</b> : null}</span>
+              {item.features?.length ? <small>{item.features.join(" · ")}</small> : null}
+            </li>;
+          })}
+        </ul>
+      </CapturedRecordSection>
+    ) : null}
+
+    {equipment.sections?.length ? (
+      <CapturedRecordSection title="Full equipment breakdown" count={countLabel(equipment.sections.reduce((total, section) => total + section.items.length, 0), "item")}>
+        <div className="vdp-record-equipment-groups">
+          {equipment.sections.map((section) => (
+            <section aria-label={`${section.name} equipment`} key={section.name}>
+              <h4>{section.name}</h4>
+              <ul>
+                {section.items.map((item, index) => (
+                  <li key={`${section.name}-${item.label}-${index}`}>
+                    <span>{item.label}</span>
+                    {item.price != null ? <b>{compactSourcePrice(item.price)}</b> : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      </CapturedRecordSection>
+    ) : null}
+  </article>;
 }
 
 function FordOasisWordmark() {
@@ -464,6 +544,23 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
           : null,
       ].filter(Boolean) as Array<{ label: string; value: string }>
     : [];
+  const stickerHasCapturedFacts = Boolean(sticker && (
+    sticker.vehicleDescription || sticker.equipmentGroup || sticker.equipmentGroupContents?.length ||
+    sticker.basePrice != null || sticker.totalOptions != null || sticker.destinationCharge != null || sticker.totalMsrp != null ||
+    sticker.exteriorColor || sticker.interiorColor || sticker.engine || sticker.transmission ||
+    sticker.options?.length || sticker.standardEquipment?.length || sticker.warranty?.length
+  ));
+  const showStickerRecord = Boolean(sticker && (stickerUrl || stickerHasCapturedFacts));
+  const preferredEquipment = vehicleOverviewResources(vehicle).find(resource =>
+    resource.id === "window-sticker" || resource.id === "vauto");
+  const vautoIsSupplement = Boolean(factoryEquipment && showStickerRecord && sticker && preferredEquipment?.id === "window-sticker");
+  const originalStickerUnavailable = Boolean(
+    factoryEquipment && !showStickerRecord && sticker &&
+    (sticker.dataState === "incomplete" || sticker.dataState === "unavailable")
+  );
+  const vautoDocument = factoryEquipment
+    ? <VautoEquipmentDocument vehicle={vehicle} href={factoryEquipmentUrl} facts={factoryEquipmentFacts} originalStickerUnavailable={originalStickerUnavailable} />
+    : null;
   const readOnlyNoteId = "inventory-vehicle-documents-read-only";
 
   const sections = [
@@ -692,7 +789,7 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
           </p>
         </article> : null) },
     { id: "outlook", label: "Warranty estimate", content: (showWarranty ? <WarrantyOutlook vehicle={vehicle} /> : null) },
-    { id: "sticker", label: "Window sticker", content: (sticker ? <article
+    { id: "sticker", label: "Window sticker", content: (sticker && showStickerRecord ? <article
           className="inventory-vehicle-document inventory-vehicle-document--sticker"
           data-document-kind="window-sticker"
           data-link-state={stickerUrl ? "available" : fallbackEquipmentUrl ? "vauto-fallback" : "unavailable"}
@@ -767,91 +864,32 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
             {sticker.originalMarket ? <p>{sticker.originalMarket} window sticker</p> : null}
             <p>Original factory equipment does not confirm current condition or installed equipment.</p>
           </RecordSourceDetails> : null}
+          {vautoIsSupplement ? <details className="vdp-record-vauto-supplement" data-record-section="equipment" aria-label="Equipment" tabIndex={-1}>
+            <summary>
+              <VautoFactoryEquipmentWordmark />
+              <span><strong>Additional vAuto equipment</strong><small>Open the complete VIN-linked profile to review extra or conflicting facts.</small></span>
+              <ChevronDown size={16} aria-hidden="true" />
+            </summary>
+            <div className="vdp-record-vauto-supplement__body">{vautoDocument}</div>
+          </details> : null}
         </article> : null) },
-    { id: "equipment", label: "Equipment", content: (factoryEquipment ? <article
-          className="inventory-vehicle-document inventory-vehicle-document--vauto"
-          data-document-kind="vauto-factory-equipment"
-          data-link-state={factoryEquipmentUrl ? "available" : "unavailable"}
-          data-original-window-sticker="false"
-        >
-          <header className="inventory-vehicle-document__heading">
-            <VautoFactoryEquipmentWordmark />
-            <span className="inventory-vehicle-document__title">
-              <strong>vAuto factory-equipment profile</strong>
-              <small>{factoryEquipment.vehicleDescription || "VIN-linked equipment reference"}</small>
-            </span>
-            <DataState state={factoryEquipment.dataState} />
-          </header>
-
-          <RecordSourceAction href={factoryEquipmentUrl} label="Open equipment" accessibleLabel={`Open equipment details for ${vehicleDisplayName(vehicle)} in a new tab`} unavailableLabel="Equipment details unavailable" />
-          {factoryEquipment.basePrice != null ? (
-            <dl className="inventory-vehicle-document__metrics inventory-vehicle-document__metrics--sticker" aria-label="Base MSRP">
-              <Fact label="Base MSRP" emphasize>{compactSourcePrice(factoryEquipment.basePrice)}</Fact>
-            </dl>
-          ) : null}
-          {factoryEquipmentFacts.length || factoryEquipment.disclaimer ? <RecordSourceDetails>
-          {factoryEquipmentFacts.length ? (
-            <dl className="inventory-vehicle-document__facts">
-              {factoryEquipmentFacts.map((fact) => (
-                <Fact label={fact.label} key={fact.label}>{fact.value}</Fact>
-              ))}
-            </dl>
-          ) : null}
-          {factoryEquipment.disclaimer ? <p>{factoryEquipment.disclaimer}</p> : null}
-          </RecordSourceDetails> : null}
-
-          {factoryEquipment.packages?.length ? (
-            <CapturedRecordSection title="Packages & priced equipment" count={countLabel(factoryEquipment.packages.length, "VIN-linked item")}>
-              <ul aria-label="vAuto package details">
-                {factoryEquipment.packages.map((item, index) => {
-                  const name = [item.name, item.code ? `(${item.code})` : null].filter(Boolean).join(" ");
-                  return (
-                    <li key={`${name}-${index}`}>
-                      <span>
-                        <strong>{name}</strong>
-                        {item.price != null ? <b>{compactSourcePrice(item.price)}</b> : null}
-                      </span>
-                      {item.features?.length ? <small>{item.features.join(" · ")}</small> : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            </CapturedRecordSection>
-          ) : null}
-
-          {factoryEquipment.sections?.length ? (
-            <CapturedRecordSection title="Full equipment breakdown" count={countLabel(factoryEquipment.sections.reduce((total, section) => total + section.items.length, 0), "item")}>
-              <div className="vdp-record-equipment-groups">
-                {factoryEquipment.sections.map((section) => (
-                  <section aria-label={`${section.name} equipment`} key={section.name}>
-                    <h4>{section.name}</h4>
-                    <ul>
-                      {section.items.map((item, index) => (
-                        <li key={`${section.name}-${item.label}-${index}`}>
-                          <span>{item.label}</span>
-                          {item.price != null ? <b>{compactSourcePrice(item.price)}</b> : null}
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                ))}
-              </div>
-            </CapturedRecordSection>
-          ) : null}
-
-        </article> : null) },
+    { id: "equipment", label: "Equipment", content: (factoryEquipment && !vautoIsSupplement ? vautoDocument : null) },
   ].filter(section => section.content !== null);
+  const navigationSections = vautoIsSupplement
+    ? [...sections, { id: "equipment", label: "Equipment" }]
+    : sections;
 
   return (
     <section ref={recordsRef}
       className="inventory-vehicle-documents vdp-records"
       aria-label="Vehicle documents"
-      data-record-count={Number(Boolean(autoCheck)) + Number(Boolean(sticker)) + Number(Boolean(factoryEquipment)) + Number(Boolean(warrantyCheck)) + Number(Boolean(fordOasis)) + Number(showWarranty)}
+      data-record-count={Number(Boolean(autoCheck)) + Number(showStickerRecord) + Number(Boolean(factoryEquipment)) + Number(Boolean(warrantyCheck)) + Number(Boolean(fordOasis)) + Number(showWarranty)}
     >
 
       <nav className="vdp-record-jumps" aria-label="Record sections">
-        {sections.map(section => <button type="button" key={section.id} onClick={() => {
+        {navigationSections.map(section => <button type="button" key={section.id} onClick={() => {
           const target = recordsRef.current?.querySelector<HTMLElement>(`[data-record-section="${section.id}"]`);
+          if (target instanceof HTMLDetailsElement) target.open = true;
           focusWorkspaceSection(target ?? null);
         }}>{section.label}<ChevronDown size={14} aria-hidden="true" /></button>)}
       </nav>

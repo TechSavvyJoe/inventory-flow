@@ -36,42 +36,42 @@
    Three bordered cells in a fixed order (history, equipment, OASIS); a missing
    source shows a quiet placeholder in its own cell so no cell is blank. */
 .vehicle-resources--scan { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0; width:100%; min-width:0; padding:0; background:transparent; }
-.vehicle-resource-scan { container:resource-scan / inline-size; display:grid; grid-template-columns:auto minmax(0,1fr); align-content:start; gap:0 var(--ifx-space-2); min-width:0; margin:0; padding:var(--ifx-space-1) var(--ifx-space-3); border-left:1px solid var(--border); color:var(--ink-900); }
+.vehicle-resource-scan { container:resource-scan / inline-size; display:grid; grid-template-columns:auto minmax(0,1fr); align-content:start; align-items:start; gap:var(--ifx-space-1) var(--ifx-space-3); min-width:0; margin:0; padding:var(--ifx-space-1) var(--ifx-space-3); border-left:1px solid var(--border); color:var(--ink-900); }
 .vehicle-resources--scan > :is(.vehicle-resource-scan[data-resource-kind="autocheck"], .vehicle-resource-scan__missing[data-missing="history"]) { grid-column:1; grid-row:1; border-left:0; }
 .vehicle-resources--scan > :is(.vehicle-resource-scan[data-resource-kind="window-sticker"], .vehicle-resource-scan[data-resource-kind="vauto"], .vehicle-resource-scan__missing[data-missing="equipment"]) { grid-column:2; grid-row:1; }
 .vehicle-resources--scan > :is(.vehicle-resource-scan[data-resource-kind="oasis"], .vehicle-resource-scan__missing[data-missing="oasis"]) { grid-column:3; grid-row:1; }
-.vehicle-resource-scan__source { display:inline-flex; align-items:center; gap:var(--ifx-space-1-5); width:fit-content; max-width:100%; min-height:var(--ifx-space-6); margin:0; padding:0 var(--ifx-space-1-5); border:1px solid var(--border-strong); border-radius:var(--ifx-radius-xs); color:var(--ink-900); background:var(--surface); font:var(--ifx-weight-semibold) var(--ifx-text-md)/1.3 var(--font-app); text-decoration:none; cursor:pointer; }
+.vehicle-resource-scan__source { display:inline-flex; grid-column:1; grid-row:1; align-items:center; justify-content:center; gap:var(--ifx-space-1); width:calc(var(--ifx-space-16) + var(--ifx-space-10)); max-width:100%; min-height:var(--ifx-control-height-md); margin:0; padding:0 var(--ifx-space-2); border:1px solid var(--border); border-radius:var(--ifx-radius-xs); color:var(--navy-900); background:var(--surface); font:var(--ifx-weight-semibold) var(--ifx-text-sm)/1.3 var(--font-app); text-decoration:none; cursor:pointer; }
 .vehicle-resource-scan__source--static { min-height:var(--ifx-space-5); padding:0; border:0; background:transparent; cursor:default; }
-.vehicle-resource-scan__source .vehicle-resource-brand { width:var(--ifx-space-12); height:var(--ifx-space-4); object-fit:contain; object-position:left center; }
-.vehicle-resource-scan__source .vehicle-resource-brand--ford { width:var(--ifx-space-8); }
+.vehicle-resource-scan__source .vehicle-resource-brand { width:var(--ifx-space-16); height:var(--ifx-space-5); object-fit:contain; object-position:left center; }
+.vehicle-resource-scan__source .vehicle-resource-brand--ford { width:var(--ifx-space-10); }
+.vehicle-resource-scan__source:has(.vehicle-resource-brand--autocheck) .vehicle-resource-scan__source-label { display:none; }
 .vehicle-resource-scan__source .vehicle-resource-symbol { width:var(--ifx-space-4); height:var(--ifx-space-4); }
 .vehicle-resource-scan__source > svg { flex-shrink:0; }
 .vehicle-resource-scan__source:is(a,button):hover { color:var(--blue-700); background:var(--blue-050); border-color:var(--blue-600); }
 .vehicle-resource-scan__source[aria-expanded=true] { background:var(--blue-600); border-color:var(--blue-600); color:var(--surface); }
-.vehicle-resource-scan__fields { grid-column:1 / -1; grid-row:2; display:grid; gap:0; margin:var(--ifx-space-0-5) 0 0; }
-.vehicle-resource-scan__fields > div { display:grid; grid-template-columns:calc(var(--ifx-space-12) + var(--ifx-space-3)) minmax(0,1fr); gap:var(--ifx-space-2); align-items:baseline; min-width:0; padding:0; }
+.vehicle-resource-scan__findings { grid-column:2; grid-row:1; min-width:0; align-self:center; }
+.vehicle-resource-scan__fields { display:flex; flex-wrap:wrap; gap:var(--ifx-space-0-5) var(--ifx-space-3); margin:0; }
+.vehicle-resource-scan__fields > div { display:flex; align-items:baseline; gap:var(--ifx-space-1); min-width:0; max-width:100%; padding:0; }
+.vehicle-resource-scan__fields > [data-field="score"] { order:-2; }
+.vehicle-resource-scan__fields > :is([data-field="owners"],[data-field="use"]) { order:-1; }
+.vehicle-resource-scan__fields > :is([data-field="accidents"],[data-field="accident / damage"],[data-field="option"],[data-field="equipment"],[data-field="group"]) { flex-basis:100%; }
 .vehicle-resource-scan__fields dt { margin:0; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.3 var(--font-app); }
 /* Outranks the app-wide paragraph/definition line-height so the ledger stays compact. */
 .vehicle-resources--scan .vehicle-resource-scan__fields dd { display:grid; gap:var(--ifx-space-0-5); margin:0; min-width:0; color:var(--ink-900); font:var(--ifx-weight-regular) var(--ifx-text-sm)/1.3 var(--font-app); overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
-.vehicle-resource-scan__caption { grid-column:2; grid-row:1; align-self:center; text-align:right; margin:0; padding:0; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.35 var(--font-app); overflow-wrap:anywhere; }
+.vehicle-resource-scan__caption { grid-column:2; grid-row:2; margin:0; padding:0; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.35 var(--font-app); overflow-wrap:anywhere; }
 .vehicle-resource-scan__missing { grid-column:1 / -1; margin:var(--ifx-space-0-5) 0; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-sm)/1.35 var(--font-app); }
 .vehicle-resources--scan > .vehicle-resource-scan__missing { margin:0; padding:var(--ifx-space-1) var(--ifx-space-3); border-left:1px solid var(--border); }
 .vehicle-resources--scan > .vehicle-resource-scan__missing[data-missing="history"] { border-left:0; }
-/* A wide cell flows its facts as label/value pairs on shared lines (Score and
-   Owners, MSRP and Group, OASIS actions and in-service date) with the source
-   caption directly after the heading; a long finding takes its own line. */
-@container resource-scan (min-width: 280px) {
-  .vehicle-resource-scan__caption { text-align:left; }
-  .vehicle-resource-scan__fields { display:flex; flex-wrap:wrap; align-items:baseline; gap:0 var(--ifx-space-4); }
-  .vehicle-resource-scan__fields > div { display:flex; align-items:baseline; gap:var(--ifx-space-1-5); max-width:100%; }
-  .vehicle-resource-scan__fields dt { flex:0 0 auto; }
-  .vehicle-resource-scan[data-resource-kind="autocheck"] .vehicle-resource-scan__fields > [data-field="score"] { order:-2; }
-  .vehicle-resource-scan[data-resource-kind="autocheck"] .vehicle-resource-scan__fields > :is([data-field="owners"],[data-field="use"]) { order:-1; }
+/* At the tablet table width, facts need the whole flat source cell instead of
+   sharing its narrow first line with the provider launcher. */
+@container resource-scan (min-width: 271px) and (max-width: 340px) {
+  .vehicle-resource-scan__findings { grid-column:1 / -1; grid-row:2; }
+  .vehicle-resource-scan__caption { grid-column:1 / -1; grid-row:3; }
 }
-/* A narrow cell puts the source caption on its own line under the heading. */
-@container resource-scan (max-width: 240px) {
-  .vehicle-resource-scan__caption { grid-column:1 / -1; grid-row:2; text-align:left; }
-  .vehicle-resource-scan__fields { grid-row:3; }
+/* A narrow report keeps its findings readable below the branded launcher. */
+@container resource-scan (max-width: 270px) {
+  .vehicle-resource-scan__findings { grid-column:1 / -1; grid-row:2; }
+  .vehicle-resource-scan__caption { grid-column:1 / -1; grid-row:3; }
 }
 @media (any-pointer: coarse) {
   .vehicle-resource-scan__source:not(.vehicle-resource-scan__source--static) { min-height:var(--ifx-control-height-md); }
@@ -316,3 +316,31 @@
 .vehicle-resources--preview.has-shared-source-controls .vehicle-resource-preview-close { margin-left:auto; }
 
 .vehicle-resource-signals { display:flex; flex-wrap:wrap; gap:0 var(--ifx-space-2); margin:var(--ifx-space-1) 0; color:var(--amber); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.35 var(--font-app); }
+
+/* Branded source shortcuts remain direct actions on compact inventory rows. */
+.vehicle-resource-shortcuts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--ifx-space-1-5); grid-column:1 / -1; margin-top:var(--ifx-space-1-5); }
+.vehicle-resource-shortcuts.is-action-rail { grid-template-columns:repeat(6,minmax(0,1fr)); align-items:stretch; gap:var(--ifx-space-1); margin-top:var(--ifx-space-1); }
+.vehicle-resource-shortcuts__facts { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--ifx-space-1) var(--ifx-space-3); color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.35 var(--font-app); }
+.vehicle-resource-shortcuts__facts strong { color:var(--ink-900); font-weight:var(--ifx-weight-medium); }
+.vehicle-resource-shortcut { display:inline-flex; min-width:0; align-items:center; justify-content:center; gap:var(--ifx-space-1); min-height:var(--ifx-control-height-md); padding:var(--ifx-space-1) var(--ifx-space-2); border:1px solid var(--border-strong); border-radius:var(--ifx-radius-sm); background:var(--surface); color:var(--blue-700); font:var(--ifx-weight-semibold) var(--ifx-text-sm)/1.3 var(--font-app); text-decoration:none; cursor:pointer; }
+.vehicle-resource-shortcuts.is-action-rail .vehicle-resource-shortcut { flex-direction:column; align-items:stretch; justify-content:center; min-height:var(--ifx-control-height-lg); padding:var(--ifx-space-1); font-size:var(--ifx-text-sm); }
+.vehicle-resource-shortcuts.is-action-rail .vehicle-resource-shortcut__heading { flex-direction:column; gap:0; font-size:var(--ifx-text-sm); line-height:1.15; }
+.vehicle-resource-shortcuts.is-action-rail .vehicle-resource-shortcut__heading > svg { display:none; }
+.vehicle-resource-shortcuts.is-action-rail .vehicle-resource-shortcut__fact { display:none; }
+.vehicle-resource-shortcuts.is-action-rail .vehicle-resource-shortcut .vehicle-resource-brand--autocheck { width:calc(var(--ifx-space-12) + var(--ifx-space-1)); max-width:100%; }
+.vehicle-resource-shortcut__heading { display:flex; align-items:center; justify-content:center; gap:var(--ifx-space-1); min-width:0; }
+.vehicle-resource-shortcut__fact { display:block; min-width:0; color:var(--ink-700); font:var(--ifx-weight-regular) var(--ifx-text-sm)/1.25 var(--font-app); text-align:center; overflow-wrap:anywhere; }
+.vehicle-resource-shortcut .vehicle-resource-brand { width:var(--ifx-space-12); height:var(--ifx-space-5); object-fit:contain; }
+.vehicle-resource-shortcut .vehicle-resource-brand--ford { width:var(--ifx-space-8); }
+.vehicle-resource-shortcut .vehicle-resource-symbol { width:var(--ifx-space-4); height:var(--ifx-space-4); }
+.vehicle-resource-shortcut:hover { background:var(--blue-050); border-color:var(--blue-600); }
+:is(.vehicle-resource-shortcut,.vehicle-resource-scan__source):is(a,button) { transition:background-color var(--ifx-motion-fast) var(--ifx-ease-standard); }
+:is(.vehicle-resource-shortcut,.vehicle-resource-scan__source):is(a,button):active { background:var(--blue-050); }
+:is(.vehicle-resource-shortcut,.vehicle-resource-scan__source):focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+@media (prefers-reduced-motion:reduce) {
+  :is(.vehicle-resource-shortcut,.vehicle-resource-scan__source):is(a,button) { transition:none; }
+}
+
+.vehicle-resource-shortcut:not(:has(.vehicle-resource-shortcut__heading)) > span,
+.vehicle-resource-shortcut__heading:has(.vehicle-resource-brand--autocheck) > span:not(.vehicle-resource-brand-fallback) { display:none; }
+.vehicle-resource-shortcut .vehicle-resource-brand--autocheck { width:var(--ifx-space-16); }
