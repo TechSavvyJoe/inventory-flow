@@ -9,8 +9,17 @@ test('the Overview preserves its hierarchy and count links across browser engine
 
   await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible()
   await expect(page.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('region', { name: 'Store summary' }).getByRole('heading', { level: 3 })).toHaveCount(4)
-  await expect(page.getByRole('link', { name: /^Howell: \d+ vehicles? on lot$/ })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=on-lot')
+  const storeSummary = page.getByRole('region', { name: 'Store summary' })
+  await expect(storeSummary.getByRole('heading', { level: 3 })).toHaveCount(4)
+
+  const howell = storeSummary.getByRole('region', { name: 'Howell' })
+  if ((page.viewportSize()?.width ?? 0) <= 880) {
+    await howell.getByRole('heading', { name: 'Howell', level: 3 }).click()
+  }
+
+  const onLot = howell.getByRole('link', { name: /^Howell: \d+ vehicles? on lot$/ })
+  await expect(onLot).toBeVisible()
+  await expect(onLot).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=on-lot')
   await expect(page.getByRole('region', { name: 'Service' })).toBeVisible()
 
   const dimensions = await page.evaluate(() => ({

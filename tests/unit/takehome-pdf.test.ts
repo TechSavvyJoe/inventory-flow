@@ -1,0 +1,85 @@
+// @vitest-environment node
+// @ts-nocheck -- shared framework-free browser module; fabricated records only.
+import { readFile } from 'node:fs/promises'
+import { describe, expect, it } from 'vitest'
+import { PDFDocument, PDFDict, PDFName, PDFString } from 'pdf-lib'
+import { createTakeHomePdf } from '../../extension/sidepanel/lib/takehome-pdf.mjs'
+
+const model = {
+  vin:'TESTDATASYN000001', stockNumber:'DEMO-1', name:'2024 Ford Explorer Active',
+  storeName:'Bob Maxey Ford of Howell', price:32000, msrp:40000, savings:8000, mileage:12000,
+  specs:[['Engine','2.3L EcoBoost'],['Exterior','Carbonized Gray']], highlights:['Heated front seats'],
+  equipment:['Heated front seats','Adaptive cruise control'], description:'Synthetic vehicle description.',
+  listingUrl:'https://example.com/synthetic-listing',
+}
+const options = {
+  now:new Date('2026-09-30T12:00:00Z'),
+  fetcher:async (url:string) => new Response(await readFile(new URL(url))),
+}
+const load = async (blob:Blob) => PDFDocument.load(await blob.arrayBuffer())
+
+describe('shared customer PDF', () => {
+  it('generates a readable PDF with embedded fonts and Unicode metadata', async () => {
+    const blob = await createTakeHomePdf([model], 'José’s vehicle choices', options)
+    expect(blob.type).toBe('application/pdf')
+    expect(Buffer.from(await blob.arrayBuffer()).subarray(0,8).toString()).toBe('%PDF-1.7')
+    const pdf = await load(blob)
+    expect(pdf.getTitle()).toBe('José’s vehicle choices')
+    expect(pdf.getPageCount()).toBe(1)
+    expect(pdf.getPage(0).getSize()).toEqual({ width:612, height:792 })
+  })
+
+  it('keeps two complete representative customer sheets to two branded pages', async () => {
+    const rich = { ...model, storeSite:'bobmaxeyfordhowell.com',
+      photos:['/demo-vehicles/f150.jpg','/demo-vehicles/f150.jpg'], logo:{src:'/brands/bob-maxey-ford.png'},
+      specs:[['Body','SuperCrew pickup'],['Drivetrain','Four-wheel drive'],['Engine','2.7L EcoBoost V6'],['Transmission','10-speed automatic'],['Fuel','Gasoline'],['Fuel economy','18 city / 24 hwy'],['Exterior','Carbonized Gray Metallic'],['Interior','Black cloth']],
+      highlights:['Ford Co-Pilot360','Heated front seats','SYNC 4 with 12-inch display','Apple CarPlay and Android Auto','Trailer tow package','Remote start','Blind-spot monitoring','Lane-keeping system'],
+      equipment:['Class IV trailer hitch receiver','LED box lighting','Skid plates','BoxLink cargo management','Integrated trailer brake controller','Zone lighting','Electronic locking rear axle','Rear parking sensors','Power sliding rear window','36-gallon extended-range fuel tank','All-weather floor liners','Keyless-entry keypad'],
+      certified:{name:'Ford Blue Certified',terms:['139-point inspection completed','14-day / 1,000-mile money-back guarantee','90-day / 4,000-mile comprehensive limited warranty'],note:'See the dealer for complete program eligibility, coverage, exclusions and transfer terms.'},
+      description:'A well-equipped, locally traded pickup with the towing, driver-assistance and connectivity features customers ask for most. Clean cabin and a practical configuration for daily driving or weekend work.',
+    }
+    const fetcher = async (url:string) => url.startsWith('file:') ? options.fetcher(url) : new Response(await readFile(new URL('../../public'+new URL(url).pathname, import.meta.url)))
+    const pdf = await load(await createTakeHomePdf([rich,{...rich,vin:'TESTDATASYN000002'}], 'Synthetic vehicle choices', {...options,fetcher,base:'http://127.0.0.1:4173/'}))
+    expect(pdf.getPageCount()).toBe(2)
+    const links = pdf.getPage(0).node.Annots()!.asArray().map(ref => pdf.context.lookup(ref,PDFDict).lookup(PDFName.of('A'),PDFDict).lookup(PDFName.of('URI'),PDFString).decodeText())
+    expect(links).toEqual(['https://bobmaxeyfordhowell.com/',model.listingUrl])
+  })
+
+  it('never embeds unsafe or authenticated URL actions', async () => {
+    for (const listingUrl of ['javascript:alert(1)','https://private:secret@example.com/']) {
+      const pdf = await load(await createTakeHomePdf([{ ...model, listingUrl }], 'Safe links', options))
+      expect(pdf.getPage(0).node.Annots()!.size()).toBe(0)
+    }
+  })
+
+  it('starts each customer vehicle on a new page and deduplicates VINs', async () => {
+    const other = { ...model, vin:'TESTDATASYN000002', name:'2024 Ford Escape' }
+    const pdf = await load(await createTakeHomePdf([model, other, model], 'Two vehicle choices', options))
+    expect(pdf.getPageCount()).toBe(2)
+  })
+
+  it('continues full descriptions and equipment rather than clipping content', async () => {
+    const long = { ...model, equipment:Array.from({length:90},(_,i) => `Synthetic factory option ${i} with important qualifications`), description:'Full customer-facing description. '.repeat(600) }
+    const pdf = await load(await createTakeHomePdf([long], 'Full details', options))
+    expect(pdf.getPageCount()).toBeGreaterThan(3)
+  })
+
+  it('still creates the document when photos are unavailable', async () => {
+    const fetcher = async (url:string) => url.startsWith('file:') ? options.fetcher(url) : new Response(null, {status:403})
+    const pdf = await load(await createTakeHomePdf([{ ...model, photos:['https://example.com/blocked.jpg'] }], 'Photo failure', { ...options, fetcher }))
+    expect(pdf.getPageCount()).toBe(1)
+  })
+
+  it('reports missing required fonts so the interface can offer a retry', async () => {
+    await expect(createTakeHomePdf([model], 'Retry', { ...options, fetcher:async () => new Response(null, {status:503}) })).rejects.toThrow('Document asset could not load')
+  })
+
+  it('ships the reviewed library bytes with a self-contained companion wrapper', async () => {
+    const root = new URL('../../', import.meta.url)
+    const library = await readFile(new URL('node_modules/pdf-lib/dist/pdf-lib.esm.min.js', root), 'utf8')
+    expect(await readFile(new URL('extension/sidepanel/vendor/pdf-lib.js', root), 'utf8')).toBe(library.split('\n').filter(line => !line.startsWith('//# sourceMappingURL=')).join('\n'))
+    const fontkit = await readFile(new URL('node_modules/@pdf-lib/fontkit/dist/fontkit.umd.min.js', root), 'utf8')
+    const wrapped = await readFile(new URL('extension/sidepanel/vendor/fontkit.js', root), 'utf8')
+    expect(wrapped).toBe('// Self-contained browser module. See README.md for source and licenses.\nconst module = { exports:{} }; const exports = module.exports;\n'+fontkit+'\nexport default module.exports;\n')
+  })
+})

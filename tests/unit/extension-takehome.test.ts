@@ -2,7 +2,7 @@
 // @ts-nocheck -- dependency-free ESM; synthetic fixtures only.
 import { describe, expect, it, vi } from 'vitest'
 import { renderTakeHome, takeHomeModel } from '../../extension/sidepanel/lib/takehome.mjs'
-import { normalizeTakeHomeDocument, publicListingLinks, shareTakeHomeHtml, standaloneTakeHomeHtml } from '../../extension/sidepanel/lib/takehome-export.mjs'
+import { normalizeTakeHomeDocument, publicListingLinks, shareTakeHomePdf, downloadTakeHomePdf } from '../../extension/sidepanel/lib/takehome-export.mjs'
 import { toPanelVehicle } from '../../extension/sidepanel/lib/model.mjs'
 
 const meta = { reportDate: '2026-08-30', completedAt: '2026-08-30T10:00:00-04:00', publicFreshness: 'current', dealerMailFreshness: 'current' }
@@ -60,26 +60,35 @@ describe('take-home sheet model', () => {
     expect([...stage.querySelectorAll('.th-listing-link')].map((link) => link.getAttribute('href'))).toEqual([first.listingUrl, second.listingUrl])
   })
 
-  it('escapes standalone HTML and strips unsafe destinations', () => {
-    const root = document.createElement('div')
-    root.innerHTML = '<a href="javascript:alert(1)">Unsafe</a><p>&lt;customer&gt;</p>'
-    const html = standaloneTakeHomeHtml(root, '<script>alert(1)</script>', '.th{color:#102238}')
-    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
-    expect(html).not.toContain('href="javascript:')
-    expect(html).toContain('&lt;customer&gt;')
+  it('shares a PDF file with the correct MIME type and extension', async () => {
+    const share = vi.fn().mockResolvedValue(undefined)
+    const environment = { navigator:{ share, canShare:vi.fn(() => true) } }
+    await expect(shareTakeHomePdf({ pdf:new Blob(['%PDF-1.7'], { type:'application/pdf' }), title:'Choices', environment })).resolves.toBe('shared')
+    const file = share.mock.calls[0][0].files[0]
+    expect(file.name).toBe('choices.pdf')
+    expect(file.type).toBe('application/pdf')
   })
 
-  it('does not copy or download when native share is cancelled', async () => {
-    const writeText = vi.fn()
-    const environment = { navigator:{ share:vi.fn().mockRejectedValue({ name:'AbortError' }), canShare:vi.fn(() => true), clipboard:{ writeText } } }
-    await expect(shareTakeHomeHtml({ html:'<html></html>', title:'Choices', links:['https://example.com'], environment })).resolves.toBe('cancelled')
-    expect(writeText).not.toHaveBeenCalled()
+  it('does not download when native share is cancelled', async () => {
+    const createObjectURL = vi.fn()
+    const environment = { navigator:{ share:vi.fn().mockRejectedValue({ name:'AbortError' }), canShare:vi.fn(() => true) }, URL:{ createObjectURL } }
+    await expect(shareTakeHomePdf({ pdf:new Blob(['%PDF-1.7'], { type:'application/pdf' }), title:'Choices', environment })).resolves.toBe('cancelled')
+    expect(createObjectURL).not.toHaveBeenCalled()
   })
 
-  it('copies public listing links when native file sharing is unavailable', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    const environment = { navigator:{ clipboard:{ writeText } } }
-    await expect(shareTakeHomeHtml({ html:'<html></html>', title:'Choices', links:['https://example.com/one','https://example.com/two'], environment })).resolves.toBe('copied')
-    expect(writeText).toHaveBeenCalledWith('https://example.com/one\nhttps://example.com/two')
+  it('downloads the PDF when native file sharing is unavailable', async () => {
+    const click = vi.fn(), link = { click }, pdf = new Blob(['%PDF-1.7'], { type:'application/pdf' })
+    const createObjectURL = vi.fn(() => 'blob:synthetic-pdf')
+    const environment = { navigator:{}, URL:{ createObjectURL, revokeObjectURL:vi.fn() }, document:{ createElement:() => link } }
+    await expect(shareTakeHomePdf({ pdf, title:'Choices', environment })).resolves.toBe('saved')
+    expect(createObjectURL).toHaveBeenCalledWith(pdf)
+    expect(link.download).toBe('choices.pdf')
+    expect(click).toHaveBeenCalledOnce()
+  })
+
+  it('refuses HTML masquerading as a customer document', async () => {
+    const html = new Blob(['<html>'], { type:'text/html' })
+    await expect(shareTakeHomePdf({ pdf:html, title:'Choices' })).rejects.toThrow('PDF')
+    expect(() => downloadTakeHomePdf(html, 'Choices')).toThrow('PDF')
   })
 })

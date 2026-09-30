@@ -27,7 +27,6 @@ import { oasisActionLabel, vehicleResourceCatalog } from "./vehicle-resource-cat
 import {
   formatMileage,
   formatMoney,
-  formatStickerMoney,
   formatDate,
   resolveCurrentLocation,
   SORT_LABELS,
@@ -437,7 +436,10 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
   onSelectVehicle: InventoryTableProps["onSelectVehicle"];
 }) {
   const name = vehicleDisplayName(vehicle);
-  const title = vehicle.vehicleName?.trim() || name;
+  const identity = [vehicle.year, vehicle.make, vehicle.model]
+    .filter((part) => part !== null && part !== undefined && `${part}`.trim())
+    .join(" ") || vehicle.vehicleName?.trim() || name;
+  const series = [...new Set([vehicle.trim, vehicle.bodyType || vehicle.bodyStyle].filter((value): value is string => Boolean(value?.trim())))].join(" · ");
   const signal = primaryVehicleChangeSignal(vehicle.changeSummary);
   const change = signal && signal.kind !== "other" ? signal : null;
   return (
@@ -448,9 +450,9 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
       </span>
       {/* Name, certification, then Stock and VIN directly beneath the name. */}
       <div className="inv-desk-vehicle__body">
-        <span className="inv-desk-vehicle__title"><strong title={name}>{title}</strong></span>
+        <span className="inv-desk-vehicle__title"><strong title={name}>{identity}</strong></span>
+        {series ? <span className="inv-desk-vehicle__series">{series}</span> : null}
         <div className="inv-desk-vehicle__links"><CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name} />
-          <CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy inv-desk-copy--stock" />
         {change ? <button type="button" className={`inv-desk-change inv-desk-change--${change.kind}`} data-row-action="history" data-inventory-vehicle-trigger={vehicle.id}
           aria-label={`View change history for ${name}: ${change.shortLabel}`} title={vehicle.changeSummary || change.label}
           onClick={(event) => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, "timeline"); }}>
@@ -459,10 +461,10 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
         </div>
       </div>
       <dl className="inv-desk-vehicle__facts">
-          <div className="inv-desk-vehicle__vin"><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy" /></dd></div>
+        <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy inv-desk-copy--stock" /></dd></div>
+        <div className="inv-desk-vehicle__vin"><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy" /></dd></div>
       </dl>
       <div className="inv-desk-vehicle__comparison">
-        {vehicle.bodyType || vehicle.bodyStyle ? <span>{vehicle.bodyType || vehicle.bodyStyle}</span> : null}
         {vehicle.exteriorColor ? <span><small>Exterior</small>{vehicle.exteriorColor}</span> : null}
         {vehicle.interiorColor ? <span><small>Interior</small>{vehicle.interiorColor}</span> : null}
       </div>
@@ -506,36 +508,28 @@ function RecallChip({ vehicle, onSelectVehicle }: { vehicle: InventoryVehicle; o
 
 function DeskPriceCell({ vehicle }: { vehicle: InventoryVehicle }) {
   const hasPrice = typeof vehicle.price === "number" && Number.isFinite(vehicle.price);
+  const hasMsrp = typeof vehicle.msrp === "number" && Number.isFinite(vehicle.msrp);
+  const savings = hasPrice && hasMsrp && vehicle.msrp! > vehicle.price! ? vehicle.msrp! - vehicle.price! : null;
   const inventoryDate = compactInventoryDate(vehicle.inventoryDate);
+  const listingCapture = compactInventoryDate(vehicle.publicListing.updatedAt);
   // Price is the primary figure; mileage and age sit tightly beneath it.
   return <div className={`inv-desk-price${hasPrice ? "" : " is-unavailable"}`}>
     <strong>{formatMoney(vehicle.price)}</strong>
+    {hasMsrp ? <dl className="inv-desk-price__context">
+      <div><dt>Listed MSRP</dt><dd>{formatMoney(vehicle.msrp)}</dd></div>
+      {savings !== null ? <div><dt>Under MSRP</dt><dd>{formatMoney(savings)}</dd></div> : null}
+    </dl> : null}
     <span className="inv-desk-price__facts">
       {typeof vehicle.mileage === "number" && Number.isFinite(vehicle.mileage)
         ? <CopyableValue compact label="mileage" text={String(vehicle.mileage)} className="inv-desk-price__mileage">{formatMileage(vehicle.mileage)}</CopyableValue>
         : <span>{formatMileage(vehicle.mileage)}</span>}
       <span className="inv-desk-price__age" title={inventoryDate ? `Inventory date ${inventoryDate}` : undefined}>{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : "Age unavailable"}</span>
     </span>
-    <CapturedPriceReference vehicle={vehicle} />
+    {inventoryDate || listingCapture ? <dl className="inv-desk-price__dates">
+      {inventoryDate ? <div><dt>Inventory</dt><dd>{inventoryDate}</dd></div> : null}
+      {listingCapture ? <div><dt>Captured</dt><dd>{listingCapture}</dd></div> : null}
+    </dl> : null}
   </div>;
-}
-
-/** Keep original document prices distinct from today's asking price. */
-function capturedPriceReference(vehicle: InventoryVehicle) {
-  const sticker = vehicle.windowSticker;
-  if (sticker && typeof sticker.totalMsrp === "number" && Number.isFinite(sticker.totalMsrp)) {
-    return { label: "Sticker MSRP", value: formatStickerMoney(sticker.totalMsrp, sticker) };
-  }
-  if (typeof vehicle.msrp === "number" && Number.isFinite(vehicle.msrp)) {
-    return { label: "Listed MSRP", value: formatMoney(vehicle.msrp) };
-  }
-  return null;
-}
-
-function CapturedPriceReference({ vehicle }: { vehicle: InventoryVehicle }) {
-  const reference = capturedPriceReference(vehicle);
-  // Original sticker pricing already appears with its source below this row.
-  return reference?.label === "Listed MSRP" ? <span className="inv-desk-price__reference"><small>{reference.label}</small><b>{reference.value}</b></span> : null;
 }
 
 function capturedFuelEconomy(vehicle: InventoryVehicle): string | null {
@@ -1051,6 +1045,7 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
         <DeskEquipmentCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} limit={1} previewOnly />
       </button>
       <dl className="inventory-mobile-row__captured-facts" aria-label="Captured vehicle specifications">
+        <div data-fact="vin"><dt>VIN</dt><dd>{vehicle.vin}</dd></div>
         {vehicle.exteriorColor ? <div data-fact="exterior"><dt>Exterior</dt><dd>{vehicle.exteriorColor}</dd></div> : null}
         {vehicle.interiorColor ? <div data-fact="interior"><dt>Interior</dt><dd>{vehicle.interiorColor}</dd></div> : null}
         {transmissionAndFuel ? <div data-fact="transmission"><dt className="inventory-sr-only">{vehicle.transmission ? "Transmission / fuel" : "Fuel"}</dt><dd title={transmissionAndFuel}>{transmissionAndFuel.replace(/(\d+)-Speed Automatic/gi, "$1-speed auto")}</dd></div> : null}

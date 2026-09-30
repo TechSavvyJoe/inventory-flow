@@ -250,7 +250,7 @@ function ReturnVerification({ rows, store, fullAccess }: { rows: OverviewRow[]; 
 
 const STORAGE_NOT_ENABLED = 'Disposition storage is not enabled yet.'
 
-function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, collapseMore, dispositionsEnabled }: { counts: StoreCounts; homeStore: StoreName; role: UserRole; rows: OverviewRow[]; fullAccess: boolean; holdsVerified: boolean; collapseMore: boolean; dispositionsEnabled: boolean }) {
+function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, collapseMore, collapseStore, dispositionsEnabled }: { counts: StoreCounts; homeStore: StoreName; role: UserRole; rows: OverviewRow[]; fullAccess: boolean; holdsVerified: boolean; collapseMore: boolean; collapseStore: boolean; dispositionsEnabled: boolean }) {
   const store = counts.store
   const titleId = `ov-store-${slug(store)}`
   const otherStore = store !== homeStore
@@ -261,7 +261,7 @@ function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, c
   // On a phone the secondary counts fold away so the where list reaches the first viewport (OVERVIEW_SPEC §3).
   const dispositions = counts.dispositions
   const moreCounts = (
-    <>
+    <div className="ov-more-body">
       <dl className="ov-counts ov-counts--more">
         {MORE_COUNTS.map((spec) => <CountLink key={spec.key} store={store} count={counts[spec.key] as number} spec={spec} />)}
       </dl>
@@ -278,17 +278,19 @@ function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, c
           ) : <p className="ov-storage-note">{STORAGE_NOT_ENABLED}</p>}
         </div>
       ) : null}
+    </div>
+  )
+  const heading = (
+    <>
+      <h3 id={titleId}>{store}</h3>
+      {otherStore
+        ? role === 'group_manager' ? null : <p>Moves as visible to you</p>
+        : <p>Home store</p>}
     </>
   )
-  return (
-    <section className={`ov-store-card${otherStore ? '' : ' is-home'}`} aria-labelledby={titleId}>
-      <header>
-        <h3 id={titleId}>{store}</h3>
-        {otherStore
-          ? role === 'group_manager' ? null : <p>Moves as visible to you</p>
-          : <p>Home store</p>}
-      </header>
-      <dl className="ov-counts">
+  const body = (
+    <>
+      <dl className="ov-counts ov-counts--core">
         {CORE_COUNTS.map((spec) => <CountLink key={spec.key} store={store} count={counts[spec.key] as number} spec={spec} note={notes[spec.key]} />)}
       </dl>
       {collapseMore ? (
@@ -298,6 +300,24 @@ function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, c
         </details>
       ) : moreCounts}
       <ReturnVerification rows={rows} store={store} fullAccess={fullAccess} />
+    </>
+  )
+  return (
+    <section className={`ov-store-card${otherStore ? '' : ' is-home'}`} aria-labelledby={titleId}>
+      {collapseStore ? (
+        <details className="ov-store-details">
+          <summary>
+            <span className="ov-store-summary-title">{heading}</span>
+            <span className="ov-store-preview" aria-hidden="true">
+              <span>Away <strong>{counts.away}</strong></span>
+              <span>Holds <strong>{counts.holds}</strong></span>
+              <span>Service <strong>{counts.waitingForService}</strong></span>
+            </span>
+            <ChevronDown aria-hidden="true" />
+          </summary>
+          <div className="ov-store-details-body">{body}</div>
+        </details>
+      ) : <><header>{heading}</header>{body}</>}
     </section>
   )
 }
@@ -686,6 +706,10 @@ export function OverviewPage() {
   const managerLog = data.meta.managerDispositionFreshness && data.meta.managerDispositionFreshness !== 'current'
     ? ` · Manager log ${freshnessWord(data.meta.managerDispositionFreshness).toLowerCase()}` : ''
   const asOf = `As of ${formatDate(overview.asOfDay)} · Holds ${freshnessWord(data.meta.dealerMailFreshness).toLowerCase()} · Website ${freshnessWord(data.meta.publicFreshness).toLowerCase()}${managerLog}`
+  const scopedIssues = (data.vehicleIssues ?? []).filter((issue) => stores.includes(issue.reportStore))
+  const openIssueCount = scopedIssues.filter((issue) => issue.status !== 'completed').length
+  const reviewIssueCount = scopedIssues.filter((issue) => issue.status === 'awaiting_review').length
+  const urgentIssueCount = scopedIssues.filter((issue) => issue.status !== 'completed' && issue.priority === 'urgent').length
 
   function printSnapshot() {
     flushSync(() => setPrinting(true))
@@ -734,9 +758,19 @@ export function OverviewPage() {
 
       <SourceWarning meta={data.meta} />
 
+      <section className="ov-issue-entry" aria-label="Vehicle issues summary">
+        <div className="ov-issue-title"><ClipboardCheck aria-hidden="true" /><div><h2>Vehicle issues</h2><p>Reported by employees in this scope</p></div></div>
+        <dl className="ov-issue-counts">
+          <div><dt>Open</dt><dd>{openIssueCount}</dd></div>
+          <div><dt>Awaiting review</dt><dd>{reviewIssueCount}</dd></div>
+          <div className={urgentIssueCount ? 'ov-tone-danger' : undefined}><dt>Urgent</dt><dd>{urgentIssueCount}</dd></div>
+        </dl>
+        <Link className="ov-button" to={`/attention?category=issues&scope=${scope}`}><ClipboardCheck aria-hidden="true"/>Vehicle issue log</Link>
+      </section>
+
       <section className={`ov-stores${stores.length === 1 ? ' ov-stores--single' : ''}`} aria-label="Store summary">
         {storeCards(overview, stores).map((counts) => (
-          <StoreCard key={counts.store} counts={counts} homeStore={homeStore} role={role} rows={rows} fullAccess={fullAccess} holdsVerified={holdsVerified} collapseMore={phone && !printing} dispositionsEnabled={dispositionsEnabled} />
+          <StoreCard key={counts.store} counts={counts} homeStore={homeStore} role={role} rows={rows} fullAccess={fullAccess} holdsVerified={holdsVerified} collapseMore={!printing} collapseStore={phone && stores.length > 1 && !printing} dispositionsEnabled={dispositionsEnabled} />
         ))}
       </section>
 

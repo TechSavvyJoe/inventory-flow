@@ -1,8 +1,11 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VehicleWorkspace } from './VehicleWorkspace';
-import { TakeHomeSheet, TakeHomeSheetContent, shareTakeHomeHtml, takeHomeDocumentHtml, takeHomeModel } from './TakeHomeSheet';
+import { TakeHomeSheet, TakeHomeSheetContent, takeHomeModel } from './TakeHomeSheet';
 import type { InventoryVehicle } from './types';
+import { createTakeHomePdf } from '../../../extension/sidepanel/lib/takehome-pdf.mjs';
+
+vi.mock('../../../extension/sidepanel/lib/takehome-pdf.mjs', () => ({ createTakeHomePdf:vi.fn().mockResolvedValue(new Blob(['%PDF-1.7 synthetic unit fixture'], { type:'application/pdf' })) }));
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
@@ -81,7 +84,7 @@ describe('take-home sheet', () => {
     expect(model.listingUrl).toBeNull();
   });
 
-  it('renders each selected vehicle once in one labelled printable document', () => {
+  it('renders each selected vehicle once in one labelled printable document', async () => {
     const first = vehicle();
     const second = { ...vehicle(), id:'TESTDATASYN000002', vin:'TESTDATASYN000002', stockNumber:'HT0530A', model:'Escape', publicListing:{ ...vehicle().publicListing, listingUrl:'https://example.com/escape' } };
     render(<TakeHomeSheet vehicle={first} vehicles={[first, second, first]} listLabel="Jamie vehicle choices" onClose={vi.fn()}/>);
@@ -89,31 +92,34 @@ describe('take-home sheet', () => {
     expect(document.querySelectorAll('.takehome-stage > .th')).toHaveLength(2);
     expect(screen.getAllByRole('link', { name:'View full vehicle listing' })).toHaveLength(2);
     expect(screen.getByRole('button', { name:'Print / Save as PDF' })).toBeVisible();
-    expect(screen.getByRole('button', { name:'Save HTML' })).toBeVisible();
-    expect(screen.getByRole('button', { name:'Share' })).toBeVisible();
+    expect(screen.getByRole('button', { name:'Save PDF' })).toBeVisible();
+    await waitFor(() => expect(screen.getByRole('button', { name:'Share' })).toBeEnabled());
   });
 
-  it('escapes the saved document title and removes unsafe links', async () => {
-    const root = document.createElement('div');
-    root.innerHTML = '<a href="javascript:alert(1)">Unsafe</a><p>&lt;customer&gt;</p>';
-    const html = await takeHomeDocumentHtml(root, '<script>alert(1)</script>');
-    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
-    expect(html).not.toContain('href="javascript:');
-    expect(html).toContain('&lt;customer&gt;');
+  it('shares a prepared PDF from the native user action', async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, share, canShare:() => true });
+    render(<TakeHomeSheet vehicle={vehicle()} onClose={vi.fn()} />);
+    const button = screen.getByRole('button', { name:'Share' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(share).toHaveBeenCalledOnce());
+    const file = share.mock.calls[0][0].files[0];
+    expect(file.type).toBe('application/pdf');
+    expect(file.name).toMatch(/\.pdf$/);
+    expect(screen.getByRole('status')).toHaveTextContent('Shared PDF document');
   });
 
-  it('treats native share cancellation as a quiet cancel without copying links', async () => {
-    const clipboard = { writeText:vi.fn() };
-    Object.defineProperties(navigator, { share:{ configurable:true, value:vi.fn().mockRejectedValue(new DOMException('cancelled','AbortError')) }, canShare:{ configurable:true, value:vi.fn(() => true) }, clipboard:{ configurable:true, value:clipboard } });
-    await expect(shareTakeHomeHtml('<html></html>', 'Vehicle choices', ['https://example.com/listing'])).resolves.toBe('cancelled');
-    expect(clipboard.writeText).not.toHaveBeenCalled();
-  });
-
-  it('falls back to copying only public listing links when file sharing is unavailable', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperties(navigator, { share:{ configurable:true, value:undefined }, canShare:{ configurable:true, value:undefined }, clipboard:{ configurable:true, value:{ writeText } } });
-    await expect(shareTakeHomeHtml('<html></html>', 'Vehicle choices', ['https://example.com/one','https://example.com/two'])).resolves.toBe('copied');
-    expect(writeText).toHaveBeenCalledWith('https://example.com/one\nhttps://example.com/two');
+  it('retains the sheet and retries PDF preparation after a temporary asset failure', async () => {
+    vi.mocked(createTakeHomePdf).mockRejectedValueOnce(new Error('Temporary asset failure'));
+    render(<TakeHomeSheet vehicle={vehicle()} onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Temporary asset failure'));
+    expect(screen.getByRole('button', { name:'Share' })).toBeDisabled();
+    expect(screen.getByRole('button', { name:'Print / Save as PDF' })).toBeEnabled();
+    expect(screen.getByText('2026 Ford Explorer Active')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name:'Retry PDF' }));
+    await waitFor(() => expect(screen.getByRole('button', { name:'Share' })).toBeEnabled());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('preserves equipment qualifications and full customer notes without repeating highlights', () => {

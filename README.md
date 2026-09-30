@@ -77,7 +77,7 @@ in-service dates do not prove reconditioning completion. See
 [Service readiness](docs/SERVICE_READINESS.md).
 
 The account menu's **Download companion extension** action provides the matching
-1.4.0 Chrome package. Extract it and load the folder containing `manifest.json`
+1.4.1 Chrome package. Extract it and load the folder containing `manifest.json`
 through Chrome's Extensions page, or reload the existing unpacked extension
 after updating its files. This is a private unpacked release, not a Chrome Web
 Store automatic update. See [Companion installation](extension/README.md).

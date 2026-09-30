@@ -249,6 +249,42 @@ describe('modern inventory result access', () => {
     expect(within(row).queryByRole('button', { name: /More actions/ })).not.toBeInTheDocument();
   });
 
+  it('uses stored identity, listing-price, inventory-date, capture, and configuration facts without crossing source families', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.inventoryDate = '2026-08-09T12:00:00Z';
+    vehicle.publicListing = { ...vehicle.publicListing, updatedAt: '2026-09-29T12:00:00Z' };
+    vehicle.mpgCity = 18;
+    vehicle.mpgHighway = 24;
+
+    render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+
+    const row = screen.getByRole('row', { name: /2024 Ford F-150/ });
+    const identity = within(row).getByRole('cell', { name: /ExteriorOxford WhiteInteriorBlack/ });
+    const price = within(row).getByRole('cell', { name: /Listed MSRP/ });
+    const configuration = within(row).getByRole('cell', { name: /18 city \/ 24 hwy MPG/ });
+    const operations = within(row).getByRole('cell', { name: /Location Fowlerville.*Hold/ });
+
+    expect(within(identity).getByText('2024 Ford F-150')).toBeVisible();
+    expect(within(identity).getByText('XLT · SuperCrew pickup')).toBeVisible();
+    expect(identity).toHaveTextContent('VIN1FTFW1E84RKF12345');
+    expect(within(price).getByText('Listed MSRP')).toBeVisible();
+    expect(price).toHaveTextContent('$52,995');
+    expect(within(price).getByText('Under MSRP')).toBeVisible();
+    expect(price).toHaveTextContent('$6,000');
+    expect(price).toHaveTextContent('Inventory08/09/2026');
+    expect(price).toHaveTextContent('Captured09/29/2026');
+    expect(configuration).toHaveTextContent('18 city / 24 hwy MPG');
+    expect(operations).not.toHaveTextContent(/MSRP|Listing captured|MPG/);
+  });
+
+  it('keeps the full VIN visible in the compact mobile comparison row', () => {
+    const vehicle = heldMovingVehicle();
+    render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} />);
+    const facts = screen.getByLabelText('Captured vehicle specifications');
+    expect(within(facts).getByText('VIN')).toBeVisible();
+    expect(facts).toHaveTextContent(vehicle.vin);
+  });
+
   it('shows the gallery count on the desktop photo and retries the next full image', () => {
     const vehicle = heldMovingVehicle();
     vehicle.imageUrl = 'https://www.bobmaxeyfordhowell.com/inventoryphotos/example/primary.jpg';

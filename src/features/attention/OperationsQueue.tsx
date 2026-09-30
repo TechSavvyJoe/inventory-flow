@@ -8,16 +8,18 @@ import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
 import { formatCurrency, formatDate, formatDateTime, formatNumber } from '../../lib/format'
 import { serviceStatusLabel } from '../../lib/service-readiness'
-import type { AttentionEventInput, AttentionItem, StoreName, UserRole, VehicleRecord } from '../../types'
+import type { AttentionEventInput, AttentionItem, BootstrapData, StoreName, UserRole, VehicleRecord } from '../../types'
 import { actionCategory, belongsToActionStore, groupByVehicle, INFORMATIONAL_REASON_LABELS, isActionable, isTaskOverdue, taskLinkLabel, taskTitle, type ActionCategory, type ActionRow } from './action-center'
 import { currentWorkspaceReturnPath, vehicleWorkspacePath, withWorkspaceReturnPath } from '../../lib/inventory-navigation'
 import { searchFieldsMatch } from '../../lib/search'
 import '../../styles/workflow-pages.css'
 import './OperationsQueue.css'
+import { VehicleIssueLedger } from '../issues/VehicleIssueLedger'
 
 interface OperationsQueueProps {
   items: AttentionItem[]; homeStore: StoreName; role: UserRole; reportDate: string
   vehicles?: VehicleRecord[]; currentUser?: string
+  issueData?: BootstrapData; onIssueChanged?: () => Promise<void>
   onAction: (id: string, input: AttentionEventInput) => Promise<AttentionItem>
 }
 const CATEGORIES: Array<[ActionCategory, string]> = [['all', 'All tasks'], ['issues', 'Vehicle issues'], ['moves', 'Vehicle moves'], ['holds', 'Hold follow-ups'], ['inventory', 'Inventory checks'], ['service', 'Service']]
@@ -87,10 +89,10 @@ function TaskFollowUp({ item, condition, role, homeStore, currentUser, onAction 
   </div></details>
 }
 
-export function OperationsQueue({ items, homeStore, role, reportDate, vehicles = [], currentUser, onAction }: OperationsQueueProps) {
+export function OperationsQueue({ items, homeStore, role, reportDate, vehicles = [], currentUser, onAction, issueData, onIssueChanged }: OperationsQueueProps) {
   const location = useLocation()
   const returnTo = currentWorkspaceReturnPath(location)
-  const accessContext = `${currentUser}:${role}:${homeStore}`
+  const accessContext = `${issueData?.access?.userId ?? currentUser}:${role}:${homeStore}`
   useWorkspaceScroll(accessContext, 'attention')
   const [scope, setScope] = useWorkspaceState<'home' | 'group'>(accessContext, 'attention.scope', 'home')
   const [category, setCategory] = useWorkspaceState<ActionCategory>(accessContext, 'attention.category', 'all')
@@ -102,8 +104,11 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
   useEffect(() => {
     if (categoryParam === null) return
     if (CATEGORIES.some(([key]) => key === categoryParam)) setCategory(categoryParam as ActionCategory)
+    const scopeParam = new URLSearchParams(location.search).get('scope')
+    if (scopeParam === 'home' || scopeParam === 'group') setScope(scopeParam)
     const next = new URLSearchParams(location.search)
     next.delete('category')
+    next.delete('scope')
     navigate({ pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : '', hash: location.hash }, { replace: true })
   }, [categoryParam]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
   const scoped = useMemo(() => items.filter(item => scope === 'group' || belongsToActionStore(item, homeStore)), [items, scope, homeStore])
@@ -122,13 +127,14 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
   // category. A vehicle with a hold and a service step is one row under "All
   // tasks" and one row under each of "Hold follow-ups" and "Service", so the
   // category figures can add up to more than "All tasks" by design.
-  const categoryCounts = (key: ActionCategory) => groupByVehicle(taskItems.filter(item => key === 'all' || actionCategory(item) === key)).length
+  const categoryCounts = (key: ActionCategory) => key === 'issues' && issueData ? (issueData.vehicleIssues ?? []).filter(issue => issue.status !== 'completed' && (scope === 'group' || issue.reportStore === homeStore)).length : groupByVehicle(taskItems.filter(item => key === 'all' || actionCategory(item) === key)).length
   const vehicleMap = useMemo(() => new Map(vehicles.map(vehicle => [vehicle.vin, vehicle])), [vehicles])
   return <section className="action-queue" aria-label="Store action queue">
     <div className="workflow-page-heading"><div><h1>Action center</h1><p>The next step for your store, in one place.</p></div>
       <div className="workflow-scope" role="group" aria-label="Queue location scope"><button type="button" aria-pressed={scope === 'home'} onClick={() => { if (confirmUnsavedWork()) setScope('home') } }>{homeStore}</button><button type="button" aria-pressed={scope === 'group'} onClick={() => { if (confirmUnsavedWork()) setScope('group') } }>All stores</button></div>
     </div>
-    <div className="workflow-tabs" role="group" aria-label="Task category">{CATEGORIES.filter(([key]) => key !== 'issues' || items.some(item => item.type === 'vehicle_issue')).map(([key, label]) => <button type="button" key={key} aria-pressed={category === key} onClick={() => { if (confirmUnsavedWork()) setCategory(key) } }>{label}<span>{categoryCounts(key)}</span></button>)}</div>
+    <div className="workflow-tabs" role="group" aria-label="Task category">{CATEGORIES.filter(([key]) => key !== 'issues' || ['sales', 'manager', 'group_manager'].includes(role) || items.some(item => item.type === 'vehicle_issue')).map(([key, label]) => <button type="button" key={key} aria-label={key === 'issues' ? `${label} ${categoryCounts(key)}` : undefined} aria-pressed={category === key} onClick={() => { if (confirmUnsavedWork()) setCategory(key) } }>{label}<span>{categoryCounts(key)}</span></button>)}</div>
+    {category === 'issues' && issueData ? <VehicleIssueLedger data={issueData} homeStore={homeStore} role={role} currentUser={currentUser} allStores={scope === 'group'} onChanged={onIssueChanged ?? (() => Promise.resolve())} /> : <>
     <div className="workflow-toolbar"><PredictiveSearchInput className="workflow-search" value={query} onChange={value => { if (confirmUnsavedWork()) setQuery(value) }} ariaLabel="Search work queue" clearLabel="Clear queue search" placeholder="Search vehicle, stock, VIN, or task" candidates={statusItems.filter(item => category === 'all' || actionCategory(item) === category).filter(matchesSearch).map(item => ({ id: item.id, label: item.vehicleName || item.stockNumber || taskTitle(item), detail: taskTitle(item), value: item.stockNumber || item.vehicleName || taskTitle(item), searchValues: [taskTitle(item), item.vehicleName, item.stockNumber, item.vin, item.owner, item.assignedTo, item.store] }))} />
       <div className="workflow-scope action-status-buttons" role="group" aria-label="Task status"><button type="button" aria-pressed={status === 'open'} onClick={() => { if (confirmUnsavedWork()) setStatus('open') } }>Open</button><button type="button" aria-pressed={status === 'reviewed'} onClick={() => { if (confirmUnsavedWork()) setStatus('reviewed') } }>Reviewed</button></div><span className="workflow-muted" role="status"><span>{visible.length} {visible.length === 1 ? 'task' : 'tasks'}</span>{alsoWorthKnowing.length ? ` · ${alsoWorthKnowing.length} informational` : ''}</span>
     </div>
@@ -150,6 +156,7 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
         </li>)}
       </ul>
     </details> : null}
+    </>}
   </section>
 }
 

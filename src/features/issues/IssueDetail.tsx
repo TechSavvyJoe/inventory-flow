@@ -12,18 +12,19 @@ interface IssueDetailProps {
   issueId: string; role: UserRole; store: StoreName; onSaved: (issue: VehicleIssueDetail) => void
   readOnly?: boolean
   showVehicle?: boolean
+  initialAction?: VehicleIssueAction
 }
 
 export function IssueDetail(props: IssueDetailProps) {
   return <IssueDetailContent key={`${props.role}:${props.store}:${props.issueId}`} {...props} />
 }
 
-function IssueDetailContent({ issueId, role, store, onSaved, readOnly = false, showVehicle = true }: IssueDetailProps) {
+function IssueDetailContent({ issueId, role, store, onSaved, readOnly = false, showVehicle = true, initialAction = 'add_note' }: IssueDetailProps) {
   const [detail, setDetail] = useState<VehicleIssueDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [retry, setRetry] = useState(0)
-  const [action, setAction] = useState<VehicleIssueAction>('add_note')
+  const [action, setAction] = useState<VehicleIssueAction>(initialAction)
   const [note, setNote] = useState('')
   const [assignee, setAssignee] = useState('')
   const [photos, setPhotos] = useState<DraftIssuePhoto[]>([])

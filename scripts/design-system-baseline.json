@@ -111,6 +111,13 @@
       "important": 0,
       "idSelectors": 0
     },
+    "src/features/issues/VehicleIssueLedger.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
     "src/features/attention/OperationsQueue.css": {
       "smallText": 0,
       "rawColors": 0,
