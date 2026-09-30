@@ -19,7 +19,7 @@ const whole: Crop = { x: 0, y: 0, width: 1, height: 1 }
 
 export function ScanVehicleDialog({ vehicles, onFind, onClose, returnFocusRef }: Props) {
   const dialog = useRef<HTMLDivElement>(null)
-  const input = useRef<HTMLInputElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
   const video = useRef<HTMLVideoElement>(null)
   const preview = useRef<HTMLCanvasElement>(null)
@@ -171,7 +171,7 @@ export function ScanVehicleDialog({ vehicles, onFind, onClose, returnFocusRef }:
           <div className="vehicle-scan-actions"><button type="button" className="vehicle-scan-primary" onClick={() => void readPhoto()} disabled={busy}><ScanLine aria-hidden="true" />Read photo</button><button type="button" onClick={() => setCrop(whole)} disabled={busy}>Use whole photo</button></div>
         </details> : null}
         {busy && !camera ? <button type="button" onClick={() => { cancel(); setBusy(false); setCamera(false); setManual(true); setStatus('Stopped. Enter the number or try again.'); }}>Cancel reading</button> : null}
-        {manual ? <label className="vehicle-scan-input">VIN or stock number<input ref={input} value={text} autoCapitalize="characters" autoComplete="off" spellCheck={false} onChange={event => { cancel(); setCamera(false); setBusy(false); setText(event.currentTarget.value); setStatus('Choose the matching vehicle below.'); }} placeholder="VIN or stock number" /></label> : null}
+        {manual ? <label className="vehicle-scan-input">VIN or stock number<textarea rows={3} ref={input} value={text} autoCapitalize="characters" autoComplete="off" spellCheck={false} onChange={event => { cancel(); setCamera(false); setBusy(false); setText(event.currentTarget.value); setStatus('Choose the matching vehicle below.'); }} placeholder="VIN or stock number" /></label> : null}
         {matches.length ? <ul className="vehicle-scan-matches">{matches.map(match => <li key={match.vehicle.id}>
           <strong>{vehicleDisplayName(match.vehicle)}</strong><span>Stock {match.vehicle.stockNumber} · {match.vehicle.location.homeStore.name}</span><span>VIN {match.vehicle.vin}</span>
           {match.needsReview ? <p>Possible reading — compare the stock number with the tag.</p> : null}

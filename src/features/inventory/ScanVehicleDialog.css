@@ -10,7 +10,7 @@
 .vehicle-scan-dialog button.vehicle-scan-primary:hover:not(:disabled) { background: var(--blue-700); border-color: var(--blue-700); }
 .vehicle-scan-dialog button svg, .vehicle-scan-file svg { width: var(--ifx-space-4); height: var(--ifx-space-4); flex: none; }
 .vehicle-scan-dialog button:disabled, .vehicle-scan-file:has(input:disabled) { opacity: var(--ifx-disabled-opacity); cursor: not-allowed; }
-.vehicle-scan-dialog :is(button,input):focus-visible, .vehicle-scan-file:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.vehicle-scan-dialog :is(button,input,textarea):focus-visible, .vehicle-scan-file:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
 .vehicle-scan-actions { display: flex; flex-wrap: wrap; gap: var(--ifx-space-2); }
 .vehicle-scan-actions > :is(button,label) { flex: 1 1 auto; padding-inline: var(--ifx-space-2); }
 .vehicle-scan-file { position: relative; overflow: hidden; }
@@ -25,7 +25,7 @@
 .vehicle-scan-crop canvas { width: 100%; display: block; }
 .vehicle-scan-crop span { box-sizing: border-box; pointer-events: none; position: absolute; border: 2px dashed var(--blue-600); background: var(--blue-100); opacity: 0.3; }
 .vehicle-scan-input { display: grid; gap: var(--ifx-space-2); font-size: var(--ifx-text-body); font-weight: var(--ifx-weight-semibold); }
-.vehicle-scan-input input { width: 100%; box-sizing: border-box; min-height: var(--control-target); padding: var(--ifx-space-2); border: 1px solid var(--border-strong); border-radius: var(--radius-control); background: var(--surface); color: var(--ink-900); font: inherit; }
+.vehicle-scan-input textarea { resize: vertical; width: 100%; box-sizing: border-box; min-height: var(--control-target); padding: var(--ifx-space-2); border: 1px solid var(--border-strong); border-radius: var(--radius-control); background: var(--surface); color: var(--ink-900); font: inherit; }
 .vehicle-scan-matches { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--ifx-space-3); }
 .vehicle-scan-matches li { display: grid; gap: var(--ifx-space-2); padding-block: var(--ifx-space-3); border-block-start: 1px solid var(--border); overflow-wrap: anywhere; }
 .vehicle-scan-matches span, .vehicle-scan-note { color: var(--ink-600); font-size: var(--ifx-text-sm); }

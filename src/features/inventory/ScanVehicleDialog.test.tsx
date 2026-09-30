@@ -160,6 +160,19 @@ describe('vehicle scanner local lookup and cancellation', () => {
     expect(onFind).toHaveBeenCalledExactlyOnceWith(vehicle)
   })
 
+  it('preserves OCR line boundaries while correcting a stock reading', async () => {
+    engine.readTag.mockResolvedValue({ text: 'STOCK\nDEMO-H09\n2024 FORD', barcode: false })
+    const { onFind } = setup()
+    await waitFor(() => expect(engine.scanVideo).toHaveBeenCalledOnce())
+    fireEvent.change(screen.getByLabelText('Choose or take a tag photo'), { target: { files: [new File(['synthetic'], 'tag.png', { type: 'image/png' })] } })
+    const reading = await screen.findByRole('textbox', { name: 'VIN or stock number' })
+    expect(reading).toHaveValue('STOCK\nDEMO-H09\n2024 FORD')
+    fireEvent.change(reading, { target: { value: 'STOCK\nDEMO-H01\n2024 FORD' } })
+    expect(onFind).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Show DEMO-H01 in inventory' }))
+    expect(onFind).toHaveBeenCalledExactlyOnceWith(vehicle)
+  })
+
   it('reads a captured photo immediately without a second Read photo action', async () => {
     engine.readTag.mockResolvedValue({ text: vehicle.stockNumber, barcode: false })
     const { onFind } = setup()
