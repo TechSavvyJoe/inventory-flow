@@ -1,5 +1,11 @@
 # Shared data deployment and activation checklist
 
+## Deployment - 2026-09-30 (pnpm cloud:release)
+
+- 2026-09-30T18:47:22.792Z | Commit: e5f2ae4f1afa0fc8e41ce09381ca2642c804d34a | Tag: e5f2ae4 | App Version: f1d51344-f960-41de-9988-6459cb72a7c6 | Integrations Version: b5b8b31c-0b03-43b8-8a6f-e97863b7d9cc
+
+Inventory Flow 1.4.0 ships the completed workspaces, companion/customer documents, central customer lists and PR #59 employee-isolation repair. [The release evidence](RELEASE_1_4_0.md) records exact-commit CI, individual verified migrations 0013/0014, the protected backup, authenticated readiness/version checks, independently reconciled integration data, rollback versions and remaining physical-device/employee acceptance boundaries. Joe-PC's publisher tasks were restored. Both Worker versions completed at least 15 minutes of connected monitoring without exceptions or 5xx responses; the scheduled 15:25 EDT hold refresh returned `0` and `published_and_verified` at 15:26:18 EDT, with no pending reconciliation.
+
 ## Deployment - September 23, 2026 (DealerMail hold freshness)
 
 Source commit `2f609694fa33cb5881b69ee071b0e8f10de6eaa5` passed [GitHub validation run 35884145372](https://github.com/TechSavvyJoe/inventory-flow/actions/runs/35884145372): tests, build, cloud/recovery checks, browser end-to-end, and mobile/cross-browser acceptance. The CI repair installed Pillow and pypdf for the existing Python document tests. No migration or daily-data republication was part of this code deploy.
