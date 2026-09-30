@@ -22,6 +22,9 @@ import {
   listVehicleIssueEvents,
   insertVehicleIssue,
   appendVehicleIssueEvent,
+  savedVehicleListsEnabled,
+  listSavedVehicleLists as listSavedVehicleListRows,
+  mutateSavedVehicleList as persistSavedVehicleListMutation,
 } from './repository-dispatch.mjs'
 import { buildServiceReadinessEvent, serviceReadinessView } from './service-readiness.mjs'
 import { buildDispositionEvent, dispositionDetail, dispositionView } from './vehicle-disposition.mjs'
@@ -34,6 +37,7 @@ import { buildOverviewSummary, overviewAccess } from './overview-summary.mjs'
 import { normalizePublicChangeCounts } from './public-change-counts.mjs'
 import { MANAGER_DISPOSITION_COVERAGE_CAVEAT } from './manager-disposition-schema.mjs'
 import { allowedEventTypes, buildTransferEvent, buildTransferRequest, roleContext, WorkflowError } from './workflow.mjs'
+import { normalizeSavedListMutation, savedListOwnerId, savedListView } from './saved-vehicle-lists.mjs'
 
 const VIN_PATTERN = /^[A-HJ-NPR-Z0-9]{17}$/
 const TERMINAL_TRANSFER_STATES = new Set(['declined', 'canceled', 'closed'])
@@ -1863,6 +1867,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       serviceEventsByVin,
       serviceIntakeByVin: new Map((dataset.serviceIntake ?? []).map((row) => [row.vin, row])),
       dispositionStorage,
+      savedListsStorage: savedVehicleListsEnabled(database),
       dispositionEventsByVin,
       transfersByVin,
       sources,
@@ -2027,6 +2032,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         // False only on a D1 without migration 0013: the page says so instead
         // of showing zero dispositions and no way to record one.
         dispositionsEnabled: state.dispositionStorage,
+        savedListsEnabled: state.savedListsStorage && Boolean(savedListOwnerId(state.context, { required: false })),
         holdSignals,
         managerDispositions: state.indexes.managerDispositionRecords.map((record) => ({
           ...record,
@@ -2055,6 +2061,37 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const vehicle = source && vehicleFromSnapshot(state, source)
       if (!vehicle) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
       return serviceDetail(vehicle, state.serviceEventsByVin.get(vin) ?? [], state.context)
+    },
+
+    listSavedVehicleLists(contextInput = {}) {
+      const state = snapshot(contextInput)
+      if (!state.savedListsStorage) return { lists: [] }
+      const ownerUserId = savedListOwnerId(state.context)
+      const availableVins = new Set(state.sources
+        .filter(currentInventoryRecord)
+        .filter((source) => Boolean(vehicleFromSnapshot(state, source)))
+        .map((source) => source.vin))
+      return {
+        lists: listSavedVehicleListRows(database, ownerUserId)
+          .map((row) => savedListView(row, availableVins)),
+      }
+    },
+
+    mutateSavedVehicleList(input, contextInput = {}, idempotencyKey) {
+      const state = snapshot(contextInput)
+      if (!state.savedListsStorage) {
+        throw new WorkflowError('Saved-list storage is not enabled yet.', { status: 503, code: 'MIGRATION_REQUIRED' })
+      }
+      const mutation = normalizeSavedListMutation(input, state.context, idempotencyKey, state.currentNow)
+      const result = persistSavedVehicleListMutation(database, mutation)
+      const availableVins = new Set(state.sources
+        .filter(currentInventoryRecord)
+        .filter((source) => Boolean(vehicleFromSnapshot(state, source)))
+        .map((source) => source.vin))
+      return {
+        created: mutation.action === 'create' && result.replayed !== true,
+        record: savedListView(result.result, availableVins),
+      }
     },
 
     getDisposition(vinInput, contextInput = {}) {

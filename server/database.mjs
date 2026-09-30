@@ -337,6 +337,43 @@ export function migrate(database) {
     CREATE TRIGGER IF NOT EXISTS vehicle_issue_events_no_delete BEFORE DELETE ON vehicle_issue_events
     BEGIN SELECT RAISE(ABORT, 'Vehicle issue history is append-only'); END;
 
+    -- Employee-owned saved VIN references. Source vehicle facts are resolved
+    -- at read time and are never copied into this app-owned state.
+    CREATE TABLE IF NOT EXISTS saved_vehicle_lists (
+      id TEXT PRIMARY KEY,
+      owner_user_id TEXT NOT NULL,
+      label TEXT NOT NULL CHECK (length(label) BETWEEN 1 AND 80),
+      revision INTEGER NOT NULL CHECK (revision > 0),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS saved_vehicle_list_items (
+      list_id TEXT NOT NULL REFERENCES saved_vehicle_lists(id) ON DELETE CASCADE,
+      vin TEXT NOT NULL,
+      added_at TEXT NOT NULL,
+      PRIMARY KEY (list_id, vin)
+    );
+    CREATE TABLE IF NOT EXISTS saved_vehicle_list_actions (
+      owner_user_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      input_hash TEXT NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('create','rename','delete','add','remove')),
+      list_id TEXT NOT NULL,
+      result_revision INTEGER NOT NULL CHECK (result_revision > 0),
+      result_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (owner_user_id, idempotency_key)
+    );
+    CREATE INDEX IF NOT EXISTS saved_vehicle_lists_owner_idx
+      ON saved_vehicle_lists(owner_user_id, deleted_at, updated_at DESC, id);
+    CREATE INDEX IF NOT EXISTS saved_vehicle_list_items_list_idx
+      ON saved_vehicle_list_items(list_id, added_at, vin);
+    CREATE TRIGGER IF NOT EXISTS saved_vehicle_list_actions_no_update
+    BEFORE UPDATE ON saved_vehicle_list_actions BEGIN SELECT RAISE(ABORT, 'Saved-list action history is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS saved_vehicle_list_actions_no_delete
+    BEFORE DELETE ON saved_vehicle_list_actions BEGIN SELECT RAISE(ABORT, 'Saved-list action history is append-only'); END;
+
     CREATE INDEX IF NOT EXISTS public_snapshot_store_idx
       ON public_vehicle_snapshots(source_run_id, physical_store_id);
     CREATE INDEX IF NOT EXISTS crm_snapshot_store_idx
@@ -1006,6 +1043,100 @@ export function insertDispositionEvent(database, row) {
     database.prepare(`INSERT INTO vehicle_disposition_events (${DISPOSITION_EVENT_COLUMNS.join(', ')}) VALUES (${DISPOSITION_EVENT_COLUMNS.map(() => '?').join(', ')})`)
       .run(...DISPOSITION_EVENT_COLUMNS.map((key) => row[key] ?? null))
     return row
+  })
+}
+
+export function savedVehicleListsEnabled() { return true }
+
+function savedListRaw(database, row) {
+  return {
+    id: row.id,
+    label: row.label,
+    revision: row.revision,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    items: database.prepare(`
+      SELECT vin, added_at FROM saved_vehicle_list_items
+      WHERE list_id = ? ORDER BY added_at, vin
+    `).all(row.id).map((item) => ({ vin: item.vin, addedAt: item.added_at })),
+  }
+}
+
+export function listSavedVehicleLists(database, ownerUserId) {
+  return database.prepare(`
+    SELECT * FROM saved_vehicle_lists
+    WHERE owner_user_id = ? AND deleted_at IS NULL
+    ORDER BY updated_at DESC, id
+  `).all(ownerUserId).map((row) => savedListRaw(database, row))
+}
+
+export function mutateSavedVehicleList(database, mutation) {
+  return withTransaction(database, () => {
+    const replay = database.prepare(`
+      SELECT input_hash, result_json FROM saved_vehicle_list_actions
+      WHERE owner_user_id = ? AND idempotency_key = ?
+    `).get(mutation.ownerUserId, mutation.idempotencyKey)
+    if (replay) {
+      if (replay.input_hash !== mutation.inputHash) {
+        throw new WorkflowError('This idempotency key was already used for a different saved-list action.', {
+          status: 409, code: 'IDEMPOTENCY_CONFLICT',
+        })
+      }
+      return { replayed: true, result: JSON.parse(replay.result_json) }
+    }
+
+    let row
+    if (mutation.action === 'create') {
+      const total = database.prepare('SELECT COUNT(*) AS total FROM saved_vehicle_lists WHERE owner_user_id = ? AND deleted_at IS NULL').get(mutation.ownerUserId).total
+      if (total >= 20) throw new WorkflowError('You can save up to 20 vehicle lists.', { status: 409, code: 'SAVED_LIST_LIMIT_REACHED' })
+      database.prepare('INSERT INTO saved_vehicle_lists (id,owner_user_id,label,revision,created_at,updated_at) VALUES (?,?,?,?,?,?)')
+        .run(mutation.newId, mutation.ownerUserId, mutation.label, 1, mutation.at, mutation.at)
+      row = database.prepare('SELECT * FROM saved_vehicle_lists WHERE id = ?').get(mutation.newId)
+    } else {
+      row = database.prepare('SELECT * FROM saved_vehicle_lists WHERE id = ? AND owner_user_id = ? AND deleted_at IS NULL')
+        .get(mutation.listId, mutation.ownerUserId)
+      if (!row) throw new WorkflowError('Saved list was not found.', { status: 404, code: 'SAVED_LIST_NOT_FOUND' })
+      if (row.revision !== mutation.expectedRevision) {
+        throw new WorkflowError('This saved list changed. Reload it and try again.', {
+          status: 409, code: 'SAVED_LIST_CONFLICT', details: { currentRevision: row.revision },
+        })
+      }
+      let changed = false
+      if (mutation.action === 'rename' && row.label !== mutation.label) {
+        database.prepare('UPDATE saved_vehicle_lists SET label = ?, revision = revision + 1, updated_at = ? WHERE id = ?')
+          .run(mutation.label, mutation.at, row.id)
+        changed = true
+      } else if (mutation.action === 'delete') {
+        database.prepare('UPDATE saved_vehicle_lists SET revision = revision + 1, updated_at = ?, deleted_at = ? WHERE id = ?')
+          .run(mutation.at, mutation.at, row.id)
+        database.prepare('DELETE FROM saved_vehicle_list_items WHERE list_id = ?').run(row.id)
+        changed = true
+      } else if (mutation.action === 'add') {
+        const exists = database.prepare('SELECT 1 FROM saved_vehicle_list_items WHERE list_id = ? AND vin = ?').get(row.id, mutation.vin)
+        if (!exists) {
+          const total = database.prepare('SELECT COUNT(*) AS total FROM saved_vehicle_list_items WHERE list_id = ?').get(row.id).total
+          if (total >= 200) throw new WorkflowError('A saved list can contain up to 200 vehicles.', { status: 409, code: 'SAVED_LIST_ITEM_LIMIT_REACHED' })
+          database.prepare('INSERT INTO saved_vehicle_list_items (list_id,vin,added_at) VALUES (?,?,?)').run(row.id, mutation.vin, mutation.at)
+          changed = true
+        }
+      } else if (mutation.action === 'remove') {
+        changed = database.prepare('DELETE FROM saved_vehicle_list_items WHERE list_id = ? AND vin = ?').run(row.id, mutation.vin).changes > 0
+      }
+      if (changed && !['rename', 'delete'].includes(mutation.action)) {
+        database.prepare('UPDATE saved_vehicle_lists SET revision = revision + 1, updated_at = ? WHERE id = ?').run(mutation.at, row.id)
+      }
+      row = database.prepare('SELECT * FROM saved_vehicle_lists WHERE id = ?').get(row.id)
+    }
+
+    const result = mutation.action === 'delete'
+      ? { id: row.id, deleted: true, revision: row.revision }
+      : savedListRaw(database, row)
+    database.prepare(`
+      INSERT INTO saved_vehicle_list_actions
+        (owner_user_id,idempotency_key,input_hash,action,list_id,result_revision,result_json,created_at)
+      VALUES (?,?,?,?,?,?,?,?)
+    `).run(mutation.ownerUserId, mutation.idempotencyKey, mutation.inputHash, mutation.action, row.id, row.revision, JSON.stringify(result), mutation.at)
+    return { replayed: false, result }
   })
 }
 

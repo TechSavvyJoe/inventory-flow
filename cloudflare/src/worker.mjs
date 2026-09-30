@@ -11,6 +11,7 @@ import { serviceIntakeRows } from '../../server/service-intake.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
 import { ISSUE_BODY_BYTES, prepareIssuePhotos } from '../../server/issue-photos.mjs'
 import { readIssuePhoto, storeIssuePhotos } from './issue-photo-storage.mjs'
+import { SAVED_LIST_BODY_BYTES } from '../../server/saved-vehicle-lists.mjs'
 
 const FORMAT = 'inventory-flow-private-release-v1'
 const MAX_UPLOAD = 25 * 1024 * 1024
@@ -425,10 +426,11 @@ async function appApi(request,url,env,context,claims) {
   if(adminOverview && !read) throw new HttpError('METHOD_NOT_ALLOWED',405)
   const issueReadRoute=/^\/vehicle-issues(?:\/[^/]+(?:\/photos\/[a-f0-9]{64})?)?$/.test(route)
   const issueWriteRoute=/^\/vehicles\/[^/]+\/issues$/.test(route) || /^\/vehicle-issues\/[^/]+\/events$/.test(route)
-  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/(?:service|disposition|invoice|equipment-pdf)$/.test(route) || issueReadRoute || issueWriteRoute || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
+  const savedListsRoute=route==='/saved-lists'
+  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/(?:service|disposition|invoice|equipment-pdf)$/.test(route) || issueReadRoute || issueWriteRoute || savedListsRoute || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
   // Only these routes accept writes. Answer 405 here, before the release is
   // decrypted and the D1 snapshot is loaded for a request that can never commit.
-  const writable=route==='/transfers' || /^\/vehicles\/[^/]+\/(?:service|disposition)$/.test(route) || /^\/(transfers|attention)\/[^/]+\/events$/.test(route) || issueWriteRoute || adminMembersRoute
+  const writable=route==='/transfers' || /^\/vehicles\/[^/]+\/(?:service|disposition)$/.test(route) || /^\/(transfers|attention)\/[^/]+\/events$/.test(route) || issueWriteRoute || savedListsRoute || adminMembersRoute
   if(write && !writable) throw new HttpError('METHOD_NOT_ALLOWED',405)
   // The membership context was resolved from Access + D1 before this point.
   // Check it before reading the group directory or private release.
@@ -440,7 +442,7 @@ async function appApi(request,url,env,context,claims) {
   if(write && request.headers.get('origin')!==url.origin) throw new AccessError('SAME_ORIGIN_REQUIRED',403)
   const idempotency=request.headers.get('idempotency-key')
   if(write && (!idempotency || idempotency.length>160 || /[\x00-\x1f]/.test(idempotency))) throw new HttpError('IDEMPOTENCY_KEY_REQUIRED')
-  const input=write?await readJson(request,issueWriteRoute?ISSUE_BODY_BYTES:64*1024):null
+  const input=write?await readJson(request,issueWriteRoute?ISSUE_BODY_BYTES:savedListsRoute?SAVED_LIST_BODY_BYTES:64*1024):null
   const issuePhotos=write&&issueWriteRoute?prepareIssuePhotos(input.photos):[]
   const issueInput=write&&issueWriteRoute?{...input,photos:issuePhotos.map(photo=>photo.metadata)}:input
   if(adminMembersRoute) return json(200,read
@@ -454,7 +456,7 @@ async function appApi(request,url,env,context,claims) {
     // A conflicting commit may have been an employee access change. Resolve
     // the same verified Access identity again before replaying any operation.
     if(attempt>0) context=await memberContext(claims,env,request)
-    const repo=await loadD1Repository(env.INVENTORY_DB,release)
+    const repo=await loadD1Repository(env.INVENTORY_DB,release,{ownerUserId:context.userId,idempotencyKey:idempotency})
     const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
     const query=Object.fromEntries(url.searchParams)
     let result, mutation=false
@@ -464,6 +466,8 @@ async function appApi(request,url,env,context,claims) {
       result.access={...result.access,authenticatedRole:context.authenticatedRole??context.role,authenticatedStore:context.authenticatedStore??context.store,canPreviewRoles:context.canPreviewRoles===true,canPreviewStores:context.canPreviewStores===true,rolePreviewActive:context.rolePreviewActive===true,storePreviewActive:context.storePreviewActive===true}
     }
     else if(read && route==='/vehicles') result=service.listVehicles(query,context)
+    else if(read && savedListsRoute) result=service.listSavedVehicleLists(context)
+    else if(write && savedListsRoute) {result=service.mutateSavedVehicleList(input,context,idempotency);mutation=true}
     else if(read && route==='/vehicle-issues') result=service.listVehicleIssues(query,context)
     else if(read && /^\/vehicle-issues\/[^/]+$/.test(route)) result=service.getVehicleIssue(identifier,context)
     else if(read && /^\/vehicle-issues\/[^/]+\/photos\/[a-f0-9]{64}$/.test(route)) {

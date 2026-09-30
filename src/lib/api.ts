@@ -158,7 +158,7 @@ function revalidatedEntry(path: string, generation: number): RevalidatedEntry | 
   return entry
 }
 
-async function request<T>(path: string, options: RequestInit = {}, timing: RequestTiming = {}): Promise<T> {
+export async function request<T>(path: string, options: RequestInit = {}, timing: RequestTiming = {}): Promise<T> {
   const accessGeneration = apiAccessGeneration()
   const headers = new Headers(options.headers)
   if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
@@ -255,7 +255,7 @@ async function request<T>(path: string, options: RequestInit = {}, timing: Reque
   }
 }
 
-function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, string> {
+export function demoIdentityHeaders(role: UserRole, store: StoreName): Record<string, string> {
   return {
     'x-inventory-demo-role': role,
     // Production honors this only for a server-authenticated group manager.

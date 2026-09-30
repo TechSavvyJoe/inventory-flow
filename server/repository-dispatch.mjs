@@ -42,6 +42,11 @@ function invoke(context, method, args) {
   return result
 }
 
+function invokeOptional(context, method, args, fallback) {
+  if (typeof context.repository[method] !== 'function') return fallback
+  return invoke(context, method, args)
+}
+
 export function appendTransferEvent(context, ...args) {
   return invoke(context, 'appendTransferEvent', args)
 }
@@ -124,4 +129,16 @@ export function insertVehicleIssue(context, ...args) {
 
 export function appendVehicleIssueEvent(context, ...args) {
   return invoke(context, 'appendVehicleIssueEvent', args)
+}
+
+export function savedVehicleListsEnabled(context, ...args) {
+  return invokeOptional(context, 'savedVehicleListsEnabled', args, false)
+}
+
+export function listSavedVehicleLists(context, ...args) {
+  return invokeOptional(context, 'listSavedVehicleLists', args, [])
+}
+
+export function mutateSavedVehicleList(context, ...args) {
+  return invoke(context, 'mutateSavedVehicleList', args)
 }

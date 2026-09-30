@@ -7,6 +7,7 @@ import { assertAdminOverviewAccess } from './admin-control-center.mjs'
 import { createIdentityResolver, IdentityError } from './identity.mjs'
 import { ISSUE_BODY_BYTES, prepareIssuePhotos } from './issue-photos.mjs'
 import { WorkflowError } from './workflow.mjs'
+import { SAVED_LIST_BODY_BYTES } from './saved-vehicle-lists.mjs'
 
 const BODY_LIMIT = 64 * 1024
 const TRANSPORT_ASSIGNMENT_EVENTS = new Set(['transport_assigned', 'return_assigned'])
@@ -282,6 +283,21 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
       }
       if (request.method === 'GET' && route === '/bootstrap') {
         return sendJsonRevalidated(request, response, service.bootstrap(context))
+      }
+      if (request.method === 'GET' && route === '/saved-lists') {
+        return sendJson(response, 200, service.listSavedVehicleLists(context))
+      }
+      if (request.method === 'POST' && route === '/saved-lists') {
+        assertLocalWriteOrigin(request)
+        const result = service.mutateSavedVehicleList(
+          await readJson(request, SAVED_LIST_BODY_BYTES),
+          context,
+          String(request.headers['idempotency-key'] ?? '') || undefined,
+        )
+        return sendJson(response, result.created ? 201 : 200, result.record)
+      }
+      if (route === '/saved-lists') {
+        return sendJson(response, 405, { error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED' })
       }
       if (request.method === 'GET' && route === '/vehicles') {
         return sendJson(response, 200, service.listVehicles(queryObject(url), context))

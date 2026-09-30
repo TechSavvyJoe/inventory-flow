@@ -831,6 +831,7 @@ export interface VehicleIssueEventInput {
 }
 
 export interface BootstrapData {
+  savedListsEnabled?: boolean
   access?: {
     user: string
     role: UserRole
