@@ -1,3 +1,4 @@
+import { createComparisonPlan } from './takehome-comparison.mjs'
 // One customer-safe PDF renderer shared by the app and the companion. It takes
 // only takeHomeModel projections, never a bootstrap, hold or customer record.
 import {
@@ -84,7 +85,7 @@ async function image(pdf, url, fetcher, base) {
   } catch { return null }
 }
 
-export async function createTakeHomePdf(models, title, { fetcher = globalThis.fetch, now = new Date(), base = globalThis.location?.href ?? 'https://inventory-ops.joegallant.me/', layoutObserver = null } = {}) {
+export async function createTakeHomePdf(models, title, { fetcher = globalThis.fetch, now = new Date(), base = globalThis.location?.href ?? 'https://inventory-ops.joegallant.me/', layoutObserver = null, layout = 'detailed', comparisonObserver = null } = {}) {
   const selected = [...new Map(models.map(model => [model.vin, model])).values()]
   if (!selected.length) throw new Error('Choose a vehicle before preparing a PDF.')
   const pdf = await PDFDocument.create()
@@ -95,6 +96,67 @@ export async function createTakeHomePdf(models, title, { fetcher = globalThis.fe
   ])
   const regular = await pdf.embedFont(regularBytes, { subset:true }), bold = await pdf.embedFont(boldBytes, { subset:true })
   pdf.setTitle(clean(title)); pdf.setAuthor('Inventory Flow · Bob Maxey'); pdf.setCreator('Inventory Flow'); pdf.setCreationDate(now)
+
+  if (layout === 'comparison') {
+    pdf.setTitle('Bob Maxey vehicle comparison')
+    const assets = new Map(), photoSources = new Map(), logoSources = new Map()
+    for (const model of selected) {
+      let photo = null
+      for (const src of [...new Set(model.photos ?? [])].slice(0,4)) {
+        photo = await image(pdf,src,fetcher,base)
+        if (photo) { photoSources.set(model.vin,src); break }
+      }
+      const branding=model.logo ?? model.brand, logo=await image(pdf,branding?.src,fetcher,base)
+      if(logo) logoSources.set(model.vin,{src:branding.src,alt:clean(branding.alt),wide:branding.wide===true})
+      assets.set(model.vin,{photo,logo})
+    }
+    const wrap = (value,maxWidth,size,isBold) => {
+      const font=isBold?bold:regular, result=[]
+      for(const paragraph of clean(value).split('\n')) {
+        let line=''
+        for(const word of paragraph.split(/\s+/).filter(Boolean)) {
+          if(line && font.widthOfTextAtSize(`${line} ${word}`,size)>maxWidth) { result.push(line);line='' }
+          if(font.widthOfTextAtSize(word,size)<=maxWidth) {line=line?`${line} ${word}`:word;continue}
+          let part=''
+          for(const char of word) {if(part && font.widthOfTextAtSize(part+char,size)>maxWidth) {result.push(part);part=''}part+=char}
+          line=part
+        }
+        result.push(line)
+      }
+      return result
+    }
+    const plan=createComparisonPlan(selected,{wrap,safeLink:value=>safeHttps(value,base),photoSources,logoSources})
+    for(const record of plan.pages) {
+      const page=pdf.addPage([612,792])
+      const draw=(value,x,top,size,font=regular,color=INK)=>page.drawText(clean(value),{x,y:792-top-size,size,font,color})
+      const first=record.vehicles[0], logo=record.headerStore==='Bob Maxey'?null:assets.get(first.vin)?.logo
+      if(logo) {const scale=Math.min(130/logo.width,32/logo.height);page.drawImage(logo,{x:32,y:792-28-32,width:logo.width*scale,height:logo.height*scale})}
+      else draw(record.headerStore,32,28,12,bold,BLUE)
+      draw(record.headerTitle,390,28,12,bold)
+      if(record.headerSite) draw(record.headerSite,390,46,8.5,regular,MUTED)
+      page.drawLine({start:{x:32,y:724},end:{x:580,y:724},thickness:1.3,color:INK})
+      page.drawLine({start:{x:32,y:721},end:{x:124,y:721},thickness:2,color:BLUE})
+      for(const row of record.rows) for(const [index,cell] of row.cells.entries()) {
+        const column=record.columns[index], vehicle=record.vehicles[index]
+        if(row.kind==='photo') {
+          page.drawRectangle({x:column.x,y:792-row.top-row.height,width:column.width,height:row.height-4,color:PALE,borderColor:LINE,borderWidth:.5})
+          const photo=assets.get(vehicle.vin)?.photo
+          if(photo) {const scale=Math.min(column.width/photo.width,(row.height-4)/photo.height),w=photo.width*scale,h=photo.height*scale;page.drawImage(photo,{x:column.x+(column.width-w)/2,y:792-row.top-row.height+(row.height-4-h)/2,width:w,height:h})}
+          else for(const [i,line] of wrap('Photo unavailable in this copy',column.width-16,10,false).entries()) draw(line,column.x+8,row.top+row.height/2-8+i*12.5,10,regular,MUTED)
+          continue
+        }
+        if(row.label) draw(row.label,column.x,row.top,row.labelSize,bold,MUTED)
+        cell.lines.forEach((line,lineIndex)=>draw(line,column.x,row.top+row.labelHeight+lineIndex*row.lineHeight,row.size,row.bold?bold:regular,row.kind==='price'||row.kind==='listing'?BLUE:INK))
+        if(row.kind==='fact') page.drawLine({start:{x:column.x,y:792-row.top-row.height+1},end:{x:column.x+column.width,y:792-row.top-row.height+1},thickness:.35,color:LINE})
+        if(cell.link) {const annotation=pdf.context.register(pdf.context.obj({Type:'Annot',Subtype:'Link',Rect:[column.x,792-row.top-row.height,column.x+column.width,792-row.top],Border:[0,0,0],A:{Type:'Action',S:'URI',URI:PDFString.of(cell.link)}}));page.node.normalizedEntries().Annots.push(annotation)}
+      }
+      page.drawLine({start:{x:32,y:65},end:{x:580,y:65},thickness:.5,color:LINE})
+      wrap(record.footerDisclaimer,548,8,false).forEach((line,index)=>draw(line,32,733+index*10,8,regular,MUTED))
+      draw(record.footerPage,32,764,8,regular,MUTED)
+    }
+    comparisonObserver?.(plan)
+    return new Blob([await pdf.save()],{type:'application/pdf'})
+  }
 
   const footerDate = now.toLocaleDateString('en-US')
   const pageWidth = 612, pageHeight = 792, margin = 32, width = pageWidth - 2 * margin, bottom = 72

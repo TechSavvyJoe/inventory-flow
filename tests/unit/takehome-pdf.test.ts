@@ -117,6 +117,76 @@ describe('shared customer PDF', () => {
     expect(pdf.getPageCount()).toBe(1)
   })
 
+
+  it.each([[2,1],[3,1],[4,2],[7,3]])('compares %i ordinary vehicles in %i portrait pages', async (count,pages) => {
+    const models=Array.from({length:count},(_,index)=>({...model,vin:`TESTDATASYN${String(index).padStart(6,'0')}`,stockNumber:`DEMO-${index}`,highlights:['Heated front seats','Adaptive cruise control','Remote start','Rear parking sensors']}))
+    let plan:any
+    const pdf=await load(await createTakeHomePdf(models,'CUSTOMER LABEL PRIVATE',{...options,layout:'comparison',comparisonObserver:value=>plan=value}))
+    expect(pdf.getPageCount()).toBe(pages)
+    expect(pdf.getTitle()).toBe('Bob Maxey vehicle comparison')
+    expect(plan.pages.map(page=>page.vehicles.length)).toEqual(count===4?[2,2]:count===7?[3,2,2]:[count])
+    expect(plan.pages.flatMap(page=>page.vehicles.map(vehicle=>vehicle.vin))).toEqual(models.map(model=>model.vin))
+    for(const page of plan.pages) for(const row of page.rows) expect(row.top+row.height).toBeLessThanOrEqual(714)
+    const serialized=JSON.stringify(plan)
+    expect(serialized).not.toContain('CUSTOMER LABEL PRIVATE')
+    expect(serialized).not.toContain('2026-09-30')
+    expect(serialized).not.toContain('msrp')
+    expect(serialized).not.toContain('40000')
+  })
+
+  it('deduplicates comparison vehicles and exposes only customer fact projections', async () => {
+    let plan:any
+    const unsafe={...model,holdReason:'PRIVATE HOLD',customerName:'PRIVATE CUSTOMER',operationalMovement:'PRIVATE MOVE',history:'PRIVATE HISTORY',description:'PRIVATE DESCRIPTION'}
+    await createTakeHomePdf([unsafe,{...unsafe,vin:'TESTDATASYN000002'},unsafe],'Private customer label',{...options,layout:'comparison',comparisonObserver:value=>plan=value})
+    expect(plan.pages.flatMap(page=>page.vehicles.map(vehicle=>vehicle.vin))).toEqual([model.vin,'TESTDATASYN000002'])
+    expect(JSON.stringify(plan)).not.toContain('PRIVATE')
+    const labels=plan.pages[0].rows.map(row=>row.label)
+    expect(labels).toEqual(expect.arrayContaining(['Selling price','Mileage','Stock number','Body style','Engine','Transmission','Fuel economy','Exterior color','Interior color']))
+  })
+
+  it('preserves full pathological names, specifications and selected highlights across continuation pages', async () => {
+    const name='Long synthetic vehicle designation '.repeat(110)
+    const engine='Complete documented engine qualification '.repeat(190)
+    const highlight='Full equipment package with every meaningful qualification '.repeat(200)
+    let plan:any
+    const pdf=await load(await createTakeHomePdf([{...model,name,specs:[['Engine',engine]],highlights:[highlight,'Second complete highlight','Third complete highlight','Fourth complete highlight','Fifth highlight']}],'Choices',{...options,layout:'comparison',comparisonObserver:value=>plan=value}))
+    expect(pdf.getPageCount()).toBeGreaterThan(3)
+    const rows=plan.pages.flatMap(page=>page.rows)
+    const join=(kind,label)=>rows.filter(row=>row.kind===kind && (label===undefined || row.label===label)).flatMap(row=>row.cells[0].lines).join(' ').replace(/\s/g,'')
+    expect(join('name')).toBe(name.replace(/\s/g,''))
+    expect(join('fact','Engine')).toBe(engine.replace(/\s/g,''))
+    expect(join('highlight')).toContain(highlight.replace(/\s/g,''))
+    expect(join('highlight')).toContain('Fourthcompletehighlight')
+    expect(join('more')).toBe('Moreequipmentinthefulllisting.')
+    expect(plan.pages.slice(1).every(page=>page.continued)).toBe(true)
+    for(const page of plan.pages) for(const row of page.rows) expect(row.top+row.height).toBeLessThanOrEqual(714)
+  })
+
+  it('falls back to a decoded photo and keeps broken images optional in comparisons', async () => {
+    const photo=await readFile(new URL('../../public/demo-vehicles/f150.jpg',import.meta.url)), requested:string[]=[]
+    let plan:any
+    const fetcher=async (url:string)=>{
+      if(url.startsWith('file:')) return options.fetcher(url)
+      requested.push(url)
+      return url.endsWith('/good.jpg')?new Response(photo):new Response(null,{status:403})
+    }
+    const pdf=await load(await createTakeHomePdf([{...model,photos:['https://example.com/bad.jpg','https://example.com/good.jpg','https://example.com/unused.jpg']},{...model,vin:'OTHER',photos:['https://example.com/blocked.jpg']}],'Choices',{...options,fetcher,layout:'comparison',comparisonObserver:value=>plan=value}))
+    expect(pdf.getPageCount()).toBe(1)
+    expect(plan.pages[0].vehicles.map(vehicle=>vehicle.photoSrc)).toEqual(['https://example.com/good.jpg',null])
+    expect(requested).not.toContain('https://example.com/unused.jpg')
+  })
+
+  it('attaches safe clickable listing links to each comparison column', async () => {
+    for(const listingUrl of [model.listingUrl,'javascript:alert(1)','https://private:secret@example.com/']) {
+      let plan:any
+      const pdf=await load(await createTakeHomePdf([{...model,listingUrl}],'Choices',{...options,layout:'comparison',comparisonObserver:value=>plan=value}))
+      const annotations=pdf.getPage(0).node.Annots()?.asArray() ?? []
+      const links=annotations.map(ref=>pdf.context.lookup(ref,PDFDict).lookup(PDFName.of('A'),PDFDict).lookup(PDFName.of('URI'),PDFString).decodeText())
+      expect(links).toEqual(listingUrl===model.listingUrl?[listingUrl]:[])
+      expect(plan.pages[0].vehicles[0].listingUrl).toBe(listingUrl===model.listingUrl?listingUrl:null)
+    }
+  })
+
   it('reports missing required fonts so the interface can offer a retry', async () => {
     await expect(createTakeHomePdf([model], 'Retry', { ...options, fetcher:async () => new Response(null, {status:503}) })).rejects.toThrow('Document asset could not load')
   })

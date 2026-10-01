@@ -10,6 +10,8 @@
 }
 .takehome-toolbar__title { font-size: 14px; font-weight: 600; color: var(--ink-700); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .takehome-toolbar__actions { display: flex; gap: 8px; }
+.takehome-format { display:flex; align-items:center; gap:var(--ifx-space-2); color:var(--ink-600); font-size:var(--ifx-text-sm); white-space:nowrap; }
+.takehome-format select { min-height:var(--control-target); padding-inline:var(--ifx-space-2); border:var(--comparison-hairline) solid var(--border-strong); border-radius:var(--radius-control); color:var(--ink-900); background:var(--surface); font:inherit; }
 .takehome-toolbar__status { color:var(--ink-700); font-size:13px; }
 .takehome-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--control-target); padding: 0 14px;
@@ -118,6 +120,8 @@ body.takehome-open { overflow: hidden; }
   .th-equipment { columns: 2; }
   .th-cert-block { padding: 10pt 8pt; gap: 6pt; }
   .takehome-toolbar { flex-wrap: wrap; }
+  .takehome-format { width:100%; }
+  .takehome-format select { flex:1; min-width:0; }
   .takehome-toolbar__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .takehome-btn { padding-inline: var(--ifx-space-2); white-space: nowrap; }
   .takehome-toolbar__status { flex-basis:100%; }

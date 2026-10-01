@@ -237,6 +237,13 @@
       "important": 2,
       "idSelectors": 0
     },
+    "extension/sidepanel/lib/takehome-comparison-view.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
     "src/components/CertifiedBadge.css": {
       "smallText": 0,
       "rawColors": 0,

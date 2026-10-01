@@ -43,6 +43,36 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
+  --comparison-preview-gap: 22px;
+  --comparison-header-top: 28pt;
+  --comparison-header-height: 54pt;
+  --comparison-header-rule: 2pt;
+  --comparison-hairline: .5pt;
+  --comparison-gutter: 12pt;
+  --comparison-logo-width: 130pt;
+  --comparison-logo-height: 32pt;
+  --comparison-header-size: 12pt;
+  --comparison-header-line-height: 14.5pt;
+  --comparison-header-meta-size: 8.5pt;
+  --comparison-header-meta-height: 12pt;
+  --comparison-header-site-gap: 3.5pt;
+  --comparison-rule-top: 40pt;
+  --comparison-main-rule: 1.3pt;
+  --comparison-accent-top: 43pt;
+  --comparison-accent-width: 92pt;
+  --comparison-photo-inset: 4pt;
+  --comparison-bold: 700;
+  --comparison-regular: 400;
+  --comparison-footer-space: 78pt;
+  --comparison-footer-bottom: 20pt;
+  --comparison-footer-gap: 5pt;
+  --comparison-footer-size: 8pt;
+  --comparison-footer-line-height: 10pt;
+  --comparison-link-offset: 2pt;
+  --comparison-mobile-padding: 14px;
+  --comparison-mobile-gap: 18px;
+  --comparison-mobile-cell-gap: 3px;
+  --comparison-mobile-photo-height: 180px;
 }
 
 @media (prefers-reduced-motion: reduce) {

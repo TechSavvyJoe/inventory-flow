@@ -7,6 +7,8 @@ import { useModalBackgroundIsolation } from "../../lib/useModalBackgroundIsolati
 import { formatDate, formatMileage, formatMoney } from "./inventory-utils";
 import type { InventoryVehicle } from "./types";
 import { takeHomeModel, type TakeHomeModel } from '../sales/customer-summary';
+import type { ComparisonPlan } from '../../../extension/sidepanel/lib/takehome-comparison.mjs';
+import { TakeHomeComparisonContent } from './TakeHomeComparisonContent';
 export { takeHomeModel } from '../sales/customer-summary';
 export type { TakeHomeModel } from '../sales/customer-summary';
 import "./TakeHomeSheet.css";
@@ -120,18 +122,22 @@ export function TakeHomeSheet({ vehicle, vehicles, listLabel, onClose, returnFoc
   const printRef = useRef<HTMLButtonElement>(null);
   const backgroundRef = useRef<HTMLElement | null>(typeof document === 'undefined' ? null : document.getElementById('root'));
   const [actionStatus, setActionStatus] = useState<string | null>(null);
-  const [preparedPdf, setPreparedPdf] = useState<{ models:TakeHomeModel[]; title:string; document:Blob } | null>(null);
-  const pdf = preparedPdf?.models === models && preparedPdf.title === title ? preparedPdf.document : null;
+  const [layout, setLayout] = useState<'detailed' | 'comparison'>('detailed');
+  const exportTitle = layout === 'comparison' ? 'Bob Maxey vehicle comparison' : title;
+  const [preparedPdf, setPreparedPdf] = useState<{ models:TakeHomeModel[]; title:string; layout:string; document:Blob; comparison:ComparisonPlan | null } | null>(null);
+  const prepared = preparedPdf?.models === models && preparedPdf.title === exportTitle && preparedPdf.layout === layout ? preparedPdf : null;
+  const pdf = prepared?.document ?? null;
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [pdfAttempt, setPdfAttempt] = useState(0);
   useEffect(() => {
     let active = true;
+    let comparison:ComparisonPlan | null = null;
     setPreparedPdf(null); setPdfError(null); setActionStatus(null);
-    void import('../../../extension/sidepanel/lib/takehome-pdf.mjs').then(({ createTakeHomePdf }) => createTakeHomePdf(models, title)).then(document => {
-      if (active) setPreparedPdf({ models, title, document });
+    void import('../../../extension/sidepanel/lib/takehome-pdf.mjs').then(({ createTakeHomePdf }) => createTakeHomePdf(models, exportTitle, { layout, comparisonObserver:plan => { comparison = plan; } })).then(document => {
+      if (active) setPreparedPdf({ models, title:exportTitle, layout, document, comparison });
     }).catch(error => { if (active) setPdfError(error instanceof Error ? error.message : 'The PDF could not be prepared. Try again.'); });
     return () => { active = false; };
-  }, [models, title, pdfAttempt]);
+  }, [models, exportTitle, layout, pdfAttempt]);
   useContainedFocus({ active: true, contain: true, containerRef: dialogRef, initialFocusRef: printRef, returnFocusRef, onEscape: onClose });
   useModalBackgroundIsolation({ active: true, backgroundRef });
   useEffect(() => {
@@ -145,14 +151,15 @@ export function TakeHomeSheet({ vehicle, vehicles, listLabel, onClose, returnFoc
       <div className="takehome-dialog" role="dialog" aria-modal="true" aria-labelledby="takehome-title" ref={dialogRef}>
         <div className="takehome-toolbar">
           <span id="takehome-title" className="takehome-toolbar__title">Take-home page · {title}</span>
+          <label className="takehome-format">Format<select value={layout} onChange={event => setLayout(event.target.value as 'detailed' | 'comparison')}><option value="detailed">Detailed vehicle sheets</option><option value="comparison">Compare on one sheet</option></select></label>
           <span className="takehome-toolbar__actions">
-            <button type="button" className="takehome-btn takehome-btn--primary" ref={printRef} onClick={() => window.print()}>
+            <button type="button" className="takehome-btn takehome-btn--primary" ref={printRef} disabled={layout === 'comparison' && !prepared?.comparison} onClick={() => window.print()}>
               <Printer size={16} strokeWidth={1.85} aria-hidden="true" /> Print / Save as PDF
             </button>
-            <button type="button" className="takehome-btn" disabled={!pdf} onClick={() => { if (pdf) { downloadTakeHomePdf(pdf, title); setActionStatus('Saved PDF document'); } }}>
+            <button type="button" className="takehome-btn" disabled={!pdf} onClick={() => { if (pdf) { downloadTakeHomePdf(pdf, exportTitle); setActionStatus('Saved PDF document'); } }}>
               <Download size={16} strokeWidth={1.85} aria-hidden="true" /> Save PDF
             </button>
-            <button type="button" className="takehome-btn" disabled={!pdf} onClick={() => { if (pdf) void shareTakeHomePdf({ pdf, title }).then(status => setActionStatus(status === 'saved' ? 'PDF saved. Share that file with your customer.' : status === 'shared' ? 'Shared PDF document' : null)).catch(() => setActionStatus('The PDF could not be shared. Use Save PDF and share the saved file.')); }}>
+            <button type="button" className="takehome-btn" disabled={!pdf} onClick={() => { if (pdf) void shareTakeHomePdf({ pdf, title:exportTitle }).then(status => setActionStatus(status === 'saved' ? 'PDF saved. Share that file with your customer.' : status === 'shared' ? 'Shared PDF document' : null)).catch(() => setActionStatus('The PDF could not be shared. Use Save PDF and share the saved file.')); }}>
               <Share2 size={16} strokeWidth={1.85} aria-hidden="true" /> Share
             </button>
             <button type="button" className="takehome-btn" onClick={onClose}>
@@ -162,8 +169,10 @@ export function TakeHomeSheet({ vehicle, vehicles, listLabel, onClose, returnFoc
           {pdfError ? <span className="takehome-toolbar__status" role="alert">PDF could not be prepared: {pdfError} <button type="button" className="takehome-btn" onClick={() => setPdfAttempt(value => value + 1)}>Retry PDF</button></span> : <span className="takehome-toolbar__status" role="status">{actionStatus ?? (!pdf ? 'Preparing PDF…' : '')}</span>}
         </div>
         <div className="takehome-stage">
-          {listLabel && models.length > 1 ? <h1 className="takehome-list-title">{listLabel}</h1> : null}
-          {models.map((model) => <TakeHomeSheetContent key={model.vin} model={model} />)}
+          {layout === 'comparison' ? prepared?.comparison ? <TakeHomeComparisonContent plan={prepared.comparison} /> : <p role="status">Preparing comparison sheet…</p> : <>
+            {listLabel && models.length > 1 ? <h1 className="takehome-list-title">{listLabel}</h1> : null}
+            {models.map((model) => <TakeHomeSheetContent key={model.vin} model={model} />)}
+          </>}
         </div>
       </div>
     </div>,

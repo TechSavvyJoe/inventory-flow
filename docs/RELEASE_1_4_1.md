@@ -60,6 +60,16 @@ the existing customer-safe projection, excluding operational holds, moves,
 issue notes and internal warranty estimates. Blocked photos show a placeholder.
 The PDF has selectable text but is not structurally tagged for screen readers.
 
+The additional Compare on one sheet format aligns two or three vehicles on a
+Letter comparison page, with photos, selling price, mileage, dealership,
+specifications, certification and standout equipment. Larger selections use
+numbered pages. Long values continue without shrinking or clipping the text.
+The preview and PDF share the same measured layout; phones show each complete
+vehicle in reading order. The existing detailed sheets remain the default.
+Both formats can be printed, downloaded and shared as PDF files in the app and
+companion. Comparison metadata uses a neutral title rather than the customer's
+private saved-list label.
+
 The companion package and update notice are paired at 1.4.1. Its PDF libraries
 and fonts are bundled locally with provenance and license notices. The app
 loads the PDF renderer only when the take-home sheet opens.

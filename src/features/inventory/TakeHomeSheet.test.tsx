@@ -4,6 +4,7 @@ import { VehicleWorkspace } from './VehicleWorkspace';
 import { TakeHomeSheet, TakeHomeSheetContent, takeHomeModel } from './TakeHomeSheet';
 import type { InventoryVehicle } from './types';
 import { createTakeHomePdf } from '../../../extension/sidepanel/lib/takehome-pdf.mjs';
+import { createComparisonPlan } from '../../../extension/sidepanel/lib/takehome-comparison.mjs';
 
 vi.mock('../../../extension/sidepanel/lib/takehome-pdf.mjs', () => ({ createTakeHomePdf:vi.fn().mockResolvedValue(new Blob(['%PDF-1.7 synthetic unit fixture'], { type:'application/pdf' })) }));
 
@@ -45,6 +46,41 @@ function vehicle(): InventoryVehicle {
 }
 
 describe('take-home sheet', () => {
+  it('offers a separate multi-vehicle comparison format and shares the matching PDF', async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, share, canShare:() => true });
+    const first = vehicle();
+    const second = { ...first, id:'TESTDATASYN000002', vin:'TESTDATASYN000002', stockNumber:'HT0530A', model:'Escape' };
+    render(<TakeHomeSheet vehicles={[first,second]} listLabel="Private customer nickname" onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('button', { name:'Share' })).toBeEnabled());
+    const models = [takeHomeModel(first),takeHomeModel(second)];
+    const plan = createComparisonPlan(models, { wrap:value => value.split('\n') });
+    let finish:((pdf:Blob) => void) | undefined;
+    vi.mocked(createTakeHomePdf).mockImplementationOnce(async (_models, _title, options) => {
+      options?.comparisonObserver?.(plan);
+      return new Promise<Blob>(resolve => { finish = resolve; });
+    });
+    fireEvent.change(screen.getByRole('combobox', { name:'Format' }), { target:{ value:'comparison' } });
+    await waitFor(() => expect(finish).toBeDefined());
+    expect(screen.getByRole('button', { name:'Share' })).toBeDisabled();
+    expect(screen.getByRole('button', { name:'Print / Save as PDF' })).toBeDisabled();
+    finish!(new Blob(['%PDF-1.7 comparison fixture'], { type:'application/pdf' }));
+    const comparison = await screen.findByRole('article', { name:'Vehicle comparison · Page 1 of 1' });
+    expect(comparison).toHaveTextContent('2026 Ford Explorer Active');
+    expect(comparison).toHaveTextContent('2026 Ford Escape Active');
+    expect(comparison).not.toHaveTextContent('Private customer nickname');
+    expect(comparison).not.toHaveTextContent('MSRP');
+    expect(comparison).not.toHaveTextContent('Customer appointment');
+    fireEvent.click(screen.getByRole('button', { name:'Share' }));
+    await waitFor(() => expect(share).toHaveBeenCalledOnce());
+    const file = share.mock.calls[0][0].files[0];
+    expect(file.type).toBe('application/pdf');
+    expect(file.name).toBe('bob-maxey-vehicle-comparison.pdf');
+    fireEvent.change(screen.getByRole('combobox', { name:'Format' }), { target:{ value:'detailed' } });
+    expect(screen.queryByRole('article', { name:/Vehicle comparison/ })).not.toBeInTheDocument();
+    expect(screen.getByText('Private customer nickname', { exact:true })).toBeVisible();
+  });
+
   it('isolates the app when opened directly and restores its opener on dismissal', async () => {
     const root = document.createElement('div');
     root.id = 'root';
