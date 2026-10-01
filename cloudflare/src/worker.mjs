@@ -460,7 +460,10 @@ async function appApi(request,url,env,context,claims) {
     // the same verified Access identity again before replaying any operation.
     if(attempt>0) context=await memberContext(claims,env,request)
     if(savedListsRoute) assertSavedListOwner(context,expectedSavedListOwner)
-    const repo=await loadD1Repository(env.INVENTORY_DB,release,{ownerUserId:context.userId,idempotencyKey:idempotency})
+    const repo=await loadD1Repository(env.INVENTORY_DB,release,{
+      ...(savedListsRoute?{ownerUserId:context.userId}:{}),
+      probeSavedLists:route==='/bootstrap',idempotencyKey:idempotency,
+    })
     const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
     const query=Object.fromEntries(url.searchParams)
     let result, mutation=false

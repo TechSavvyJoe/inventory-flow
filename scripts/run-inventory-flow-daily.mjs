@@ -480,7 +480,7 @@ async function runDealerMail(reportDate, browserReady, warnings, steps, { refres
       return null
     }
     try {
-      runtime.run(NODE, ['work\\build_v2_snapshot.mjs', reportDate], { label: 'DealerMail snapshot builder' })
+      runtime.run(NODE, ['build_v2_snapshot.mjs', reportDate], { cwd: WORK_ROOT, label: 'DealerMail snapshot builder' })
       runtime.run(NODE, ['work\\finalize_cloud_snapshot.mjs', reportDate], { label: 'DealerMail cloud snapshot finalizer' })
       if (!existsSync(target)) throw new Error('DealerMail finalized snapshot was not created')
     } catch (error) {
@@ -544,9 +544,9 @@ function lastJsonLine(output) {
 }
 
 function oasisWarning(outcome) {
-  if (outcome.systemic) return 'Ford OASIS was not captured for this run (sign in to FMCDealer in the Work PC Automation Browser). Inventory and holds were published; OASIS shows as not captured.'
+  if (outcome.systemic) return 'Ford OASIS was not captured for this run (sign in to FMCDealer in the Work PC Automation Browser). The inventory and holds candidate continues without OASIS; publication still requires validation and verification.'
   const gaps = (outcome.incompleteVehicles ?? 0) + (outcome.missingVehicles ?? 0)
-  return gaps ? `Ford OASIS open actions are unconfirmed for ${gaps} vehicle(s); they show as not confirmed in the app. See work\\oasis-history\\<date>-needs-review.json.` : null
+  return gaps ? `Ford OASIS open actions are unconfirmed for ${gaps} vehicle(s); they show as not confirmed in the app. Review the affected vehicles in OASIS.` : null
 }
 
 function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps) {
@@ -715,6 +715,7 @@ function safeDetail(value) {
 function redactSecrets(text) {
   return String(text)
     .replace(/\b(cookie|set-cookie)\s*[:=][^\r\n]*/gi, '$1: [redacted]')
+    .replace(/\bauthorization["']?\s*[:=]\s*[^\r\n]*/gi, 'Authorization: [redacted]')
     .replace(/\bbearer\s+[\w.~+/=-]+/gi, 'Bearer [redacted]')
     .replace(/\b([\w-]*(?:token|secret|password|passwd|api[_-]?key|authorization|session[_-]?id)[\w-]*)(["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi, '$1$2[redacted]')
 }

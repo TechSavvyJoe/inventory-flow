@@ -1061,7 +1061,7 @@ export function VehicleWorkspace({
         evidence={vehicle.managerDisposition ? { ...vehicle.managerDisposition, sourceStore: vehicle.managerDisposition.sourceStore.name } : null}
         role={dispositionContext.role}
         store={dispositionContext.homeStore}
-        defaultDate={defaultDispositionDate(vehicle.vin, dispositionContext.reportDate)}
+        defaultDate={defaultDispositionDate(vehicle.vin, dispositionContext.reportDate, dispositionContext.timezone)}
         returnFocusRef={dispositionOpenerRef}
         onClose={() => setDispositionOpen(false)}
         onSaved={async (saved) => {

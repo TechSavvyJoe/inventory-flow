@@ -45,6 +45,7 @@ export interface DispositionContext {
   role: UserRole
   homeStore: StoreName
   reportDate?: string
+  timezone?: string
   /** False when the server's disposition table is not installed yet. */
   enabled?: boolean
   onChanged: () => Promise<void>
@@ -69,9 +70,10 @@ export function dispositionSummary(disposition: Pick<AppDisposition, 'code' | 'd
   return disposition.code === 'transfer_out' && disposition.destinationStore ? `${label} to ${disposition.destinationStore}` : label
 }
 
-/** Synthetic demo VINs date from the fixture's report day; real VINs from the device's today. */
-export function defaultDispositionDate(vin: string, reportDate: string | undefined): string {
+/** Match the server's calendar; synthetic demo VINs retain their fixture day. */
+export function defaultDispositionDate(vin: string, reportDate: string | undefined, timezone = 'America/New_York'): string {
   if (vin.startsWith('TESTDATA') && reportDate) return reportDate
-  const today = new Date()
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)!.value
+  return `${value('year')}-${value('month')}-${value('day')}`
 }

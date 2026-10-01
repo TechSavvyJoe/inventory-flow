@@ -38,6 +38,16 @@ describe('app-first daily orchestrator helpers', () => {
     expect(internals.todayInNewYork(new Date('2026-09-18T02:00:00Z'))).toBe('2026-09-17')
   })
 
+  it('does not claim publication or promise a nonexistent review file before the publisher runs', async () => {
+    const internals = await loadInternals()
+    const systemic = internals.oasisWarning({ systemic: true })
+    expect(systemic).toContain('candidate')
+    expect(systemic).not.toMatch(/were published|was published/)
+    const partial = internals.oasisWarning({ incompleteVehicles: 2, missingVehicles: 1 })
+    expect(partial).toContain('3 vehicle(s)')
+    expect(partial).not.toContain('needs-review.json')
+  })
+
   it('formats the daily summary around app/API counts, not workbook status', async () => {
     const internals = await loadInternals()
     const summary = internals.summarize({

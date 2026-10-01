@@ -1,7 +1,7 @@
 // @ts-nocheck -- exercises the plain ESM Node and Worker adapters with synthetic identities.
 // @vitest-environment node
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildSyntheticRelease } from '../../fixtures/synthetic-release.mjs'
 import { startInventoryServer } from '../../server/index.mjs'
 import { loadD1Repository, RepositoryConflictError } from '../../cloudflare/src/repository.mjs'
@@ -30,6 +30,25 @@ describe('Worker employee-owned saved vehicle lists', () => {
   })
   const get = (email, headers = {}) => cloud.call('GET', '/api/saved-lists', email, undefined, {
     'x-inventory-saved-list-owner': ownerFor(email), ...headers,
+  })
+
+  it('loads private list rows only for list requests and still advertises storage capability', async () => {
+    const created = await post(sales.email, { action: 'create', label: 'AB' }, 'query-budget-create')
+    await post(sales.email, { action: 'add', listId: created.json.id, vin: CURRENT_VIN, expectedRevision: 1 }, 'query-budget-add')
+    const prepare = vi.spyOn(cloud.env.INVENTORY_DB, 'prepare')
+    const listReads = () => prepare.mock.calls.map(([sql]) => sql).filter(sql => /SELECT[\s\S]*\bFROM\s+saved_vehicle_list(?:s|_items|_actions)\b/i.test(sql))
+    for (const path of ['/api/bootstrap', `/api/vehicles/${CURRENT_VIN}`, '/api/transfers', '/api/attention']) {
+      prepare.mockClear()
+      const response = await cloud.call('GET', path, sales.email)
+      expect(response.status).toBe(200)
+      if (path === '/api/bootstrap') expect(response.json.savedListsEnabled).toBe(true)
+      expect(listReads(), path).toEqual([])
+    }
+    prepare.mockClear()
+    const own = await get(sales.email)
+    expect(own.json.lists[0]).toMatchObject({ label: 'AB', items: [{ vin: CURRENT_VIN }] })
+    expect(listReads()).toHaveLength(3)
+    prepare.mockRestore()
   })
 
   it('isolates owners, keeps missing VIN references, and never returns a vehicle snapshot', async () => {

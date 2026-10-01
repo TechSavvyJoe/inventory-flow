@@ -40,15 +40,19 @@ export const PRERUN_DEFAULT_LOCAL_TIME = '05:00'
 const SEND_TIMEOUT_MS = 120000
 const SSH_TARGET = /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+$/
 
-// Only an explicit OK clears a site that was broken before; ERROR, NO_TAB or
-// SKIPPED say nothing about the session, so the earlier state stands.
+// Explicit OK clears a site; the keeper's RECOVERED browser also confirms
+// health. ERROR, NO_TAB and SKIPPED say nothing about the session.
+function confirmedHealthy(status, name) {
+  const current = name === 'browser' ? status?.automationBrowser?.status : status?.[name]?.status
+  return current === 'OK' || (name === 'browser' && current === 'RECOVERED')
+}
+
 export function signInProblems(status, before = []) {
   const found = new Set()
   if (status?.automationBrowser?.status === 'UNAVAILABLE') found.add('browser')
   for (const name of Array.isArray(status?.expired) ? status.expired : []) found.add(name)
   for (const name of before) {
-    const current = name === 'browser' ? status?.automationBrowser?.status : status?.[name]?.status
-    if (current !== 'OK') found.add(name)
+    if (!confirmedHealthy(status, name)) found.add(name)
   }
   return ALERT_PROBLEMS.filter((name) => found.has(name))
 }
@@ -110,12 +114,18 @@ function sshAttempt({ command, args, timeoutMs }) {
   const fd = openSync(outPath, 'w')
   return new Promise((resolve) => {
     let timedOut = false
+    let timer
+    let finished = false
     const finish = (code, spawnError) => {
+      if (finished) return
+      finished = true
       clearTimeout(timer)
       try { closeSync(fd) } catch {}
       let output = ''
       try { output = readFileSync(outPath, 'utf8') } catch {}
-      rmSync(outPath, { force: true })
+      // Antivirus or an open Windows file handle must not turn a confirmed
+      // send into an uncaught failure and an unnecessary later resend.
+      try { rmSync(outPath, { force: true }) } catch {}
       resolve({ code, output, timedOut, spawnError })
     }
     let child
@@ -125,7 +135,7 @@ function sshAttempt({ command, args, timeoutMs }) {
       finish(null, error)
       return
     }
-    const timer = setTimeout(() => { timedOut = true; child.kill() }, timeoutMs)
+    timer = setTimeout(() => { timedOut = true; child.kill() }, timeoutMs)
     child.on('error', (error) => finish(null, error))
     child.on('exit', (code) => finish(code, null))
   })
@@ -141,13 +151,11 @@ function readReply(output) {
   return null
 }
 
-// Runs the forced script on the Mac; resolves ok only when it reports ok. One
-// retry covers a failed connection (ssh exit 255), which the Tailscale relay
-// between the two machines occasionally produces.
+// Runs the forced script once; resolves ok only when it reports ok. Exit 255
+// may follow remote execution, so immediately retrying can send duplicate texts.
 export async function sshSend({ target, key, words, env = process.env, command = [sshExecutable(env)], timeoutMs = SEND_TIMEOUT_MS }) {
   const args = sshArgs({ target, key, words })
-  let attempt = await sshAttempt({ command, args, timeoutMs })
-  if (!attempt.timedOut && attempt.code === 255 && !readReply(attempt.output)) attempt = await sshAttempt({ command, args, timeoutMs })
+  const attempt = await sshAttempt({ command, args, timeoutMs })
   const reply = readReply(attempt.output)
   if (reply?.ok === true) return { ok: true }
   if (reply?.error) return { ok: false, error: reply.error }
@@ -172,6 +180,11 @@ export async function sendSignInAlert({ status, statePath, env = process.env, se
   const previous = readState(statePath)
   const before = previous.problems
   const problems = signInProblems(status, before)
+  // Keep the last alert state until all probes confirm recovery; otherwise an
+  // unrelated failed probe could trigger all-clear or erase the pending notice.
+  if (!problems.length && before.length && !ALERT_PROBLEMS.every(name => confirmedHealthy(status, name))) {
+    return { status: 'unchanged', problems: before }
+  }
   const newlyBroken = problems.filter((name) => !before.includes(name))
   const lastSent = Date.parse(previous.sentAt ?? '')
   let kind = null

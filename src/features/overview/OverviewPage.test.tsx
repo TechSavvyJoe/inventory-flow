@@ -140,6 +140,23 @@ describe('OverviewPage (server projection)', () => {
     vi.unstubAllGlobals()
   })
 
+  it('offers foreign-store service and returns as views, not unauthorized manager actions', () => {
+    const data = bootstrap('manager')
+    const foreign = data.vehicles.find(vehicle => vehicle.homeStore === 'Lincoln')!
+    foreign.vehicleName = 'Synthetic Lincoln foreign-store vehicle'
+    data.overview!.service!.agedWaiting.push({ vin: foreign.vin, store: 'Lincoln', waitingDays: 18, arrivalBasis: 'listing_date' })
+    const returning = data.vehicles.find(vehicle => vehicle.movement.transferId === 'move-2')!
+    returning.homeStore = 'Lincoln'
+    renderAs('manager', data)
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
+    expect(screen.queryByRole('link', { name: `Confirm ${returning.vehicleName} back home` })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: `Update service for ${foreign.vehicleName}` })).not.toBeInTheDocument()
+    const queue = screen.getByRole('region', { name: 'Work queue' })
+    fireEvent.click(within(queue).getByRole('button', { name: /^Service / }))
+    expect(within(queue).getAllByRole('link', { name: 'View service' }).some(link => link.getAttribute('href')?.includes(foreign.vin))).toBe(true)
+    expect(within(queue).getAllByRole('link', { name: 'Update service' }).length).toBeGreaterThan(0)
+  })
+
   it('opens a store manager on their store with every count a link to the list behind it', () => {
     renderAs('manager')
 
@@ -221,7 +238,7 @@ describe('OverviewPage (server projection)', () => {
     const types = within(exceptions).getAllByRole('heading', { level: 3 })
     expect(types.map((heading) => heading.textContent)).toEqual(['Return overdue', 'Hold past expected date', 'Records not all captured'])
     // The explanation reads for any count and appears once for the type, not once per store.
-    expect(within(exceptions).getAllByText('Vehicles missing one or more of AutoCheck, OASIS, sticker, invoice or Ford service history.')).toHaveLength(1)
+    expect(within(exceptions).getAllByText('Vehicles missing applicable current AutoCheck, sticker, factory equipment, invoice, OASIS or Ford service history.')).toHaveLength(1)
     expect(exceptions).not.toHaveTextContent('for this unit')
     for (const store of STORES) {
       expect(within(exceptions).getByRole('link', { name: `${store}: 2 vehicles · Records not all captured` })).toHaveAttribute('href', expect.stringMatching(/^\/inventory\?scope=group&store=.+&view=records-incomplete$/))

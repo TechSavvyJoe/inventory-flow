@@ -121,5 +121,7 @@ describe('manager log bound to a release', () => {
     // Tampering with the bound copy is still caught.
     writeFileSync(binding.path, JSON.stringify({ ...managerLog, records: [] }))
     expect(() => loadLatestCompletedRelease({ workspaceRoot: root, now })).toThrow(/checksum differs/)
+    // Aging does not turn a content-addressed file into a mutable legacy log.
+    expect(() => loadLatestCompletedRelease({ workspaceRoot: root, now: new Date(now.getTime() + 2 * 86_400_000) })).toThrow(/checksum differs/)
   })
 })

@@ -29,6 +29,11 @@ beforeEach(() => {
 })
 
 describe('Service readiness workspace', () => {
+  it('opens a group service total across all stores even from the default home-store scope', async () => {
+    show('/service?status=serviced&scope=all')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.getByRole('link', { name: 'Open vehicle for Synthetic Ford 003' })).toBeInTheDocument()
+  })
   it('focuses vehicle context and keeps saved status and dates in one summary', async () => {
     mocked.get.mockResolvedValue(detail('serviced', { serviceEnteredAt: '2026-08-28', completedAt: '2026-08-30' }))
     show('/service?vin=TESTDATAHWELL0001')
@@ -84,6 +89,18 @@ describe('Service readiness workspace', () => {
     expect(reference).toHaveTextContent('SYN-24 · Inspect connection')
     expect(screen.queryByRole('button', { name: /Open photo gallery/ })).not.toBeInTheDocument()
     expect(mocked.update).not.toHaveBeenCalled()
+  })
+
+  it('shows Canadian coverage distances in miles while retaining the captured kilometre evidence', async () => {
+    const vehicle = record()
+    Object.assign(vehicle, { fordOasis: { openActionsCaptured: true, dataState: 'current', warrantyCoverages: [{ type: 'Powertrain', description: '60 months / 100,000 km' }], extendedCoverageExpirations: ['Ends at 120,000 km'] } })
+    mocked.context.data = { meta: { reportDate: '2026-08-30' }, vehicles: [vehicle] }
+    show('/service?vin=TESTDATAHWELL0001')
+    const reference = await screen.findByRole('region', { name: 'Service reference' })
+    expect(reference).toHaveTextContent('62,137 mi')
+    expect(reference).toHaveTextContent('100,000 km')
+    expect(reference).toHaveTextContent('74,565 mi')
+    expect(reference).toHaveTextContent('120,000 km')
   })
 
   it('puts direct service actions before secondary facts, with links instead of full provider panels', async () => {

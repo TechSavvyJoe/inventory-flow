@@ -240,6 +240,22 @@ describe('SalesOverview', () => {
     expect(metrics.querySelector('a[href*="view=on-lot"]')).not.toBeInTheDocument()
   })
 
+  it.each(['missing', 'unknown'] as const)('keeps %s service evidence in the waiting total and attention list', (state) => {
+    const source = data()
+    source.overview = undefined
+    source.vehicleIssues = []
+    const target = source.vehicles[0]
+    target.serviceReadiness = state === 'missing' ? undefined : { ...target.serviceReadiness!, status: 'unknown' }
+    renderOverview('employee-1', source)
+    const metrics = screen.getByRole('region', { name: 'Current store facts' })
+    expect(within(metrics).getByRole('link', { name: 'Waiting for service: 2' })).toBeVisible()
+    const relevant = screen.getByRole('region', { name: 'Other vehicles in scope' })
+    const row = within(relevant).getByRole('listitem')
+    expect(row).toHaveTextContent('ServiceWaiting for service')
+    expect(row).toHaveTextContent('Why shownservice attention')
+    expect(row).not.toHaveTextContent('Service status not recorded')
+  })
+
   it('keeps broad inventory totals stable when selecting a different saved list', () => {
     const source = data()
     const props = { data: source, stores: ['Howell', 'Lincoln'] as StoreName[], homeStore: 'Howell' as StoreName, role: 'sales' as const, currentUserId: 'employee-1' }

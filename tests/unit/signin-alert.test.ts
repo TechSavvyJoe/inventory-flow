@@ -73,6 +73,23 @@ describe('sign-in alerts from the session keeper', () => {
     expect(signInProblems(keeper([], { browser: 'UNAVAILABLE' }), [])).toEqual(['browser'])
   })
 
+  it('withholds all-clear until unrelated probes also confirm healthy, then sends it once', async () => {
+    const { calls, send } = recorder()
+    await alert(keeper(['dealermail']), send)
+    expect((await alert(keeper([], { errors: ['vauto'] }), send, at(10))).status).toBe('unchanged')
+    expect(calls).toHaveLength(1)
+    expect((await alert(keeper([]), send, at(20))).kind).toBe('all_clear')
+    expect((await alert(keeper([]), send, at(30))).status).toBe('unchanged')
+    expect(calls).toHaveLength(2)
+  })
+
+  it('recognizes an explicitly recovered automation browser', async () => {
+    const { calls, send } = recorder()
+    await alert(keeper([], { browser: 'UNAVAILABLE' }), send)
+    expect((await alert(keeper([], { browser: 'RECOVERED' }), send, at(10))).kind).toBe('all_clear')
+    expect(calls.at(-1).words).toEqual(['all_clear', '-', 'JOE-PC'])
+  })
+
   it('alerts again when another site breaks, stays quiet on a partial fix, and sends one all-clear', async () => {
     const { calls, send } = recorder()
     await alert(keeper(['dealermail']), send)
@@ -217,12 +234,14 @@ describe('the ssh call on the publisher PC', () => {
     expect(await call('silent-hang', 1500)).toEqual({ ok: false, error: 'timeout' })
   })
 
-  it('retries a failed connection once', async () => {
-    expect(await call('connect-then-ok')).toEqual({ ok: true })
+  it('does not immediately resend a non-idempotent alert after an ambiguous SSH disconnect', async () => {
+    // Exit 255 can occur after the remote sender ran. The previous retry could
+    // send the same text twice; an unconfirmed attempt must remain a failure.
+    expect(await call('connect-then-ok')).toEqual({ ok: false, error: 'ssh_connect_failed' })
     expect(existsSync(path.join(dir, 'fake-ssh-marker'))).toBe(true)
   })
 
-  it('names a connection that fails twice', async () => {
+  it('names a failed connection', async () => {
     expect(await call('connect-fail')).toEqual({ ok: false, error: 'ssh_connect_failed' })
   })
 })

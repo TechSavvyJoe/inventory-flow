@@ -102,10 +102,11 @@ function recordsOf(vehicle) {
     oasis: vehicle.fordOasis?.dataState === 'current',
     sticker: vehicle.windowSticker?.dataState === 'current',
     invoice: vehicle.fordInvoice?.dataState === 'current',
-    fordHistory: vehicle.fordOasis?.serviceHistory?.historyCaptured === true,
+    fordHistory: vehicle.fordOasis?.serviceHistory?.historyCaptured === true && vehicle.fordOasis.serviceHistory.dataState === 'current',
+    factoryEquipment: vehicle.factoryEquipment?.dataState === 'current',
   }
   const ford = FORD_MAKE.test(String(vehicle.make ?? '').trim())
-  const applicable = ford ? Object.keys(records) : ['autoCheck', 'sticker', 'invoice']
+  const applicable = ford ? ['autoCheck', 'oasis', 'sticker', 'invoice', 'fordHistory'] : ['autoCheck', 'sticker', 'factoryEquipment']
   return {
     records,
     recordsCaptured: applicable.filter((key) => records[key]).length,

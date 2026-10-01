@@ -81,6 +81,7 @@ describe('private inventory search navigation', () => {
     expect(withWorkspaceReturnPath('/transfers?id=synthetic-move', '/attention')).toBe('/transfers?id=synthetic-move&returnTo=%2Fattention')
     expect(workspaceReturnLabel('/inventory?vin=TESTDATAHWELL0001')).toBe('Back to vehicle')
     expect(workspaceReturnLabel('/attention')).toBe('Back to Action center')
+    expect(workspaceReturnLabel('/manager')).toBe('Back to Overview')
     expect(workspaceReturnLabel('/transfers?id=synthetic-move')).toBe('Back to move')
     expect(workspaceReturnLabel('/service?vin=TESTDATAHWELL0001')).toBe('Back to service')
     expect(withWorkspaceReturnPath('/service', '//example.test')).toBe('/service')

@@ -264,6 +264,17 @@ describe('AppShell account and update controls', () => {
     expect(within(screen.getByRole('navigation', { name: 'Mobile primary' })).queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument()
   })
 
+  it.each(['/transfers', '/transfers/history', '/updates', '/admin'])('marks More as the current mobile destination on %s', (route) => {
+    const context = useAppDataMock()
+    useAppDataMock.mockReturnValue({ ...context, role: 'group_manager' })
+    render(<MemoryRouter initialEntries={[route]}><AppShell><span>Utility route</span></AppShell></MemoryRouter>)
+    const mobile = screen.getByRole('navigation', { name: 'Mobile primary' })
+    const more = within(mobile).getByRole('button', { name: 'More app controls' })
+    expect(more).toHaveAttribute('aria-current', 'page')
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    expect(within(mobile).queryByRole('link', { current: 'page' })).not.toBeInTheDocument()
+  })
+
   it.each(['/transfers', '/service', '/attention', '/inventory'])('leaves %s with only its own page search in the shell header', (route) => {
     const context = useAppDataMock()
     useAppDataMock.mockReturnValue({ ...context, role: 'manager' })

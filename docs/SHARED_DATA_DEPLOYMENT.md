@@ -1,5 +1,9 @@
 # Shared data deployment and activation checklist
 
+## Recovered deployment record — September 29, 2026
+
+Recovered October 1 from the preserved `release-2026-09-29` worktree's uncommitted deployment-log entry. That entry records the paired release at `2026-09-29T16:37:06.318Z`, source `728d38229241677902ae11dcf969b530d0e94559`, tag `728d382`, app version `a4a7f794-c78c-471b-afbe-2e72c7ee1158` and integrations version `e8c28a80-90ca-42e4-bbd5-97644219edd4`. The owner also supplied the app's matching authenticated health JSON in the conversation. This restores the historical log; it does not claim those versions serve now or that all post-release checks were completed then. The original worktree is unchanged.
+
 ## Deployment - 2026-09-30 (pnpm cloud:release)
 
 - 2026-09-30T18:47:22.792Z | Commit: e5f2ae4f1afa0fc8e41ce09381ca2642c804d34a | Tag: e5f2ae4 | App Version: f1d51344-f960-41de-9988-6459cb72a7c6 | Integrations Version: b5b8b31c-0b03-43b8-8a6f-e97863b7d9cc

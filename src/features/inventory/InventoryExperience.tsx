@@ -610,7 +610,7 @@ export function InventoryExperience({
   const pageVehicles = scopedVehicles.slice(pageStart, pageStart + rowsPerPage);
   // List-only filters must not discard an already open, still-authorized record.
   const selectedVehicle = selectedVehicleId ? allVehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null : null;
-  const filterCount = activeFilterCount(filters) + (["moving", "new", "price"].includes(quickView) ? 1 : 0);
+  const filterCount = activeFilterCount(filters) + (["moving", "new", "price"].includes(quickView) ? 1 : 0) + (onlyShortlisted ? 1 : 0);
   const selectedServiceLabel = SERVICE_FILTERS.find(([value]) => value === filters.serviceReadiness && value !== "all")?.[1];
   const overviewViewLabel = filters.overviewView ? `${OVERVIEW_VIEW_LABELS[filters.overviewView.view]} · ${filters.overviewView.store === "all" ? "All stores" : filters.overviewView.store}` : null;
   const secondaryViewLabel = quickView === "moving" ? "Moving" : quickView === "new" ? "New today" : quickView === "price" ? "Price changed" : null;
@@ -657,7 +657,7 @@ export function InventoryExperience({
     return () => window.cancelAnimationFrame(frame);
   }, [selectedVehicleId]);
 
-  const resultKey = JSON.stringify([filters, query, quickView, rowsPerPage, scope, sorts]);
+  const resultKey = JSON.stringify([filters, query, quickView, onlyShortlisted, rowsPerPage, scope, sorts]);
   const previousResultKey = useRef(resultKey);
   useEffect(() => {
     if (previousResultKey.current !== resultKey) setPage(1);
@@ -674,6 +674,7 @@ export function InventoryExperience({
   const clearFilters = () => {
     setFilters({ ...DEFAULT_INVENTORY_FILTERS });
     setQuickView("all");
+    setOnlyShortlisted(false);
   };
   const clearEmptyState = () => {
     setSearchQuery("");

@@ -48,13 +48,15 @@ function fakeDealerMail(reportDate, { capture, finalizeRejects = 0, writeTarget 
   internals.runtime.dealerMailRetryDelayMs = 1234
   internals.runtime.sleep = async (ms) => { calls.sleeps.push(ms) }
   internals.runtime.ensureAutomationBrowser = async () => true
-  internals.runtime.run = (_command, args) => {
+  internals.runtime.run = (_command, args, options) => {
     const script = args[0]
     if (script.includes('capture-dealermail')) {
       calls.capture += 1
       return capture ? capture(calls.capture) : { ok: true, output: '{"sessionStatus":"ok"}', status: 0 }
     }
     if (script.includes('build_v2_snapshot')) {
+      expect(script).toBe('build_v2_snapshot.mjs')
+      expect(options.cwd).toBe(path.join(workspaceRoot, 'work'))
       calls.build += 1
       return { ok: true, output: 'VALIDATION PASSED', status: 0 }
     }
@@ -163,6 +165,11 @@ describe('DealerMail snapshot retry', () => {
 })
 
 describe('failure detail', () => {
+  it.each(['Basic SYNTHETIC_BASIC_CREDENTIAL', 'AWS4-HMAC-SHA256 Credential=SYNTHETIC_KEY, SignedHeaders=host, Signature=SYNTHETIC_SIGNATURE'])('redacts the complete Authorization value: %s', (value) => {
+    const detail = internals.failureDetailFor(new Error(`Capture failed\nAuthorization: ${value}\nHTTP 403`))
+    expect(detail).toContain('HTTP 403')
+    expect(detail).not.toMatch(/SYNTHETIC_BASIC_CREDENTIAL|SYNTHETIC_KEY|SYNTHETIC_SIGNATURE/)
+  })
   it('keeps the real message bounded and masks credential-shaped values', () => {
     const detail = internals.failureDetailFor(new Error(`fetch failed token=abc123 Authorization: Bearer xyz.789 Cookie: sid=secret-value\n${'x'.repeat(900)}`))
     expect(detail).toContain('fetch failed')

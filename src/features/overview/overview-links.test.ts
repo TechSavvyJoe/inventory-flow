@@ -29,7 +29,7 @@ describe('Overview link contract (OVERVIEW_SPEC §8.4)', () => {
   it('links service counts, return overdue and the Action center category', () => {
     expect(serviceStatusHref('needs_service', 'Howell')).toBe('/service?status=needs_service&store=Howell')
     expect(serviceStatusHref('in_service', 'Lincoln')).toBe('/service?status=in_service&store=Lincoln')
-    expect(serviceStatusHref('serviced')).toBe('/service?status=serviced')
+    expect(serviceStatusHref('serviced')).toBe('/service?status=serviced&scope=all')
     expect(returnOverdueHref('Fowlerville')).toBe('/transfers?view=return-overdue&store=Fowlerville')
     expect(actionCenterHref('inventory')).toBe('/attention?category=inventory')
   })
@@ -48,7 +48,7 @@ describe('Overview link contract (OVERVIEW_SPEC §8.4)', () => {
     expect(exceptionHref({ kind: 'stale_confirmation', store: 'Howell', vins: [] })).toBe('/inventory?scope=group&store=Howell&view=unaccounted')
     expect(exceptionHref({ kind: 'return_overdue', store: 'Lincoln', vins: [] })).toBe('/transfers?view=return-overdue&store=Lincoln')
     expect(exceptionHref({ kind: 'hold_past_expected', store: 'Howell', vins: [] })).toBe('/inventory?scope=group&store=Howell&view=holds-past-expected')
-    expect(exceptionHref({ kind: 'identity_review', store: 'Howell', vins: [] })).toBe('/attention?category=inventory')
+    expect(exceptionHref({ kind: 'identity_review', store: 'Lincoln', vins: [] })).toBe('/attention?category=inventory&scope=group')
     expect(exceptionHref({ kind: 'records_incomplete', store: 'Howell', vins: [] })).toBe('/inventory?scope=group&store=Howell&view=records-incomplete')
     expect(exceptionHref({ kind: 'source_conflict', store: 'Howell', vins: ['TESTDATAHWELL0001', 'TESTDATAHWELL0002'] })).toBe('/inventory?scope=group&vins=TESTDATAHWELL0001%2CTESTDATAHWELL0002')
     const capped = new URLSearchParams(inventoryVinsHref(vins).split('?')[1]).get('vins')!.split(',')

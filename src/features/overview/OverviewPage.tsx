@@ -129,7 +129,7 @@ const EXCEPTION_COPY: Record<OverviewExceptionKind, { label: string; why: (thres
   return_overdue: { label: 'Return overdue', why: () => 'Due back and not confirmed received.' },
   hold_past_expected: { label: 'Hold past expected date', why: () => 'The DealerMail expected date has passed; a review signal, not proof of sale or release.' },
   identity_review: { label: 'Manager log needs an exact VIN', why: () => 'Sold-board rows that could not be placed on a VIN.' },
-  records_incomplete: { label: 'Records not all captured', why: () => 'Vehicles missing one or more of AutoCheck, OASIS, sticker, invoice or Ford service history.' },
+  records_incomplete: { label: 'Records not all captured', why: () => 'Vehicles missing applicable current AutoCheck, sticker, factory equipment, invoice, OASIS or Ford service history.' },
   service_date_order: { label: 'Service dates before arrival', why: () => 'A recorded service date is earlier than the arrival date; check the record.' },
   listed_but_delivered: { label: 'Recorded delivered · still listed', why: (thresholds) => `Delivered in Inventory Flow ${thresholds.listedAfterDeliveredDays}+ days ago and still listed on the website. Confirm with the store; the listing is not changed here.` },
   delivered_move_no_disposition: { label: 'Move says delivered · no disposition', why: () => 'A move records customer delivery; no disposition has been recorded.' },
@@ -300,7 +300,7 @@ function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, c
           {moreCounts}
         </details>
       ) : moreCounts}
-      <ReturnVerification rows={rows} store={store} fullAccess={fullAccess} />
+      <ReturnVerification rows={rows} store={store} fullAccess={fullAccess && (role === 'group_manager' || store === homeStore)} />
     </>
   )
   return (
@@ -366,7 +366,7 @@ function ServiceTimingRow({ metrics, store, thresholds }: { metrics: OverviewSer
   )
 }
 
-function ServiceSection({ data, overview, stores, fullAccess, reportMode, printing, onReport }: { data: BootstrapData; overview: OverviewSummary; stores: StoreName[]; fullAccess: boolean; reportMode: boolean; printing: boolean; onReport: () => void }) {
+function ServiceSection({ data, overview, stores, role, homeStore, fullAccess, reportMode, printing, onReport }: { data: BootstrapData; overview: OverviewSummary; stores: StoreName[]; role: UserRole; homeStore: StoreName; fullAccess: boolean; reportMode: boolean; printing: boolean; onReport: () => void }) {
   const service = overview.service
   const [showAllAged, setShowAllAged] = useState(false)
   const [showTiming, setShowTiming] = useState(false)
@@ -424,7 +424,8 @@ function ServiceSection({ data, overview, stores, fullAccess, reportMode, printi
                 </div>
                 <div className="ov-row-actions">
                   <RecordsLink vin={entry.vin} facts={entry.facts} name={name} />
-                  {fullAccess ? <Link className="ov-row-link" to={serviceVehicleHref(entry.vin)} aria-label={`Update service for ${name}`}><Wrench aria-hidden="true" />Update service</Link> : null}
+                  {fullAccess && (role === 'group_manager' || (entry.store ?? entry.vehicle?.homeStore) === homeStore) && entry.vehicle?.serviceReadiness?.canManage !== false
+                    ? <Link className="ov-row-link" to={serviceVehicleHref(entry.vin)} aria-label={`Update service for ${name}`}><Wrench aria-hidden="true" />Update service</Link> : null}
                 </div>
               </li>
             )
@@ -739,12 +740,14 @@ function issueAction(issue: VehicleIssue, enabled: boolean): { label: string; hr
   return { label, href: `/attention?${params.toString()}` }
 }
 
-function OverviewWorkQueue({ data, overview, rows, stores, scope, fullAccess, holdsVerified, dispositionsEnabled, onDispositionOpen }: {
+function OverviewWorkQueue({ data, overview, rows, stores, scope, role, homeStore, fullAccess, holdsVerified, dispositionsEnabled, onDispositionOpen }: {
   data: BootstrapData
   overview: OverviewSummary
   rows: OverviewRow[]
   stores: StoreName[]
   scope: OverviewScope
+  role: UserRole
+  homeStore: StoreName
   fullAccess: boolean
   holdsVerified: boolean
   dispositionsEnabled: boolean
@@ -795,7 +798,7 @@ function OverviewWorkQueue({ data, overview, rows, stores, scope, fullAccess, ho
         detail={[facts.service.waitingDays !== undefined ? `Waiting ${plural(facts.service.waitingDays, 'day')}` : null, arrivalText(facts.service)].filter(Boolean).join(' · ') || 'Arrival timing not recorded'}
         owner={facts.service.store ?? vehicle.homeStore} status={facts.service.waitingDays !== undefined ? `${plural(facts.service.waitingDays, 'day')} waiting` : 'Waiting time not recorded'}
         tone={facts.service.waitingDays !== undefined && facts.service.waitingDays >= overview.thresholds.serviceWaitingDays[1] ? 'danger' : undefined}
-        actionLabel={fullAccess ? 'Update service' : 'View service'} actionHref={serviceVehicleHref(vehicle.vin)} />
+        actionLabel={fullAccess && (role === 'group_manager' || (facts.service.store ?? vehicle.homeStore) === homeStore) && vehicle.serviceReadiness?.canManage !== false ? 'Update service' : 'View service'} actionHref={serviceVehicleHref(vehicle.vin)} />
     ))
   } else if (view === 'holds') {
     content = holds.slice(0, WORK_QUEUE_ROWS).map(({ vehicle, facts }) => (
@@ -940,7 +943,7 @@ export function OverviewPage() {
       </div>
 
       {presentation === 'sales' ? <SalesOverview data={data} stores={stores} homeStore={homeStore} role={role} currentUserId={currentUserId ?? null} printing={printing} /> : <>
-      <OverviewWorkQueue data={data} overview={overview} rows={rows} stores={stores} scope={scope} fullAccess={fullAccess}
+      <OverviewWorkQueue data={data} overview={overview} rows={rows} stores={stores} scope={scope} role={role} homeStore={homeStore} fullAccess={fullAccess}
         holdsVerified={holdsVerified} dispositionsEnabled={dispositionsEnabled}
         onDispositionOpen={(vin, opener) => { dispositionOpener.current = opener; setDispositionStatus(''); setDispositionVin(vin) }} />
 
@@ -955,7 +958,7 @@ export function OverviewPage() {
         <div className="ov-column">{dispositions}</div>
       </div>
 
-      <ServiceSection data={data} overview={overview} stores={stores} fullAccess={fullAccess} reportMode={serviceReport} printing={printing} onReport={printServiceReport} />
+      <ServiceSection data={data} overview={overview} stores={stores} role={role} homeStore={homeStore} fullAccess={fullAccess} reportMode={serviceReport} printing={printing} onReport={printServiceReport} />
       </>}
 
       <footer className="ov-print-only ov-print-footer">Counts are app records and source evidence as of the times shown. Nothing here asserts availability; confirm holds and location with the home store.</footer>
@@ -966,7 +969,7 @@ export function OverviewPage() {
           evidence={dispositionVehicle.managerDisposition}
           role={role}
           store={homeStore}
-          defaultDate={defaultDispositionDate(dispositionVehicle.vin, data.meta.reportDate)}
+          defaultDate={defaultDispositionDate(dispositionVehicle.vin, data.meta.reportDate, data.meta.timezone)}
           returnFocusRef={dispositionOpener}
           onClose={() => setDispositionVin(null)}
           onSaved={async (saved) => {

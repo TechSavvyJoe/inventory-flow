@@ -29,7 +29,7 @@
 .service-page .service-vehicle-row:hover { background:var(--ifx-neutral-50); }
 .service-page .service-vehicle-row[aria-pressed=true] { background:var(--ifx-info-surface); color:var(--ink-900); box-shadow:inset 3px 0 var(--ifx-info); }
 .service-row-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border-top:1px solid var(--ifx-border-subtle); }
-.service-row-actions :is(a,button) { display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; min-height:44px; padding:6px 8px; border:0; border-radius:0; background:var(--ifx-neutral-0); color:var(--ifx-info); font-size:13px; font-weight:650; line-height:1.25; text-align:center; text-decoration:none; }
+.service-row-actions :is(a,button) { display:flex; align-items:center; justify-content:center; gap:var(--ifx-space-1-5); min-width:0; min-height:var(--ifx-control-height-md); padding:var(--ifx-space-1-5) var(--ifx-space-2); border:0; border-radius:0; background:var(--ifx-neutral-0); color:var(--ifx-info); font-size:var(--ifx-text-sm); font-weight:var(--ifx-weight-semibold); line-height:var(--ifx-leading-compact); text-align:center; text-decoration:none; }
 .service-row-actions :is(a,button)+:is(a,button) { border-left:1px solid var(--ifx-border-subtle); }
 .service-row-actions :is(a,button):hover { background:var(--ifx-neutral-50); }
 .service-row-actions svg { flex:none; }

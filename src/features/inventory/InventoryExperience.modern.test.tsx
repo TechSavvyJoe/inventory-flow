@@ -35,6 +35,18 @@ function vehicle(index: number): InventoryVehicle {
 describe('modern inventory scope and paging', () => {
   beforeEach(() => window.sessionStorage.clear());
 
+  it('clears shortlist-only mode from an empty result after the last saved vehicle is removed', () => {
+    const item = { ...vehicle(1), location: { homeStore, sourceReportedStore: homeStore } };
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[item]} />);
+    fireEvent.click(screen.getByRole('button', { name: `Save ${item.stockNumber} to shortlist` }));
+    fireEvent.click(screen.getByRole('button', { name: 'Shortlist (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: `Remove ${item.stockNumber} from shortlist` }));
+    expect(screen.getByRole('button', { name: 'Shortlist (0)' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /^Clear filters$/ }));
+    expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Shortlist (0)' })).not.toBeInTheDocument();
+  });
+
   it('starts the sales view with unheld vehicles here, includes visitors, and keeps held/offsite one tap away', async () => {
     const away = { id: 'fowlerville', name: 'Fowlerville' };
     const local = { ...vehicle(1), location: { homeStore, sourceReportedStore: homeStore } };

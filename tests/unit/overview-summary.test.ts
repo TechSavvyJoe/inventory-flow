@@ -52,6 +52,20 @@ function store(summary, name) {
 }
 
 describe('overview projection metric definitions (§5)', () => {
+  it('counts Ford service history only when the history itself is current', () => {
+    for (const dataState of ['stale_unverified', 'incomplete', undefined]) {
+      const result = facts([vehicle('TESTDATAHWELL0001', { fordOasis: { dataState: 'current', serviceHistory: { historyCaptured: true, dataState } } })])
+      expect(result.TESTDATAHWELL0001).toMatchObject({ records: { oasis: true, fordHistory: false }, recordsCaptured: 1 })
+    }
+    expect(facts([vehicle('TESTDATAHWELL0001', { fordOasis: { dataState: 'current', serviceHistory: { historyCaptured: true, dataState: 'current' } } })]).TESTDATAHWELL0001.recordsCaptured).toBe(2)
+  })
+
+  it('counts factory equipment instead of a Ford invoice for other manufacturers', () => {
+    const result = build([vehicle('TESTDATAOTHER0001', { make: 'Chevrolet', autoCheckReport: { dataState: 'current' }, windowSticker: { dataState: 'current' }, factoryEquipment: { dataState: 'current' } })])
+    expect(result.vehicleFacts.TESTDATAOTHER0001).toMatchObject({ recordsCaptured: 3, recordsApplicable: 3 })
+    expect(result.group.recordsIncomplete).toBe(0)
+    expect(facts([vehicle('TESTDATAOTHER0002', { make: 'Chevrolet', fordInvoice: { dataState: 'current' } })]).TESTDATAOTHER0002.recordsCaptured).toBe(0)
+  })
   it('publishes the thresholds and the role access it was built for', () => {
     const summary = build([])
     expect(summary).toMatchObject({ asOfDay: AS_OF, scopeStore: 'Howell', role: 'manager', access: 'full' })
@@ -364,7 +378,8 @@ describe('overview projection metric definitions (§5)', () => {
   it('counts captured records against 5 for Ford and Lincoln and 3 otherwise', () => {
     const complete = {
       autoCheckReport: { dataState: 'current' }, windowSticker: { dataState: 'current' }, fordInvoice: { dataState: 'current' },
-      fordOasis: { dataState: 'current', serviceHistory: { historyCaptured: true } },
+      fordOasis: { dataState: 'current', serviceHistory: { historyCaptured: true, dataState: 'current' } },
+      factoryEquipment: { dataState: 'current' },
     }
     const result = build([
       vehicle('VINRECORDSFORD001', complete),
