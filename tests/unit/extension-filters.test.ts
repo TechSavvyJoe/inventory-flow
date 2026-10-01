@@ -85,8 +85,8 @@ describe('sorting', () => {
     expect(sortMatches(matches, 'mileage-asc').map((item) => item.vehicle.vin)).toEqual(['VIN', 'V2', 'V3', 'V4'])
     expect(sortMatches(matches, 'year-desc').map((item) => item.vehicle.year)).toEqual([2024, 2023, 2022, 2021])
     expect(sortMatches(matches, 'days-desc').map((item) => item.vehicle.vin)).toEqual(['V3', 'VIN', 'V2', 'V4'])
-    // Two missing savings tie, so the name decides.
-    expect(sortMatches(matches, 'savings-desc').map((item) => item.vehicle.vin)).toEqual(['VIN', 'V2', 'V4', 'V3'])
+    // Old discount-based preferences safely fall back to vehicle name.
+    expect(sortMatches(matches, 'savings-desc')).toEqual(sortMatches(matches, 'name'))
   })
 
   it('keeps search ranking for relevance when there is a query and falls back to names otherwise', () => {

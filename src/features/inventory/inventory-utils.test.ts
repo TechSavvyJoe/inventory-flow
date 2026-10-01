@@ -49,6 +49,15 @@ function vehicle(overrides: Partial<InventoryVehicle> = {}): InventoryVehicle {
 }
 
 describe("inventory source-safe selectors", () => {
+  it("sorts MSRP by usable original-document amounts instead of the listing discount anchor", () => {
+    const records = [
+      vehicle({ id: "sticker", msrp: 1, windowSticker: { dataState: "current", totalMsrp: 60000 } }),
+      vehicle({ id: "fallback", msrp: 99000, factoryEquipment: { dataState: "current", totalMsrp: 40000, isOriginalWindowSticker: false } }),
+      vehicle({ id: "missing", msrp: 10, windowSticker: { dataState: "incomplete", totalMsrp: 20000 } }),
+    ];
+    expect(sortVehicles(records, [{ key: "msrp", direction: "asc" }]).map(({ id }) => id)).toEqual(["fallback", "sticker", "missing"]);
+  });
+
   it("chooses request versus direct move from role and vehicle ownership", () => {
     const howell = { id: "howell", name: "Howell" };
     const own = vehicle();
@@ -229,6 +238,18 @@ describe("Overview views in Inventory (OVERVIEW_SPEC §8.1)", () => {
     expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, vins: [base.vin] })).toBe(true);
     expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, vins: ["TESTDATAHWELL0009"] })).toBe(false);
     expect(activeFilterCount({ ...DEFAULT_INVENTORY_FILTERS, vins: [base.vin], overviewView: { view: "away", store: "Howell" } })).toBe(2);
+  });
+
+  it("includes ordinary active holds from every store without inferring them from a label", () => {
+    const filters = { ...DEFAULT_INVENTORY_FILTERS, overviewView: { view: "holds", store: "all" } as const };
+    for (const store of ["Howell", "Lincoln"]) {
+      const held = vehicle({ overview: facts({ holdActive: true }), location: { homeStore: { id: store.toLowerCase(), name: store } } });
+      expect(vehicleMatchesFilters(held, filters)).toBe(true);
+      expect(vehicleMatchesFilters({ ...held, overview: facts() }, filters)).toBe(false);
+    }
+    const labelledOnly = vehicle({ overview: facts(), dealerMail: { dataState: "current", hasActiveHold: true, position: "primary" } });
+    expect(vehicleMatchesFilters(labelledOnly, filters)).toBe(false);
+    expect(vehicleMatchesFilters(vehicle(), filters)).toBe(false);
   });
 
   it("matches disposition views by the recorded code and the server's owner store, never the manager log", () => {

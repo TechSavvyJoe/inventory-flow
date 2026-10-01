@@ -36,15 +36,15 @@ export const EQUIPMENT_CATEGORY_LABELS: Record<EquipmentCategory, string> = {
 };
 
 const CATEGORY_MATCHERS: Array<[EquipmentCategory, RegExp]> = [
-  ["packages", /\b(package|equipment\s+group|edition|appearance\s+group|special\s+series|black\s+label|king\s+ranch|platinum|lariat|tremor|raptor|shelby|stx|luxury\s+group|technology\s+group)\b/i],
-  ["driver-assistance", /\b(bluecruise|super\s+cruise|pro\s*pilot|propilot|co-?pilot|active\s+driving\s+assist|hands[- ]free\s+driv|adaptive\s+cruise|cruise\s+control\s+with\s+stop|lane\s+(?:change\s+alert|keep|keeping|centering|departure|tracing)|blind\s+spot|blind\s+zone|blis|cross[- ](?:path|traffic)|pre[- ]collision|forward\s+collision|full[- ]speed\s+forward\s+collision|automatic\s+emergency|emergency\s+braking|front\s+pedestrian\s+braking|park(?:ing)?\s+assist|park\s*sense|park\s*view|parking\s+sensor|reverse\s+sensing|360(?:-degree)?\s+camera|surround\s+(?:view|vision)|driver\s+(?:alert|attention|monitoring)|drowsy\s+driver|safety\s+alert\s+seat|traffic\s+sign\s+(?:recognition|assist)|evasive\s+steering|pedestrian|automatic\s+high[- ]beam|auto\s+high[- ]beam|intelli\s*beam|backup\s+camera|rear\s*view\s+camera|air\s*bag|anti[- ]lock|abs\b|stability\s+control|traction\s+control|ford\s+co-?pilot|toyota\s+safety\s+sense|honda\s+sensing)\b/i],
+  ["packages", /\b(package|equipment\s+group|edition|appearance\s+group|special\s+series|black\s+label|jet\s+appearance|monochromatic\s+appearance|king\s+ranch|platinum|lariat|tremor|raptor|shelby|stx|luxury\s+group|technology\s+group)\b/i],
+  ["driver-assistance", /\b(bluecruise|activeglide|active\s+glide|super\s+cruise|pro\s*pilot|propilot|co-?pilot|active\s+driving\s+assist|hands[- ]free\s+driv|adaptive\s+cruise|cruise\s+control\s+with\s+stop|lane\s+(?:change\s+alert|keep|keeping|centering|departure|tracing)|blind\s+spot|blind\s+zone|blis|cross[- ](?:path|traffic)|pre[- ]collision|forward\s+collision|full[- ]speed\s+forward\s+collision|automatic\s+emergency|emergency\s+braking|front\s+pedestrian\s+braking|park(?:ing)?\s+assist|park\s*sense|park\s*view|parking\s+sensor|reverse\s+sensing|360(?:-degree)?\s+camera|surround\s+(?:view|vision)|driver\s+(?:alert|attention|monitoring)|drowsy\s+driver|safety\s+alert\s+seat|traffic\s+sign\s+(?:recognition|assist)|evasive\s+steering|pedestrian|automatic\s+high[- ]beam|auto\s+high[- ]beam|intelli\s*beam|backup\s+camera|rear\s*view\s+camera|air\s*bag|anti[- ]lock|abs\b|stability\s+control|traction\s+control|ford\s+co-?pilot|toyota\s+safety\s+sense|honda\s+sensing)\b/i],
   ["towing-utility", /\b(tow|towing|trailer|hitch|gooseneck|fifth[- ]wheel|5th[- ]wheel|payload|bed\s*liner|bed\s+utility|tailgate|cargo\s+management|pro\s+power\s+onboard)\b/i],
-  ["comfort", /\b(heated|ventilated|cooled|massage|leather|memory\s+seat|power\s+seat|moonroof|sunroof|panoramic|climate\s+control|third[- ]row|3rd[- ]row|remote\s+start|keyless|hands[- ]free\s+liftgate|power\s+liftgate|power\s+running\s+board)\b/i],
-  ["technology", /\b(navigation|sync\b|apple\s+carplay|android\s+auto|wireless\s+charging|bluetooth|wi-?fi|touchscreen|touch\s+screen|head[- ]up|digital\s+(?:cluster|display)|b&o|bang\s*&\s*olufsen|premium\s+audio|satellite\s+radio|usb)\b/i],
+  ["comfort", /\b(heated|ventilated|cooled|massage|perfect\s+position|multi[- ]contour|leather|memory\s+seat|power\s+seat|moonroof|sunroof|panoramic|climate\s+control|third[- ]row|3rd[- ]row|remote\s+start|keyless|hands[- ]free\s+liftgate|power\s+liftgate|power\s+running\s+board)\b/i],
+  ["technology", /\b(navigation|sync\b|apple\s+carplay|android\s+auto|wireless\s+charging|bluetooth|wi-?fi|touchscreen|touch\s+screen|head[- ]up|digital\s+(?:cluster|display)|revel(?:\s+ultima)?|b&o|bang\s*&\s*olufsen|premium\s+audio|satellite\s+radio|usb)\b/i],
   ["performance", /\b(4x4|4wd|four[- ]wheel\s+drive|awd|all[- ]wheel\s+drive|locking\s+differential|limited[- ]slip|off[- ]road|sport[- ]tuned|performance|turbo|ecoboost|hybrid|electric|ev\b|suspension|skid\s+plate)\b/i],
 ];
 
-const STANDOUT_MATCHER = /\b(package|equipment\s+group|edition|special\s+series|black\s+label|king\s+ranch|platinum|lariat|tremor|raptor|shelby|max\s+trailer|trailer\s+tow|tow\s+technology|gooseneck|fifth[- ]wheel|5th[- ]wheel|pro\s+trailer|pro\s+power\s+onboard|bluecruise|super\s+cruise|pro\s*pilot|propilot|hands[- ]free\s+driv|active\s+driving\s+assist|adaptive\s+cruise|lane\s+centering|360(?:-degree)?\s+camera|surround\s+(?:view|vision)|active\s+park|blind\s+spot|blind\s+zone|automatic\s+emergency|driver\s+monitoring|traffic\s+sign\s+recognition|panoramic|moonroof|sunroof|ventilated|cooled\s+seat|massage|b&o|bang\s*&\s*olufsen|premium\s+audio|head[- ]up|wireless\s+charging|locking\s+differential|off[- ]road|hybrid|electric)\b/i;
+const STANDOUT_MATCHER = /\b(package|equipment\s+group|edition|special\s+series|black\s+label|jet\s+appearance|monochromatic\s+appearance|king\s+ranch|platinum|lariat|tremor|raptor|shelby|max\s+trailer|trailer\s+tow|tow\s+technology|gooseneck|fifth[- ]wheel|5th[- ]wheel|pro\s+trailer|pro\s+power\s+onboard|bluecruise|activeglide|active\s+glide|super\s+cruise|pro\s*pilot|propilot|hands[- ]free\s+driv|active\s+driving\s+assist|adaptive\s+cruise|lane\s+centering|360(?:-degree)?\s+camera|surround\s+(?:view|vision)|active\s+park|blind\s+spot|blind\s+zone|automatic\s+emergency|driver\s+monitoring|traffic\s+sign\s+recognition|panoramic|moonroof|sunroof|ventilated|cooled\s+seat|massage|perfect\s+position|multi[- ]contour|revel(?:\s+ultima)?|b&o|bang\s*&\s*olufsen|premium\s+audio|head[- ]up|wireless\s+charging|locking\s+differential|off[- ]road|hybrid|electric)\b/i;
 
 const SOURCE_STRENGTH: Record<EquipmentEvidenceSource, number> = {
   "factory-equipment-group": 4,
@@ -64,13 +64,12 @@ function normalizedEquipmentKey(label: string): string {
 }
 
 function candidateItems(vehicle: InventoryVehicle): Array<{ label: string; source: EquipmentEvidenceSource }> {
-  const sticker = vehicle.windowSticker;
-  const factoryEquipment = vehicle.factoryEquipment;
+  const sticker = vehicle.windowSticker && ["current", "stale"].includes(vehicle.windowSticker.dataState) ? vehicle.windowSticker : undefined;
+  const factoryEquipment = vehicle.factoryEquipment && ["current", "stale"].includes(vehicle.factoryEquipment.dataState) ? vehicle.factoryEquipment : undefined;
   return [
     ...(sticker?.equipmentGroup ? [{ label: sticker.equipmentGroup, source: "factory-equipment-group" as const }] : []),
     ...(sticker?.equipmentGroupContents ?? []).map((label) => ({ label, source: "factory-equipment-group" as const })),
     ...(sticker?.options ?? []).map((label) => ({ label, source: "factory-option" as const })),
-    ...(sticker?.equipmentGroupContents ?? []).map((label) => ({ label, source: 'factory-equipment-group' as const })),
     ...(sticker?.standardEquipment ?? []).map((label) => ({ label, source: "factory-standard-equipment" as const })),
     ...(factoryEquipment?.packages ?? []).flatMap((item) => [
       { label: [item.name, item.code ? `(${item.code})` : null].filter(Boolean).join(" "), source: "vauto-equipment-package" as const },
@@ -123,6 +122,7 @@ export function standoutEquipment(vehicle: InventoryVehicle, limit = 4): Publish
  */
 export function compactEquipmentScanLabel(label: string): string {
   const value = label.replace(/\s+/g, " ").trim()
+    .replace(/\b360[- ]degree\s+camera\b/gi, '360° camera')
     .replace(/\s+(?:[·|]\s*)?((?:USD|CAD)\s*\$?[\d,]+(?:\.\d{2})?|\$[\d,]+(?:\.\d{2})?|NO\s*CHARGE)$/i, '')
     .replace(/\s*\([A-Z0-9-]+\)$/, '')
     .replace(/\s*[·|]\s*[A-Z]{2,}-[A-Z0-9-]+$/, '');

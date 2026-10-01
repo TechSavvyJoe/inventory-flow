@@ -15,6 +15,12 @@ const base = (overrides = {}) => ({
 const data = (record, extra = {}) => ({ meta: meta(extra.meta), stores: [], transfers: extra.transfers ?? [], attention: [], vehicles: [record], access: extra.access })
 
 describe('deal desk view model', () => {
+  it('fills missing sales specifications from usable VIN documents without overriding the listing', () => {
+    const record = base({ engine: 'Published engine', windowSticker: { dataState: 'current', engine: 'Sticker engine', transmission: '10-speed automatic', exteriorColor: 'Oxford White' } });
+    expect(toPanelVehicle(record, data(record))).toMatchObject({ engine: 'Published engine', transmission: '10-speed automatic', exteriorColor: 'Oxford White' });
+    record.windowSticker.dataState = 'incomplete';
+    expect(toPanelVehicle(record, data(record)).transmission).toBeNull();
+  })
   it('keeps unconfirmed existing inventory waiting without inventing manager service completion dates', () => {
     expect(toPanelVehicle(base(), data(base())).serviceReadiness).toMatchObject({ status: 'needs_service', completedAt: null, readinessBasis: 'unconfirmed' })
     const serviced = base({ serviceReadiness: { status: 'serviced', completedAt: '2026-09-14', store: 'Howell', canManage: true } })
@@ -289,7 +295,8 @@ describe('deal desk v2 projections', () => {
     expect(fields.options).toMatchObject({ value: 3005 })
     expect(fields.mileage).toMatchObject({ value: 12450, kind: 'mileage' })
     expect(fields.modelCode.value).toBe('W1E')
-    expect(vehicle.savings).toBe(68420 - 51800)
+    expect(vehicle).not.toHaveProperty('savings')
+    expect(fields).not.toHaveProperty('msrp')
     expect(vehicle.documents.windowSticker.warranty).toEqual(['3 yr / 36,000 mi'])
     expect(vehicle.documents.factoryEquipment.packages[0]).toMatchObject({ name: 'Sport', price: 3005 })
     expect(vehicle.equipment.byCategory.find((group) => group.category === 'comfort').items[0].label).toBe('Twin Panel Moonroof')

@@ -1,4 +1,6 @@
 import { serviceWorkflowStatus } from './service-readiness.mjs'
+import { factoryPricing, factoryPriceLabel } from './factory-pricing.mjs'
+import { salesSpecifications } from './sales-specs.mjs'
 
 // Builds the panel's vehicle view model from the app's /api/bootstrap record.
 // The rules mirror src/app/adapters.ts and src/features/inventory/
@@ -358,7 +360,7 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now(), origin = n
   const fordFamily = /^(ford|lincoln)$/i.test(make)
   const savedInvoice = Boolean(fordFamily && record.fordInvoice?.available === true && text(record.fordInvoice?.capturedAt) && origin)
   const price = number(record.listedPrice)
-  const msrp = number(record.msrp)
+  const salesSpecs = salesSpecifications(record, documents)
   const vehicle = {
     id: record.vin,
     vin: record.vin,
@@ -369,16 +371,14 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now(), origin = n
     model: text(record.model) || '',
     trim: text(record.trim),
     price,
-    msrp,
-    savings: price !== null && msrp !== null && msrp > price ? msrp - price : null,
     mileage: number(record.mileage),
     daysListed: number(record.daysListed),
-    exteriorColor: text(record.exteriorColor),
-    interiorColor: text(record.interiorColor),
+    exteriorColor: salesSpecs.exteriorColor,
+    interiorColor: salesSpecs.interiorColor,
     bodyStyle: text(record.bodyStyle),
-    drivetrain: text(record.drivetrain),
-    engine: text(record.engine),
-    transmission: text(record.transmission),
+    drivetrain: salesSpecs.drivetrain,
+    engine: salesSpecs.engine,
+    transmission: salesSpecs.transmission,
     fuelType: text(record.fuelType),
     serviceReadiness: {
       status: serviceWorkflowStatus(record.serviceReadiness),
@@ -513,19 +513,21 @@ export function requestBlockedReason(vehicle, access) {
 export function copyFields(vehicle) {
   const sticker = vehicle.documents.windowSticker
   const label = vehicle.documents.factoryEquipment
-  const pick = (key) => (sticker && sticker[key] !== null ? { value: sticker[key], from: 'sticker' } : label && label[key] !== null ? { value: label[key], from: 'label' } : { value: null, from: null })
-  const base = pick('basePrice'), options = pick('totalOptions'), destination = pick('destinationCharge'), total = pick('totalMsrp')
+  const usable = source => source && ['current', 'stale'].includes(source.dataState)
+  const pick = (key) => (usable(sticker) && number(sticker[key]) !== null ? { value: sticker[key], from: 'sticker' } : usable(label) && number(label[key]) !== null ? { value: label[key], from: 'label' } : { value: null, from: null })
+  const prices = factoryPricing(vehicle.documents)
+  const pricingField = price => ({ value: price.value, currency: price.currency, from: price.source === 'window-sticker' ? 'sticker' : price.source === 'vauto' ? 'label' : null })
+  const base = pricingField(prices.base), total = pricingField(prices.original), options = pick('totalOptions'), destination = pick('destinationCharge')
   return [
     { key: 'stock', label: 'Stock', value: vehicle.stockNumber, kind: 'text' },
     { key: 'vin', label: 'VIN', value: vehicle.vin, kind: 'text' },
     { key: 'vehicle', label: 'Vehicle', value: vehicle.name, kind: 'text' },
     { key: 'year', label: 'Year', value: vehicle.year || null, kind: 'text' },
     { key: 'price', label: 'Listed price', value: vehicle.price, kind: 'money' },
-    { key: 'msrp', label: 'MSRP', value: vehicle.msrp, kind: 'money' },
-    { key: 'base', label: 'Base MSRP', value: base.value, kind: 'money', from: base.from },
+    { key: 'base', label: factoryPriceLabel(prices.base.source, true), kind: 'money', ...base },
     { key: 'options', label: 'Options total', value: options.value, kind: 'money', from: options.from },
     { key: 'destination', label: 'Destination & delivery', value: destination.value, kind: 'money', from: destination.from },
-    { key: 'stickerTotal', label: total.from === 'label' ? 'Equipment label total MSRP' : 'Sticker total MSRP', value: total.value, kind: 'money', from: total.from },
+    { key: 'stickerTotal', label: factoryPriceLabel(prices.original.source), kind: 'money', ...total },
     { key: 'mileage', label: 'Miles', value: vehicle.mileage, kind: 'mileage' },
     { key: 'inService', label: vehicle.warranty?.inService.estimated ? 'Warranty start (est.)' : 'Warranty start (OASIS)', value: vehicle.warranty?.inService.date ?? null, kind: 'date' },
     { key: 'exterior', label: 'Exterior', value: vehicle.exteriorColor, kind: 'text' },

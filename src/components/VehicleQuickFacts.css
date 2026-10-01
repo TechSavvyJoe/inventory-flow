@@ -1,0 +1,3 @@
+.vehicle-quick-facts { display:flex; flex-wrap:wrap; min-width:0; gap:var(--ifx-space-0-5) var(--ifx-space-2); color:var(--ink-700); font:var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); text-align:left; }
+.vehicle-quick-facts__item { min-width:0; overflow-wrap:anywhere; }
+.vehicle-quick-facts__item + .vehicle-quick-facts__item { border-left:1px solid var(--border); padding-left:var(--ifx-space-2); }

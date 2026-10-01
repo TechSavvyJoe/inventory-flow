@@ -37,6 +37,21 @@ test('move route, owner and next action precede optional vehicle records', async
   await expectFocusedLayout(page)
 })
 
+for (const action of ['Open vehicle', 'Records']) {
+  test(`${action} returns to the selected service store`, async ({ page }) => {
+    await page.goto('/service?status=needs_service&store=Lincoln')
+    const results = page.getByRole('status').filter({ hasText: /vehicles? · Lincoln/ })
+    await expect(results).toBeVisible()
+    const before = await results.innerText()
+    await page.getByRole('navigation', { name: /^Actions for/ }).first().getByRole('link', { name: new RegExp(`^${action} for`) }).click()
+    const workspace = page.getByRole('dialog', { name: /vehicle workspace/ })
+    await expect(workspace).toBeVisible()
+    await workspace.getByRole('button', { name: 'Close vehicle details', exact: true }).click()
+    await expect(results).toHaveText(before)
+    await expect(page.getByRole('button', { name: 'Clear service store filter: Lincoln' })).toBeVisible()
+  })
+}
+
 test('service actions appear before secondary facts without sales provider panels', async ({ page }) => {
   await page.goto('/service?vin=TESTDATAHWELL0002')
   const actions = page.getByRole('group', { name: 'Service actions' })

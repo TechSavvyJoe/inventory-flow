@@ -17,6 +17,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { useAppData } from '../../app/AppDataContext'
 import { toTransferDetail, toTransferVehicle } from '../../app/transferAdapters'
 import { SourceWarning } from '../../components/SourceWarning'
+import { VehicleQuickFacts } from '../../components/VehicleQuickFacts'
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
 import { getTransfer } from '../../lib/api'
 import { vehiclePhotoDisplaySources } from '../../lib/vehicle-photos'
@@ -766,6 +767,7 @@ export function TransfersPage() {
                         <span className="transfer-list-top"><strong>{detail.vehicle.vehicleLabel}</strong>{detail.priority === 'high' || detail.priority === 'critical' ? <b className={`priority-${detail.priority}`}>{detail.priority === 'critical' ? 'Urgent' : 'High priority'}</b> : null}</span>
                         <span className="move-row-stock">Stock {detail.vehicle.stock}</span>
                         <span className="move-row-vin">{record.vin}</span>
+                        <VehicleQuickFacts vehicle={data.vehicles.find(vehicle => vehicle.vin === record.vin)} />
                       </span>
                       <span className="move-row-route">
                         <span className="transfer-list-route">{detail.vehicle.homeStore} → {record.destination}</span>

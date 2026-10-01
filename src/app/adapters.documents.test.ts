@@ -4,6 +4,16 @@ import type { BootstrapData, VehicleRecord } from '../types';
 import { toInventoryVehicle } from './adapters';
 
 describe('OASIS action capture provenance', () => {
+  it('fills missing sales specifications from usable VIN documents without overriding the listing', () => {
+    const record = sourceVehicle();
+    record.engine = 'Published engine';
+    record.windowSticker = { dataState: 'current', engine: 'Sticker engine', transmission: '10-speed automatic', exteriorColor: 'Oxford White' };
+    const mapped = toInventoryVehicle(record, sourceData());
+    expect(mapped).toMatchObject({ engine: 'Published engine', transmission: '10-speed automatic', exteriorColor: 'Oxford White' });
+    record.windowSticker.dataState = 'incomplete';
+    record.factoryEquipment!.dataState = 'incomplete';
+    expect(toInventoryVehicle(record, sourceData()).transmission).toBeNull();
+  });
   it('keeps optional technical OASIS facts source-specific without deriving missing values from listing specs', () => {
     const record = sourceVehicle();
     const technicalFields = {

@@ -40,6 +40,12 @@ export function displaySourceMoney(value: string) {
   return value.replace(/^USD\s*\$?(?=\d)/i, '$');
 }
 
+function decisionSourceNote(note: string | null | undefined): string | null {
+  // Routine run dates stay in Records' source details. Keep stale, incomplete,
+  // missing and anomalous-date warnings where staff make the decision.
+  return note?.split(' · ').filter(part => !/^(?:Captured|Report run|Saved) \d{2}\/\d{2}\/\d{4}$/.test(part)).join(' · ') || null;
+}
+
 export function stickerLineParts(line: string) {
   // Only a price explicitly attached to this exact source line is separated.
   const priced = /^(.*?)\s+(?:[·|]\s*)?((?:USD|CAD)\s*\$?[\d,]+(?:\.\d{2})?|\$[\d,]+(?:\.\d{2})?|Price\s+[\d,]+(?:\.\d+)?|NO\s*CHARGE)$/i.exec(line);
@@ -145,24 +151,56 @@ function historyExceptionText(row: VehicleResourceSummaryRow, synthetic: boolean
 function scanRows(resource: VehicleResource, vehicle: VehicleResourceVehicle): VehicleResourceSummaryRow[] {
   const rows = resource.summaryRows ?? [];
   if (resource.id === 'autocheck') {
+    const unique = (candidates: Array<VehicleResourceSummaryRow | undefined>) => {
+      const seen = new Set<string>();
+      return candidates.filter((row): row is VehicleResourceSummaryRow => {
+        if (!row) return false;
+        const key = historyLabel(HISTORY_LABELS[row.label.toLowerCase()] ?? row.label);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
     const ownership = rows.find(row => row.label === 'Owners / use' || row.label === 'Reported use');
+    const title = rows.find(row => /title/i.test(row.label));
+    const accidents = rows.find(row => /accident|damage/i.test(row.label));
+    const odometer = rows.find(row => row.label === 'Last odometer');
     const reviewLabels = historyReviewLabels(vehicle);
     const primary = rows.find(row => reviewLabels.has(historyLabel(row.label))) ?? resource.primaryScanRow;
-    return [rows.find(row => row.label === 'Score'), primary,
+    return unique([rows.find(row => row.label === 'Score'), title, accidents, primary,
       ownership ? { ...ownership, label:ownership.label === 'Owners / use' ? 'Owners' : 'Use', detail:undefined } : undefined,
-    ].filter((row): row is VehicleResourceSummaryRow => Boolean(row));
+      odometer ? { ...odometer, values:odometer.values.slice(0, 1), detail:undefined } : undefined,
+    ]);
   }
   if (resource.id === 'oasis') {
+    const actionRow = rows.find(row => /actions/i.test(row.label));
+    const firstAction = actionRow?.values.find(value => !/^no open ford actions$/i.test(value));
     return [
       { label:'Actions', values:[resource.scanFacts?.[0] === 'No open Ford actions' ? 'No open actions' : resource.scanFacts?.[0] ?? 'Action status unconfirmed'] },
+      firstAction ? { label:'Service', values:[firstAction] } : undefined,
       rows.find(row => row.label === 'Warranty start'),
     ].filter((row): row is VehicleResourceSummaryRow => Boolean(row));
   }
   const sticker = resource.stickerDetails;
-  if (sticker) return [
-    sticker.msrp ? { label:'MSRP', values:[displaySourceMoney(sticker.msrp)] } : undefined,
-    sticker.equipmentGroup ? { label:'Group', values:[stickerLineParts(sticker.equipmentGroup).label] } : undefined,
-  ].filter((row): row is VehicleResourceSummaryRow => Boolean(row));
+  if (sticker) {
+    const group = sticker.equipmentGroup ? stickerLineParts(sticker.equipmentGroup).label : null;
+    const seen = new Set(group ? [historyLabel(group)] : []);
+    const options = sticker.optionLines.map(stickerLineParts).filter(line => !line.child).map(line => line.label).filter(label => {
+      const key = historyLabel(label);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const counts = [
+      sticker.equipmentGroupContents?.length ? `${sticker.equipmentGroupContents.length} included` : null,
+      options.length ? `${options.length} ${options.length === 1 ? 'option' : 'options'}` : null,
+    ].filter((value): value is string => Boolean(value));
+    return [
+      group ? { label:'Group', values:[group] } : undefined,
+      options[0] ? { label:resource.id === 'vauto' ? 'Package' : 'Highlight', values:[options[0]] } : undefined,
+      counts.length ? { label:'Captured', values:[counts.join(' · ')] } : undefined,
+    ].filter((row): row is VehicleResourceSummaryRow => Boolean(row));
+  }
   return rows.slice(0, 3);
 }
 
@@ -170,9 +208,10 @@ function ScanFields({ rows, resource, synthetic }: { rows: VehicleResourceSummar
   return <dl className="vehicle-resource-scan__fields">{rows.map((row, index) => {
     const label = resource.id === 'autocheck' ? HISTORY_LABELS[row.label.toLowerCase()] ?? row.label : row.label === 'Warranty start' ? 'In service' : row.label;
     const specificHistoryResult = resource.id === 'autocheck' && row.detail && /^(?:no issues?|no problems?|clear|normal|events reported)$/i.test(row.values.join(' '));
+    const exactValue = [...row.values, ...(row.detail && row.label !== 'Score' ? [row.detail] : [])].map(value => reportDisplayText(value, synthetic)).join(' · ');
     return <div key={`${row.label}-${index}`} data-field={label.toLowerCase()}>
       <dt>{label}</dt>
-      <dd>{specificHistoryResult ? <span>{reportDisplayText(row.detail!, synthetic)}</span> : <>{row.values.map((value, valueIndex) => <span key={valueIndex}>{reportDisplayText(value, synthetic)}</span>)}{row.detail && row.label !== 'Score' ? <span>{reportDisplayText(row.detail, synthetic)}</span> : null}</>}</dd>
+      <dd title={exactValue}>{specificHistoryResult ? <span>{reportDisplayText(row.detail!, synthetic)}</span> : <>{row.values.map((value, valueIndex) => <span key={valueIndex}>{reportDisplayText(value, synthetic)}</span>)}{row.detail && row.label !== 'Score' ? <span>{reportDisplayText(row.detail, synthetic)}</span> : null}</>}</dd>
     </div>;
   })}</dl>;
 }
@@ -296,12 +335,13 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
       {usable.filter(resource => ['autocheck', 'window-sticker', 'vauto', 'oasis'].includes(resource.id)).map(resource => {
         const label = resource.id === 'autocheck' ? 'AutoCheck' : resource.id === 'oasis' ? 'OASIS' : resource.id === 'vauto' ? 'Equipment' : 'Sticker';
         const rows = scanRows(resource, vehicle);
+        const sourceMsrp = resource.stickerDetails?.msrp;
         const shortcutFact = resource.id === 'autocheck'
           ? rows.filter(row => ['Score', 'Owners'].includes(row.label)).map(row => `${row.label === 'Score' ? 'Score ' : ''}${row.values[0]}`).join(' · ')
           : resource.id === 'oasis'
             ? rows.find(row => row.label === 'Actions')?.values[0]
-            : rows.find(row => row.label === 'MSRP')?.values[0]
-              ? `${label} MSRP ${rows.find(row => row.label === 'MSRP')!.values[0]}`
+            : sourceMsrp
+              ? `${label} MSRP ${displaySourceMoney(sourceMsrp)}`
               : rows[0]?.values[0];
         const content = <><span className="vehicle-resource-shortcut__heading"><ResourceBrand resource={resource}/><span>{label}</span>{resource.href ? <ArrowUpRight size={14} aria-hidden="true"/> : <ArrowRight size={14} aria-hidden="true"/>}</span>{combinedRail && shortcutFact ? <span className="vehicle-resource-shortcut__fact">{shortcutFact}</span> : null}</>;
         return resource.href ? <a key={resource.id} className="vehicle-resource-shortcut" href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`Open ${label} source in a new tab`}>{content}</a>
@@ -339,14 +379,19 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
       {sources.map(resource => {
         const rows = scanRows(resource, vehicle);
         const label = resource.id === 'autocheck' ? 'AutoCheck' : resource.id === 'oasis' ? 'OASIS' : resource.id === 'vauto' ? 'Equipment' : 'Sticker';
-        const sourceContent = <><ResourceBrand resource={resource}/><span className="vehicle-resource-scan__source-label">{label}</span>{onSelectResource ? <ChevronDown size={13} aria-hidden="true"/> : null}</>;
+        // The synthetic demo sticker still represents the captured Ford-family
+        // document slot; the adjacent warning keeps its demo status explicit.
+        const scanBrandResource = resource.id === 'window-sticker' && !resource.brand && /^(ford|lincoln)$/i.test(vehicle.make?.trim() ?? '')
+          ? { ...resource, brand:'ford' as const }
+          : resource;
+        const sourceContent = <><ResourceBrand resource={scanBrandResource}/><span className="vehicle-resource-scan__source-label">{label}</span>{onSelectResource ? <ChevronDown size={13} aria-hidden="true"/> : null}</>;
         return <div key={resource.id} data-resource-kind={resource.id} className="vehicle-resource-scan">
           {onSelectResource && resource.hasCapturedData ? <button type="button" className="vehicle-resource-scan__source" aria-label={`Show ${label === 'Sticker' ? 'sticker' : label === 'Equipment' ? 'equipment' : label} records`} aria-expanded={selectedId === resource.id} onClick={event => { event.currentTarget.focus({preventScroll:true}); selectResource(resource.id); }}>{sourceContent}</button>
-            : resource.href ? <a className="vehicle-resource-scan__source" href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`Open ${resource.id === 'vauto' ? 'vAuto equipment' : label} source in a new tab`}><ResourceBrand resource={resource}/><span className="vehicle-resource-scan__source-label">{label}</span><ArrowUpRight size={13} aria-hidden="true"/></a>
+            : resource.href ? <a className="vehicle-resource-scan__source" href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`Open ${resource.id === 'vauto' ? 'vAuto equipment' : label} source in a new tab`}><ResourceBrand resource={scanBrandResource}/><span className="vehicle-resource-scan__source-label">{label}</span><ArrowUpRight size={13} aria-hidden="true"/></a>
               : onOpenSection && resource.hasCapturedData ? <button type="button" className="vehicle-resource-scan__source" aria-label={`View captured ${label} records`} onClick={() => onOpenSection(resource.target)}>{sourceContent}<ArrowRight size={13} aria-hidden="true"/></button>
                 : <strong className="vehicle-resource-scan__source vehicle-resource-scan__source--static">{sourceContent}</strong>}
           <div className="vehicle-resource-scan__findings">{rows.length ? <ScanFields rows={rows} resource={resource} synthetic={syntheticPreview}/> : <p className="vehicle-resource-scan__missing">{resource.hasCapturedData ? 'Captured details in Records' : resource.id === 'vauto' && resource.href ? 'VIN equipment profile available' : 'No captured report'}</p>}</div>
-          {resource.sourceNote ? <p className="vehicle-resource-scan__caption">{resource.sourceNote}</p> : null}
+          {decisionSourceNote(resource.sourceNote) ? <p className="vehicle-resource-scan__caption">{decisionSourceNote(resource.sourceNote)}</p> : null}
         </div>;
       })}
     </div>;
@@ -399,7 +444,7 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
         const previewUrl = resource.previewUrl && !failedPreviews.has(resource.id) ? resource.previewUrl : undefined;
         const expanded = !preview && detailsExpanded !== undefined ? detailsExpanded : selectedId === resource.id;
         const detailId = `${disclosureId}-${resource.id}`;
-        const visibleSourceNote = expanded ? resource.sourceNote : resource.sourceNote?.split(' · ').filter(part => !/^(?:Captured|Report run) \d{2}\/\d{2}\/\d{4}$/.test(part)).join(' · ');
+        const visibleSourceNote = decisionSourceNote(resource.sourceNote);
         return <section key={resource.id} className={`vehicle-resource-summary${facts.length <= 2 ? " vehicle-resource-summary--sparse" : ""}`} data-resource-kind={resource.id} aria-label={resource.title} hidden={preview && !overview && !expanded}>
           <div className="vehicle-resource-summary__heading">{sourceAction(resource, !expanded)}
           {!preview && detailsExpanded === undefined ? resourceToggle(resource) : null}

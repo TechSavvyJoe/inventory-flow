@@ -43,10 +43,21 @@ describe("published vehicle equipment", () => {
     expect(publishedEquipment(vehicle())).toEqual([]);
   });
 
+  it("excludes incomplete document equipment while retaining published and last verified evidence", () => {
+    const record = vehicle({
+      features: ["Published heated seats"],
+      windowSticker: { dataState: "incomplete", options: ["Unverified BlueCruise"] },
+      factoryEquipment: { dataState: "stale", isOriginalWindowSticker:false, packages: [{ name: "Retained tow package", features: [] }] },
+    });
+    expect(publishedEquipment(record).map(item => item.label)).toEqual(expect.arrayContaining(["Published heated seats", "Retained tow package"]));
+    expect(publishedEquipment(record).some(item => item.label.includes("BlueCruise"))).toBe(false);
+  });
+
   it("turns a copied long factory option into a meaningful scan cue", () => {
     expect(compactEquipmentScanLabel("CLASS IV TRAILER TOW PACKAGE WITH PRO TRAILER BACKUP ASSIST AND INTEGRATED TRAILER BRAKE CONTROLLER"))
       .toBe("Class IV Trailer tow package");
     expect(compactEquipmentScanLabel("XLT Sport Appearance Package")).toBe("XLT Sport Appearance Package");
+    expect(compactEquipmentScanLabel("360-Degree Camera")).toBe("360° camera");
   });
 
   it("recognizes exact cross-OEM safety phrases without inventing missing equipment", () => {
@@ -65,6 +76,30 @@ describe("published vehicle equipment", () => {
     expect(items.every((item) => item.category === "driver-assistance")).toBe(true);
     expect(items.every((item) => item.source === "published-listing-feature")).toBe(true);
     expect(items.some((item) => item.label.includes("Adaptive Cruise"))).toBe(false);
+  });
+
+  it("recognizes captured Lincoln differentiators while preserving every source label", () => {
+    const labels = [
+      "Revel Ultima 3D Audio System",
+      "Perfect Position Front Seats",
+      "Multi-Contour Seats with Active Motion Massage",
+      "Lincoln ActiveGlide",
+      "Lincoln BlueCruise",
+      "Black Label Special Edition Package",
+      "Jet Appearance Package",
+      "Monochromatic Appearance Package",
+    ];
+    const items = publishedEquipment(vehicle({ make:"Lincoln", model:"Nautilus", features:labels }));
+
+    expect(items.map((item) => item.label)).toEqual(expect.arrayContaining(labels));
+    expect(items.filter((item) => labels.includes(item.label)).every((item) => item.standout)).toBe(true);
+    expect(items.find((item) => item.label === "Revel Ultima 3D Audio System")?.category).toBe("technology");
+    expect(items.find((item) => item.label === "Perfect Position Front Seats")?.category).toBe("comfort");
+    expect(items.find((item) => item.label === "Multi-Contour Seats with Active Motion Massage")?.category).toBe("comfort");
+    expect(items.find((item) => item.label === "Lincoln ActiveGlide")?.category).toBe("driver-assistance");
+    expect(items.find((item) => item.label === "Lincoln BlueCruise")?.category).toBe("driver-assistance");
+    expect(items.filter((item) => /(?:Black Label|Appearance Package)/.test(item.label)).every((item) => item.category === "packages")).toBe(true);
+    expect(items.some((item) => /speaker count|subscription|seat count/i.test(item.label))).toBe(false);
   });
 
   it("uses vAuto informational equipment as VIN-linked fallback evidence without calling it a factory sticker", () => {

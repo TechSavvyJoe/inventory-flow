@@ -302,14 +302,6 @@
   opacity: 1;
 }
 
-.app-shell.is-store-switching .top-bar::after {
-  animation: store-accent-sweep 520ms cubic-bezier(.2, .78, .2, 1);
-}
-
-.app-shell.is-store-switching .desktop-nav::after {
-  animation: store-context-wash 520ms ease-out;
-}
-
 .mobile-brand {
   display: none;
 }
@@ -358,12 +350,6 @@
   object-fit: contain;
 }
 
-.is-store-switching .store-brand-frame {
-  border-color: color-mix(in srgb, var(--store-accent) 48%, var(--border));
-  box-shadow: 0 5px 16px color-mix(in srgb, var(--store-accent) 18%, transparent);
-  animation: store-mark-settle 420ms cubic-bezier(.2, .78, .2, 1);
-}
-
 .store-control-copy {
   min-width: 0;
   display: flex;
@@ -407,28 +393,6 @@
   height: 14px;
   transform: translateY(-50%);
   pointer-events: none;
-}
-
-.store-switch-status {
-  position: absolute;
-  z-index: 4;
-  top: calc(100% + 10px);
-  left: 50%;
-  max-width: 190px;
-  overflow: hidden;
-  padding: 6px 9px;
-  border: 1px solid color-mix(in srgb, var(--store-accent) 36%, var(--border));
-  border-radius: 6px;
-  background: white;
-  box-shadow: 0 8px 22px rgb(19 48 78 / 14%);
-  color: var(--store-accent-strong);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  pointer-events: none;
-  animation: store-status-in 760ms cubic-bezier(.2, .78, .2, 1) both;
 }
 
 .freshness-chip,
@@ -1059,67 +1023,6 @@
   to { transform: translateY(0); }
 }
 
-@keyframes store-accent-sweep {
-  0% { opacity: 0.15; transform: scaleX(0.12); }
-  58% { opacity: 1; transform: scaleX(1); }
-  100% { opacity: 0.8; transform: scaleX(1); }
-}
-
-@keyframes store-context-wash {
-  0% { opacity: 0.2; }
-  45% { opacity: 1; }
-  100% { opacity: 0.72; }
-}
-
-@keyframes store-mark-settle {
-  0% { opacity: 0.45; transform: translateY(3px) scale(0.94); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-@keyframes store-status-in {
-  0% { opacity: 0; transform: translateY(-4px) scale(0.96); }
-  22%, 72% { opacity: 1; transform: translateY(0) scale(1); }
-  100% { opacity: 0; transform: translateY(-2px) scale(0.98); }
-}
-
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: 220ms;
-  animation-timing-function: cubic-bezier(.16, 1, .3, 1);
-}
-
-html[data-interface-transition='vehicle']::view-transition-old(root) {
-  animation-name: interface-vehicle-out;
-}
-
-html[data-interface-transition='vehicle']::view-transition-new(root) {
-  animation-name: interface-vehicle-in;
-}
-
-html[data-interface-transition='oem']::view-transition-old(root) {
-  animation-name: interface-oem-out;
-}
-
-html[data-interface-transition='oem']::view-transition-new(root) {
-  animation-name: interface-oem-in;
-}
-
-@keyframes interface-vehicle-out {
-  to { opacity: .84; transform: translateY(-1px) scale(.998); }
-}
-
-@keyframes interface-vehicle-in {
-  from { opacity: .68; transform: translateY(2px) scale(1.001); }
-}
-
-@keyframes interface-oem-out {
-  to { opacity: .76; transform: translateX(-.35%); }
-}
-
-@keyframes interface-oem-in {
-  from { opacity: .62; transform: translateX(.55%); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .app-shell,
   .desktop-nav,
@@ -1133,20 +1036,12 @@ html[data-interface-transition='oem']::view-transition-new(root) {
     transition: none;
   }
 
-  .app-shell.is-store-switching .top-bar::after,
-  .app-shell.is-store-switching .desktop-nav::after,
-  .is-store-switching .store-brand-frame,
-  .store-switch-status,
   .utility-panel,
   .spin,
   .loading-mark {
     animation: none;
   }
 
-  ::view-transition-old(root),
-  ::view-transition-new(root) {
-    animation: none !important;
-  }
 }
 
 @media (forced-colors: active) {

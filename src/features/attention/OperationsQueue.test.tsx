@@ -34,7 +34,7 @@ describe('Action center store workflow', () => {
     show([task()], vi.fn(), [vehicle])
     const row = screen.getByRole('listitem')
     expect(row).toHaveTextContent('$31,900')
-    expect(row).not.toHaveTextContent('Synthetic engine')
+    expect(within(row).getByRole('group', { name: 'Vehicle quick facts' })).toHaveTextContent('2.0L synthetic engine · 4WD')
     expect(row).toHaveTextContent('Howell managerDue 09/13/2026')
     expect(within(row).getByRole('button', { name: 'Copy VIN: TESTDATAHWELL0001' })).toBeVisible()
     expect(within(row).getByRole('button', { name: 'Copy stock number: SYN-H01' })).toBeVisible()
@@ -48,13 +48,13 @@ describe('Action center store workflow', () => {
     expect(screen.getByRole('button', { name: 'Open' })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('selects relevant facts for a service task instead of repeating a sales specification sheet', () => {
+  it('keeps captured configuration beside service-task value and the next action', () => {
     const vehicle = { vin: 'TESTDATAHWELL0001', vehicleName: 'Synthetic Ford H01', stockNumber: 'SYN-H01', homeStore: 'Howell', listedPrice: 31900, mileage: 18920, daysListed: 27, engine: 'Synthetic engine', serviceReadiness: { status: 'needs_service' } } as VehicleRecord
     show([task({ type: 'service_pending', href: '/service?vin=TESTDATAHWELL0001' })], vi.fn(), [vehicle])
     const row = screen.getByRole('listitem')
     expect(row).toHaveTextContent('18,920 mi · 27 days listed')
     expect(row).toHaveTextContent('$31,900')
-    expect(row).not.toHaveTextContent('Synthetic engine')
+    expect(within(row).getByLabelText('Engine / drive: Synthetic engine')).toHaveTextContent('Synthetic engine')
     expect(within(row).getByRole('link', { name: 'Update service' })).toHaveAttribute('href', '/service?vin=TESTDATAHWELL0001&returnTo=%2F')
   })
 

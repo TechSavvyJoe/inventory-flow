@@ -14,6 +14,7 @@ import type {
   WarrantyCheckResource,
 } from '../features/inventory/types'
 import { vautoFactoryEquipmentUrl } from '../features/inventory/vehicle-document-utils'
+import { salesSpecifications } from '../../extension/sidepanel/lib/sales-specs.mjs'
 import type {
   BootstrapData,
   PublicChangeEvent,
@@ -594,6 +595,10 @@ export function toInventoryVehicle(
   // The warranty check also rides the independent resources channel.
   const warrantyCheck = warrantyCheckResource(vehicle.warrantyCheck, dealerMailState)
   const documentSearchText = officialDocumentSearchText(vehicle, factoryEquipment, fordOasis, warrantyCheck)
+  const salesSpecs = salesSpecifications(vehicle, {
+    windowSticker: vehicle.windowSticker ? { ...vehicle.windowSticker, dataState: resourceDataState(vehicle.windowSticker.dataState, publicState) } : null,
+    factoryEquipment,
+  })
 
   return {
     id: vehicle.vin,
@@ -608,13 +613,13 @@ export function toInventoryVehicle(
     msrp: vehicle.msrp,
     mileage: vehicle.mileage,
     daysListed: vehicle.daysListed,
-    exteriorColor: vehicle.exteriorColor || null,
-    interiorColor: vehicle.interiorColor || null,
+    exteriorColor: salesSpecs.exteriorColor,
+    interiorColor: salesSpecs.interiorColor,
     bodyStyle: vehicle.bodyStyle || null,
     bodyType: vehicle.bodyType || null,
-    drivetrain: vehicle.drivetrain || null,
-    engine: vehicle.engine || null,
-    transmission: vehicle.transmission || null,
+    drivetrain: salesSpecs.drivetrain,
+    engine: salesSpecs.engine,
+    transmission: salesSpecs.transmission,
     fuelType: vehicle.fuelType || null,
     mpgCity: vehicle.mpgCity ?? null,
     mpgHighway: vehicle.mpgHighway ?? null,

@@ -14,7 +14,6 @@ export const SORTS = Object.freeze([
   { id: 'year-desc', label: 'Year · newest first' },
   { id: 'days-asc', label: 'Newest on the lot' },
   { id: 'days-desc', label: 'Longest on the lot' },
-  { id: 'savings-desc', label: 'Most under MSRP' },
 ])
 
 export const EMPTY_FILTERS = Object.freeze({
@@ -121,7 +120,6 @@ export function sortMatches(matches, sortId, { hasQuery = false } = {}) {
     'mileage-asc': asc((v) => v.mileage),
     'year-desc': desc((v) => modelYear(v.year)),
     'days-asc': asc((v) => v.daysListed), 'days-desc': desc((v) => v.daysListed),
-    'savings-desc': desc((v) => v.savings),
     name: byName,
   }
   const comparator = comparators[sortId]

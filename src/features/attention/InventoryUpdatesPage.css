@@ -10,6 +10,7 @@
 @media(max-width:1200px) {
  .inventory-updates-page .updates-row { grid-template-columns:minmax(0,1fr) minmax(165px,.65fr) 155px; grid-template-areas:"vehicle change actions" "context change actions"; gap:10px 14px; }
  .inventory-updates-page .updates-specs { display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; }
+ .inventory-updates-page .updates-specs > .vehicle-quick-facts { flex-basis:100%; }
 }
 @media(max-width:760px) {
  .inventory-updates-page .workflow-page-heading > div:first-child p { display:none; }

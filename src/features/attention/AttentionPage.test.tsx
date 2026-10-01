@@ -26,6 +26,15 @@ function show() { return render(<MemoryRouter><AttentionPage/></MemoryRouter>) }
 function tasks() { return within(screen.getByRole('list', { name: 'Attention items' })).getAllByRole('listitem') }
 
 describe('Action center page and shared navigation count', () => {
+  it('keeps the top Vehicle issues option available when no reports exist', () => {
+    show()
+    const category = screen.getByRole('group', { name: 'Task category' })
+    fireEvent.click(within(category).getByRole('button', { name: 'Vehicle issues 0' }))
+    expect(screen.getByRole('region', { name: 'Vehicle issue log' })).toBeInTheDocument()
+    expect(screen.getByText('No open vehicle issues')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Completed/ }))
+    expect(screen.getByText('No completed issues yet')).toBeInTheDocument()
+  })
   it('counts only work this store and role can take, and groups the rest', () => {
     const fixture = data()
     const items = actionCenterItems(fixture, howellManager)

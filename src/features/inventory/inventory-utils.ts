@@ -2,6 +2,7 @@ import { displayDate } from "../../lib/date-display";
 import type { TransferRecord } from "../../types";
 import { serviceWorkflowStatus } from "../../lib/service-readiness";
 import { availableWindowStickerUrl } from "./vehicle-document-utils";
+import { factoryPricing } from "../../../extension/sidepanel/lib/factory-pricing.mjs";
 import type {
   DealerMailHoldSignal,
   InventoryFilters,
@@ -245,10 +246,10 @@ export function dealerMailHoldLabel(signal: DealerMailHoldSignal): string {
 }
 
 /**
- * One Overview view of one store, judged only from the server's day-level
+ * An Overview view, judged only from the server's day-level
  * facts (never a label). Custody, aging, unaccounted, return and records views
  * are by home store; Visiting by the store the vehicle is at; holds by the
- * DealerMail store the Action center counts them under.
+ * DealerMail store, with an all-store view for active hold signals.
  */
 export function vehicleMatchesOverviewView(
   vehicle: InventoryVehicle,
@@ -277,7 +278,7 @@ export function vehicleMatchesOverviewView(
     case "holds":
     case "holds-past-expected": {
       const holdStore = vehicle.location.crmStore?.name ?? vehicle.location.homeStore.name;
-      return holdStore === store && facts.holdActive === true && (view === "holds" || facts.holdPastExpected === true);
+      return (store === "all" || holdStore === store) && facts.holdActive === true && (view === "holds" || facts.holdPastExpected === true);
     }
     default: return false;
   }
@@ -428,7 +429,7 @@ function sortValue(vehicle: InventoryVehicle, key: InventorySortKey): string | n
     case "price":
       return vehicle.price ?? null;
     case "msrp":
-      return vehicle.msrp ?? null;
+      return factoryPricing(vehicle).original.value;
     case "mileage":
       return vehicle.mileage ?? null;
     case "daysListed":
@@ -552,7 +553,7 @@ export const SORT_LABELS: Record<InventorySortKey, string> = {
   vin: "VIN",
   homeStore: "Home location",
   price: "Price",
-  msrp: "MSRP",
+  msrp: "Original MSRP",
   mileage: "Mileage",
   daysListed: "Days listed",
   inventoryDate: "Inventory date",

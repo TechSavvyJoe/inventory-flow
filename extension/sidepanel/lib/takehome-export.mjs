@@ -1,4 +1,3 @@
-const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[character])
 const safeHttps = (value) => { try { return new URL(value).protocol === 'https:' } catch { return false } }
 
 export function normalizeTakeHomeDocument(payload) {
@@ -9,47 +8,25 @@ export function normalizeTakeHomeDocument(payload) {
 
 export const publicListingLinks = (models) => [...new Set(models.map((model) => model.listingUrl).filter(safeHttps))]
 
-export function standaloneTakeHomeHtml(root, title, css = '') {
-  const clone = root.cloneNode(true)
-  clone.querySelectorAll('a[href]').forEach((link) => { if (!safeHttps(link.href)) link.removeAttribute('href') })
-  clone.querySelectorAll('img[src]').forEach((image) => {
-    try { const url = new URL(image.src); if (!['https:', 'data:', 'chrome-extension:'].includes(url.protocol)) image.removeAttribute('src') } catch { image.removeAttribute('src') }
-  })
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${css}</style></head><body class="th-page"><main class="th-stage">${clone.innerHTML}</main></body></html>`
-}
+const pdfName = title => `${String(title).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'vehicle-list'}.pdf`
 
-export async function selfContainedTakeHomeHtml(root, title, css = '', fetcher = globalThis.fetch) {
-  const clone = root.cloneNode(true)
-  await Promise.all([...clone.querySelectorAll('img[src]')].map(async (image) => {
-    if (image.src.startsWith('data:image/')) return
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 4000)
-    try {
-      const response = await fetcher(image.src, { signal: controller.signal }); const blob = await response.blob()
-      if (!response.ok || !blob.type.startsWith('image/') || blob.size > 6 * 1024 * 1024) return
-      image.src = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(blob) })
-    } catch { /* Retain the vetted source URL if embedding is blocked. */ }
-    finally { clearTimeout(timeout) }
-  }))
-  return standaloneTakeHomeHtml(clone, title, css)
-}
-
-export function downloadTakeHomeHtml(html, title, environment = globalThis) {
-  const fileName = `${String(title).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'vehicle-list'}.html`
-  const url = environment.URL.createObjectURL(new Blob([html], { type:'text/html;charset=utf-8' }))
-  const link = environment.document.createElement('a'); link.href = url; link.download = fileName; link.click(); environment.URL.revokeObjectURL(url)
+export function downloadTakeHomePdf(pdf, title, environment = globalThis) {
+  const fileName = pdfName(title)
+  if (pdf?.type !== 'application/pdf') throw new Error('A PDF is required for saving.')
+  const url = environment.URL.createObjectURL(pdf)
+  const link = environment.document.createElement('a'); link.href = url; link.download = fileName; link.click()
+  // Let the browser finish opening the download before revoking its URL.
+  setTimeout(() => environment.URL.revokeObjectURL(url), 1000)
   return fileName
 }
 
-export async function shareTakeHomeHtml({ html, title, links, environment = globalThis }) {
-  const fileName = `${String(title).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'vehicle-list'}.html`
-  const file = new File([html], fileName, { type:'text/html' })
+export async function shareTakeHomePdf({ pdf, title, environment = globalThis }) {
+  if (pdf?.type !== 'application/pdf') throw new Error('A PDF is required for sharing.')
+  const fileName = pdfName(title)
+  const file = new File([pdf], fileName, { type:'application/pdf' })
   if (environment.navigator.share && (!environment.navigator.canShare || environment.navigator.canShare({ files:[file] }))) {
     try { await environment.navigator.share({ title, files:[file] }); return 'shared' }
     catch (error) { if (error?.name === 'AbortError') return 'cancelled' }
   }
-  if (links.length && environment.navigator.clipboard?.writeText) {
-    try { await environment.navigator.clipboard.writeText(links.join('\n')); return 'copied' } catch { /* Save when clipboard permission is denied. */ }
-  }
-  downloadTakeHomeHtml(html, title, environment); return 'saved'
+  downloadTakeHomePdf(pdf, title, environment); return 'saved'
 }

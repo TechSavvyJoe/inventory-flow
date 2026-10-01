@@ -16,5 +16,8 @@ export default defineConfig({
     ],
     testTimeout: 15_000,
     hookTimeout: 15_000,
+    // PDF/font and DOM suites can exhaust memory when Vitest forks for every
+    // reported CPU. Bound concurrency without changing assertions or timeouts.
+    maxWorkers: 2,
   },
 })

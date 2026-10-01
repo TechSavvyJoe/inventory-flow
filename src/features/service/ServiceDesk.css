@@ -24,9 +24,15 @@
 .service-search button { display:grid; flex:none; width:44px; height:44px; place-items:center; margin-right:-12px; border:0; background:transparent; color:var(--ink-600); }
 .service-result-count { color:var(--ink-600); margin:0 0 10px; }
 .service-list { display:grid; gap:8px; list-style:none; padding:0; margin:0; }
-.service-page .service-vehicle-row { display:grid; grid-template-columns:112px minmax(180px,1fr) minmax(120px,.48fr) minmax(150px,.6fr); gap:14px; width:100%; padding:12px; text-align:left; border:1px solid var(--ifx-neutral-300); border-radius:8px; align-items:center; }
+.service-vehicle-entry { min-width:0; border:1px solid var(--ifx-neutral-300); border-radius:8px; overflow:hidden; }
+.service-page .service-vehicle-row { display:grid; grid-template-columns:112px minmax(180px,1fr) minmax(120px,.48fr) minmax(150px,.6fr); gap:14px; width:100%; padding:12px; text-align:left; border:0; border-radius:0; align-items:center; }
 .service-page .service-vehicle-row:hover { background:var(--ifx-neutral-50); }
 .service-page .service-vehicle-row[aria-pressed=true] { background:var(--ifx-info-surface); color:var(--ink-900); box-shadow:inset 3px 0 var(--ifx-info); }
+.service-row-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border-top:1px solid var(--ifx-border-subtle); }
+.service-row-actions :is(a,button) { display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; min-height:44px; padding:6px 8px; border:0; border-radius:0; background:var(--ifx-neutral-0); color:var(--ifx-info); font-size:13px; font-weight:650; line-height:1.25; text-align:center; text-decoration:none; }
+.service-row-actions :is(a,button)+:is(a,button) { border-left:1px solid var(--ifx-border-subtle); }
+.service-row-actions :is(a,button):hover { background:var(--ifx-neutral-50); }
+.service-row-actions svg { flex:none; }
 .service-photo { display:flex; align-items:center; justify-content:center; width:112px; aspect-ratio:3/2; overflow:hidden; border-radius:6px; background:var(--ifx-neutral-100); color:var(--ink-600); }
 .service-photo img { width:100%; height:100%; object-fit:cover; }
 .service-vehicle-info,.service-row-numbers,.service-status-badge { display:flex; flex-direction:column; gap:3px; min-width:0; }
@@ -154,6 +160,7 @@
  .service-vehicle-summary { padding:10px; }
  .service-status-panel { padding-inline:10px; }
  .service-page .service-vehicle-row { padding:10px; grid-template-columns:84px minmax(0,1fr); gap:6px 10px; }.service-vehicle-row .service-photo { width:84px; }
+ .service-row-actions :is(a,button) { padding-inline:5px; font-size:12px; }
 }
 
 .service-reference { container-type:inline-size; margin-top:12px; padding:0 12px; border:1px solid var(--ifx-neutral-300); border-radius:5px; background:var(--ifx-neutral-0); }

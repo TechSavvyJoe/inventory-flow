@@ -15,6 +15,8 @@ import * as fmt from './lib/format.mjs'
 import { clear, el, icon } from './lib/dom.mjs'
 import { copyText, host, openExtensionPage, openUrl, placeholderPhotos, previewFlags, storage } from './lib/host.mjs'
 import { takeHomeModel } from './lib/takehome.mjs'
+import { factoryPricing, factoryPriceLabel, formatFactoryPrice } from './lib/factory-pricing.mjs'
+import { equipmentTalkingPoints, manufacturerReferences } from './lib/manufacturer-knowledge.mjs'
 import { serviceWorkflowStatus } from './lib/service-readiness.mjs'
 import { sourceDisplayText } from './lib/source-text.mjs'
 import { dealerMailTabId, checkLiveDealerMailHold, withLiveDealerMailHold } from './lib/live-dealermail-hold.mjs'
@@ -746,6 +748,7 @@ function humanize(value) {
 
 function fieldText(field, vehicle) {
   if (field.value === null || field.value === undefined || field.value === '') return '—'
+  if (field.kind === 'money' && Object.hasOwn(field, 'currency')) return formatFactoryPrice(field.value, field.currency)
   if (field.kind === 'money') return field.from === 'sticker' ? fmt.formatStickerMoney(field.value, vehicle.documents.windowSticker) : field.from === 'label' ? fmt.formatReferencePrice(field.value) : fmt.formatMoney(field.value)
   if (field.kind === 'mileage') return fmt.formatMileage(field.value)
   if (field.kind === 'date') return fmt.formatDate(field.value)
@@ -805,7 +808,6 @@ function hero(vehicle) {
 }
 
 function openPhotoViewer(vehicle, photos, initialIndex) {
-  clearTimeout(sheetCloseTimer)
   sheetOpen = true; state.sheetKind = 'photos'; state.sheetReturnFocus = document.activeElement
   document.getElementById('sheet-title').textContent = `${vehicle.name} · Photos`
   ui.sheetClose.setAttribute('aria-label', 'Close photos')
@@ -983,7 +985,6 @@ function renderCustomerSheet() {
 }
 
 function openCustomerLists() {
-  clearTimeout(sheetCloseTimer)
   sheetOpen = true; state.sheetKind = 'customers'; state.sheetReturnFocus = document.activeElement
   state.customerRename = false; state.customerDelete = false
   document.getElementById('sheet-title').textContent = 'Customer lists'
@@ -1029,7 +1030,6 @@ function hold_count(vehicle) { return vehicle.hold.evidence.length + vehicle.hol
 function switchTab(id) {
   const vehicle = vehicleByVin(state.selectedVin)
   if (!vehicle) return
-  const changed = state.tab !== id
   state.tab = id
   const bar = ui.detail.querySelector('.tabs')
   if (bar) {
@@ -1040,7 +1040,7 @@ function switchTab(id) {
   // A sticky bar's offsetTop follows its stuck position. Use the content's
   // normal-flow position so a deep Overview link never lands mid-Records.
   const sectionTop = bar && panel ? Math.max(0, ui.detail.scrollTop + panel.getBoundingClientRect().top - ui.detail.getBoundingClientRect().top - bar.offsetHeight) : 0
-  if (panel) { const next = tabPanel(vehicle); panel.replaceWith(next); if (changed) next.classList.add('is-fresh') }
+  if (panel) panel.replaceWith(tabPanel(vehicle))
   if (bar && panel) {
     ui.detail.scrollTop = Math.min(ui.detail.scrollTop, sectionTop)
     bar.querySelector('[aria-selected="true"]')?.focus({ preventScroll: true })
@@ -1153,6 +1153,10 @@ function documentSummaryFacts(resource, vehicle) {
   )
 }
 
+function decisionSourceNote(note) {
+  return (note ?? '').split(' · ').filter(part => !/^(Captured|Report run|Saved) \d{2}\/\d{2}\/\d{4}$/.test(part)).join(' · ')
+}
+
 function documentsGrid(vehicle) {
   const sourceResources = resourceSummaries(vehicle)
   const sticker = sourceResources.find(resource => resource.id === 'window-sticker')
@@ -1172,7 +1176,7 @@ function documentsGrid(vehicle) {
       resource.facts.length ? el('div', { class: 'doc-overview-highlights' }, scanResource(resource, vehicle, { omitWarranty: true })) : null,
       resource.facts.length ? el('div', { class: 'doc-expanded-facts', hidden: true }, documentSummaryFacts(resource, vehicle)) : null,
       resource.id === 'vauto' && sticker?.url ? el('button', { type: 'button', class: 'doc-source-supplement', onclick: () => openUrl(sticker.url) }, 'Open window sticker', icon('external', { size: 14 })) : null,
-      resource.sourceNote ? el('p', { class: 'doc-source-note', text: resource.sourceNote }) : null,
+      decisionSourceNote(resource.sourceNote) ? el('p', { class: 'doc-source-note', text: decisionSourceNote(resource.sourceNote) }) : null,
       captured && resource.url ? el('button', { type: 'button', class: 'doc-source-open', 'aria-label': `Open ${resource.title} for ${vehicle.stockNumber}`, onclick: () => openUrl(resource.url) }, 'Open document', icon('external', { size: 14 })) : null,
     )
   })
@@ -1198,7 +1202,7 @@ function documentsGrid(vehicle) {
 }
 
 function dealSheet(vehicle) {
-  const always = new Set(['stock', 'vin', 'price', 'msrp', 'mileage'])
+  const always = new Set(['stock', 'vin', 'price', 'base', 'stickerTotal', 'mileage'])
   const fields = copyFields(vehicle).filter((field) => always.has(field.key) || (field.value !== null && field.value !== undefined && field.value !== ''))
   const rows = fields.map((field) => {
     const empty = field.value === null || field.value === undefined || field.value === ''
@@ -1292,7 +1296,6 @@ function specsCard(vehicle) {
     ['Drivetrain', vehicle.drivetrain], ['Engine', vehicle.engine, vehicle.engine], ['Transmission', vehicle.transmission], ['Fuel', vehicle.fuelType],
     ['MPG', s.mpgCity !== null || s.mpgHighway !== null ? `${s.mpgCity ?? '—'} city / ${s.mpgHighway ?? '—'} hwy` : null],
     ['Exterior', vehicle.exteriorColor, vehicle.exteriorColor], ['Interior', vehicle.interiorColor, vehicle.interiorColor], ['Model code', s.modelCode, s.modelCode],
-    ['In inventory since', s.inventoryDate ? fmt.formatDate(s.inventoryDate) : null],
   ])
   if (!node) return null
   return el('section', { class: 'card' }, el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, icon('gauge', { size: 13 }), 'Specifications')), node)
@@ -1301,13 +1304,17 @@ function specsCard(vehicle) {
 function frequentFacts(vehicle) {
   const docs = vehicle.documents
   const start = vehicleInServiceSource(vehicle)
-  const stickerBase = docs.windowSticker?.basePrice
-  const labelBase = docs.factoryEquipment?.basePrice
-  const hasStickerBase = stickerBase !== null && stickerBase !== undefined
-  const hasLabelBase = labelBase !== null && labelBase !== undefined
-  const baseLookup = fact('Base MSRP', hasStickerBase ? fmt.formatStickerMoney(stickerBase, docs.windowSticker) : hasLabelBase ? fmt.formatReferencePrice(labelBase) : '—')
+  const prices = factoryPricing(docs)
+  const pricingFact = (price, isBase) => {
+    if (price.value === null) return null
+    const label = factoryPriceLabel(price.source, isBase)
+    const node = fact(label, formatFactoryPrice(price.value, price.currency))
+    node.append(copyButton(String(price.value), label))
+    return node
+  }
   return el('section', { class: 'detail-frequent-facts', 'aria-label': 'Frequently used vehicle facts' },
-    baseLookup,
+    pricingFact(prices.original, false),
+    pricingFact(prices.base, true),
     fact(start.source === 'OASIS' ? 'Warranty in-service · OASIS' : start.raw ? 'Warranty in-service · estimate' : 'Warranty in-service', start.raw ? fmt.formatDate(start.raw) : '—'),
   )
 }
@@ -1315,9 +1322,9 @@ function frequentFacts(vehicle) {
 function overviewTab(vehicle) {
   const specification = el('section', { class: 'detail-specification' },
     el('h3', { text: 'Specifications' }),
-    kv([['Engine', vehicle.engine], ['Drive', vehicle.drivetrain], ['Exterior', vehicle.exteriorColor], ['Interior', vehicle.interiorColor], ['MSRP', vehicle.msrp !== null ? fmt.formatMoney(vehicle.msrp) : null], ['Fuel', vehicle.fuelType]]))
+    kv([['Engine', vehicle.engine], ['Drive', vehicle.drivetrain], ['Exterior', vehicle.exteriorColor], ['Interior', vehicle.interiorColor], ['Fuel', vehicle.fuelType]]))
   const fullSpecifications = el('section', { class: 'detail-specification detail-full-specs' }, el('h3', { text: 'Vehicle details' }),
-    kv([['Transmission', vehicle.transmission], ['Body', vehicle.bodyStyle], ['Vehicle class', vehicle.documents.autoCheck?.vehicleClass], ['Location', vehicle.location.label], ['Model code', vehicle.specs.modelCode], ['Inventory date', vehicle.specs.inventoryDate ? fmt.formatDate(vehicle.specs.inventoryDate) : null], ['Under MSRP', vehicle.savings ? fmt.formatMoney(vehicle.savings) : null], ['Fuel economy', vehicle.specs.mpgCity !== null || vehicle.specs.mpgHighway !== null ? `${vehicle.specs.mpgCity ?? '—'} city / ${vehicle.specs.mpgHighway ?? '—'} highway` : null]]))
+    kv([['Transmission', vehicle.transmission], ['Body', vehicle.bodyStyle], ['Vehicle class', vehicle.documents.autoCheck?.vehicleClass], ['Location', vehicle.location.label], ['Model code', vehicle.specs.modelCode], ['Fuel economy', vehicle.specs.mpgCity !== null || vehicle.specs.mpgHighway !== null ? `${vehicle.specs.mpgCity ?? '—'} city / ${vehicle.specs.mpgHighway ?? '—'} highway` : null]]))
   const identifiers = el('div', { class: 'detail-identity-band' }, ...[['Stock', vehicle.stockNumber], ['VIN', vehicle.vin]].map(([label, value]) =>
     el('button', { type: 'button', class: 'detail-identity-copy', 'aria-label': `Copy ${label === 'Stock' ? 'stock number' : 'VIN'} ${value}`, onclick: (event) => copy(value, label, event.currentTarget) },
       el('span', { class: 'detail-identity-label', text: label }), el('strong', { class: 'detail-identity-value', text: value }), icon('copy', { size: 14 }))))
@@ -1413,6 +1420,19 @@ function holdTab(vehicle) {
 }
 
 /* Equipment tab */
+function equipmentKnowledge(vehicle, groups) {
+  const references = manufacturerReferences(vehicle)
+  const points = equipmentTalkingPoints(vehicle, groups.flatMap(group => group.items.map(item => item.label)))
+  if (!references.length && !points.length) return null
+  const reference = (label, url) => el('a', { href:url, target:'_blank', rel:'noreferrer' }, label, icon('external', { size:14 }))
+  return el('details', { class:'equipment-knowledge' },
+    el('summary', { text:'Sales guide · packages & feature differences' }),
+    el('p', { class:'d-caption', text:`US manufacturer references for ${vehicle.year} ${vehicle.make} ${vehicle.model}. Vehicle records show what is captured for this VIN; these guides explain features and differences. Check the original market and guide revision.` }),
+    points.length ? el('ul', {}, ...points.map(point => el('li', {}, el('strong', { text:point.title }), el('span', { text:point.detail }), point.url ? reference('Manufacturer reference', point.url) : null))) : null,
+    el('nav', { 'aria-label':'Manufacturer reference guides' }, ...references.map(item => reference(item.label, item.url))),
+  )
+}
+
 function equipmentTab(vehicle) {
   const groups = vehicle.equipment.byCategory
   const total = groups.reduce((sum, group) => sum + group.items.length, 0)
@@ -1422,7 +1442,7 @@ function equipmentTab(vehicle) {
     el('h3', { class: 'card-title' }, icon('list', { size: 13 }), `${fmt.formatNumber(total)} published item${total === 1 ? '' : 's'}`),
     total ? el('button', { type: 'button', class: 'btn btn-sm', onclick: (event) => copy(groups.map((group) => `${group.label}\n${group.items.map((item) => `• ${item.label}`).join('\n')}`).join('\n\n'), 'Equipment list', event.currentTarget) }, icon('copy', { size: 13 }), 'Copy list') : null,
   ))
-  if (docs.factoryEquipment?.packages.length) {
+  if (['current', 'stale'].includes(docs.factoryEquipment?.dataState) && docs.factoryEquipment?.packages.length) {
     children.push(el('section', { class: 'card' },
       el('div', { class: 'card-head' }, el('h3', { class: 'card-title' }, icon('layers', { size: 13 }), 'Packages on the equipment label'), docs.factoryEquipment.url ? el('button', { type: 'button', class: 'link-btn', onclick: () => openUrl(docs.factoryEquipment.url) }, 'Open label', icon('external', { size: 12 })) : null),
       ...docs.factoryEquipment.packages.map((pkg) => el('div', { class: 'pkg' },
@@ -1431,7 +1451,7 @@ function equipmentTab(vehicle) {
       )),
     ))
   }
-  if (docs.windowSticker?.equipmentGroup) children.push(el('p', { class: 'd-caption' }, el('b', { text: 'Sticker equipment group: ' }), docs.windowSticker.equipmentGroup))
+  if (['current', 'stale'].includes(docs.windowSticker?.dataState) && docs.windowSticker?.equipmentGroup) children.push(el('p', { class: 'd-caption' }, el('b', { text: 'Sticker equipment group: ' }), docs.windowSticker.equipmentGroup))
   groups.forEach((group) => {
     const details = el('section', { class: 'eq-group eq-ledger', 'aria-label': group.label },
       el('h3', {}, el('span', { text: group.label }), el('b', { class: 'num', text: fmt.formatNumber(group.items.length) })),
@@ -1441,6 +1461,7 @@ function equipmentTab(vehicle) {
   })
   if (!total) children.push(el('p', { class: 'd-caption', text: 'No equipment details are available for this vehicle.' }))
   else children.push(el('p', { class: 'd-freshness', text: 'Confirm installed equipment on the vehicle.' }))
+  children.push(equipmentKnowledge(vehicle, groups))
   return children
 }
 
@@ -1959,7 +1980,6 @@ function renderFilterSheet() {
 }
 
 let sheetOpen = false
-let sheetCloseTimer = null
 const sheetBackgroundState = new Map()
 
 function setSheetBackgroundInert(active) {
@@ -1981,7 +2001,6 @@ function sheetFocusableElements() {
 }
 
 function openFilters() {
-  clearTimeout(sheetCloseTimer)
   sheetOpen = true
   state.sheetKind = 'filters'
   state.sheetReturnFocus = document.activeElement
@@ -1999,7 +2018,6 @@ function openFilters() {
 }
 
 function openSheet() {
-  clearTimeout(sheetCloseTimer)
   sheetOpen = true
   state.sheetKind = 'settings'
   state.sheetReturnFocus = document.activeElement
@@ -2026,7 +2044,8 @@ function closeSheet() {
   setSheetBackgroundInert(false)
   ui.settingsBtn.setAttribute('aria-expanded', 'false')
   ui.filtersBtn.setAttribute('aria-expanded', 'false')
-  sheetCloseTimer = setTimeout(() => { ui.backdrop.hidden = true; ui.sheet.hidden = true }, 280)
+  ui.backdrop.hidden = true
+  ui.sheet.hidden = true
   const returnTarget = state.sheetReturnFocus?.isConnected && !state.sheetReturnFocus.closest('[inert]') ? state.sheetReturnFocus : state.sheetKind === 'filters' ? ui.filtersBtn : ui.settingsBtn
   returnTarget?.focus?.({ preventScroll: true })
 }

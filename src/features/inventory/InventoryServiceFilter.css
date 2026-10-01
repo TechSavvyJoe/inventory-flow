@@ -40,7 +40,7 @@
 .if-srp .inv-btn.is-active { color: var(--blue-700); border-color: var(--blue-600); background: var(--blue-050); }
 .if-srp .inv-btn__count { font: inherit; font-style: normal; }
 .if-srp .inventory-results-surface { width: 100%; overflow: visible; border: 0; padding: 0; background: var(--surface); box-shadow: none; }
-.if-srp .inventory-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 0; color: var(--ink-600); font-size: 14px; }
+.if-srp .inventory-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 0; padding-inline-end:calc(var(--ifx-space-16) * 4); color: var(--ink-600); font-size: 14px; }
 .if-srp .inventory-pagination > div { display: flex; align-items: center; gap: 10px; }
 .if-srp .inventory-pagination button { display: inline-flex; align-items: center; justify-content: center; min-width: var(--ifx-control-height-md); min-height: var(--ifx-control-height-md); border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--ink-700); cursor: pointer; }
 .if-srp .inventory-pagination button:disabled { opacity: .45; cursor: default; }

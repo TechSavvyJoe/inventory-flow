@@ -21,7 +21,6 @@ import {
 import { NavLink, useLocation } from 'react-router-dom'
 import { formatDateTime } from '../lib/format'
 import { FlowBrandLockup } from '../design-system'
-import { runInterfaceTransition } from '../lib/interfaceTransition'
 import { useContainedFocus } from '../lib/useContainedFocus'
 import { useModalBackgroundIsolation } from '../lib/useModalBackgroundIsolation'
 import { STORE_NAMES, type StoreName, type UserRole } from '../types'
@@ -108,13 +107,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     .join('') || 'IF'
   const [navExpanded, setNavExpanded] = useState(readStoredNavigationState)
   const [utilityOpen, setUtilityOpen] = useState(false)
-  const [storeSwitching, setStoreSwitching] = useState(false)
   const utilityDialogRef = useRef<HTMLDivElement>(null)
   const utilityCloseRef = useRef<HTMLButtonElement>(null)
   const utilityOpenerRef = useRef<HTMLButtonElement>(null)
   const appShellRef = useRef<HTMLDivElement>(null)
   const mainContentRef = useRef<HTMLElement>(null)
-  const previousHomeStoreRef = useRef(homeStore)
   const location = useLocation()
   const routeUrl = `${location.pathname}${location.search}${location.hash}`
   const previousRouteUrlRef = useRef(routeUrl)
@@ -178,16 +175,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       // Navigation persistence is a convenience and must never block the app.
     }
   }, [navExpanded])
-
-  useEffect(() => {
-    if (previousHomeStoreRef.current === homeStore) return
-
-    previousHomeStoreRef.current = homeStore
-    setStoreSwitching(true)
-    const timer = window.setTimeout(() => setStoreSwitching(false), 760)
-
-    return () => window.clearTimeout(timer)
-  }, [homeStore])
 
   useEffect(() => {
     // Consuming a private search request replaces router state at the same
@@ -297,7 +284,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <>
     <div
       ref={appShellRef}
-      className={`app-shell${navExpanded ? ' is-nav-expanded' : ' is-nav-compact'} store-theme-${storeBrand.themeKey}${storeSwitching ? ' is-store-switching' : ''}`}
+      className={`app-shell${navExpanded ? ' is-nav-expanded' : ' is-nav-compact'} store-theme-${storeBrand.themeKey}`}
       data-dealer-group={storeBrand.dealerGroupKey}
       data-oem={storeBrand.oemKey}
       data-ifx-oem={storeBrand.oemKey}
@@ -347,7 +334,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   disabled={!storePreviewEnabled}
                   onChange={(event) => {
                     const nextStore = event.target.value as StoreName
-                    runInterfaceTransition(() => setHomeStore(nextStore), 'oem')
+                    setHomeStore(nextStore)
                   }}
                   aria-label="Working location"
                   title={storePreviewEnabled ? 'Change the working location' : `Your account is assigned to ${homeStore}`}
@@ -358,11 +345,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               </span>
             </span>
           </label>
-          {storeSwitching ? (
-            <span className="store-switch-status" role="status" aria-live="polite">
-              {storeBrand.oemLabel} · {homeStore}
-            </span>
-          ) : null}
         </div>
 
         <button

@@ -3,11 +3,17 @@
 import { equipmentKey, publishedEquipment } from './equipment.mjs'
 import { formatMileage, formatMoney, formatNumber } from './format.mjs'
 import { serviceWorkflowStatus } from './service-readiness.mjs'
+import { factoryPricing, factoryPriceLabel, formatFactoryPrice } from './factory-pricing.mjs'
+
+function documentPrice(vehicle, key) {
+  const price = factoryPricing(vehicle.documents)[key];
+  return price.value === null ? 'Not captured' : `${formatFactoryPrice(price.value, price.currency)} · ${factoryPriceLabel(price.source, key === 'base')}`;
+}
 
 const FACTS = [
   ['Price', (v) => formatMoney(v.price)],
-  ['MSRP', (v) => formatMoney(v.msrp)],
-  ['Off MSRP', (v) => (v.savings ? formatMoney(v.savings) : '—')],
+  ['Original / vAuto MSRP', (v) => documentPrice(v, 'original')],
+  ['Base MSRP', (v) => documentPrice(v, 'base')],
   ['Mileage', (v) => (v.mileage === null ? '—' : formatMileage(v.mileage))],
   ['Days listed', (v) => (v.daysListed === null ? '—' : formatNumber(v.daysListed))],
   ['Year', (v) => String(v.year || '—')],

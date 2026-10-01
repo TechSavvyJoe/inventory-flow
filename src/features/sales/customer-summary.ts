@@ -2,7 +2,8 @@ import { STORE_BRANDING } from '../../app/storeBranding'
 import type { StoreName } from '../../types'
 import { publishedEquipment } from '../inventory/vehicle-feature-utils'
 import { certifiedTerms } from '../inventory/vehicle-warranty-utils'
-import { formatDate, formatMileage, formatMoney, vehicleDisplayName } from '../inventory/inventory-utils'
+import { formatMileage, formatMoney, vehicleDisplayName } from '../inventory/inventory-utils'
+import { customerHistorySummary } from '../../../extension/sidepanel/lib/customer-history.mjs'
 import type { InventoryVehicle } from '../inventory/types'
 
 const STORE_DISPLAY: Record<string, { name: string; site: string }> = {
@@ -43,12 +44,7 @@ export function takeHomeModel(vehicle: InventoryVehicle) {
   const equipment = [...new Set(published.map((item) => customerEquipmentLabel(item.label)).filter(Boolean))];
   const standout = [...new Set(published.filter((item) => item.standout).map((item) => customerEquipmentLabel(item.label)).filter(Boolean))].slice(0, 8);
   const price = vehicle.price ?? null;
-  const msrp = vehicle.msrp ?? null;
-  const savings = price !== null && msrp !== null && msrp > price ? msrp - price : null;
-  const autoCheck = vehicle.autoCheckReport;
-  const history = autoCheck && ['current', 'stale'].includes(autoCheck.dataState)
-    ? [autoCheck.score != null ? `AutoCheck score ${autoCheck.score}` : null, autoCheck.ownerCount != null ? `${autoCheck.ownerCount} owner${autoCheck.ownerCount === 1 ? "" : "s"} reported` : null].filter(Boolean).join(" · ") || null
-    : null;
+  const history = customerHistorySummary(vehicle.autoCheckReport);
   return {
     store,
     storeName: display.name,
@@ -59,10 +55,6 @@ export function takeHomeModel(vehicle: InventoryVehicle) {
     stockNumber: vehicle.stockNumber,
     vin: vehicle.vin,
     price,
-    publishedAt: vehicle.publicListing.updatedAt ?? null,
-    historyCapturedAt: autoCheck?.capturedAt || autoCheck?.reportRunAt || null,
-    msrp,
-    savings,
     mileage: vehicle.mileage ?? null,
     certified: vehicle.certified ? certifiedTerms(store) : null,
     photos,
@@ -87,10 +79,9 @@ export function customerSummaryText(model: TakeHomeModel): string {
     model.name,
     `Stock ${model.stockNumber} · VIN ${model.vin}`,
     `Recorded price: ${model.price !== null ? formatMoney(model.price) : 'Ask the store'} · Mileage: ${model.mileage !== null ? formatMileage(model.mileage) : 'Not published'}`,
-    model.publishedAt ? `Inventory snapshot: ${formatDate(model.publishedAt)}` : 'Inventory snapshot date not provided',
     ...model.specs.map(([label, value]) => `${label}: ${value}`),
     model.highlights.length ? `Equipment highlights: ${model.highlights.join('; ')}` : 'Confirm installed equipment with the store.',
-    model.history ? `Reported history: ${model.history}${model.historyCapturedAt ? ` (report ${formatDate(model.historyCapturedAt)})` : ''}` : null,
+    model.history ? `Reported history: ${model.history}` : null,
     model.storeName,
     model.listingUrl,
     'Confirm current availability, price, mileage and installed equipment with the dealership. Price excludes tax, title, license and dealer fees.',

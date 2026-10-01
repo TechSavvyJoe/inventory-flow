@@ -13,6 +13,14 @@ export function IssueReportDialog({ vehicle, context, onSaved, onClose, returnFo
   vehicle: InventoryVehicle; context: VehicleIssueContext; onSaved: (issue: VehicleIssueDetail) => void
   onClose: () => void; returnFocusRef: RefObject<HTMLElement | null>
 }) {
+  return <IssueDialog title="Report a vehicle issue" onClose={onClose} returnFocusRef={returnFocusRef}>
+    <IssueReportForm vehicle={vehicle} context={context} onSaved={onSaved} />
+  </IssueDialog>
+}
+
+export function IssueReportForm({ vehicle, context, onSaved }: {
+  vehicle: InventoryVehicle; context: VehicleIssueContext; onSaved: (issue: VehicleIssueDetail) => void
+}) {
   const [category, setCategory] = useState<VehicleIssueCategory>('cleaning')
   const [priority, setPriority] = useState<'normal' | 'urgent'>('normal')
   const [description, setDescription] = useState('')
@@ -35,7 +43,7 @@ export function IssueReportDialog({ vehicle, context, onSaved, onClose, returnFo
     } catch (caught) { if (alive.current) setError(caught instanceof Error ? caught.message : 'The issue could not be saved. Your report is still here; try again.') }
     finally { submitted.current = false; if (alive.current) setSaving(false) }
   }
-  return <IssueDialog title="Report a vehicle issue" onClose={onClose} returnFocusRef={returnFocusRef}>
+  return <>
     <p className="vehicle-issue-identity"><strong>{vehicleDisplayName(vehicle)}</strong><span>Stock {vehicle.stockNumber} · {context.homeStore}</span></p>
     <form className="vehicle-issue-form" onSubmit={event => { event.preventDefault(); void submit() }}>
       <div className="vehicle-issue-form__pair"><label>Category<select value={category} disabled={saving} onChange={event => setCategory(event.target.value as VehicleIssueCategory)}>{Object.entries(ISSUE_CATEGORIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -46,5 +54,5 @@ export function IssueReportDialog({ vehicle, context, onSaved, onClose, returnFo
       {error ? <p role="alert" className="vehicle-issue-error">{error}</p> : null}
       <div className="vehicle-issue-form__actions"><button type="submit" className="vehicle-issue-primary" disabled={saving || preparing || !description.trim()}>{saving ? 'Saving issue…' : 'Report issue'}</button></div>
     </form>
-  </IssueDialog>
+  </>
 }

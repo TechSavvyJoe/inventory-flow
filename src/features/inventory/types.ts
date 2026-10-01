@@ -3,7 +3,7 @@ import type { VehicleIssueContext } from '../issues/issue-model';
 import type { DispositionContext } from '../overview/disposition-model';
 import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus';
 import type { AppDisposition, DealerMailEvidenceMessage, DealerMailHistoryRecord, OverviewVehicleFacts, ServiceReadiness, ServiceReadinessStatus, StoreName, UserRole } from "../../types";
-import type { OverviewInventoryView } from "../overview/overview-links";
+import type { OverviewInventorySelection } from "../overview/overview-links";
 
 export type InventoryScope = "home" | "group";
 
@@ -524,8 +524,8 @@ export interface InventoryFilters {
   minimumPrice?: number;
   maximumPrice?: number;
   maximumMileage?: number;
-  /** An Overview count opened here: one view of one store, read from the server's facts. */
-  overviewView?: { view: OverviewInventoryView; store: StoreName };
+  /** An Overview count opened here, read from the server's facts. */
+  overviewView?: OverviewInventorySelection;
   /** An Overview exception opened here: exactly these VINs. */
   vins?: string[];
 }

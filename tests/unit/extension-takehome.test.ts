@@ -2,7 +2,7 @@
 // @ts-nocheck -- dependency-free ESM; synthetic fixtures only.
 import { describe, expect, it, vi } from 'vitest'
 import { renderTakeHome, takeHomeModel } from '../../extension/sidepanel/lib/takehome.mjs'
-import { normalizeTakeHomeDocument, publicListingLinks, shareTakeHomeHtml, standaloneTakeHomeHtml } from '../../extension/sidepanel/lib/takehome-export.mjs'
+import { normalizeTakeHomeDocument, publicListingLinks, shareTakeHomePdf, downloadTakeHomePdf } from '../../extension/sidepanel/lib/takehome-export.mjs'
 import { toPanelVehicle } from '../../extension/sidepanel/lib/model.mjs'
 
 const meta = { reportDate: '2026-08-30', completedAt: '2026-08-30T10:00:00-04:00', publicFreshness: 'current', dealerMailFreshness: 'current' }
@@ -22,7 +22,8 @@ describe('take-home sheet model', () => {
   it('carries only published, customer-facing facts', () => {
     const vehicle = toPanelVehicle(record, { meta, transfers: [], vehicles: [record] })
     const model = takeHomeModel(vehicle, vehicle.photos)
-    expect(model).toMatchObject({ store: 'Howell', storeName: 'Bob Maxey Ford of Howell', storeSite: 'bobmaxeyfordhowell.com', name: '2024 Ford F-150 Lariat', stockNumber: 'DEMO-H01', price: 51800, msrp: 68420, savings: 16620, mileage: 12450 })
+    expect(model).toMatchObject({ store: 'Howell', storeName: 'Bob Maxey Ford of Howell', storeSite: 'bobmaxeyfordhowell.com', name: '2024 Ford F-150 Lariat', stockNumber: 'DEMO-H01', price: 51800, mileage: 12450 })
+    expect(model).not.toHaveProperty('factoryPrices')
     expect(model.brand.src).toBe('../brands/bob-maxey-ford.png')
     expect(model.certified.name).toBe('Ford Blue Certified')
     expect(model.photos).toEqual(['https://www.bobmaxeyfordhowell.com/photos/1.jpg'])
@@ -30,11 +31,46 @@ describe('take-home sheet model', () => {
     expect(model.highlights).toContain('BlueCruise')
     expect(model.history).toBe('AutoCheck score 91 · 1 owner reported')
     expect(model.description).toBe('Synthetic description.')
+    expect(JSON.stringify(model)).not.toContain('68420')
     const serialized = JSON.stringify(model)
     // Operational facts, custody, and the internal warranty estimate must never leave the panel.
     for (const forbidden of ['Demo Salesperson', 'Customer appointment', 'Fowlerville', 'Demo Driver', 'transfer-1', 'hold', 'inService', '2024-03-14', 'Bumper-to-bumper', 'expiresOn', 'monthsRemaining', 'OASIS', 'RequestBlocked']) {
       expect(serialized).not.toContain(forbidden)
     }
+  })
+
+  it('carries captured adverse history detail into the customer sheet', () => {
+    const adverse = {
+      ...record,
+      autoCheckReport: {
+        dataState: 'current',
+        score: 78,
+        checks: [
+          { label: 'Title', status: 'No issues found', detail: 'Salvage title reported' },
+          { label: 'Insurance loss', status: '1 record reported', detail: 'Total loss reported' },
+        ],
+      },
+    }
+    const model = takeHomeModel(toPanelVehicle(adverse, { meta, transfers: [], vehicles: [adverse] }))
+    expect(model.history).toBe('AutoCheck score 78 · Title: No issues found · Salvage title reported · Insurance loss: 1 record reported · Total loss reported')
+    expect(renderTakeHome(model).textContent).toContain(model.history)
+  })
+
+  it('keeps every MSRP/reference-price field out of the customer sheet', () => {
+    const panel = toPanelVehicle({...record,windowSticker:{dataState:'current',totalMsrp:62000,basePrice:50000,pricingCurrency:'CAD'}}, {meta,transfers:[],vehicles:[record]})
+    const model = takeHomeModel(panel)
+    expect(model).not.toHaveProperty('factoryPrices')
+    const legacy = renderTakeHome({...model,factoryPrices:{original:{value:62000,source:'window-sticker',currency:'CAD'},base:{value:50000,source:'window-sticker',currency:'CAD'}},msrp:68420,savings:16620})
+    expect(legacy.textContent).not.toContain('MSRP')
+    expect(legacy.textContent).not.toContain('62,000')
+    expect(legacy.textContent).not.toContain('68,420')
+  })
+
+  it('renders at most three distinct public photos in the customer sheet', () => {
+    const panel = toPanelVehicle(record, {meta,transfers:[],vehicles:[record]})
+    const photos = ['https://example.com/1.jpg','https://example.com/2.jpg','https://example.com/2.jpg','https://example.com/3.jpg','https://example.com/4.jpg']
+    const sheet = renderTakeHome(takeHomeModel(panel, photos))
+    expect([...sheet.querySelectorAll('.th-hero img')].map(image => image.getAttribute('src'))).toEqual(['https://example.com/1.jpg','https://example.com/2.jpg','https://example.com/3.jpg'])
   })
 
   it('names the Lincoln store certification for Lincoln-store vehicles', () => {
@@ -60,26 +96,35 @@ describe('take-home sheet model', () => {
     expect([...stage.querySelectorAll('.th-listing-link')].map((link) => link.getAttribute('href'))).toEqual([first.listingUrl, second.listingUrl])
   })
 
-  it('escapes standalone HTML and strips unsafe destinations', () => {
-    const root = document.createElement('div')
-    root.innerHTML = '<a href="javascript:alert(1)">Unsafe</a><p>&lt;customer&gt;</p>'
-    const html = standaloneTakeHomeHtml(root, '<script>alert(1)</script>', '.th{color:#102238}')
-    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
-    expect(html).not.toContain('href="javascript:')
-    expect(html).toContain('&lt;customer&gt;')
+  it('shares a PDF file with the correct MIME type and extension', async () => {
+    const share = vi.fn().mockResolvedValue(undefined)
+    const environment = { navigator:{ share, canShare:vi.fn(() => true) } }
+    await expect(shareTakeHomePdf({ pdf:new Blob(['%PDF-1.7'], { type:'application/pdf' }), title:'Choices', environment })).resolves.toBe('shared')
+    const file = share.mock.calls[0][0].files[0]
+    expect(file.name).toBe('choices.pdf')
+    expect(file.type).toBe('application/pdf')
   })
 
-  it('does not copy or download when native share is cancelled', async () => {
-    const writeText = vi.fn()
-    const environment = { navigator:{ share:vi.fn().mockRejectedValue({ name:'AbortError' }), canShare:vi.fn(() => true), clipboard:{ writeText } } }
-    await expect(shareTakeHomeHtml({ html:'<html></html>', title:'Choices', links:['https://example.com'], environment })).resolves.toBe('cancelled')
-    expect(writeText).not.toHaveBeenCalled()
+  it('does not download when native share is cancelled', async () => {
+    const createObjectURL = vi.fn()
+    const environment = { navigator:{ share:vi.fn().mockRejectedValue({ name:'AbortError' }), canShare:vi.fn(() => true) }, URL:{ createObjectURL } }
+    await expect(shareTakeHomePdf({ pdf:new Blob(['%PDF-1.7'], { type:'application/pdf' }), title:'Choices', environment })).resolves.toBe('cancelled')
+    expect(createObjectURL).not.toHaveBeenCalled()
   })
 
-  it('copies public listing links when native file sharing is unavailable', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    const environment = { navigator:{ clipboard:{ writeText } } }
-    await expect(shareTakeHomeHtml({ html:'<html></html>', title:'Choices', links:['https://example.com/one','https://example.com/two'], environment })).resolves.toBe('copied')
-    expect(writeText).toHaveBeenCalledWith('https://example.com/one\nhttps://example.com/two')
+  it('downloads the PDF when native file sharing is unavailable', async () => {
+    const click = vi.fn(), link = { click }, pdf = new Blob(['%PDF-1.7'], { type:'application/pdf' })
+    const createObjectURL = vi.fn(() => 'blob:synthetic-pdf')
+    const environment = { navigator:{}, URL:{ createObjectURL, revokeObjectURL:vi.fn() }, document:{ createElement:() => link } }
+    await expect(shareTakeHomePdf({ pdf, title:'Choices', environment })).resolves.toBe('saved')
+    expect(createObjectURL).toHaveBeenCalledWith(pdf)
+    expect(link.download).toBe('choices.pdf')
+    expect(click).toHaveBeenCalledOnce()
+  })
+
+  it('refuses HTML masquerading as a customer document', async () => {
+    const html = new Blob(['<html>'], { type:'text/html' })
+    await expect(shareTakeHomePdf({ pdf:html, title:'Choices' })).rejects.toThrow('PDF')
+    expect(() => downloadTakeHomePdf(html, 'Choices')).toThrow('PDF')
   })
 })

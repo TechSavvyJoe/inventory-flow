@@ -6,13 +6,16 @@
   <title>Take-home page</title>
   <link rel="icon" href="../icons/icon-32.png" type="image/png">
   <link rel="stylesheet" href="takehome.css">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="lib/takehome-comparison-view.css">
 </head>
 <body class="th-page">
   <div class="th-toolbar" id="toolbar">
     <span class="th-toolbar-title" id="toolbar-title">Take-home page</span>
+    <label class="th-format">Format<select id="format"><option value="detailed">Detailed vehicle sheets</option><option value="comparison">Compare on one sheet</option></select></label>
     <span class="th-toolbar-actions">
       <button type="button" class="th-btn th-btn-primary" id="print">Print / Save as PDF</button>
-      <button type="button" class="th-btn" data-action="save">Save HTML</button>
+      <button type="button" class="th-btn" data-action="save">Save PDF</button>
       <button type="button" class="th-btn" data-action="share">Share</button>
       <button type="button" class="th-btn" id="close">Close</button>
     </span>

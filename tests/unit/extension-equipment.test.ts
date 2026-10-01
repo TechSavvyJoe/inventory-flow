@@ -11,8 +11,8 @@ const vehicle = (overrides = {}) => ({
   features: ['Heated Front Seats', 'Class II Trailer Tow Package', 'BlueCruise'],
   documents: {
     autoCheck: { score: 91 },
-    windowSticker: { equipmentGroup: '502A Equipment Group', options: ['heated front seats', 'Twin Panel Moonroof'], standardEquipment: ['Rearview Camera'], warranty: [] },
-    factoryEquipment: { packages: [{ name: 'Lariat Sport Package', code: '502A', price: 3005, features: ['20" Wheels', 'Twin Panel Moonroof'] }], sections: [{ name: 'Safety', items: [{ label: 'Blind Spot Information System', price: null }] }] },
+    windowSticker: { dataState:'current', equipmentGroup: '502A Equipment Group', options: ['heated front seats', 'Twin Panel Moonroof'], standardEquipment: ['Rearview Camera'], warranty: [] },
+    factoryEquipment: { dataState:'current', packages: [{ name: 'Lariat Sport Package', code: '502A', price: 3005, features: ['20" Wheels', 'Twin Panel Moonroof'] }], sections: [{ name: 'Safety', items: [{ label: 'Blind Spot Information System', price: null }] }] },
   },
   ...overrides,
 })
@@ -46,6 +46,18 @@ describe('published equipment', () => {
     expect(autoCheckTone('1 accident reported')).toBe('review')
     expect(autoCheckTone('Not reported')).toBe('unknown')
     expect(autoCheckTone('')).toBe('unknown')
+  })
+
+  it('recognizes captured Lincoln features and excludes incomplete equipment evidence', () => {
+    const labels = ['Revel Ultima 3D', 'Perfect Position Seats', 'Lincoln ActiveGlide', 'Jet Appearance Package', 'Monochromatic Appearance Package']
+    const record = vehicle({ features:labels, documents:{ windowSticker:{ dataState:'incomplete', options:['Unverified BlueCruise'] }, factoryEquipment:null } })
+    const items = publishedEquipment(record)
+    expect(items).toHaveLength(labels.length)
+    expect(items.every(item => item.standout)).toBe(true)
+    expect(items.find(item => item.label === 'Revel Ultima 3D').category).toBe('technology')
+    expect(items.find(item => item.label === 'Perfect Position Seats').category).toBe('comfort')
+    expect(items.find(item => item.label === 'Lincoln ActiveGlide').category).toBe('driver-assistance')
+    expect(items.some(item => item.label.includes('Unverified'))).toBe(false)
   })
 })
 

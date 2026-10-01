@@ -34,8 +34,8 @@
   --radius-control: 8px;
   --radius-panel: 10px;
   --control-target: 44px;
-  --motion-fast: 140ms;
-  --motion-standard: 220ms;
+  --motion-fast: 80ms;
+  --motion-standard: 120ms;
   --motion-enter: cubic-bezier(0.16, 1, 0.3, 1);
   --motion-exit: cubic-bezier(0.4, 0, 1, 1);
   --motion-ease: cubic-bezier(0.2, 0.78, 0.2, 1);
@@ -43,6 +43,36 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
+  --comparison-landscape-paper: letter landscape;
+  --comparison-portrait-paper: letter portrait;
+  --comparison-brand-size: 12pt;
+  --comparison-offer-label-size: 9pt;
+  --comparison-preview-gap: 22px;
+  --comparison-header-top: 24pt;
+  --comparison-header-height: 46pt;
+  --comparison-header-rule: 2pt;
+  --comparison-hairline: .5pt;
+  --comparison-gutter: 12pt;
+  --comparison-logo-width: 130pt;
+  --comparison-logo-height: 28pt;
+  --comparison-header-size: 17pt;
+  --comparison-header-line-height: 20pt;
+  --comparison-header-meta-size: 8.5pt;
+  --comparison-header-meta-height: 12pt;
+  --comparison-header-site-gap: 3.5pt;
+  --comparison-rule-top: 40pt;
+  --comparison-main-rule: 1.3pt;
+  --comparison-accent-width: 92pt;
+  --comparison-bold: 700;
+  --comparison-regular: 400;
+  --comparison-footer-space: 48pt;
+  --comparison-footer-gap: 5pt;
+  --comparison-footer-size: 8pt;
+  --comparison-footer-line-height: 10pt;
+  --comparison-mobile-padding: 14px;
+  --comparison-mobile-gap: 18px;
+  --comparison-mobile-cell-gap: 3px;
+  --comparison-mobile-photo-height: 180px;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -449,7 +449,7 @@ describe('source-backed vehicle resource cards', () => {
     expect(within(rows[1] as HTMLElement).getByText('Total loss reported')).toBeVisible();
   });
 
-  it('offers additional captured comparison facts without inventing report results or changing source records', () => {
+  it('uses the scan strip for exact history, equipment, and OASIS facts without changing source records', () => {
     const vehicle = sources();
     vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, reportRunAt:'2026-09-01', lastReportedOdometer:12000, lastReportedOdometerDate:'2026-08-20', checks:[
       { label:'Title', status:'No title brands reported' },
@@ -459,9 +459,23 @@ describe('source-backed vehicle resource cards', () => {
     vehicle.fordOasis = { ...vehicle.fordOasis!, dataState:'stale', capturedAt:'2026-08-30', openActionsCaptured:false, openFieldServiceActions:[{code:'26X01',description:'Inspect connector before replacing'}], warrantyCoverages:[{type:'Powertrain',description:'5 years / 60,000 miles'}] };
     const original = JSON.stringify(vehicle);
     const page = render(<VehicleResourceCards vehicle={vehicle} variant="scan"/>);
-    for (const provider of document.querySelectorAll('.vehicle-resource-scan__fields')) expect(provider.children.length).toBeLessThanOrEqual(3);
+    const historyScan = within(document.querySelector('[data-resource-kind="autocheck"]') as HTMLElement);
+    expect(historyScan.getByText('Title')).toBeVisible();
+    expect(historyScan.getByText('No title brands reported')).toBeVisible();
+    expect(historyScan.getByText('Accidents')).toBeVisible();
+    expect(historyScan.getByText('No accidents reported')).toBeVisible();
+    expect(historyScan.getByText('Odometer')).toBeVisible();
+    expect(historyScan.getByText('12,000 mi')).toBeVisible();
     expect(screen.queryByText('Adaptive cruise control')).not.toBeInTheDocument();
-    expect(screen.queryByText('Trailer Tow Package')).not.toBeInTheDocument();
+    const equipmentScan = within(document.querySelector('[data-resource-kind="window-sticker"]') as HTMLElement);
+    expect(equipmentScan.getByText('Trailer Tow Package')).toBeVisible();
+    expect(equipmentScan.getByText('2 included · 2 options')).toBeVisible();
+    expect(equipmentScan.queryByText('MSRP')).not.toBeInTheDocument();
+    const oasisScan = within(document.querySelector('[data-resource-kind="oasis"]') as HTMLElement);
+    expect(oasisScan.getByText('26X01 · Inspect connector before replacing')).toBeVisible();
+    expect(document.querySelectorAll('[data-resource-kind="autocheck"] .vehicle-resource-scan__fields > div').length).toBeLessThanOrEqual(6);
+    expect(document.querySelectorAll('[data-resource-kind="window-sticker"] .vehicle-resource-scan__fields > div').length).toBeLessThanOrEqual(3);
+    expect(document.querySelectorAll('[data-resource-kind="oasis"] .vehicle-resource-scan__fields > div').length).toBeLessThanOrEqual(3);
     page.rerender(<VehicleResourceCards vehicle={vehicle} variant="preview"/>);
     expandDetails('history');
     expect(screen.getByText('No title brands reported')).toBeVisible();
@@ -669,10 +683,11 @@ describe('source-backed vehicle resource cards', () => {
     expect(history.getByText('Corrected Title')).toBeVisible();
     expect(history.getByText('NO CPO INFO AVAILABLE')).toBeVisible();
     expect(history.getByText('5 Service Records Reported')).toBeVisible();
-    expect(history.getByText('Saved report · refresh at source · Report run 09/01/2026')).toBeVisible();
+    expect(history.getByText('Saved report · refresh at source')).toBeVisible();
+    expect(history.queryByText(/Report run 09\/01\/2026/)).not.toBeInTheDocument();
     expect(screen.getByText('Partial captured record')).toBeVisible();
     expandDetails('equipment');
-    expect(screen.getByText('Partial captured record · Captured 08/28/2026')).toBeVisible();
+    expect(screen.getByText('Partial captured record')).toBeVisible();
     expect(screen.getByText('Source currently unavailable')).toBeVisible();
   });
 
@@ -702,7 +717,7 @@ describe('source-backed vehicle resource cards', () => {
     expect(oasis.getByText('63 months')).toBeVisible();
     expect(oasis.getByText('12 mi')).toBeVisible();
     expect(oasis.getByText('Synthetic extension through 05/31/2028')).toBeVisible();
-    expect(oasis.getByText('Partial captured record · Captured 09/01/2026')).toBeVisible();
+    expect(oasis.getByText('Partial captured record')).toBeVisible();
     expect(oasis.queryByText(/active coverage|all recalls/i)).not.toBeInTheDocument();
   });
 

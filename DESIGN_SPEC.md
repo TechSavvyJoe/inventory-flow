@@ -25,7 +25,7 @@ The generated concepts establish layout, density, component anatomy, and visual 
 - **Inventory**: full searchable inventory table, home-store-first scope, advanced sorting/filtering, selected vehicle drawer.
 - **Transfers**: requests, transport/custody stages, outcome and return tasks.
 - **Attention**: one actionable queue ordered by due time and risk.
-- **Overview** (`/overview`, replaces Group operations): store cards, where-is-my-inventory list, a schematic store board (configured positions, not a map; every pin and arrow is a link), exceptions, service metrics, and the app's own disposition ledger beside the imported manager log.
+- **Overview** (`/overview`, replaces Group operations): salespeople default to a sales workspace with their employee-owned customer lists, relevant vehicle facts, independent hold/location/service signals, and their reported issues. Managers default to the operations work queue, store summaries, location evidence, service metrics and dispositions. Both presentations remain reachable without changing permissions. Personal ownership uses authenticated employee IDs, never display-name matching. Each vehicle preview retains identity and a direct next action.
 
 ## Source and status boundaries
 
@@ -61,7 +61,7 @@ Never display **Available** solely because a public listing exists, DealerOn say
 - Typography: Inter when available, then `Segoe UI`, Arial, sans-serif. Body 14px desktop/15px mobile; controls 13–14px; table secondary 12px; page title 28px/700.
 - Radius: 8px controls, 10px panels/drawers, 12px selected mobile sheet.
 - Elevation: none for the normal canvas; subtle shadow only for drawers, sheets, and menus.
-- Motion: 160–220ms for drawer, selection, and disclosure transitions; respect `prefers-reduced-motion`.
+- Motion: apply selection, tab and store changes immediately. Use the shared 80ms/120ms tokens for brief feedback and disclosure transitions; avoid animating the whole inventory table or taking a full-page view-transition snapshot. Respect `prefers-reduced-motion`.
 
 ## Component families
 
@@ -73,7 +73,7 @@ Never display **Available** solely because a public listing exists, DealerOn say
 - Vehicle row/mobile row, source-status label, location treatment, next-action label.
 - Vehicle workspace/drawer with Overview, Movement, Hold evidence, Timeline.
 - Transfer request form, handoff/accountability preview, confirmation state.
-- Overview store cards, store board, exceptions, and the disposition dialog (one dialog, opened from the Overview or the vehicle workspace's Operations block).
+- Overview vehicle work queue, store summaries, exceptions, and the disposition dialog (one dialog, opened from the Overview or the vehicle workspace's Operations block).
 - Custody timeline, manager actions.
 - Empty, stale-source, conflict, permission-redaction, and offline states.
 
@@ -136,6 +136,8 @@ Inspect at the viewports listed in [AGENTS.md](AGENTS.md); the width-specific cr
 - 390×844 mobile: no horizontal scrolling, 44px touch targets, bottom navigation, status text alongside color/icon.
 - Judge density using an unfiltered, multi-vehicle list as well as the default No hold view. Include provider summaries in the complete desktop row height; measuring only the primary table row hides wasted space. Typical phone results should be about 200–250px, and complete desktop groups about 240–280px. Long warnings may need more space; do not truncate material evidence to meet a budget.
 - Phone results use a compact identity block, location/hold/service facts, and one shared action row. Full provider details are one Records action away. Desktop compares a short set of labeled AutoCheck, sticker, and OASIS facts beneath the main row.
+- The customer shortlist uses a fixed launcher and a small anchored, nonmodal popover. Opening it must not add document height, move inventory scroll position, dim the whole page or block other inventory controls. Customer management is progressive; compact photo rows retain vehicle identity and quick actions. Nested vehicle and customer-sheet dialogs remain modal and return focus to their exact launch controls.
+- Service list cards provide explicit Open vehicle, Records and permission-aware Update service / View service actions outside the card's selection button. These open existing workflows and never save a new status by themselves.
 - Overview has one Show details / Hide details control for all captured documents and records. They expand together, retain their source links, and reset to summaries when another vehicle opens. Full records remains a separate action.
 - Full Records uses up to two report columns on desktop and a single report sequence on phones. Reports flow in reading order with compact gaps, without reserving space to match a taller neighboring report; a lone report uses the full width. Keep labels near values and source details with their report. The phone report-navigation row may scroll horizontally; report bodies and the page must not.
 

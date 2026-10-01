@@ -1,0 +1,25 @@
+import { expect, test } from '@playwright/test'
+
+test('keeps the issue log discoverable and accepts a vehicle report across browser engines', async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('maxey-role', 'manager')
+    localStorage.setItem('maxey-home-store', 'Howell')
+  })
+  await page.goto('/attention?category=issues')
+  await expect(page.getByRole('button', { name: /^Vehicle issues \d+$/ })).toHaveAttribute('aria-pressed', 'true')
+  const ledger = page.getByRole('region', { name: 'Vehicle issue log' })
+  await ledger.getByRole('button', { name: 'Report issue', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Report a vehicle issue' })
+  await dialog.getByLabel('Find the vehicle').fill('DEMO-H01')
+  await dialog.getByRole('button', { name: /Stock DEMO-H01/ }).click()
+  await dialog.getByLabel('What needs attention?').fill(`Synthetic cross-browser lot report: ${testInfo.project.name}.`)
+  await dialog.getByRole('button', { name: 'Report issue', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  const detail = page.getByRole('dialog', { name: 'Vehicle issue', exact: true })
+  await expect(detail).toContainText(`Synthetic cross-browser lot report: ${testInfo.project.name}.`)
+  await page.keyboard.press('Escape')
+  await expect(detail).toBeHidden()
+  await expect(ledger.getByRole('listitem').filter({ hasText: `Synthetic cross-browser lot report: ${testInfo.project.name}.` })).toContainText('DEMO-H01')
+  const width = await page.evaluate(() => ({ content: document.documentElement.scrollWidth, viewport: innerWidth }))
+  expect(width.content).toBeLessThanOrEqual(width.viewport + 1)
+})

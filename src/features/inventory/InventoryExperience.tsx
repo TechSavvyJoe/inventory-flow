@@ -612,7 +612,7 @@ export function InventoryExperience({
   const selectedVehicle = selectedVehicleId ? allVehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null : null;
   const filterCount = activeFilterCount(filters) + (["moving", "new", "price"].includes(quickView) ? 1 : 0);
   const selectedServiceLabel = SERVICE_FILTERS.find(([value]) => value === filters.serviceReadiness && value !== "all")?.[1];
-  const overviewViewLabel = filters.overviewView ? `${OVERVIEW_VIEW_LABELS[filters.overviewView.view]} · ${filters.overviewView.store}` : null;
+  const overviewViewLabel = filters.overviewView ? `${OVERVIEW_VIEW_LABELS[filters.overviewView.view]} · ${filters.overviewView.store === "all" ? "All stores" : filters.overviewView.store}` : null;
   const secondaryViewLabel = quickView === "moving" ? "Moving" : quickView === "new" ? "New today" : quickView === "price" ? "Price changed" : null;
   const canRequestSelected = selectedVehicle ? canRequestVehicle?.(selectedVehicle) ?? false : false;
   const selectedMoveAction = selectedVehicle ? moveActionFor?.(selectedVehicle) ?? null : null;
@@ -638,10 +638,8 @@ export function InventoryExperience({
     backgroundRef: modalBackgroundRef,
   });
 
-  // A vehicle selection can be committed inside a view transition. Restore
-  // focus only after that commit has removed background inertness, rather than
-  // racing the transition from the close handler (especially noticeable in
-  // WebKit after a viewport resize).
+  // Restore focus after React has removed background inertness, rather than
+  // racing the close handler (especially in WebKit after a viewport resize).
   useLayoutEffect(() => {
     const pending = pendingWorkspaceReturnFocusRef.current;
     if (selectedVehicleId !== null || !pending) return;
@@ -869,6 +867,7 @@ export function InventoryExperience({
       <CustomerShortlistDrawer entries={shortlist.entries}
         onRemove={shortlist.remove} onClear={shortlist.clear}
         management={shortlist.management} authorizedVehicles={allVehicles} accessContext={shortlist.context}
+        modalOpen={scannerOpen || Boolean(selectedVehicle)}
         onSelectVehicle={(entry, opener) => {
           const vehicle = allVehicles.find(candidate => candidate.id === entry.id || candidate.vin === entry.id);
           if (vehicle) openVehicleWorkspace(vehicle, "overview", opener);
