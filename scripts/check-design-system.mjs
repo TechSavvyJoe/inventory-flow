@@ -2,6 +2,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, extname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { countIdSelectors } from './lib/css-metrics.mjs'
 
 const projectRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -215,7 +216,7 @@ if (!failures.length) {
     grandfatheredFilenames,
     files: nextFiles,
   }
-  if (JSON.stringify(nextBaseline) !== JSON.stringify(baseline)) {
+  if (!isDeepStrictEqual(nextBaseline, baseline)) {
     await writeFile(baselinePath, `${JSON.stringify(nextBaseline, null, 2)}\n`, 'utf8')
     console.log(accept
       ? 'Design-system baseline updated with --accept (raised where the current change needed it).'
