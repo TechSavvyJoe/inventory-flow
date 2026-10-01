@@ -22,7 +22,12 @@
 .sales-overview__section-head > :is(span,strong,a) { flex:0 0 auto; color:var(--blue-700); font-size:var(--ifx-text-sm); }
 .sales-overview__section-head a { display:inline-flex; align-items:center; min-height:var(--control-target); }
 
-.sales-overview__list-tabs { display:flex; gap:var(--ifx-space-2); padding:var(--ifx-space-3) var(--ifx-space-4); border-bottom:1px solid var(--border); overflow-x:auto; }
+.sales-overview__list-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:var(--ifx-space-2); padding:var(--ifx-space-3) var(--ifx-space-4); border-bottom:1px solid var(--border); }
+.sales-overview__list-tabs { display:flex; flex:1 1 calc(var(--control-target) * 3); min-width:0; gap:var(--ifx-space-2); overflow-x:auto; }
+.sales-overview__sheet { display:inline-flex; align-items:center; justify-content:center; gap:var(--ifx-space-2); flex:0 0 auto; min-height:var(--control-target); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--blue-700); border-radius:var(--radius-control); background:var(--blue-700); color:var(--surface); font:var(--ifx-weight-semibold) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); white-space:nowrap; cursor:pointer; }
+.sales-overview__sheet:hover { background:var(--navy-900); border-color:var(--navy-900); }
+.sales-overview__sheet:active { background:var(--blue-600); }
+.sales-overview__saved-note { margin:0; padding:var(--ifx-space-2) var(--ifx-space-4); border-bottom:1px solid var(--border); background:var(--surface-soft); color:var(--ink-600); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-compact); }
 .sales-overview__list-tabs button { display:inline-flex; align-items:center; gap:var(--ifx-space-2); flex:0 0 auto; min-height:var(--control-target); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--border-strong); border-radius:var(--radius-control); background:var(--surface); color:var(--ink-700); font:var(--ifx-weight-semibold) var(--ifx-text-md)/var(--ifx-leading-compact) var(--font-app); cursor:pointer; }
 .sales-overview__list-tabs button[aria-pressed="true"] { border-color:var(--blue-600); background:var(--blue-050); color:var(--navy-900); }
 .sales-overview__list-tabs button span { min-width:var(--ifx-space-5); color:var(--ink-600); text-align:center; }
@@ -87,6 +92,7 @@
   .sales-overview__metric strong { grid-column:1 / -1; }
   .sales-overview__sidebar { grid-template-columns:1fr; }
   .sales-overview__section-head { padding:var(--ifx-space-3); }
+  .sales-overview__list-toolbar { padding:var(--ifx-space-2) var(--ifx-space-3); }
   .sales-overview__vehicle-row { grid-template-columns:var(--ifx-space-16) minmax(0,1fr); gap:var(--ifx-space-3); padding:var(--ifx-space-3); }
   .sales-overview__vehicle-photo { width:var(--ifx-space-16); height:var(--ifx-space-12); }
   .sales-overview__vehicle-content { display:contents; }
@@ -108,6 +114,7 @@
   .sales-overview__vehicle-row { break-inside:avoid; }
   .sales-overview__section-head { break-after:avoid; }
   .sales-overview__open,
+  .sales-overview__sheet,
   .sales-overview__plain-list a,
   .sales-overview__browse-panel,
   .sales-overview__list-tabs button[aria-pressed="false"] { display:none; }

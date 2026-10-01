@@ -246,10 +246,10 @@ export function dealerMailHoldLabel(signal: DealerMailHoldSignal): string {
 }
 
 /**
- * One Overview view of one store, judged only from the server's day-level
+ * An Overview view, judged only from the server's day-level
  * facts (never a label). Custody, aging, unaccounted, return and records views
  * are by home store; Visiting by the store the vehicle is at; holds by the
- * DealerMail store the Action center counts them under.
+ * DealerMail store, with an all-store view for active hold signals.
  */
 export function vehicleMatchesOverviewView(
   vehicle: InventoryVehicle,
@@ -278,7 +278,7 @@ export function vehicleMatchesOverviewView(
     case "holds":
     case "holds-past-expected": {
       const holdStore = vehicle.location.crmStore?.name ?? vehicle.location.homeStore.name;
-      return holdStore === store && facts.holdActive === true && (view === "holds" || facts.holdPastExpected === true);
+      return (store === "all" || holdStore === store) && facts.holdActive === true && (view === "holds" || facts.holdPastExpected === true);
     }
     default: return false;
   }

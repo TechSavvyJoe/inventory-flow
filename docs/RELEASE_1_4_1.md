@@ -18,6 +18,13 @@ retain the vehicle work queue and compact store ledger with core operational
 counts and a More counts disclosure. Its vehicle-issue summary opens the same
 scoped issue ledger. Presentation changes never grant or revoke permissions.
 
+Sales can open Customer sheet beside their saved-list selector without returning
+to Inventory, using the same detailed and comparison PDF formats. Saved vehicles
+without current authorized details stay saved but are excluded from the document,
+with a count note. Employee, list selection and access changes close the document snapshot.
+The All stores hold count opens the complete active-hold Inventory view, including
+ordinary holds that do not have an Action center alert. Its filter can be cleared.
+
 The Service summary leads with Waiting, In service and Ready counts, separate
 14-day and 30-day wait counts, and the longest-waiting vehicles with photos,
 stock numbers and direct record/service actions. Listing-based wait estimates
@@ -61,9 +68,10 @@ issue notes and internal warranty estimates. Blocked photos show a placeholder.
 The PDF has selectable text but is not structurally tagged for screen readers.
 
 The additional Compare on one sheet format aligns two or three vehicles on a
-Letter comparison page, with photos, selling price, mileage, dealership,
-specifications, certification and standout equipment. Larger selections use
-numbered pages. Long values continue without shrinking or clipping the text.
+landscape Letter comparison page, with photos, selling price, mileage, dealership,
+grouped specifications, certification and standout equipment. Printable listing
+QR codes are generated locally. Larger selections use balanced, numbered pages.
+Long values continue without shrinking or clipping the text.
 The preview and PDF share the same measured layout; phones show each complete
 vehicle in reading order. The existing detailed sheets remain the default.
 Both formats can be printed, downloaded and shared as PDF files in the app and

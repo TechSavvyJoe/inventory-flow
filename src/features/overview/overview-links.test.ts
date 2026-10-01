@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   actionCenterHref,
+  allStoreHoldsHref,
   dispositionView,
   exceptionHref,
   inventoryViewHref,
@@ -89,5 +90,15 @@ describe('Overview link contract (OVERVIEW_SPEC §8.4)', () => {
     expect(readOverviewInventoryRequest(new URLSearchParams('store=Nowhere&view=everything&service=sold'))).toBeNull()
     expect(withoutOverviewInventoryParams('?scope=group&store=Howell&view=away&service=serviced&vins=A&vin=X')).toBe('?scope=group&vin=X')
     expect(withoutOverviewInventoryParams('?store=Howell')).toBe('')
+  })
+
+  it('opens all-store holds while keeping every other Overview view store-specific', () => {
+    expect(allStoreHoldsHref()).toBe('/inventory?scope=group&store=all&view=holds')
+    expect(readOverviewInventoryRequest(new URLSearchParams('scope=group&store=all&view=holds')))
+      .toEqual({ overviewView: { view: 'holds', store: 'all' } })
+    for (const view of OVERVIEW_INVENTORY_VIEWS.filter(view => view !== 'holds')) {
+      expect(readOverviewInventoryRequest(new URLSearchParams(`store=all&view=${view}`))).toBeNull()
+    }
+    expect(withoutOverviewInventoryParams('?scope=group&store=all&view=holds')).toBe('?scope=group')
   })
 })

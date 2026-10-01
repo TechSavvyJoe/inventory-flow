@@ -612,7 +612,7 @@ export function InventoryExperience({
   const selectedVehicle = selectedVehicleId ? allVehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null : null;
   const filterCount = activeFilterCount(filters) + (["moving", "new", "price"].includes(quickView) ? 1 : 0);
   const selectedServiceLabel = SERVICE_FILTERS.find(([value]) => value === filters.serviceReadiness && value !== "all")?.[1];
-  const overviewViewLabel = filters.overviewView ? `${OVERVIEW_VIEW_LABELS[filters.overviewView.view]} · ${filters.overviewView.store}` : null;
+  const overviewViewLabel = filters.overviewView ? `${OVERVIEW_VIEW_LABELS[filters.overviewView.view]} · ${filters.overviewView.store === "all" ? "All stores" : filters.overviewView.store}` : null;
   const secondaryViewLabel = quickView === "moving" ? "Moving" : quickView === "new" ? "New today" : quickView === "price" ? "Price changed" : null;
   const canRequestSelected = selectedVehicle ? canRequestVehicle?.(selectedVehicle) ?? false : false;
   const selectedMoveAction = selectedVehicle ? moveActionFor?.(selectedVehicle) ?? null : null;

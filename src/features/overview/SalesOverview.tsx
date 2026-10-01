@@ -1,6 +1,6 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertCircle, ArrowRight, CarFront, RotateCw } from 'lucide-react'
+import { AlertCircle, ArrowRight, CarFront, FileText, RotateCw } from 'lucide-react'
 import { toInventoryVehicle } from '../../app/adapters'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
 import { formatNumber } from '../../lib/format'
@@ -10,7 +10,8 @@ import type { InventoryVehicle } from '../inventory/types'
 import { formatMoney, publicListingLabel, resolveCurrentLocation, vehicleDisplayName } from '../inventory/inventory-utils'
 import { standoutEquipment } from '../inventory/vehicle-feature-utils'
 import { useSyncedCustomerLists } from '../inventory/useSyncedCustomerLists'
-import { inventoryViewHref, serviceStatusHref } from './overview-links'
+import { TakeHomeSheet } from '../inventory/TakeHomeSheet'
+import { allStoreHoldsHref, inventoryViewHref, serviceStatusHref } from './overview-links'
 import './SalesOverview.css'
 
 export interface SalesOverviewProps {
@@ -75,7 +76,7 @@ function scopedMetricHref(kind: 'on-lot' | 'holds' | 'service' | 'moves', stores
   if (kind === 'service') return serviceStatusHref('needs_service', store)
   if (kind === 'moves') return store ? `/transfers?store=${encodeURIComponent(store)}` : '/transfers'
   if (store) return inventoryViewHref(store, kind === 'on-lot' ? 'on-lot' : 'holds')
-  return kind === 'on-lot' ? '/inventory?scope=group' : '/attention?category=holds&scope=group'
+  return kind === 'on-lot' ? '/inventory?scope=group' : allStoreHoldsHref()
 }
 
 function joinedFact(values: Array<string | null | undefined>) {
@@ -138,6 +139,8 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
     authorizedVehicles,
   })
   const management = savedLists.management
+  const sheetButtonRef = useRef<HTMLButtonElement>(null)
+  const [sheetSnapshot, setSheetSnapshot] = useState<{ context: string; listId: string; label: string; vehicles: InventoryVehicle[] } | null>(null)
   const storeSet = useMemo(() => new Set(stores), [stores])
   const sourceByVin = useMemo(() => new Map(data.vehicles.map(vehicle => [vehicle.vin, vehicle])), [data.vehicles])
   const inventoryByVin = useMemo(() => new Map(authorizedVehicles.map(vehicle => [vehicle.vin, vehicle])), [authorizedVehicles])
@@ -146,6 +149,10 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
     const vehicle = sourceByVin.get(entry.vin)
     return vehicle ? [vehicle] : []
   }) : []
+  const unavailableSavedCount = savedLists.entries.length - visibleSavedVehicles.length
+  const canOpenSheet = Boolean(currentUserId && data.savedListsEnabled === true && !management?.accessRevoked && management?.activeListId && visibleSavedVehicles.length)
+  const sheetCurrent = canOpenSheet && !printing && sheetSnapshot?.context === accessContext && sheetSnapshot.listId === management?.activeListId && sheetSnapshot.vehicles.every(vehicle => inventoryByVin.has(vehicle.vin))
+  useEffect(() => { if (sheetSnapshot && !sheetCurrent) setSheetSnapshot(null) }, [sheetSnapshot, sheetCurrent])
   const savedVins = new Set(visibleSavedVehicles.map(vehicle => vehicle.vin))
   const activeMoves = data.transfers.filter(record => isActiveMove(record) && moveInScope(record, storeSet))
   const activeMoveVins = new Set(activeMoves.map(record => record.vin))
@@ -193,10 +200,16 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
             : !currentUserId ? <p className="sales-overview__state">Sign in with an employee identity to view customer saved lists.</p>
             : management?.accessRevoked ? <p className="sales-overview__state sales-overview__state--alert" role="alert">Your saved-list access changed. Reload or sign in again.</p>
             : <>
-              {management?.lists.length ? <div className="sales-overview__list-tabs" aria-label="Choose a customer saved list">
-                {management.lists.map(list => <button key={list.id} type="button" aria-pressed={management.activeListId === list.id} onClick={() => management.selectList(list.id)}>{list.label}<span>{list.count}</span></button>)}
+              {management?.lists.length ? <div className="sales-overview__list-toolbar">
+                <div className="sales-overview__list-tabs" aria-label="Choose a customer saved list">
+                  {management.lists.map(list => <button key={list.id} type="button" aria-pressed={management.activeListId === list.id} onClick={() => management.selectList(list.id)}>{list.label}<span>{list.count}</span></button>)}
+                </div>
+                {canOpenSheet && !printing ? <button ref={sheetButtonRef} className="sales-overview__sheet" type="button" onClick={() => {
+                  if (management.activeListId) setSheetSnapshot({ context: accessContext, listId: management.activeListId, label: management.activeLabel, vehicles: visibleSavedVehicles.map(vehicle => inventoryByVin.get(vehicle.vin)!) })
+                }}><FileText size={16} aria-hidden="true" />Customer sheet</button> : null}
               </div> : !management?.loading && !management?.error ? <p className="sales-overview__state">No customer saved lists yet. Save vehicles from Inventory when you are working with a customer.</p> : null}
               {management?.error ? <div className="sales-overview__error" role="alert"><span>{management.error}</span><button type="button" onClick={management.retry}><RotateCw aria-hidden="true" />Retry</button></div> : null}
+              {unavailableSavedCount > 0 ? <p className="sales-overview__saved-note">{unavailableSavedCount} saved {unavailableSavedCount === 1 ? 'vehicle has' : 'vehicles have'} no current authorized details. {unavailableSavedCount === 1 ? 'It stays' : 'They stay'} in your list and {unavailableSavedCount === 1 ? 'is' : 'are'} excluded from customer sheets.</p> : null}
               {visibleSavedVehicles.length ? <ul className="sales-overview__vehicle-list">
                 {visibleSavedVehicles.map(vehicle => <SalesVehicleRow key={vehicle.vin} vehicle={vehicle} normalized={inventoryByVin.get(vehicle.vin)!} />)}
               </ul> : management?.activeListId && !management.loading ? <p className="sales-overview__state">This list has no vehicles in your current authorized inventory.</p> : null}
@@ -229,5 +242,6 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
       </aside>
     </div>
     <p className="sales-overview__boundary"><AlertCircle aria-hidden="true" />Listing, hold, service, movement, issue, and location facts remain independent. This overview does not confirm availability.</p>
+    {sheetCurrent && sheetSnapshot ? <TakeHomeSheet vehicles={sheetSnapshot.vehicles} listLabel={sheetSnapshot.label} onClose={() => setSheetSnapshot(null)} returnFocusRef={sheetButtonRef} /> : null}
   </div>
 }

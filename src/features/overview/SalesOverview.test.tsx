@@ -3,11 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import type { BootstrapData, OverviewSummary, StoreName, TransferRecord, VehicleIssue, VehicleRecord } from '../../types'
 import type { ShortlistContextValue } from '../inventory/useCustomerShortlist'
+import type { InventoryVehicle } from '../inventory/types'
 import { SalesOverview } from './SalesOverview'
 
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 const { syncedListsMock } = vi.hoisted(() => ({ syncedListsMock: vi.fn() }))
 vi.mock('../inventory/useSyncedCustomerLists', () => ({ useSyncedCustomerLists: syncedListsMock }))
+vi.mock('../inventory/TakeHomeSheet', () => ({ TakeHomeSheet: ({ vehicles, listLabel, onClose }: { vehicles: InventoryVehicle[]; listLabel: string; onClose: () => void }) => <div role="dialog" aria-label="Customer sheet preview"><span>{listLabel}</span>{vehicles.map(vehicle => <span key={vehicle.vin}>{vehicle.vin}</span>)}<button onClick={onClose}>Close sheet</button></div> }))
 
 const stores: StoreName[] = ['Howell']
 
@@ -137,6 +139,69 @@ describe('SalesOverview', () => {
     expect(syncedListsMock).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false, ownerId: null, context: JSON.stringify([null, 'sales', 'Howell', 'overview']) }))
   })
 
+  it('opens a customer sheet directly for current saved vehicles and explains excluded entries', () => {
+    renderOverview()
+    const saved = screen.getByRole('region', { name: 'Customer saved lists' })
+    expect(saved).toHaveTextContent('1 saved vehicle has no current authorized details.')
+    expect(saved).toHaveTextContent('It stays in your list and is excluded from customer sheets.')
+    fireEvent.click(within(saved).getByRole('button', { name: 'Customer sheet' }))
+    const sheet = screen.getByRole('dialog', { name: 'Customer sheet preview' })
+    expect(sheet).toHaveTextContent('AB')
+    expect(sheet).toHaveTextContent('TESTDATASAVED0001')
+    expect(sheet).not.toHaveTextContent('STALEVIN')
+    expect(sheet).not.toHaveTextContent('TESTDATAOTHER0002')
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Close sheet' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('closes an open sheet when the employee changes and never revives the previous snapshot', () => {
+    const props = { data: data(), stores, homeStore: 'Howell' as StoreName, role: 'sales' as const }
+    const view = render(<MemoryRouter><SalesOverview {...props} currentUserId="employee-1" /></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Customer sheet' }))
+    expect(screen.getByRole('dialog')).toBeVisible()
+    view.rerender(<MemoryRouter><SalesOverview {...props} currentUserId="employee-2" /></MemoryRouter>)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    view.rerender(<MemoryRouter><SalesOverview {...props} currentUserId="employee-1" /></MemoryRouter>)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('closes sheets on list selection changes, revocation, disabled lists or lost vehicle authorization', () => {
+    const source = data()
+    const props = { data: source, stores, homeStore: 'Howell' as StoreName, role: 'sales' as const, currentUserId: 'employee-1' }
+    const view = render(<MemoryRouter><SalesOverview {...props} /></MemoryRouter>)
+    const open = () => fireEvent.click(screen.getByRole('button', { name: 'Customer sheet' }))
+    open()
+    syncedListsMock.mockReturnValue(shortlist({ management: { ...shortlist().management!, activeListId: 'list-b', activeLabel: 'CD' } }))
+    view.rerender(<MemoryRouter><SalesOverview {...props} /></MemoryRouter>)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    open()
+    syncedListsMock.mockReturnValue(shortlist({ management: { ...shortlist().management!, activeListId: 'list-b', accessRevoked: true } }))
+    view.rerender(<MemoryRouter><SalesOverview {...props} /></MemoryRouter>)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Customer sheet' })).not.toBeInTheDocument()
+    syncedListsMock.mockReturnValue(shortlist())
+    view.rerender(<MemoryRouter><SalesOverview {...props} /></MemoryRouter>)
+    open()
+    view.rerender(<MemoryRouter><SalesOverview {...props} data={{ ...source, savedListsEnabled: false }} /></MemoryRouter>)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    view.rerender(<MemoryRouter><SalesOverview {...props} /></MemoryRouter>)
+    open()
+    view.rerender(<MemoryRouter><SalesOverview {...props} data={{ ...source, vehicles: source.vehicles.filter(vehicle => vehicle.vin !== 'TESTDATASAVED0001') }} /></MemoryRouter>)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    view.rerender(<MemoryRouter><SalesOverview {...props} /></MemoryRouter>)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('omits sheet actions for empty or entirely unavailable lists and printed snapshots', () => {
+    syncedListsMock.mockReturnValue(shortlist({ entries: [{ ...shortlist().entries[1] }] }))
+    const view = renderOverview()
+    expect(screen.queryByRole('button', { name: 'Customer sheet' })).not.toBeInTheDocument()
+    view.unmount()
+    syncedListsMock.mockReturnValue(shortlist())
+    render(<MemoryRouter><SalesOverview data={data()} stores={stores} homeStore="Howell" role="sales" currentUserId="employee-1" printing /></MemoryRouter>)
+    expect(screen.queryByRole('button', { name: 'Customer sheet' })).not.toBeInTheDocument()
+  })
+
   it('surfaces read errors with retry and gives revoked access its own state', () => {
     const retry = vi.fn()
     syncedListsMock.mockReturnValue(shortlist({ management: { ...shortlist().management!, error: 'Saved lists could not be read.', retry } }))
@@ -170,7 +235,8 @@ describe('SalesOverview', () => {
     render(<MemoryRouter><SalesOverview data={source} stores={['Howell', 'Lincoln']} homeStore="Howell" role="sales" currentUserId="employee-1" /></MemoryRouter>)
     const metrics = screen.getByRole('region', { name: 'Current store facts' })
     expect(within(metrics).getByRole('link', { name: 'Browse group inventory: 2' })).toHaveAttribute('href', '/inventory?scope=group')
-    expect(within(metrics).getByRole('link', { name: 'Hold signals: 1' })).toHaveAttribute('href', '/attention?category=holds&scope=group')
+    // Attention lists exceptions; this count includes ordinary active holds too.
+    expect(within(metrics).getByRole('link', { name: 'Hold signals: 1' })).toHaveAttribute('href', '/inventory?scope=group&store=all&view=holds')
     expect(metrics.querySelector('a[href*="view=on-lot"]')).not.toBeInTheDocument()
   })
 

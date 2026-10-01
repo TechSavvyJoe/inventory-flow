@@ -30,6 +30,10 @@ export const OVERVIEW_INVENTORY_VIEWS = [
 
 export type OverviewInventoryView = (typeof OVERVIEW_INVENTORY_VIEWS)[number]
 
+export type OverviewInventorySelection =
+  | { view: OverviewInventoryView; store: StoreName }
+  | { view: 'holds'; store: 'all' }
+
 export const OVERVIEW_VIN_LIMIT = 50
 
 export const OVERVIEW_RETURN_PATH = '/overview'
@@ -49,6 +53,11 @@ function query(path: string, entries: Array<[string, string]>): string {
 /** A store-card count: Inventory across the group, narrowed to one Overview view. */
 export function inventoryViewHref(store: StoreName, view: OverviewInventoryView): string {
   return query('/inventory', [['scope', 'group'], ['store', store], ['view', view]])
+}
+
+/** All active hold signals, including ordinary holds with no attention alert. */
+export function allStoreHoldsHref(): string {
+  return query('/inventory', [['scope', 'group'], ['store', 'all'], ['view', 'holds']])
 }
 
 /** An exception drill-down with no single predicate: the exact VINs, at most 50. */
@@ -174,7 +183,7 @@ const SERVICE_PARAM_VALUES: readonly ServiceWorkflowStatus[] = ['needs_service',
 const VIN_PATTERN = /^[A-Z0-9]{5,17}$/
 
 export interface OverviewInventoryRequest {
-  overviewView?: { view: OverviewInventoryView; store: StoreName }
+  overviewView?: OverviewInventorySelection
   /** A store with no view narrows Inventory to that store. */
   store?: StoreName
   serviceReadiness?: ServiceWorkflowStatus
@@ -191,7 +200,8 @@ export function readOverviewInventoryRequest(params: URLSearchParams): OverviewI
   const view = params.get('view')
   const service = params.get('service')
   const request: OverviewInventoryRequest = {}
-  if (isStoreName(store) && isOverviewInventoryView(view)) request.overviewView = { view, store }
+  if (store === 'all' && view === 'holds') request.overviewView = { view, store }
+  else if (isStoreName(store) && isOverviewInventoryView(view)) request.overviewView = { view, store }
   else if (isStoreName(store)) request.store = store
   if (SERVICE_PARAM_VALUES.includes(service as ServiceWorkflowStatus)) request.serviceReadiness = service as ServiceWorkflowStatus
   const vins = [...new Set((params.get('vins') ?? '').split(',').map((vin) => vin.trim().toUpperCase()).filter((vin) => VIN_PATTERN.test(vin)))]

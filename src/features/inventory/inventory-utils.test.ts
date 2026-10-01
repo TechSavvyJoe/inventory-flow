@@ -240,6 +240,18 @@ describe("Overview views in Inventory (OVERVIEW_SPEC §8.1)", () => {
     expect(activeFilterCount({ ...DEFAULT_INVENTORY_FILTERS, vins: [base.vin], overviewView: { view: "away", store: "Howell" } })).toBe(2);
   });
 
+  it("includes ordinary active holds from every store without inferring them from a label", () => {
+    const filters = { ...DEFAULT_INVENTORY_FILTERS, overviewView: { view: "holds", store: "all" } as const };
+    for (const store of ["Howell", "Lincoln"]) {
+      const held = vehicle({ overview: facts({ holdActive: true }), location: { homeStore: { id: store.toLowerCase(), name: store } } });
+      expect(vehicleMatchesFilters(held, filters)).toBe(true);
+      expect(vehicleMatchesFilters({ ...held, overview: facts() }, filters)).toBe(false);
+    }
+    const labelledOnly = vehicle({ overview: facts(), dealerMail: { dataState: "current", hasActiveHold: true, position: "primary" } });
+    expect(vehicleMatchesFilters(labelledOnly, filters)).toBe(false);
+    expect(vehicleMatchesFilters(vehicle(), filters)).toBe(false);
+  });
+
   it("matches disposition views by the recorded code and the server's owner store, never the manager log", () => {
     const disposition = { vin: "TESTDATAHWELL0001", code: "sold_pending" as const, version: 1, effectiveDate: "2026-08-29", destinationStore: null, updatedAt: "2026-08-30T12:00:00Z", updatedByRole: "manager" as const, store: "Howell" as const, ownerStore: "Lincoln" as const, canManage: false };
     const recorded = vehicle({ overview: facts(), appDisposition: disposition });
