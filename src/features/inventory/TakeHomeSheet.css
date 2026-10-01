@@ -127,10 +127,12 @@ body.takehome-open { overflow: hidden; }
   .takehome-toolbar__status { flex-basis:100%; }
 }
 @media print {
-  @page { size: letter portrait; margin: 0; }
+  @page { size:var(--comparison-paper-size, var(--comparison-portrait-paper)); margin:0; }
   body.takehome-open > *:not(.takehome-portal) { display: none !important; }
   body.takehome-open { overflow: visible; }
+  :root:has(body.takehome-open .comparison-pages) { --comparison-paper-size:var(--comparison-landscape-paper); }
   .takehome-portal, .takehome-dialog { position: static; }
+  .takehome-dialog { display:block; }
   .takehome-backdrop, .takehome-toolbar { display: none; }
   .takehome-stage { padding: 0; overflow: visible; display: block; background: var(--surface); }
   .takehome-list-title { display:none; }

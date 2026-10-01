@@ -1108,7 +1108,7 @@ button.ov-row-link { cursor: pointer; }
 /* Printable daily snapshot (OVERVIEW_SPEC §10) ------------------------------ */
 
 @media print {
-  @page { margin: 12mm; size: letter; }
+  @page { margin:12mm; size:var(--comparison-paper-size, letter); }
   .desktop-nav,
   .top-bar,
   .mobile-bottom-nav,

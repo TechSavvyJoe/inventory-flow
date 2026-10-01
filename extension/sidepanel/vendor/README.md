@@ -10,3 +10,5 @@ sheet is uploaded to a rendering service. The app lazy-loads this same renderer.
 Sources: https://github.com/Hopding/pdf-lib and https://github.com/Hopding/fontkit.
 Keep these files in sync with the lockfile; the PDF tests verify the exact vendor
 bytes and the wrapper. All implementation changes belong in `../lib/takehome-pdf.mjs`.
+
+- `qr-encoder.mjs`: browser-only QR writer bundled from locked `@zxing/library@0.23.0`, Apache-2.0; adjacent license copied unchanged. Source entry: `scripts/lib/takehome-qr-entry.mjs`. Rebuild: `pnpm exec esbuild scripts/lib/takehome-qr-entry.mjs --bundle --format=esm --platform=browser --target=es2022 --minify --outfile=extension/sidepanel/vendor/qr-encoder.mjs`. It encodes locally with medium error correction and a four-module quiet zone; no QR service receives the listing URL. Upstream: https://github.com/zxing-js/library.

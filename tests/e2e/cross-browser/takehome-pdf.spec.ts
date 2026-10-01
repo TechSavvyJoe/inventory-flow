@@ -32,7 +32,7 @@ async function installNativeShare(page: import('@playwright/test').Page) {
 }
 
 // Real PDF generation and browser downloads; native sharing is simulated here.
-test('app saves and shares an actual PDF with recovery when file sharing is unavailable', async ({ page }) => {
+test('app saves and shares an actual PDF with recovery when file sharing is unavailable', async ({ page, browserName }) => {
   await page.addInitScript(() => { localStorage.setItem('maxey-role','sales'); localStorage.setItem('maxey-home-store','Howell') })
   await page.goto('/inventory?scope=group&vin=TESTDATAHWELL0001')
   const workspace = page.getByRole('dialog', { name:/vehicle workspace/ })
@@ -52,6 +52,22 @@ test('app saves and shares an actual PDF with recovery when file sharing is unav
   await sheet.getByRole('button', { name:'Share', exact:true }).click()
   await verifyDownload(await fallback)
   await expect(sheet.getByRole('status')).toHaveText('PDF saved. Share that file with your customer.')
+  await sheet.getByRole('combobox', { name:'Format' }).selectOption('comparison')
+  await expect(sheet.getByRole('img', { name:/Scan to open .* listing/ })).toBeVisible()
+  const compared = page.waitForEvent('download')
+  await save.click()
+  expect((await verifyDownload(await compared, 1)).getPage(0).getSize()).toEqual({width:792,height:612})
+  if (browserName === 'chromium') {
+    const printed = await PDFDocument.load(await page.pdf({preferCSSPageSize:true,printBackground:true}))
+    expect(printed.getPageCount()).toBe(1)
+    expect(printed.getPage(0).getSize()).toEqual({width:792,height:612})
+  }
+  await sheet.getByRole('combobox', { name:'Format' }).selectOption('detailed')
+  await expect(save).toBeEnabled()
+  if (browserName === 'chromium') {
+    const detailedPrint = await PDFDocument.load(await page.pdf({preferCSSPageSize:true,printBackground:true}))
+    expect(detailedPrint.getPage(0).getSize()).toEqual({width:612,height:792})
+  }
   await page.keyboard.press('Escape')
   await expect(sheet).toBeHidden()
   await expect(workspace).toBeVisible()

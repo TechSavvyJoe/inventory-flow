@@ -1,3 +1,4 @@
+import { getListingQr } from './takehome-qr.mjs'
 import { createComparisonPlan } from './takehome-comparison.mjs'
 // One customer-safe PDF renderer shared by the app and the companion. It takes
 // only takeHomeModel projections, never a bootstrap, hold or customer record.
@@ -125,34 +126,61 @@ export async function createTakeHomePdf(models, title, { fetcher = globalThis.fe
       }
       return result
     }
-    const plan=createComparisonPlan(selected,{wrap,safeLink:value=>safeHttps(value,base),photoSources,logoSources})
+    const qrCodes=new Map()
+    for(const model of selected) { const url=safeHttps(model.listingUrl,base);if(url && !qrCodes.has(url)) qrCodes.set(url,getListingQr(url)) }
+    const plan=createComparisonPlan(selected,{wrap,safeLink:value=>safeHttps(value,base),photoSources,logoSources,qrCodes})
     for(const record of plan.pages) {
-      const page=pdf.addPage([612,792])
-      const draw=(value,x,top,size,font=regular,color=INK)=>page.drawText(clean(value),{x,y:792-top-size,size,font,color})
-      const first=record.vehicles[0], logo=record.headerStore==='Bob Maxey'?null:assets.get(first.vin)?.logo
-      if(logo) {const scale=Math.min(130/logo.width,32/logo.height);page.drawImage(logo,{x:32,y:792-28-32,width:logo.width*scale,height:logo.height*scale})}
-      else draw(record.headerStore,32,28,12,bold,BLUE)
-      draw(record.headerTitle,390,28,12,bold)
-      if(record.headerSite) draw(record.headerSite,390,46,8.5,regular,MUTED)
-      page.drawLine({start:{x:32,y:724},end:{x:580,y:724},thickness:1.3,color:INK})
-      page.drawLine({start:{x:32,y:721},end:{x:124,y:721},thickness:2,color:BLUE})
+      const page=pdf.addPage([plan.width,plan.height]), pageHeight=plan.height
+      const draw=(value,x,top,size,font=regular,color=INK)=>page.drawText(clean(value),{x,y:pageHeight-top-size,size,font,color})
+      const first=record.vehicles.find(vehicle=>vehicle.logo?.src===record.headerLogo?.src), logo=record.headerLogo?assets.get(first?.vin)?.logo:null
+      if(logo) {const scale=Math.min(130/logo.width,28/logo.height);page.drawImage(logo,{x:32,y:pageHeight-plan.geometry.headerTop-28,width:logo.width*scale,height:logo.height*scale})}
+      else draw(record.headerStore,32,plan.geometry.headerTop,12,bold,BLUE)
+      const titleWidth=bold.widthOfTextAtSize(record.headerTitle,17)
+      draw(record.headerTitle,plan.width-32-titleWidth,plan.geometry.headerTop,17,bold)
+      if(record.headerSite) draw(record.headerSite,plan.width-32-regular.widthOfTextAtSize(record.headerSite,9),45,9,regular,MUTED)
+      page.drawLine({start:{x:32,y:pageHeight-plan.geometry.headerRuleTop},end:{x:plan.width-32,y:pageHeight-plan.geometry.headerRuleTop},thickness:1,color:LINE})
+      page.drawLine({start:{x:32,y:pageHeight-plan.geometry.headerRuleTop},end:{x:124,y:pageHeight-plan.geometry.headerRuleTop},thickness:2,color:BLUE})
       for(const row of record.rows) for(const [index,cell] of row.cells.entries()) {
         const column=record.columns[index], vehicle=record.vehicles[index]
         if(row.kind==='photo') {
-          page.drawRectangle({x:column.x,y:792-row.top-row.height,width:column.width,height:row.height-4,color:PALE,borderColor:LINE,borderWidth:.5})
+          page.drawRectangle({x:column.x,y:pageHeight-row.top-row.height,width:column.width,height:row.height,color:PALE})
           const photo=assets.get(vehicle.vin)?.photo
-          if(photo) {const scale=Math.min(column.width/photo.width,(row.height-4)/photo.height),w=photo.width*scale,h=photo.height*scale;page.drawImage(photo,{x:column.x+(column.width-w)/2,y:792-row.top-row.height+(row.height-4-h)/2,width:w,height:h})}
+          if(photo) {const scale=Math.min(column.width/photo.width,row.height/photo.height),w=photo.width*scale,h=photo.height*scale;page.drawImage(photo,{x:column.x+(column.width-w)/2,y:pageHeight-row.top-row.height+(row.height-h)/2,width:w,height:h})}
           else for(const [i,line] of wrap('Photo unavailable in this copy',column.width-16,10,false).entries()) draw(line,column.x+8,row.top+row.height/2-8+i*12.5,10,regular,MUTED)
           continue
         }
-        if(row.label) draw(row.label,column.x,row.top,row.labelSize,bold,MUTED)
-        cell.lines.forEach((line,lineIndex)=>draw(line,column.x,row.top+row.labelHeight+lineIndex*row.lineHeight,row.size,row.bold?bold:regular,row.kind==='price'||row.kind==='listing'?BLUE:INK))
-        if(row.kind==='fact') page.drawLine({start:{x:column.x,y:792-row.top-row.height+1},end:{x:column.x+column.width,y:792-row.top-row.height+1},thickness:.35,color:LINE})
-        if(cell.link) {const annotation=pdf.context.register(pdf.context.obj({Type:'Annot',Subtype:'Link',Rect:[column.x,792-row.top-row.height,column.x+column.width,792-row.top],Border:[0,0,0],A:{Type:'Action',S:'URI',URI:PDFString.of(cell.link)}}));page.node.normalizedEntries().Annots.push(annotation)}
+        if(row.kind==='qr') {
+          const offer=cell.offer
+          draw(row.label,column.x,row.top,9,regular,MUTED)
+          offer.priceLines.forEach((line,i)=>draw(line,column.x,row.top+offer.priceTop+i*offer.priceLineHeight,offer.priceSize,bold,BLUE))
+          offer.mileageLines.forEach((line,i)=>draw(line,column.x,row.top+offer.mileageTop+i*offer.metaLineHeight,offer.metaSize,regular))
+          offer.stockLines.forEach((line,i)=>draw(line,column.x,row.top+offer.stockTop+i*offer.metaLineHeight,offer.metaSize,regular,MUTED))
+          const qrX=column.x+column.width-offer.qrSize, qrTop=row.top+offer.qrTop
+          if(cell.qr) {
+            page.drawRectangle({x:qrX,y:pageHeight-qrTop-offer.qrSize,width:offer.qrSize,height:offer.qrSize,color:WHITE})
+            const unit=offer.qrSize/cell.qr.size
+            // One filled vector path avoids antialiased seams between adjacent modules.
+            const paths=[]
+            cell.qr.modules.forEach((moduleRow,ri)=>{
+              for(let ci=0;ci<moduleRow.length;ci++) {
+                if(!moduleRow[ci]) continue
+                const start=ci
+                while(ci+1<moduleRow.length && moduleRow[ci+1]) ci++
+                paths.push(`M${start} ${ri}h${ci-start+1}v1H${start}Z`)
+              }
+            })
+            page.drawSvgPath(paths.join(' '),{x:qrX,y:pageHeight-qrTop,scale:unit,color:rgb(0,0,0)})
+          }
+          cell.lines.forEach((line,i)=>draw(line,qrX,row.top+offer.captionTop+i*offer.captionLineHeight,offer.captionSize,regular,MUTED))
+        } else {
+          if(row.label) draw(row.label,column.x,row.top,row.labelSize,bold,BLUE)
+          cell.lines.forEach((line,lineIndex)=>draw(line,column.x,row.top+row.labelHeight+lineIndex*row.lineHeight,row.size,row.bold?bold:regular,row.kind==='certification'?BLUE:row.kind==='more'?MUTED:INK))
+        }
+        if(cell.link) {const annotation=pdf.context.register(pdf.context.obj({Type:'Annot',Subtype:'Link',Rect:[column.x+column.width-66,pageHeight-row.top-row.height,column.x+column.width,pageHeight-row.top],Border:[0,0,0],A:{Type:'Action',S:'URI',URI:PDFString.of(cell.link)}}));page.node.normalizedEntries().Annots.push(annotation)}
       }
-      page.drawLine({start:{x:32,y:65},end:{x:580,y:65},thickness:.5,color:LINE})
-      wrap(record.footerDisclaimer,548,8,false).forEach((line,index)=>draw(line,32,733+index*10,8,regular,MUTED))
-      draw(record.footerPage,32,764,8,regular,MUTED)
+      page.drawLine({start:{x:32,y:pageHeight-plan.geometry.footerTop},end:{x:plan.width-32,y:pageHeight-plan.geometry.footerTop},thickness:.5,color:LINE})
+      wrap(record.footerDisclaimer,plan.width-64,8,false).forEach((line,index)=>draw(line,32,plan.geometry.footerTop+5+index*10,8,regular,MUTED))
+      draw(record.footerPage,plan.width-32-regular.widthOfTextAtSize(record.footerPage,8),595,8,regular,MUTED)
     }
     comparisonObserver?.(plan)
     return new Blob([await pdf.save()],{type:'application/pdf'})

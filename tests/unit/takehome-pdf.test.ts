@@ -118,7 +118,7 @@ describe('shared customer PDF', () => {
   })
 
 
-  it.each([[2,1],[3,1],[4,2],[7,3]])('compares %i ordinary vehicles in %i portrait pages', async (count,pages) => {
+  it.each([[2,1],[3,1],[4,2],[7,3]])('compares %i ordinary vehicles in %i landscape pages', async (count,pages) => {
     const models=Array.from({length:count},(_,index)=>({...model,vin:`TESTDATASYN${String(index).padStart(6,'0')}`,stockNumber:`DEMO-${index}`,highlights:['Heated front seats','Adaptive cruise control','Remote start','Rear parking sensors']}))
     let plan:any
     const pdf=await load(await createTakeHomePdf(models,'CUSTOMER LABEL PRIVATE',{...options,layout:'comparison',comparisonObserver:value=>plan=value}))
@@ -126,7 +126,7 @@ describe('shared customer PDF', () => {
     expect(pdf.getTitle()).toBe('Bob Maxey vehicle comparison')
     expect(plan.pages.map(page=>page.vehicles.length)).toEqual(count===4?[2,2]:count===7?[3,2,2]:[count])
     expect(plan.pages.flatMap(page=>page.vehicles.map(vehicle=>vehicle.vin))).toEqual(models.map(model=>model.vin))
-    for(const page of plan.pages) for(const row of page.rows) expect(row.top+row.height).toBeLessThanOrEqual(714)
+    for(const page of plan.pages) for(const row of page.rows) expect(row.top+row.height).toBeLessThanOrEqual(548)
     const serialized=JSON.stringify(plan)
     expect(serialized).not.toContain('CUSTOMER LABEL PRIVATE')
     expect(serialized).not.toContain('2026-09-30')
@@ -141,7 +141,11 @@ describe('shared customer PDF', () => {
     expect(plan.pages.flatMap(page=>page.vehicles.map(vehicle=>vehicle.vin))).toEqual([model.vin,'TESTDATASYN000002'])
     expect(JSON.stringify(plan)).not.toContain('PRIVATE')
     const labels=plan.pages[0].rows.map(row=>row.label)
-    expect(labels).toEqual(expect.arrayContaining(['Selling price','Mileage','Stock number','Body style','Engine','Transmission','Fuel economy','Exterior color','Interior color']))
+    expect(labels).toEqual(expect.arrayContaining(['Selling price','Powertrain','Vehicle details']))
+    expect(plan.width).toBe(792);expect(plan.height).toBe(612)
+    const rows=plan.pages[0].rows.flatMap(row=>row.cells.flatMap(cell=>cell.lines)).join(' ')
+    expect(rows).toContain('Engine: 2.3L EcoBoost');expect(rows).toContain('Exterior: Carbonized Gray')
+    expect(rows).not.toContain(model.listingUrl)
   })
 
   it('preserves full pathological names, specifications and selected highlights across continuation pages', async () => {
@@ -154,12 +158,12 @@ describe('shared customer PDF', () => {
     const rows=plan.pages.flatMap(page=>page.rows)
     const join=(kind,label)=>rows.filter(row=>row.kind===kind && (label===undefined || row.label===label)).flatMap(row=>row.cells[0].lines).join(' ').replace(/\s/g,'')
     expect(join('name')).toBe(name.replace(/\s/g,''))
-    expect(join('fact','Engine')).toBe(engine.replace(/\s/g,''))
+    expect(join('specs','Powertrain')).toContain(engine.replace(/\s/g,''))
     expect(join('highlight')).toContain(highlight.replace(/\s/g,''))
     expect(join('highlight')).toContain('Fourthcompletehighlight')
-    expect(join('more')).toBe('Moreequipmentinthefulllisting.')
+    expect(join('more')).toBe('Moreequipmentavailableinthefulllisting.')
     expect(plan.pages.slice(1).every(page=>page.continued)).toBe(true)
-    for(const page of plan.pages) for(const row of page.rows) expect(row.top+row.height).toBeLessThanOrEqual(714)
+    for(const page of plan.pages) for(const row of page.rows) expect(row.top+row.height).toBeLessThanOrEqual(548)
   })
 
   it('falls back to a decoded photo and keeps broken images optional in comparisons', async () => {
@@ -185,6 +189,36 @@ describe('shared customer PDF', () => {
       expect(links).toEqual(listingUrl===model.listingUrl?[listingUrl]:[])
       expect(plan.pages[0].vehicles[0].listingUrl).toBe(listingUrl===model.listingUrl?listingUrl:null)
     }
+  })
+
+
+  it('prints a legible quiet-zone QR instead of an unreadable raw listing slug', async () => {
+    let plan:any
+    const url='https://example.com/inventory/2024-ford-explorer-active-TESTDATASYN000001'
+    const pdf=await load(await createTakeHomePdf([{...model,listingUrl:url}],'Customer private label',{...options,layout:'comparison',comparisonObserver:value=>plan=value}))
+    expect(pdf.getPage(0).getSize()).toEqual({width:792,height:612})
+    expect(plan.geometry).toEqual({headerTop:24,headerRuleTop:56,bodyTop:70,bodyBottom:548,footerTop:564})
+    const row=plan.pages[0].rows.find(row=>row.kind==='qr'),cell=row.cells[0]
+    expect(row.height).toBeGreaterThanOrEqual(90)
+    expect(cell.offer.qrSize).toBe(66)
+    expect(cell.qr.modules.length).toBe(cell.qr.size)
+    expect(cell.qr.modules.flat().some(Boolean)).toBe(true)
+    expect(cell.qr.modules.slice(0,4).flat().some(Boolean)).toBe(false)
+    expect(cell.qr.modules.slice(-4).flat().some(Boolean)).toBe(false)
+    expect(cell.qr.modules.every(line=>!line.slice(0,4).some(Boolean)&&!line.slice(-4).some(Boolean))).toBe(true)
+    expect(cell.lines.join(' ')).toBe('Scan vehicle details')
+    expect(cell.link).toBe(url)
+    expect(plan.pages[0].rows.flatMap(row=>row.cells.flatMap(cell=>cell.lines)).join(' ')).not.toContain(url)
+  })
+
+  it('keeps all eight published specifications in compact comparison groups', async () => {
+    const specs=[['Body','SuperCrew pickup'],['Drivetrain','Four-wheel drive'],['Engine','2.7L EcoBoost V6'],['Transmission','10-speed automatic'],['Fuel','Gasoline'],['Fuel economy','18 city / 24 hwy'],['Exterior','Carbonized Gray Metallic'],['Interior','Black cloth']]
+    let plan:any
+    const pdf=await load(await createTakeHomePdf(Array.from({length:3},(_,i)=>({...model,vin:`FULL-SPECS-${i}`,storeName:i===2?'Bob Maxey Ford in Fowlerville':model.storeName,certified:{name:'Ford Blue Certified'},equipment:['Additional factory option'],specs,highlights:['Heated front seats','Adaptive cruise control','Remote start','Trailer tow package']})),'Choices',{...options,layout:'comparison',comparisonObserver:value=>plan=value}))
+    expect(pdf.getPageCount()).toBe(1)
+    const text=plan.pages[0].rows.filter(row=>row.kind==='specs').flatMap(row=>row.cells[0].lines).join(' ')
+    for(const [,value] of specs) expect(text).toContain(value)
+    expect(plan.pages[0].rows.filter(row=>row.kind==='specs')).toHaveLength(2)
   })
 
   it('reports missing required fonts so the interface can offer a retry', async () => {
