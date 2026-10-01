@@ -76,7 +76,6 @@ export function buildEntry(vehicle) {
   field(fields, 'Next action', vehicle.movement?.nextAction, 18)
   field(fields, 'Change', vehicle.changeSummary, 10)
   for (const alias of numberAliases(vehicle.price, 'money')) field(fields, 'Price', alias, 25)
-  for (const alias of numberAliases(vehicle.msrp, 'money')) field(fields, 'MSRP', alias, 18)
   for (const alias of numberAliases(vehicle.mileage, 'mileage')) field(fields, 'Mileage', alias, 23)
   field(fields, 'Days listed', vehicle.daysListed, 12)
   for (const feature of vehicle.features) field(fields, 'Feature', feature, 16)

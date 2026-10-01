@@ -24,6 +24,14 @@ const MONEY = new Intl.NumberFormat('en-US', { style:'currency', currency:'USD',
 const DISCLAIMER = 'Price excludes tax, title, license and dealer fees. Confirm equipment, mileage and availability with the dealership before purchase.'
 const clean = value => String(value ?? '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
 
+/** Customer PDFs deliberately exclude every MSRP/reference-price field. */
+export function customerTakeHomePriceFacts(model) {
+  return [
+    model.mileage != null ? { label:'MILEAGE', value:`${model.mileage.toLocaleString('en-US')} mi` } : { label:'MILEAGE', value:'Not published' },
+    { label:'STOCK', value:clean(model.stockNumber) },
+  ]
+}
+
 async function bytes(url, fetcher) {
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 5000)
   try {
@@ -76,7 +84,7 @@ async function image(pdf, url, fetcher, base) {
   } catch { return null }
 }
 
-export async function createTakeHomePdf(models, title, { fetcher = globalThis.fetch, now = new Date(), base = globalThis.location?.href ?? 'https://inventory-ops.joegallant.me/' } = {}) {
+export async function createTakeHomePdf(models, title, { fetcher = globalThis.fetch, now = new Date(), base = globalThis.location?.href ?? 'https://inventory-ops.joegallant.me/', layoutObserver = null } = {}) {
   const selected = [...new Map(models.map(model => [model.vin, model])).values()]
   if (!selected.length) throw new Error('Choose a vehicle before preparing a PDF.')
   const pdf = await PDFDocument.create()
@@ -92,7 +100,7 @@ export async function createTakeHomePdf(models, title, { fetcher = globalThis.fe
   const pageWidth = 612, pageHeight = 792, margin = 32, width = pageWidth - 2 * margin, bottom = 72
   const pageRecords = []
   const measurements = new Map()
-  let page, y, currentModel, currentAssets, currentVehicleIndex = 0, currentVehiclePage = 0
+  let page, y, currentModel, currentAssets, currentVehicleIndex = 0, currentVehiclePage = 0, currentHeroHighlightCount = 0
 
   function measure(value, font, size) {
     const normalized = clean(value)
@@ -163,12 +171,6 @@ export async function createTakeHomePdf(models, title, { fetcher = globalThis.fe
     page.node.normalizedEntries().Annots.push(annotation)
   }
 
-  function displayDate(value) {
-    if (!value) return null
-    const parsed = new Date(value)
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toLocaleDateString('en-US')
-  }
-
   function drawBrandHeader() {
     const logo = currentAssets.logo
     if (logo) fitPhoto(logo, margin, y, 132, 34)
@@ -183,8 +185,9 @@ export async function createTakeHomePdf(models, title, { fetcher = globalThis.fe
     }
     const labelHeight = selected.length > 1 ? textRight(title, storeRight, y - 31, 310, 7.5, regular, MUTED) : 0
     y -= Math.max(43, 33 + labelHeight)
-    page.drawLine({ start:{ x:margin, y }, end:{ x:pageWidth - margin, y }, thickness:0.7, color:LINE })
-    y -= 9
+    page.drawLine({ start:{ x:margin, y }, end:{ x:pageWidth - margin, y }, thickness:1.4, color:INK })
+    page.drawLine({ start:{ x:margin, y:y - 2.5 }, end:{ x:margin + 92, y:y - 2.5 }, thickness:2.2, color:BLUE })
+    y -= 11
   }
 
   function newPage(continued = false, continuationLabel = 'Details continued') {
@@ -221,52 +224,82 @@ export async function createTakeHomePdf(models, title, { fetcher = globalThis.fe
 
   function drawHero() {
     const photos = currentAssets.photos
-    const hero = photos[0]
-    const heroHeight = hero ? 214 : 146
-    const photoWidth = 394, priceX = margin + 408, priceWidth = width - 408
+    const hero = photos[0], supporting = photos.slice(1, 3)
+    currentHeroHighlightCount = 0
+    const heroHeight = 214, photoWidth = 402, railGap = 12
+    const railX = margin + photoWidth + railGap, railWidth = width - photoWidth - railGap
     page.drawRectangle({ x:margin, y:y - heroHeight, width:photoWidth, height:heroHeight, color:PALE, borderColor:LINE, borderWidth:0.6 })
     if (hero) {
-      const thumbWidth = photos.length > 1 ? 58 : 0
-      const heroWidth = photos.length > 1 ? photoWidth - thumbWidth - 7 : photoWidth
-      coverPhoto(hero, margin, y, heroWidth, heroHeight)
-      if (photos.length > 1) {
-        const gap = 5, thumbHeight = (heroHeight - gap * 2) / 3
-        photos.slice(1, 4).forEach((photo, index) => coverPhoto(photo, margin + heroWidth + 7, y - index * (thumbHeight + gap), thumbWidth, thumbHeight))
-      }
+      coverPhoto(hero, margin, y, photoWidth, heroHeight)
     } else {
       text('Photo unavailable in this copy', margin + 18, y - heroHeight / 2 + 8, photoWidth - 36, 10, bold, MUTED)
       text('View the full listing for current photos.', margin + 18, y - heroHeight / 2 - 9, photoWidth - 36, 8.5, regular, MUTED)
     }
 
-    page.drawRectangle({ x:priceX, y:y - heroHeight, width:priceWidth, height:heroHeight, color:WHITE, borderColor:LINE, borderWidth:0.6 })
-    const inset = priceX + 12, inner = priceWidth - 24
-    text('PUBLISHED PRICE', inset, y - 13, inner, 7, bold, MUTED, 9)
-    text(currentModel.price != null ? MONEY.format(currentModel.price) : 'Call for price', inset, y - 29, inner, 19, bold, BLUE, 22)
-    let priceY = y - 60
-    if (currentModel.msrp != null) { text('MSRP', inset, priceY, 40, 7, regular, MUTED); textRight(MONEY.format(currentModel.msrp), priceX + priceWidth - 12, priceY, inner - 42, 8.5, bold); priceY -= 15 }
-    if (currentModel.savings) { text('UNDER MSRP', inset, priceY, 75, 7, regular, MUTED); textRight(MONEY.format(currentModel.savings), priceX + priceWidth - 12, priceY, inner - 70, 8.5, bold, BLUE); priceY -= 18 }
-    page.drawLine({ start:{ x:inset, y:priceY }, end:{ x:priceX + priceWidth - 12, y:priceY }, thickness:0.5, color:LINE }); priceY -= 10
-    text('MILEAGE', inset, priceY, inner, 7, bold, MUTED)
-    text(currentModel.mileage != null ? `${currentModel.mileage.toLocaleString('en-US')} mi` : 'Not published', inset, priceY - 14, inner, 9.5, bold)
-    priceY -= 40
-    text('STOCK', inset, priceY, inner, 7, bold, MUTED)
-    text(currentModel.stockNumber, inset, priceY - 14, inner, 8.5, bold)
+    const priceHeight = 91, inset = railX + 10, inner = railWidth - 20
+    page.drawRectangle({ x:railX, y:y - priceHeight, width:railWidth, height:priceHeight, color:WHITE, borderColor:LINE, borderWidth:0.6 })
+    text('PUBLISHED PRICE', inset, y - 10, inner, 6.5, bold, BLUE, 8)
+    text(currentModel.price != null ? MONEY.format(currentModel.price) : 'Call for price', inset, y - 24, inner, 17, bold, BLUE, 20)
+    page.drawLine({ start:{ x:inset, y:y - 55 }, end:{ x:railX + railWidth - 10, y:y - 55 }, thickness:0.5, color:LINE })
+    const facts = customerTakeHomePriceFacts(currentModel), factWidth = inner / 2
+    facts.forEach((fact, index) => {
+      const factX = inset + index * factWidth
+      text(fact.label, factX, y - 62, factWidth - 5, 6.2, bold, MUTED, 8)
+      text(fact.value, factX, y - 75, factWidth - 5, fact.label === 'STOCK' ? 7.5 : 8.2, bold, INK, 9)
+    })
+
+    const supportTop = y - priceHeight - 6, supportHeight = heroHeight - priceHeight - 6
+    if (supporting.length) {
+      const thumbGap = 5, thumbHeight = (supportHeight - thumbGap * (supporting.length - 1)) / supporting.length
+      supporting.forEach((photo, index) => coverPhoto(photo, railX, supportTop - index * (thumbHeight + thumbGap), railWidth, thumbHeight))
+    } else {
+      const headingHeight = 22, itemGap = 3, lineHeight = 9
+      const candidates = (currentModel.highlights ?? []).slice(0, 4).map(value => {
+        const wrapped = lines(`• ${value}`, railWidth, regular, 7.3)
+        return { value, wrapped, height:wrapped.length * lineHeight }
+      })
+      const fitted = []
+      let usedHeight = 0
+      for (const candidate of candidates) {
+        const requiredHeight = candidate.height + (fitted.length ? itemGap : 0)
+        if (usedHeight + requiredHeight > supportHeight - headingHeight) break
+        fitted.push(candidate); usedHeight += requiredHeight
+      }
+      currentHeroHighlightCount = fitted.length
+      const remaining = (currentModel.highlights ?? []).slice(currentHeroHighlightCount)
+      layoutObserver?.({
+        type:'hero-highlights', vehicleIndex:currentVehicleIndex, successfulPhotos:photos.length,
+        supportTop, supportBottom:supportTop - supportHeight, highlightBottom:supportTop - headingHeight - usedHeight,
+        fitted:fitted.map(item => item.value), remaining,
+      })
+      if (!fitted.length) { y -= heroHeight + 7; return }
+      page.drawLine({ start:{ x:railX, y:supportTop }, end:{ x:railX + railWidth, y:supportTop }, thickness:1.5, color:BLUE })
+      text('STANDOUT FEATURES', railX, supportTop - 8, railWidth, 6.4, bold, MUTED, 8)
+      let quickY = supportTop - 22
+      fitted.forEach((item, index) => {
+        if (index) quickY -= itemGap
+        drawLines(item.wrapped, railX, quickY, 7.3, regular, INK, lineHeight)
+        quickY -= item.height
+      })
+      if (quickY < supportTop - supportHeight) {
+        throw new Error('Take-home highlight rail exceeded its measured bounds.')
+      }
+    }
     y -= heroHeight + 7
   }
 
   function drawIdentity() {
-    const snapshot = displayDate(currentModel.publishedAt)
-    const historyDate = displayDate(currentModel.historyCapturedAt)
     const entries = [
-      `VIN ${currentModel.vin}`,
-      currentModel.history ? `${currentModel.history}${historyDate ? ` · report ${historyDate}` : ''}` : 'Vehicle history details available from the store',
-      snapshot ? `Inventory snapshot ${snapshot}` : 'Confirm current inventory with the store',
+      ['VIN', currentModel.vin],
+      ['VEHICLE HISTORY', currentModel.history || 'Details available from the store'],
     ]
-    const gap = 12, colWidth = (width - gap * 2) / 3, size = 7.3, lineHeight = 9.2
-    const wrapped = entries.map(entry => lines(entry, colWidth, regular, size))
-    const height = Math.max(...wrapped.map(item => item.length)) * lineHeight + 10
+    const gap = 14, columns = [width * .34, width * .66 - gap], size = 7.5, lineHeight = 9.5
+    const wrapped = entries.map(([, value], index) => lines(value, columns[index] - 8, regular, size))
+    const height = Math.max(...wrapped.map(item => item.length)) * lineHeight + 21
     page.drawRectangle({ x:margin, y:y - height, width, height, color:PALE })
-    wrapped.forEach((entry, index) => drawLines(entry, margin + 8 + index * (colWidth + gap), y - 5, size, index === 0 ? bold : regular, index === 0 ? INK : MUTED, lineHeight))
+    const positions = [margin + 8, margin + columns[0] + gap]
+    entries.forEach(([label], index) => text(label, positions[index], y - 5, columns[index] - 8, 6.3, bold, MUTED, 8))
+    wrapped.forEach((entry, index) => drawLines(entry, positions[index], y - 15, size, index === 0 ? bold : regular, index === 0 ? INK : MUTED, lineHeight))
     y -= height + 7
   }
 
@@ -277,7 +310,9 @@ export async function createTakeHomePdf(models, title, { fetcher = globalThis.fe
   function drawPairedOverview() {
     const gap = 22, colWidth = (width - gap) / 2, size = 8.5, lineHeight = 10.5
     const left = (currentModel.specs ?? []).map(([label, value]) => lines(`${label}: ${value}`, colWidth, regular, size))
-    const rightValues = currentModel.highlights?.length ? currentModel.highlights : ['Ask the store about installed equipment.']
+    const remainingHighlights = (currentModel.highlights ?? []).slice(currentHeroHighlightCount)
+    layoutObserver?.({ type:'overview-highlights', vehicleIndex:currentVehicleIndex, values:[...remainingHighlights] })
+    const rightValues = remainingHighlights.length ? remainingHighlights : ['See additional equipment below.']
     const right = rightValues.map(value => lines(`• ${value}`, colWidth, regular, size))
     const rows = Array.from({ length:Math.max(left.length, right.length) }, (_, index) => [left[index] ?? [], right[index] ?? []])
     const headingHeight = 19
@@ -356,10 +391,11 @@ export async function createTakeHomePdf(models, title, { fetcher = globalThis.fe
 
   for (const [modelIndex, model] of selected.entries()) {
     currentModel = model; currentVehicleIndex = modelIndex; currentVehiclePage = 0
+    const photoUrls = [...new Set(model.photos ?? [])].slice(0, 3)
     const loaded = await Promise.all([
-      image(pdf, model.photos?.[0], fetcher, base),
+      image(pdf, photoUrls[0], fetcher, base),
       image(pdf, (model.logo ?? model.brand)?.src, fetcher, base),
-      ...(model.photos ?? []).slice(1, 4).map(url => image(pdf, url, fetcher, base)),
+      ...photoUrls.slice(1).map(url => image(pdf, url, fetcher, base)),
     ])
     currentAssets = { logo:loaded[1], photos:[loaded[0], ...loaded.slice(2)].filter(Boolean) }
     newPage(false)
@@ -373,7 +409,8 @@ export async function createTakeHomePdf(models, title, { fetcher = globalThis.fe
     drawGridSection(`Additional equipment · ${equipment.length}`, equipment)
     drawParagraphSection('About this vehicle', currentModel.description)
     if (currentModel.certified) {
-      drawGridSection(currentModel.certified.name, currentModel.certified.terms ?? [], 2, 8.1, 10.3)
+      const certificationTerms = currentModel.certified.terms ?? []
+      drawGridSection(currentModel.certified.name, certificationTerms, certificationTerms.length > 1 ? 2 : 1, 8.1, 10.3)
       drawParagraphSection('Certification details', currentModel.certified.note, 8.1, MUTED)
     }
   }

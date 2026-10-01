@@ -4,6 +4,7 @@ import { ArrowRight, CheckCircle2, Info } from 'lucide-react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
+import { VehicleQuickFacts } from '../../components/VehicleQuickFacts'
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
 import { formatCurrency, formatDate, formatNumber } from '../../lib/format'
 import type { PublicChangeEvent, PublicChangeType } from '../../types'
@@ -71,7 +72,7 @@ export function InventoryUpdatesPage() {
         return <article key={event.id} role="listitem" className="updates-row">
           <div className="workflow-vehicle"><VehicleThumbnail vehicle={vehicle}/><div><strong>{event.vehicleName}</strong><small>Stock {event.stockNumber}</small><small>{event.vin}</small></div></div>
           <div className="updates-values">{view === 'price' ? <><del>{eventValue(event,event.beforeValue)}</del><strong>{eventValue(event,event.afterValue)}</strong>{delta !== null && delta !== 0 ? <span className={delta < 0 ? 'price-down' : 'price-up'}>{delta < 0 ? 'Down' : 'Up'} {formatCurrency(Math.abs(delta))}</span> : null}</> : view === 'new' ? <><span>Added {formatDate(event.reportDate)}</span><strong>{typeof vehicle?.listedPrice === 'number' ? formatCurrency(vehicle.listedPrice) : 'Price not published'}</strong></> : <><strong style={{fontSize: 14}}>{LABELS[event.type]}</strong><span>{event.field}</span><span>{eventValue(event,event.beforeValue)} → {eventValue(event,event.afterValue)}</span></>}</div>
-          <div className="updates-specs"><strong>{event.store}</strong>{typeof vehicle?.mileage === 'number' ? <span>{formatNumber(vehicle.mileage)} mi</span> : null}{vehicle && event.currentVehicle && view === 'new' ? <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} /> : null}</div>
+          <div className="updates-specs"><strong>{event.store}</strong>{typeof vehicle?.mileage === 'number' ? <span>{formatNumber(vehicle.mileage)} mi</span> : null}<VehicleQuickFacts vehicle={vehicle} />{vehicle && event.currentVehicle && view === 'new' ? <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} /> : null}</div>
           {event.currentVehicle ? <div className="updates-actions"><Link className="workflow-action workflow-action--primary" to={vehicleWorkspacePath(event.vin, { returnTo: currentWorkspaceReturnPath(location) })}>Vehicle details<ArrowRight aria-hidden="true"/></Link>{vehicle ? <div className="workflow-quick-actions"><Link to={vehicleWorkspacePath(event.vin, { tab: 'data', returnTo: currentWorkspaceReturnPath(location) })}>Records</Link>{view === 'new' ? <Link to={withWorkspaceReturnPath(`/service?vin=${encodeURIComponent(event.vin)}`, currentWorkspaceReturnPath(location))}>Service</Link> : null}</div> : null}</div> : <span className="updates-actions workflow-muted">No current listing</span>}
         </article>
       })}

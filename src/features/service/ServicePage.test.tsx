@@ -157,6 +157,56 @@ describe('Service readiness workspace', () => {
     expect(screen.queryByText('Synthetic Ford 001')).not.toBeInTheDocument()
   })
 
+  it('adds explicit vehicle, records, and manager service actions without nesting controls in the row button', () => {
+    const { container } = show('/service?status=needs_service')
+    const row = screen.getByRole('button', { name: /^Synthetic Ford 002Stock/ })
+    const actions = screen.getByRole('navigation', { name: 'Actions for Synthetic Ford 002' })
+    expect(row).toHaveAttribute('aria-pressed', 'false')
+    expect(row.contains(actions)).toBe(false)
+    expect(actions).toBe(row.nextElementSibling)
+    expect(screen.getByRole('link', { name: 'Open vehicle for Synthetic Ford 002' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0002&returnTo=%2Fservice%3Fstatus%3Dneeds_service')
+    expect(screen.getByRole('link', { name: 'Records for Synthetic Ford 002' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0002&tab=data&returnTo=%2Fservice%3Fstatus%3Dneeds_service')
+    expect(screen.getByRole('button', { name: 'Update service for Synthetic Ford 002' })).toBeInTheDocument()
+    expect(container.querySelector('.service-vehicle-row a, .service-vehicle-row button')).toBeNull()
+  })
+
+  it.each(['Open vehicle', 'Records'])('preserves the active store filter in the %s return path', async (action) => {
+    show('/service?status=serviced&store=Lincoln')
+    const link = await screen.findByRole('link', { name: `${action} for Synthetic Ford 003` })
+    await waitFor(() => {
+      const url = new URL(link.getAttribute('href')!, 'https://inventory.invalid')
+      expect(url.searchParams.get('returnTo')).toBe('/service?status=serviced&store=Lincoln')
+    })
+  })
+
+  it('opens service from the row action while preserving the current list state', async () => {
+    show('/service?status=needs_service')
+    fireEvent.click(screen.getByRole('button', { name: 'Update service for Synthetic Ford 002' }))
+    expect(await screen.findByRole('complementary', { name: 'Service for Synthetic Ford 002' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Synthetic Ford 002Stock/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('keeps an unsaved service draft when a different row action is declined', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    show('/service?status=needs_service&vin=TESTDATAHWELL0001')
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit note' }))
+    fireEvent.change(screen.getByLabelText(/Service note/), { target: { value: 'Finish inspection before changing vehicles' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Update service for Synthetic Ford 002' }))
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(screen.getByRole('complementary', { name: 'Service for Synthetic Ford 001' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Service note/)).toHaveValue('Finish inspection before changing vehicles')
+  })
+
+  it('shows read-only service actions when the server projection denies management', () => {
+    const vehicle = record('needs_service', 'Howell', '002')
+    vehicle.serviceReadiness = { ...vehicle.serviceReadiness!, canManage: false }
+    mocked.context.role = 'sales'
+    mocked.context.data = { meta: { reportDate: '2026-08-30' }, vehicles: [vehicle] }
+    show('/service?status=needs_service')
+    expect(screen.getByRole('button', { name: 'View service for Synthetic Ford 002' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Update service for Synthetic Ford 002' })).not.toBeInTheDocument()
+  })
+
   it('opens an Overview store count on that service store once, then lets the list widen again', async () => {
     mocked.context.data = { meta: { reportDate: '2026-08-30' }, vehicles: [record('serviced', 'Howell', '001'), record('serviced', 'Lincoln', '003'), record('serviced', 'Fowlerville', '004')] }
     show('/service?status=serviced&store=Lincoln')

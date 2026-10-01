@@ -71,7 +71,7 @@
 
   --fast: var(--motion-fast);
   --base: var(--motion-standard);
-  --slow: 280ms;
+  --slow: var(--motion-standard);
   --ease-out: var(--motion-enter);
   --ease-in: var(--motion-exit);
   --ease-inout: var(--motion-ease);
@@ -395,7 +395,6 @@ code { font: 500 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace; background:
 .tabs-ind { top: 6px; left: 0; height: calc(100% - 12px); }
 .tab { height: 44px; padding: 0 4px; font-size: 12px; }
 .tab-panel { padding: 10px var(--gutter) 6px; display: flex; flex-direction: column; gap: 10px; }
-.tab-panel.is-fresh { animation: panel-in var(--base) var(--ease-out); }
 @keyframes panel-in { from { opacity: 0; transform: translateY(4px); } }
 
 .card { border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: var(--card-pad); }
@@ -679,6 +678,13 @@ code { font: 500 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace; background:
 }
 
 .cert-logo { padding:0; border:0; background:transparent; color:var(--ink); max-width:100%; }
+.equipment-knowledge { border-top:var(--scan-rule) solid var(--line); margin-top:var(--scan-space); }
+.equipment-knowledge > summary { min-height:var(--control-target); display:flex; align-items:center; color:var(--blue); font-size:var(--t-body); font-weight:var(--scan-strong-weight); cursor:pointer; }
+.equipment-knowledge ul { list-style:none; padding:0; margin:0; }
+.equipment-knowledge li { display:grid; gap:var(--scan-gap-small); border-top:var(--scan-rule) solid var(--line); padding-block:var(--scan-space); color:var(--ink-2); font-size:var(--t-body); }
+.equipment-knowledge li > strong { color:var(--ink); font-weight:var(--scan-strong-weight); }
+.equipment-knowledge nav { display:grid; border-top:var(--scan-rule) solid var(--line); }
+.equipment-knowledge a { display:inline-flex; align-items:center; gap:var(--scan-gap-small); min-height:var(--control-target); color:var(--blue); font-size:var(--t-body); overflow-wrap:anywhere; }
 .cert-logo img { display:block; width:auto; height:30px; object-fit:contain; }
 .cert-logo.cert-lincoln { padding:3px 6px; background:var(--blue); }
 .cert-logo.cert-lincoln img { width:120px; height:27px; }

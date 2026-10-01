@@ -44,6 +44,15 @@ async function boot(records = [record()]) {
 }
 
 describe('companion concept vehicle workspace', () => {
+  it('does not present incomplete package and unavailable sticker markers as captured equipment', async () => {
+    await boot([{ ...record(), features: '', factoryEquipment: { dataState: 'incomplete', packages: [{ name: 'INCOMPLETE_PACKAGE_MARKER', features: ['INCOMPLETE_FEATURE_MARKER'] }] }, windowSticker: { dataState: 'unavailable', equipmentGroup: 'UNAVAILABLE_GROUP_MARKER' } }])
+    within(document.body).getByRole('tab', { name: 'Equipment', exact: true }).click()
+    const panel = document.querySelector('#tab-panel')
+    expect(panel).not.toHaveTextContent('INCOMPLETE_PACKAGE_MARKER')
+    expect(panel).not.toHaveTextContent('INCOMPLETE_FEATURE_MARKER')
+    expect(panel).not.toHaveTextContent('UNAVAILABLE_GROUP_MARKER')
+    expect(panel).toHaveTextContent('No equipment details are available')
+  })
   it('preserves ordered sticker option rows, explicit children and original price tokens', async () => {
     const options = ['Synthetic Equipment Group $1,200.00', '• Synthetic camera package', '. Connected navigation — 1-year trial', 'Synthetic transmission NO CHARGE', 'Synthetic radio trial 90 days', 'Synthetic radio trial 90 days', 'Paint code 2024']
     await boot([{ ...record(), windowSticker: { pricingCurrency: 'CAD', totalMsrp: 45000, options } }])
@@ -161,8 +170,8 @@ describe('companion concept vehicle workspace', () => {
       if (check.detail) expect(row?.querySelector('dd').textContent).toContain(check.detail)
     }
     expect(summary.textContent).toContain('Partial captured record')
-    expect(summary.textContent).toContain('Report run')
-    expect(summary.textContent).toContain('08/30/2026')
+    expect(summary.textContent).not.toContain('Report run')
+    expect(summary.textContent).not.toContain('08/30/2026')
     expect(summary.textContent).not.toContain('Certified pre-ownedClean')
   })
 
@@ -203,7 +212,7 @@ describe('companion concept vehicle workspace', () => {
     expect(facts()).toContain('Base MSRP')
     expect(facts()).not.toContain('WEIGHT FEE — CAD 100')
     expect(document.querySelectorAll('.detail-frequent-facts .d-fact')).toHaveLength(2)
-    expect(document.querySelector('.detail-full-specs').textContent).toContain('Inventory date')
+    expect(document.querySelector('.detail-full-specs').textContent).not.toContain('Inventory date')
     document.querySelector('#tab-records').click()
     expect(facts()).toContain('CAD 42,500')
     expect(document.querySelector('[data-record="window-sticker"]').textContent).toContain('WEIGHT FEE — CAD 100')
@@ -230,10 +239,10 @@ describe('companion concept vehicle workspace', () => {
     await vi.waitFor(() => expect(copyText).toHaveBeenCalled())
     const text = copyText.mock.calls[0][0]
     expect(text).toContain('Listed price: $32,000')
-    expect(text).toContain('Base MSRP: 42,500.5')
+    expect(text).toContain('vAuto base MSRP: 42,500.5')
     expect(text).toContain('Options total: 1,200')
     expect(text).toContain('Destination & delivery: 1,995')
-    expect(text).toContain('Equipment label total MSRP: 45,695.5')
+    expect(text).toContain('vAuto MSRP: 45,695.5')
     expect(text).not.toContain('Sticker total MSRP')
     expect(text).toContain('42,500.5')
     expect(document.querySelector('.detail-frequent-facts').textContent).toContain('42,500.5')
@@ -312,7 +321,8 @@ describe('companion concept vehicle workspace', () => {
   it('shows every equipment group without nested expanders', async () => {
     await boot()
     document.querySelector('#tab-equipment').click()
-    expect(document.querySelectorAll('#tab-panel details')).toHaveLength(0)
+    expect(document.querySelectorAll('#tab-panel .eq-ledger details')).toHaveLength(0)
+    expect(within(document.querySelector('#tab-panel')).getByText('Sales guide · packages & feature differences').closest('details')).not.toHaveAttribute('open')
     expect(document.querySelectorAll('.eq-ledger').length).toBeGreaterThan(0)
     expect(document.querySelector('#tab-panel').textContent).toContain('Synthetic heated seats')
   })

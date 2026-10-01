@@ -2,7 +2,7 @@ import { confirmUnsavedWork, useUnsavedChanges } from '../../lib/useUnsavedChang
 import { useWorkspaceLifetime } from '../../lib/useWorkspaceLifetime'
 import { useWorkspaceState, useWorkspaceScroll } from '../../lib/workspace-memory'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { ArrowLeft, CarFront, CheckCircle2, Wrench, X } from 'lucide-react'
+import { ArrowLeft, CarFront, CheckCircle2, FileText, Wrench, X } from 'lucide-react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { ApiError, getServiceReadiness, updateServiceReadiness } from '../../lib/api'
@@ -13,6 +13,7 @@ import { currentWorkspaceReturnPath, vehicleWorkspacePath, readWorkspaceReturnPa
 import { STORE_NAMES, type ServiceReadinessDetail, type ServiceReadinessStatus, type ServiceWorkflowStatus, type StoreName, type UserRole, type VehicleRecord } from '../../types'
 import { SourceWarning } from '../../components/SourceWarning'
 import { CopyableValue } from '../../components/CopyableValue'
+import { VehicleQuickFacts } from '../../components/VehicleQuickFacts'
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
 import { VehicleGallery } from '../inventory/VehicleGallery'
 import { ServiceVehicleContext } from './ServiceVehicleContext'
@@ -78,7 +79,7 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
   const configuration = [
     ['Engine / drive', [vehicle.engine, vehicle.drivetrain].filter(Boolean).join(' · ')],
     ['Transmission', vehicle.transmission],
-    ['Exterior', vehicle.exteriorColor],
+    ['Exterior / interior', [vehicle.exteriorColor, vehicle.interiorColor].filter(Boolean).join(' / ')],
     ['Fuel', vehicle.fuelType],
   ].filter(([, value]) => value)
 
@@ -236,6 +237,7 @@ export function ServicePage() {
   const { data, homeStore, role, currentUser, refresh } = useAppData()
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const returnTo = readWorkspaceReturnPath(params.get('returnTo'))
   const accessContext = `${currentUser}:${role}:${homeStore}`
   useWorkspaceScroll(accessContext, 'service')
@@ -272,6 +274,9 @@ export function ServicePage() {
     await refresh()
   }
   if (!data) return null
+  const returnParams = new URLSearchParams(location.search)
+  if (scope === 'all' && storeFilter) returnParams.set('store', storeFilter)
+  const returnPath = currentWorkspaceReturnPath({ ...location, search: returnParams.size ? `?${returnParams.toString()}` : '' })
   return <section className={`service-page${selected ? ' service-has-selection' : ''}${selected && returnTo ? ' service-from-vehicle' : ''}`}>
     <SourceWarning meta={data.meta} />
     <header className="service-page-heading"><h1><Wrench aria-hidden="true" size={25} />Service status</h1><div className="service-heading-controls"><div className="service-scope" role="group" aria-label="Service inventory scope"><button type="button" aria-pressed={scope === 'my_store'} onClick={() => { setScope('my_store'); setStoreFilter(null) }}>My store · {homeStore}</button><button type="button" aria-pressed={scope === 'all' && !storeFilter} onClick={() => { setScope('all'); setStoreFilter(null) }}>All stores</button></div></div></header>
@@ -283,11 +288,18 @@ export function ServicePage() {
       <div className="service-list-toolbar"><p>{STATUS_HELP[status]}</p><PredictiveSearchInput className="service-search" inputType="search" value={search} onChange={setSearch} ariaLabel="Search service vehicles" clearLabel="Clear service search" placeholder="Search stock, VIN, model" candidates={statusVehicles.map(vehicle => ({ id: vehicle.vin, label: vehicle.vehicleName, detail: `#${vehicle.stockNumber}`, value: vehicle.stockNumber, searchValues: [vehicle.vehicleName, vehicle.stockNumber, vehicle.vin, vehicle.searchText] }))} /></div>
       <p className="service-result-count" role="status">{vehicles.length} {vehicles.length === 1 ? 'vehicle' : 'vehicles'} · {scope === 'all' ? storeFilter ?? 'All stores' : homeStore}</p>
       {scope === 'all' && storeFilter ? <button type="button" className="service-store-filter" aria-label={`Clear service store filter: ${storeFilter}`} onClick={() => setStoreFilter(null)}>Store: {storeFilter}<X size={14} aria-hidden="true" /></button> : null}
-      {vehicles.length ? <ul className="service-list">{vehicles.map((vehicle) => <li key={vehicle.vin}><button className="service-vehicle-row" type="button" aria-pressed={selectedVin === vehicle.vin} onClick={() => selectVin(vehicle.vin)}>
-        <ServicePhoto key={vehicle.vin} vehicle={vehicle} /><span className="service-vehicle-info"><strong>{vehicle.vehicleName}</strong><span>Stock {vehicle.stockNumber} · {vehicle.serviceReadiness?.store ?? vehicle.homeStore}</span><small>{vehicle.vin}</small></span>
-        <span className="service-row-numbers"><strong>{vehicle.mileage != null ? `${formatNumber(vehicle.mileage)} mi` : 'Mileage unavailable'}</strong><span>{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : vehicle.inventoryDate ? `Listed ${displayDate(vehicle.inventoryDate)}` : ''}</span></span>
-        <span className={`service-status-badge service-status-${status}`}>{SERVICE_LABELS[status]}<small>{vehicle.serviceReadiness?.notes || (status === 'in_service' && vehicle.serviceReadiness?.serviceEnteredAt ? `Since ${displayDate(vehicle.serviceReadiness.serviceEnteredAt)}` : serviceEvidenceSummary(vehicle) || 'View & update')}</small></span>
-      </button></li>)}</ul> : <div className="service-empty"><CheckCircle2 size={28} /><h2>{search ? 'No matching vehicles' : EMPTY_TITLES[status]}</h2><p>{search ? 'Try a stock number, VIN, or model.' : 'Choose another status or expand to all stores.'}</p>{search ? <button type="button" onClick={() => setSearch('')}>Clear search</button> : scope === 'my_store' ? <button type="button" onClick={() => setScope('all')}>Search all stores</button> : null}</div>}
+      {vehicles.length ? <ul className="service-list">{vehicles.map((vehicle) => {
+        const serviceAction = vehicle.serviceReadiness?.canManage ? 'Update service' : 'View service'
+        return <li key={vehicle.vin} className="service-vehicle-entry"><button className="service-vehicle-row" type="button" aria-pressed={selectedVin === vehicle.vin} onClick={() => selectVin(vehicle.vin)}>
+          <ServicePhoto key={vehicle.vin} vehicle={vehicle} /><span className="service-vehicle-info"><strong>{vehicle.vehicleName}</strong><span>Stock {vehicle.stockNumber} · {vehicle.serviceReadiness?.store ?? vehicle.homeStore}</span><small>{vehicle.vin}</small><VehicleQuickFacts vehicle={vehicle} /></span>
+          <span className="service-row-numbers"><strong>{vehicle.mileage != null ? `${formatNumber(vehicle.mileage)} mi` : 'Mileage unavailable'}</strong><span>{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : ''}</span></span>
+          <span className={`service-status-badge service-status-${status}`}>{SERVICE_LABELS[status]}<small>{vehicle.serviceReadiness?.notes || (status === 'in_service' && vehicle.serviceReadiness?.serviceEnteredAt ? `Since ${displayDate(vehicle.serviceReadiness.serviceEnteredAt)}` : serviceEvidenceSummary(vehicle) || 'View & update')}</small></span>
+        </button><nav className="service-row-actions" aria-label={`Actions for ${vehicle.vehicleName}`}>
+          <Link aria-label={`Open vehicle for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { returnTo: returnPath })}><CarFront size={16} aria-hidden="true" />Open vehicle</Link>
+          <Link aria-label={`Records for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: returnPath })}><FileText size={16} aria-hidden="true" />Records</Link>
+          <button type="button" aria-label={`${serviceAction} for ${vehicle.vehicleName}`} onClick={() => selectVin(vehicle.vin)}><Wrench size={16} aria-hidden="true" />{serviceAction}</button>
+        </nav></li>
+      })}</ul> : <div className="service-empty"><CheckCircle2 size={28} /><h2>{search ? 'No matching vehicles' : EMPTY_TITLES[status]}</h2><p>{search ? 'Try a stock number, VIN, or model.' : 'Choose another status or expand to all stores.'}</p>{search ? <button type="button" onClick={() => setSearch('')}>Clear search</button> : scope === 'my_store' ? <button type="button" onClick={() => setScope('all')}>Search all stores</button> : null}</div>}
     </div>{selected && <ServiceEditor key={`${selected.vin}:${role}:${homeStore}`} vehicle={selected} role={role} store={homeStore} initialAction={STATUSES.includes(actionParam) ? actionParam : null} defaultDate={selected.vin.startsWith('TESTDATA') ? data.meta.reportDate : localToday()} onSaved={savedStatus} backLabel={returnTo ? workspaceReturnLabel(returnTo) : undefined} onBack={() => returnTo ? navigate(returnTo) : selectVin(null)} />}</div>
   </section>
 }

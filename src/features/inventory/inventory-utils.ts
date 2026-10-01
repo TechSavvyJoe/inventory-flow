@@ -2,6 +2,7 @@ import { displayDate } from "../../lib/date-display";
 import type { TransferRecord } from "../../types";
 import { serviceWorkflowStatus } from "../../lib/service-readiness";
 import { availableWindowStickerUrl } from "./vehicle-document-utils";
+import { factoryPricing } from "../../../extension/sidepanel/lib/factory-pricing.mjs";
 import type {
   DealerMailHoldSignal,
   InventoryFilters,
@@ -428,7 +429,7 @@ function sortValue(vehicle: InventoryVehicle, key: InventorySortKey): string | n
     case "price":
       return vehicle.price ?? null;
     case "msrp":
-      return vehicle.msrp ?? null;
+      return factoryPricing(vehicle).original.value;
     case "mileage":
       return vehicle.mileage ?? null;
     case "daysListed":
@@ -552,7 +553,7 @@ export const SORT_LABELS: Record<InventorySortKey, string> = {
   vin: "VIN",
   homeStore: "Home location",
   price: "Price",
-  msrp: "MSRP",
+  msrp: "Original MSRP",
   mileage: "Mileage",
   daysListed: "Days listed",
   inventoryDate: "Inventory date",

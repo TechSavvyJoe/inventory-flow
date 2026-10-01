@@ -6,6 +6,30 @@ import { expect, test } from '@playwright/test'
 const VIN = 'TESTDATAHWELL0001'
 const NAME = '2024 Ford F-150 Lariat'
 
+test('browser history restores the app after leaving nested take-home and vehicle dialogs', async ({ page }, testInfo) => {
+  await page.goto('/overview')
+  await page.getByRole('link', { name:'Inventory', exact:true }).filter({ visible:true }).click()
+  await expect(page.getByRole('combobox', { name:'Search inventory' })).toBeVisible()
+  await page.getByRole('button', { name:/^All:/ }).click()
+  await page.getByRole('combobox', { name:'Search inventory' }).fill(VIN)
+  if (testInfo.project.name === 'mobile') {
+    await page.locator('.if-srp-mobile-list .inventory-mobile-row__open', { hasText:NAME }).click()
+  } else {
+    await page.getByRole('row', { name:new RegExp(VIN) }).getByRole('button', { name:new RegExp(`Open vehicle details for ${NAME}`, 'i') }).click()
+  }
+  const workspace = page.getByRole('dialog', { name:`${NAME} vehicle workspace` })
+  await workspace.getByRole('button', { name:'Take-home page' }).click()
+  await expect(page.getByRole('dialog', { name:/Take-home page/ })).toBeVisible()
+  await page.evaluate(() => history.go(-2))
+  await expect(page).toHaveURL(/\/overview$/)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.locator('#root')).not.toHaveAttribute('inert')
+  await expect(page.locator('#root')).not.toHaveAttribute('aria-hidden', 'true')
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe('')
+  await page.getByRole('link', { name:'Inventory', exact:true }).filter({ visible:true }).click()
+  await expect(page.getByRole('combobox', { name:'Search inventory' })).toBeVisible()
+})
+
 test('inventory search opens the VIN-specific premium document workspace', async ({ page }, testInfo) => {
   await page.goto('/inventory')
 

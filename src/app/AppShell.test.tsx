@@ -78,15 +78,24 @@ describe('AppShell account and update controls', () => {
     ])
   })
 
-  it('lets a verified group manager change working stores', () => {
+  it('lets a verified group manager change working stores without waiting for a browser snapshot', () => {
     const context = useAppDataMock()
     useAppDataMock.mockReturnValue({ ...context, data: { ...context.data, access: { role: 'group_manager', store: 'Howell', canPreviewStores: true } } })
-    const { unmount } = render(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory</p></AppShell></MemoryRouter>)
-    const groupStore = screen.getByRole('combobox', { name: 'Working location' })
-    expect(groupStore).toBeEnabled()
-    fireEvent.change(groupStore, { target: { value: 'Ford Detroit' } })
-    expect(context.setHomeStore).toHaveBeenCalledWith('Ford Detroit')
-    unmount()
+    const original = Object.getOwnPropertyDescriptor(document, 'startViewTransition')
+    const capture = vi.fn(() => ({finished:Promise.resolve()}))
+    Object.defineProperty(document, 'startViewTransition', {configurable:true,value:capture})
+    try {
+      const { unmount } = render(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory</p></AppShell></MemoryRouter>)
+      const groupStore = screen.getByRole('combobox', { name: 'Working location' })
+      expect(groupStore).toBeEnabled()
+      fireEvent.change(groupStore, { target: { value: 'Ford Detroit' } })
+      expect(context.setHomeStore).toHaveBeenCalledWith('Ford Detroit')
+      expect(capture).not.toHaveBeenCalled()
+      unmount()
+    } finally {
+      if (original) Object.defineProperty(document, 'startViewTransition', original)
+      else Reflect.deleteProperty(document, 'startViewTransition')
+    }
   })
 
   it('portals the modal outside the app shell, isolates the page, and restores opener focus', async () => {

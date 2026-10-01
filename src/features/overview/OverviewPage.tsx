@@ -1,10 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { ChevronDown, ClipboardCheck, FileText, MapPin, Printer, Wrench } from 'lucide-react'
+import { ChevronDown, ChevronRight, ClipboardCheck, FileText, MapPin, Printer, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAppData } from '../../app/AppDataContext'
 import { SourceWarning } from '../../components/SourceWarning'
-import { formatDate, formatDateTime } from '../../lib/format'
+import { VehicleThumbnail } from '../../components/VehicleThumbnail'
+import { formatCurrency, formatDate, formatDateTime, formatNumber } from '../../lib/format'
+import { vehicleWorkspacePath } from '../../lib/inventory-navigation'
 import { useWorkspaceState } from '../../lib/workspace-memory'
 import type {
   AppDispositionCode,
@@ -17,8 +19,10 @@ import type {
   OverviewVehicleFacts,
   StoreName,
   UserRole,
+  VehicleIssue,
   VehicleRecord,
 } from '../../types'
+import { ISSUE_CATEGORIES, ISSUE_STATUSES } from '../issues/issue-model'
 import {
   actionCenterHref,
   dispositionView,
@@ -50,8 +54,8 @@ import {
   type WhereFilter,
 } from './overview-selectors'
 import { DispositionDialog } from './DispositionDialog'
+import { SalesOverview } from './SalesOverview'
 import { defaultDispositionDate, DISPOSITION_LABELS, DISPOSITION_QUALIFIER, dispositionSummary, managerLogLine } from './disposition-model'
-import { StoreBoard } from './StoreBoard'
 import './overview.css'
 
 const ROLE_LABELS: Partial<Record<UserRole, string>> = {
@@ -61,7 +65,7 @@ const ROLE_LABELS: Partial<Record<UserRole, string>> = {
 }
 
 const PHONE_ROWS = 5
-const AGED_ROWS = 10
+const AGED_ROWS = 3
 /** OVERVIEW_SPEC §10: the printed snapshot lists this many where-rows; `.ov-where .ov-rows` hides the rest in print. */
 const PRINT_ROWS = 15
 /** A media query as a useSyncExternalStore source; false where matchMedia is missing. */
@@ -79,9 +83,6 @@ function mediaQuery(query: string) {
 
 /** Matches the stylesheet's single-column breakpoint. */
 const PHONE = mediaQuery('(max-width: 880px)')
-/** Matches overview.css: from this width the sections sit in two columns. */
-const WIDE = mediaQuery('(min-width: 1181px)')
-
 type Tone = 'danger' | 'warning'
 
 interface CountSpec {
@@ -325,7 +326,7 @@ function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, c
 function median(metric: { value: number | null; n: number }): string {
   if (metric.value === null) return '—'
   const value = Number.isInteger(metric.value) ? metric.value : metric.value.toFixed(1)
-  return `${value} d (n=${metric.n})`
+  return `${value} days · ${plural(metric.n, 'vehicle')}`
 }
 
 function intakeShare(metrics: OverviewServiceStoreMetrics): string {
@@ -338,73 +339,88 @@ function ServiceCount({ count, status, store, label }: { count: number; status: 
   return <Link to={serviceStatusHref(status, store)} aria-label={`${store ?? 'All stores'}: ${plural(count, 'vehicle')} ${label}`}>{count}</Link>
 }
 
-function ServiceMetricsRow({ metrics, store }: { metrics: OverviewServiceStoreMetrics; store?: StoreName }) {
+function ServiceWorkloadRow({ metrics, store, thresholds }: { metrics: OverviewServiceStoreMetrics; store?: StoreName; thresholds: readonly number[] }) {
   return (
     <tr className={store ? undefined : 'ov-service-group'}>
       <th scope="row">{store ?? 'All stores'}</th>
       <td data-label="Waiting"><ServiceCount count={metrics.counts.waitingForService} status="needs_service" store={store} label="waiting for service" /></td>
       <td data-label="In service"><ServiceCount count={metrics.counts.inService} status="in_service" store={store} label="in service" /></td>
       <td data-label="Ready"><ServiceCount count={metrics.counts.ready} status="serviced" store={store} label="ready" /></td>
-      <td data-label="Median receipt → start">{median(metrics.medians.receiptToStartDays)}</td>
-      <td data-label="Median in service">{median(metrics.medians.inServiceDays)}</td>
-      <td data-label="Median receipt → Ready">{median(metrics.medians.receiptToReadyDays)}</td>
-      <td data-label="Waiting 14+ / 30+">{metrics.agedWaiting14} / {metrics.agedWaiting30}</td>
-      <td data-label="Arrival dates from intake">{intakeShare(metrics)}</td>
+      <td data-label={`Waiting ${thresholds[0]}+ days`} className={metrics.agedWaiting14 ? 'ov-tone-warning' : 'ov-service-muted'}>{metrics.agedWaiting14}</td>
+      <td data-label={`Waiting ${thresholds[1]}+ days`} className={metrics.agedWaiting30 ? 'ov-tone-danger' : 'ov-service-muted'}>{metrics.agedWaiting30}</td>
     </tr>
   )
 }
 
-function ServiceSection({ data, overview, stores, fullAccess, reportMode, onReport }: { data: BootstrapData; overview: OverviewSummary; stores: StoreName[]; fullAccess: boolean; reportMode: boolean; onReport: () => void }) {
+function ServiceTimingRow({ metrics, store, thresholds }: { metrics: OverviewServiceStoreMetrics; store?: StoreName; thresholds: readonly number[] }) {
+  return (
+    <tr className={store ? undefined : 'ov-service-group'}>
+      <th scope="row">{store ?? 'All stores'}</th>
+      <td data-label="Arrival to service start">{median(metrics.medians.receiptToStartDays)}</td>
+      <td data-label="Time in service">{median(metrics.medians.inServiceDays)}</td>
+      <td data-label="Arrival to ready">{median(metrics.medians.receiptToReadyDays)}</td>
+      <td data-label="Arrival dates from intake">{intakeShare(metrics)}</td>
+      <td data-label={`Waiting ${thresholds[0]}+ days`}>{metrics.agedWaiting14}</td>
+      <td data-label={`Waiting ${thresholds[1]}+ days`}>{metrics.agedWaiting30}</td>
+    </tr>
+  )
+}
+
+function ServiceSection({ data, overview, stores, fullAccess, reportMode, printing, onReport }: { data: BootstrapData; overview: OverviewSummary; stores: StoreName[]; fullAccess: boolean; reportMode: boolean; printing: boolean; onReport: () => void }) {
   const service = overview.service
   const [showAllAged, setShowAllAged] = useState(false)
+  const [showTiming, setShowTiming] = useState(false)
   if (!service) return null
   const perStore = stores.flatMap((store) => service.perStore.filter((entry) => entry.store === store))
   const basis = stores.length === 1 ? perStore[0]?.basis ?? service.group.basis : service.group.basis
-  const aged = agedWaitingRows(data, overview, stores)
-  const visibleAged = reportMode || showAllAged ? aged : aged.slice(0, AGED_ROWS)
+  const aged = agedWaitingRows(data, overview, stores).sort((left, right) => right.waitingDays - left.waitingDays)
+  const visibleAged = printing || reportMode || showAllAged ? aged : aged.slice(0, AGED_ROWS)
   const [waitingFrom, waitingLong] = overview.thresholds.serviceWaitingDays
+  const timingExpanded = printing || reportMode || showTiming
+  const scopeMetrics = stores.length === 1 ? perStore[0] : service.group
   return (
     <section className={`ov-section ov-service${reportMode ? ' is-report' : ''}`} aria-labelledby="ov-service-title">
       <header className="ov-section-heading">
         <h2 id="ov-service-title">Service</h2>
         <button type="button" className="ov-button" onClick={onReport}><Printer aria-hidden="true" />Open report</button>
       </header>
-      <div className="ov-table-wrap">
-        <table className="ov-table" aria-labelledby="ov-service-title">
+      <div className="ov-service-layout">
+      <div className="ov-service-workload">
+        <div className="ov-service-aged-summary" aria-label="Long service waits">
+          <span><strong>{scopeMetrics?.agedWaiting14 ?? 0}</strong> waiting {waitingFrom}+ days</span>
+          <span><strong>{scopeMetrics?.agedWaiting30 ?? 0}</strong> waiting {waitingLong}+ days</span>
+        </div>
+        <table className="ov-table ov-service-counts" aria-label="Service workload">
           <thead>
             <tr>
               <th scope="col">Store</th>
               <th scope="col">Waiting</th>
               <th scope="col">In service</th>
               <th scope="col">Ready</th>
-              <th scope="col">Median receipt → start</th>
-              <th scope="col">Median in service</th>
-              <th scope="col">Median receipt → Ready</th>
-              <th scope="col">Waiting {waitingFrom}+ / {waitingLong}+</th>
-              <th scope="col">Arrival dates from intake</th>
+              <th scope="col">Waiting <br />{waitingFrom}+ days</th>
+              <th scope="col">Waiting <br />{waitingLong}+ days</th>
             </tr>
           </thead>
           <tbody>
-            {perStore.map((entry) => <ServiceMetricsRow key={entry.store} metrics={entry} store={entry.store} />)}
-            {stores.length > 1 ? <ServiceMetricsRow metrics={service.group} /> : null}
+            {perStore.map((entry) => <ServiceWorkloadRow key={entry.store} metrics={entry} store={entry.store} thresholds={overview.thresholds.serviceWaitingDays} />)}
+            {stores.length > 1 ? <ServiceWorkloadRow metrics={service.group} thresholds={overview.thresholds.serviceWaitingDays} /> : null}
           </tbody>
         </table>
+        <p className="ov-section-note">Counts reflect recorded service status. {waitingLong}+ days is included in {waitingFrom}+ days.</p>
       </div>
-      <p className="ov-section-note">Arrival uses verified arrival or public listing dates; listing dates can lag physical receipt. Days listed is listing age, not lot age.</p>
-      <p className="ov-basis">
-        Basis: {basis.manager_updated} manager-recorded · {basis.ford_service_history_inspection} Ford Certified Blue Oval · {basis.autocheck_post_intake_inspection} AutoCheck inspection · {basis.new_arrival} new arrival · {basis.unconfirmed} unconfirmed · {basis.legacy_review} legacy review
-      </p>
-      <h3 className="ov-subheading">Waiting {waitingFrom}+ days</h3>
+      <div className="ov-service-priority">
+      <header className="ov-service-priority-heading"><h3 className="ov-subheading">Longest waiting</h3><span>{plural(aged.length, 'vehicle')} · {waitingFrom}+ days</span></header>
       {aged.length ? (
         <ul className="ov-rows">
           {visibleAged.map((entry) => {
             const name = entry.vehicle?.vehicleName ?? entry.vin
             return (
-              <li key={entry.vin} className="ov-row">
+              <li key={entry.vin} className="ov-row ov-service-vehicle">
+                <VehicleThumbnail vehicle={entry.vehicle} className="ov-service-photo" />
                 <div className="ov-row-main">
                   <strong>{name}</strong>
-                  <span className="ov-row-meta">{entry.vehicle ? `#${entry.vehicle.stockNumber} · ` : ''}{entry.store ?? 'Service store not set'}</span>
-                  <span className={`ov-row-details${entry.waitingDays >= waitingLong ? ' ov-tone-danger' : ''}`}><span>Waiting {plural(entry.waitingDays, 'day')}{entry.facts?.service.arrivalDate ? ` · ${arrivalText(entry.facts.service)}` : ''}</span></span>
+                  <span className="ov-row-meta">{entry.vehicle ? `Stock ${entry.vehicle.stockNumber} · ` : ''}{entry.store ?? 'Service store not set'}{entry.vehicle?.mileage != null ? ` · ${formatNumber(entry.vehicle.mileage)} mi` : ''}</span>
+                  <span className={`ov-service-wait${entry.waitingDays >= waitingLong ? ' ov-tone-danger' : ' ov-tone-warning'}`}>Waiting {plural(entry.waitingDays, 'day')}<span>{entry.arrivalBasis === 'intake' ? 'From recorded arrival' : entry.arrivalBasis === 'listing_date' ? 'From listing date; arrival unconfirmed' : 'Arrival date unconfirmed'}</span></span>
                 </div>
                 <div className="ov-row-actions">
                   <RecordsLink vin={entry.vin} facts={entry.facts} name={name} />
@@ -418,9 +434,25 @@ function ServiceSection({ data, overview, stores, fullAccess, reportMode, onRepo
       {aged.length > AGED_ROWS && !reportMode ? (
         <div className="ov-show-all">
           {showAllAged ? null : <button type="button" className="ov-button" onClick={() => setShowAllAged(true)}>Show all {aged.length}</button>}
-          <Link className="ov-row-link" to={serviceStatusHref('needs_service')}>Open Waiting for service</Link>
+          <Link className="ov-row-link" to={serviceStatusHref('needs_service', stores.length === 1 ? stores[0] : undefined)}>Open Waiting for service</Link>
         </div>
       ) : null}
+      </div>
+      </div>
+      <div className="ov-service-details">
+        <button type="button" className="ov-service-disclosure" aria-expanded={timingExpanded} aria-controls="ov-service-timing" onClick={() => setShowTiming(!showTiming)}><span>Service timing &amp; evidence</span><ChevronDown aria-hidden="true" /></button>
+        {timingExpanded ? <div id="ov-service-timing" className="ov-service-timing">
+          <p className="ov-section-note">Median days, with the number of vehicles used in each calculation. A dash means no complete dates are recorded.</p>
+          <div className="ov-table-wrap"><table className="ov-table" aria-label="Service timing & evidence">
+            <thead><tr><th scope="col">Store</th><th scope="col">Arrival to service start</th><th scope="col">Time in service</th><th scope="col">Arrival to ready</th><th scope="col">Arrival dates from intake</th><th scope="col">Waiting {waitingFrom}+ days</th><th scope="col">Waiting {waitingLong}+ days</th></tr></thead>
+            <tbody>{perStore.map((entry) => <ServiceTimingRow key={entry.store} metrics={entry} store={entry.store} thresholds={overview.thresholds.serviceWaitingDays} />)}{stores.length > 1 ? <ServiceTimingRow metrics={service.group} thresholds={overview.thresholds.serviceWaitingDays} /> : null}</tbody>
+          </table></div>
+          <p className="ov-section-note">Arrival uses verified arrival or public listing dates; listing dates can lag physical receipt. Days listed is listing age, not lot age.</p>
+          <dl className="ov-service-basis">
+            {[[ 'Manager-recorded', basis.manager_updated ], [ 'Ford service inspection', basis.ford_service_history_inspection ], [ 'AutoCheck inspection', basis.autocheck_post_intake_inspection ], [ 'New arrival', basis.new_arrival ], [ 'Unconfirmed', basis.unconfirmed ], [ 'Legacy review', basis.legacy_review ]].map(([label, count]) => <div key={label}><dt>{label}</dt><dd>{count}</dd></div>)}
+          </dl>
+        </div> : null}
+      </div>
     </section>
   )
 }
@@ -516,31 +548,6 @@ function WhereSection({ rows, stores, holdsVerified, printing, filter, onFilter 
       {unprinted > 0 ? <p className="ov-print-only ov-print-more">and {plural(unprinted, 'more vehicle')} {filter === 'away' ? 'away from home' : `in ${label.toLowerCase()}`}</p> : null}
     </section>
   )
-}
-
-/**
- * On a wide screen the store board is secondary: it sits at the foot of
- * whichever column of daily lists is shorter (where + exceptions, or
- * dispositions). The board itself is never measured, so the choice cannot
- * feed back on itself; the daily sections never change column.
- */
-function useBoardUnderDispositions(columnsRef: RefObject<HTMLElement | null>, active: boolean) {
-  const [underDispositions, setUnderDispositions] = useState(false)
-  useLayoutEffect(() => {
-    const container = columnsRef.current
-    if (!active || !container || typeof ResizeObserver === 'undefined') return
-    const sections = ['.ov-where', '.ov-exceptions', '.ov-dispositions'].map((selector) => container.querySelector<HTMLElement>(selector))
-    const place = () => {
-      const [where, exceptions, dispositions] = sections.map((section) => section?.getBoundingClientRect().height ?? 0)
-      const gap = Number.parseFloat(getComputedStyle(container).rowGap) || 0
-      setUnderDispositions(dispositions < where + gap + exceptions)
-    }
-    place()
-    const observer = new ResizeObserver(place)
-    for (const section of sections) if (section) observer.observe(section)
-    return () => observer.disconnect()
-  }, [columnsRef, active])
-  return active && underDispositions
 }
 
 interface DispositionRow {
@@ -656,13 +663,200 @@ function DispositionsSection({ overview, rows, stores, status, enabled, onOpen }
   )
 }
 
+type WorkQueueView = 'issues' | 'location' | 'service' | 'holds' | 'exceptions' | 'dispositions'
+
+const WORK_QUEUE_VIEWS: Array<{ value: WorkQueueView; label: string }> = [
+  { value: 'issues', label: 'Vehicle issues' },
+  { value: 'location', label: 'Location & moves' },
+  { value: 'service', label: 'Service' },
+  { value: 'holds', label: 'Hold evidence' },
+  { value: 'exceptions', label: 'Exceptions' },
+  { value: 'dispositions', label: 'Dispositions' },
+]
+
+const WORK_QUEUE_ROWS = 4
+
+function VehicleValue({ vehicle }: { vehicle?: VehicleRecord }) {
+  if (!vehicle) return null
+  const values = [
+    vehicle.listedPrice != null ? formatCurrency(vehicle.listedPrice) : null,
+    vehicle.mileage != null ? `${formatNumber(vehicle.mileage)} mi` : null,
+    vehicle.daysListed != null ? `${plural(vehicle.daysListed, 'day')} listed` : null,
+  ].filter(Boolean)
+  return values.length ? <span className="ov-work-value">{values.join(' · ')}</span> : null
+}
+
+function WorkQueueRow({ vehicle, fallbackName, stockNumber, work, detail, owner, status, tone, actionLabel, actionHref, onAction, showVehicleLink = true }: {
+  vehicle?: VehicleRecord
+  fallbackName: string
+  stockNumber?: string
+  work: string
+  detail: string
+  owner: string
+  status: string
+  tone?: Tone
+  actionLabel: string
+  actionHref?: string
+  onAction?: (opener: HTMLElement) => void
+  showVehicleLink?: boolean
+}) {
+  const name = vehicle?.vehicleName ?? fallbackName
+  const stock = vehicle?.stockNumber ?? stockNumber
+  return (
+    <li className="ov-work-row">
+      <div className="ov-work-vehicle">
+        <VehicleThumbnail vehicle={vehicle} className="ov-work-photo" />
+        <div>
+          <strong>{name}</strong>
+          {stock ? <span>Stock {stock}</span> : null}
+          <VehicleValue vehicle={vehicle} />
+        </div>
+      </div>
+      <div className="ov-work-detail">
+        <strong>{work}</strong>
+        <p>{detail}</p>
+      </div>
+      <div className="ov-work-owner">
+        <span>Owner / status</span>
+        <strong>{owner}</strong>
+        <small className={tone ? `ov-tone-${tone}` : undefined}>{status}</small>
+      </div>
+      <div className="ov-work-actions">
+        {actionHref ? <Link className="ov-work-primary" to={actionHref}>{actionLabel}<ChevronRight aria-hidden="true" /></Link> : null}
+        {onAction ? <button type="button" className="ov-work-primary" onClick={(event) => onAction(event.currentTarget)}>{actionLabel}<ChevronRight aria-hidden="true" /></button> : null}
+        {showVehicleLink && vehicle ? <Link className="ov-work-secondary" to={vehicleWorkspacePath(vehicle.vin, { returnTo: '/overview' })}>Vehicle details</Link> : null}
+      </div>
+    </li>
+  )
+}
+
+function issueAction(issue: VehicleIssue, enabled: boolean): { label: string; href: string } {
+  const canReview = enabled && issue.status === 'awaiting_review' && issue.allowedActions.includes('complete')
+  const canManage = enabled && issue.allowedActions.length > 0
+  const label = canReview ? 'Review work' : canManage ? 'Manage issue' : 'View issue'
+  const params = new URLSearchParams({ category: 'issues', issue: issue.id })
+  if (canReview) params.set('action', 'complete')
+  return { label, href: `/attention?${params.toString()}` }
+}
+
+function OverviewWorkQueue({ data, overview, rows, stores, scope, fullAccess, holdsVerified, dispositionsEnabled, onDispositionOpen }: {
+  data: BootstrapData
+  overview: OverviewSummary
+  rows: OverviewRow[]
+  stores: StoreName[]
+  scope: OverviewScope
+  fullAccess: boolean
+  holdsVerified: boolean
+  dispositionsEnabled: boolean
+  onDispositionOpen: (vin: string, opener: HTMLElement) => void
+}) {
+  const vehicles = useMemo(() => new Map(data.vehicles.map((vehicle) => [vehicle.vin, vehicle])), [data.vehicles])
+  const issues = useMemo(() => (data.vehicleIssues ?? [])
+    .filter((issue) => stores.includes(issue.reportStore) && issue.status !== 'completed')
+    .sort((left, right) => Number(right.priority === 'urgent') - Number(left.priority === 'urgent') ||
+      Number(right.status === 'awaiting_review') - Number(left.status === 'awaiting_review') ||
+      right.updatedAt.localeCompare(left.updatedAt, 'en-US')), [data.vehicleIssues, stores])
+  const locations = useMemo(() => whereRows(rows, 'unaccounted', stores), [rows, stores])
+  const service = useMemo(() => whereRows(rows, 'waiting', stores), [rows, stores])
+  const holds = useMemo(() => whereRows(rows, 'holds', stores), [rows, stores])
+  const exceptions = useMemo(() => exceptionRows(overview, stores), [overview, stores])
+  const dispositions = useMemo(() => dispositionRows(rows, overview, stores), [rows, overview, stores])
+  const queueCounts: Record<WorkQueueView, number> = {
+    issues: issues.length,
+    location: locations.length,
+    service: service.length,
+    holds: holds.length,
+    exceptions: exceptions.reduce((total, exception) => total + exception.count, 0),
+    dispositions: dispositions.length,
+  }
+  const [view, setView] = useState<WorkQueueView>(() => WORK_QUEUE_VIEWS.find((entry) => queueCounts[entry.value] > 0)?.value ?? 'issues')
+
+  let content: ReactNode
+  if (view === 'issues') {
+    content = issues.slice(0, WORK_QUEUE_ROWS).map((issue) => {
+      const action = issueAction(issue, data.vehicleIssuesEnabled === true)
+      return <WorkQueueRow key={issue.id} vehicle={vehicles.get(issue.vin)} fallbackName={issue.vehicleName} stockNumber={issue.stockNumber}
+        work={`${ISSUE_CATEGORIES[issue.category]}${issue.priority === 'urgent' ? ' · Urgent' : ''}`} detail={issue.description}
+        owner={issue.assignee ?? 'Unassigned'} status={`${ISSUE_STATUSES[issue.status]} · updated ${formatDateTime(issue.updatedAt)}`}
+        tone={issue.priority === 'urgent' ? 'danger' : undefined} actionLabel={action.label} actionHref={`${action.href}&scope=${scope}`} />
+    })
+  } else if (view === 'location') {
+    content = locations.slice(0, WORK_QUEUE_ROWS).map(({ vehicle, facts }) => {
+      const reason = facts.unaccounted ? UNACCOUNTED_TEXT[facts.unaccounted.reason] : custodyText(facts)
+      const detail = [custodyText(facts), daysAwayText(facts), facts.returnDueAt ? `Return due ${formatDate(facts.returnDueAt)}` : null].filter(Boolean).join(' · ')
+      const transferId = vehicle.movement.transferId
+      return <WorkQueueRow key={vehicle.vin} vehicle={vehicle} fallbackName={vehicle.vehicleName} work={reason} detail={detail}
+        owner={`Home ${vehicle.homeStore}`} status={facts.returnOverdue ? 'Return overdue' : 'Location needs confirmation'} tone={facts.returnOverdue ? 'danger' : 'warning'}
+        actionLabel={transferId ? 'Open move' : 'Check location'} actionHref={locationHref(vehicle.vin, transferId)} />
+    })
+  } else if (view === 'service') {
+    content = service.slice(0, WORK_QUEUE_ROWS).map(({ vehicle, facts }) => (
+      <WorkQueueRow key={vehicle.vin} vehicle={vehicle} fallbackName={vehicle.vehicleName} work="Waiting for service"
+        detail={[facts.service.waitingDays !== undefined ? `Waiting ${plural(facts.service.waitingDays, 'day')}` : null, arrivalText(facts.service)].filter(Boolean).join(' · ') || 'Arrival timing not recorded'}
+        owner={facts.service.store ?? vehicle.homeStore} status={facts.service.waitingDays !== undefined ? `${plural(facts.service.waitingDays, 'day')} waiting` : 'Waiting time not recorded'}
+        tone={facts.service.waitingDays !== undefined && facts.service.waitingDays >= overview.thresholds.serviceWaitingDays[1] ? 'danger' : undefined}
+        actionLabel={fullAccess ? 'Update service' : 'View service'} actionHref={serviceVehicleHref(vehicle.vin)} />
+    ))
+  } else if (view === 'holds') {
+    content = holds.slice(0, WORK_QUEUE_ROWS).map(({ vehicle, facts }) => (
+      <WorkQueueRow key={vehicle.vin} vehicle={vehicle} fallbackName={vehicle.vehicleName} work={vehicle.hold.label}
+        detail={`${holdsVerified ? 'Current' : 'Last-verified'} DealerMail evidence · confirm with the home store`}
+        owner={vehicle.crmStore ?? vehicle.homeStore} status={facts.holdPastExpected ? 'Past expected date' : 'Hold evidence recorded'} tone={facts.holdPastExpected ? 'warning' : undefined}
+        actionLabel="Open hold evidence" actionHref={vehicleWorkspacePath(vehicle.vin, { tab: 'hold', returnTo: '/overview' })} />
+    ))
+  } else if (view === 'exceptions') {
+    content = exceptions.slice(0, WORK_QUEUE_ROWS).map((exception) => {
+      const vehicle = exception.vins.map((vin) => vehicles.get(vin)).find((candidate): candidate is VehicleRecord => Boolean(candidate))
+      const exceptionTone = EXCEPTION_TONE[exception.kind]
+      const label = exception.kind === 'stale_confirmation' ? `Not confirmed for ${overview.thresholds.unaccountedAfterDays}+ days` : EXCEPTION_COPY[exception.kind].label
+      return <WorkQueueRow key={`${exception.kind}:${exception.store}`} vehicle={vehicle} fallbackName={`${exception.store} inventory`} work={label}
+        detail={EXCEPTION_COPY[exception.kind].why(overview.thresholds)} owner={exception.store} status={plural(exception.count, 'vehicle')}
+        tone={exceptionTone === 'neutral' ? undefined : exceptionTone}
+        actionLabel={`Review ${plural(exception.count, 'vehicle')}`} actionHref={exceptionHref(exception)} showVehicleLink={Boolean(vehicle)} />
+    })
+  } else {
+    content = dispositions.slice(0, WORK_QUEUE_ROWS).map(({ vehicle, ownerStore, moveDelivered }) => {
+      const disposition = vehicle.appDisposition
+      const evidence = managerLogLine(vehicle.managerDisposition)
+      const action = !dispositionsEnabled ? null : disposition?.canManage
+        ? disposition.code ? 'Change disposition' : 'Record disposition'
+        : disposition?.code ? 'View disposition' : null
+      return <WorkQueueRow key={vehicle.vin} vehicle={vehicle} fallbackName={vehicle.vehicleName} work={dispositionSummary(disposition)}
+        detail={evidence ?? (moveDelivered ? 'A move records customer delivery; no disposition has been recorded.' : DISPOSITION_QUALIFIER)}
+        owner={`${ownerStore} manager`} status={moveDelivered ? 'Delivery evidence needs review' : disposition?.code ? `Effective ${formatDate(disposition.effectiveDate ?? undefined)}` : 'Decision not recorded'}
+        tone={moveDelivered ? 'warning' : undefined} actionLabel={action ?? 'Open vehicle'}
+        onAction={action ? (opener) => onDispositionOpen(vehicle.vin, opener) : undefined}
+        actionHref={action ? undefined : vehicleWorkspacePath(vehicle.vin, { returnTo: '/overview' })} showVehicleLink={Boolean(action)} />
+    })
+  }
+
+  return (
+    <section className="ov-work-queue" aria-labelledby="ov-work-title">
+      <header className="ov-work-heading">
+        <div><h2 id="ov-work-title">Work queue</h2><p>Vehicle-level work and evidence in this scope.</p></div>
+        <Link className="ov-button" to={`/attention?${view === 'issues' ? 'category=issues&' : ''}scope=${scope}`}>{view === 'issues' ? 'Vehicle issue log' : 'Open Action center'}<ChevronRight aria-hidden="true" /></Link>
+      </header>
+      <div className="ov-work-tabs" role="group" aria-label="Overview work queue">
+        {WORK_QUEUE_VIEWS.map((entry) => <button key={entry.value} type="button" aria-label={`${entry.label} ${queueCounts[entry.value]}`} aria-pressed={view === entry.value} onClick={() => setView(entry.value)}>{entry.label}<span>{queueCounts[entry.value]}</span></button>)}
+      </div>
+      <div className="ov-work-columns" aria-hidden="true"><span>Vehicle / value</span><span>Work</span><span>Owner / status</span><span>Next action</span></div>
+      {queueCounts[view] ? <ul className="ov-work-rows">{content}</ul> : <p className="ov-work-empty">No {WORK_QUEUE_VIEWS.find((entry) => entry.value === view)!.label.toLowerCase()} in this scope.</p>}
+      {queueCounts[view] > WORK_QUEUE_ROWS ? <p className="ov-work-more">Showing {WORK_QUEUE_ROWS} of {queueCounts[view]} items. Open the full ledger from the row action or section below.</p> : null}
+    </section>
+  )
+}
+
 export function OverviewPage() {
-  const { data, homeStore, role, currentUser, refresh } = useAppData()
-  const accessContext = `${currentUser}:${role}:${homeStore}`
+  const { data, homeStore, role, currentUser, currentUserId, refresh } = useAppData()
+  const accessContext = JSON.stringify([currentUserId, currentUser, role, homeStore])
+  const [presentationChoice, setPresentationChoice] = useState<{ context: string; value: 'sales' | 'operations' } | null>(null)
+  // An employee or role change gets its own default before the first render;
+  // a previous employee's presentation choice never carries across identities.
+  const presentation = presentationChoice?.context === accessContext ? presentationChoice.value : role === 'sales' ? 'sales' : 'operations'
   const [scope, setScope] = useWorkspaceState<OverviewScope>(accessContext, 'overview.scope', role === 'group_manager' ? 'group' : 'home')
   const [serviceReport, setServiceReport] = useState(false)
   const [printing, setPrinting] = useState(false)
-  // One filter drives the where list and the store board's pin numbers.
+  // The filter drives the operational location ledger below the work queue.
   const [whereFilter, setWhereFilter] = useState<WhereFilter>('away')
   const [dispositionVin, setDispositionVin] = useState<string | null>(null)
   const [dispositionStatus, setDispositionStatus] = useState('')
@@ -670,9 +864,6 @@ export function OverviewPage() {
   // does not focus a clicked button, so the dialog cannot rely on activeElement).
   const dispositionOpener = useRef<HTMLElement | null>(null)
   const phone = useSyncExternalStore(PHONE.subscribe, PHONE.matches, () => false)
-  const wide = useSyncExternalStore(WIDE.subscribe, WIDE.matches, () => false)
-  const columnsRef = useRef<HTMLDivElement>(null)
-  const boardUnderDispositions = useBoardUnderDispositions(columnsRef, wide && !printing && Boolean(data?.overview))
   // Printing from the browser menu gets the same full snapshot as the button.
   useEffect(() => {
     const before = () => flushSync(() => setPrinting(true))
@@ -706,11 +897,6 @@ export function OverviewPage() {
   const managerLog = data.meta.managerDispositionFreshness && data.meta.managerDispositionFreshness !== 'current'
     ? ` · Manager log ${freshnessWord(data.meta.managerDispositionFreshness).toLowerCase()}` : ''
   const asOf = `As of ${formatDate(overview.asOfDay)} · Holds ${freshnessWord(data.meta.dealerMailFreshness).toLowerCase()} · Website ${freshnessWord(data.meta.publicFreshness).toLowerCase()}${managerLog}`
-  const scopedIssues = (data.vehicleIssues ?? []).filter((issue) => stores.includes(issue.reportStore))
-  const openIssueCount = scopedIssues.filter((issue) => issue.status !== 'completed').length
-  const reviewIssueCount = scopedIssues.filter((issue) => issue.status === 'awaiting_review').length
-  const urgentIssueCount = scopedIssues.filter((issue) => issue.status !== 'completed' && issue.priority === 'urgent').length
-
   function printSnapshot() {
     flushSync(() => setPrinting(true))
     window.print()
@@ -724,21 +910,11 @@ export function OverviewPage() {
   }
 
   const where = <WhereSection key="where" rows={rows} stores={stores} holdsVerified={holdsVerified} printing={printing} filter={whereFilter} onFilter={setWhereFilter} />
-  const board = <StoreBoard key="board" overview={overview} homeStore={homeStore} role={role} metric={whereFilter} collapsible={phone && !printing} />
   const exceptions = <ExceptionsSection key="exceptions" overview={overview} stores={stores} />
   const dispositions = (
     <DispositionsSection key="dispositions" overview={overview} rows={rows} stores={stores} status={dispositionStatus} enabled={dispositionsEnabled}
       onOpen={(vin, opener) => { dispositionOpener.current = opener; setDispositionStatus(''); setDispositionVin(vin) }} />
   )
-  // A wide screen keeps the daily lists in fixed columns (where and
-  // exceptions; dispositions) and puts the compact store board at the foot of
-  // the shorter one. Narrower screens and print stack the two wrappers as one
-  // column in phone reading order: where, board, exceptions, dispositions.
-  // Where and dispositions keep their wrapper and key in every layout, so
-  // their show-all state survives a switch.
-  const columns = !wide || printing ? [[where, board], [exceptions, dispositions]]
-    : boardUnderDispositions ? [[where, exceptions], [dispositions, board]] : [[where, exceptions, board], [dispositions]]
-
   return (
     <section className={`ov-page${serviceReport ? ' is-service-report' : ''}`} aria-labelledby="ov-title">
       <header className="ov-header">
@@ -758,15 +934,15 @@ export function OverviewPage() {
 
       <SourceWarning meta={data.meta} />
 
-      <section className="ov-issue-entry" aria-label="Vehicle issues summary">
-        <div className="ov-issue-title"><ClipboardCheck aria-hidden="true" /><div><h2>Vehicle issues</h2><p>Reported by employees in this scope</p></div></div>
-        <dl className="ov-issue-counts">
-          <div><dt>Open</dt><dd>{openIssueCount}</dd></div>
-          <div><dt>Awaiting review</dt><dd>{reviewIssueCount}</dd></div>
-          <div className={urgentIssueCount ? 'ov-tone-danger' : undefined}><dt>Urgent</dt><dd>{urgentIssueCount}</dd></div>
-        </dl>
-        <Link className="ov-button" to={`/attention?category=issues&scope=${scope}`}><ClipboardCheck aria-hidden="true"/>Vehicle issue log</Link>
-      </section>
+      <div className="ov-scope" role="group" aria-label="Overview presentation">
+        <button type="button" aria-pressed={presentation === 'sales'} onClick={() => setPresentationChoice({ context: accessContext, value: 'sales' })}>Sales workspace</button>
+        <button type="button" aria-pressed={presentation === 'operations'} onClick={() => setPresentationChoice({ context: accessContext, value: 'operations' })}>Store operations</button>
+      </div>
+
+      {presentation === 'sales' ? <SalesOverview data={data} stores={stores} homeStore={homeStore} role={role} currentUserId={currentUserId ?? null} printing={printing} /> : <>
+      <OverviewWorkQueue data={data} overview={overview} rows={rows} stores={stores} scope={scope} fullAccess={fullAccess}
+        holdsVerified={holdsVerified} dispositionsEnabled={dispositionsEnabled}
+        onDispositionOpen={(vin, opener) => { dispositionOpener.current = opener; setDispositionStatus(''); setDispositionVin(vin) }} />
 
       <section className={`ov-stores${stores.length === 1 ? ' ov-stores--single' : ''}`} aria-label="Store summary">
         {storeCards(overview, stores).map((counts) => (
@@ -774,11 +950,13 @@ export function OverviewPage() {
         ))}
       </section>
 
-      <div className="ov-columns" ref={columnsRef}>
-        {columns.map((sections, index) => <div key={index} className="ov-column">{sections}</div>)}
+      <div className="ov-columns">
+        <div className="ov-column">{where}{exceptions}</div>
+        <div className="ov-column">{dispositions}</div>
       </div>
 
-      <ServiceSection data={data} overview={overview} stores={stores} fullAccess={fullAccess} reportMode={serviceReport} onReport={printServiceReport} />
+      <ServiceSection data={data} overview={overview} stores={stores} fullAccess={fullAccess} reportMode={serviceReport} printing={printing} onReport={printServiceReport} />
+      </>}
 
       <footer className="ov-print-only ov-print-footer">Counts are app records and source evidence as of the times shown. Nothing here asserts availability; confirm holds and location with the home store.</footer>
       {dispositionVehicle ? (

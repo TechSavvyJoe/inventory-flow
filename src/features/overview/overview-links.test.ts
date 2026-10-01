@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   actionCenterHref,
-  boardFlowHref,
   dispositionView,
   exceptionHref,
   inventoryViewHref,
@@ -65,8 +64,7 @@ describe('Overview link contract (OVERVIEW_SPEC §8.4)', () => {
     expect(readOverviewInventoryRequest(new URLSearchParams('store=Howell&view=disposition-sold-pending'))).toEqual({ overviewView: { view: 'disposition-sold-pending', store: 'Howell' } })
   })
 
-  it('links a board arrow to exactly its leg, and reads only a complete, valid route', () => {
-    expect(boardFlowHref({ from: 'Howell', to: 'Ford Detroit', kind: 'outbound' })).toBe('/transfers?from=Howell&to=Ford+Detroit&leg=outbound')
+  it('reads only a complete, valid legacy move route', () => {
     expect(readBoardRoute(new URLSearchParams('from=Howell&to=Ford+Detroit&leg=outbound'))).toEqual({ from: 'Howell', to: 'Ford Detroit', leg: 'outbound' })
     for (const bad of ['from=Howell&to=Howell&leg=outbound', 'from=Howell&to=Nowhere&leg=planned', 'from=Howell&to=Lincoln&leg=sideways', 'from=Howell&to=Lincoln']) {
       expect(readBoardRoute(new URLSearchParams(bad)), bad).toBeNull()

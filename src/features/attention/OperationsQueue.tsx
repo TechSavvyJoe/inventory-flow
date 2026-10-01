@@ -6,6 +6,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { CopyableValue } from '../../components/CopyableValue'
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
+import { VehicleQuickFacts } from '../../components/VehicleQuickFacts'
 import { formatCurrency, formatDate, formatDateTime, formatNumber } from '../../lib/format'
 import { serviceStatusLabel } from '../../lib/service-readiness'
 import type { AttentionEventInput, AttentionItem, BootstrapData, StoreName, UserRole, VehicleRecord } from '../../types'
@@ -35,6 +36,7 @@ function TaskVehicle({ item, vehicle }: { item: AttentionItem; vehicle?: Vehicle
   return <div className="workflow-vehicle action-vehicle"><VehicleThumbnail vehicle={vehicle}/><div className="action-vehicle-summary">
     <strong>{vehicle?.vehicleName || item.vehicleName || item.store || 'Store inventory'}</strong>
     {value ? <p className="action-vehicle-value">{value}</p> : null}
+    <VehicleQuickFacts vehicle={vehicle} />
     {vehicle ? <p className="action-vehicle-readiness">{[serviceStatusLabel(vehicle.serviceReadiness), location].filter(Boolean).join(' · ')}</p> : null}
     {homeStore && homeStore !== currentStore ? <small>Home: {homeStore}</small> : null}
     {item.count ? <small>{item.count} {item.count === 1 ? 'vehicle' : 'vehicles'}</small> : null}

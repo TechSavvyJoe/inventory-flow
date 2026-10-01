@@ -26,7 +26,7 @@ Design and implementation notes are in [Brand architecture](docs/BRAND_ARCHITECT
 
 Authenticated employee-owned customer lists retain VIN references in the central service and can be opened from the web app and companion. Labels use initials or nicknames; customer contacts stay in DealerMail. Missing vehicles remain saved with unavailable details. Transient network failures retain the last confirmed list; access changes clear protected views. The saved-list storage and paired Workers were activated in [release 1.4.0](docs/RELEASE_1_4_0.md); that record separates deployed checks from remaining employee/device acceptance.
 
-Customer take-home documents support one or multiple vehicles, larger photos, public specifications and equipment, dealership branding, Print/Save as PDF, downloadable HTML and native Share when available. Sharing falls back to public listing links or saving the document. Private hold, movement and manager evidence stays out of customer documents.
+Customer take-home documents support one or multiple vehicles, larger photos, public specifications and equipment, dealership branding, Print, Save PDF and native PDF Share when available. Sharing falls back to saving the PDF. Selling price is shown; original and base MSRP remain in the employee inventory table and VDP. Private hold, movement and manager evidence stays out of customer documents.
 
 ## Release 1.3.0: consistent workspaces and mobile reliability
 

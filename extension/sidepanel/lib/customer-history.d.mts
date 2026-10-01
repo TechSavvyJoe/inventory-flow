@@ -1,0 +1,1 @@
+export function customerHistorySummary(history?: { dataState?: string; score?: number | null; ownerCount?: number | null; checks?: Array<{ label: string; status?: string | null; detail?: string | null }> } | null): string | null;

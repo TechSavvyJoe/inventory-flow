@@ -125,9 +125,8 @@ export function useContainedFocus({
       window.cancelAnimationFrame(frame)
       const target = returnFocusRef?.current ?? returnFocus
       // Restore synchronously when possible, then retry after the next paint.
-      // WebKit can otherwise keep focus on a removed portal while a surrounding
-      // view transition is committing, leaving the original launch control
-      // inactive after the dialog is gone.
+      // WebKit can otherwise keep focus on a removed portal while background
+      // isolation is clearing, leaving the original launch control inactive.
       const restoreFocus = () => {
         if (target?.isConnected) target.focus({ preventScroll: true })
       }

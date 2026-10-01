@@ -92,15 +92,6 @@ export function dispositionView(code: AppDispositionCode | 'none'): OverviewInve
 export type BoardLeg = OverviewBoardFlow['kind']
 const BOARD_LEGS: readonly BoardLeg[] = ['outbound', 'return', 'planned']
 
-/**
- * A store-board arrow: Vehicle moves narrowed to exactly that arrow's leg.
- * `from`/`to` are the arrow's drawn direction (a return runs from the
- * destination back to the home store).
- */
-export function boardFlowHref(flow: Pick<OverviewBoardFlow, 'from' | 'to' | 'kind'>): string {
-  return query('/transfers', [['from', flow.from], ['to', flow.to], ['leg', flow.kind]])
-}
-
 export interface BoardRoute { from: StoreName; to: StoreName; leg: BoardLeg }
 
 /** Reads a board arrow's Moves parameters; null unless all three are valid. */

@@ -55,24 +55,33 @@ async function withHowellUnitsAway(page: Page) {
   })
 }
 
-test('on a phone the home card core counts and the first away row share the first viewport', async ({ page }) => {
+test('on a phone an actionable vehicle leads the single-column overview and store evidence follows', async ({ page }) => {
   await signInAs(page, 'manager')
   await withHowellUnitsAway(page)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/overview')
+  const queue = page.getByRole('region', { name: 'Work queue' })
+  const selectedTab = queue.getByRole('button', { pressed: true })
+  await expect(selectedTab).not.toHaveAccessibleName(/ 0$/)
+  const firstAction = queue.locator('.ov-work-row').first().getByRole('link').first()
+  await expect(firstAction).toBeInViewport()
+  const fold = await page.evaluate(() => document.documentElement.clientHeight)
+  const queueBox = (await queue.boundingBox())!
+  expect(queueBox.y + queueBox.height).toBeLessThanOrEqual(fold)
+
   const summary = page.getByRole('region', { name: 'Store summary' })
   // Earlier specs in the same run may record real moves on the shared demo
-  // ledger, so the count is not pinned; the layout is what this test covers.
-  await expect(summary.getByRole('link', { name: /^Howell: \d+ vehicles? away from home$/ })).toBeInViewport()
+  // ledger, so the count is not pinned; the reading order is what this covers.
+  await expect(summary.getByRole('link', { name: /^Howell: \d+ vehicles? away from home$/ })).toBeVisible()
   const more = summary.getByText('More counts')
   await expect(more).toBeVisible()
   await expect(summary.getByRole('link', { name: /with records incomplete$/ })).toBeHidden()
   const where = page.getByRole('region', { name: 'Where is my inventory' })
   const firstRow = where.getByRole('listitem').first()
   await expect(firstRow).toContainText(/Away · at /)
-  const fold = await page.evaluate(() => document.documentElement.clientHeight)
-  const box = (await firstRow.boundingBox())!
-  expect(box.y + box.height).toBeLessThanOrEqual(fold)
+  const readingOrder = await page.locator('.ov-page > *').evaluateAll(elements => elements.map(element => element.className))
+  expect(readingOrder.findIndex(className => className.includes('ov-work-queue')))
+    .toBeLessThan(readingOrder.findIndex(className => className.includes('ov-stores')))
 
   await more.click()
   await expect(summary.getByRole('link', { name: /with records incomplete$/ })).toBeVisible()
@@ -107,7 +116,11 @@ test('sales open the Overview read-only, with no manager actions', async ({ page
   await page.goto('/overview')
   await expect(page).toHaveURL(/\/overview$/)
   await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible()
-  await expect(page.getByText('Read-only')).toBeVisible()
+  await expect(page.getByText('Read-only', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sales workspace', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('region', { name: 'Store summary' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Store operations', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Store summary' })).toBeVisible()
   await expect(page.getByRole('link', { name: /^Update service/ })).toHaveCount(0)
   await expect(page.getByRole('link', { name: /back home$/ })).toHaveCount(0)
 })
@@ -125,31 +138,41 @@ test('the phone rail is Overview · Inventory · Actions · Service · More, wit
   await expect(more.getByRole('link', { name: /Vehicle moves/ })).toBeVisible()
 })
 
-// Slice B (OVERVIEW_SPEC §4, §6.10, §15.8): the store board, the disposition dialog and its two entry points.
+// Overview decision links, the disposition dialog and its two entry points.
 
-test('store-board pins and arrows open exactly the list behind them', async ({ page }) => {
+test('work-queue tabs support the keyboard and open the exact vehicle action behind them', async ({ page }) => {
   await signInAs(page, 'group_manager')
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/overview')
-  const board = page.getByRole('region', { name: 'Store board' })
-  await expect(board.getByRole('img', { name: /^Store board Schematic of the four stores, not a map\./ })).toBeVisible()
-  const pin = board.getByRole('link', { name: /^Store board pin, Howell: \d+ vehicles? away from home$/ })
-  await expect(pin).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=away')
-  await pin.click()
-  await expect(page).toHaveURL(/\/inventory\?scope=group$/)
-  await expect(page.getByRole('button', { name: 'Clear Overview view: Away from home · Howell' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Store board' })).toHaveCount(0)
+  const queue = page.getByRole('region', { name: 'Work queue' })
+  const serviceTab = queue.getByRole('button', { name: /^Service \d+$/ })
+  await serviceTab.focus()
+  await page.keyboard.press('Enter')
+  await expect(serviceTab).toHaveAttribute('aria-pressed', 'true')
+  const action = queue.getByRole('link', { name: /^Update service$/ }).first()
+  const actionHref = await action.getAttribute('href')
+  expect(actionHref).toMatch(/^\/service\?vin=TESTDATA[A-Z0-9]+&returnTo=%2Foverview$/)
+  await action.click()
+  const serviceUrl = new URL(actionHref!, 'https://inventory.invalid')
+  await expect(page).toHaveURL(new RegExp(`/service\\?vin=${serviceUrl.searchParams.get('vin')}&returnTo=%2Foverview$`))
   await page.goBack()
   await expect(page).toHaveURL(/\/overview$/)
 
-  // The demo's approved Howell request draws a planned arrow unless an earlier spec moved it on.
-  const arrows = board.getByRole('listitem').getByRole('link')
-  if (await arrows.count()) {
-    const name = (await arrows.first().getAttribute('aria-label'))!
-    const [, from, to, leg] = /^\d+ vehicles? (.+) to (.+), (outbound|returning home|planned)$/.exec(name)!
-    await arrows.first().click()
-    await expect(page).toHaveURL(/\/transfers$/)
-    await expect(page.getByRole('button', { name: `Clear route filter: ${from} to ${to}, ${leg === 'returning home' ? 'return' : leg}` })).toBeVisible()
-  }
+  const exceptionsTab = queue.getByRole('button', { name: /^Exceptions \d+$/ })
+  await exceptionsTab.focus()
+  await page.keyboard.press(' ')
+  await expect(exceptionsTab).toHaveAttribute('aria-pressed', 'true')
+  const review = queue.getByRole('link', { name: /^Review \d+ vehicles?$/ }).first()
+  const reviewHref = (await review.getAttribute('href'))!
+  const reviewUrl = new URL(reviewHref, 'https://inventory.invalid')
+  expect(reviewUrl.pathname).toBe('/inventory')
+  expect(reviewUrl.searchParams.get('scope')).toBe('group')
+  const store = reviewUrl.searchParams.get('store')!
+  expect(store).toBeTruthy()
+  await review.click()
+  await expect(page).toHaveURL(/\/inventory\?scope=group$/)
+  await expect(page.getByRole('button', { name: new RegExp(`Clear Overview view: .+ · ${store}$`) })).toBeVisible()
 })
 
 test('the disposition dialog traps focus, locks scroll, closes on Escape and restores focus at every viewport', async ({ page }, testInfo) => {

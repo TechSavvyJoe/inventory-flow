@@ -80,6 +80,7 @@ test('keeps Vehicle issues at the top of Action center and manages reports with 
   await ledger.getByRole('button', { name: /^Completed \d+$/ }).click()
   await expect(ledger.getByRole('listitem').filter({ hasText: `Synthetic issue ledger ${testInfo.project.name}:` })).toContainText('Confirmed by Demo user')
   await page.getByRole('link', { name: 'Overview', exact: true }).click()
+  await page.getByRole('region', { name: 'Work queue' }).getByRole('button', { name: /^Vehicle issues \d+$/ }).click()
   await expect(page.getByRole('link', { name: 'Vehicle issue log' })).toBeVisible()
   await page.getByRole('link', { name: 'Vehicle issue log' }).click()
   await expect(page.getByRole('button', { name: /^Vehicle issues \d+$/ })).toHaveAttribute('aria-pressed', 'true')

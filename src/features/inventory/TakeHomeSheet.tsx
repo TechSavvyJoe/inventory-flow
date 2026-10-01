@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Download, Printer, Share2, X } from "lucide-react";
 import { useContainedFocus } from "../../lib/useContainedFocus";
+import { useModalBackgroundIsolation } from "../../lib/useModalBackgroundIsolation";
 import { formatDate, formatMileage, formatMoney } from "./inventory-utils";
 import type { InventoryVehicle } from "./types";
 import { takeHomeModel, type TakeHomeModel } from '../sales/customer-summary';
@@ -13,8 +14,12 @@ import "./TakeHomeSheet.css";
 import { downloadTakeHomePdf, shareTakeHomePdf } from '../../../extension/sidepanel/lib/takehome-export.mjs';
 
 export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeHomeModel; now?: Date }) {
-  const heroPhoto = model.photos[0] ?? null;
-  const equipmentCap = heroPhoto ? 18 : model.description ? 24 : 30;
+  const documentPhotos = [...new Set(model.photos)].slice(0, 3);
+  const heroPhoto = documentPhotos[0] ?? null;
+  const supportingPhotos = documentPhotos.slice(1);
+  const railHighlights = supportingPhotos.length ? [] : model.highlights.slice(0, 4);
+  const remainingHighlights = model.highlights.slice(railHighlights.length);
+  const equipmentCap = heroPhoto ? 24 : model.description ? 30 : 36;
   const additionalEquipment = model.equipment.filter((label) => !model.highlights.includes(label));
   const hidden = Math.max(0, additionalEquipment.length - equipmentCap);
   return (
@@ -35,23 +40,24 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
           <h1>{model.name}</h1>
           {model.descriptor ? <p>{model.descriptor}</p> : null}
         </div>
+        {model.certified ? <span className="th-title-cert"><Check size={14} strokeWidth={2.4} aria-hidden="true" />{model.certified.name}</span> : null}
       </section>
-      <section className={`th-hero${heroPhoto ? " has-photo" : ""}`}>
-        {heroPhoto ? <div className="th-photos">
-          <img className="th-photo" src={heroPhoto} alt={model.name} referrerPolicy="no-referrer" />
-          {model.photos.length > 1 ? <div className="th-thumbs">{model.photos.slice(1,4).map((photo,index) => <img key={photo} src={photo} alt={`${model.name} view ${index + 2}`} referrerPolicy="no-referrer" />)}</div> : null}
-        </div> : null}
-        <dl className="th-price">
-          <div className="th-price-main"><dt>Price</dt><dd>{model.price !== null ? formatMoney(model.price) : "Call for price"}</dd></div>
-          {model.msrp !== null ? <div><dt>MSRP</dt><dd>{formatMoney(model.msrp)}</dd></div> : null}
-          {model.savings ? <div className="th-save"><dt>Under MSRP</dt><dd>{formatMoney(model.savings)}</dd></div> : null}
-        </dl>
+      <section className="th-hero">
+        <div className="th-photos">
+          {heroPhoto ? <img className="th-photo" src={heroPhoto} alt={model.name} referrerPolicy="no-referrer" /> : <div className="th-photo th-photo-empty"><span>Current photos are available from the store.</span></div>}
+        </div>
+        <div className="th-hero-rail">
+          <dl className="th-price">
+            <div className="th-price-main"><dt>Price</dt><dd>{model.price !== null ? formatMoney(model.price) : "Call for price"}</dd></div>
+            {model.mileage !== null ? <div><dt>Mileage</dt><dd>{formatMileage(model.mileage)}</dd></div> : null}
+            <div><dt>Stock</dt><dd className="th-mono">{model.stockNumber}</dd></div>
+          </dl>
+          {supportingPhotos.length ? <div className={`th-thumbs${supportingPhotos.length === 1 ? " is-single" : ""}`}>{supportingPhotos.map((photo,index) => <img key={photo} src={photo} alt={`${model.name} view ${index + 2}`} referrerPolicy="no-referrer" />)}</div> : railHighlights.length ? <div className="th-quick"><b>Standout features</b><ul>{railHighlights.map((label) => <li key={label}>{label}</li>)}</ul></div> : null}
+        </div>
       </section>
       <dl className="th-identity">
-          {model.mileage !== null ? <div><dt>Mileage</dt><dd>{formatMileage(model.mileage)}</dd></div> : null}
-          <div><dt>Stock</dt><dd className="th-mono">{model.stockNumber}</dd></div>
           <div><dt>VIN</dt><dd className="th-mono">{model.vin}</dd></div>
-          {model.history ? <div><dt>History</dt><dd>{model.history}</dd></div> : null}
+          {model.history ? <div><dt>Vehicle history</dt><dd>{model.history}</dd></div> : null}
       </dl>
       <section className="th-grid">
         <div className="th-block">
@@ -62,8 +68,8 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
         </div>
         <div className="th-block">
           <h2>Highlights</h2>
-          {model.highlights.length ? (
-            <ul className="th-chips">{model.highlights.map((label) => <li key={label}><Check size={14} strokeWidth={2.5} aria-hidden="true" /><span>{label}</span></li>)}</ul>
+          {remainingHighlights.length ? (
+            <ul className="th-chips">{remainingHighlights.map((label) => <li key={label}><Check size={14} strokeWidth={2.5} aria-hidden="true" /><span>{label}</span></li>)}</ul>
           ) : (
             <p className="th-muted">Ask us about the equipment on this vehicle.</p>
           )}
@@ -71,7 +77,7 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
       </section>
       {additionalEquipment.length ? (
         <section className="th-block">
-          <h2>Additional equipment</h2>
+          <h2>Additional equipment · {additionalEquipment.length}</h2>
           <ul className="th-equipment">
             {additionalEquipment.slice(0, equipmentCap).map((label) => <li key={label}>{label}</li>)}
             {hidden ? <li className="th-muted">{hidden} additional items; ask the store for the complete equipment list.</li> : null}
@@ -97,7 +103,7 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
       ) : null}
       <footer className="th-foot">
         {model.listingUrl ? <a className="th-listing-link" href={model.listingUrl} target="_blank" rel="noopener noreferrer">View full vehicle listing</a> : null}
-        <span>{model.publishedAt ? `Inventory snapshot ${formatDate(model.publishedAt)} · ` : ""}Prepared {formatDate(now.toISOString())} · {model.storeName}{model.storeSite ? ` · ${model.storeSite}` : ""}</span>
+        <span>Prepared {formatDate(now.toISOString())} · {model.storeName}{model.storeSite ? ` · ${model.storeSite}` : ""}</span>
         <span>Price excludes tax, title, license and dealer fees. Vehicle information is believed accurate but not guaranteed; confirm equipment, mileage and availability with the dealership before purchase.</span>
       </footer>
     </article>
@@ -112,6 +118,7 @@ export function TakeHomeSheet({ vehicle, vehicles, listLabel, onClose, returnFoc
   const title = listLabel?.trim() || (models.length === 1 ? `${models[0].name} · ${models[0].stockNumber}` : `Customer vehicle list · ${models.length} vehicles`);
   const dialogRef = useRef<HTMLDivElement>(null);
   const printRef = useRef<HTMLButtonElement>(null);
+  const backgroundRef = useRef<HTMLElement | null>(typeof document === 'undefined' ? null : document.getElementById('root'));
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [preparedPdf, setPreparedPdf] = useState<{ models:TakeHomeModel[]; title:string; document:Blob } | null>(null);
   const pdf = preparedPdf?.models === models && preparedPdf.title === title ? preparedPdf.document : null;
@@ -126,6 +133,7 @@ export function TakeHomeSheet({ vehicle, vehicles, listLabel, onClose, returnFoc
     return () => { active = false; };
   }, [models, title, pdfAttempt]);
   useContainedFocus({ active: true, contain: true, containerRef: dialogRef, initialFocusRef: printRef, returnFocusRef, onEscape: onClose });
+  useModalBackgroundIsolation({ active: true, backgroundRef });
   useEffect(() => {
     document.body.classList.add("takehome-open");
     return () => document.body.classList.remove("takehome-open");

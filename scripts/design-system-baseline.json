@@ -16,8 +16,8 @@
     "src/styles/shell.css": {
       "smallText": 0,
       "rawColors": 22,
-      "rgbHslColors": 20,
-      "important": 3,
+      "rgbHslColors": 19,
+      "important": 2,
       "idSelectors": 0
     },
     "src/styles/base.css": {
@@ -83,6 +83,13 @@
       "important": 0,
       "idSelectors": 0
     },
+    "src/components/VehicleQuickFacts.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
     "src/features/overview/overview.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -90,7 +97,7 @@
       "important": 0,
       "idSelectors": 0
     },
-    "src/features/overview/StoreBoard.css": {
+    "src/features/overview/SalesOverview.css": {
       "smallText": 0,
       "rawColors": 0,
       "rgbHslColors": 0,
@@ -204,8 +211,8 @@
     },
     "src/features/inventory/inventory-modern.css": {
       "smallText": 50,
-      "rawColors": 186,
-      "rgbHslColors": 44,
+      "rawColors": 183,
+      "rgbHslColors": 38,
       "important": 1,
       "idSelectors": 0
     },
@@ -249,9 +256,16 @@
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 461
+      "idSelectors": 451
     },
     "src/features/inventory/WarrantyOutlook.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/EquipmentKnowledge.css": {
       "smallText": 0,
       "rawColors": 0,
       "rgbHslColors": 0,

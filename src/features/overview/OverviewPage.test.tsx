@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import type {
@@ -232,21 +232,32 @@ describe('OverviewPage (server projection)', () => {
     expect(within(exceptions).getByRole('link', { name: 'Lincoln: 3 vehicles · Hold past expected date' })).toHaveTextContent('3')
   })
 
-  it('reports service per store with medians and an aged list linked to Records and Service', () => {
-    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined)
+  it('leads with service workload and oldest waits, with timing available on demand and in print', () => {
+    const print = vi.spyOn(window, 'print').mockImplementation(() => {
+      expect(within(screen.getByRole('region', { name: 'Service' })).getByRole('table', { name: 'Service timing & evidence' })).toBeVisible()
+    })
     renderAs('manager')
 
     const service = screen.getByRole('region', { name: 'Service' })
-    const table = within(service).getByRole('table', { name: 'Service' })
+    const table = within(service).getByRole('table', { name: 'Service workload' })
     const howellRow = within(table).getByRole('rowheader', { name: 'Howell' }).closest('tr')!
     expect(within(howellRow).getByRole('link', { name: 'Howell: 3 vehicles waiting for service' })).toHaveAttribute('href', '/service?status=needs_service&store=Howell')
-    expect(howellRow).toHaveTextContent('4 d (n=2)')
-    expect(howellRow).toHaveTextContent('6.5 d (n=2)')
-    expect(howellRow).toHaveTextContent('3 / 0')
-    expect(within(service).getByText(/listing dates can lag physical receipt/)).toBeVisible()
+    expect(within(table).getByRole('columnheader', { name: 'Waiting 14+ days' })).toBeVisible()
+    expect(within(table).getByRole('columnheader', { name: 'Waiting 30+ days' })).toBeVisible()
+    expect(within(howellRow).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['3', '0', '0', '3', '0'])
+    expect(within(service).queryByRole('table', { name: 'Service timing & evidence' })).not.toBeInTheDocument()
     const aged = within(service).getByRole('list')
     expect(within(aged).getByRole('link', { name: 'Records 2/5 for 2026 Ford F-150 001' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=data&returnTo=%2Foverview')
     expect(within(aged).getByRole('link', { name: 'Update service for 2026 Ford F-150 001' })).toHaveAttribute('href', '/service?vin=TESTDATAHWELL0001&returnTo=%2Foverview')
+    expect(within(aged).getByText('From listing date; arrival unconfirmed')).toBeVisible()
+
+    fireEvent.click(within(service).getByRole('button', { name: 'Service timing & evidence' }))
+    const timing = within(service).getByRole('table', { name: 'Service timing & evidence' })
+    const timingHowell = within(timing).getByRole('rowheader', { name: 'Howell' }).closest('tr')!
+    expect(timingHowell).toHaveTextContent('4 days · 2 vehicles')
+    expect(timingHowell).toHaveTextContent('6.5 days · 2 vehicles')
+    expect(within(service).getByText(/listing dates can lag physical receipt/)).toBeVisible()
+    fireEvent.click(within(service).getByRole('button', { name: 'Service timing & evidence' }))
 
     fireEvent.click(within(service).getByRole('button', { name: 'Open report' }))
     expect(print).toHaveBeenCalledOnce()
@@ -258,7 +269,7 @@ describe('OverviewPage (server projection)', () => {
 
     expect(screen.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByText('Moves as visible to you')).not.toBeInTheDocument()
-    expect(within(screen.getByRole('table', { name: 'Service' })).getByRole('rowheader', { name: 'All stores' })).toBeInTheDocument()
+    expect(within(screen.getByRole('table', { name: 'Service workload' })).getByRole('rowheader', { name: 'All stores' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Print daily snapshot' }))
     expect(print).toHaveBeenCalledOnce()
     expect(screen.getByText(/Inventory Flow · Daily snapshot · All stores · As of 09\/25\/2026/)).toBeInTheDocument()
@@ -310,6 +321,9 @@ describe('OverviewPage (server projection)', () => {
 
   it('gives sales the same picture read-only, with no manager actions', () => {
     renderAs('sales')
+    expect(screen.getByRole('button', { name: 'Sales workspace' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('region', { name: 'Store summary' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Store operations' }))
 
     expect(screen.getByText('Read-only')).toBeVisible()
     expect(screen.getByRole('link', { name: 'Howell: 1 vehicle away from home' })).toBeVisible()
@@ -320,6 +334,22 @@ describe('OverviewPage (server projection)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
     expect(screen.getAllByText('Moves as visible to you').length).toBeGreaterThan(0)
+  })
+
+  it('resets presentation for a different employee even when display names match', () => {
+    const data = bootstrap('manager')
+    const identity = { data, homeStore: 'Howell', role: 'manager', currentUser: 'Synthetic Employee', currentUserId: 'employee-1', refresh: vi.fn() }
+    useAppDataMock.mockReturnValue(identity)
+    const view = render(<MemoryRouter><OverviewPage /></MemoryRouter>)
+    expect(screen.getByRole('button', { name: 'Store operations' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Sales workspace' }))
+    useAppDataMock.mockReturnValue({ ...identity, currentUserId: 'employee-2' })
+    view.rerender(<MemoryRouter><OverviewPage /></MemoryRouter>)
+    expect(screen.getByRole('button', { name: 'Store operations' })).toHaveAttribute('aria-pressed', 'true')
+    useAppDataMock.mockReturnValue({ ...identity, data: bootstrap('sales'), role: 'sales', currentUserId: 'employee-3' })
+    view.rerender(<MemoryRouter><OverviewPage /></MemoryRouter>)
+    expect(screen.getByRole('button', { name: 'Sales workspace' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('region', { name: 'Store summary' })).not.toBeInTheDocument()
   })
 
   it('never renders an availability claim or the no-hold string, and labels unverified holds', () => {
@@ -344,7 +374,7 @@ function disposition(vin: string, ownerStore: StoreName, code: AppDisposition['c
   return { vin, code, version: code ? 1 : 0, effectiveDate: code ? '2026-09-20' : null, destinationStore: null, updatedAt: code ? '2026-09-20T15:00:00Z' : null, updatedByRole: code ? 'manager' : null, store: code ? ownerStore : null, ownerStore, canManage }
 }
 
-/** The Slice B additions: recorded dispositions, one manager-log sale, board arrows and the two disposition prompts. */
+/** Recorded dispositions, one manager-log sale and the two disposition prompts. */
 function withDispositions(role: UserRole): BootstrapData {
   const data = bootstrap(role)
   const manages = (store: StoreName) => role === 'group_manager' || (role === 'manager' && store === 'Howell')
@@ -365,10 +395,6 @@ function withDispositions(role: UserRole): BootstrapData {
   }
   overview.vehicleFacts[local.vin].disposition = 'sold_pending'
   overview.vehicleFacts[lincoln.vin].disposition = 'wholesale'
-  overview.board.flows = [
-    { from: 'Howell', to: 'Lincoln', kind: 'outbound', count: 1, vins: [away.vin] },
-    { from: 'Lincoln', to: 'Howell', kind: 'return', count: 1, vins: [returning.vin] },
-  ]
   overview.exceptions.push(
     { kind: 'listed_but_delivered', store: 'Howell', count: 1, vins: [local.vin] },
     ...(role === 'sales' ? [] : [{ kind: 'delivered_move_no_disposition' as const, store: 'Howell' as StoreName, count: 1, vins: [away.vin], transferIds: ['move-1'] }]),
@@ -376,7 +402,23 @@ function withDispositions(role: UserRole): BootstrapData {
   return data
 }
 
-describe('Overview store board and dispositions (Slice B)', () => {
+function withWorkQueue(role: UserRole): BootstrapData {
+  const data = withDispositions(role)
+  data.vehicleIssuesEnabled = true
+  data.vehicles[0].listedPrice = 42_500
+  data.vehicles[0].mileage = 12_345
+  data.vehicles[0].imageUrl = '/demo-vehicles/synthetic-f150.svg'
+  data.vehicleIssues = [{
+    id: 'issue-1', vin: data.vehicles[0].vin, stockNumber: data.vehicles[0].stockNumber, vehicleName: data.vehicles[0].vehicleName,
+    homeStore: 'Howell', reportStore: 'Howell', category: 'cleaning', priority: 'urgent', description: 'Synthetic detail needs attention.',
+    status: 'awaiting_review', version: 2, assignee: 'Synthetic Detail Team', reportedBy: 'Synthetic Salesperson', reportedByUserId: 'synthetic-sales',
+    reportedAt: '2026-09-24T12:00:00Z', updatedAt: '2026-09-25T12:00:00Z', completedAt: null, completedBy: null, photoCount: 2,
+    allowedActions: role === 'sales' ? [] : ['complete', 'add_note'],
+  }]
+  return data
+}
+
+describe('Overview work queue and dispositions', () => {
   beforeEach(() => {
     window.localStorage.clear()
     api.getDisposition.mockReset()
@@ -387,28 +429,31 @@ describe('Overview store board and dispositions (Slice B)', () => {
     vi.unstubAllGlobals()
   })
 
-  it('draws a schematic whose pins link to the list behind their number and whose arrows link to exactly their moves', () => {
-    renderAs('group_manager', withDispositions('group_manager'))
-    const board = screen.getByRole('region', { name: 'Store board' })
-    expect(within(board).getByRole('img', { name: /^Store board Schematic of the four stores, not a map\./ })).toBeInTheDocument()
-    expect(within(board).getByRole('link', { name: 'Store board pin, Howell: 1 vehicle away from home' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=away')
-    expect(within(board).getByRole('link', { name: 'Store board pin, Lincoln: 0 vehicles away from home' })).toHaveAttribute('href', '/inventory?scope=group&store=Lincoln&view=away')
-    // Each arrow is drawn and also listed as text, both linking to its leg.
-    for (const [name, href] of [
-      ['1 vehicle Howell to Lincoln, outbound', '/transfers?from=Howell&to=Lincoln&leg=outbound'],
-      ['1 vehicle Lincoln to Howell, returning home', '/transfers?from=Lincoln&to=Howell&leg=return'],
-    ]) {
-      const links = within(board).getAllByRole('link', { name })
-      expect(links).toHaveLength(2)
-      for (const link of links) expect(link).toHaveAttribute('href', href)
-    }
-    expect(within(board).getByRole('table', { name: 'Store board counts by home store' })).toBeInTheDocument()
-    // No provenance footer: the page header carries the one freshness line.
-    expect(board).not.toHaveTextContent(/move ledger · live/)
+  it('replaces the store board with vehicle-level work that opens the exact existing action', () => {
+    renderAs('group_manager', withWorkQueue('group_manager'))
+    expect(screen.queryByRole('region', { name: 'Store board' })).not.toBeInTheDocument()
+    const queue = screen.getByRole('region', { name: 'Work queue' })
+    expect(within(queue).getByRole('button', { name: 'Vehicle issues 1' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(queue).getByRole('link', { name: 'Vehicle issue log' })).toHaveAttribute('href', '/attention?category=issues&scope=group')
+    expect(queue).toHaveTextContent('2026 Ford F-150 001')
+    expect(queue).toHaveTextContent('$42,500 · 12,345 mi')
+    expect(queue).toHaveTextContent('Cleaning · Urgent')
+    expect(queue).toHaveTextContent('Synthetic Detail Team')
+    expect(within(queue).getByRole('link', { name: /Review work/ })).toHaveAttribute('href', '/attention?category=issues&issue=issue-1&action=complete&scope=group')
 
-    // One filter drives the list and the pins.
-    fireEvent.click(within(screen.getByRole('region', { name: 'Where is my inventory' })).getByRole('button', { name: /^Holds/ }))
-    expect(within(board).getByRole('link', { name: 'Store board pin, Howell: 1 vehicle with holds' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=holds')
+    fireEvent.click(within(queue).getByRole('button', { name: 'Location & moves 1' }))
+    expect(within(queue).getByRole('link', { name: /Open move/ })).toHaveAttribute('href', '/transfers?id=move-1&returnTo=%2Foverview')
+    expect(queue).toHaveTextContent('Not confirmed recently')
+
+    fireEvent.click(within(queue).getByRole('button', { name: 'Hold evidence 1' }))
+    expect(within(queue).getByRole('link', { name: /Open hold evidence/ })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=hold&returnTo=%2Foverview')
+    expect(queue).toHaveTextContent('confirm with the home store')
+
+    fireEvent.click(within(queue).getByRole('button', { name: 'Exceptions 6' }))
+    expect(within(queue).getAllByRole('link', { name: 'Review 1 vehicle' }).find((link) => link.getAttribute('href')?.includes('view=unaccounted'))).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=unaccounted')
+
+    fireEvent.click(within(queue).getByRole('button', { name: 'Dispositions 4' }))
+    expect(within(queue).getAllByRole('button', { name: 'Change disposition' }).length).toBeGreaterThan(0)
   })
 
   it('lets a group manager record or change any disposition, beside the manager log, with no note on the page', () => {
@@ -454,6 +499,7 @@ describe('Overview store board and dispositions (Slice B)', () => {
   it('gives sales dispositions read-only, with the note in the detail', async () => {
     api.getDisposition.mockResolvedValue({ ...disposition('TESTDATAHWELL0001', 'Howell', 'sold_pending', false), updatedBy: 'Synthetic Howell Manager', note: 'Delivery Friday', history: [] })
     renderAs('sales', withDispositions('sales'))
+    fireEvent.click(screen.getByRole('button', { name: 'Store operations' }))
     const section = screen.getByRole('region', { name: 'Dispositions' })
     expect(within(section).queryByRole('button', { name: /^(Change|Record) disposition/ })).not.toBeInTheDocument()
     fireEvent.click(within(section).getByRole('button', { name: 'View disposition for 2026 Ford F-150 001' }))
@@ -493,58 +539,22 @@ describe('Overview store board and dispositions (Slice B)', () => {
     expect(within(summary).queryByRole('link', { name: /with the disposition/ })).not.toBeInTheDocument()
   })
 
-  it('puts the board in a closed disclosure below the list on a phone', () => {
+  it('keeps the work queue interactive on a phone without restoring the store board', () => {
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(max-width: 880px)', media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
-    renderAs('manager', withDispositions('manager'))
-    const board = screen.getByRole('region', { name: 'Store board' })
-    // The disclosure (a details group) is closed until its heading row is activated.
-    const disclosure = within(board).getByRole('group')
-    expect(disclosure).not.toHaveAttribute('open')
-    fireEvent.click(within(disclosure).getByRole('heading', { name: 'Store board', level: 2 }))
-    expect(disclosure).toHaveAttribute('open')
-    expect(within(disclosure).getByRole('img', { name: /^Store board Schematic/ })).toBeInTheDocument()
-    const where = screen.getByRole('region', { name: 'Where is my inventory' })
-    expect(where.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    renderAs('manager', withWorkQueue('manager'))
+    const queue = screen.getByRole('region', { name: 'Work queue' })
+    fireEvent.click(within(queue).getByRole('button', { name: 'Service 3' }))
+    expect(within(queue).getAllByRole('link', { name: 'Update service' })[0]).toHaveAttribute('href', '/service?vin=TESTDATAHWELL0001&returnTo=%2Foverview')
+    expect(screen.queryByRole('region', { name: 'Store board' })).not.toBeInTheDocument()
   })
 
-  it('drops the store board to the foot of the shorter column on a wide screen, never moving the daily lists', () => {
-    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(min-width: 1181px)', media: query, addEventListener: () => undefined, removeEventListener: () => undefined }))
-    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
-    // Where + exceptions (2 × 300) run longer than dispositions (200).
-    const heights: Record<string, number> = { 'ov-where': 300, 'ov-exceptions': 300, 'ov-dispositions': 200 }
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      const height = Object.entries(heights).find(([name]) => this.classList.contains(name))?.[1] ?? 0
-      return { height, width: 0, top: 0, left: 0, right: 0, bottom: height, x: 0, y: 0, toJSON: () => ({}) } as DOMRect
-    })
+  it('keeps the dense decision ledgers in a stable reading order below the work queue', () => {
     renderAs('group_manager', withDispositions('group_manager'))
-    const region = (name: string) => screen.getByRole('region', { name })
-    expect(region('Exceptions').parentElement).toBe(region('Where is my inventory').parentElement)
-    expect(region('Store board').parentElement).toBe(region('Dispositions').parentElement)
-    expect(Boolean(region('Dispositions').compareDocumentPosition(region('Store board')) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
-  })
-
-  it('puts where, exceptions and the store board in one column beside dispositions on a wide screen, and phone reading order below it', () => {
-    let wide = true
-    const listeners = new Set<() => void>()
-    vi.stubGlobal('matchMedia', (query: string) => ({
-      get matches() { return query === '(min-width: 1181px)' && wide },
-      media: query,
-      addEventListener: (_type: string, listener: () => void) => { listeners.add(listener) },
-      removeEventListener: (_type: string, listener: () => void) => { listeners.delete(listener) },
-    }))
-    renderAs('group_manager', withDispositions('group_manager'))
-    const sections = () => ['Where is my inventory', 'Store board', 'Exceptions', 'Dispositions'].map((name) => screen.getByRole('region', { name }))
+    const sections = () => ['Work queue', 'Where is my inventory', 'Exceptions', 'Dispositions'].map((name) => screen.getByRole('region', { name }))
     const inOrder = (...elements: HTMLElement[]) => elements.every((element, index) => index === 0 || Boolean(elements[index - 1].compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING))
-    let [where, board, exceptions, dispositions] = sections()
-    // Two column wrappers, each stacking on its own; the move board is secondary, below the daily lists.
+    const [queue, where, exceptions, dispositions] = sections()
     expect(exceptions.parentElement).toBe(where.parentElement)
-    expect(board.parentElement).toBe(where.parentElement)
     expect(dispositions.parentElement).not.toBe(where.parentElement)
-    expect(inOrder(where, exceptions, board, dispositions)).toBe(true)
-
-    wide = false
-    act(() => listeners.forEach((listener) => listener()))
-    ;[where, board, exceptions, dispositions] = sections()
-    expect(inOrder(where, board, exceptions, dispositions)).toBe(true)
+    expect(inOrder(queue, where, exceptions, dispositions)).toBe(true)
   })
 })

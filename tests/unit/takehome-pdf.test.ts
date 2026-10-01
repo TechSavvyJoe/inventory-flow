@@ -3,7 +3,7 @@
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import { PDFDocument, PDFDict, PDFName, PDFString } from 'pdf-lib'
-import { createTakeHomePdf } from '../../extension/sidepanel/lib/takehome-pdf.mjs'
+import { createTakeHomePdf, customerTakeHomePriceFacts } from '../../extension/sidepanel/lib/takehome-pdf.mjs'
 
 const model = {
   vin:'TESTDATASYN000001', stockNumber:'DEMO-1', name:'2024 Ford Explorer Active',
@@ -19,6 +19,53 @@ const options = {
 const load = async (blob:Blob) => PDFDocument.load(await blob.arrayBuffer())
 
 describe('shared customer PDF', () => {
+  it('keeps MSRP and reference pricing out of the customer price rail', () => {
+    expect(customerTakeHomePriceFacts({ ...model, factoryPrices:{original:{value:40000},base:{value:35000}}, msrp:40000, savings:8000 })).toEqual([
+      { label:'MILEAGE', value:'12,000 mi' },
+      { label:'STOCK', value:'DEMO-1' },
+    ])
+  })
+
+  it('loads at most three public photos for one vehicle', async () => {
+    const requested:string[] = []
+    const photo = await readFile(new URL('../../public/demo-vehicles/f150.jpg', import.meta.url))
+    const fetcher = async (url:string) => {
+      if (url.startsWith('file:')) return options.fetcher(url)
+      requested.push(url)
+      return new Response(photo)
+    }
+    const photos = ['https://example.com/1.jpg','https://example.com/2.jpg','https://example.com/2.jpg','https://example.com/3.jpg','https://example.com/4.jpg']
+    await createTakeHomePdf([{...model,photos}], 'Three photos', {...options,fetcher})
+    expect(requested).toEqual(['https://example.com/1.jpg','https://example.com/2.jpg','https://example.com/3.jpg'])
+  })
+
+  it.each([0,1])('measures long rail highlights with %i successful photo and preserves every full label', async (successfulPhotos) => {
+    const photo = await readFile(new URL('../../public/demo-vehicles/f150.jpg', import.meta.url))
+    const fetcher = async (url:string) => {
+      if (url.startsWith('file:')) return options.fetcher(url)
+      return successfulPhotos ? new Response(photo) : new Response(null, { status:403 })
+    }
+    const highlights = [
+      'Badlands equipment group with premium-trim interior appointments, advanced trail systems, and model-specific appearance details',
+      'Class II trailer tow package with factory hitch receiver, trailer-sway control, wiring connector, and documented cooling upgrades',
+      'Ford Co-Pilot360 driver-assistance collection with blind-spot information, lane-keeping support, and automatic emergency braking',
+      'Cargo management package with configurable dividers, reversible load floor, rear-seat protection, and covered small-item storage',
+    ]
+    expect(highlights.every(value => value.length >= 110)).toBe(true)
+    const layouts:any[] = []
+    const blob = await createTakeHomePdf([{ ...model, highlights, photos:['https://example.com/hero.jpg'] }], 'Measured highlights', {
+      ...options, fetcher, layoutObserver:(layout:any) => layouts.push(layout),
+    })
+    const rail = layouts.find(layout => layout.type === 'hero-highlights')
+    const overview = layouts.find(layout => layout.type === 'overview-highlights')
+    expect(rail.successfulPhotos).toBe(successfulPhotos)
+    expect(rail.fitted).toEqual(highlights.slice(0,2))
+    expect(rail.highlightBottom).toBeGreaterThanOrEqual(rail.supportBottom)
+    expect([...rail.fitted,...overview.values]).toEqual(highlights)
+    expect(overview.values).toEqual(rail.remaining)
+    expect(await load(blob)).toHaveProperty('getPageCount')
+  })
+
   it('generates a readable PDF with embedded fonts and Unicode metadata', async () => {
     const blob = await createTakeHomePdf([model], 'José’s vehicle choices', options)
     expect(blob.type).toBe('application/pdf')

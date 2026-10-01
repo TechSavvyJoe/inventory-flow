@@ -185,8 +185,9 @@ describe('modern inventory result access', () => {
     expect(screen.getByText('Hold · Alex Morgan')).toBeInTheDocument();
     expect(screen.getByText('In transit outbound')).toBeInTheDocument();
     const sticker = within(document.querySelector('.vehicle-resource-scan[data-resource-kind="window-sticker"]') as HTMLElement);
-    expect(sticker.getByText('MSRP')).toBeVisible();
-    expect(sticker.getByText('52,995')).toBeVisible();
+    expect(sticker.queryByText('MSRP')).not.toBeInTheDocument();
+    expect(sticker.getByText('Highlight')).toBeVisible();
+    expect(sticker.getByText('XLT Sport Appearance Package')).toBeVisible();
     expect(screen.getAllByText('Equipment Group 302A').length).toBeGreaterThan(0);
     expect(screen.getByText('2.7L EcoBoost V6 · 4x4')).toHaveAttribute('title', 'SuperCrew pickup · 10-speed automatic · Gasoline');
     expect(screen.getByText('10-speed auto · Gasoline')).toBeVisible();
@@ -249,32 +250,66 @@ describe('modern inventory result access', () => {
     expect(within(row).queryByRole('button', { name: /More actions/ })).not.toBeInTheDocument();
   });
 
-  it('uses stored identity, listing-price, inventory-date, capture, and configuration facts without crossing source families', () => {
+  it('uses original sticker pricing and a copyable explicit base without treating listed MSRP as document evidence', async () => {
     const vehicle = heldMovingVehicle();
-    vehicle.inventoryDate = '2026-08-09T12:00:00Z';
-    vehicle.publicListing = { ...vehicle.publicListing, updatedAt: '2026-09-29T12:00:00Z' };
+    vehicle.msrp = 52995;
+    vehicle.windowSticker = { ...vehicle.windowSticker!, totalMsrp: 55600, basePrice: 48750, pricingCurrency: 'CAD' };
     vehicle.mpgCity = 18;
     vehicle.mpgHighway = 24;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
 
     render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
 
     const row = screen.getByRole('row', { name: /2024 Ford F-150/ });
     const identity = within(row).getByRole('cell', { name: /ExteriorOxford WhiteInteriorBlack/ });
-    const price = within(row).getByRole('cell', { name: /Listed MSRP/ });
+    const price = within(row).getByRole('cell', { name: /Original MSRP/ });
     const configuration = within(row).getByRole('cell', { name: /18 city \/ 24 hwy MPG/ });
     const operations = within(row).getByRole('cell', { name: /Location Fowlerville.*Hold/ });
 
     expect(within(identity).getByText('2024 Ford F-150')).toBeVisible();
     expect(within(identity).getByText('XLT · SuperCrew pickup')).toBeVisible();
     expect(identity).toHaveTextContent('VIN1FTFW1E84RKF12345');
-    expect(within(price).getByText('Listed MSRP')).toBeVisible();
-    expect(price).toHaveTextContent('$52,995');
-    expect(within(price).getByText('Under MSRP')).toBeVisible();
-    expect(price).toHaveTextContent('$6,000');
-    expect(price).toHaveTextContent('Inventory08/09/2026');
-    expect(price).toHaveTextContent('Captured09/29/2026');
+    expect(within(price).getByText('Original MSRP')).toHaveAttribute('title', 'Window sticker');
+    expect(price).toHaveTextContent(/Original MSRP\s*CAD 55,600/);
+    expect(within(price).getByText('Base MSRP')).toHaveAttribute('title', 'Window sticker');
+    expect(price).toHaveTextContent(/Base MSRP\s*CAD 48,750/);
+    expect(price).not.toHaveTextContent('$52,995');
+    expect(price).not.toHaveTextContent(/Listed MSRP|Under MSRP|Inventory|Captured/);
+    await userEvent.click(within(price).getByRole('button', { name: 'Copy window sticker base MSRP: 48750' }));
+    expect(writeText).toHaveBeenCalledWith('48750');
     expect(configuration).toHaveTextContent('18 city / 24 hwy MPG');
     expect(operations).not.toHaveTextContent(/MSRP|Listing captured|MPG/);
+    if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard);
+    else Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+  });
+
+  it('labels an explicit vAuto base fallback without borrowing sticker currency', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.windowSticker = { ...vehicle.windowSticker!, basePrice: null, pricingCurrency: 'CAD' };
+    vehicle.factoryEquipment = { ...vehicle.factoryEquipment!, basePrice: 47125.5 };
+    render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+    const price = screen.getByRole('cell', { name: /vAuto base MSRP/ });
+    const base = within(price).getByText('vAuto base MSRP').parentElement!;
+    expect(within(base).getByText('vAuto base MSRP')).toHaveAttribute('title', 'vAuto equipment');
+    expect(base).toHaveTextContent(/vAuto base MSRP\s*47,125.5/);
+    expect(base).not.toHaveTextContent(/CAD|USD|\$/);
+    expect(within(base).getByRole('button', { name: 'Copy vAuto base MSRP: 47125.5' })).toBeVisible();
+  });
+
+  it('does not invent base MSRP from listed MSRP, original total, options, or destination', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.msrp = 52995;
+    vehicle.windowSticker = { ...vehicle.windowSticker!, basePrice: null, totalMsrp: 55600, totalOptions: 4100, destinationCharge: 1995, pricingCurrency: 'USD' };
+    vehicle.factoryEquipment = { ...vehicle.factoryEquipment!, basePrice: null, totalMsrp: 55600, totalOptions: 4100, destinationCharge: 1995 };
+    render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+    const price = screen.getByRole('cell', { name: /Original MSRP/ });
+    expect(within(price).getByText('Original MSRP')).toHaveAttribute('title', 'Window sticker');
+    expect(price).toHaveTextContent(/Original MSRP\s*\$55,600/);
+    expect(within(price).queryByText('Base MSRP')).not.toBeInTheDocument();
+    expect(within(price).queryByRole('button', { name: /base MSRP/i })).not.toBeInTheDocument();
+    expect(price).not.toHaveTextContent(/52,995|4,100|1,995/);
   });
 
   it('keeps the full VIN visible in the compact mobile comparison row', () => {
@@ -784,7 +819,7 @@ describe('modern inventory result access', () => {
     for (const header of ['Vehicle', 'Price & age', 'Configuration', 'Operations', 'Actions']) expect(screen.getByRole('columnheader', { name: header })).toBeInTheDocument();
     for (const [menu, categories] of [
       ['More Vehicle sort options', ['Make / model', 'Year', 'Source update', 'AutoCheck score', 'Vehicle documents']],
-      ['More Price & age sort options', ['MSRP', 'Days', 'Inventory date']],
+      ['More Price & age sort options', ['Original MSRP', 'Days', 'Inventory date']],
       ['More Operations sort options', ['Home store', 'Movement', 'Last movement', 'Hold salesperson']],
     ] as const) {
       fireEvent.click(screen.getByRole('button', { name: menu }));
@@ -933,7 +968,7 @@ describe('modern inventory result access', () => {
     const panelId = trigger.getAttribute('aria-controls')!;
     expect(document.getElementById(panelId)).toHaveAttribute('hidden');
     fireEvent.click(trigger);
-    screen.getByRole('button', { name: /Sort by MSRP ascending/ }).focus();
+    screen.getByRole('button', { name: /Sort by Original MSRP ascending/ }).focus();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(trigger).toHaveFocus();
@@ -1015,8 +1050,10 @@ describe('captured inventory comparison facts', () => {
     render(layout === 'desktop'
       ? <InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()}/>
       : <InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()}/>);
-    // MSRP belongs to the branded source summary, rather than repeating in the asking-price cell.
-    expect(screen.getByText(/CAD 52,995/)).toBeInTheDocument();
+    // Desktop keeps original document pricing beside the asking price; the
+    // branded source strip remains the provenance-rich record below it.
+    if (layout === 'desktop') expect(within(screen.getByRole('cell', { name: /Original MSRP/ })).getByText(/CAD 52,995/)).toBeVisible();
+    else expect(within(screen.getByLabelText('Captured factory pricing')).getByText(/CAD 52,995/)).toBeVisible();
     expect(screen.getByText('25 hwy MPG')).toBeVisible();
     expect(screen.queryByText(/0 city/)).not.toBeInTheDocument();
   });
@@ -1028,8 +1065,11 @@ describe('captured inventory comparison facts', () => {
     vehicle.mpgCity = null;
     vehicle.mpgHighway = null;
     render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()}/>);
-    expect(screen.queryByText('Sticker MSRP')).not.toBeInTheDocument();
-    expect(screen.queryByText('Listed MSRP')).not.toBeInTheDocument();
-    expect(screen.queryByText(/MPG/)).not.toBeInTheDocument();
+    const row = screen.getByRole('row', { name: /2024 Ford F-150/ });
+    expect(within(row).queryByText('Sticker MSRP')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Original MSRP')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Base MSRP')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Listed MSRP')).not.toBeInTheDocument();
+    expect(within(row).queryByText(/MPG/)).not.toBeInTheDocument();
   });
 });

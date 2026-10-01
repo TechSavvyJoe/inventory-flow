@@ -71,9 +71,11 @@ import {
 import { primaryVehicleChangeSignal } from "./change-utils";
 import { fordInvoiceUrl, fordOasisUrl, savedFordInvoiceUrl } from "./vehicle-document-utils";
 import { publishedEquipment, standoutEquipment } from "./vehicle-feature-utils";
+import { EquipmentKnowledge } from "./EquipmentKnowledge";
 import { TakeHomeSheet } from "./TakeHomeSheet";
 import { useCustomerShortlist } from "./useCustomerShortlist";
-import { compactSourcePrice, DataState, Fact, HoldEvidenceRecord, VehicleDocuments } from "./VehicleDocuments";
+import { DataState, Fact, HoldEvidenceRecord, VehicleDocuments } from "./VehicleDocuments";
+import { factoryPricing, factoryPriceLabel, formatFactoryPrice } from '../../../extension/sidepanel/lib/factory-pricing.mjs';
 import { useContainedFocus } from "../../lib/useContainedFocus";
 import type {
   InventoryVehicle,
@@ -406,13 +408,16 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
           ? "Last-verified DealerMail evidence is preserved below because the current hold state is unverified. Confirm the exact live record before any availability decision."
           : "Hold position, operational reason, CDK status, paperwork, and delivery are separate. A hold alone does not mean sold or delivered."}
       </p>
-      {vehicle.holdEvidence.map((evidence) => (
-        <HoldEvidenceRecord
-          evidence={evidence}
-          backupCount={Math.max(0, vehicle.holdEvidence!.length - 1)}
-          key={evidence.id}
-        />
-      ))}
+      <div className="vdp-focus-hold-records">
+        {vehicle.holdEvidence.map((evidence) => (
+          <div className={`vdp-focus-hold-record vdp-focus-hold-record--${evidence.position || "other"}`} key={evidence.id}>
+            <HoldEvidenceRecord
+              evidence={evidence}
+              backupCount={Math.max(0, vehicle.holdEvidence!.length - 1)}
+            />
+          </div>
+        ))}
+      </div>
       <VehicleRecordEvidence vehicle={vehicle} />
       <dl
         className="inventory-workspace-hold-context"
@@ -745,22 +750,30 @@ export function VehicleWorkspace({
     ? `${mpgCity} city / ${mpgHighway} hwy MPG`
     : mpgCity != null ? `${mpgCity} city MPG`
       : mpgHighway != null ? `${mpgHighway} hwy MPG` : null;
-  const originalMsrp = typeof vehicle.windowSticker?.totalMsrp === "number" && Number.isFinite(vehicle.windowSticker.totalMsrp) && vehicle.windowSticker.totalMsrp > 0
-    ? vehicle.windowSticker.totalMsrp : null;
-  const listedMsrp = typeof vehicle.msrp === "number" && Number.isFinite(vehicle.msrp) && vehicle.msrp > 0 ? vehicle.msrp : null;
-  const hasStickerBase = vehicle.windowSticker?.basePrice != null;
-  const baseMsrpLabel = "Base MSRP";
-  const baseMsrpDisplay = hasStickerBase
-    ? compactSourcePrice(vehicle.windowSticker!.basePrice, vehicle.windowSticker!)
-    : vehicle.factoryEquipment?.basePrice != null ? compactSourcePrice(vehicle.factoryEquipment.basePrice) : "—";
-  const baseMsrpQualifier = null;
-  const baseMsrpSource = hasStickerBase ? "Window sticker" : vehicle.factoryEquipment?.basePrice != null ? "vAuto equipment" : null;
+  const factoryPrices = factoryPricing(vehicle);
+  const baseMsrpLabel = factoryPriceLabel(factoryPrices.base.source, true);
+  const baseMsrpDisplay = factoryPrices.base.value === null ? "—" : formatFactoryPrice(factoryPrices.base.value, factoryPrices.base.currency);
+  const baseMsrpSource = factoryPrices.base.source === "window-sticker" ? "Window sticker" : factoryPrices.base.source === "vauto" ? "vAuto equipment" : null;
   const factoryEquipmentGroup = vehicle.factoryEquipment?.packages?.find(item => /equipment\s+group/i.test(item.name))?.name.trim() || null;
   const equipmentGroup = vehicle.windowSticker?.equipmentGroup?.trim()
     ? { value: vehicle.windowSticker.equipmentGroup.trim(), source: "Window sticker" }
     : factoryEquipmentGroup
       ? { value: factoryEquipmentGroup, source: "vAuto equipment" }
       : null;
+  const historyCheck = (pattern: RegExp) => vehicle.autoCheckReport?.checks?.find(check => pattern.test(check.label))?.status?.trim() || null;
+  const vehicleHistoryFacts = vehicle.autoCheckReport && ["current", "stale"].includes(vehicle.autoCheckReport.dataState ?? "current") ? [
+    ["Score", Number.isFinite(vehicle.autoCheckReport.score) ? String(vehicle.autoCheckReport.score) : null],
+    ["Owners", Number.isFinite(vehicle.autoCheckReport.ownerCount) ? `${vehicle.autoCheckReport.ownerCount} reported` : null],
+    ["Title", historyCheck(/(?:^|\b)(?:state )?title\b/i)],
+    ["Accidents", historyCheck(/accident|damage/i)],
+  ].filter((fact): fact is [string, string] => Boolean(fact[1])) : [];
+  const coverageSource = vehicle.warrantyCheck?.fordOasis?.coverages?.length
+    ? { rows:vehicle.warrantyCheck.fordOasis.coverages, label:"OASIS" }
+    : vehicle.warrantyCheck?.autoCheck?.coverages?.length
+      ? { rows:vehicle.warrantyCheck.autoCheck.coverages, label:"AutoCheck estimate" }
+      : null;
+  const coverage = coverageSource?.rows.find(row => row.status === "ACTIVE") ?? coverageSource?.rows[0] ?? null;
+  const coverageSummary = coverage ? [coverage.type, coverage.remainingTimeText, coverage.remainingMilesText].filter(Boolean).join(" · ") : null;
   const recordsNeedReview = [vehicle.publicListing.dataState, vehicle.dealerOn.dataState, vehicle.dealerMail.dataState]
     .some((state) => state !== "current");
   const equipmentLabels = new Set<string>();
@@ -775,7 +788,7 @@ export function VehicleWorkspace({
     if (!label || equipmentLabels.has(identity)) return [];
     equipmentLabels.add(identity);
     return [{ ...item, label }];
-  }).slice(0, 12);
+  }).slice(0, 8);
   const specifications = [
     ["Mileage", formatMileage(vehicle.mileage)],
     ["Days listed", vehicle.daysListed != null ? `${vehicle.daysListed} days` : null],
@@ -795,8 +808,8 @@ export function VehicleWorkspace({
     ["Exterior", vehicle.exteriorColor],
     ["Interior", vehicle.interiorColor],
     ["Fuel", vehicle.fuelType],
-    ["MSRP", vehicle.msrp != null ? formatMoney(vehicle.msrp) : null],
-    ["Inventory date", vehicle.inventoryDate ? formatDate(vehicle.inventoryDate) : null],
+    [factoryPriceLabel(factoryPrices.original.source), factoryPrices.original.value === null ? null : formatFactoryPrice(factoryPrices.original.value, factoryPrices.original.currency)],
+    [baseMsrpLabel, factoryPrices.base.value === null ? null : baseMsrpDisplay],
     ["Model code", vehicle.modelCode],
     ["MPG city / hwy", vehicle.mpgCity != null || vehicle.mpgHighway != null ? `${vehicle.mpgCity ?? "—"} / ${vehicle.mpgHighway ?? "—"}` : null],
   ].filter((fact) => Boolean(fact[1]));
@@ -871,7 +884,7 @@ export function VehicleWorkspace({
         <header className="vdp-focus-header">
           <button type="button" className="vdp-focus-back" onClick={closeWorkspace} aria-label={returnLabel}><ChevronLeft size={20} aria-hidden="true" /><span>{returnLabel}</span></button>
           <div className="vdp-focus-primary">
-            <div className="vdp-focus-identity"><h2 id="inventory-workspace-title">{displayName}</h2><strong>{formatMoney(vehicle.price)}</strong><span className="vdp-focus-mobile-stock">Stock {vehicle.stockNumber}</span></div>
+            <div className="vdp-focus-identity"><h2 id="inventory-workspace-title">{displayName}</h2><span className="vdp-focus-mobile-stock">Stock {vehicle.stockNumber}</span></div>
             <div className="vdp-focus-subline">
               <dl className="vdp-focus-identifiers">
                 <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} /></dd></div>
@@ -884,6 +897,7 @@ export function VehicleWorkspace({
               </div>
             </div>
           </div>
+          <div className="vdp-focus-price"><span>Published price</span><strong>{formatMoney(vehicle.price)}</strong></div>
           <button type="button" className="vdp-focus-close" onClick={closeWorkspace} aria-label="Close vehicle details"><X size={20} aria-hidden="true" /></button>
         </header>
         <div className="vdp-focus-navigation">
@@ -921,32 +935,39 @@ export function VehicleWorkspace({
                 {hasMovement ? <div className="vdp-focus-next-action"><strong className={nextStepStatus?.tone === "danger" ? "vdp-focus-next-action__overdue" : undefined}>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div> : null}
               </section>
               <div className="vdp-focus-vehicle-context">
-                <div className="vdp-focus-photo"><VehicleGallery vehicle={vehicle} /></div>
-                <section className="vdp-focus-specs" aria-label="Vehicle specifications">
-                  <h3>Vehicle details</h3>
-                  <dl className="vdp-focus-desktop-specs">
-                    {specifications.map(([label, value]) => <Fact key={label} label={label!} className={label === "Exterior / interior" ? "vdp-focus-spec-wide" : undefined}>{label === "Mileage" && vehicle.mileage != null ? <CopyableValue compact label="mileage" text={String(vehicle.mileage)}>{value}</CopyableValue> : value}</Fact>)}
-                  </dl>
-                  <div className="vdp-focus-mobile-specs">{mobileSpecificationLines.map((line, index) => <p key={index}>{line}</p>)}</div>
-                  <p className="vdp-focus-listing">{vehicle.location.homeStore.name} · {vehicle.publicListing.dataState !== "current" ? "Listing unverified" : vehicle.publicListing.isListed === true ? "Listed online" : vehicle.publicListing.isListed === false ? "Not publicly listed" : "Listing state not provided"}{vehicle.certified ? <> · <CertifiedBadge certified homeStore={vehicle.location.homeStore.name} /></> : null}</p>
-                </section>
+                <div className="vdp-focus-gallery-column">
+                  <div className="vdp-focus-photo"><VehicleGallery vehicle={vehicle} /></div>
+                  <section className="vdp-focus-document-shortcuts" aria-label="Document shortcuts">
+                    <VehicleResourceCards vehicle={vehicle} variant="shortcuts" onOpenSection={openAndFocusSection} />
+                  </section>
+                  <section className="vdp-focus-keyfacts" aria-label="Frequently used vehicle facts">
+                    <h3>Reference facts</h3>
+                    <dl>
+                      <Fact label={warrantyInServiceSource === "autocheck" ? "Est. in-service" : "In-service"}><span className="vdp-focus-reference-date">{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</span>{warrantyInServiceSource ? <small>{warrantyInServiceSource === "oasis" ? "OASIS" : "AutoCheck"}</small> : null}</Fact>
+                      {coverageSummary ? <Fact label="Coverage"><span>{coverageSummary}</span>{coverageSource ? <small>{coverageSource.label}</small> : null}</Fact> : null}
+                      {factoryPrices.original.value !== null ? <Fact label={factoryPriceLabel(factoryPrices.original.source)}><span className="vdp-focus-reference-value">{formatFactoryPrice(factoryPrices.original.value, factoryPrices.original.currency)}</span><small>{factoryPrices.original.source === "window-sticker" ? "Window sticker" : "vAuto equipment"}</small></Fact> : null}
+                      {factoryPrices.base.value !== null ? <Fact label={baseMsrpLabel}><CopyableValue compact label="base MSRP" text={String(factoryPrices.base.value)}>{baseMsrpDisplay}</CopyableValue>{baseMsrpSource ? <small>{baseMsrpSource} · Before options &amp; destination</small> : null}</Fact> : null}
+                      {equipmentGroup ? <Fact label="Equipment group"><span>{equipmentGroup.value}</span><small>{equipmentGroup.source}</small></Fact> : null}
+                    </dl>
+                  </section>
+                </div>
+                <div className="vdp-focus-vehicle-intelligence">
+                  <section className="vdp-focus-specs" aria-label="Vehicle specifications">
+                    <h3>Vehicle details</h3>
+                    <dl className="vdp-focus-desktop-specs">
+                      {specifications.map(([label, value]) => <Fact key={label} label={label!} className={label === "Exterior / interior" ? "vdp-focus-spec-wide" : label === "Mileage" ? "vdp-focus-copy-fact" : undefined}>{label === "Mileage" && vehicle.mileage != null ? <CopyableValue compact label="mileage" text={String(vehicle.mileage)}>{value}</CopyableValue> : value}</Fact>)}
+                    </dl>
+                    <div className="vdp-focus-mobile-specs">{mobileSpecificationLines.map((line, index) => <p key={index}>{line}</p>)}</div>
+                    <p className="vdp-focus-listing">{vehicle.location.homeStore.name} · {vehicle.publicListing.dataState !== "current" ? "Listing unverified" : vehicle.publicListing.isListed === true ? "Listed online" : vehicle.publicListing.isListed === false ? "Not publicly listed" : "Listing state not provided"}{vehicle.certified ? <> · <CertifiedBadge certified homeStore={vehicle.location.homeStore.name} /></> : null}</p>
+                  </section>
+                  <section className="vdp-focus-highlights" aria-label="Key equipment">
+                    <div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
+                    {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
+                  </section>
+                  {vehicleHistoryFacts.length ? <section className="vdp-focus-history-facts" aria-label="AutoCheck history"><h3>History</h3><dl>{vehicleHistoryFacts.map(([label, value]) => <Fact key={label} label={label}>{value}</Fact>)}</dl></section> : null}
+                </div>
                 <div className="vdp-focus-mobile-vin"><span>VIN</span><CopyableValue compact label="VIN" text={vehicle.vin} /></div>
-                <section className="vdp-focus-document-shortcuts" aria-label="Document shortcuts">
-                  <VehicleResourceCards vehicle={vehicle} variant="shortcuts" onOpenSection={openAndFocusSection} />
-                </section>
-                <section className="vdp-focus-keyfacts" aria-label="Frequently used vehicle facts"><dl>
-                  <Fact label={warrantyInServiceSource === "autocheck" ? "Est. in-service" : "In-service"}><span className="vdp-focus-reference-date">{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</span>{warrantyInServiceSource ? <small>{warrantyInServiceSource === "oasis" ? "OASIS" : "AutoCheck"}</small> : null}</Fact>
-                  {originalMsrp != null ? <Fact label="Original MSRP"><span className="vdp-focus-reference-value">{compactSourcePrice(originalMsrp, vehicle.windowSticker!)}</span><small>Window sticker</small></Fact>
-                    : baseMsrpDisplay !== "—" ? <Fact label="Base MSRP"><span className="vdp-focus-reference-value">{baseMsrpDisplay}</span>{baseMsrpSource ? <small>{baseMsrpSource}</small> : null}</Fact> : null}
-                  {listedMsrp != null && listedMsrp !== originalMsrp ? <Fact label="Listed MSRP"><span className="vdp-focus-reference-value">{formatMoney(listedMsrp)}</span><small>Public listing</small></Fact> : null}
-                  {equipmentGroup ? <Fact label="Equipment group"><span>{equipmentGroup.value}</span><small>{equipmentGroup.source}</small></Fact> : null}
-                  <Fact label="Inventory date"><span className="vdp-focus-reference-date">{vehicle.inventoryDate ? formatDate(vehicle.inventoryDate) : "—"}</span></Fact>
-                </dl></section>
               </div>
-              <section className="vdp-focus-highlights" aria-label="Key equipment">
-                <div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
-                {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
-              </section>
               {primaryHold?.salesperson || primaryHold?.expectedDeliveryDate || holdCount > 1 || appDisposition || issueContext ? <section className="vdp-focus-operational-details" aria-label="Operational details">
                 <div className="vdp-focus-section-heading"><h3>Operational details</h3></div>
                 {primaryHold?.salesperson || primaryHold?.expectedDeliveryDate || holdCount > 1 || appDisposition ? <dl>
@@ -983,6 +1004,7 @@ export function VehicleWorkspace({
           </WorkspacePanel>
           <WorkspacePanel id="equipment" label="Equipment" active={activePage === "equipment"}>
             <SourceConfirmedEquipment vehicle={vehicle} />
+            <EquipmentKnowledge vehicle={vehicle} />
             <details className="vdp-equipment-specifications" aria-label="Complete vehicle specifications">
               <summary><Gauge size={17} strokeWidth={1.8} aria-hidden="true"/><span>Specifications</span><ChevronDown size={16} aria-hidden="true"/></summary>
               <dl className="vdp-focus-extra-specs">{equipmentSpecifications.map(([label, value]) => <Fact key={label} label={label!} className={label === "Model code" ? "vdp-spec-model-code" : undefined}>{value}</Fact>)}</dl>
@@ -993,7 +1015,7 @@ export function VehicleWorkspace({
             </details>
           </WorkspacePanel>
           <WorkspacePanel id="data" label="Records" active={activePage === "data"}>
-            <dl className="vdp-records-summary"><Fact label={baseMsrpLabel}>{baseMsrpDisplay}{baseMsrpQualifier ? <small>{baseMsrpQualifier}</small> : null}</Fact><Fact label={warrantyInServiceLabel}>{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</Fact></dl>
+            <dl className="vdp-records-summary"><Fact label={baseMsrpLabel}>{factoryPrices.base.value !== null ? <CopyableValue compact label="base MSRP" text={String(factoryPrices.base.value)}>{baseMsrpDisplay}</CopyableValue> : baseMsrpDisplay}</Fact><Fact label={warrantyInServiceLabel}>{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</Fact></dl>
             <VehicleDocuments vehicle={vehicle} />
             {!vehicle.autoCheckReport && !vehicle.windowSticker && !vehicle.factoryEquipment && !vehicle.fordOasis && !vehicle.warrantyCheck ? <div className="vdp-focus-empty"><h3>Vehicle records</h3><p>No vehicle records are available.</p></div> : null}
             {openRecallCount ? <a className="vdp-focus-warning" href={oasisUrl ?? undefined} target="_blank" rel="noopener noreferrer">{oasisActionLabel(vehicle.fordOasis)} · Review OASIS</a> : null}
@@ -1001,14 +1023,12 @@ export function VehicleWorkspace({
           <WorkspacePanel id="hold" label="Holds & moves" active={activePage === "hold"}>
             <div className="vdp-focus-section-heading"><h3>Holds &amp; moves</h3><div className="vdp-focus-actions">{movementAction}</div></div>
             <div className="vdp-focus-hold-grid inventory-workspace-hold-center" data-hold-state={vehicle.holdEvidence?.length ? "held" : "no-evidence"}>
-              <div>
-                <HoldDetails vehicle={vehicle} />
-                {/* Evidence first; DealerMail is a secondary, read-only handoff. */}
-                {canManageDealerMail ? <div className="vdp-focus-handoff"><DealerMailHandoff key={vehicle.id + "|" + vehicle.stockNumber + "|" + vehicle.vin} vehicle={vehicle} /></div> : null}
-              </div>
-              <div>
+              <div className="vdp-focus-movement-panel">
                 <section id="inventory-section-movement" tabIndex={-1} aria-labelledby="inventory-movement-heading" className="vdp-focus-movement"><h3 id="inventory-movement-heading">Location &amp; movement</h3><MovementDetails vehicle={vehicle} status={nextStepStatus} /></section>
               </div>
+              <div className="vdp-focus-hold-evidence"><HoldDetails vehicle={vehicle} /></div>
+              {/* Custody and full evidence precede this secondary, read-only handoff. */}
+              {canManageDealerMail ? <div className="vdp-focus-handoff vdp-focus-handoff-panel"><DealerMailHandoff key={vehicle.id + "|" + vehicle.stockNumber + "|" + vehicle.vin} vehicle={vehicle} /></div> : null}
             </div>
           </WorkspacePanel>
           <WorkspacePanel id="timeline" label="Activity" active={activePage === "timeline"}><TimelineDetails vehicle={vehicle} /></WorkspacePanel>

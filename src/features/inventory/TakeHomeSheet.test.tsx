@@ -45,9 +45,36 @@ function vehicle(): InventoryVehicle {
 }
 
 describe('take-home sheet', () => {
+  it('isolates the app when opened directly and restores its opener on dismissal', async () => {
+    const root = document.createElement('div');
+    root.id = 'root';
+    root.setAttribute('aria-hidden', 'false');
+    const opener = document.createElement('button');
+    opener.textContent = 'Customer sheet';
+    root.append(opener);
+    document.body.append(root);
+    opener.focus();
+    const sheet = render(<TakeHomeSheet vehicle={vehicle()} onClose={vi.fn()} returnFocusRef={{ current:opener }} />);
+    try {
+      await waitFor(() => expect(root).toHaveAttribute('aria-hidden', 'true'));
+      expect(root).toHaveAttribute('inert');
+      expect(screen.getByRole('dialog', { name:/Take-home page/ }).closest('[inert]')).toBeNull();
+      expect(document.body.style.overflow).toBe('hidden');
+      sheet.unmount();
+      await waitFor(() => expect(opener).toHaveFocus());
+      expect(root).not.toHaveAttribute('inert');
+      expect(root).toHaveAttribute('aria-hidden', 'false');
+      expect(document.body.style.overflow).toBe('');
+    } finally {
+      sheet.unmount();
+      root.remove();
+    }
+  });
+
   it('carries only published, customer-facing facts', () => {
     const model = takeHomeModel(vehicle());
-    expect(model).toMatchObject({ store: 'Howell', storeName: 'Bob Maxey Ford of Howell', stockNumber: 'HT0529A', price: 42810, msrp: 49480, savings: 6670, mileage: 2052 });
+    expect(model).toMatchObject({ store: 'Howell', storeName: 'Bob Maxey Ford of Howell', stockNumber: 'HT0529A', price: 42810, mileage: 2052 });
+    expect(model).not.toHaveProperty('factoryPrices');
     expect(model.certified?.name).toBe('Ford Blue Certified');
     expect(model.history).toBe('AutoCheck score 92 · 1 owner reported');
     const serialized = JSON.stringify(model);
@@ -63,17 +90,23 @@ describe('take-home sheet', () => {
     expect(container.querySelector('.th-listing-link')).toHaveAttribute('href', vehicle().publicListing.listingUrl);
     expect(container.querySelector('.th-cert-note')).toHaveTextContent('Separate from any factory warranty');
     expect(screen.getAllByText('Apple CarPlay')).toHaveLength(1);
-    expect(container.querySelector('.th-photo')).not.toBeInTheDocument();
-    expect(container.querySelector('.th-identity')).toHaveTextContent('HT0529A');
+    expect(container.querySelector('.th-photo-empty')).toHaveTextContent('Current photos are available from the store.');
+    expect(container.querySelector('.th-price')).toHaveTextContent('HT0529A');
     expect(container.querySelector('.th-identity')).toHaveTextContent('TESTDATASYN000001');
     expect(container.querySelector('.th-price')).toHaveTextContent('$42,810');
+    const legacy = { ...model, factoryPrices:{ original:{ value:49480, source:'window-sticker', currency:'USD' }, base:{ value:44500, source:'window-sticker', currency:'USD' } }, msrp:49480, savings:6670 };
+    const legacyRender = render(<TakeHomeSheetContent model={legacy} />).container;
+    expect(legacyRender).not.toHaveTextContent('MSRP');
+    expect(legacyRender).not.toHaveTextContent('$49,480');
   });
 
   it('fills highlights without duplicating equipment and renders an available vehicle photo', () => {
-    const model = takeHomeModel({ ...vehicle(), imageUrl: 'https://example.com/vehicle.jpg', features: ['Adaptive cruise control', 'Heated front seats', 'Apple CarPlay'] });
+    const model = takeHomeModel({ ...vehicle(), imageUrl: 'https://example.com/vehicle-1.jpg', imageUrls:['https://example.com/vehicle-1.jpg','https://example.com/vehicle-2.jpg','https://example.com/vehicle-2.jpg','https://example.com/vehicle-3.jpg','https://example.com/vehicle-4.jpg'], features: ['Adaptive cruise control', 'Heated front seats', 'Apple CarPlay'] });
     const { container } = render(<TakeHomeSheetContent model={model} />);
     expect(model.highlights).toHaveLength(3);
-    expect(container.querySelector('.th-photo')).toHaveAttribute('src', 'https://example.com/vehicle.jpg');
+    expect(container.querySelector('.th-photo')).toHaveAttribute('src', 'https://example.com/vehicle-1.jpg');
+    expect(container.querySelectorAll('.th-thumbs img')).toHaveLength(2);
+    expect([...container.querySelectorAll('.th-hero img')].map((image) => image.getAttribute('src'))).toEqual(['https://example.com/vehicle-1.jpg','https://example.com/vehicle-2.jpg','https://example.com/vehicle-3.jpg']);
     expect(container.querySelectorAll('.th-chips li')).toHaveLength(3);
     expect(screen.getAllByText('Apple CarPlay')).toHaveLength(1);
   });

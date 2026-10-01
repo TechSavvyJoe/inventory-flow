@@ -1,5 +1,5 @@
 /* Compact comparison rows; full source reports are one Records action away. */
-.if-srp-mobile-list .if-srp-mobile-row--scan { padding:var(--ifx-space-1); border:0; border-bottom:1px solid var(--border-strong); border-radius:0; box-shadow:none; scroll-margin-top:var(--ifx-space-16); }
+.if-srp-mobile-list .if-srp-mobile-row--scan { padding:var(--ifx-space-0-5) var(--ifx-space-1); border:0; border-bottom:1px solid var(--border-strong); border-radius:0; box-shadow:none; scroll-margin-top:var(--ifx-space-16); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__open { grid-template-columns:calc(2 * var(--ifx-space-10) + var(--ifx-space-6)) minmax(0,1fr); gap:var(--ifx-space-0-5) var(--ifx-space-2); align-items:start; }
 .if-srp-mobile-list .inventory-mobile-row__thumbnail { display:grid; gap:var(--ifx-space-0-5); min-width:0; }
 .if-srp-mobile-list .inventory-mobile-row__thumbnail > small { color:var(--ink-600); font:var(--ifx-weight-medium) var(--ifx-text-xs)/1.3 var(--font-app); font-variant-numeric:tabular-nums; }
@@ -19,13 +19,18 @@
 .if-srp-mobile-list .inventory-mobile-row__photo-certification .vehicle-certified-badge--lincoln { background:var(--navy-900); }
 .if-srp-mobile-list .inventory-mobile-row__photo-certification .vehicle-certified-badge:has(> img) > span { display:none; }
 /* Two inline specification lines replace the individual fact boxes. */
-.if-srp-mobile-list .inventory-mobile-row__captured-facts { display:flex; flex-wrap:wrap; gap:0 var(--ifx-space-2); margin:var(--ifx-space-0-5) 0 0; padding:0; color:var(--ink-600); }
+.if-srp-mobile-list .inventory-mobile-row__captured-facts { display:flex; flex-wrap:wrap; gap:0 var(--ifx-space-2); margin:0; padding:0; color:var(--ink-600); }
 .if-srp-mobile-list .inventory-mobile-row__captured-facts > div { display:inline-flex; flex-wrap:wrap; align-items:baseline; gap:0 var(--ifx-space-1); min-width:0; }
 .if-srp-mobile-list .inventory-mobile-row__captured-facts dt { margin:0; color:var(--ink-600); font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.3 var(--font-app); }
-.if-srp-mobile-list .inventory-mobile-row__captured-facts dd { margin:0; color:var(--ink-900); font:var(--ifx-weight-medium) var(--ifx-text-sm)/1.35 var(--font-app); overflow-wrap:anywhere; }
-.if-srp-mobile-list .inventory-mobile-row__equipment-preview { grid-column:1 / -1; color:var(--ink-700); font:var(--ifx-weight-medium) var(--ifx-text-sm)/1.35 var(--font-app); }
+.if-srp-mobile-list .inventory-mobile-row__captured-facts dd { margin:0; color:var(--ink-900); font:var(--ifx-weight-medium) var(--ifx-text-sm)/1.3 var(--font-app); overflow-wrap:anywhere; }
+.if-srp-mobile-list .inventory-mobile-row__equipment-preview { display:flex; grid-column:1 / -1; width:100%; min-width:0; color:var(--ink-700); font:var(--ifx-weight-medium) var(--ifx-text-sm)/1.35 var(--font-app); white-space:nowrap; }
+.if-srp-mobile-list .inventory-mobile-row__equipment-preview > span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .if-srp-mobile-list .inventory-mobile-row__equipment-preview .inv-desk-equipment__more { color:var(--blue-700); white-space:nowrap; }
 .if-srp-mobile-list .inventory-mobile-row__title > svg { flex-shrink:0; color:var(--blue-700); margin-top:var(--ifx-space-0-5); }
+.if-srp-mobile-list .inventory-mobile-row__factory-pricing { display:flex; flex-wrap:wrap; gap:0 var(--ifx-space-3); margin:0; color:var(--ink-600); }
+.if-srp-mobile-list .inventory-mobile-row__factory-pricing > div { display:flex; align-items:baseline; gap:var(--ifx-space-1); min-width:0; }
+.if-srp-mobile-list .inventory-mobile-row__factory-pricing dt { font:var(--ifx-weight-regular) var(--ifx-text-xs)/1.3 var(--font-app); }
+.if-srp-mobile-list .inventory-mobile-row__factory-pricing dd { margin:0; color:var(--ink-900); font:var(--ifx-weight-semibold) var(--ifx-text-xs)/1.3 var(--font-app); font-variant-numeric:tabular-nums; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__signals { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); align-items:stretch; gap:0; margin:0; padding:0; border-block:1px solid var(--border); border-radius:0; background:var(--surface-soft); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; min-height:var(--ifx-control-height-md); gap:0; padding:0 var(--ifx-space-2); color:var(--ink-900); font:var(--ifx-weight-regular) var(--ifx-text-sm)/1.3 var(--font-app); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-hold > strong { font:var(--ifx-weight-semibold) var(--ifx-text-sm)/1.3 var(--font-app); }

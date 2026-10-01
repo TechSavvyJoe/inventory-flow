@@ -136,11 +136,11 @@
   --ifx-elevation-4: 0 24px 72px rgb(7 23 34 / 18%), 0 8px 20px rgb(7 23 34 / 8%);
   --ifx-elevation-action: 0 6px 16px rgb(53 70 219 / 22%), inset 0 1px rgb(255 255 255 / 20%);
 
-  --ifx-motion-instant: 70ms;
+  --ifx-motion-instant: 40ms;
   --ifx-motion-fast: var(--motion-fast);
   --ifx-motion-standard: var(--motion-standard);
-  --ifx-motion-deliberate: 360ms;
-  --ifx-motion-scene: 600ms;
+  --ifx-motion-deliberate: 120ms;
+  --ifx-motion-scene: 180ms;
   --ifx-ease-standard: var(--motion-ease);
   --ifx-ease-enter: var(--motion-enter);
   --ifx-ease-exit: var(--motion-exit);

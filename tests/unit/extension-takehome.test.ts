@@ -22,7 +22,8 @@ describe('take-home sheet model', () => {
   it('carries only published, customer-facing facts', () => {
     const vehicle = toPanelVehicle(record, { meta, transfers: [], vehicles: [record] })
     const model = takeHomeModel(vehicle, vehicle.photos)
-    expect(model).toMatchObject({ store: 'Howell', storeName: 'Bob Maxey Ford of Howell', storeSite: 'bobmaxeyfordhowell.com', name: '2024 Ford F-150 Lariat', stockNumber: 'DEMO-H01', price: 51800, msrp: 68420, savings: 16620, mileage: 12450 })
+    expect(model).toMatchObject({ store: 'Howell', storeName: 'Bob Maxey Ford of Howell', storeSite: 'bobmaxeyfordhowell.com', name: '2024 Ford F-150 Lariat', stockNumber: 'DEMO-H01', price: 51800, mileage: 12450 })
+    expect(model).not.toHaveProperty('factoryPrices')
     expect(model.brand.src).toBe('../brands/bob-maxey-ford.png')
     expect(model.certified.name).toBe('Ford Blue Certified')
     expect(model.photos).toEqual(['https://www.bobmaxeyfordhowell.com/photos/1.jpg'])
@@ -30,11 +31,46 @@ describe('take-home sheet model', () => {
     expect(model.highlights).toContain('BlueCruise')
     expect(model.history).toBe('AutoCheck score 91 · 1 owner reported')
     expect(model.description).toBe('Synthetic description.')
+    expect(JSON.stringify(model)).not.toContain('68420')
     const serialized = JSON.stringify(model)
     // Operational facts, custody, and the internal warranty estimate must never leave the panel.
     for (const forbidden of ['Demo Salesperson', 'Customer appointment', 'Fowlerville', 'Demo Driver', 'transfer-1', 'hold', 'inService', '2024-03-14', 'Bumper-to-bumper', 'expiresOn', 'monthsRemaining', 'OASIS', 'RequestBlocked']) {
       expect(serialized).not.toContain(forbidden)
     }
+  })
+
+  it('carries captured adverse history detail into the customer sheet', () => {
+    const adverse = {
+      ...record,
+      autoCheckReport: {
+        dataState: 'current',
+        score: 78,
+        checks: [
+          { label: 'Title', status: 'No issues found', detail: 'Salvage title reported' },
+          { label: 'Insurance loss', status: '1 record reported', detail: 'Total loss reported' },
+        ],
+      },
+    }
+    const model = takeHomeModel(toPanelVehicle(adverse, { meta, transfers: [], vehicles: [adverse] }))
+    expect(model.history).toBe('AutoCheck score 78 · Title: No issues found · Salvage title reported · Insurance loss: 1 record reported · Total loss reported')
+    expect(renderTakeHome(model).textContent).toContain(model.history)
+  })
+
+  it('keeps every MSRP/reference-price field out of the customer sheet', () => {
+    const panel = toPanelVehicle({...record,windowSticker:{dataState:'current',totalMsrp:62000,basePrice:50000,pricingCurrency:'CAD'}}, {meta,transfers:[],vehicles:[record]})
+    const model = takeHomeModel(panel)
+    expect(model).not.toHaveProperty('factoryPrices')
+    const legacy = renderTakeHome({...model,factoryPrices:{original:{value:62000,source:'window-sticker',currency:'CAD'},base:{value:50000,source:'window-sticker',currency:'CAD'}},msrp:68420,savings:16620})
+    expect(legacy.textContent).not.toContain('MSRP')
+    expect(legacy.textContent).not.toContain('62,000')
+    expect(legacy.textContent).not.toContain('68,420')
+  })
+
+  it('renders at most three distinct public photos in the customer sheet', () => {
+    const panel = toPanelVehicle(record, {meta,transfers:[],vehicles:[record]})
+    const photos = ['https://example.com/1.jpg','https://example.com/2.jpg','https://example.com/2.jpg','https://example.com/3.jpg','https://example.com/4.jpg']
+    const sheet = renderTakeHome(takeHomeModel(panel, photos))
+    expect([...sheet.querySelectorAll('.th-hero img')].map(image => image.getAttribute('src'))).toEqual(['https://example.com/1.jpg','https://example.com/2.jpg','https://example.com/3.jpg'])
   })
 
   it('names the Lincoln store certification for Lincoln-store vehicles', () => {

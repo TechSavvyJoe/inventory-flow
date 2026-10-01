@@ -419,44 +419,12 @@
   }
 }
 
-/* Premium inventory command surface — 2026 interaction pass ---------------- */
-
+/* Keep inventory stationary when its vehicle workspace opens. */
 .inventory-results-surface {
   position: relative;
   isolation: isolate;
-  border-color: color-mix(in srgb, var(--store-accent, #0c67c7) 15%, #d7e1ea);
-  background: rgb(255 255 255 / 94%);
-  box-shadow:
-    0 20px 55px rgb(8 35 63 / 8%),
-    0 2px 6px rgb(8 35 63 / 5%),
-    inset 0 1px rgb(255 255 255 / 94%);
-  backdrop-filter: blur(18px) saturate(1.08);
-}
-
-.inventory-results-surface {
   z-index: 1;
   overflow: visible;
-  transform-origin: 45% 22%;
-  transition: transform 360ms cubic-bezier(.16, 1, .3, 1), filter 360ms ease, box-shadow 360ms ease;
-}
-
-.inventory-results-surface::before {
-  content: '';
-  position: absolute;
-  z-index: 2;
-  top: -1px;
-  right: 6%;
-  left: 6%;
-  height: 1px;
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--store-accent, #0c67c7) 42%, white), transparent);
-  opacity: .72;
-}
-
-.inventory-experience.has-workspace .inventory-results-surface {
-  transform: perspective(1200px) translate3d(-4px, 2px, -16px) rotateY(.18deg) scale(.994);
-  filter: saturate(.88) brightness(.985);
-  box-shadow: 0 12px 35px rgb(8 35 63 / 7%);
 }
 
 .inventory-toolbar__right {
@@ -816,7 +784,6 @@
   .inventory-sort-composer { flex: 1; }
   .inventory-sort-composer > summary { width: 100%; min-width: 0; }
   .inventory-sort-composer__panel { right: 0; width: min(620px, calc(100vw - 24px)); }
-  .inventory-experience.has-workspace .inventory-results-surface { transform: scale(.994); }
 }
 
 @media (max-width: 620px) {
@@ -976,12 +943,12 @@
   height: 100%;
   display: block;
   object-fit: cover;
-  animation: inventory-photo-in 160ms ease both;
+  animation: inventory-photo-in var(--ifx-motion-fast) ease both;
 }
 
 @keyframes inventory-photo-in {
-  from { opacity: .35; transform: scale(1.01); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: .9; }
+  to { opacity: 1; }
 }
 
 .inventory-workspace-gallery__count {
@@ -2048,7 +2015,7 @@
 }
 
 /* Final cascade guard for the restrained operational UI. */
-.inventory-results-surface { overflow: visible; border-radius: 8px; background: var(--ifx-neutral-0); box-shadow: 0 8px 24px rgb(15 42 68 / 6%); }
+.inventory-results-surface { overflow: visible; border-radius: var(--ifx-radius-sm); background: var(--ifx-neutral-0); box-shadow: none; }
 .inventory-workspace { width: min(940px, 68vw); max-width: calc(100vw - 270px); box-shadow: -18px 0 44px rgb(9 31 53 / 16%); }
 .inventory-vehicle-documents { background-image: none; }
 

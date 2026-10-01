@@ -34,6 +34,7 @@ import {
   vehicleDisplayName,
 } from "./inventory-utils";
 import { primaryVehicleChangeSignal } from "./change-utils";
+import { factoryPriceLabel, factoryPricing, formatFactoryPrice } from "../../../extension/sidepanel/lib/factory-pricing.mjs";
 import {
   availableWindowStickerUrl,
   officialVehicleDocumentUrl,
@@ -77,7 +78,7 @@ const STOCK_SORT_OPTIONS = [
 
 const PRICE_SORT_OPTIONS = [
   { label: "Price", sortKey: "price" },
-  { label: "MSRP", sortKey: "msrp" },
+  { label: "Original MSRP", sortKey: "msrp" },
 ] satisfies SortOption[];
 
 const MILEAGE_SORT_OPTIONS = [
@@ -447,26 +448,28 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
       <span className="inv-desk-vehicle__photo">
         <VehiclePhoto vehicle={vehicle} className="inv-desk-vehicle__img" priority={priority} />
         <PhotoCount vehicle={vehicle} />
+        <span className="inv-desk-vehicle__photo-certification">
+          <CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name} />
+        </span>
       </span>
-      {/* Name, certification, then Stock and VIN directly beneath the name. */}
+      {/* Keep the complete identity beside its photo so a row scans as one vehicle. */}
       <div className="inv-desk-vehicle__body">
         <span className="inv-desk-vehicle__title"><strong title={name}>{identity}</strong></span>
         {series ? <span className="inv-desk-vehicle__series">{series}</span> : null}
-        <div className="inv-desk-vehicle__links"><CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name} />
-        {change ? <button type="button" className={`inv-desk-change inv-desk-change--${change.kind}`} data-row-action="history" data-inventory-vehicle-trigger={vehicle.id}
+        <div className="inv-desk-vehicle__links">{change ? <button type="button" className={`inv-desk-change inv-desk-change--${change.kind}`} data-row-action="history" data-inventory-vehicle-trigger={vehicle.id}
           aria-label={`View change history for ${name}: ${change.shortLabel}`} title={vehicle.changeSummary || change.label}
           onClick={(event) => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, "timeline"); }}>
           {change.shortLabel}
         </button> : null}
         </div>
-      </div>
-      <dl className="inv-desk-vehicle__facts">
-        <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy inv-desk-copy--stock" /></dd></div>
-        <div className="inv-desk-vehicle__vin"><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy" /></dd></div>
-      </dl>
-      <div className="inv-desk-vehicle__comparison">
-        {vehicle.exteriorColor ? <span><small>Exterior</small>{vehicle.exteriorColor}</span> : null}
-        {vehicle.interiorColor ? <span><small>Interior</small>{vehicle.interiorColor}</span> : null}
+        <dl className="inv-desk-vehicle__facts">
+          <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy inv-desk-copy--stock" /></dd></div>
+          <div className="inv-desk-vehicle__vin"><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy" /></dd></div>
+        </dl>
+        <div className="inv-desk-vehicle__comparison">
+          {vehicle.exteriorColor ? <span><small>Exterior</small>{vehicle.exteriorColor}</span> : null}
+          {vehicle.interiorColor ? <span><small>Interior</small>{vehicle.interiorColor}</span> : null}
+        </div>
       </div>
     </div>
   );
@@ -508,27 +511,34 @@ function RecallChip({ vehicle, onSelectVehicle }: { vehicle: InventoryVehicle; o
 
 function DeskPriceCell({ vehicle }: { vehicle: InventoryVehicle }) {
   const hasPrice = typeof vehicle.price === "number" && Number.isFinite(vehicle.price);
-  const hasMsrp = typeof vehicle.msrp === "number" && Number.isFinite(vehicle.msrp);
-  const savings = hasPrice && hasMsrp && vehicle.msrp! > vehicle.price! ? vehicle.msrp! - vehicle.price! : null;
-  const inventoryDate = compactInventoryDate(vehicle.inventoryDate);
-  const listingCapture = compactInventoryDate(vehicle.publicListing.updatedAt);
+  const pricing = factoryPricing(vehicle);
+  const originalMsrp = pricing.original.value === null ? null : {
+    label: factoryPriceLabel(pricing.original.source),
+    value: formatFactoryPrice(pricing.original.value, pricing.original.currency),
+    source: pricing.original.source === "vauto" ? "vAuto equipment" : "Window sticker",
+  };
+  const baseMsrp = pricing.base.value === null ? null : {
+    label: factoryPriceLabel(pricing.base.source, true),
+    value: formatFactoryPrice(pricing.base.value, pricing.base.currency),
+    source: pricing.base.source === "vauto" ? "vAuto equipment" : "Window sticker",
+    copyLabel: pricing.base.source === "vauto" ? "vAuto base MSRP" : "window sticker base MSRP",
+  };
   // Price is the primary figure; mileage and age sit tightly beneath it.
   return <div className={`inv-desk-price${hasPrice ? "" : " is-unavailable"}`}>
     <strong>{formatMoney(vehicle.price)}</strong>
-    {hasMsrp ? <dl className="inv-desk-price__context">
-      <div><dt>Listed MSRP</dt><dd>{formatMoney(vehicle.msrp)}</dd></div>
-      {savings !== null ? <div><dt>Under MSRP</dt><dd>{formatMoney(savings)}</dd></div> : null}
+    {originalMsrp || baseMsrp ? <dl className="inv-desk-price__context">
+      {originalMsrp ? <div><dt title={originalMsrp.source}>{originalMsrp.label}</dt><dd>{originalMsrp.value}</dd></div> : null}
+      {baseMsrp ? <div><dt title={baseMsrp.source}>{baseMsrp.label}</dt><dd>
+        <CopyableValue compact label={baseMsrp.copyLabel} text={String(pricing.base.value)} className="inv-desk-price__copy">{baseMsrp.value}</CopyableValue>
+      </dd></div> : null}
     </dl> : null}
     <span className="inv-desk-price__facts">
       {typeof vehicle.mileage === "number" && Number.isFinite(vehicle.mileage)
-        ? <CopyableValue compact label="mileage" text={String(vehicle.mileage)} className="inv-desk-price__mileage">{formatMileage(vehicle.mileage)}</CopyableValue>
-        : <span>{formatMileage(vehicle.mileage)}</span>}
-      <span className="inv-desk-price__age" title={inventoryDate ? `Inventory date ${inventoryDate}` : undefined}>{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : "Age unavailable"}</span>
+        ? <CopyableValue compact label="mileage" text={String(vehicle.mileage)} className="inv-desk-price__mileage">
+          <span>{formatMileage(vehicle.mileage)}<small className="inv-desk-price__age">{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : "Age unavailable"}</small></span>
+        </CopyableValue>
+        : <span>{formatMileage(vehicle.mileage)}<small className="inv-desk-price__age">{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : "Age unavailable"}</small></span>}
     </span>
-    {inventoryDate || listingCapture ? <dl className="inv-desk-price__dates">
-      {inventoryDate ? <div><dt>Inventory</dt><dd>{inventoryDate}</dd></div> : null}
-      {listingCapture ? <div><dt>Captured</dt><dd>{listingCapture}</dd></div> : null}
-    </dl> : null}
   </div>;
 }
 
@@ -1008,6 +1018,18 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
   ].filter(Boolean).join(" · ") || "Specifications in details";
   const transmissionAndFuel = [vehicle.transmission, vehicle.fuelType].filter(Boolean).join(" · ");
   const fuelEconomy = capturedFuelEconomy(vehicle);
+  const compactFuelEconomy = fuelEconomy
+    ?.replace(/^(\d+) city \/ (\d+) hwy MPG$/, "$1/$2 MPG")
+    .replace(/^(\d+) (city|hwy) MPG$/, "$1 $2 MPG");
+  const factoryPrice = factoryPricing(vehicle);
+  const mobileOriginalMsrp = factoryPrice.original.value === null ? null : {
+    label: factoryPriceLabel(factoryPrice.original.source),
+    value: formatFactoryPrice(factoryPrice.original.value, factoryPrice.original.currency),
+  };
+  const mobileBaseMsrp = factoryPrice.base.value === null ? null : {
+    label: factoryPriceLabel(factoryPrice.base.source, true),
+    value: formatFactoryPrice(factoryPrice.base.value, factoryPrice.base.currency),
+  };
   const operationalUpdate = movementStatus?.label || (recentChange?.kind !== "other" ? recentChange?.shortLabel : null);
   const holdToolsAvailable = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
   const hasDocumentEvidence = Object.values(mobileDocumentAvailability(vehicle)).some(Boolean);
@@ -1041,15 +1063,19 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
             <span>{formatMileage(vehicle.mileage)}</span>{vehicle.daysListed != null ? <span>{vehicle.daysListed}d</span> : null}
           </span>
           <small className="inventory-mobile-row__specification" title={specification}>{specification}</small>
+          <DeskEquipmentCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} limit={1} previewOnly />
         </span>
-        <DeskEquipmentCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} limit={1} previewOnly />
       </button>
+      {mobileOriginalMsrp || mobileBaseMsrp ? <dl className="inventory-mobile-row__factory-pricing" aria-label="Captured factory pricing">
+        {mobileOriginalMsrp ? <div><dt>{mobileOriginalMsrp.label}</dt><dd>{mobileOriginalMsrp.value}</dd></div> : null}
+        {mobileBaseMsrp ? <div><dt>{mobileBaseMsrp.label}</dt><dd>{mobileBaseMsrp.value}</dd></div> : null}
+      </dl> : null}
       <dl className="inventory-mobile-row__captured-facts" aria-label="Captured vehicle specifications">
         <div data-fact="vin"><dt>VIN</dt><dd>{vehicle.vin}</dd></div>
-        {vehicle.exteriorColor ? <div data-fact="exterior"><dt>Exterior</dt><dd>{vehicle.exteriorColor}</dd></div> : null}
-        {vehicle.interiorColor ? <div data-fact="interior"><dt>Interior</dt><dd>{vehicle.interiorColor}</dd></div> : null}
-        {transmissionAndFuel ? <div data-fact="transmission"><dt className="inventory-sr-only">{vehicle.transmission ? "Transmission / fuel" : "Fuel"}</dt><dd title={transmissionAndFuel}>{transmissionAndFuel.replace(/(\d+)-Speed Automatic/gi, "$1-speed auto")}</dd></div> : null}
-        {fuelEconomy ? <div data-fact="economy"><dt className="inventory-sr-only">Fuel economy</dt><dd>{fuelEconomy}</dd></div> : null}
+        {compactFuelEconomy ? <div data-fact="economy"><dt className="inventory-sr-only">Fuel economy</dt><dd title={fuelEconomy ?? undefined}>{compactFuelEconomy}</dd></div> : null}
+        {vehicle.exteriorColor ? <div data-fact="exterior"><dt className="inventory-sr-only">Exterior</dt><dd aria-label={`Exterior ${vehicle.exteriorColor}`}>{vehicle.exteriorColor}</dd></div> : null}
+        {vehicle.interiorColor ? <div data-fact="interior"><dt className="inventory-sr-only">Interior</dt><dd aria-label={`Interior ${vehicle.interiorColor}`}>{vehicle.interiorColor}</dd></div> : null}
+        {transmissionAndFuel ? <div data-fact="transmission"><dt className="inventory-sr-only">{vehicle.transmission ? "Transmission / fuel" : "Fuel"}</dt><dd title={transmissionAndFuel}>{transmissionAndFuel.replace(/(\d+)-Speed Automatic/gi, "$1-speed").replace(/\bGasoline\b/gi, "Gas")}</dd></div> : null}
       </dl>
       <div className="inventory-mobile-row__signals" aria-label="Operational vehicle signals">
         <div className="inventory-mobile-service"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed compact /></div>
