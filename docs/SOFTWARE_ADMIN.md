@@ -65,8 +65,11 @@ Configuring just one setting fails closed. Both absent preserves current
 single-account operation. The tenant gate runs after authentication and before
 inventory, integration/MCP or publisher handlers. There is no request-supplied tenant selector.
 Suspension and revocation are checked on each new request; an already accepted
-in-flight request may finish. Owner revocation clears the console's protected
-views and aborts pending reads. Platform administration uses no browser storage.
+in-flight request may finish. Owner revocation, a sign-in redirect or an owner
+refresh that cannot verify access clears the console's protected views and open
+edits, and aborts pending reads. A failed write with an uncertain outcome keeps
+its retry key while owner access is still verified. Platform administration uses
+no browser storage.
 
 ## New dealership onboarding boundary
 

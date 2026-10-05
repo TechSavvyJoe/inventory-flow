@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import PlatformAdminPage from './PlatformAdminPage'
 import type { PlatformOverview } from './types'
@@ -48,6 +48,58 @@ describe('Software administration',()=>{
     await waitFor(()=>expect(screen.queryByText('Synthetic manager')).not.toBeInTheDocument())
     expect(screen.queryByText('Northside Ford')).not.toBeInTheDocument()
     expect(screen.queryByText('Demo owner')).not.toBeInTheDocument()
+  })
+  it.each([
+    ['an HTML access refusal',()=>new Response('<html>Access denied</html>',{status:403,headers:{'Content-Type':'text/html'}})],
+    ['an HTML sign-in page',()=>new Response('<html>Sign in</html>',{headers:{'Content-Type':'text/html'}})],
+    ['a sign-in redirect',()=>{const response=ok(overview);Object.defineProperty(response,'redirected',{value:true});return response}],
+  ] as const)('clears protected records and open edits on %s',async(_name,response)=>{
+    let signInRequired=false
+    vi.stubGlobal('fetch',vi.fn(async()=>signInRequired?response():ok(overview)))
+    render(<PlatformAdminPage/>)
+    await selectGroup()
+    fireEvent.click(screen.getByRole('button',{name:'Add group'}))
+    expect(screen.getByRole('form',{name:'Add dealership group'})).toBeInTheDocument()
+    signInRequired=true
+    fireEvent.click(screen.getByRole('button',{name:'Refresh'}))
+    await screen.findByRole('heading',{name:'Software-owner access required'})
+    expect(screen.queryByText('Northside Ford')).not.toBeInTheDocument()
+    expect(screen.queryByText('Demo owner')).not.toBeInTheDocument()
+    expect(screen.queryByRole('form')).not.toBeInTheDocument()
+  })
+  it('clears protected records when an owner refresh cannot verify access, then recovers on retry',async()=>{
+    let disconnected=false
+    vi.stubGlobal('fetch',vi.fn(async()=>{if(disconnected)throw new TypeError('Synthetic network unavailable');return ok(overview)}))
+    render(<PlatformAdminPage/>)
+    await selectGroup()
+    fireEvent.click(screen.getByRole('button',{name:'Add group'}))
+    disconnected=true
+    fireEvent.click(screen.getByRole('button',{name:'Refresh'}))
+    await screen.findByRole('heading',{name:'Administration unavailable'})
+    expect(screen.queryByText('Northside Ford')).not.toBeInTheDocument()
+    expect(screen.queryByText('Demo owner')).not.toBeInTheDocument()
+    expect(screen.queryByRole('form')).not.toBeInTheDocument()
+    disconnected=false
+    fireEvent.click(screen.getByRole('button',{name:'Refresh'}))
+    await screen.findByText('Northside Ford')
+    expect(screen.queryByRole('heading',{name:'Administration unavailable'})).not.toBeInTheDocument()
+  })
+  it('does not let an older failed refresh erase a newer verified owner view',async()=>{
+    let reads=0, rejectOlder:(error:Error)=>void=()=>{}
+    vi.stubGlobal('fetch',vi.fn(async()=>{
+      reads++
+      if(reads===2)return new Promise<Response>((_resolve,reject)=>{rejectOlder=reject})
+      return ok(reads>2?{...overview,owner:{...overview.owner,name:'Refreshed owner'}}:overview)
+    }))
+    render(<PlatformAdminPage/>)
+    await selectGroup()
+    fireEvent.click(screen.getByRole('button',{name:'Refresh'}))
+    fireEvent.click(screen.getByRole('button',{name:'Refresh'}))
+    await screen.findByText('Refreshed owner')
+    await act(async()=>rejectOlder(new TypeError('Synthetic older request failed')))
+    expect(screen.getByText('Refreshed owner')).toBeInTheDocument()
+    expect(screen.getByText('Northside Ford')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
   it('keeps an idempotency key when retrying an uncertain network failure',async()=>{
     let writes=0

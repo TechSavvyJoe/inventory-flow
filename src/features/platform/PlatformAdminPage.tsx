@@ -54,24 +54,34 @@ export default function PlatformAdminPage() {
   const controllers = useRef(new Set<AbortController>())
   const loadSequence = useRef(0)
   const ownerId = useRef('')
+  const clearProtected = useCallback((accessDenied:boolean) => {
+    epoch.current++;controllers.current.forEach(controller=>controller.abort())
+    setData(null);setMembers(null);setMemberError('');setEdit(null);setSelected('');setNotice('');setDenied(accessDenied);ownerId.current=''
+  },[])
   const request = useCallback(async <T,>(path:string,body?:Record<string,string|boolean|number>,key?:string):Promise<T> => {
     const generation = epoch.current, controller = new AbortController()
     controllers.current.add(controller)
     try {
       const response = await fetch(`/api/platform${path}`,{credentials:'same-origin',cache:'no-store',signal:controller.signal,...(body?{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key ?? ''},body:JSON.stringify(body)}:{})})
       if (generation !== epoch.current) throw new DOMException('Access changed','AbortError')
+      if ([401,403].includes(response.status)) {
+        clearProtected(true)
+        throw new PlatformRequestError(response.status===401?'Sign in again to verify software-owner access.':'Software-owner access is required.',response.status)
+      }
+      const isJson = response.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase()==='application/json'
+      if (response.redirected || (response.ok && !isJson)) {
+        clearProtected(true)
+        throw new PlatformRequestError('Sign in again to verify software-owner access.',401)
+      }
+      if (!isJson) throw new PlatformRequestError('The owner service could not be verified. Refresh to try again.',response.status)
       const result = await response.json()
       if (generation !== epoch.current) throw new DOMException('Access changed','AbortError')
       if (!response.ok) {
-        if ([401,403].includes(response.status)) {
-          epoch.current++; controllers.current.forEach(active=>active.abort())
-          setData(null);setMembers(null);setEdit(null);setSelected('');setNotice('');setDenied(true);ownerId.current=''
-        }
         throw new PlatformRequestError(result.error || 'The request could not be completed.',response.status)
       }
       return result as T
     } finally {controllers.current.delete(controller)}
-  },[])
+  },[clearProtected])
   const failed = useCallback((caught:unknown) => {if (!(caught instanceof DOMException && caught.name === 'AbortError')) setError(caught instanceof Error?caught.message:'The request failed.')},[])
   const refresh = useCallback(async () => {
     const sequence = ++loadSequence.current
@@ -83,8 +93,13 @@ export default function PlatformAdminPage() {
       setSelected(current=>!ownerChanged && next.groups.some(item=>item.id===current) ? current : next.groups.find(item=>item.status==='active' && item.health.connected)?.id ?? next.groups[0]?.id ?? '')
       ownerId.current = next.owner.id
       setData(next);setDenied(false);setError('')
-    } catch(caught) {failed(caught)} finally {if (sequence === loadSequence.current) setLoading(false)}
-  },[failed,request])
+    } catch(caught) {
+      if (sequence === loadSequence.current && !(caught instanceof DOMException && caught.name==='AbortError')) {
+        clearProtected(caught instanceof PlatformRequestError && [401,403].includes(caught.status))
+        failed(caught)
+      }
+    } finally {if (sequence === loadSequence.current) setLoading(false)}
+  },[clearProtected,failed,request])
   useEffect(()=>{
     void refresh()
     const timer = window.setInterval(()=>{if (document.visibilityState==='visible') void refresh()},30000)
