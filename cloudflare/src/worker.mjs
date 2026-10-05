@@ -12,6 +12,7 @@ import { WorkflowError } from '../../server/workflow.mjs'
 import { ISSUE_BODY_BYTES, prepareIssuePhotos } from '../../server/issue-photos.mjs'
 import { readIssuePhoto, storeIssuePhotos } from './issue-photo-storage.mjs'
 import { assertSavedListOwner, SAVED_LIST_BODY_BYTES } from '../../server/saved-vehicle-lists.mjs'
+import { assertTenantEnabled } from './tenant-gate.mjs'
 
 const FORMAT = 'inventory-flow-private-release-v1'
 const MAX_UPLOAD = 25 * 1024 * 1024
@@ -531,6 +532,7 @@ export default {
       if(!env.PRIVATE_HOSTNAME || url.hostname!==env.PRIVATE_HOSTNAME) throw new AccessError('PRIVATE_HOST_REQUIRED',403)
       if(url.pathname.startsWith('/internal/')) {
         await publisher(request,env)
+        await assertTenantEnabled(env)
         const invoiceMatch=/^\/internal\/invoices\/(\d{4}-\d{2}-\d{2})\/([A-HJ-NPR-Z0-9]{17})$/.exec(url.pathname)
         if(request.method==='POST' && invoiceMatch) return await uploadInvoiceDocument(request,env,invoiceMatch[1],invoiceMatch[2])
         const equipmentMatch=/^\/internal\/equipment\/([A-HJ-NPR-Z0-9]{17})\/([a-f0-9]{64})$/.exec(url.pathname)
@@ -542,6 +544,7 @@ export default {
         throw new HttpError('NOT_FOUND',404)
       }
       const claims=await verifyAccess(request,env)
+      await assertTenantEnabled(env)
       const context=await memberContext(claims,env,request)
       if(request.method==='GET' && url.pathname==='/api/health') return json(200,{ok:true,ready:Boolean(await currentRelease(env)),service:'inventory-flow-cloud',version:versionMetadata(env)})
       if(url.pathname.startsWith('/api/')) return await appApi(request,url,env,context,claims)

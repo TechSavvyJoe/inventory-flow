@@ -5,6 +5,8 @@ import { createInventoryServiceCore } from '../../server/service-core.mjs'
 import { createIntegrationReadService, IntegrationReadError } from '../../server/integrations/read-service.mjs'
 import { createInventoryMcpHandler } from '../../server/integrations/mcp.mjs'
 import { integrationBootstrapFromSource } from '../../server/integrations/source-bootstrap.mjs'
+import { assertTenantEnabled } from './tenant-gate.mjs'
+import { AccessError } from './access.mjs'
 
 const MAX_RESPONSE = 1024 * 1024
 const encoder = new TextEncoder()
@@ -46,7 +48,7 @@ function routeFor(url) {
 }
 function resultCount(result) { return Array.isArray(result?.data) ? result.data.length : result?.data ? 1 : 0 }
 function errorInfo(error) {
-  if (error instanceof IntegrationAccessError || error instanceof IntegrationReadError) return { status: error.status, code: error.code }
+  if (error instanceof IntegrationAccessError || error instanceof IntegrationReadError || error instanceof AccessError) return { status: error.status, code: error.code }
   // Release validation, storage and SDK failures can contain source or credential
   // metadata. Expose only fixed failures, never exception messages or stack traces.
   return { status: 503, code: 'INTEGRATION_DATA_UNAVAILABLE' }
@@ -139,6 +141,7 @@ export function createIntegrationWorker({
         if (request.method !== (isMcp ? 'POST' : 'GET')) fail('METHOD_NOT_ALLOWED', 405)
         if (isMcp) noQuery(url)
         principal = await authenticate(request, env)
+        await assertTenantEnabled(env)
         const consumed = await quota(env, principal)
         quotaHeaders = { 'RateLimit-Limit': String(consumed.limit), 'RateLimit-Remaining': String(consumed.remaining), 'RateLimit-Reset': String(Math.ceil(consumed.resetAt / 1000)) }
         // Authentication and quota above run on every request before any cached

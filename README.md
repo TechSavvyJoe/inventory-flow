@@ -65,6 +65,14 @@ move within the vehicle workspace without scrolling its header out of view.
 
 ### Manager access and service accuracy
 
+Software owners have a separate `/platform` console for dealership-group
+registration, isolated account connections, employee access, account suspension,
+publication health and attributed administration history. It requires a separate
+owner identity/database/Worker; a dealership group-manager role does not grant
+ownership. It is prepared for review, not activated in production. See
+[Software administration](docs/SOFTWARE_ADMIN.md) for implemented controls,
+onboarding limits and the separate activation checklist.
+
 Group managers open **Control center** (`/admin`) to manage employees and review
 access history. The account menu offers permission previews of the other roles;
 the testing banner provides **Return to Group manager**. These are live records,
