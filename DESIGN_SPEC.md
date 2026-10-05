@@ -1,8 +1,8 @@
-# Maxey Inventory Flow — implementation design specification
+# Inventory Flow — implementation design specification
 
 ## Product point of view
 
-Maxey Inventory Flow is an internal operations surface for a four-store dealership group. It is not a replacement for DealerMail, CDK, DealerOn, or the audited daily workbook. It answers a narrower set of operational questions quickly:
+Inventory Flow is an operations surface for dealership teams, with independent product branding and separate dealership account branding. The current account is configured for a four-store group. It is not a replacement for DealerMail, CDK, DealerOn, or the audited daily workbook. It answers a narrower set of operational questions quickly:
 
 1. What inventory should I work from my home store today?
 2. What matching vehicles can the group reach when my store does not have the right unit?
@@ -83,7 +83,7 @@ Use one consistent 1.75px rounded-outline family for navigation, search, filter,
 
 ## Allowed first-viewport copy
 
-- Maxey Inventory Flow
+- Inventory Flow
 - Home store
 - Howell / Fowlerville / Ford Detroit / Lincoln
 - Search stock, VIN, model, or feature

@@ -12,7 +12,7 @@ Version History row for every release submitted to the Chrome Web Store.
 Inventory Flow Deal Desk
 
 **Short Description** (116 of 132 characters)
-Search Maxey inventory, see hold and location status, and request a vehicle from a side panel while you work a deal.
+Search your dealership's inventory, see hold and location status, and request a vehicle from a side panel while you work a deal.
 
 **Detailed Description**
 Inventory Flow Deal Desk puts your dealership's inventory one keyboard shortcut away, wherever you're already working — DealerMail, CDK, email, or a customer's online listing.

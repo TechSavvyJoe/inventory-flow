@@ -4,15 +4,15 @@ The interface uses four separable brand layers. This keeps the software reusable
 
 ## 1. Product layer
 
-The product name and mark are a working identity and remain **TBD pending naming, trademark, and domain clearance**. This layer owns the masthead, navigation structure, typography, neutral surfaces, status colors, and interaction patterns. It must remain legible and recognizable regardless of the selected dealer group, OEM, or store.
+The software name is **Inventory Flow**, with the Flowline “F” mark. This layer owns the app title, navigation, install icons, extension identity, document metadata, typography, neutral surfaces, status colors, and interaction patterns. It must remain legible and recognizable regardless of the selected dealer group, OEM, or store.
 
-The current “Maxey Inventory Flow” text and blue “M” are temporary prototype identity, not a locked independent product brand and not an official Bob Maxey corporate mark.
+Dealership names are never appended to the product wordmark or app name. Customer documents retain the dealership name and logo supplied by their store; a comparison spanning different stores uses Inventory Flow as its neutral heading and keeps each vehicle's store attribution. A shared dealership logo appears only when every selected store supplies the same asset.
 
 ## 2. Dealer-group layer
 
-The dealer-group layer identifies the authorized tenant. For the current prototype that tenant is Bob Maxey. It provides the store roster, operational language, permissions, and group-specific workflow configuration. It does not replace the product identity in the masthead.
+The dealer-group layer identifies the authorized dealership account. The current configured account is Bob Maxey. It provides the store roster, operational language, permissions, and group-specific workflow configuration. Its branding belongs in the working-location/account context and store-specific customer documents.
 
-The active group is exposed on the app shell as `data-dealer-group="bob-maxey"`. A future tenant can provide a different group key and store configuration without changing the product components.
+The active group is exposed on the app shell as `data-dealer-group="bob-maxey"`. Product components do not use that key as their name or logo. Branding separation does not implement multi-tenant onboarding or data isolation: the current store roster, document branding, source adapters, and host allowlists still describe the existing account. Supporting another dealership requires its own authorized configuration and a separate tenancy implementation.
 
 ## 3. OEM layer
 
@@ -32,7 +32,7 @@ The UI tokens are an internal interface interpretation, not a claim that the exa
 
 The store layer provides the selected store's name, approved local asset, source provenance, and store-specific theme key. The current keys are `ford`, `fowlerville`, and `lincoln`, exposed through `data-store-theme`.
 
-`src/app/storeBranding.ts` is the single configuration point. Every store declares:
+`src/app/storeBranding.ts` configures the current account's shell branding. Customer document names and sites are currently configured in `src/features/sales/customer-summary.ts` and `extension/sidepanel/lib/takehome.mjs`, with extension logos in `extension/sidepanel/lib/brand.mjs`. These are dealership account settings, not Inventory Flow product identity. Every shell store declares:
 
 - dealer-group key;
 - OEM key and accessible OEM label;

@@ -1,8 +1,8 @@
-# Maxey Inventory Flow
+# Inventory Flow
 
-A separate home-store-first inventory and cross-store vehicle-operations application for Howell, Fowlerville, Ford Detroit, and Lincoln.
+A home-store-first inventory and cross-store vehicle-operations application for dealership teams. The current dealership account is configured for Howell, Fowlerville, Ford Detroit, and Lincoln.
 
-The blue “M” is an internal Inventory Flow product mark, not an official Bob Maxey, Ford, or Lincoln corporate logo. The selected Home Store adds a locally bundled logo and restrained store-specific accent sourced from that store's official website; the manufacturer/store treatment never replaces the group-wide product identity.
+Inventory Flow uses its own Flowline “F” product mark and software name. The selected Home Store adds its dealership logo and store-specific accent in the account context; dealership and manufacturer branding never becomes part of the Inventory Flow name or product logo. See [Brand architecture](docs/BRAND_ARCHITECTURE.md) for the current account configuration and the remaining work required to onboard other dealerships.
 
 The app reads only completed, dated public-inventory and DealerMail snapshots named by the daily run manifest. It never modifies source snapshots, DealerMail, DealerOn, or CDK. The hosted app uses Cloudflare Workers, an Access-protected API, private encrypted R2 evidence, and a shared D1 operational ledger. Local SQLite remains a development/recovery format, not the hosted app's database.
 

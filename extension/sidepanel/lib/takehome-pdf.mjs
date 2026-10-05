@@ -96,10 +96,10 @@ export async function createTakeHomePdf(models, title, { fetcher = globalThis.fe
     bytes(new URL('../../fonts/Inter-Bold.woff', import.meta.url).href, fetcher),
   ])
   const regular = await pdf.embedFont(regularBytes, { subset:true }), bold = await pdf.embedFont(boldBytes, { subset:true })
-  pdf.setTitle(clean(title)); pdf.setAuthor('Inventory Flow · Bob Maxey'); pdf.setCreator('Inventory Flow'); pdf.setCreationDate(now)
+  pdf.setTitle(clean(title)); pdf.setAuthor('Inventory Flow'); pdf.setCreator('Inventory Flow'); pdf.setCreationDate(now)
 
   if (layout === 'comparison') {
-    pdf.setTitle('Bob Maxey vehicle comparison')
+    pdf.setTitle('Inventory Flow vehicle comparison')
     const assets = new Map(), photoSources = new Map(), logoSources = new Map()
     for (const model of selected) {
       let photo = null

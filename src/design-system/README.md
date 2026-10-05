@@ -21,10 +21,10 @@ The interface has three deliberately separate layers:
    - Never recolored to imitate an OEM and never combined into an OEM oval,
      shield, star, grille, or other protected shape.
 2. **Tenant — dealership or group**
-   - Replaceable text label such as `Maxey workspace` and an optional
+   - Replaceable text label such as `Dealership workspace` and an optional
      tenant-owned logo.
-   - Lives beside or below the product identity; it never replaces the
-     Inventory Flow wordmark.
+   - Lives in the account and working-location context; it never becomes part
+     of the Inventory Flow wordmark or app name.
 3. **OEM skin — Ford, Lincoln, or neutral**
    - Changes atmospheric scene, navigation accent, metallic surfaces, and
      selected operational buttons through `data-ifx-oem`.
@@ -107,8 +107,10 @@ primitive for icon-only controls.
 
 ### FlowBrandLockup
 
-The app shell renders it in the expanded and compact navigation. Product and
-tenant stay separate elements.
+The app shell renders it in the expanded and compact navigation without a
+dealership suffix. The compact interface descriptor is `Dealer tools`. Account
+branding stays in the working-location context; the optional `tenantLabel` is
+available for explicitly account-specific surfaces.
 
 ## Accessibility
 
@@ -143,7 +145,7 @@ delay interaction or animate tables themselves.
    itself, so importing a component brings its styles.
 2. Replace the current product mark reference with
    `/brand-kit/inventory-flow-icon.svg` and render
-   `<FlowBrandLockup tenantLabel="Maxey" />` in the expanded navigation.
+   `<FlowBrandLockup />` in the expanded navigation.
 3. Set `data-ifx-oem="ford"`, `"lincoln"`, or `"neutral"` on the app shell.
 4. Adopt `FlowButton` and `FlowIconButton` first in Inventory table row
    actions and the vehicle workspace. Do not change source-status wording while

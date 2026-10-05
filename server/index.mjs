@@ -102,7 +102,7 @@ export function startInventoryServer({
     const sourceNote = refreshResult.ok
       ? `synthetic release ${refreshResult.reportDate}`
       : `retained release ${refreshResult.retainedReportDate || 'none'} (refresh failed)`
-    console.log(`Maxey Inventory Flow demo server listening on http://${host}:${activePort} — ${sourceNote}`)
+    console.log(`Inventory Flow demo server listening on http://${host}:${activePort} — ${sourceNote}`)
   })
 
   function close() {

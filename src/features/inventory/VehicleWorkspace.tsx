@@ -1035,7 +1035,7 @@ export function VehicleWorkspace({
           {issueContext ? <WorkspacePanel id="issues" label="Issues" active={activePage === 'issues'}><VehicleIssues key={issueAccessKey} issues={vehicleIssues} context={issueContext} canReport={canReportIssue} onReport={reportIssue} onSaved={issueSaved} initialIssueId={createdIssueId} /></WorkspacePanel> : null}
         </div>
         <footer className="vdp-focus-footer">
-          <span>Inventory Flow <strong>MAXEY</strong></span>
+          <span>Inventory Flow</span>
           <div role="toolbar" aria-label="Vehicle actions">
             {listingUrl ? onOpenListing ? <button type="button" onClick={() => onOpenListing(vehicle)} data-action="open-listing"><Globe2 size={18} aria-hidden="true" />Listing</button>
               : <a href={listingUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" data-action="open-listing" data-read-only="true"><Globe2 size={18} aria-hidden="true" />Listing</a> : null}

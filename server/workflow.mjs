@@ -195,7 +195,7 @@ function optionalIdentity(value, field) {
 function storeName(value, field) {
   const store = requiredText(value, field, 40)
   if (!STORE_NAMES.includes(store)) {
-    throw new WorkflowError(`${field} must be a Bob Maxey store`, {
+    throw new WorkflowError(`${field} must be a configured store`, {
       details: { field, allowed: STORE_NAMES },
     })
   }

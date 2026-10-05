@@ -68,8 +68,10 @@ export function createComparisonPlan(models, {wrap, safeLink = () => null, photo
     let current, top
     const nextPage=continued=> {
       const sameStore=vehicles.every(vehicle=>vehicle.storeName===vehicles[0].storeName)
-      const headerLogo=sameStore?vehicles[0].logo:vehicles.every(vehicle=>/^Bob Maxey Ford/i.test(vehicle.storeName))?vehicles.find(vehicle=>/\/bob-maxey-ford\.png$/.test(vehicle.logo?.src ?? ''))?.logo ?? null:null
-      current={index:plan.pages.length+1,continued,vehicles,columns,headerLogo,headerTitle:'Vehicle comparison',headerStore:sameStore?vehicles[0].storeName:'Bob Maxey',headerSite:sameStore?vehicles[0].storeSite:'',footerDisclaimer:'Price excludes tax, title, license and dealer fees. Confirm equipment, mileage and availability with the dealership before purchase.',footerPage:'',rows:[]}
+      // A shared logo must be supplied by every store; never infer a dealer group from its name.
+      const sharedLogo=vehicles[0].logo?.src && vehicles.every(vehicle=>vehicle.logo?.src===vehicles[0].logo.src)
+      const headerLogo=sameStore || sharedLogo?vehicles[0].logo:null
+      current={index:plan.pages.length+1,continued,vehicles,columns,headerLogo,headerTitle:'Vehicle comparison',headerStore:sameStore?vehicles[0].storeName || 'Inventory Flow':'Inventory Flow',headerSite:sameStore?vehicles[0].storeSite:'',footerDisclaimer:'Price excludes tax, title, license and dealer fees. Confirm equipment, mileage and availability with the dealership before purchase.',footerPage:'',rows:[]}
       plan.pages.push(current);top=geometry.bodyTop
       if(continued) {
         const cells=vehicles.map((vehicle,index)=> {

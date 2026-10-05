@@ -294,7 +294,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <aside className="desktop-nav" id="application-navigation" aria-label="Application navigation">
         <div className="brand-block">
-          <FlowBrandLockup tenantLabel="Maxey" />
+          <FlowBrandLockup />
         </div>
         {primaryNavigation}
         <div className="nav-footer">
@@ -317,8 +317,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <header className="top-bar">
-        <div className="mobile-brand" aria-label="Inventory Flow, Maxey workspace">
-          <FlowBrandLockup tenantLabel="Maxey" compact />
+        <div className="mobile-brand" aria-label="Inventory Flow">
+          <FlowBrandLockup compact />
         </div>
 
         <div className="store-control-region">
