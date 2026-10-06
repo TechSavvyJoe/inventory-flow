@@ -93,6 +93,14 @@ Playwright attachments remain in `/tmp/inventory-flow-qa/e2e/`.
   now have their own 44px space; the phone footer uses two rows with arrows
   on the left and row size on the right. New browser regressions check these
   specific bounds without forced clicks or longer timeouts.
+- Source run `37521342464` exposed shared fixture contamination in the new
+  phone pager test: an earlier transfer test moved its only unheld vehicle
+  away from the home store. The pager test now isolates that vehicle's
+  synthetic location and joined movement rows in its bootstrap response.
+  The original home-page geometry, controls, assertions and timeout remain
+  unchanged; no shared ledger reset or application change is required.
+  The bounded desktop-pager, direct-move, mobile-pager, direct-move sequence
+  passed all four tests, including the contaminated mobile case.
 
 ## Reviewed visual references
 

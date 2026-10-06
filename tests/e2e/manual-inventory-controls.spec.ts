@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import type { BootstrapData } from '../../src/types'
 
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 // The real Node HTTP routes persist app-owned controls, never source writes.
@@ -28,6 +29,25 @@ for (const [width, height] of [[1024, 768], [1320, 820], [1440, 900]]) {
 
 test('phone pagination and row size remain clear of the saved-vehicle launcher', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
+  // The desktop direct-move test moves this synthetic Bronco to Ford Detroit
+  // before the mobile project runs. Restore its initial location only in this
+  // page's synthetic response so the one-row home layout stays deterministic;
+  // the shared demo ledger and the real move assertions remain untouched.
+  await page.route('**/api/bootstrap?**', async route => {
+    const response = await route.fetch()
+    expect(response.ok()).toBe(true)
+    const payload = await response.json() as BootstrapData
+    expect(payload.vehicles.every(vehicle => vehicle.vin.startsWith('TESTDATA'))).toBe(true)
+    const bronco = payload.vehicles.find(vehicle => vehicle.vin === 'TESTDATAHWELL0002')!
+    expect(bronco).toBeDefined()
+    bronco.movement = {
+      state: 'source_reported', label: 'Source-reported location', currentLocation: 'Howell',
+      locationConfidence: 'reported', nextAction: 'Confirm with home store before customer commitment',
+      nextActionOwner: 'Howell manager', newRequestBlocked: false,
+    }
+    payload.transfers = payload.transfers.filter(transfer => transfer.vin !== bronco.vin)
+    await route.fulfill({ response, json: payload })
+  })
   await page.goto('/inventory')
   await page.getByRole('button', { name: /^No hold:/ }).click()
   const pages = page.getByRole('navigation', { name: 'Inventory pages' })
