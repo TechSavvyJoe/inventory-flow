@@ -56,6 +56,6 @@ export default function PlatformAdminPage() {
  <footer className="platform-footer">Verified {formatDateTime(data.generatedAt)} · Source credentials and customer records stay outside the control plane.</footer>
  </div>}
  </main></div>
- {data&&edit&&<PlatformChangeDialog key={`${edit.path}:${edit.values.id??'new'}`} edit={edit} busy={busy} error={admin.error} save={admin.save} cancel={admin.closeEdit}/>}
+ {data&&edit&&<PlatformChangeDialog key={`${edit.path}:${edit.values.id??'new'}`} edit={edit} busy={busy} error={admin.error} save={admin.save} cancel={admin.closeEdit} onRetryRefresh={admin.refreshFailed?admin.refresh:undefined}/>}
  </div>
 }

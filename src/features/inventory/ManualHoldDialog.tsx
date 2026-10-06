@@ -73,12 +73,15 @@ export function ManualHoldDialog({ vehicle, role, store, onClose, onSaved, retur
         try {
           const latest = await getManualHold(vehicle.vin, role, store)
           setDetail(latest)
-          if (action === 'released' && latest.state !== 'active') {
-            // A concurrent release completed the intended action. Return to a usable placement form.
-            setAction('active'); setLabel(''); setDate(''); setNote('')
-            markSaved(); setDirty(false)
-            setError('This manual hold was already released. The latest record is shown; you can place a new hold if needed.')
-          }
+          // Reconcile the editable fields with the version before another deliberate save.
+          setAction('active')
+          setLabel(latest.state === 'active' ? latest.customerLabel ?? '' : '')
+          setDate(latest.state === 'active' ? latest.expectedDeliveryDate ?? '' : '')
+          setNote(latest.state === 'active' ? latest.note ?? '' : '')
+          markSaved(); setDirty(false)
+          setError(action === 'released' && latest.state !== 'active'
+            ? 'This manual hold was already released. The latest record is shown; you can place a new hold if needed.'
+            : 'This manual hold changed on another device. The latest values are shown. Review them before saving again.')
         } catch { /* Keep the draft for a deliberate retry. */ }
       }
     } finally { setBusy(false) }

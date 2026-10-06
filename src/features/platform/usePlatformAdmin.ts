@@ -7,6 +7,7 @@ export function usePlatformAdmin() {
   const [selected,setSelected] = useState('')
   const [edit,setEdit] = useState<PlatformEdit|null>(null)
   const [error,setError] = useState('')
+  const [refreshFailed,setRefreshFailed] = useState(false)
   const [notice,setNotice] = useState('')
   const [busy,setBusy] = useState(false)
   const [loading,setLoading] = useState(true)
@@ -18,7 +19,7 @@ export function usePlatformAdmin() {
   const ownerId = useRef('')
   const clearProtected = useCallback((accessDenied:boolean) => {
     epoch.current++;controllers.current.forEach(controller=>controller.abort())
-    setData(null);setEdit(null);setSelected('');setNotice('');setDenied(accessDenied);ownerId.current=''
+    setData(null);setEdit(null);setSelected('');setNotice('');setRefreshFailed(false);setDenied(accessDenied);ownerId.current=''
   },[])
   const request = useCallback(async <T,>(path:string,body?:Record<string,string|boolean|number>,key?:string):Promise<T> => {
     const generation = epoch.current, controller = new AbortController()
@@ -42,9 +43,14 @@ export function usePlatformAdmin() {
         throw new PlatformRequestError(result.error || 'The request could not be completed.',response.status)
       }
       return result as T
+    } catch(caught) {
+      if (generation !== epoch.current && !(caught instanceof PlatformRequestError && [401,403].includes(caught.status))) {
+        throw new DOMException('Access changed','AbortError')
+      }
+      throw caught
     } finally {controllers.current.delete(controller)}
   },[clearProtected])
-  const failed = useCallback((caught:unknown) => {if (!(caught instanceof DOMException && caught.name === 'AbortError')) setError(caught instanceof Error?caught.message:'The request failed.')},[])
+  const failed = useCallback((caught:unknown) => {if (!(caught instanceof DOMException && caught.name === 'AbortError')) {setError(caught instanceof Error?caught.message:'The request failed.');setRefreshFailed(false)}},[])
   const refresh = useCallback(async () => {
     const sequence = ++loadSequence.current
     try {
@@ -54,14 +60,14 @@ export function usePlatformAdmin() {
       if (ownerChanged) {epoch.current++;controllers.current.forEach(controller=>controller.abort());setEdit(null);setNotice('')}
       setSelected(current=>!ownerChanged && next.groups.some(item=>item.id===current) ? current : next.groups.find(item=>item.status==='active' && item.health.connected && item.health.status==='current')?.id ?? next.groups.find(item=>item.status==='active' && item.health.connected)?.id ?? next.groups[0]?.id ?? '')
       ownerId.current = next.owner.id
-      setData(next);setRefreshVersion(value=>value+1);setDenied(false);setError('')
+      setData(next);setRefreshVersion(value=>value+1);setDenied(false);setError('');setRefreshFailed(false)
     } catch(caught) {
       if (sequence === loadSequence.current && !(caught instanceof DOMException && caught.name==='AbortError')) {
-        clearProtected(caught instanceof PlatformRequestError && [401,403].includes(caught.status))
-        failed(caught)
+        if (caught instanceof PlatformRequestError && [401,403].includes(caught.status)) failed(caught)
+        else {setError('The owner overview could not be refreshed. Refresh to try again.');setRefreshFailed(true)}
       }
     } finally {if (sequence === loadSequence.current) setLoading(false)}
-  },[clearProtected,failed,request])
+  },[failed,request])
   useEffect(()=>{
     void refresh()
     const timer = window.setInterval(()=>{if (document.visibilityState==='visible') void refresh()},30000)
@@ -70,7 +76,7 @@ export function usePlatformAdmin() {
     return ()=>{clearInterval(timer);window.removeEventListener('focus',refreshOnFocus);epoch.current++;controllers.current.forEach(controller=>controller.abort())}
   },[refresh])
   const save = async (form:PlatformEdit,values:Record<string,string|boolean|number>,key:string) => {
-    setBusy(true);setError('');setNotice('')
+    setBusy(true);setError('');setNotice('');setRefreshFailed(false)
     try {
       const result=await request<{id?:string}>(form.path,values,key)
       if(result.id)form.afterSave?.(result.id)
@@ -78,6 +84,6 @@ export function usePlatformAdmin() {
       await refresh()
     } catch(caught) {failed(caught)} finally {setBusy(false)}
   }
-  const begin = (form:PlatformEdit) => {if (busy) return;setError('');setNotice('');setEdit(form)}
-  return {data,selected,setSelected,edit,error,notice,busy,loading,denied,refreshVersion,request,refresh,save,begin,closeEdit:()=>setEdit(null)}
+  const begin = (form:PlatformEdit) => {if (busy) return;setError('');setNotice('');setRefreshFailed(false);setEdit(form)}
+  return {data,selected,setSelected,edit,error,refreshFailed,notice,busy,loading,denied,refreshVersion,request,refresh,save,begin,closeEdit:()=>setEdit(null)}
 }

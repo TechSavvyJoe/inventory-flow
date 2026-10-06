@@ -1,7 +1,8 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import PlatformAdminPage from './PlatformAdminPage'
 import type { PlatformOverview } from './types'
+import { usePlatformAdmin } from './usePlatformAdmin'
 
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 const overview:PlatformOverview={owner:{id:'synthetic-owner',email:'owner@example.invalid',name:'Demo owner',enabled:true},revision:0,generatedAt:'2026-10-05T14:00:00Z',groups:[{id:'synthetic-north',name:'Northside Motors',status:'active',updatedAt:'2026-10-05T12:00:00Z',dealerships:[{id:'synthetic-store',groupId:'synthetic-north',name:'Northside Ford',storeKey:'northside',website:'https://northside.example.invalid',enabled:true}],health:{status:'current',connected:true,activeEmployees:1,employees:1,groupManagers:1,message:'Synthetic current publication'}}],owners:[{id:'synthetic-owner',name:'Demo owner',email:'owner@example.invalid',enabled:true}],audit:[]}
@@ -50,6 +51,7 @@ describe('Software administration',()=>{
     expect(screen.queryByText('Demo owner')).not.toBeInTheDocument()
   })
   it.each([
+    ['an expired owner session',()=>Response.json({error:'Sign in again'},{status:401})],
     ['an HTML access refusal',()=>new Response('<html>Access denied</html>',{status:403,headers:{'Content-Type':'text/html'}})],
     ['an HTML sign-in page',()=>new Response('<html>Sign in</html>',{headers:{'Content-Type':'text/html'}})],
     ['a sign-in redirect',()=>{const response=ok(overview);Object.defineProperty(response,'redirected',{value:true});return response}],
@@ -67,22 +69,91 @@ describe('Software administration',()=>{
     expect(screen.queryByText('Demo owner')).not.toBeInTheDocument()
     expect(screen.queryByRole('form')).not.toBeInTheDocument()
   })
-  it('clears protected records when an owner refresh cannot verify access, then recovers on retry',async()=>{
+  it.each([
+    ['a network failure',()=>{throw new TypeError('Synthetic network unavailable')}],
+    ['a service failure',()=>Response.json({error:'Synthetic service unavailable'},{status:503})],
+    ['an HTML gateway failure',()=>new Response('<html>Temporary gateway failure</html>',{status:502,headers:{'Content-Type':'text/html'}})],
+  ] as const)('retains the verified account and open draft after %s, then recovers on retry',async(_name,failure)=>{
     let disconnected=false
-    vi.stubGlobal('fetch',vi.fn(async()=>{if(disconnected)throw new TypeError('Synthetic network unavailable');return ok(overview)}))
+    const lakeside={...overview.groups[0],id:'synthetic-lake',name:'Lakeside Group',dealerships:[]}
+    const fetcher=vi.fn(async(_url:string,_options?:RequestInit)=>disconnected?failure():ok({...overview,groups:[...overview.groups,lakeside]}))
+    vi.stubGlobal('fetch',fetcher)
     render(<PlatformAdminPage/>)
     await selectGroup()
+    fireEvent.click(screen.getByRole('button',{name:/Lakeside Group/}))
     fireEvent.click(screen.getByRole('button',{name:'Add group'}))
+    const form=screen.getByRole('form',{name:'Add dealership group'})
+    fireEvent.change(within(form).getByRole('textbox',{name:'Group name'}),{target:{value:'Synthetic unsaved group'}})
+    fireEvent.change(within(form).getByRole('textbox',{name:'Reason for this change'}),{target:{value:'Synthetic unsaved reason'}})
+    expect(within(form).queryByRole('button',{name:'Retry refresh'})).not.toBeInTheDocument()
     disconnected=true
     fireEvent(window,new Event('focus'))
-    await screen.findByRole('heading',{name:'Administration unavailable'})
-    expect(screen.queryByText('Northside Ford')).not.toBeInTheDocument()
-    expect(screen.queryByText('Demo owner')).not.toBeInTheDocument()
-    expect(screen.queryByRole('form')).not.toBeInTheDocument()
-    disconnected=false
-    fireEvent.click(screen.getByRole('button',{name:'Refresh'}))
-    await within(await screen.findByRole('region',{name:'Northside Motors account'})).findByText('Northside Ford')
+    expect(await within(form).findByRole('alert')).toHaveTextContent('Refresh to try again.')
+    expect(screen.getByRole('form',{name:'Add dealership group'})).toBe(form)
+    expect(within(form).getByRole('textbox',{name:'Group name'})).toHaveValue('Synthetic unsaved group')
+    expect(within(form).getByRole('textbox',{name:'Reason for this change'})).toHaveValue('Synthetic unsaved reason')
+    expect(screen.getByText('Demo owner')).toBeInTheDocument()
+    expect(screen.getByRole('region',{name:'Lakeside Group account',hidden:true})).toBeInTheDocument()
     expect(screen.queryByRole('heading',{name:'Administration unavailable'})).not.toBeInTheDocument()
+    fireEvent.click(within(form).getByRole('button',{name:'Retry refresh'}))
+    await waitFor(()=>expect(fetcher).toHaveBeenCalledTimes(3))
+    expect(within(form).getByRole('textbox',{name:'Group name'})).toHaveValue('Synthetic unsaved group')
+    expect(within(form).getByRole('textbox',{name:'Reason for this change'})).toHaveValue('Synthetic unsaved reason')
+    disconnected=false
+    fireEvent.click(within(form).getByRole('button',{name:'Retry refresh'}))
+    await waitFor(()=>expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    expect(screen.getByRole('form',{name:'Add dealership group'})).toBe(form)
+    expect(within(form).getByRole('textbox',{name:'Group name'})).toHaveValue('Synthetic unsaved group')
+    expect(within(form).getByRole('textbox',{name:'Reason for this change'})).toHaveValue('Synthetic unsaved reason')
+    expect(within(form).queryByRole('button',{name:'Retry refresh'})).not.toBeInTheDocument()
+    expect(fetcher).toHaveBeenCalledTimes(4)
+    expect(fetcher.mock.calls.every(([,options])=>!options?.method)).toBe(true)
+    fireEvent.keyDown(document,{key:'Escape'})
+    expect(screen.getByRole('button',{name:/Lakeside Group/})).toHaveAttribute('aria-pressed','true')
+  })
+  it('clears an open draft and resets account selection when the verified owner changes',async()=>{
+    let changed=false
+    const lakeside={...overview.groups[0],id:'synthetic-lake',name:'Lakeside Group',dealerships:[]}
+    vi.stubGlobal('fetch',vi.fn(async()=>ok({...overview,owner:changed?{...overview.owner,id:'synthetic-other-owner',name:'Other synthetic owner'}:overview.owner,groups:[...overview.groups,lakeside]})))
+    render(<PlatformAdminPage/>)
+    await selectGroup()
+    fireEvent.click(screen.getByRole('button',{name:/Lakeside Group/}))
+    fireEvent.click(screen.getByRole('button',{name:'Add group'}))
+    fireEvent.change(screen.getByRole('textbox',{name:'Group name'}),{target:{value:'Synthetic prior-owner draft'}})
+    changed=true
+    fireEvent(window,new Event('focus'))
+    await screen.findByText('Other synthetic owner')
+    expect(screen.queryByRole('form')).not.toBeInTheDocument()
+    expect(screen.getByRole('button',{name:/Northside Motors/})).toHaveAttribute('aria-pressed','true')
+    expect(screen.queryByRole('region',{name:'Lakeside Group account'})).not.toBeInTheDocument()
+  })
+  it('ignores a pending transient failure after another request revokes owner access',async()=>{
+    let reads=0,rejectRefresh!:(error:Error)=>void
+    vi.stubGlobal('fetch',vi.fn((url:string)=>{
+      if(url.endsWith('/revoked'))return Promise.resolve(Response.json({error:'Revoked'},{status:403}))
+      return ++reads===1?Promise.resolve(ok(overview)):new Promise<Response>((_resolve,reject)=>{rejectRefresh=reject})
+    }))
+    const {result}=renderHook(()=>usePlatformAdmin())
+    await waitFor(()=>expect(result.current.data?.owner.id).toBe(overview.owner.id))
+    act(()=>result.current.begin({title:'Synthetic edit',path:'/groups',values:{name:'Synthetic draft'},fields:[]}))
+    let pending!:Promise<void>
+    act(()=>{pending=result.current.refresh()})
+    await act(async()=>{await expect(result.current.request('/revoked')).rejects.toThrow('Software-owner access is required.')})
+    expect(result.current).toMatchObject({data:null,edit:null,selected:'',denied:true,refreshFailed:false})
+    await act(async()=>{rejectRefresh(new TypeError('Synthetic stale network failure'));await pending})
+    expect(result.current).toMatchObject({data:null,edit:null,selected:'',denied:true,error:'',refreshFailed:false})
+  })
+  it.each([401,403])('clears refresh retry state when access is refused with %s after a transient failure',async status=>{
+    let response=ok(overview)
+    vi.stubGlobal('fetch',vi.fn(async()=>response))
+    const {result}=renderHook(()=>usePlatformAdmin())
+    await waitFor(()=>expect(result.current.data?.owner.id).toBe(overview.owner.id))
+    response=Response.json({error:'Synthetic unavailable'},{status:503})
+    await act(async()=>{await result.current.refresh()})
+    expect(result.current.refreshFailed).toBe(true)
+    response=Response.json({error:'Synthetic access refused'},{status})
+    await act(async()=>{await result.current.refresh()})
+    expect(result.current).toMatchObject({data:null,edit:null,selected:'',denied:true,refreshFailed:false})
   })
   it('does not let an older failed refresh erase a newer verified owner view',async()=>{
     let reads=0, rejectOlder:(error:Error)=>void=()=>{}
@@ -114,6 +185,7 @@ describe('Software administration',()=>{
     fireEvent.change(screen.getByRole('textbox',{name:'Reason for this change'}),{target:{value:'Synthetic onboarding'}})
     fireEvent.submit(screen.getByRole('form',{name:'Add dealership group'}))
     await screen.findByRole('alert')
+    expect(screen.queryByRole('button',{name:'Retry refresh'})).not.toBeInTheDocument()
     fireEvent.submit(screen.getByRole('form',{name:'Add dealership group'}))
     await screen.findByText('Change saved and recorded in the audit history.')
     const posts=(fetcher.mock.calls as [string,RequestInit?][]).filter(([,options])=>options?.method==='POST')

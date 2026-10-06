@@ -39,6 +39,8 @@
 .platform-heading-actions { display: flex; gap: var(--ifx-space-2); flex: none; }
 .platform-demo { font-size: var(--ifx-text-xs); background: var(--ifx-neutral-50); border-left: var(--ifx-focus-width) solid var(--ifx-info); padding: var(--ifx-space-2) var(--ifx-space-3); margin-block: var(--ifx-space-4); }
 .platform-error, .platform-notice { padding: var(--ifx-space-3); margin-bottom: var(--ifx-space-4); border-radius: var(--ifx-radius-sm); }
+.platform-form .platform-error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ifx-space-3); }
+.platform-form .platform-error > button { flex: none; }
 .platform-error { background: var(--ifx-danger-surface); color: var(--ifx-danger); }
 .platform-notice { background: var(--ifx-success-surface); color: var(--ifx-success); }
 .platform-summary { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); border: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); border-radius: var(--ifx-radius-sm); overflow: hidden; margin-bottom: var(--ifx-space-6); }

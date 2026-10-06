@@ -132,7 +132,7 @@ authentication, physical-device acceptance or deployment authorization.
 
 ## GitHub review corrections
 
-The review sweeps confirmed sixteen actionable findings. The first nine repairs:
+The review sweeps confirmed twenty actionable findings. The first nine repairs:
 
 - Overview hold totals and their drilldown both use imported DealerMail evidence;
   manual holds remain visible through Held and the inventory-decision filters.
@@ -244,6 +244,63 @@ is `/tmp/inventory-pr67-browser-evidence/platform-token-geometry.json` and
 `platform-{tokens,b66-css}-<width>x<height>.png` with their dialog equivalents.
 This verifies native equivalence; final Linux CI comparisons remain the separate
 visual gate and no new reference set was generated.
+
+## Final concurrency and refresh repairs
+
+Four later findings were reproduced and repaired. A conflicting manual-hold save
+now reloads the editable label, date and note together with the latest version,
+clears the obsolete dirty draft and asks the employee to review before saving.
+If the reconciliation read fails, the original draft and version remain intact;
+concurrent completed-release recovery still returns a usable placement form.
+The vehicle workspace gives an active manual hold its own Inventory Flow fact
+and a separately labelled DealerMail fact with its own holder, date and backups.
+Existing authorization/redaction is preserved and ordinary nonmanual rendering
+stays unchanged. The dialog/workspace suites passed all 31 tests. Native conflict
+checks passed at all four canonical sizes: the next deliberate POST uses version 2
+and the winning fields, the obsolete dirty draft is cleared, Tab stays contained,
+Escape returns to the actual Manage opener, and modal bounds/overflow pass. Browser
+inspection caught inherited phone hiding and desktop ellipsis in the two new facts.
+A scoped per-fact display/wrapping correction makes both source-labelled facts and
+all their context visible at all four sizes, with no clipping or horizontal overflow.
+Manage remains at least 44px in both dimensions. Evidence is
+`hold-conflict-workspace-geometry.json`, `mixed-workspace-visible-geometry.json`,
+`manual-hold-conflict-<width>x<height>.png` and
+`mixed-workspace-sources-visible-<width>x<height>.png` under the same `/tmp` directory.
+Earlier screenshots without `visible` are superseded diagnostic evidence.
+
+A transient owner-console background refresh now retains the verified account,
+selection and open configuration draft while reporting a retry error. Authentication
+failure, sign-in redirection and owner change still clear protected state, and an
+old rejected request cannot revive a revoked view. All 19 final focused component/hook
+tests passed, including network and server failures, later successful recovery,
+account changes and delayed rejection after revocation. Independent native QA
+passed 24 cases across all four sizes: network/503 retain the account and exact
+unsaved dialog fields, recovery clears the alert, auth failures clear records and
+draft, delayed old GET results cannot revive them, and initial 503 shows an enabled
+Refresh action. Native evidence is `/tmp/inventory-pr67-admin-native.log` with
+`admin-transient-` and `admin-cleared-` PNGs outside Git. That review also found the
+header Refresh action was behind the edit dialog. A dedicated transient-refresh
+flag now exposes an inline Retry refresh button inside the dialog; a click issues
+only a GET and retains the same form, typed values and selected account. Successful
+refresh, access loss, owner change and non-refresh errors clear the flag. The final
+19 cases include ordinary inline recovery and 503 followed by 401/403. Four
+additional native inline-retry checks passed at the canonical sizes: an ordinary
+click issues GET only, clears the alert/button, retains the same account, dialog
+and exact unsaved draft, and never sends a POST. The retry target is approximately
+121 by 44px, accepts focus and remains within bounds without horizontal overflow.
+All four screenshots were inspected. Evidence is
+`/tmp/inventory-pr67-admin-retry.log` and
+`admin-inline-retry-<width>x<height>.png` outside Git.
+
+The mobile inventory-decision border now uses the shared 1px hairline token.
+A bounded audit also centralizes the edited pager's 44px height/4px padding and
+workspace 1px borders and 10px/16px gaps without changing computed sizes. No
+screenshot reference or threshold was changed for these mechanical replacements.
+The complete local check attempt at `41e1664` was stopped when this new source
+work superseded it; it did not produce a full local pass. Its GitHub unit/build
+job passed 3,459 tests across 225 files, with three existing skips, all 15 offline
+migrations, synthetic recovery and eight Python tests. Its canceled remainder is
+not final acceptance. Fresh exact-head CI is required after this delta freezes.
 
 ## Release boundaries
 
