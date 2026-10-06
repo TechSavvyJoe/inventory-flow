@@ -234,6 +234,15 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     }
     if (width === 320 || width === 390) {
       await page.getByRole('button', { name: 'Save DEMO-H02 to shortlist', exact: true }).click()
+      const naming = page.getByRole('dialog', { name: /Save to a customer list|Name this customer list/ })
+      const removeSaved = page.getByRole('button', { name: 'Remove DEMO-H02 from shortlist', exact: true })
+      await expect.poll(async () => await naming.isVisible() || await removeSaved.isVisible()).toBe(true)
+      if (await naming.isVisible()) {
+        await naming.getByRole('textbox', { name: 'List name', exact: true }).fill('Responsive demo list')
+        await naming.getByRole('button', { name: 'Save vehicle', exact: true }).click()
+        await expect(naming).toHaveCount(0)
+      }
+      await expect(removeSaved).toBeVisible()
       await page.getByRole('button', { name: /^Filters/ }).click()
       await expectOpenFilterGeometry(page, width)
       await expectNoOverflow(page)

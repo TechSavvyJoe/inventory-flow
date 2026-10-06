@@ -97,10 +97,9 @@
 #inventory-vehicle-workspace .vdp-focus-desktop-specs .inventory-workspace-fact dt { font-size:12px; line-height:1.3; }
 #inventory-vehicle-workspace .vdp-focus-desktop-specs .inventory-workspace-fact dd { line-height:1.3; }
 #inventory-vehicle-workspace .vdp-focus-specs .inventory-workspace-fact { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--ifx-space-0-5); }
-#inventory-vehicle-workspace .vdp-focus-operations { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"facts actions" "update update"; gap:var(--ifx-space-2) var(--ifx-space-4); align-items:center; min-width:0; padding:var(--ifx-space-2) 0; border:0; border-bottom:1px solid var(--v10-border); border-radius:0; background:var(--surface); box-shadow:none; }
-#inventory-vehicle-workspace .vdp-focus-operations > dl { grid-area:facts; display:flex; align-items:stretch; gap:0; min-width:0; }
+#inventory-vehicle-workspace .vdp-focus-operations { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-areas:"facts actions" "update update"; gap:var(--ifx-space-2) var(--ifx-space-4); align-items:center; min-width:0; padding:var(--ifx-space-2) 0; border:0; border-bottom:1px solid var(--v10-border); border-radius:0; background:var(--surface); box-shadow:none; }
+#inventory-vehicle-workspace .vdp-focus-operations > dl { grid-area:facts; display:grid; grid-template-columns:repeat(auto-fit,minmax(calc(var(--ifx-space-16) * 2),1fr)); align-items:stretch; gap:0; min-width:0; }
 #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact { display:var(--vdp-operation-fact-display,grid); align-content:center; min-width:0; min-height:var(--ifx-control-height-md); padding:0 var(--ifx-space-3); border-left:1px solid var(--v10-border); }
-.inventory-workspace--focused .vdp-focus-operations > dl > .inventory-workspace-fact { flex:0 1 auto; }
 .inventory-workspace--focused .vdp-focus-disposition-fact { --vdp-operation-fact-display:grid; }
 #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact:first-child { padding-left:0; border-left:0; }
 #inventory-vehicle-workspace .vdp-focus-operations .inventory-workspace-fact dt { color:var(--v10-support); font-size:var(--ifx-text-xs); font-weight:var(--ifx-weight-medium); line-height:1.2; }
@@ -371,8 +370,8 @@
 #inventory-vehicle-workspace .inventory-hold-evidence { padding: 0; border: 0; border-bottom: 1px solid var(--v10-border); border-radius: 0; background: none; }
 #inventory-vehicle-workspace .inventory-hold-evidence > header { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--v10-border-soft); }
 #inventory-vehicle-workspace .inventory-hold-evidence > header small { margin-left: 10px; color: var(--v10-support); font-size: 12px; }
-#inventory-vehicle-workspace .inventory-hold-evidence__facts,
-#inventory-vehicle-workspace .inventory-workspace-no-hold__facts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px 16px; margin: 10px 0; }
+.inventory-workspace--focused .inventory-hold-evidence__facts,
+.inventory-workspace--focused .inventory-workspace-no-hold__facts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px 16px; margin: 10px 0; }
 #inventory-vehicle-workspace .inventory-workspace-hold-context { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px 16px; margin:10px 0; }
 #inventory-vehicle-workspace .inventory-hold-evidence__messages > summary { display: flex; gap: 10px; align-items: center; font-weight: 600; font-size: 14px; }
 #inventory-vehicle-workspace .inventory-hold-evidence__messages > summary small { font-size: 12px; font-weight: 400; }

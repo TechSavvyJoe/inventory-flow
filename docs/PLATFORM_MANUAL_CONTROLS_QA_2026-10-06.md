@@ -38,7 +38,8 @@ source request, scheduled task, secret, migration or Cloudflare setting was chan
   and launcher position unchanged, including a transformed app container.
 - Companion preview: name before Save, later rename, compact name prompt, Escape
   and focus return passed using the synthetic API only.
-- Full gate: `VITEST_MAX_WORKERS=1 pnpm check` passed (exit 0): 223 test files,
+- Initial implementation gate at `32c42ce`: `VITEST_MAX_WORKERS=1 pnpm check`
+  passed (exit 0): 223 test files,
   3,371 tests passed and three existing skips. Type checking, repository safety,
   design-system ratchet, web production build and companion archive verification
   passed. One worker limits memory use on the loaded Mac; assertions, test
@@ -53,6 +54,38 @@ Synthetic PNG evidence is kept outside Git in
 `name-before-save-<width>.png`, `named-list-<width>.png`,
 `manual-hold-<width>.png`, and `extension-name-compact.png`.
 Playwright attachments remain in `/tmp/inventory-flow-qa/e2e/`.
+
+## Acceptance repair review
+
+- Corrected the mobile Decision row overlap, tablet VIN/copy spacing and
+  Base MSRP label/value overlap. Stock, VIN and colors use the full vehicle
+  column instead of the narrow title area beside the photo.
+- The Overview uses equal-width ledgers to keep its expanded store counts
+  inside the page at 1320px. Actual expanded disclosures were inspected at
+  1024x768, 1320x820 and 1440x900.
+- Vehicle workspace actions wrap inside a bounded column. Service status and
+  backup hold dates remain readable at all four canonical sizes. Removing a
+  blocking ID selector lets the intended responsive backup-fact grid apply;
+  the design-system ratchet tightened by two ID selectors.
+- Mobile results reserve the fixed saved-list launcher's 44px clearance above
+  the bottom navigation. The original WebKit pagination test reproduced the
+  covered Next button before the repair and passed afterward; Chrome passed
+  that same unchanged pagination test.
+- Scanner and cross-browser saves complete the name-before-save prompt;
+  the Overview assertion distinguishes the saved-disposition confirmation
+  from a separate conflicting-evidence status.
+- GitHub run `37508772752` at `f1ec994` passed all 223 test files (3,371 tests,
+  three existing skips), the build/recovery gates and 88 standard browser tests.
+  Its remaining cross-browser failures prompted the pagination and naming
+  repairs above. Its old-reference visual comparisons are not an acceptance
+  result for the updated interface.
+- Subsequent local runs were not full passes: repeated unit runs hit unchanged
+  test timeouts; the isolated PDF stress case still exceeded 15 seconds. The
+  local saved-pop-up rerun passed seven of eight cases, with the eighth timing
+  out at screenshot attachment; Chrome's many-width reflow timed out during
+  screenshot capture. WebKit's full reflow passed. No assertion, timeout or
+  screenshot threshold was weakened. Final CI and reviewed Linux references
+  must be recorded before this follow-up is handed off.
 
 ## Release boundaries
 

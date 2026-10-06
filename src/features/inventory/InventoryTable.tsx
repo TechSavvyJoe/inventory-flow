@@ -463,14 +463,14 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
           {change.shortLabel}
         </button> : null}
         </div>
-        <dl className="inv-desk-vehicle__facts">
-          <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy inv-desk-copy--stock" /></dd></div>
-          <div className="inv-desk-vehicle__vin"><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy" /></dd></div>
-        </dl>
-        <div className="inv-desk-vehicle__comparison">
-          {vehicle.exteriorColor ? <span><small>Exterior</small>{vehicle.exteriorColor}</span> : null}
-          {vehicle.interiorColor ? <span><small>Interior</small>{vehicle.interiorColor}</span> : null}
-        </div>
+      </div>
+      <dl className="inv-desk-vehicle__facts">
+        <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy inv-desk-copy--stock" /></dd></div>
+        <div className="inv-desk-vehicle__vin"><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy" /></dd></div>
+      </dl>
+      <div className="inv-desk-vehicle__comparison">
+        {vehicle.exteriorColor ? <span><small>Exterior</small>{vehicle.exteriorColor}</span> : null}
+        {vehicle.interiorColor ? <span><small>Interior</small>{vehicle.interiorColor}</span> : null}
       </div>
     </div>
   );
