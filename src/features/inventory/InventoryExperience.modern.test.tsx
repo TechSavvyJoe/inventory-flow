@@ -394,6 +394,18 @@ describe('vehicle workspace background isolation', () => {
     }
   });
 
+  it.each([/^Review inventory decision for/i, /^Open hold details for/i])('restores the focused %s opener after Escape', async name => {
+    const unit = vehicle(3);
+    unit.inventoryDecision = { status: 'unconfirmed', comparison: 'conflict', reasons: [], manualHold: null, importedHold: false, label: 'Records disagree' };
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[unit]} />);
+    const trigger = screen.getByRole('button', { name });
+    trigger.focus();
+    fireEvent.click(trigger);
+    await waitFor(() => expect(screen.getByRole('dialog')).toHaveAttribute('data-active-target', 'hold'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
   it('returns focus to the vehicle trigger after Escape closes the workspace', async () => {
     render(
       <InventoryExperienceHarness

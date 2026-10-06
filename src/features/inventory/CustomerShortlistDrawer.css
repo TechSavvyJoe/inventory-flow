@@ -57,6 +57,7 @@
 .shortlist-drawer button:focus-visible, .shortlist-drawer__dialog :focus-visible { outline:2px solid var(--blue-600); outline-offset:2px; }
 @keyframes shortlist-popover-in { from { opacity:0; transform:translateY(var(--ifx-space-2)); } to { opacity:1; transform:translateY(0); } }
 @media (max-width:880px) {
+  .shortlist-drawer__label-detail { display:none; }
   .shortlist-drawer { right:max(var(--ifx-space-2),var(--safe-right)); bottom:calc(var(--mobile-bottom-height) + var(--safe-bottom) + var(--ifx-space-2)); }
   .shortlist-drawer__dialog { right:max(var(--ifx-space-2),var(--safe-right)); bottom:calc(var(--mobile-bottom-height) + var(--safe-bottom) + var(--ifx-control-height-md) + var(--ifx-space-3)); width:calc(100vw - var(--ifx-space-4)); max-height:min(62dvh,calc(100dvh - var(--mobile-bottom-height) - var(--safe-bottom) - var(--ifx-control-height-md) - var(--ifx-space-5))); }
 }

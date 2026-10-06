@@ -90,8 +90,8 @@ Playwright attachments remain in `/tmp/inventory-flow-qa/e2e/`.
   jobs. The candidate from `37518243882` was nevertheless rejected after all
   40 images were inspected: desktop header copy icons overlapped identifier
   text by 4px, and the phone's stacked pager was partly covered. Copy targets
-  now have their own 44px space; the phone footer uses two rows with arrows
-  on the left and row size on the right. New browser regressions check these
+  now have their own 44px space; the phone footer uses two rows. The final
+  populated-launcher repair clusters arrows and row size together on the left. New browser regressions check these
   specific bounds without forced clicks or longer timeouts.
 - Source run `37521342464` exposed shared fixture contamination in the new
   phone pager test: an earlier transfer test moved its only unheld vehicle
@@ -154,6 +154,28 @@ The frontend repair lanes passed their focused suites (77 saved-list tests and
 readiness, cancellation audit, write identity, source privacy and migration parity.
 These focused counts include overlapping reruns and are not a distinct-test total.
 The current PR checks remain the evidence for the final immutable commit.
+
+Native browser review exercised legacy naming, interrupted create/rename replay
+followed by an add conflict and successful retry, fresh manual-hold comparison,
+concurrent release recovery, imported-only drilldown and manual-only Held
+visibility at all four canonical sizes. Decision controls now use the existing
+opener marker, return focus to the actual opener after Escape and meet the 44px
+target requirement. Two focused opener regressions passed.
+
+The populated phone pager uses left-clustered controls and a compact visible
+Saved label on mobile, preserving the full accessible name and desktop label.
+Native checks with Saved 4 and the maximum Saved 200, Rows 100 and no scrolling
+verified readable digits, 44px controls, 44px of minimum horizontal clearance
+and an ordinary Next click reaching page two. Both final standard pager tests
+passed. The page-scoped synthetic GET fixture covers a populated launcher
+without changing the shared saved-list ledger, and all original geometry
+assertions and timeouts remain intact.
+
+The latest serial local full check was stopped after two unchanged-limit
+timeouts (PDF listing links and inventory row-count controls). Both exact cases
+passed an isolated two-test rerun; the production build, companion archive,
+15 offline migrations and synthetic recovery drill also passed. This still is
+not a complete final-head local `pnpm check` pass.
 
 ## Release boundaries
 

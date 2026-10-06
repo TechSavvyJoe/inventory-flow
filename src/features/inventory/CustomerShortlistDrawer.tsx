@@ -142,7 +142,7 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
   const floatingSurface = <>
     <section className="shortlist-drawer" aria-label="Customer shortlist launcher" data-covered={covered || undefined} inert={covered} aria-hidden={covered ? true : undefined}>
       <button ref={toggleRef} type="button" className="shortlist-drawer__toggle" aria-label={`Saved vehicles: ${management?.activeLabel ?? 'Shortlist'} (${entries.length})`} aria-expanded={expanded} aria-controls={panelId} onClick={() => expanded ? closeShortlist(true) : setExpanded(true)}>
-        <Heart size={18} aria-hidden="true" /><span>Saved vehicles</span><strong>{entries.length}</strong><ChevronUp size={18} aria-hidden="true" />
+        <Heart size={18} aria-hidden="true" /><span>Saved<span className="shortlist-drawer__label-detail"> vehicles</span></span><strong>{entries.length}</strong><ChevronUp size={18} aria-hidden="true" />
       </button>
     </section>
     {dialog}

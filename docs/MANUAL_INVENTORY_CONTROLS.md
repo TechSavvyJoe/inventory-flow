@@ -21,9 +21,9 @@ Keep requires a note. Disposition permission and existing source-evidence
 privacy rules are preserved. Notes do not belong in customer take-home sheets.
 
 Inventory rows show manual holds, decisions and conflicting records on both
-desktop and phone. Held includes manual holds; No hold excludes manual holds
-and non-Keep dispositions. The **Inventory decision** filter drills into a
-specific disposition or conflicting records. These filters are not an
+desktop and phone. Held includes manual holds; No hold excludes active manual
+holds and keeps app dispositions independent. The **Inventory decision** filter
+drills into a specific disposition or conflicting records. These filters are not an
 availability promise. All continues to retain the vehicle and independent
 listing, source hold, service, movement and location evidence.
 

@@ -48,11 +48,24 @@ test('phone pagination and row size remain clear of the saved-vehicle launcher',
     payload.transfers = payload.transfers.filter(transfer => transfer.vin !== bronco.vin)
     await route.fulfill({ response, json: payload })
   })
+  // A populated launcher is wider than the empty launcher. Keep its shared
+  // browser-suite state deterministic without writing the saved-list ledger.
+  await page.route('**/api/saved-lists', async route => {
+    expect(route.request().method()).toBe('GET')
+    await route.fulfill({ json: { lists: [{
+      id: 'synthetic-pager-list', label: 'Synthetic pager choices', revision: 1,
+      createdAt: '2026-08-30T12:00:00Z', updatedAt: '2026-08-30T12:00:00Z',
+      items: ['TESTDATAHWELL0001', 'TESTDATAHWELL0002', 'TESTDATAFWELL0001', 'TESTDATADETRT0001'].map(vin => ({
+        vin, addedAt: '2026-08-30T12:00:00Z', available: true,
+      })),
+    }] } })
+  })
   await page.goto('/inventory')
   await page.getByRole('button', { name: /^No hold:/ }).click()
   const pages = page.getByRole('navigation', { name: 'Inventory pages' })
   await expect(pages).toContainText('Showing 1–1 of 1')
   const launcher = page.getByRole('button', { name: /^Saved vehicles:/ })
+  await expect(launcher).toHaveAccessibleName('Saved vehicles: Synthetic pager choices (4)')
   const launcherBounds = await launcher.boundingBox()
   expect(launcherBounds).not.toBeNull()
   for (const control of [
