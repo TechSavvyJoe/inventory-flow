@@ -94,6 +94,30 @@ Playwright attachments remain in `/tmp/inventory-flow-qa/e2e/`.
   on the left and row size on the right. New browser regressions check these
   specific bounds without forced clicks or longer timeouts.
 
+## Reviewed visual references
+
+All 40 fresh Linux images from source `6dc788d` and candidate run
+`37521342464` were accepted after inspection at all four canonical viewports.
+The earlier `f1ec994` and `fdcdd04` candidates were rejected and never pinned.
+The final images resolve header copy overlap, initial phone pager obstruction,
+wrapped service/hold facts and stock/VIN legibility.
+
+The exact reviewed bundle is stored as asset `616504177` in the private
+`ci-baseline-pr67-6dc788d` test-reference prerelease. Its SHA-256 is
+`8992043eef55de8a2f5f82ff0bab1a805b67d49bebc3b4ac21704cb514114f98`.
+Only provenance/asset metadata is committed in `tests/visual/baseline-pin.json`;
+no screenshot or encoded image bytes are in Git. The normal CI comparison
+uses the existing read-only token and forbids snapshot updates. The current
+[PR checks](https://github.com/TechSavvyJoe/inventory-flow/pull/67/checks)
+record the ordinary comparisons and final unit/build/browser gates.
+
+Five delegated reviewers used Codex GPT-6 Luna/medium for the completion audit,
+GPT-6.1 Sol/medium for browser repairs and visual review, GPT-6.1 Sol/high for
+patch-risk review, and GPT-6 Astra/high for the independent final gate.
+Their relevant skills covered frontend testing, React, interface design and
+patch-risk assessment. Visual acceptance is synthetic; it is not production
+authentication, physical-device acceptance or deployment authorization.
+
 ## Release boundaries
 
 Manual controls need reviewed inventory migration `0015_manual_inventory_controls.sql`
