@@ -89,6 +89,39 @@ function heldMovingVehicle(): InventoryVehicle {
 }
 
 describe('modern inventory result access', () => {
+  describe.each(['desktop', 'mobile'] as const)('%s independent manual and imported hold facts', layout => {
+    function renderManual(imported: 'active' | 'none' | 'stale', canViewEvidence = true) {
+      const vehicle = heldMovingVehicle();
+      vehicle.manualHold = { vin: vehicle.vin, state: 'active', version: 1, expectedDeliveryDate: '2026-10-09', updatedAt: null, ownerStore: 'Howell', canManage: true, enabled: true };
+      vehicle.dealerMail = { ...vehicle.dealerMail, dataState: imported === 'stale' ? 'stale' : 'current', hasActiveHold: imported === 'stale' ? null : imported === 'active', lastKnownActiveHold: imported === 'stale', activeRecordCount: imported === 'none' ? 0 : 3, canViewEvidence };
+      vehicle.holdEvidence = [{ id: 'synthetic-imported-hold', position: 'primary', salesperson: 'Synthetic source owner', heldBy: 'Synthetic source holder', expectedDeliveryDate: '2026-10-02' }];
+      if (layout === 'desktop') render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+      else render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} />);
+      const manualFact = layout === 'desktop' ? screen.getByRole('button', { name: /Open hold details/ }).closest('dd')! : screen.getByRole('button', { name: /Open hold details/ });
+      const importedFact = layout === 'desktop' ? screen.getByText('DealerMail', { selector: 'dt' }).closest('div')! : screen.getByLabelText('Imported hold evidence');
+      return { manualFact, importedFact: layout === 'desktop' ? importedFact! : screen.getByLabelText('Imported hold evidence') };
+    }
+    it.each(['active', 'none', 'stale'] as const)('qualifies %s imported facts separately from the manual expected date', imported => {
+      const { manualFact, importedFact } = renderManual(imported);
+      expect(manualFact).toHaveTextContent('Manual hold');
+      expect(manualFact).toHaveTextContent('Manual expected 10/09/2026');
+      expect(manualFact).not.toHaveTextContent('10/02/2026');
+      expect(manualFact).not.toHaveTextContent('Synthetic source holder');
+      expect(importedFact).toHaveTextContent('DealerMail');
+      expect(importedFact).toHaveTextContent(imported === 'none' ? 'No current hold' : imported === 'stale' ? 'Last verified hold' : 'Hold · Synthetic source owner');
+      expect(importedFact).not.toHaveTextContent('10/09/2026');
+      if (imported !== 'none') {
+        expect(importedFact).toHaveTextContent('Expected 10/02/2026 · 2 backups · Held by Synthetic source holder');
+      } else expect(importedFact).not.toHaveTextContent('Expected');
+    });
+    it('keeps private imported owner and date evidence redacted beside a visible manual hold', () => {
+      const { importedFact } = renderManual('active', false);
+      expect(importedFact).not.toHaveTextContent('Synthetic source owner');
+      expect(importedFact).not.toHaveTextContent('Synthetic source holder');
+      expect(importedFact).not.toHaveTextContent('10/02/2026');
+      expect(importedFact).toHaveTextContent('2 backups');
+    });
+  });
   describe.each(['desktop', 'mobile'] as const)('%s recorded inventory decision', layout => {
     it.each([false, true])('shows Keep unless the independent records conflict (%s)', conflict => {
       const vehicle = heldMovingVehicle();

@@ -329,6 +329,10 @@ type OperationalStatus = {
 
 export function vehicleOperationalStatus(vehicle: InventoryVehicle): OperationalStatus {
   if (vehicle.manualHold?.state === 'active') return { label: 'Manual hold', detail: 'Recorded in Inventory Flow. Review imported evidence separately.', tone: 'hold', icon: UserRound };
+  return importedHoldOperationalStatus(vehicle);
+}
+
+function importedHoldOperationalStatus(vehicle: InventoryVehicle): OperationalStatus {
   if (vehicle.dealerMail.dataState !== "current") {
     const evidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
     const previousPrimary = evidence?.find((record) => record.position === "primary") ?? evidence?.[0];
@@ -562,6 +566,19 @@ function DeskLocationCell({ vehicle }: { vehicle: InventoryVehicle }) {
   </div>;
 }
 
+function importedHoldDetail(vehicle: InventoryVehicle): string | null {
+  const visibleEvidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
+  const primaryEvidence = visibleEvidence?.find((record) => record.position === "primary") ?? visibleEvidence?.[0];
+  const backupCount = Math.max(0, (vehicle.dealerMail.activeRecordCount ?? 0) - 1);
+  const heldBy = primaryEvidence?.heldBy?.trim();
+  const showHeldBy = heldBy && heldBy.toLocaleLowerCase() !== primaryEvidence?.salesperson?.trim().toLocaleLowerCase();
+  return vehicle.dealerMail.lastKnownActiveHold || (vehicle.dealerMail.dataState === "current" && vehicle.dealerMail.hasActiveHold === true)
+    ? [primaryEvidence?.expectedDeliveryDate ? `Expected ${compactInventoryDate(primaryEvidence.expectedDeliveryDate) ?? primaryEvidence.expectedDeliveryDate}` : null,
+      backupCount ? `${backupCount} backup${backupCount === 1 ? "" : "s"}` : null,
+      showHeldBy ? `Held by ${heldBy}` : null].filter(Boolean).join(" · ") || importedHoldOperationalStatus(vehicle).detail
+    : null;
+}
+
 function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerStore }: {
   vehicle: InventoryVehicle;
   onSelectVehicle: InventoryTableProps["onSelectVehicle"];
@@ -572,19 +589,12 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerSt
   const holdStatus = vehicleOperationalStatus(vehicle);
   const movement = vehicleMovementStatus(vehicle, viewerStore);
   const canOpenDealerMail = vehicle.manualHold?.state !== "active" && vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
-  const visibleEvidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
-  const primaryEvidence = visibleEvidence?.find((record) => record.position === "primary") ?? visibleEvidence?.[0];
-  const backupCount = Math.max(0, (vehicle.dealerMail.activeRecordCount ?? 0) - 1);
-  const heldBy = primaryEvidence?.heldBy?.trim();
-  const showHeldBy = heldBy && heldBy.toLocaleLowerCase() !== primaryEvidence?.salesperson?.trim().toLocaleLowerCase();
-  const holdDetail = vehicle.dealerMail.lastKnownActiveHold || (vehicle.dealerMail.dataState === "current" && vehicle.dealerMail.hasActiveHold === true)
-    ? [primaryEvidence?.expectedDeliveryDate ? `Expected ${compactInventoryDate(primaryEvidence.expectedDeliveryDate) ?? primaryEvidence.expectedDeliveryDate}` : null,
-      backupCount ? `${backupCount} backup${backupCount === 1 ? "" : "s"}` : null,
-      showHeldBy ? `Held by ${heldBy}` : null].filter(Boolean).join(" · ") || holdStatus.detail
-    : null;
-  // Fixed Operations order: Location, Hold (its expected date and backups
-  // directly beneath), Move, Service. Each family stays its own labelled
-  // signal; none is inferred from another.
+  const manualActive = vehicle.manualHold?.state === 'active';
+  const importedStatus = importedHoldOperationalStatus(vehicle);
+  const holdDetail = importedHoldDetail(vehicle);
+  const manualExpected = manualActive ? compactInventoryDate(vehicle.manualHold?.expectedDeliveryDate) : null;
+  // Keep manual dates with the app record and source details with DealerMail.
+  // Movement, service and disposition remain independent facts.
   return <dl className="inv-desk-status">
     <div className="inv-desk-status__row" data-fact="location"><dt>Location</dt><dd><DeskLocationCell vehicle={vehicle} /></dd></div>
     <div className="inv-desk-status__row" data-fact="hold"><dt>Hold</dt><dd>
@@ -593,8 +603,12 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerSt
         title={holdStatus.detail} onClick={event => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); if (canOpenDealerMail) onOpenSourceRecord?.(vehicle, "dealermail"); else onSelectVehicle(vehicle, "hold"); }}>
         <span className="inv-desk-hold__dot" aria-hidden="true" /><span>{holdStatus.label}</span>
       </button>
-      {holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
+      {manualActive ? manualExpected ? <small className="inv-desk-status__detail">Manual expected {manualExpected}</small> : null : holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
     </dd></div>
+    {manualActive ? <div className="inv-desk-status__row" data-fact="imported-hold"><dt>DealerMail</dt><dd>
+      <span className="inv-desk-status__imported-hold">{importedStatus.label}</span>
+      {holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
+    </dd></div> : null}
     {movement ? <div className="inv-desk-status__row" data-fact="move"><dt>Move</dt><dd><span className={`inv-desk-move${movement.tone === "warning" ? " is-warning" : ""}`} title={movement.detail}>{humanizeStatusLabel(movement.label)}</span></dd></div> : null}
     <div className="inv-desk-status__row" data-fact="service"><dt>Service</dt><dd><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed /></dd></div>
     {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <div className="inv-desk-status__row" data-fact="manual-decision"><dt>Decision</dt><dd><button type="button" className="inv-desk-hold inv-desk-decision" data-inventory-vehicle-trigger={vehicle.id} aria-label={`Review inventory decision for ${name}`} onClick={event => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, 'hold'); }}>{vehicle.inventoryDecision?.comparison === 'conflict' ? 'Records disagree' : vehicle.appDisposition?.code ? DISPOSITION_LABELS[vehicle.appDisposition.code] : vehicle.inventoryDecision?.label}</button></dd></div> : null}
@@ -1040,6 +1054,10 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
   // Keep that useful context on the compact SRP instead of making staff
   // open the vehicle just to see who owns the current hold.
   const compactHoldLabel = holdStatus.label;
+  const manualActive = vehicle.manualHold?.state === 'active';
+  const manualExpected = manualActive ? compactInventoryDate(vehicle.manualHold?.expectedDeliveryDate) : null;
+  const importedStatus = importedHoldOperationalStatus(vehicle);
+  const importedDetail = manualActive ? importedHoldDetail(vehicle) : null;
   return (
     <article
       className={`if-srp-mobile-row if-srp-mobile-row--scan${selected ? " is-selected" : ""}`}
@@ -1102,7 +1120,11 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
           >
             <strong>{currentLocation.label}</strong><span aria-hidden="true" className="inventory-mobile-hold__separator">·</span>
             <span>{compactHoldLabel}</span>
+            {manualExpected ? <small>Manual expected {manualExpected}</small> : null}
           </button>
+          {manualActive ? <dl className="inventory-mobile-imported-hold" aria-label="Imported hold evidence"><div><dt>DealerMail</dt><dd>
+            <span>{importedStatus.label}</span>{importedDetail ? <small>{importedDetail}</small> : null}
+          </dd></div></dl> : null}
           {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <button type="button"
             className="inventory-mobile-decision" data-inventory-vehicle-trigger={vehicle.id} aria-label={`Review inventory decision for ${name}`}
             onClick={event => { event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, 'hold'); }}>

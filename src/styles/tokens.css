@@ -121,6 +121,17 @@
   --ifx-radius-xl: 20px;
   --ifx-radius-full: 999px;
 
+  --ifx-stroke-hairline: 1px;
+  --ifx-stroke-emphasis: 3px;
+  --ifx-focus-width: 2px;
+  --ifx-focus-offset: var(--ifx-stroke-hairline);
+  --ifx-dialog-overlay-padding: var(--ifx-space-3);
+  --ifx-dialog-overlay-placement: center;
+  --ifx-dialog-radius: var(--ifx-radius-md);
+  --ifx-dialog-viewport-gap: var(--ifx-space-6);
+  --ifx-dialog-field-columns: repeat(2, minmax(0, 1fr));
+  --ifx-dialog-footer-button-flex: 0 1 auto;
+
   --ifx-border-subtle: var(--ifx-neutral-200);
   --ifx-border-control: var(--ifx-neutral-300);
   --ifx-control-height-sm: 36px;
@@ -203,5 +214,17 @@
     --ifx-motion-standard: 0.01ms;
     --ifx-motion-deliberate: 0.01ms;
     --ifx-motion-scene: 0.01ms;
+  }
+}
+
+/* Shared compact-dialog boundary matches the shell. Custom properties cannot be media conditions. */
+@media (max-width: 760px) {
+  :root {
+    --ifx-dialog-overlay-padding: var(--ifx-space-0);
+    --ifx-dialog-overlay-placement: end;
+    --ifx-dialog-radius: var(--ifx-radius-md) var(--ifx-radius-md) 0 0;
+    --ifx-dialog-viewport-gap: var(--ifx-space-8);
+    --ifx-dialog-field-columns: minmax(0, 1fr);
+    --ifx-dialog-footer-button-flex: 1;
   }
 }

@@ -73,3 +73,9 @@
   .if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action { transition:none; }
   .if-srp-mobile-list .if-srp-mobile-row--scan .inv-desk-action:active { transform:none; }
 }
+
+.if-srp-mobile-list .inventory-mobile-imported-hold { grid-column: 1 / -1; margin: 0; padding: var(--ifx-space-1) var(--ifx-space-2); border-top: var(--ifx-stroke-hairline) solid var(--border); }
+.if-srp-mobile-list .inventory-mobile-imported-hold > div { display: flex; align-items: baseline; gap: var(--ifx-space-2); }
+.if-srp-mobile-list .inventory-mobile-imported-hold dt { color: var(--ink-600); font: var(--ifx-weight-regular) var(--ifx-text-xs)/var(--ifx-leading-compact) var(--font-app); }
+.if-srp-mobile-list .inventory-mobile-imported-hold dd { display: grid; gap: var(--ifx-space-0-5); margin: 0; min-width: 0; color: var(--ink-900); font: var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); overflow-wrap: anywhere; }
+.if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-imported-hold small { color: var(--ink-600); font-size: var(--ifx-text-xs); }

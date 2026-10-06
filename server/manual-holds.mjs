@@ -57,6 +57,17 @@ function text(value, limit, label) {
   return value.trim() || null
 }
 
+function noteHasContactInformation(note) {
+  if (/@|https?:\/\/|www\./i.test(note)) return true
+  // Operational dates and prices are useful in notes; count phone-like runs,
+  // rather than adding every unrelated digit in the note as labels do.
+  const operationalText = note
+    .replace(/\b(?:\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])|(?:0?[1-9]|1[0-2])[/-](?:0?[1-9]|[12]\d|3[01])[/-]\d{2}(?:\d{2})?)\b/g, ' ')
+    .replace(/(?:\$\s*|\bUSD\s+)\d[\d,]*(?:\.\d{1,2})?/gi, ' ')
+  return [...operationalText.matchAll(/\+?\d[\d().\s-]*\d/g)]
+    .some(match => (match[0].match(/\d/g)?.length ?? 0) >= 7)
+}
+
 export function buildManualHoldEvent(source, rows, input, context, { now, idempotencyKey, enabled = true }) {
   if (!enabled) throw new WorkflowError('Manual hold storage is not enabled yet.', { status: 503, code: 'MIGRATION_REQUIRED' })
   const current = rows.at(-1)
@@ -75,6 +86,9 @@ export function buildManualHoldEvent(source, rows, input, context, { now, idempo
     throw new WorkflowError('Use initials or a nickname, without contact information.', { code: 'INVALID_MANUAL_HOLD_INPUT' })
   }
   const note = text(input.note, 1000, 'hold note')
+  if (note && noteHasContactInformation(note)) {
+    throw new WorkflowError('Keep contact information in the CRM, not in hold notes.', { code: 'INVALID_MANUAL_HOLD_INPUT' })
+  }
   const date = text(input.expectedDeliveryDate, 10, 'expected delivery date')
   if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(`${date}T12:00:00Z`)) || new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) !== date)) {
     throw new WorkflowError('Enter a valid expected delivery date.', { code: 'INVALID_MANUAL_HOLD_INPUT' })

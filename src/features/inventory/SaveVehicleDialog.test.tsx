@@ -39,4 +39,28 @@ describe('first-save naming choices', () => {
     expect(screen.queryByRole('option', { name:'CD (1)' })).not.toBeInTheDocument()
     expect(screen.getByRole('option', { name:'AB (0)' })).toBeInTheDocument()
   })
+
+  it.each(['last list deleted', 'one of multiple deleted', 'renamed generic', 'became naming target'] as const)('restores naming when the selected destination is %s', async change => {
+    const user = userEvent.setup()
+    const state = management()
+    if (change === 'one of multiple deleted') state.lists.push({ id:'other', label:'CD', count:0 })
+    const { rerender } = render(<SaveVehicleDialog management={state} />)
+    await user.type(screen.getByRole('textbox', { name:'List name' }), 'EF options')
+    await user.selectOptions(screen.getByRole('combobox', { name:'Or use an existing list' }), 'named')
+    expect(screen.getByRole('textbox', { name:'List name' })).toBeDisabled()
+
+    const refreshed = { ...state, lists:state.lists.map(list => ({ ...list })) }
+    if (change === 'renamed generic') refreshed.lists.find(list => list.id === 'named')!.label = 'Customer shortlist'
+    else if (change === 'became naming target') refreshed.pendingSave = { ...state.pendingSave!, namingListId:'named' }
+    else refreshed.lists = refreshed.lists.filter(list => list.id !== 'named')
+    rerender(<SaveVehicleDialog management={refreshed} />)
+
+    expect(screen.getByRole('textbox', { name:'List name' })).toBeEnabled()
+    expect(screen.getByRole('textbox', { name:'List name' })).toHaveValue('EF options')
+    const existing = screen.queryByRole('combobox', { name:'Or use an existing list' })
+    if (existing) expect(existing).toHaveValue('')
+    await user.click(screen.getByRole('button', { name:'Save vehicle' }))
+    expect(state.savePendingToNamedList).toHaveBeenCalledWith('EF options')
+    expect(state.savePendingToExistingList).not.toHaveBeenCalled()
+  })
 })

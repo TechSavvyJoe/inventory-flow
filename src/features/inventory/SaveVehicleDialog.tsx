@@ -20,6 +20,9 @@ export function SaveVehicleDialog({ management }: { management: ShortlistManagem
   const [submitting, setSubmitting] = useState(false)
   const pending = management.pendingSave
   const existingLists = management.lists.filter(list => list.label !== 'Customer shortlist' && list.id !== pending?.namingListId)
+  // Refreshes can delete or exclude a destination while the prompt is open.
+  // Clear it before committing this render so naming and submission agree.
+  if (selectedId && !existingLists.some(list => list.id === selectedId)) setSelectedId('')
   const busy = submitting || management.saving
   const close = () => { if (!busy) management.cancelPendingSave?.() }
   useContainedFocus({ active: true, contain: true, containerRef: container, initialFocusRef: input, returnFocusRef: opener, onEscape: close })

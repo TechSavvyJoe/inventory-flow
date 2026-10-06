@@ -18,6 +18,16 @@ const manager = { ...sales, role: 'manager', user: 'Synthetic manager', userId: 
 const source = { vin: VIN, publicRecord: { store: 'Howell' } }
 const options = { now: SYNTHETIC_NOW, idempotencyKey: 'synthetic-hold-1' }
 const input = { state: 'active', customerLabel: 'AB', note: 'Appointment tomorrow', expectedVersion: 0 }
+const contactNotes = [
+  'Email synthetic.customer@example.invalid to confirm',
+  'Details at https://customer.example.invalid/reservation',
+  'Details at www.customer.example.invalid',
+  'Call (555) 010-1234 to confirm',
+  'Call +1 555 010 1234 to confirm',
+  'Call 555.010.1234 to confirm',
+  'Call 5550101234 to confirm',
+  'Call 555-0123 to confirm',
+]
 const databases = []
 afterEach(() => { while (databases.length) databases.pop().close() })
 function local() {
@@ -77,6 +87,32 @@ describe('manual holds and reconciliation', () => {
       expect(() => buildManualHoldEvent(source, [], bad, sales, options)).toThrow()
     }
     expect(() => buildManualHoldEvent(source, [], input, sales, { ...options, enabled: false })).toThrow(expect.objectContaining({ code: 'MIGRATION_REQUIRED' }))
+  })
+  it.each(contactNotes)('rejects contact information in notes before persisting create, edit or release: %s', note => {
+    const { database, service } = local()
+    const rejection = expect.objectContaining({ code: 'INVALID_MANUAL_HOLD_INPUT', status: 422 })
+    expect(() => service.updateManualHold(VIN, { ...input, note }, sales, 'rejected-create')).toThrow(rejection)
+    expect(database.prepare('SELECT COUNT(*) AS count FROM vehicle_manual_hold_events').get().count).toBe(0)
+    service.updateManualHold(VIN, input, sales, 'valid-create')
+    const before = service.getManualHold(VIN, sales)
+    for (const state of ['active', 'released']) {
+      expect(() => service.updateManualHold(VIN, { ...input, state, expectedVersion: 1, note }, sales, `rejected-${state}`)).toThrow(rejection)
+      expect(service.getManualHold(VIN, sales)).toEqual(before)
+      expect(database.prepare('SELECT COUNT(*) AS count FROM vehicle_manual_hold_events').get().count).toBe(1)
+    }
+  })
+  it.each([
+    'Delivery 2026-10-08; appointment 10/8/2026 at 10:30',
+    'Delivery 10-08-2026; backup appointment 10/9/26',
+    'Quoted $35,900 with $1,250 deposit; display unit price USD 1250000',
+    'Equipment packages 302A and 501A; 18-inch wheels; 4 seats checked',
+    'Detail complete; customer selected another unit',
+  ])('preserves operational notes with dates, prices and package codes: %s', note => {
+    const { service } = local()
+    const created = service.updateManualHold(VIN, { ...input, note }, sales, 'operational-create')
+    expect(created.record).toMatchObject({ state: 'active', version: 1, note })
+    const released = service.updateManualHold(VIN, { state: 'released', expectedVersion: 1, note }, sales, 'operational-release')
+    expect(released.record).toMatchObject({ state: 'released', version: 2, note })
   })
   it('supports Other with a required explanation, while retaining delivered units in inventory', () => {
     const { service } = local()
@@ -147,6 +183,15 @@ describe('manual holds and reconciliation', () => {
         expect(response).toMatchObject({ status: 200, json: { manualHoldsEnabled: true, dispositionsEnabled: true, savedListsEnabled: true } })
       }
       expect(await appReadiness(cloud.env)).toMatchObject({ ready: true, manualHoldStorage: true, dispositionStorage: true, savedListsStorage: true })
+      const emptyRevision = cloud.revision()
+      for (const [index, note] of [contactNotes[0], contactNotes[1], contactNotes[3]].entries()) {
+        for (const response of [await callNode('POST', path, { ...input, note }, `contact-create-${index}`), await cloudCall('POST', { ...input, note }, `contact-create-${index}`)]) {
+          expect(response).toMatchObject({ status: 422, json: { code: 'INVALID_MANUAL_HOLD_INPUT' } })
+        }
+      }
+      expect(service.getManualHold(VIN, sales)).toMatchObject({ state: null, version: 0, history: [] })
+      expect(cloud.database.prepare('SELECT COUNT(*) AS count FROM vehicle_manual_hold_events').get().count).toBe(0)
+      expect(cloud.revision()).toBe(emptyRevision)
       const expectation = { enabled: true, canManage: true, state: 'active', version: 1, customerLabel: input.customerLabel,
         note: input.note, updatedBy: sales.user, ownedByCurrentUser: true }
       for (const response of [await callNode('POST', path, input), await cloudCall('POST', input)]) {
@@ -158,6 +203,19 @@ describe('manual holds and reconciliation', () => {
       for (const response of [await callNode('GET', path), await cloudCall('GET')]) {
         expect(response).toMatchObject({ status: 200, json: { ...expectation, history: [expect.objectContaining(expectation)] } })
       }
+      const nodeBefore = service.getManualHold(VIN, sales)
+      const cloudBefore = (await cloudCall('GET')).json
+      const revisionBefore = cloud.revision()
+      for (const [state, note] of [['active', contactNotes[3]], ['released', contactNotes[0]]]) {
+        const rejectedInput = { ...input, state, expectedVersion: 1, note }
+        for (const response of [await callNode('POST', path, rejectedInput, `contact-${state}`), await cloudCall('POST', rejectedInput, `contact-${state}`)]) {
+          expect(response).toMatchObject({ status: 422, json: { code: 'INVALID_MANUAL_HOLD_INPUT' } })
+        }
+      }
+      expect(service.getManualHold(VIN, sales)).toEqual(nodeBefore)
+      expect((await cloudCall('GET')).json).toEqual(cloudBefore)
+      expect(cloud.database.prepare('SELECT COUNT(*) AS count FROM vehicle_manual_hold_events').get().count).toBe(1)
+      expect(cloud.revision()).toBe(revisionBefore)
       const release = { state: 'released', expectedVersion: 1, note: 'Synthetic customer selected another unit' }
       for (const response of [await callNode('POST', path, release, 'synthetic-release'), await cloudCall('POST', release, 'synthetic-release')]) {
         expect(response).toMatchObject({ status: 201, json: { enabled: true, state: 'released', version: 2, note: release.note,

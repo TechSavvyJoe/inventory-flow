@@ -119,9 +119,9 @@ uses the existing read-only token and forbids snapshot updates. The current
 [PR checks](https://github.com/TechSavvyJoe/inventory-flow/pull/67/checks)
 record the ordinary comparisons and final unit/build/browser gates.
 
-Eight delegated specialists used Codex GPT-6 Luna/medium for the completion audit,
+Nine delegated specialists used Codex GPT-6 Luna/medium for the completion audit,
 GPT-6.1 Sol/medium for browser repairs, visual review and two frontend repair lanes,
-GPT-6.1 Sol/high for patch-risk review and backend readiness repairs,
+GPT-6.1 Sol/high for patch-risk review, backend readiness repairs and note validation,
 and GPT-6 Astra/high for the independent final gate.
 Their relevant skills covered frontend testing, React, interface design and
 patch-risk assessment. Visual acceptance is synthetic; it is not production
@@ -129,7 +129,7 @@ authentication, physical-device acceptance or deployment authorization.
 
 ## GitHub review corrections
 
-The final review sweep confirmed and repaired nine unresolved findings:
+The review sweeps confirmed thirteen actionable findings. The first nine repairs:
 
 - Overview hold totals and their drilldown both use imported DealerMail evidence;
   manual holds remain visible through Held and the inventory-decision filters.
@@ -176,6 +176,29 @@ timeouts (PDF listing links and inventory row-count controls). Both exact cases
 passed an isolated two-test rerun; the production build, companion archive,
 15 offline migrations and synthetic recovery drill also passed. This still is
 not a complete final-head local `pnpm check` pass.
+
+
+The last four review corrections restore naming when a selected destination
+is deleted or becomes ineligible; reject contact patterns in manual-hold notes
+before event creation; keep each manual/imported date and holder with its own
+source label; and centralize both new dialogs' border, focus and compact layout
+dimensions in shared tokens. The existing 760px shell boundary is defined in
+tokens.css because CSS variables cannot serve as media-query conditions.
+Desktop Hold and Decision buttons meet 44px in both dimensions. Native mixed-hold
+checks passed at all four sizes: each source retains its own date and backups,
+no horizontal overflow occurs, both controls accept an ordinary edge click,
+Escape returns focus, and the manual dialog stays within bounds and contains
+Tab focus. Final local safety, type, design and production-build checks passed.
+
+The naming component passed six tests and eight native recovery flows across
+all four canonical sizes. Eight new source-separation cases and two broader
+existing cases passed their focused rerun, with all original timeouts retained;
+the broader initial table run had two load-related timeouts. Final manual-note
+validation passed all 28 tests, including create/edit/release rejection on Node
+and Worker with unchanged ledger/history and Worker revision. The guard covers
+email, web and phone patterns while permitting ordinary dates, prices and
+package codes; it is not a general identity-information classifier and does
+not rewrite historical events.
 
 ## Release boundaries
 
