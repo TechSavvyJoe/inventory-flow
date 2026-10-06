@@ -658,3 +658,7 @@
 }
 
 .vdp-focus-actions :is(button,a):first-child:hover { --workspace-primary-bg:var(--blue-700); }
+
+.vdp-focus-manual-summary { align-items: center; background: var(--ifx-neutral-50); border: 1px solid var(--ifx-border-subtle); display: flex; flex-wrap: wrap; gap: var(--ifx-space-2); justify-content: space-between; margin-bottom: var(--ifx-space-3); padding: var(--ifx-space-2) var(--ifx-space-3); }
+.vdp-focus-manual-summary > div:first-child { display: grid; gap: var(--ifx-space-1); }
+.vdp-focus-manual-summary span { color: var(--ifx-neutral-600); font-size: var(--ifx-text-sm); }

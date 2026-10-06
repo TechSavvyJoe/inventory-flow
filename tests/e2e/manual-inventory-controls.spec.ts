@@ -1,0 +1,40 @@
+import { expect, test } from '@playwright/test'
+
+// SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
+// The real Node HTTP routes persist app-owned controls, never source writes.
+test('records, compares and releases a manual hold, then records Other with details', async ({ page }, info) => {
+  const vin = info.project.name === 'mobile' ? 'TESTDATAHWELL0002' : 'TESTDATAHWELL0001'
+  await page.addInitScript(() => {
+    localStorage.setItem('maxey-role', 'manager')
+    localStorage.setItem('maxey-home-store', 'Howell')
+  })
+  await page.goto(`/inventory?scope=group&vin=${vin}&tab=hold`)
+  const workspace = page.getByRole('dialog', { name:/vehicle workspace/ })
+  await expect(workspace).toBeVisible()
+  const place = workspace.getByRole('button', { name:'Place manual hold', exact:true })
+  await place.click()
+  const hold = page.getByRole('dialog', { name:'Manual hold', exact:true })
+  await expect(hold).toBeVisible()
+  await hold.getByRole('textbox', { name:'Customer initials or nickname' }).fill('AB')
+  await hold.getByLabel('Expected delivery (optional)').fill('2026-08-31')
+  await hold.getByRole('textbox', { name:'Notes and details' }).fill('Synthetic appointment reservation')
+  await hold.getByRole('button', { name:'Place manual hold', exact:true }).click()
+  await expect(hold).toHaveCount(0)
+  await expect(workspace.getByRole('button', { name:'Manage manual hold', exact:true })).toBeVisible()
+  await workspace.getByRole('button', { name:'Manage manual hold', exact:true }).click()
+  await expect(hold.getByRole('textbox', { name:'Customer initials or nickname' })).toHaveValue('AB')
+  await hold.getByRole('radio', { name:'Release hold' }).check()
+  await hold.getByRole('textbox', { name:'Release reason' }).fill('Synthetic appointment ended')
+  await hold.getByRole('button', { name:'Release manual hold', exact:true }).click()
+  await expect(hold).toHaveCount(0)
+  await expect(workspace.getByText('Manual hold released', {exact:true})).toBeVisible()
+  await workspace.getByRole('button', { name:/^(Record|Change) disposition$/ }).click()
+  const disposition = page.getByRole('dialog', { name:/Disposition ·/ })
+  await disposition.getByRole('radio', { name:'Other', exact:true }).check()
+  await disposition.getByRole('textbox', { name:/Note/ }).fill('Reserved for showroom display')
+  await disposition.getByRole('button', { name:'Save disposition', exact:true }).click()
+  await expect(disposition).toHaveCount(0)
+  await expect(workspace.getByRole('region', { name:'Manual inventory controls' })).toContainText('Other · Inventory Flow')
+  await workspace.getByRole('button', { name:'Close vehicle details' }).click()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+})

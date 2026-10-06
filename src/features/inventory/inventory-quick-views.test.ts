@@ -4,7 +4,7 @@ import {
   filterPanelHoldValue, filterPanelMovementValue, inventoryInLocationScope, matchesInventoryQuickView,
   selectHoldFilter, selectMovementFilter, selectQuickView, type InventoryViewState,
 } from './inventory-quick-views'
-import { DEFAULT_INVENTORY_FILTERS } from './inventory-utils'
+import { vehicleMatchesFilters, DEFAULT_INVENTORY_FILTERS } from './inventory-utils'
 import type { InventoryScope, InventoryVehicle } from './types'
 
 const howell = { id: 'howell', name: 'Howell' }
@@ -26,6 +26,19 @@ function matches(record: InventoryVehicle, view: Parameters<typeof matchesInvent
 }
 
 describe('inventory quick views use independent hold and location evidence', () => {
+  it('includes manual holds in Held while keeping imported no-hold evidence separate', () => {
+    const held = vehicle({ manualHold:{ vin:'TESTDATAHWELL0001', state:'active', version:1, ownerStore:'Howell', canManage:true, enabled:true, expectedDeliveryDate:null, updatedAt:null } })
+    expect(matches(held, 'held')).toBe(true)
+    expect(matches(held, 'no-hold')).toBe(false)
+    expect(held.dealerMail.hasActiveHold).toBe(false)
+  })
+  it('filters app decisions and conflicts without changing the imported source status', () => {
+    const record = vehicle({ appDisposition:{ vin:'TESTDATAHWELL0001', code:'other', version:1, ownerStore:'Howell', canManage:true, effectiveDate:null, destinationStore:null, updatedAt:null, updatedByRole:'manager', store:'Howell' } })
+    expect(vehicleMatchesFilters(record, { ...DEFAULT_INVENTORY_FILTERS, disposition:'other' })).toBe(true)
+    expect(vehicleMatchesFilters(record, { ...DEFAULT_INVENTORY_FILTERS, disposition:'sold_pending' })).toBe(false)
+    expect(matches(record, 'no-hold')).toBe(false)
+    expect(record.publicListing.isListed).toBe(true)
+  })
   it('includes owned units and known visitors in home scope, including held visitors', () => {
     const ownedElsewhere = vehicle({ location: { homeStore: howell, sourceReportedStore: fowlerville } })
     const visitor = vehicle({ location: { homeStore: lincoln, sourceReportedStore: howell } })

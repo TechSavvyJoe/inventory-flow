@@ -30,7 +30,7 @@ function harness({ issuesEnabled = false, dispositionsEnabled = false, savedList
   const first=vi.fn(async()=>({object_key:'synthetic-private-release',bundle_sha256:envelope.bundleSha256}))
   const batch=vi.fn(async statements=>{
     if (statements.length === 1) {
-      expect(statements[0].sql).toBe("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('vehicle_issues', 'vehicle_issue_events', 'vehicle_disposition_events', 'saved_vehicle_lists', 'saved_vehicle_list_items', 'saved_vehicle_list_actions')")
+      expect(statements[0].sql).toBe("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('vehicle_issues', 'vehicle_issue_events', 'vehicle_disposition_events', 'vehicle_manual_hold_events', 'saved_vehicle_lists', 'saved_vehicle_list_items', 'saved_vehicle_list_actions')")
       return [{success:true,results:[
         ...(issuesEnabled?[{name:'vehicle_issues'},{name:'vehicle_issue_events'}]:[]),
         ...(dispositionsEnabled?[{name:'vehicle_disposition_events'}]:[]),

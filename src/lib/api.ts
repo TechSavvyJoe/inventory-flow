@@ -1,5 +1,6 @@
 import { apiAccessGeneration, recordConfirmedMutation, reportAccessFailure } from './apiSession'
 import type {
+  ManualHoldDetail, ManualHoldInput,
   AppDispositionDetail,
   AppDispositionInput,
   AttentionEventInput,
@@ -396,4 +397,11 @@ export function appendAttentionEvent(
     headers: demoIdentityHeaders(role, store),
     body: JSON.stringify(eventInput),
   })
+}
+
+export function getManualHold(vin: string, role: UserRole, store: StoreName): Promise<ManualHoldDetail> {
+  return request<ManualHoldDetail>(`/api/vehicles/${encodeURIComponent(vin)}/manual-hold`, { headers: demoIdentityHeaders(role, store) })
+}
+export function updateManualHold(vin: string, input: ManualHoldInput, role: UserRole, store: StoreName): Promise<ManualHoldDetail> {
+  return request<ManualHoldDetail>(`/api/vehicles/${encodeURIComponent(vin)}/manual-hold`, { method: 'POST', body: JSON.stringify(input), headers: demoIdentityHeaders(role, store) })
 }

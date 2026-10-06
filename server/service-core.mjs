@@ -14,6 +14,7 @@ import {
   createRepositoryContext,
   listServiceEvents,
   insertServiceEvent,
+  manualHoldsEnabled, listManualHoldEvents, insertManualHoldEvent,
   dispositionsEnabled,
   listDispositionEvents,
   insertDispositionEvent,
@@ -27,6 +28,7 @@ import {
   mutateSavedVehicleList as persistSavedVehicleListMutation,
 } from './repository-dispatch.mjs'
 import { buildServiceReadinessEvent, serviceReadinessView } from './service-readiness.mjs'
+import { buildManualHoldEvent, manualHoldDetail, manualHoldView, inventoryDecision } from './manual-holds.mjs'
 import { buildDispositionEvent, dispositionDetail, dispositionView } from './vehicle-disposition.mjs'
 import { buildVehicleIssue, buildVehicleIssueEvent, canReportVehicleIssue, vehicleIssueView, VEHICLE_ISSUE_CATEGORIES, VEHICLE_ISSUE_STATUSES } from './vehicle-issues.mjs'
 import { allowedAttentionActions, attentionInputHash, buildAttentionMutation, canSeePersistedAssignee, isTransportItem } from './attention-workflow.mjs'
@@ -1850,6 +1852,13 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       values.push(row)
       dispositionEventsByVin.set(row.vin, values)
     }
+    const manualHoldStorage = manualHoldsEnabled(database)
+    const manualHoldEventsByVin = new Map()
+    for (const row of listManualHoldEvents(database)) {
+      const rows = manualHoldEventsByVin.get(row.vin) ?? []
+      rows.push(row)
+      manualHoldEventsByVin.set(row.vin, rows)
+    }
     const transfersByVin = new Map()
     for (const row of allTransferRows) {
       const values = transfersByVin.get(row.vin) ?? []
@@ -1866,7 +1875,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       allTransferRows,
       serviceEventsByVin,
       serviceIntakeByVin: new Map((dataset.serviceIntake ?? []).map((row) => [row.vin, row])),
-      dispositionStorage,
+      dispositionStorage, manualHoldStorage, manualHoldEventsByVin,
       savedListsStorage: savedVehicleListsEnabled(database),
       dispositionEventsByVin,
       transfersByVin,
@@ -1898,6 +1907,8 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       vehicle.appDisposition = dispositionView(source, state.dispositionEventsByVin.get(source.vin)?.at(-1) ?? null, state.context, {
         enabled: state.dispositionStorage,
       })
+      vehicle.manualHold = manualHoldView(source, state.manualHoldEventsByVin.get(source.vin)?.at(-1), state.context, { enabled: state.manualHoldStorage })
+      vehicle.inventoryDecision = inventoryDecision(vehicle)
       vehicle.canReportIssue = vehicleIssuesEnabled(database) && canReportVehicleIssue(vehicle, state.context)
     }
     return vehicle
@@ -2033,6 +2044,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         // False only on a D1 without migration 0013: the page says so instead
         // of showing zero dispositions and no way to record one.
         dispositionsEnabled: state.dispositionStorage,
+        manualHoldsEnabled: state.manualHoldStorage,
         savedListsEnabled: state.savedListsStorage && Boolean(savedListOwnerId(state.context, { required: false })),
         holdSignals,
         managerDispositions: state.indexes.managerDispositionRecords.map((record) => ({
@@ -2101,7 +2113,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const source = state.sources.find((candidate) => candidate.vin === vin)
       const vehicle = source && vehicleFromSnapshot(state, source)
       if (!vehicle) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
-      return dispositionDetail(source, state.dispositionEventsByVin.get(vin) ?? [], state.context, { enabled: state.dispositionStorage })
+      return { ...dispositionDetail(source, state.dispositionEventsByVin.get(vin) ?? [], state.context, { enabled: state.dispositionStorage }), otherEnabled: state.manualHoldStorage }
     },
 
     updateDisposition(vinInput, input, contextInput = {}, idempotencyKey) {
@@ -2111,6 +2123,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const vehicle = source && vehicleFromSnapshot(state, source)
       if (!vehicle) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
       const rows = state.dispositionEventsByVin.get(vin) ?? []
+      if (input?.disposition === 'other' && !state.manualHoldStorage) throw new WorkflowError('Manual inventory controls require migration 0015.', { status: 503, code: 'MIGRATION_REQUIRED' })
       const result = buildDispositionEvent(source, rows, input, state.context, {
         now: state.currentNow,
         today: dateInTimeZone(state.currentNow, state.meta.timezone),
@@ -2121,7 +2134,24 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
         insertDispositionEvent(database, result.row)
         rows.push(result.row)
       }
-      return { created: result.created, record: dispositionDetail(source, rows, state.context, { enabled: state.dispositionStorage }) }
+      return { created: result.created, record: { ...dispositionDetail(source, rows, state.context, { enabled: state.dispositionStorage }), otherEnabled: state.manualHoldStorage } }
+    },
+
+    getManualHold(vinInput, contextInput = {}) {
+      const state = snapshot(contextInput)
+      const source = state.sources.find(candidate => candidate.vin === normalizedVin(vinInput))
+      if (!source || !vehicleFromSnapshot(state, source)) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
+      return manualHoldDetail(source, state.manualHoldEventsByVin.get(source.vin) ?? [], state.context, { enabled: state.manualHoldStorage })
+    },
+
+    updateManualHold(vinInput, input, contextInput = {}, idempotencyKey) {
+      const state = snapshot(contextInput)
+      const source = state.sources.find(candidate => candidate.vin === normalizedVin(vinInput))
+      if (!source || !vehicleFromSnapshot(state, source)) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
+      const rows = state.manualHoldEventsByVin.get(source.vin) ?? []
+      const result = buildManualHoldEvent(source, rows, input, state.context, { now: state.currentNow, idempotencyKey, enabled: state.manualHoldStorage })
+      if (result.created) { insertManualHoldEvent(database, result.row); rows.push(result.row) }
+      return { created: result.created, record: manualHoldDetail(source, rows, state.context, { enabled: state.manualHoldStorage }) }
     },
 
     listVehicleIssues(query = {}, contextInput = {}) {

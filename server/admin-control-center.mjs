@@ -66,6 +66,7 @@ const DISPOSITION_AUDIT_ACTIVITY = Object.freeze({
   delivered: 'Disposition: delivered',
   wholesale: 'Disposition: wholesale',
   transfer_out: 'Disposition: transfer out',
+  other: 'Disposition: other',
 })
 const ATTENTION_SCOPE_LABEL = Object.freeze({
   source_freshness: 'Source feed',

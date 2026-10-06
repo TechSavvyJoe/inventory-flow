@@ -25,6 +25,7 @@ export const OVERVIEW_INVENTORY_VIEWS = [
   'disposition-delivered',
   'disposition-wholesale',
   'disposition-transfer-out',
+  'disposition-other',
   'disposition-none',
 ] as const
 
@@ -173,6 +174,7 @@ export const OVERVIEW_VIEW_LABELS: Record<OverviewInventoryView, string> = {
   'disposition-delivered': 'Disposition: Delivered',
   'disposition-wholesale': 'Disposition: Wholesale',
   'disposition-transfer-out': 'Disposition: Transfer out',
+  'disposition-other': 'Disposition: Other',
   'disposition-none': 'No disposition recorded',
 }
 

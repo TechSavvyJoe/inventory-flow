@@ -64,6 +64,7 @@ function rowFor(code, version) {
 const validInput = (code, extra = {}) => ({
   disposition: code, expectedVersion: 1,
   ...(['delivered', 'wholesale'].includes(code) ? { effectiveDate: '2026-08-29' } : {}),
+  ...(code === 'other' ? { note: 'Other operational decision' } : {}),
   ...(code === 'transfer_out' ? { destinationStore: 'Howell' } : {}),
   ...extra,
 })

@@ -422,3 +422,36 @@ describe.each(['simple', 'advanced'])('role-matrix canary (disposition ledger, %
     }
   })
 })
+
+
+describe('role-matrix canary (manual holds)', () => {
+  it('retains private manual hold fields only in authorized detail and excludes app controls from integration', async () => {
+    const { baseUrl, release, service, seeded } = await harness('simple')
+    const vin = 'TESTDATAHWELL0002'
+    const actor = { role:'manager', store:'Howell', user:marker(seeded, 'manual hold actor') }
+    const response = await fetch(`${baseUrl}/api/vehicles/${vin}/manual-hold`, {
+      method:'POST', headers:{ ...headers(actor), 'idempotency-key':'manual-hold-canary' },
+      body:JSON.stringify({ state:'active', customerLabel:marker(seeded, 'manual hold label'), note:marker(seeded, 'manual hold note'), expectedVersion:0 }),
+    })
+    expect(response.status, JSON.stringify(await response.clone().json())).toBe(201)
+    for (const context of [sales, manager, groupManager]) {
+      const detail = await get(baseUrl, context, `/api/vehicles/${vin}/manual-hold`)
+      expect(detail).toMatchObject({ customerLabel:'ZQCANARY manual hold label', note:'ZQCANARY manual hold note', updatedBy:actor.user })
+      const bootstrap = await get(baseUrl, context, '/api/bootstrap')
+      expectNoMarker('manual hold list fields', bootstrap.vehicles.map(vehicle => vehicle.manualHold))
+      const projected = integrationBootstrapFromSource(service.bootstrap(context), release)
+      for (const vehicle of projected.vehicles) {
+        expect(vehicle).not.toHaveProperty('manualHold')
+        expect(vehicle).not.toHaveProperty('inventoryDecision')
+      }
+    }
+    for (const context of [porter, driver, coordinator]) {
+      const detail = await get(baseUrl, context, `/api/vehicles/${vin}/manual-hold`)
+      expect(detail).toMatchObject({ canManage:false, history:[] })
+      expectNoMarker('transport manual hold detail', detail)
+      expect(detail).not.toHaveProperty('customerLabel')
+      expect(detail).not.toHaveProperty('note')
+      expect(detail).not.toHaveProperty('updatedBy')
+    }
+  })
+})

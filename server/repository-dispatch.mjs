@@ -103,6 +103,10 @@ export function dispositionsEnabled(context, ...args) {
   return invoke(context, 'dispositionsEnabled', args)
 }
 
+export function manualHoldsEnabled(context) { return invokeOptional(context, 'manualHoldsEnabled', [], false) }
+export function listManualHoldEvents(context) { return invokeOptional(context, 'listManualHoldEvents', [], []) }
+export function insertManualHoldEvent(context, row) { return invoke(context, 'insertManualHoldEvent', [row]) }
+
 export function listDispositionEvents(context, ...args) {
   return invoke(context, 'listDispositionEvents', args)
 }

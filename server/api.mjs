@@ -419,6 +419,14 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
       }
       // The app-owned disposition ledger: a manager's own record, never a
       // write to DealerMail, CDK, the listing or the imported manager log.
+      const manualHoldMatch = route.match(/^\/vehicles\/([^/]+)\/manual-hold$/)
+      if (request.method === 'GET' && manualHoldMatch) {
+        return sendJson(response, 200, service.getManualHold(pathSegment(manualHoldMatch[1]), context))
+      }
+      if (request.method === 'POST' && manualHoldMatch) {
+        const result = service.updateManualHold(pathSegment(manualHoldMatch[1]), await readJson(request), context, String(request.headers['idempotency-key'] ?? ''))
+        return sendJson(response, result.created ? 201 : 200, result.record)
+      }
       const dispositionMatch = route.match(/^\/vehicles\/([^/]+)\/disposition$/)
       if (request.method === 'GET' && dispositionMatch) {
         return sendJson(response, 200, service.getDisposition(pathSegment(dispositionMatch[1]), context))

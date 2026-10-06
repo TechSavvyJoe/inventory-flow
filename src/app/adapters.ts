@@ -676,6 +676,8 @@ export function toInventoryVehicle(
     ...(data.overview?.vehicleFacts[vehicle.vin] ? { overview: data.overview.vehicleFacts[vehicle.vin] } : {}),
     // Passed through unchanged: the app ledger's own code, never derived from
     // the manager log, the listing or a move.
+    ...(vehicle.manualHold ? { manualHold: vehicle.manualHold } : {}),
+    ...(vehicle.inventoryDecision ? { inventoryDecision: vehicle.inventoryDecision } : {}),
     ...(vehicle.appDisposition !== undefined ? { appDisposition: vehicle.appDisposition } : {}),
     managerDisposition: vehicle.managerDisposition
       ? {

@@ -322,6 +322,16 @@ function FiltersPanel({
           </select>
         </label>
         <label>
+          <span>Inventory decision</span>
+          <select value={filters.disposition ?? "all"} onChange={event => update("disposition", event.target.value as InventoryFilters["disposition"])}>
+            <option value="all">Any decision</option><option value="none">No disposition recorded</option>
+            <option value="sold_pending">Sold pending</option><option value="delivered">Delivered</option>
+            <option value="other">Other</option><option value="keep">Keep</option>
+            <option value="wholesale">Wholesale</option><option value="transfer_out">Transfer out</option>
+            <option value="conflict">Conflicting records</option>
+          </select>
+        </label>
+        <label>
           <span>Vehicle movement</span>
           <select value={movementValue} onChange={(event) => onMovementChange(event.target.value as InventoryFilters["movement"])}>
             <option value="all">Any movement status</option>

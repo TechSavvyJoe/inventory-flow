@@ -6,7 +6,7 @@ import type { AppDisposition, AppDispositionCode, StoreName, UserRole } from '..
  * offers only allowed choices; the server stays authoritative on every save.
  */
 
-export const DISPOSITION_CODES: readonly AppDispositionCode[] = ['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out']
+export const DISPOSITION_CODES: readonly AppDispositionCode[] = ['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out', 'other']
 
 export const DISPOSITION_LABELS: Record<AppDispositionCode, string> = {
   keep: 'Keep',
@@ -14,15 +14,17 @@ export const DISPOSITION_LABELS: Record<AppDispositionCode, string> = {
   delivered: 'Delivered',
   wholesale: 'Wholesale',
   transfer_out: 'Transfer out',
+  other: 'Other',
 }
 
 export const DISPOSITION_TRANSITIONS: Record<AppDispositionCode | 'none', readonly AppDispositionCode[]> = {
-  none: ['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out'],
-  keep: ['sold_pending', 'delivered', 'wholesale', 'transfer_out'],
-  sold_pending: ['delivered', 'keep', 'wholesale', 'transfer_out'],
+  none: ['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out', 'other'],
+  keep: ['sold_pending', 'delivered', 'wholesale', 'transfer_out', 'other'],
+  sold_pending: ['delivered', 'keep', 'wholesale', 'transfer_out', 'other'],
   delivered: ['keep'],
   wholesale: ['keep'],
-  transfer_out: ['keep', 'sold_pending'],
+  transfer_out: ['keep', 'sold_pending', 'other'],
+  other: ['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out', 'other'],
 }
 
 /** Delivered and wholesale close a unit; changing one back to Keep is a correction that needs a note. */

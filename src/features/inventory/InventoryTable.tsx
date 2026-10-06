@@ -327,6 +327,7 @@ type OperationalStatus = {
 };
 
 export function vehicleOperationalStatus(vehicle: InventoryVehicle): OperationalStatus {
+  if (vehicle.manualHold?.state === 'active') return { label: 'Manual hold', detail: 'Recorded in Inventory Flow. Review imported evidence separately.', tone: 'hold', icon: UserRound };
   if (vehicle.dealerMail.dataState !== "current") {
     const evidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
     const previousPrimary = evidence?.find((record) => record.position === "primary") ?? evidence?.[0];
@@ -569,7 +570,7 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerSt
   const name = vehicleDisplayName(vehicle);
   const holdStatus = vehicleOperationalStatus(vehicle);
   const movement = vehicleMovementStatus(vehicle, viewerStore);
-  const canOpenDealerMail = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
+  const canOpenDealerMail = vehicle.manualHold?.state !== "active" && vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
   const visibleEvidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
   const primaryEvidence = visibleEvidence?.find((record) => record.position === "primary") ?? visibleEvidence?.[0];
   const backupCount = Math.max(0, (vehicle.dealerMail.activeRecordCount ?? 0) - 1);
@@ -595,6 +596,7 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerSt
     </dd></div>
     {movement ? <div className="inv-desk-status__row" data-fact="move"><dt>Move</dt><dd><span className={`inv-desk-move${movement.tone === "warning" ? " is-warning" : ""}`} title={movement.detail}>{humanizeStatusLabel(movement.label)}</span></dd></div> : null}
     <div className="inv-desk-status__row" data-fact="service"><dt>Service</dt><dd><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed /></dd></div>
+    {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <div className="inv-desk-status__row" data-fact="manual-decision"><dt>Decision</dt><dd><button type="button" className="inv-desk-hold" aria-label={`Review inventory decision for ${name}`} onClick={event => { stopRowSelection(event); onSelectVehicle(vehicle, 'hold'); }}>{vehicle.inventoryDecision?.comparison === 'conflict' ? 'Records disagree' : vehicle.inventoryDecision?.label}</button></dd></div> : null}
     {vehicle.managerDisposition ? <div className="inv-desk-status__row" data-fact="sale"><dt>Sale</dt><dd><small className="inv-desk-disposition" data-state={vehicle.managerDisposition.dataState}>{vehicle.managerDisposition.soldLabel} · {vehicle.managerDisposition.deliveryLabel}</small></dd></div> : null}
     {openRecallCount(vehicle) ? <div className="inv-desk-status__row" data-fact="recall"><dt>OASIS</dt><dd><RecallChip vehicle={vehicle} onSelectVehicle={onSelectVehicle} /></dd></div> : null}
   </dl>;
@@ -1031,7 +1033,7 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
     value: formatFactoryPrice(factoryPrice.base.value, factoryPrice.base.currency),
   };
   const operationalUpdate = movementStatus?.label || (recentChange?.kind !== "other" ? recentChange?.shortLabel : null);
-  const holdToolsAvailable = vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
+  const holdToolsAvailable = vehicle.manualHold?.state !== "active" && vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
   const hasDocumentEvidence = Object.values(mobileDocumentAvailability(vehicle)).some(Boolean);
   // The holder is already role-redacted by vehicleOperationalStatus.
   // Keep that useful context on the compact SRP instead of making staff
@@ -1100,6 +1102,11 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
             <strong>{currentLocation.label}</strong><span aria-hidden="true" className="inventory-mobile-hold__separator">·</span>
             <span>{compactHoldLabel}</span>
           </button>
+          {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <button type="button"
+            className="inventory-mobile-hold" aria-label={`Review inventory decision for ${name}`}
+            onClick={event => { event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, 'hold'); }}>
+            <ClipboardCheck size={14} aria-hidden="true" />{vehicle.inventoryDecision?.label}
+          </button> : null}
           {vehicle.managerDisposition ? (
             <span className="inventory-mobile-manager-disposition" data-state={vehicle.managerDisposition.dataState}>
               <ClipboardCheck size={14} strokeWidth={1.9} aria-hidden="true" />
