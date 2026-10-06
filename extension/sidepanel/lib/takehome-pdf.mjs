@@ -111,15 +111,23 @@ export async function createTakeHomePdf(models, title, { fetcher = globalThis.fe
       if(logo) logoSources.set(model.vin,{src:branding.src,alt:clean(branding.alt),wide:branding.wide===true})
       assets.set(model.vin,{photo,logo})
     }
+    // Repeated equipment/qualification text needs the same shaped width many
+    // times. Cache only within this document, keeping exact font measurements.
+    const measurements = new Map()
+    const measure = (value,size,isBold) => {
+      const key = `${isBold ? 'b' : 'r'}:${size}:${value}`
+      if (!measurements.has(key)) measurements.set(key,(isBold ? bold : regular).widthOfTextAtSize(value,size))
+      return measurements.get(key)
+    }
     const wrap = (value,maxWidth,size,isBold) => {
-      const font=isBold?bold:regular, result=[]
+      const result=[]
       for(const paragraph of clean(value).split('\n')) {
         let line=''
         for(const word of paragraph.split(/\s+/).filter(Boolean)) {
-          if(line && font.widthOfTextAtSize(`${line} ${word}`,size)>maxWidth) { result.push(line);line='' }
-          if(font.widthOfTextAtSize(word,size)<=maxWidth) {line=line?`${line} ${word}`:word;continue}
+          if(line && measure(`${line} ${word}`,size,isBold)>maxWidth) { result.push(line);line='' }
+          if(measure(word,size,isBold)<=maxWidth) {line=line?`${line} ${word}`:word;continue}
           let part=''
-          for(const char of word) {if(part && font.widthOfTextAtSize(part+char,size)>maxWidth) {result.push(part);part=''}part+=char}
+          for(const char of word) {if(part && measure(part+char,size,isBold)>maxWidth) {result.push(part);part=''}part+=char}
           line=part
         }
         result.push(line)
