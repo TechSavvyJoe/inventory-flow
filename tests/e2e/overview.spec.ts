@@ -239,7 +239,7 @@ test('a store manager records a disposition from the vehicle workspace and the O
     await expect(dialog).toBeHidden()
   }
   await record('Sold pending')
-  await expect(operations.getByRole('status')).toHaveText(/^Sold pending recorded for #/)
+  await expect(operations.getByRole('status').filter({ hasText: /^Sold pending recorded for #/ })).toHaveText(/^Sold pending recorded for #/)
   // Provenance belongs with the full disposition detail; the action and its
   // immediate confirmation remain in the operational summary.
   await expect(page.getByRole('region', { name: 'Operational details' })).toContainText('recorded in Inventory Flow')

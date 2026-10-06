@@ -36,6 +36,23 @@ for (const [width, height] of [[390, 844], [1024, 768], [1320, 820], [1440, 900]
     await saveVehicles(page)
     await expect(page).toHaveTitle(/Inventory Flow/)
     await expect(page.locator('vite-error-overlay')).toHaveCount(0)
+    if (width > 760) {
+      const copy = page.getByRole('button', { name:'Copy VIN: TESTDATAHWELL0001', exact:true }).first()
+      const contentBounds = await copy.locator('..').getByText('TESTDATAHWELL0001', { exact:true }).boundingBox()
+      const copyBounds = await copy.boundingBox()
+      expect(contentBounds).not.toBeNull()
+      expect(copyBounds).not.toBeNull()
+      expect(contentBounds!.x + contentBounds!.width).toBeLessThanOrEqual(copyBounds!.x)
+      const priceCopy = page.getByRole('button', { name:/^Copy .*base MSRP:/ }).first()
+      const priceRow = priceCopy.locator('..').locator('..').locator('..')
+      const labelBounds = await priceRow.getByRole('term').boundingBox()
+      const valueBounds = await priceRow.getByRole('definition').boundingBox()
+      expect(labelBounds).not.toBeNull()
+      expect(valueBounds).not.toBeNull()
+      const separateRows = labelBounds!.y + labelBounds!.height <= valueBounds!.y
+      const separateColumns = labelBounds!.x + labelBounds!.width <= valueBounds!.x
+      expect(separateRows || separateColumns).toBe(true)
+    }
     // A transformed/clipped app container must not capture the fixed launcher.
     await page.evaluate(() => { document.getElementById('root')!.style.transform = 'translateZ(0)' })
     const launcher = page.getByRole('button', { name: /^Saved vehicles:/ })

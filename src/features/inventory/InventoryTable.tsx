@@ -1103,7 +1103,7 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
             <span>{compactHoldLabel}</span>
           </button>
           {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <button type="button"
-            className="inventory-mobile-hold" aria-label={`Review inventory decision for ${name}`}
+            className="inventory-mobile-decision" aria-label={`Review inventory decision for ${name}`}
             onClick={event => { event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, 'hold'); }}>
             <ClipboardCheck size={14} aria-hidden="true" />{vehicle.inventoryDecision?.label}
           </button> : null}

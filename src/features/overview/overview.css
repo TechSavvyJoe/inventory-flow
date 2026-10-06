@@ -891,7 +891,7 @@ button.ov-row-link { cursor: pointer; }
 @media (min-width: 1181px) {
   .ov-columns {
     align-items: start;
-    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .ov-service-priority .ov-rows { gap: var(--ifx-space-4); grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ov-service-vehicle .ov-row-actions { grid-column: 1 / -1; }

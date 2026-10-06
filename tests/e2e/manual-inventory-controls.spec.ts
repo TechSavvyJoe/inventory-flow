@@ -36,5 +36,16 @@ test('records, compares and releases a manual hold, then records Other with deta
   await expect(disposition).toHaveCount(0)
   await expect(workspace.getByRole('region', { name:'Manual inventory controls' })).toContainText('Other · Inventory Flow')
   await workspace.getByRole('button', { name:'Close vehicle details' }).click()
+  const row = page.getByRole('article').filter({ has:page.getByRole('button', { name:/Review inventory decision/ }) }).first()
+  const decision = row.getByRole('button', { name:/Review inventory decision/ })
+  if (info.project.name === 'mobile') {
+    await expect(decision).toBeVisible()
+    const decisionBounds = await decision.boundingBox()
+    const holdBounds = await row.getByRole('button', { name:/Open (DealerMail hold tools|hold details)/ }).boundingBox()
+    expect(decisionBounds).not.toBeNull()
+    expect(holdBounds).not.toBeNull()
+    expect(decisionBounds!.y).toBeGreaterThanOrEqual(holdBounds!.y + holdBounds!.height)
+    expect(decisionBounds!.height).toBeGreaterThanOrEqual(44)
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
