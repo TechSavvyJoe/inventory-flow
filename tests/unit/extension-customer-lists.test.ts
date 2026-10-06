@@ -176,6 +176,67 @@ describe('companion customer lists', () => {
     expect(session.snapshot.naming).toBeNull()
   })
 
+  it('requires a name for the selected legacy list but allows saving to another named list', async () => {
+    const legacy = { ...list(), label:'Customer shortlist', items:[] }
+    const named = { ...list(), id:'list-two', label:'AB', items:[] }
+    const write = vi.fn().mockResolvedValueOnce({ ...named, revision:2, items:list().items })
+    const session = createCustomerListSession({ read:async () => ({ lists:[legacy, named] }), write })
+    await session.refresh(); await session.toggle('TESTDATAHWELL0001')
+    expect(await session.saveToSelected()).toBe(false)
+    expect(write).not.toHaveBeenCalled()
+    expect(session.snapshot.error).toMatch(/Name this customer list/)
+    expect(session.snapshot.naming?.vin).toBe('TESTDATAHWELL0001')
+    session.select(named.id)
+    expect(await session.saveToSelected()).toBe(true)
+    expect(write.mock.calls[0][0]).toEqual({ action:'add', listId:'list-two', expectedRevision:1, vin:'TESTDATAHWELL0001' })
+    expect(session.snapshot.naming).toBeNull()
+  })
+
+  it.each(['create', 'rename'])('retains the first-save prompt and conflict error after a replayed %s add is rejected', async (action) => {
+    const legacy = { ...list(), label:'Customer shortlist', items:[] }
+    const replay = { ...list(2), label:'AB', items:[] }
+    const latest = { ...replay, revision:3 }
+    const read = vi.fn().mockResolvedValueOnce({ lists:action === 'rename' ? [legacy] : [] }).mockResolvedValue({ lists:[latest] })
+    const write = vi.fn().mockRejectedValueOnce(new Error('response interrupted'))
+      .mockResolvedValueOnce(replay).mockRejectedValueOnce({ status:409 })
+    if (action === 'rename') write.mockResolvedValueOnce({ ...latest, revision:4 })
+    write.mockResolvedValueOnce({ ...latest, revision:action === 'rename' ? 5 : 4, items:list().items })
+    const session = createCustomerListSession({ read, write })
+    await session.refresh(); await session.toggle('TESTDATAHWELL0001')
+    expect(await session.saveNamed('AB')).toBe(false)
+    expect(await session.retry()).toBe(false)
+    expect(write.mock.calls[1]).toEqual(write.mock.calls[0])
+    expect(write.mock.calls[2][0]).toEqual({ action:'add', listId:'list-one', expectedRevision:2, vin:'TESTDATAHWELL0001' })
+    expect(session.snapshot.naming?.vin).toBe('TESTDATAHWELL0001')
+    expect(session.snapshot.error).toMatch(/changed on another device/)
+    expect(session.snapshot.pending).toBeNull()
+    expect(session.active().revision).toBe(3)
+    expect(session.active().items).toEqual([])
+    expect(await session.saveNamed('AB')).toBe(true)
+    expect(session.snapshot.naming).toBeNull()
+    expect(session.active().items).toEqual(list().items)
+  })
+
+  it.each(['owner change', 'access revocation'])('discards the first-save replay after %s', async (change) => {
+    let finishReplay!: (value: unknown) => void
+    const read = vi.fn().mockResolvedValue({ lists:[] })
+    const write = vi.fn().mockRejectedValueOnce(new Error('response interrupted'))
+      .mockImplementationOnce(() => new Promise(resolve => { finishReplay = resolve }))
+    const session = createCustomerListSession({ read, write })
+    await session.refresh(); await session.toggle('TESTDATAHWELL0001'); await session.saveNamed('AB')
+    const retry = session.retry()
+    if (change === 'owner change') session.setOwner('synthetic-owner-b')
+    else {
+      // A reset is the companion's access-revocation notification boundary.
+      session.reset()
+    }
+    finishReplay({ ...list(), label:'AB', items:[] })
+    expect(await retry).toBe(false)
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(session.snapshot.lists).toEqual([])
+    expect(session.snapshot.naming).toBeNull()
+  })
+
   it('closes first-save naming after retrying an interrupted VIN add without another create', async () => {
     const write = vi.fn().mockResolvedValueOnce({ ...list(), label:'AB', items:[] })
       .mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce({ ...list(2), label:'AB' })

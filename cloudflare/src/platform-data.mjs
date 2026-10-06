@@ -88,7 +88,10 @@ export async function saveDataControl(env,claims,groupId,action,input,key) {
       id=text(input.requestId,'request ID')
       previous=await db.prepare("SELECT * FROM platform_pull_requests WHERE id=? AND group_id=? AND connection_id=? AND state='queued'").bind(id,groupId,connection.id).first()
       if(!previous)fail('This queued request no longer exists. Reload.','PLATFORM_NOT_FOUND',404)
-      next={id,groupId,connectionId:connection.id,name:connection.name,state:'cancelled',kind:previous.request_kind,scheduleSlot:previous.schedule_slot||null}
+      // Compare the same logical fields on both sides of this state change.
+      // The connection name is context, never a rename caused by cancellation.
+      previous={id,groupId,connectionId:connection.id,name:connection.name,state:previous.state,kind:previous.request_kind,scheduleSlot:previous.schedule_slot||null}
+      next={...previous,state:'cancelled'}
       write=db.prepare("UPDATE platform_pull_requests SET state='cancelled',updated_at=? WHERE id=? AND state='queued'").bind(now,id);event='cancelled'
     }
   } else fail('Route not found.','NOT_FOUND',404)
@@ -107,7 +110,7 @@ export async function saveDataControl(env,claims,groupId,action,input,key) {
 }
 
 const AUDIT_FIELDS={groups:['name','status'],dealerships:['name','groupId','storeKey','website','enabled'],owners:['name','email','enabled'],connections:['name','groupId','dealershipId','provider','vendor','oem','method','endpoint','credentialRef','enabled','cadence','localTime','timezone'],pulls:['name','groupId','connectionId','state','kind','scheduleSlot']}
-const aliases={groupId:'group_id',storeKey:'store_key',dealershipId:'dealership_id',credentialRef:'credential_ref',localTime:'local_time',kind:'request_kind',scheduleSlot:'schedule_slot'}
+const aliases={groupId:'group_id',storeKey:'store_key',dealershipId:'dealership_id',connectionId:'connection_id',credentialRef:'credential_ref',localTime:'local_time',kind:'request_kind',scheduleSlot:'schedule_slot'}
 export async function readPlatformAudit(env,claims,id) {
   const db=env.PLATFORM_DB
   await platformOwner(db,claims)
@@ -115,7 +118,10 @@ export async function readPlatformAudit(env,claims,id) {
   if(!row)fail('This audit entry does not exist.','PLATFORM_NOT_FOUND',404)
   const before=row.previous_json?JSON.parse(row.previous_json):{},after=JSON.parse(row.next_json)
   const changes=(AUDIT_FIELDS[row.entity]??[]).flatMap(field=>{
-    const value=record=>{const raw=record[field]??record[aliases[field]];return field==='enabled' && raw!=null?Boolean(raw):raw??null}
+    // Older cancellation entries stored the raw pull row without a name.
+    // Preserve those append-only entries while interpreting their state change.
+    if(row.entity==='pulls' && row.action==='cancelled' && field==='name')return []
+    const value=record=>{const raw=record[field]??record[aliases[field]];return field==='enabled' && raw!=null?Boolean(raw):field==='scheduleSlot'?raw||null:raw??null}
     const previous=value(before),next=value(after)
     return previous===next?[]:[{field,before:previous,after:next}]
   })

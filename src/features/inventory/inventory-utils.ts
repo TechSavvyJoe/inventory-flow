@@ -263,9 +263,6 @@ export function vehicleMatchesOverviewView(
     return owner === store && view === `disposition-${code.replaceAll("_", "-")}`;
   }
   const facts = vehicle.overview;
-  if (view === "holds" && vehicle.manualHold?.state === 'active') {
-    return store === 'all' || vehicle.manualHold.ownerStore === store;
-  }
   const home = vehicle.location.homeStore.name === store;
   if (!facts) return view === "on-lot" && home;
   switch (view) {

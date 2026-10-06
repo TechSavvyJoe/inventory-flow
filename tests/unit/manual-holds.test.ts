@@ -6,6 +6,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
 import { openInventoryDatabase, importRelease } from '../../server/database.mjs'
 import { createInventoryService } from '../../server/service.mjs'
+import { createInventoryServer } from '../../server/api.mjs'
+import { appReadiness } from '../../cloudflare/src/worker.mjs'
 import { buildSyntheticRelease, SYNTHETIC_NOW } from '../../fixtures/synthetic-release.mjs'
 import { buildManualHoldEvent, inventoryDecision } from '../../server/manual-holds.mjs'
 import { createCloudWorkerHarness } from './cloudWorkerHarness'
@@ -104,5 +106,66 @@ describe('manual holds and reconciliation', () => {
       const spoof = await cloud.call('POST', `/api/vehicles/${VIN}/manual-hold`, 'manager@example.invalid', { ...input, expectedVersion: 1, actor: 'forged' })
       expect(spoof.status).toBe(422)
     } finally { cloud.close() }
+  })
+  it('keeps Worker inventory readable but gates holds and deployment readiness when migration 0015 is absent', async () => {
+    const cloud = await createCloudWorkerHarness([{ email: 'sales@example.invalid', ...sales, name: sales.user }])
+    try {
+      cloud.database.exec('DROP TABLE vehicle_manual_hold_events')
+      const revision = cloud.revision()
+      const bootstrap = await cloud.call('GET', '/api/bootstrap', 'sales@example.invalid')
+      expect(bootstrap.status).toBe(200)
+      expect(bootstrap.json).toMatchObject({ manualHoldsEnabled: false, dispositionsEnabled: true, savedListsEnabled: true })
+      expect(bootstrap.json.vehicles.length).toBeGreaterThan(0)
+      const detail = await cloud.call('GET', `/api/vehicles/${VIN}/manual-hold`, 'sales@example.invalid')
+      expect(detail).toMatchObject({ status: 200, json: { enabled: false, canManage: false, state: null, history: [] } })
+      const blocked = await cloud.call('POST', `/api/vehicles/${VIN}/manual-hold`, 'sales@example.invalid', input)
+      expect(blocked).toMatchObject({ status: 503, json: { code: 'MIGRATION_REQUIRED' } })
+      expect(cloud.revision()).toBe(revision)
+      expect(await appReadiness(cloud.env)).toMatchObject({ ready: false, manualHoldStorage: false, dispositionStorage: true, savedListsStorage: true })
+      expect(cloud.revision()).toBe(revision)
+    } finally { cloud.close() }
+  })
+  it('matches healthy Node demo and Worker hold capabilities and HTTP create, replay, read and release behavior', async () => {
+    const { service } = local()
+    const nodeServer = createInventoryServer({ service })
+    const nodeFetch = globalThis.fetch
+    const cloud = await createCloudWorkerHarness([{ email: 'sales@example.invalid', ...sales, name: sales.user }])
+    try {
+      await new Promise(resolve => nodeServer.listen(0, '127.0.0.1', resolve))
+      const baseUrl = `http://127.0.0.1:${nodeServer.address().port}`
+      const callNode = async (method, path, body, key = 'synthetic-parity') => {
+        const response = await nodeFetch(`${baseUrl}${path}`, {
+          method, headers: { 'content-type': 'application/json', 'x-inventory-demo-role': sales.role,
+            'x-inventory-demo-store': sales.store, 'x-inventory-demo-user': sales.user, 'idempotency-key': key },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        })
+        return { status: response.status, json: await response.json() }
+      }
+      const path = `/api/vehicles/${VIN}/manual-hold`
+      const cloudCall = (method, body, key = 'synthetic-parity') => cloud.call(method, path, 'sales@example.invalid', body, { 'idempotency-key': key })
+      for (const response of [await callNode('GET', '/api/bootstrap'), await cloud.call('GET', '/api/bootstrap', 'sales@example.invalid')]) {
+        expect(response).toMatchObject({ status: 200, json: { manualHoldsEnabled: true, dispositionsEnabled: true, savedListsEnabled: true } })
+      }
+      expect(await appReadiness(cloud.env)).toMatchObject({ ready: true, manualHoldStorage: true, dispositionStorage: true, savedListsStorage: true })
+      const expectation = { enabled: true, canManage: true, state: 'active', version: 1, customerLabel: input.customerLabel,
+        note: input.note, updatedBy: sales.user, ownedByCurrentUser: true }
+      for (const response of [await callNode('POST', path, input), await cloudCall('POST', input)]) {
+        expect(response).toMatchObject({ status: 201, json: expectation })
+      }
+      for (const response of [await callNode('POST', path, input), await cloudCall('POST', input)]) {
+        expect(response).toMatchObject({ status: 200, json: expectation })
+      }
+      for (const response of [await callNode('GET', path), await cloudCall('GET')]) {
+        expect(response).toMatchObject({ status: 200, json: { ...expectation, history: [expect.objectContaining(expectation)] } })
+      }
+      const release = { state: 'released', expectedVersion: 1, note: 'Synthetic customer selected another unit' }
+      for (const response of [await callNode('POST', path, release, 'synthetic-release'), await cloudCall('POST', release, 'synthetic-release')]) {
+        expect(response).toMatchObject({ status: 201, json: { enabled: true, state: 'released', version: 2, note: release.note,
+          history: [expect.objectContaining({ state: 'released' }), expect.objectContaining({ state: 'active' })] } })
+      }
+    } finally {
+      await new Promise(resolve => nodeServer.close(resolve))
+      cloud.close()
+    }
   })
 })

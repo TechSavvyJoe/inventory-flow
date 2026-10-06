@@ -42,8 +42,7 @@ export function matchesInventoryQuickView(vehicle: InventoryVehicle, view: Quick
       ? sameStore(location.store, context.homeStore)
       : GROUP_STORES.some(store => sameStore(location.store, store))
     return observedNoHold && !hasHold(vehicle) && atStore && !inTransit(vehicle) &&
-      vehicle.dealerMail.loaner?.active !== true && vehicle.managerDisposition?.sold !== true &&
-      (!vehicle.appDisposition?.code || vehicle.appDisposition.code === 'keep')
+      vehicle.dealerMail.loaner?.active !== true && vehicle.managerDisposition?.sold !== true
   }
 
   // Offsite is relative to ownership, not to the employee's chosen group

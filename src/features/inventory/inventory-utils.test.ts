@@ -233,6 +233,16 @@ describe("Overview views in Inventory (OVERVIEW_SPEC §8.1)", () => {
     expect(matches(held, "holds", "Howell")).toBe(false);
   });
 
+  it("keeps the imported Overview hold drilldown consistent with its counted source facts", () => {
+    const manual = { vin: "TESTDATAHWELL0001", state: "active" as const, version: 1, expectedDeliveryDate: null, updatedAt: null, ownerStore: "Howell" as const, canManage: true, enabled: true };
+    const manualOnly = vehicle({ manualHold: manual, overview: facts() });
+    expect(matches(manualOnly, "holds")).toBe(false);
+    expect(vehicleMatchesFilters(manualOnly, { ...DEFAULT_INVENTORY_FILTERS, overviewView: { view: "holds", store: "all" } })).toBe(false);
+    const both = vehicle({ manualHold: manual, overview: facts({ holdActive: true }), location: { homeStore: { id: "howell", name: "Howell" }, crmStore: { id: "lincoln", name: "Lincoln" } } });
+    expect(matches(both, "holds", "Lincoln")).toBe(true);
+    expect(matches(both, "holds", "Howell")).toBe(false);
+  });
+
   it("narrows to an exact VIN list and counts both as active filters", () => {
     const base = vehicle();
     expect(vehicleMatchesFilters(base, { ...DEFAULT_INVENTORY_FILTERS, vins: [base.vin] })).toBe(true);

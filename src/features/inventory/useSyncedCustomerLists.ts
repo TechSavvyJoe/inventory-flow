@@ -265,7 +265,13 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
     namingBusy.current = true
     try {
       let list: SavedVehicleList | undefined
-      if ('listId' in choice) list = listsRef.current.find(candidate => candidate.id === choice.listId)
+      if ('listId' in choice) {
+        list = listsRef.current.find(candidate => candidate.id === choice.listId)
+        if (list?.id === pending.namingListId || list?.label === DEFAULT_LABEL) {
+          setError('Name this customer list before saving the vehicle, or choose another named list.')
+          return false
+        }
+      }
       else {
         const label = choice.label.trim()
         const validation = savedListLabelError(label)
@@ -341,7 +347,7 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
       readyForWrites: viewCurrent && initialReadConfirmed.current,
       pendingSave: viewCurrent && pendingSave?.generation === generation.current && vehiclesByVin.has(pendingSave.vin)
         ? { vin: pendingSave.vin, displayName: entryFor(vehiclesByVin.get(pendingSave.vin)!, '').displayName,
-          stockNumber: vehiclesByVin.get(pendingSave.vin)!.stockNumber, namingExistingList: Boolean(pendingSave.namingListId) } : null,
+          stockNumber: vehiclesByVin.get(pendingSave.vin)!.stockNumber, namingExistingList: Boolean(pendingSave.namingListId), namingListId: pendingSave.namingListId } : null,
       savePendingToNamedList: label => savePending({ label }),
       savePendingToExistingList: listId => savePending({ listId }),
       cancelPendingSave: () => { if (!mutationBusy.current && !namingBusy.current) setPendingSave(null) },
@@ -364,14 +370,15 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
           const result = await applyMutation(pending.input, { retryPending: true, continuation: pending.continuation })
           if (!result || 'deleted' in result || generation.current !== pending.generation) return
           if (pending.continuation?.type === 'add-after-create' && !result.items.some(item => item.vin === pending.continuation!.vin)) {
-            await applyMutation({
+            const added = await applyMutation({
               action: 'add',
               listId: result.id,
               expectedRevision: result.revision,
               vin: pending.continuation.vin,
             })
+            if (!added || 'deleted' in added) return
           }
-          if (!pendingMutation.current && generation.current === pending.generation) setPendingSave(null)
+          if (!pendingMutation.current && generation.current === pending.generation && !revoked.current) setPendingSave(null)
         })()
         else void refresh()
       },

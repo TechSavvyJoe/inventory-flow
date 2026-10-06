@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSyntheticPlatformAdmin } from '../../fixtures/synthetic-platform-admin.mjs'
 import { readDataConnections, readPlatformAudit, saveDataControl } from '../../cloudflare/src/platform-data.mjs'
 import { handlePlatformApi } from '../../cloudflare/src/platform-worker.mjs'
+import { planScheduledPulls } from '../../cloudflare/src/platform-scheduler.mjs'
 const claims={email:'owner@example.invalid'},group='synthetic-north',fixtures=[]
 const setup=()=>{const fixture=createSyntheticPlatformAdmin();fixtures.push(fixture);return fixture}
 afterEach(()=>{fixtures.splice(0).forEach(fixture=>fixture.close());vi.unstubAllGlobals()})
@@ -65,6 +66,31 @@ describe('Dealership source configuration and queued requests',()=>{
   const {env,sqlite}=setup(),connection=await saveDataControl(env,claims,group,'connections',source(),'config')
   sqlite.prepare("UPDATE platform_groups SET status='suspended' WHERE id=?").run(group)
   await expect(saveDataControl(env,claims,group,'pulls',pull(connection.id),'suspended')).rejects.toMatchObject({code:'PLATFORM_PULL_DISABLED'})
+ })
+ it.each(['manual','scheduled'])('audits cancellation of a %s pull as only a state change and retains the original audit',async kind=>{
+  const {env,sqlite}=setup(),connection=await saveDataControl(env,claims,group,'connections',source(),'source')
+  if(kind==='scheduled')expect(await planScheduledPulls({...env,PLATFORM_SCHEDULER_ENABLED:'true'},new Date('2026-10-06T09:30:00Z'))).toMatchObject({queued:1})
+  else await saveDataControl(env,claims,group,'pulls',pull(connection.id),'pull')
+  const queued=sqlite.prepare("SELECT * FROM platform_pull_requests WHERE connection_id=? AND state='queued'").get(connection.id)
+  const slot=queued.schedule_slot
+  const original=sqlite.prepare('SELECT * FROM platform_audit WHERE target_id=?').get(queued.id)
+  await saveDataControl(env,claims,group,'pulls',pull(connection.id,{operation:'cancel',requestId:queued.id,expectedRevision:2}),'cancel')
+  const audit=sqlite.prepare("SELECT * FROM platform_audit WHERE request_key='cancel'").get()
+  expect((await readPlatformAudit(env,claims,audit.id)).changes).toEqual([{field:'state',before:'queued',after:'cancelled'}])
+  expect(JSON.parse(audit.previous_json)).toMatchObject({name:source().name,state:'queued',kind,scheduleSlot:slot||null})
+  expect(JSON.parse(audit.next_json)).toMatchObject({name:source().name,state:'cancelled',kind,scheduleSlot:slot||null})
+  expect(sqlite.prepare('SELECT * FROM platform_audit WHERE id=?').get(original.id)).toEqual(original)
+  expect(await saveDataControl(env,claims,group,'pulls',pull(connection.id,{operation:'cancel',requestId:queued.id,expectedRevision:2}),'cancel')).toMatchObject({replayed:true})
+  expect(sqlite.prepare('SELECT COUNT(*) AS n FROM platform_audit').get().n).toBe(3)
+ })
+ it('reads historical raw cancellation audits without inventing a connection rename or rewriting history',async()=>{
+  const {env,sqlite}=setup()
+  const before={id:'old-pull',group_id:group,connection_id:'old-source',state:'queued',request_kind:'manual',schedule_slot:''}
+  const after={id:'old-pull',groupId:group,connectionId:'old-source',name:'Synthetic historic source',state:'cancelled',kind:'manual',scheduleSlot:null}
+  sqlite.prepare('INSERT INTO platform_audit VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run('old-audit','synthetic-owner','Demo software owner','pulls','old-pull','cancelled','Synthetic cancellation',JSON.stringify(before),JSON.stringify(after),'old-key','old-hash','2026-10-05T12:00:00Z')
+  const original=sqlite.prepare("SELECT * FROM platform_audit WHERE id='old-audit'").get()
+  expect((await readPlatformAudit(env,claims,'old-audit')).changes).toEqual([{field:'state',before:'queued',after:'cancelled'}])
+  expect(sqlite.prepare("SELECT * FROM platform_audit WHERE id='old-audit'").get()).toEqual(original)
  })
  it('reads only allowlisted audit fields and normalizes stored boolean values',async()=>{
   const {env,sqlite}=setup(),saved=await saveDataControl(env,claims,group,'connections',source(),'source')

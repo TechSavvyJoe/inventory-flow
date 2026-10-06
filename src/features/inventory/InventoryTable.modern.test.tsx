@@ -89,6 +89,21 @@ function heldMovingVehicle(): InventoryVehicle {
 }
 
 describe('modern inventory result access', () => {
+  describe.each(['desktop', 'mobile'] as const)('%s recorded inventory decision', layout => {
+    it.each([false, true])('shows Keep unless the independent records conflict (%s)', conflict => {
+      const vehicle = heldMovingVehicle();
+      vehicle.appDisposition = { vin: vehicle.vin, code: 'keep', version: 1, effectiveDate: null, destinationStore: null, updatedAt: null, updatedByRole: 'manager', store: 'Howell', ownerStore: 'Howell', canManage: true };
+      vehicle.inventoryDecision = { status: 'unconfirmed', comparison: conflict ? 'conflict' : 'source_only', reasons: conflict ? ['keep_vs_imported_delivery'] : [], manualHold: null, importedHold: false, label: conflict ? 'Review conflicting records' : 'Confirm availability' };
+      const onSelectVehicle = vi.fn();
+      if (layout === 'desktop') render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={onSelectVehicle} />);
+      else render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={onSelectVehicle} />);
+      const control = screen.getByRole('button', { name: /Review inventory decision/ });
+      expect(control).toHaveTextContent(conflict ? 'Records disagree' : 'Keep');
+      expect(control).not.toHaveTextContent('Confirm availability');
+      fireEvent.click(control);
+      expect(onSelectVehicle).toHaveBeenCalledWith(vehicle, 'hold');
+    });
+  });
   describe.each(['desktop', 'mobile'] as const)('%s service readiness', (layout) => {
     it.each([
       ['unknown', 'Waiting for service'],

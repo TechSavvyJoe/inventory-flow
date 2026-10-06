@@ -39,7 +39,7 @@ export function createCustomerListSession({ read, write, ownerId = null, onChang
     publish({ activeId: value.lists.some(list => list.id === id) ? id : null })
   }
   function active() { return value.lists.find(list => list.id === value.activeId) ?? null }
-  async function refresh() {
+  async function refresh(preserveError = false) {
     if (!ownerId) return
     if (readPromise || value.saving) return readPromise
     const version = generation
@@ -50,7 +50,7 @@ export function createCustomerListSession({ read, write, ownerId = null, onChang
         if (version !== generation) return
         const lists = result.lists
         const activeId = lists.some(list => list.id === value.activeId) ? value.activeId : lists[0]?.id ?? null
-        publish({ lists, activeId, error: value.pending ? value.error : null, checkedAt: Date.now(), readyForWrites: true })
+        publish({ lists, activeId, error: value.pending || preserveError ? value.error : null, checkedAt: Date.now(), readyForWrites: true })
       } catch (error) { if (version === generation) failure(error) }
       finally { if (version === generation) { readPromise = null; publish({ loading: false }) } }
     })()
@@ -99,7 +99,7 @@ export function createCustomerListSession({ read, write, ownerId = null, onChang
       }
     }
     const ok = await send(action === 'create' ? { action, ...fields } : { action, listId: list.id, expectedRevision: list.revision, ...fields })
-    if (!ok && !value.pending && !value.saving) await refresh()
+    if (!ok && !value.pending && !value.saving) await refresh(true)
     return ok
   }
   async function continueFirstSave(continuation) {
@@ -132,6 +132,10 @@ export function createCustomerListSession({ read, write, ownerId = null, onChang
     },
     async saveToSelected() {
       if (!value.naming || !customerListWritesReady(value) || !active()) return false
+      if (active().id === value.naming.renamingId || active().label === 'Customer shortlist') {
+        publish({ error: 'Name this customer list before saving the vehicle, or choose another named list.' })
+        return false
+      }
       const continuation = { vin: value.naming.vin }; saveAfterCreate = continuation
       return continueFirstSave(continuation)
     },

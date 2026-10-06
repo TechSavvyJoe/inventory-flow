@@ -1,3 +1,4 @@
+import { DISPOSITION_LABELS } from '../overview/disposition-model';
 import { equipmentFinderItems } from "./vehicle-equipment";
 import { CertifiedBadge } from "../../components/CertifiedBadge";
 import { WorkspaceLink } from "../../components/WorkspaceLink";
@@ -596,7 +597,7 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerSt
     </dd></div>
     {movement ? <div className="inv-desk-status__row" data-fact="move"><dt>Move</dt><dd><span className={`inv-desk-move${movement.tone === "warning" ? " is-warning" : ""}`} title={movement.detail}>{humanizeStatusLabel(movement.label)}</span></dd></div> : null}
     <div className="inv-desk-status__row" data-fact="service"><dt>Service</dt><dd><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed /></dd></div>
-    {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <div className="inv-desk-status__row" data-fact="manual-decision"><dt>Decision</dt><dd><button type="button" className="inv-desk-hold" aria-label={`Review inventory decision for ${name}`} onClick={event => { stopRowSelection(event); onSelectVehicle(vehicle, 'hold'); }}>{vehicle.inventoryDecision?.comparison === 'conflict' ? 'Records disagree' : vehicle.inventoryDecision?.label}</button></dd></div> : null}
+    {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <div className="inv-desk-status__row" data-fact="manual-decision"><dt>Decision</dt><dd><button type="button" className="inv-desk-hold" aria-label={`Review inventory decision for ${name}`} onClick={event => { stopRowSelection(event); onSelectVehicle(vehicle, 'hold'); }}>{vehicle.inventoryDecision?.comparison === 'conflict' ? 'Records disagree' : vehicle.appDisposition?.code ? DISPOSITION_LABELS[vehicle.appDisposition.code] : vehicle.inventoryDecision?.label}</button></dd></div> : null}
     {vehicle.managerDisposition ? <div className="inv-desk-status__row" data-fact="sale"><dt>Sale</dt><dd><small className="inv-desk-disposition" data-state={vehicle.managerDisposition.dataState}>{vehicle.managerDisposition.soldLabel} · {vehicle.managerDisposition.deliveryLabel}</small></dd></div> : null}
     {openRecallCount(vehicle) ? <div className="inv-desk-status__row" data-fact="recall"><dt>OASIS</dt><dd><RecallChip vehicle={vehicle} onSelectVehicle={onSelectVehicle} /></dd></div> : null}
   </dl>;
@@ -1105,7 +1106,7 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
           {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <button type="button"
             className="inventory-mobile-decision" aria-label={`Review inventory decision for ${name}`}
             onClick={event => { event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, 'hold'); }}>
-            <ClipboardCheck size={14} aria-hidden="true" />{vehicle.inventoryDecision?.label}
+            <ClipboardCheck size={14} aria-hidden="true" />{vehicle.inventoryDecision?.comparison === 'conflict' ? 'Records disagree' : vehicle.appDisposition?.code ? DISPOSITION_LABELS[vehicle.appDisposition.code] : vehicle.inventoryDecision?.label}
           </button> : null}
           {vehicle.managerDisposition ? (
             <span className="inventory-mobile-manager-disposition" data-state={vehicle.managerDisposition.dataState}>

@@ -963,7 +963,7 @@ function renderCustomerSheet() {
   const createInput = el('input', { type: 'text', 'aria-label': 'New customer list name', maxlength: '80', value: state.customerDraft, disabled: !canWrite, oninput: event => { state.customerDraft = event.target.value } })
   ui.sheetBody.append(el('form', { class: 'customer-list-create', onsubmit: async event => { event.preventDefault(); const label = state.customerDraft.trim(); if (!label) return; if (await (snapshot.naming ? customerLists.saveNamed(label) : customerLists.mutate('create', { label }))) { state.customerDraft = ''; renderCustomerSheet() } } },
     createInput, el('button', { type: 'submit', class: 'btn btn-primary', disabled: !canWrite }, snapshot.naming ? 'Name list & save vehicle' : 'New list')))
-  if (snapshot.naming && list) ui.sheetBody.append(el('button', { type:'button', class:'btn', disabled:!canWrite, onclick:() => customerLists.saveToSelected() }, `Save to ${list.label}`))
+  if (snapshot.naming && list && list.id !== snapshot.naming.renamingId && list.label !== 'Customer shortlist') ui.sheetBody.append(el('button', { type:'button', class:'btn', disabled:!canWrite, onclick:() => customerLists.saveToSelected() }, `Save to ${list.label}`))
   if (!list) { ui.sheetBody.append(el('p', { text: snapshot.naming ? 'Name this list to save the selected vehicle. You can rename it later.' : 'Create a list, then save vehicles from their detail view.' })); restoreInput(); return }
   const present = list.items.map(item => vehicleByVin(item.vin)).filter(Boolean)
   ui.sheetBody.append(el('div', { class: 'customer-list-actions' },

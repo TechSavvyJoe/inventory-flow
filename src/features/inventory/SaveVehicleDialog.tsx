@@ -19,6 +19,7 @@ export function SaveVehicleDialog({ management }: { management: ShortlistManagem
   const [validation, setValidation] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const pending = management.pendingSave
+  const existingLists = management.lists.filter(list => list.label !== 'Customer shortlist' && list.id !== pending?.namingListId)
   const busy = submitting || management.saving
   const close = () => { if (!busy) management.cancelPendingSave?.() }
   useContainedFocus({ active: true, contain: true, containerRef: container, initialFocusRef: input, returnFocusRef: opener, onEscape: close })
@@ -49,10 +50,10 @@ export function SaveVehicleDialog({ management }: { management: ShortlistManagem
           placeholder="e.g. AB · SUV options" disabled={busy || Boolean(selectedId) || management.pendingAction}
           onChange={event => { setName(event.target.value); setValidation('') }} aria-describedby={`${id}-help`} /></label>
         <p id={`${id}-help`}>Use customer initials or a nickname. You can change the name later.</p>
-        {management.lists.length ? <label htmlFor={`${id}-existing`}>Or use an existing list<select id={`${id}-existing`} value={selectedId} disabled={busy || management.pendingAction}
+        {existingLists.length ? <label htmlFor={`${id}-existing`}>Or use an existing list<select id={`${id}-existing`} value={selectedId} disabled={busy || management.pendingAction}
           onChange={event => { setSelectedId(event.target.value); setValidation('') }}>
           <option value="">{pending.namingExistingList ? 'Name the current list' : 'Create a named list'}</option>
-          {management.lists.map(list => <option key={list.id} value={list.id}>{list.label} ({list.count})</option>)}
+          {existingLists.map(list => <option key={list.id} value={list.id}>{list.label} ({list.count})</option>)}
         </select></label> : null}
         {validation || management.error ? <p role="alert" className="save-vehicle-error">{validation || management.error}</p> : null}
         {management.pendingAction ? <p role="status">The response was interrupted. Retry the original save to confirm it without creating another list.</p> : null}

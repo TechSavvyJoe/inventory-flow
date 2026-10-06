@@ -119,12 +119,41 @@ uses the existing read-only token and forbids snapshot updates. The current
 [PR checks](https://github.com/TechSavvyJoe/inventory-flow/pull/67/checks)
 record the ordinary comparisons and final unit/build/browser gates.
 
-Five delegated reviewers used Codex GPT-6 Luna/medium for the completion audit,
-GPT-6.1 Sol/medium for browser repairs and visual review, GPT-6.1 Sol/high for
-patch-risk review, and GPT-6 Astra/high for the independent final gate.
+Eight delegated specialists used Codex GPT-6 Luna/medium for the completion audit,
+GPT-6.1 Sol/medium for browser repairs, visual review and two frontend repair lanes,
+GPT-6.1 Sol/high for patch-risk review and backend readiness repairs,
+and GPT-6 Astra/high for the independent final gate.
 Their relevant skills covered frontend testing, React, interface design and
 patch-risk assessment. Visual acceptance is synthetic; it is not production
 authentication, physical-device acceptance or deployment authorization.
+
+## GitHub review corrections
+
+The final review sweep confirmed and repaired nine unresolved findings:
+
+- Overview hold totals and their drilldown both use imported DealerMail evidence;
+  manual holds remain visible through Held and the inventory-decision filters.
+- No hold stays independent of app dispositions. The old non-protected expectation
+  excluding Other was wrong because a disposition does not change hold evidence.
+  Recorded Keep is shown by desktop and mobile Decision controls; comparison
+  conflicts retain their separate warning.
+- The manual-hold dialog compares its freshly loaded manual record with the
+  independently retained imported observation. A concurrent completed release
+  resets the draft and action to a usable form with explicit feedback.
+- Legacy generic customer lists cannot bypass naming through the existing-list
+  selector or companion command. Failed follow-up adds after a replay keep the
+  naming prompt open, with an actionable error and deliberate retry.
+- Pull cancellation audit changes contain only the state transition. Historical
+  raw snapshots are interpreted accurately without rewriting append-only events.
+- Protected release readiness reports `manualHoldStorage` and requires it in
+  addition to disposition and saved-list storage. All eight schema partitions
+  and healthy Node/Worker manual-hold HTTP parity are covered by tests.
+
+The frontend repair lanes passed their focused suites (77 saved-list tests and
+120 hold/UI tests). The backend lane passed 582 tests across nine files, including
+readiness, cancellation audit, write identity, source privacy and migration parity.
+These focused counts include overlapping reruns and are not a distinct-test total.
+The current PR checks remain the evidence for the final immutable commit.
 
 ## Release boundaries
 

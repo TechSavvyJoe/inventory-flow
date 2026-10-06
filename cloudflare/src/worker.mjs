@@ -313,11 +313,12 @@ export async function appReadiness(env) {
   // accepting browser claims or exposing any employee/customer evidence.
   const bootstrap=service.bootstrap({role:'driver',store:'Howell',user:'Cloud readiness diagnostic'})
   // Requests stay readable while a feature migration is absent, but deployment
-  // is not ready when either write surface would answer MIGRATION_REQUIRED.
+  // is not ready when any required write surface answers MIGRATION_REQUIRED.
   const dispositionStorage=repo.database.dispositionsEnabled===true
   const savedListsStorage=repo.database.savedVehicleListsEnabled===true
+  const manualHoldStorage=repo.database.manualHoldsEnabled===true
   return {
-    ready:dispositionStorage&&savedListsStorage,dispositionStorage,savedListsStorage,reportDate:bootstrap.meta.reportDate,bundleSha256,
+    ready:dispositionStorage&&savedListsStorage&&manualHoldStorage,dispositionStorage,savedListsStorage,manualHoldStorage,reportDate:bootstrap.meta.reportDate,bundleSha256,
     counts:{inventory:bootstrap.vehicles.length,managerDispositions:bootstrap.managerDispositions?.length??0,transfers:bootstrap.transfers.length,attention:bootstrap.attention.length},
     bootstrapBytes:encoder.encode(JSON.stringify(bootstrap)).byteLength,
   }

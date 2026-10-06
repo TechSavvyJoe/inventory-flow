@@ -30,6 +30,15 @@ export function ManualHoldDialog({ vehicle, role, store, onClose, onSaved, retur
   const [busy, setBusy] = useState(false)
   const [dirty, setDirty] = useState(false)
   const { confirmDiscard, markSaved } = useUnsavedChanges(dirty, { saving: busy })
+  // The imported observation stays independent; only the app-owned record is refreshed here.
+  const importedHold = vehicle.inventoryDecision ? vehicle.inventoryDecision.importedHold :
+    (vehicle.dealerMail.dataState === 'current' ? vehicle.dealerMail.hasActiveHold : null)
+  const recordsDisagree = detail !== null && (
+    (detail.state === 'active' && importedHold === false) ||
+    (detail.state === 'released' && importedHold === true) ||
+    (vehicle.appDisposition?.code === 'delivered' && (detail.state === 'active' || importedHold === true)) ||
+    vehicle.inventoryDecision?.reasons.includes('keep_vs_imported_delivery') === true
+  )
   const close = () => { if (!busy && confirmDiscard()) onClose() }
   useContainedFocus({ active: true, contain: true, containerRef: container, initialFocusRef: heading, returnFocusRef, onEscape: close })
   useModalBackgroundIsolation({ active: true, backgroundRef: background })
@@ -38,6 +47,7 @@ export function ManualHoldDialog({ vehicle, role, store, onClose, onSaved, retur
     setDetail(null); setLoading(true); setError('')
     void getManualHold(vehicle.vin, role, store).then(value => {
       if (cancelled) return
+      setAction('active')
       setDetail(value); setLabel(value.state === 'active' ? value.customerLabel ?? '' : '')
       setDate(value.state === 'active' ? value.expectedDeliveryDate ?? '' : '')
       setNote(value.state === 'active' ? value.note ?? '' : '')
@@ -60,7 +70,16 @@ export function ManualHoldDialog({ vehicle, role, store, onClose, onSaved, retur
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The hold could not be saved.')
       if (caught instanceof ApiError && caught.code === 'MANUAL_HOLD_VERSION_CONFLICT') {
-        try { setDetail(await getManualHold(vehicle.vin, role, store)) } catch { /* Keep the draft for a deliberate retry. */ }
+        try {
+          const latest = await getManualHold(vehicle.vin, role, store)
+          setDetail(latest)
+          if (action === 'released' && latest.state !== 'active') {
+            // A concurrent release completed the intended action. Return to a usable placement form.
+            setAction('active'); setLabel(''); setDate(''); setNote('')
+            markSaved(); setDirty(false)
+            setError('This manual hold was already released. The latest record is shown; you can place a new hold if needed.')
+          }
+        } catch { /* Keep the draft for a deliberate retry. */ }
       }
     } finally { setBusy(false) }
   }
@@ -72,7 +91,7 @@ export function ManualHoldDialog({ vehicle, role, store, onClose, onSaved, retur
       <div className="manual-hold-body">
         <dl className="manual-hold-comparison"><div><dt>Inventory Flow</dt><dd>{detail?.state === 'active' ? 'Manual hold active' : detail?.state === 'released' ? 'Manual hold released' : 'No manual hold recorded'}</dd></div>
           <div><dt>Imported hold evidence</dt><dd>{vehicle.dealerMail.conciseState || 'Not verified'}</dd></div></dl>
-        {vehicle.inventoryDecision?.comparison === 'conflict' ? <p role="status" className="manual-hold-warning">The records disagree. Review the imported evidence before promising availability.</p> : null}
+        {recordsDisagree ? <p role="status" className="manual-hold-warning">The records disagree. Review the imported evidence before promising availability.</p> : null}
         {loading ? <p role="status">Loading the latest record…</p> : null}
         {error ? <p role="alert" className="manual-hold-error">{error}</p> : null}
         {!loading && !detail ? <button type="button" onClick={() => setRetry(value => value + 1)}>Try again</button> : null}

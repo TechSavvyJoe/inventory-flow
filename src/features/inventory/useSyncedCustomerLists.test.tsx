@@ -307,6 +307,79 @@ describe('useSyncedCustomerLists', () => {
     expect(result.current.management?.pendingSave).toBeNull()
   })
 
+  it('rejects the legacy list as an existing target but permits another named list', async () => {
+    const legacy = { ...list(), label:'Customer shortlist', items:[] }
+    const named = { ...list(), id:'list-2', label:'CD', items:[] }
+    api.get.mockResolvedValue({ lists:[legacy, named] })
+    api.mutate.mockResolvedValueOnce({ ...named, revision:2, items:list().items })
+    const { result } = renderHook(() => useSyncedCustomerLists(options))
+    await waitFor(() => expect(result.current.management?.readyForWrites).toBe(true))
+    act(() => result.current.add(vehicle))
+    await act(async () => {
+      expect(await result.current.management?.savePendingToExistingList?.(legacy.id)).toBe(false)
+    })
+    expect(api.mutate).not.toHaveBeenCalled()
+    expect(result.current.management?.pendingSave?.vin).toBe(vehicle.vin)
+    expect(result.current.management?.error).toMatch(/Name this customer list/)
+    await act(async () => {
+      expect(await result.current.management?.savePendingToExistingList?.(named.id)).toBe(true)
+    })
+    expect(api.mutate.mock.calls[0][0]).toEqual({ action:'add', listId:'list-2', expectedRevision:1, vin:vehicle.vin })
+    expect(result.current.management?.pendingSave).toBeNull()
+  })
+
+  it.each(['create', 'rename'] as const)('keeps naming actionable when a replayed %s is followed by a revision conflict', async (action) => {
+    const legacy = { ...list(), label:'Customer shortlist', items:[] }
+    const replay = { ...list(2), label:'AB', items:[] }
+    const latest = { ...replay, revision:3 }
+    api.get.mockResolvedValueOnce({ lists:action === 'rename' ? [legacy] : [] })
+      .mockResolvedValue({ lists:[latest] })
+    api.mutate.mockRejectedValueOnce(new TypeError('response interrupted'))
+      .mockResolvedValueOnce(replay)
+      .mockRejectedValueOnce(new ApiError('conflict', 409))
+    if (action === 'rename') api.mutate.mockResolvedValueOnce({ ...latest, revision:4 })
+    api.mutate.mockResolvedValueOnce({ ...latest, revision:action === 'rename' ? 5 : 4, items:list().items })
+    const { result } = renderHook(() => useSyncedCustomerLists(options))
+    await waitFor(() => expect(result.current.management?.readyForWrites).toBe(true))
+    act(() => result.current.add(vehicle))
+    await act(async () => { await result.current.management?.savePendingToNamedList?.('AB') })
+    expect(result.current.management?.pendingAction).toBe(true)
+    act(() => result.current.management?.retry())
+    await waitFor(() => expect(result.current.management?.error).toMatch(/changed on another device/))
+    await waitFor(() => expect(result.current.management?.loading).toBe(false))
+    expect(api.mutate.mock.calls[1][0]).toEqual(api.mutate.mock.calls[0][0])
+    expect(api.mutate.mock.calls[2][0]).toEqual({ action:'add', listId:'list-1', expectedRevision:2, vin:vehicle.vin })
+    expect(result.current.count).toBe(0)
+    expect(result.current.management?.pendingAction).toBe(false)
+    expect(result.current.management?.pendingSave?.vin).toBe(vehicle.vin)
+    // The reviewed current list can now receive the VIN without repeating the
+    // interrupted create/rename or pretending the rejected add succeeded.
+    await act(async () => {
+      expect(await result.current.management?.savePendingToNamedList?.('AB')).toBe(true)
+    })
+    expect(result.current.count).toBe(1)
+    expect(result.current.management?.pendingSave).toBeNull()
+    expect(api.mutate.mock.calls.at(-1)?.[0]).toEqual({ action:'add', listId:'list-1', expectedRevision:action === 'rename' ? 4 : 3, vin:vehicle.vin })
+  })
+
+  it.each(['owner change', 'access revocation'] as const)('does not continue an interrupted first save after %s during replay', async (change) => {
+    let finishReplay!: (value: ReturnType<typeof list>) => void
+    api.get.mockResolvedValue({ lists:[] })
+    api.mutate.mockRejectedValueOnce(new TypeError('response interrupted'))
+      .mockImplementationOnce(() => new Promise(resolve => { finishReplay = resolve }))
+    const { result, rerender } = renderHook(({ ownerId }) => useSyncedCustomerLists({ ...options, ownerId }), { initialProps:{ ownerId:'synthetic-owner-a' } })
+    await waitFor(() => expect(result.current.management?.readyForWrites).toBe(true))
+    act(() => result.current.add(vehicle))
+    await act(async () => { await result.current.management?.savePendingToNamedList?.('AB') })
+    act(() => result.current.management?.retry())
+    if (change === 'owner change') rerender({ ownerId:'synthetic-owner-b' })
+    else act(() => reportAccessFailure({ status:403, role:'sales', store:'Howell', message:'access revoked' }))
+    await act(async () => finishReplay({ ...list(), items:[] }))
+    expect(api.mutate).toHaveBeenCalledTimes(2)
+    expect(result.current.management?.pendingSave).toBeNull()
+    expect(result.current.management?.lists).toEqual([])
+  })
+
   it('reuses a same-named list rather than creating another duplicate', async () => {
     api.get.mockResolvedValue({ lists:[list()] })
     const { result } = renderHook(() => useSyncedCustomerLists(options))
