@@ -32,6 +32,7 @@ import { serviceWorkflowStatus } from "../../lib/service-readiness";
 import { useModalBackgroundIsolation } from "../../lib/useModalBackgroundIsolation";
 import { InventoryMobileList, InventoryTable, inventorySortSummary } from "./InventoryTable";
 import { VehicleWorkspace } from "./VehicleWorkspace";
+import { SaveVehicleDialog } from "./SaveVehicleDialog";
 import { CustomerShortlistDrawer } from "./CustomerShortlistDrawer";
 import { ShortlistContext, useCustomerShortlist } from "./useCustomerShortlist";
 import { useSyncedCustomerLists } from "./useSyncedCustomerLists";
@@ -877,7 +878,7 @@ export function InventoryExperience({
       <CustomerShortlistDrawer entries={shortlist.entries}
         onRemove={shortlist.remove} onClear={shortlist.clear}
         management={shortlist.management} authorizedVehicles={allVehicles} accessContext={shortlist.context}
-        modalOpen={scannerOpen || Boolean(selectedVehicle)}
+        modalOpen={scannerOpen || Boolean(selectedVehicle) || Boolean(shortlist.management?.pendingSave)}
         onSelectVehicle={(entry, opener) => {
           const vehicle = allVehicles.find(candidate => candidate.id === entry.id || candidate.vin === entry.id);
           if (vehicle) openVehicleWorkspace(vehicle, "overview", opener);
@@ -903,6 +904,7 @@ export function InventoryExperience({
         />
       ) : null}
     </section>
+    {shortlist.management?.pendingSave ? <SaveVehicleDialog key={`${shortlist.context}:${shortlist.management.pendingSave.vin}`} management={shortlist.management} /> : null}
     </ShortlistContext.Provider>
   );
 }

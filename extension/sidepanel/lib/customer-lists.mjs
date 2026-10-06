@@ -20,7 +20,7 @@ export function createCustomerListSession({ read, write, ownerId = null, onChang
   let readPromise = null
   let saveAfterCreate = null
   let value = empty()
-  function empty() { return { lists: [], activeId: null, loading: false, saving: false, error: null, pending: null, checkedAt: null, readyForWrites: false } }
+  function empty() { return { lists: [], activeId: null, loading: false, saving: false, error: null, pending: null, naming: null, checkedAt: null, readyForWrites: false } }
   function publish(patch) { value = { ...value, ...patch }; onChange(value) }
   function denied(error) { return ['signin', 'forbidden'].includes(error?.kind) || [401, 403].includes(error?.status) }
   function failure(error) {
@@ -93,6 +93,10 @@ export function createCustomerListSession({ read, write, ownerId = null, onChang
       const error = customerListLabelError(label)
       if (error) { publish({ error }); return false }
       fields = { ...fields, label }
+      if (action === 'create') {
+        const existing = value.lists.find(candidate => candidate.label.trim().toLocaleLowerCase() === label.toLocaleLowerCase())
+        if (existing) { select(existing.id); return true }
+      }
     }
     const ok = await send(action === 'create' ? { action, ...fields } : { action, listId: list.id, expectedRevision: list.revision, ...fields })
     if (!ok && !value.pending && !value.saving) await refresh()
@@ -101,28 +105,50 @@ export function createCustomerListSession({ read, write, ownerId = null, onChang
   async function continueFirstSave(continuation) {
     if (!continuation || continuation !== saveAfterCreate || !active()) return false
     saveAfterCreate = null
-    return mutate('add', { vin: continuation.vin })
+    const ok = active().items.some(item => item.vin === continuation.vin) || await mutate('add', { vin: continuation.vin })
+    if (ok) publish({ naming: null })
+    return ok
   }
   return {
     get snapshot() { return value }, active, reset, setOwner, select, refresh, mutate,
+    cancelNaming() { if (!value.saving && !value.pending) publish({ naming: null }) },
+    async saveNamed(label) {
+      if (!value.naming || !customerListWritesReady(value)) return false
+      const naming = value.naming
+      const continuation = { vin: naming.vin }
+      saveAfterCreate = continuation
+      const error = customerListLabelError(label)
+      if (error) { publish({ error }); saveAfterCreate = null; return false }
+      const existing = value.lists.find(candidate => candidate.label.trim().toLocaleLowerCase() === label.trim().toLocaleLowerCase() && candidate.id !== naming.renamingId)
+      if (existing) select(existing.id)
+      else {
+        if (naming.renamingId) select(naming.renamingId)
+        if (!await mutate(naming.renamingId ? 'rename' : 'create', { label })) {
+          if (!value.pending) saveAfterCreate = null
+          return false
+        }
+      }
+      return continueFirstSave(continuation)
+    },
+    async saveToSelected() {
+      if (!value.naming || !customerListWritesReady(value) || !active()) return false
+      const continuation = { vin: value.naming.vin }; saveAfterCreate = continuation
+      return continueFirstSave(continuation)
+    },
     async retry() {
       const pending = value.pending, continuation = saveAfterCreate
       if (!pending) return refresh()
       const ok = await send(pending.input, pending.key)
-      if (ok && pending.input.action === 'create' && continuation) return continueFirstSave(continuation)
+      if (ok && ['create', 'rename'].includes(pending.input.action) && continuation) return continueFirstSave(continuation)
+      if (ok && pending.input.action === 'add' && pending.input.vin === value.naming?.vin) publish({ naming: null })
       if (!ok && !value.pending) saveAfterCreate = null
       return ok
     },
     async toggle(vin) {
       if (!requireConfirmedRead() || value.saving || value.pending) return false
-      if (!active()) {
-        const continuation = { vin }
-        saveAfterCreate = continuation
-        if (!await mutate('create', { label: 'Customer shortlist' })) {
-          if (!value.pending) saveAfterCreate = null
-          return false
-        }
-        return continueFirstSave(continuation)
+      if (!active() || active().label === 'Customer shortlist' && !active().items.some(item => item.vin === vin)) {
+        publish({ naming: { vin, renamingId: active()?.id ?? null }, error: null })
+        return false
       }
       return mutate(active().items.some(item => item.vin === vin) ? 'remove' : 'add', { vin })
     },

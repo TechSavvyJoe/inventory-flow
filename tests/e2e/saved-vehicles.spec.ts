@@ -8,6 +8,12 @@ async function saveVehicles(page: Page) {
   for (const stock of ['DEMO-H02', 'DEMO-H01', 'DEMO-F02', 'DEMO-L02']) {
     const save = page.getByRole('button', { name: `Save ${stock} to shortlist`, exact: true })
     if (await save.count()) await save.click()
+    const naming = page.getByRole('dialog', { name: /Save to a customer list|Name this customer list/ })
+    if (await naming.count()) {
+      await naming.getByRole('textbox', { name:'List name', exact:true }).fill('AB · Demo vehicles')
+      await naming.getByRole('button', { name:'Save vehicle', exact:true }).click()
+      await expect(naming).toHaveCount(0)
+    }
     await expect(page.getByRole('button', { name: `Remove ${stock} from shortlist`, exact: true })).toBeVisible()
   }
   await page.evaluate(() => window.scrollTo(0, 0))

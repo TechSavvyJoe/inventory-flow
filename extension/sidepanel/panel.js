@@ -884,7 +884,9 @@ function dock(vehicle) {
     moveAction ? el('button', { type: 'button', class: 'btn', onclick: () => openUrl(links.requestVehicleUrl(origin, vehicle.vin, moveAction)) }, canReroute ? 'Move again' : moveAction === 'direct' ? 'Move vehicle' : 'Request vehicle', icon('arrow-right')) : null,
   )
   const utils = el('nav', { class: 'd-utilities', 'aria-label': 'Vehicle utilities' },
-    state.bootstrap?.savedListsEnabled === true && state.data?.access?.userId ? el('button', { type: 'button', class: 'chip customer-save-toggle', dataset: { vin: vehicle.vin }, 'aria-pressed': String(Boolean(customerLists.active()?.items.some(item => item.vin === vehicle.vin))), onclick: () => customerLists.toggle(vehicle.vin) }, icon('heart', { size: 14 }), 'Save vehicle') : null,
+    state.bootstrap?.savedListsEnabled === true && state.data?.access?.userId ? el('button', { type: 'button', class: 'chip customer-save-toggle', dataset: { vin: vehicle.vin }, 'aria-pressed': String(Boolean(customerLists.active()?.items.some(item => item.vin === vehicle.vin))), onclick: async () => { await customerLists.toggle(vehicle.vin); if (customerLists.snapshot.naming) {
+      openCustomerLists(); requestAnimationFrame(() => ui.sheetBody.querySelector('[aria-label="New customer list name"]')?.focus());
+    } } }, icon('heart', { size: 14 }), 'Save vehicle') : null,
     chip('Deal sheet', 'copy', (button) => copy(dealSheetText(vehicle, (field) => fieldText(field, vehicle)), 'Deal sheet', button), { title: 'Copy every identifying and pricing fact as text' }),
     chip('Take-home page', 'file-text', () => openTakeHome(vehicle), { title: 'Customer sheet to print or save as PDF' }),
     vehicle.hold.canManage ? chip('DealerMail', 'mail', async (button) => { await copy(vehicle.stockNumber, 'Stock number', button); openUrl(links.DEALERMAIL_INVENTORY_URL) }, { title: 'Copies the stock number, then opens DealerMail inventory' }) : null,
@@ -934,6 +936,7 @@ function renderCustomerControls() {
 
 function renderCustomerSheet() {
   const snapshot = customerLists.snapshot, list = customerLists.active()
+  ui.sheet.dataset.kind = snapshot.naming ? 'save-list' : 'customers'
   const busy = snapshot.saving
   const canWrite = customerListWritesReady(snapshot)
   const focused = ui.sheetBody.contains(document.activeElement) ? document.activeElement : null
@@ -955,12 +958,13 @@ function renderCustomerSheet() {
   const status = snapshot.error ?? (busy ? 'Saving changes…' : snapshot.loading ? 'Checking your lists…' : snapshot.checkedAt ? 'Saved to your account · available on your other devices' : 'Your private customer lists')
   ui.sheetBody.append(el('div', { class: 'customer-lists-status', role: snapshot.error ? 'alert' : 'status' }, el('p', { text: status }),
     el('button', { type: 'button', class: 'btn', disabled: busy || snapshot.loading, onclick: () => customerLists.retry() }, snapshot.pending ? 'Retry unfinished action' : snapshot.readyForWrites ? 'Refresh lists' : 'Retry list check')),
-  el('p', { class: 'field-help', text: 'Use initials or a nickname. Customer contact details stay in DealerMail.' }))
+  el('p', { class: 'field-help', text: 'Use initials or a nickname. Keep contact details in your CRM.' }))
   if (snapshot.lists.length) ui.sheetBody.append(el('label', { class: 'customer-list-selector' }, el('span', { text: 'Save vehicles to' }), selector))
   const createInput = el('input', { type: 'text', 'aria-label': 'New customer list name', maxlength: '80', value: state.customerDraft, disabled: !canWrite, oninput: event => { state.customerDraft = event.target.value } })
-  ui.sheetBody.append(el('form', { class: 'customer-list-create', onsubmit: async event => { event.preventDefault(); const label = state.customerDraft.trim(); if (!label) return; if (await customerLists.mutate('create', { label })) { state.customerDraft = ''; renderCustomerSheet() } } },
-    createInput, el('button', { type: 'submit', class: 'btn btn-primary', disabled: !canWrite }, 'New list')))
-  if (!list) { ui.sheetBody.append(el('p', { text: 'Create a list, then save vehicles from their detail view.' })); restoreInput(); return }
+  ui.sheetBody.append(el('form', { class: 'customer-list-create', onsubmit: async event => { event.preventDefault(); const label = state.customerDraft.trim(); if (!label) return; if (await (snapshot.naming ? customerLists.saveNamed(label) : customerLists.mutate('create', { label }))) { state.customerDraft = ''; renderCustomerSheet() } } },
+    createInput, el('button', { type: 'submit', class: 'btn btn-primary', disabled: !canWrite }, snapshot.naming ? 'Name list & save vehicle' : 'New list')))
+  if (snapshot.naming && list) ui.sheetBody.append(el('button', { type:'button', class:'btn', disabled:!canWrite, onclick:() => customerLists.saveToSelected() }, `Save to ${list.label}`))
+  if (!list) { ui.sheetBody.append(el('p', { text: snapshot.naming ? 'Name this list to save the selected vehicle. You can rename it later.' : 'Create a list, then save vehicles from their detail view.' })); restoreInput(); return }
   const present = list.items.map(item => vehicleByVin(item.vin)).filter(Boolean)
   ui.sheetBody.append(el('div', { class: 'customer-list-actions' },
     el('button', { type: 'button', class: 'btn', disabled: busy, onclick: () => openCustomerDocument(present, list.label) }, `Customer sheet (${present.length})`),
@@ -2035,6 +2039,7 @@ function openSheet() {
 }
 
 function closeSheet() {
+  customerLists.cancelNaming()
   if (!sheetOpen) return
   sheetOpen = false
   ui.backdrop.classList.remove('is-in')

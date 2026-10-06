@@ -30,6 +30,10 @@ export interface ShortlistManagement {
   pendingAction: boolean;
   accessRevoked: boolean;
   readyForWrites: boolean;
+  pendingSave?: { vin: string; displayName: string; stockNumber: string; namingExistingList: boolean } | null;
+  savePendingToNamedList?: (label: string) => Promise<boolean>;
+  savePendingToExistingList?: (id: string) => Promise<boolean>;
+  cancelPendingSave?: () => void;
   selectList: (id: string) => void;
   createList: (label: string) => Promise<boolean>;
   renameActiveList: (label: string) => Promise<boolean>;

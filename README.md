@@ -22,9 +22,18 @@ The Today screen turns the daily report into an action layer. It opens on the em
 
 Design and implementation notes are in [Brand architecture](docs/BRAND_ARCHITECTURE.md), [Store brand assets](docs/BRAND_ASSETS.md), [Today and change center](docs/CHANGE_CENTER.md), and [Fidelity and interaction QA](docs/FIDELITY_QA.md).
 
+## Manual inventory controls (prepared, not deployed)
+
+Dealerships can record app-owned manual holds without DealerMail. Salespeople
+manage their own home-store holds; managers manage holds and dispositions,
+including Sold pending, Delivered and Other with notes. Imported evidence
+remains separate and discrepancies require review. The prepared implementation
+requires migration 0015 and a separately authorized release; see
+[Manual inventory controls](docs/MANUAL_INVENTORY_CONTROLS.md).
+
 ## Customer vehicle lists and customer documents
 
-Authenticated employee-owned customer lists retain VIN references in the central service and can be opened from the web app and companion. Labels use initials or nicknames; customer contacts stay in DealerMail. Missing vehicles remain saved with unavailable details. Transient network failures retain the last confirmed list; access changes clear protected views. The saved-list storage and paired Workers were activated in [release 1.4.0](docs/RELEASE_1_4_0.md); that record separates deployed checks from remaining employee/device acceptance.
+Authenticated employee-owned customer lists retain VIN references in the central service and can be opened from the web app and companion. First Save asks for a name before creating a customer list; existing generic lists can be named in place and names remain editable. Labels use initials or nicknames; customer contacts stay in the CRM. Missing vehicles remain saved with unavailable details. Transient network failures retain the last confirmed list; access changes clear protected views. The saved-list storage and paired Workers were activated in [release 1.4.0](docs/RELEASE_1_4_0.md); that record separates deployed checks from remaining employee/device acceptance.
 
 Customer take-home documents support one or multiple vehicles, larger photos, public specifications and equipment, dealership branding, Print, Save PDF and native PDF Share when available. Sharing falls back to saving the PDF. Selling price is shown; original and base MSRP remain in the employee inventory table and VDP. Private hold, movement and manager evidence stays out of customer documents.
 
