@@ -104,15 +104,17 @@ Playwright attachments remain in `/tmp/inventory-flow-qa/e2e/`.
 
 ## Reviewed visual references
 
-All 40 fresh Linux images from source `6dc788d` and candidate run
-`37521342464` were accepted after inspection at all four canonical viewports.
+All 40 fresh Linux images from source `b66d9b1` and candidate run
+`37533677579` were accepted after individual inspection at all four canonical
+viewports, together with nine native edge proofs. The prior `6dc788d` references
+were accepted for their earlier source; the final patch has its own reviewed set.
 The earlier `f1ec994` and `fdcdd04` candidates were rejected and never pinned.
 The final images resolve header copy overlap, initial phone pager obstruction,
 wrapped service/hold facts and stock/VIN legibility.
 
-The exact reviewed bundle is stored as asset `616504177` in the private
-`ci-baseline-pr67-6dc788d` test-reference prerelease. Its SHA-256 is
-`8992043eef55de8a2f5f82ff0bab1a805b67d49bebc3b4ac21704cb514114f98`.
+The exact reviewed bundle is stored as asset `616724317` in the private
+`ci-baseline-pr67-b66d9b1` test-reference prerelease. Its SHA-256 is
+`479dd63787474336b20e9893be4788f9b7e9bee51b055d32f16afc6522445fd9`.
 Only provenance/asset metadata is committed in `tests/visual/baseline-pin.json`;
 no screenshot or encoded image bytes are in Git. The normal CI comparison
 uses the existing read-only token and forbids snapshot updates. The current
@@ -153,7 +155,11 @@ The frontend repair lanes passed their focused suites (77 saved-list tests and
 120 hold/UI tests). The backend lane passed 582 tests across nine files, including
 readiness, cancellation audit, write identity, source privacy and migration parity.
 These focused counts include overlapping reruns and are not a distinct-test total.
-The current PR checks remain the evidence for the final immutable commit.
+Source CI `37533681127` at `b66d9b1` passed all 225 unit/component files
+(3,437 tests and three existing skips), the production and companion build,
+offline migration verification and synthetic recovery. The current PR checks
+remain the evidence for the final immutable metadata-pin commit, including
+ordinary visual comparisons without snapshot updates.
 
 Native browser review exercised legacy naming, interrupted create/rename replay
 followed by an add conflict and successful retry, fresh manual-hold comparison,
