@@ -2,6 +2,9 @@ import { verifyAccess, AccessError } from './access.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
 import { platformOwner, readPlatform, savePlatform, readTenantMembers, saveTenantMember } from './platform-admin.mjs'
 
+import { readDataConnections, saveDataControl, readPlatformAudit } from './platform-data.mjs'
+import { planScheduledPulls } from './platform-scheduler.mjs'
+
 const HEADERS = {
   'Cache-Control':'private, no-store', 'Referrer-Policy':'no-referrer',
   'X-Content-Type-Options':'nosniff', 'X-Frame-Options':'DENY',
@@ -40,19 +43,26 @@ export async function handlePlatformApi(request, env, claims, now = new Date()) 
     if (url.search) throw new WorkflowError('Unsupported query parameters.',{status:400,code:'PLATFORM_INPUT_INVALID'})
     const entity = /^\/api\/platform\/(groups|dealerships|owners)$/.exec(url.pathname)?.[1]
     const members = /^\/api\/platform\/groups\/([a-zA-Z0-9_-]+)\/members$/.exec(url.pathname)
+    const connections = /^\/api\/platform\/groups\/([a-zA-Z0-9_-]+)\/(connections|pulls)$/.exec(url.pathname)
+    const audit = /^\/api\/platform\/audit\/([a-zA-Z0-9_-]+)$/.exec(url.pathname)
     if (request.method === 'GET') {
       if (url.pathname === '/api/platform') return json(200,await readPlatform(env,claims,now))
+      if (audit) return json(200,await readPlatformAudit(env,claims,audit[1]))
+      if (connections?.[2] === 'connections') return json(200,await readDataConnections(env,claims,connections[1],now))
       if (members) return json(200,await readTenantMembers(env,claims,members[1]))
       throw new WorkflowError('Route not found.',{status:404,code:'NOT_FOUND'})
     }
-    if (!entity && !members) throw new WorkflowError('Route not found.',{status:404,code:'NOT_FOUND'})
+    if (!entity && !members && !connections) throw new WorkflowError('Route not found.',{status:404,code:'NOT_FOUND'})
     if (request.headers.get('origin') !== url.origin) throw new AccessError('SAME_ORIGIN_REQUIRED',403)
     const input = await inputJson(request), key = request.headers.get('idempotency-key')
-    return json(200, members ? await saveTenantMember(env,claims,members[1],input,key) : await savePlatform(env,claims,entity,input,key))
+    return json(200, connections ? await saveDataControl(env,claims,connections[1],connections[2],input,key) : members ? await saveTenantMember(env,claims,members[1],input,key) : await savePlatform(env,claims,entity,input,key))
   } catch (error) { return errorResponse(error) }
 }
 
 export default {
+  async scheduled(controller,env) {
+    await planScheduledPulls(env,new Date(controller.scheduledTime))
+  },
   async fetch(request,env) {
     try {
       const url = new URL(request.url)

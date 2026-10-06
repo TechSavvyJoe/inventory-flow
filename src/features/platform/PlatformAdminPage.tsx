@@ -1,183 +1,61 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { Building2, Check, ChevronRight, Plus, RefreshCw, Search, ShieldCheck, Users, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Activity, Building2, ChevronRight, CircleAlert, Filter, History, LayoutDashboard, Plus, RefreshCw, Search, ShieldCheck, Users } from 'lucide-react'
 import { FlowBrandLockup } from '../../design-system'
 import { formatDateTime } from '../../lib/format'
-import type { PlatformOverview, PlatformMembers, PlatformGroup } from './types'
+import type { PlatformGroup } from './types'
+import { HEALTH_LABEL, groupEdit } from './platformPresentation'
+import { PlatformAccountSummary } from './PlatformAccountSummary'
+import { PlatformAuditHistory } from './PlatformAuditHistory'
+import { PlatformChangeDialog } from './PlatformChangeDialog'
+import { PlatformGroupDetail } from './PlatformGroupDetail'
+import { PlatformOwnerDirectory } from './PlatformOwnerDirectory'
+import { usePlatformAdmin } from './usePlatformAdmin'
 import './platform.css'
 
-const ROLES = {sales:'Salesperson',manager:'Store manager',group_manager:'Group manager',coordinator:'Coordinator',porter:'Porter',driver:'Driver'}
-const healthLabel:Record<string,string> = {current:'Current publication',stale:'Publication overdue',not_connected:'Not connected',no_release:'No publication',needs_review:'Review publication',unavailable:'Connection unavailable'}
-type Field = {key:string;label:string;type?:'email'|'checkbox';options?:{value:string;label:string}[];readOnly?:boolean;optional?:boolean}
-type Edit = {title:string;path:string;values:Record<string,string|boolean|number>;fields:Field[];help?:string}
-class PlatformRequestError extends Error {constructor(message:string,readonly status:number) {super(message)}}
-
-function ChangeForm({edit,busy,save,cancel}:{edit:Edit;busy:boolean;save:(edit:Edit,values:Record<string,string|boolean|number>,key:string)=>Promise<void>;cancel:()=>void}) {
-  const [values,setValues] = useState<Record<string,string|boolean|number>>({...edit.values,reason:''})
-  const retry = useRef({signature:'',key:''})
-  const first = useRef<HTMLInputElement>(null)
-  useEffect(()=>{first.current?.focus()},[])
-  const submit = (event:FormEvent) => {
-    event.preventDefault()
-    const signature = JSON.stringify(values)
-    if (retry.current.signature !== signature) retry.current = {signature,key:crypto.randomUUID()}
-    void save(edit,values,retry.current.key)
-  }
-  return <form className="platform-form" aria-label={edit.title} onSubmit={submit}>
-    <header><h3>{edit.title}</h3><button type="button" onClick={cancel} disabled={busy} aria-label="Cancel change"><X aria-hidden="true"/></button></header>
-    {edit.help && <p>{edit.help}</p>}
-    <div className="platform-fields">{edit.fields.map((field,index)=><label key={field.key}>{field.label}
-      {field.options ? <select value={String(values[field.key])} disabled={busy} onChange={event=>setValues({...values,[field.key]:event.target.value})}>{field.options.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select>
-        : field.type === 'checkbox' ? <input type="checkbox" checked={Boolean(values[field.key])} disabled={busy} onChange={event=>setValues({...values,[field.key]:event.target.checked})}/>
-        : <input ref={index===0?first:undefined} type={field.type ?? 'text'} value={String(values[field.key] ?? '')} maxLength={field.key==='website'?500:field.type==='email'?254:160} readOnly={field.readOnly} disabled={busy} required={!field.optional} onChange={event=>setValues({...values,[field.key]:event.target.value})}/>}
-    </label>)}</div>
-    <label>Reason for this change<input required minLength={3} maxLength={500} value={String(values.reason)} disabled={busy} onChange={event=>setValues({...values,reason:event.target.value})} placeholder="Account administration only; no customer information"/></label>
-    <footer><button type="button" onClick={cancel} disabled={busy}>Cancel</button><button className="platform-primary" disabled={busy} type="submit"><Check aria-hidden="true"/>{busy?'Saving…':'Save change'}</button></footer>
-  </form>
+const SECTIONS={overview:{label:'Overview',icon:LayoutDashboard},groups:{label:'Dealer groups',icon:Building2},owners:{label:'Software owners',icon:ShieldCheck},audit:{label:'Audit history',icon:History}}
+type Section=keyof typeof SECTIONS
+const TITLES={overview:'Platform overview',groups:'Dealer groups',owners:'Software owners',audit:'Audit history'}
+function GroupDirectory({groups,selected,busy,choose}:{groups:PlatformGroup[];selected:string;busy:boolean;choose:(id:string)=>void}) {
+ return <div className="platform-directory"><div className="platform-directory-head"><span>Dealer group</span><span>Account</span><span>Stores</span><span>People</span><span>Publication</span></div>{groups.map(group=><button className="platform-directory-row" key={group.id} disabled={busy} aria-pressed={selected===group.id} onClick={()=>choose(group.id)}><span><strong>{group.name}</strong><small>{group.dealerships.map(dealer=>dealer.name).join(' · ')||'Setup in progress'}</small></span><span className={`platform-status platform-status--${group.status}`}>{group.status}</span><span>{group.dealerships.length}</span><span>{group.health.activeEmployees??'—'}</span><span className={`platform-health--${group.health.status}`}>{HEALTH_LABEL[group.health.status]}<ChevronRight aria-hidden="true"/></span></button>)}{!groups.length&&<p className="platform-empty-copy">No groups match these filters.</p>}</div>
 }
-
 export default function PlatformAdminPage() {
-  const [data,setData] = useState<PlatformOverview|null>(null)
-  const [memberState,setMembers] = useState<PlatformMembers|null>(null)
-  const [memberError,setMemberError] = useState('')
-  const [memberAttempt,setMemberAttempt] = useState(0)
-  const [selected,setSelected] = useState('')
-  const [tab,setTab] = useState<'dealerships'|'people'|'health'>('dealerships')
-  const [section,setSection] = useState<'groups'|'owners'|'audit'>('groups')
-  const [search,setSearch] = useState('')
-  const [edit,setEdit] = useState<Edit|null>(null)
-  const [error,setError] = useState('')
-  const [notice,setNotice] = useState('')
-  const [busy,setBusy] = useState(false)
-  const [loading,setLoading] = useState(true)
-  const [denied,setDenied] = useState(false)
-  const epoch = useRef(0)
-  const controllers = useRef(new Set<AbortController>())
-  const loadSequence = useRef(0)
-  const ownerId = useRef('')
-  const clearProtected = useCallback((accessDenied:boolean) => {
-    epoch.current++;controllers.current.forEach(controller=>controller.abort())
-    setData(null);setMembers(null);setMemberError('');setEdit(null);setSelected('');setNotice('');setDenied(accessDenied);ownerId.current=''
-  },[])
-  const request = useCallback(async <T,>(path:string,body?:Record<string,string|boolean|number>,key?:string):Promise<T> => {
-    const generation = epoch.current, controller = new AbortController()
-    controllers.current.add(controller)
-    try {
-      const response = await fetch(`/api/platform${path}`,{credentials:'same-origin',cache:'no-store',signal:controller.signal,...(body?{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key ?? ''},body:JSON.stringify(body)}:{})})
-      if (generation !== epoch.current) throw new DOMException('Access changed','AbortError')
-      if ([401,403].includes(response.status)) {
-        clearProtected(true)
-        throw new PlatformRequestError(response.status===401?'Sign in again to verify software-owner access.':'Software-owner access is required.',response.status)
-      }
-      const isJson = response.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase()==='application/json'
-      if (response.redirected || (response.ok && !isJson)) {
-        clearProtected(true)
-        throw new PlatformRequestError('Sign in again to verify software-owner access.',401)
-      }
-      if (!isJson) throw new PlatformRequestError('The owner service could not be verified. Refresh to try again.',response.status)
-      const result = await response.json()
-      if (generation !== epoch.current) throw new DOMException('Access changed','AbortError')
-      if (!response.ok) {
-        throw new PlatformRequestError(result.error || 'The request could not be completed.',response.status)
-      }
-      return result as T
-    } finally {controllers.current.delete(controller)}
-  },[clearProtected])
-  const failed = useCallback((caught:unknown) => {if (!(caught instanceof DOMException && caught.name === 'AbortError')) setError(caught instanceof Error?caught.message:'The request failed.')},[])
-  const refresh = useCallback(async () => {
-    const sequence = ++loadSequence.current
-    try {
-      const next = await request<PlatformOverview>('')
-      if (sequence !== loadSequence.current) return
-      const ownerChanged = Boolean(ownerId.current && ownerId.current !== next.owner.id)
-      if (ownerChanged) {epoch.current++;controllers.current.forEach(controller=>controller.abort());setMembers(null);setEdit(null);setNotice('');setMemberAttempt(value=>value+1)}
-      setSelected(current=>!ownerChanged && next.groups.some(item=>item.id===current) ? current : next.groups.find(item=>item.status==='active' && item.health.connected)?.id ?? next.groups[0]?.id ?? '')
-      ownerId.current = next.owner.id
-      setData(next);setDenied(false);setError('')
-    } catch(caught) {
-      if (sequence === loadSequence.current && !(caught instanceof DOMException && caught.name==='AbortError')) {
-        clearProtected(caught instanceof PlatformRequestError && [401,403].includes(caught.status))
-        failed(caught)
-      }
-    } finally {if (sequence === loadSequence.current) setLoading(false)}
-  },[clearProtected,failed,request])
-  useEffect(()=>{
-    void refresh()
-    const timer = window.setInterval(()=>{if (document.visibilityState==='visible') void refresh()},30000)
-    const refreshOnFocus = ()=>void refresh()
-    window.addEventListener('focus',refreshOnFocus)
-    return ()=>{clearInterval(timer);window.removeEventListener('focus',refreshOnFocus);epoch.current++;controllers.current.forEach(controller=>controller.abort())}
-  },[refresh])
-  const group = data?.groups.find(item=>item.id===selected)
-  const visibleGroups = data?.groups.filter(item=>`${item.name} ${item.dealerships.map(dealer=>dealer.name).join(' ')}`.toLowerCase().includes(search.toLowerCase())) ?? []
-  const members = memberState?.groupId===group?.id ? memberState : null
-  useEffect(()=>{
-    let current = true
-    setMembers(null);setMemberError('')
-    if (tab==='people' && group?.health.connected) void request<PlatformMembers>(`/groups/${group.id}/members`).then(next=>{if(current)setMembers(next)}).catch(caught=>{if(current && !(caught instanceof DOMException && caught.name==='AbortError')) setMemberError(caught instanceof Error?caught.message:'Employee access could not be loaded.')})
-    return ()=>{current=false}
-  },[group?.id,group?.health.connected,tab,request,memberAttempt])
-  const save = async (form:Edit,values:Record<string,string|boolean|number>,key:string) => {
-    setBusy(true);setError('');setNotice('')
-    try {
-      await request(form.path,values,key)
-      setEdit(null);setNotice('Change saved and recorded in the audit history.')
-      await refresh()
-      if (form.path.endsWith('/members') && group) setMembers(await request<PlatformMembers>(`/groups/${group.id}/members`))
-    } catch(caught) {failed(caught)} finally {setBusy(false)}
-  }
-  const begin = (form:Edit) => {if (busy) return;setError('');setNotice('');setEdit(form)}
-  const groupEdit = (item?:PlatformGroup):Edit => ({title:item?'Edit group':'Add dealership group',path:'/groups',values:{...(item?{id:item.id}:{}),name:item?.name??'',status:item?.status??'setup',expectedRevision:data!.revision},fields:[{key:'name',label:'Group name'},{key:'status',label:'Account state',options:(item?['setup','active','suspended']:['setup']).map(value=>({value,label:{setup:'Setup',active:'Active',suspended:'Suspended'}[value]!}))}],help:'Suspension blocks employee access and publishing on deployments connected to the tenant gate. It does not stop source collectors or Windows tasks.'})
+ const admin=usePlatformAdmin(),{data,selected,setSelected,edit,busy,begin,request}=admin
+ const [accountTab,setAccountTab]=useState<'dealerships'|'people'|'connections'|'health'>('dealerships')
+ const [filtersOpen,setFiltersOpen]=useState(false)
+ const [section,setSection]=useState<Section>('overview'),[search,setSearch]=useState(''),[state,setState]=useState('all'),[health,setHealth]=useState('all')
+ const groups=data?.groups.filter(item=>`${item.name} ${item.dealerships.map(dealer=>dealer.name).join(' ')}`.toLowerCase().includes(search.toLowerCase())&&(state==='all'||item.status===state)&&(health==='all'||(health==='review'?item.status==='active'&&item.health.status!=='current':health===item.health.status)))??[]
+ const visibleKey=groups.map(group=>group.id).join(',')
+ useEffect(()=>{if(data&&!groups.some(group=>group.id===selected))setSelected(groups[0]?.id??'')},[data,visibleKey,selected,setSelected])
+ const group=groups.find(item=>item.id===selected)
+ const navigate=(next:Section)=>{if(!busy){setSection(next);admin.closeEdit()}}
+ const choose=(id:string)=>{setSelected(id);admin.closeEdit()}
+ const openAccount=(tab:typeof accountTab)=>{setAccountTab(tab);navigate('groups');if(window.innerWidth<760)window.requestAnimationFrame(()=>document.querySelector('.platform-detail')?.scrollIntoView?.({block:'start'}))}
+ return <div className="platform-app">
+ <a className="platform-skip" href="#platform-content">Skip to administration</a>
+ <aside className="platform-rail"><FlowBrandLockup reversed tenantLabel="Platform"/><nav aria-label="Software administration sections">{Object.entries(SECTIONS).map(([key,item])=><button key={key} disabled={busy} aria-pressed={section===key} onClick={()=>navigate(key as Section)}><item.icon aria-hidden="true"/>{item.label}</button>)}</nav><div className="platform-rail-foot"><ShieldCheck aria-hidden="true"/><span>Owner workspace<small>Isolated dealership accounts</small></span></div></aside>
+ <div className="platform-canvas"><header className="platform-header"><span><ShieldCheck aria-hidden="true"/>Software admin <ChevronRight aria-hidden="true"/><strong>{SECTIONS[section].label}</strong></span><span className="platform-owner"><span className="platform-avatar" aria-hidden="true">{data?.owner.name.split(' ').slice(0,2).map(word=>word[0]).join('')||'IF'}</span><span>{data?.owner.name??'Owner access'}<small>{data?'Verified software owner':'Verification required'}</small></span></span></header>
+ <main id="platform-content" onClickCapture={event=>{if(event.target instanceof Element)(event.target.closest('button:not([disabled])') as HTMLButtonElement|null)?.focus({preventScroll:true})}}><header className="platform-heading"><div><small className="platform-eyebrow">Inventory Flow control plane</small><h1>{TITLES[section]}</h1><p>Dealer groups, people, data connections and publication health.</p></div><div className="platform-heading-actions"><button onClick={()=>void admin.refresh()} disabled={busy}><RefreshCw aria-hidden="true"/>Refresh</button>{data&&<button className="platform-primary" disabled={busy} onClick={()=>begin(groupEdit(data.revision))}><Plus aria-hidden="true"/>Add group</button>}</div></header>
+ <p className="platform-demo">{data?.demo||import.meta.env.DEV?'Synthetic demo · configuration changes affect this demo only.':'Software-owner workspace · customer evidence stays in its dealership account.'}</p>
+ {admin.error&&!edit&&<p role="alert" className="platform-error">{admin.error}</p>}{admin.notice&&<p role="status" className="platform-notice">{admin.notice}</p>}
+ {admin.loading&&!data&&<p role="status">Checking software-owner access…</p>}
+ {!admin.loading&&!data&&<section className="platform-empty"><ShieldCheck aria-hidden="true"/><h2>{admin.denied?'Software-owner access required':'Administration unavailable'}</h2><p>{admin.denied?'Dealership and group-manager roles do not grant software administration. Your owner account must be enabled in the separate control-plane database.':'Check the owner service configuration, then refresh.'}</p></section>}
+ {data&&<div key={data.owner.id}>
+ {(section==='overview'||section==='groups')&&<>
+ <section className="platform-summary" aria-label="Platform summary">{[{label:'Dealer groups',value:data.groups.length,icon:Building2,action:()=>navigate('groups')},{label:'Dealerships',value:data.groups.reduce((n,item)=>n+item.dealerships.length,0),icon:Building2,action:()=>navigate('groups')},{label:'Enabled employees',value:data.groups.reduce((n,item)=>n+(item.health.activeEmployees??0),0),icon:Users,action:()=>navigate('groups')},{label:'Need review',value:data.groups.filter(item=>item.status==='active'&&item.health.status!=='current').length,icon:CircleAlert,action:()=>{setHealth('review');navigate('groups')}}].map(item=><button disabled={busy} key={item.label} onClick={item.action}><span><small>{item.label}</small><strong>{item.value}</strong></span><item.icon aria-hidden="true"/></button>)}</section>
+ <div className={`platform-workspace ${section==='groups'?'platform-workspace--account':''}`}><section className="platform-directory-panel"><div className="platform-panel-heading"><div><h2>Account directory</h2><p className="platform-help">{groups.length} of {data.groups.length} groups · select an account to manage</p></div><Activity aria-hidden="true"/></div><div className={`platform-toolbar ${filtersOpen?'platform-toolbar--filters-open':''}`}><label className="platform-search"><Search aria-hidden="true"/><input aria-label="Find a group or dealership" placeholder="Search groups or dealerships" value={search} onChange={event=>setSearch(event.target.value)}/></label><button className="platform-mobile-filters" aria-expanded={filtersOpen} onClick={()=>setFiltersOpen(value=>!value)}><Filter aria-hidden="true"/>Filters</button><select className="platform-account-filter" aria-label="Account state filter" value={state} onChange={event=>setState(event.target.value)}><option value="all">All accounts</option><option value="active">Active</option><option value="setup">Setup</option><option value="suspended">Suspended</option></select><select className="platform-account-filter" aria-label="Publication filter" value={health} onChange={event=>setHealth(event.target.value)}><option value="all">All publication states</option><option value="current">Current</option><option value="review">Needs review</option><option value="not_connected">Not connected</option></select></div>
+ <label className="platform-mobile-group-picker">Selected dealer group<select value={group?.id??''} disabled={busy||!groups.length} onChange={event=>choose(event.target.value)}><option value="" disabled>{groups.length?'Select a group':'No matching groups'}</option>{groups.map(item=><option value={item.id} key={item.id}>{item.name} · {item.status}</option>)}</select></label>
+ <GroupDirectory groups={groups} selected={selected} busy={busy} choose={choose}/>
 
-  return <div className="platform-app">
-    <header className="platform-header"><FlowBrandLockup/><span><ShieldCheck aria-hidden="true"/>Software admin</span><span>{data?.owner.name ?? 'Owner access'}</span></header>
-    <main>
-      <header className="platform-heading"><div><h1>Software administration</h1><p>Dealership accounts, employee access and publication health.</p></div><button onClick={()=>void refresh()} disabled={busy}><RefreshCw aria-hidden="true"/>Refresh</button></header>
-      <p className="platform-demo">{data?.demo || import.meta.env.DEV?'Synthetic demo · no dealership data or real access is changed.':'Owner controls · dealership data remains in its isolated account.'}</p>
-      {error && <p role="alert" className="platform-error">{error}</p>}
-      {notice && <p role="status" className="platform-notice">{notice}</p>}
-      {loading && !data && <p role="status">Checking software-owner access…</p>}
-      {!loading && !data && <section className="platform-empty"><ShieldCheck aria-hidden="true"/><h2>{denied?'Software-owner access required':'Administration unavailable'}</h2><p>{denied?'Dealership and group-manager roles do not grant software administration. Your owner account must be enabled in the separate control-plane database.':'Check the owner service configuration, then refresh.'}</p></section>}
-      {data && <>
-        <section className="platform-summary" aria-label="Platform summary">
-          <div><Building2 aria-hidden="true"/><strong>{data.groups.length}</strong><span>Dealer groups</span></div>
-          <div><strong>{data.groups.reduce((n,item)=>n+item.dealerships.length,0)}</strong><span>Dealerships</span></div>
-          <div><strong>{data.groups.filter(item=>item.status==='active').length}</strong><span>Active groups</span></div>
-          <div><strong>{data.groups.filter(item=>item.status==='active' && item.health.status!=='current').length}</strong><span>Need review</span></div>
-        </section>
-        <nav className="platform-sections" aria-label="Software administration sections">{(['groups','owners','audit'] as const).map(value=><button key={value} disabled={busy} aria-pressed={section===value} onClick={()=>{setSection(value);setEdit(null)}}>{{groups:'Dealer groups',owners:'Software owners',audit:'Audit history'}[value]}</button>)}</nav>
-        {edit && <ChangeForm key={`${edit.path}:${edit.values.id??'new'}`} edit={edit} busy={busy} save={save} cancel={()=>setEdit(null)}/>}
-        {section==='groups' && <>
-          <div className="platform-toolbar"><label><Search aria-hidden="true"/><input aria-label="Find a group or dealership" placeholder="Find a group or dealership" value={search} onChange={event=>setSearch(event.target.value)}/></label><button className="platform-primary" onClick={()=>begin(groupEdit())}><Plus aria-hidden="true"/>Add group</button></div>
-          <label className="platform-mobile-group-picker">Dealer group<select value={visibleGroups.some(item=>item.id===selected)?selected:''} disabled={busy || !visibleGroups.length} onChange={event=>{setSelected(event.target.value);setEdit(null);setError('')}}><option value="" disabled>{visibleGroups.length?'Select a matching group':'No matching groups'}</option>{visibleGroups.map(item=><option key={item.id} value={item.id}>{item.name} · {item.status}</option>)}</select></label>
-          <div className="platform-workspace">
-            <section className="platform-group-list" aria-label="Dealer groups">
-              {visibleGroups.map(item=><button className="platform-group-row" key={item.id} disabled={busy} aria-pressed={selected===item.id} onClick={()=>{setSelected(item.id);setEdit(null);setError('')}}><span><strong>{item.name}</strong><small>{item.dealerships.length} dealerships · {item.health.activeEmployees ?? '—'} active employees</small><small className={`platform-health platform-health--${item.health.status}`}>{healthLabel[item.health.status] ?? item.health.status}</small></span><span className={`platform-status platform-status--${item.status}`}>{item.status}</span><ChevronRight aria-hidden="true"/></button>)}
-              {!data.groups.length && <p>Add your first dealership group to begin setup.</p>}
-              {!!data.groups.length && !visibleGroups.length && <p>No matching groups or dealerships.</p>}
-            </section>
-            {group ? <section className="platform-detail" aria-label={`${group.name} account`}>
-              <header><div><h2>{group.name}</h2><small>Group ID: {group.id}</small></div><button onClick={()=>begin(groupEdit(group))}>Edit group</button></header>
-              <nav aria-label="Group sections">{(['dealerships','people','health'] as const).map(value=><button key={value} disabled={busy} aria-pressed={tab===value} onClick={()=>{setTab(value);setEdit(null);setError('')}}>{{dealerships:'Dealerships',people:'People & access',health:'Connection health'}[value]}</button>)}</nav>
-              {tab==='dealerships' && <>
-                <div className="platform-panel-heading"><h3>Dealerships</h3><button onClick={()=>begin({title:'Add dealership',path:'/dealerships',values:{groupId:group.id,name:'',storeKey:'',website:'',enabled:true,expectedRevision:data.revision},fields:[{key:'name',label:'Dealership name'},{key:'storeKey',label:'Deployment store key'},{key:'website',label:'Public website',optional:true},{key:'enabled',label:'Allow employee assignments',type:'checkbox'}],help:'Use the exact store key configured by this group’s inventory deployment. This record does not install a collector or configure a source system.'})}><Plus aria-hidden="true"/>Add dealership</button></div>
-                {group.dealerships.map(dealer=><article className="platform-record" key={dealer.id}><div><strong>{dealer.name}</strong><small>Store key: {dealer.storeKey} · {dealer.enabled?'Assignments enabled':'Assignments disabled'}</small>{dealer.website && <a href={dealer.website} target="_blank" rel="noreferrer">Public website</a>}</div><button onClick={()=>begin({title:'Edit dealership',path:'/dealerships',values:{...dealer,expectedRevision:data.revision},fields:[{key:'name',label:'Dealership name'},{key:'storeKey',label:'Deployment store key',readOnly:true},{key:'website',label:'Public website',optional:true},{key:'enabled',label:'Allow employee assignments',type:'checkbox'}]})}>Edit</button></article>)}
-                {!group.dealerships.length && <p className="platform-empty-copy">No dealerships yet. Add the account’s store records before assigning employees.</p>}
-              </>}
-              {tab==='people' && <>
-                <div className="platform-panel-heading"><h3><Users aria-hidden="true"/>People & access</h3>{members && <button onClick={()=>begin({title:'Add employee',path:`/groups/${group.id}/members`,values:{email:'',name:'',role:'sales',homeStore:group.dealerships.find(dealer=>dealer.enabled)?.storeKey??'',enabled:true,expectedRevision:members.revision},fields:[{key:'name',label:'Employee name'},{key:'email',label:'Sign-in email',type:'email'},{key:'role',label:'Employee role',options:Object.entries(ROLES).map(([value,label])=>({value,label}))},{key:'homeStore',label:'Home dealership',options:group.dealerships.filter(dealer=>dealer.enabled).map(dealer=>({value:dealer.storeKey,label:dealer.name}))},{key:'enabled',label:'App access enabled',type:'checkbox'}],help:'The employee must also be admitted by the deployment’s sign-in policy. Saving does not send an invitation or alter Cloudflare Access.'})}><Plus aria-hidden="true"/>Add employee</button>}</div>
-                {!group.health.connected && <p className="platform-empty-copy">Connect and verify this group’s isolated database before managing employees.</p>}
-                {group.health.connected && !members && (memberError ? <p role="alert">{memberError} <button onClick={()=>setMemberAttempt(value=>value+1)}>Retry employee access</button></p> : <p role="status">Loading employee access…</p>)}
-                {members?.members.map(member=><article className="platform-record" key={member.id}><div><strong>{member.name}</strong><small>{member.email}</small><small>{ROLES[member.role as keyof typeof ROLES] ?? member.role} · {member.homeStore} · {member.enabled?'Enabled':'Disabled'}</small></div><button onClick={()=>begin({title:'Edit employee',path:`/groups/${group.id}/members`,values:{...member,expectedRevision:members.revision},fields:[{key:'name',label:'Employee name'},{key:'email',label:'Sign-in email',type:'email',readOnly:true},{key:'role',label:'Employee role',options:Object.entries(ROLES).map(([value,label])=>({value,label}))},{key:'homeStore',label:'Home dealership',options:group.dealerships.filter(dealer=>dealer.enabled || dealer.storeKey===member.homeStore).map(dealer=>({value:dealer.storeKey,label:dealer.name}))},{key:'enabled',label:'App access enabled',type:'checkbox'}]})}>Edit</button></article>)}
-                {!!members?.audit.length && <details><summary>Employee access history</summary>{members.audit.map(event=><article className="platform-audit-row" key={event.id}><strong>{event.targetName} · {event.action}</strong><p>{event.reason}</p><small>{event.actor} · {formatDateTime(event.occurredAt)}</small></article>)}</details>}
-              </>}
-              {tab==='health' && <><h3 className="platform-health-heading">{healthLabel[group.health.status] ?? group.health.status}</h3><p>{group.health.message}</p><dl className="platform-facts"><div><dt>Account state</dt><dd>{group.status}</dd></div><div><dt>Verified database identity</dt><dd>{group.health.connected?'Matches this group':'Not verified'}</dd></div><div><dt>Stored release date</dt><dd>{group.health.reportDate ?? 'None'}</dd></div><div><dt>Last publication</dt><dd>{group.health.publishedAt?formatDateTime(group.health.publishedAt):'None'}</dd></div><div><dt>Employees enabled / total</dt><dd>{group.health.activeEmployees??'—'} / {group.health.employees??'—'}</dd></div><div><dt>Active group managers</dt><dd>{group.health.groupManagers??'—'}</dd></div></dl><p className="platform-help">This is database publication health. Browser sign-ins, backup recovery, source collectors and deploy credentials require separate checks. No secrets or customer records are shown here.</p></>}
-            </section> : <section className="platform-empty"><Building2 aria-hidden="true"/><h2>Select a dealership group</h2><p>Review stores, manage employee access and check its latest stored publication.</p></section>}
-          </div>
-        </>}
-        {section==='owners' && <section><div className="platform-panel-heading"><div><h2>Software owners</h2><p>These accounts administer every connected group. Dealership managers cannot grant this role.</p></div><button className="platform-primary" onClick={()=>begin({title:'Add software owner',path:'/owners',values:{name:'',email:'',enabled:true,expectedRevision:data.revision},fields:[{key:'name',label:'Owner name'},{key:'email',label:'Sign-in email',type:'email'},{key:'enabled',label:'Software-owner access enabled',type:'checkbox'}]})}><Plus aria-hidden="true"/>Add owner</button></div>{data.owners.map(owner=><article className="platform-record" key={owner.id}><div><strong>{owner.name}{owner.id===data.owner.id?' · You':''}</strong><small>{owner.email} · {owner.enabled?'Enabled':'Disabled'}</small></div><button onClick={()=>begin({title:'Edit software owner',path:'/owners',values:{...owner,expectedRevision:data.revision},fields:[{key:'name',label:'Owner name'},{key:'email',label:'Sign-in email',type:'email',readOnly:true},{key:'enabled',label:'Software-owner access enabled',type:'checkbox'}],help:'Another owner must disable your own account. The final enabled software owner is protected.'})}>Edit</button></article>)}</section>}
-        {section==='audit' && <section><h2>Platform audit history</h2><p>Latest 50 group, dealership and software-owner changes. Employee access changes stay in each group’s People & access history.</p>{data.audit.map(event=><article className="platform-audit-row" key={event.id}><strong>{event.entity} · {event.action}</strong><p>{event.reason}</p><small>{event.actor} · {formatDateTime(event.occurredAt)} · Record {event.targetId}</small></article>)}{!data.audit.length && <p>No platform changes recorded yet.</p>}</section>}
-        <footer className="platform-footer">Checked {formatDateTime(data.generatedAt)} · Accounts only; customer evidence stays in the dealership application.</footer>
-      </>}
-    </main>
-  </div>
+ </section>
+ {group?section==='overview'?<PlatformAccountSummary group={group} revision={data.revision} busy={busy} begin={begin} open={openAccount}/>:<PlatformGroupDetail key={`${data.owner.id}:${group.id}`} initialTab={accountTab} group={group} revision={data.revision} refreshVersion={admin.refreshVersion} request={request} busy={busy} begin={begin}/>:<section className="platform-empty"><Building2 aria-hidden="true"/><h2>No matching account</h2><p>Adjust the search or account filters to select a dealership group.</p><button onClick={()=>{setSearch('');setState('all');setHealth('all')}}>Clear filters</button></section>}
+ {section==='overview'&&<PlatformAuditHistory events={data.audit} request={request} compact onViewAll={()=>navigate('audit')}/>}
+ </div>
+ </>}
+ {section==='owners'&&<PlatformOwnerDirectory data={data} busy={busy} begin={begin}/>}
+ {section==='audit'&&<PlatformAuditHistory events={data.audit} request={request}/>}
+ <footer className="platform-footer">Verified {formatDateTime(data.generatedAt)} · Source credentials and customer records stay outside the control plane.</footer>
+ </div>}
+ </main></div>
+ {data&&edit&&<PlatformChangeDialog key={`${edit.path}:${edit.values.id??'new'}`} edit={edit} busy={busy} error={admin.error} save={admin.save} cancel={admin.closeEdit}/>}
+ </div>
 }

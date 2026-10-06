@@ -28,7 +28,7 @@ const app = startInventoryServer({
   now: fixedNow,
   releaseLoader: () => buildSyntheticRelease({ includeDemoChanges: true }),
   adminDirectory: createSyntheticMembershipAdmin(),
-  platformAdmin: createSyntheticPlatformAdmin(),
+  platformAdmin: createSyntheticPlatformAdmin({showcase:true}),
 })
 
 // This launcher never reads dealership data. Keep illustrative assets here,
