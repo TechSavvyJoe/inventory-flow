@@ -176,6 +176,75 @@ describe('companion customer lists', () => {
     expect(session.snapshot.naming).toBeNull()
   })
 
+  it.each(['deleted', 'renamed elsewhere'])('creates a named destination when the legacy naming source is %s during the prompt', async change => {
+    const legacy = { ...list(), label:'Customer shortlist', items:[] }
+    const remaining = change === 'deleted' ? [] : [{ ...legacy, label:'CD', revision:2 }]
+    const created = { ...legacy, id:'new-list', label:'AB' }
+    const read = vi.fn().mockResolvedValueOnce({ lists:[legacy] }).mockResolvedValue({ lists:remaining })
+    const write = vi.fn().mockResolvedValueOnce(created).mockResolvedValueOnce({ ...created, revision:2, items:list().items })
+    const session = createCustomerListSession({ read, write })
+    await session.refresh(); await session.toggle('TESTDATAHWELL0001'); await session.refresh()
+    expect(session.snapshot.naming?.vin).toBe('TESTDATAHWELL0001')
+    expect(await session.saveNamed('AB')).toBe(true)
+    expect(write.mock.calls.map(call => call[0])).toEqual([
+      { action:'create', label:'AB' },
+      { action:'add', listId:'new-list', expectedRevision:1, vin:'TESTDATAHWELL0001' },
+    ])
+    expect(session.active().items).toEqual(list().items)
+    expect(session.snapshot.naming).toBeNull()
+    expect(await session.saveNamed('AB')).toBe(false)
+    expect(write).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([false, true])('reuses a matching named destination after legacy deletion (VIN already saved: %s)', async saved => {
+    const legacy = { ...list(), label:'Customer shortlist', items:[] }
+    const named = { ...list(), id:'named-list', label:'AB', items:saved ? list().items : [] }
+    const read = vi.fn().mockResolvedValueOnce({ lists:[legacy] }).mockResolvedValue({ lists:[named] })
+    const write = vi.fn().mockResolvedValue({ ...named, revision:2, items:list().items })
+    const session = createCustomerListSession({ read, write })
+    await session.refresh(); await session.toggle('TESTDATAHWELL0001'); await session.refresh()
+    expect(await session.saveNamed(' ab ')).toBe(true)
+    expect(write.mock.calls.map(call => call[0])).toEqual(saved ? [] : [{ action:'add', listId:'named-list', expectedRevision:1, vin:'TESTDATAHWELL0001' }])
+    expect(session.snapshot.lists).toHaveLength(1)
+    expect(session.snapshot.naming).toBeNull()
+  })
+
+  it('keeps naming and the VIN after a rejected recovery create, then retries without duplicating a list', async () => {
+    const legacy = { ...list(), label:'Customer shortlist', items:[] }
+    const created = { ...legacy, id:'new-list', label:'AB' }
+    const read = vi.fn().mockResolvedValueOnce({ lists:[legacy] }).mockResolvedValue({ lists:[] })
+    const write = vi.fn().mockRejectedValueOnce({ status:409 }).mockRejectedValueOnce(new Error('response interrupted'))
+      .mockResolvedValueOnce(created).mockResolvedValueOnce({ ...created, revision:2, items:list().items })
+    const session = createCustomerListSession({ read, write })
+    await session.refresh(); await session.toggle('TESTDATAHWELL0001'); await session.refresh()
+    expect(await session.saveNamed('AB')).toBe(false)
+    expect(session.snapshot.naming?.vin).toBe('TESTDATAHWELL0001')
+    expect(session.snapshot.error).toMatch(/changed on another device/)
+    expect(await session.saveNamed('AB')).toBe(false)
+    expect(await session.retry()).toBe(true)
+    expect(write.mock.calls[2]).toEqual(write.mock.calls[1])
+    expect(write.mock.calls.map(call => call[0].action)).toEqual(['create', 'create', 'create', 'add'])
+    expect(session.active().items).toHaveLength(1)
+    expect(session.snapshot.naming).toBeNull()
+  })
+
+  it('discards deleted-source recovery and its VIN continuation when access is revoked', async () => {
+    let finishCreate!: (value: unknown) => void
+    const legacy = { ...list(), label:'Customer shortlist', items:[] }
+    const read = vi.fn().mockResolvedValueOnce({ lists:[legacy] }).mockResolvedValue({ lists:[] })
+    const write = vi.fn().mockImplementationOnce(() => new Promise(resolve => { finishCreate = resolve }))
+    const session = createCustomerListSession({ read, write })
+    await session.refresh(); await session.toggle('TESTDATAHWELL0001'); await session.refresh()
+    const saving = session.saveNamed('AB')
+    session.reset()
+    finishCreate({ ...legacy, id:'new-list', label:'AB' })
+    expect(await saving).toBe(false)
+    expect(write).toHaveBeenCalledOnce()
+    expect(session.snapshot.lists).toEqual([])
+    expect(session.snapshot.naming).toBeNull()
+    expect(session.snapshot.readyForWrites).toBe(false)
+  })
+
   it('requires a name for the selected legacy list but allows saving to another named list', async () => {
     const legacy = { ...list(), label:'Customer shortlist', items:[] }
     const named = { ...list(), id:'list-two', label:'AB', items:[] }
@@ -199,8 +268,7 @@ describe('companion customer lists', () => {
     const read = vi.fn().mockResolvedValueOnce({ lists:action === 'rename' ? [legacy] : [] }).mockResolvedValue({ lists:[latest] })
     const write = vi.fn().mockRejectedValueOnce(new Error('response interrupted'))
       .mockResolvedValueOnce(replay).mockRejectedValueOnce({ status:409 })
-    if (action === 'rename') write.mockResolvedValueOnce({ ...latest, revision:4 })
-    write.mockResolvedValueOnce({ ...latest, revision:action === 'rename' ? 5 : 4, items:list().items })
+    write.mockResolvedValueOnce({ ...latest, revision:4, items:list().items })
     const session = createCustomerListSession({ read, write })
     await session.refresh(); await session.toggle('TESTDATAHWELL0001')
     expect(await session.saveNamed('AB')).toBe(false)
@@ -215,6 +283,7 @@ describe('companion customer lists', () => {
     expect(await session.saveNamed('AB')).toBe(true)
     expect(session.snapshot.naming).toBeNull()
     expect(session.active().items).toEqual(list().items)
+    expect(write.mock.calls.map(call => call[0].action)).toEqual([action, action, 'add', 'add'])
   })
 
   it.each(['owner change', 'access revocation'])('discards the first-save replay after %s', async (change) => {

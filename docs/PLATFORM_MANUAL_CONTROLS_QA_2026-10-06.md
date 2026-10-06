@@ -121,7 +121,8 @@ uses the existing read-only token and forbids snapshot updates. The current
 [PR checks](https://github.com/TechSavvyJoe/inventory-flow/pull/67/checks)
 record the ordinary comparisons and final unit/build/browser gates.
 
-Nine delegated specialists used Codex GPT-6 Luna/medium for the completion audit,
+Ten delegated specialists used Codex GPT-6 Luna/medium for the completion audit,
+GPT-6 Luna/low for the bounded platform token sweep,
 GPT-6.1 Sol/medium for browser repairs, visual review and two frontend repair lanes,
 GPT-6.1 Sol/high for patch-risk review, backend readiness repairs and note validation,
 and GPT-6 Astra/high for the independent final gate.
@@ -131,7 +132,7 @@ authentication, physical-device acceptance or deployment authorization.
 
 ## GitHub review corrections
 
-The review sweeps confirmed thirteen actionable findings. The first nine repairs:
+The review sweeps confirmed sixteen actionable findings. The first nine repairs:
 
 - Overview hold totals and their drilldown both use imported DealerMail evidence;
   manual holds remain visible through Held and the inventory-decision filters.
@@ -155,11 +156,16 @@ The frontend repair lanes passed their focused suites (77 saved-list tests and
 120 hold/UI tests). The backend lane passed 582 tests across nine files, including
 readiness, cancellation audit, write identity, source privacy and migration parity.
 These focused counts include overlapping reruns and are not a distinct-test total.
-Source CI `37533681127` at `b66d9b1` passed all 225 unit/component files
+Source CI `37533677579` at `b66d9b1` passed all 225 unit/component files
 (3,437 tests and three existing skips), the production and companion build,
-offline migration verification and synthetic recovery. The current PR checks
-remain the evidence for the final immutable metadata-pin commit, including
-ordinary visual comparisons without snapshot updates.
+offline migration verification and synthetic recovery. Its browser jobs passed
+96 standard and 57 Chromium/WebKit acceptance tests, with four and three existing
+project skips respectively. This manual candidate run does not count as an ordinary
+visual comparison. Run `37535636346` at `7f4941f` passed its unit/build and all 40
+strict visual comparisons, then was canceled when three new review findings arrived.
+The current PR checks remain the evidence required for the final immutable patch,
+including ordinary visual comparisons without snapshot updates and complete browser
+acceptance. Earlier-source passes and a canceled run are not final-head acceptance.
 
 Native browser review exercised legacy naming, interrupted create/rename replay
 followed by an add conflict and successful retry, fresh manual-hold comparison,
@@ -184,7 +190,7 @@ passed an isolated two-test rerun; the production build, companion archive,
 not a complete final-head local `pnpm check` pass.
 
 
-The last four review corrections restore naming when a selected destination
+The next four review corrections restore naming when a selected destination
 is deleted or becomes ineligible; reject contact patterns in manual-hold notes
 before event creation; keep each manual/imported date and holder with its own
 source label; and centralize both new dialogs' border, focus and compact layout
@@ -205,6 +211,39 @@ and Worker with unchanged ledger/history and Worker revision. The guard covers
 email, web and phone patterns while permitting ordinary dates, prices and
 package codes; it is not a general identity-information classifier and does
 not rewrite historical events.
+
+## Latest review repairs
+
+The final three findings cover contact patterns in disposition notes, platform
+sizes defined locally instead of in shared tokens, and companion naming recovery
+when a generic list disappears. The shared employee-note validator now covers
+both hold and disposition writes. Confirmed historical disposition retries return
+the original event before the new guard; new requests reject contact patterns
+before appending an event. No history is rewritten. All six disposition codes,
+Node/Worker rejection without ledger or revision changes, ordinary operational
+notes and historical replay passed: 64 tests across the hold and disposition files.
+
+The companion resolves the current generic-list eligibility before naming,
+creates a new list when the original disappeared or became ineligible, and reuses
+an existing matching name. Pending vehicles survive recovery without duplicate
+rename/create actions. An additional adversarial test uncovered a stale completion
+that could refresh after revocation; the captured generation now prevents that
+refresh and keeps writes unavailable. The final companion suite passed 30 tests,
+including all six new recovery and revocation cases.
+
+Platform stroke, focus, press, canvas, inspector, dialog and search dimensions
+now consume shared tokens. The initial mechanical substitutions were corrected
+before acceptance to preserve the exact original dimensions: 1px stroke, 2px
+focus, 1px press, 1600px canvas, 390px inspector, 640px dialog, 180px search basis
+and 32px dialog viewport gap. Actual native checks passed at all four canonical
+viewports: computed dimensions, 1px pressed transform, dialog bounds, Tab
+containment, body-scroll lock, Escape return and no horizontal overflow. Eight
+same-browser screenshots (console and dialog at each size) matched the exact
+`b66d9b1` stylesheet injected into the same synthetic DOM byte for byte. Evidence
+is `/tmp/inventory-pr67-browser-evidence/platform-token-geometry.json` and
+`platform-{tokens,b66-css}-<width>x<height>.png` with their dialog equivalents.
+This verifies native equivalence; final Linux CI comparisons remain the separate
+visual gate and no new reference set was generated.
 
 ## Release boundaries
 

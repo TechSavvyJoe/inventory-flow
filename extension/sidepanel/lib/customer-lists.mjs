@@ -98,7 +98,10 @@ export function createCustomerListSession({ read, write, ownerId = null, onChang
         if (existing) { select(existing.id); return true }
       }
     }
-    const ok = await send(action === 'create' ? { action, ...fields } : { action, listId: list.id, expectedRevision: list.revision, ...fields })
+    const request = send(action === 'create' ? { action, ...fields } : { action, listId: list.id, expectedRevision: list.revision, ...fields })
+    const version = generation
+    const ok = await request
+    if (version !== generation) return false
     if (!ok && !value.pending && !value.saving) await refresh(true)
     return ok
   }
@@ -119,11 +122,12 @@ export function createCustomerListSession({ read, write, ownerId = null, onChang
       saveAfterCreate = continuation
       const error = customerListLabelError(label)
       if (error) { publish({ error }); saveAfterCreate = null; return false }
-      const existing = value.lists.find(candidate => candidate.label.trim().toLocaleLowerCase() === label.trim().toLocaleLowerCase() && candidate.id !== naming.renamingId)
+      const renameSource = value.lists.find(candidate => candidate.id === naming.renamingId && candidate.label === 'Customer shortlist')
+      const existing = value.lists.find(candidate => candidate.label.trim().toLocaleLowerCase() === label.trim().toLocaleLowerCase() && candidate.id !== renameSource?.id)
       if (existing) select(existing.id)
       else {
-        if (naming.renamingId) select(naming.renamingId)
-        if (!await mutate(naming.renamingId ? 'rename' : 'create', { label })) {
+        if (renameSource) select(renameSource.id)
+        if (!await mutate(renameSource ? 'rename' : 'create', { label })) {
           if (!value.pending) saveAfterCreate = null
           return false
         }

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { STORE_NAMES } from './constants.mjs'
+import { employeeNoteHasContactInformation } from './employee-note-validation.mjs'
 import { WorkflowError } from './workflow.mjs'
 
 /**
@@ -195,6 +196,9 @@ export function buildDispositionEvent(source, rows, input, context, { now, today
   }
   const note = input.note?.trim() || null
   if (note) {
+    if (employeeNoteHasContactInformation(note)) {
+      throw new WorkflowError('Keep contact information in the CRM, not in disposition notes.', { code: 'INVALID_DISPOSITION_NOTE' })
+    }
     const evidence = holdEvidenceTokens(source)
     // Every note token is compared: the reason-text allowlist never applies here.
     if (tokens(note).some((token) => evidence.has(token))) {

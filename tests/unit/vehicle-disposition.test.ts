@@ -6,6 +6,7 @@
 // append-only, written only by the vehicle's home-store manager or a group
 // manager, never inferred from a source or a move, and never hiding a vehicle.
 import { DatabaseSync } from 'node:sqlite'
+import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 import { buildSyntheticRelease, SYNTHETIC_NOW } from '../../fixtures/synthetic-release.mjs'
 import { importRelease, openInventoryDatabase } from '../../server/database.mjs'
@@ -38,6 +39,16 @@ const groupManager = { role: 'group_manager', store: 'Lincoln', user: 'Synthetic
 const sales = { role: 'sales', store: 'Fowlerville', user: 'Synthetic Fowlerville Salesperson', userId: 'sales-fowlerville' }
 const driver = { role: 'driver', store: 'Howell', user: 'Synthetic Driver', userId: 'driver-howell' }
 const TODAY = '2026-08-30'
+const contactNotes = [
+  'Email synthetic.customer@example.invalid to confirm',
+  'Details at https://customer.example.invalid/reservation',
+  'Details at www.customer.example.invalid',
+  'Call (555) 010-1234 to confirm',
+  'Call +1 555 010 1234 to confirm',
+  'Call 555.010.1234 to confirm',
+  'Call 5550101234 to confirm',
+  'Call 555-0123 to confirm',
+]
 
 function local(release = buildSyntheticRelease()) {
   const db = openInventoryDatabase()
@@ -70,6 +81,40 @@ const validInput = (code, extra = {}) => ({
 })
 
 describe('disposition ledger rules', () => {
+  it('returns a confirmed historical contact-note replay but refuses a new write with that note', () => {
+    const input = { disposition: 'other', expectedVersion: 0, note: contactNotes[0] }
+    // Fabricated row in the pre-contact-validation format, never a live ledger export.
+    const original = build([], { ...input, note: 'Reserved for display' }, context(fowlervilleManager), { key: 'synthetic-historical-contact' }).row
+    const row = { ...original, note: input.note, input_hash: createHash('sha256').update(JSON.stringify({
+      disposition: input.disposition, effectiveDate: null, destinationStore: null, note: input.note,
+      expectedVersion: 0, actor: fowlervilleManager.userId, role: fowlervilleManager.role, store: fowlervilleManager.store,
+    })).digest('hex') }
+    expect(build([row], input, context(fowlervilleManager), { key: row.idempotency_key })).toEqual({ row, created: false })
+    expect(() => build([row], { ...input, expectedVersion: 1 }, context(fowlervilleManager), { key: 'synthetic-new-contact' }))
+      .toThrow(expect.objectContaining({ status: 422, code: 'INVALID_DISPOSITION_NOTE' }))
+  })
+
+  it('refuses contact details in notes for every disposition code', () => {
+    for (const code of DISPOSITION_CODES) {
+      for (const note of contactNotes) {
+        expect(() => build([], validInput(code, { expectedVersion: 0, note })), `${code}: ${note}`)
+          .toThrow(expect.objectContaining({ status: 422, code: 'INVALID_DISPOSITION_NOTE' }))
+      }
+    }
+  })
+
+  it.each([
+    'Delivery 2026-10-08; appointment 10/8/2026 at 10:30',
+    'Delivery 10-08-2026; backup appointment 10/9/26',
+    'Quoted $35,900 with $1,250 deposit; display unit price USD 1250000',
+    'Equipment packages 302A and 501A; 18-inch wheels; 4 seats checked',
+    'Detail complete; customer selected another unit',
+  ])('preserves operational notes for every disposition code: %s', note => {
+    for (const code of DISPOSITION_CODES) {
+      expect(build([], validInput(code, { expectedVersion: 0, note })).row).toMatchObject({ disposition: code, note })
+    }
+  })
+
   it('allows exactly the documented transitions from every state and refuses the rest', () => {
     for (const from of DISPOSITION_CODES) {
       for (const to of DISPOSITION_CODES) {
@@ -190,6 +235,18 @@ describe('disposition ledger rules', () => {
 })
 
 describe('disposition ledger through the service', () => {
+  it.each(contactNotes)('rejects Other contact notes without appending a create or update: %s', note => {
+    const { db, service } = local()
+    const rejected = expect.objectContaining({ status: 422, code: 'INVALID_DISPOSITION_NOTE' })
+    expect(() => service.updateDisposition(UNHELD, { disposition: 'other', expectedVersion: 0, note }, fowlervilleManager, 'synthetic-rejected-create')).toThrow(rejected)
+    expect(count(db)).toBe(0)
+    service.updateDisposition(UNHELD, { disposition: 'other', expectedVersion: 0, note: 'Reserved for display' }, fowlervilleManager, 'synthetic-other')
+    const before = service.getDisposition(UNHELD, fowlervilleManager)
+    expect(() => service.updateDisposition(UNHELD, { disposition: 'other', expectedVersion: 1, note }, fowlervilleManager, 'synthetic-rejected-update')).toThrow(rejected)
+    expect(count(db)).toBe(1)
+    expect(service.getDisposition(UNHELD, fowlervilleManager)).toEqual(before)
+  })
+
   it('creates, replays, rejects a reused key with a different request, and detects a stale version', () => {
     const { db, service } = local()
     const input = { disposition: 'sold_pending', effectiveDate: '2026-08-29', note: 'Deposit taken', expectedVersion: 0 }
@@ -319,6 +376,53 @@ describe('disposition ledger through the service', () => {
 })
 
 describe('disposition ledger on D1 and over HTTP', () => {
+  it('matches Node and Worker rejection of Other contact notes without persisting or changing the revision', async () => {
+    const { db, service } = local()
+    const server = createInventoryServer({ service })
+    servers.push(server)
+    const nodeFetch = globalThis.fetch
+    const member = { email: 'fowlerville-manager@example.invalid', ...fowlervilleManager, name: fowlervilleManager.user }
+    const cloud = await createCloudWorkerHarness([member])
+    try {
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+      const path = `/api/vehicles/${UNHELD}/disposition`
+      const url = `http://127.0.0.1:${server.address().port}${path}`
+      const headers = { 'content-type': 'application/json', 'x-inventory-demo-role': fowlervilleManager.role,
+        'x-inventory-demo-store': fowlervilleManager.store, 'x-inventory-demo-user': fowlervilleManager.user }
+      const writeNode = async (body, key) => {
+        const response = await nodeFetch(url, { method: 'POST', headers: { ...headers, 'idempotency-key': key }, body: JSON.stringify(body) })
+        return { status: response.status, json: await response.json() }
+      }
+      const writeCloud = (body, key) => cloud.call('POST', path, member.email, body, { 'idempotency-key': key })
+      const emptyRevision = cloud.revision()
+      for (const [index, note] of [contactNotes[0], contactNotes[1], contactNotes[3]].entries()) {
+        const body = { disposition: 'other', expectedVersion: 0, note }
+        for (const response of [await writeNode(body, `synthetic-contact-${index}`), await writeCloud(body, `synthetic-contact-${index}`)]) {
+          expect(response).toMatchObject({ status: 422, json: { code: 'INVALID_DISPOSITION_NOTE' } })
+        }
+      }
+      expect(count(db)).toBe(0)
+      expect(cloud.count('vehicle_disposition_events')).toBe(0)
+      expect(cloud.revision()).toBe(emptyRevision)
+      const valid = { disposition: 'other', expectedVersion: 0, note: 'Display 302A package; quoted $35,900; review 2026-10-08' }
+      for (const response of [await writeNode(valid, 'synthetic-valid-other'), await writeCloud(valid, 'synthetic-valid-other')]) {
+        expect(response).toMatchObject({ status: 201, json: { code: 'other', version: 1, note: valid.note } })
+      }
+      const revision = cloud.revision()
+      const before = service.getDisposition(UNHELD, fowlervilleManager)
+      const cloudBefore = (await cloud.call('GET', path, member.email)).json
+      const rejectedUpdate = { disposition: 'other', expectedVersion: 1, note: contactNotes[3] }
+      for (const response of [await writeNode(rejectedUpdate, 'synthetic-rejected-update'), await writeCloud(rejectedUpdate, 'synthetic-rejected-update')]) {
+        expect(response).toMatchObject({ status: 422, json: { code: 'INVALID_DISPOSITION_NOTE' } })
+      }
+      expect(count(db)).toBe(1)
+      expect(cloud.count('vehicle_disposition_events')).toBe(1)
+      expect(service.getDisposition(UNHELD, fowlervilleManager)).toEqual(before)
+      expect((await cloud.call('GET', path, member.email)).json).toEqual(cloudBefore)
+      expect(cloud.revision()).toBe(revision)
+    } finally { cloud.close() }
+  })
+
   it('commits through the D1 adapter and reads back on a cold request', async () => {
     const db = new DatabaseSync(':memory:')
     databases.push(db)
