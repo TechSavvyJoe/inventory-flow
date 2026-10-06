@@ -65,10 +65,10 @@
 #inventory-vehicle-workspace .vdp-focus-identifiers > div { display:flex; align-items:center; min-width:0; gap:4px; }
 #inventory-vehicle-workspace .vdp-focus-identifiers dt { color:var(--v10-muted); font:var(--ifx-weight-medium) var(--ifx-text-xs)/1.2 var(--font-app); letter-spacing:var(--ifx-tracking-label); }
 #inventory-vehicle-workspace .vdp-focus-identifiers dd { margin:0; }
-#inventory-vehicle-workspace .vdp-focus-identifiers .copyable-value { position:relative; min-height:var(--ifx-space-5); padding-right:calc(var(--ifx-space-6) + var(--ifx-space-2)); color:var(--navy-900); font:var(--ifx-weight-semibold) var(--ifx-text-sm)/1.2 var(--font-app); font-variant-numeric:tabular-nums; }
+#inventory-vehicle-workspace .vdp-focus-identifiers .copyable-value { position:relative; min-height:var(--ifx-space-5); padding-right:calc(var(--ifx-control-height-md) + var(--ifx-space-1)); color:var(--navy-900); font:var(--ifx-weight-semibold) var(--ifx-text-sm)/1.2 var(--font-app); font-variant-numeric:tabular-nums; }
 #inventory-vehicle-workspace .vdp-focus-identifiers .copyable-value__content { display:block; overflow:hidden; font:inherit; text-overflow:ellipsis; white-space:nowrap; }
 #inventory-vehicle-workspace .copyable-value__button { min-width:44px; min-height:44px; }
-#inventory-vehicle-workspace .vdp-focus-header .copyable-value__button { position:absolute; top:50%; right:calc(var(--ifx-space-2) * -1); width:var(--ifx-control-height-md); min-width:var(--ifx-control-height-md); height:var(--ifx-control-height-md); min-height:var(--ifx-control-height-md); padding:0; transform:translateY(-50%); color:var(--v10-support); background:transparent; }
+#inventory-vehicle-workspace .vdp-focus-header .copyable-value__button { position:absolute; top:50%; right:0; width:var(--ifx-control-height-md); min-width:var(--ifx-control-height-md); height:var(--ifx-control-height-md); min-height:var(--ifx-control-height-md); justify-content:center; padding:0; transform:translateY(-50%); color:var(--v10-support); background:transparent; }
 #inventory-vehicle-workspace .vdp-focus-header .copyable-value__button:hover { transform:translateY(-50%); color:var(--blue-700); background:var(--blue-050); }
 #inventory-vehicle-workspace .vdp-focus-header .copyable-value__button:active { transform:translateY(-50%) scale(.96); }
 #inventory-vehicle-workspace .vdp-focus-navigation { flex:none; display:flex; align-items:center; min-height:46px; padding:0 10px; border-bottom:1px solid var(--border-strong); background:var(--surface); }

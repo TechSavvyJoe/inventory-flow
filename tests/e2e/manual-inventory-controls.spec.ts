@@ -2,6 +2,53 @@ import { expect, test } from '@playwright/test'
 
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 // The real Node HTTP routes persist app-owned controls, never source writes.
+for (const [width, height] of [[1024, 768], [1320, 820], [1440, 900]]) {
+  test(`vehicle header identifiers keep copy targets separate at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height })
+    await page.goto('/inventory?vin=TESTDATAHWELL0001')
+    const workspace = page.getByRole('dialog', { name: '2024 Ford F-150 Lariat vehicle workspace' })
+    await expect(workspace).toBeVisible()
+    const header = workspace.locator('.vdp-focus-header')
+    for (const [label, value] of [['stock number', 'DEMO-H01'], ['VIN', 'TESTDATAHWELL0001']]) {
+      const copy = header.getByRole('button', { name: `Copy ${label}: ${value}`, exact: true })
+      await expect(copy).toBeVisible()
+      const text = copy.locator('..').getByText(value, { exact: true })
+      const textBounds = await text.boundingBox()
+      const copyBounds = await copy.boundingBox()
+      expect(textBounds).not.toBeNull()
+      expect(copyBounds).not.toBeNull()
+      expect(textBounds!.x + textBounds!.width).toBeLessThanOrEqual(copyBounds!.x)
+      expect(copyBounds!.width).toBeGreaterThanOrEqual(44)
+      expect(copyBounds!.height).toBeGreaterThanOrEqual(44)
+      expect(await text.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+  })
+}
+
+test('phone pagination and row size remain clear of the saved-vehicle launcher', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/inventory')
+  await page.getByRole('button', { name: /^No hold:/ }).click()
+  const pages = page.getByRole('navigation', { name: 'Inventory pages' })
+  await expect(pages).toContainText('Showing 1–1 of 1')
+  const launcher = page.getByRole('button', { name: /^Saved vehicles:/ })
+  const launcherBounds = await launcher.boundingBox()
+  expect(launcherBounds).not.toBeNull()
+  for (const control of [
+    pages.getByRole('button', { name: 'Previous inventory page' }),
+    pages.getByRole('button', { name: 'Next inventory page' }),
+    pages.getByRole('combobox', { name: 'Rows per page' }),
+  ]) {
+    const bounds = await control.boundingBox()
+    expect(bounds).not.toBeNull()
+    const separateRows = bounds!.y + bounds!.height <= launcherBounds!.y || launcherBounds!.y + launcherBounds!.height <= bounds!.y
+    const separateColumns = bounds!.x + bounds!.width <= launcherBounds!.x || launcherBounds!.x + launcherBounds!.width <= bounds!.x
+    expect(separateRows || separateColumns).toBe(true)
+    expect(bounds!.height).toBeGreaterThanOrEqual(44)
+  }
+})
+
 test('records, compares and releases a manual hold, then records Other with details', async ({ page }, info) => {
   const vin = info.project.name === 'mobile' ? 'TESTDATAHWELL0002' : 'TESTDATAHWELL0001'
   await page.addInitScript(() => {

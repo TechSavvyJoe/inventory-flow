@@ -209,12 +209,12 @@
   #inventory-results-workspace.if-srp[data-filters-open="true"] .if-srp-service-filters { display: grid; margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--border); }
   #inventory-results-workspace.if-srp .if-srp-service-heading { display: block; grid-column: 1 / -1; font-size: 14px; margin-bottom: 3px; }
   #inventory-results-workspace.if-srp .if-srp-active-filters { gap: 2px 4px; }
-  #inventory-results-workspace.if-srp .inventory-pagination--modern { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; margin-top: 8px; padding: 4px 0; }
-  #inventory-results-workspace.if-srp .inventory-pagination--modern > span { flex: 1 1 auto; font-size: 14px; }
-  #inventory-results-workspace.if-srp .inventory-page-size { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; margin: 0; }
+  #inventory-results-workspace.if-srp .inventory-pagination--modern { display: grid; grid-template-columns:minmax(0,1fr) auto; align-items: center; gap: var(--ifx-space-1); margin-top: var(--ifx-space-2); padding: var(--ifx-space-1) 0; }
+  #inventory-results-workspace.if-srp .inventory-pagination--modern > span { grid-column:1 / -1; font-size: var(--ifx-text-sm); }
+  #inventory-results-workspace.if-srp .inventory-page-size { display: flex; grid-column:2; grid-row:2; align-items: center; justify-self:end; gap: var(--ifx-space-1); margin: 0; }
   #inventory-results-workspace.if-srp .inventory-page-size > span { display: inline; font-size: 14px; }
   #inventory-results-workspace.if-srp .inventory-page-size select { width: 56px; min-width: 56px; min-height: 44px; padding: 4px; }
-  #inventory-results-workspace.if-srp .inventory-pagination--modern > div { display: flex; flex: 0 0 auto; gap: 4px; width: auto; margin: 0; }
+  #inventory-results-workspace.if-srp .inventory-pagination--modern > div { display: flex; grid-column:1; grid-row:2; gap: var(--ifx-space-1); width: auto; margin: 0; }
   #inventory-results-workspace.if-srp .inventory-pagination--modern > div > span { display: none; }
   #inventory-results-workspace.if-srp .inventory-pagination--modern > div > button { width: 44px; min-width: 44px; min-height: 44px; margin: 0; }
 }

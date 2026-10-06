@@ -86,6 +86,13 @@ Playwright attachments remain in `/tmp/inventory-flow-qa/e2e/`.
   screenshot capture. WebKit's full reflow passed. No assertion, timeout or
   screenshot threshold was weakened. Final CI and reviewed Linux references
   must be recorded before this follow-up is handed off.
+- Run `37517650583` at `fdcdd04` passed its unit/build and browser acceptance
+  jobs. The candidate from `37518243882` was nevertheless rejected after all
+  40 images were inspected: desktop header copy icons overlapped identifier
+  text by 4px, and the phone's stacked pager was partly covered. Copy targets
+  now have their own 44px space; the phone footer uses two rows with arrows
+  on the left and row size on the right. New browser regressions check these
+  specific bounds without forced clicks or longer timeouts.
 
 ## Release boundaries
 
