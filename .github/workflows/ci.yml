@@ -83,13 +83,18 @@ jobs:
     # Per-push coverage is Chromium and WebKit only (desktop/mobile plus the
     # chromium-desktop/webkit-mobile cross-browser projects). Firefox, the
     # Chromium-Android emulation, and the WebKit-desktop project run once a
-    # night in cross-browser-nightly below, not on every push. Cold browser
-    # installation took seven minutes on September 30; allow both complete
-    # suites to finish without changing their per-test limits or coverage.
+    # night in cross-browser-nightly below, not on every push. The pinned image
+    # includes both engines and their OS dependencies, avoiding repeated slow
+    # Ubuntu mirror installs while preserving both suites and their limits.
     timeout-minutes: 25
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Trust the workspace inside the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -105,14 +110,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-chromium-webkit-${{ hashFiles('pnpm-lock.yaml') }}
-
-      - name: Install browser engines
-        run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Verify bundled browser engines
+        run: |
+          pnpm exec node --input-type=module <<'NODE'
+          import { accessSync } from 'node:fs'
+          import { createRequire } from 'node:module'
+          import { chromium, webkit } from '@playwright/test'
+          const require = createRequire(import.meta.url)
+          if (require('@playwright/test/package.json').version !== '1.62.1') throw new Error('PLAYWRIGHT_IMAGE_VERSION_MISMATCH')
+          for (const browser of [chromium, webkit]) accessSync(browser.executablePath())
+          console.log('Pinned Chromium and WebKit engines present')
+          NODE
 
       - name: Run browser end-to-end tests
         # Playwright starts dedicated synthetic servers on 4473/4474;
