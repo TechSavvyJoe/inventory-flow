@@ -17,8 +17,9 @@ const start = async (sourceData = sources) => {
   const fetcher = vi.fn(async (url: string, options?: RequestInit) => Response.json(options?.method === 'POST' ? { saved: true } : url.endsWith('/connections') ? sourceData : overview))
   vi.stubGlobal('fetch', fetcher)
   render(<PlatformAdminPage />)
-  fireEvent.click(await screen.findByRole('button', { name: 'Data connections' }))
-  await screen.findByRole('navigation', { name: 'Data connection views' })
+  fireEvent.click(await screen.findByRole('button', { name: 'Open Synthetic Motors workspace' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Data connections' }))
+  await screen.findByRole('region', { name: 'Source directory' })
   return fetcher
 }
 
@@ -32,7 +33,7 @@ describe('Source and OEM administration workbench', () => {
     expect(within(directory).getByRole('button', { name: 'Inspect OASIS archive at Synthetic South' })).toBeInTheDocument()
     expect(within(directory).queryByRole('button', { name: /Public feed/ })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'OASIS archive' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Request pull' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Queue pull request' })).toBeDisabled()
     fireEvent.change(screen.getByRole('textbox', { name: 'Find a connection' }), { target: { value: 'does not exist' } })
     expect(screen.getByRole('heading', { name: 'No matching sources' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Configure' })).not.toBeInTheDocument()
@@ -42,17 +43,19 @@ describe('Source and OEM administration workbench', () => {
 
   it('opens a dealership-scoped OEM draft, starts paused and preserves its family when the source category changes', async () => {
     const fetcher = await start()
-    fireEvent.click(screen.getByRole('button', { name: 'OEM coverage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Evidence & OEM coverage' }))
     fireEvent.change(screen.getByRole('combobox', { name: 'OEM family' }), { target: { value: 'toyota_lexus' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add Toyota / Lexus source for Synthetic South' }))
     const form = screen.getByRole('form', { name: 'Add data connection' })
     expect(within(form).getByRole('combobox', { name: 'Dealership' })).toHaveValue('synthetic-south')
     expect(within(form).getByRole('combobox', { name: 'OEM connection' })).toHaveValue('toyota_lexus')
-    expect(within(form).getByRole('checkbox', { name: 'Source enabled' })).not.toBeChecked()
     fireEvent.change(within(form).getByRole('combobox', { name: 'Data source' }), { target: { value: 'equipment' } })
     expect(within(form).getByRole('combobox', { name: 'OEM connection' })).toHaveValue('toyota_lexus')
     fireEvent.change(within(form).getByRole('textbox', { name: 'Connection name' }), { target: { value: 'Synthetic factory equipment' } })
     fireEvent.change(within(form).getByRole('textbox', { name: 'Provider or vendor name' }), { target: { value: 'Authorized synthetic vendor' } })
+    fireEvent.click(within(form).getByRole('button', { name: 'Continue to connection' }))
+    fireEvent.click(within(form).getByRole('button', { name: 'Continue to schedule & review' }))
+    expect(within(form).getByRole('checkbox', { name: 'Source enabled' })).not.toBeChecked()
     fireEvent.change(within(form).getByRole('textbox', { name: 'Reason for this change' }), { target: { value: 'Synthetic configuration setup' } })
     fireEvent.submit(form)
     await waitFor(() => expect(fetcher.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(true))
@@ -63,11 +66,9 @@ describe('Source and OEM administration workbench', () => {
 
   it('shows schedules as configured targets and queued work without invented successful captures', async () => {
     await start({ ...sources, requests: [{ id: 'synthetic-pull', connectionId: 'synthetic-public', state: 'queued', kind: 'scheduled', scheduledSlot: '2026-10-05T05:30', requestedBy: 'Synthetic planner', createdAt: '2026-10-05T10:00:00Z', updatedAt: '2026-10-05T10:00:00Z' }] })
-    fireEvent.click(screen.getByRole('button', { name: 'Schedules' }))
-    const schedules = screen.getByRole('region', { name: 'Dealership pull schedules' })
-    expect(within(schedules).getByText('Daily 05:30')).toBeInTheDocument()
-    expect(within(schedules).queryByText('OASIS archive')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Pull queue 1' }))
+    const selected = screen.getByRole('article', { name: 'Selected source configuration' })
+    expect(within(selected).getByText('Daily 05:30')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Pull requests 1' }))
     const queue = screen.getByRole('region', { name: 'Pull request queue' })
     expect(within(queue).getByText('Awaiting executor')).toBeInTheDocument()
     expect(within(queue).getByRole('button', { name: 'Cancel request' })).toBeEnabled()

@@ -1,87 +1,78 @@
-# Software Admin source and OEM workbench
+# Software Admin guided source setup and workbench
 
-Branch: `codex/oem-admin-workbench`, based on `108305e`.
+Branch: `codex/oem-admin-workbench`, based on `108305e`, PR #72.
 Evidence uses the deterministic synthetic demo only. No dealership source,
 credential, publisher, scheduled task or production setting was changed.
 
 ## Behavior
 
-- Full-width account workspace with a compact dealership-group picker and
-  optional group filters; structured dealership, employee, owner and audit ledgers.
-- Source directory with combined search, dealership, provider, OEM and preference
-  filters; selected-source configuration and activation requirements.
-- Separate source, OEM coverage, schedule and pull-queue views. Counts and targets
-  describe stored configuration, not source access or completed captures.
-- OEM setup drafts preselect their dealership and manufacturer family. Changing
-  the provider category preserves that family. New sources start paused.
-- Configuration fields are grouped into identity, connection and schedule
-  sections. Credential references remain names rather than secret values.
-- Mobile/tablet source inspection replaces the directory. Keyboard activation
-  moves focus into the inspector; Back restores the same directory row.
+- Contextual group navigation: Setup, Dealerships, Data connections,
+  People & access and Publication. Owners and audit history remain global.
+- Setup identifies the next account requirement and its action. Account
+  readiness is distinct from source execution and publication readiness.
+- A filtered source ledger and focused inspector replace nested setup views.
+  Mobile and tablet inspection replaces the list; Back restores row focus.
+- Source configuration is a three-step dialog: Source & scope, Connection,
+  Schedule & review. Only final Save writes configuration. The fixed footer
+  stays visible while its body scrolls, with keyboard containment and Escape.
+- API and file endpoints require public HTTPS; credential fields accept
+  reference names only. OEM, time and zone requirements validate before saving.
+  New connections start paused. Retry identity and revision guards remain intact.
+- Provider directory includes 55 official-source profiles covering franchise
+  and independent CRM, DMS, websites, inventory feeds, history, enrichment and
+  OEM data. Salesforce and DealerTeam are excluded. Search by name, segment,
+  evidence or delivery method; Configure prefills the source draft.
+- Stored publication coverage exposes allowlisted aggregate counters and exact
+  registered-store totals. Unknown counts remain unreported. Tenant identity
+  is rechecked around reads; raw metadata and vehicle/customer fields stay out.
+- Captured totals and manufacturer source planning are separate. Configuration
+  counts do not establish provider access, OEM capture, availability or warranty.
+- Pull requests show attributed intent awaiting an executor. No vendor adapter,
+  collector execution, schema migration or new route is added.
 
-## Browser acceptance
+Research links and documented access boundaries are in
+[AUTOMOTIVE_SOURCE_CATALOG.md](AUTOMOTIVE_SOURCE_CATALOG.md).
 
-Google Chrome inspected the actual `pnpm dev:demo` at `127.0.0.1:4173/platform`,
-using 390x844, 1024x768, 1320x820 and 1440x900 viewports. Browser automation used
-Playwright because the Browser plugin was unavailable.
+## Validation
 
-All 42 captured states had zero page-width overflow, console errors and uncaught
-page errors. The pages rendered their expected content without sign-in/error
-overlays: Overview, Dealerships, People & access, Health & setup, Sources, OEM
-coverage, Schedules, Pull queue, Software owners and Audit history. Mobile and
-tablet source-directory states were also captured. All images were inspected
-across the root and design review lanes.
+The final `pnpm check` passed with exit 0: 235 test files, 3,572 tests passed,
+three existing skips and zero failures. Type checking, repository safety,
+design-system ratchet, production build and companion packaging passed.
 
-Review fixes were verified in the actual browser:
+The M1 was under heavy load, causing timeouts in unrelated existing tests;
+those assertions, timeouts and configuration were retained. The full run used
+an isolated temporary Intel Mac checkout with the frozen lockfile, Node
+24.16.0, pnpm 11.19.0 and a temporary PowerShell 7.6.6 runtime verified against
+Microsoft's SHA-256. All 822 source inputs matched the M1 by SHA-256. A first
+Intel run caught one implicit-locale call in the new coverage view; pinning it
+to en-US passed five focused checks, followed by the complete successful rerun.
+This evidence document was updated after that run.
 
-- Enter opens a source and focuses its heading; Back returns focus to its row at
-  390 and 1024 pixels. The inactive workspace is hidden rather than appended.
-- Mobile OEM enabled/paused counts retain visible labels when column headers hide.
-- Public website links have 44px hit areas at all four sizes.
-- Audit header/data columns align at 1024, 1320 and 1440 pixels.
+`pnpm exec playwright test tests/e2e/platform-data.spec.ts` passed all ten
+cases across desktop and mobile: guided setup, OEM scoping, queue cancellation,
+contained dialog focus, Escape/restore, responsive inspection, independent
+provider prefill and visible wizard actions.
 
-Synthetic screenshots are outside Git in
-`/Users/joegallant/Downloads/InventoryFlow-Admin-Workbench-QA-2026-10-07/`, named
-`inventory-admin-final-<section>-<width>.png`. Playwright attachments remain
-outside Git as well. The source review has no remaining blockers.
+Actual Chrome QA of `pnpm dev:demo` covered 390x844, 1024x768, 1320x820 and
+1440x900. All four sizes had zero page overflow or uncaught page errors, and
+visible wizard actions. The 56 captured states include directory, setup,
+dealerships, people, publication, sources, stored coverage, OEM planning,
+providers, all three wizard steps, owners and audit history. Representative
+final states were visually inspected at desktop, tablet and mobile sizes.
 
-Two additional screenshots, `oem-populated-1440.png` and
-`oem-populated-390.png`, show a paused Ford / Lincoln collector registered through
-the synthetic demo UI. The displayed counts are one configured, zero enabled
-and one paused. No vendor was contacted.
+Independent source/design review and a final catalog/footer delta review
+reported no blockers or follow-ups. No test contract or visual baseline was
+weakened.
 
-## Validation environment
-
-The M1's loaded test runs timed out in unrelated baseline suites. Their
-assertions, timeouts and committed configuration were retained. A temporary
-Intel Mac checkout uses the same base and source files; SHA-256 comparisons
-verify matching inputs. Its dependency installation uses the frozen lockfile.
-Temporary test tools and reports stay outside the repository.
-
-The final Intel run used Node 24.16.0, pnpm 11.19.0 and a temporary PowerShell
-7.6.6 runtime verified against Microsoft's published SHA-256. All 18 source,
-test and existing-documentation files matched the M1's SHA-256 snapshot before
-the run. This QA report was added afterward.
-
-- `pnpm check`: passed, exit 0. All 230 test files passed: 3,538 tests passed,
-  three existing skips, zero failures. Type checking, repository safety,
-  design-system ratchet, production build and companion archive verification
-  passed.
-- `pnpm exec playwright test tests/e2e/platform-data.spec.ts`: eight passed,
-  zero failures, covering desktop/mobile source setup, OEM scoping, queue
-  cancellation, dialog keyboard containment and responsive focus restoration.
-- Independent source review: no blockers or follow-ups. Independent design
-  review accepted all admin sections after the hit-area and audit-alignment
-  fixes listed above.
-
-The final logs are saved beside the screenshots as `full-check.log` and
-`platform-browser-tests.log`. They contain synthetic test evidence only.
+Screenshots and logs remain outside Git in
+`/Users/joegallant/Downloads/InventoryFlow-Admin-Guided-Setup-2026-10-07/`:
+`final-*.png`, `final-qa-results.json`, `validated-source-sha256.json` and
+`intel-final-pnpm-check.log`. Earlier failed logs are retained separately.
 
 ## Operational boundary
 
-This change adds administration workflows over the existing owner service. It
-adds no backend route, migration, vendor adapter, authenticated source probe or
-collector executor. The queue is attributed configuration intent. Enabling a
-preference does not start collection, and the OEM guide does not establish
-vehicle availability, warranty coverage or a working manufacturer integration.
-No production release is part of this branch.
+Provider profiles are planning references, not installed integrations. Saving
+configuration does not grant vendor access, provision a deployment, activate
+an executor or publish inventory. Stored aggregate coverage comes from an
+existing tenant publication and does not prove current source access. No
+production release is part of this pull request.

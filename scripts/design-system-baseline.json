@@ -48,6 +48,27 @@
       "important": 0,
       "idSelectors": 0
     },
+    "src/features/platform/PlatformProviderDirectory.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/platform/PlatformOemCoverage.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/platform/PlatformSourceSetup.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
     "src/design-system/components.css": {
       "smallText": 0,
       "rawColors": 4,

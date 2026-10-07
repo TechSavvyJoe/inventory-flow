@@ -1,0 +1,45 @@
+.platform-provider-directory { display: grid; gap: var(--ifx-space-3); min-width: 0; }
+.platform-provider-heading { display: flex; justify-content: space-between; align-items: baseline; gap: var(--ifx-space-3); }
+.platform-provider-heading p,.platform-provider-boundary,.platform-provider-count { color: var(--ifx-neutral-600); font-size: var(--ifx-text-sm); }
+.platform-provider-boundary { padding-block: var(--ifx-space-2); border-block: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
+.platform-provider-toolbar { display: flex; flex-wrap: wrap; gap: var(--ifx-space-2); align-items: end; }
+.platform-provider-search { position: relative; flex: 1 1 var(--ifx-platform-search-min-width); display: flex; align-items: center; }
+.platform-provider-search svg { position: absolute; left: var(--ifx-space-3); color: var(--ifx-neutral-500); pointer-events: none; }
+.platform-app .platform-provider-search input { width: 100%; padding-left: var(--ifx-space-10); }
+.platform-provider-category { display: grid; gap: var(--ifx-space-1); min-width: var(--ifx-platform-search-min-width); font-size: var(--ifx-text-sm); font-weight: var(--ifx-weight-semibold); }
+.platform-provider-category select { width: 100%; }
+.platform-provider-count { margin: 0; }
+.platform-provider-list { border-top: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
+.platform-provider-row { display: grid; grid-template-columns: minmax(var(--ifx-platform-source-name-min-width),.8fr) minmax(0,2fr) auto auto; align-items: start; gap: var(--ifx-space-3); padding: var(--ifx-space-3) var(--ifx-space-2); border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
+.platform-provider-identity { display: grid; gap: var(--ifx-space-1); min-width: 0; overflow-wrap: anywhere; }
+.platform-provider-identity span { color: var(--ifx-neutral-600); font-size: var(--ifx-text-xs); }
+.platform-provider-evidence { display: grid; gap: var(--ifx-space-2); min-width: 0; font-size: var(--ifx-text-sm); overflow-wrap: anywhere; }
+.platform-provider-evidence > p { margin: 0; }
+.platform-provider-evidence details summary { display: flex; align-items: center; min-height: var(--ifx-control-height-md); cursor: pointer; color: var(--ifx-info); font-size: var(--ifx-text-sm); font-weight: var(--ifx-weight-semibold); }
+.platform-provider-evidence dl { display: grid; gap: var(--ifx-space-2); margin: 0; }
+.platform-provider-evidence dl > div { display: grid; grid-template-columns: minmax(var(--ifx-platform-source-preference-min-width),.35fr) minmax(0,1fr); gap: var(--ifx-space-2); }
+.platform-provider-evidence dt { color: var(--ifx-neutral-600); }
+.platform-provider-evidence dd { margin: 0; }
+.platform-provider-source { align-self: center; min-height: var(--ifx-control-height-md); display: inline-flex; align-items: center; font-size: var(--ifx-text-sm); white-space: nowrap; }
+.platform-app .platform-provider-configure { min-height: var(--ifx-control-height-md); align-self: center; font-size: var(--ifx-text-sm); white-space: nowrap; }
+.platform-provider-empty { padding-block: var(--ifx-space-4); color: var(--ifx-neutral-600); font-size: var(--ifx-text-sm); }
+.platform-provider-visually-hidden { position: absolute; width: var(--ifx-stroke-hairline); height: var(--ifx-stroke-hairline); padding: 0; margin: calc(-1 * var(--ifx-stroke-hairline)); overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+@media (max-width: 850px) {
+  .platform-provider-row { grid-template-columns: minmax(0,1fr) auto; gap: var(--ifx-space-2) var(--ifx-space-3); }
+  .platform-provider-evidence { grid-column: 1 / -1; }
+  .platform-provider-source { grid-column: 1; grid-row: 2; }
+  .platform-app .platform-provider-configure { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+}
+
+@media (max-width: 520px) {
+  .platform-provider-heading { align-items: start; }
+  .platform-provider-toolbar { align-items: stretch; flex-direction: column; }
+  .platform-provider-search,.platform-provider-category { min-width: 0; width: 100%; }
+  .platform-provider-row { grid-template-columns: minmax(0,1fr); }
+  .platform-provider-evidence { grid-column: 1; }
+  .platform-provider-source,.platform-app .platform-provider-configure { grid-column: 1; grid-row: auto; }
+  .platform-provider-source { min-height: var(--ifx-control-height-md); }
+  .platform-app .platform-provider-configure { justify-self: stretch; }
+  .platform-provider-evidence dl > div { grid-template-columns: 1fr; gap: var(--ifx-space-1); }
+}

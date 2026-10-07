@@ -17,14 +17,15 @@ export function createSyntheticPlatformAdmin({groupId='synthetic-north',showcase
   const tenant = new DatabaseSync(':memory:')
   tenant.exec(`CREATE TABLE cloud_memberships(email TEXT PRIMARY KEY COLLATE NOCASE,user_id TEXT UNIQUE NOT NULL,name TEXT NOT NULL,role TEXT NOT NULL,home_store TEXT NOT NULL,enabled INTEGER NOT NULL,created_at TEXT,updated_at TEXT);
     CREATE TABLE cloud_app_revision(id INTEGER PRIMARY KEY,revision INTEGER NOT NULL); INSERT INTO cloud_app_revision VALUES(1,0);
-    CREATE TABLE cloud_release_versions(release_id TEXT PRIMARY KEY,report_date TEXT,status TEXT,published_at TEXT);
+    CREATE TABLE cloud_release_versions(release_id TEXT PRIMARY KEY,report_date TEXT,status TEXT,published_at TEXT,metadata_json TEXT);
     CREATE TABLE cloud_release_state(key TEXT PRIMARY KEY,value TEXT,updated_at TEXT);`)
   tenant.exec(readFileSync(new URL('../cloudflare/migrations/0009_membership_admin.sql',import.meta.url),'utf8'))
   tenant.exec(readFileSync(new URL('../cloudflare/tenant-migrations/0001_tenant_identity.sql',import.meta.url),'utf8'))
   tenant.prepare('INSERT INTO inventory_tenant_identity VALUES(1,?)').run(groupId)
   tenant.prepare('INSERT INTO cloud_memberships(email,user_id,name,role,home_store,enabled) VALUES(?,?,?,?,?,1)').run('manager@example.invalid','synthetic-manager','Demo group manager','group_manager','northside')
-  tenant.prepare("INSERT INTO cloud_release_versions VALUES('synthetic-platform-release','2026-10-05','current','2026-10-05T12:00:00Z')").run()
+  tenant.prepare("INSERT INTO cloud_release_versions(release_id,report_date,status,published_at) VALUES('synthetic-platform-release','2026-10-05','current','2026-10-05T12:00:00Z')").run()
   tenant.prepare("INSERT INTO cloud_release_state VALUES('current_release_id','synthetic-platform-release','2026-10-05T12:00:00Z')").run()
+  tenant.prepare('UPDATE cloud_release_versions SET metadata_json=?').run(JSON.stringify({vehicleCount:8,publicRowCount:8,dealerMailRowCount:2,dealerMailVinReconciledCount:2,dealerMailVinReviewCount:0,activeInventoryCount:8,resourceRecordCount:8,fordInvoiceRecordCount:6,fordOasisRecordCount:6,warrantyCheckRecordCount:6,warningCount:1,publicStoreCounts:{northside:6,'northside-lincoln':2},crmStoreCounts:{northside:2,'northside-lincoln':0},activeStoreCounts:{northside:6,'northside-lincoln':2}}))
   const env = {PLATFORM_DB:sqliteD1(sqlite),TENANT_NORTH_DB:sqliteD1(tenant),PLATFORM_TENANT_BINDINGS:JSON.stringify({[groupId]:'TENANT_NORTH_DB'}),PLATFORM_DEMO:true}
   const extraTenants=[]
   if(showcase) {

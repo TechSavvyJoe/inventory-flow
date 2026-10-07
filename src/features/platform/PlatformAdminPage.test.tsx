@@ -9,7 +9,7 @@ const overview:PlatformOverview={owner:{id:'synthetic-owner',email:'owner@exampl
 const members={groupId:'synthetic-north',revision:0,members:[{id:'synthetic-manager',name:'Synthetic manager',email:'manager@example.invalid',role:'group_manager',homeStore:'northside',enabled:true}],audit:[]}
 afterEach(()=>{cleanup();vi.unstubAllGlobals()})
 const ok=(body:unknown)=>Response.json(body)
-const selectGroup=async()=>{fireEvent.click(await screen.findByRole('button',{name:/Northside Motors/}));await screen.findByRole('heading',{name:'Northside Motors'})}
+const selectGroup=async()=>{fireEvent.click(await screen.findByRole('button',{name:'Open Northside Motors workspace'}));await screen.findByRole('heading',{name:'Northside Motors'});fireEvent.click(screen.getByRole('button',{name:'Dealerships'}))}
 
 describe('Software administration',()=>{
   it('shows an owner-only empty installation with zero dealership activity and a clear first setup action',async()=>{
@@ -22,21 +22,47 @@ describe('Software administration',()=>{
     expect(within(summary).getByText('Dealerships').parentElement).toHaveTextContent('0')
     expect(within(summary).getByText('Enabled employees').parentElement).toHaveTextContent('0')
     expect(screen.getByText('No groups match these filters.')).toBeInTheDocument()
-    expect(screen.getByRole('heading',{name:'No matching account'})).toBeInTheDocument()
+    expect(screen.getByRole('heading',{name:'No dealership accounts yet'})).toBeInTheDocument()
     expect(screen.getByRole('button',{name:'Add group'})).toBeEnabled()
     expect(screen.getByText('Demo owner')).toBeInTheDocument()
   })
-  it('opens the verified active dealership app from both the account summary and detail',async()=>{
+  it('opens the verified active dealership app from the account workspace',async()=>{
     const group={...overview.groups[0],appUrl:'https://northside.example.com/inventory'}
     vi.stubGlobal('fetch',vi.fn(async()=>ok({...overview,groups:[group]})))
     render(<PlatformAdminPage/>)
-
-    const summaryLink=await screen.findByRole('link',{name:'Open dealership app'})
-    expect(summaryLink).toHaveAttribute('href','https://northside.example.com/inventory')
-    expect(summaryLink).toHaveAttribute('target','_blank')
-    fireEvent.click(screen.getByRole('button',{name:'Dealer groups'}))
-    expect(await screen.findByRole('region',{name:'Northside Motors account'})).toBeInTheDocument()
-    expect(screen.getByRole('link',{name:'Open dealership app'})).toHaveAttribute('href','https://northside.example.com/inventory')
+    await screen.findByRole('heading',{name:'Platform overview'})
+    expect(screen.queryByRole('link',{name:'Open dealership app'})).not.toBeInTheDocument()
+    await selectGroup()
+    const link=screen.getByRole('link',{name:'Open dealership app'})
+    expect(link).toHaveAttribute('href','https://northside.example.com/inventory')
+    expect(link).toHaveAttribute('target','_blank')
+    expect(screen.getByRole('region',{name:'Northside Motors account'})).toBeInTheDocument()
+  })
+  it('separates completed account setup from unverified source activation and opens its actual next actions',async()=>{
+    vi.stubGlobal('fetch',vi.fn(async()=>ok(overview)))
+    render(<PlatformAdminPage/>)
+    fireEvent.click(await screen.findByRole('button',{name:'Open Northside Motors workspace'}))
+    const setup=screen.getByRole('region',{name:'Account setup and data activation'})
+    expect(within(setup).getByText('4 of 4 account requirements met. Data activation is reviewed separately.')).toBeInTheDocument()
+    expect(within(setup).getByText('Not verified here')).toBeInTheDocument()
+    expect(within(setup).getByRole('link',{name:'Deployment guide'})).toHaveAttribute('target','_blank')
+    fireEvent.click(within(setup).getByRole('button',{name:'Manage dealerships'}))
+    expect(screen.getByRole('heading',{name:'Dealerships'})).toBeInTheDocument()
+    expect(screen.queryByRole('region',{name:'Account setup and data activation'})).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button',{name:'Setup'}))
+    fireEvent.click(screen.getByRole('button',{name:'Review account'}))
+    expect(screen.getByRole('form',{name:'Edit group'})).toBeInTheDocument()
+  })
+  it('identifies missing external provisioning and blocks employee management until the database is verified',async()=>{
+    const group={...overview.groups[0],status:'setup' as const,dealerships:[],health:{status:'not_connected',message:'No isolated deployment',connected:false}}
+    vi.stubGlobal('fetch',vi.fn(async()=>ok({...overview,groups:[group]})))
+    render(<PlatformAdminPage/>)
+    fireEvent.click(await screen.findByRole('button',{name:'Open Northside Motors workspace'}))
+    expect(screen.getByText('Next: Isolated database identity')).toBeInTheDocument()
+    expect(screen.getByText('0 of 4 account requirements met. Data activation is reviewed separately.')).toBeInTheDocument()
+    expect(screen.getByRole('button',{name:'Manage employees'})).toBeDisabled()
+    fireEvent.click(screen.getByRole('button',{name:'Manage dealerships'}))
+    expect(screen.getByRole('button',{name:'Register first dealership'})).toBeEnabled()
   })
   it.each([
     ['a setup group', {...overview.groups[0],status:'setup' as const,appUrl:'https://northside.example.com/inventory'}],
@@ -120,7 +146,7 @@ describe('Software administration',()=>{
     vi.stubGlobal('fetch',fetcher)
     render(<PlatformAdminPage/>)
     await selectGroup()
-    fireEvent.click(screen.getByRole('button',{name:/Lakeside Group/}))
+    fireEvent.change(screen.getByRole('combobox',{name:'Selected dealer group'}),{target:{value:'synthetic-lake'}})
     fireEvent.click(screen.getByRole('button',{name:'Add group'}))
     const form=screen.getByRole('form',{name:'Add dealership group'})
     fireEvent.change(within(form).getByRole('textbox',{name:'Group name'}),{target:{value:'Synthetic unsaved group'}})
@@ -149,7 +175,7 @@ describe('Software administration',()=>{
     expect(fetcher).toHaveBeenCalledTimes(4)
     expect(fetcher.mock.calls.every(([,options])=>!options?.method)).toBe(true)
     fireEvent.keyDown(document,{key:'Escape'})
-    expect(screen.getByRole('button',{name:/Lakeside Group/})).toHaveAttribute('aria-pressed','true')
+    expect(screen.getByRole('combobox',{name:'Selected dealer group'})).toHaveValue('synthetic-lake')
   })
   it('clears an open draft and resets account selection when the verified owner changes',async()=>{
     let changed=false
@@ -157,14 +183,14 @@ describe('Software administration',()=>{
     vi.stubGlobal('fetch',vi.fn(async()=>ok({...overview,owner:changed?{...overview.owner,id:'synthetic-other-owner',name:'Other synthetic owner'}:overview.owner,groups:[...overview.groups,lakeside]})))
     render(<PlatformAdminPage/>)
     await selectGroup()
-    fireEvent.click(screen.getByRole('button',{name:/Lakeside Group/}))
+    fireEvent.change(screen.getByRole('combobox',{name:'Selected dealer group'}),{target:{value:'synthetic-lake'}})
     fireEvent.click(screen.getByRole('button',{name:'Add group'}))
     fireEvent.change(screen.getByRole('textbox',{name:'Group name'}),{target:{value:'Synthetic prior-owner draft'}})
     changed=true
     fireEvent(window,new Event('focus'))
     await screen.findByText('Other synthetic owner')
     expect(screen.queryByRole('form')).not.toBeInTheDocument()
-    expect(screen.getByRole('button',{name:/Northside Motors/})).toHaveAttribute('aria-pressed','true')
+    expect(screen.getByRole('combobox',{name:'Selected dealer group'})).toHaveValue('synthetic-north')
     expect(screen.queryByRole('region',{name:'Lakeside Group account'})).not.toBeInTheDocument()
   })
   it('ignores a pending transient failure after another request revokes owner access',async()=>{
@@ -233,16 +259,19 @@ describe('Software administration',()=>{
     expect(posts[0][1]?.body).toBe(posts[1][1]?.body)
     expect(posts[0][1]?.headers).toEqual(posts[1][1]?.headers)
   })
-  it('filters account selection without leaving an excluded group’s records visible',async()=>{
+  it('filters the full account directory without leaving an excluded account workspace visible',async()=>{
     const lakeside={...overview.groups[0],id:'synthetic-lake',name:'Lakeside Group',status:'setup' as const,dealerships:[],health:{status:'not_connected',message:'Not connected'}}
     vi.stubGlobal('fetch',vi.fn(async()=>ok({...overview,groups:[...overview.groups,lakeside]})))
     render(<PlatformAdminPage/>)
     await selectGroup()
+    fireEvent.click(screen.getByRole('button',{name:'All dealer groups'}))
     fireEvent.change(screen.getByRole('textbox',{name:'Find a group or dealership'}),{target:{value:'Lakeside'}})
-    await screen.findByRole('region',{name:'Lakeside Group account'})
+    expect(screen.getByRole('button',{name:'Open Lakeside Group workspace'})).toBeInTheDocument()
+    expect(screen.queryByRole('button',{name:'Open Northside Motors workspace'})).not.toBeInTheDocument()
     expect(screen.queryByRole('region',{name:'Northside Motors account'})).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole('combobox',{name:'Account state filter'}),{target:{value:'active'}})
-    await screen.findByRole('heading',{name:'No matching account'})
+    await screen.findByText('No groups match these filters.')
+    expect(screen.queryByRole('button',{name:'Open Lakeside Group workspace'})).not.toBeInTheDocument()
     expect(screen.queryByRole('region',{name:'Lakeside Group account'})).not.toBeInTheDocument()
   })
   it('keeps the source action mounted during revalidation so a dialog restores focus',async()=>{
@@ -252,7 +281,8 @@ describe('Software administration',()=>{
     const pending=new Promise<Response>(resolve=>{finish=resolve})
     vi.stubGlobal('fetch',vi.fn(async(url:string)=>url.endsWith('/connections')?(++sourceReads===1?ok(sourceData):pending):ok(overview)))
     render(<PlatformAdminPage/>)
-    fireEvent.click(await screen.findByRole('button',{name:'Data connections'}))
+    await selectGroup()
+    fireEvent.click(screen.getByRole('button',{name:'Data connections'}))
     const trigger=await screen.findByRole('button',{name:'Configure'})
     fireEvent.click(trigger)
     await act(async()=>{fireEvent(window,new Event('focus'))})
@@ -273,19 +303,20 @@ describe('Software administration',()=>{
     })
     vi.stubGlobal('fetch',fetcher)
     render(<PlatformAdminPage/>)
-    fireEvent.click(await screen.findByRole('button',{name:'Data connections'}))
+    await selectGroup()
+    fireEvent.click(screen.getByRole('button',{name:'Data connections'}))
     await screen.findByRole('heading',{name:connection.name})
     expect(screen.getByText('Executor not connected')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button',{name:'Request pull'}))
+    fireEvent.click(screen.getByRole('button',{name:'Queue pull request'}))
     fireEvent.change(screen.getByRole('textbox',{name:'Reason for this change'}),{target:{value:'Synthetic dealership request'}})
-    await act(async()=>{fireEvent.submit(screen.getByRole('form',{name:'Request data pull'}))})
-    await screen.findByText(/Pull queued · awaiting executor/)
+    await act(async()=>{fireEvent.submit(screen.getByRole('form',{name:'Queue data pull'}))})
+    await screen.findByText(/Request queued · awaiting executor/)
     expect(screen.getByRole('button',{name:'Cancel request'})).toBeEnabled()
     expect(screen.getByText('Change saved and recorded in the audit history.')).toBeInTheDocument()
     const posts=(fetcher.mock.calls as [string,RequestInit?][]).filter(([,options])=>options?.method==='POST')
     expect(posts[0][0]).toBe('/api/platform/groups/synthetic-north/pulls')
     expect(JSON.parse(String(posts[0][1]?.body))).toMatchObject({connectionId:'synthetic-source',operation:'request',expectedRevision:0})
-    expect(screen.getByRole('button',{name:'Request pull'})).toBeDisabled()
+    expect(screen.getByRole('button',{name:'Queue pull request'})).toBeDisabled()
     expect(screen.getByRole('button',{name:'Cancel request'})).toBeEnabled()
   })
   it('discards pending audit details and closes the dialog when owner access is revoked',async()=>{
