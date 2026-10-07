@@ -5,9 +5,11 @@ On October 7, 2026, the separately authorized owner-only console was activated a
 Joe's verified Cloudflare Access identity resolves to the enabled **Joe Gallant**
 software-owner record. This is separate from the dealership `/admin` Control center.
 All deployment versions, settings, and readbacks below record the initial
-owner-only activation snapshot at main commit
+owner-only activation. Its implementation came from main commit
 [`72e4ca4cd61820f843fed9785293264ddfdacd20`](https://github.com/TechSavvyJoe/inventory-flow/tree/72e4ca4cd61820f843fed9785293264ddfdacd20),
-tagged `72e4ca4`; they do not describe the current connected-account release.
+tagged `72e4ca4`; the deployed configuration snapshots were subsequently recorded
+at `da10f081ac7622251e0d4e71eb7b64c0db835291`. This historical record does not
+describe the current connected-account release.
 
 Joe's instruction to finish the owner console and owner account authorized this
 activation. It did not authorize dealership onboarding, tenant gates, collectors,
@@ -28,9 +30,9 @@ Both initial Workers used the reviewed owner implementation from main commit
 | New owner-only Allow policy | `fd8dd357-a501-49fd-a422-044f49493fcc` | `358f580c-0bc0-47d8-9add-24d71c748596` |
 
 The immutable configuration sources for that initial snapshot are
-[staging](https://github.com/TechSavvyJoe/inventory-flow/blob/72e4ca4cd61820f843fed9785293264ddfdacd20/cloudflare/platform.staging.wrangler.jsonc)
+[staging](https://github.com/TechSavvyJoe/inventory-flow/blob/da10f081ac7622251e0d4e71eb7b64c0db835291/cloudflare/platform.staging.wrangler.jsonc)
 and
-[production](https://github.com/TechSavvyJoe/inventory-flow/blob/72e4ca4cd61820f843fed9785293264ddfdacd20/cloudflare/platform.production.wrangler.jsonc).
+[production](https://github.com/TechSavvyJoe/inventory-flow/blob/da10f081ac7622251e0d4e71eb7b64c0db835291/cloudflare/platform.production.wrangler.jsonc).
 At that snapshot, each had one D1 binding (`PLATFORM_DB`), authenticated
 `ASSETS`, its own hostname/audience, and six reviewed variables. Actual Cloudflare
 settings were independently read back:
