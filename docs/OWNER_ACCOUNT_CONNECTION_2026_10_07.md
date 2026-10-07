@@ -11,6 +11,66 @@ attributed audit through the normal platform service. Tenant identity activation
 and deployment require the release gates below; registration alone is not a
 working connection. The retained inventory publication is dated October 1, 2026.
 
+## Deployed release
+
+PR [#70](https://github.com/TechSavvyJoe/inventory-flow/pull/70) merged at
+`108305e2a07c631a165eb13d2fb4a085629d911e`. The
+[exact-main CI](https://github.com/TechSavvyJoe/inventory-flow/actions/runs/37669316118)
+passed test/build, end-to-end, Chromium/WebKit and strict visual checks. The
+paired release command passed 3,531 tests with three skipped across 228 files,
+typecheck, repository safety, design-system checks, build, Companion packaging,
+Cloudflare validation and the read-only existing migration-ledger check.
+
+All four deployments used that clean main commit, tag `108305e`, and were
+independently read back at 100% traffic:
+
+| Target | Version |
+| --- | --- |
+| Software Admin staging | `077c44a2-b14d-417d-8c30-a7f6bd56e88a` |
+| Software Admin production | `fb81437b-9334-45e6-8cfb-e7d6bbbf0aa5` |
+| App | `669625d0-c502-4c0c-9419-6008e2269ac1` |
+| Integrations | `aee172fa-13b8-488e-a66f-19a3f8363bd9` |
+
+The paired receipt is `release-JsrbeB`. The 900-second connected monitor passed
+for the three production versions: 49 app, 15 integration and one owner event,
+all HTTP 200 with `ok` outcomes. There were no Worker exceptions, console-error
+events, 5xx responses or disconnected streams; all six streams drained cleanly.
+This observation does not establish source freshness or fleet-scale capacity.
+
+The additive tenant identity table and its two immutable triggers were verified
+against the reviewed SQL. The normal attributed owner controls registered and
+activated the account; before deployment it read back active and connected with
+four enabled stores and two active employees. Configured data connections and
+feed pull requests remain empty, with scheduling disabled and no Cron triggers.
+
+Independent integration reconciliation passed at `2026-10-07T19:50:23Z`: 235
+public records, with Howell 83, Fowlerville 46, Ford Detroit 65 and Lincoln 41.
+The October 1 report date and retained release hash matched the independently
+prepared expectation. The one-hour read-only verification grant was revoked by
+its exact client ID, subsequent access returned HTTP 403, and its exact local
+credential file was removed. An earlier creation attempt failed without retaining
+its underlying error; read-only checks found no residual matching grant or file.
+One reviewed retry added fixed-code diagnostics and passed. The original cause
+remains unknown; no source or release code was changed for that retry.
+
+Authenticated owner/employee browser acceptance passed at `2026-10-07T19:52:26Z`.
+The app returned HTTP 200 with the deployed version and Joe's actual group-manager
+role, without role/store preview. Its account menu rendered **Software Admin**;
+the connected owner account rendered **Open dealership app**. Both destinations
+loaded in guarded verification tabs. The Other disposition option was visible.
+Manual controls and Issues/report controls were visible at all four canonical
+viewports.
+Browser QA attempted no writes and blocked off-origin requests. Native new-window
+click behavior and a hosted OAuth client's real sign-in remain unverified.
+
+The final Windows readback at `2026-10-07T19:52:53Z` confirmed DailyRun,
+DailyPublish, IntradayHolds and DealerMailKeeper disabled, with no publisher
+running. AutomationBrowser and IntradayHolds-Monitor remained Ready; this is not
+a claim that every legacy task is inactive. The legacy checkout remained clean
+at `0e48dd66ac6998e35a10d146469a10417e0b4367`. Inventory remains the stale
+October 1 publication. Private exports, operation receipts and diagnostic
+helpers remain outside Git.
+
 ## Scope and validation
 
 - App and integrations receive the same immutable tenant identity and platform

@@ -2,6 +2,17 @@
 
 ## Deployment - 2026-10-07 (pnpm cloud:release)
 
+- 2026-10-07T19:18:09.574Z | Commit: 108305e2a07c631a165eb13d2fb4a085629d911e | Tag: 108305e | App Version: 669625d0-c502-4c0c-9419-6008e2269ac1 | Integrations Version: aee172fa-13b8-488e-a66f-19a3f8363bd9
+
+The [Software Admin connection record](OWNER_ACCOUNT_CONNECTION_2026_10_07.md)
+records the separate owner deployments, reviewed activation, rollback versions,
+exact-main checks, passed monitoring, independent integration reconciliation,
+temporary-grant cleanup and authenticated reciprocal navigation acceptance.
+The retained inventory publication is October 1; publisher tasks remain paused.
+Native new-window behavior and hosted OAuth-client sign-in remain unverified.
+
+## Deployment - 2026-10-07 (pnpm cloud:release)
+
 - 2026-10-07T02:15:20.511Z | Commit: 72e4ca4cd61820f843fed9785293264ddfdacd20 | Tag: 72e4ca4 | App Version: d6614de9-4eb4-4aee-a8eb-2d96d0c16192 | Integrations Version: 572a82ac-939b-490f-a33b-903956787ddb
 
 [October 6 local-date release evidence](RELEASE_2026_10_06.md) records the exact
