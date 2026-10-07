@@ -34,6 +34,7 @@ export function startInventoryServer({
   now = () => new Date(),
   environment = process.env.NODE_ENV || 'development',
   adminDirectory,
+  platformAdmin,
 } = {}) {
   if (typeof releaseLoader !== 'function') {
     throw new DemoServerConfigurationError(
@@ -70,7 +71,7 @@ export function startInventoryServer({
   }
 
   const refreshResult = refresh()
-  const server = createInventoryServer({ service, serveDist, distDir, identityResolver, adminDirectory })
+  const server = createInventoryServer({ service, serveDist, distDir, identityResolver, adminDirectory, platformAdmin })
   const timer = refreshIntervalMs > 0 ? setInterval(refresh, refreshIntervalMs) : null
   timer?.unref()
 
@@ -102,7 +103,7 @@ export function startInventoryServer({
     const sourceNote = refreshResult.ok
       ? `synthetic release ${refreshResult.reportDate}`
       : `retained release ${refreshResult.retainedReportDate || 'none'} (refresh failed)`
-    console.log(`Maxey Inventory Flow demo server listening on http://${host}:${activePort} — ${sourceNote}`)
+    console.log(`Inventory Flow demo server listening on http://${host}:${activePort} — ${sourceNote}`)
   })
 
   function close() {
@@ -111,6 +112,7 @@ export function startInventoryServer({
       server.close((error) => {
         try {
           database.close()
+          platformAdmin?.close()
         } catch {
           // The database may already be closed during process shutdown.
         }

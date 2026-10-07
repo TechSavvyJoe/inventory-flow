@@ -74,11 +74,11 @@ test('sales opens a current customer comparison PDF from Overview without return
   const downloaded = page.waitForEvent('download')
   await save.click()
   const download = await downloaded
-  expect(download.suggestedFilename()).toBe('bob-maxey-vehicle-comparison.pdf')
+  expect(download.suggestedFilename()).toBe('inventory-flow-vehicle-comparison.pdf')
   const bytes = await readFile((await download.path())!)
   expect(bytes.subarray(0, 8).toString()).toBe('%PDF-1.7')
   const pdf = await PDFDocument.load(bytes)
-  expect(pdf.getTitle()).toBe('Bob Maxey vehicle comparison')
+  expect(pdf.getTitle()).toBe('Inventory Flow vehicle comparison')
   expect(pdf.getPageCount()).toBe(1)
   expect(pdf.getPage(0).getSize()).toEqual({ width: 792, height: 612 })
   await page.keyboard.press('Escape')

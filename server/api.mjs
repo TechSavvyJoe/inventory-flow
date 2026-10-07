@@ -244,7 +244,7 @@ function sendFile(file, response) {
   })
 }
 
-export function createApiHandler({ service, serveDist = false, distDir, workspaceRoot, identityResolver = createIdentityResolver(), adminDirectory } = {}) {
+export function createApiHandler({ service, serveDist = false, distDir, workspaceRoot, identityResolver = createIdentityResolver(), adminDirectory, platformAdmin } = {}) {
   if (!service) throw new Error('service is required')
   if (!identityResolver?.resolve) throw new Error('identityResolver is required')
   const issuePhotos = new Map()
@@ -258,6 +258,21 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
       }
 
       if (request.method === 'GET' && route === '/health') return sendJson(response, 200, service.health())
+      if (route === '/platform' || route.startsWith('/platform/')) {
+        if (identityResolver.mode !== 'demo' || !platformAdmin) return sendJson(response,404,{code:'NOT_FOUND'})
+        const isMutation = !['GET','HEAD'].includes(request.method)
+        if (isMutation) assertLocalWriteOrigin(request)
+        // Vite rewrites Host for its local API proxy. After validating the
+        // loopback write origin, preserve that frontend origin for the shared
+        // same-origin Worker handler. This adapter exists only in the demo.
+        const requestOrigin = isMutation ? String(request.headers.origin) : `http://${request.headers.host}`
+        const platformRequest = new Request(`${requestOrigin}${url.pathname}${url.search}`, {
+          method:request.method, headers:request.headers,
+          ...(!['GET','HEAD'].includes(request.method) ? {body:request,duplex:'half'} : {}),
+        })
+        const result = await platformAdmin.fetch(platformRequest)
+        return sendJson(response,result.status,await result.json())
+      }
       const context = identityResolver.resolve(request, url, { allowQuery: route === '/bootstrap' })
       if (route === '/admin/overview') {
         if (request.method !== 'GET') {
@@ -404,6 +419,14 @@ export function createApiHandler({ service, serveDist = false, distDir, workspac
       }
       // The app-owned disposition ledger: a manager's own record, never a
       // write to DealerMail, CDK, the listing or the imported manager log.
+      const manualHoldMatch = route.match(/^\/vehicles\/([^/]+)\/manual-hold$/)
+      if (request.method === 'GET' && manualHoldMatch) {
+        return sendJson(response, 200, service.getManualHold(pathSegment(manualHoldMatch[1]), context))
+      }
+      if (request.method === 'POST' && manualHoldMatch) {
+        const result = service.updateManualHold(pathSegment(manualHoldMatch[1]), await readJson(request), context, String(request.headers['idempotency-key'] ?? ''))
+        return sendJson(response, result.created ? 201 : 200, result.record)
+      }
       const dispositionMatch = route.match(/^\/vehicles\/([^/]+)\/disposition$/)
       if (request.method === 'GET' && dispositionMatch) {
         return sendJson(response, 200, service.getDisposition(pathSegment(dispositionMatch[1]), context))

@@ -72,6 +72,7 @@ describe('shared customer PDF', () => {
     expect(Buffer.from(await blob.arrayBuffer()).subarray(0,8).toString()).toBe('%PDF-1.7')
     const pdf = await load(blob)
     expect(pdf.getTitle()).toBe('José’s vehicle choices')
+    expect(pdf.getAuthor()).toBe('Inventory Flow')
     expect(pdf.getPageCount()).toBe(1)
     expect(pdf.getPage(0).getSize()).toEqual({ width:612, height:792 })
   })
@@ -123,7 +124,8 @@ describe('shared customer PDF', () => {
     let plan:any
     const pdf=await load(await createTakeHomePdf(models,'CUSTOMER LABEL PRIVATE',{...options,layout:'comparison',comparisonObserver:value=>plan=value}))
     expect(pdf.getPageCount()).toBe(pages)
-    expect(pdf.getTitle()).toBe('Bob Maxey vehicle comparison')
+    expect(pdf.getTitle()).toBe('Inventory Flow vehicle comparison')
+    expect(pdf.getAuthor()).toBe('Inventory Flow')
     expect(plan.pages.map(page=>page.vehicles.length)).toEqual(count===4?[2,2]:count===7?[3,2,2]:[count])
     expect(plan.pages.flatMap(page=>page.vehicles.map(vehicle=>vehicle.vin))).toEqual(models.map(model=>model.vin))
     for(const page of plan.pages) for(const row of page.rows) expect(row.top+row.height).toBeLessThanOrEqual(548)

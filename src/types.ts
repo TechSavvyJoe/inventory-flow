@@ -499,7 +499,7 @@ export interface ServiceReadinessInput {
   expectedVersion: number
 }
 
-export type AppDispositionCode = 'keep' | 'sold_pending' | 'delivered' | 'wholesale' | 'transfer_out'
+export type AppDispositionCode = 'keep' | 'sold_pending' | 'delivered' | 'wholesale' | 'transfer_out' | 'other'
 
 /**
  * A manager's disposition recorded in Inventory Flow (server/vehicle-disposition.mjs).
@@ -524,6 +524,7 @@ export interface AppDisposition {
 }
 
 export interface AppDispositionDetail extends AppDisposition {
+  otherEnabled?: boolean;
   history: AppDisposition[]
 }
 
@@ -533,6 +534,37 @@ export interface AppDispositionInput {
   destinationStore?: StoreName
   note?: string
   expectedVersion: number
+}
+
+export interface ManualHold {
+  vin: string
+  state: 'active' | 'released' | null
+  version: number
+  expectedDeliveryDate: string | null
+  updatedAt: string | null
+  ownerStore: StoreName | null
+  canManage: boolean
+  enabled: boolean
+  customerLabel?: string | null
+  note?: string | null
+  updatedBy?: string | null
+  ownedByCurrentUser?: boolean
+}
+export interface ManualHoldDetail extends ManualHold { history: ManualHold[] }
+export interface ManualHoldInput {
+  state: 'active' | 'released'
+  expectedVersion: number
+  customerLabel?: string
+  expectedDeliveryDate?: string
+  note?: string
+}
+export interface InventoryDecision {
+  status: AppDispositionCode | 'held' | 'unconfirmed'
+  comparison: 'agreement' | 'conflict' | 'manual_only' | 'source_only' | 'unverified'
+  reasons: string[]
+  manualHold: ManualHold['state']
+  importedHold: boolean | null
+  label: string
 }
 
 export interface VehicleRecord {
@@ -582,6 +614,8 @@ export interface VehicleRecord {
   movement: MovementSummary
   serviceReadiness?: ServiceReadiness
   appDisposition?: AppDisposition | null
+  manualHold?: ManualHold
+  inventoryDecision?: InventoryDecision
   changeSummary?: string
   searchText?: string
   dataStatus?: string
@@ -859,6 +893,7 @@ export interface BootstrapData {
   vehicleIssuesEnabled?: boolean
   /** False when the app's disposition table is not installed yet (D1 migration 0013). */
   dispositionsEnabled?: boolean
+  manualHoldsEnabled?: boolean
   overview?: OverviewSummary
 }
 

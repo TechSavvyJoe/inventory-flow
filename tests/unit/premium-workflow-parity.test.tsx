@@ -144,8 +144,8 @@ describe('Shortlist belongs only to the current authenticated context', () => {
   it('makes compare cards keyboard-operable buttons with qualified context', () => {
     const open = vi.fn()
     render(<CustomerShortlistDrawer entries={[{ id: VIN, vin: VIN, stockNumber: 'SYNTHETIC-001', displayName: 'Synthetic Ford', price: 20000, imageUrl: null, exteriorColor: 'Blue', addedAt: 0 }]} onSelectVehicle={open} onRemove={vi.fn()} onClear={vi.fn()} />)
-    fireEvent.click(screen.getByRole('button', { name: /^Shortlist 1$/ }))
-    const region = screen.getByRole('region', { name: 'Customer shortlist' })
+    fireEvent.click(screen.getByRole('button', { name: /^Saved vehicles:/ }))
+    const region = screen.getByRole('region', { name: 'Saved vehicles 1' })
     expect(region).toHaveTextContent('Confirm availability with the home store')
     const opener = within(region).getByRole('button', { name: /^Open shortlisted/ })
     opener.focus()

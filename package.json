@@ -1,5 +1,5 @@
 {
-  "name": "maxey-inventory-flow",
+  "name": "inventory-flow",
   "version": "1.4.1",
   "private": true,
   "packageManager": "pnpm@11.19.0",

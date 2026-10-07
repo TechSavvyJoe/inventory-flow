@@ -32,6 +32,7 @@ import { serviceWorkflowStatus } from "../../lib/service-readiness";
 import { useModalBackgroundIsolation } from "../../lib/useModalBackgroundIsolation";
 import { InventoryMobileList, InventoryTable, inventorySortSummary } from "./InventoryTable";
 import { VehicleWorkspace } from "./VehicleWorkspace";
+import { SaveVehicleDialog } from "./SaveVehicleDialog";
 import { CustomerShortlistDrawer } from "./CustomerShortlistDrawer";
 import { ShortlistContext, useCustomerShortlist } from "./useCustomerShortlist";
 import { useSyncedCustomerLists } from "./useSyncedCustomerLists";
@@ -319,6 +320,16 @@ function FiltersPanel({
             <option value="held">Held</option>
             <option value="not-held">No current hold</option>
             <option value="unverified">Hold status unverified</option>
+          </select>
+        </label>
+        <label>
+          <span>Inventory decision</span>
+          <select value={filters.disposition ?? "all"} onChange={event => update("disposition", event.target.value as InventoryFilters["disposition"])}>
+            <option value="all">Any decision</option><option value="none">No disposition recorded</option>
+            <option value="sold_pending">Sold pending</option><option value="delivered">Delivered</option>
+            <option value="other">Other</option><option value="keep">Keep</option>
+            <option value="wholesale">Wholesale</option><option value="transfer_out">Transfer out</option>
+            <option value="conflict">Conflicting records</option>
           </select>
         </label>
         <label>
@@ -867,7 +878,7 @@ export function InventoryExperience({
       <CustomerShortlistDrawer entries={shortlist.entries}
         onRemove={shortlist.remove} onClear={shortlist.clear}
         management={shortlist.management} authorizedVehicles={allVehicles} accessContext={shortlist.context}
-        modalOpen={scannerOpen || Boolean(selectedVehicle)}
+        modalOpen={scannerOpen || Boolean(selectedVehicle) || Boolean(shortlist.management?.pendingSave)}
         onSelectVehicle={(entry, opener) => {
           const vehicle = allVehicles.find(candidate => candidate.id === entry.id || candidate.vin === entry.id);
           if (vehicle) openVehicleWorkspace(vehicle, "overview", opener);
@@ -893,6 +904,7 @@ export function InventoryExperience({
         />
       ) : null}
     </section>
+    {shortlist.management?.pendingSave ? <SaveVehicleDialog key={`${shortlist.context}:${shortlist.management.pendingSave.vin}`} management={shortlist.management} /> : null}
     </ShortlistContext.Provider>
   );
 }

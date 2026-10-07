@@ -123,7 +123,7 @@ export function TakeHomeSheet({ vehicle, vehicles, listLabel, onClose, returnFoc
   const backgroundRef = useRef<HTMLElement | null>(typeof document === 'undefined' ? null : document.getElementById('root'));
   const [actionStatus, setActionStatus] = useState<string | null>(null);
   const [layout, setLayout] = useState<'detailed' | 'comparison'>('detailed');
-  const exportTitle = layout === 'comparison' ? 'Bob Maxey vehicle comparison' : title;
+  const exportTitle = layout === 'comparison' ? 'Inventory Flow vehicle comparison' : title;
   const [preparedPdf, setPreparedPdf] = useState<{ models:TakeHomeModel[]; title:string; layout:string; document:Blob; comparison:ComparisonPlan | null } | null>(null);
   const prepared = preparedPdf?.models === models && preparedPdf.title === exportTitle && preparedPdf.layout === layout ? preparedPdf : null;
   const pdf = prepared?.document ?? null;

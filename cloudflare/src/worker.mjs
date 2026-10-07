@@ -12,6 +12,7 @@ import { WorkflowError } from '../../server/workflow.mjs'
 import { ISSUE_BODY_BYTES, prepareIssuePhotos } from '../../server/issue-photos.mjs'
 import { readIssuePhoto, storeIssuePhotos } from './issue-photo-storage.mjs'
 import { assertSavedListOwner, SAVED_LIST_BODY_BYTES } from '../../server/saved-vehicle-lists.mjs'
+import { assertTenantEnabled } from './tenant-gate.mjs'
 
 const FORMAT = 'inventory-flow-private-release-v1'
 const MAX_UPLOAD = 25 * 1024 * 1024
@@ -312,11 +313,12 @@ export async function appReadiness(env) {
   // accepting browser claims or exposing any employee/customer evidence.
   const bootstrap=service.bootstrap({role:'driver',store:'Howell',user:'Cloud readiness diagnostic'})
   // Requests stay readable while a feature migration is absent, but deployment
-  // is not ready when either write surface would answer MIGRATION_REQUIRED.
+  // is not ready when any required write surface answers MIGRATION_REQUIRED.
   const dispositionStorage=repo.database.dispositionsEnabled===true
   const savedListsStorage=repo.database.savedVehicleListsEnabled===true
+  const manualHoldStorage=repo.database.manualHoldsEnabled===true
   return {
-    ready:dispositionStorage&&savedListsStorage,dispositionStorage,savedListsStorage,reportDate:bootstrap.meta.reportDate,bundleSha256,
+    ready:dispositionStorage&&savedListsStorage&&manualHoldStorage,dispositionStorage,savedListsStorage,manualHoldStorage,reportDate:bootstrap.meta.reportDate,bundleSha256,
     counts:{inventory:bootstrap.vehicles.length,managerDispositions:bootstrap.managerDispositions?.length??0,transfers:bootstrap.transfers.length,attention:bootstrap.attention.length},
     bootstrapBytes:encoder.encode(JSON.stringify(bootstrap)).byteLength,
   }
@@ -428,10 +430,10 @@ async function appApi(request,url,env,context,claims) {
   const issueReadRoute=/^\/vehicle-issues(?:\/[^/]+(?:\/photos\/[a-f0-9]{64})?)?$/.test(route)
   const issueWriteRoute=/^\/vehicles\/[^/]+\/issues$/.test(route) || /^\/vehicle-issues\/[^/]+\/events$/.test(route)
   const savedListsRoute=route==='/saved-lists'
-  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/(?:service|disposition|invoice|equipment-pdf)$/.test(route) || issueReadRoute || issueWriteRoute || savedListsRoute || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
+  if(!(/^\/(bootstrap|vehicles|transfers|attention)$/.test(route) || /^\/(vehicles|transfers|attention)\/[^/]+(?:\/events)?$/.test(route) || /^\/vehicles\/[^/]+\/(?:service|disposition|manual-hold|invoice|equipment-pdf)$/.test(route) || issueReadRoute || issueWriteRoute || savedListsRoute || adminOverview || adminMembersRoute)) throw new HttpError('NOT_FOUND',404)
   // Only these routes accept writes. Answer 405 here, before the release is
   // decrypted and the D1 snapshot is loaded for a request that can never commit.
-  const writable=route==='/transfers' || /^\/vehicles\/[^/]+\/(?:service|disposition)$/.test(route) || /^\/(transfers|attention)\/[^/]+\/events$/.test(route) || issueWriteRoute || savedListsRoute || adminMembersRoute
+  const writable=route==='/transfers' || /^\/vehicles\/[^/]+\/(?:service|disposition|manual-hold)$/.test(route) || /^\/(transfers|attention)\/[^/]+\/events$/.test(route) || issueWriteRoute || savedListsRoute || adminMembersRoute
   if(write && !writable) throw new HttpError('METHOD_NOT_ALLOWED',405)
   // The membership context was resolved from Access + D1 before this point.
   // Check it before reading the group directory or private release.
@@ -495,6 +497,8 @@ async function appApi(request,url,env,context,claims) {
     else if(read && /^\/vehicles\/[^/]+$/.test(route)) result=service.getVehicle(identifier,context)
     else if(read && /^\/vehicles\/[^/]+\/service$/.test(route)) result=service.getServiceReadiness(identifier,context)
     else if(write && /^\/vehicles\/[^/]+\/service$/.test(route)) {result=service.updateServiceReadiness(identifier,input,context,idempotency);mutation=true}
+    else if(read && /^\/vehicles\/[^/]+\/manual-hold$/.test(route)) result=service.getManualHold(identifier,context)
+    else if(write && /^\/vehicles\/[^/]+\/manual-hold$/.test(route)) {result=service.updateManualHold(identifier,input,context,idempotency);mutation=true}
     else if(read && /^\/vehicles\/[^/]+\/disposition$/.test(route)) result=service.getDisposition(identifier,context)
     else if(write && /^\/vehicles\/[^/]+\/disposition$/.test(route)) {result=service.updateDisposition(identifier,input,context,idempotency);mutation=true}
     else if(read && route==='/transfers') result=service.listTransfers(query,context)
@@ -531,6 +535,7 @@ export default {
       if(!env.PRIVATE_HOSTNAME || url.hostname!==env.PRIVATE_HOSTNAME) throw new AccessError('PRIVATE_HOST_REQUIRED',403)
       if(url.pathname.startsWith('/internal/')) {
         await publisher(request,env)
+        await assertTenantEnabled(env)
         const invoiceMatch=/^\/internal\/invoices\/(\d{4}-\d{2}-\d{2})\/([A-HJ-NPR-Z0-9]{17})$/.exec(url.pathname)
         if(request.method==='POST' && invoiceMatch) return await uploadInvoiceDocument(request,env,invoiceMatch[1],invoiceMatch[2])
         const equipmentMatch=/^\/internal\/equipment\/([A-HJ-NPR-Z0-9]{17})\/([a-f0-9]{64})$/.exec(url.pathname)
@@ -542,6 +547,7 @@ export default {
         throw new HttpError('NOT_FOUND',404)
       }
       const claims=await verifyAccess(request,env)
+      await assertTenantEnabled(env)
       const context=await memberContext(claims,env,request)
       if(request.method==='GET' && url.pathname==='/api/health') return json(200,{ok:true,ready:Boolean(await currentRelease(env)),service:'inventory-flow-cloud',version:versionMetadata(env)})
       if(url.pathname.startsWith('/api/')) return await appApi(request,url,env,context,claims)

@@ -1,4 +1,4 @@
-import { Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppDataProvider, useAppData } from './app/AppDataContext'
 import { AppShell } from './app/AppShell'
@@ -8,6 +8,7 @@ import { WorkspaceRefreshStatus } from './components/WorkspaceRefreshStatus'
 import { LoadingState } from './components/LoadingState'
 import { RouteLoadBoundary } from './components/RouteLoadBoundary'
 import { RouteLoadingState } from './components/RouteLoadingState'
+const PlatformAdminPage = lazy(() => import('./features/platform/PlatformAdminPage'))
 
 function AppRoutes() {
   const { data, loading, error, accessErrorStatus, lastCheckedAt, savedChangesPending, refresh, role, homeStore, currentUser } = useAppData()
@@ -44,6 +45,8 @@ export default function App() {
   useEffect(() => {
     preloadRoute(pathname)
   }, [pathname])
+
+  if (pathname === '/platform') return <RouteLoadBoundary><Suspense fallback={<RouteLoadingState />}><PlatformAdminPage /></Suspense></RouteLoadBoundary>
 
   return (
     <AppDataProvider>

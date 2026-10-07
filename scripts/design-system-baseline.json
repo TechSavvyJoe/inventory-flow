@@ -34,10 +34,10 @@
       "important": 0,
       "idSelectors": 0
     },
-    "src/components/RouteLoadingState.css": {
+    "src/features/platform/platform.css": {
       "smallText": 0,
       "rawColors": 0,
-      "rgbHslColors": 1,
+      "rgbHslColors": 0,
       "important": 0,
       "idSelectors": 0
     },
@@ -46,6 +46,13 @@
       "rawColors": 4,
       "rgbHslColors": 5,
       "important": 1,
+      "idSelectors": 0
+    },
+    "src/components/RouteLoadingState.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 1,
+      "important": 0,
       "idSelectors": 0
     },
     "src/features/admin/admin.css": {
@@ -98,6 +105,27 @@
       "idSelectors": 0
     },
     "src/features/overview/SalesOverview.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/TakeHomeSheet.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 2,
+      "idSelectors": 0
+    },
+    "extension/sidepanel/lib/takehome-comparison-view.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/components/CertifiedBadge.css": {
       "smallText": 0,
       "rawColors": 0,
       "rgbHslColors": 0,
@@ -230,21 +258,7 @@
       "important": 0,
       "idSelectors": 0
     },
-    "src/features/inventory/TakeHomeSheet.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 2,
-      "idSelectors": 0
-    },
-    "extension/sidepanel/lib/takehome-comparison-view.css": {
-      "smallText": 0,
-      "rawColors": 0,
-      "rgbHslColors": 0,
-      "important": 0,
-      "idSelectors": 0
-    },
-    "src/components/CertifiedBadge.css": {
+    "src/features/inventory/SaveVehicleDialog.css": {
       "smallText": 0,
       "rawColors": 0,
       "rgbHslColors": 0,
@@ -263,7 +277,7 @@
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 451
+      "idSelectors": 449
     },
     "src/features/inventory/WarrantyOutlook.css": {
       "smallText": 0,
@@ -294,6 +308,13 @@
       "idSelectors": 0
     },
     "src/features/sales/CustomerSummary.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/ManualHoldDialog.css": {
       "smallText": 0,
       "rawColors": 0,
       "rgbHslColors": 0,

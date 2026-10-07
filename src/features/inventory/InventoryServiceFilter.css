@@ -209,12 +209,12 @@
   #inventory-results-workspace.if-srp[data-filters-open="true"] .if-srp-service-filters { display: grid; margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--border); }
   #inventory-results-workspace.if-srp .if-srp-service-heading { display: block; grid-column: 1 / -1; font-size: 14px; margin-bottom: 3px; }
   #inventory-results-workspace.if-srp .if-srp-active-filters { gap: 2px 4px; }
-  #inventory-results-workspace.if-srp .inventory-pagination--modern { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; margin-top: 8px; padding: 4px 0; }
-  #inventory-results-workspace.if-srp .inventory-pagination--modern > span { flex: 1 1 auto; font-size: 14px; }
-  #inventory-results-workspace.if-srp .inventory-page-size { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; margin: 0; }
+  #inventory-results-workspace.if-srp .inventory-pagination--modern { display: grid; grid-template-columns:auto auto minmax(0,1fr); align-items: center; gap: var(--ifx-space-1); margin-top: var(--ifx-space-2); padding: var(--ifx-space-1) 0; }
+  #inventory-results-workspace.if-srp .inventory-pagination--modern > span { grid-column:1 / -1; font-size: var(--ifx-text-sm); }
+  #inventory-results-workspace.if-srp .inventory-page-size { display: flex; grid-column:2; grid-row:2; align-items: center; justify-self:start; gap: var(--ifx-space-1); margin: 0; }
   #inventory-results-workspace.if-srp .inventory-page-size > span { display: inline; font-size: 14px; }
-  #inventory-results-workspace.if-srp .inventory-page-size select { width: 56px; min-width: 56px; min-height: 44px; padding: 4px; }
-  #inventory-results-workspace.if-srp .inventory-pagination--modern > div { display: flex; flex: 0 0 auto; gap: 4px; width: auto; margin: 0; }
+  #inventory-results-workspace.if-srp .inventory-page-size select { width: calc(var(--ifx-space-12) + var(--ifx-space-2)); min-width: calc(var(--ifx-space-12) + var(--ifx-space-2)); min-height: var(--ifx-control-height-md); padding: var(--ifx-space-1); }
+  #inventory-results-workspace.if-srp .inventory-pagination--modern > div { display: flex; grid-column:1; grid-row:2; justify-content:flex-start; gap: var(--ifx-space-1); width: auto; margin: 0; }
   #inventory-results-workspace.if-srp .inventory-pagination--modern > div > span { display: none; }
   #inventory-results-workspace.if-srp .inventory-pagination--modern > div > button { width: 44px; min-width: 44px; min-height: 44px; margin: 0; }
 }
@@ -230,7 +230,10 @@
 /* Phone and tablet results reach the viewport edge: the gutter moves onto
    the controls and card contents instead of stacking shell and surface. */
 @media (max-width: 880px) {
-  #inventory-results-workspace.if-srp .inventory-experience__content { padding: 8px 0 16px; }
+  /* The shell reserves the mobile rail; leave the fixed saved-list launcher
+     its own clearance so the final pagination row can scroll above both. */
+  #inventory-results-workspace.if-srp .inventory-experience__content { padding: var(--ifx-space-2) 0 calc(var(--ifx-control-height-md) + var(--ifx-space-4)); }
+  .if-srp .inventory-pagination { scroll-margin-block-end: calc(var(--mobile-bottom-height) + var(--safe-bottom) + var(--ifx-control-height-md) + var(--ifx-space-4)); }
   #inventory-results-workspace.if-srp :is(.if-srp-heading-grid, .if-srp-controls, .inventory-pagination) {
     padding-left: max(10px, var(--safe-left));
     padding-right: max(10px, var(--safe-right));

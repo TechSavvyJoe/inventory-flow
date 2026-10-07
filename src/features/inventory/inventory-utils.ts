@@ -21,6 +21,7 @@ export const DEFAULT_INVENTORY_FILTERS: InventoryFilters = {
   dealerMail: "all",
   movement: "all",
   serviceReadiness: "all",
+  disposition: "all",
 };
 
 export const DEFAULT_INVENTORY_SORTS: InventorySort[] = [
@@ -297,6 +298,11 @@ export function vehicleMatchesFilters(
     return false;
   }
 
+  if (filters.disposition && filters.disposition !== "all") {
+    if (filters.disposition === "conflict") {
+      if (vehicle.inventoryDecision?.comparison !== "conflict") return false;
+    } else if ((vehicle.appDisposition?.code ?? "none") !== filters.disposition) return false;
+  }
   const listed = vehicle.publicListing.isListed;
   if (filters.publicListing === "listed" && listed !== true) return false;
   if (filters.publicListing === "not-listed" && listed !== false) return false;
@@ -314,10 +320,10 @@ export function vehicleMatchesFilters(
   }
 
   const dealerMail = vehicle.dealerMail;
-  if (filters.dealerMail === "held" && dealerMail.hasActiveHold !== true && !dealerMail.lastKnownActiveHold) return false;
+  if (filters.dealerMail === "held" && vehicle.manualHold?.state !== "active" && dealerMail.hasActiveHold !== true && !dealerMail.lastKnownActiveHold) return false;
   if (
     filters.dealerMail === "not-held" &&
-    !(dealerMail.dataState === "current" && dealerMail.hasActiveHold === false)
+    !(vehicle.manualHold?.state !== "active" && dealerMail.dataState === "current" && dealerMail.hasActiveHold === false)
   ) {
     return false;
   }
@@ -437,6 +443,7 @@ function sortValue(vehicle: InventoryVehicle, key: InventorySortKey): string | n
     case "inventoryDate":
       return sortableDate(vehicle.inventoryDate);
     case "holdStatus":
+      if (vehicle.manualHold?.state === "active") return 0;
       if (vehicle.dealerMail.dataState !== "current" || vehicle.dealerMail.hasActiveHold === null) return 2;
       return vehicle.dealerMail.hasActiveHold ? 0 : 1;
     case "websiteStatus":
@@ -533,6 +540,7 @@ export function activeFilterCount(filters: InventoryFilters): number {
     filters.dealerMail !== "all",
     filters.movement !== "all",
     Boolean(filters.serviceReadiness && filters.serviceReadiness !== "all"),
+    Boolean(filters.disposition && filters.disposition !== "all"),
     typeof filters.minimumPrice === "number",
     typeof filters.maximumPrice === "number",
     typeof filters.maximumMileage === "number",

@@ -93,7 +93,7 @@ describe('DispositionDialog', () => {
     render(<Harness current={disposition({ code: 'sold_pending', version: 1 })} evidence={{ soldLabel: 'Sold — manager log', deliveryLabel: 'Not marked delivered — manager log', sourceStore: 'Fowlerville', sourcePeriod: '2026-08' }} />)
     const dialog = await openDialog()
     const choices = within(dialog).getByRole('group', { name: 'Change to' })
-    expect(within(choices).getAllByRole('radio').map((radio) => radio.closest('label')?.textContent)).toEqual(['Delivered', 'Keep', 'Wholesale', 'Transfer out'])
+    expect(within(choices).getAllByRole('radio').map((radio) => radio.closest('label')?.textContent)).toEqual(['Delivered', 'Keep', 'Wholesale', 'Transfer out', 'Other'])
     expect(dialog).toHaveTextContent('Disposition · recorded in Inventory Flow')
     expect(dialog).toHaveTextContent('Sold — manager log · Not marked delivered — manager log · Fowlerville · 2026-08')
     expect(dialog).toHaveTextContent('Deposit taken')
@@ -128,6 +128,21 @@ describe('DispositionDialog', () => {
     expect(save()).toBeDisabled()
     fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'Deal unwound after delivery' } })
     expect(save()).toBeEnabled()
+  })
+
+  it('requires operational details for Other and hides it when storage has not been migrated', async () => {
+    api.getDisposition.mockResolvedValue(detail({ otherEnabled: true }))
+    render(<Harness />)
+    let dialog = await openDialog()
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Other' }))
+    expect(within(dialog).getByRole('button', { name: 'Save disposition' })).toBeDisabled()
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Note (required)' }), { target: { value: 'Reserved for showroom display' } })
+    expect(within(dialog).getByRole('button', { name: 'Save disposition' })).toBeEnabled()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    api.getDisposition.mockResolvedValue(detail({ otherEnabled: false }))
+    dialog = await openDialog()
+    expect(within(dialog).queryByRole('radio', { name: 'Other' })).not.toBeInTheDocument()
   })
 
   it('saves the draft with the loaded version and reports the saved record', async () => {

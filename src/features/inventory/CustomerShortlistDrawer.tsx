@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CarFront, ChevronDown, ChevronUp, FileText, Heart, Pencil, Plus, RotateCw, Trash2, X } from 'lucide-react'
+import { CarFront, ChevronDown, ChevronRight, ChevronUp, FileText, Heart, Pencil, Plus, RotateCw, Trash2, X } from 'lucide-react'
 import { formatMoney } from './inventory-utils'
 import { TakeHomeSheet } from './TakeHomeSheet'
 import { formatNumber } from '../../lib/format'
@@ -37,11 +37,13 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
   const panelId = useId()
   const managementPanelId = useId()
   const writesBlocked = Boolean(management && (!management.readyForWrites || management.saving || management.pendingAction || management.accessRevoked))
+  const covered = modalOpen || Boolean(sheetSnapshot)
   const vehiclesByVin = useMemo(() => new Map(authorizedVehicles.map(vehicle => [vehicle.vin, vehicle])), [authorizedVehicles])
   const restoreManagementFocus = (mode: 'create' | 'manage') => window.requestAnimationFrame(() => (mode === 'create' ? newListRef : manageRef).current?.focus({ preventScroll: true }))
   const closeManagement = (mode: 'create' | 'manage', clearNewLabel = false) => {
     setManagementMode(null)
     setConfirmDelete(false)
+    setConfirmClear(false)
     if (clearNewLabel) setNewLabel('')
     restoreManagementFocus(mode)
   }
@@ -88,10 +90,13 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
     const vehicle = vehiclesByVin.get(entry.vin)
     return vehicle ? [vehicle] : []
   })
-  const dialog = expanded ? <section id={panelId} className="shortlist-drawer__dialog" ref={dialogRef} role="region" aria-labelledby={`${panelId}-title`} inert={modalOpen || Boolean(sheetSnapshot)} aria-hidden={modalOpen || Boolean(sheetSnapshot) ? true : undefined} tabIndex={-1}>
+  const clearControls = entries.length ? confirmClear ? <><button type="button" className="shortlist-drawer__clear is-danger" onClick={() => { onClear(); setConfirmClear(false) }} disabled={writesBlocked}>Confirm clear</button><button type="button" className="shortlist-drawer__clear" onClick={() => setConfirmClear(false)}>Cancel clear</button></> : <button type="button" className="shortlist-drawer__clear" onClick={() => setConfirmClear(true)} disabled={writesBlocked}><Trash2 size={16} aria-hidden="true" />Clear list</button> : null
+  // Keep opener geometry while covered: the vehicle workspace uses it to
+  // restore the exact saved row after the modal releases focus and inertness.
+  const dialog = expanded ? <section id={panelId} className="shortlist-drawer__dialog" ref={dialogRef} role="region" aria-labelledby={`${panelId}-title`} data-covered={covered || undefined} inert={covered} aria-hidden={covered ? true : undefined} tabIndex={-1}>
       <header className="shortlist-drawer__dialog-header">
-        <div><Heart size={18} aria-hidden="true" /><h2 id={`${panelId}-title`}>{management?.activeLabel ?? 'Customer shortlist'} <span>{entries.length}</span></h2></div>
-        <div>{entries.length ? confirmClear ? <><button type="button" className="shortlist-drawer__clear is-danger" onClick={() => { onClear(); setConfirmClear(false) }} disabled={writesBlocked}>Confirm clear</button><button type="button" className="shortlist-drawer__clear" onClick={() => setConfirmClear(false)}>Cancel clear</button></> : <button type="button" className="shortlist-drawer__clear" onClick={() => setConfirmClear(true)} disabled={writesBlocked}><Trash2 size={16} aria-hidden="true" />Clear list</button> : null}<button ref={closeRef} type="button" className="shortlist-drawer__close" onClick={() => closeShortlist(true)} aria-label="Close customer shortlist"><X size={18} aria-hidden="true" /></button></div>
+        <div><Heart size={18} aria-hidden="true" /><h2 id={`${panelId}-title`}>Saved vehicles <span>{entries.length}</span></h2></div>
+        <div>{!management ? clearControls : null}<button ref={closeRef} type="button" className="shortlist-drawer__close" onClick={() => closeShortlist(true)} aria-label="Close customer shortlist"><X size={18} aria-hidden="true" /></button></div>
       </header>
       <div className="shortlist-drawer__content" role="region" aria-label={management ? 'Customer saved lists' : 'Customer shortlist'}>
       {management ? <div className="shortlist-manager">
@@ -112,34 +117,38 @@ export function CustomerShortlistDrawer({ entries, onRemove, onClear, onSelectVe
             <label><span>Customer list name</span><input value={renameLabel} onChange={event => setRenameLabel(event.target.value)} maxLength={80} /></label>
             <p>Use initials or a nickname only. No contact information.</p>
             <div className="shortlist-manager__actions"><button type="submit" disabled={writesBlocked || !renameLabel.trim()}>Save name</button>{confirmDelete ? <><button type="button" className="is-danger" disabled={writesBlocked} onClick={() => { void management.deleteActiveList(); setConfirmDelete(false) }}>Confirm delete</button><button type="button" onClick={() => setConfirmDelete(false)}>Cancel delete</button></> : <button type="button" className="is-danger" disabled={writesBlocked} onClick={() => setConfirmDelete(true)}><Trash2 size={16} aria-hidden="true" />Delete list</button>}</div>
+            <div className="shortlist-manager__actions">{clearControls}</div>
           </form> : null}
         </div> : null}
         {management.error ? <div className="shortlist-manager__error" role="alert"><span>{management.error}</span><button type="button" onClick={management.retry}><RotateCw size={16} aria-hidden="true" />Retry</button></div> : null}
       </div> : null}
-      <div className="shortlist-drawer__intro">
-        {management && selectedVehicles.length ? <button ref={sheetButtonRef} type="button" onClick={() => setSheetSnapshot({ listId: management.activeListId, label: management.activeLabel, vehicles: [...selectedVehicles] })}><FileText size={16} aria-hidden="true" />Customer sheet ({selectedVehicles.length})</button> : null}
-        <p>{management ? <><span className="shortlist-manager__status" role="status">{management.saving ? 'Saving…' : management.pendingAction ? 'Needs retry' : management.loading ? 'Syncing…' : management.lastConfirmedAt ? 'Synced' : 'Not synced'}</span><span aria-hidden="true"> · </span></> : null}Confirm availability with the home store.</p>
-      </div>
       {entries.length ? <ul className="shortlist-drawer__vehicles">
         {entries.map(entry => { const currentVehicle = entry.available === false ? undefined : vehiclesByVin.get(entry.vin); const standouts = currentVehicle ? [...new Set([currentVehicle.engine, ...standoutEquipment(currentVehicle, 2).map(item => item.label)].filter((item): item is string => Boolean(item)))].slice(0, 2) : []
           const displayName = currentVehicle?.vehicleName || [entry.displayName, currentVehicle?.trim].filter(Boolean).join(' ')
           return <li key={entry.id} aria-label={`${displayName} saved vehicle`} className={`shortlist-drawer__vehicle${entry.available === false ? ' is-unavailable' : ''}`}>
-          <div className="shortlist-drawer__vehicle-summary">
+          <button type="button" className="shortlist-drawer__vehicle-summary" aria-label={entry.available === false ? `Saved vehicle ${entry.vin} is unavailable in current access` : `Open shortlisted ${displayName}, stock ${entry.stockNumber}`} disabled={entry.available === false} onClick={event => onSelectVehicle?.({ id: entry.id }, event.currentTarget)}>
             <span className="shortlist-drawer__photo">{entry.imageUrl ? <img src={entry.imageUrl} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" /> : <CarFront size={28} aria-hidden="true" />}</span>
-            <div className="shortlist-drawer__details"><strong>{displayName}</strong>{entry.available === false ? <span>Unavailable in current access</span> : <><span>Stock {entry.stockNumber}</span><b>{formatMoney(currentVehicle ? currentVehicle.price ?? null : entry.price)}{currentVehicle?.mileage != null ? <span className="shortlist-drawer__mileage">{formatNumber(currentVehicle.mileage)} mi</span> : null}</b>{standouts.length ? <span className="shortlist-drawer__standouts">{standouts.join(' · ')}</span> : entry.exteriorColor ? <span className="shortlist-drawer__standouts">{entry.exteriorColor}</span> : null}</>}</div>
-          </div>
-          <div className="shortlist-drawer__vehicle-actions"><button type="button" className="shortlist-drawer__open-action" aria-label={entry.available === false ? `Saved vehicle ${entry.vin} is unavailable in current access` : `Open shortlisted ${displayName}, stock ${entry.stockNumber}`} disabled={entry.available === false} onClick={event => onSelectVehicle?.({ id: entry.id }, event.currentTarget)}>Open</button><button type="button" className="shortlist-drawer__remove" disabled={writesBlocked} aria-label={`Remove ${entry.available === false ? entry.vin : entry.stockNumber} from list`} onClick={() => onRemove(entry.id)}><X size={16} aria-hidden="true" />Remove</button></div>
+            <span className="shortlist-drawer__details"><span className="shortlist-drawer__name"><strong>{displayName}</strong><ChevronRight size={16} aria-hidden="true" /></span>{entry.available === false ? <span>Unavailable in current access</span> : <><span>Stock {entry.stockNumber}</span><b>{formatMoney(currentVehicle ? currentVehicle.price ?? null : entry.price)}{currentVehicle?.mileage != null ? <span className="shortlist-drawer__mileage">{formatNumber(currentVehicle.mileage)} mi</span> : null}</b>{standouts.length ? <span className="shortlist-drawer__standouts">{standouts.join(' · ')}</span> : entry.exteriorColor ? <span className="shortlist-drawer__standouts">{entry.exteriorColor}</span> : null}</>}</span>
+          </button>
+          <button type="button" className="shortlist-drawer__remove" disabled={writesBlocked} title="Remove from list" aria-label={`Remove ${entry.available === false ? entry.vin : entry.stockNumber} from list`} onClick={() => onRemove(entry.id)}><X size={16} aria-hidden="true" /></button>
         </li>})}
       </ul> : <p className="shortlist-drawer__empty">Choose a list or create one, then use Save on a vehicle.</p>}
       </div>
+      <footer className="shortlist-drawer__intro">
+        {management && selectedVehicles.length ? <button ref={sheetButtonRef} type="button" onClick={() => setSheetSnapshot({ listId: management.activeListId, label: management.activeLabel, vehicles: [...selectedVehicles] })}><FileText size={16} aria-hidden="true" />Customer sheet ({selectedVehicles.length})</button> : null}
+        <p>{management ? <><span className="shortlist-manager__status" role="status">{management.saving ? 'Saving…' : management.pendingAction ? 'Needs retry' : management.loading ? 'Syncing…' : management.lastConfirmedAt ? 'Synced' : 'Not synced'}</span><span aria-hidden="true"> · </span></> : null}Confirm availability with the home store.</p>
+      </footer>
     </section> : null
-  return <>
-    <section className="shortlist-drawer" aria-label="Customer shortlist launcher">
-      <button ref={toggleRef} type="button" className="shortlist-drawer__toggle" aria-label={`${management?.activeLabel ?? 'Shortlist'} ${entries.length}`} aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(true)}>
-        <Heart size={18} aria-hidden="true" /><span>{management?.activeLabel ?? 'Shortlist'}</span><strong>{entries.length}</strong><ChevronUp size={18} aria-hidden="true" />
+  const floatingSurface = <>
+    <section className="shortlist-drawer" aria-label="Customer shortlist launcher" data-covered={covered || undefined} inert={covered} aria-hidden={covered ? true : undefined}>
+      <button ref={toggleRef} type="button" className="shortlist-drawer__toggle" aria-label={`Saved vehicles: ${management?.activeLabel ?? 'Shortlist'} (${entries.length})`} aria-expanded={expanded} aria-controls={panelId} onClick={() => expanded ? closeShortlist(true) : setExpanded(true)}>
+        <Heart size={18} aria-hidden="true" /><span>Saved<span className="shortlist-drawer__label-detail"> vehicles</span></span><strong>{entries.length}</strong><ChevronUp size={18} aria-hidden="true" />
       </button>
     </section>
-    {dialog && typeof document !== 'undefined' ? createPortal(dialog, document.body) : null}
+    {dialog}
+  </>
+  return <>
+    {typeof document !== 'undefined' ? createPortal(floatingSurface, document.body) : null}
     {sheetSnapshot && !management?.accessRevoked ? <TakeHomeSheet vehicles={sheetSnapshot.vehicles} listLabel={sheetSnapshot.label} onClose={() => setSheetSnapshot(null)} returnFocusRef={sheetButtonRef} /> : null}
   </>
 }

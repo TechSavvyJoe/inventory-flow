@@ -65,6 +65,10 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastConfirmedAt, setLastConfirmedAt] = useState<number | null>(null)
+  const [pendingSave, setPendingSave] = useState<{ vin: string; generation: number; namingListId: string | null } | null>(null)
+  const pendingSaveRef = useRef(pendingSave)
+  pendingSaveRef.current = pendingSave
+  const namingBusy = useRef(false)
   const generation = useRef(0)
   const writeVersion = useRef(0)
   const revoked = useRef(false)
@@ -102,6 +106,7 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
         revoked.current = true
         setLists([])
         setActiveListId(null)
+        setPendingSave(null)
       }
       setError(messageFor(cause))
     } finally {
@@ -117,6 +122,8 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
     initialReadConfirmed.current = false
     mutationToken.current = null
     pendingMutation.current = null
+    namingBusy.current = false
+    setPendingSave(null)
     abort.current?.abort()
     setLists([])
     setActiveListId(null)
@@ -138,6 +145,8 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
       initialReadConfirmed.current = false
       mutationToken.current = null
       pendingMutation.current = null
+      pendingSaveRef.current = null
+      namingBusy.current = false
       mutationBusy.current = false
     }
   }, [accessKey, enabled, refresh])
@@ -150,6 +159,8 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
     initialReadConfirmed.current = false
     mutationToken.current = null
     pendingMutation.current = null
+    namingBusy.current = false
+    setPendingSave(null)
     abort.current?.abort()
     setLists([])
     setActiveListId(null)
@@ -209,6 +220,7 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
         revoked.current = true
         setLists([])
         setActiveListId(null)
+        setPendingSave(null)
       }
       return null
     } finally {
@@ -221,27 +233,69 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
   }, [accessKey, enabled, ownerId, refresh, role, store])
 
   const createList = useCallback(async (rawLabel: string) => {
+    if (!viewCurrent || !initialReadConfirmed.current || revoked.current || mutationBusy.current || pendingMutation.current) return false
     const label = rawLabel.trim()
     const validation = savedListLabelError(label)
     if (validation) { setError(validation); return false }
+    const existing = listsRef.current.find(list => list.label.trim().toLocaleLowerCase() === label.toLocaleLowerCase())
+    if (existing) { setActiveListId(existing.id); return true }
     return Boolean(await applyMutation({ action: 'create', label }))
+  }, [applyMutation, viewCurrent])
+
+  const addToList = useCallback(async (list: SavedVehicleList, vin: string) => {
+    if (list.items.some(item => item.vin === vin)) { setActiveListId(list.id); return true }
+    return Boolean(await applyMutation({ action: 'add', listId: list.id, expectedRevision: list.revision, vin }))
   }, [applyMutation])
 
   const addAsync = useCallback(async (vehicle: InventoryVehicle) => {
-    const actionGeneration = generation.current
-    let list = activeList
-    if (!list) {
-      const created = await applyMutation(
-        { action: 'create', label: DEFAULT_LABEL },
-        { continuation: { type: 'add-after-create', vin: vehicle.vin } },
-      )
-      if (actionGeneration !== generation.current || !created || 'deleted' in created) return
-      list = created
+    if (!viewCurrent || !initialReadConfirmed.current || revoked.current || mutationBusy.current || pendingMutation.current || namingBusy.current) return
+    if (!vehiclesByVin.has(vehicle.vin)) return
+    if (!activeList || activeList.label === DEFAULT_LABEL) {
+      // First Save asks for a name. Legacy generic lists are renamed in place,
+      // preserving their vehicles instead of creating another default list.
+      setPendingSave({ vin: vehicle.vin, generation: generation.current, namingListId: activeList?.id ?? null })
+      return
     }
-    if (actionGeneration !== generation.current) return
-    if (list.items.some(item => item.vin === vehicle.vin)) return
-    await applyMutation({ action: 'add', listId: list.id, expectedRevision: list.revision, vin: vehicle.vin })
-  }, [activeList, applyMutation])
+    await addToList(activeList, vehicle.vin)
+  }, [activeList, addToList, vehiclesByVin, viewCurrent])
+
+  const savePending = useCallback(async (choice: { label: string } | { listId: string }) => {
+    const pending = pendingSaveRef.current
+    if (!pending || pending.generation !== generation.current || namingBusy.current || revoked.current || !vehiclesByVin.has(pending.vin)) return false
+    namingBusy.current = true
+    try {
+      let list: SavedVehicleList | undefined
+      if ('listId' in choice) {
+        list = listsRef.current.find(candidate => candidate.id === choice.listId)
+        if (list?.id === pending.namingListId || list?.label === DEFAULT_LABEL) {
+          setError('Name this customer list before saving the vehicle, or choose another named list.')
+          return false
+        }
+      }
+      else {
+        const label = choice.label.trim()
+        const validation = savedListLabelError(label)
+        if (validation) { setError(validation); return false }
+        // Reuse a same-named customer list rather than add a confusing duplicate.
+        list = listsRef.current.find(candidate => candidate.label.trim().toLocaleLowerCase() === label.toLocaleLowerCase() && candidate.id !== pending.namingListId)
+        if (!list) {
+          const current = listsRef.current.find(candidate => candidate.id === pending.namingListId)
+          const input = current
+            ? { action: 'rename' as const, listId: current.id, expectedRevision: current.revision, label }
+            : { action: 'create' as const, label }
+          const result = await applyMutation(input, { continuation: { type: 'add-after-create', vin: pending.vin } })
+          if (!result || 'deleted' in result) return false
+          list = result
+        }
+      }
+      if (!list || pending.generation !== generation.current || revoked.current) return false
+      const saved = await addToList(list, pending.vin)
+      if (saved && pending.generation === generation.current) setPendingSave(null)
+      return saved
+    } finally {
+      if (pending.generation === generation.current) namingBusy.current = false
+    }
+  }, [addToList, applyMutation, vehiclesByVin])
   const removeAsync = useCallback(async (vin: string) => {
     if (!activeList || !activeList.items.some(item => item.vin === vin)) return
     await applyMutation({ action: 'remove', listId: activeList.id, expectedRevision: activeList.revision, vin })
@@ -291,6 +345,12 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
       pendingAction: viewCurrent && pendingMutation.current?.generation === generation.current,
       accessRevoked: revoked.current,
       readyForWrites: viewCurrent && initialReadConfirmed.current,
+      pendingSave: viewCurrent && pendingSave?.generation === generation.current && vehiclesByVin.has(pendingSave.vin)
+        ? { vin: pendingSave.vin, displayName: entryFor(vehiclesByVin.get(pendingSave.vin)!, '').displayName,
+          stockNumber: vehiclesByVin.get(pendingSave.vin)!.stockNumber, namingExistingList: Boolean(pendingSave.namingListId), namingListId: pendingSave.namingListId } : null,
+      savePendingToNamedList: label => savePending({ label }),
+      savePendingToExistingList: listId => savePending({ listId }),
+      cancelPendingSave: () => { if (!mutationBusy.current && !namingBusy.current) setPendingSave(null) },
       selectList: setActiveListId,
       createList,
       renameActiveList: async (rawLabel) => {
@@ -310,13 +370,15 @@ export function useSyncedCustomerLists({ enabled: requestedEnabled, ownerId, rol
           const result = await applyMutation(pending.input, { retryPending: true, continuation: pending.continuation })
           if (!result || 'deleted' in result || generation.current !== pending.generation) return
           if (pending.continuation?.type === 'add-after-create' && !result.items.some(item => item.vin === pending.continuation!.vin)) {
-            await applyMutation({
+            const added = await applyMutation({
               action: 'add',
               listId: result.id,
               expectedRevision: result.revision,
               vin: pending.continuation.vin,
             })
+            if (!added || 'deleted' in added) return
           }
+          if (!pendingMutation.current && generation.current === pending.generation && !revoked.current) setPendingSave(null)
         })()
         else void refresh()
       },

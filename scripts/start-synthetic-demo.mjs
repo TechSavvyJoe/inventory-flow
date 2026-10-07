@@ -6,6 +6,7 @@ import {
   SYNTHETIC_REPORT_DATE,
 } from '../fixtures/synthetic-release.mjs'
 import { createSyntheticMembershipAdmin } from '../fixtures/synthetic-membership-admin.mjs'
+import { createSyntheticPlatformAdmin } from '../fixtures/synthetic-platform-admin.mjs'
 import { startInventoryServer } from '../server/index.mjs'
 import { withSyntheticIllustrations, withSyntheticVehicleIllustration } from '../fixtures/synthetic-photos.mjs'
 
@@ -27,6 +28,7 @@ const app = startInventoryServer({
   now: fixedNow,
   releaseLoader: () => buildSyntheticRelease({ includeDemoChanges: true }),
   adminDirectory: createSyntheticMembershipAdmin(),
+  platformAdmin: createSyntheticPlatformAdmin({showcase:true}),
 })
 
 // This launcher never reads dealership data. Keep illustrative assets here,

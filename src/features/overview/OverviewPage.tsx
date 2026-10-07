@@ -136,8 +136,8 @@ const EXCEPTION_COPY: Record<OverviewExceptionKind, { label: string; why: (thres
 }
 
 /** Store-card disposition counts, most decision-relevant first (OVERVIEW_SPEC §3). */
-const CARD_DISPOSITIONS: AppDispositionCode[] = ['sold_pending', 'delivered', 'wholesale', 'transfer_out']
-const TABLE_DISPOSITIONS: Array<AppDispositionCode | 'none'> = ['sold_pending', 'delivered', 'wholesale', 'transfer_out', 'keep', 'none']
+const CARD_DISPOSITIONS: AppDispositionCode[] = ['sold_pending', 'delivered', 'wholesale', 'transfer_out', 'other']
+const TABLE_DISPOSITIONS: Array<AppDispositionCode | 'none'> = ['sold_pending', 'delivered', 'wholesale', 'transfer_out', 'other', 'keep', 'none']
 const DISPOSITION_ROWS = 8
 
 const UNACCOUNTED_TEXT: Record<NonNullable<OverviewVehicleFacts['unaccounted']>['reason'], string> = {

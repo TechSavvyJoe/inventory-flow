@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 import type { VehicleIssueContext } from '../issues/issue-model';
 import type { DispositionContext } from '../overview/disposition-model';
 import type { VehicleDetailLoadState } from '../../components/VehicleDetailStatus';
-import type { AppDisposition, DealerMailEvidenceMessage, DealerMailHistoryRecord, OverviewVehicleFacts, ServiceReadiness, ServiceReadinessStatus, StoreName, UserRole } from "../../types";
+import type { ManualHold, InventoryDecision, AppDisposition, DealerMailEvidenceMessage, DealerMailHistoryRecord, OverviewVehicleFacts, ServiceReadiness, ServiceReadinessStatus, StoreName, UserRole } from "../../types";
 import type { OverviewInventorySelection } from "../overview/overview-links";
 
 export type InventoryScope = "home" | "group";
@@ -487,6 +487,8 @@ export interface InventoryVehicle {
   managerDisposition?: ManagerDispositionSignal | null;
   /** The disposition recorded in Inventory Flow, beside (never replacing) the imported manager log. */
   appDisposition?: AppDisposition | null;
+  manualHold?: ManualHold;
+  inventoryDecision?: InventoryDecision;
   dealerMail: DealerMailHoldSignal;
   location: VehicleLocationSignal;
   movement?: VehicleMovementSignal | null;
@@ -521,6 +523,7 @@ export interface InventoryFilters {
   dealerMail: InventoryDealerMailFilter;
   movement: InventoryMovementFilter;
   serviceReadiness?: "all" | ServiceReadinessStatus;
+  disposition?: "all" | "none" | "conflict" | AppDisposition["code"];
   minimumPrice?: number;
   maximumPrice?: number;
   maximumMileage?: number;

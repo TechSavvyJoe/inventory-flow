@@ -39,6 +39,13 @@ describe('AppShell account and update controls', () => {
     vi.clearAllMocks()
   })
 
+  it('keeps the product wordmark independent of the configured dealership account', () => {
+    render(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory</p></AppShell></MemoryRouter>)
+    expect(screen.getAllByText('Inventory Flow', { exact: true }).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Maxey', { exact: true })).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Working location' })).toHaveValue('Howell')
+  })
+
   it('counts only the work this store and role can take in the Action center badge', () => {
     const context = useAppDataMock()
     const hold = { id: 'synthetic-hold', type: 'hold_alert', severity: 'warning', status: 'open', priority: 'high', label: 'Synthetic hold alert', vin: 'TESTDATAHWELL0001', store: 'Howell', actionability: 'actionable', allowedActions: [], events: [] }

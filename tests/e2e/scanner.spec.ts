@@ -34,7 +34,20 @@ test('scanner is mobile-only and finds vehicles despite conflicting filters', as
   await expect(dialog).not.toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Search inventory' })).toHaveValue('TESTDATAHWELL0002')
   await expect(page.getByText('Showing 1–1 of 1')).toBeVisible()
-  await page.getByRole('button', { name: 'Save DEMO-H02 to shortlist', exact: true }).click()
+  // Other specs share the synthetic server and may already have saved this
+  // vehicle. Reset only this entry so this flow always exercises a real save.
+  const save = page.getByRole('button', { name: 'Save DEMO-H02 to shortlist', exact: true })
+  const remove = page.getByRole('button', { name: 'Remove DEMO-H02 from shortlist', exact: true })
+  await expect(save.or(remove)).toBeVisible()
+  if (await remove.isVisible()) await remove.click()
+  await save.click()
+  const naming = page.getByRole('dialog', { name: /Save to a customer list|Name this customer list/ })
+  await expect(naming.or(remove)).toBeVisible()
+  if (await naming.isVisible()) {
+    await naming.getByRole('textbox', { name: 'List name', exact: true }).fill('AB · Scanner demo')
+    await naming.getByRole('button', { name: 'Save vehicle', exact: true }).click()
+    await expect(naming).toBeHidden()
+  }
   await expect(page.getByRole('button', { name: 'Remove DEMO-H02 from shortlist', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await trigger.click()
   await expect(dialog.getByRole('textbox', { name: 'VIN or stock number' })).toHaveCount(0)

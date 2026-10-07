@@ -98,7 +98,7 @@ export function FlowBrandLockup({
       <img src="/brand-kit/inventory-flow-icon.svg" alt="" className="ifx-brand-lockup__mark" />
       <span className="ifx-brand-lockup__type">
         <strong>{productLabel}</strong>
-        {tenantLabel ? <small>{tenantLabel}</small> : <small>Automotive operations</small>}
+        {tenantLabel ? <small>{tenantLabel}</small> : <small>Dealer tools</small>}
       </span>
     </div>
   );

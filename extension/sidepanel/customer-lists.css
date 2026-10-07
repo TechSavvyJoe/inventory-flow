@@ -16,3 +16,4 @@
 .customer-list-vehicle small { color: var(--ink-2); font-size: var(--t-label); }
 .customer-lists-button:hover, .customer-list-vehicle:hover { background: var(--blue-tint); }
 .customer-lists-button:active, .customer-list-vehicle:active { transform: translateY(var(--scan-pressed-offset)); }
+.sheet[data-kind="save-list"] { top: auto; height: auto; max-height: calc(100% - var(--control-target) - var(--safe-top)); border: var(--scan-rule) solid var(--line); border-radius: var(--radius-control) var(--radius-control) 0 0; }

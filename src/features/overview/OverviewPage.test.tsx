@@ -391,7 +391,7 @@ function withDispositions(role: UserRole): BootstrapData {
   lincoln.appDisposition = disposition(lincoln.vin, 'Lincoln', 'wholesale', manages('Lincoln'))
   const overview = data.overview!
   for (const entry of overview.stores) {
-    entry.dispositions = { keep: 0, sold_pending: entry.store === 'Howell' ? 1 : 0, delivered: 0, wholesale: entry.store === 'Lincoln' ? 1 : 0, transfer_out: 0, none: entry.store === 'Howell' ? 2 : 0 }
+    entry.dispositions = { keep: 0, sold_pending: entry.store === 'Howell' ? 1 : 0, delivered: 0, wholesale: entry.store === 'Lincoln' ? 1 : 0, transfer_out: 0, other: 0, none: entry.store === 'Howell' ? 2 : 0 }
   }
   overview.vehicleFacts[local.vin].disposition = 'sold_pending'
   overview.vehicleFacts[lincoln.vin].disposition = 'wholesale'

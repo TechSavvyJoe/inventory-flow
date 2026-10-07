@@ -40,7 +40,7 @@ const EXCEPTION_KINDS = [
   'hold_past_expected', 'identity_review', 'records_incomplete', 'service_date_order',
   'listed_but_delivered', 'delivered_move_no_disposition',
 ]
-const DISPOSITION_KEYS = ['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out', 'none']
+const DISPOSITION_KEYS = ['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out', 'other', 'none']
 const CANCELED_TRANSFER_STATES = new Set(['declined', 'canceled'])
 const EXCEPTION_VIN_LIMIT = 50
 const AGED_WAITING_LIMIT = 100

@@ -75,7 +75,7 @@ describe('take-home sheet', () => {
     await waitFor(() => expect(share).toHaveBeenCalledOnce());
     const file = share.mock.calls[0][0].files[0];
     expect(file.type).toBe('application/pdf');
-    expect(file.name).toBe('bob-maxey-vehicle-comparison.pdf');
+    expect(file.name).toBe('inventory-flow-vehicle-comparison.pdf');
     fireEvent.change(screen.getByRole('combobox', { name:'Format' }), { target:{ value:'detailed' } });
     expect(screen.queryByRole('article', { name:/Vehicle comparison/ })).not.toBeInTheDocument();
     expect(screen.getByText('Private customer nickname', { exact:true })).toBeVisible();

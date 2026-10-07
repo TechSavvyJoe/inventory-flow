@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { STORE_NAMES } from './constants.mjs'
+import { employeeNoteHasContactInformation } from './employee-note-validation.mjs'
 import { WorkflowError } from './workflow.mjs'
 
 /**
@@ -10,7 +11,7 @@ import { WorkflowError } from './workflow.mjs'
  * creates one. A delivered disposition never hides a vehicle; only sources do.
  */
 
-export const DISPOSITION_CODES = Object.freeze(['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out'])
+export const DISPOSITION_CODES = Object.freeze(['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out', 'other'])
 export const DISPOSITION_EVENT_COLUMNS = Object.freeze([
   'id', 'vin', 'version', 'disposition', 'effective_date', 'destination_store', 'note',
   'updated_at', 'actor', 'actor_user_id', 'actor_role', 'store_id', 'input_hash', 'idempotency_key',
@@ -20,14 +21,15 @@ export const DISPOSITION_EVENT_COLUMNS = Object.freeze([
 // never a literal null key). Delivered and wholesale close a unit: the only
 // way back is a correction to Keep, which requires a note.
 export const DISPOSITION_TRANSITIONS = Object.freeze({
-  none: Object.freeze(['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out']),
-  keep: Object.freeze(['sold_pending', 'delivered', 'wholesale', 'transfer_out']),
+  none: Object.freeze(['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out', 'other']),
+  keep: Object.freeze(['sold_pending', 'delivered', 'wholesale', 'transfer_out', 'other']),
   // keep = the deal fell through; wholesale / transfer_out = the deal
   // collapsed and the unit was re-dispositioned.
-  sold_pending: Object.freeze(['delivered', 'keep', 'wholesale', 'transfer_out']),
+  sold_pending: Object.freeze(['delivered', 'keep', 'wholesale', 'transfer_out', 'other']),
   delivered: Object.freeze(['keep']),
   wholesale: Object.freeze(['keep']),
-  transfer_out: Object.freeze(['keep', 'sold_pending']),
+  transfer_out: Object.freeze(['keep', 'sold_pending', 'other']),
+  other: Object.freeze(['keep', 'sold_pending', 'delivered', 'wholesale', 'transfer_out', 'other']),
 })
 
 export const DISPOSITION_NOTE_LIMIT = 500
@@ -194,6 +196,9 @@ export function buildDispositionEvent(source, rows, input, context, { now, today
   }
   const note = input.note?.trim() || null
   if (note) {
+    if (employeeNoteHasContactInformation(note)) {
+      throw new WorkflowError('Keep contact information in the CRM, not in disposition notes.', { code: 'INVALID_DISPOSITION_NOTE' })
+    }
     const evidence = holdEvidenceTokens(source)
     // Every note token is compared: the reason-text allowlist never applies here.
     if (tokens(note).some((token) => evidence.has(token))) {
@@ -210,8 +215,8 @@ export function buildDispositionEvent(source, rows, input, context, { now, today
       code: 'INVALID_DISPOSITION_TRANSITION', details: { from, to: disposition, allowed: [...allowed] },
     })
   }
-  if (CORRECTIONS.has(from) && (!note || note.length < 3)) {
-    throw new WorkflowError('Explain the correction in a note.', { code: 'INVALID_DISPOSITION_NOTE' })
+  if ((CORRECTIONS.has(from) || disposition === 'other') && (!note || note.length < 3)) {
+    throw new WorkflowError(disposition === 'other' ? 'Explain the Other disposition in a note.' : 'Explain the correction in a note.', { code: 'INVALID_DISPOSITION_NOTE' })
   }
   return {
     created: true,

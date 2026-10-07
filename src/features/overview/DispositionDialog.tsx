@@ -100,8 +100,8 @@ export function DispositionDialog({ vehicle, disposition, evidence, role, store,
 
   const current = detail ?? disposition ?? null
   const canManage = Boolean(detail?.canManage)
-  const options = allowedDispositions(current?.code)
-  const correcting = choice === 'keep' && isCorrection(current?.code)
+  const options = allowedDispositions(current?.code).filter(code => code !== 'other' || detail?.otherEnabled !== false)
+  const correcting = (choice === 'keep' && isCorrection(current?.code)) || choice === 'other'
   const needsDate = dateRequired(choice)
   const destinations = STORE_NAMES.filter((candidate) => candidate !== current?.ownerStore)
   const logLine = managerLogLine(evidence)
@@ -213,7 +213,7 @@ export function DispositionDialog({ vehicle, disposition, evidence, role, store,
                 </div>
               ) : null}
               <label className="disposition-field">
-                <span>Note{correcting ? ' (required for a correction)' : ' (optional)'}</span>
+                <span>Note{choice === 'other' ? ' (required)' : correcting ? ' (required for a correction)' : ' (optional)'}</span>
                 <textarea
                   value={note}
                   maxLength={NOTE_LIMIT}
@@ -224,7 +224,7 @@ export function DispositionDialog({ vehicle, disposition, evidence, role, store,
                   onChange={(event) => { setNote(event.target.value); setNoteError('') }}
                 />
               </label>
-              <p id={noteHelpId} className="disposition-muted">No customer names. Notes are visible to sales and managers. {note.length}/{NOTE_LIMIT}</p>
+              <p id={noteHelpId} className="disposition-muted">Use operational details, without customer contact information. Notes are visible to sales and managers. {note.length}/{NOTE_LIMIT}</p>
               {noteError ? <p id={noteErrorId} className="disposition-field-error" role="alert">{noteError}</p> : null}
               <div className="disposition-actions">
                 <button type="submit" className="disposition-button disposition-button--primary"

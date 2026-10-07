@@ -1,3 +1,4 @@
+import { ManualHoldDialog } from './ManualHoldDialog';
 import { CustomerSummary } from '../sales/CustomerSummary';
 import { VehicleIssues, VehicleIssuesSummary } from '../issues/VehicleIssues';
 import { IssueReportDialog } from '../issues/IssueReportDialog';
@@ -671,6 +672,8 @@ export function VehicleWorkspace({
   const [activeTarget, setActiveTarget] = useState<WorkspaceSectionId>(initialTab);
   const [takeHomeOpen, setTakeHomeOpen] = useState(false);
   const [issueReportOpen, setIssueReportOpen] = useState(false);
+  const [manualHoldOpen, setManualHoldOpen] = useState(false);
+  const manualHoldOpenerRef = useRef<HTMLButtonElement>(null);
   const [dispositionOpen, setDispositionOpen] = useState(false);
   const [dispositionStatus, setDispositionStatus] = useState("");
   const dispositionOpenerRef = useRef<HTMLButtonElement>(null);
@@ -731,7 +734,7 @@ export function VehicleWorkspace({
       ? `${vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"} · ${formatDate(vehicle.dealerMail.loaner.serviceDate)}`
       : vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"
     : null;
-  const holdLabel = !holdCurrent ? (vehicle.dealerMail.lastKnownActiveHold ? "Last verified hold" : "Hold status unverified")
+  const holdLabel = vehicle.manualHold?.state === "active" ? "Manual hold" : !holdCurrent ? (vehicle.dealerMail.lastKnownActiveHold ? "Last verified hold" : "Hold status unverified")
     : loanerLabel
       ? loanerLabel
     : vehicle.dealerMail.hasActiveHold === true
@@ -916,7 +919,10 @@ export function VehicleWorkspace({
               <section className="vdp-focus-operations" aria-label="Vehicle operational summary">
                 <dl>
                   <Fact label="Location"><strong>{currentLocation.label}</strong>{vehicle.location.conflict ? <small>Location conflict — review needed</small> : null}</Fact>
-                  <Fact label="Hold status"><strong>{loanerLabel || (holdCurrent && vehicle.dealerMail.hasActiveHold ? "Held" : holdLabel)}</strong>{vehicle.dealerMail.loaner?.rawAlert && loanerLabel ? <small>{vehicle.dealerMail.loaner.rawAlert}</small> : null}{primaryHold?.salesperson || primaryHold?.expectedDeliveryDate || holdCount > 1 ? <small className="vdp-focus-hold-context">{[primaryHold?.salesperson, primaryHold?.expectedDeliveryDate ? `Expected ${formatDate(primaryHold.expectedDeliveryDate)}` : null, holdCount > 1 ? `${holdCount - 1} backup ${holdCount === 2 ? "hold" : "holds"}` : null].filter(Boolean).join(" · ")}</small> : null}</Fact>
+                  {vehicle.manualHold?.state === "active" ? <>
+                    <Fact label="Manual hold" className="vdp-focus-source-hold-fact"><strong>Active · Inventory Flow</strong>{canViewHoldEvidence && (vehicle.manualHold.customerLabel || vehicle.manualHold.expectedDeliveryDate) ? <small className="vdp-focus-hold-context">{[vehicle.manualHold.customerLabel, vehicle.manualHold.expectedDeliveryDate ? `Expected ${formatDate(vehicle.manualHold.expectedDeliveryDate)}` : null].filter(Boolean).join(" · ")}</small> : null}</Fact>
+                    <Fact label="DealerMail" className="vdp-focus-source-hold-fact"><strong>{loanerLabel || (holdCurrent && vehicle.dealerMail.hasActiveHold ? "Held" : vehicle.dealerMail.conciseState || "Hold status not verified")}</strong>{vehicle.dealerMail.loaner?.rawAlert && loanerLabel ? <small>{vehicle.dealerMail.loaner.rawAlert}</small> : null}{primaryHold?.salesperson || primaryHold?.expectedDeliveryDate || holdCount > 1 ? <small className="vdp-focus-hold-context">{[primaryHold?.salesperson, primaryHold?.expectedDeliveryDate ? `Expected ${formatDate(primaryHold.expectedDeliveryDate)}` : null, holdCount > 1 ? `${holdCount - 1} backup ${holdCount === 2 ? "hold" : "holds"}` : null].filter(Boolean).join(" · ")}</small> : null}</Fact>
+                  </> : <Fact label="Hold status"><strong>{loanerLabel || (holdCurrent && vehicle.dealerMail.hasActiveHold ? "Held" : holdLabel)}</strong>{vehicle.dealerMail.loaner?.rawAlert && loanerLabel ? <small>{vehicle.dealerMail.loaner.rawAlert}</small> : null}{primaryHold?.salesperson || primaryHold?.expectedDeliveryDate || holdCount > 1 ? <small className="vdp-focus-hold-context">{[primaryHold?.salesperson, primaryHold?.expectedDeliveryDate ? `Expected ${formatDate(primaryHold.expectedDeliveryDate)}` : null, holdCount > 1 ? `${holdCount - 1} backup ${holdCount === 2 ? "hold" : "holds"}` : null].filter(Boolean).join(" · ")}</small> : null}</Fact>}
                   <Fact label="Service" className="vdp-focus-service-fact"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} compact /></Fact>
                   {appDisposition ? <Fact label="Disposition" className="vdp-focus-disposition-fact">{dispositionStorageMissing
                     ? <><strong>Not available</strong><small>Disposition storage is not enabled yet.</small></>
@@ -929,9 +935,11 @@ export function VehicleWorkspace({
                   {serviceStatus === "serviced" ? <WorkspaceLink to={serviceHref} preserveOrigin>Service history</WorkspaceLink> : null}
                   <button type="button" onClick={() => openAndFocusSection("hold")} data-action="hold-details"><MessageSquare size={18} aria-hidden="true" />Hold status</button>
                   {serviceStatus === "needs_service" ? <WorkspaceLink to={serviceHref + "&action=serviced"} preserveOrigin>Mark Ready</WorkspaceLink> : null}
+                  {dispositionContext && vehicle.manualHold?.enabled ? <button type="button" ref={manualHoldOpenerRef} onClick={() => setManualHoldOpen(true)}><Tag size={18} aria-hidden="true" />{vehicle.manualHold.canManage ? vehicle.manualHold.state === 'active' ? 'Manage manual hold' : 'Place manual hold' : 'View manual hold'}</button> : null}
                   {dispositionAction ? <button type="button" ref={dispositionOpenerRef} onClick={() => { setDispositionStatus(""); setDispositionOpen(true); }} data-action="disposition"><ClipboardCheck size={18} aria-hidden="true" />{dispositionAction}</button> : null}
                 </div>
                 {dispositionStatus ? <p className="vdp-focus-next-action" role="status">{dispositionStatus}</p> : null}
+                {vehicle.inventoryDecision?.comparison === 'conflict' ? <p className="vdp-focus-next-action" role="status"><strong>Records disagree</strong> · Review manual and imported hold / disposition evidence.</p> : null}
                 {hasMovement ? <div className="vdp-focus-next-action"><strong className={nextStepStatus?.tone === "danger" ? "vdp-focus-next-action__overdue" : undefined}>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div> : null}
               </section>
               <div className="vdp-focus-vehicle-context">
@@ -1022,6 +1030,7 @@ export function VehicleWorkspace({
           </WorkspacePanel>
           <WorkspacePanel id="hold" label="Holds & moves" active={activePage === "hold"}>
             <div className="vdp-focus-section-heading"><h3>Holds &amp; moves</h3><div className="vdp-focus-actions">{movementAction}</div></div>
+            {vehicle.manualHold ? <section className="vdp-focus-manual-summary" aria-label="Manual inventory controls"><div><strong>{vehicle.manualHold.state === 'active' ? 'Manual hold active' : vehicle.manualHold.state === 'released' ? 'Manual hold released' : 'No manual hold recorded'}</strong><span>{dispositionSummary(appDisposition)} · Inventory Flow</span></div><div className="vdp-focus-actions">{dispositionContext && vehicle.manualHold.enabled ? <button type="button" onClick={event => { manualHoldOpenerRef.current = event.currentTarget; setManualHoldOpen(true); }}>{vehicle.manualHold.canManage ? vehicle.manualHold.state === 'active' ? 'Manage manual hold' : 'Place manual hold' : 'View manual hold'}</button> : null}{dispositionAction ? <button type="button" onClick={event => { dispositionOpenerRef.current = event.currentTarget; setDispositionOpen(true); }}>{dispositionAction}</button> : null}</div></section> : null}
             <div className="vdp-focus-hold-grid inventory-workspace-hold-center" data-hold-state={vehicle.holdEvidence?.length ? "held" : "no-evidence"}>
               <div className="vdp-focus-movement-panel">
                 <section id="inventory-section-movement" tabIndex={-1} aria-labelledby="inventory-movement-heading" className="vdp-focus-movement"><h3 id="inventory-movement-heading">Location &amp; movement</h3><MovementDetails vehicle={vehicle} status={nextStepStatus} /></section>
@@ -1035,7 +1044,7 @@ export function VehicleWorkspace({
           {issueContext ? <WorkspacePanel id="issues" label="Issues" active={activePage === 'issues'}><VehicleIssues key={issueAccessKey} issues={vehicleIssues} context={issueContext} canReport={canReportIssue} onReport={reportIssue} onSaved={issueSaved} initialIssueId={createdIssueId} /></WorkspacePanel> : null}
         </div>
         <footer className="vdp-focus-footer">
-          <span>Inventory Flow <strong>MAXEY</strong></span>
+          <span>Inventory Flow</span>
           <div role="toolbar" aria-label="Vehicle actions">
             {listingUrl ? onOpenListing ? <button type="button" onClick={() => onOpenListing(vehicle)} data-action="open-listing"><Globe2 size={18} aria-hidden="true" />Listing</button>
               : <a href={listingUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" data-action="open-listing" data-read-only="true"><Globe2 size={18} aria-hidden="true" />Listing</a> : null}
@@ -1054,6 +1063,11 @@ export function VehicleWorkspace({
         </footer>
       </aside>
       {takeHomeOpen ? <TakeHomeSheet vehicle={vehicle} onClose={() => setTakeHomeOpen(false)} returnFocusRef={takeHomeOpenerRef} /> : null}
+      {manualHoldOpen && dispositionContext ? <ManualHoldDialog
+        key={`${dispositionContext.role}:${dispositionContext.homeStore}:${issueContext?.currentUser}:${vehicle.vin}`}
+        vehicle={vehicle} role={dispositionContext.role} store={dispositionContext.homeStore}
+        returnFocusRef={manualHoldOpenerRef} onClose={() => setManualHoldOpen(false)}
+        onSaved={async saved => { setManualHoldOpen(false); setDispositionStatus(saved.state === 'active' ? 'Manual hold recorded.' : 'Manual hold released.'); await dispositionContext.onChanged(); }} /> : null}
       {dispositionOpen && dispositionContext ? <DispositionDialog
         key={`${dispositionContext.role}:${dispositionContext.homeStore}:${vehicle.vin}`}
         vehicle={{ vin: vehicle.vin, name: displayName, stockNumber: vehicle.stockNumber }}

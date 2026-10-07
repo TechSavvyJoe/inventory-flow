@@ -36,7 +36,7 @@ async function preparePdf() {
   pdf = null
   exportButtons.forEach(button => { button.disabled = true })
   document.getElementById('print').disabled = layout === 'comparison'
-  document.title = layout === 'comparison' ? 'Bob Maxey vehicle comparison' : detailedTitle
+  document.title = layout === 'comparison' ? 'Inventory Flow vehicle comparison' : detailedTitle
   document.getElementById('toolbar-title').textContent = document.title
   stage.replaceChildren(...(layout === 'comparison' ? [el('p', {text:'Preparing comparison sheet…'})] : activeDocument.models.map(model => renderTakeHome(model))))
   const status = document.querySelector('[data-share-status]')

@@ -26,6 +26,8 @@ const DML_FILES = [
   '0003_transport_assignment_identity.sql',
   '0005_manager_disposition_audit.sql',
   '0010_integration_audit_operations.sql',
+  // 0015 rebuilds dispositions and copies their ledger rows before dropping the old table.
+  '0015_manual_inventory_controls.sql',
 ]
 const insertFor = (file: string) => `INSERT INTO d1_migrations (name) VALUES ('${file}');`
 
@@ -228,6 +230,7 @@ describe('read-only D1 schema verifier', () => {
     expect(unattested.migrations.filter((migration) => migration.dataReviewRequired).map((migration) => migration.file)).toEqual(DML_FILES)
     expect(migrationReport(unattested, '0002').dataReviewReasons).toEqual(['INSERT statement'])
     expect(migrationReport(unattested, '0003').dataReviewReasons).toEqual(['UPDATE statement'])
+    expect(migrationReport(unattested, '0015').dataReviewReasons).toContain('INSERT statement')
     // 0005 rebuilds the audit table with an identical definition: only data can show it ran.
     expect(migrationReport(unattested, '0005')).toMatchObject({ status: 'APPLIED', schemaIndistinguishable: true })
     expect(migrationReport(unattested, '0009')).toMatchObject({ dataReviewRequired: false, schemaIndistinguishable: false })

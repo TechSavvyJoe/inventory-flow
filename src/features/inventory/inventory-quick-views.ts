@@ -16,7 +16,7 @@ function inTransit(vehicle: InventoryVehicle): boolean {
 
 function hasHold(vehicle: InventoryVehicle): boolean {
   const hold = vehicle.dealerMail
-  return hold.lastKnownActiveHold === true || (hold.dataState === 'current' && hold.hasActiveHold === true)
+  return vehicle.manualHold?.state === 'active' || hold.lastKnownActiveHold === true || (hold.dataState === 'current' && hold.hasActiveHold === true)
 }
 
 /** Home inventory includes its owned units and positively located visitors. */
