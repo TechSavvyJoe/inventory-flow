@@ -130,7 +130,7 @@ const EXCEPTION_COPY: Record<OverviewExceptionKind, { label: string; why: (thres
   return_overdue: { label: 'Return overdue', why: () => 'Due back and not confirmed received.' },
   hold_past_expected: { label: 'Hold past expected date', why: () => 'The DealerMail expected date has passed; a review signal, not proof of sale or release.' },
   identity_review: { label: 'Manager log needs an exact VIN', why: () => 'Sold-board rows that could not be placed on a VIN.' },
-  records_incomplete: { label: 'Records not all captured', why: () => 'Vehicles missing one or more of AutoCheck, OASIS, sticker, invoice or Ford service history.' },
+  records_incomplete: { label: 'Records not all captured', why: () => 'Current records are incomplete: AutoCheck and sticker, plus OASIS, invoice and service history for Ford/Lincoln, or factory equipment for other makes.' },
   service_date_order: { label: 'Service dates before arrival', why: () => 'A recorded service date is earlier than the arrival date; check the record.' },
   listed_but_delivered: { label: 'Recorded delivered · still listed', why: (thresholds) => `Delivered in Inventory Flow ${thresholds.listedAfterDeliveredDays}+ days ago and still listed on the website. Confirm with the store; the listing is not changed here.` },
   delivered_move_no_disposition: { label: 'Move says delivered · no disposition', why: () => 'A move records customer delivery; no disposition has been recorded.' },

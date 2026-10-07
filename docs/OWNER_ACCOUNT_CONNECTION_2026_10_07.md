@@ -23,6 +23,9 @@ working connection. The retained inventory publication is dated October 1, 2026.
 - Service controls respect the server's permission result and the vehicle's
   verified store. Missing service evidence receives review attention without
   claiming a confirmed service state. Disposition dates use the dealership timezone.
+- Overview document counts require current, make-appropriate evidence. Ford
+  history must be both captured and current; other makes use factory-equipment
+  coverage rather than a Ford invoice. Saved reports remain available to inspect.
 - OASIS warning progress does not claim publication prematurely, and credential
   lines are redacted before error text is shortened.
 
@@ -33,7 +36,7 @@ tenant identity, fabricated membership and empty source/publication data.
 
 Synthetic browser checks exercised the account links, focus restoration and
 layout at 390×844, 1024×768, 1320×820 and 1440×900. Full local validation on the
-reviewed connection tree passed 3,530 tests with three skipped across 228 files,
+reviewed connection tree passed 3,531 tests with three skipped across 228 files,
 including the exact fixed inventory/control binding guard. Require CI on the
 exact merged commit before deployment.
 

@@ -221,7 +221,7 @@ describe('OverviewPage (server projection)', () => {
     const types = within(exceptions).getAllByRole('heading', { level: 3 })
     expect(types.map((heading) => heading.textContent)).toEqual(['Return overdue', 'Hold past expected date', 'Records not all captured'])
     // The explanation reads for any count and appears once for the type, not once per store.
-    expect(within(exceptions).getAllByText('Vehicles missing one or more of AutoCheck, OASIS, sticker, invoice or Ford service history.')).toHaveLength(1)
+    expect(within(exceptions).getAllByText('Current records are incomplete: AutoCheck and sticker, plus OASIS, invoice and service history for Ford/Lincoln, or factory equipment for other makes.')).toHaveLength(1)
     expect(exceptions).not.toHaveTextContent('for this unit')
     for (const store of STORES) {
       expect(within(exceptions).getByRole('link', { name: `${store}: 2 vehicles · Records not all captured` })).toHaveAttribute('href', expect.stringMatching(/^\/inventory\?scope=group&store=.+&view=records-incomplete$/))
