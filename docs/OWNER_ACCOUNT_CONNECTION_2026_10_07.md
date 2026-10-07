@@ -51,9 +51,12 @@ exact merged commit before deployment.
    inventory migration ledger.
 3. Verify the four enabled stores, existing employee memberships, retained
    publication and zero configured connections/pull requests before activation.
-4. Release the owner Worker and the paired app/integration Workers from the same
+4. Activate the registered group through the normal audited owner control.
+   Read back that it is active and connected with four enabled stores and two
+   employees before deploying any tenant-gated Workers.
+5. Release the owner Worker and the paired app/integration Workers from the same
    reviewed main commit. Use `pnpm cloud:release` for the app/integration pair.
-5. Verify actual owner/employee navigation, publisher readiness, independent
+6. Verify actual owner/employee navigation, publisher readiness, independent
    integration reconciliation and the 15-minute monitoring window. Record the
    results and new versions in the deployment log.
 

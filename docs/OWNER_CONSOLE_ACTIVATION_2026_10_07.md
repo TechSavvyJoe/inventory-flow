@@ -1,9 +1,13 @@
 # Software-owner console activation — October 7, 2026
 
-The separately authorized owner-only console is live at
+On October 7, 2026, the separately authorized owner-only console was activated at
 [inventory-admin.joegallant.me/platform](https://inventory-admin.joegallant.me/platform).
 Joe's verified Cloudflare Access identity resolves to the enabled **Joe Gallant**
 software-owner record. This is separate from the dealership `/admin` Control center.
+All deployment versions, settings, and readbacks below record the initial
+owner-only activation snapshot at main commit
+[`72e4ca4cd61820f843fed9785293264ddfdacd20`](https://github.com/TechSavvyJoe/inventory-flow/tree/72e4ca4cd61820f843fed9785293264ddfdacd20),
+tagged `72e4ca4`; they do not describe the current connected-account release.
 
 Joe's instruction to finish the owner console and owner account authorized this
 activation. It did not authorize dealership onboarding, tenant gates, collectors,
@@ -11,7 +15,7 @@ pull execution, Cron, publisher-task changes or changes to existing Access apps.
 
 ## Deployed targets and recovery identifiers
 
-Both Workers use the reviewed owner implementation from main commit
+Both initial Workers used the reviewed owner implementation from main commit
 `72e4ca4cd61820f843fed9785293264ddfdacd20`, tagged `72e4ca4`.
 
 | Resource | Staging | Production |
@@ -23,11 +27,13 @@ Both Workers use the reviewed owner implementation from main commit
 | New Access application | `21c51c75-4d52-418a-b2cd-c7b534f2c7d7` | `3d49c180-7f7c-4900-9d36-520beacf60e9` |
 | New owner-only Allow policy | `fd8dd357-a501-49fd-a422-044f49493fcc` | `358f580c-0bc0-47d8-9add-24d71c748596` |
 
-The versioned configurations are
-`cloudflare/platform.staging.wrangler.jsonc` and
-`cloudflare/platform.production.wrangler.jsonc`. Each has exactly one D1 binding,
-`PLATFORM_DB`, authenticated `ASSETS`, its own hostname/audience, and six reviewed
-variables. Actual Cloudflare settings were independently read back:
+The immutable configuration sources for that initial snapshot are
+[staging](https://github.com/TechSavvyJoe/inventory-flow/blob/72e4ca4cd61820f843fed9785293264ddfdacd20/cloudflare/platform.staging.wrangler.jsonc)
+and
+[production](https://github.com/TechSavvyJoe/inventory-flow/blob/72e4ca4cd61820f843fed9785293264ddfdacd20/cloudflare/platform.production.wrangler.jsonc).
+At that snapshot, each had one D1 binding (`PLATFORM_DB`), authenticated
+`ASSETS`, its own hostname/audience, and six reviewed variables. Actual Cloudflare
+settings were independently read back:
 
 - `PLATFORM_TENANT_BINDINGS="{}"`; no tenant databases, services, R2 or source bindings.
 - `PLATFORM_SCHEDULER_ENABLED="false"`; no Cron triggers.
@@ -94,9 +100,17 @@ plus a pre-existing WARP app; all seven preflight self-hosted names remained.
 A complete earlier configuration snapshot of those seven was unavailable, so
 an exact whole-account before/after configuration comparison is not claimed.
 
+The current connected-account configuration is a separate release. See
+[Software Admin account connection](OWNER_ACCOUNT_CONNECTION_2026_10_07.md) and
+its current [app](../cloudflare/wrangler.jsonc),
+[integration](../cloudflare/integrations.wrangler.jsonc), and
+[owner platform production](../cloudflare/platform.production.wrangler.jsonc) and
+[staging](../cloudflare/platform.staging.wrangler.jsonc) configurations.
+
 ## Rollback and subsequent releases
 
-This service has no earlier owner Worker version. To withdraw it, first remove
+The initial activation had no earlier owner Worker version. To withdraw that
+activation, first remove
 only the relevant new owner custom domain from its Worker while retaining Access
 protection. Alternatively block only that new owner Access policy while arranging
 route withdrawal. After routing is off, its new Access application/policy may be
