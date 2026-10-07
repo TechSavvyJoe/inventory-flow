@@ -1,0 +1,40 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "inventory-flow-software-admin-staging",
+  "account_id": "c7d37a87f560c6eac566c62db586288d",
+  "main": "src/platform-worker.mjs",
+  "compatibility_date": "2026-09-02",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "../dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "routes": [
+    {
+      "pattern": "inventory-admin-staging.joegallant.me",
+      "custom_domain": true
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "PLATFORM_DB",
+      "database_name": "inventory-flow-platform-staging",
+      "database_id": "acc3341e-36da-4903-819e-6bc5b3e240df",
+      "migrations_dir": "platform-migrations"
+    }
+  ],
+  "vars": {
+    "PRIVATE_HOSTNAME": "inventory-admin-staging.joegallant.me",
+    "ACCESS_ISSUER": "https://techsavvyjoe.cloudflareaccess.com",
+    "ACCESS_AUDIENCE": "caa1e5292084f78bac7f6c6a674d7ea60747eb434350283ce9999ddb5b209675",
+    "PLATFORM_TENANT_BINDINGS": "{}",
+    "PLATFORM_SCHEDULER_ENABLED": "false",
+    "PLATFORM_SCHEDULER_BATCH_SIZE": "8"
+  }
+}

@@ -42,6 +42,26 @@ describe('Owner Worker authorization boundary',()=>{
     sqlite.prepare("UPDATE platform_owners SET enabled=0 WHERE id='synthetic-owner'").run()
     expect((await platformWorker.fetch(request(jwt),env)).status).toBe(403)
   })
+  it('serves an owner-only installation with no groups, dealership bindings or tenant databases',async()=>{
+    const {env,sqlite}=setup(),jwt=await token()
+    sqlite.prepare('DELETE FROM platform_dealerships').run()
+    sqlite.prepare('DELETE FROM platform_groups').run()
+    env.PLATFORM_TENANT_BINDINGS='{}'
+    delete env.TENANT_NORTH_DB
+
+    const response=await platformWorker.fetch(request(jwt),env)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({owner:{id:'synthetic-owner'},groups:[],owners:[{id:'synthetic-owner'}],audit:[]})
+  })
+  it('denies owner static assets after the server-owned owner is disabled',async()=>{
+    const {env,sqlite,assets}=setup(),jwt=await token()
+    sqlite.prepare('INSERT INTO platform_owners VALUES(?,?,?,1)').run('synthetic-backup','backup@example.invalid','Synthetic Backup')
+    sqlite.prepare("UPDATE platform_owners SET enabled=0 WHERE id='synthetic-owner'").run()
+
+    const response=await platformWorker.fetch(request(jwt,'/platform'),env)
+    expect(response.status).toBe(403)
+    expect(assets).not.toHaveBeenCalled()
+  })
   it('does not expose employee bootstrap, inventory, publisher or source-write routes even to an owner',async()=>{
     const {env}=setup(),jwt=await token()
     for(const path of ['/api/bootstrap','/api/vehicles','/internal/releases','/inventory','/api/platform/dealermail/holds']) expect((await platformWorker.fetch(request(jwt,path),env)).status).toBe(404)

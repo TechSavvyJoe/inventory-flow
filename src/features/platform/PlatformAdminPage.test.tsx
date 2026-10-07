@@ -12,6 +12,20 @@ const ok=(body:unknown)=>Response.json(body)
 const selectGroup=async()=>{fireEvent.click(await screen.findByRole('button',{name:/Northside Motors/}));await screen.findByRole('heading',{name:'Northside Motors'})}
 
 describe('Software administration',()=>{
+  it('shows an owner-only empty installation with zero dealership activity and a clear first setup action',async()=>{
+    vi.stubGlobal('fetch',vi.fn(async()=>ok({...overview,groups:[],owners:[overview.owner],audit:[]})))
+    render(<PlatformAdminPage/>)
+
+    expect(await screen.findByRole('heading',{name:'Platform overview'})).toBeInTheDocument()
+    const summary=screen.getByRole('region',{name:'Platform summary'})
+    expect(within(summary).getByText('Dealer groups').parentElement).toHaveTextContent('0')
+    expect(within(summary).getByText('Dealerships').parentElement).toHaveTextContent('0')
+    expect(within(summary).getByText('Enabled employees').parentElement).toHaveTextContent('0')
+    expect(screen.getByText('No groups match these filters.')).toBeInTheDocument()
+    expect(screen.getByRole('heading',{name:'No matching account'})).toBeInTheDocument()
+    expect(screen.getByRole('button',{name:'Add group'})).toBeEnabled()
+    expect(screen.getByText('Demo owner')).toBeInTheDocument()
+  })
   it('loads independently of employee bootstrap, opens a group and saves attributed employee settings',async()=>{
     const fetcher=vi.fn(async(url:string,options?:RequestInit)=>options?.method==='POST'?ok({saved:true}):ok(url.endsWith('/members')?members:overview))
     vi.stubGlobal('fetch',fetcher)
