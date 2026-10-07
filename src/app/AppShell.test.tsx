@@ -46,6 +46,23 @@ describe('AppShell account and update controls', () => {
     expect(screen.getByRole('combobox', { name: 'Working location' })).toHaveValue('Howell')
   })
 
+  it('shows a separate Software Admin link only while the verified URL is supplied', () => {
+    const context = useAppDataMock()
+    const withOwnerAccess = { ...context, data: { ...context.data, access: { softwareAdminUrl: 'https://inventory-admin.joegallant.me/platform' } } }
+    useAppDataMock.mockReturnValue(withOwnerAccess)
+    const { rerender } = render(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory</p></AppShell></MemoryRouter>)
+    fireEvent.click(screen.getByRole('button', { name: 'Open account and app controls' }))
+
+    const utility = screen.getByRole('dialog', { name: 'Account and app controls' })
+    expect(within(utility).getByRole('link', { name: /Software Admin/ })).toHaveAttribute('href', 'https://inventory-admin.joegallant.me/platform')
+    expect(within(utility).getByRole('link', { name: /Software Admin/ })).toHaveAttribute('target', '_blank')
+    expect(within(utility).queryByRole('link', { name: /Control center/ })).not.toBeInTheDocument()
+
+    useAppDataMock.mockReturnValue({ ...withOwnerAccess, data: { ...withOwnerAccess.data, access: {} } })
+    rerender(<MemoryRouter initialEntries={['/inventory']}><AppShell><p>Inventory updated</p></AppShell></MemoryRouter>)
+    expect(within(screen.getByRole('dialog', { name: 'Account and app controls' })).queryByRole('link', { name: /Software Admin/ })).not.toBeInTheDocument()
+  })
+
   it('counts only the work this store and role can take in the Action center badge', () => {
     const context = useAppDataMock()
     const hold = { id: 'synthetic-hold', type: 'hold_alert', severity: 'warning', status: 'open', priority: 'high', label: 'Synthetic hold alert', vin: 'TESTDATAHWELL0001', store: 'Howell', actionability: 'actionable', allowedActions: [], events: [] }

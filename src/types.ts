@@ -878,6 +878,8 @@ export interface BootstrapData {
     canPreviewStores?: boolean
     rolePreviewActive?: boolean
     storePreviewActive?: boolean
+    /** Server supplied only after the signed-in user is verified as a software owner. */
+    softwareAdminUrl?: string
     canViewPrivateEvidence: boolean
     canCreateTransfer: boolean
   }

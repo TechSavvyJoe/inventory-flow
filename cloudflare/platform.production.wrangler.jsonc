@@ -27,14 +27,20 @@
       "database_name": "inventory-flow-platform-production",
       "database_id": "b0b0b0d0-740c-4052-9ae1-1c57007b5466",
       "migrations_dir": "platform-migrations"
+    },
+    {
+      "binding": "TENANT_BOB_MAXEY_DB",
+      "database_name": "inventory-ops-production",
+      "database_id": "29bfd3dd-ecd9-4c71-9dba-f0c106c690dd"
     }
   ],
   "vars": {
     "PRIVATE_HOSTNAME": "inventory-admin.joegallant.me",
     "ACCESS_ISSUER": "https://techsavvyjoe.cloudflareaccess.com",
     "ACCESS_AUDIENCE": "beda956e9314b2cd7160b723a9e082d2879c1126603ade00c83626d3e3d9e6f5",
-    "PLATFORM_TENANT_BINDINGS": "{}",
+    "PLATFORM_TENANT_BINDINGS": "{\"a385619e-d6cc-47e5-8670-7d9f79fff9b7\":\"TENANT_BOB_MAXEY_DB\"}",
     "PLATFORM_SCHEDULER_ENABLED": "false",
-    "PLATFORM_SCHEDULER_BATCH_SIZE": "8"
+    "PLATFORM_SCHEDULER_BATCH_SIZE": "8",
+    "PLATFORM_TENANT_APP_HOSTNAMES": "{\"a385619e-d6cc-47e5-8670-7d9f79fff9b7\":\"inventory-ops.joegallant.me\"}"
   }
 }

@@ -47,6 +47,7 @@ export interface DispositionContext {
   role: UserRole
   homeStore: StoreName
   reportDate?: string
+  timeZone?: string
   /** False when the server's disposition table is not installed yet. */
   enabled?: boolean
   onChanged: () => Promise<void>
@@ -71,9 +72,15 @@ export function dispositionSummary(disposition: Pick<AppDisposition, 'code' | 'd
   return disposition.code === 'transfer_out' && disposition.destinationStore ? `${label} to ${disposition.destinationStore}` : label
 }
 
-/** Synthetic demo VINs date from the fixture's report day; real VINs from the device's today. */
-export function defaultDispositionDate(vin: string, reportDate: string | undefined): string {
+/** Synthetic demo VINs use the fixture report day; real VINs use the dealership's current date. */
+export function defaultDispositionDate(vin: string, reportDate: string | undefined, timeZone = 'UTC', now = new Date()): string {
   if (vin.startsWith('TESTDATA') && reportDate) return reportDate
-  const today = new Date()
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  let parts: Intl.DateTimeFormatPart[]
+  try {
+    parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now)
+  } catch {
+    parts = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now)
+  }
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((value) => value.type === type)?.value ?? ''
+  return `${part('year')}-${part('month')}-${part('day')}`
 }

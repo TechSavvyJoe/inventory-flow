@@ -475,6 +475,32 @@ describe('Overview work queue and dispositions', () => {
     expect(screen.queryByText(/Deposit|customer name/i)).not.toBeInTheDocument()
   })
 
+  it.each([
+    ['honors explicit server permission for a cross-store manager action', 'manager' as const, 'Lincoln' as const, true, true],
+    ['honors explicit server refusal for a same-store manager action', 'manager' as const, 'Howell' as const, false, false],
+    ['allows a legacy same-store manager row without a server flag', 'manager' as const, 'Howell' as const, undefined, true],
+    ['blocks a legacy cross-store manager row without a server flag', 'manager' as const, 'Lincoln' as const, undefined, false],
+    ['allows a legacy group-manager row without a server flag', 'group_manager' as const, 'Lincoln' as const, undefined, true],
+  ])('%s', (_case, role, ownerStore, canManage, expected) => {
+    const data = bootstrap(role)
+    const target = data.vehicles[0]
+    target.movement = { ...target.movement, currentLocation: ownerStore, locationConfidence: 'verified' }
+    if (canManage !== undefined) {
+      target.serviceReadiness = {
+        vin: target.vin, status: 'needs_service', version: 0, serviceEnteredAt: null, completedAt: null,
+        updatedAt: null, updatedBy: null, updatedByRole: null, updatedAtStore: null, store: ownerStore, canManage,
+      }
+    }
+    data.overview!.service!.agedWaiting = [{ vin: target.vin, store: ownerStore, waitingDays: 24, arrivalBasis: 'listing_date' }]
+    renderAs(role, data)
+    if (role === 'manager' && ownerStore !== 'Howell') fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
+
+    const section = screen.getByRole('region', { name: 'Service' })
+    const update = within(section).queryByRole('link', { name: 'Update service for 2026 Ford F-150 001' })
+    expect(update !== null).toBe(expected)
+    expect(screen.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible()
+  })
+
   it('shows the two disposition prompts with fixed copy, never as inferences', () => {
     renderAs('manager', withDispositions('manager'))
     const exceptions = screen.getByRole('region', { name: 'Exceptions' })
@@ -546,6 +572,20 @@ describe('Overview work queue and dispositions', () => {
     fireEvent.click(within(queue).getByRole('button', { name: 'Service 3' }))
     expect(within(queue).getAllByRole('link', { name: 'Update service' })[0]).toHaveAttribute('href', '/service?vin=TESTDATAHWELL0001&returnTo=%2Foverview')
     expect(screen.queryByRole('region', { name: 'Store board' })).not.toBeInTheDocument()
+  })
+
+  it('keeps a cross-store manager read-only in the work queue without an affirmative server decision', () => {
+    const data = bootstrap('manager')
+    const target = data.vehicles[0]
+    target.movement = { ...target.movement, currentLocation: 'Lincoln', locationConfidence: 'verified' }
+    data.overview!.service!.agedWaiting = [{ vin: target.vin, store: 'Lincoln', waitingDays: 24, arrivalBasis: 'listing_date' }]
+    renderAs('manager', data)
+    fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
+    const queue = screen.getByRole('region', { name: 'Work queue' })
+    fireEvent.click(within(queue).getByRole('button', { name: 'Service 4' }))
+    const targetLink = within(queue).getAllByRole('link', { name: 'View service' }).find((link) => link.getAttribute('href')?.includes('TESTDATAHWELL0001'))
+    expect(targetLink).toHaveAttribute('href', '/service?vin=TESTDATAHWELL0001&returnTo=%2Foverview')
+    expect(within(queue).getAllByRole('link', { name: 'Update service' }).some((link) => link.getAttribute('href')?.includes('TESTDATAHWELL0001'))).toBe(false)
   })
 
   it('keeps the dense decision ledgers in a stable reading order below the work queue', () => {

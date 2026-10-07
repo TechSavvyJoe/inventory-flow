@@ -26,6 +26,32 @@ describe('Software administration',()=>{
     expect(screen.getByRole('button',{name:'Add group'})).toBeEnabled()
     expect(screen.getByText('Demo owner')).toBeInTheDocument()
   })
+  it('opens the verified active dealership app from both the account summary and detail',async()=>{
+    const group={...overview.groups[0],appUrl:'https://northside.example.com/inventory'}
+    vi.stubGlobal('fetch',vi.fn(async()=>ok({...overview,groups:[group]})))
+    render(<PlatformAdminPage/>)
+
+    const summaryLink=await screen.findByRole('link',{name:'Open dealership app'})
+    expect(summaryLink).toHaveAttribute('href','https://northside.example.com/inventory')
+    expect(summaryLink).toHaveAttribute('target','_blank')
+    fireEvent.click(screen.getByRole('button',{name:'Dealer groups'}))
+    expect(await screen.findByRole('region',{name:'Northside Motors account'})).toBeInTheDocument()
+    expect(screen.getByRole('link',{name:'Open dealership app'})).toHaveAttribute('href','https://northside.example.com/inventory')
+  })
+  it.each([
+    ['a setup group', {...overview.groups[0],status:'setup' as const,appUrl:'https://northside.example.com/inventory'}],
+    ['a suspended group', {...overview.groups[0],status:'suspended' as const,appUrl:'https://northside.example.com/inventory'}],
+    ['an unverified tenant', {...overview.groups[0],health:{...overview.groups[0].health,connected:false},appUrl:'https://northside.example.com/inventory'}],
+    ['an unsafe configured URL', {...overview.groups[0],appUrl:'http://northside.example.com/inventory'}],
+  ])('hides the dealership app link for %s',async(_case,group)=>{
+    vi.stubGlobal('fetch',vi.fn(async()=>ok({...overview,groups:[group]})))
+    render(<PlatformAdminPage/>)
+    await screen.findByRole('heading',{name:'Platform overview'})
+    expect(screen.queryByRole('link',{name:'Open dealership app'})).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button',{name:'Dealer groups'}))
+    await screen.findByRole('region',{name:'Northside Motors account'})
+    expect(screen.queryByRole('link',{name:'Open dealership app'})).not.toBeInTheDocument()
+  })
   it('loads independently of employee bootstrap, opens a group and saves attributed employee settings',async()=>{
     const fetcher=vi.fn(async(url:string,options?:RequestInit)=>options?.method==='POST'?ok({saved:true}):ok(url.endsWith('/members')?members:overview))
     vi.stubGlobal('fetch',fetcher)

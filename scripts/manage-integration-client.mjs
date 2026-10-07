@@ -304,7 +304,11 @@ export function wranglerIntegrationDatabase({ run = spawnSync, readConfig = read
   try {
     const config = JSON.parse(readConfig(configPath, 'utf8'))
     const databases = config.d1_databases
-    assert(config.name === 'inventory-flow-integrations' && Array.isArray(databases) && databases.length === 1 && databases[0].binding === 'INVENTORY_DB' && databases[0].database_name === 'inventory-ops-production' && databases[0].database_id === '29bfd3dd-ecd9-4c71-9dba-f0c106c690dd', 'WRANGLER_TARGET_NOT_CONFIGURED')
+    const hasDatabase = (binding, databaseName, databaseId) => databases.filter((database) => database?.binding === binding && database.database_name === databaseName && database.database_id === databaseId).length === 1
+    const validInventory = Array.isArray(databases) && hasDatabase('INVENTORY_DB', 'inventory-ops-production', '29bfd3dd-ecd9-4c71-9dba-f0c106c690dd')
+    const validLegacyConfig = validInventory && databases.length === 1
+    const validOwnerConfig = validInventory && databases.length === 2 && hasDatabase('PLATFORM_CONTROL_DB', 'inventory-flow-platform-production', 'b0b0b0d0-740c-4052-9ae1-1c57007b5466')
+    assert(config.name === 'inventory-flow-integrations' && (validLegacyConfig || validOwnerConfig), 'WRANGLER_TARGET_NOT_CONFIGURED')
     wranglerBin = path.join(path.dirname(require.resolve('wrangler/package.json')), 'bin', 'wrangler.js')
     assert(existsSync(wranglerBin), 'WRANGLER_NOT_INSTALLED')
   } catch { throw new IntegrationManagementError('WRANGLER_TARGET_NOT_CONFIGURED') }

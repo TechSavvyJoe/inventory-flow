@@ -10,6 +10,7 @@ import {
   CircleUserRound,
   Download,
   Ellipsis,
+  ExternalLink,
   Gauge,
   LayoutDashboard,
   RefreshCw,
@@ -23,6 +24,7 @@ import { formatDateTime } from '../lib/format'
 import { FlowBrandLockup } from '../design-system'
 import { useContainedFocus } from '../lib/useContainedFocus'
 import { useModalBackgroundIsolation } from '../lib/useModalBackgroundIsolation'
+import { verifiedApplicationUrl } from '../lib/verified-application-url'
 import { STORE_NAMES, type StoreName, type UserRole } from '../types'
 import { useAppData } from './AppDataContext'
 import { STORE_BRANDING } from './storeBranding'
@@ -137,6 +139,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // When Actions is not in the rail, its count rides on More so it is never lost.
   const moreAttentionCount = mobileUtilityItems.some((item) => item.id === 'today') ? attentionCount : 0
   const rolePreviewEnabled = data?.access?.canPreviewRoles === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
+  const softwareAdminUrl = verifiedApplicationUrl(data?.access?.softwareAdminUrl, '/platform')
   const storePreviewEnabled = data?.access?.canPreviewStores === true || import.meta.env.DEV || import.meta.env.VITE_ENABLE_ROLE_PREVIEW === 'true'
   const productionRolePreview = data?.access?.rolePreviewActive === true
   const freshnessState = !data
@@ -272,6 +275,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         {data?.access?.canPreviewRoles && <p className="utility-role-help">Your account is a Group manager. Choose a role to test its permissions. Any changes you save affect live records.</p>}
 
         {import.meta.env.PROD && <a className="utility-service-link" href="/downloads/inventory-flow-deal-desk.zip" download="inventory-flow-deal-desk.zip"><Download aria-hidden="true"/><span><strong>Download companion extension</strong><small>Extract the ZIP, then load or reload it in Chrome extensions.</small></span><ChevronRight aria-hidden="true"/></a>}
+
+        {softwareAdminUrl && <a className="utility-service-link" href={softwareAdminUrl} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true"/><span><strong>Software Admin</strong><small>Separate software-owner administration</small></span><ChevronRight aria-hidden="true"/></a>}
 
         {mobileUtilityItems.map(({ id, to, label, icon: Icon }) => (
           <NavLink key={id} className="utility-service-link" to={to} onClick={() => setUtilityOpen(false)}><Icon aria-hidden="true"/><span><strong>{label}</strong><small>{MOBILE_UTILITY_HINTS[id]}</small></span><ChevronRight aria-hidden="true"/></NavLink>

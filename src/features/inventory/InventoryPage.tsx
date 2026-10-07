@@ -323,7 +323,7 @@ export function InventoryPage({ homeMode = false }: { homeMode?: boolean }) {
         issueContext={data.vehicleIssuesEnabled === true || Boolean(data.vehicleIssues?.length)
           ? { role, homeStore, currentUser, enabled: data.vehicleIssuesEnabled === true, issues: data.vehicleIssues ?? [], onChanged: refresh }
           : undefined}
-        dispositionContext={{ role, homeStore, reportDate: data.meta.reportDate, enabled: data.dispositionsEnabled !== false, onChanged: refresh }}
+        dispositionContext={{ role, homeStore, reportDate: data.meta.reportDate, timeZone: data.meta.timezone, enabled: data.dispositionsEnabled !== false, onChanged: refresh }}
         vehicles={vehicles}
         detailState={activeDetail
           ? detailRequest.key === detailKey && detailRequest.sourceRevision === bootstrapRevision && ['refreshing', 'stale'].includes(detailRequest.state)

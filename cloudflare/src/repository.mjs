@@ -519,6 +519,7 @@ export async function loadD1Repository(d1, release, options = {}) {
   // refuses writes (503 MIGRATION_REQUIRED). Never create production schema here.
   const ownerUserId = typeof options.ownerUserId === 'string' && options.ownerUserId ? options.ownerUserId : null
   const idempotencyKey = typeof options.idempotencyKey === 'string' && options.idempotencyKey ? options.idempotencyKey : null
+  const loadSavedLists = options.loadSavedLists !== false
   // Machine readiness has no employee owner and must never load anyone's list
   // rows, but it still needs to prove that the feature's complete schema is
   // present. Ordinary ownerless diagnostics retain their established read set.
@@ -553,7 +554,7 @@ export async function loadD1Repository(d1, release, options = {}) {
     ...(dispositionsEnabled ? [
       ['dispositionEvents', 'SELECT * FROM vehicle_disposition_events ORDER BY vin, version'],
     ] : []),
-    ...(savedListsEnabled && ownerUserId ? [
+    ...(savedListsEnabled && ownerUserId && loadSavedLists ? [
       ['savedVehicleLists', 'SELECT * FROM saved_vehicle_lists WHERE owner_user_id = ? ORDER BY updated_at DESC, id', [ownerUserId]],
       ['savedVehicleListItems', `SELECT item.* FROM saved_vehicle_list_items AS item
         JOIN saved_vehicle_lists AS list ON list.id = item.list_id

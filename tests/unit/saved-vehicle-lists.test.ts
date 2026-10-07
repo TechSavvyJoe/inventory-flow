@@ -1,7 +1,7 @@
 // @ts-nocheck -- exercises the plain ESM Node and Worker adapters with synthetic identities.
 // @vitest-environment node
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildSyntheticRelease } from '../../fixtures/synthetic-release.mjs'
 import { startInventoryServer } from '../../server/index.mjs'
 import { loadD1Repository, RepositoryConflictError } from '../../cloudflare/src/repository.mjs'
@@ -30,6 +30,37 @@ describe('Worker employee-owned saved vehicle lists', () => {
   })
   const get = (email, headers = {}) => cloud.call('GET', '/api/saved-lists', email, undefined, {
     'x-inventory-saved-list-owner': ownerFor(email), ...headers,
+  })
+
+  it('keeps list capability while skipping list row reads on ordinary routes and unrelated writes', async () => {
+    const created = await post(other.email, { action: 'create', label: 'AB' }, 'skip-read-create')
+    await post(other.email, { action: 'add', listId: created.json.id, vin: CURRENT_VIN, expectedRevision: 1 }, 'skip-read-add')
+
+    const prepare = vi.spyOn(cloud.env.INVENTORY_DB, 'prepare')
+    const listRowReads = () => prepare.mock.calls.map(([sql]) => sql).filter((sql) =>
+      /\bFROM\s+(?:saved_vehicle_lists|saved_vehicle_list_items|saved_vehicle_list_actions)\b/i.test(sql))
+    for (const route of ['/api/bootstrap', `/api/vehicles/${CURRENT_VIN}`, '/api/transfers', '/api/attention']) {
+      prepare.mockClear()
+      const response = await cloud.call('GET', route, other.email)
+      expect(response.status, route).toBe(200)
+      if (route === '/api/bootstrap') expect(response.json.savedListsEnabled).toBe(true)
+      expect(listRowReads(), route).toEqual([])
+    }
+
+    prepare.mockClear()
+    const unrelatedWrite = await cloud.call('POST', '/api/transfers', other.email, {
+      vin: CURRENT_VIN, neededBy: '2026-10-08T18:00:00Z', reason: 'SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS unrelated workflow',
+      customerAppointment: true, returnRequired: true, priority: 'normal',
+    })
+    expect(unrelatedWrite.status).toBe(201)
+    expect(listRowReads()).toEqual([])
+    prepare.mockRestore()
+
+    const replay = await post(other.email, { action: 'create', label: 'AB' }, 'skip-read-create')
+    expect(replay).toMatchObject({ status: 200, json: { id: created.json.id, revision: 1 } })
+    expect((await get(other.email)).json.lists).toMatchObject([
+      { id: created.json.id, label: 'AB', items: [{ vin: CURRENT_VIN, available: true }] },
+    ])
   })
 
   it('isolates owners, keeps missing VIN references, and never returns a vehicle snapshot', async () => {

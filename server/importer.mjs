@@ -2379,7 +2379,11 @@ export function loadLatestCompletedRelease({ workspaceRoot, now = new Date() }) 
     // work\releases\<date>\manager-disposition\ is immutable, so a missing or
     // unapproved copy still fails loudly: never prune those folders.
     const staleRelease = release.sourceRuns.public.status === 'stale_unverified'
-    if (!staleRelease || error?.message !== 'Manager disposition source checksum differs from the completed manifest') throw error
+    const bindingPath = manifest.manager_disposition_overlay?.path
+    const boundPath = typeof bindingPath === 'string' ? path.resolve(resolvedWorkspace, bindingPath) : null
+    const legacyDirectory = path.join(resolvedWorkspace, 'work', 'manager-supplied', 'sold-logs')
+    const legacyMutableSource = boundPath && path.relative(legacyDirectory, path.dirname(boundPath)) === ''
+    if (!staleRelease || !legacyMutableSource || error?.message !== 'Manager disposition source checksum differs from the completed manifest') throw error
     // Older releases bound the mutable monthly manager log directly. Do not
     // discard their verified public inventory or DealerMail holds merely
     // because a newer manager update replaced that monthly source.

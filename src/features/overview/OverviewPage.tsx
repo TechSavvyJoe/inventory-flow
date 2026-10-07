@@ -8,6 +8,7 @@ import { VehicleThumbnail } from '../../components/VehicleThumbnail'
 import { formatCurrency, formatDate, formatDateTime, formatNumber } from '../../lib/format'
 import { vehicleWorkspacePath } from '../../lib/inventory-navigation'
 import { useWorkspaceState } from '../../lib/workspace-memory'
+import { STORE_NAMES } from '../../types'
 import type {
   AppDispositionCode,
   BootstrapData,
@@ -366,7 +367,20 @@ function ServiceTimingRow({ metrics, store, thresholds }: { metrics: OverviewSer
   )
 }
 
-function ServiceSection({ data, overview, stores, fullAccess, reportMode, printing, onReport }: { data: BootstrapData; overview: OverviewSummary; stores: StoreName[]; fullAccess: boolean; reportMode: boolean; printing: boolean; onReport: () => void }) {
+function serviceActionAllowed(vehicle: VehicleRecord | undefined, fallbackStore: StoreName | null | undefined, role: UserRole, homeStore: StoreName) {
+  const serverDecision = vehicle?.serviceReadiness?.canManage
+  if (serverDecision === true) return true
+  if (serverDecision === false) return false
+  if (role === 'group_manager') return true
+  if (role !== 'manager') return false
+  const movementStore = vehicle?.movement.locationConfidence === 'verified' && STORE_NAMES.includes(vehicle.movement.currentLocation as StoreName)
+    ? vehicle.movement.currentLocation as StoreName
+    : null
+  const ownerStore = vehicle?.serviceReadiness?.store ?? movementStore ?? vehicle?.homeStore ?? fallbackStore
+  return ownerStore != null && ownerStore === homeStore
+}
+
+function ServiceSection({ data, overview, stores, role, homeStore, reportMode, printing, onReport }: { data: BootstrapData; overview: OverviewSummary; stores: StoreName[]; role: UserRole; homeStore: StoreName; reportMode: boolean; printing: boolean; onReport: () => void }) {
   const service = overview.service
   const [showAllAged, setShowAllAged] = useState(false)
   const [showTiming, setShowTiming] = useState(false)
@@ -424,7 +438,7 @@ function ServiceSection({ data, overview, stores, fullAccess, reportMode, printi
                 </div>
                 <div className="ov-row-actions">
                   <RecordsLink vin={entry.vin} facts={entry.facts} name={name} />
-                  {fullAccess ? <Link className="ov-row-link" to={serviceVehicleHref(entry.vin)} aria-label={`Update service for ${name}`}><Wrench aria-hidden="true" />Update service</Link> : null}
+                  {serviceActionAllowed(entry.vehicle, entry.store, role, homeStore) ? <Link className="ov-row-link" to={serviceVehicleHref(entry.vin)} aria-label={`Update service for ${name}`}><Wrench aria-hidden="true" />Update service</Link> : null}
                 </div>
               </li>
             )
@@ -739,13 +753,14 @@ function issueAction(issue: VehicleIssue, enabled: boolean): { label: string; hr
   return { label, href: `/attention?${params.toString()}` }
 }
 
-function OverviewWorkQueue({ data, overview, rows, stores, scope, fullAccess, holdsVerified, dispositionsEnabled, onDispositionOpen }: {
+function OverviewWorkQueue({ data, overview, rows, stores, scope, role, homeStore, holdsVerified, dispositionsEnabled, onDispositionOpen }: {
   data: BootstrapData
   overview: OverviewSummary
   rows: OverviewRow[]
   stores: StoreName[]
   scope: OverviewScope
-  fullAccess: boolean
+  role: UserRole
+  homeStore: StoreName
   holdsVerified: boolean
   dispositionsEnabled: boolean
   onDispositionOpen: (vin: string, opener: HTMLElement) => void
@@ -795,7 +810,7 @@ function OverviewWorkQueue({ data, overview, rows, stores, scope, fullAccess, ho
         detail={[facts.service.waitingDays !== undefined ? `Waiting ${plural(facts.service.waitingDays, 'day')}` : null, arrivalText(facts.service)].filter(Boolean).join(' · ') || 'Arrival timing not recorded'}
         owner={facts.service.store ?? vehicle.homeStore} status={facts.service.waitingDays !== undefined ? `${plural(facts.service.waitingDays, 'day')} waiting` : 'Waiting time not recorded'}
         tone={facts.service.waitingDays !== undefined && facts.service.waitingDays >= overview.thresholds.serviceWaitingDays[1] ? 'danger' : undefined}
-        actionLabel={fullAccess ? 'Update service' : 'View service'} actionHref={serviceVehicleHref(vehicle.vin)} />
+        actionLabel={serviceActionAllowed(vehicle, facts.service.store, role, homeStore) ? 'Update service' : 'View service'} actionHref={serviceVehicleHref(vehicle.vin)} />
     ))
   } else if (view === 'holds') {
     content = holds.slice(0, WORK_QUEUE_ROWS).map(({ vehicle, facts }) => (
@@ -940,7 +955,7 @@ export function OverviewPage() {
       </div>
 
       {presentation === 'sales' ? <SalesOverview data={data} stores={stores} homeStore={homeStore} role={role} currentUserId={currentUserId ?? null} printing={printing} /> : <>
-      <OverviewWorkQueue data={data} overview={overview} rows={rows} stores={stores} scope={scope} fullAccess={fullAccess}
+      <OverviewWorkQueue data={data} overview={overview} rows={rows} stores={stores} scope={scope} role={role} homeStore={homeStore}
         holdsVerified={holdsVerified} dispositionsEnabled={dispositionsEnabled}
         onDispositionOpen={(vin, opener) => { dispositionOpener.current = opener; setDispositionStatus(''); setDispositionVin(vin) }} />
 
@@ -955,7 +970,7 @@ export function OverviewPage() {
         <div className="ov-column">{dispositions}</div>
       </div>
 
-      <ServiceSection data={data} overview={overview} stores={stores} fullAccess={fullAccess} reportMode={serviceReport} printing={printing} onReport={printServiceReport} />
+      <ServiceSection data={data} overview={overview} stores={stores} role={role} homeStore={homeStore} reportMode={serviceReport} printing={printing} onReport={printServiceReport} />
       </>}
 
       <footer className="ov-print-only ov-print-footer">Counts are app records and source evidence as of the times shown. Nothing here asserts availability; confirm holds and location with the home store.</footer>
@@ -966,7 +981,7 @@ export function OverviewPage() {
           evidence={dispositionVehicle.managerDisposition}
           role={role}
           store={homeStore}
-          defaultDate={defaultDispositionDate(dispositionVehicle.vin, data.meta.reportDate)}
+          defaultDate={defaultDispositionDate(dispositionVehicle.vin, data.meta.reportDate, data.meta.timezone)}
           returnFocusRef={dispositionOpener}
           onClose={() => setDispositionVin(null)}
           onSaved={async (saved) => {

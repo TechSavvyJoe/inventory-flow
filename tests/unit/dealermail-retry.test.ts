@@ -171,6 +171,20 @@ describe('failure detail', () => {
     expect(internals.failureDetailFor(new Error('CLOUDFLARE_PUBLISH_FAILED'), 'CLOUDFLARE_PUBLISH_FAILED')).toBeNull()
   })
 
+  it.each([
+    ['Basic', 'dXNlcm5hbWU6c2VjcmV0LWJhc2ljLXRva2Vu=='],
+    ['Bearer', 'opaque.secret-token-value'],
+  ])('redacts the complete Authorization %s value before truncating error and status details', (scheme, credential) => {
+    const header = `Authorization: ${scheme} ${credential}`
+    const longFailure = `${'x'.repeat(800)}\n${header}`
+    const detail = internals.failureDetailFor(new Error(longFailure))
+
+    expect(detail).toContain('Authorization: [redacted]')
+    expect(detail).not.toContain(credential)
+    expect(detail.length).toBeLessThanOrEqual(500)
+    expect(internals.safeDetail(longFailure)).not.toContain(credential)
+  })
+
   it('keeps the finalizer error that follows long progress output', async () => {
     const reportDate = '2026-09-07'
     fakeDealerMail(reportDate, { finalizeRejects: 2, finalizeProgress: `${'progress '.repeat(120)}\n` })

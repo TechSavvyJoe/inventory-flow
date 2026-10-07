@@ -50,7 +50,17 @@ describe('OASIS never blocks the daily release', () => {
     const outcome = internals.reuseExistingOasisCapture('2026-01-02', steps)
     expect(outcome).toMatchObject({ validated: false, systemic: true })
     expect(steps.at(-1).status).toBe('skipped_browser_unavailable')
-    expect(internals.oasisWarning(outcome)).toMatch(/sign in to FMCDealer/)
+    const warning = internals.oasisWarning(outcome)
+    // This warning is emitted before bundle validation and publishing; it must not report a release that may fail later.
+    expect(warning).toBe('Ford OASIS was not captured for this run (sign in to FMCDealer in the Work PC Automation Browser). The inventory and holds candidate may continue without OASIS; publication still requires validation and verification.')
+    expect(warning).not.toMatch(/were published|needs-review\.json/)
+  })
+
+  it('does not point staff to a review file that the orchestrator did not generate', () => {
+    const warning = internals.oasisWarning({ systemic: false, incompleteVehicles: 1, missingVehicles: 0 })
+
+    expect(warning).toBe('Ford OASIS open actions are unconfirmed for 1 vehicle(s); if published, they will show as not confirmed in the app. Review the affected vehicles in OASIS.')
+    expect(warning).not.toContain('needs-review.json')
   })
 
   it('reports a clean capture as validated with no warning', () => {

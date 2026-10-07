@@ -265,6 +265,27 @@ customer or tenant data. Restoring an older inventory Worker without the tenant
 gate restores its previous access behavior, so document that consequence before
 using the rollback. Do not roll a database backup over newer employee changes.
 
+## Navigation between the services
+
+The employee bootstrap may include `access.softwareAdminUrl`. The server derives
+it from `SOFTWARE_ADMIN_HOSTNAME` only after checking the authenticated employee's
+email against an enabled `platform_owners` record. Role previews and group-manager
+permissions never grant software ownership. The URL is part of bootstrap's
+conditional-response validator, so revoking ownership removes the shortcut even
+when inventory has not changed. The owner service still authenticates every visit.
+
+The owner directory may include `group.appUrl` for an active, connected group.
+`PLATFORM_TENANT_APP_HOSTNAMES` maps its immutable group ID to the reviewed public
+application hostname; form inputs cannot supply this map. The UI accepts only
+public HTTPS URLs with the exact `/platform` or `/inventory` path. These are
+navigation links, not shared sessions or authorization grants.
+
+Adding `PLATFORM_CONTROL_DB` to an employee deployment also activates its tenant
+configuration checks. Ship that binding together with the matching
+`PLATFORM_TENANT_ID`, after the immutable tenant identity and active registry group
+have been verified. Apply the same pair to the integrations Worker. Adding the
+binding only to provide a shortcut would make the application fail closed.
+
 ## Synthetic development
 
 `pnpm dev:demo` serves `/platform` using fabricated Northside and Lakeside account

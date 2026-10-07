@@ -1,5 +1,6 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
+  "account_id": "c7d37a87f560c6eac566c62db586288d",
   "name": "inventory-ops-production",
   "main": "src/worker.mjs",
   "compatibility_date": "2026-09-02",
@@ -24,6 +25,11 @@
       "database_name": "inventory-ops-production",
       "database_id": "29bfd3dd-ecd9-4c71-9dba-f0c106c690dd",
       "migrations_dir": "migrations"
+    },
+    {
+      "binding": "PLATFORM_CONTROL_DB",
+      "database_name": "inventory-flow-platform-production",
+      "database_id": "b0b0b0d0-740c-4052-9ae1-1c57007b5466"
     }
   ],
   "r2_buckets": [
@@ -37,6 +43,8 @@
     "PRIVATE_HOSTNAME": "inventory-ops.joegallant.me",
     "ACCESS_ISSUER": "https://techsavvyjoe.cloudflareaccess.com",
     "ACCESS_AUDIENCE": "b243147ef0a8b935011b43ed34b5451e44c414c3a7bfe231f9a257039a398040",
-    "ACCESS_PUBLISHER_AUDIENCE": "2c2b4041106efedbcd458337db0d33deab4a08c0dc19f083f9c856dd78e56206"
+    "ACCESS_PUBLISHER_AUDIENCE": "2c2b4041106efedbcd458337db0d33deab4a08c0dc19f083f9c856dd78e56206",
+    "PLATFORM_TENANT_ID": "a385619e-d6cc-47e5-8670-7d9f79fff9b7",
+    "SOFTWARE_ADMIN_HOSTNAME": "inventory-admin.joegallant.me"
   }
 }

@@ -27,14 +27,20 @@
       "database_name": "inventory-flow-platform-staging",
       "database_id": "acc3341e-36da-4903-819e-6bc5b3e240df",
       "migrations_dir": "platform-migrations"
+    },
+    {
+      "binding": "TENANT_SYNTHETIC_ACCEPTANCE_DB",
+      "database_name": "inventory-flow-connection-acceptance-2026-10-07",
+      "database_id": "b7a1364f-574c-4680-868b-4c65ab62da4e"
     }
   ],
   "vars": {
     "PRIVATE_HOSTNAME": "inventory-admin-staging.joegallant.me",
     "ACCESS_ISSUER": "https://techsavvyjoe.cloudflareaccess.com",
     "ACCESS_AUDIENCE": "caa1e5292084f78bac7f6c6a674d7ea60747eb434350283ce9999ddb5b209675",
-    "PLATFORM_TENANT_BINDINGS": "{}",
+    "PLATFORM_TENANT_BINDINGS": "{\"2cf956d5-7487-4ba7-ad40-ef14b72bfb14\":\"TENANT_SYNTHETIC_ACCEPTANCE_DB\"}",
     "PLATFORM_SCHEDULER_ENABLED": "false",
-    "PLATFORM_SCHEDULER_BATCH_SIZE": "8"
+    "PLATFORM_SCHEDULER_BATCH_SIZE": "8",
+    "PLATFORM_TENANT_APP_HOSTNAMES": "{}"
   }
 }
