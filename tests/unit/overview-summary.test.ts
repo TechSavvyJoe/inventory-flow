@@ -364,7 +364,8 @@ describe('overview projection metric definitions (§5)', () => {
   it('counts captured records against 5 for Ford and Lincoln and 3 otherwise', () => {
     const complete = {
       autoCheckReport: { dataState: 'current' }, windowSticker: { dataState: 'current' }, fordInvoice: { dataState: 'current' },
-      fordOasis: { dataState: 'current', serviceHistory: { historyCaptured: true } },
+      fordOasis: { dataState: 'current', serviceHistory: { historyCaptured: true, dataState: 'current' } },
+      factoryEquipment: { dataState: 'current' },
     }
     const result = build([
       vehicle('VINRECORDSFORD001', complete),
@@ -379,6 +380,26 @@ describe('overview projection metric definitions (§5)', () => {
     expect(view.VINRECORDSOTHER01).toMatchObject({ recordsCaptured: 3, recordsApplicable: 3 })
     expect(store(result, 'Howell').recordsIncomplete).toBe(1)
     expect(result.exceptions.find((entry) => entry.kind === 'records_incomplete')).toMatchObject({ count: 1, vins: ['VINRECORDSLINC001'] })
+  })
+
+  it('counts only current make-appropriate records while retaining stale source evidence', () => {
+    const staleHistory = { historyCaptured: true, dataState: 'stale_unverified' }
+    const staleEquipment = { dataState: 'incomplete', isOriginalWindowSticker: false }
+    const result = build([
+      vehicle('VINHISTORYCURRENT01', { fordOasis: { dataState: 'current', serviceHistory: { historyCaptured: true, dataState: 'current' } } }),
+      vehicle('VINHISTORYSTALE0001', { fordOasis: { dataState: 'current', serviceHistory: staleHistory } }),
+      vehicle('VINNONFORDCURRENT01', { make: 'Chevrolet', autoCheckReport: { dataState: 'current' }, windowSticker: { dataState: 'current' }, fordInvoice: { dataState: 'current' }, factoryEquipment: { dataState: 'current', isOriginalWindowSticker: false } }),
+      vehicle('VINNONFORDSTALE0001', { make: 'Toyota', autoCheckReport: { dataState: 'current' }, windowSticker: { dataState: 'current' }, fordInvoice: { dataState: 'current' }, factoryEquipment: staleEquipment }),
+    ])
+    const view = result.vehicleFacts
+
+    expect(view.VINHISTORYCURRENT01).toMatchObject({ records: { oasis: true, fordHistory: true }, recordsCaptured: 2, recordsApplicable: 5 })
+    expect(view.VINHISTORYSTALE0001).toMatchObject({ records: { oasis: true, fordHistory: false }, recordsCaptured: 1, recordsApplicable: 5 })
+    expect(view.VINNONFORDCURRENT01).toMatchObject({ records: { invoice: true, factoryEquipment: true }, recordsCaptured: 3, recordsApplicable: 3 })
+    expect(view.VINNONFORDSTALE0001).toMatchObject({ records: { invoice: true, factoryEquipment: false }, recordsCaptured: 2, recordsApplicable: 3 })
+    expect(result.group.recordsIncomplete).toBe(3)
+    expect(staleHistory).toMatchObject({ historyCaptured: true, dataState: 'stale_unverified' })
+    expect(staleEquipment.dataState).toBe('incomplete')
   })
 
   it('draws outbound, return and planned flows from visible active moves only', () => {

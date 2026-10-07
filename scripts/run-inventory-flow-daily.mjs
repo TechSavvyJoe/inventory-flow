@@ -544,9 +544,9 @@ function lastJsonLine(output) {
 }
 
 function oasisWarning(outcome) {
-  if (outcome.systemic) return 'Ford OASIS was not captured for this run (sign in to FMCDealer in the Work PC Automation Browser). Inventory and holds were published; OASIS shows as not captured.'
+  if (outcome.systemic) return 'Ford OASIS was not captured for this run (sign in to FMCDealer in the Work PC Automation Browser). The inventory and holds candidate may continue without OASIS; publication still requires validation and verification.'
   const gaps = (outcome.incompleteVehicles ?? 0) + (outcome.missingVehicles ?? 0)
-  return gaps ? `Ford OASIS open actions are unconfirmed for ${gaps} vehicle(s); they show as not confirmed in the app. See work\\oasis-history\\<date>-needs-review.json.` : null
+  return gaps ? `Ford OASIS open actions are unconfirmed for ${gaps} vehicle(s); if published, they will show as not confirmed in the app. Review the affected vehicles in OASIS.` : null
 }
 
 function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps) {
@@ -709,12 +709,13 @@ function validateCurrentResourceFile() {
 }
 
 function safeDetail(value) {
-  return String(value || '').replace(/\s+/g, ' ').slice(0, 500)
+  return redactSecrets(String(value || '')).replace(/\s+/g, ' ').slice(0, 500)
 }
 
 function redactSecrets(text) {
   return String(text)
     .replace(/\b(cookie|set-cookie)\s*[:=][^\r\n]*/gi, '$1: [redacted]')
+    .replace(/\bauthorization["']?\s*[:=]\s*[^\r\n]*/gi, 'Authorization: [redacted]')
     .replace(/\bbearer\s+[\w.~+/=-]+/gi, 'Bearer [redacted]')
     .replace(/\b([\w-]*(?:token|secret|password|passwd|api[_-]?key|authorization|session[_-]?id)[\w-]*)(["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi, '$1$2[redacted]')
 }
@@ -1754,6 +1755,7 @@ export const internals = {
   runtime,
   runDealerMail,
   failureDetailFor,
+  safeDetail,
   archiveDealerMailRevision,
   assertCandidatePreservesReceiptSources,
   assertReceiptHashes,

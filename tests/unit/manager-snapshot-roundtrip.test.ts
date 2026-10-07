@@ -103,6 +103,18 @@ describe('manager log bound to a release', () => {
     expect(reloaded.managerDispositionOverlay.coverageStatus).toBe('provided')
     expect(reloaded.managerDispositionOverlay.summary.soldRecordCount).toBe(loaded.managerDispositionOverlay.summary.soldRecordCount)
 
+    // Only an old release directly bound to the mutable monthly source may
+    // drop that superseded overlay. Fresh mismatches still refuse the source.
+    const staleNow = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000)
+    writeFileSync(manifestPath, JSON.stringify({ ...baseManifest, manager_disposition_overlay: { ...binding, path: soldLog } }))
+    expect(() => loadLatestCompletedRelease({ workspaceRoot: root, now })).toThrow(/checksum differs/)
+    const retainedLegacy = loadLatestCompletedRelease({ workspaceRoot: root, now: staleNow })
+    expect(retainedLegacy.sourceRuns.public.status).toBe('stale_unverified')
+    expect(retainedLegacy.vehicles.map(vehicle => vehicle.vin)).toEqual(reloaded.vehicles.map(vehicle => vehicle.vin))
+    expect(retainedLegacy.managerDispositionOverlay.records).toHaveLength(0)
+    expect(retainedLegacy.warnings).toContain('Manager disposition source changed after this verified release; retained the verified inventory and DealerMail holds without the superseded manager-only overlay.')
+    writeFileSync(manifestPath, JSON.stringify({ ...baseManifest, manager_disposition_overlay: binding }))
+
     // A truncated copy left by an interrupted earlier run is rewritten from the
     // verified bytes instead of failing every later run for that date.
     const logBytes = readFileSync(soldLog)
@@ -121,5 +133,6 @@ describe('manager log bound to a release', () => {
     // Tampering with the bound copy is still caught.
     writeFileSync(binding.path, JSON.stringify({ ...managerLog, records: [] }))
     expect(() => loadLatestCompletedRelease({ workspaceRoot: root, now })).toThrow(/checksum differs/)
+    expect(() => loadLatestCompletedRelease({ workspaceRoot: root, now: staleNow })).toThrow(/checksum differs/)
   })
 })

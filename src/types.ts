@@ -878,6 +878,8 @@ export interface BootstrapData {
     canPreviewStores?: boolean
     rolePreviewActive?: boolean
     storePreviewActive?: boolean
+    /** Server supplied only after the signed-in user is verified as a software owner. */
+    softwareAdminUrl?: string
     canViewPrivateEvidence: boolean
     canCreateTransfer: boolean
   }
@@ -996,7 +998,7 @@ export interface OverviewVehicleFacts {
   agedBucket?: 60 | 90
   /** Pre-listing rows carry CRM age, not listing age, and have no bucket. */
   agedBasis?: 'crm_age'
-  records: { autoCheck: boolean; oasis: boolean; sticker: boolean; invoice: boolean; fordHistory: boolean }
+  records: { autoCheck: boolean; oasis: boolean; sticker: boolean; invoice: boolean; fordHistory: boolean; factoryEquipment?: boolean }
   recordsCaptured: number
   recordsApplicable: 3 | 5
   service: OverviewVehicleService

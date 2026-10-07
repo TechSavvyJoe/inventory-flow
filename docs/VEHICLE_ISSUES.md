@@ -2,9 +2,11 @@
 
 Status: active in source for the synthetic Node demo and hosted Worker. Joe
 approved the two employee write branches and the manager-confirmed completion
-rule. Production deployment and migration `0011_vehicle_issues.sql` remain
-separate operator steps; an older production schema continues to expose
-inventory while reporting stays unavailable.
+rule. Production `0011_vehicle_issues.sql` was verified on October 7, 2026:
+the two tables, three indexes and four append-only triggers match the reviewed
+migration. The existing hosted Worker includes the issue workflow; this schema
+check does not substitute for persisted employee-write acceptance. An older
+schema still exposes inventory while reporting remains unavailable.
 
 Vehicle issues are staff observations about a specific VIN: cleaning, fuel,
 mechanical concerns, damage, or another problem. They belong to Inventory

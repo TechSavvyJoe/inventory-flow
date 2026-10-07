@@ -230,6 +230,27 @@ describe('SalesOverview', () => {
     expect(screen.getByText(/does not confirm availability/)).toBeVisible()
   })
 
+  it.each(['missing', 'unknown'] as const)('keeps %s service evidence in the review count without claiming a confirmed state', (state) => {
+    const source = data()
+    source.overview = undefined
+    source.vehicleIssues = []
+    const reviewVehicle = vehicle('TESTDATAREVIEW0003', {
+      serviceReadiness: state === 'missing' ? undefined : { ...vehicle('review').serviceReadiness!, vin: 'TESTDATAREVIEW0003', status: 'unknown' },
+    })
+    source.vehicles = [source.vehicles[0], reviewVehicle, source.vehicles[1]]
+    renderOverview('employee-1', source)
+
+    const metrics = screen.getByRole('region', { name: 'Current store facts' })
+    expect(within(metrics).getByRole('link', { name: 'Waiting for service: 2' })).toBeVisible()
+    const relevant = screen.getByRole('region', { name: 'Other vehicles in scope' })
+    const rows = within(relevant).getAllByRole('listitem')
+    expect(rows[0]).toHaveTextContent('2026 Ford F-150 03')
+    expect(within(rows[0]).getByText('Service status not recorded')).toBeVisible()
+    expect(within(rows[0]).getByText('service attention')).toBeVisible()
+    expect(rows[1]).toHaveTextContent('2026 Ford F-150 02')
+    expect(within(rows[0]).queryByText('Waiting for service')).not.toBeInTheDocument()
+  })
+
   it('uses valid broad actions when the scope contains more than one store', () => {
     const source = data()
     render(<MemoryRouter><SalesOverview data={source} stores={['Howell', 'Lincoln']} homeStore="Howell" role="sales" currentUserId="employee-1" /></MemoryRouter>)

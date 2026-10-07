@@ -22,13 +22,13 @@ The Today screen turns the daily report into an action layer. It opens on the em
 
 Design and implementation notes are in [Brand architecture](docs/BRAND_ARCHITECTURE.md), [Store brand assets](docs/BRAND_ASSETS.md), [Today and change center](docs/CHANGE_CENTER.md), and [Fidelity and interaction QA](docs/FIDELITY_QA.md).
 
-## Manual inventory controls (prepared, not deployed)
+## Manual inventory controls
 
 Dealerships can record app-owned manual holds without DealerMail. Salespeople
 manage their own home-store holds; managers manage holds and dispositions,
 including Sold pending, Delivered and Other with notes. Imported evidence
-remains separate and discrepancies require review. The prepared implementation
-requires migration 0015 and a separately authorized release; see
+remains separate and discrepancies require review. Migration 0015 and the
+paired Workers were activated in the October 6 release at `72e4ca4`; see
 [Manual inventory controls](docs/MANUAL_INVENTORY_CONTROLS.md).
 
 ## Customer vehicle lists and customer documents
@@ -78,7 +78,9 @@ Software owners have a separate `/platform` console for dealership-group
 registration, isolated account connections, employee access, account suspension,
 publication health and attributed administration history. It requires a separate
 owner identity/database/Worker; a dealership group-manager role does not grant
-ownership. It is prepared for review, not activated in production. See
+ownership. The separate owner console is live at
+`https://inventory-admin.joegallant.me/platform`; its initial activation kept
+the dealership directory empty and source execution disabled. See
 [Software administration](docs/SOFTWARE_ADMIN.md) for implemented controls,
 onboarding limits and the separate activation checklist.
 

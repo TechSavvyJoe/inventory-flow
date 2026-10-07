@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Check, CheckCircle2, Circle, Plus, Users } from 'lucide-react'
+import { Check, CheckCircle2, Circle, ExternalLink, Plus, Users } from 'lucide-react'
 import { formatDateTime } from '../../lib/format'
 import type { PlatformEdit, PlatformGroup, PlatformMembers, PlatformRequest } from './types'
-import { HEALTH_LABEL, ROLES, groupEdit, readiness } from './platformPresentation'
+import { groupAppHref, HEALTH_LABEL, ROLES, groupEdit, readiness } from './platformPresentation'
 import { PlatformDataConnections } from './PlatformDataConnections'
 import { useGroupResource } from './useGroupResource'
 
@@ -22,8 +22,9 @@ function People({group,request,refreshVersion,busy,begin}:{group:PlatformGroup;r
 }
 export function PlatformGroupDetail({group,revision,refreshVersion,request,busy,begin,initialTab='dealerships'}:{initialTab?:'dealerships'|'people'|'connections'|'health';group:PlatformGroup;revision:number;refreshVersion:number;request:PlatformRequest;busy:boolean;begin:(edit:PlatformEdit)=>void}) {
  const [tab,setTab]=useState<'dealerships'|'people'|'connections'|'health'>(initialTab)
+ const appHref=groupAppHref(group)
  const dealerEdit=(dealer?:PlatformGroup['dealerships'][number]):PlatformEdit=>({title:dealer?'Edit dealership':'Add dealership',path:'/dealerships',values:dealer?{...dealer,expectedRevision:revision}:{groupId:group.id,name:'',storeKey:'',website:'',enabled:true,expectedRevision:revision},fields:[{key:'name',label:'Dealership name'},{key:'storeKey',label:'Deployment store key',readOnly:!!dealer},{key:'website',label:'Public website',optional:true},{key:'enabled',label:'Allow employee assignments',type:'checkbox'}],help:'Store keys match the group’s isolated deployment. This record does not install a collector or configure source credentials.'})
- return <section className="platform-detail" aria-label={`${group.name} account`}><header><div><small className="platform-eyebrow">Selected account</small><h2>{group.name}</h2><span className={`platform-status platform-status--${group.status}`}>{group.status}</span></div><button disabled={busy} onClick={()=>begin(groupEdit(revision,group))}>Edit group</button></header>
+ return <section className="platform-detail" aria-label={`${group.name} account`}><header><div><small className="platform-eyebrow">Selected account</small><h2>{group.name}</h2><span className={`platform-status platform-status--${group.status}`}>{group.status}</span></div><div className="platform-detail-actions">{appHref&&<a className="platform-open-app platform-primary" href={appHref} target="_blank" rel="noreferrer"><ExternalLink aria-hidden="true"/>Open dealership app</a>}<button disabled={busy} onClick={()=>begin(groupEdit(revision,group))}>Edit group</button></div></header>
  <div className="platform-account-facts"><span><strong>{group.dealerships.length}</strong> dealerships</span><span><strong>{group.health.activeEmployees??'—'}</strong> enabled employees</span><span className={`platform-health--${group.health.status}`}><CheckCircle2 aria-hidden="true"/>{HEALTH_LABEL[group.health.status]}</span></div>
  <nav aria-label="Group sections">{(['dealerships','people','connections','health'] as const).map(value=><button disabled={busy} key={value} aria-pressed={tab===value} onClick={()=>setTab(value)}>{{dealerships:'Dealerships',people:'People & access',connections:'Data connections',health:'Health & setup'}[value]}</button>)}</nav>
  {tab==='dealerships'&&<><div className="platform-panel-heading"><h3>Dealerships</h3><button disabled={busy} onClick={()=>begin(dealerEdit())}><Plus aria-hidden="true"/>Add dealership</button></div>{group.dealerships.map(dealer=><article className="platform-record" key={dealer.id}><div><strong>{dealer.name}</strong><small>{dealer.storeKey} · {dealer.enabled?'Assignments enabled':'Assignments disabled'}</small>{dealer.website&&<a href={dealer.website} target="_blank" rel="noreferrer">Public website</a>}</div><button disabled={busy} onClick={()=>begin(dealerEdit(dealer))}>Edit</button></article>)}{!group.dealerships.length&&<p className="platform-empty-copy">No dealerships yet. Register a dealership to configure its sources and employees.</p>}

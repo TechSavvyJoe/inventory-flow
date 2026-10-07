@@ -246,6 +246,9 @@ describe('owner-run CLI and bounded Cloudflare adapter', () => {
 })
 
 describe('bounded Wrangler managed-login transport', () => {
+  const inventoryDatabaseBinding = { binding: 'INVENTORY_DB', database_name: 'inventory-ops-production', database_id: '29bfd3dd-ecd9-4c71-9dba-f0c106c690dd', migrations_dir: 'migrations' }
+  const platformControlDatabaseBinding = { binding: 'PLATFORM_CONTROL_DB', database_name: 'inventory-flow-platform-production', database_id: 'b0b0b0d0-740c-4052-9ae1-1c57007b5466' }
+
   it('keeps API transport the default and permits only the explicit Wrangler alternative', () => {
     expect(parseManagementArguments(['list']).options.transport).toBeUndefined()
     expect(parseManagementArguments(['list', '--transport', 'wrangler']).options.transport).toBe('wrangler')
@@ -294,6 +297,30 @@ describe('bounded Wrangler managed-login transport', () => {
     expect(args.slice(1, 6)).toEqual(['d1', 'execute', 'inventory-ops-production', '--remote', '--config'])
     expect(args[6].replaceAll('\\', '/')).toMatch(/\/cloudflare\/integrations\.wrangler\.jsonc$/)
     expect(args.slice(7)).toEqual(['--json', '--command', "SELECT user_id FROM cloud_memberships WHERE user_id='synthetic-owner'"])
+  })
+
+  it.each([
+    ['legacy fixed inventory binding', [inventoryDatabaseBinding]],
+    ['fixed inventory and platform control bindings', [inventoryDatabaseBinding, platformControlDatabaseBinding]],
+  ])('accepts only the reviewed %s configuration', async (_label, d1_databases) => {
+    const run = vi.fn(() => ({ status: 0, stdout: JSON.stringify([{ success: true, results: [] }]) }))
+    const readConfig = () => JSON.stringify({ name: 'inventory-flow-integrations', d1_databases })
+    await wranglerIntegrationDatabase({ run, readConfig }).query('SELECT 1')
+    expect(run).toHaveBeenCalledOnce()
+    expect(run.mock.calls[0][1].slice(1, 4)).toEqual(['d1', 'execute', 'inventory-ops-production'])
+  })
+
+  it.each([
+    ['unknown extra database', [inventoryDatabaseBinding, platformControlDatabaseBinding, { binding: 'OTHER_DB', database_name: 'other', database_id: 'other-id' }]],
+    ['duplicate inventory binding', [inventoryDatabaseBinding, { ...inventoryDatabaseBinding }]],
+    ['drifted control database ID', [inventoryDatabaseBinding, { ...platformControlDatabaseBinding, database_id: 'different-id' }]],
+    ['drifted control database name', [inventoryDatabaseBinding, { ...platformControlDatabaseBinding, database_name: 'different-name' }]],
+    ['missing fixed inventory binding', [platformControlDatabaseBinding]],
+  ])('fails closed on %s before invoking Wrangler', (_label, d1_databases) => {
+    const run = vi.fn()
+    const readConfig = () => JSON.stringify({ name: 'inventory-flow-integrations', d1_databases })
+    expect(() => wranglerIntegrationDatabase({ run, readConfig })).toThrow('WRANGLER_TARGET_NOT_CONFIGURED')
+    expect(run).not.toHaveBeenCalled()
   })
 
   it('fails closed on config drift and never exposes Wrangler errors or raw output', async () => {

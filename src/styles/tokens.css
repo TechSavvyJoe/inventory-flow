@@ -130,6 +130,11 @@
   --ifx-platform-inspector-width: 390px;
   --ifx-platform-dialog-width: 640px;
   --ifx-platform-search-min-width: 180px;
+  --ifx-platform-directory-account-min-width: 4.875rem;
+  --ifx-platform-directory-count-min-width: 3.25rem;
+  --ifx-platform-directory-publication-min-width: 5rem;
+  --ifx-platform-directory-compact-account-min-width: 4.75rem;
+  --ifx-platform-directory-compact-publication-min-width: 5rem;
   --ifx-dialog-overlay-padding: var(--ifx-space-3);
   --ifx-dialog-overlay-placement: center;
   --ifx-dialog-radius: var(--ifx-radius-md);

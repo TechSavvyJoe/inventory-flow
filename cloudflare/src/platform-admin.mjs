@@ -1,6 +1,7 @@
 import { AccessError } from './access.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
 import { assertTenantIdentity } from './tenant-gate.mjs'
+import { dealershipAppUrl } from './account-navigation.mjs'
 
 const ROLES = ['sales','manager','group_manager','coordinator','porter','driver']
 const fail = (message, code = 'PLATFORM_INPUT_INVALID', status = 422) => { throw new WorkflowError(message, {code,status}) }
@@ -78,6 +79,7 @@ export async function readPlatform(env, claims, now = new Date()) {
   // Bound D1 concurrency; one unavailable group never masks the others.
   const rows = result[1].results
   for (let offset=0;offset<rows.length;offset+=4) groups.push(...await Promise.all(rows.slice(offset,offset+4).map(async row=>({id:row.id,name:row.name,status:row.status,updatedAt:row.updated_at,dealerships:result[2].results.filter(dealer => dealer.group_id === row.id).map(publicDealer),health:await health(env,row.id,now)}))))
+  for (const group of groups) group.appUrl=group.status==='active' && group.health.connected===true ? dealershipAppUrl(env,group.id) : null
   await platformOwner(db, claims)
   return {demo:env.PLATFORM_DEMO===true,owner:publicOwner(owner),revision:result[0].results[0].revision,generatedAt:now.toISOString(),groups,owners:result[3].results.map(publicOwner),audit:result[4].results.map(row => ({id:row.id,actor:row.actor_name,entity:row.entity,targetId:row.target_id,action:row.action,reason:row.reason,occurredAt:row.created_at}))}
 }

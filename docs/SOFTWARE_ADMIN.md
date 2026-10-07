@@ -3,8 +3,11 @@
 Inventory Flow now has a separate software-owner control plane at `/platform`.
 It is independent of the dealership **Control center** at `/admin`. An enabled
 group manager cannot become a software owner, grant that role, or access these
-endpoints. The implementation is prepared on a branch; it has not been activated
-in production. No existing account has been promoted.
+endpoints. The owner service has its own hostname, Access audience and database;
+employee membership does not grant ownership. The
+[October 7 owner-only activation](OWNER_CONSOLE_ACTIVATION_2026_10_07.md) records
+the live owner address and verified account. Dealership connections and source
+execution remain separate activation steps.
 
 ## Account workspace and data controls
 
@@ -162,11 +165,13 @@ Configuring just one setting fails closed. Both absent preserves current
 single-account operation. The tenant gate runs after authentication and before
 inventory, integration/MCP or publisher handlers. There is no request-supplied tenant selector.
 Suspension and revocation are checked on each new request; an already accepted
-in-flight request may finish. Owner revocation, a sign-in redirect or an owner
-refresh that cannot verify access clears the console's protected views and open
-edits, and aborts pending reads. A failed write with an uncertain outcome keeps
-its retry key while owner access is still verified. Platform administration uses
-no browser storage.
+in-flight request may finish. Owner revocation, an authentication refusal, a
+sign-in redirect, or a sign-in HTML response clears the console's protected
+views and open edits, and aborts pending reads. A transient network failure or
+502/503 response preserves the last verified view and any open draft for retry;
+each write still reauthorizes the owner before saving. A failed write with an
+uncertain outcome keeps its retry key while owner access is still verified.
+Platform administration uses no browser storage.
 
 ## New dealership onboarding boundary
 
@@ -210,6 +215,13 @@ and the name from the trusted owner record, never client-provided identity.
 
 This is a deployment plan, not authorization to execute it.
 
+An **owner-only activation** uses steps 1–4 and the applicable owner checks in
+step 7, with an empty account directory, `PLATFORM_TENANT_BINDINGS="{}"`, no tenant
+database bindings, scheduler disabled and no Cron. Steps 5–6 are a separate
+dealership-onboarding release; they are not prerequisites for signing in to an
+otherwise empty owner console. Never implicitly connect an existing dealership
+or enable its tenant gate while activating the first owner.
+
 1. Record the current Worker versions, configuration/bindings and D1 backups.
    Use a fresh isolated staging control-plane DB first. Review the six new
    owner-only write routes and configure an owner Access application with its
@@ -252,6 +264,27 @@ the new control-plane database and append-only audit for recovery; do not delete
 customer or tenant data. Restoring an older inventory Worker without the tenant
 gate restores its previous access behavior, so document that consequence before
 using the rollback. Do not roll a database backup over newer employee changes.
+
+## Navigation between the services
+
+The employee bootstrap may include `access.softwareAdminUrl`. The server derives
+it from `SOFTWARE_ADMIN_HOSTNAME` only after checking the authenticated employee's
+email against an enabled `platform_owners` record. Role previews and group-manager
+permissions never grant software ownership. The URL is part of bootstrap's
+conditional-response validator, so revoking ownership removes the shortcut even
+when inventory has not changed. The owner service still authenticates every visit.
+
+The owner directory may include `group.appUrl` for an active, connected group.
+`PLATFORM_TENANT_APP_HOSTNAMES` maps its immutable group ID to the reviewed public
+application hostname; form inputs cannot supply this map. The UI accepts only
+public HTTPS URLs with the exact `/platform` or `/inventory` path. These are
+navigation links, not shared sessions or authorization grants.
+
+Adding `PLATFORM_CONTROL_DB` to an employee deployment also activates its tenant
+configuration checks. Ship that binding together with the matching
+`PLATFORM_TENANT_ID`, after the immutable tenant identity and active registry group
+have been verified. Apply the same pair to the integrations Worker. Adding the
+binding only to provide a shortcut would make the application fail closed.
 
 ## Synthetic development
 

@@ -13,6 +13,7 @@ import { ISSUE_BODY_BYTES, prepareIssuePhotos } from '../../server/issue-photos.
 import { readIssuePhoto, storeIssuePhotos } from './issue-photo-storage.mjs'
 import { assertSavedListOwner, SAVED_LIST_BODY_BYTES } from '../../server/saved-vehicle-lists.mjs'
 import { assertTenantEnabled } from './tenant-gate.mjs'
+import { softwareAdminUrl } from './account-navigation.mjs'
 
 const FORMAT = 'inventory-flow-private-release-v1'
 const MAX_UPLOAD = 25 * 1024 * 1024
@@ -462,7 +463,7 @@ async function appApi(request,url,env,context,claims) {
     // the same verified Access identity again before replaying any operation.
     if(attempt>0) context=await memberContext(claims,env,request)
     if(savedListsRoute) assertSavedListOwner(context,expectedSavedListOwner)
-    const repo=await loadD1Repository(env.INVENTORY_DB,release,{ownerUserId:context.userId,idempotencyKey:idempotency})
+    const repo=await loadD1Repository(env.INVENTORY_DB,release,{ownerUserId:context.userId,idempotencyKey:idempotency,loadSavedLists:savedListsRoute})
     const service=createInventoryServiceCore({database:repo.database,repository:repo.repository,initialLoadStatus:{status:'loaded'}})
     const query=Object.fromEntries(url.searchParams)
     let result, mutation=false
@@ -470,6 +471,9 @@ async function appApi(request,url,env,context,claims) {
     else if(read && route==='/bootstrap') {
       result=service.bootstrap(context)
       result.access={...result.access,authenticatedRole:context.authenticatedRole??context.role,authenticatedStore:context.authenticatedStore??context.store,canPreviewRoles:context.canPreviewRoles===true,canPreviewStores:context.canPreviewStores===true,rolePreviewActive:context.rolePreviewActive===true,storePreviewActive:context.storePreviewActive===true}
+      // This lookup precedes jsonRevalidated: owner revocation changes the
+      // bootstrap validator and removes the shortcut on the next refresh.
+      result.access.softwareAdminUrl=await softwareAdminUrl(env,claims)
     }
     else if(read && route==='/vehicles') result=service.listVehicles(query,context)
     else if(read && savedListsRoute) result=service.listSavedVehicleLists(context)
