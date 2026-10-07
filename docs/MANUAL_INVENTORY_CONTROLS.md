@@ -1,6 +1,8 @@
 # Manual inventory controls
 
-Prepared on `codex/platform-admin-workspace`; not activated in production.
+Activated with the reviewed `0015` migration and paired `72e4ca4` release;
+[production evidence](RELEASE_2026_10_06.md) records verification and remaining
+employee-write acceptance boundaries.
 Joe requested app-owned manual holds and dispositions on October 6, 2026.
 These records work without DealerMail and sit beside imported evidence.
 

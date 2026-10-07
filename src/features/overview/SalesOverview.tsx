@@ -5,6 +5,7 @@ import { toInventoryVehicle } from '../../app/adapters'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
 import { formatNumber } from '../../lib/format'
 import { vehicleWorkspacePath, withWorkspaceReturnPath } from '../../lib/inventory-navigation'
+import { serviceWorkflowStatus } from '../../lib/service-readiness'
 import type { BootstrapData, StoreName, TransferRecord, UserRole, VehicleIssue, VehicleRecord } from '../../types'
 import type { InventoryVehicle } from '../inventory/types'
 import { formatMoney, publicListingLabel, resolveCurrentLocation, vehicleDisplayName } from '../inventory/inventory-utils'
@@ -64,7 +65,7 @@ function issueLabel(issue: VehicleIssue) {
 function attentionReasons(vehicle: VehicleRecord, issues: readonly VehicleIssue[], activeMoveVins: ReadonlySet<string>) {
   const reasons: string[] = []
   if (vehicle.hold.state === 'primary' || vehicle.hold.state === 'backup' || vehicle.hold.state === 'multiple') reasons.push('hold signal')
-  if (vehicle.serviceReadiness?.status === 'needs_service' || vehicle.serviceReadiness?.status === 'in_service') reasons.push('service attention')
+  if (serviceWorkflowStatus(vehicle.serviceReadiness) !== 'serviced') reasons.push('service attention')
   if (issues.some(issue => issue.vin === vehicle.vin && issue.status !== 'completed')) reasons.push('reported issue')
   if (activeMoveVins.has(vehicle.vin)) reasons.push('active move')
   if (vehicle.movement.locationConfidence === 'conflicting' || vehicle.movement.locationConfidence === 'stale') reasons.push('location check')
@@ -166,7 +167,7 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
   const metrics = [
     { label: stores.length === 1 ? 'On lot' : 'Browse group inventory', value: stores.length === 1 ? overviewCounts?.onLot ?? null : data.vehicles.filter(vehicle => vehicleInScope(vehicle, storeSet)).length, href: scopedMetricHref('on-lot', stores) },
     { label: 'Hold signals', value: overviewCounts?.holds ?? fallbackHolds, href: scopedMetricHref('holds', stores) },
-    { label: 'Waiting for service', value: overviewCounts?.service ?? data.vehicles.filter(vehicle => vehicleInScope(vehicle, storeSet) && vehicle.serviceReadiness?.status === 'needs_service').length, href: scopedMetricHref('service', stores) },
+    { label: 'Waiting for service', value: overviewCounts?.service ?? data.vehicles.filter(vehicle => vehicleInScope(vehicle, storeSet) && serviceWorkflowStatus(vehicle.serviceReadiness) === 'needs_service').length, href: scopedMetricHref('service', stores) },
     { label: 'Active moves', value: activeMoves.length, href: scopedMetricHref('moves', stores) },
   ]
   const relevantVehicles = [...data.vehicles]

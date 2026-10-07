@@ -21,7 +21,8 @@ working connection. The retained inventory publication is dated October 1, 2026.
 - Immutable manager-disposition snapshots fail checksum validation when changed;
   the explicit legacy mutable monthly fallback remains supported.
 - Service controls respect the server's permission result and the vehicle's
-  verified store. Disposition dates use the dealership timezone.
+  verified store. Missing service evidence receives review attention without
+  claiming a confirmed service state. Disposition dates use the dealership timezone.
 - OASIS warning progress does not claim publication prematurely, and credential
   lines are redacted before error text is shortened.
 
@@ -32,7 +33,7 @@ tenant identity, fabricated membership and empty source/publication data.
 
 Synthetic browser checks exercised the account links, focus restoration and
 layout at 390×844, 1024×768, 1320×820 and 1440×900. Full local validation on the
-reviewed connection tree passed 3,528 tests with three skipped across 228 files,
+reviewed connection tree passed 3,530 tests with three skipped across 228 files,
 including the exact fixed inventory/control binding guard. Require CI on the
 exact merged commit before deployment.
 
