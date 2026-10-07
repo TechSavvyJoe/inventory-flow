@@ -6,7 +6,7 @@ export interface PlatformAudit {id:string;actor:string;entity:string;targetId:st
 export interface PlatformOverview {demo?:boolean;owner:PlatformOwner;revision:number;generatedAt:string;groups:PlatformGroup[];owners:PlatformOwner[];audit:PlatformAudit[]}
 export interface PlatformMember {id:string;email:string;name:string;role:string;homeStore:string;enabled:boolean}
 export interface PlatformMembers {groupId:string;revision:number;members:PlatformMember[];audit:{id:string;actor:string;action:string;reason:string;targetName:string;occurredAt:string}[]}
-export interface PlatformField {key:string;label:string;type?:'email'|'checkbox'|'time';options?:{value:string;label:string}[];readOnly?:boolean;optional?:boolean;showWhen?:{key:string;values:string[]}}
+export interface PlatformField {key:string;label:string;section?:string;type?:'email'|'checkbox'|'time';options?:{value:string;label:string}[];readOnly?:boolean;optional?:boolean;showWhen?:{key:string;values:string[]}}
 export interface PlatformEdit {title:string;path:string;values:Record<string,string|boolean|number>;fields:PlatformField[];help?:string;afterSave?:(id:string)=>void}
 export type PlatformRequest = <T>(path:string,body?:Record<string,string|boolean|number>,key?:string)=>Promise<T>
 export interface PlatformConnection {id:string;groupId:string;dealershipId:string;name:string;provider:string;vendor?:string;oem?:string;method:'collector'|'api'|'file';endpoint:string;credentialRef:string;enabled:boolean;cadence:'manual'|'daily'|'hourly';localTime:string;timezone:string;updatedAt:string;verification:'not_verified';schedule?:{nextLocal?:string;due?:boolean;invalid?:boolean;checkedAt:string|null;outcome:string|null}}

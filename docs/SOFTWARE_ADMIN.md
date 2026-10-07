@@ -18,6 +18,30 @@ and after values. Editing uses a contained dialog with Escape dismissal and
 focus restoration. Account selection follows the filters: an excluded group’s
 records are not left in the inspector.
 
+Dealer groups opens a full-width account workspace with a compact group picker
+and optional group filters. Dealerships, employees, source configuration and
+health keep the selected account context. Owner and audit directories have their
+own search and structured ledgers.
+
+The source workbench separates **Sources**, **OEM coverage**, **Schedules** and
+**Pull queue**. Sources can be filtered together by dealership, provider, OEM
+family, enabled preference and name/vendor. A selected-source inspector exposes
+its scope, method, endpoint, credential reference, local schedule and
+configuration checks. On smaller screens it replaces the directory until
+**Back to sources** is selected, rather than appending a detail panel below the
+list. Configuration dialogs group identity, connection and schedule fields.
+
+**OEM coverage** counts saved configurations and enabled/paused preferences for
+each dealership, not successful captures or vehicle coverage. A dealership's
+**Add source** action preselects its store and the selected OEM family. OEM scope
+can also be recorded for equipment, history, CRM and other provider categories;
+changing the category retains that explicit choice. The guide identifies
+factory/package data, original and base MSRP, warranty/in-service fields and
+recall/campaign provenance to map with an authorized provider. It is planning
+guidance, not proof of an installed adapter. Ford's customer-consented
+[vehicle APIs](https://developer.ford.com/apis) are separate products from an
+OASIS evidence source; access to one does not establish access to another.
+
 Each dealership can register authorized sources independently. Supported source
 labels are public inventory, DealerMail, vAuto, AutoCheck, CARFAX, another CRM,
 another equipment provider, OEM evidence, DMS and another explicitly authorized
@@ -41,7 +65,8 @@ validate DNS, redirect destinations, provider authorization and tenant scope.
 **Execution is not connected in this implementation.** Saving a connection does
 not verify credentials or a source session. The screen therefore reports
 **Not verified** and **Executor not connected**, including in the synthetic
-demo. Enabling/pausing a source saves an app-owned preference; it does not stop
+demo. New source forms default to **paused**; existing preferences are preserved.
+Enabling/pausing a source saves an app-owned preference; it does not stop
 or start Windows tasks or an existing collector. Sources remain read-only.
 
 **Request pull** creates an attributed, idempotent queue record; it never runs a
