@@ -1,5 +1,13 @@
 # Shared data deployment and activation checklist
 
+## Deployment - 2026-10-07 (pnpm cloud:release)
+
+- 2026-10-07T02:15:20.511Z | Commit: 72e4ca4cd61820f843fed9785293264ddfdacd20 | Tag: 72e4ca4 | App Version: d6614de9-4eb4-4aee-a8eb-2d96d0c16192 | Integrations Version: 572a82ac-939b-490f-a33b-903956787ddb
+
+[October 6 local-date release evidence](RELEASE_2026_10_06.md) records the exact
+checks, reviewed 0015 migration, preserved history, rollback versions, live
+acceptance, publisher states, and separate owner-service activation boundary.
+
 ## Deployment - 2026-09-30 (pnpm cloud:release)
 
 - 2026-09-30T18:47:22.792Z | Commit: e5f2ae4f1afa0fc8e41ce09381ca2642c804d34a | Tag: e5f2ae4 | App Version: f1d51344-f960-41de-9988-6459cb72a7c6 | Integrations Version: b5b8b31c-0b03-43b8-8a6f-e97863b7d9cc

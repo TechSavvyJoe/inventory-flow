@@ -1,7 +1,9 @@
-# Inventory Flow 1.4.1 candidate
+# Inventory Flow 1.4.1 feature scope
 
-Status: feature branch only; this document does not establish a deployment.
-The live 1.4.0 release is recorded separately in `RELEASE_1_4_0.md`.
+The deployed artifact and subsequent admin/manual-inventory changes are recorded
+in [October 6 release evidence](RELEASE_2026_10_06.md). The candidate behavior
+below was documented before that release. Earlier 1.4.0 evidence remains in
+`RELEASE_1_4_0.md`.
 
 The Action center always exposes its Vehicle issues option. Its issue ledger
 keeps the vehicle, location evidence, issue, photos, reporter, assignment and
@@ -93,10 +95,11 @@ transition snapshots are removed; app and companion feedback use shared
 startup. Local interaction measurements are reported separately from live
 network performance and physical-device acceptance.
 
-No API, schema, production publisher, task, credential or source-system change
-is included. Final check counts and CI/browser evidence belong in the pull
-request. Actual iPhone sharing, protected live-photo CORS behavior and employee
-acceptance remain separate production/device checks.
+This original candidate introduced no API, schema, publisher, task, credential
+or source-system change. The later reviewed 0015 manual-controls migration and
+paired deployment are recorded in the October 6 release evidence. Actual iPhone
+sharing, protected live-photo CORS behavior and employee acceptance remain
+separate production/device checks.
 
 App and companion share an expandable manufacturer-reference starter for
 captured options and packages. References apply to exact model/year/market
