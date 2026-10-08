@@ -68,6 +68,7 @@ describe('Source and OEM administration workbench', () => {
 
   it('shows schedules as configured targets and queued work without invented successful captures', async () => {
     await start({ ...sources, requests: [{ id: 'synthetic-pull', connectionId: 'synthetic-public', state: 'queued', kind: 'scheduled', scheduledSlot: '2026-10-05T05:30', requestedBy: 'Synthetic planner', createdAt: '2026-10-05T10:00:00Z', updatedAt: '2026-10-05T10:00:00Z' }] })
+    expect(screen.getByText('Daily planner not activated')).toBeInTheDocument()
     const selected = screen.getByRole('article', { name: 'Selected source configuration' })
     expect(within(selected).getByText('Daily 05:30')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Pull requests 1' }))
@@ -77,6 +78,26 @@ describe('Source and OEM administration workbench', () => {
     fireEvent.change(within(queue).getByRole('combobox', { name: 'Pull request state filter' }), { target: { value: 'cancelled' } })
     expect(within(queue).getByText('No cancelled pull requests.')).toBeInTheDocument()
     expect(screen.queryByText(/Last successful sync/)).not.toBeInTheDocument()
+  })
+
+  it('shows an enabled planner awaiting its first tick with the full zeroed counters', async () => {
+    await start({ ...sources, scheduler: { enabled: true, lastTick: null, checked: 0, queued: 0, waiting: 0, failed: 0 } })
+    expect(screen.getByText('Queue planner enabled · awaiting first tick')).toBeInTheDocument()
+    expect(screen.getByText(/Last tick: Not confirmed · 0 checked · 0 queued · 0 planner waiting · 0 failed/)).toBeInTheDocument()
+    expect(screen.getByText(/Executor not connected/)).toBeInTheDocument()
+  })
+
+  it('shows the latest planner tick and failed batch counters', async () => {
+    await start({ ...sources, scheduler: { enabled: true, lastTick: '2026-10-05T09:31:00.000Z', checked: 3, queued: 1, waiting: 2, failed: 1 } })
+    expect(screen.getByText('Latest planner batch reported failures')).toBeInTheDocument()
+    expect(screen.getByText(/Last tick: .* · 3 checked · 1 queued · 2 planner waiting · 1 failed/)).toBeInTheDocument()
+  })
+
+  it('confirms a successful planner heartbeat separately from executor connectivity', async () => {
+    await start({ ...sources, scheduler: { enabled: true, lastTick: '2026-10-05T09:31:00.000Z', checked: 3, queued: 1, waiting: 0, failed: 0 } })
+    expect(screen.getByText('Planner heartbeat successful')).toBeInTheDocument()
+    expect(screen.getByText(/Last tick: .* · 3 checked · 1 queued · 0 planner waiting · 0 failed/)).toBeInTheDocument()
+    expect(screen.getByText('Executor not connected')).toBeInTheDocument()
   })
 
   it('moves desktop keyboard focus into the inspector after cross-panel inspection', async () => {

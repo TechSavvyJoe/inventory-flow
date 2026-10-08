@@ -25,7 +25,15 @@ describe('Stored evidence and manufacturer planning',()=>{
   const dealer=screen.getByRole('group',{name:'Stored coverage at Synthetic North'})
   expect(within(dealer).getByText('Public rows').closest('div')).toHaveTextContent('7')
   expect(within(dealer).getByText('DealerMail rows').closest('div')).toHaveTextContent('6')
-  expect(within(dealer).getByText('Active inventory').closest('div')).toHaveTextContent('Not reported')
+  expect(within(dealer).getByText('App membership').closest('div')).toHaveTextContent('Not reported')
+ })
+ it('labels the derived store count as app membership and explains its limits',()=>{
+  start({...stored,stores:[{storeKey:'north',publicCount:7,crmCount:6,activeInventoryCount:4}]})
+  const dealer=screen.getByRole('group',{name:'Stored coverage at Synthetic North'})
+  expect(within(dealer).getByText('App membership').closest('div')).toHaveTextContent('4')
+  expect(within(dealer).queryByText('Active inventory')).not.toBeInTheDocument()
+  expect(screen.getByText(/derived from public and DealerMail VIN membership, excluding manager-reported deliveries/)).toBeInTheDocument()
+  expect(screen.getByText(/does not indicate vehicle availability, physical location, or sale status/)).toBeInTheDocument()
  })
  it('shows unknown coverage when absent rather than inventing zero captures',()=>{
   start()

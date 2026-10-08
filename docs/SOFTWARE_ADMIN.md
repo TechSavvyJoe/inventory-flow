@@ -23,16 +23,27 @@ and optional group filters. Dealerships, employees, source configuration and
 health keep the selected account context. Owner and audit directories have their
 own search and structured ledgers.
 
-The source workbench separates **Sources**, **OEM coverage**, **Schedules** and
-**Pull queue**. Sources can be filtered together by dealership, provider, OEM
+The account workspace exposes **Setup**, **Dealerships**, **Data connections**,
+**People & access** and **Publication** in the selected account's navigation.
+Data connections combines a source ledger and inspector with **Evidence & OEM
+coverage**, **Provider directory** and **Pull requests**. Sources can be filtered
+together by dealership, provider, OEM
 family, enabled preference and name/vendor. A selected-source inspector exposes
 its scope, method, endpoint, credential reference, local schedule and
 configuration checks. On smaller screens it replaces the directory until
 **Back to sources** is selected, rather than appending a detail panel below the
-list. Configuration dialogs group identity, connection and schedule fields.
+list. Configuration uses three steps: Source & scope, Connection, and Schedule
+& review. Only the final Save persists the draft. New connections start paused.
+The readiness strip separates executor connectivity from planner activation,
+last tick and checked/queued/waiting/failed counters.
 
-**OEM coverage** counts saved configurations and enabled/paused preferences for
-each dealership, not successful captures or vehicle coverage. A dealership's
+**Evidence & OEM coverage** separates stored publication counters and exact
+registered-store totals from manufacturer source planning. App membership is
+the derived public/DealerMail VIN union excluding manager-reported deliveries;
+it does not establish availability, physical location or sale status. Unknown
+coverage remains unreported. Manufacturer planning counts saved configurations
+and enabled/paused preferences for each dealership, not successful captures.
+A dealership's
 **Add source** action preselects its store and the selected OEM family. OEM scope
 can also be recorded for equipment, history, CRM and other provider categories;
 changing the category retains that explicit choice. The guide identifies

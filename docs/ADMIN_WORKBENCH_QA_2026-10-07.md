@@ -36,6 +36,11 @@ credential, publisher, scheduled task or production setting was changed.
   is rechecked around reads; raw metadata and vehicle/customer fields stay out.
 - Captured totals and manufacturer source planning are separate. Configuration
   counts do not establish provider access, OEM capture, availability or warranty.
+- Derived public/DealerMail membership is labeled App membership, with its
+  delivery exclusion and availability, location and sale-status limits stated.
+- Planner readiness retains its last tick and checked, queued, waiting and
+  failed counters. Enabled without a tick is distinct from a reported heartbeat
+  or failed batch, and executor connectivity is shown separately.
 - Pull requests show attributed intent awaiting an executor. No vendor adapter,
   collector execution, schema migration or new route is added.
 
@@ -44,7 +49,7 @@ Research links and documented access boundaries are in
 
 ## Validation
 
-The final `pnpm check` passed with exit 0: 235 test files, 3,579 tests passed,
+The final `pnpm check` passed with exit 0: 235 test files, 3,583 tests passed,
 three existing skips and zero failures. Type checking, repository safety,
 design-system ratchet, production build and companion packaging passed.
 
@@ -57,7 +62,9 @@ Intel run caught one implicit-locale call in the new coverage view; pinning it
 to en-US passed five focused checks, followed by the complete successful rerun.
 The release review's account-navigation, planning-save focus and coverage-label
 regressions were included in a third SHA-matched full run, which passed all
-unit checks and the build. This evidence document was updated afterward.
+unit checks and the build. The derived-membership and planner-diagnostics review
+fixes passed a further matching full run with four additional regression cases.
+The documentation was updated afterward.
 
 `pnpm exec playwright test tests/e2e/platform-data.spec.ts` passed all twelve
 cases across desktop and mobile: guided setup, OEM scoping, queue cancellation,
@@ -78,6 +85,9 @@ visible wizard actions. The 56 captured states include directory, setup,
 dealerships, people, publication, sources, stored coverage, OEM planning,
 providers, all three wizard steps, owners and audit history. Representative
 final states were visually inspected at desktop, tablet and mobile sizes.
+The final review delta added 16 screenshots of source readiness, coverage and
+a simulated failed planner batch at all four sizes, with no overflow, page
+errors or console errors; the membership explanation wrapped readably.
 
 Independent source/design, catalog/footer and final focus delta reviews
 reported no blockers or follow-ups. No test contract or visual baseline was
@@ -92,6 +102,8 @@ The final release-delta checks are retained in
 `/Users/joegallant/Downloads/InventoryFlow-Production-PR72-2026-10-07/` as
 `final-pnpm-check.log`, `final-cloud-validate.log` and
 `final-platform-e2e-corrected.log`; the initial browser failure is separate.
+The latest review-fix receipts use `review-fixes-*.log` and
+`pr72-review-fix-*.png` / `pr72-review-fix-results.json` in that same folder.
 
 ## Operational boundary
 

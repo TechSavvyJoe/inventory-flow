@@ -24,6 +24,12 @@ export function PlatformDataConnections({ group, request, revision, busy, begin 
   const selectedId = visible.some(item => item.id === selected) ? selected : visible[0]?.id
   const item = visible.find(source => source.id === selectedId)
   const waiting = data?.requests.filter(pull => pull.state === 'queued') ?? []
+  const scheduler = data?.scheduler
+  const plannerStatus = !scheduler ? 'Planner diagnostics unavailable'
+    : !scheduler.enabled ? 'Daily planner not activated'
+      : !scheduler.lastTick ? 'Queue planner enabled · awaiting first tick'
+        : scheduler.failed > 0 ? 'Latest planner batch reported failures'
+          : 'Planner heartbeat successful'
   useEffect(() => {
     const destination = focusDestination.current
     if (!destination || panel) return
@@ -68,7 +74,7 @@ export function PlatformDataConnections({ group, request, revision, busy, begin 
     <div className="platform-panel-heading"><div><h3>Data connections</h3><p className="platform-help">Choose a provider, configure its delivery and review stored evidence.</p></div><button className="platform-primary" disabled={busy||!data||!group.dealerships.length} onClick={()=>begin(edit())}><Plus aria-hidden="true"/>Add connection</button></div>
     {!group.dealerships.length&&<p className="platform-empty-copy">Register a dealership before connecting its data.</p>}
     {error?<p role="alert">{error} <button onClick={retry}>Retry data connections</button></p>:!data?<p role="status">Loading source configuration…</p>:<>
-      <div className="platform-execution-strip" aria-label="Collection readiness"><strong>{data.execution.connected?'Executor reported connected':'Executor not connected'}</strong><span>{data.scheduler?.enabled?'Queue planner enabled':'Daily planner not activated'}</span><small>{connections.length} configured · {waiting.length} waiting · provider access unverified</small></div>
+      <div className="platform-execution-strip" aria-label="Collection readiness"><strong>{data.execution.connected?'Executor reported connected':'Executor not connected'}</strong><span>{plannerStatus}</span><small>Last tick: {formatDateTime(scheduler?.lastTick ?? undefined)} · {scheduler?.checked ?? 'Not reported'} checked · {scheduler?.queued ?? 'Not reported'} queued · {scheduler?.waiting ?? 'Not reported'} planner waiting · {scheduler?.failed ?? 'Not reported'} failed · {connections.length} configured · {waiting.length} requests waiting · provider access unverified</small></div>
       <div className="platform-data-tools" aria-label="Source planning tools"><button disabled={busy} aria-expanded={panel==='coverage'} onClick={()=>toggle('coverage')}>Evidence & OEM coverage</button><button disabled={busy} aria-expanded={panel==='catalog'} onClick={()=>toggle('catalog')}>Provider directory</button><button disabled={busy} aria-expanded={panel==='queue'} onClick={()=>toggle('queue')}>Pull requests {waiting.length}</button></div>
       {panel==='coverage'&&<PlatformOemCoverage group={group} data={data} busy={busy} onInspect={inspect} onAdd={(family,dealershipId)=>begin(edit(undefined,family,dealershipId,undefined,true))}/>}
       {panel==='catalog'&&<PlatformProviderDirectory busy={busy||!group.dealerships.length} onChoose={providerProfile=>begin(edit(undefined,'not_applicable',undefined,providerProfile,true))}/>}
