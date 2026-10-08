@@ -5,8 +5,8 @@ import { buildOemCoverage, OEM_PROFILES, type OemFamily } from './platformSource
 import './PlatformOemCoverage.css'
 
 const EVIDENCE_FIELDS: {key:keyof PlatformStoredCoverage['counts'];label:string}[] = [
- {key:'publicRowCount',label:'Public inventory rows'}, {key:'dealerMailRowCount',label:'CRM source rows'},
- {key:'dealerMailVinReconciledCount',label:'CRM rows reconciled to VINs'}, {key:'dealerMailVinReviewCount',label:'CRM rows needing VIN review'},
+ {key:'publicRowCount',label:'Public inventory rows'}, {key:'dealerMailRowCount',label:'DealerMail source rows'},
+ {key:'dealerMailVinReconciledCount',label:'DealerMail rows reconciled to VINs'}, {key:'dealerMailVinReviewCount',label:'DealerMail rows needing VIN review'},
  {key:'resourceRecordCount',label:'Vehicle resource records'}, {key:'fordInvoiceRecordCount',label:'Ford invoice records'},
  {key:'fordOasisRecordCount',label:'Ford OASIS records'}, {key:'warrantyCheckRecordCount',label:'Warranty check records'},
  {key:'warningCount',label:'Publication warnings'},
@@ -27,7 +27,7 @@ export function PlatformOemCoverage({group,data,busy,onInspect,onAdd}:{group:Pla
    {stored?.publishedAt&&<p className="platform-evidence-context">Published: <time dateTime={stored.publishedAt}>{stored.publishedAt}</time></p>}
    <dl className="platform-evidence-counts">{EVIDENCE_FIELDS.map(field=><div key={field.key}><dt>{field.label}</dt><dd>{countLabel(stored?.counts[field.key])}</dd></div>)}</dl>
    <div className="platform-evidence-stores" aria-label="Stored coverage by dealership"><h4>Dealership publication totals</h4>
-    {group.dealerships.filter(dealer=>dealer.groupId===group.id).map(dealer=>{const totals=stored?.stores.find(item=>item.storeKey===dealer.storeKey);return <div className="platform-evidence-store" key={dealer.id} role="group" aria-label={`Stored coverage at ${dealer.name}`}><strong>{dealer.name}</strong><dl><div><dt>Public rows</dt><dd>{countLabel(totals?.publicCount)}</dd></div><div><dt>CRM rows</dt><dd>{countLabel(totals?.crmCount)}</dd></div><div><dt>Active inventory</dt><dd>{countLabel(totals?.activeInventoryCount)}</dd></div></dl></div>})}
+    {group.dealerships.filter(dealer=>dealer.groupId===group.id).map(dealer=>{const totals=stored?.stores.find(item=>item.storeKey===dealer.storeKey);return <div className="platform-evidence-store" key={dealer.id} role="group" aria-label={`Stored coverage at ${dealer.name}`}><strong>{dealer.name}</strong><dl><div><dt>Public rows</dt><dd>{countLabel(totals?.publicCount)}</dd></div><div><dt>DealerMail rows</dt><dd>{countLabel(totals?.crmCount)}</dd></div><div><dt>Active inventory</dt><dd>{countLabel(totals?.activeInventoryCount)}</dd></div></dl></div>})}
     <p className="platform-evidence-context">Store totals require an exact registered store key. Missing totals remain unreported.</p>
    </div>
   </section>

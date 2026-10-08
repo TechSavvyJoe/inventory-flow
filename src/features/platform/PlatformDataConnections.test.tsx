@@ -11,10 +11,10 @@ const group = { id: 'synthetic-group', name: 'Synthetic Motors', status: 'active
 const owner = { id: 'synthetic-owner', name: 'Demo owner', email: 'owner@example.invalid', enabled: true }
 const overview: PlatformOverview = { owner, owners: [owner], groups: [group], audit: [], revision: 5, generatedAt: '2026-10-05T14:00:00Z' }
 const source = (id: string, overrides: Partial<PlatformConnection> = {}): PlatformConnection => ({ id, groupId: group.id, dealershipId: 'synthetic-north', name: 'Public feed', provider: 'public_inventory', vendor: 'Public website', oem: 'not_applicable', method: 'api', endpoint: 'https://feed.example.invalid/inventory', credentialRef: '', enabled: true, cadence: 'daily', localTime: '05:30', timezone: 'America/Detroit', updatedAt: '2026-10-05T12:00:00Z', verification: 'not_verified', ...overrides })
-const sources: PlatformConnections = { groupId: group.id, revision: 5, connections: [source('synthetic-public'), source('synthetic-oasis', { name: 'OASIS archive', provider: 'oem', vendor: 'Archived Ford evidence', oem: 'ford_lincoln', dealershipId: 'synthetic-south', method: 'collector', endpoint: '', enabled: false, cadence: 'manual' })], requests: [], execution: { connected: false, message: 'No executor.' }, scheduler: { enabled: false, lastTick: null, checked: 0, queued: 0, waiting: 0, failed: 0 } }
+const sources: PlatformConnections = { groupId: group.id, revision: 5, connections: [source('synthetic-public'), source('synthetic-oasis', { name: 'OASIS archive', provider: 'oem', vendor: 'Archived Ford evidence', oem: 'ford_lincoln', dealershipId: 'synthetic-south', method: 'collector', endpoint: '', enabled: false, cadence: 'manual' }), source('synthetic-crm', { name: 'Independent CRM', provider: 'crm', vendor: 'Independent CRM', oem: 'not_applicable' })], requests: [], execution: { connected: false, message: 'No executor.' }, scheduler: { enabled: false, lastTick: null, checked: 0, queued: 0, waiting: 0, failed: 0 } }
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 const start = async (sourceData = sources) => {
-  const fetcher = vi.fn(async (url: string, options?: RequestInit) => Response.json(options?.method === 'POST' ? { saved: true } : url.endsWith('/connections') ? sourceData : overview))
+  const fetcher = vi.fn(async (url: string, options?: RequestInit) => Response.json(options?.method === 'POST' ? { saved: true, id: 'synthetic-oasis' } : url.endsWith('/connections') ? sourceData : overview))
   vi.stubGlobal('fetch', fetcher)
   render(<PlatformAdminPage />)
   fireEvent.click(await screen.findByRole('button', { name: 'Open Synthetic Motors workspace' }))
@@ -38,10 +38,11 @@ describe('Source and OEM administration workbench', () => {
     expect(screen.getByRole('heading', { name: 'No matching sources' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Configure' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Clear source filters' }))
-    expect(within(directory).getAllByRole('button')).toHaveLength(2)
+    expect(within(directory).getAllByRole('button')).toHaveLength(3)
   })
 
   it('opens a dealership-scoped OEM draft, starts paused and preserves its family when the source category changes', async () => {
+    vi.stubGlobal('innerWidth', 1440)
     const fetcher = await start()
     fireEvent.click(screen.getByRole('button', { name: 'Evidence & OEM coverage' }))
     fireEvent.change(screen.getByRole('combobox', { name: 'OEM family' }), { target: { value: 'toyota_lexus' } })
@@ -59,6 +60,7 @@ describe('Source and OEM administration workbench', () => {
     fireEvent.change(within(form).getByRole('textbox', { name: 'Reason for this change' }), { target: { value: 'Synthetic configuration setup' } })
     fireEvent.submit(form)
     await waitFor(() => expect(fetcher.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(true))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'OASIS archive' })).toHaveFocus())
     const post = fetcher.mock.calls.find(([, options]) => options?.method === 'POST')!
     expect(post[0]).toBe('/api/platform/groups/synthetic-group/connections')
     expect(JSON.parse(String(post[1]?.body))).toMatchObject({ dealershipId: 'synthetic-south', oem: 'toyota_lexus', provider: 'equipment', enabled: false, expectedRevision: 5 })
@@ -90,10 +92,37 @@ describe('Source and OEM administration workbench', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Evidence & OEM coverage' }))
     fireEvent.click(screen.getByRole('button', { name: 'View OASIS archive' }))
-    expect(screen.getByRole('heading', { name: 'OASIS archive' })).toHaveFocus()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'OASIS archive' })).toHaveFocus())
 
     fireEvent.click(screen.getByRole('button', { name: 'Pull requests 0' }))
     fireEvent.click(screen.getByRole('button', { name: 'Inspect source' }))
-    expect(screen.getByRole('heading', { name: 'OASIS archive' })).toHaveFocus()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'OASIS archive' })).toHaveFocus())
+  })
+
+  it('focuses the inspector after provider setup saves on desktop', async () => {
+    vi.stubGlobal('innerWidth', 1440)
+    const fetcher = await start()
+    fireEvent.click(screen.getByRole('button', { name: 'Provider directory' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Configure Selly Automotive' }))
+    const form = screen.getByRole('form', { name: 'Add data connection' })
+    fireEvent.click(within(form).getByRole('button', { name: 'Continue to connection' }))
+    fireEvent.click(within(form).getByRole('button', { name: 'Continue to schedule & review' }))
+    fireEvent.change(within(form).getByRole('textbox', { name: 'Reason for this change' }), { target: { value: 'Synthetic provider setup' } })
+    fireEvent.submit(form)
+    await waitFor(() => expect(fetcher.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(true))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'OASIS archive' })).toHaveFocus())
+  })
+
+  it('restores direct desktop ledger edit focus after saving', async () => {
+    vi.stubGlobal('innerWidth', 1440)
+    await start()
+    const configure = screen.getByRole('button', { name: 'Configure' })
+    fireEvent.click(configure)
+    const form = screen.getByRole('form', { name: 'Edit data connection' })
+    fireEvent.click(within(form).getByRole('button', { name: 'Continue to connection' }))
+    fireEvent.click(within(form).getByRole('button', { name: 'Continue to schedule & review' }))
+    fireEvent.change(within(form).getByRole('textbox', { name: 'Reason for this change' }), { target: { value: 'Synthetic direct edit' } })
+    fireEvent.submit(form)
+    await waitFor(() => expect(configure).toHaveFocus())
   })
 })

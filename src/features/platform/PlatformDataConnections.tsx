@@ -27,16 +27,19 @@ export function PlatformDataConnections({ group, request, revision, busy, begin 
   useEffect(() => {
     const destination = focusDestination.current
     if (!destination || panel) return
-    const target = destination === 'inspector' ? inspectorHeading.current : sourceRows.current.get(selectedId ?? '')
-    if (target) { target.focus({ preventScroll: true }); target.scrollIntoView?.({ block: 'nearest' }); focusDestination.current = null }
+    const frame = window.requestAnimationFrame(() => {
+      const target = destination === 'inspector' ? inspectorHeading.current : sourceRows.current.get(selectedId ?? '')
+      if (target) { target.focus({ preventScroll: true }); target.scrollIntoView?.({ block: 'nearest' }); focusDestination.current = null }
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [detailOpen, selectedId, panel])
   const showSource = (id: string, focusInspector = window.innerWidth < 1200) => { if (focusInspector) focusDestination.current = 'inspector'; setSelected(id); setDetailOpen(true) }
   const backToSources = () => { focusDestination.current = 'directory'; setDetailOpen(false) }
   const clearFilters = () => { setSearch(''); setStore('all'); setProvider('all'); setOem('all'); setPreference('all') }
   const inspect = (id: string) => { clearFilters(); showSource(id, true); setPanel(null) }
-  const edit = (source?: PlatformConnection, family = 'not_applicable', dealershipId?: string, profile?:SourceProfile): PlatformEdit => ({
+  const edit = (source?: PlatformConnection, family = 'not_applicable', dealershipId?: string, profile?:SourceProfile, focusInspectorAfterSave = false): PlatformEdit => ({
     kind:'source',
-    afterSave: id => { clearFilters(); showSource(id); setPanel(null) },
+    afterSave: id => { clearFilters(); showSource(id, focusInspectorAfterSave || window.innerWidth < 1200); setPanel(null) },
     title: source ? 'Edit data connection' : 'Add data connection', path: `/groups/${group.id}/connections`,
     values: { ...(source ? { id: source.id } : {}), dealershipId: source?.dealershipId ?? dealershipId ?? group.dealerships[0]?.id ?? '', name: source?.name ?? profile?.name ?? '', provider: source?.provider ?? profile?.category ?? (family === 'not_applicable' ? 'public_inventory' : 'oem'), vendor: source?.vendor ?? profile?.name ?? (source ? PROVIDERS[source.provider] : ''), oem: source?.oem ?? family, method: source?.method ?? 'collector', endpoint: source?.endpoint ?? '', credentialRef: source?.credentialRef ?? '', enabled: source?.enabled ?? false, cadence: source?.cadence ?? 'manual', localTime: source?.localTime ?? '05:30', timezone: source?.timezone ?? 'America/Detroit', expectedRevision: data!.revision },
     fields: [
@@ -67,8 +70,8 @@ export function PlatformDataConnections({ group, request, revision, busy, begin 
     {error?<p role="alert">{error} <button onClick={retry}>Retry data connections</button></p>:!data?<p role="status">Loading source configuration…</p>:<>
       <div className="platform-execution-strip" aria-label="Collection readiness"><strong>{data.execution.connected?'Executor reported connected':'Executor not connected'}</strong><span>{data.scheduler?.enabled?'Queue planner enabled':'Daily planner not activated'}</span><small>{connections.length} configured · {waiting.length} waiting · provider access unverified</small></div>
       <div className="platform-data-tools" aria-label="Source planning tools"><button disabled={busy} aria-expanded={panel==='coverage'} onClick={()=>toggle('coverage')}>Evidence & OEM coverage</button><button disabled={busy} aria-expanded={panel==='catalog'} onClick={()=>toggle('catalog')}>Provider directory</button><button disabled={busy} aria-expanded={panel==='queue'} onClick={()=>toggle('queue')}>Pull requests {waiting.length}</button></div>
-      {panel==='coverage'&&<PlatformOemCoverage group={group} data={data} busy={busy} onInspect={inspect} onAdd={(family,dealershipId)=>begin(edit(undefined,family,dealershipId))}/>}
-      {panel==='catalog'&&<PlatformProviderDirectory busy={busy||!group.dealerships.length} onChoose={providerProfile=>begin(edit(undefined,'not_applicable',undefined,providerProfile))}/>}
+      {panel==='coverage'&&<PlatformOemCoverage group={group} data={data} busy={busy} onInspect={inspect} onAdd={(family,dealershipId)=>begin(edit(undefined,family,dealershipId,undefined,true))}/>}
+      {panel==='catalog'&&<PlatformProviderDirectory busy={busy||!group.dealerships.length} onChoose={providerProfile=>begin(edit(undefined,'not_applicable',undefined,providerProfile,true))}/>}
       {panel==='queue'&&<section aria-label="Pull request queue"><div className="platform-panel-heading"><div><h4>Pull request history</h4><p className="platform-help">Waiting requests and latest 50 cancellations. This queue does not report completed captures.</p></div><select aria-label="Pull request state filter" value={queueState} onChange={event=>setQueueState(event.target.value)}><option value="all">All requests</option><option value="queued">Waiting</option><option value="cancelled">Cancelled</option></select></div><div className="platform-source-queue">{data.requests.filter(pull=>queueState==='all'||pull.state===queueState).map(pull=>{const source=connections.find(connection=>connection.id===pull.connectionId);return <article className="platform-source-queue-row" key={pull.id}><div><strong>{source?.name??'Source no longer registered'}</strong><small>{source?dealerName(source.dealershipId):'Account-scoped request'} · {pull.kind==='scheduled'?'Scheduled':'Manual'}</small></div><div><strong>{pull.state==='queued'?'Awaiting executor':'Cancelled'}</strong><small>{formatDateTime(pull.createdAt)} · {pull.requestedBy}</small>{pull.scheduledSlot&&<small>Local slot {pull.scheduledSlot}</small>}</div>{source&&<button disabled={busy} onClick={()=>pull.state==='queued'?control(source,'cancel',pull.id):inspect(source.id)}>{pull.state==='queued'?'Cancel request':'Inspect source'}</button>}</article>})}{!data.requests.some(pull=>queueState==='all'||pull.state===queueState)&&<p className="platform-empty-copy">No {queueState==='all'?'':queueState==='queued'?'waiting ':'cancelled '}pull requests.</p>}</div></section>}
       {!panel&&<>
         <div className={`platform-source-toolbar ${filtersOpen?'platform-source-toolbar--filters-open':''}`}><label className="platform-search"><Search aria-hidden="true"/><input aria-label="Find a connection" placeholder="Search sources or dealerships" value={search} onChange={event=>{setSearch(event.target.value);setDetailOpen(false)}}/></label><button className="platform-source-filter-toggle" aria-expanded={filtersOpen} onClick={()=>setFiltersOpen(current=>!current)}><Filter aria-hidden="true"/>Filters</button>

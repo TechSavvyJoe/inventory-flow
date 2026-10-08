@@ -15,6 +15,12 @@ credential, publisher, scheduled task or production setting was changed.
   OEM View and cancelled-request Inspect move keyboard focus to the inspector
   at every width when their originating panel closes. Direct desktop ledger
   selection retains row focus.
+- Opening an account or returning to the platform directory focuses the page
+  heading. Global summary actions reset empty directory filters and select a
+  registered account; an empty installation stays in the directory.
+- Saving OEM/provider planning drafts focuses the resulting source inspector
+  after the dialog closes. Coverage labels identify DealerMail specifically,
+  rather than implying that other configured CRM providers supplied the counts.
 - Source configuration is a three-step dialog: Source & scope, Connection,
   Schedule & review. Only final Save writes configuration. The fixed footer
   stays visible while its body scrolls, with keyboard containment and Escape.
@@ -38,7 +44,7 @@ Research links and documented access boundaries are in
 
 ## Validation
 
-The final `pnpm check` passed with exit 0: 235 test files, 3,573 tests passed,
+The final `pnpm check` passed with exit 0: 235 test files, 3,579 tests passed,
 three existing skips and zero failures. Type checking, repository safety,
 design-system ratchet, production build and companion packaging passed.
 
@@ -49,16 +55,22 @@ an isolated temporary Intel Mac checkout with the frozen lockfile, Node
 Microsoft's SHA-256. All 822 source inputs matched the M1 by SHA-256. A first
 Intel run caught one implicit-locale call in the new coverage view; pinning it
 to en-US passed five focused checks, followed by the complete successful rerun.
-The final focus regression was included in a second SHA-matched full run,
-which passed the build and all ten admin browser cases sequentially. This
-evidence document was updated afterward.
+The release review's account-navigation, planning-save focus and coverage-label
+regressions were included in a third SHA-matched full run, which passed all
+unit checks and the build. This evidence document was updated afterward.
 
-`pnpm exec playwright test tests/e2e/platform-data.spec.ts` passed all ten
+`pnpm exec playwright test tests/e2e/platform-data.spec.ts` passed all twelve
 cases across desktop and mobile: guided setup, OEM scoping, queue cancellation,
 contained dialog focus, Escape/restore, responsive inspection, independent
 provider prefill and visible wizard actions.
 Both desktop and native mobile cases verify focus after OEM and cancelled
 request inspection; the unit regression also preserves direct desktop row focus.
+The final browser suite also verifies account-row focus, planning-save focus,
+and summary navigation after filters return no accounts. Its initial summary
+test incorrectly expected Northside instead of Harbor, the first registered
+account after an empty selection; correcting that fixture expectation retained
+the focus and valid-account assertions. No application fix or timeout change
+was needed for that failure.
 
 Actual Chrome QA of `pnpm dev:demo` covered 390x844, 1024x768, 1320x820 and
 1440x900. All four sizes had zero page overflow or uncaught page errors, and
@@ -76,6 +88,10 @@ Screenshots and logs remain outside Git in
 `final-*.png`, `final-qa-results.json`, `validated-source-sha256.json` and
 `intel-final-focus-pnpm-check.log` and `intel-final-platform-e2e.log`.
 Earlier full-run and failed logs are retained separately.
+The final release-delta checks are retained in
+`/Users/joegallant/Downloads/InventoryFlow-Production-PR72-2026-10-07/` as
+`final-pnpm-check.log`, `final-cloud-validate.log` and
+`final-platform-e2e-corrected.log`; the initial browser failure is separate.
 
 ## Operational boundary
 

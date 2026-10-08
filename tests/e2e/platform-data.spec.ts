@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 async function openSources(page:Page){
  await page.goto('/platform')
  await page.getByRole('button',{name:'Open Northside Motors workspace'}).click()
+ await expect(page.getByRole('heading',{name:'Northside Motors',exact:true})).toBeFocused()
  const nav=page.getByRole('button',{name:'Data connections',exact:true})
  if(await nav.isVisible())await nav.click();else await page.getByRole('combobox',{name:'Administration section'}).selectOption('account:connections')
 }
@@ -68,6 +69,7 @@ test('creates an OEM-scoped source from its dealership and preserves the family 
   await form.getByRole('textbox',{name:'Reason for this change'}).fill('Synthetic OEM configuration')
   await form.getByRole('button',{name:'Save change'}).click()
   await expect(page.getByRole('heading',{name,exact:true})).toBeVisible()
+  await expect(page.getByRole('heading',{name,exact:true})).toBeFocused()
   await expect(page.getByRole('button',{name:'Queue pull request',exact:true})).toBeDisabled()
   await page.getByRole('button',{name:'Evidence & OEM coverage',exact:true}).click()
   await coverage.getByRole('combobox',{name:'OEM family'}).selectOption('toyota_lexus')
@@ -118,7 +120,7 @@ test('keeps keyboard focus in the responsive source workspace',async({page})=>{
   expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBe(false)
 })
 
-test('prefills a researched independent provider and keeps setup actions visible',async({page})=>{
+test('prefills a researched independent provider and keeps setup actions visible',async({page},info)=>{
   await openSources(page)
   await page.getByRole('button',{name:'Provider directory',exact:true}).click()
   await page.getByRole('textbox',{name:'Find providers'}).fill('Selly')
@@ -137,4 +139,35 @@ test('prefills a researched independent provider and keeps setup actions visible
   await page.keyboard.press('Escape')
   await expect(form).toHaveCount(0)
   await expect(page.getByRole('button',{name:'Configure Selly Automotive'})).toBeFocused()
+  await page.getByRole('button',{name:'Configure Selly Automotive'}).click()
+  const name=`Synthetic Selly CRM ${info.project.name}`
+  await form.getByRole('textbox',{name:'Connection name',exact:true}).fill(name)
+  await form.getByRole('button',{name:'Continue to connection'}).click()
+  await form.getByRole('button',{name:'Continue to schedule & review'}).click()
+  await form.getByRole('textbox',{name:'Reason for this change'}).fill('Synthetic provider setup focus check')
+  await form.getByRole('button',{name:'Save change'}).click()
+  await expect(page.getByRole('heading',{name,exact:true})).toBeFocused()
+})
+
+test('keeps summary navigation usable after account filters return no matches',async({page})=>{
+  await page.goto('/platform')
+  const summary=page.getByRole('region',{name:'Platform summary'})
+  const search=page.getByRole('textbox',{name:'Find a group or dealership'})
+  await search.fill('no matching synthetic account')
+  await expect(page.getByText('No groups match these filters.')).toBeVisible()
+  await summary.getByRole('button',{name:/^Dealer groups/}).click()
+  await expect(page.getByRole('button',{name:'Open Northside Motors workspace'})).toBeVisible()
+  await search.fill('no matching synthetic account')
+  await summary.getByRole('button',{name:/^Dealerships/}).click()
+  // Clearing an empty filtered selection restores the first registered account.
+  await expect(page.getByRole('heading',{name:'Harbor Automotive',exact:true})).toBeFocused()
+  await expect(page.getByRole('heading',{name:'No matching account'})).toHaveCount(0)
+  const back=page.getByRole('button',{name:'All dealer groups',exact:true})
+  if(await back.isVisible()) await back.click()
+  else await page.getByRole('combobox',{name:'Administration section'}).selectOption('overview')
+  await expect(page.getByRole('heading',{name:'Platform overview',exact:true})).toBeFocused()
+  await search.fill('no matching synthetic account')
+  await summary.getByRole('button',{name:/^Enabled employees/}).click()
+  await expect(page.getByRole('heading',{name:'Harbor Automotive',exact:true})).toBeFocused()
+  await expect(page.getByRole('heading',{name:'No matching account'})).toHaveCount(0)
 })
