@@ -40,6 +40,10 @@ test('configures a dealership daily feed and keeps requests clearly separate fro
   await page.getByRole('dialog').getByRole('textbox',{name:'Reason for this change'}).fill('Synthetic request cancellation')
   await page.getByRole('dialog').getByRole('button',{name:'Save change'}).click()
   await expect(page.getByRole('button',{name:'Configure'})).toBeEnabled()
+  await page.getByRole('button',{name:/^Pull requests /}).click()
+  const cancelledRequest=page.getByRole('region',{name:'Pull request queue'}).getByRole('article').filter({hasText:`Synthetic daily feed ${info.project.name}`})
+  await cancelledRequest.getByRole('button',{name:'Inspect source',exact:true}).click()
+  await expect(page.getByRole('heading',{name:`Synthetic daily feed ${info.project.name}`,exact:true})).toBeFocused()
 })
 
 test('creates an OEM-scoped source from its dealership and preserves the family for other providers',async({page},info)=>{
@@ -71,6 +75,7 @@ test('creates an OEM-scoped source from its dealership and preserves the family 
   await expect(cell.getByRole('button',{name:`View ${name}`,exact:true})).toBeVisible()
   await cell.getByRole('button',{name:`View ${name}`,exact:true}).click()
   await expect(page.getByRole('heading',{name,exact:true})).toBeVisible()
+  await expect(page.getByRole('heading',{name,exact:true})).toBeFocused()
   const back=page.getByRole('button',{name:'Back to sources',exact:true})
   if(await back.isVisible()) await back.click()
   await page.getByRole('textbox',{name:'Find a connection'}).fill(name)

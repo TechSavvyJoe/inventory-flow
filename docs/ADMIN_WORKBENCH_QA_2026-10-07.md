@@ -12,6 +12,9 @@ credential, publisher, scheduled task or production setting was changed.
   readiness is distinct from source execution and publication readiness.
 - A filtered source ledger and focused inspector replace nested setup views.
   Mobile and tablet inspection replaces the list; Back restores row focus.
+  OEM View and cancelled-request Inspect move keyboard focus to the inspector
+  at every width when their originating panel closes. Direct desktop ledger
+  selection retains row focus.
 - Source configuration is a three-step dialog: Source & scope, Connection,
   Schedule & review. Only final Save writes configuration. The fixed footer
   stays visible while its body scrolls, with keyboard containment and Escape.
@@ -35,7 +38,7 @@ Research links and documented access boundaries are in
 
 ## Validation
 
-The final `pnpm check` passed with exit 0: 235 test files, 3,572 tests passed,
+The final `pnpm check` passed with exit 0: 235 test files, 3,573 tests passed,
 three existing skips and zero failures. Type checking, repository safety,
 design-system ratchet, production build and companion packaging passed.
 
@@ -46,12 +49,16 @@ an isolated temporary Intel Mac checkout with the frozen lockfile, Node
 Microsoft's SHA-256. All 822 source inputs matched the M1 by SHA-256. A first
 Intel run caught one implicit-locale call in the new coverage view; pinning it
 to en-US passed five focused checks, followed by the complete successful rerun.
-This evidence document was updated after that run.
+The final focus regression was included in a second SHA-matched full run,
+which passed the build and all ten admin browser cases sequentially. This
+evidence document was updated afterward.
 
 `pnpm exec playwright test tests/e2e/platform-data.spec.ts` passed all ten
 cases across desktop and mobile: guided setup, OEM scoping, queue cancellation,
 contained dialog focus, Escape/restore, responsive inspection, independent
 provider prefill and visible wizard actions.
+Both desktop and native mobile cases verify focus after OEM and cancelled
+request inspection; the unit regression also preserves direct desktop row focus.
 
 Actual Chrome QA of `pnpm dev:demo` covered 390x844, 1024x768, 1320x820 and
 1440x900. All four sizes had zero page overflow or uncaught page errors, and
@@ -60,14 +67,15 @@ dealerships, people, publication, sources, stored coverage, OEM planning,
 providers, all three wizard steps, owners and audit history. Representative
 final states were visually inspected at desktop, tablet and mobile sizes.
 
-Independent source/design review and a final catalog/footer delta review
+Independent source/design, catalog/footer and final focus delta reviews
 reported no blockers or follow-ups. No test contract or visual baseline was
 weakened.
 
 Screenshots and logs remain outside Git in
 `/Users/joegallant/Downloads/InventoryFlow-Admin-Guided-Setup-2026-10-07/`:
 `final-*.png`, `final-qa-results.json`, `validated-source-sha256.json` and
-`intel-final-pnpm-check.log`. Earlier failed logs are retained separately.
+`intel-final-focus-pnpm-check.log` and `intel-final-platform-e2e.log`.
+Earlier full-run and failed logs are retained separately.
 
 ## Operational boundary
 

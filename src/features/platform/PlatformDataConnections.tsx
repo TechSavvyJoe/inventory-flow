@@ -30,10 +30,10 @@ export function PlatformDataConnections({ group, request, revision, busy, begin 
     const target = destination === 'inspector' ? inspectorHeading.current : sourceRows.current.get(selectedId ?? '')
     if (target) { target.focus({ preventScroll: true }); target.scrollIntoView?.({ block: 'nearest' }); focusDestination.current = null }
   }, [detailOpen, selectedId, panel])
-  const showSource = (id: string) => { if (window.innerWidth < 1200) focusDestination.current = 'inspector'; setSelected(id); setDetailOpen(true) }
+  const showSource = (id: string, focusInspector = window.innerWidth < 1200) => { if (focusInspector) focusDestination.current = 'inspector'; setSelected(id); setDetailOpen(true) }
   const backToSources = () => { focusDestination.current = 'directory'; setDetailOpen(false) }
   const clearFilters = () => { setSearch(''); setStore('all'); setProvider('all'); setOem('all'); setPreference('all') }
-  const inspect = (id: string) => { clearFilters(); showSource(id); setPanel(null) }
+  const inspect = (id: string) => { clearFilters(); showSource(id, true); setPanel(null) }
   const edit = (source?: PlatformConnection, family = 'not_applicable', dealershipId?: string, profile?:SourceProfile): PlatformEdit => ({
     kind:'source',
     afterSave: id => { clearFilters(); showSource(id); setPanel(null) },

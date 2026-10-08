@@ -76,4 +76,24 @@ describe('Source and OEM administration workbench', () => {
     expect(within(queue).getByText('No cancelled pull requests.')).toBeInTheDocument()
     expect(screen.queryByText(/Last successful sync/)).not.toBeInTheDocument()
   })
+
+  it('moves desktop keyboard focus into the inspector after cross-panel inspection', async () => {
+    vi.stubGlobal('innerWidth', 1440)
+    const cancelled = { id: 'synthetic-cancelled', connectionId: 'synthetic-oasis', state: 'cancelled' as const, kind: 'manual' as const, requestedBy: 'Synthetic operator', createdAt: '2026-10-05T10:00:00Z', updatedAt: '2026-10-05T10:05:00Z' }
+    await start({ ...sources, requests: [cancelled] })
+
+    const directory = screen.getByRole('region', { name: 'Source directory' })
+    const ledgerRow = within(directory).getByRole('button', { name: 'Inspect OASIS archive at Synthetic South' })
+    fireEvent.click(ledgerRow)
+    expect(ledgerRow).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'OASIS archive' })).not.toHaveFocus()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Evidence & OEM coverage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'View OASIS archive' }))
+    expect(screen.getByRole('heading', { name: 'OASIS archive' })).toHaveFocus()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pull requests 0' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect source' }))
+    expect(screen.getByRole('heading', { name: 'OASIS archive' })).toHaveFocus()
+  })
 })
