@@ -84,6 +84,12 @@ the dealership directory empty and source execution disabled. See
 [Software administration](docs/SOFTWARE_ADMIN.md) for implemented controls,
 onboarding limits and the separate activation checklist.
 
+Within a dealer group, **Data connections** provides guided source setup,
+provider research, stored aggregate coverage and the pull-request queue. The
+[Automotive source catalog](docs/AUTOMOTIVE_SOURCE_CATALOG.md) explains the
+researched CRM, DMS, website, inventory-feed, history and OEM options. Catalog
+entries describe provider capabilities; they are not installed adapters.
+
 Group managers open **Control center** (`/admin`) to manage employees and review
 access history. The account menu offers permission previews of the other roles;
 the testing banner provides **Return to Group manager**. These are live records,

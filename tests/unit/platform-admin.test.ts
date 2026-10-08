@@ -75,6 +75,19 @@ describe('Software owner identity and registry',()=>{
 })
 
 describe('Tenant boundaries and monitoring',()=>{
+  it('exposes only stored aggregate coverage for the verified tenant and its registered stores',async()=>{
+    const {env,tenant}=setup()
+    tenant.prepare('UPDATE cloud_release_versions SET metadata_json=?').run(JSON.stringify({vehicleCount:5,publicRowCount:4,
+      publicStoreCounts:{northside:4,foreign:90},dealerMailVinReviewStocks:['PRIVATE_STOCK_MARKER'],warnings:['PRIVATE_WARNING_MARKER']}))
+    const overview=await readPlatform(env,claims,new Date('2026-10-05T14:00:00Z'))
+    expect(overview.groups.find(item=>item.id===groupId).health.coverage).toEqual({basis:'stored_publication',reportDate:'2026-10-05',publishedAt:'2026-10-05T12:00:00Z',counts:{vehicleCount:5,publicRowCount:4},stores:[{storeKey:'northside',publicCount:4}]})
+    expect(overview.groups.find(item=>item.id==='synthetic-lake').health.coverage).toBeUndefined()
+    expect(JSON.stringify(overview)).not.toContain('PRIVATE_')
+    expect(JSON.stringify(overview)).not.toContain('foreign')
+    tenant.prepare('UPDATE cloud_release_versions SET metadata_json=?').run('invalid json')
+    expect((await readPlatform(env,claims)).groups.find(item=>item.id===groupId).health).toMatchObject({connected:true})
+    expect((await readPlatform(env,claims)).groups.find(item=>item.id===groupId).health.coverage).toBeUndefined()
+  })
   it('does not read a database with the wrong immutable tenant identity or a client-supplied binding',async()=>{
     const {env}=setup()
     await expect(tenantDatabase({...env,PLATFORM_TENANT_BINDINGS:'{"synthetic-lake":"TENANT_NORTH_DB"}'},'synthetic-lake')).rejects.toMatchObject({code:'TENANT_CONFIGURATION_REQUIRED'})

@@ -1,0 +1,31 @@
+.platform-oem-coverage { display: grid; gap: var(--ifx-space-3); }
+.platform-evidence-ledger { border-block: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
+.platform-evidence-ledger header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--ifx-space-2); }
+.platform-evidence-ledger h3,.platform-oem-header h3 { margin: var(--ifx-space-2) 0; font-size: var(--ifx-text-lg); }
+.platform-evidence-ledger header p,.platform-evidence-context,.platform-oem-header p,.platform-oem-totals { margin: var(--ifx-space-1) 0 var(--ifx-space-2); color: var(--ifx-neutral-600); font-size: var(--ifx-text-sm); }
+.platform-evidence-counts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin: 0; }
+.platform-evidence-counts > div { display: flex; justify-content: space-between; gap: var(--ifx-space-2); padding: var(--ifx-space-2); border-top: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); font-size: var(--ifx-text-body); }
+.platform-evidence-counts dd { margin: 0; font-weight: var(--ifx-weight-semibold); white-space: nowrap; }
+.platform-evidence-stores h4,.platform-oem-profile h4 { margin: var(--ifx-space-3) 0 var(--ifx-space-2); font-size: var(--ifx-text-body); }
+.platform-evidence-store { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,2fr); gap: var(--ifx-space-2); padding-block: var(--ifx-space-2); border-top: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); font-size: var(--ifx-text-sm); }
+.platform-evidence-store dl { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--ifx-space-2); margin: 0; }
+.platform-evidence-store dt { color: var(--ifx-neutral-600); }
+.platform-evidence-store dd { margin: var(--ifx-space-1) 0 0; font-weight: var(--ifx-weight-semibold); }
+.platform-oem-header { display: flex; justify-content: space-between; align-items: end; gap: var(--ifx-space-3); }
+.platform-oem-header label { display: grid; gap: var(--ifx-space-1); min-width: var(--ifx-platform-oem-family-min-width); font-size: var(--ifx-text-sm); font-weight: var(--ifx-weight-semibold); }
+.platform-oem-header select { width: 100%; min-height: var(--ifx-control-height-md); }
+.platform-oem-workspace { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(var(--ifx-platform-oem-guide-min-width),1fr); gap: var(--ifx-space-3); align-items: start; }
+.platform-oem-matrix { min-width: 0; }
+.platform-oem-matrix-row { padding-block: var(--ifx-space-2); border-top: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); font-size: var(--ifx-text-body); }
+.platform-oem-matrix-row p { margin: var(--ifx-space-1) 0; color: var(--ifx-neutral-600); font-size: var(--ifx-text-sm); }
+.platform-oem-row-actions { display: flex; flex-wrap: wrap; gap: var(--ifx-space-2); }
+.platform-oem-row-actions button { min-height: var(--ifx-control-height-md); padding-inline: var(--ifx-space-2); font-size: var(--ifx-text-sm); }
+.platform-oem-row-actions .platform-oem-add { display: inline-flex; align-items: center; gap: var(--ifx-space-1); color: var(--ifx-info); }
+.platform-oem-profile { border-inline-start: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); padding-inline-start: var(--ifx-space-3); font-size: var(--ifx-text-sm); }
+.platform-oem-profile p { margin-block: var(--ifx-space-2); }
+.platform-oem-profile h4 { margin-top: 0; }
+.platform-oem-profile ul { margin: 0; padding-left: var(--ifx-space-4); }
+.platform-oem-profile li { margin-block: var(--ifx-space-2); }
+.platform-oem-caution { color: var(--ifx-neutral-600); border-top: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); padding-top: var(--ifx-space-2); }
+@media (max-width: 850px) { .platform-oem-workspace { grid-template-columns: 1fr; } .platform-oem-profile { border-inline-start: 0; padding-inline-start: 0; } }
+@media (max-width: 600px) { .platform-evidence-counts { grid-template-columns: 1fr; } .platform-evidence-store { grid-template-columns: 1fr; } .platform-oem-header { align-items: stretch; flex-direction: column; } .platform-oem-header label { min-width: 0; } .platform-oem-row-actions { flex-direction: column; align-items: stretch; } .platform-oem-row-actions button { text-align: left; } }

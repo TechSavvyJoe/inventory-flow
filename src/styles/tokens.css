@@ -128,8 +128,16 @@
   --ifx-press-distance: 1px;
   --ifx-platform-canvas-width: 1600px;
   --ifx-platform-inspector-width: 390px;
+  --ifx-platform-audit-action-width: 8.5rem;
   --ifx-platform-dialog-width: 640px;
   --ifx-platform-search-min-width: 180px;
+  --ifx-platform-source-name-min-width: 9rem;
+  --ifx-platform-source-dealership-min-width: 7rem;
+  --ifx-platform-source-preference-min-width: 6rem;
+  --ifx-platform-source-schedule-min-width: 8rem;
+  --ifx-platform-source-count-min-width: 4rem;
+  --ifx-platform-oem-family-min-width: 13rem;
+  --ifx-platform-oem-guide-min-width: 15rem;
   --ifx-platform-directory-account-min-width: 4.875rem;
   --ifx-platform-directory-count-min-width: 3.25rem;
   --ifx-platform-directory-publication-min-width: 5rem;

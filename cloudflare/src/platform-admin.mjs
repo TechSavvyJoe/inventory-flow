@@ -2,6 +2,7 @@ import { AccessError } from './access.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
 import { assertTenantIdentity } from './tenant-gate.mjs'
 import { dealershipAppUrl } from './account-navigation.mjs'
+import { storedPublicationCoverage } from './platform-coverage.mjs'
 
 const ROLES = ['sales','manager','group_manager','coordinator','porter','driver']
 const fail = (message, code = 'PLATFORM_INPUT_INVALID', status = 422) => { throw new WorkflowError(message, {code,status}) }
@@ -46,13 +47,13 @@ export async function tenantDatabase(env, groupId) {
   await assertTenantIdentity(env[name], groupId)
   return env[name]
 }
-async function health(env, groupId, now) {
+async function health(env, groupId, now, storeKeys = []) {
   const binding = tenantBindings(env)[groupId]
   if (!binding) return {status:'not_connected',message:'Connect an isolated tenant deployment before activation.'}
   try {
     const db = await tenantDatabase(env, groupId)
     const results = await db.batch([
-      db.prepare("SELECT report_date,published_at,status FROM cloud_release_versions WHERE release_id=(SELECT value FROM cloud_release_state WHERE key='current_release_id')"),
+      db.prepare("SELECT * FROM cloud_release_versions WHERE release_id=(SELECT value FROM cloud_release_state WHERE key='current_release_id')"),
       db.prepare('SELECT COUNT(*) AS total,SUM(CASE WHEN enabled=1 THEN 1 ELSE 0 END) AS active FROM cloud_memberships'),
       db.prepare("SELECT COUNT(*) AS count FROM cloud_memberships WHERE enabled=1 AND role='group_manager'"),
     ])
@@ -60,7 +61,8 @@ async function health(env, groupId, now) {
     const release = results[0].results[0]
     const age = release?.published_at ? (now.getTime() - Date.parse(release.published_at)) / 3600000 : NaN
     const status = !release ? 'no_release' : !Number.isFinite(age) || age < -0.1 || age > 26 ? 'stale' : release.status !== 'current' ? 'needs_review' : 'current'
-    return {status, connected:true, reportDate:release?.report_date ?? null,publishedAt:release?.published_at ?? null,releaseStatus:release?.status ?? null,employees:results[1].results[0].total,activeEmployees:results[1].results[0].active ?? 0,groupManagers:results[2].results[0].count,message:status === 'current' ? 'Current stored publication. Collector sessions and external providers are not probed.' : 'Review publication status in this group’s deployment.'}
+    const coverage = storedPublicationCoverage(release, storeKeys)
+    return {status, connected:true, reportDate:release?.report_date ?? null,publishedAt:release?.published_at ?? null,releaseStatus:release?.status ?? null,...(coverage ? {coverage} : {}),employees:results[1].results[0].total,activeEmployees:results[1].results[0].active ?? 0,groupManagers:results[2].results[0].count,message:status === 'current' ? 'Current stored publication. Collector sessions and external providers are not probed.' : 'Review publication status in this group’s deployment.'}
   } catch { return {status:'unavailable',message:'Database connection or tenant identity could not be verified.'} }
 }
 
@@ -78,7 +80,7 @@ export async function readPlatform(env, claims, now = new Date()) {
   const groups = []
   // Bound D1 concurrency; one unavailable group never masks the others.
   const rows = result[1].results
-  for (let offset=0;offset<rows.length;offset+=4) groups.push(...await Promise.all(rows.slice(offset,offset+4).map(async row=>({id:row.id,name:row.name,status:row.status,updatedAt:row.updated_at,dealerships:result[2].results.filter(dealer => dealer.group_id === row.id).map(publicDealer),health:await health(env,row.id,now)}))))
+  for (let offset=0;offset<rows.length;offset+=4) groups.push(...await Promise.all(rows.slice(offset,offset+4).map(async row=>({id:row.id,name:row.name,status:row.status,updatedAt:row.updated_at,dealerships:result[2].results.filter(dealer => dealer.group_id === row.id).map(publicDealer),health:await health(env,row.id,now,result[2].results.filter(dealer => dealer.group_id === row.id).map(dealer => dealer.store_key))}))))
   for (const group of groups) group.appUrl=group.status==='active' && group.health.connected===true ? dealershipAppUrl(env,group.id) : null
   await platformOwner(db, claims)
   return {demo:env.PLATFORM_DEMO===true,owner:publicOwner(owner),revision:result[0].results[0].revision,generatedAt:now.toISOString(),groups,owners:result[3].results.map(publicOwner),audit:result[4].results.map(row => ({id:row.id,actor:row.actor_name,entity:row.entity,targetId:row.target_id,action:row.action,reason:row.reason,occurredAt:row.created_at}))}
