@@ -164,9 +164,12 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
     service: scopeOverview.reduce((sum, entry) => sum + entry.waitingForService, 0),
   } : null
   const fallbackHolds = data.stores.filter(entry => storeSet.has(entry.store)).reduce((sum, entry) => sum + entry.currentHolds, 0)
+  const providerOnlyHolds = data.vehicles.filter(vehicle => vehicleInScope(vehicle, storeSet) &&
+    vehicle.operationalEvidence?.records.some(record => record.dataState === 'current' && record.complete && record.holdState === 'held') &&
+    !(data.overview?.vehicleFacts[vehicle.vin]?.holdActive || ['primary', 'backup', 'multiple'].includes(vehicle.hold.state))).length
   const metrics = [
     { label: stores.length === 1 ? 'On lot' : 'Browse group inventory', value: stores.length === 1 ? overviewCounts?.onLot ?? null : data.vehicles.filter(vehicle => vehicleInScope(vehicle, storeSet)).length, href: scopedMetricHref('on-lot', stores) },
-    { label: 'Hold signals', value: overviewCounts?.holds ?? fallbackHolds, href: scopedMetricHref('holds', stores) },
+    { label: 'Hold signals', value: (overviewCounts?.holds ?? fallbackHolds) + providerOnlyHolds, href: scopedMetricHref('holds', stores) },
     { label: 'Waiting for service', value: overviewCounts?.service ?? data.vehicles.filter(vehicle => vehicleInScope(vehicle, storeSet) && serviceWorkflowStatus(vehicle.serviceReadiness) === 'needs_service').length, href: scopedMetricHref('service', stores) },
     { label: 'Active moves', value: activeMoves.length, href: scopedMetricHref('moves', stores) },
   ]

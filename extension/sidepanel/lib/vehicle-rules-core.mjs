@@ -235,3 +235,11 @@ export function sourceDisplayText(value) {
     return String.fromCodePoint(point)
   })
 }
+
+/** Mileage arithmetic only: source coverage limits do not establish eligibility. */
+export function calculatedWarrantyMiles(coverage, currentMileage) {
+  if (coverage?.unlimitedMiles === true
+    || typeof coverage?.termMiles !== 'number' || !Number.isFinite(coverage.termMiles) || coverage.termMiles < 0
+    || typeof currentMileage !== 'number' || !Number.isFinite(currentMileage) || currentMileage < 0) return null
+  return Math.max(0, coverage.termMiles - currentMileage)
+}

@@ -19,3 +19,10 @@ describe('one source-prioritized vehicle in-service date', () => {
     expect(resolveVehicleInService({})).toMatchObject({ date: null, source: null });
   });
 });
+
+
+it('labels a supplied CARFAX in-service estimate and keeps an OEM start primary', () => {
+  const warrantyCheck = { carfax: { inServiceDate: '2024-11-21' } };
+  expect(resolveVehicleInService({ warrantyCheck })).toMatchObject({ date: '2024-11-21', source: 'carfax', label: 'In-service · CARFAX estimate' });
+  expect(resolveVehicleInService({ warrantyCheck, fordOasis: { warrantyStartDate: '2024-11-26' } })).toMatchObject({ source: 'oasis' });
+});

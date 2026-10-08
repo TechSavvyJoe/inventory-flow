@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { dispositionOwnerStore } from './vehicle-disposition.mjs'
 import { employeeNoteHasContactInformation } from './employee-note-validation.mjs'
+import { validateOperationalEvidence } from './provider-evidence.mjs'
 import { WorkflowError } from './workflow.mjs'
 
 // App-owned reservations. Imported CRM holds remain independent, read-only evidence.
@@ -115,11 +116,57 @@ export function inventoryDecision(vehicle) {
   if (manual === 'released' && observed === true) reasons.push('source_hold_after_manual_release')
   if (code === 'delivered' && (manual === 'active' || observed === true)) reasons.push('delivered_with_hold')
   if (code === 'keep' && vehicle.managerDisposition?.deliveredManagerLog === true) reasons.push('keep_vs_imported_delivery')
-  const comparison = reasons.length ? 'conflict' : manual && observed !== null ? 'agreement'
-    : manual ? 'manual_only' : observed !== null ? 'source_only' : 'unverified'
-  const status = code && code !== 'keep' ? code : manual === 'active' || observed === true ? 'held' : 'unconfirmed'
-  return { status, comparison, reasons, manualHold: manual, importedHold: observed,
-    label: reasons.length ? 'Review conflicting records' : status === 'held' ? manual === 'active' ? 'Manual hold' : 'Imported hold'
+  const legacyReasons = [...reasons]
+  let evidence
+  if (vehicle.operationalEvidence) {
+    const records = validateOperationalEvidence(vehicle.operationalEvidence, vehicle.vin).records
+    evidence = records.map(record => {
+      const current = record.dataState === 'current' && record.complete
+      const effectiveHoldState = current ? record.holdState : 'unknown'
+      const providerObserved = effectiveHoldState === 'held' ? true : effectiveHoldState === 'not_observed' ? false : null
+      const knownDisposition = current && record.reportedDisposition && !['unknown', 'not_observed'].includes(record.reportedDisposition)
+      const agrees = (providerObserved !== null && (manual || observed === providerObserved)) || (knownDisposition && record.reportedDisposition === code)
+      const providerReasons = []
+      if (manual === 'active' && providerObserved === false) providerReasons.push('manual_hold_not_in_source')
+      if (manual === 'released' && providerObserved === true) providerReasons.push('source_hold_after_manual_release')
+      if (code === 'delivered' && providerObserved === true) providerReasons.push('delivered_with_hold')
+      if (current && code && record.reportedDisposition && !['unknown', 'not_observed'].includes(record.reportedDisposition) && record.reportedDisposition !== code) providerReasons.push('provider_disposition_mismatch')
+      return { ...record, effectiveHoldState, comparison: providerReasons.length ? 'conflict'
+        : agrees ? 'agreement' : providerObserved !== null || knownDisposition ? 'source_only' : 'unverified', reasons: providerReasons }
+    })
+    const currentSignals = evidence.filter(record => record.effectiveHoldState !== 'unknown')
+    if ((observed !== null && currentSignals.some(record => (record.effectiveHoldState === 'held') !== observed)) || new Set(currentSignals.map(record => record.effectiveHoldState)).size > 1) {
+      reasons.push('provider_hold_disagreement')
+      evidence = evidence.map(record => record.effectiveHoldState === 'unknown' ? record : {
+        ...record, comparison: 'conflict', reasons: [...new Set([...record.reasons, 'provider_hold_disagreement'])],
+      })
+    }
+    const dispositions = evidence.filter(record => record.dataState === 'current' && record.complete && record.reportedDisposition && !['unknown', 'not_observed'].includes(record.reportedDisposition))
+    if (new Set(dispositions.map(record => record.reportedDisposition)).size > 1) {
+      evidence = evidence.map(record => dispositions.includes(record) ? {
+        ...record, comparison: 'conflict', reasons: [...new Set([...record.reasons, 'provider_disposition_mismatch'])],
+      } : record)
+    }
+    reasons.push(...evidence.flatMap(record => record.reasons))
+    // Legacy CRM evidence stays distinct from supplied providers and carries no private fields.
+    if (observed !== null || vehicle.hold?.lastKnownActiveHold === true) evidence.unshift({
+      vin: vehicle.vin, provider: records.some(record => record.provider === 'dealermail') ? 'legacy-dealermail' : 'dealermail', sourceLabel: 'DealerMail',
+      dataState: observed === null ? 'stale_unverified' : 'current', readOnly: true, complete: observed !== null,
+      holdState: observed === true || vehicle.hold?.lastKnownActiveHold === true ? 'held' : observed === false ? 'not_observed' : 'unknown',
+      effectiveHoldState: observed === true ? 'held' : observed === false ? 'not_observed' : 'unknown',
+      comparison: observed === null ? 'unverified' : legacyReasons.length || reasons.includes('provider_hold_disagreement') ? 'conflict' : manual ? 'agreement' : 'source_only',
+      reasons: [...legacyReasons, ...(reasons.includes('provider_hold_disagreement') ? ['provider_hold_disagreement'] : [])],
+    })
+  }
+  const uniqueReasons = [...new Set(reasons)]
+  const providerObserved = evidence?.some(record => record.capturedAt && record.dataState === 'current' && record.complete && (record.effectiveHoldState !== 'unknown' || (record.reportedDisposition && !['unknown', 'not_observed'].includes(record.reportedDisposition)))) ?? false
+  const providerHeld = evidence?.some(record => record.capturedAt && record.effectiveHoldState === 'held') ?? false
+  const comparison = reasons.length ? 'conflict' : manual && (observed !== null || providerObserved) ? 'agreement'
+    : manual ? 'manual_only' : observed !== null || providerObserved ? 'source_only' : 'unverified'
+  const status = code && code !== 'keep' ? code : manual === 'active' || observed === true || providerHeld ? 'held' : 'unconfirmed'
+  return { status, comparison, reasons: uniqueReasons, manualHold: manual, importedHold: observed,
+    reviewRequired: reasons.length > 0, ...(evidence ? { evidence } : {}),
+    label: code && code !== 'keep' ? ({ sold_pending: 'Sold pending', delivered: 'Delivered', other: 'Other disposition', wholesale: 'Wholesale', transfer_out: 'Transfer out' }[code] ?? 'Other disposition') : reasons.length && !evidence ? 'Review conflicting records' : status === 'held' ? manual === 'active' ? 'Manual hold' : 'Imported hold'
       : status === 'sold_pending' ? 'Sold pending' : status === 'delivered' ? 'Delivered'
         : status === 'other' ? 'Other disposition' : status === 'wholesale' ? 'Wholesale'
           : status === 'transfer_out' ? 'Transfer out' : 'Confirm availability' }

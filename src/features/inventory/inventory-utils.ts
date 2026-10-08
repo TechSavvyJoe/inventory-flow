@@ -1,3 +1,4 @@
+import { hasProviderHold, providerHoldState } from './provider-evidence-utils';
 import { displayDate } from "../../lib/date-display";
 import type { TransferRecord } from "../../types";
 import { serviceWorkflowStatus } from "../../lib/service-readiness";
@@ -262,6 +263,7 @@ export function vehicleMatchesOverviewView(
     const code = vehicle.appDisposition?.code ?? "none";
     return owner === store && view === `disposition-${code.replaceAll("_", "-")}`;
   }
+  if (view === 'holds' && hasProviderHold(vehicle)) return store === 'all' || vehicle.location.homeStore.name === store;
   const facts = vehicle.overview;
   const home = vehicle.location.homeStore.name === store;
   if (!facts) return view === "on-lot" && home;
@@ -320,17 +322,16 @@ export function vehicleMatchesFilters(
   }
 
   const dealerMail = vehicle.dealerMail;
-  if (filters.dealerMail === "held" && vehicle.manualHold?.state !== "active" && dealerMail.hasActiveHold !== true && !dealerMail.lastKnownActiveHold) return false;
+  if (filters.dealerMail === "held" && !hasProviderHold(vehicle) && vehicle.manualHold?.state !== "active" && dealerMail.hasActiveHold !== true && !dealerMail.lastKnownActiveHold) return false;
   if (
     filters.dealerMail === "not-held" &&
-    !(vehicle.manualHold?.state !== "active" && dealerMail.dataState === "current" && dealerMail.hasActiveHold === false)
+    !(vehicle.manualHold?.state !== "active" && !hasProviderHold(vehicle) && (vehicle.operationalEvidence ? providerHoldState(vehicle) === false : dealerMail.dataState === "current" && dealerMail.hasActiveHold === false))
   ) {
     return false;
   }
   if (
     filters.dealerMail === "unverified" &&
-    dealerMail.dataState === "current" &&
-    dealerMail.hasActiveHold !== null
+    (vehicle.operationalEvidence ? providerHoldState(vehicle) !== null : dealerMail.dataState === "current" && dealerMail.hasActiveHold !== null)
   ) {
     return false;
   }
@@ -443,7 +444,7 @@ function sortValue(vehicle: InventoryVehicle, key: InventorySortKey): string | n
     case "inventoryDate":
       return sortableDate(vehicle.inventoryDate);
     case "holdStatus":
-      if (vehicle.manualHold?.state === "active") return 0;
+      if (vehicle.manualHold?.state === "active" || providerHoldState(vehicle) === true) return 0;
       if (vehicle.dealerMail.dataState !== "current" || vehicle.dealerMail.hasActiveHold === null) return 2;
       return vehicle.dealerMail.hasActiveHold ? 0 : 1;
     case "websiteStatus":

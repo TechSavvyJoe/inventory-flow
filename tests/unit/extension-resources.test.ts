@@ -46,7 +46,34 @@ describe('extension captured document model', () => {
     expect(vehicle.documents.fordOasis).toBeNull()
     expect(vehicle.documents.warrantyCheck.autoCheck.coverages[0]).toMatchObject({ unlimitedMiles: null, unlimitedMonths: null })
     expect(panel({ warrantyCheck: { ...warrantyCheck, mileageEntered: undefined } }).documents.warrantyCheck).toBeNull()
-    expect(panel({ warrantyCheck: { mileageEntered: 0, autoCheck: { coverages: [{ type: 'Basic', status: 'ACTIVE' }] } } }).documents.warrantyCheck.autoCheck.coverages).toEqual([])
+    expect(panel({ warrantyCheck: { mileageEntered: 0, autoCheck: { coverages: [{ type: 'Basic', status: 'ACTIVE' }] } } }).documents.warrantyCheck.autoCheck.coverages[0]).toMatchObject({ type: 'Basic', status: 'ACTIVE', termText: null, remainingMilesText: null, remainingTimeText: null })
+  })
+
+  it('keeps reported provider history and CARFAX warranty evidence allowlisted and bounded', () => {
+    const serviceHistory = { reports: [
+      { vin, provider: 'carfax', sourceLabel: 'Synthetic CARFAX', capturedAt: '2026-09-10T10:00:00Z', dataState: 'stale_unverified', historyStatus: 'reported', raw: 'PRIVATE_MARKER', entries: [{ date: '2025-01-02', odometer: 10000, odometerUnit: 'mi', services: ['Synthetic oil change'], raw: 'PRIVATE_MARKER' }] },
+      { vin, provider: 'unknown-provider', historyStatus: 'reported', entries: [{ date: '2025-01-02', services: ['PRIVATE_MARKER'] }] },
+    ] }
+    const carfaxCoverage = { type: 'Synthetic basic', termText: '36 months', remainingMonths: 7 }
+    const vehicle = panel({ serviceHistory, warrantyCheck: { dataState: 'current', mileageEntered: 10000, mileageSource: 'Synthetic basis', carfax: { inServiceDate: '2024-02-01', coverages: [carfaxCoverage] } } })
+    expect(vehicle.documents.serviceHistory).toHaveLength(1)
+    expect(vehicle.documents.serviceHistory[0].entries[0]).toMatchObject({ date: '2025-01-02', services: ['Synthetic oil change'] })
+    expect(vehicle.documents.serviceHistory[0].dataState).toBe('stale_unverified')
+    expect(JSON.stringify(vehicle.documents.serviceHistory)).not.toContain('PRIVATE_MARKER')
+    expect(vehicle.documents.warrantyCheck.carfax.coverages[0]).toMatchObject({ type: 'Synthetic basic', termText: '36 months', remainingMonths: 7, remainingMilesText: null })
+    expect(resourceSummaries(vehicle).find((item) => item.id === 'carfax')).toMatchObject({ title: 'CARFAX warranty estimate', brand: 'carfax', url: null })
+    const oversized = panel({ serviceHistory: { reports: Array.from({ length: 14 }, (_, index) => ({ vin, provider: 'carfax', historyStatus: 'reported', entries: Array.from({ length: 260 }, () => ({ date: '2025-01-02', services: [`Synthetic ${index}`] })) })) } }).documents.serviceHistory
+    expect(oversized).toHaveLength(12)
+    expect(oversized[0].entries).toHaveLength(250)
+  })
+
+  it('preserves status-only warranty categories for all supported source statuses', () => {
+    const coverages = ['ACTIVE', 'EXPIRED', 'N/A'].map((status, index) => ({ type: `Synthetic category ${index}`, status }))
+    const vehicle = panel({ warrantyCheck: { dataState: 'current', mileageEntered: 10000, carfax: { coverages } } })
+    expect(vehicle.documents.warrantyCheck.carfax.coverages).toEqual(coverages.map((coverage) => ({
+      ...coverage, termText: null, remainingMilesText: null, remainingTimeText: null, termMonths: null, termMiles: null,
+      remainingMiles: null, remainingMonths: null, unlimitedMiles: null, unlimitedMonths: null, note: null,
+    })))
   })
 })
 
@@ -217,5 +244,10 @@ describe('extension resource summaries', () => {
     expect(vehicle.serviceReadiness.status).toBe('needs_service')
     expect(vehicle.hold.hasActiveHold).toBeNull()
     expect(vehicle.movement).toBeNull()
+  })
+
+  it('labels an estimate-only AutoCheck resource as a warranty estimate, not history', () => {
+    expect(source({ warrantyCheck: { dataState: 'current', mileageEntered: 20000, autoCheck: { coverages: [{ type: 'Synthetic Powertrain', remainingMonths: 8 }] } } }, 'autocheck'))
+      .toMatchObject({ title: 'AutoCheck warranty estimate', brand: 'autocheck', url: null })
   })
 })

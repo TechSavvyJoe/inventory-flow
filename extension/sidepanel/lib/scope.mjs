@@ -1,6 +1,7 @@
 // Store is independent from the inventory view. In particular, opening Held
 // must never silently widen a salesperson's working store to the whole group.
 import { STORES } from './config.mjs'
+import { hasPositiveHoldSignal } from './hold-evidence.mjs'
 
 export function resolveStoreScope(scope, workingStore) {
   if (scope === 'all') return null
@@ -8,7 +9,7 @@ export function resolveStoreScope(scope, workingStore) {
 }
 
 export function matchesInventoryView(vehicle, view) {
-  if (view === 'held') return vehicle.hold?.hasActiveHold === true || vehicle.hold?.lastKnownActiveHold === true
+  if (view === 'held') return hasPositiveHoldSignal(vehicle)
   if (view === 'moving') return Boolean(vehicle.movement)
   return true
 }

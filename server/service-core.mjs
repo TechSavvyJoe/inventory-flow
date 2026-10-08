@@ -1,3 +1,4 @@
+import { validateOperationalEvidence, validateServiceHistoryEvidence } from './provider-evidence.mjs'
 import { createHash } from 'node:crypto'
 import {
   appendTransferEvent,
@@ -983,6 +984,19 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
         dataState: independentResourceState(source.resourceRecord.warrantyCheck),
       }
     : undefined
+  // Revalidate the allow-list at projection time; storage is not a public API contract.
+  const operationalEvidence = source.resourceRecord?.operationalEvidence
+    ? validateOperationalEvidence(source.resourceRecord.operationalEvidence, source.vin) : undefined
+  if (operationalEvidence) operationalEvidence.records = operationalEvidence.records.map(record => ({
+    ...record, dataState: independentResourceState(record),
+    ...(independentResourceState(record) !== 'current' ? {
+      ...(record.holdState === 'not_observed' ? { holdState: 'unknown' } : {}),
+      ...(record.reportedDisposition === 'not_observed' ? { reportedDisposition: 'unknown' } : {}),
+    } : {}),
+  }))
+  const serviceHistory = source.resourceRecord?.serviceHistory
+    ? validateServiceHistoryEvidence(source.resourceRecord.serviceHistory, source.vin) : undefined
+  if (serviceHistory) serviceHistory.reports = serviceHistory.reports.map(report => ({ ...report, dataState: independentResourceState(report) }))
   const view = {
     vin: source.vin,
     stockNumber,
@@ -1052,6 +1066,8 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ...(fordInvoice ? { fordInvoice } : {}),
     ...(fordOasis ? { fordOasis } : {}),
     ...(warrantyCheck ? { warrantyCheck } : {}),
+    ...(operationalEvidence ? { operationalEvidence } : {}),
+    ...(serviceHistory ? { serviceHistory } : {}),
   }
   const safeSearchParts = [
     source.vin,
@@ -1176,9 +1192,11 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     warrantyCheck?.mileageSource,
     warrantyCheck?.autoCheck?.inServiceDate,
     warrantyCheck?.autoCheck?.inServiceAgeMonths,
+    warrantyCheck?.carfax?.inServiceDate,
+    warrantyCheck?.carfax?.inServiceAgeMonths,
     warrantyCheck?.fordOasis?.warrantyStartDate,
     warrantyCheck?.fordOasis?.monthsInService,
-    ...[...(warrantyCheck?.autoCheck?.coverages ?? []), ...(warrantyCheck?.fordOasis?.coverages ?? [])].flatMap(
+    ...[...(warrantyCheck?.autoCheck?.coverages ?? []), ...(warrantyCheck?.carfax?.coverages ?? []), ...(warrantyCheck?.fordOasis?.coverages ?? [])].flatMap(
       (coverage) => [
         coverage.type,
         coverage.termText,
@@ -1339,8 +1357,20 @@ function matchesVehicleFilters(vehicle, query, privateIndex = '') {
   if (query.homeStore && vehicle.homeStore !== query.homeStore) return false
   if (query.hold) {
     const wanted = query.hold.toLowerCase()
-    if (wanted === 'yes' && !['primary', 'multiple'].includes(vehicle.hold.state)) return false
-    if (wanted === 'no' && vehicle.hold.state !== 'none_observed') return false
+    if (vehicle.operationalEvidence) {
+      // Retained positives stay findable even though reconciliation treats them
+      // as unverified. Unknown generic evidence cannot establish no hold.
+      const records = vehicle.inventoryDecision?.evidence ?? vehicle.operationalEvidence.records
+      const retainedPositive = vehicle.operationalEvidence.records.some(record => record.holdState === 'held') ||
+        ['primary', 'backup', 'multiple'].includes(vehicle.hold.state) || vehicle.hold.lastKnownActiveHold === true ||
+        vehicle.manualHold?.state === 'active'
+      const verifiedNoHold = records.length > 0 && records.every(record => record.dataState === 'current' && record.complete && record.holdState === 'not_observed')
+      if (wanted === 'yes' && !retainedPositive) return false
+      if (wanted === 'no' && (retainedPositive || !verifiedNoHold)) return false
+    } else {
+      if (wanted === 'yes' && !['primary', 'multiple'].includes(vehicle.hold.state)) return false
+      if (wanted === 'no' && vehicle.hold.state !== 'none_observed') return false
+    }
     if (!['yes', 'no'].includes(wanted) && vehicle.hold.state !== wanted) return false
   }
   return true

@@ -1,4 +1,5 @@
 import { serviceWorkflowStatus } from './service-readiness.mjs'
+import { hasCompleteCurrentNoHoldEvidence, hasPositiveHoldSignal } from './hold-evidence.mjs'
 
 // Multi-criteria filtering and sorting over the panel's vehicles. Search
 // ranking finds the exact vehicle; these narrow a list to the kind of vehicle
@@ -91,8 +92,16 @@ export function matchesFilters(vehicle, filters) {
   if (f.mileageMax !== null && (vehicle.mileage === null || vehicle.mileage > f.mileageMax)) return false
   if (f.certified && !vehicle.certified) return false
   if (f.listed && vehicle.listing?.isListed !== true) return false
-  // "No hold" means the current snapshot found none — never an availability promise.
-  if (f.noHold && vehicle.hold?.hasActiveHold !== false) return false
+  // Provider-backed records require a complete, current negative observation;
+  // the legacy path remains DealerMail-only when no such resource was supplied.
+  if (f.noHold) {
+    const hasProviderEvidence = (vehicle.operationalEvidence !== null && vehicle.operationalEvidence !== undefined)
+      || (vehicle.inventoryDecision?.evidence?.length ?? 0) > 0
+    const hasNoHoldEvidence = hasProviderEvidence
+      ? hasCompleteCurrentNoHoldEvidence(vehicle)
+      : vehicle.hold?.hasActiveHold === false
+    if (!hasNoHoldEvidence || hasPositiveHoldSignal(vehicle)) return false
+  }
   if (f.photos && !vehicle.photos.length) return false
   if (f.serviceStatus && serviceWorkflowStatus(vehicle.serviceReadiness) !== f.serviceStatus) return false
   return true

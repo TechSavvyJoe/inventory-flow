@@ -4,6 +4,19 @@ import type { BootstrapData, VehicleRecord } from '../types';
 import { toInventoryVehicle } from './adapters';
 
 describe('OASIS action capture provenance', () => {
+  it('retains CARFAX status-only coverage categories with unknown balances', () => {
+    const record = sourceVehicle();
+    record.warrantyCheck = { mileageEntered: 25000, carfax: { coverages: [
+      { type: 'Basic Warranty', status: 'EXPIRED' },
+      { type: 'Corrosion', status: 'N/A' },
+      { type: 'Emissions', status: 'ACTIVE', termMiles: 80000 },
+    ] } };
+    expect(toInventoryVehicle(record, sourceData()).warrantyCheck?.carfax?.coverages).toEqual([
+      expect.objectContaining({ type: 'Basic Warranty', status: 'EXPIRED', termText: 'Unknown', remainingMilesText: 'Unknown', remainingTimeText: 'Unknown' }),
+      expect.objectContaining({ type: 'Corrosion', status: 'N/A', termText: 'Unknown', remainingMilesText: 'Unknown', remainingTimeText: 'Unknown' }),
+      expect.objectContaining({ type: 'Emissions', status: 'ACTIVE', termMiles: 80000, remainingMilesText: 'Unknown' }),
+    ]);
+  });
   it('fills missing sales specifications from usable VIN documents without overriding the listing', () => {
     const record = sourceVehicle();
     record.engine = 'Published engine';
@@ -356,5 +369,20 @@ describe('official document adapter', () => {
     expect(rankInventorySearch(index, 'Synthetic vehicle transport restriction')).toHaveLength(1);
     record.hold.canViewEvidence = false;
     expect(toInventoryVehicle(record, sourceData()).dealerMailEvidence).toBeUndefined();
+  });
+});
+
+
+describe('provider report fallbacks', () => {
+  it('maps CARFAX-only warranty and service events without populating OEM coverage', () => {
+    const record = sourceVehicle();
+    record.fordOasis = undefined;
+    record.warrantyCheck = { mileageEntered: 21000, dataState: 'current', carfax: { coverages: [{ type: 'Powertrain', termText: '5 years / 60000 miles', remainingMilesText: '39000 miles', remainingTimeText: '18 months', status: 'ACTIVE' }] } };
+    record.serviceHistory = { reports: [{ vin: record.vin, provider: 'carfax', sourceLabel: 'Synthetic CARFAX', capturedAt: '2026-08-30T14:00:00Z', dataState: 'current', historyStatus: 'reported', entries: [{ date: '2026-07-12', services: ['Synthetic oil service'] }] }] };
+    const mapped = toInventoryVehicle(record, sourceData());
+    expect(mapped.warrantyCheck?.carfax?.coverages[0].type).toBe('Powertrain');
+    expect(mapped.warrantyCheck?.fordOasis).toBeNull();
+    expect(mapped.serviceHistory?.reports[0].entries[0].services).toEqual(['Synthetic oil service']);
+    expect(mapped.authorizedSearchText).toContain('Synthetic oil service');
   });
 });

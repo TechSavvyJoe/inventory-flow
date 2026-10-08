@@ -1,3 +1,4 @@
+import { hasProviderHold, providerHoldState } from './provider-evidence-utils'
 import { STORE_NAMES } from '../../types'
 import { resolveCurrentLocation, sameStore } from './inventory-utils'
 import type { InventoryFilters, InventoryScope, InventoryStore, InventoryVehicle } from './types'
@@ -16,7 +17,7 @@ function inTransit(vehicle: InventoryVehicle): boolean {
 
 function hasHold(vehicle: InventoryVehicle): boolean {
   const hold = vehicle.dealerMail
-  return vehicle.manualHold?.state === 'active' || hold.lastKnownActiveHold === true || (hold.dataState === 'current' && hold.hasActiveHold === true)
+  return hasProviderHold(vehicle) || vehicle.manualHold?.state === 'active' || hold.lastKnownActiveHold === true || (hold.dataState === 'current' && hold.hasActiveHold === true)
 }
 
 /** Home inventory includes its owned units and positively located visitors. */
@@ -36,8 +37,8 @@ export function matchesInventoryQuickView(vehicle: InventoryVehicle, view: Quick
   if (vehicle.location.conflict || location.provenance === 'unknown' || UNKNOWN_LOCATION.test(location.label.trim())) return false
   if (view === 'no-hold') {
     const hold = vehicle.dealerMail
-    const observedNoHold = (hold.dataState === 'current' && hold.hasActiveHold === false) ||
-      (hold.dataState === 'stale' && hold.lastKnownNoHold === true)
+    const observedNoHold = vehicle.operationalEvidence ? providerHoldState(vehicle) === false :
+      (hold.dataState === 'current' && hold.hasActiveHold === false) || (hold.dataState === 'stale' && hold.lastKnownNoHold === true)
     const atStore = context.scope === 'home'
       ? sameStore(location.store, context.homeStore)
       : GROUP_STORES.some(store => sameStore(location.store, store))

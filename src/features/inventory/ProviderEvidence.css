@@ -1,0 +1,9 @@
+.provider-evidence { border-block: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); padding-block: var(--ifx-space-2); min-width: 0; }
+.provider-evidence header { display: flex; align-items: center; justify-content: space-between; gap: var(--ifx-space-2); }
+.provider-evidence h4, .provider-evidence p { margin: 0; }
+.provider-evidence h4 { font-size: var(--ifx-text-body); font-weight: var(--ifx-weight-semibold); }
+.provider-evidence header span, .provider-evidence small, .provider-evidence p { color: var(--ifx-neutral-600); font-size: var(--ifx-text-sm); }
+.provider-evidence ul { padding: 0; margin: var(--ifx-space-1) 0; list-style: none; }
+.provider-evidence li { display: flex; justify-content: space-between; gap: var(--ifx-space-3); padding-block: var(--ifx-space-2); border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
+.provider-evidence li > div { display: grid; gap: var(--ifx-space-1); min-width: 0; overflow-wrap: anywhere; font-size: var(--ifx-text-sm); }
+.provider-evidence-warning { color: var(--ifx-warning); }

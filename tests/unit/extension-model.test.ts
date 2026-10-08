@@ -2,6 +2,7 @@
 // @ts-nocheck -- dependency-free ESM view model; synthetic fixtures only.
 import { describe, expect, it } from 'vitest'
 import { buildPanelData, canRequestVehicle, certifiedProgram, copyFields, dealSheetText, holdLabel, mergeDetail, requestBlockedReason, resolveLocation, toPanelVehicle, vehicleMoveAction } from '../../extension/sidepanel/lib/model.mjs'
+import { matchesFilters, normalizeFilters } from '../../extension/sidepanel/lib/filters.mjs'
 
 const meta = (overrides = {}) => ({ reportDate: '2026-08-30', completedAt: '2026-08-30T10:00:00-04:00', publicFreshness: 'current', dealerMailFreshness: 'current', ...overrides })
 const base = (overrides = {}) => ({
@@ -45,6 +46,32 @@ describe('deal desk view model', () => {
     expect(vehicle.listing.isListed).toBe(true)
     expect(vehicle.movement).toBeNull()
     expect(vehicle.location).toMatchObject({ label: 'Howell', provenance: 'source-reported' })
+  })
+
+  it('preserves read-only provider hold observations separately from the DealerMail projection', () => {
+    const observation = { vin: base().vin, provider: 'carfax', sourceLabel: 'Synthetic CARFAX', capturedAt: '2026-09-20T12:00:00Z', dataState: 'current', readOnly: true, complete: true, holdState: 'held' }
+    const record = base({ operationalEvidence: { records: [{ ...observation, raw: 'PRIVATE_MARKER', owner: 'PRIVATE_MARKER' }] }, manualHold: { state: 'active', customerLabel: 'PRIVATE_MARKER', note: 'PRIVATE_MARKER' }, inventoryDecision: { status: 'unconfirmed', comparison: 'conflict', manualHold: 'active', importedHold: false, label: 'Review source records', evidence: [{ ...observation, raw: 'PRIVATE_MARKER', effectiveHoldState: 'held', comparison: 'conflict', reasons: ['provider_hold_disagreement'] }] } })
+    const vehicle = toPanelVehicle(record, data(record))
+    expect(vehicle.hold.label).toBe('No current DealerMail hold found')
+    expect(vehicle.operationalEvidence).toEqual({ records: [{ ...observation, observedHoldState: 'held' }] })
+    expect(vehicle.inventoryDecision).toMatchObject({ comparison: 'conflict', evidence: [{ provider: 'carfax', comparison: 'conflict', effectiveHoldState: 'held' }] })
+    expect(vehicle.manualHold).toEqual({ state: 'active' })
+    expect(JSON.stringify({ operationalEvidence: vehicle.operationalEvidence, inventoryDecision: vehicle.inventoryDecision })).not.toContain('PRIVATE_MARKER')
+    expect(JSON.stringify(vehicle.manualHold)).not.toContain('PRIVATE_MARKER')
+    const stale = toPanelVehicle(base({ operationalEvidence: { records: [{ ...observation, dataState: 'stale_unverified' }] } }), data(base()))
+    expect(stale.operationalEvidence.records[0]).toMatchObject({ holdState: 'unknown', observedHoldState: 'held', dataState: 'stale_unverified' })
+  })
+
+  it('keeps the reserved legacy decision observation after twelve provider rows for strict no-hold filtering', () => {
+    const providers = Array.from({ length: 12 }, (_, index) => ({
+      provider: `provider-${index}`, sourceLabel: 'Synthetic source', dataState: 'current', readOnly: true, complete: true, holdState: 'not_observed',
+    }))
+    const evidence = [...providers, { provider: 'legacy-dealermail', sourceLabel: 'Synthetic legacy', dataState: 'unknown', readOnly: true, complete: false, holdState: 'unknown' }]
+    const record = base({ inventoryDecision: { status: 'unconfirmed', comparison: 'unverified', evidence } })
+    const vehicle = toPanelVehicle(record, data(record))
+    expect(vehicle.inventoryDecision.evidence).toHaveLength(13)
+    expect(vehicle.inventoryDecision.evidence.at(-1).provider).toBe('legacy-dealermail')
+    expect(matchesFilters(vehicle, normalizeFilters({ noHold: true }))).toBe(false)
   })
 
   it.each([

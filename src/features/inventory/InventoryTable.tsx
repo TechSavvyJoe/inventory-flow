@@ -1,3 +1,4 @@
+import { importedHoldSummary, providerHoldState } from "./provider-evidence-utils";
 import { DISPOSITION_LABELS } from '../overview/disposition-model';
 import { equipmentFinderItems } from "./vehicle-equipment";
 import { CertifiedBadge } from "../../components/CertifiedBadge";
@@ -329,6 +330,7 @@ type OperationalStatus = {
 
 export function vehicleOperationalStatus(vehicle: InventoryVehicle): OperationalStatus {
   if (vehicle.manualHold?.state === 'active') return { label: 'Manual hold', detail: 'Recorded in Inventory Flow. Review imported evidence separately.', tone: 'hold', icon: UserRound };
+  if (vehicle.operationalEvidence) return { label: importedHoldSummary(vehicle), detail: 'Read-only provider observations. Confirm availability with the store.', tone: providerHoldState(vehicle) === true ? 'hold' : providerHoldState(vehicle) === false ? 'clear' : 'unknown', icon: UserRound };
   return importedHoldOperationalStatus(vehicle);
 }
 
@@ -588,7 +590,7 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerSt
   const name = vehicleDisplayName(vehicle);
   const holdStatus = vehicleOperationalStatus(vehicle);
   const movement = vehicleMovementStatus(vehicle, viewerStore);
-  const canOpenDealerMail = vehicle.manualHold?.state !== "active" && vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
+  const canOpenDealerMail = !vehicle.operationalEvidence && vehicle.manualHold?.state !== "active" && vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
   const manualActive = vehicle.manualHold?.state === 'active';
   const importedStatus = importedHoldOperationalStatus(vehicle);
   const holdDetail = importedHoldDetail(vehicle);
@@ -605,13 +607,13 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerSt
       </button>
       {manualActive ? manualExpected ? <small className="inv-desk-status__detail">Manual expected {manualExpected}</small> : null : holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
     </dd></div>
-    {manualActive ? <div className="inv-desk-status__row" data-fact="imported-hold"><dt>DealerMail</dt><dd>
-      <span className="inv-desk-status__imported-hold">{importedStatus.label}</span>
+    {manualActive ? <div className="inv-desk-status__row" data-fact="imported-hold"><dt>{vehicle.operationalEvidence ? "Imported reports" : "DealerMail"}</dt><dd>
+      <span className="inv-desk-status__imported-hold">{vehicle.operationalEvidence ? importedHoldSummary(vehicle) : importedStatus.label}</span>
       {holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
     </dd></div> : null}
     {movement ? <div className="inv-desk-status__row" data-fact="move"><dt>Move</dt><dd><span className={`inv-desk-move${movement.tone === "warning" ? " is-warning" : ""}`} title={movement.detail}>{humanizeStatusLabel(movement.label)}</span></dd></div> : null}
     <div className="inv-desk-status__row" data-fact="service"><dt>Service</dt><dd><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed /></dd></div>
-    {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <div className="inv-desk-status__row" data-fact="manual-decision"><dt>Decision</dt><dd><button type="button" className="inv-desk-hold inv-desk-decision" data-inventory-vehicle-trigger={vehicle.id} aria-label={`Review inventory decision for ${name}`} onClick={event => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, 'hold'); }}>{vehicle.inventoryDecision?.comparison === 'conflict' ? 'Records disagree' : vehicle.appDisposition?.code ? DISPOSITION_LABELS[vehicle.appDisposition.code] : vehicle.inventoryDecision?.label}</button></dd></div> : null}
+    {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <div className="inv-desk-status__row" data-fact="manual-decision"><dt>Decision</dt><dd><button type="button" className="inv-desk-hold inv-desk-decision" data-inventory-vehicle-trigger={vehicle.id} aria-label={`Review inventory decision for ${name}`} onClick={event => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, 'hold'); }}>{vehicle.appDisposition?.code ? `${DISPOSITION_LABELS[vehicle.appDisposition.code]}${vehicle.inventoryDecision?.comparison === 'conflict' ? ' · Records disagree' : ''}` : vehicle.inventoryDecision?.comparison === 'conflict' ? 'Records disagree' : vehicle.inventoryDecision?.label}</button></dd></div> : null}
     {vehicle.managerDisposition ? <div className="inv-desk-status__row" data-fact="sale"><dt>Sale</dt><dd><small className="inv-desk-disposition" data-state={vehicle.managerDisposition.dataState}>{vehicle.managerDisposition.soldLabel} · {vehicle.managerDisposition.deliveryLabel}</small></dd></div> : null}
     {openRecallCount(vehicle) ? <div className="inv-desk-status__row" data-fact="recall"><dt>OASIS</dt><dd><RecallChip vehicle={vehicle} onSelectVehicle={onSelectVehicle} /></dd></div> : null}
   </dl>;
@@ -1122,13 +1124,13 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
             <span>{compactHoldLabel}</span>
             {manualExpected ? <small>Manual expected {manualExpected}</small> : null}
           </button>
-          {manualActive ? <dl className="inventory-mobile-imported-hold" aria-label="Imported hold evidence"><div><dt>DealerMail</dt><dd>
-            <span>{importedStatus.label}</span>{importedDetail ? <small>{importedDetail}</small> : null}
+          {manualActive ? <dl className="inventory-mobile-imported-hold" aria-label="Imported hold evidence"><div><dt>{vehicle.operationalEvidence ? "Imported reports" : "DealerMail"}</dt><dd>
+            <span>{vehicle.operationalEvidence ? importedHoldSummary(vehicle) : importedStatus.label}</span>{importedDetail ? <small>{importedDetail}</small> : null}
           </dd></div></dl> : null}
           {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <button type="button"
             className="inventory-mobile-decision" data-inventory-vehicle-trigger={vehicle.id} aria-label={`Review inventory decision for ${name}`}
             onClick={event => { event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, 'hold'); }}>
-            <ClipboardCheck size={14} aria-hidden="true" />{vehicle.inventoryDecision?.comparison === 'conflict' ? 'Records disagree' : vehicle.appDisposition?.code ? DISPOSITION_LABELS[vehicle.appDisposition.code] : vehicle.inventoryDecision?.label}
+            <ClipboardCheck size={14} aria-hidden="true" />{vehicle.appDisposition?.code ? `${DISPOSITION_LABELS[vehicle.appDisposition.code]}${vehicle.inventoryDecision?.comparison === 'conflict' ? ' · Records disagree' : ''}` : vehicle.inventoryDecision?.comparison === 'conflict' ? 'Records disagree' : vehicle.inventoryDecision?.label}
           </button> : null}
           {vehicle.managerDisposition ? (
             <span className="inventory-mobile-manager-disposition" data-state={vehicle.managerDisposition.dataState}>

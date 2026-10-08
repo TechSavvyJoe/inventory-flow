@@ -83,3 +83,52 @@ it('keeps captured evidence visible while the production live check is pending',
   await vi.waitFor(() => expect(document.querySelector('.hold-card')?.textContent).toContain('Checked directly in DealerMail'))
   expect(document.querySelector('.hold-card')?.textContent).not.toMatch(/Old salesperson|Old hold reason/)
 })
+
+it('keeps a current provider hold source-labeled beside the separate DealerMail result', async () => {
+  const providerRecord = {
+    ...record,
+    hold: { state: 'none_observed', canViewEvidence: true, canManage: true, backupCount: 0 },
+    privateEvidence: { primary: null, backups: [], comments: [], alerts: [] },
+    operationalEvidence: { records: [{ vin: record.vin, provider: 'autocheck', sourceLabel: 'Synthetic AutoCheck', capturedAt: '2026-09-23T14:00:00Z', dataState: 'current', readOnly: true, complete: true, holdState: 'held' }] },
+    inventoryDecision: { status: 'unconfirmed', comparison: 'conflict', manualHold: null, importedHold: false, label: 'Review source records', reasons: ['provider_hold_disagreement'], evidence: [{ vin: record.vin, provider: 'autocheck', sourceLabel: 'Synthetic AutoCheck', capturedAt: '2026-09-23T14:00:00Z', dataState: 'current', readOnly: true, complete: true, holdState: 'held', effectiveHoldState: 'held', comparison: 'conflict', reasons: ['provider_hold_disagreement'] }] },
+  }
+  api.bootstrap.mockResolvedValue({ ...bootstrap, vehicles: [providerRecord] })
+  api.vehicle.mockResolvedValue(providerRecord)
+  live.check.mockResolvedValue({ status: 'unavailable' })
+  await import('../../extension/sidepanel/panel.js')
+  await vi.waitFor(() => expect(document.querySelector('#rows .row')).not.toBeNull())
+  expect(document.querySelector('.row-status')?.textContent).toContain('Synthetic AutoCheck reports hold')
+  document.querySelector('#rows .row').click()
+  await vi.waitFor(() => expect(document.querySelector('#tab-hold')).not.toBeNull())
+  document.querySelector('#tab-hold').click()
+  await vi.waitFor(() => expect(document.querySelector('.hold-card')?.textContent).toContain('Could not confirm the current hold'))
+  expect(document.querySelector('.hold-card')?.textContent).toContain('Hold status needs review')
+  expect(document.querySelector('.hold-card')?.textContent).not.toContain('No current DealerMail hold found')
+  expect(document.querySelector('#tab-panel')?.textContent).toContain('Read-only provider hold observations')
+  expect(document.querySelector('#tab-panel')?.textContent).toContain('Synthetic AutoCheck')
+  expect(document.querySelector('#tab-panel')?.textContent).toContain('Reports a hold')
+  expect(document.querySelector('#tab-panel')?.textContent).toContain('Records disagree')
+  expect(document.querySelector('#tab-panel')?.textContent).toContain('separate from DealerMail')
+})
+
+it('keeps a retained provider hold findable but labels it as unverified', async () => {
+  const providerRecord = {
+    ...record,
+    hold: { state: 'none_observed', canViewEvidence: true, canManage: true, backupCount: 0 },
+    privateEvidence: { primary: null, backups: [], comments: [], alerts: [] },
+    operationalEvidence: { records: [{ vin: record.vin, provider: 'carfax', sourceLabel: 'Synthetic CARFAX', capturedAt: '2026-09-01T14:00:00Z', dataState: 'stale_unverified', readOnly: true, complete: true, holdState: 'held' }] },
+  }
+  api.bootstrap.mockResolvedValue({ ...bootstrap, vehicles: [providerRecord] })
+  api.vehicle.mockResolvedValue(providerRecord)
+  live.check.mockResolvedValue({ status: 'unavailable' })
+  await import('../../extension/sidepanel/panel.js')
+  await vi.waitFor(() => expect(document.querySelector('#rows .row')).not.toBeNull())
+  expect(document.querySelector('.row-status')?.textContent).toContain('Synthetic CARFAX prior hold · verify')
+  document.querySelector('#scope-held').click()
+  expect(document.querySelector('#rows').textContent).toContain('HT1345U')
+  document.querySelector('#rows .row').click()
+  await vi.waitFor(() => expect(document.querySelector('#tab-hold')).not.toBeNull())
+  document.querySelector('#tab-hold').click()
+  await vi.waitFor(() => expect(document.querySelector('#tab-panel')?.textContent).toContain('Previously reported a hold · not current'))
+  expect(document.querySelector('.hold-card')?.textContent).not.toContain('No current DealerMail hold found')
+})

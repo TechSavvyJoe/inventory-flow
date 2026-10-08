@@ -1,3 +1,4 @@
+import { ProviderEvidence, importedHoldSummary } from "./ProviderEvidence";
 import { ManualHoldDialog } from './ManualHoldDialog';
 import { CustomerSummary } from '../sales/CustomerSummary';
 import { VehicleIssues, VehicleIssuesSummary } from '../issues/VehicleIssues';
@@ -338,6 +339,7 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
       null;
     const noCurrentHold =
       hold.dataState === "current" && hold.hasActiveHold === false;
+    const distinguishSourceHold = Boolean(vehicle.operationalEvidence || vehicle.manualHold?.state === "active");
 
     return (
       <>
@@ -352,7 +354,7 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
           <span className="inventory-workspace-no-hold__heading">
             <h3 id="inventory-no-hold-title">
               {noCurrentHold
-                ? "No active hold"
+                ? distinguishSourceHold ? "DealerMail hold evidence" : "No active hold"
                 : "Hold status needs review"}
             </h3>
             <p>Check availability with the home store before promising this vehicle.</p>
@@ -361,7 +363,7 @@ function HoldDetails({ vehicle }: { vehicle: InventoryVehicle }) {
         <dl className="inventory-workspace-no-hold__facts">
           <Fact label="Hold status" emphasize>
             {noCurrentHold
-              ? "No active hold recorded"
+              ? distinguishSourceHold ? "No current DealerMail hold found" : "No active hold recorded"
               : "Needs review"}
           </Fact>
           <Fact label="Home store">{vehicle.location.homeStore.name}</Fact>
@@ -734,7 +736,7 @@ export function VehicleWorkspace({
       ? `${vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"} · ${formatDate(vehicle.dealerMail.loaner.serviceDate)}`
       : vehicle.dealerMail.loaner.program ? `Loaner ${vehicle.dealerMail.loaner.program}` : vehicle.dealerMail.loaner.label || "Loaner"
     : null;
-  const holdLabel = vehicle.manualHold?.state === "active" ? "Manual hold" : !holdCurrent ? (vehicle.dealerMail.lastKnownActiveHold ? "Last verified hold" : "Hold status unverified")
+  const holdLabel = vehicle.manualHold?.state === "active" ? "Manual hold" : vehicle.operationalEvidence ? importedHoldSummary(vehicle) : !holdCurrent ? (vehicle.dealerMail.lastKnownActiveHold ? "Last verified hold" : "Hold status unverified")
     : loanerLabel
       ? loanerLabel
     : vehicle.dealerMail.hasActiveHold === true
@@ -774,7 +776,9 @@ export function VehicleWorkspace({
     ? { rows:vehicle.warrantyCheck.fordOasis.coverages, label:"OASIS" }
     : vehicle.warrantyCheck?.autoCheck?.coverages?.length
       ? { rows:vehicle.warrantyCheck.autoCheck.coverages, label:"AutoCheck estimate" }
-      : null;
+      : vehicle.warrantyCheck?.carfax?.coverages.length
+        ? { rows:vehicle.warrantyCheck.carfax.coverages, label:"CARFAX estimate" }
+        : null;
   const coverage = coverageSource?.rows.find(row => row.status === "ACTIVE") ?? coverageSource?.rows[0] ?? null;
   const coverageSummary = coverage ? [coverage.type, coverage.remainingTimeText, coverage.remainingMilesText].filter(Boolean).join(" · ") : null;
   const recordsNeedReview = [vehicle.publicListing.dataState, vehicle.dealerOn.dataState, vehicle.dealerMail.dataState]
@@ -919,7 +923,10 @@ export function VehicleWorkspace({
               <section className="vdp-focus-operations" aria-label="Vehicle operational summary">
                 <dl>
                   <Fact label="Location"><strong>{currentLocation.label}</strong>{vehicle.location.conflict ? <small>Location conflict — review needed</small> : null}</Fact>
-                  {vehicle.manualHold?.state === "active" ? <>
+                  {vehicle.operationalEvidence ? <>
+                    <Fact label="Manual hold"><strong>{vehicle.manualHold?.state === 'active' ? 'Active · Inventory Flow' : vehicle.manualHold?.state === 'released' ? 'Released · Inventory Flow' : 'No manual hold recorded'}</strong></Fact>
+                    <Fact label="Imported holds"><strong>{importedHoldSummary(vehicle)}</strong></Fact>
+                  </> : vehicle.manualHold?.state === "active" ? <>
                     <Fact label="Manual hold" className="vdp-focus-source-hold-fact"><strong>Active · Inventory Flow</strong>{canViewHoldEvidence && (vehicle.manualHold.customerLabel || vehicle.manualHold.expectedDeliveryDate) ? <small className="vdp-focus-hold-context">{[vehicle.manualHold.customerLabel, vehicle.manualHold.expectedDeliveryDate ? `Expected ${formatDate(vehicle.manualHold.expectedDeliveryDate)}` : null].filter(Boolean).join(" · ")}</small> : null}</Fact>
                     <Fact label="DealerMail" className="vdp-focus-source-hold-fact"><strong>{loanerLabel || (holdCurrent && vehicle.dealerMail.hasActiveHold ? "Held" : vehicle.dealerMail.conciseState || "Hold status not verified")}</strong>{vehicle.dealerMail.loaner?.rawAlert && loanerLabel ? <small>{vehicle.dealerMail.loaner.rawAlert}</small> : null}{primaryHold?.salesperson || primaryHold?.expectedDeliveryDate || holdCount > 1 ? <small className="vdp-focus-hold-context">{[primaryHold?.salesperson, primaryHold?.expectedDeliveryDate ? `Expected ${formatDate(primaryHold.expectedDeliveryDate)}` : null, holdCount > 1 ? `${holdCount - 1} backup ${holdCount === 2 ? "hold" : "holds"}` : null].filter(Boolean).join(" · ")}</small> : null}</Fact>
                   </> : <Fact label="Hold status"><strong>{loanerLabel || (holdCurrent && vehicle.dealerMail.hasActiveHold ? "Held" : holdLabel)}</strong>{vehicle.dealerMail.loaner?.rawAlert && loanerLabel ? <small>{vehicle.dealerMail.loaner.rawAlert}</small> : null}{primaryHold?.salesperson || primaryHold?.expectedDeliveryDate || holdCount > 1 ? <small className="vdp-focus-hold-context">{[primaryHold?.salesperson, primaryHold?.expectedDeliveryDate ? `Expected ${formatDate(primaryHold.expectedDeliveryDate)}` : null, holdCount > 1 ? `${holdCount - 1} backup ${holdCount === 2 ? "hold" : "holds"}` : null].filter(Boolean).join(" · ")}</small> : null}</Fact>}
@@ -951,7 +958,8 @@ export function VehicleWorkspace({
                   <section className="vdp-focus-keyfacts" aria-label="Frequently used vehicle facts">
                     <h3>Reference facts</h3>
                     <dl>
-                      <Fact label={warrantyInServiceSource === "autocheck" ? "Est. in-service" : "In-service"}><span className="vdp-focus-reference-date">{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</span>{warrantyInServiceSource ? <small>{warrantyInServiceSource === "oasis" ? "OASIS" : "AutoCheck"}</small> : null}</Fact>
+                      <Fact label={warrantyInServiceSource && warrantyInServiceSource !== "oasis" ? "Est. in-service" : "In-service"}><span className="vdp-focus-reference-date">{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</span>{warrantyInServiceSource ? <small>{warrantyInServiceSource === "oasis" ? "OASIS" : warrantyInServiceSource === "carfax" ? "CARFAX estimate" : "AutoCheck estimate"}</small> : null}</Fact>
+                      {vehicle.serviceHistory?.reports.length ? <Fact label="Service records"><button type="button" onClick={() => openAndFocusSection("data")}>{vehicle.serviceHistory.reports.reduce((sum,report) => sum+report.entries.length,0)} reported events</button><small>{vehicle.serviceHistory.reports.map(report => report.sourceLabel).join(" · ")}</small></Fact> : null}
                       {coverageSummary ? <Fact label="Coverage"><span>{coverageSummary}</span>{coverageSource ? <small>{coverageSource.label}</small> : null}</Fact> : null}
                       {factoryPrices.original.value !== null ? <Fact label={factoryPriceLabel(factoryPrices.original.source)}><span className="vdp-focus-reference-value">{formatFactoryPrice(factoryPrices.original.value, factoryPrices.original.currency)}</span><small>{factoryPrices.original.source === "window-sticker" ? "Window sticker" : "vAuto equipment"}</small></Fact> : null}
                       {factoryPrices.base.value !== null ? <Fact label={baseMsrpLabel}><CopyableValue compact label="base MSRP" text={String(factoryPrices.base.value)}>{baseMsrpDisplay}</CopyableValue>{baseMsrpSource ? <small>{baseMsrpSource} · Before options &amp; destination</small> : null}</Fact> : null}
@@ -1025,19 +1033,20 @@ export function VehicleWorkspace({
           <WorkspacePanel id="data" label="Records" active={activePage === "data"}>
             <dl className="vdp-records-summary"><Fact label={baseMsrpLabel}>{factoryPrices.base.value !== null ? <CopyableValue compact label="base MSRP" text={String(factoryPrices.base.value)}>{baseMsrpDisplay}</CopyableValue> : baseMsrpDisplay}</Fact><Fact label={warrantyInServiceLabel}>{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</Fact></dl>
             <VehicleDocuments vehicle={vehicle} />
-            {!vehicle.autoCheckReport && !vehicle.windowSticker && !vehicle.factoryEquipment && !vehicle.fordOasis && !vehicle.warrantyCheck ? <div className="vdp-focus-empty"><h3>Vehicle records</h3><p>No vehicle records are available.</p></div> : null}
+            {!vehicle.autoCheckReport && !vehicle.windowSticker && !vehicle.factoryEquipment && !vehicle.fordOasis && !vehicle.warrantyCheck && !vehicle.serviceHistory?.reports.length ? <div className="vdp-focus-empty"><h3>Vehicle records</h3><p>No vehicle records are available.</p></div> : null}
             {openRecallCount ? <a className="vdp-focus-warning" href={oasisUrl ?? undefined} target="_blank" rel="noopener noreferrer">{oasisActionLabel(vehicle.fordOasis)} · Review OASIS</a> : null}
           </WorkspacePanel>
           <WorkspacePanel id="hold" label="Holds & moves" active={activePage === "hold"}>
             <div className="vdp-focus-section-heading"><h3>Holds &amp; moves</h3><div className="vdp-focus-actions">{movementAction}</div></div>
             {vehicle.manualHold ? <section className="vdp-focus-manual-summary" aria-label="Manual inventory controls"><div><strong>{vehicle.manualHold.state === 'active' ? 'Manual hold active' : vehicle.manualHold.state === 'released' ? 'Manual hold released' : 'No manual hold recorded'}</strong><span>{dispositionSummary(appDisposition)} · Inventory Flow</span></div><div className="vdp-focus-actions">{dispositionContext && vehicle.manualHold.enabled ? <button type="button" onClick={event => { manualHoldOpenerRef.current = event.currentTarget; setManualHoldOpen(true); }}>{vehicle.manualHold.canManage ? vehicle.manualHold.state === 'active' ? 'Manage manual hold' : 'Place manual hold' : 'View manual hold'}</button> : null}{dispositionAction ? <button type="button" onClick={event => { dispositionOpenerRef.current = event.currentTarget; setDispositionOpen(true); }}>{dispositionAction}</button> : null}</div></section> : null}
+            <ProviderEvidence vehicle={vehicle} />
             <div className="vdp-focus-hold-grid inventory-workspace-hold-center" data-hold-state={vehicle.holdEvidence?.length ? "held" : "no-evidence"}>
               <div className="vdp-focus-movement-panel">
                 <section id="inventory-section-movement" tabIndex={-1} aria-labelledby="inventory-movement-heading" className="vdp-focus-movement"><h3 id="inventory-movement-heading">Location &amp; movement</h3><MovementDetails vehicle={vehicle} status={nextStepStatus} /></section>
               </div>
-              <div className="vdp-focus-hold-evidence"><HoldDetails vehicle={vehicle} /></div>
+              <div className="vdp-focus-hold-evidence">{!vehicle.operationalEvidence || vehicle.inventoryDecision?.evidence?.some(record => ["dealermail", "legacy-dealermail"].includes(record.provider)) ? <HoldDetails vehicle={vehicle} /> : null}</div>
               {/* Custody and full evidence precede this secondary, read-only handoff. */}
-              {canManageDealerMail ? <div className="vdp-focus-handoff vdp-focus-handoff-panel"><DealerMailHandoff key={vehicle.id + "|" + vehicle.stockNumber + "|" + vehicle.vin} vehicle={vehicle} /></div> : null}
+              {canManageDealerMail && (!vehicle.operationalEvidence || vehicle.inventoryDecision?.evidence?.some(record => ["dealermail", "legacy-dealermail"].includes(record.provider))) ? <div className="vdp-focus-handoff vdp-focus-handoff-panel"><DealerMailHandoff key={vehicle.id + "|" + vehicle.stockNumber + "|" + vehicle.vin} vehicle={vehicle} /></div> : null}
             </div>
           </WorkspacePanel>
           <WorkspacePanel id="timeline" label="Activity" active={activePage === "timeline"}><TimelineDetails vehicle={vehicle} /></WorkspacePanel>

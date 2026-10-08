@@ -5,6 +5,7 @@ export interface VehicleInServiceInput {
   warrantyCheck?: {
     fordOasis?: { warrantyStartDate?: string | null } | null;
     autoCheck?: { inServiceDate?: string | null } | null;
+    carfax?: { inServiceDate?: string | null } | null;
   } | null;
 }
 
@@ -15,5 +16,7 @@ export function resolveVehicleInService(vehicle: VehicleInServiceInput) {
     || vehicle.warrantyCheck?.autoCheck?.inServiceDate?.trim();
   if (oasis) return { date: oasis, source: 'oasis' as const, label: 'Warranty in-service · OASIS' };
   if (estimate) return { date: estimate, source: 'autocheck' as const, label: 'In-service · AutoCheck estimate' };
+  const carfax = vehicle.warrantyCheck?.carfax?.inServiceDate?.trim();
+  if (carfax) return { date: carfax, source: 'carfax' as const, label: 'In-service · CARFAX estimate' };
   return { date: null, source: null, label: 'Warranty in-service' };
 }

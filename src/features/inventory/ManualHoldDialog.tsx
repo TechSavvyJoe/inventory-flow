@@ -1,3 +1,4 @@
+import { ProviderEvidence, importedHoldSummary } from "./ProviderEvidence"
 import { useEffect, useId, useRef, useState, type FormEvent, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
@@ -37,6 +38,7 @@ export function ManualHoldDialog({ vehicle, role, store, onClose, onSaved, retur
     (detail.state === 'active' && importedHold === false) ||
     (detail.state === 'released' && importedHold === true) ||
     (vehicle.appDisposition?.code === 'delivered' && (detail.state === 'active' || importedHold === true)) ||
+    vehicle.inventoryDecision?.reviewRequired === true ||
     vehicle.inventoryDecision?.reasons.includes('keep_vs_imported_delivery') === true
   )
   const close = () => { if (!busy && confirmDiscard()) onClose() }
@@ -93,7 +95,8 @@ export function ManualHoldDialog({ vehicle, role, store, onClose, onSaved, retur
         <button type="button" onClick={close} aria-label="Close manual hold" disabled={busy}><X size={20} aria-hidden="true" /></button></header>
       <div className="manual-hold-body">
         <dl className="manual-hold-comparison"><div><dt>Inventory Flow</dt><dd>{detail?.state === 'active' ? 'Manual hold active' : detail?.state === 'released' ? 'Manual hold released' : 'No manual hold recorded'}</dd></div>
-          <div><dt>Imported hold evidence</dt><dd>{vehicle.dealerMail.conciseState || 'Not verified'}</dd></div></dl>
+          <div><dt>Imported hold evidence</dt><dd>{importedHoldSummary(vehicle)}</dd></div></dl>
+        <ProviderEvidence vehicle={vehicle} />
         {recordsDisagree ? <p role="status" className="manual-hold-warning">The records disagree. Review the imported evidence before promising availability.</p> : null}
         {loading ? <p role="status">Loading the latest record…</p> : null}
         {error ? <p role="alert" className="manual-hold-error">{error}</p> : null}

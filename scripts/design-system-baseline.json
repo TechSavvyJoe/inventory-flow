@@ -307,6 +307,13 @@
       "important": 1,
       "idSelectors": 449
     },
+    "src/features/inventory/ServiceHistory.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
     "src/features/inventory/WarrantyOutlook.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -343,6 +350,13 @@
       "idSelectors": 0
     },
     "src/features/inventory/ManualHoldDialog.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
+    "src/features/inventory/ProviderEvidence.css": {
       "smallText": 0,
       "rawColors": 0,
       "rgbHslColors": 0,

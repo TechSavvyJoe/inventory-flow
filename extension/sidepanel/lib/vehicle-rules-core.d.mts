@@ -57,3 +57,4 @@ export function warrantySummary(outlook: WarrantyOutlook): string | null
 export function sourceDistanceText(value?: string | null): string
 export function statesKilometres(value?: string | null): boolean
 export function sourceDisplayText(value?: string | null): string
+export function calculatedWarrantyMiles(coverage: { termMiles?: number | null; unlimitedMiles?: boolean | null }, currentMileage?: number | null): number | null

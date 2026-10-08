@@ -177,6 +177,25 @@ describe('extension working-store workflow and identity reset', () => {
     expect(document.querySelector('#detail')?.textContent).not.toContain('CARFAX')
   })
 
+  it('labels CARFAX and AutoCheck estimates by provider without borrowing a Ford logo', async () => {
+    const record = { ...vehicle(), make: 'Chevrolet', model: 'Equinox', vehicleName: '2022 Chevrolet Equinox',
+      warrantyCheck: { dataState: 'current', mileageEntered: 30000, carfax: { defaultMileage: 30000, coverages: [{ type: 'Powertrain', remainingMonths: 12, remainingMilesText: '20,000' }] } },
+    }
+    api.bootstrap.mockResolvedValue({ ...bootstrap(), vehicles: [record] })
+    api.vehicle.mockResolvedValue(record)
+    await import('../../extension/sidepanel/panel.js')
+    await waitForText('#rows', 'DEMO-H01')
+    expect(document.querySelector('[data-resource="carfax"] .row-doc-provider')?.textContent).toContain('CARFAX estimate')
+    expect(document.querySelector('[data-resource="carfax"] .row-doc-brand')?.tagName.toLowerCase()).not.toBe('img')
+    document.querySelector('.row').click()
+    await vi.waitFor(() => expect(document.querySelector('.doc-carfax')).not.toBeNull())
+    expect(document.querySelector('.doc-carfax')?.getAttribute('aria-label')).toBe('View CARFAX warranty estimate')
+    expect(document.querySelector('.doc-carfax img')).toBeNull()
+    expect(document.querySelector('.doc-carfax')?.textContent).toContain('CARFAX warranty estimate')
+    expect(document.querySelector('.doc-carfax')?.textContent).not.toContain('AutoCheck')
+    expect(document.querySelector('.doc-carfax img')?.getAttribute('alt')).not.toBe('Ford')
+  })
+
   it.each([
     ['needs_service', 'Waiting for service'],
     ['in_service', 'In service'],

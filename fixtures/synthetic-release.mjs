@@ -447,6 +447,14 @@ function demoResources(vehicle) {
   }
   return {
     factoryEquipment: factory,
+    ...(/chevrolet/i.test(vehicle.make) ? {
+      operationalEvidence: { records: [{ vin: vehicle.vin, provider: 'demo-dms', sourceLabel: 'Synthetic DMS', capturedAt: '2026-08-30T09:20:00-04:00', dataState: 'current', readOnly: true, complete: true, holdState: 'not_observed', reportedDisposition: 'not_observed' }] },
+      serviceHistory: { reports: [{ vin: vehicle.vin, provider: 'carfax', sourceLabel: 'Synthetic CARFAX', capturedAt: '2026-08-30T09:20:00-04:00', dataState: 'current', historyStatus: 'reported', entries: [
+        { date: '2026-07-12', odometer: 21000, odometerUnit: 'mi', services: ['Synthetic oil and filter service', 'Synthetic tire rotation'] },
+        { date: '2026-01-08', odometer: 17000, odometerUnit: 'mi', services: ['Synthetic brake inspection'] },
+      ] }] },
+      warrantyCheck: { dataState: 'current', capturedAt: '2026-08-30T09:20:00-04:00', sourceLabel: 'Synthetic CARFAX warranty estimate', mileageEntered: vehicle.mileage, carfax: { inServiceDate: inServiceDate, coverages: [{ type: 'Powertrain', termText: '5 years / 60000 miles', termMiles: 60000, remainingMilesText: '37948 miles', remainingTimeText: '18 months', status: 'ACTIVE', note: 'Fabricated demo estimate only' }] } },
+    } : {}),
     autoCheckReport: {
       ...autoCheckReport(),
       lastReportedOdometer: vehicle.mileage,

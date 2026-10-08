@@ -1,3 +1,4 @@
+import { validateOperationalEvidence, validateServiceHistoryEvidence } from './provider-evidence.mjs'
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
@@ -1115,6 +1116,7 @@ function validatedWarrantyCoverage(value, vin, label, seen, {
   termTextMax,
   allowUnlimitedMonths,
   requireFactoryGrammar = false,
+  allowMissingEstimateText = false,
 }) {
   const allowedKeys = new Set([
     'type',
@@ -1142,15 +1144,15 @@ function validatedWarrantyCoverage(value, vin, label, seen, {
   assertValid(!seen.has(identity), `${label} coverages contain a duplicate type`, { vin, type })
   seen.add(identity)
 
-  const termText = optionalBoundedText(value.termText, `${label} coverage term`, { max: termTextMax })
+  const termText = optionalBoundedText(value.termText, `${label} coverage term`, { max: termTextMax }) ?? (allowMissingEstimateText ? 'Unknown' : undefined)
   assertValid(termText, `${label} coverage term is required`, { vin, type })
   if (requireFactoryGrammar) {
     assertValid(isFactoryCoverageRow(type, termText), `${label} coverage is not a recognized factory coverage term`, { vin, type })
     assertValid(factoryTermText(termText) === termText, `${label} coverage term is not canonical factory text`, { vin, type })
   }
-  const remainingMilesText = optionalBoundedText(value.remainingMilesText, `${label} remaining miles text`, { max: 40 })
+  const remainingMilesText = optionalBoundedText(value.remainingMilesText, `${label} remaining miles text`, { max: 40 }) ?? (allowMissingEstimateText ? 'Unknown' : undefined)
   assertValid(remainingMilesText, `${label} remaining miles text is required`, { vin, type })
-  const remainingTimeText = optionalBoundedText(value.remainingTimeText, `${label} remaining time text`, { max: 40 })
+  const remainingTimeText = optionalBoundedText(value.remainingTimeText, `${label} remaining time text`, { max: 40 }) ?? (allowMissingEstimateText ? 'Unknown' : undefined)
   assertValid(remainingTimeText, `${label} remaining time text is required`, { vin, type })
   assertValid(WARRANTY_STATUSES.has(value.status), `${label} coverage status is invalid`, { vin, type })
 
@@ -1176,16 +1178,17 @@ function validatedWarrantyCoverage(value, vin, label, seen, {
 
 /**
  * Remaining factory warranty for one VIN, figured at that vehicle's own listed
- * odometer. Two independent read-only sources may be present:
+ * odometer. Independent read-only warranty sources may be present:
  *   fordOasis  - Ford/Lincoln only, the manufacturer's own record (authoritative)
  *   autoCheck  - Experian's estimate, available for every make
+ *   carfax     - CARFAX estimated coverage; never an OEM status
  * At least one must be present. No owner or customer field exists in either
  * block and none is accepted here.
  */
 function validatedWarrantyCheck(value, vin) {
   assertOnlyKeys(
     value,
-    new Set(['dataState', 'capturedAt', 'sourceLabel', 'mileageEntered', 'mileageSource', 'autoCheck', 'fordOasis']),
+    new Set(['dataState', 'capturedAt', 'sourceLabel', 'mileageEntered', 'mileageSource', 'autoCheck', 'carfax', 'fordOasis']),
     'Warranty check record',
     { vin },
   )
@@ -1238,6 +1241,40 @@ function validatedWarrantyCheck(value, vin) {
     result.autoCheck = out
   }
 
+  if (value.carfax !== undefined && value.carfax !== null) {
+    const block = value.carfax
+    assertOnlyKeys(
+      block,
+      new Set(['inServiceDate', 'inServiceAgeMonths', 'defaultMileage', 'coverages']),
+      'Warranty check CARFAX block',
+      { vin },
+    )
+    const rows = block.coverages ?? []
+    assertValid(
+      Array.isArray(rows) && rows.length > 0 && rows.length <= 12,
+      'Warranty check CARFAX coverages must be a non-empty bounded array',
+      { vin },
+    )
+    const seen = new Set()
+    const out = {
+      coverages: rows.map((row) => validatedWarrantyCoverage(row, vin, 'Warranty check CARFAX', seen, {
+        termTextMax: 80,
+        allowUnlimitedMonths: true,
+        allowMissingEstimateText: true,
+      })),
+    }
+    const inServiceDate = optionalBoundedText(block.inServiceDate, 'Warranty check CARFAX inServiceDate', { max: 40 })
+    if (inServiceDate) out.inServiceDate = inServiceDate
+    for (const [key, min, max] of [
+      ['inServiceAgeMonths', 0, 600],
+      ['defaultMileage', 0, 999_999],
+    ]) {
+      const number = optionalBoundedInteger(block[key], `Warranty check CARFAX ${key}`, { min, max })
+      if (number !== undefined) out[key] = number
+    }
+    result.carfax = out
+  }
+
   if (value.fordOasis !== undefined && value.fordOasis !== null) {
     const block = value.fordOasis
     assertOnlyKeys(block, new Set(['warrantyStartDate', 'monthsInService', 'coverages']), 'Warranty check OASIS block', {
@@ -1271,7 +1308,7 @@ function validatedWarrantyCheck(value, vin) {
     }
   }
 
-  assertValid(result.autoCheck || result.fordOasis, 'Warranty check record carries no warranty source', { vin })
+  assertValid(result.autoCheck || result.carfax || result.fordOasis, 'Warranty check record carries no warranty source', { vin })
   return result
 }
 
@@ -1295,6 +1332,8 @@ function validateVinDocumentEnrichmentInternal(value, {
   let fordInvoiceCount = 0
   let fordOasisCount = 0
   let warrantyCheckCount = 0
+  let operationalEvidenceCount = 0
+  let serviceHistoryCount = 0
   for (const [rawVin, record] of entries) {
     const vin = normalizedVin(rawVin)
     assertValid(VIN_PATTERN.test(vin) && rawVin === vin, 'VIN document enrichment key is not a canonical VIN', {
@@ -1302,7 +1341,7 @@ function validateVinDocumentEnrichmentInternal(value, {
     })
     assertOnlyKeys(
       record,
-      new Set(['vin', 'factoryEquipment', 'autoCheckReport', 'fordInvoice', 'fordOasis', 'warrantyCheck']),
+      new Set(['vin', 'factoryEquipment', 'autoCheckReport', 'fordInvoice', 'fordOasis', 'warrantyCheck', 'operationalEvidence', 'serviceHistory']),
       'VIN document enrichment record',
       { vin },
     )
@@ -1323,6 +1362,8 @@ function validateVinDocumentEnrichmentInternal(value, {
         : validatedFordInvoice(record.fordInvoice, vin)
     let fordOasis
     let warrantyCheck
+    let operationalEvidence
+    let serviceHistory
     let rejectedOptionalResource = false
     if (record.fordOasis !== undefined && record.fordOasis !== null) {
       try {
@@ -1342,11 +1383,23 @@ function validateVinDocumentEnrichmentInternal(value, {
         onResourceRejected({ vin, channel: 'warrantyCheck', reason: String(error?.message ?? error).slice(0, 240) })
       }
     }
-    if (degradeOptionalResources && rejectedOptionalResource && !(factoryEquipment || autoCheckReport || fordInvoice || fordOasis || warrantyCheck)) {
+    for (const [channel, validator] of [['operationalEvidence', validateOperationalEvidence], ['serviceHistory', validateServiceHistoryEvidence]]) {
+      if (record[channel] == null) continue
+      try {
+        const normalized = validator(record[channel], vin)
+        if (channel === 'operationalEvidence') operationalEvidence = normalized
+        else serviceHistory = normalized
+      } catch (error) {
+        if (!degradeOptionalResources) throw error
+        rejectedOptionalResource = true
+        onResourceRejected({ vin, channel, reason: String(error?.message ?? error).slice(0, 240) })
+      }
+    }
+    if (degradeOptionalResources && rejectedOptionalResource && !(factoryEquipment || autoCheckReport || fordInvoice || fordOasis || warrantyCheck || operationalEvidence || serviceHistory)) {
       continue
     }
     assertValid(
-      factoryEquipment || autoCheckReport || fordInvoice || fordOasis || warrantyCheck,
+      factoryEquipment || autoCheckReport || fordInvoice || fordOasis || warrantyCheck || operationalEvidence || serviceHistory,
       'VIN document enrichment record contains no usable resource',
       { vin },
     )
@@ -1355,6 +1408,8 @@ function validateVinDocumentEnrichmentInternal(value, {
     if (fordInvoice) fordInvoiceCount += 1
     if (fordOasis) fordOasisCount += 1
     if (warrantyCheck) warrantyCheckCount += 1
+    if (operationalEvidence?.records.length) operationalEvidenceCount += 1
+    if (serviceHistory?.reports.length) serviceHistoryCount += 1
     recordsByVin[vin] = {
       vin,
       ...(factoryEquipment ? { factoryEquipment } : {}),
@@ -1362,6 +1417,8 @@ function validateVinDocumentEnrichmentInternal(value, {
       ...(fordInvoice ? { fordInvoice } : {}),
       ...(fordOasis ? { fordOasis } : {}),
       ...(warrantyCheck ? { warrantyCheck } : {}),
+      ...(operationalEvidence ? { operationalEvidence } : {}),
+      ...(serviceHistory ? { serviceHistory } : {}),
     }
   }
   return {
@@ -1380,13 +1437,14 @@ function validateVinDocumentEnrichmentInternal(value, {
       ...(fordOasisCount > 0 ? { fordOasisCount } : {}),
       // Same backward-compatibility rule for the warranty check channel.
       ...(warrantyCheckCount > 0 ? { warrantyCheckCount } : {}),
+      ...(operationalEvidenceCount > 0 ? { operationalEvidenceCount } : {}),
+      ...(serviceHistoryCount > 0 ? { serviceHistoryCount } : {}),
     },
   }
 }
 
 // Direct callers keep the strict validator for diagnostics and tests. The
-// publication importer may drop only the two newly introduced optional Ford
-// channels per VIN, preserving older factory-equipment/AutoCheck evidence and
+// publication importer may drop unsafe optional evidence channels per VIN, preserving older factory-equipment/AutoCheck evidence and
 // surfacing an explicit release warning instead of losing the whole release.
 export function validateVinDocumentEnrichment(value) {
   return validateVinDocumentEnrichmentInternal(value)

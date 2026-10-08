@@ -76,3 +76,10 @@ preserving their vehicles. A same-named list is reused to avoid another
 confusing duplicate. **Manage → Save name** remains available later. The web
 and companion retain original payload/key on an interrupted save and clear
 private drafts on account/access changes. Customer contacts stay in the CRM.
+
+## Optional provider evidence
+
+[Provider-neutral evidence](PROVIDER_NEUTRAL_EVIDENCE.md) adds independent
+CRM/DMS observations without making DealerMail a prerequisite for the app-owned
+controls. Imported holds, source dispositions, service history and warranty
+estimates remain read-only. Source observations never mutate staff decisions.
