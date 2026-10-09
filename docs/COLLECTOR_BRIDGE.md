@@ -180,9 +180,12 @@ Use `cloudflare/platform.wrangler.example.jsonc` and
 configuration. The owner requires separate collector audience/signing key and
 an explicit group-to-tenant service-binding map. The tenant requires its
 singleton identity, platform D1 gate, bridge verification key and execution flag.
-Apply platform migration `0004_collector_execution.sql` and tenant migration
-`0016_collector_publication_receipts.sql` through the documented migration-ledger
-process only in the authorized release. Do not run a generic migration command
+Platform migration `0004_collector_execution.sql` is required before deploying
+the collector-capable owner Worker, even with execution disabled: Data
+connections reads its collector tables. It does not activate collection. Tenant
+migration `0016_collector_publication_receipts.sql` is a separate prerequisite
+for the collector pilot. Apply each through the documented migration-ledger
+process only in its authorized release. Do not run a generic migration command
 or reuse another dealership's database, R2 bucket, credentials or keys.
 
 The named pilot must identify the exact group, all four permitted stores,

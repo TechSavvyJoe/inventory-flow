@@ -73,10 +73,12 @@ query strings, fragments, non-HTTPS schemes or literal/private-network hosts.
 The control plane never fetches these URLs. A future executor must independently
 validate DNS, redirect destinations, provider authorization and tenant scope.
 
-**Execution is not connected in this implementation.** Saving a connection does
-not verify credentials or a source session. The screen therefore reports
-**Not verified** and **Executor not connected**, including in the synthetic
-demo. New source forms default to **paused**; existing preferences are preserved.
+**Collector execution is implemented but disabled by default.** Saving a
+connection does not verify credentials, a source session or successful capture.
+Source verification remains **Not verified**; executor connectivity is reported
+separately and requires current contact from an enabled, enrolled host. The
+synthetic demo does not establish live activation or vendor compatibility. New
+source forms default to **paused**; existing preferences are preserved.
 Enabling/pausing a source saves an app-owned preference; it does not stop
 or start Windows tasks or an existing collector. Sources remain read-only.
 
@@ -277,14 +279,22 @@ otherwise empty owner console. Never implicitly connect an existing dealership
 or enable its tenant gate while activating the first owner.
 
 1. Record the current Worker versions, configuration/bindings and D1 backups.
-   Use a fresh isolated staging control-plane DB first. Review the six new
+   Use a fresh isolated staging control-plane DB first. Review the documented
    owner-only write routes and configure an owner Access application with its
    own audience and an explicitly permitted owner identity.
 2. Apply `cloudflare/platform-migrations/0001_platform.sql`, followed by
    `cloudflare/platform-migrations/0002_data_connections.sql` and
-   `cloudflare/platform-migrations/0003_pull_scheduler.sql` to the new
-   control-plane DB. Never apply it to `INVENTORY_DB`, and never run the generic
-   inventory migrations against that new database. It creates no owner.
+   `cloudflare/platform-migrations/0003_pull_scheduler.sql` and
+   `cloudflare/platform-migrations/0004_collector_execution.sql` to the new
+   control-plane DB through the documented migration-ledger process. Migration
+   `0004` is a schema prerequisite before deploying this collector-capable owner
+   Worker, even with execution disabled: Data connections reads collector tables.
+   It does not enable collection. Tenant migration
+   `0016_collector_publication_receipts.sql` and live execution are separate
+   collector-pilot steps in [Collector bridge](COLLECTOR_BRIDGE.md), not
+   prerequisites for an empty owner console. Never apply platform migrations to
+   `INVENTORY_DB`, and never run the generic inventory migrations against the
+   control-plane database. These migrations create no owner.
 3. Resolve Joe's exact verified Access email. A trusted database operator must
    insert the first enabled owner, with a fresh immutable ID and Joe's name,
    using bound parameters. No email or owner identity is guessed by this code.
