@@ -1,0 +1,30 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "inventory-flow-collector-tenant-staging",
+  "main": "src/collector-publication-entrypoint.mjs",
+  "compatibility_date": "2026-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {"directory":"../dist","binding":"ASSETS","not_found_handling":"single-page-application","run_worker_first":true},
+  "d1_databases": [
+    {"binding":"INVENTORY_DB","database_name":"REPLACE_WITH_ISOLATED_TENANT_DB","database_id":"REPLACE_WITH_ISOLATED_TENANT_DB_ID","migrations_dir":"migrations"},
+    {"binding":"PLATFORM_CONTROL_DB","database_name":"REPLACE_WITH_CONTROL_PLANE_DB","database_id":"REPLACE_WITH_CONTROL_PLANE_DB_ID"}
+  ],
+  "r2_buckets": [{"binding":"RELEASE_SNAPSHOTS","bucket_name":"replace-with-isolated-tenant-bucket"}],
+  "vars": {
+    "PRIVATE_HOSTNAME":"REPLACE_WITH_VERIFIED_TENANT_HOSTNAME",
+    "ACCESS_ISSUER":"REPLACE_WITH_VERIFIED_ACCESS_ISSUER",
+    "ACCESS_AUDIENCE":"REPLACE_WITH_EMPLOYEE_ACCESS_AUDIENCE",
+    "ACCESS_PUBLISHER_AUDIENCE":"REPLACE_WITH_EXISTING_LEGACY_PUBLISHER_AUDIENCE",
+    "PUBLISHER_CLIENT_ID":"REPLACE_WITH_EXISTING_LEGACY_PUBLISHER_ID",
+    "PLATFORM_TENANT_ID":"REPLACE_WITH_EXACT_GROUP_ID",
+    "PLATFORM_COLLECTOR_EXECUTION_ENABLED":"false"
+  }
+  // Secrets, separately authorized installation only:
+  // RELEASE_ENCRYPTION_KEY_BASE64 (existing per-tenant AES key),
+  // COLLECTOR_PUBLICATION_PUBLIC_KEY (control-plane Ed25519 public JWK),
+  // RELEASE_PUBLISHER_TOKEN (existing legacy path, never shared with collector).
+  // Tenant identity migration/singleton must be installed separately. Do not
+  // apply platform migrations to this inventory DB or change a live config.
+}

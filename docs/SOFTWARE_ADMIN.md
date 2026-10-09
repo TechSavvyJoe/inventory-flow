@@ -26,7 +26,7 @@ own search and structured ledgers.
 The account workspace exposes **Setup**, **Dealerships**, **Data connections**,
 **People & access** and **Publication** in the selected account's navigation.
 Data connections combines a source ledger and inspector with **Evidence & OEM
-coverage**, **Provider directory** and **Pull requests**. Sources can be filtered
+coverage**, **Provider directory**, **Collector hosts** and **Pull requests**. Sources can be filtered
 together by dealership, provider, OEM
 family, enabled preference and name/vendor. A selected-source inspector exposes
 its scope, method, endpoint, credential reference, local schedule and
@@ -80,21 +80,32 @@ demo. New source forms default to **paused**; existing preferences are preserved
 Enabling/pausing a source saves an app-owned preference; it does not stop
 or start Windows tasks or an existing collector. Sources remain read-only.
 
-**Request pull** creates an attributed, idempotent queue record; it never runs a
-capture or publishes inventory. An active group and enabled source are required,
-and each source can have only one waiting request. A waiting request must be
-cancelled before its source configuration can be changed. Queued requests have
-no automatic expiry, and there is deliberately no execution/claim/complete
-endpoint. The console shows every queued request plus the latest 50 cancelled
-requests. **Cancel request** cancels a waiting request even if its group has
-since been suspended. No arbitrary command, filesystem path, secret transfer,
-source write or remote-task route is available.
+**Request pull** creates an attributed, idempotent queue record. A request is
+queued separately from capture and publication. An active group and enabled
+source are required; only one unresolved request per source is allowed. Source
+configuration is blocked while its request is queued, running or awaiting
+publication reconciliation. The console shows queued/running/uncertain requests
+plus the latest 50 terminal requests. Cancel a waiting request, or stop a running
+attempt; an already admitted publication may finish and needs a separate final
+check.
 
-Connecting execution is a separate integration and release: use each dealer’s
-authorized API/file feed or local collector, independently provision its
-credentials, and implement authenticated group-bound execution and receipts
-before representing any feed as operating. Do not connect these preferences or
-queued jobs to the existing production publisher implicitly.
+**Collector hosts** registers the reviewed installed profile and Cloudflare
+Access service identity, starting paused. Enabling a host is separate from the
+execution flag, source preference, planner flag, vendor session and permissions.
+The first implemented adapter refreshes **DealerMail holds for the exact four
+stores in the existing pipeline**. It retains public inventory and resource
+facts from the exact same-day verified baseline. It cannot cold-start a new
+customer, run arbitrary commands, collect new public inventory or vAuto reports,
+or access FMCDealer/OEM systems. API and file connections remain configuration
+and planning until an authorized adapter is implemented.
+
+Reported host contact and capture are displayed separately from a tenant-verified
+publication receipt. **Check saved publication** reconciles a pending/uncertain
+attempt by reading the tenant's exact saved receipt and current release. It does
+not dispatch another capture or force-clear uncertainty. The platform chooses
+the registered tenant through a service binding; the host receives no publisher
+URL or token. See [Collector bridge](COLLECTOR_BRIDGE.md) for installation,
+protocol, scope, validation and the separately authorized pilot release.
 
 ## Daily scheduling across dealerships
 
@@ -102,8 +113,8 @@ queued jobs to the existing production publisher implicitly.
 handler, with `PLATFORM_SCHEDULER_ENABLED="true"`. The example configuration
 leaves it **false** and registers no Cron trigger. The console shows that
 activation boundary, the last planner tick/counts, each source's local target,
-and a dealership schedule ledger. There is no browser-callable tick, dispatch,
-execution or secret endpoint.
+and a dealership schedule ledger. There is no browser-callable planner tick or secret endpoint. Machine execution
+uses the separate enrolled collector API and its own Access audience.
 
 The planner isolates jobs by group, dealership and connection. Only active
 groups and enabled sources are eligible; employee-assignment preferences do not
@@ -118,8 +129,9 @@ Daily jobs catch up after today's configured local time, without backfilling
 past dates. Hourly jobs use the latest due slot after a missed interval, rather
 than creating every missed hour. A repeated daylight-saving hour has one slot;
 a skipped start time becomes due on the first later local tick. A waiting job
-blocks only its own source; no automatic expiry is invented while execution is
-unconnected. Operators can cancel it from its account workspace. Paused or
+blocks only its own source; queued requests do not expire automatically. Active collector leases have a
+bounded lifetime; uncertain publications block another attempt until reconciled.
+Operators can cancel or stop a request from its account workspace. Paused or
 suspended sources get no new scheduled requests.
 
 Batch size is bounded from 1 to 100, default **8**. Least recently checked
@@ -139,8 +151,9 @@ Choose batch size and monitor tick failures/queue depth against the account's
 limits. Scheduling is **at or after** the target time, not a guarantee that
 collection finishes then. With N eligible sources and batch size B, a full
 rotation needs roughly ceil(N/B) ticks; verify that delay at the intended fleet
-size before promising a dealership's publication deadline. The current demo
-has neither an active Cron trigger nor a connected executor.
+size before promising a dealership's publication deadline. The ordinary demo has no active Cron trigger and leaves collector execution
+disabled. Dedicated synthetic tests exercise the actual claim, capture receipt,
+encrypted publication and tenant readback path.
 
 ## Implemented controls
 
@@ -222,8 +235,9 @@ database or reuse another dealership's source permissions.
 
 ## API contract
 
-This separate owner-only Worker adds six app-owned administrative write paths;
-it does not modify the existing employee/integration write-surface contract.
+This separate owner Worker exposes app-owned administrative writes and a
+separate enrolled-machine API. It does not modify the existing
+employee/integration write-surface contract.
 
 | Method | Path | Result |
 | --- | --- | --- |
@@ -232,15 +246,19 @@ it does not modify the existing employee/integration write-surface contract.
 | GET | `/api/platform/groups/:id/connections` | Group-scoped configuration, waiting/cancelled requests and executor boundary |
 | GET | `/api/platform/audit/:id` | Allowlisted before/after values for an administrative change |
 | POST | `/api/platform/groups/:id/connections` | Create/update one dealership’s source configuration |
-| POST | `/api/platform/groups/:id/pulls` | Request/cancel a waiting read-only pull; never executes it |
+| POST | `/api/platform/groups/:id/pulls` | Request/cancel a waiting pull, or stop a running attempt |
+| GET | `/api/platform/groups/:id/collectors` | Enrollments, execution flag and latest 50 sanitized attempts |
+| POST | `/api/platform/groups/:id/collectors` | Register paused host, enable reviewed host or revoke its authority |
+| POST | `/api/platform/groups/:id/collector-reconcile` | Read exact tenant receipt/readiness and preserve an unresolved outcome |
 | POST | `/api/platform/groups` | Create/update group; new groups start in Setup |
 | POST | `/api/platform/dealerships` | Create/update a dealership within its original group |
 | POST | `/api/platform/owners` | Create/update software-owner access |
 | POST | `/api/platform/groups/:id/members` | Create/update that group's employee membership |
 
-All writes require same origin, JSON (maximum 8 KiB), an `Idempotency-Key`, a
+Configuration writes require same origin, JSON (maximum 8 KiB), an `Idempotency-Key`, a
 reason, and `expectedRevision` from the relevant directory. IDs/emails/store keys
-remain immutable. No delete route exists. Stale or conflicting writes return
+remain immutable. Collector reconciliation accepts only an attempt ID and
+rechecks owner access; it cannot admit another publication. No delete route exists. Stale or conflicting writes return
 409 without a partial membership or audit update. Platform saves atomically
 recheck the owner and revision in the control-plane transaction. Tenant saves
 recheck the owner before their separate tenant transaction and use that

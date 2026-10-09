@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { PlatformOverview, PlatformEdit } from './types'
+import type { PlatformOverview, PlatformEdit, PlatformPayload } from './types'
 class PlatformRequestError extends Error {constructor(message:string,readonly status:number) {super(message)}}
 
 export function usePlatformAdmin() {
@@ -21,7 +21,7 @@ export function usePlatformAdmin() {
     epoch.current++;controllers.current.forEach(controller=>controller.abort())
     setData(null);setEdit(null);setSelected('');setNotice('');setRefreshFailed(false);setDenied(accessDenied);ownerId.current=''
   },[])
-  const request = useCallback(async <T,>(path:string,body?:Record<string,string|boolean|number>,key?:string):Promise<T> => {
+  const request = useCallback(async <T,>(path:string,body?:PlatformPayload,key?:string):Promise<T> => {
     const generation = epoch.current, controller = new AbortController()
     controllers.current.add(controller)
     try {

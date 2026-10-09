@@ -1,6 +1,7 @@
 import { WorkflowError } from '../../server/workflow.mjs'
 import { platformOwner } from './platform-admin.mjs'
 import { schedulePreview, schedulerEnabled } from './platform-scheduler.mjs'
+import { readCollectors } from './collector-execution.mjs'
 
 const fail = (message,code='PLATFORM_INPUT_INVALID',status=422) => {throw new WorkflowError(message,{code,status})}
 const text = (value,label,max=160) => {
@@ -20,13 +21,14 @@ export async function readDataConnections(env,claims,groupId,now=new Date()) {
   const result=await db.batch([
     db.prepare('SELECT revision FROM platform_revision WHERE id=1'),
     db.prepare('SELECT c.*,s.checked_at,s.last_slot,s.outcome FROM platform_data_connections c LEFT JOIN platform_schedule_checks s ON s.connection_id=c.id WHERE c.group_id=? ORDER BY c.name COLLATE NOCASE,c.id').bind(groupId),
-    db.prepare(`SELECT p.* FROM platform_pull_requests p WHERE p.group_id=? AND (p.state='queued' OR p.id IN (SELECT id FROM platform_pull_requests WHERE group_id=? AND state='cancelled' ORDER BY created_at DESC,id DESC LIMIT 50)) ORDER BY p.created_at DESC,p.id DESC`).bind(groupId,groupId),
+    db.prepare(`SELECT p.* FROM platform_pull_requests p WHERE p.group_id=? AND (p.state IN ('queued','running','reconciliation_required') OR p.id IN (SELECT id FROM platform_pull_requests WHERE group_id=? AND state IN ('cancelled','completed','failed') ORDER BY created_at DESC,id DESC LIMIT 50)) ORDER BY p.created_at DESC,p.id DESC`).bind(groupId,groupId),
     db.prepare('SELECT * FROM platform_scheduler_state WHERE id=1'),
   ])
   if(result.some(row=>row.success===false) || !Number.isSafeInteger(result[0].results[0]?.revision))fail('Data connection administration is unavailable.','PLATFORM_UNAVAILABLE',503)
   await platformOwner(db,claims)
-  const heartbeat=result[3].results[0]
-  return {groupId,revision:result[0].results[0].revision,connections:result[1].results.map(row=>publicConnection(row,now)),requests:result[2].results.map(publicPull),scheduler:{enabled:schedulerEnabled(env),lastTick:heartbeat?.checked_at??null,checked:heartbeat?.checked??0,queued:heartbeat?.queued??0,waiting:heartbeat?.waiting??0,failed:heartbeat?.failed??0},execution:{connected:false,message:'No collector or API executor is connected. Queue planning never contacts a source or publishes inventory.'}}
+  const heartbeat=result[3].results[0],collectorState=await readCollectors(env,claims,groupId,now)
+  const connected=collectorState.collectors.some(c=>c.connected)
+  return {groupId,revision:result[0].results[0].revision,connections:result[1].results.map(row=>publicConnection(row,now)),requests:result[2].results.map(publicPull),scheduler:{enabled:schedulerEnabled(env),lastTick:heartbeat?.checked_at??null,checked:heartbeat?.checked??0,queued:heartbeat?.queued??0,waiting:heartbeat?.waiting??0,failed:heartbeat?.failed??0},execution:{connected,enabled:collectorState.executionEnabled,message:connected?'Registered collector contact is current. Source capture and tenant publication are verified separately.':'No enabled collector has current contact. Queue planning never contacts a source or publishes inventory.'}}
 }
 
 // The registry does not fetch this URL. Execution adapters require separate review.
@@ -52,7 +54,7 @@ export async function saveDataControl(env,claims,groupId,action,input,key) {
   const prior=await db.prepare('SELECT request_hash,target_id FROM platform_audit WHERE actor_id=? AND request_key=?').bind(actor.id,requestKey).first()
   if(prior){await platformOwner(db,claims);if(prior.request_hash!==requestHash)fail('Request key conflict.','PLATFORM_REQUEST_CONFLICT',409);return {saved:true,id:prior.target_id,replayed:true}}
   const now=new Date().toISOString()
-  let id,previous,next,write,event
+  let id,previous,next,write,event,extra=[]
   if(action==='connections') {
     id=input.id==null?crypto.randomUUID():text(input.id,'connection ID')
     previous=input.id?await db.prepare('SELECT * FROM platform_data_connections WHERE id=? AND group_id=?').bind(id,groupId).first():null
@@ -71,8 +73,9 @@ export async function saveDataControl(env,claims,groupId,action,input,key) {
     next={id,groupId,dealershipId:dealer.id,name:text(input.name,'connection name'),provider:input.provider,vendor,oem,method:input.method,endpoint:endpoint(input.endpoint,input.method),credentialRef,enabled:input.enabled,cadence:input.cadence,localTime,timezone}
     if(input.method!=='collector' && !next.endpoint)fail('API and file connections need a feed URL.')
     // A source paused while work is queued cannot later be captured by accident.
-    const queued=await db.prepare("SELECT COUNT(*) AS count FROM platform_pull_requests WHERE connection_id=? AND state='queued'").bind(id).first()
-    if(queued?.count)fail('Cancel this connection’s queued request before changing its configuration.','PLATFORM_PULL_PENDING',409)
+    const queued=await db.prepare("SELECT COUNT(*) AS count FROM platform_pull_requests WHERE connection_id=? AND state IN ('queued','running','reconciliation_required')").bind(id).first()
+    const activeGrant=await db.prepare("SELECT a.id FROM platform_collector_attempts a JOIN platform_collector_grants g ON g.collector_id=a.collector_id WHERE g.connection_id=? AND a.stage IN ('claimed','captured','publishing','reconciliation_required') LIMIT 1").bind(id).first()
+    if(queued?.count || activeGrant)fail('Cancel or reconcile this connection’s unresolved request before changing its configuration.','PLATFORM_PULL_PENDING',409)
     write=previous?db.prepare('UPDATE platform_data_connections SET name=?,provider=?,vendor=?,oem=?,method=?,endpoint=?,credential_ref=?,enabled=?,cadence=?,local_time=?,timezone=?,updated_at=? WHERE id=? AND group_id=?').bind(next.name,next.provider,vendor,oem,next.method,next.endpoint,credentialRef,Number(input.enabled),next.cadence,localTime,timezone,now,id,groupId):db.prepare('INSERT INTO platform_data_connections VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,groupId,dealer.id,next.name,next.provider,vendor,oem,next.method,next.endpoint,credentialRef,Number(input.enabled),next.cadence,localTime,timezone,now,now)
     event=previous?'updated':'created'
   } else if(action==='pulls') {
@@ -86,18 +89,21 @@ export async function saveDataControl(env,claims,groupId,action,input,key) {
       write=db.prepare("INSERT INTO platform_pull_requests VALUES(?,?,?,'queued','manual',?,?,'',?,?)").bind(id,groupId,connection.id,actor.id,actor.name,now,now);event='requested'
     } else {
       id=text(input.requestId,'request ID')
-      previous=await db.prepare("SELECT * FROM platform_pull_requests WHERE id=? AND group_id=? AND connection_id=? AND state='queued'").bind(id,groupId,connection.id).first()
+      previous=await db.prepare("SELECT * FROM platform_pull_requests WHERE id=? AND group_id=? AND connection_id=? AND state IN ('queued','running','reconciliation_required')").bind(id,groupId,connection.id).first()
       if(!previous)fail('This queued request no longer exists. Reload.','PLATFORM_NOT_FOUND',404)
       // Compare the same logical fields on both sides of this state change.
       // The connection name is context, never a rename caused by cancellation.
       previous={id,groupId,connectionId:connection.id,name:connection.name,state:previous.state,kind:previous.request_kind,scheduleSlot:previous.schedule_slot||null}
-      next={...previous,state:'cancelled'}
-      write=db.prepare("UPDATE platform_pull_requests SET state='cancelled',updated_at=? WHERE id=? AND state='queued'").bind(now,id);event='cancelled'
+      const inFlight=await db.prepare("SELECT id FROM platform_collector_attempts WHERE request_id=? AND stage IN ('publishing','reconciliation_required')").bind(id).first()
+      next={...previous,state:inFlight?'reconciliation_required':'cancelled'}
+      write=db.prepare("UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts WHERE request_id=? AND stage IN ('publishing','reconciliation_required')) THEN 'reconciliation_required' ELSE 'cancelled' END,updated_at=? WHERE id=? AND state IN ('queued','running','reconciliation_required')").bind(id,now,id)
+      extra=[db.prepare("UPDATE platform_collector_attempts SET stage=CASE WHEN stage IN ('publishing','reconciliation_required') THEN 'reconciliation_required' ELSE 'cancelled' END,failure_code='CANCELLED_BY_OWNER' WHERE request_id=? AND stage IN ('claimed','captured','publishing','reconciliation_required')").bind(id)]
+      event='cancelled'
     }
   } else fail('Route not found.','NOT_FOUND',404)
   try {
     await db.batch([
-      db.prepare('UPDATE platform_revision SET revision=CASE WHEN revision=? AND EXISTS(SELECT 1 FROM platform_owners WHERE id=? AND enabled=1) THEN revision+1 ELSE NULL END WHERE id=1').bind(input.expectedRevision,actor.id),write,
+      db.prepare('UPDATE platform_revision SET revision=CASE WHEN revision=? AND EXISTS(SELECT 1 FROM platform_owners WHERE id=? AND enabled=1) THEN revision+1 ELSE NULL END WHERE id=1').bind(input.expectedRevision,actor.id),...(action==='connections'?[db.prepare("UPDATE platform_revision SET revision=CASE WHEN NOT EXISTS(SELECT 1 FROM platform_pull_requests WHERE connection_id=? AND state IN ('queued','running','reconciliation_required')) AND NOT EXISTS(SELECT 1 FROM platform_collector_attempts a JOIN platform_collector_grants g ON g.collector_id=a.collector_id WHERE g.connection_id=? AND a.stage IN ('claimed','captured','publishing','reconciliation_required')) THEN revision ELSE NULL END WHERE id=1").bind(id,id)]:[]),write,...extra,
       db.prepare('INSERT INTO platform_audit VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),actor.id,actor.name,action,id,event,reason,previous?JSON.stringify(previous):null,JSON.stringify(next),requestKey,requestHash,now),
     ])
   } catch {
@@ -109,7 +115,7 @@ export async function saveDataControl(env,claims,groupId,action,input,key) {
   return {saved:true,id,replayed:false}
 }
 
-const AUDIT_FIELDS={groups:['name','status'],dealerships:['name','groupId','storeKey','website','enabled'],owners:['name','email','enabled'],connections:['name','groupId','dealershipId','provider','vendor','oem','method','endpoint','credentialRef','enabled','cadence','localTime','timezone'],pulls:['name','groupId','connectionId','state','kind','scheduleSlot']}
+const AUDIT_FIELDS={collectors:['name','enabled','revokedAt','generation','adapterId','adapterVersion','profileId','profileSha256','scopeSha256'],collector_attempts:['stage','requestId','fence','bundleSha256','code'],groups:['name','status'],dealerships:['name','groupId','storeKey','website','enabled'],owners:['name','email','enabled'],connections:['name','groupId','dealershipId','provider','vendor','oem','method','endpoint','credentialRef','enabled','cadence','localTime','timezone'],pulls:['name','groupId','connectionId','state','kind','scheduleSlot']}
 const aliases={groupId:'group_id',storeKey:'store_key',dealershipId:'dealership_id',connectionId:'connection_id',credentialRef:'credential_ref',localTime:'local_time',kind:'request_kind',scheduleSlot:'schedule_slot'}
 export async function readPlatformAudit(env,claims,id) {
   const db=env.PLATFORM_DB

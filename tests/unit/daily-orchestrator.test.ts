@@ -1,6 +1,6 @@
 // @ts-nocheck -- the daily orchestrator is plain ESM.
 // @vitest-environment node
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -77,6 +77,28 @@ describe('app-first daily orchestrator helpers', () => {
       skipAuthenticated: false,
       forcePublish: false,
     })
+  })
+
+  it('collector stage refuses a missing same-day verified baseline before invoking its injected source adapter', async () => {
+    const internals = await loadInternals()
+    const captureDealerMail = vi.fn(async () => {})
+    const reportDate = internals.todayInNewYork()
+    await expect(internals.stageIntradayHoldRefreshCandidate({
+      reportDate,
+      attemptId: 'synthetic-collector-attempt',
+      baselineBundleSha256: 'a'.repeat(64),
+      captureDealerMail,
+    })).rejects.toThrow('BASELINE_REQUIRED')
+    expect(captureDealerMail).not.toHaveBeenCalled()
+  })
+
+  it('requires the installed workspace and owned publication lock before collector baseline promotion', async () => {
+    const internals = await loadInternals()
+    const claim = { attemptId: 'synthetic-promotion-attempt', reportDate: internals.todayInNewYork(), baselineBundleSha256: 'a'.repeat(64) }
+    const promote = profile => internals.promoteVerifiedCollectorCandidate({ profile, claim, candidate: {}, verification: {} })
+    expect(() => promote({ workspaceRoot: path.join(workspaceRoot, 'foreign-workspace') })).toThrow('COLLECTOR_LOCAL_PROMOTION_FAILED')
+    expect(() => promote({ workspaceRoot })).toThrow('PUBLICATION_WRITER_ACTIVE_OR_LOCK_REQUIRES_REVIEW')
+    expect(() => internals.promoteVerifiedCollectorCandidate({ profile: { workspaceRoot }, claim: { ...claim, attemptId: '../escaped' } })).toThrow('COLLECTOR_LOCAL_PROMOTION_FAILED')
   })
 
   it('defers the entire hold refresh behind an active shared pipeline writer', async () => {
