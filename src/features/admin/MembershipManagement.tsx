@@ -1,3 +1,4 @@
+import { FlowLedgerHeading, flowButtonClassName } from '../../design-system'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Check, Pencil, Plus, RefreshCw, Search, ShieldCheck, X } from 'lucide-react'
 import { getMembershipDirectory, saveMembershipAccess } from '../../lib/api'
@@ -92,18 +93,17 @@ function MembershipEditor({ role, store, onSaved }: { role: UserRole; store: Sto
   const self = draft?.id === directory?.currentUserId
   const legacyDraftRole = draft && !ASSIGNABLE_ROLES.includes(draft.role) ? draft.role : null
   return <section className="admin-section admin-section--people" id="admin-people" aria-labelledby="admin-people-title">
-    <header className="admin-section__header">
-      <div><h2 id="admin-people-title" ref={headingRef} tabIndex={-1}>People &amp; access</h2><p>Choose each employee's role, home store, and sign-in access.</p></div>
-      <button className="admin-primary-button" type="button" disabled={!directory || saving} onClick={event => edit(event.currentTarget)}><Plus size={16} /> Add employee</button>
-    </header>
+    <FlowLedgerHeading title="People & access" titleId="admin-people-title" titleRef={headingRef} titleTabIndex={-1}
+      description="Choose each employee's role, home store, and sign-in access."
+      actions={<button className={flowButtonClassName({ variant: "primary", className: "admin-primary-button" })} type="button" disabled={!directory || saving} onClick={event => edit(event.currentTarget)}><Plus size={18} /> Add employee</button>} />
     <div className="admin-member-toolbar">
-      <label className="admin-member-search"><Search size={16} /><input aria-label="Search employees" value={query} onChange={event => setQuery(event.target.value)} placeholder="Name, email, role, or store" /></label>
-      <button className="admin-secondary-button" type="button" disabled={saving} onClick={() => { if (confirmDiscard()) { setDraft(null); setLoadAttempt(value => value + 1) } }}><RefreshCw size={15} /> Reload</button>
+      <label className="admin-member-search"><Search size={18} /><input aria-label="Search employees" value={query} onChange={event => setQuery(event.target.value)} placeholder="Name, email, role, or store" /></label>
+      <button className={flowButtonClassName({ variant: "secondary", className: "admin-secondary-button" })} type="button" disabled={saving} onClick={() => { if (confirmDiscard()) { setDraft(null); setLoadAttempt(value => value + 1) } }}><RefreshCw size={18} /> Reload</button>
     </div>
-    {notice && <p className="admin-save-notice" role="status"><Check size={16} />{notice}</p>}
+    {notice && <p className="admin-save-notice" role="status"><Check size={18} />{notice}</p>}
     {error && <p className="admin-save-error" role="alert">{error}</p>}
     {draft && <form className="admin-member-form" ref={formRef} onSubmit={event => void save(event)}>
-      <header><h3>{draft.id ? `Edit ${directory?.members.find(member => member.id === draft.id)?.name}` : 'Add employee'}</h3><button type="button" className="admin-secondary-button" disabled={saving} aria-label="Cancel employee changes" onClick={() => { if (confirmDiscard()) { restoreEditorFocusRef.current = true; setDraft(null) } }}><X size={16} /> Cancel</button></header>
+      <FlowLedgerHeading level={3} title={draft.id ? `Edit ${directory?.members.find(member => member.id === draft.id)?.name}` : 'Add employee'} actions={<button type="button" className={flowButtonClassName({ variant: "secondary", className: "admin-secondary-button" })} disabled={saving} aria-label="Cancel employee changes" onClick={() => { if (confirmDiscard()) { restoreEditorFocusRef.current = true; setDraft(null) } }}><X size={18} /> Cancel</button>} />
       <div className="admin-member-fields">
         <label>Full name<input required maxLength={160} value={draft.name} disabled={saving} onChange={event => change('name', event.target.value)} /></label>
         <label>Sign-in email<input aria-label="Sign-in email" required type="email" maxLength={254} value={draft.email} disabled={saving || Boolean(draft.id)} onChange={event => change('email', event.target.value)} />{draft.id && <small>Email stays tied to this employee's history.</small>}</label>
@@ -113,17 +113,17 @@ function MembershipEditor({ role, store, onSaved }: { role: UserRole; store: Sto
       <fieldset className="admin-access-toggle" disabled={saving || self}><legend>Sign-in access</legend><label><input type="radio" name="member-enabled" checked={draft.enabled} onChange={() => change('enabled', true)} /> Active</label><label><input type="radio" name="member-enabled" checked={!draft.enabled} onChange={() => change('enabled', false)} /> Disabled</label></fieldset>
       {self && <p className="admin-member-help">Another group manager must change your own role or disable your access.</p>}
       <label className="admin-change-reason">Reason for change<input required minLength={3} maxLength={500} value={draft.reason} disabled={saving} placeholder="For example: promoted to Howell sales manager" onChange={event => change('reason', event.target.value)} /></label>
-      <footer><p><ShieldCheck size={16} />Changes take effect on the next request and are recorded below. New employees also need approval in the site's sign-in policy before they can enter. Adding an employee does not send an invitation.</p><button className="admin-primary-button" ref={saveButtonRef} disabled={saving} type="submit">{saving ? 'Saving…' : 'Save access'}</button></footer>
+      <footer><p><ShieldCheck size={18} />Changes take effect on the next request and are recorded below. New employees also need approval in the site's sign-in policy before they can enter. Adding an employee does not send an invitation.</p><button className={flowButtonClassName({ variant: "primary", className: "admin-primary-button" })} ref={saveButtonRef} disabled={saving} type="submit">{saving ? 'Saving…' : 'Save access'}</button></footer>
     </form>}
     {!directory ? <p role="status">{error ? 'Use Reload to try again.' : 'Loading employees…'}</p> : <div className="admin-member-list">
       {filtered.map(member => <article className="admin-member-card" key={member.id}>
         <div><strong>{member.name}{member.id === directory.currentUserId && <span className="admin-you-tag">You</span>}</strong><small>{member.email}</small></div>
         <div><span>{ROLE_LABELS[member.role]}</span><small>{member.homeStore}{member.role === 'group_manager' ? ' · All stores' : ''}</small></div>
         <span className={`admin-status admin-status--${member.enabled ? 'active' : 'disabled'}`}><span />{member.enabled ? 'Active' : 'Disabled'}</span>
-        <button className="admin-secondary-button" type="button" disabled={saving} aria-label={`Edit ${member.name}`} onClick={event => edit(event.currentTarget, member)}><Pencil size={15} /> Edit</button>
+        <button className={flowButtonClassName({ variant: "secondary", className: "admin-secondary-button" })} type="button" disabled={saving} aria-label={`Edit ${member.name}`} onClick={event => edit(event.currentTarget, member)}><Pencil size={18} /> Edit</button>
       </article>)}
       {!filtered.length && <p>No employees match this search.</p>}
     </div>}
-    {directory && <div className="admin-access-history"><h3>Access change history</h3>{directory.audit.length ? directory.audit.map(entry => <article key={entry.id}><div><strong>{entry.targetName} · {entry.action === 'created' ? 'Added' : 'Access updated'}</strong><p>{entry.reason}</p><small>{entry.actor} · {formatDateTime(entry.occurredAt)}</small></div></article>) : <p>Access changes will appear here after the first save.</p>}</div>}
+    {directory && <div className="admin-access-history"><FlowLedgerHeading level={3} title="Access change history" />{directory.audit.length ? directory.audit.map(entry => <article key={entry.id}><div><strong>{entry.targetName} · {entry.action === 'created' ? 'Added' : 'Access updated'}</strong><p>{entry.reason}</p><small>{entry.actor} · {formatDateTime(entry.occurredAt)}</small></div></article>) : <p>Access changes will appear here after the first save.</p>}</div>}
   </section>
 }

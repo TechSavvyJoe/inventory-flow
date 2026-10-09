@@ -23,6 +23,7 @@ import type {
 } from './types';
 import { locationConfidenceLabel } from './presentation';
 import { ServiceStatusLink } from '../inventory/ServiceStatusLink';
+import { FlowPageHeader } from '../../design-system';
 import './transfers.css';
 import './transfer-vehicle-context.css';
 
@@ -270,26 +271,18 @@ export function TransferRequestWorkspace(props: TransferRequestWorkspaceProps) {
 
   return (
     <section className={`mif-transfer-feature mif-request-workspace${simple ? ' move-request-simple' : ''}`} aria-labelledby={`${formId}-title`}>
-      <header className="mif-request-header">
+      <FlowPageHeader className="mif-request-header" title={vehicle.vehicleLabel} titleId={`${formId}-title`}
+        description={[vehicle.trimLabel && !vehicle.vehicleLabel.includes(vehicle.trimLabel) ? vehicle.trimLabel : null, vehicle.stock, vehicle.vin].filter(Boolean).join(' · ')}
+        actions={onCancel ? <button aria-label="Close request workspace" className="mif-icon-button" onClick={cancel} type="button"><X aria-hidden="true" size={20} strokeWidth={1.75} /></button> : undefined}>
         <div className="mif-vehicle-heading">
           {vehicle.imageUrl ? <img alt="" src={vehicle.imageUrl} /> : null}
-          <div>
-            <h1 id={`${formId}-title`}>{vehicle.vehicleLabel}</h1>
-            {vehicle.trimLabel && !vehicle.vehicleLabel.includes(vehicle.trimLabel) ? <p>{vehicle.trimLabel}</p> : null}
-            <span>{vehicle.stock} · {vehicle.vin}</span>
-          </div>
           <div className="move-vehicle-context">
             <p className="move-vehicle-value">{[vehicle.listedPriceLabel, vehicle.mileageLabel, vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : null].filter(value => value && !/not published/i.test(value)).join(' · ')}</p>
             <p className="move-vehicle-specs">{[vehicle.exteriorColor, vehicle.engine, vehicle.drivetrain].filter(Boolean).join(' · ')}</p>
             <ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} />
           </div>
         </div>
-        {onCancel ? (
-          <button aria-label="Close request workspace" className="mif-icon-button" onClick={cancel} type="button">
-            <X aria-hidden="true" size={20} strokeWidth={1.75} />
-          </button>
-        ) : null}
-      </header>
+      </FlowPageHeader>
 
       {simple && !direct ? <p className="move-request-current-location"><MapPin aria-hidden="true" size={16}/><strong>{vehicle.currentLocation.label}</strong><span>{locationConfidenceLabel(vehicle.currentLocation.confidence)}</span></p> : null}
 

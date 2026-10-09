@@ -1,4 +1,5 @@
-import { ArrowRight } from 'lucide-react'
+import { FlowLedgerHeading, flowButtonClassName } from '../../design-system'
+import { ArrowRight, FileCheck2 } from 'lucide-react'
 import { formatDateTime } from '../../lib/format'
 import type { PlatformGroup, PlatformStoredCoverage } from './types'
 import { HEALTH_LABEL } from './platformPresentation'
@@ -27,7 +28,7 @@ export function PlatformPublication({ group, busy, onConnections }: { group: Pla
     { label: 'Publication warnings', value: stored?.counts.warningCount, attention: true },
   ]
   return <section className="platform-publication" aria-label="Stored publication evidence">
-    <header className="platform-panel-heading"><div><h3>Stored publication evidence</h3><p className="platform-help">{group.health.message}</p></div><span className={`platform-health--${group.health.status}`}>{HEALTH_LABEL[group.health.status] ?? 'Publication state not reported'}</span></header>
+    <FlowLedgerHeading level={3} title={<><FileCheck2 size={20} aria-hidden="true" />Stored publication evidence</>} description={group.health.message} actions={<span className={`platform-health--${group.health.status}`}>{HEALTH_LABEL[group.health.status] ?? 'Publication state not reported'}</span>} />
     <dl className="platform-publication-summary" aria-label="Publication totals">{summary.map(item => <div key={item.label} data-attention={item.attention && typeof item.value === 'number' && item.value > 0}><dt>{item.label}</dt><dd>{countLabel(item.value)}</dd></div>)}</dl>
     <dl className="platform-publication-facts">
       <div><dt>Stored release date</dt><dd>{reportDate ?? 'Not reported'}</dd></div>
@@ -50,6 +51,6 @@ export function PlatformPublication({ group, busy, onConnections }: { group: Pla
       <p className="platform-help">App membership combines public and DealerMail VIN membership, excluding manager-reported deliveries. It does not establish availability, physical location or sale status. Missing totals remain unreported.</p>
     </section>
     <details className="platform-publication-records"><summary>Captured records & reconciliation</summary><dl>{RECORD_FIELDS.map(field => <div key={field.key}><dt>{field.label}</dt><dd>{countLabel(stored?.counts[field.key])}</dd></div>)}</dl><p className="platform-help">Record counts do not establish complete field capture, current source access or warranty coverage.</p></details>
-    <footer className="platform-publication-footer"><p className="platform-help">Publication health comes from the isolated database. Source sign-ins, collector execution and backups require separate verification.</p><button disabled={busy} onClick={onConnections}>Review data connections<ArrowRight aria-hidden="true"/></button></footer>
+    <footer className="platform-publication-footer"><p className="platform-help">Publication health comes from the isolated database. Source sign-ins, collector execution and backups require separate verification.</p><button className={flowButtonClassName({ variant: "secondary" })} disabled={busy} onClick={onConnections}>Review data connections<ArrowRight aria-hidden="true"/></button></footer>
   </section>
 }

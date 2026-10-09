@@ -12,7 +12,7 @@ const draft:PlatformEdit={kind:'source',title:'Add data connection',path:'/group
  {key:'method',label:'Connection method',options:[{value:'collector',label:'Collector'},{value:'api',label:'API'}]},
  {key:'endpoint',label:'Public HTTPS feed URL',showWhen:{key:'method',values:['api']}},{key:'credentialRef',label:'Credential reference (CREDENTIAL_NAME)',optional:true},
  {key:'cadence',label:'Pull schedule',options:[{value:'manual',label:'On request'},{value:'daily',label:'Daily'}]},
- {key:'localTime',label:'Local start time',type:'time',showWhen:{key:'cadence',values:['daily']}},{key:'timezone',label:'IANA timezone',showWhen:{key:'cadence',values:['daily']}},{key:'enabled',label:'Source enabled',type:'checkbox'},
+ {key:'localTime',label:'Local start time',type:'time',showWhen:{key:'cadence',values:['daily']}},{key:'timezone',label:'IANA timezone',showWhen:{key:'cadence',values:['daily']}},{key:'enabled',label:'Enable scheduling preference',type:'checkbox'},
 ]}
 afterEach(cleanup)
 it('blocks invalid scope and credential references in the visible step and saves only after review',async()=>{
@@ -33,7 +33,7 @@ it('blocks invalid scope and credential references in the visible step and saves
  await user.paste('CREDENTIAL_DEALER_FEED_KEY')
  await user.click(screen.getByRole('button',{name:'Continue to schedule & review'}))
  expect(save).not.toHaveBeenCalled()
- expect(screen.getByRole('checkbox',{name:'Source enabled'})).not.toBeChecked()
+ expect(screen.getByRole('checkbox',{name:'Enable scheduling preference'})).not.toBeChecked()
  await user.click(screen.getByRole('textbox',{name:'Reason for this change'}))
  await user.paste('Synthetic setup review')
  await user.click(screen.getByRole('button',{name:'Save change'}))

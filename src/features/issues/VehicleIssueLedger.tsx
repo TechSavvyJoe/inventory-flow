@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Camera, ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
+import { Camera, ClipboardList, ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { toInventoryVehicle } from '../../app/adapters'
 import { VehicleThumbnail } from '../../components/VehicleThumbnail'
@@ -9,6 +9,7 @@ import { searchFieldsMatch } from '../../lib/search'
 import { serviceStatusLabel } from '../../lib/service-readiness'
 import { confirmUnsavedWork } from '../../lib/useUnsavedChanges'
 import { useWorkspaceState } from '../../lib/workspace-memory'
+import { FlowLedgerHeading, flowButtonClassName } from '../../design-system'
 import type { BootstrapData, StoreName, UserRole, VehicleIssueAction, VehicleIssueCategory } from '../../types'
 import { IssueDialog } from './IssueDialog'
 import { IssueReportForm } from './IssueReportDialog'
@@ -53,9 +54,8 @@ export function VehicleIssueLedger({ data, homeStore, role, currentUser, allStor
   const pickerMatches = reportable.filter(vehicle => searchFieldsMatch(vehicleQuery, [vehicle.vehicleName, vehicle.vin, vehicle.stockNumber, vehicle.homeStore]))
 
   return <section className="issue-ledger" aria-label="Vehicle issue log">
-    <header className="issue-ledger__heading"><div><h2>Vehicle issues</h2><p>Assign work, track updates and photos, then confirm completion.</p></div>
-      {reportable.length ? <button data-issue-opener className="issue-ledger__primary" type="button" onClick={event => { opener.current = event.currentTarget; setReportVin(null); setVehicleQuery(''); setReporting(true); setNotice('') }}><Plus aria-hidden="true" />Report issue</button> : null}
-    </header>
+    <FlowLedgerHeading className="issue-ledger__heading" title={<><ClipboardList size={20} aria-hidden="true" />Ledger</>} description="Assign work, track updates and photos, then confirm completion."
+      actions={reportable.length ? <button data-issue-opener className={flowButtonClassName({ variant: "primary", className: "issue-ledger__primary" })} type="button" onClick={event => { opener.current = event.currentTarget; setReportVin(null); setVehicleQuery(''); setReporting(true); setNotice('') }}><Plus aria-hidden="true" />Report issue</button> : undefined} />
     {data.vehicleIssuesEnabled !== true ? <p className="issue-ledger__notice" role="status">Issue history is available. Reporting and updates are not enabled in this deployment.</p> : null}
     {notice ? <p className="issue-ledger__notice" role="status">{notice}</p> : null}
     <div className="issue-ledger__toolbar">
@@ -75,7 +75,7 @@ export function VehicleIssueLedger({ data, homeStore, role, currentUser, allStor
         <div className="issue-ledger__vehicle"><VehicleThumbnail vehicle={vehicle} className="issue-ledger__photo"/><div><strong>{vehicle?.vehicleName ?? issue.vehicleName}</strong>{value ? <p>{value}</p> : null}<p>Stock {issue.stockNumber} · {issue.vin}</p><p>{vehicle ? location ?? 'Location not confirmed' : 'Not in current inventory'}</p></div></div>
         <div className="issue-ledger__issue"><div className="issue-ledger__labels"><strong>{ISSUE_CATEGORIES[issue.category]}</strong>{issue.priority === 'urgent' ? <span className="issue-ledger__urgent">Urgent</span> : null}</div><p className="issue-ledger__description">{issue.description}</p>{issue.photoCount ? <span className="issue-ledger__evidence"><Camera aria-hidden="true"/>{issue.photoCount} {issue.photoCount === 1 ? 'photo' : 'photos'} attached</span> : null}<small>Reported by {issue.reportedBy} · {issue.reportStore}</small></div>
         <div className="issue-ledger__progress"><span className="vehicle-issue-state" data-status={issue.status}>{ISSUE_STATUSES[issue.status]}</span><strong>{issue.assignee ?? 'Unassigned'}</strong><small>{issue.status === 'completed' ? `Confirmed by ${issue.completedBy ?? 'manager'}` : 'Updated'} · {formatDateTime(issue.completedAt ?? issue.updatedAt)}</small></div>
-        <div className="issue-ledger__actions"><Link data-issue-opener className="issue-ledger__primary" to={`?issue=${encodeURIComponent(issue.id)}${nextAction ? `&action=${nextAction}` : ''}`} aria-label={`${actionLabel}: ${ISSUE_CATEGORIES[issue.category]} · ${issue.stockNumber}`}>{actionLabel}<ChevronRight aria-hidden="true"/></Link>{vehicle ? <Link data-inventory-vehicle-trigger={issue.vin} to={vehicleWorkspacePath(issue.vin, { tab: 'issues', returnTo })}>Vehicle details</Link> : null}</div>
+        <div className="issue-ledger__actions"><Link data-issue-opener className={flowButtonClassName({ variant: "primary", className: "issue-ledger__primary" })} to={`?issue=${encodeURIComponent(issue.id)}${nextAction ? `&action=${nextAction}` : ''}`} aria-label={`${actionLabel}: ${ISSUE_CATEGORIES[issue.category]} · ${issue.stockNumber}`}>{actionLabel}<ChevronRight aria-hidden="true"/></Link>{vehicle ? <Link data-inventory-vehicle-trigger={issue.vin} to={vehicleWorkspacePath(issue.vin, { tab: 'issues', returnTo })}>Vehicle details</Link> : null}</div>
       </article>
     })}</div>
     {!filtered.length ? <div className="issue-ledger__empty"><h3>{query || category !== 'all' ? 'No issues match these filters' : view === 'completed' ? 'No completed issues yet' : view === 'review' ? 'No issues awaiting manager review' : view === 'all' ? 'No vehicle issues reported yet' : 'No open vehicle issues'}</h3><p>{query || category !== 'all' ? 'Try another vehicle, employee or category.' : 'Reports stay attached to the vehicle, with photos, updates and completion history.'}</p>{query || category !== 'all' ? <button type="button" onClick={() => { setQuery(''); setCategory('all') }}>Clear issue filters</button> : null}</div> : null}

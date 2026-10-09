@@ -12,6 +12,18 @@ const ok=(body:unknown)=>Response.json(body)
 const selectGroup=async()=>{fireEvent.click(await screen.findByRole('button',{name:'Open Northside Motors workspace'}));await screen.findByRole('heading',{name:'Northside Motors'});fireEvent.click(screen.getByRole('button',{name:'Dealerships'}))}
 
 describe('Software administration',()=>{
+  it.each([
+    ['suspended', 'Account suspended'],
+    ['setup', 'Account in setup'],
+  ] as const)('describes the actual %s account state beside its next action',async(status,explanation)=>{
+    const group={...overview.groups[0],status}
+    vi.stubGlobal('fetch',vi.fn(async()=>ok({...overview,groups:[group]})))
+    render(<PlatformAdminPage/>)
+    const account=await screen.findByRole('button',{name:'Open Northside Motors workspace'})
+    expect(within(account).getByText('Review account state')).toBeInTheDocument()
+    expect(within(account).getByText(explanation)).toBeInTheDocument()
+    expect(within(account).queryByText('Account active')).not.toBeInTheDocument()
+  })
   it('shows an owner-only empty installation with zero dealership activity and a clear first setup action',async()=>{
     vi.stubGlobal('fetch',vi.fn(async()=>ok({...overview,groups:[],owners:[overview.owner],audit:[]})))
     render(<PlatformAdminPage/>)

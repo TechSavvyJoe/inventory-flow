@@ -1031,7 +1031,7 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
   const movementStatus = vehicleMovementStatus(vehicle, viewerStore);
   const holdStatus = vehicleOperationalStatus(vehicle);
   const currentLocation = resolveCurrentLocation(vehicle);
-  const specification = [
+  const powertrain = [
     vehicle.engine,
     vehicle.drivetrain,
   ].filter(Boolean).join(" · ") || "Specifications in details";
@@ -1076,31 +1076,20 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
         }}
         aria-label={vehicleAccessibleSummary(vehicle, viewerStore)}
       >
-        <span className="inventory-mobile-row__thumbnail"><span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} priority={priority} /><PhotoCount vehicle={vehicle} /><span className="inventory-mobile-row__photo-certification"><CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name}/></span></span><small>{vehicle.stockNumber}</small></span>
+        <span className="inventory-mobile-row__thumbnail"><span className="inventory-vehicle-visual"><VehiclePhoto vehicle={vehicle} priority={priority} /><PhotoCount vehicle={vehicle} /><span className="inventory-mobile-row__photo-certification"><CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name}/></span></span></span>
         <span className="inventory-mobile-row__main">
           <span className="inventory-mobile-row__title">
             <strong>{name}</strong><ChevronRight size={16} aria-hidden="true" />
           </span>
           <span className="inventory-mobile-row__valuation">
             <b>{formatMoney(vehicle.price)}</b>
-            <span>{formatMileage(vehicle.mileage)}</span>{vehicle.daysListed != null ? <span>{vehicle.daysListed}d</span> : null}
+            <span aria-label={`Mileage: ${formatMileage(vehicle.mileage)}`}>{formatMileage(vehicle.mileage)}</span>{vehicle.daysListed != null ? <span aria-label={`Age: ${vehicle.daysListed} days listed`}>{vehicle.daysListed} days</span> : null}
           </span>
-          <small className="inventory-mobile-row__specification" title={specification}>{specification}</small>
-          <DeskEquipmentCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} limit={1} previewOnly />
+          <small className="inventory-mobile-row__specification" title="Engine / drive"><span>Engine</span>{powertrain}</small>
         </span>
+        <span className="inventory-mobile-row__equipment"><small>Equipment</small><DeskEquipmentCell vehicle={vehicle} onSelectVehicle={onSelectVehicle} limit={1} previewOnly /></span>
       </button>
-      {mobileOriginalMsrp || mobileBaseMsrp ? <dl className="inventory-mobile-row__factory-pricing" aria-label="Captured factory pricing">
-        {mobileOriginalMsrp ? <div><dt>{mobileOriginalMsrp.label}</dt><dd>{mobileOriginalMsrp.value}</dd></div> : null}
-        {mobileBaseMsrp ? <div><dt>{mobileBaseMsrp.label}</dt><dd>{mobileBaseMsrp.value}</dd></div> : null}
-      </dl> : null}
-      <dl className="inventory-mobile-row__captured-facts" aria-label="Captured vehicle specifications">
-        <div data-fact="vin"><dt>VIN</dt><dd>{vehicle.vin}</dd></div>
-        {compactFuelEconomy ? <div data-fact="economy"><dt className="inventory-sr-only">Fuel economy</dt><dd title={fuelEconomy ?? undefined}>{compactFuelEconomy}</dd></div> : null}
-        {vehicle.exteriorColor ? <div data-fact="exterior"><dt className="inventory-sr-only">Exterior</dt><dd aria-label={`Exterior ${vehicle.exteriorColor}`}>{vehicle.exteriorColor}</dd></div> : null}
-        {vehicle.interiorColor ? <div data-fact="interior"><dt className="inventory-sr-only">Interior</dt><dd aria-label={`Interior ${vehicle.interiorColor}`}>{vehicle.interiorColor}</dd></div> : null}
-        {transmissionAndFuel ? <div data-fact="transmission"><dt className="inventory-sr-only">{vehicle.transmission ? "Transmission / fuel" : "Fuel"}</dt><dd title={transmissionAndFuel}>{transmissionAndFuel.replace(/(\d+)-Speed Automatic/gi, "$1-speed").replace(/\bGasoline\b/gi, "Gas")}</dd></div> : null}
-      </dl>
-      <div className="inventory-mobile-row__signals" aria-label="Operational vehicle signals">
+      <div className="inventory-mobile-row__signals" aria-label="Operational vehicle signals" data-has-decision={Boolean(vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === "conflict")}>
         <div className="inventory-mobile-service"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed compact /></div>
           <button
             type="button"
@@ -1130,7 +1119,7 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
           {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <button type="button"
             className="inventory-mobile-decision" data-inventory-vehicle-trigger={vehicle.id} aria-label={`Review inventory decision for ${name}`}
             onClick={event => { event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, 'hold'); }}>
-            <ClipboardCheck size={14} aria-hidden="true" />{vehicle.appDisposition?.code ? `${DISPOSITION_LABELS[vehicle.appDisposition.code]}${vehicle.inventoryDecision?.comparison === 'conflict' ? ' · Records disagree' : ''}` : vehicle.inventoryDecision?.comparison === 'conflict' ? 'Records disagree' : vehicle.inventoryDecision?.label}
+            <span><small>Disposition</small><strong>{vehicle.appDisposition?.code ? `${DISPOSITION_LABELS[vehicle.appDisposition.code]}${vehicle.inventoryDecision?.comparison === 'conflict' ? ' · Records disagree' : ''}` : vehicle.inventoryDecision?.comparison === 'conflict' ? 'Records disagree' : vehicle.inventoryDecision?.label}</strong></span>
           </button> : null}
           {vehicle.managerDisposition ? (
             <span className="inventory-mobile-manager-disposition" data-state={vehicle.managerDisposition.dataState}>
@@ -1150,6 +1139,29 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
       <VehicleResourceCards vehicle={vehicle} variant="shortcuts" onOpenSection={target => onSelectVehicle(vehicle, target)} shortcutActions={
         <DeskRowActions vehicle={vehicle} variant="mobile" {...handlers} hideListing recordsAction={<RecordsLauncher vehicle={vehicle} expanded={recordsExpanded} onOpenRecords={onOpenRecords} className="inv-desk-action inv-desk-action--records inventory-records-launch" chevron={false} />} />
       } />
+      <div className="inventory-mobile-row__supporting">
+      {mobileOriginalMsrp || mobileBaseMsrp ? <dl className="inventory-mobile-row__factory-pricing" aria-label="Captured factory pricing">
+        {mobileOriginalMsrp ? <div><dt>{mobileOriginalMsrp.label}</dt><dd>{mobileOriginalMsrp.value}</dd></div> : null}
+        {mobileBaseMsrp ? <div><dt>{mobileBaseMsrp.label}</dt><dd>{mobileBaseMsrp.value}</dd></div> : null}
+      </dl> : null}
+      <dl className="inventory-mobile-row__captured-facts" aria-label="Captured vehicle specifications">
+        <div data-fact="vin"><dt>Stock</dt><dd>{vehicle.stockNumber}</dd><dt>VIN</dt><dd>{vehicle.vin}</dd></div>
+        {transmissionAndFuel || compactFuelEconomy ? <div data-fact="transmission">
+          {transmissionAndFuel ? <>
+            <dt>{vehicle.transmission ? "Transmission" : "Fuel"}</dt>
+            <dd title={transmissionAndFuel}>{transmissionAndFuel.replace(/(\d+)-Speed Automatic/gi, "$1-speed").replace(/\bGasoline\b/gi, "Gas")}</dd>
+          </> : null}
+          {compactFuelEconomy ? <>
+            <dt className={transmissionAndFuel ? "inventory-sr-only" : undefined}>Fuel economy</dt>
+            <dd className="inventory-mobile-row__economy" title={fuelEconomy ?? undefined}>{compactFuelEconomy}</dd>
+          </> : null}
+        </div> : null}
+        {vehicle.exteriorColor || vehicle.interiorColor ? <div data-fact="colors">
+          {vehicle.exteriorColor ? <><dt>Exterior</dt><dd aria-label={`Exterior ${vehicle.exteriorColor}`}>{vehicle.exteriorColor}</dd></> : null}
+          {vehicle.interiorColor ? <><dt>Interior</dt><dd aria-label={`Interior ${vehicle.interiorColor}`}>{vehicle.interiorColor}</dd></> : null}
+        </div> : null}
+      </dl>
+      </div>
     </article>
   );
 });

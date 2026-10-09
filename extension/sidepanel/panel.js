@@ -438,10 +438,9 @@ function rowThumb(vehicle) {
 
 function renderRow(match, position) {
   const vehicle = match.vehicle
-  const metaParts = [fmt.formatMoney(vehicle.price), vehicle.mileage !== null ? fmt.formatMileage(vehicle.mileage) : null, vehicle.daysListed !== null ? `${fmt.formatNumber(vehicle.daysListed)}d listed` : null]
+  const metaParts = [fmt.formatMoney(vehicle.price), vehicle.mileage !== null ? fmt.formatMileage(vehicle.mileage) : null]
   const via = state.query && match.matchedLabels.find((label) => !['Stock', 'VIN', 'Vehicle', 'Make', 'Model', 'Year', 'Trim'].includes(label))
   const inCompare = state.compare.includes(vehicle.vin)
-  const config = fmt.joinFacts([vehicle.bodyStyle, vehicle.exteriorColor, vehicle.interiorColor ? `Interior ${vehicle.interiorColor}` : null])
   const powertrain = fmt.joinFacts([vehicle.engine, vehicle.drivetrain])
   const economy = vehicle.specs.mpgCity !== null || vehicle.specs.mpgHighway !== null ? `${vehicle.specs.mpgCity ?? '—'} city / ${vehicle.specs.mpgHighway ?? '—'} hwy MPG` : null
   const specification = fmt.joinFacts([vehicle.transmission, vehicle.fuelType, economy])
@@ -459,14 +458,22 @@ function renderRow(match, position) {
     el('span', { class: 'plate' }, rowThumb(vehicle), el('b', { text: vehicle.stockNumber, title: `Stock ${vehicle.stockNumber}` }), certifiedBadge(vehicle)),
     el('span', { class: 'row-main' },
       el('span', { class: 'row-title', text: vehicle.name, title: vehicle.name }),
-      el('span', { class: 'row-meta', title: fmt.joinFacts([metaParts[0], metaParts[1], fmt.formatDays(vehicle.daysListed)]) }, el('strong', { text: metaParts[0] }), metaParts.slice(1).some(Boolean) ? ' · ' : '', fmt.joinFacts(metaParts.slice(1))),
+      el('span', { class: 'row-meta', title: fmt.joinFacts([metaParts[0], metaParts[1], fmt.formatDays(vehicle.daysListed)]) },
+        el('strong', { text: metaParts[0] }),
+        vehicle.mileage !== null ? el('span', { class: 'row-mileage', 'aria-label': `Mileage: ${metaParts[1]}`, text: metaParts[1] }) : null,
+        vehicle.daysListed !== null ? el('span', { class: 'row-age', 'aria-label': `Age: ${fmt.formatDays(vehicle.daysListed)} listed`, text: fmt.formatDays(vehicle.daysListed) }) : null,
+      ),
       powertrain ? el('span', { class: 'row-spec row-powertrain', text: powertrain, title: powertrain }) : null,
       via ? el('span', { class: 'row-match', text: `Matched ${via.toLowerCase()}` }) : null,
     ),
     inCompare ? el('span', { class: 'row-cmp', title: 'In the compare set' }, icon('columns', { size: 13 })) : icon('chevron-right', { size: 14 }),
     el('span', { class: 'row-configuration' },
       el('span', { class: 'row-vin', text: `VIN ${vehicle.vin}` }),
-      config ? el('span', { class: 'row-spec', text: config }) : null,
+      vehicle.bodyStyle ? el('span', { class: 'row-spec', text: vehicle.bodyStyle }) : null,
+      vehicle.exteriorColor || vehicle.interiorColor ? el('span', { class: 'row-colors' },
+        ...[['Exterior', vehicle.exteriorColor], ['Interior', vehicle.interiorColor]].filter(([,value]) => value).map(([label,value]) =>
+          el('span', { class: 'row-color' }, el('small', { text: label }), el('span', { text: value }))),
+      ) : null,
       specification ? el('span', { class: 'row-spec', text: specification }) : null,
     ),
     el('span', { class: 'row-operations' },
@@ -851,7 +858,7 @@ function identity(vehicle) {
     el('div', { class: 'detail-home' }, el('span', { text: vehicle.homeStore }), vehicle.daysListed !== null ? el('span', { text: `· ${fmt.formatNumber(vehicle.daysListed)} days listed` }) : null, certifiedBadge(vehicle)),
     el('div', { class: 'service-summary detail-status-line' },
       holdPill(vehicle), ...additionalHoldBadges(vehicle), servicePill(vehicle), movementPill(vehicle),
-      vehicle.serviceReadiness?.completedAt ? el('span', { text: `Completed ${fmt.formatDate(vehicle.serviceReadiness.completedAt)}` }) : vehicle.serviceReadiness?.serviceEnteredAt ? el('span', { text: `Since ${fmt.formatDate(vehicle.serviceReadiness.serviceEnteredAt)}` }) : null,
+      vehicle.serviceReadiness?.completedAt ? el('span', { text: `Service completed ${fmt.formatDate(vehicle.serviceReadiness.completedAt)}` }) : vehicle.serviceReadiness?.serviceEnteredAt ? el('span', { text: `In service since ${fmt.formatDate(vehicle.serviceReadiness.serviceEnteredAt)}` }) : null,
     ),
     vehicle.serviceReadiness?.readinessBasis === 'unconfirmed' ? el('p', { class: 'service-unconfirmed', text: 'Service not yet confirmed · manager review needed' }) : null,
   )

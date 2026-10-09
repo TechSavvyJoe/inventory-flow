@@ -3,6 +3,7 @@ import { ApiError, appendVehicleIssueEvent, getVehicleIssue } from '../../lib/ap
 import { apiAccessGeneration } from '../../lib/apiSession'
 import { formatDateTime } from '../../lib/format'
 import { useUnsavedChanges } from '../../lib/useUnsavedChanges'
+import { FlowLedgerHeading, flowButtonClassName } from '../../design-system'
 import type { StoreName, UserRole, VehicleIssueAction, VehicleIssueDetail, VehicleIssueEventInput } from '../../types'
 import { IssuePhotoPicker, IssuePhotos, type DraftIssuePhoto } from './IssuePhotos'
 import { ISSUE_ACTIONS, ISSUE_CATEGORIES, ISSUE_STATUSES, issueNextStep } from './issue-model'
@@ -81,10 +82,12 @@ function IssueDetailContent({ issueId, role, store, onSaved, readOnly = false, s
   }
   return <section className="vehicle-issue-detail" aria-label="Vehicle issue details" aria-busy={loading || saving}>
     {loading ? <p role="status">Loading issue…</p> : null}
-    {loadError ? <div className="vehicle-issue-error" role="alert"><p>{loadError}</p><button type="button" onClick={() => setRetry(value => value + 1)} disabled={loading}>Retry issue</button></div> : null}
+    {loadError ? <div className="vehicle-issue-error" role="alert"><p>{loadError}</p><button className={flowButtonClassName({ variant: "secondary" })} type="button" onClick={() => setRetry(value => value + 1)} disabled={loading}>Retry issue</button></div> : null}
     {detail ? <div className="vehicle-issue-detail__layout" data-editable={allowed.length > 0}>
       <div className="vehicle-issue-detail__summary">
-      <header className="vehicle-issue-detail__heading"><div><h3>{ISSUE_CATEGORIES[detail.category]} issue</h3>{showVehicle ? <p>{detail.vehicleName} · Stock {detail.stockNumber}</p> : null}</div><span className="vehicle-issue-state" data-status={detail.status}>{ISSUE_STATUSES[detail.status]}</span></header>
+      <FlowLedgerHeading className="vehicle-issue-detail__heading" level={3} variant="plain" title={`${ISSUE_CATEGORIES[detail.category]} issue`}
+        description={showVehicle ? `${detail.vehicleName} · Stock ${detail.stockNumber}` : undefined}
+        actions={<span className="vehicle-issue-state" data-status={detail.status}>{ISSUE_STATUSES[detail.status]}</span>} />
       {detail.priority === 'urgent' ? <p className="vehicle-issue-urgent">Urgent</p> : null}
       <p className="vehicle-issue-description">{detail.description}</p>
       <dl className="vehicle-issue-facts"><div><dt>Assigned to</dt><dd>{detail.assignee || 'Unassigned'}</dd></div><div><dt>Reporting store</dt><dd>{detail.reportStore}</dd></div><div><dt>Reported by</dt><dd>{detail.reportedBy}</dd></div><div><dt>Reported</dt><dd>{formatDateTime(detail.reportedAt)}</dd></div></dl>
@@ -97,7 +100,7 @@ function IssueDetailContent({ issueId, role, store, onSaved, readOnly = false, s
         <label>{selectedAction === 'complete' ? 'Completion note' : 'Work update'}<textarea rows={2} maxLength={1000} required={selectedAction === 'complete'} disabled={saving} value={note} onChange={event => setNote(event.target.value)} placeholder={selectedAction === 'complete' ? 'What did you check to confirm the issue is resolved?' : 'Record what was checked or what happens next.'} /></label>
         <IssuePhotoPicker photos={photos} onChange={setPhotos} disabled={saving} remaining={Math.max(0, 12 - detail.photoCount)} onPreparing={setPreparing} />
         {error ? <p className="vehicle-issue-error" role="alert">{error}</p> : null}
-        <div className="vehicle-issue-form__actions">{conflict ? <button type="button" disabled={loading} onClick={() => setRetry(value => value + 1)}>Reload latest issue</button> : null}<button type="submit" className="vehicle-issue-primary" disabled={!canSubmit}>{saving ? 'Saving…' : ISSUE_ACTIONS[selectedAction]}</button></div>
+        <div className="vehicle-issue-form__actions">{conflict ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" disabled={loading} onClick={() => setRetry(value => value + 1)}>Reload latest issue</button> : null}<button type="submit" className={flowButtonClassName({ variant: "primary", className: "vehicle-issue-primary" })} disabled={!canSubmit}>{saving ? 'Saving…' : ISSUE_ACTIONS[selectedAction]}</button></div>
       </form> : <p className="vehicle-issue-muted">{readOnly ? 'Issue history is available. Reporting and updates are not enabled in this deployment.' : 'You can read this issue. Updates are handled by the reporting store.'}</p>}
       <div className="vehicle-issue-detail__evidence"><IssuePhotos issueId={detail.id} photos={detail.photos} role={role} store={store} />
       <section className="vehicle-issue-history" aria-label="Issue history"><h3>History</h3><ol>{[...detail.events].reverse().map(event => <li key={event.id}><strong>{event.type === 'reported' || event.type === 'created' ? 'Issue reported' : ISSUE_ACTIONS[event.type as VehicleIssueAction] ?? event.type}</strong><span>{event.actor} · {formatDateTime(event.createdAt)}</span>{event.assignee ? <span>Assigned to {event.assignee}</span> : null}{event.note ? <p>{event.note}</p> : null}{event.photos.length ? <small>{event.photos.length} {event.photos.length === 1 ? 'photo' : 'photos'} attached</small> : null}</li>)}</ol></section>

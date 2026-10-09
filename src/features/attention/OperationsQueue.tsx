@@ -1,7 +1,7 @@
 import { confirmUnsavedWork, useUnsavedChanges } from '../../lib/useUnsavedChanges'
 import { useWorkspaceState, useWorkspaceScroll } from '../../lib/workspace-memory'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CheckCircle2 } from 'lucide-react'
+import { ClipboardList, ArrowRight, CheckCircle2 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { CopyableValue } from '../../components/CopyableValue'
 import { PredictiveSearchInput } from '../../components/PredictiveSearchInput'
@@ -13,7 +13,7 @@ import type { AttentionEventInput, AttentionItem, BootstrapData, StoreName, User
 import { actionCategory, belongsToActionStore, groupByVehicle, INFORMATIONAL_REASON_LABELS, isActionable, isTaskOverdue, taskLinkLabel, taskTitle, type ActionCategory, type ActionRow } from './action-center'
 import { currentWorkspaceReturnPath, vehicleWorkspacePath, withWorkspaceReturnPath } from '../../lib/inventory-navigation'
 import { searchFieldsMatch } from '../../lib/search'
-import '../../styles/workflow-pages.css'
+import { FlowLedgerHeading, FlowPageHeader, flowButtonClassName } from '../../design-system'
 import './OperationsQueue.css'
 import { VehicleIssueLedger } from '../issues/VehicleIssueLedger'
 
@@ -36,19 +36,19 @@ function TaskVehicle({ item, vehicle }: { item: AttentionItem; vehicle?: Vehicle
   return <div className="workflow-vehicle action-vehicle"><VehicleThumbnail vehicle={vehicle}/><div className="action-vehicle-summary">
     <strong>{vehicle?.vehicleName || item.vehicleName || item.store || 'Store inventory'}</strong>
     {value ? <p className="action-vehicle-value">{value}</p> : null}
-    <VehicleQuickFacts vehicle={vehicle} />
     {vehicle ? <p className="action-vehicle-readiness">{[serviceStatusLabel(vehicle.serviceReadiness), location].filter(Boolean).join(' · ')}</p> : null}
     {homeStore && homeStore !== currentStore ? <small>Home: {homeStore}</small> : null}
     {item.count ? <small>{item.count} {item.count === 1 ? 'vehicle' : 'vehicles'}</small> : null}
-  </div><div className="action-vehicle-identifiers">{(vehicle?.stockNumber || item.stockNumber) && <CopyableValue label="stock number" text={(vehicle?.stockNumber || item.stockNumber)!} compact>Stock {vehicle?.stockNumber || item.stockNumber}</CopyableValue>}{(vehicle?.vin || item.vin) && <CopyableValue label="VIN" text={(vehicle?.vin || item.vin)!} compact>{vehicle?.vin || item.vin}</CopyableValue>}</div></div>
+    {vehicle?.stockNumber || item.stockNumber ? <small>Stock {vehicle?.stockNumber || item.stockNumber}</small> : null}
+  </div></div>
 }
 
 function TaskActions({ item, vehicle, returnTo }: { item: AttentionItem; vehicle?: VehicleRecord; returnTo: string }) {
   return <div className="action-next-steps" aria-label="Task and vehicle actions">
-    {item.href ? <Link className="workflow-action workflow-action--primary" to={withWorkspaceReturnPath(item.href, returnTo)}>{taskLinkLabel(item)}<ArrowRight aria-hidden="true"/></Link> : <span className="workflow-muted">Ask your manager</span>}
+    {item.href ? <Link className={flowButtonClassName({ variant: "primary", className: "workflow-action workflow-action--primary" })} to={withWorkspaceReturnPath(item.href, returnTo)}>{taskLinkLabel(item)}<ArrowRight aria-hidden="true"/></Link> : <span className="workflow-muted">Ask your manager</span>}
     {vehicle ? <div className="workflow-quick-actions">
-      <Link to={vehicleWorkspacePath(vehicle.vin, { returnTo })}>Vehicle details</Link>
-      <Link to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo })}>Records</Link>
+      <Link className={flowButtonClassName({ variant: "secondary" })} to={vehicleWorkspacePath(vehicle.vin, { returnTo })}>Vehicle details</Link>
+      <Link className={flowButtonClassName({ variant: "secondary" })} to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo })}>Records</Link>
     </div> : null}
   </div>
 }
@@ -81,9 +81,9 @@ function TaskFollowUp({ item, condition, role, homeStore, currentUser, onAction 
       {canNote ? <label>Work note<textarea rows={1} value={note} disabled={busy} onChange={event => setNote(event.target.value)} placeholder="What was confirmed, or what happens next?" /></label> : null}
       {canDate ? <label>Follow up on<input type="datetime-local" value={date} disabled={busy} onChange={event => setDate(event.target.value)} /></label> : null}
       <div className="workflow-inline-actions">
-        {canNote || canDate ? <button type="button" disabled={busy || !(canDate && date) && !(canNote && note.trim())} onClick={() => void save(date && canDate ? 'set_follow_up' : 'add_note')}>{busy ? 'Saving…' : 'Save follow-up'}</button> : null}
-        {canResolve ? <button type="button" disabled={busy} onClick={() => void save('resolve')}>Mark reviewed</button> : null}
-        {item.allowedActions.includes('reopen') ? <button type="button" disabled={busy} onClick={() => void save('reopen')}>Reopen review</button> : null}
+        {canNote || canDate ? <button className={flowButtonClassName({ variant: "primary" })} type="button" disabled={busy || !(canDate && date) && !(canNote && note.trim())} onClick={() => void save(date && canDate ? 'set_follow_up' : 'add_note')}>{busy ? 'Saving…' : 'Save follow-up'}</button> : null}
+        {canResolve ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" disabled={busy} onClick={() => void save('resolve')}>Mark reviewed</button> : null}
+        {item.allowedActions.includes('reopen') ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" disabled={busy} onClick={() => void save('reopen')}>Reopen review</button> : null}
       </div>
       {error ? <p role="alert" className="workflow-error">{error}</p> : null}{message ? <p role="status">{message}</p> : null}
     </div> : null}
@@ -132,10 +132,11 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
   const categoryCounts = (key: ActionCategory) => key === 'issues' && issueData ? (issueData.vehicleIssues ?? []).filter(issue => issue.status !== 'completed' && (scope === 'group' || issue.reportStore === homeStore)).length : groupByVehicle(taskItems.filter(item => key === 'all' || actionCategory(item) === key)).length
   const vehicleMap = useMemo(() => new Map(vehicles.map(vehicle => [vehicle.vin, vehicle])), [vehicles])
   return <section className="action-queue" aria-label="Store action queue">
-    <div className="workflow-page-heading"><div><h1>Action center</h1><p>The next step for your store, in one place.</p></div>
+    <FlowPageHeader className="workflow-page-heading" icon={<ClipboardList size={20} aria-hidden="true" />} title="Action center" description="The next step for your store, in one place.">
       <div className="workflow-scope" role="group" aria-label="Queue location scope"><button type="button" aria-pressed={scope === 'home'} onClick={() => { if (confirmUnsavedWork()) setScope('home') } }>{homeStore}</button><button type="button" aria-pressed={scope === 'group'} onClick={() => { if (confirmUnsavedWork()) setScope('group') } }>All stores</button></div>
-    </div>
+    </FlowPageHeader>
     <div className="workflow-tabs" role="group" aria-label="Task category">{CATEGORIES.filter(([key]) => key !== 'issues' || ['sales', 'manager', 'group_manager'].includes(role) || items.some(item => item.type === 'vehicle_issue')).map(([key, label]) => <button type="button" key={key} aria-label={key === 'issues' ? `${label} ${categoryCounts(key)}` : undefined} aria-pressed={category === key} onClick={() => { if (confirmUnsavedWork()) setCategory(key) } }>{label}<span>{categoryCounts(key)}</span></button>)}</div>
+    {category === 'issues' ? null : <FlowLedgerHeading className="action-queue-ledger-heading" title="Tasks" />}
     {category === 'issues' && issueData ? <VehicleIssueLedger data={issueData} homeStore={homeStore} role={role} currentUser={currentUser} allStores={scope === 'group'} onChanged={onIssueChanged ?? (() => Promise.resolve())} /> : <>
     <div className="workflow-toolbar"><PredictiveSearchInput className="workflow-search" value={query} onChange={value => { if (confirmUnsavedWork()) setQuery(value) }} ariaLabel="Search work queue" clearLabel="Clear queue search" placeholder="Search vehicle, stock, VIN, or task" candidates={statusItems.filter(item => category === 'all' || actionCategory(item) === category).filter(matchesSearch).map(item => ({ id: item.id, label: item.vehicleName || item.stockNumber || taskTitle(item), detail: taskTitle(item), value: item.stockNumber || item.vehicleName || taskTitle(item), searchValues: [taskTitle(item), item.vehicleName, item.stockNumber, item.vin, item.owner, item.assignedTo, item.store] }))} />
       <div className="workflow-scope action-status-buttons" role="group" aria-label="Task status"><button type="button" aria-pressed={status === 'open'} onClick={() => { if (confirmUnsavedWork()) setStatus('open') } }>Open</button><button type="button" aria-pressed={status === 'reviewed'} onClick={() => { if (confirmUnsavedWork()) setStatus('reviewed') } }>Reviewed</button></div><span className="workflow-muted" role="status"><span>{visible.length} {visible.length === 1 ? 'task' : 'tasks'}</span>{alsoWorthKnowing.length ? ` · ${alsoWorthKnowing.length} informational` : ''}</span>
@@ -178,5 +179,5 @@ function TaskRow({ row, vehicle, returnTo, reportDate, role, homeStore, currentU
     </div>
     <div className="action-owner"><strong>{lead.assignedTo || lead.owner || 'Store manager'}</strong><span className={overdue ? 'workflow-overdue' : undefined}>{lead.followUpAt ? `Follow up ${formatDateTime(lead.followUpAt)}` : lead.dueAt ? `Due ${formatDate(lead.dueAt)}` : lead.status === 'resolved' ? 'Reviewed' : 'Next store review'}</span></div>
     <TaskActions item={lead} vehicle={vehicle} returnTo={returnTo}/>
-  </div>{followUps.map(item => <TaskFollowUp key={item.id} item={item} condition={followUps.length > 1 ? taskTitle(item) : undefined} role={role} homeStore={homeStore} currentUser={currentUser} onAction={onAction}/>)}</article>
+  </div><div className="action-vehicle-context" aria-label="Supporting vehicle facts"><div className="action-vehicle-identifiers">{(vehicle?.stockNumber || lead.stockNumber) && <CopyableValue label="stock number" text={(vehicle?.stockNumber || lead.stockNumber)!} compact><span className="action-identifier-fact"><span>Stock</span><strong>{vehicle?.stockNumber || lead.stockNumber}</strong></span></CopyableValue>}{(vehicle?.vin || lead.vin) && <CopyableValue label="VIN" text={(vehicle?.vin || lead.vin)!} compact><span className="action-identifier-fact"><span>VIN</span><strong>{vehicle?.vin || lead.vin}</strong></span></CopyableValue>}</div><VehicleQuickFacts vehicle={vehicle} /></div>{followUps.map(item => <TaskFollowUp key={item.id} item={item} condition={followUps.length > 1 ? taskTitle(item) : undefined} role={role} homeStore={homeStore} currentUser={currentUser} onAction={onAction}/>)}</article>
 }

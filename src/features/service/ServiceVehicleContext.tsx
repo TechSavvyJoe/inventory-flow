@@ -1,9 +1,11 @@
+import { ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { VehicleRecord } from '../../types'
 import { sourceDisplayText } from '../../lib/source-text'
 import { formatDate, formatNumber } from '../inventory/inventory-utils'
 import { formatSourceDateText, oasisActionLabel } from '../inventory/vehicle-resource-catalog'
 import { resolveVehicleInService } from '../inventory/vehicle-in-service'
+import { FlowLedgerHeading } from '../../design-system'
 
 export function ServiceVehicleContext({ vehicle, recordsHref }: { vehicle: VehicleRecord; recordsHref: string }) {
   const oasis = vehicle.fordOasis
@@ -35,7 +37,7 @@ export function ServiceVehicleContext({ vehicle, recordsHref }: { vehicle: Vehic
   const capturedAt = oasis?.capturedAt ?? (warranty ? vehicle.warrantyCheck?.capturedAt : undefined)
   const state = oasis?.dataState ?? (warranty ? vehicle.warrantyCheck?.dataState : undefined)
   return <section className="service-reference" aria-label="Service reference">
-    <header className="service-reference-heading"><h3>Service reference</h3><span>OASIS</span>{capturedAt ? <small>Captured {formatDate(capturedAt)}</small> : null}</header>
+    <FlowLedgerHeading className="service-reference-heading" level={3} variant="plain" title={<><ShieldCheck size={20} aria-hidden="true"/>Service reference</>} description="OASIS" actions={capturedAt ? <small>Captured {formatDate(capturedAt)}</small> : undefined} />
     {!oasis && !warranty ? <p>OASIS reference unavailable</p> : null}
     {state === 'stale_unverified' ? <p>Saved report · refresh at source</p> : state === 'unknown' ? <p>OASIS source status unverified</p> : state === 'incomplete' ? <p>Partial captured record</p> : null}
     <section className={actions.length ? 'service-source-alert' : 'service-reference-actions'} aria-label={actions.length ? 'Saved Ford service actions' : undefined}>

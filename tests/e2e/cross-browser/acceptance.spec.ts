@@ -762,7 +762,13 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
   await expect(dialog.getByRole('toolbar', { name: 'Vehicle actions' })).toBeVisible()
   const status = dialog.getByRole('region', { name: 'Vehicle operational summary' })
   await expect(status).toContainText('Location')
-  await expect(dialog.getByRole('link', { name: 'Service: Ready', exact: true })).toBeVisible()
+  // Desktop presents service in the operational summary; the duplicate header
+  // signal is reserved for the compact phone masthead.
+  const serviceLink = page.viewportSize()!.width <= 680
+    ? dialog.getByRole('link', { name: 'Service: Ready', exact: true })
+    : status.getByRole('link', { name: 'Ready. Open service status for VIN TESTDATAHWELL0001', exact: true })
+  await expect(serviceLink).toBeVisible()
+  await expect(serviceLink).toHaveAttribute('href', /\/service\?vin=TESTDATAHWELL0001(?:&|$)/)
   await expect(status.getByRole('link', { name: 'Service history', exact: true })).toBeVisible()
   const statusOverflow = await status.evaluate(element => [...element.querySelectorAll<HTMLElement>('button,a')].map(control => ({
     clientHeight: control.clientHeight, scrollHeight: control.scrollHeight,

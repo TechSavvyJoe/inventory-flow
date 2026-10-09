@@ -56,7 +56,7 @@ describe('Source and OEM administration workbench', () => {
     fireEvent.change(within(form).getByRole('textbox', { name: 'Provider or vendor name' }), { target: { value: 'Authorized synthetic vendor' } })
     fireEvent.click(within(form).getByRole('button', { name: 'Continue to connection' }))
     fireEvent.click(within(form).getByRole('button', { name: 'Continue to schedule & review' }))
-    expect(within(form).getByRole('checkbox', { name: 'Source enabled' })).not.toBeChecked()
+    expect(within(form).getByRole('checkbox', { name: 'Enable scheduling preference' })).not.toBeChecked()
     fireEvent.change(within(form).getByRole('textbox', { name: 'Reason for this change' }), { target: { value: 'Synthetic configuration setup' } })
     fireEvent.submit(form)
     await waitFor(() => expect(fetcher.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(true))

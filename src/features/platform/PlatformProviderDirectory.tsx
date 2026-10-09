@@ -1,5 +1,6 @@
+import { FlowLedgerHeading, flowButtonClassName } from '../../design-system'
 import { useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import { Search, Library } from 'lucide-react'
 import { PROVIDERS } from './platformPresentation'
 import { SOURCE_CATALOG, sourceProfiles, type SourceProfile } from './sourceCatalog'
 import './PlatformProviderDirectory.css'
@@ -12,12 +13,7 @@ export function PlatformProviderDirectory({ busy, onChoose }: { busy: boolean; o
   const profiles = useMemo(() => sourceProfiles(query, category === 'all' ? undefined : category), [category, query])
 
   return <section className="platform-provider-directory" aria-label="Provider directory">
-    <header className="platform-provider-heading">
-      <div>
-        <h3>Provider directory</h3>
-        <p>Research notes for dealership software and data sources.</p>
-      </div>
-    </header>
+    <FlowLedgerHeading level={3} title={<><Library size={20} aria-hidden="true" />Provider directory</>} description="Research notes for dealership software and data sources." />
     <p className="platform-provider-boundary">These are planning references, not live integrations. Saving a source configuration does not install an adapter or provide access.</p>
 
     <div className="platform-provider-toolbar">
@@ -53,7 +49,7 @@ export function PlatformProviderDirectory({ busy, onChoose }: { busy: boolean; o
           </details>
         </div>
         <a className="platform-provider-source" href={profile.url} target="_blank" rel="noreferrer">Official source<span className="platform-provider-visually-hidden"> for {profile.name} (opens in a new tab)</span></a>
-        <button type="button" className="platform-provider-configure" disabled={busy} onClick={() => onChoose(profile)}>Configure {profile.name}</button>
+        <button type="button" className={flowButtonClassName({ variant: "secondary", className: "platform-provider-configure" })} disabled={busy} onClick={() => onChoose(profile)}>Configure {profile.name}</button>
       </article>)}
       {!profiles.length && <p className="platform-provider-empty">No providers match. Change the search or category filter.</p>}
     </div>

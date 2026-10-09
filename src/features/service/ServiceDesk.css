@@ -1,16 +1,15 @@
 :is(.service-page,.service-editor) { color:var(--ink-900); font-size:14px; line-height:1.45; }
 :is(.service-page,.service-editor) * { box-sizing:border-box; }
-:is(.service-page,.service-editor) :is(button,input,textarea) { font:inherit; }
-:is(.service-page,.service-editor) button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; border:1px solid var(--ifx-neutral-300); border-radius:6px; background:var(--ifx-neutral-0); color:var(--ink-900); padding:8px 12px; font-weight:600; line-height:1.3; cursor:pointer; }
-:is(.service-page,.service-editor) button:hover:not(:disabled) { border-color:var(--ifx-info); background:var(--ifx-neutral-50); }
-:is(.service-page,.service-editor) button:disabled { opacity:.55; cursor:not-allowed; }
+:is(.service-page,.service-editor) :is(button:not(:where(.ifx-button)),input,textarea) { font:inherit; }
+:is(.service-page,.service-editor) button:not(:where(.ifx-button)) { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; border:1px solid var(--ifx-neutral-300); border-radius:6px; background:var(--ifx-neutral-0); color:var(--ink-900); padding:8px 12px; font-weight:600; line-height:1.3; cursor:pointer; }
+:is(.service-page,.service-editor) button:not(:where(.ifx-button)):hover:not(:disabled) { border-color:var(--ifx-info); background:var(--ifx-neutral-50); }
+:is(.service-page,.service-editor) button:not(:where(.ifx-button)):disabled { opacity:.55; cursor:not-allowed; }
 :is(.service-page,.service-editor) :is(button,a,input,textarea):focus-visible { outline:3px solid var(--ifx-info); outline-offset:3px; }
-.service-page-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:12px; }
-.service-page-heading h1 { display:flex; align-items:center; gap:10px; margin:0; font-size:26px; letter-spacing:-.5px; }
+.service-page-heading { margin-bottom:var(--ifx-space-2); }
+.service-page-heading .ifx-page-header__title { display:flex; align-items:center; gap:var(--ifx-space-2); }
 .service-heading-controls { display:flex; align-items:center; gap:12px; }
 .service-scope { display:flex; gap:6px; }
-:is(.service-page,.service-editor) [aria-pressed=true],:is(.service-page,.service-editor) .service-save { background:var(--ifx-info); border-color:var(--ifx-info); color:var(--ifx-neutral-0); }
-:is(.service-page,.service-editor) .service-save:hover:not(:disabled) { background:var(--ifx-info); color:var(--ifx-neutral-0); }
+:is(.service-page,.service-editor) [aria-pressed=true] { background:var(--ifx-info); border-color:var(--ifx-info); color:var(--ifx-neutral-0); }
 .service-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; max-width:860px; margin-bottom:12px; }
 .service-tabs button { display:flex; align-items:center; justify-content:center; gap:10px; min-height:48px; font-weight:650; }
 .service-tabs button span { opacity:.85; font-variant-numeric:tabular-nums; }
@@ -28,11 +27,14 @@
 .service-page .service-vehicle-row { display:grid; grid-template-columns:112px minmax(180px,1fr) minmax(120px,.48fr) minmax(150px,.6fr); gap:14px; width:100%; padding:12px; text-align:left; border:0; border-radius:0; align-items:center; }
 .service-page .service-vehicle-row:hover { background:var(--ifx-neutral-50); }
 .service-page .service-vehicle-row[aria-pressed=true] { background:var(--ifx-info-surface); color:var(--ink-900); box-shadow:inset 3px 0 var(--ifx-info); }
-.service-row-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border-top:1px solid var(--ifx-border-subtle); }
-.service-row-actions :is(a,button) { display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; min-height:44px; padding:6px 8px; border:0; border-radius:0; background:var(--ifx-neutral-0); color:var(--ifx-info); font-size:13px; font-weight:650; line-height:1.25; text-align:center; text-decoration:none; }
-.service-row-actions :is(a,button)+:is(a,button) { border-left:1px solid var(--ifx-border-subtle); }
-.service-row-actions :is(a,button):hover { background:var(--ifx-neutral-50); }
+.service-row-actions { padding:var(--ifx-space-2); gap:var(--ifx-space-1); display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-areas:"primary primary" "vehicle records"; border-top:1px solid var(--ifx-border-subtle); }
+.service-row-actions :is(a,button) { min-width:0; text-align:center; white-space:normal; }
+.service-row-actions .service-row-primary-action { grid-area:primary; }
+.service-row-actions .service-row-open-vehicle { grid-area:vehicle; }
+.service-row-actions .service-row-records { grid-area:records; }
 .service-row-actions svg { flex:none; }
+.service-row-supporting { padding:8px 12px; border-top:1px solid var(--ifx-border-subtle); background:var(--ifx-neutral-50); }
+.service-row-supporting .vehicle-quick-facts { gap:var(--ifx-space-2) var(--ifx-space-4); }
 .service-photo { display:flex; align-items:center; justify-content:center; width:112px; aspect-ratio:3/2; overflow:hidden; border-radius:6px; background:var(--ifx-neutral-100); color:var(--ink-600); }
 .service-photo img { width:100%; height:100%; object-fit:cover; }
 .service-vehicle-info,.service-row-numbers,.service-status-badge { display:flex; flex-direction:column; gap:3px; min-width:0; }
@@ -90,10 +92,9 @@
 .service-vehicle-summary .inventory-workspace-gallery__placeholder strong { font-size:12px; color:var(--ink-600); }
 .service-vehicle-summary .inventory-workspace-gallery__placeholder>span { display:none; }
 .service-status-panel { margin-top:12px; border:1px solid var(--ifx-neutral-300); border-radius:5px; padding:0 12px; background:var(--ifx-neutral-0); }
-.service-status-heading { display:flex; align-items:center; justify-content:space-between; min-height:48px; gap:10px; }
+.service-status-heading { display:block; min-height:var(--ifx-control-height-md); }
 .service-editor h3 { color:var(--ink-900); font-size:15px; font-weight:700; margin:0; }
-.service-editor .service-note-action { flex:none; max-width:52%; min-height:44px; padding:6px 0 6px 8px; border:0; border-radius:3px; background:transparent; color:var(--ifx-info); font-size:13px; }
-.service-editor .service-note-action:hover:not(:disabled) { background:transparent; color:var(--ink-900); }
+.service-editor .service-note-action { flex:none; }
 .service-state-summary { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 12px; }
 .service-current { min-width:0; margin:0; }
 .service-current-label { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
@@ -114,7 +115,7 @@
 .service-editor .service-status-switch button[aria-pressed=true]:hover:not(:disabled) { background:var(--ifx-info); color:var(--ifx-neutral-0); }
 .service-unconfirmed { margin:8px 0 12px; padding:8px; border-left:3px solid var(--ifx-warning); background:var(--ifx-warning-surface); font-size:13px; }
 .service-editor .service-direct-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:8px 0 12px; }
-.service-editor .service-direct-actions button { width:100%; min-height:44px; padding:8px; border-radius:4px; font-size:13px; }
+.service-editor .service-direct-actions button { width:100%; }
 .service-editor .service-save { background:var(--ifx-info); border-color:var(--ifx-info); color:var(--ifx-neutral-0); }
 .service-editor .service-save:hover:not(:disabled) { background:var(--navy-900); border-color:var(--navy-900); color:var(--ifx-neutral-0); }
 .service-editor form { display:grid; gap:8px; padding-top:12px; border-top:1px solid var(--ifx-border-subtle); }
@@ -151,25 +152,28 @@
 }
 @media(max-width:850px) {
  .service-has-selection .service-page-heading,.service-has-selection .service-tabs { display:none; }
- .service-page-heading { flex-wrap:wrap; gap:12px; }.service-has-selection .service-content { grid-template-columns:minmax(0,1fr); }
+ .service-page-heading { flex-wrap:wrap; gap:var(--ifx-space-2); }.service-has-selection .service-content { grid-template-columns:minmax(0,1fr); }
  .service-has-selection .service-list-panel { display:none; }.service-editor { position:static; max-height:none; overflow:visible; border:0; padding:0; }
  .service-tabs { gap:6px; }.service-tabs button { padding:8px 5px; }
 }
 @media(max-width:500px) {
- .service-heading-controls { flex-wrap:wrap; width:100%; gap:8px; }.service-page-heading h1 { font-size:24px; }.service-scope { width:100%; }.service-scope button { flex:1; padding:8px; }
+ .service-heading-controls { flex-wrap:wrap; width:100%; gap:var(--ifx-space-1); }.service-scope { width:100%; }.service-scope button { flex:1; padding:var(--ifx-space-1); }
  .service-tabs { gap:4px; margin-bottom:12px; }.service-tabs button { min-height:44px; gap:5px; font-size:12px; line-height:1.3; }
  .service-editor-heading { grid-template-columns:minmax(118px,40%) minmax(0,1fr); gap:12px; }
  .service-editor h2 { font-size:18px; }
  .service-vehicle-summary { padding:10px; }
  .service-status-panel { padding-inline:10px; }
  .service-page .service-vehicle-row { padding:10px; grid-template-columns:84px minmax(0,1fr); gap:6px 10px; }.service-vehicle-row .service-photo { width:84px; }
- .service-row-actions :is(a,button) { padding-inline:5px; font-size:12px; }
+
+}
+
+@media(max-width:350px) {
+ .service-list-toolbar>p { display:none; }
 }
 
 .service-reference { container-type:inline-size; margin-top:12px; padding:0 12px; border:1px solid var(--ifx-neutral-300); border-radius:5px; background:var(--ifx-neutral-0); }
-.service-reference-heading { display:flex; align-items:center; flex-wrap:wrap; gap:5px 8px; min-height:46px; padding:10px 0; border-bottom:1px solid var(--ifx-border-subtle); }
-.service-reference-heading>span { color:var(--navy-900); background:var(--ifx-info-surface); border-radius:3px; padding:2px 5px; font-size:12px; font-weight:700; }
-.service-reference-heading>small { color:var(--ink-600); font-size:12px; margin-left:auto; }
+.service-reference-heading { padding:0; }
+.service-reference-heading .ifx-ledger-heading__actions { padding-right:0; }
 .service-reference>p { color:var(--ink-600); font-size:12px; margin:8px 0; }
 .service-reference-actions { padding:10px 0; color:var(--ink-900); font-size:13px; }
 .service-reference-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; margin:0; }

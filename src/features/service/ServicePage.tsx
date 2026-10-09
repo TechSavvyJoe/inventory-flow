@@ -19,6 +19,7 @@ import { VehicleGallery } from '../inventory/VehicleGallery'
 import { ServiceVehicleContext } from './ServiceVehicleContext'
 import { serviceEvidenceSummary, SourceServiceHistory } from './SourceServiceHistory'
 import { searchFieldsMatch } from '../../lib/search'
+import { FlowLedgerHeading, FlowPageHeader, flowButtonClassName } from '../../design-system'
 import './ServiceDesk.css'
 
 export const SERVICE_LABELS: Record<ServiceReadinessStatus, string> = {
@@ -162,7 +163,7 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
   const historyEntry = (entry: ServiceReadinessDetail['history'][number]) => <li key={entry.version}><strong>{serviceStatusLabel(entry)}</strong><span>{entry.updatedBy} · {displayDate(entry.updatedAt)}</span>{entry.serviceEnteredAt && <span>Entered service {displayDate(entry.serviceEnteredAt)}</span>}{entry.completedAt && <span>Completed {displayDate(entry.completedAt)}</span>}{entry.notes && <p>{entry.notes}</p>}</li>
 
   return <aside ref={editorRef} className="service-editor" aria-label={`Service for ${vehicle.vehicleName}`}>
-    <button className="service-back" type="button" onClick={() => { if (confirmDiscard()) onBack() }}><ArrowLeft size={17} />{backLabel}</button>
+    <button className={flowButtonClassName({ variant: "quiet", className: "service-back" })} type="button" onClick={() => { if (confirmDiscard()) onBack() }}><ArrowLeft size={18} />{backLabel}</button>
     <section className="service-vehicle-summary" aria-label="Vehicle summary">
     <header className="service-editor-heading">
       <VehicleGallery vehicle={{ id: vehicle.vin, vehicleName: vehicle.vehicleName, imageUrl: vehicle.imageUrl, imageUrls: vehicle.imageUrls, photoCount: vehicle.photoCount }} />
@@ -181,15 +182,13 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
     </dl>
     </section>
     <section className="service-status-panel" aria-labelledby="service-status-heading">
-      <header className="service-status-heading">
-        <h3 id="service-status-heading">Service status</h3>
-        {!loading && detail?.canManage && !editing && <button type="button" className="service-note-action" disabled={busy || newerRecordAvailable} onClick={() => { setEditIntent(serviceWorkflowStatus(detail) === 'serviced' && !detail.completedAt ? 'completion' : 'note'); setStatus(serviceWorkflowStatus(detail)); setSaved(''); setError(''); setEditing(true) }}>{serviceWorkflowStatus(detail) === 'serviced' && !detail.completedAt ? 'Record completion' : 'Edit note'}</button>}
-      </header>
+      <FlowLedgerHeading className="service-status-heading" title="Service status" titleId="service-status-heading" level={3} variant="plain"
+        actions={!loading && detail?.canManage && !editing ? <button type="button" className={flowButtonClassName({ variant: "secondary", className: "service-note-action" })} disabled={busy || newerRecordAvailable} onClick={() => { setEditIntent(serviceWorkflowStatus(detail) === 'serviced' && !detail.completedAt ? 'completion' : 'note'); setStatus(serviceWorkflowStatus(detail)); setSaved(''); setError(''); setEditing(true) }}>{serviceWorkflowStatus(detail) === 'serviced' && !detail.completedAt ? 'Record completion' : 'Edit note'}</button> : undefined} />
     {loading ? <p role="status">Loading service history…</p> : <>
       {error && <div className="service-error" role="alert"><p>{error}</p>{!detail && <button type="button" onClick={() => setRetry((value) => value + 1)}>Try again</button>}</div>}
       {newerRecordAvailable && <div className="service-error" role="status">
         <p>A newer service update is available. Your unsaved edits are still here. Loading the latest status will replace them.</p>
-        <button type="button" disabled={busy} onClick={() => { if (confirmDiscard()) { setSaved(''); setRetry((value) => value + 1) } }}>Load latest status</button>
+        <button className={flowButtonClassName({ variant: "secondary" })} type="button" disabled={busy} onClick={() => { if (confirmDiscard()) { setSaved(''); setRetry((value) => value + 1) } }}>Load latest status</button>
       </div>}
       {saved && <p className="service-saved" role="status"><CheckCircle2 size={18} />{saved}</p>}
       {detail && <>
@@ -215,7 +214,7 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
           <label htmlFor="service-notes">Service note <span>(optional)</span></label>
           <textarea id="service-notes" value={notes} maxLength={1000} rows={2} disabled={busy} placeholder="Work needed, completed, or a short handoff note" onChange={(event) => setNotes(event.target.value)} />
           <p className="service-form-help">{editIntent === 'note' ? `Current state: ${SERVICE_LABELS[detail.status]}. Your name and save time are recorded.` : status === 'serviced' ? 'Confirm the vehicle is ready. This records your name and completion date.' : 'Your name and save time are recorded.'}</p>
-          <div className="service-direct-actions"><button className="service-save" type="submit" disabled={busy || newerRecordAvailable}>{busy ? 'Saving…' : editIntent === 'note' ? 'Save note' : 'Save service status'}</button><button type="button" disabled={busy} onClick={() => { if (confirmDiscard()) { acceptDetail(detail); setEditing(false) } }}>Cancel</button></div>
+          <div className="service-direct-actions"><button className={flowButtonClassName({ variant: "primary", className: "service-save" })} type="submit" disabled={busy || newerRecordAvailable}>{busy ? 'Saving…' : editIntent === 'note' ? 'Save note' : 'Save service status'}</button><button className={flowButtonClassName({ variant: "secondary" })} type="button" disabled={busy} onClick={() => { if (confirmDiscard()) { acceptDetail(detail); setEditing(false) } }}>Cancel</button></div>
         </form>}</> : <p className="service-permission">{detail.store ? `A ${detail.store} manager can update this vehicle’s service status.` : 'A group manager can update service until the vehicle’s store is confirmed.'}</p>}
 
       </>}
@@ -287,7 +286,9 @@ export function ServicePage() {
   const returnPath = currentWorkspaceReturnPath({ ...location, search: returnParams.size ? `?${returnParams.toString()}` : '' })
   return <section className={`service-page${selected ? ' service-has-selection' : ''}${selected && returnTo ? ' service-from-vehicle' : ''}`}>
     <SourceWarning meta={data.meta} />
-    <header className="service-page-heading"><h1><Wrench aria-hidden="true" size={25} />Service status</h1><div className="service-heading-controls"><div className="service-scope" role="group" aria-label="Service inventory scope"><button type="button" aria-pressed={scope === 'my_store'} onClick={() => { setScope('my_store'); setStoreFilter(null) }}>My store · {homeStore}</button><button type="button" aria-pressed={scope === 'all' && !storeFilter} onClick={() => { setScope('all'); setStoreFilter(null) }}>All stores</button></div></div></header>
+    <FlowPageHeader className="service-page-heading" icon={<Wrench aria-hidden="true" size={20} />} title="Service status">
+      <div className="service-heading-controls"><div className="service-scope" role="group" aria-label="Service inventory scope"><button type="button" aria-pressed={scope === 'my_store'} onClick={() => { setScope('my_store'); setStoreFilter(null) }}>My store · {homeStore}</button><button type="button" aria-pressed={scope === 'all' && !storeFilter} onClick={() => { setScope('all'); setStoreFilter(null) }}>All stores</button></div></div>
+    </FlowPageHeader>
     <div className="service-tabs" role="group" aria-label="Service status">
       {STATUSES.map((value) => <button key={value} type="button" aria-pressed={status === value} onClick={() => setParams({ status: value, ...(returnTo ? { returnTo } : {}) })}>{SERVICE_LABELS[value]}{' '}<span>{counts[value]}</span></button>)}
     </div>
@@ -299,14 +300,14 @@ export function ServicePage() {
       {vehicles.length ? <ul className="service-list">{vehicles.map((vehicle) => {
         const serviceAction = vehicle.serviceReadiness?.canManage ? 'Update service' : 'View service'
         return <li key={vehicle.vin} className="service-vehicle-entry"><button className="service-vehicle-row" type="button" aria-pressed={selectedVin === vehicle.vin} onClick={() => selectVin(vehicle.vin)}>
-          <ServicePhoto key={vehicle.vin} vehicle={vehicle} /><span className="service-vehicle-info"><strong>{vehicle.vehicleName}</strong><span>Stock {vehicle.stockNumber} · {vehicle.serviceReadiness?.store ?? vehicle.homeStore}</span><small>{vehicle.vin}</small><VehicleQuickFacts vehicle={vehicle} /></span>
+          <ServicePhoto key={vehicle.vin} vehicle={vehicle} /><span className="service-vehicle-info"><strong>{vehicle.vehicleName}</strong><span>Stock {vehicle.stockNumber} · {vehicle.serviceReadiness?.store ?? vehicle.homeStore}</span><small>{vehicle.vin}</small></span>
           <span className="service-row-numbers"><strong>{vehicle.mileage != null ? `${formatNumber(vehicle.mileage)} mi` : 'Mileage unavailable'}</strong><span>{vehicle.daysListed != null ? `${vehicle.daysListed} days listed` : ''}</span></span>
           <span className={`service-status-badge service-status-${status}`}>{SERVICE_LABELS[status]}<small>{vehicle.serviceReadiness?.notes || (status === 'in_service' && vehicle.serviceReadiness?.serviceEnteredAt ? `Since ${displayDate(vehicle.serviceReadiness.serviceEnteredAt)}` : serviceEvidenceSummary(vehicle) || 'View & update')}</small></span>
         </button><nav className="service-row-actions" aria-label={`Actions for ${vehicle.vehicleName}`}>
-          <Link aria-label={`Open vehicle for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { returnTo: returnPath })}><CarFront size={16} aria-hidden="true" />Open vehicle</Link>
-          <Link aria-label={`Records for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: returnPath })}><FileText size={16} aria-hidden="true" />Records</Link>
-          <button type="button" aria-label={`${serviceAction} for ${vehicle.vehicleName}`} onClick={() => selectVin(vehicle.vin)}><Wrench size={16} aria-hidden="true" />{serviceAction}</button>
-        </nav></li>
+          <button className={flowButtonClassName({ variant: "primary", className: "service-row-primary-action" })} type="button" aria-label={`${serviceAction} for ${vehicle.vehicleName}`} onClick={() => selectVin(vehicle.vin)}><Wrench size={18} aria-hidden="true" />{serviceAction}</button>
+          <Link className={flowButtonClassName({ variant: "secondary", className: "service-row-open-vehicle" })} aria-label={`Open vehicle for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { returnTo: returnPath })}><CarFront size={18} aria-hidden="true" />Open vehicle</Link>
+          <Link className={flowButtonClassName({ variant: "secondary", className: "service-row-records" })} aria-label={`Records for ${vehicle.vehicleName}`} to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: returnPath })}><FileText size={18} aria-hidden="true" />Records</Link>
+        </nav><div className="service-row-supporting"><VehicleQuickFacts vehicle={vehicle} /></div></li>
       })}</ul> : <div className="service-empty"><CheckCircle2 size={28} /><h2>{search ? 'No matching vehicles' : EMPTY_TITLES[status]}</h2><p>{search ? 'Try a stock number, VIN, or model.' : 'Choose another status or expand to all stores.'}</p>{search ? <button type="button" onClick={() => setSearch('')}>Clear search</button> : scope === 'my_store' ? <button type="button" onClick={() => setScope('all')}>Search all stores</button> : null}</div>}
     </div>{selected && <ServiceEditor key={`${selected.vin}:${role}:${homeStore}`} vehicle={selected} role={role} store={homeStore} initialAction={STATUSES.includes(actionParam) ? actionParam : null} defaultDate={selected.vin.startsWith('TESTDATA') ? data.meta.reportDate : localToday()} onSaved={savedStatus} backLabel={returnTo ? workspaceReturnLabel(returnTo) : undefined} onBack={() => returnTo ? navigate(returnTo) : selectVin(null)} />}</div>
   </section>

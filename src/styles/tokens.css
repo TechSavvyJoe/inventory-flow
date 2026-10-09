@@ -69,6 +69,16 @@
   --ifx-danger-surface: #ffecef;
   --ifx-info: #1263bf;
   --ifx-info-surface: #eaf4ff;
+  /* Shared page anatomy follows the approved compact vehicle workspace. */
+  --ifx-workspace-header-background: var(--ifx-neutral-0);
+  --ifx-workspace-header-ink: var(--navy-900);
+  --ifx-workspace-header-muted: var(--ink-600);
+  --ifx-workspace-header-control: var(--blue-050);
+  --ifx-workspace-header-border: var(--ifx-border-control);
+  --ifx-icon-action-size: 18px;
+  --ifx-icon-heading-size: 20px;
+  --ifx-workspace-ledger-border: var(--ifx-border-subtle);
+  --ifx-workspace-gap: var(--ifx-space-3);
   --ifx-hold: #6941c6;
   --ifx-hold-surface: #f2edff;
 
@@ -166,6 +176,7 @@
   --ifx-elevation-action: 0 6px 16px rgb(53 70 219 / 22%), inset 0 1px rgb(255 255 255 / 20%);
 
   --ifx-motion-instant: 40ms;
+  --ifx-motion-press: 100ms;
   --ifx-motion-fast: var(--motion-fast);
   --ifx-motion-standard: var(--motion-standard);
   --ifx-motion-deliberate: 120ms;
@@ -228,6 +239,7 @@
 @media (prefers-reduced-motion: reduce) {
   :root {
     --ifx-motion-instant: 0.01ms;
+    --ifx-motion-press: 0.01ms;
     --ifx-motion-fast: 0.01ms;
     --ifx-motion-standard: 0.01ms;
     --ifx-motion-deliberate: 0.01ms;

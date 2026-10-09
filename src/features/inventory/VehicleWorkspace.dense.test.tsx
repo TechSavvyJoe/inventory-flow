@@ -334,14 +334,15 @@ describe('focused vehicle workspace', () => {
     unit.dealerMail.activeRecordCount = 3;
     unit.mpgHighway = 24;
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
-    const mobileSpecs = document.querySelector('.vdp-focus-mobile-specs')!;
-    expect(Array.from(mobileSpecs.querySelectorAll('p'), line => line.textContent)).toEqual([
-      '123,328 mi · 2 days',
-      '3.5L V6 EcoBoost · 4WD',
-      '10-Speed Automatic · Gasoline',
-      '24 hwy MPG',
-      'Black / Black Leather',
-    ]);
+    const mobileSpecs = screen.getByRole('group', { name: 'Mobile vehicle specifications' });
+    const mobile = within(mobileSpecs);
+    expect(mobile.getByText('Mileage', { selector: 'dt' }).parentElement).toHaveTextContent('123,328 mi');
+    expect(mobile.getByText('Days listed', { selector: 'dt' }).parentElement).toHaveTextContent('2 days');
+    const quickFacts = mobile.getByRole('group', { name: 'Vehicle quick facts' });
+    expect(within(quickFacts).getByLabelText('Engine / drive: 3.5L V6 EcoBoost · 4WD')).toBeVisible();
+    expect(within(quickFacts).getByLabelText('Transmission / fuel: 10-Speed Automatic · Gasoline · 24 hwy MPG')).toBeVisible();
+    expect(within(quickFacts).getByText('Exterior').parentElement).toHaveTextContent('Black');
+    expect(within(quickFacts).getByText('Interior').parentElement).toHaveTextContent('Black Leather');
     const specs = screen.getByRole('region', { name: 'Vehicle specifications' });
     expect(within(specs).getByText('Fuel economy', { selector: 'dt' }).closest('.inventory-workspace-fact')).toHaveTextContent('24 hwy MPG');
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });

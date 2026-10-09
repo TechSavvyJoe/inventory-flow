@@ -1,0 +1,6 @@
+.attention-page .workflow-service-link { display:grid; grid-template-columns:var(--ifx-space-5) minmax(0,1fr) var(--ifx-space-5); align-items:center; gap:var(--ifx-space-3); min-height:var(--ifx-control-height-md); padding:var(--ifx-space-3); border:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); color:var(--blue-700); text-decoration:none; }
+.attention-page .workflow-service-link > span { display:grid; gap:var(--ifx-space-1); }
+.attention-page .workflow-service-link > span > span { color:var(--ink-600); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-compact); }
+.attention-page .workflow-service-link > svg { width:var(--ifx-space-5); height:var(--ifx-space-5); }
+.attention-page .workflow-service-link:hover { background:var(--ifx-info-surface); }
+.attention-page .workflow-notice { padding:var(--ifx-space-2) var(--ifx-space-3); border-left:var(--ifx-stroke-emphasis) solid var(--ifx-warning); background:var(--ifx-neutral-50); color:var(--ink-700); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-body); }

@@ -14,7 +14,7 @@
 .platform-source-setup .platform-fields { margin: 0; gap: var(--ifx-space-3); }
 .platform-source-setup .platform-fields > label { align-content: start; min-width: 0; }
 .platform-source-setup label > small { font-weight: var(--ifx-weight-regular); }
-.platform-provider-guide, .platform-connection-guide, .platform-source-review { padding: var(--ifx-space-3); background: var(--ifx-neutral-50); border: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); font-size: var(--ifx-text-sm); }
+.platform-provider-guide, .platform-connection-guide, .platform-source-review { padding: var(--ifx-space-3); background:var(--ifx-neutral-0); border: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); font-size: var(--ifx-text-sm); }
 .platform-provider-guide header { display: flex; align-items: center; justify-content: space-between; gap: var(--ifx-space-2); }
 .platform-provider-guide > summary { min-height: var(--ifx-control-height-md); padding-block: 0; align-content: center; cursor: pointer; font-weight: var(--ifx-weight-semibold); }
 .platform-provider-guide a { display: inline-flex; align-items: center; gap: var(--ifx-space-1); min-height: var(--ifx-control-height-md); font-size: var(--ifx-text-xs); }
@@ -24,4 +24,10 @@
 .platform-source-review dt { color: var(--ifx-neutral-600); font-size: var(--ifx-text-xs); }
 .platform-source-review dd { margin: var(--ifx-space-1) 0 0; overflow-wrap: anywhere; font-weight: var(--ifx-weight-semibold); }
 .platform-source-review small { display: block; font-weight: var(--ifx-weight-regular); }
-@media(max-width:600px) { .platform-setup-steps { gap: var(--ifx-space-2); } .platform-setup-steps li { align-items: start; flex-direction: column; gap: var(--ifx-space-1); } .platform-provider-guide ul, .platform-source-review dl { grid-template-columns: 1fr; } }
+@media(max-width:600px) { .platform-setup-steps { gap: var(--ifx-space-2); } .platform-setup-steps li { align-items: start; flex-direction: column; gap: var(--ifx-space-1); } .platform-provider-guide ul { grid-template-columns: 1fr; } }
+
+.platform-source-review-endpoint { grid-column:1 / -1; }
+.platform-source-setup .platform-source-checkbox { display:flex; align-items:center; gap:var(--ifx-space-3); min-height:var(--ifx-control-height-md); }
+.platform-form .platform-source-checkbox input[type="checkbox"] { flex:none; width:var(--ifx-space-5); height:var(--ifx-space-5); min-height:0; margin:0; }
+.platform-source-checkbox > span { display:grid; gap:var(--ifx-space-1); }
+.platform-source-checkbox small { font-weight:var(--ifx-weight-regular); }

@@ -35,6 +35,7 @@ import { readBoardRoute, transferMatchesBoardRoute, type BoardRoute } from '../o
 import { simpleTransferActions } from './SimpleTransferTracker'
 import { currentWorkspaceReturnPath, readWorkspaceReturnPath, vehicleWorkspacePath, withWorkspaceReturnPath, workspaceReturnLabel } from '../../lib/inventory-navigation'
 import { searchFieldsMatch } from '../../lib/search'
+import { flowButtonClassName, FlowButton, FlowIconButton, FlowPageHeader } from '../../design-system'
 import { isReturnOverdue, slaLabel, type SlaStatus } from '../../lib/sla-label'
 import './transfers-page.css'
 import './transfer-workspace-v3.css'
@@ -655,21 +656,12 @@ export function TransfersPage() {
       data-mobile-detail-open={(requestedId || requestedVin) && selected ? 'true' : 'false'}
     >
       <SourceWarning meta={data.meta} />
-      <header className="transfers-page-header">
-        <div>
-          <h1>Vehicle moves</h1>
-          <p>See where each vehicle is, who is responsible, and what happens next.</p>
-          {(requestedId || requestedVin || origin) ? <Link className="mif-button mif-button--secondary" to={safeReturnTo}><ArrowLeft size={16} aria-hidden="true" />{workspaceReturnLabel(safeReturnTo, 'Back to vehicle moves')}</Link> : null}
-        </div>
-        <button className="mif-button mif-button--primary transfer-header-create" type="button" aria-label="Start a vehicle move" onClick={() => navigate(withWorkspaceReturnPath('/transfers/new', currentPath))}>
-          <Plus aria-hidden="true" />
-          Start a move
-        </button>
-      </header>
+      <FlowPageHeader className="transfers-page-header" icon={<ArrowLeftRight aria-hidden="true" />} title="Vehicle moves"
+        actions={<>{(requestedId || requestedVin || origin) ? <Link className={flowButtonClassName({ variant: 'secondary', size: 'md' })} to={safeReturnTo}><ArrowLeft size={18} aria-hidden="true" />{workspaceReturnLabel(safeReturnTo, 'Back to vehicle moves')}</Link> : null}<FlowButton className="transfer-header-create" variant="primary" size="md" aria-label="Start a vehicle move" onClick={() => navigate(withWorkspaceReturnPath('/transfers/new', currentPath))} iconBefore={<Plus aria-hidden="true" />}>Start a move</FlowButton></>} />
 
       <div className="move-store-scope" role="group" aria-label="Vehicle move stores">
-        <button type="button" aria-pressed={storeScope === 'home'} onClick={() => { setStoreScope('home'); setLinkedHomeStore(null) }}>My store <span>{homeStore}</span></button>
-        <button type="button" aria-pressed={storeScope === 'group'} onClick={() => { setStoreScope('group'); setLinkedHomeStore(null) }}>All stores</button>
+        <FlowButton size="md" variant={storeScope === 'home' ? 'primary' : 'secondary'} aria-pressed={storeScope === 'home'} onClick={() => { setStoreScope('home'); setLinkedHomeStore(null) }}>My store <span className="move-store-scope-location">{homeStore}</span></FlowButton>
+        <FlowButton size="md" variant={storeScope === 'group' ? 'primary' : 'secondary'} aria-pressed={storeScope === 'group'} onClick={() => { setStoreScope('group'); setLinkedHomeStore(null) }}>All stores</FlowButton>
         <p>{storeScope === 'home' ? `Vehicles requested by, owned by, or currently at ${homeStore}.` : 'Moves you can access across the group.'}</p>
       </div>
 
@@ -695,9 +687,9 @@ export function TransfersPage() {
                   ['needs-action', 'Needs me'],
                   ['history', 'Completed'],
                 ] as Array<[TransferQueueView, string]>).map(([value, label]) => (
-                  <button type="button" key={value} aria-label={value === 'needs-action' ? `Your next steps, ${queueCounts[value]} ${queueCounts[value] === 1 ? 'move' : 'moves'}` : undefined} className={queueView === value ? 'is-active' : undefined} onClick={() => setQueueView(value)} aria-pressed={queueView === value}>
-                    {label}<span>{queueCounts[value]}</span>
-                  </button>
+                  <FlowButton size="md" variant={queueView === value ? 'primary' : 'secondary'} type="button" key={value} aria-label={value === 'needs-action' ? `Your next steps, ${queueCounts[value]} ${queueCounts[value] === 1 ? 'move' : 'moves'}` : undefined} className={queueView === value ? 'is-active' : undefined} onClick={() => setQueueView(value)} aria-pressed={queueView === value}>
+                    {label}<span className="transfer-list-view-count">{queueCounts[value]}</span>
+                  </FlowButton>
                 ))}
               </div>
               <div className="transfer-list-tools">
@@ -766,8 +758,7 @@ export function TransfersPage() {
                       <span className="move-row-vehicle">
                         <span className="transfer-list-top"><strong>{detail.vehicle.vehicleLabel}</strong>{detail.priority === 'high' || detail.priority === 'critical' ? <b className={`priority-${detail.priority}`}>{detail.priority === 'critical' ? 'Urgent' : 'High priority'}</b> : null}</span>
                         <span className="move-row-stock">Stock {detail.vehicle.stock}</span>
-                        <span className="move-row-vin">{record.vin}</span>
-                        <VehicleQuickFacts vehicle={data.vehicles.find(vehicle => vehicle.vin === record.vin)} />
+                        <span className="move-row-vin">VIN {record.vin}</span>
                       </span>
                       <span className="move-row-route">
                         <span className="transfer-list-route">{detail.vehicle.homeStore} → {record.destination}</span>
@@ -780,6 +771,9 @@ export function TransfersPage() {
                         <span className="transfer-list-owner-row">{nextStatus.overdue && !isOwnOverdue(nextStatus) ? null : <span>{record.nextActionOwner || 'Responsible person not recorded'}</span>}<span className={DUE_TONE_CLASS[nextStatus.tone]}>{dueLabel(detail, nextStatus)}</span></span>
                         {issueLabel ? <span className="transfer-list-alert"><CircleAlert aria-hidden="true" />{issueLabel}</span> : record.returnRequired && away.isAway ? <span className="transfer-list-return">{returnTimingLabel(record)}</span> : null}
                       </span>
+                      <span className="move-row-supporting" aria-label="Vehicle specifications">
+                        <VehicleQuickFacts vehicle={data.vehicles.find(vehicle => vehicle.vin === record.vin)} />
+                      </span>
                     </span>
                     <ChevronRight aria-hidden="true" />
                   </button>
@@ -791,9 +785,7 @@ export function TransfersPage() {
           <div className="transfer-detail-surface" id="transfer-detail-workspace">
             {(requestedId || requestedVin) && selected ? (
               <header className="transfer-mobile-detail-bar">
-                <button type="button" onClick={() => navigate(safeReturnTo)} aria-label={workspaceReturnLabel(safeReturnTo, 'Back to vehicle moves')}>
-                  <ArrowLeft aria-hidden="true" />
-                </button>
+                <FlowIconButton size="md" variant="secondary" onClick={() => navigate(safeReturnTo)} label={workspaceReturnLabel(safeReturnTo, 'Back to vehicle moves')}><ArrowLeft aria-hidden="true" /></FlowIconButton>
                 <span>
                   <h1>Vehicle move</h1>
                   <small>{selected.detail.vehicle.stock} · {selected.record.workflowMode === 'simple' ? compactRequestStatus(selected.record.requestStatus, true) : `Step ${workflowStep(selected.record.requestStatus)} of 5 · ${compactRequestStatus(selected.record.requestStatus)}`}</small>
