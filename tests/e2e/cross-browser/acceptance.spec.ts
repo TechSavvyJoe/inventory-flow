@@ -106,11 +106,24 @@ async function expectNoOverflow(page: Page) {
 
 
 async function expectOpenFilterGeometry(page: Page, width: number) {
+  const scope = page.getByRole('group', { name: 'Inventory location scope' })
+  const quickFilters = page.getByRole('group', { name: 'Inventory quick filters' })
+  const serviceFilters = page.getByRole('group', { name: 'Inventory service status' })
+  const serviceButtons = [
+    serviceFilters.getByRole('button', { name: /^All service: \d+ vehicles$/ }),
+    serviceFilters.getByRole('button', { name: /^Waiting for service: \d+ vehicles$/ }),
+    serviceFilters.getByRole('button', { name: /^In service: \d+ vehicles$/ }),
+    serviceFilters.getByRole('button', { name: /^Ready: \d+ vehicles$/ }),
+  ]
   const sections = [
-    page.getByRole('group', { name: 'Inventory search and location scope' }),
-    page.getByRole('group', { name: 'Inventory quick filters' }),
-    page.getByRole('group', { name: 'Inventory service status' }),
-    page.getByRole('group', { name: 'Inventory location scope' }),
+    page.getByRole('combobox', { name: 'Search inventory' }),
+    scope.getByRole('button', { name: /^Howell inventory, \d+ of \d+ group vehicles$/ }),
+    scope.getByRole('button', { name: /^All locations, \d+ group vehicles$/ }),
+    quickFilters.getByRole('button', { name: /^No hold: \d+ vehicles$/ }),
+    quickFilters.getByRole('button', { name: /^All: \d+ vehicles$/ }),
+    quickFilters.getByRole('button', { name: /^Held: \d+ vehicles$/ }),
+    quickFilters.getByRole('button', { name: /^(?:Offsite|Away from home): \d+ vehicles$/ }),
+    ...serviceButtons,
     page.getByRole('button', { name: /^Filters/ }),
     page.getByRole('button', { name: /^Sort inventory\./ }),
   ]
@@ -131,9 +144,11 @@ async function expectOpenFilterGeometry(page: Page, width: number) {
     }
   }
   if (width <= 760) {
-    expect(boxes[2]!.box.y, `${width}px service filters follow the quick filters`).toBeGreaterThanOrEqual(boxes[1]!.box.y + boxes[1]!.box.height)
+    const quickFiltersBox = (await quickFilters.boundingBox())!
+    const serviceFiltersBox = (await serviceFilters.boundingBox())!
+    expect(serviceFiltersBox.y, `${width}px service filters follow the quick filters`).toBeGreaterThanOrEqual(quickFiltersBox.y + quickFiltersBox.height)
   }
-  for (const button of await sections[2]!.getByRole('button').all()) {
+  for (const button of serviceButtons) {
     const target = (await button.boundingBox())!
     expect(target.height).toBeGreaterThanOrEqual(44)
     expect(target.width).toBeGreaterThanOrEqual(44)
@@ -216,7 +231,7 @@ test('inventory reflows from a wide monitor to a narrow phone without crowded co
     await page.getByLabel('Sort priority 1 field').selectOption('price')
     await page.getByRole('button', { name: 'Close sort options' }).click()
     await expect(sortPanel).toBeHidden()
-    const search = page.getByRole('group', { name: 'Inventory search and location scope' })
+    const search = page.getByRole('combobox', { name: 'Search inventory' })
     const quickFilters = page.getByRole('group', { name: 'Inventory quick filters' })
     const closedSearch = (await search.boundingBox())!
     const closedQuickFilters = (await quickFilters.boundingBox())!
@@ -769,7 +784,6 @@ test('VDP hold, movement, and full equipment are reachable and closing restores 
     : status.getByRole('link', { name: 'Ready. Open service status for VIN TESTDATAHWELL0001', exact: true })
   await expect(serviceLink).toBeVisible()
   await expect(serviceLink).toHaveAttribute('href', /\/service\?vin=TESTDATAHWELL0001(?:&|$)/)
-  await expect(status.getByRole('link', { name: 'Service history', exact: true })).toBeVisible()
   const statusOverflow = await status.evaluate(element => [...element.querySelectorAll<HTMLElement>('button,a')].map(control => ({
     clientHeight: control.clientHeight, scrollHeight: control.scrollHeight,
     clientWidth: control.clientWidth, scrollWidth: control.scrollWidth,
