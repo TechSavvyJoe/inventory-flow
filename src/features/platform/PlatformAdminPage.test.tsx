@@ -59,10 +59,27 @@ describe('Software administration',()=>{
     render(<PlatformAdminPage/>)
     fireEvent.click(await screen.findByRole('button',{name:'Open Northside Motors workspace'}))
     expect(screen.getByText('Next: Isolated database identity')).toBeInTheDocument()
+    expect(within(screen.getByRole('region',{name:'Next setup action'})).getByRole('link',{name:'Open deployment guide'})).toHaveAttribute('href','https://github.com/TechSavvyJoe/inventory-flow/blob/main/docs/SOFTWARE_ADMIN.md')
     expect(screen.getByText('0 of 4 account requirements met. Data activation is reviewed separately.')).toBeInTheDocument()
     expect(screen.getByRole('button',{name:'Manage employees'})).toBeDisabled()
     fireEvent.click(screen.getByRole('button',{name:'Manage dealerships'}))
     expect(screen.getByRole('button',{name:'Register first dealership'})).toBeEnabled()
+  })
+  it('opens the missing dealership requirement directly from the next setup action',async()=>{
+    const group={...overview.groups[0],dealerships:[]}
+    vi.stubGlobal('fetch',vi.fn(async()=>ok({...overview,groups:[group]})))
+    render(<PlatformAdminPage/> )
+    fireEvent.click(await screen.findByRole('button',{name:'Open Northside Motors workspace'}))
+    fireEvent.click(within(screen.getByRole('region',{name:'Next setup action'})).getByRole('button',{name:'Set up dealerships'}))
+    expect(screen.getByRole('button',{name:'Register first dealership'})).toBeInTheDocument()
+  })
+  it('opens verified employee management directly when the group manager requirement is missing',async()=>{
+    const group={...overview.groups[0],health:{...overview.groups[0].health,groupManagers:0}}
+    vi.stubGlobal('fetch',vi.fn(async(url:string)=>ok(url.endsWith('/members')?members:{...overview,groups:[group]})))
+    render(<PlatformAdminPage/> )
+    fireEvent.click(await screen.findByRole('button',{name:'Open Northside Motors workspace'}))
+    fireEvent.click(within(screen.getByRole('region',{name:'Next setup action'})).getByRole('button',{name:'Review employee access'}))
+    expect(await screen.findByText('Synthetic manager')).toBeInTheDocument()
   })
   it.each([
     ['a setup group', {...overview.groups[0],status:'setup' as const,appUrl:'https://northside.example.com/inventory'}],

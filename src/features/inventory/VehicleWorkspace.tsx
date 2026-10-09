@@ -53,6 +53,7 @@ import {
   Tag,
   Truck,
   UserRound,
+  Wrench,
   X,
 } from "lucide-react";
 import { CopyableValue } from "../../components/CopyableValue";
@@ -937,11 +938,11 @@ export function VehicleWorkspace({
                 </dl>
                 <div className="vdp-focus-actions">
                   {movementAction}
-                  {serviceStatus === "needs_service" ? <WorkspaceLink to={serviceHref + "&action=in_service"} preserveOrigin>Start service</WorkspaceLink> : null}
-                  {serviceStatus !== "needs_service" && serviceStatus !== "serviced" ? <WorkspaceLink to={serviceHref + "&action=serviced"} preserveOrigin>Mark Ready</WorkspaceLink> : null}
+                  {serviceStatus === "needs_service" ? <WorkspaceLink to={serviceHref + "&action=in_service"} preserveOrigin><Wrench size={18} aria-hidden="true" />Start service</WorkspaceLink> : null}
+                  {serviceStatus !== "needs_service" && serviceStatus !== "serviced" ? <WorkspaceLink to={serviceHref + "&action=serviced"} preserveOrigin><Check size={18} aria-hidden="true" />Mark Ready</WorkspaceLink> : null}
                   {serviceStatus === "serviced" ? <WorkspaceLink to={serviceHref} preserveOrigin>Service history</WorkspaceLink> : null}
                   <button type="button" onClick={() => openAndFocusSection("hold")} data-action="hold-details"><MessageSquare size={18} aria-hidden="true" />Hold status</button>
-                  {serviceStatus === "needs_service" ? <WorkspaceLink to={serviceHref + "&action=serviced"} preserveOrigin>Mark Ready</WorkspaceLink> : null}
+                  {serviceStatus === "needs_service" ? <WorkspaceLink to={serviceHref + "&action=serviced"} preserveOrigin><Check size={18} aria-hidden="true" />Mark Ready</WorkspaceLink> : null}
                   {dispositionContext && vehicle.manualHold?.enabled ? <button type="button" ref={manualHoldOpenerRef} onClick={() => setManualHoldOpen(true)}><Tag size={18} aria-hidden="true" />{vehicle.manualHold.canManage ? vehicle.manualHold.state === 'active' ? 'Manage manual hold' : 'Place manual hold' : 'View manual hold'}</button> : null}
                   {dispositionAction ? <button type="button" ref={dispositionOpenerRef} onClick={() => { setDispositionStatus(""); setDispositionOpen(true); }} data-action="disposition"><ClipboardCheck size={18} aria-hidden="true" />{dispositionAction}</button> : null}
                 </div>
@@ -955,17 +956,6 @@ export function VehicleWorkspace({
                   <section className="vdp-focus-document-shortcuts" aria-label="Document shortcuts">
                     <VehicleResourceCards vehicle={vehicle} variant="shortcuts" onOpenSection={openAndFocusSection} />
                   </section>
-                  <section className="vdp-focus-keyfacts" aria-label="Frequently used vehicle facts">
-                    <h3>Reference facts</h3>
-                    <dl>
-                      <Fact label={warrantyInServiceSource && warrantyInServiceSource !== "oasis" ? "Est. in-service" : "In-service"}><span className="vdp-focus-reference-date">{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</span>{warrantyInServiceSource ? <small>{warrantyInServiceSource === "oasis" ? "OASIS" : warrantyInServiceSource === "carfax" ? "CARFAX estimate" : "AutoCheck estimate"}</small> : null}</Fact>
-                      {vehicle.serviceHistory?.reports.length ? <Fact label="Service records"><button type="button" onClick={() => openAndFocusSection("data")}>{vehicle.serviceHistory.reports.reduce((sum,report) => sum+report.entries.length,0)} reported events</button><small>{vehicle.serviceHistory.reports.map(report => report.sourceLabel).join(" · ")}</small></Fact> : null}
-                      {coverageSummary ? <Fact label="Coverage"><span>{coverageSummary}</span>{coverageSource ? <small>{coverageSource.label}</small> : null}</Fact> : null}
-                      {factoryPrices.original.value !== null ? <Fact label={factoryPriceLabel(factoryPrices.original.source)}><span className="vdp-focus-reference-value">{formatFactoryPrice(factoryPrices.original.value, factoryPrices.original.currency)}</span><small>{factoryPrices.original.source === "window-sticker" ? "Window sticker" : "vAuto equipment"}</small></Fact> : null}
-                      {factoryPrices.base.value !== null ? <Fact label={baseMsrpLabel}><CopyableValue compact label="base MSRP" text={String(factoryPrices.base.value)}>{baseMsrpDisplay}</CopyableValue>{baseMsrpSource ? <small>{baseMsrpSource} · Before options &amp; destination</small> : null}</Fact> : null}
-                      {equipmentGroup ? <Fact label="Equipment group"><span>{equipmentGroup.value}</span><small>{equipmentGroup.source}</small></Fact> : null}
-                    </dl>
-                  </section>
                 </div>
                 <div className="vdp-focus-vehicle-intelligence">
                   <section className="vdp-focus-specs" aria-label="Vehicle specifications">
@@ -976,12 +966,27 @@ export function VehicleWorkspace({
                     <div className="vdp-focus-mobile-specs">{mobileSpecificationLines.map((line, index) => <p key={index}>{line}</p>)}</div>
                     <p className="vdp-focus-listing">{vehicle.location.homeStore.name} · {vehicle.publicListing.dataState !== "current" ? "Listing unverified" : vehicle.publicListing.isListed === true ? "Listed online" : vehicle.publicListing.isListed === false ? "Not publicly listed" : "Listing state not provided"}{vehicle.certified ? <> · <CertifiedBadge certified homeStore={vehicle.location.homeStore.name} /></> : null}</p>
                   </section>
-                  <section className="vdp-focus-highlights" aria-label="Key equipment">
-                    <div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
-                    {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
-                  </section>
-                  {vehicleHistoryFacts.length ? <section className="vdp-focus-history-facts" aria-label="AutoCheck history"><h3>History</h3><dl>{vehicleHistoryFacts.map(([label, value]) => <Fact key={label} label={label}>{value}</Fact>)}</dl></section> : null}
+                  {vehicleHistoryFacts.length ? <section className="vdp-focus-history-facts" aria-label="AutoCheck history">
+                    <header className="vdp-focus-history-heading"><h3>History</h3><img src="/resource-brands/autocheck.svg" alt="AutoCheck" /></header>
+                    <dl>{vehicleHistoryFacts.map(([label, value]) => <Fact key={label} label={label} className={label === "Score" ? "vdp-focus-history-score" : undefined}>{value}</Fact>)}</dl>
+                    {vehicle.autoCheckReport?.dataState === "stale" ? <p className="vdp-focus-history-source">Saved report · review current history</p> : null}
+                  </section> : null}
                 </div>
+                <section className="vdp-focus-highlights" aria-label="Key equipment">
+                  <div className="vdp-focus-section-heading"><h3>Key equipment</h3><button type="button" onClick={() => openAndFocusSection("equipment")}>View all equipment <ChevronRight size={16} aria-hidden="true" /></button></div>
+                  {keyEquipment.length ? <ul>{keyEquipment.map(item => <li key={item.label}><Check size={16} aria-hidden="true" /><span>{item.label}</span></li>)}</ul> : <p>No equipment highlights are available.</p>}
+                </section>
+                <section className="vdp-focus-keyfacts" aria-label="Frequently used vehicle facts">
+                  <h3>Reference facts</h3>
+                  <dl>
+                    <Fact label={warrantyInServiceSource && warrantyInServiceSource !== "oasis" ? "Est. in-service" : "In-service"}><span className="vdp-focus-reference-date">{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</span>{warrantyInServiceSource ? <small>{warrantyInServiceSource === "oasis" ? "OASIS" : warrantyInServiceSource === "carfax" ? "CARFAX estimate" : "AutoCheck estimate"}</small> : null}</Fact>
+                    {vehicle.serviceHistory?.reports.length ? <Fact label="Service records"><button type="button" className="vdp-focus-reference-action" onClick={() => openAndFocusSection("data")}>{vehicle.serviceHistory.reports.reduce((sum,report) => sum+report.entries.length,0)} reported events</button><small>{vehicle.serviceHistory.reports.map(report => report.sourceLabel).join(" · ")}</small></Fact> : null}
+                    {coverageSummary ? <Fact label="Coverage"><span>{coverageSummary}</span>{coverageSource ? <small>{coverageSource.label}</small> : null}</Fact> : null}
+                    {factoryPrices.original.value !== null ? <Fact label={factoryPriceLabel(factoryPrices.original.source)}><span className="vdp-focus-reference-value">{formatFactoryPrice(factoryPrices.original.value, factoryPrices.original.currency)}</span><small>{factoryPrices.original.source === "window-sticker" ? "Window sticker" : "vAuto equipment"}</small></Fact> : null}
+                    {factoryPrices.base.value !== null ? <Fact label={baseMsrpLabel}><CopyableValue compact label="base MSRP" text={String(factoryPrices.base.value)}>{baseMsrpDisplay}</CopyableValue>{baseMsrpSource ? <small>{baseMsrpSource} · Before options &amp; destination</small> : null}</Fact> : null}
+                    {equipmentGroup ? <Fact label="Equipment group"><span>{equipmentGroup.value}</span><small>{equipmentGroup.source}</small></Fact> : null}
+                  </dl>
+                </section>
                 <div className="vdp-focus-mobile-vin"><span>VIN</span><CopyableValue compact label="VIN" text={vehicle.vin} /></div>
               </div>
               {primaryHold?.salesperson || primaryHold?.expectedDeliveryDate || holdCount > 1 || appDisposition || issueContext ? <section className="vdp-focus-operational-details" aria-label="Operational details">

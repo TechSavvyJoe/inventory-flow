@@ -10,11 +10,13 @@ function issue(id: string, changes: Partial<VehicleIssue> = {}): VehicleIssue {
   return { id, vin: `TESTDATA${id.padStart(9, '0')}`, stockNumber: `DEMO-${id}`, vehicleName: `Synthetic vehicle ${id}`, homeStore: 'Howell', reportStore: 'Howell', category: 'cleaning', priority: 'normal', description: `Synthetic cleaning ${id}`, status: 'open', version: 1, assignee: null, reportedBy: 'Synthetic employee', reportedByUserId: 'demo-employee', reportedAt: '2026-09-30T12:00:00Z', updatedAt: '2026-09-30T12:00:00Z', completedAt: null, completedBy: null, photoCount: 0, allowedActions: ['assign', 'complete', 'add_note'], ...changes }
 }
 const issues = [issue('1', { photoCount: 2, assignee: 'Synthetic detail team' }), issue('2', { category: 'mechanical', status: 'awaiting_review', priority: 'urgent' }), issue('3', { status: 'completed', completedBy: 'Synthetic manager', completedAt: '2026-09-30T13:00:00Z' }), issue('4', { reportStore: 'Lincoln', homeStore: 'Howell', category: 'fuel' })]
+vi.mock('../../app/adapters', async importOriginal => ({ ...await importOriginal<typeof import('../../app/adapters')>(), toInventoryVehicle: (vehicle: VehicleRecord) => ({ ...vehicle, canReportIssue: true }) }))
+vi.mock('./IssueReportDialog', () => ({ IssueReportForm: ({ onSaved }: { onSaved: (issue: VehicleIssue) => void }) => <button type="button" onClick={() => onSaved(issue('saved', { stockNumber: 'DEMO-SAVED' }))}>Persist synthetic report</button> }))
 function fixture(): BootstrapData {
   return { vehicleIssues: issues, vehicleIssuesEnabled: false, vehicles: [{ vin: issues[0].vin, vehicleName: '2024 Ford F-150 Lariat', listedPrice: 45000, mileage: 9000, sourceReportedLocation: 'Lincoln', movement: { locationConfidence: 'reported' } } as VehicleRecord], access: { userId: 'employee-one' } } as BootstrapData
 }
-function show(data = fixture(), allStores = false) {
-  return render(<MemoryRouter initialEntries={['/attention']}><VehicleIssueLedger data={data} homeStore="Howell" role="manager" currentUser="Synthetic employee" allStores={allStores} onChanged={vi.fn().mockResolvedValue(undefined)} /></MemoryRouter>)
+function show(data = fixture(), allStores = false, onChanged = vi.fn().mockResolvedValue(undefined)) {
+  return render(<MemoryRouter initialEntries={['/attention']}><VehicleIssueLedger data={data} homeStore="Howell" role="manager" currentUser="Synthetic employee" allStores={allStores} onChanged={onChanged} /></MemoryRouter>)
 }
 beforeEach(clearWorkspaceMemory)
 afterEach(cleanup)
@@ -67,6 +69,35 @@ describe('vehicle issue ledger', () => {
     show({ ...fixture(), vehicleIssuesEnabled: true, vehicles: [] })
     expect(screen.getByRole('link', { name: 'Review work: Mechanical · DEMO-2' })).toHaveAttribute('href', '/attention?issue=2&action=complete')
     expect(screen.queryByRole('button', { name: 'Confirm completion' })).not.toBeInTheDocument()
+  })
+
+  it('routes each supported next step and falls back to a read-only issue view when actions are denied', () => {
+    const records = [
+      issue('assign', { allowedActions: ['assign'] }),
+      issue('start', { assignee: 'Synthetic team', allowedActions: ['start_work'] }),
+      issue('update', { status: 'in_progress', allowedActions: ['add_note'] }),
+      issue('send', { status: 'in_progress', allowedActions: ['request_completion'] }),
+      issue('review', { status: 'awaiting_review', allowedActions: ['complete'] }),
+      issue('denied', { allowedActions: [] }),
+      issue('unsupported', { allowedActions: ['not_an_action'] as VehicleIssue['allowedActions'] }),
+    ]
+    show({ ...fixture(), vehicleIssuesEnabled: true, vehicles: [], vehicleIssues: records })
+    const list = screen.getByRole('list', { name: 'Reported vehicle issues' })
+    const expected = [['DEMO-assign', 'Assign issue', 'assign'], ['DEMO-start', 'Start work', 'start_work'], ['DEMO-update', 'Add update', 'add_note'], ['DEMO-send', 'Send for review', 'request_completion'], ['DEMO-review', 'Review work', 'complete']]
+    for (const [stock, label, action] of expected) expect(within(list).getByRole('link', { name: `${label}: Cleaning · ${stock}` })).toHaveAttribute('href', `/attention?issue=${records.find(record => record.stockNumber === stock)!.id}&action=${action}`)
+    expect(within(list).getByRole('link', { name: 'View issue: Cleaning · DEMO-denied' })).toHaveAttribute('href', '/attention?issue=denied')
+    expect(within(list).getByRole('link', { name: 'View issue: Cleaning · DEMO-unsupported' })).toHaveAttribute('href', '/attention?issue=unsupported')
+  })
+
+  it('keeps a saved report successful when a custom refresh callback rejects without resubmitting', async () => {
+    const onChanged = vi.fn().mockRejectedValueOnce(new Error('refresh offline')).mockResolvedValue(undefined)
+    show({ ...fixture(), vehicleIssuesEnabled: true }, false, onChanged)
+    fireEvent.click(screen.getByRole('button', { name: 'Report issue' }))
+    fireEvent.click(screen.getByRole('button', { name: /2024 Ford F-150 Lariat/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Persist synthetic report' }))
+    expect(screen.getByText('Issue reported for stock DEMO-SAVED.')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(onChanged).toHaveBeenCalledTimes(1)
   })
 
   it('bounds long issue lists and resets paging when a filter changes', () => {

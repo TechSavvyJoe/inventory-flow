@@ -121,7 +121,7 @@ describe('focused vehicle workspace', () => {
     expect(screen.getByRole('tab', { name: 'Records' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('groups source-backed reference facts with specifications and equipment beside the gallery', () => {
+  it('keeps history beside specifications and spans equipment and reference facts beneath the gallery', () => {
     const unit = vehicle();
     unit.windowSticker = {dataState:'current',basePrice:42500,totalMsrp:50560,pricingCurrency:'USD'};
     unit.fordOasis = {dataState:'current',warrantyStartDate:'2024-08-14',openFieldServiceActions:[],warrantyCoverages:[],extendedCoverageExpirations:[]};
@@ -134,10 +134,12 @@ describe('focused vehicle workspace', () => {
     const shortcuts = within(overview).getByRole('region',{name:'Document shortcuts'});
     const equipment = within(overview).getByRole('region',{name:'Key equipment'});
     const history = within(overview).getByRole('region',{name:'AutoCheck history'});
-    expect(reference.parentElement).toHaveClass('vdp-focus-gallery-column');
-    expect(equipment.parentElement).toHaveClass('vdp-focus-vehicle-intelligence');
+    expect(reference.parentElement).toHaveClass('vdp-focus-vehicle-context');
+    expect(equipment.parentElement).toHaveClass('vdp-focus-vehicle-context');
+    expect(history.parentElement).toHaveClass('vdp-focus-vehicle-intelligence');
     expect(specifications.compareDocumentPosition(equipment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(equipment.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(history.compareDocumentPosition(equipment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(equipment.compareDocumentPosition(reference) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(shortcuts.compareDocumentPosition(reference) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(reference).getAllByRole('term').map(node=>node.textContent)).toEqual(['In-service','Coverage','Original MSRP','Base MSRP']);
     expect(within(reference).getByText('08/14/2024')).toBeVisible();

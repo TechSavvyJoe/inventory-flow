@@ -129,7 +129,9 @@
 .platform-detail-actions .platform-open-app, .platform-setup-row > a { display: inline-flex; align-items: center; justify-content: center; gap: var(--ifx-space-2); min-height: var(--ifx-control-height-md); padding-inline: var(--ifx-space-2); border: var(--ifx-stroke-hairline) solid var(--ifx-border-control); border-radius: var(--ifx-radius-sm); text-decoration: none; font-weight: var(--ifx-weight-semibold); }
 .platform-setup-intro { display: flex; justify-content: space-between; align-items: center; gap: var(--ifx-space-3); margin-bottom: var(--ifx-space-2); }
 .platform-setup-progress { color: var(--ifx-info); font-size: var(--ifx-text-xl); font-weight: var(--ifx-weight-semibold); font-variant-numeric: tabular-nums; }
-.platform-setup-next { display: flex; flex-wrap: wrap; gap: var(--ifx-space-1) var(--ifx-space-3); padding: var(--ifx-space-2) var(--ifx-space-3); background: var(--ifx-info-surface); font-size: var(--ifx-text-sm); border-left: var(--ifx-focus-width) solid var(--ifx-info); }
+.platform-setup-next { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ifx-space-2) var(--ifx-space-3); padding: var(--ifx-space-2) var(--ifx-space-3); margin-bottom: var(--ifx-space-2); background: var(--ifx-info-surface); font-size: var(--ifx-text-sm); border-left: var(--ifx-focus-width) solid var(--ifx-info); }
+.platform-setup-next > div { flex: 1; min-width: var(--ifx-space-32); display: grid; gap: var(--ifx-space-1); }
+.platform-setup-next > a { display: inline-flex; align-items: center; gap: var(--ifx-space-2); min-height: var(--ifx-control-height-md); font-weight: var(--ifx-weight-semibold); }
 .platform-setup-ledger { border-top: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
 .platform-setup-row { display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: var(--ifx-space-3); padding: var(--ifx-space-3) var(--ifx-space-2); border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); font-size: var(--ifx-text-sm); }
 .platform-setup-row[data-next="true"] { background: var(--ifx-neutral-50); }

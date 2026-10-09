@@ -35,3 +35,15 @@ export function issueNextStep(issue: VehicleIssue) {
   if (issue.status === 'in_progress') return 'Record progress, then send the finished work for manager review.'
   return issue.assignee ? 'Start work and record progress.' : 'Assign someone to check and address this issue.'
 }
+
+export function issueNextAction(issue: VehicleIssue): VehicleIssueAction | null {
+  const allowed = new Set(issue.allowedActions)
+  if (issue.status === 'awaiting_review' && allowed.has('complete')) return 'complete'
+  if (issue.status === 'completed') return null
+  const preferred: VehicleIssueAction[] = issue.status === 'open' && !issue.assignee
+    ? ['assign', 'add_note', 'request_completion']
+    : issue.status === 'open'
+      ? ['start_work', 'add_note', 'request_completion']
+      : ['add_note', 'request_completion']
+  return preferred.find(action => allowed.has(action)) ?? null
+}

@@ -41,6 +41,13 @@
       "important": 0,
       "idSelectors": 0
     },
+    "src/features/platform/PlatformPublication.css": {
+      "smallText": 0,
+      "rawColors": 0,
+      "rgbHslColors": 0,
+      "important": 0,
+      "idSelectors": 0
+    },
     "src/features/platform/PlatformDataConnections.css": {
       "smallText": 0,
       "rawColors": 0,
@@ -305,7 +312,7 @@
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 449
+      "idSelectors": 447
     },
     "src/features/inventory/ServiceHistory.css": {
       "smallText": 0,

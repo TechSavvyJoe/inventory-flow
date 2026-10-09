@@ -296,10 +296,49 @@ describe('Service readiness workspace', () => {
 
   it('shows read-only status without update controls when the server denies management', async () => {
     mocked.context.role = 'sales'
-    mocked.get.mockResolvedValue(detail('needs_service', { canManage: false }))
+    mocked.get.mockResolvedValue(detail('needs_service', { canManage: false, notes: 'Brake inspection is still needed.' }))
     show('/service?vin=TESTDATAHWELL0001')
     expect(await screen.findByText('A Howell manager can update this vehicle’s service status.')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Current service note' })).toHaveTextContent('Brake inspection is still needed.')
+    expect(screen.queryByLabelText(/Service note/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Save service status' })).not.toBeInTheDocument()
+  })
+
+  it('keeps save disabled until conflict recovery returns the latest version', async () => {
+    let finishRecovery!: (result: ServiceReadinessDetail) => void
+    mocked.get.mockResolvedValueOnce(detail()).mockImplementationOnce(() => new Promise<ServiceReadinessDetail>(resolve => { finishRecovery = resolve }))
+    mocked.update.mockRejectedValueOnce(new ApiError('Another manager updated this vehicle.', 409))
+    show('/service?vin=TESTDATAHWELL0001')
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit note' }))
+    fireEvent.change(screen.getByLabelText(/Service note/), { target: { value: 'My inspection details' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Another manager updated')
+    const pendingSave = screen.getByRole('button', { name: 'Saving…' })
+    expect(pendingSave).toBeDisabled()
+    fireEvent.click(pendingSave)
+    expect(mocked.update).toHaveBeenCalledOnce()
+    await act(async () => finishRecovery(detail('in_service', { version: 1, notes: 'Other manager note' })))
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeEnabled()
+    expect(screen.getByLabelText(/Service note/)).toHaveValue('My inspection details')
+    mocked.update.mockResolvedValueOnce(detail('in_service', { version: 2 }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }))
+    await waitFor(() => expect(mocked.update).toHaveBeenLastCalledWith('TESTDATAHWELL0001', expect.objectContaining({ expectedVersion: 1, notes: 'My inspection details' }), 'manager', 'Howell'))
+  })
+
+  it('keeps the saved detail and success message when the refresh callback rejects', async () => {
+    mocked.update.mockResolvedValue(detail('serviced', { version: 1, completedAt: '2026-08-30', notes: 'Synthetic work finished' }))
+    mocked.refresh.mockRejectedValueOnce(new Error('Inventory refresh unavailable')).mockResolvedValueOnce(undefined)
+    show('/service?vin=TESTDATAHWELL0001')
+    fireEvent.click(await screen.findByRole('button', { name: 'Ready' }))
+    fireEvent.change(screen.getByLabelText('Date service completed'), { target: { value: '2026-08-30' } })
+    fireEvent.change(screen.getByLabelText(/Service note/), { target: { value: 'Synthetic work finished' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save service status' }))
+
+    expect(await screen.findByText('Ready saved for SYNTHETIC-001.')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Recorded service status' })).toHaveTextContent('Ready')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(mocked.update).toHaveBeenCalledOnce()
+    expect(mocked.refresh).toHaveBeenCalledOnce()
   })
 
   it('preserves a draft when bootstrap announces a newer version and requires an explicit reload before saving', async () => {

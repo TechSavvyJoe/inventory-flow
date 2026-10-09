@@ -101,6 +101,9 @@
 .service-current--serviced strong { color:var(--ifx-success); }
 .service-current--in_service strong { color:var(--ifx-info); }
 .service-current--needs_service strong { color:var(--ifx-warning); font-size:17px; }
+.service-current-note { padding:var(--ifx-space-2) 0; border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
+.service-current-note h4 { margin:0 0 var(--ifx-space-1); color:var(--ink-600); font-size:var(--ifx-text-xs); font-weight:var(--ifx-weight-semibold); }
+.service-current-note p { margin:0; color:var(--ink-900); font-size:var(--ifx-text-md); line-height:var(--ifx-leading-compact); overflow-wrap:anywhere; }
 .service-recorded-dates { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px 14px; min-width:0; }
 .service-recorded-dates>span { display:flex; flex-direction:column; align-items:flex-end; gap:2px; color:var(--ink-600); font-size:12px; }
 .service-recorded-dates strong { color:var(--ink-900); font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; }

@@ -128,8 +128,9 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
     setBusy(true)
     setError('')
     setSaved('')
+    let result: ServiceReadinessDetail
     try {
-      const result = await updateServiceReadiness(vehicle.vin, {
+      result = await updateServiceReadiness(vehicle.vin, {
         status, expectedVersion: detail.version, notes,
         ...(['in_service', 'serviced'].includes(status) ? { serviceDate: date } : {}),
       }, role, store)
@@ -137,7 +138,6 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
       markSaved()
       acceptDetail(result)
       setSaved(`${SERVICE_LABELS[result.status]} saved for ${vehicle.stockNumber}.`)
-      await onSaved(result.status)
     } catch (caught) {
       if (!isCurrentWorkspace()) return
       setError(caught instanceof Error ? caught.message : 'Service status could not be saved. Try again.')
@@ -149,7 +149,14 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
           if (isCurrentWorkspace()) setDetail(latest)
         } catch { /* The current draft remains available to retry. */ }
       }
-    } finally { if (isCurrentWorkspace()) setBusy(false) }
+      if (isCurrentWorkspace()) setBusy(false)
+      return
+    }
+    if (!isCurrentWorkspace()) return
+    setBusy(false)
+    try {
+      await onSaved(result.status)
+    } catch { /* The shared workspace provider owns refresh warnings and retry. */ }
   }
 
   const historyEntry = (entry: ServiceReadinessDetail['history'][number]) => <li key={entry.version}><strong>{serviceStatusLabel(entry)}</strong><span>{entry.updatedBy} · {displayDate(entry.updatedAt)}</span>{entry.serviceEnteredAt && <span>Entered service {displayDate(entry.serviceEnteredAt)}</span>}{entry.completedAt && <span>Completed {displayDate(entry.completedAt)}</span>}{entry.notes && <p>{entry.notes}</p>}</li>
@@ -172,9 +179,6 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
       <div><dt>Stock</dt><dd><CopyableValue label="stock number" text={vehicle.stockNumber} compact>{vehicle.stockNumber}</CopyableValue></dd></div>
       <div className="service-editor-vin"><dt>VIN</dt><dd><CopyableValue label="VIN" text={vehicle.vin} compact>{vehicle.vin}</CopyableValue></dd></div>
     </dl>
-    {configuration.length > 0 && <dl className="service-vehicle-configuration" aria-label="Vehicle configuration">
-      {configuration.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
-    </dl>}
     </section>
     <section className="service-status-panel" aria-labelledby="service-status-heading">
       <header className="service-status-heading">
@@ -193,6 +197,7 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
           <p className={`service-current service-current--${serviceWorkflowStatus(detail)}`}><span className="service-current-label">Current state</span><strong>{serviceWorkflowStatus(detail) === 'serviced' && <CheckCircle2 size={18} aria-hidden="true" />}{serviceStatusLabel(detail)}</strong></p>
           {(detail.serviceEnteredAt || detail.completedAt) && <div className="service-recorded-dates">{detail.serviceEnteredAt && <span>Entered service<strong>{displayDate(detail.serviceEnteredAt)}</strong></span>}{detail.completedAt && <span>Completed<strong>{displayDate(detail.completedAt)}</strong></span>}</div>}
         </section>
+        {!editing && detail.notes && <section className="service-current-note" aria-label="Current service note"><h4>Current service note</h4><p>{detail.notes}</p></section>}
         {detail.readinessBasis === 'unconfirmed' && <p className="service-unconfirmed">No service completion is recorded. Check the vehicle’s service record, then mark it Ready or start the work needed.</p>}
         {detail.canManage ? <>
           {!editing && <div className="service-status-switch" role="group" aria-label="Service actions">
@@ -223,6 +228,9 @@ export function ServiceEditor({ vehicle, role, store, initialAction, defaultDate
       <nav className="service-vehicle-links" aria-label="Vehicle reference"><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { returnTo: currentWorkspaceReturnPath(location) })}>Vehicle details</Link><Link className="service-vehicle-link" to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo: currentWorkspaceReturnPath(location) })}>Records</Link></nav>
     </>}
     </section>
+    {configuration.length > 0 && <dl className="service-vehicle-configuration" aria-label="Vehicle configuration">
+      {configuration.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+    </dl>}
     <SourceServiceHistory vehicle={vehicle} recordsHref={recordsHref} />
     <ServiceVehicleContext vehicle={vehicle} recordsHref={recordsHref} />
       {!loading && detail && <>
