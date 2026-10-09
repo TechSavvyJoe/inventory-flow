@@ -70,7 +70,7 @@
   --ifx-info: #1263bf;
   --ifx-info-surface: #eaf4ff;
   /* Shared page anatomy follows the approved compact vehicle workspace. */
-  --ifx-workspace-header-background: var(--ifx-neutral-0);
+  --ifx-workspace-header-background: var(--ifx-neutral-100);
   --ifx-workspace-header-ink: var(--navy-900);
   --ifx-workspace-header-muted: var(--ink-600);
   --ifx-workspace-header-control: var(--blue-050);

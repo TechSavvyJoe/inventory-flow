@@ -121,7 +121,7 @@ describe('focused vehicle workspace', () => {
     expect(screen.getByRole('tab', { name: 'Records' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('keeps history beside specifications and spans equipment and reference facts beneath the gallery', () => {
+  it('keeps history, equipment, pricing and reference facts in the vehicle work area', () => {
     const unit = vehicle();
     unit.windowSticker = {dataState:'current',basePrice:42500,totalMsrp:50560,pricingCurrency:'USD'};
     unit.fordOasis = {dataState:'current',warrantyStartDate:'2024-08-14',openFieldServiceActions:[],warrantyCoverages:[],extendedCoverageExpirations:[]};
@@ -130,6 +130,7 @@ describe('focused vehicle workspace', () => {
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}/>);
     const overview = screen.getByRole('tabpanel',{name:'Overview'});
     const reference = within(overview).getByRole('region',{name:'Frequently used vehicle facts'});
+    const pricing = within(overview).getByLabelText('Original vehicle pricing');
     const specifications = within(overview).getByRole('region',{name:'Vehicle specifications'});
     const shortcuts = within(overview).getByRole('region',{name:'Document shortcuts'});
     const equipment = within(overview).getByRole('region',{name:'Key equipment'});
@@ -141,13 +142,17 @@ describe('focused vehicle workspace', () => {
     expect(history.compareDocumentPosition(equipment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(equipment.compareDocumentPosition(reference) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(shortcuts.compareDocumentPosition(reference) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(reference).getAllByRole('term').map(node=>node.textContent)).toEqual(['In-service','Coverage','Original MSRP','Base MSRP']);
+    expect(within(reference).getByText('In-service').closest('dt')).toHaveTextContent('In-serviceOASIS');
+    expect(within(reference).getByText('Coverage').closest('dt')).toHaveTextContent('CoverageOASIS');
+    expect(within(shortcuts).queryByLabelText('AutoCheck captured summary')).not.toBeInTheDocument();
+    expect(within(shortcuts).getByRole('button', {name:'View captured AutoCheck records'})).toBeVisible();
+    expect(within(pricing).getAllByRole('term').map(node=>node.textContent)).toEqual(['Original MSRP','Base MSRP']);
     expect(within(reference).getByText('08/14/2024')).toBeVisible();
-    expect(within(reference).getByText('$42,500')).toBeVisible();
-    expect(within(reference).getByText('$50,560')).toBeVisible();
+    expect(within(pricing).getByText('$42,500')).toBeVisible();
+    expect(within(pricing).getByText('$50,560')).toBeVisible();
     expect(reference).toHaveTextContent('Powertrain · 35 months remaining · 21,500 miles remaining');
-    expect(within(reference).getByText('Window sticker · Before options & destination')).toBeVisible();
-    expect(within(reference).getByRole('button', {name:'Copy base MSRP: 42500'})).toBeVisible();
+    expect(within(pricing).getByText('Window sticker · Before options & destination')).toBeVisible();
+    expect(within(pricing).getByRole('button', {name:'Copy base MSRP: 42500'})).toBeVisible();
     expect(within(reference).queryByText('Public listing')).not.toBeInTheDocument();
     expect(within(reference).queryByText('08/29/2026')).not.toBeInTheDocument();
     expect(within(history).getAllByRole('term').map(node=>node.textContent)).toEqual(['Score','Owners','Title','Accidents']);
@@ -156,8 +161,9 @@ describe('focused vehicle workspace', () => {
     expect(history).toHaveTextContent('Clean');
     expect(history).toHaveTextContent('No issue');
     expect(reference).not.toHaveTextContent('USD');
+    expect(pricing).not.toHaveTextContent('USD');
     for (const label of ['In-service','Base MSRP']) {
-      expect(within(overview).getAllByText(label,{selector:'dt'})).toHaveLength(1);
+      expect(within(overview).getAllByRole('term').filter(node => node.textContent?.startsWith(label))).toHaveLength(1);
       expect(within(specifications).queryByText(label,{selector:'dt'})).not.toBeInTheDocument();
     }
   });
@@ -167,7 +173,8 @@ describe('focused vehicle workspace', () => {
     unit.dealerMail.loaner = {active:true,program:'FCTP',label:'Loaner FCTP',serviceDate};
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}/>);
     const operations = screen.getByRole('region',{name:'Vehicle operational summary'});
-    expect(within(operations).getByText('Loaner FCTP · 08/14/2024')).toBeVisible();
+    expect(within(operations).getByRole('group', { name:'Reported hold evidence' })).toHaveTextContent('Reported evidence: Loaner FCTP · 08/14/2024');
+    expect(within(operations).getByText('Reported evidence: Loaner FCTP · 08/14/2024')).toBeVisible();
     expect(unit.dealerMail.loaner.serviceDate).toBe(serviceDate);
   });
 
@@ -175,7 +182,7 @@ describe('focused vehicle workspace', () => {
     const unit = vehicle();
     unit.windowSticker = {dataState:'current',totalMsrp:50560,pricingCurrency:'USD',options:['WEIGHT FEE — $123.45']};
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
-    const facts=screen.getByRole('region',{name:'Frequently used vehicle facts'});
+    const facts=screen.getByLabelText('Original vehicle pricing');
     const lookup=within(facts).getByText('Original MSRP',{selector:'dt'}).parentElement!;
     expect(lookup).toHaveTextContent('$50,560');
     expect(lookup).toHaveTextContent('Window sticker');
@@ -192,7 +199,7 @@ describe('focused vehicle workspace', () => {
     unit.windowSticker={dataState:'current',basePrice:42500.5};
     unit.factoryEquipment={dataState:'current',isOriginalWindowSticker:false,basePrice:39999};
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
-    const facts=screen.getByRole('region',{name:'Frequently used vehicle facts'});
+    const facts=screen.getByLabelText('Original vehicle pricing');
     const lookup=within(facts).getByText('Base MSRP',{selector:'dt'}).parentElement!;
     expect(lookup).toHaveTextContent('42,500.5');
     expect(lookup).not.toHaveTextContent('Sticker · confirm currency');
@@ -205,7 +212,7 @@ describe('focused vehicle workspace', () => {
     unit.windowSticker = { dataState: 'current', pricingCurrency: 'CAD' };
     unit.factoryEquipment = { dataState: 'current', isOriginalWindowSticker: false, basePrice: 31234.5, totalMsrp: 35432, sections: [{ name: 'Fees', items: [{ label: 'Weight fee', price: 123.45 }] }] };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
-    const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
+    const facts = screen.getByLabelText('Original vehicle pricing');
     const lookup = within(facts).getByText('vAuto base MSRP', {selector:'dt'}).parentElement!;
     expect(facts).toHaveTextContent('vAuto base MSRP31,234.5');
     expect(facts).not.toHaveTextContent('vAuto reference · confirm on sticker');
@@ -227,11 +234,11 @@ describe('focused vehicle workspace', () => {
     unit.factoryEquipment = { dataState: 'current', isOriginalWindowSticker: false, basePrice: 31234 };
     unit.autoCheckReport = { dataState: 'current', estimatedInServiceDate: '2023-05-12' };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
-    const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
+    const facts = screen.getByLabelText('Original vehicle pricing');
     expect(facts).toHaveTextContent('Base MSRPCAD 45,000');
     expect(facts).not.toHaveTextContent('31,234');
     expect(within(facts).getAllByText('Base MSRP')).toHaveLength(1);
-    expect(facts).toHaveTextContent('Est. in-service05/12/2023AutoCheck');
+    expect(screen.getByRole('region', { name: 'Frequently used vehicle facts' })).toHaveTextContent('Est. in-serviceAutoCheck estimate05/12/2023');
     await userEvent.click(screen.getByRole('tab', { name: 'Records' }));
     expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('In-service · AutoCheck estimate05/12/2023');
     expect(document.querySelector('.vdp-records-summary')).toHaveTextContent('Base MSRPCAD 45,000');
@@ -243,7 +250,7 @@ describe('focused vehicle workspace', () => {
     unit.autoCheckReport = { dataState: 'current', estimatedInServiceDate: '2023-05-12' };
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
     const facts = screen.getByRole('region', { name: 'Frequently used vehicle facts' });
-    expect(facts).toHaveTextContent('In-service05/13/2023OASIS');
+    expect(facts).toHaveTextContent('In-serviceOASIS05/13/2023');
     expect(facts).not.toHaveTextContent('estimate');
   });
 
@@ -319,7 +326,7 @@ describe('focused vehicle workspace', () => {
     for (const value of ['3.5L V6 EcoBoost', 'SuperCrew 4x4', '10-Speed Automatic', '4WD', '123,328 mi']) expect(specs).toHaveTextContent(value);
     expect(screen.getByText('$20,988')).toBeVisible();
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
-    expect(operations).toHaveTextContent('Hold statusHeld');
+    expect(operations).toHaveTextContent('HoldHeld · Reported');
     expect(operations).toHaveTextContent('Jamie Howell');
     // The detailed hold owner stays labeled below the decisive workflow strip;
     // 'Held by' is reserved for DealerMail's evidence.heldBy.
@@ -329,24 +336,73 @@ describe('focused vehicle workspace', () => {
     expect(operations).not.toHaveTextContent(/sold|delivered|CDK/);
   });
 
-  it('provides compact mobile specs and nests backup context under the same hold', () => {
+  it('keeps a pending app request distinct from reported held evidence and exposes manager review', async () => {
+    const unit = vehicle();
+    unit.manualHold = { vin:unit.vin, state:'requested', version:1, ownerStore:'Howell', canManage:true, canApprove:true, approvalEnabled:true, enabled:true, expectedDeliveryDate:'2026-09-02', updatedAt:null };
+    unit.inventoryDecision = { status:'held', comparison:'source_only', reasons:[], manualHold:'requested', importedHold:true, label:'Held' };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}
+      dispositionContext={{ role:'manager', homeStore:'Howell', onChanged:vi.fn() }} />);
+    const operations = screen.getByRole('region', { name:'Vehicle operational summary' });
+    const hold = within(operations).getByText('Hold', { selector:'dt' }).parentElement!;
+    expect(within(hold).getByText('Pending approval', { selector:'strong' })).toBeVisible();
+    expect(within(hold).getByRole('group', { name:'Inventory Flow hold' })).toHaveTextContent('Inventory Flow: Pending approval');
+    expect(within(hold).getByRole('group', { name:'Reported hold evidence' })).toHaveTextContent('Reported evidence: Held');
+    expect(hold).not.toHaveTextContent('Available');
+    const more = within(operations).getByRole('button', { name:'More' });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(more);
+    expect(more).toHaveAttribute('aria-expanded', 'true');
+    expect(within(operations).getByRole('button', { name:'Review hold request' })).toBeVisible();
+    await userEvent.click(more);
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it.each([
+    [null, true, 'Last verified hold', null],
+    [null, false, 'Hold status unverified', null],
+    ['released', true, 'Last verified hold', 'Hold released'],
+    ['rejected', false, 'Hold status unverified', 'Request declined'],
+    ['cancelled', false, 'Hold status unverified', 'Request cancelled'],
+  ] as const)('preserves source uncertainty when the app hold is %s and retained hold is %s', (state, retained, headline, history) => {
+    const unit = vehicle();
+    unit.manualHold = { vin:unit.vin, state, version:state ? 1 : 0, ownerStore:'Howell', canManage:false, enabled:true, expectedDeliveryDate:null, updatedAt:null };
+    unit.dealerMail = { ...unit.dealerMail, dataState:'stale', hasActiveHold:null, lastKnownActiveHold:retained };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    const summary = screen.getByRole('region', { name:'Vehicle operational summary' });
+    expect(summary).toHaveTextContent(headline);
+    expect(summary).not.toHaveTextContent('No hold recorded');
+    if (history) expect(within(summary).getByRole('group', { name:'Inventory Flow hold' })).toHaveTextContent(`Inventory Flow: ${history}`);
+    else expect(within(summary).queryByRole('group', { name:'Inventory Flow hold' })).not.toBeInTheDocument();
+    expect(within(summary).getByRole('group', { name:'Reported hold evidence' })).toBeInTheDocument();
+  });
+
+  it('keeps a current loaner headline when the app supplies an empty hold record', () => {
+    const unit = vehicle();
+    unit.manualHold = { vin:unit.vin, state:null, version:0, ownerStore:'Howell', canManage:false, enabled:true, expectedDeliveryDate:null, updatedAt:null };
+    unit.dealerMail = { ...unit.dealerMail, hasActiveHold:false, loaner:{ active:true, program:'Synthetic program', label:'Loaner', serviceDate:null, rawAlert:'Synthetic loaner evidence' } };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    const summary = screen.getByRole('region', { name:'Vehicle operational summary' });
+    expect(summary).toHaveTextContent('Loaner Synthetic program');
+    expect(summary).not.toHaveTextContent('No hold recorded');
+    expect(within(summary).getByRole('group', { name:'Reported hold evidence' })).toHaveTextContent('Synthetic loaner evidence');
+  });
+
+  it('pairs compact mileage and age with the gallery before complete specifications and nests backup context under the same hold', () => {
     const unit = vehicle();
     unit.dealerMail.activeRecordCount = 3;
     unit.mpgHighway = 24;
     render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
-    const mobileSpecs = screen.getByRole('group', { name: 'Mobile vehicle specifications' });
+    const mobileSpecs = screen.getByRole('group', { name: 'Vehicle mileage and age' });
     const mobile = within(mobileSpecs);
     expect(mobile.getByText('Mileage', { selector: 'dt' }).parentElement).toHaveTextContent('123,328 mi');
     expect(mobile.getByText('Days listed', { selector: 'dt' }).parentElement).toHaveTextContent('2 days');
-    const quickFacts = mobile.getByRole('group', { name: 'Vehicle quick facts' });
-    expect(within(quickFacts).getByLabelText('Engine / drive: 3.5L V6 EcoBoost · 4WD')).toBeVisible();
-    expect(within(quickFacts).getByLabelText('Transmission / fuel: 10-Speed Automatic · Gasoline · 24 hwy MPG')).toBeVisible();
-    expect(within(quickFacts).getByText('Exterior').parentElement).toHaveTextContent('Black');
-    expect(within(quickFacts).getByText('Interior').parentElement).toHaveTextContent('Black Leather');
     const specs = screen.getByRole('region', { name: 'Vehicle specifications' });
-    expect(within(specs).getByText('Fuel economy', { selector: 'dt' }).closest('.inventory-workspace-fact')).toHaveTextContent('24 hwy MPG');
+    expect(mobileSpecs.compareDocumentPosition(specs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    for (const [label, value] of [['Engine','3.5L V6 EcoBoost'],['Drivetrain','4WD'],['Transmission','10-Speed Automatic'],['Fuel','Gasoline'],['Exterior','Black'],['Interior','Black Leather'],['Fuel economy','24 hwy MPG']]) {
+      expect(within(specs).getByText(label, {selector:'dt'}).parentElement).toHaveTextContent(value!);
+    }
     const operations = screen.getByRole('region', { name: 'Vehicle operational summary' });
-    const hold = within(operations).getByText('Hold status', { selector: 'dt' }).closest('.inventory-workspace-fact')!;
+    const hold = within(operations).getByText('Hold', { selector: 'dt' }).closest('.inventory-workspace-fact')!;
     expect(hold).toHaveTextContent('Held');
     expect(hold.querySelector('.vdp-focus-hold-context')).toHaveTextContent('Jamie Howell · 2 backup holds');
     const operationalDetails = screen.getByRole('region', { name: 'Operational details' });

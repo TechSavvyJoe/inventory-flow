@@ -1,4 +1,4 @@
-import { MANUAL_HOLD_COLUMNS } from '../../server/manual-holds.mjs'
+import { MANUAL_HOLD_COLUMNS, manualHoldApprovalSchema } from '../../server/manual-holds.mjs'
 import { SERVICE_EVENT_COLUMNS } from '../../server/service-readiness.mjs'
 import { DISPOSITION_EVENT_COLUMNS } from '../../server/vehicle-disposition.mjs'
 import { VEHICLE_ISSUE_COLUMNS, VEHICLE_ISSUE_EVENT_COLUMNS } from '../../server/vehicle-issues.mjs'
@@ -392,10 +392,11 @@ export const d1SnapshotRepository = Object.freeze({
     database.serviceEvents.push(clone(row))
     return clone(row)
   },
+  manualHoldApprovalsEnabled(database) { return database.manualHoldApprovalsEnabled === true },
   manualHoldsEnabled(database) { return database.manualHoldsEnabled === true },
   listManualHoldEvents(database) { return [...(database.manualHoldEvents ?? [])].sort((a, b) => compare(a.vin, b.vin) || a.version - b.version).map(clone) },
   insertManualHoldEvent(database, row) {
-    if (!database.manualHoldsEnabled) throw new WorkflowError('Manual hold storage is not enabled yet.', { status: 503, code: 'MIGRATION_REQUIRED' })
+    if (!database.manualHoldsEnabled || !database.manualHoldApprovalsEnabled) throw new WorkflowError('Manual hold storage is not enabled yet.', { status: 503, code: 'MIGRATION_REQUIRED' })
     if ((database.manualHoldEvents.filter(event => event.vin === row.vin).at(-1)?.version ?? 0) + 1 !== row.version) throw new RepositoryConflictError()
     insert(database, 'vehicle_manual_hold_events', MANUAL_HOLD_COLUMNS, row)
     database.manualHoldEvents.push(clone(row))
@@ -527,7 +528,7 @@ export async function loadD1Repository(d1, release, options = {}) {
   const capabilityTables = probeSavedLists
     ? "'vehicle_issues', 'vehicle_issue_events', 'vehicle_disposition_events', 'vehicle_manual_hold_events', 'saved_vehicle_lists', 'saved_vehicle_list_items', 'saved_vehicle_list_actions'"
     : "'vehicle_issues', 'vehicle_issue_events', 'vehicle_disposition_events', 'vehicle_manual_hold_events'"
-  const capability = await d1.batch([d1.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${capabilityTables})`)])
+  const capability = await d1.batch([d1.prepare(`SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name IN (${capabilityTables})`)])
   if (capability.length !== 1 || capability[0].success === false || !Array.isArray(capability[0].results)) {
     throw new Error('Unable to read workflow storage capabilities')
   }
@@ -535,6 +536,7 @@ export async function loadD1Repository(d1, release, options = {}) {
   const issuesEnabled = tables.has('vehicle_issues') && tables.has('vehicle_issue_events')
   const dispositionsEnabled = tables.has('vehicle_disposition_events')
   const manualHoldsEnabled = tables.has('vehicle_manual_hold_events')
+  const manualHoldApprovalsEnabled = manualHoldApprovalSchema(capability[0].results.find(row => row.name === 'vehicle_manual_hold_events')?.sql)
   const savedListsEnabled = tables.has('saved_vehicle_lists') && tables.has('saved_vehicle_list_items') && tables.has('saved_vehicle_list_actions')
   // Each read is keyed by name, so an optional table never shifts another's result.
   const reads = [
@@ -582,7 +584,7 @@ export async function loadD1Repository(d1, release, options = {}) {
     vehicleIssuesEnabled: issuesEnabled,
     vehicleIssues: rows.vehicleIssues ?? [],
     vehicleIssueEvents: rows.vehicleIssueEvents ?? [],
-    manualHoldsEnabled, manualHoldEvents: rows.manualHoldEvents ?? [],
+    manualHoldsEnabled, manualHoldApprovalsEnabled, manualHoldEvents: rows.manualHoldEvents ?? [],
     dispositionsEnabled,
     dispositionEvents: rows.dispositionEvents ?? [],
     savedVehicleListsEnabled: savedListsEnabled,

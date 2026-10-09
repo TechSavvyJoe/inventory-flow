@@ -16,7 +16,7 @@ export function ProviderEvidence({ vehicle }: { vehicle: InventoryVehicle }) {
         {record.dataState !== 'current' || !record.complete ? <small>{record.dataState === 'stale_unverified' ? 'Retained report · unverified' : record.dataState === 'incomplete' || !record.complete ? 'Incomplete report' : 'Unverified report'}</small> : <small>Current report</small>}
         {'comparison' in record && record.comparison === 'conflict' ? <strong className="provider-evidence-warning">Records disagree</strong> : null}
       </div>
-    </li>)}</ul> : <p>No imported observations supplied. Manual controls remain available.</p>}
+    </li>)}</ul> : <p>No imported observations supplied. Inventory Flow controls remain available.</p>}
     <p>Staff decisions and source observations are separate. No observed hold is not an availability promise.</p>
   </section>
 }

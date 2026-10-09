@@ -28,7 +28,7 @@
 
 .ov-work-queue {
   background: var(--ifx-neutral-0);
-  border: 1px solid var(--ifx-border-subtle);
+  border: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
   border-radius: var(--ifx-radius-sm);
   display: grid;
   min-width: 0;
@@ -91,7 +91,8 @@
 }
 
 .ov-work-columns {
-  border-bottom: 1px solid var(--ifx-border-subtle);
+  background: var(--ifx-neutral-50);
+  border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
   color: var(--ifx-neutral-600);
   font-size: var(--ifx-text-xs);
   font-weight: var(--ifx-weight-semibold);
@@ -228,7 +229,7 @@
 
 .ov-stores {
   background: var(--ifx-neutral-0);
-  border: 1px solid var(--ifx-border-subtle);
+  border: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
   border-radius: var(--ifx-radius-sm);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -248,6 +249,7 @@
 .ov-store-card.is-home { box-shadow: inset var(--ifx-space-0-5) 0 var(--ifx-oem-accent); }
 
 .ov-store-card header {
+  background: var(--ifx-neutral-50);
   align-content: center;
   border-right: 1px solid var(--ifx-border-subtle);
   display: flex;
@@ -477,7 +479,7 @@
 
 .ov-section {
   background: var(--ifx-neutral-0);
-  border: 1px solid var(--ifx-border-subtle);
+  border: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
   border-radius: var(--ifx-radius-sm);
   display: grid;
   gap: var(--ifx-space-3);
@@ -801,12 +803,12 @@
   .ov-work-actions { align-self: center; grid-column: 2; grid-row: 1 / 4; }
   .ov-stores { background: transparent; border: 0; border-radius: 0; gap: var(--ifx-space-2); overflow: visible; }
   .ov-store-card {
-    border: 1px solid var(--ifx-border-subtle);
+    border: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
     border-radius: var(--ifx-radius-sm);
     grid-template-columns: minmax(0, 1fr) auto;
     overflow: hidden;
   }
-  .ov-store-card:last-child { border-bottom: 1px solid var(--ifx-border-subtle); }
+  .ov-store-card:last-child { border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
   .ov-store-card > header { border-right: 0; grid-column: 1; }
   .ov-store-card > .ov-counts--core { border-right: 0; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ov-counts--core .ov-count { border-bottom: 1px solid var(--ifx-border-subtle); }

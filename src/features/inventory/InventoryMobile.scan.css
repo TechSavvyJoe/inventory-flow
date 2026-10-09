@@ -1,5 +1,6 @@
 /* Compact comparison rows; full source reports are one Records action away. */
-.if-srp-mobile-list .if-srp-mobile-row--scan { padding:var(--ifx-space-0-5) var(--ifx-space-1); border:0; border-bottom:1px solid var(--border-strong); border-radius:0; box-shadow:none; scroll-margin-top:var(--ifx-space-16); }
+.if-srp-mobile-list { gap:var(--ifx-space-1); padding:var(--ifx-space-1); background:var(--ifx-neutral-50); }
+.if-srp-mobile-list .if-srp-mobile-row--scan { padding:var(--ifx-space-0-5) var(--ifx-space-1); border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); border-radius:var(--ifx-radius-xs); box-shadow:none; scroll-margin-top:var(--ifx-space-16); }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-row__open { grid-template-columns:calc(var(--ifx-space-16) + var(--ifx-space-8)) minmax(0,1fr); gap:var(--ifx-space-0-5) var(--ifx-space-2); align-items:start; }
 .if-srp-mobile-list .inventory-mobile-row__thumbnail { display:grid; gap:var(--ifx-space-0-5); min-width:0; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-vehicle-visual { width:calc(var(--ifx-space-16) + var(--ifx-space-8)); height:var(--ifx-space-16); border-radius:var(--ifx-radius-xs); background:var(--surface-muted); box-shadow:none; }
@@ -82,7 +83,7 @@
 .if-srp-mobile-list .inventory-mobile-imported-hold dt { color: var(--ink-600); font: var(--ifx-weight-regular) var(--ifx-text-xs)/var(--ifx-leading-compact) var(--font-app); }
 .if-srp-mobile-list .inventory-mobile-imported-hold dd { display: grid; gap: var(--ifx-space-0-5); margin: 0; min-width: 0; color: var(--ink-900); font: var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); overflow-wrap: anywhere; }
 .if-srp-mobile-list .if-srp-mobile-row--scan .inventory-mobile-imported-hold small { color: var(--ink-600); font-size: var(--ifx-text-xs); }
-.if-srp-mobile-list .inventory-mobile-row__supporting { display:grid; gap:var(--ifx-space-0); padding-block:var(--ifx-space-0-5); }
+.if-srp-mobile-list .inventory-mobile-row__supporting { display:grid; gap:var(--ifx-space-0); padding-block:var(--ifx-space-0-5); border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
 .if-srp-mobile-list .inventory-mobile-row__equipment { grid-column:1 / -1; display:flex; align-items:baseline; min-width:0; gap:var(--ifx-space-2); }
 .if-srp-mobile-list .inventory-mobile-row__equipment > small { flex:none; color:var(--ink-600); font-size:var(--ifx-text-xs); }
 .if-srp-mobile-list .inventory-mobile-decision > span { display:grid; gap:var(--ifx-space-0-5); text-align:left; }

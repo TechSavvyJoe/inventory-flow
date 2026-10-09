@@ -24,8 +24,8 @@ import {
 import { CopyableValue } from "../../components/CopyableValue";
 import { ServiceStatusLink } from "./ServiceStatusLink";
 import { InventoryRecordsPanel } from "./InventoryRecordsPanel";
-import { VehicleResourceCards } from "./VehicleResourceCards";
-import { oasisActionLabel, vehicleResourceCatalog } from "./vehicle-resource-catalog";
+import { VehicleResourceCards, VehicleResourceScan } from "./VehicleResourceCards";
+import { oasisActionLabel, vehicleOverviewResources } from "./vehicle-resource-catalog";
 import {
   formatMileage,
   formatMoney,
@@ -329,7 +329,8 @@ type OperationalStatus = {
 };
 
 export function vehicleOperationalStatus(vehicle: InventoryVehicle): OperationalStatus {
-  if (vehicle.manualHold?.state === 'active') return { label: 'Manual hold', detail: 'Recorded in Inventory Flow. Review imported evidence separately.', tone: 'hold', icon: UserRound };
+  if (vehicle.manualHold?.state === 'active') return { label: 'Held', detail: 'Confirmed in Inventory Flow. Review reported evidence separately.', tone: 'hold', icon: UserRound };
+  if (vehicle.manualHold?.state === 'requested') return { label: 'Pending approval', detail: 'Awaiting manager approval. This request is not a confirmed hold.', tone: 'warning', icon: UserRound };
   if (vehicle.operationalEvidence) return { label: importedHoldSummary(vehicle), detail: 'Read-only provider observations. Confirm availability with the store.', tone: providerHoldState(vehicle) === true ? 'hold' : providerHoldState(vehicle) === false ? 'clear' : 'unknown', icon: UserRound };
   return importedHoldOperationalStatus(vehicle);
 }
@@ -445,9 +446,7 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
   onSelectVehicle: InventoryTableProps["onSelectVehicle"];
 }) {
   const name = vehicleDisplayName(vehicle);
-  const identity = [vehicle.year, vehicle.make, vehicle.model]
-    .filter((part) => part !== null && part !== undefined && `${part}`.trim())
-    .join(" ") || vehicle.vehicleName?.trim() || name;
+  const identity = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(" ") || vehicle.vehicleName?.trim() || name;
   const series = [...new Set([vehicle.trim, vehicle.bodyType || vehicle.bodyStyle].filter((value): value is string => Boolean(value?.trim())))].join(" · ");
   const signal = primaryVehicleChangeSignal(vehicle.changeSummary);
   const change = signal && signal.kind !== "other" ? signal : null;
@@ -460,24 +459,30 @@ function DeskVehicleCell({ vehicle, onSelectVehicle, priority }: {
           <CertifiedBadge certified={vehicle.certified} homeStore={vehicle.location.homeStore.name} />
         </span>
       </span>
-      {/* Keep the complete identity beside its photo so a row scans as one vehicle. */}
       <div className="inv-desk-vehicle__body">
-        <span className="inv-desk-vehicle__title"><strong title={name}>{identity}</strong></span>
-        {series ? <span className="inv-desk-vehicle__series">{series}</span> : null}
-        <div className="inv-desk-vehicle__links">{change ? <button type="button" className={`inv-desk-change inv-desk-change--${change.kind}`} data-row-action="history" data-inventory-vehicle-trigger={vehicle.id}
+        <button type="button" className="inv-desk-vehicle__title" data-row-action="open-details" data-inventory-vehicle-trigger={vehicle.id} aria-label={`Open vehicle details for ${name}`} title={name} onClick={event => { stopRowSelection(event); onSelectVehicle(vehicle); }}>
+          <strong>{identity}</strong>{series ? <span className="inv-desk-vehicle__series">{series}</span> : null}
+        </button>
+      </div>
+      <div className="inv-desk-vehicle__identifiers">
+        <dl className="inv-desk-vehicle__facts">
+          <div><dt>Stock</dt><dd>{vehicle.stockNumber}</dd></div>
+          <div><dt>VIN</dt><dd>{vehicle.vin}</dd></div>
+        </dl>
+        <div className="inv-desk-identity-copy" role="group" aria-label={`Copy identifiers for ${name}`}>
+          <CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy-control">Stock</CopyableValue>
+          <CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy-control">VIN</CopyableValue>
+        </div>
+      </div>
+      <div className="inv-desk-vehicle__comparison">
+        {vehicle.exteriorColor ? <span><small>Exterior</small>{vehicle.exteriorColor}</span> : null}
+        {vehicle.interiorColor ? <span><small>Interior</small>{vehicle.interiorColor}</span> : null}
+      </div>
+      <div className="inv-desk-vehicle__links">{change ? <button type="button" className={`inv-desk-change inv-desk-change--${change.kind}`} data-row-action="history" data-inventory-vehicle-trigger={vehicle.id}
           aria-label={`View change history for ${name}: ${change.shortLabel}`} title={vehicle.changeSummary || change.label}
           onClick={(event) => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, "timeline"); }}>
           {change.shortLabel}
         </button> : null}
-        </div>
-      </div>
-      <dl className="inv-desk-vehicle__facts">
-        <div><dt>Stock</dt><dd><CopyableValue compact label="stock number" text={vehicle.stockNumber} className="inv-desk-copy inv-desk-copy--stock" /></dd></div>
-        <div className="inv-desk-vehicle__vin"><dt>VIN</dt><dd><CopyableValue compact label="VIN" text={vehicle.vin} className="inv-desk-copy" /></dd></div>
-      </dl>
-      <div className="inv-desk-vehicle__comparison">
-        {vehicle.exteriorColor ? <span><small>Exterior</small>{vehicle.exteriorColor}</span> : null}
-        {vehicle.interiorColor ? <span><small>Interior</small>{vehicle.interiorColor}</span> : null}
       </div>
     </div>
   );
@@ -590,8 +595,8 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerSt
   const name = vehicleDisplayName(vehicle);
   const holdStatus = vehicleOperationalStatus(vehicle);
   const movement = vehicleMovementStatus(vehicle, viewerStore);
-  const canOpenDealerMail = !vehicle.operationalEvidence && vehicle.manualHold?.state !== "active" && vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
-  const manualActive = vehicle.manualHold?.state === 'active';
+  const manualActive = vehicle.manualHold?.state === 'active' || vehicle.manualHold?.state === 'requested';
+  const canOpenDealerMail = !vehicle.operationalEvidence && !manualActive && vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
   const importedStatus = importedHoldOperationalStatus(vehicle);
   const holdDetail = importedHoldDetail(vehicle);
   const manualExpected = manualActive ? compactInventoryDate(vehicle.manualHold?.expectedDeliveryDate) : null;
@@ -600,17 +605,20 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerSt
   return <dl className="inv-desk-status">
     <div className="inv-desk-status__row" data-fact="location"><dt>Location</dt><dd><DeskLocationCell vehicle={vehicle} /></dd></div>
     <div className="inv-desk-status__row" data-fact="hold"><dt>Hold</dt><dd>
+      <div role={manualActive ? 'group' : undefined} aria-label={manualActive ? 'Inventory Flow hold' : undefined}>
       <button type="button" className={`inv-desk-hold inv-desk-hold--${holdStatus.tone}`} data-inventory-vehicle-trigger={vehicle.id}
         aria-label={canOpenDealerMail ? `Review DealerMail handoff for stock ${vehicle.stockNumber}; verify VIN ${vehicle.vin}` : `Open hold details for ${name}`}
         title={holdStatus.detail} onClick={event => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); if (canOpenDealerMail) onOpenSourceRecord?.(vehicle, "dealermail"); else onSelectVehicle(vehicle, "hold"); }}>
         <span className="inv-desk-hold__dot" aria-hidden="true" /><span>{holdStatus.label}</span>
       </button>
-      {manualActive ? manualExpected ? <small className="inv-desk-status__detail">Manual expected {manualExpected}</small> : null : holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
+      {manualActive && manualExpected ? <small className="inv-desk-status__detail">Expected {manualExpected}</small> : null}
+      </div>
+      {!manualActive && holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
+      {manualActive ? <div role="group" aria-label="Reported hold evidence">
+        <small className="inv-desk-status__detail">{vehicle.operationalEvidence ? "Reports" : "DealerMail"}: {vehicle.operationalEvidence ? importedHoldSummary(vehicle) : importedStatus.label}</small>
+        {holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
+      </div> : null}
     </dd></div>
-    {manualActive ? <div className="inv-desk-status__row" data-fact="imported-hold"><dt>{vehicle.operationalEvidence ? "Imported reports" : "DealerMail"}</dt><dd>
-      <span className="inv-desk-status__imported-hold">{vehicle.operationalEvidence ? importedHoldSummary(vehicle) : importedStatus.label}</span>
-      {holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
-    </dd></div> : null}
     {movement ? <div className="inv-desk-status__row" data-fact="move"><dt>Move</dt><dd><span className={`inv-desk-move${movement.tone === "warning" ? " is-warning" : ""}`} title={movement.detail}>{humanizeStatusLabel(movement.label)}</span></dd></div> : null}
     <div className="inv-desk-status__row" data-fact="service"><dt>Service</dt><dd><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed /></dd></div>
     {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <div className="inv-desk-status__row" data-fact="manual-decision"><dt>Decision</dt><dd><button type="button" className="inv-desk-hold inv-desk-decision" data-inventory-vehicle-trigger={vehicle.id} aria-label={`Review inventory decision for ${name}`} onClick={event => { stopRowSelection(event); event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, 'hold'); }}>{vehicle.appDisposition?.code ? `${DISPOSITION_LABELS[vehicle.appDisposition.code]}${vehicle.inventoryDecision?.comparison === 'conflict' ? ' · Records disagree' : ''}` : vehicle.inventoryDecision?.comparison === 'conflict' ? 'Records disagree' : vehicle.inventoryDecision?.label}</button></dd></div> : null}
@@ -700,6 +708,7 @@ interface DeskRowActionsProps extends Pick<
 > {
   vehicle: InventoryVehicle;
   variant?: "desktop" | "mobile";
+  subset?: "valuation" | "movement";
   hideRecords?: boolean;
   hideListing?: boolean;
   /** Row-owned Records launcher; when supplied it renders beside Details so every row action lives in one group. */
@@ -713,7 +722,7 @@ interface DeskRowActionsProps extends Pick<
 // the Operations column, so the action group deliberately does not repeat them.
 // Every remaining action is directly visible (no overflow menu) at 44px.
 export function DeskRowActions({
-  vehicle, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onSelectVehicle, variant = "desktop", recordsAction, recordsDisclosure, hideRecords = false, hideListing = false, includeServiceLink = false,
+  vehicle, canRequestVehicle, moveActionFor, onRequestVehicle, onMoveVehicle, onTrackMovement, onOpenListing, onSelectVehicle, variant = "desktop", subset, recordsAction, recordsDisclosure, hideRecords = false, hideListing = false, includeServiceLink = false,
 }: DeskRowActionsProps) {
   const shortlist = useCustomerShortlist();
   const saved = shortlist.isShortlisted(vehicle);
@@ -726,14 +735,14 @@ export function DeskRowActions({
   const moveAction = explicitMoveAction ?? (requestAllowed ? { intent: "request" as const, label: "Request vehicle", shortLabel: "Request" } : null);
   const canCreateMove = Boolean(moveAction && (onMoveVehicle || onRequestVehicle) && (!canTrack || explicitMoveAction));
   return (
-    <div className="inv-desk-actions" role="group" aria-label={`Actions for ${name}`} onClick={stopRowSelection}>
-      {variant === "desktop" ? <button type="button" className="inv-desk-action inv-desk-action--primary"
+    <div className="inv-desk-actions" role="group" aria-label={`${subset === "valuation" ? "Price actions" : subset === "movement" ? "Movement actions" : "Actions"} for ${name}`} onClick={stopRowSelection}>
+      {variant === "desktop" && !subset ? <button type="button" className="inv-desk-action inv-desk-action--primary"
         data-row-action="open-details" data-inventory-vehicle-trigger={vehicle.id}
         onClick={() => onSelectVehicle(vehicle)} aria-label={`Open vehicle details for ${name}`} title="View vehicle">
         <Eye size={16} aria-hidden="true" />View vehicle
       </button> : null}
-      {recordsAction}
-      {!hideRecords && !recordsAction ? <button type="button" className={`inv-desk-action${recordsDisclosure ? " inv-desk-action--records" : ""}`} data-row-action="records"
+      {!subset ? recordsAction : null}
+      {!subset && !hideRecords && !recordsAction ? <button type="button" className={`inv-desk-action${recordsDisclosure ? " inv-desk-action--records" : ""}`} data-row-action="records"
         aria-expanded={recordsDisclosure?.expanded} aria-controls={recordsDisclosure?.controls}
         onClick={(event) => {
           event.currentTarget.focus({ preventScroll: true });
@@ -742,13 +751,13 @@ export function DeskRowActions({
         }} aria-label={`Open vehicle records for ${name}`} title="Open vehicle records">
         <FileText size={16} aria-hidden="true" />Records{recordsDisclosure ? <ChevronDown size={14} aria-hidden="true" className={recordsDisclosure.expanded ? "is-expanded" : undefined}/> : null}
       </button> : null}
-      {includeServiceLink ? <WorkspaceLink className="inv-desk-action" data-row-action="service" preserveOrigin to={`/service?vin=${encodeURIComponent(vehicle.vin)}`}
+      {!subset && includeServiceLink ? <WorkspaceLink className="inv-desk-action" data-row-action="service" preserveOrigin to={`/service?vin=${encodeURIComponent(vehicle.vin)}`}
         aria-label={`Open service status for ${name}`} title="Open service status">
         Service
       </WorkspaceLink> : null}
-      {canTrack ? <button type="button" className="inv-desk-action" data-row-action="track-movement"
+      {subset !== "valuation" && canTrack ? <button type="button" className="inv-desk-action" data-row-action="track-movement"
         onClick={() => onTrackMovement?.(vehicle)} aria-label={`Track movement for ${name}`} title="Track movement"><Truck size={16} aria-hidden="true" />Track</button> : null}
-      {canCreateMove ? <button type="button" className="inv-desk-action"
+      {subset !== "valuation" && canCreateMove ? <button type="button" className="inv-desk-action"
         data-row-action={moveAction?.intent === "direct" ? "move-vehicle" : "request-vehicle"}
         onClick={() => {
           if (moveAction && onMoveVehicle) onMoveVehicle(vehicle, moveAction.intent);
@@ -756,19 +765,19 @@ export function DeskRowActions({
         }}
         aria-label={`${moveAction?.label} ${name}`}
         title={moveAction?.label}><Truck size={16} aria-hidden="true" />{moveAction?.shortLabel}</button> : null}
-      <button type="button" className="inv-desk-action inv-desk-action--save" data-row-action="shortlist"
+      {subset !== "movement" ? <button type="button" className="inv-desk-action inv-desk-action--save" data-row-action="shortlist"
         aria-label={saved ? `Remove ${vehicle.stockNumber} from shortlist` : `Save ${vehicle.stockNumber} to shortlist`}
         aria-pressed={saved} title={shortlistWriteBlocked ? "Saved lists are not ready" : saved ? "Remove from shortlist" : "Save to shortlist"} disabled={shortlistWriteBlocked} onClick={() => shortlist.toggle(vehicle)}>
-        <Heart size={14} aria-hidden="true" fill={saved ? "currentColor" : "none"} />{saved ? "Saved" : "Save"}
-      </button>
-      {listingUrl && !hideListing ? onOpenListing ? (
+        <Heart size={14} aria-hidden="true" fill={saved ? "currentColor" : "none"} />{!subset ? saved ? "Saved" : "Save" : null}
+      </button> : null}
+      {subset !== "movement" && listingUrl && !hideListing ? onOpenListing ? (
         <button type="button" className="inv-desk-action inv-desk-action--listing" data-row-action="listing"
           title="Open listing" aria-label={`Open listing for ${name}`} onClick={() => onOpenListing(vehicle)}>
-          Listing <ExternalLink size={13} aria-hidden="true" />
+          {!subset ? "Listing " : null}<ExternalLink size={13} aria-hidden="true" />
         </button>
       ) : <a className="inv-desk-action inv-desk-action--listing" data-row-action="listing" href={listingUrl}
         target="_blank" rel="noopener noreferrer" title="Open listing" aria-label={`Open listing for ${name} in a new tab`}>
-        Listing <ExternalLink size={13} aria-hidden="true" />
+        {!subset ? "Listing " : null}<ExternalLink size={13} aria-hidden="true" />
       </a> : null}
     </div>
   );
@@ -888,48 +897,26 @@ interface VehicleRowProps {
 }
 
 const DeskRow = memo(function DeskRow({ vehicle, selected, priority, recordsExpanded, onOpenRecords, handlers, viewerStore }: VehicleRowProps) {
-  const hasResources = vehicleResourceCatalog(vehicle).some((resource) => resource.href || resource.hasCapturedData);
-  // One tbody per vehicle keeps its main row and source-signal row together, so
-  // striping, hover and selection are one rule and a filtered list never
-  // re-renders untouched rows just to flip their stripe.
-  return (
-    <tbody className={`inv-desk-vehicle-rows${selected ? " is-selected" : ""}`} data-inventory-vehicle-rows={vehicle.id}>
-      <tr
-        className={`inv-desk-row${selected ? " is-selected" : ""}`}
-        data-has-resources={hasResources ? "true" : "false"}
-        data-stock-number={vehicle.stockNumber}
-        data-inventory-vehicle-trigger={vehicle.id}
-        data-hold-state={vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
-        data-has-movement={vehicleMovementStatus(vehicle) ? "true" : "false"}
-        onClick={() => handlers.onSelectVehicle(vehicle)}
-      >
-        <td className="inv-desk-td inv-desk-td--vehicle" data-column="vehicle">
-          <DeskVehicleCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} priority={priority} />
-        </td>
-        <td className="inv-desk-td inv-desk-td--num" data-column="price">
-          <DeskPriceCell vehicle={vehicle} />
-        </td>
-        <td className="inv-desk-td" data-column="configuration">
-          <DeskConfigurationCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} />
-        </td>
-        <td className="inv-desk-td" data-column="status">
-          <DeskStatusCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} onOpenSourceRecord={handlers.onOpenSourceRecord} viewerStore={viewerStore} />
-        </td>
-        <td className="inv-desk-td inv-desk-td--actions" data-column="actions">
-          <DeskRowActions
-            vehicle={vehicle}
-            {...handlers}
-            recordsAction={<RecordsLauncher vehicle={vehicle} expanded={recordsExpanded} onOpenRecords={onOpenRecords} className="inv-desk-action inv-desk-action--records inventory-records-launch" chevron={false} />}
-          />
-        </td>
-      </tr>
-      {hasResources ? <tr className={`inv-desk-scan-row${selected ? " is-selected" : ""}`}>
-        <td colSpan={5}>
-          <VehicleResourceCards vehicle={vehicle} variant="scan" onOpenSection={target => handlers.onSelectVehicle(vehicle, target)} />
-        </td>
-      </tr> : null}
-    </tbody>
-  );
+  const resources = vehicleOverviewResources(vehicle);
+  const equipment = resources.find(resource => ['window-sticker', 'vauto'].includes(resource.id));
+  const history = resources.find(resource => resource.id === 'autocheck');
+  const oasis = resources.find(resource => resource.id === 'oasis');
+  const source = (resource: typeof equipment) => resource ? <div className="inv-desk-source vehicle-resources vehicle-resources--scan" onClick={stopRowSelection}><VehicleResourceScan resource={resource} vehicle={vehicle} onOpenSection={target => handlers.onSelectVehicle(vehicle, target)}/></div> : null;
+  return <tbody className={`inv-desk-vehicle-rows${selected ? " is-selected" : ""}`} data-inventory-vehicle-rows={vehicle.id}>
+    <tr className={`inv-desk-row${selected ? " is-selected" : ""}`} data-stock-number={vehicle.stockNumber} data-inventory-vehicle-trigger={vehicle.id}
+      data-hold-state={vehicle.dealerMail.hasActiveHold === true ? "held" : vehicle.dealerMail.hasActiveHold === false ? "clear" : "unknown"}
+      data-has-movement={vehicleMovementStatus(vehicle) ? "true" : "false"} onClick={() => handlers.onSelectVehicle(vehicle)}>
+      <td className="inv-desk-td inv-desk-td--vehicle" data-column="vehicle"><DeskVehicleCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} priority={priority}/></td>
+      <td className="inv-desk-td" data-column="price"><DeskPriceCell vehicle={vehicle}/><DeskRowActions vehicle={vehicle} {...handlers} subset="valuation"/></td>
+      <td className="inv-desk-td" data-column="configuration"><div className="inv-desk-configuration-record"><DeskConfigurationCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle}/>{source(equipment) ?? <p className="inv-desk-quiet">Equipment not captured</p>}</div></td>
+      <td className="inv-desk-td" data-column="status"><DeskStatusCell vehicle={vehicle} onSelectVehicle={handlers.onSelectVehicle} onOpenSourceRecord={handlers.onOpenSourceRecord} viewerStore={viewerStore}/><DeskRowActions vehicle={vehicle} {...handlers} subset="movement"/></td>
+      <td className="inv-desk-td" data-column="records"><div className="inv-desk-records-record">
+        {source(history) ?? <p className="inv-desk-quiet inv-desk-history-missing">History not captured</p>}
+        {source(oasis) ?? <p className="inv-desk-quiet inv-desk-source-missing">{/^(ford|lincoln)$/i.test(vehicle.make?.trim() ?? '') ? 'OASIS not captured' : 'OASIS covers Ford and Lincoln only'}</p>}
+        <RecordsLauncher vehicle={vehicle} expanded={recordsExpanded} onOpenRecords={onOpenRecords} className="inv-desk-action inv-desk-action--records inventory-records-launch" chevron={false}/>
+      </div></td>
+    </tr>
+  </tbody>;
 });
 
 function useRecordsPanel(vehicles: InventoryVehicle[]) {
@@ -1000,9 +987,7 @@ export function InventoryTable({
               <SortHeader label="Operations" column="status"
                 options={[...LOCATION_SORT_OPTIONS, ...STATUS_SORT_OPTIONS, ...CHANGE_SORT_OPTIONS]}
                 sorts={sorts} onSortChange={onSortChange} />
-              <th scope="col" className="inv-desk-th inv-desk-th--actions" data-column="actions">
-                <span className="inv-desk-th__label">Actions</span>
-              </th>
+              <th className="inv-desk-th inv-desk-th--records" scope="col">Records</th>
             </tr>
           </thead>
           {vehicles.map((vehicle, index) => (
@@ -1050,13 +1035,13 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
     value: formatFactoryPrice(factoryPrice.base.value, factoryPrice.base.currency),
   };
   const operationalUpdate = movementStatus?.label || (recentChange?.kind !== "other" ? recentChange?.shortLabel : null);
-  const holdToolsAvailable = vehicle.manualHold?.state !== "active" && vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
+  const manualActive = vehicle.manualHold?.state === 'active' || vehicle.manualHold?.state === 'requested';
+  const holdToolsAvailable = !manualActive && vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
   const hasDocumentEvidence = Object.values(mobileDocumentAvailability(vehicle)).some(Boolean);
   // The holder is already role-redacted by vehicleOperationalStatus.
   // Keep that useful context on the compact SRP instead of making staff
   // open the vehicle just to see who owns the current hold.
   const compactHoldLabel = holdStatus.label;
-  const manualActive = vehicle.manualHold?.state === 'active';
   const manualExpected = manualActive ? compactInventoryDate(vehicle.manualHold?.expectedDeliveryDate) : null;
   const importedStatus = importedHoldOperationalStatus(vehicle);
   const importedDetail = manualActive ? importedHoldDetail(vehicle) : null;
@@ -1111,9 +1096,9 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
           >
             <strong>{currentLocation.label}</strong><span aria-hidden="true" className="inventory-mobile-hold__separator">·</span>
             <span>{compactHoldLabel}</span>
-            {manualExpected ? <small>Manual expected {manualExpected}</small> : null}
+            {manualExpected ? <small>Expected {manualExpected}</small> : null}
           </button>
-          {manualActive ? <dl className="inventory-mobile-imported-hold" aria-label="Imported hold evidence"><div><dt>{vehicle.operationalEvidence ? "Imported reports" : "DealerMail"}</dt><dd>
+          {manualActive ? <dl className="inventory-mobile-imported-hold" aria-label="Reported hold evidence"><div><dt>{vehicle.operationalEvidence ? "Reports" : "DealerMail"}</dt><dd>
             <span>{vehicle.operationalEvidence ? importedHoldSummary(vehicle) : importedStatus.label}</span>{importedDetail ? <small>{importedDetail}</small> : null}
           </dd></div></dl> : null}
           {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <button type="button"

@@ -655,8 +655,8 @@ export function VehicleDocuments({ vehicle }: { vehicle: InventoryVehicle }) {
 
           {openRecallCount ? (
             <ul className="inventory-vehicle-document__recall-list" aria-label="Open field service action details">
-              {fordOasis.openFieldServiceActions.map((action) => (
-                <li key={action.code}>
+              {fordOasis.openFieldServiceActions.map((action, index) => (
+                <li key={action.code || index}>
                   <b>{action.code}</b>
                   <span>{sourceDistanceText(sourceDisplayText(action.description)) || "Details unavailable"}</span>
                 </li>

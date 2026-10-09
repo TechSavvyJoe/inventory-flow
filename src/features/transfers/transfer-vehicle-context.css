@@ -4,7 +4,7 @@
 #root .mif-transfer-feature .inventory-service-link { margin: 0; font-size: 14px; }
 #root .mif-transfer-feature .move-request-current-location { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; padding: 8px 20px; border-bottom: 1px solid var(--ifx-neutral-300); color: var(--ifx-neutral-700); font: 400 14px/1.45 var(--font-app); }
 #root .mif-transfer-feature .move-request-current-location strong { color: var(--ifx-neutral-900); font-weight: 600; }
-#root .simple-transfer-tracker .simple-move-heading { display: block; min-width: 0; margin: 0; padding: 0 0 var(--ifx-space-2); border: 0; border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-neutral-300); background: var(--ifx-neutral-0); }
+#root .simple-transfer-tracker .simple-move-heading { display: block; min-width: 0; margin: 0; padding: 0 0 var(--ifx-space-2); border: 0; border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-neutral-300); background: var(--ifx-neutral-100); }
 .simple-transfer-tracker .simple-move-heading .ifx-ledger-heading__row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; overflow: visible; }
 .simple-transfer-tracker .simple-move-heading .ifx-ledger-heading__label { padding: 0; background: transparent; }
 .simple-transfer-tracker .simple-move-heading .ifx-ledger-heading__label::after { display: none; }

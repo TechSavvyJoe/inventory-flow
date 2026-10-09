@@ -318,9 +318,10 @@ export async function appReadiness(env) {
   // is not ready when any required write surface answers MIGRATION_REQUIRED.
   const dispositionStorage=repo.database.dispositionsEnabled===true
   const savedListsStorage=repo.database.savedVehicleListsEnabled===true
+  const manualHoldApprovalStorage=repo.database.manualHoldApprovalsEnabled===true
   const manualHoldStorage=repo.database.manualHoldsEnabled===true
   return {
-    ready:dispositionStorage&&savedListsStorage&&manualHoldStorage,dispositionStorage,savedListsStorage,manualHoldStorage,reportDate:bootstrap.meta.reportDate,bundleSha256,
+    ready:dispositionStorage&&savedListsStorage&&manualHoldStorage&&manualHoldApprovalStorage,dispositionStorage,savedListsStorage,manualHoldStorage,manualHoldApprovalStorage,reportDate:bootstrap.meta.reportDate,bundleSha256,
     counts:{inventory:bootstrap.vehicles.length,managerDispositions:bootstrap.managerDispositions?.length??0,transfers:bootstrap.transfers.length,attention:bootstrap.attention.length},
     bootstrapBytes:encoder.encode(JSON.stringify(bootstrap)).byteLength,
   }

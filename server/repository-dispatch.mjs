@@ -103,6 +103,7 @@ export function dispositionsEnabled(context, ...args) {
   return invoke(context, 'dispositionsEnabled', args)
 }
 
+export function manualHoldApprovalsEnabled(context) { return invokeOptional(context, 'manualHoldApprovalsEnabled', [], false) }
 export function manualHoldsEnabled(context) { return invokeOptional(context, 'manualHoldsEnabled', [], false) }
 export function listManualHoldEvents(context) { return invokeOptional(context, 'listManualHoldEvents', [], []) }
 export function insertManualHoldEvent(context, row) { return invoke(context, 'insertManualHoldEvent', [row]) }

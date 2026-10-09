@@ -32,7 +32,7 @@ describe('provider-neutral vehicle evidence', () => {
     expect(screen.getByText('Retained report · unverified')).toBeInTheDocument()
     cleanup()
     render(<ProviderEvidence vehicle={premiumVehicle({ operationalEvidence: { records: [] } })} />)
-    expect(screen.getByText('No imported observations supplied. Manual controls remain available.')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Imported inventory evidence' })).toHaveTextContent('No imported observations supplied. Inventory Flow controls remain available.')
   })
   it('displays supplied CARFAX service events without declaring Ready or complete lifetime history', () => {
     render(<ServiceHistory vehicle={premiumVehicle({ fordOasis: null, serviceHistory: { reports: [report] } })} />)

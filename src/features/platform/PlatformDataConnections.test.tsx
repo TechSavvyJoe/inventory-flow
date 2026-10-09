@@ -24,6 +24,29 @@ const start = async (sourceData = sources) => {
 }
 
 describe('Source and OEM administration workbench', () => {
+  it('labels every empty pull-history filter with its selected request state', async () => {
+    await start()
+    fireEvent.click(screen.getByRole('button', { name: /^Pull requests/ }))
+    const queue=screen.getByRole('region', { name: 'Pull request queue' })
+    const filter=within(queue).getByRole('combobox', { name: 'Pull request state filter' })
+    for (const [value,message] of [
+      ['all','No pull requests.'],
+      ['queued','No waiting pull requests.'],
+      ['running','No running pull requests.'],
+      ['completed','No completed pull requests.'],
+      ['failed','No stopped pull requests.'],
+      ['reconciliation_required','No pull requests need reconciliation.'],
+      ['cancelled','No cancelled pull requests.'],
+    ]) {
+      fireEvent.change(filter, { target: { value } })
+      expect(filter).toHaveValue(value)
+      expect(within(queue).getByText(message)).toBeInTheDocument()
+      if(value!=='cancelled')expect(within(queue).queryByText('No cancelled pull requests.')).not.toBeInTheDocument()
+    }
+    fireEvent.change(filter, { target: { value: 'unknown-state' } })
+    expect(within(queue).getByText('No pull requests match this filter.')).toBeInTheDocument()
+  })
+
   it('combines dealership, OEM and preference filters without leaving an excluded source in the inspector', async () => {
     await start()
     fireEvent.change(screen.getByRole('combobox', { name: 'Connection dealership filter' }), { target: { value: 'synthetic-south' } })

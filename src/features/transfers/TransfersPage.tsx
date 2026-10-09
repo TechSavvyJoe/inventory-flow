@@ -657,13 +657,13 @@ export function TransfersPage() {
     >
       <SourceWarning meta={data.meta} />
       <FlowPageHeader className="transfers-page-header" icon={<ArrowLeftRight aria-hidden="true" />} title="Vehicle moves"
-        actions={<>{(requestedId || requestedVin || origin) ? <Link className={flowButtonClassName({ variant: 'secondary', size: 'md' })} to={safeReturnTo}><ArrowLeft size={18} aria-hidden="true" />{workspaceReturnLabel(safeReturnTo, 'Back to vehicle moves')}</Link> : null}<FlowButton className="transfer-header-create" variant="primary" size="md" aria-label="Start a vehicle move" onClick={() => navigate(withWorkspaceReturnPath('/transfers/new', currentPath))} iconBefore={<Plus aria-hidden="true" />}>Start a move</FlowButton></>} />
-
+        description={storeScope === 'home' ? `Vehicles requested by, owned by, or currently at ${homeStore}.` : 'Moves you can access across the group.'}
+        actions={<>{(requestedId || requestedVin || origin) ? <Link className={flowButtonClassName({ variant: 'secondary', size: 'md' })} to={safeReturnTo}><ArrowLeft size={18} aria-hidden="true" />{workspaceReturnLabel(safeReturnTo, 'Back to vehicle moves')}</Link> : null}<FlowButton className="transfer-header-create" variant="primary" size="md" aria-label="Start a vehicle move" onClick={() => navigate(withWorkspaceReturnPath('/transfers/new', currentPath))} iconBefore={<Plus aria-hidden="true" />}>Start a move</FlowButton></>}>
       <div className="move-store-scope" role="group" aria-label="Vehicle move stores">
         <FlowButton size="md" variant={storeScope === 'home' ? 'primary' : 'secondary'} aria-pressed={storeScope === 'home'} onClick={() => { setStoreScope('home'); setLinkedHomeStore(null) }}>My store <span className="move-store-scope-location">{homeStore}</span></FlowButton>
         <FlowButton size="md" variant={storeScope === 'group' ? 'primary' : 'secondary'} aria-pressed={storeScope === 'group'} onClick={() => { setStoreScope('group'); setLinkedHomeStore(null) }}>All stores</FlowButton>
-        <p>{storeScope === 'home' ? `Vehicles requested by, owned by, or currently at ${homeStore}.` : 'Moves you can access across the group.'}</p>
       </div>
+      </FlowPageHeader>
 
       {details.length === 0 ? (
         <div className="transfers-empty-surface">

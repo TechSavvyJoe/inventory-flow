@@ -25,7 +25,7 @@ export interface ActionRow {
 }
 
 const TRANSPORT_TYPES = ['transfer_next_action', 'return_overdue', 'location_exception']
-const HOLD_TYPES = ['past_expected_hold', 'hold_alert', 'vehicle_alert']
+const HOLD_TYPES = ['past_expected_hold', 'hold_alert', 'vehicle_alert', 'hold_request']
 // Conditions that describe group data rather than one store's next step.
 const INFORMATIONAL_TYPES: Record<string, AttentionInformationalReason> = {
   source_freshness: 'source_health',
@@ -134,7 +134,22 @@ export function actionCenterItems(data: BootstrapData, viewer: ActionViewer): At
       allowedActions: [], events: [], lastUpdatedAt: issue.updatedAt,
     }
   })
-  return [...items, ...serviceItems, ...issueItems].map(item => classify(item, viewer))
+  const holdRequests: AttentionItem[] = (data.vehicles ?? []).flatMap(vehicle => {
+    const hold = vehicle.manualHold
+    if (hold?.state !== 'requested') return []
+    const store = hold.ownerStore ?? vehicle.homeStore
+    const actionable = hold.canApprove === true
+    return [{ id: `hold-request-${vehicle.vin}`, type: 'hold_request', status: 'open', priority: 'high', severity: 'info',
+      label: 'Review hold request', vehicleName: vehicle.vehicleName, stockNumber: vehicle.stockNumber, vin: vehicle.vin,
+      store, actionStore: store, relatedStores: [store], owner: `${store} manager`,
+      actionability: actionable ? 'actionable' : 'informational', informationalReason: actionable ? null : store === viewer.store ? 'role_scope' : 'other_store',
+      whyItMatters: 'A salesperson has requested a hold. Manager approval has not been recorded.',
+      recommendedAction: 'Review the request and supporting source evidence, then approve or decline the hold.',
+      href: `/inventory?scope=group&vin=${encodeURIComponent(vehicle.vin)}&tab=hold`, allowedActions: [], events: [],
+      lastUpdatedAt: hold.updatedAt ?? undefined,
+    } satisfies AttentionItem]
+  })
+  return [...items, ...serviceItems, ...issueItems, ...holdRequests].map(item => classify(item, viewer))
 }
 
 /**
@@ -189,6 +204,7 @@ export function taskDescription(item: AttentionItem) {
   return item.recommendedAction
 }
 export function taskLinkLabel(item: AttentionItem) {
+  if (item.type === 'hold_request') return 'Review hold request'
   if (item.type === 'vehicle_issue') return `Open ${item.label.toLowerCase()}`
   if (item.type === 'vehicle_alert') return 'Review vehicle'
   const category = actionCategory(item)

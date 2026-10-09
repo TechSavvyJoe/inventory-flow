@@ -17,7 +17,7 @@ function fakeD1({ dispositions = true } = {}) {
   const sqlite = new DatabaseSync(':memory:')
   openDatabases.push(sqlite)
   sqlite.exec('PRAGMA foreign_keys = ON')
-  for (const name of ['0001_initial.sql', '0002_app_access.sql', '0003_transport_assignment_identity.sql', '0007_service_readiness.sql', '0008_service_intake.sql', '0011_vehicle_issues.sql', '0012_attention_event_input_hash.sql', ...(dispositions ? ['0013_vehicle_dispositions.sql', '0015_manual_inventory_controls.sql'] : [])]) {
+  for (const name of ['0001_initial.sql', '0002_app_access.sql', '0003_transport_assignment_identity.sql', '0007_service_readiness.sql', '0008_service_intake.sql', '0011_vehicle_issues.sql', '0012_attention_event_input_hash.sql', ...(dispositions ? ['0013_vehicle_dispositions.sql', '0015_manual_inventory_controls.sql', '0017_manual_hold_approval.sql'] : [])]) {
     sqlite.exec(readFileSync(new URL(`../../cloudflare/migrations/${name}`, import.meta.url), 'utf8'))
   }
   return {

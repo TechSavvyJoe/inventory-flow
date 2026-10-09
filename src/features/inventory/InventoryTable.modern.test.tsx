@@ -97,14 +97,14 @@ describe('modern inventory result access', () => {
       vehicle.holdEvidence = [{ id: 'synthetic-imported-hold', position: 'primary', salesperson: 'Synthetic source owner', heldBy: 'Synthetic source holder', expectedDeliveryDate: '2026-10-02' }];
       if (layout === 'desktop') render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
       else render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} />);
-      const manualFact = layout === 'desktop' ? screen.getByRole('button', { name: /Open hold details/ }).closest('dd')! : screen.getByRole('button', { name: /Open hold details/ });
-      const importedFact = layout === 'desktop' ? screen.getByText('DealerMail', { selector: 'dt' }).closest('div')! : screen.getByLabelText('Imported hold evidence');
-      return { manualFact, importedFact: layout === 'desktop' ? importedFact! : screen.getByLabelText('Imported hold evidence') };
+      const manualFact = layout === 'desktop' ? screen.getByRole('group', { name: 'Inventory Flow hold' }) : screen.getByRole('button', { name: /Open hold details/ });
+      const importedFact = screen.getByLabelText('Reported hold evidence');
+      return { manualFact, importedFact: importedFact };
     }
     it.each(['active', 'none', 'stale'] as const)('qualifies %s imported facts separately from the manual expected date', imported => {
       const { manualFact, importedFact } = renderManual(imported);
-      expect(manualFact).toHaveTextContent('Manual hold');
-      expect(manualFact).toHaveTextContent('Manual expected 10/09/2026');
+      expect(manualFact).toHaveTextContent('Held');
+      expect(manualFact).toHaveTextContent('Expected 10/09/2026');
       expect(manualFact).not.toHaveTextContent('10/02/2026');
       expect(manualFact).not.toHaveTextContent('Synthetic source holder');
       expect(importedFact).toHaveTextContent('DealerMail');
@@ -251,9 +251,9 @@ describe('modern inventory result access', () => {
     expect(row).toHaveTextContent('In transit outbound');
     expect(document.querySelector('.inventory-grid-shell--desk')).toBeInTheDocument();
     expect(document.querySelector('.inv-desk-table')).toBeInTheDocument();
-    // Each vehicle has one comparison row plus a shallow full-width resource strip.
+    // One record keeps comparison facts, actions and source ledgers in five cells.
     expect(document.querySelectorAll('tbody tr.inv-desk-row')).toHaveLength(1);
-    expect(row.nextElementSibling).toHaveClass('inv-desk-scan-row');
+    expect(row.nextElementSibling).toBeNull();
     expect(document.querySelector('.inv-desk-resource-row')).toBeNull();
     expect(row).toHaveTextContent('H240512');
     expect(row).toHaveTextContent('1FTFW1E84RKF12345');
@@ -261,7 +261,7 @@ describe('modern inventory result access', () => {
     expect(within(row).getByRole('button', { name: 'Copy VIN: 1FTFW1E84RKF12345' })).toBeInTheDocument();
     const vehicleCell = row.querySelector('td[data-column="vehicle"]') as HTMLElement;
     expect(vehicleCell.querySelector('.inv-desk-vehicle__title strong')).toHaveTextContent('2024 Ford F-150');
-    expect(vehicleCell.querySelector('.inv-desk-vehicle__title strong')).toHaveAttribute('title', '2024 Ford F-150 XLT');
+    expect(vehicleCell.querySelector('.inv-desk-vehicle__title')).toHaveAttribute('title', '2024 Ford F-150 XLT');
     expect(row.querySelectorAll('.vehicle-certified-badge')).toHaveLength(1);
     expect(row.querySelector('td[data-column="price"]')).toHaveTextContent('$46,995');
     const metricsCell = row.querySelector('td[data-column="price"]') as HTMLElement;
@@ -277,7 +277,8 @@ describe('modern inventory result access', () => {
     expect(equipmentCell.querySelector('button')).toHaveAttribute('title', expect.stringContaining('XLT Sport Appearance Package'));
     expect(equipmentCell.querySelector('button')).toHaveAttribute('title', expect.stringContaining('Trailer Tow Package (53A)'));
     expect(row.querySelector('.inv-desk-status__detail')).toHaveTextContent('Customer appointment');
-    expect(row.querySelector(':scope > td[data-column="actions"] .inv-desk-actions')).toBeInTheDocument();
+    expect(within(row).getByRole('group', { name: 'Price actions for 2024 Ford F-150 XLT' })).toBeInTheDocument();
+    expect(within(row).getByRole('group', { name: 'Movement actions for 2024 Ford F-150 XLT' })).toBeInTheDocument();
     const activity = within(row).getByRole('button', { name: /View change history for 2024 Ford F-150 XLT: Price changed/i });
     expect(activity).toHaveTextContent('Price changed');
     expect(activity).toHaveAttribute('title', 'Price changed today');
@@ -285,16 +286,16 @@ describe('modern inventory result access', () => {
     expect(Array.from(document.querySelectorAll('thead th')).map((header) =>
       header.querySelector('.inventory-sort-header > span:first-child')?.textContent?.trim() ?? header.textContent?.trim(),
     )).toEqual([
-      'Vehicle', 'Price & age', 'Configuration', 'Operations', 'Actions',
+      'Vehicle', 'Price & age', 'Configuration', 'Operations', 'Records',
     ]);
     expect(Array.from(row.querySelectorAll<HTMLElement>('td[data-column]')).map((cell) => cell.dataset.column)).toEqual([
-      'vehicle', 'price', 'configuration', 'status', 'actions',
+      'vehicle', 'price', 'configuration', 'status', 'records',
     ]);
     expect(row.querySelectorAll('td')).toHaveLength(5);
     // Source signals stay visible while complete records remain collapsed.
-    expect(within(row.nextElementSibling as HTMLElement).getByText('Score')).toBeVisible();
-    expect(within(row.nextElementSibling as HTMLElement).getByText('92')).toBeVisible();
-    expect(row.nextElementSibling!.querySelector('[data-resource="window-sticker"]')).toBeNull();
+    expect(within(row.querySelector('td[data-column="records"]') as HTMLElement).getByText('Score')).toBeVisible();
+    expect(within(row.querySelector('td[data-column="records"]') as HTMLElement).getByText('92')).toBeVisible();
+    expect(row.querySelector('[data-resource="window-sticker"]')).toBeNull();
     expect(within(row).queryByRole('button', { name: /More actions/ })).not.toBeInTheDocument();
   });
 
@@ -310,14 +311,15 @@ describe('modern inventory result access', () => {
 
     render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
 
-    const row = screen.getByRole('row', { name: /2024 Ford F-150/ });
+    const row = screen.getByRole('button', { name: 'Copy VIN: 1FTFW1E84RKF12345' }).closest('tr')!;
     const identity = within(row).getByRole('cell', { name: /ExteriorOxford WhiteInteriorBlack/ });
     const price = within(row).getByRole('cell', { name: /Original MSRP/ });
     const configuration = within(row).getByRole('cell', { name: /18 city \/ 24 hwy MPG/ });
     const operations = within(row).getByRole('cell', { name: /Location Fowlerville.*Hold/ });
 
-    expect(within(identity).getByText('2024 Ford F-150')).toBeVisible();
-    expect(within(identity).getByText('XLT · SuperCrew pickup')).toBeVisible();
+    const command = screen.getByRole('button', { name: 'Open vehicle details for 2024 Ford F-150 XLT' }).closest('tr')!;
+    expect(within(command).getByText('2024 Ford F-150')).toBeVisible();
+    expect(within(command).getByText('XLT · SuperCrew pickup')).toBeVisible();
     expect(identity).toHaveTextContent('VIN1FTFW1E84RKF12345');
     expect(within(price).getByText('Original MSRP')).toHaveAttribute('title', 'Window sticker');
     expect(price).toHaveTextContent(/Original MSRP\s*CAD 55,600/);
@@ -442,8 +444,8 @@ describe('modern inventory result access', () => {
 
     expect(document.querySelector('.inv-desk-change')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /View change history/i })).not.toBeInTheDocument();
-    expect(document.querySelector('.inv-desk-scan-row')).toHaveTextContent('AutoCheck');
-    const historySignals = within(document.querySelector('.inv-desk-scan-row') as HTMLElement);
+    expect(document.querySelector('td[data-column="records"]')).toHaveTextContent('AutoCheck');
+    const historySignals = within(document.querySelector('td[data-column="records"]') as HTMLElement);
     expect(historySignals.getByText('Score')).toBeVisible();
     expect(historySignals.getByText('92')).toBeVisible();
   });
@@ -567,7 +569,7 @@ describe('modern inventory result access', () => {
 
     const rows = document.querySelectorAll<HTMLTableRowElement>('tbody tr.inv-desk-row');
     expect(rows).toHaveLength(2);
-    expect(document.querySelectorAll('tbody tr.inv-desk-scan-row')).toHaveLength(2);
+    expect(document.querySelectorAll('tbody tr.inv-desk-scan-row')).toHaveLength(0);
     expect(document.querySelectorAll('tbody tr.inv-desk-resource-row')).toHaveLength(0);
     for (const [index, row] of Array.from(rows).entries()) {
       const vehicle = [first, second][index];
@@ -864,7 +866,7 @@ describe('modern inventory result access', () => {
     expect(mileageSort).toHaveTextContent('#2');
     fireEvent.click(mileageSort, { shiftKey: true });
     expect(onSortChange).toHaveBeenLastCalledWith([{ key: 'price', direction: 'asc' }, { key: 'mileage', direction: 'asc' }]);
-    for (const header of ['Vehicle', 'Price & age', 'Configuration', 'Operations', 'Actions']) expect(screen.getByRole('columnheader', { name: header })).toBeInTheDocument();
+    for (const header of ['Vehicle', 'Price & age', 'Configuration', 'Operations', 'Records']) expect(screen.getByRole('columnheader', { name: header })).toBeInTheDocument();
     for (const [menu, categories] of [
       ['More Vehicle sort options', ['Make / model', 'Year', 'Source update', 'AutoCheck score', 'Vehicle documents']],
       ['More Price & age sort options', ['Original MSRP', 'Days', 'Inventory date']],
@@ -889,23 +891,28 @@ describe('modern inventory result access', () => {
     const onTrackMovement = vi.fn();
     const props = { vehicles: [vehicle], sorts: [] as const, onSortChange: vi.fn(), onSelectVehicle, canRequestVehicle: () => true, onRequestVehicle, onTrackMovement, onOpenListing, onOpenSourceRecord };
     const { rerender } = render(<InventoryTable {...props} sorts={[]} />);
-    const actions = screen.getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' });
-    expect(within(actions).getAllByRole('button').map(button => button.getAttribute('title'))).toEqual(['View vehicle', 'Open vehicle records', 'Track movement', 'Save to shortlist', 'Open listing']);
-    expect(within(actions).getByRole('button', { name: /Open vehicle details/ })).toHaveTextContent('View vehicle');
+    const row = screen.getByRole('button', { name: /Open vehicle details/ }).closest('tr')!;
+    const actions = within(row);
+    expect(actions.getByRole('button', { name: /Open vehicle details/ })).toHaveTextContent('2024 Ford F-150');
+    expect(actions.getByRole('button', { name: /Open vehicle records/ })).toHaveAttribute('title', 'Open vehicle records');
+    expect(actions.getByRole('button', { name: /Track movement/ })).toHaveAttribute('title', 'Track movement');
+    expect(actions.getByRole('button', { name: /Save .* to shortlist/ })).toHaveAttribute('title', 'Save to shortlist');
+    expect(actions.getByRole('button', { name: /Open listing/ })).toHaveAttribute('title', 'Open listing');
     // The Operations column already carries the clickable hold signal and the
     // service link, so the action group does not duplicate them.
-    expect(within(actions).queryByRole('button', { name: /Open hold and movement details/ })).toBeNull();
-    expect(within(actions).queryByRole('link', { name: /Open service status/ })).toBeNull();
+    expect(actions.queryByRole('button', { name: /Open hold and movement details/ })).toBeNull();
+    expect(within(screen.getByRole('group', { name: 'Price actions for 2024 Ford F-150 XLT' })).queryByRole('link', { name: /Open service status/ })).toBeNull();
+    expect(within(screen.getByRole('group', { name: 'Movement actions for 2024 Ford F-150 XLT' })).queryByRole('link', { name: /Open service status/ })).toBeNull();
     expect(screen.getByRole('link', { name: /Open service status for VIN/ })).toHaveAttribute('href', `/service?vin=${vehicle.vin}`);
-    fireEvent.click(within(actions).getByRole('button', { name: /Open vehicle details/ }));
+    fireEvent.click(actions.getByRole('button', { name: /Open vehicle details/ }));
     expect(onSelectVehicle).toHaveBeenCalledExactlyOnceWith(vehicle);
-    fireEvent.click(within(actions).getByRole('button', { name: /Open vehicle records/ }));
+    fireEvent.click(actions.getByRole('button', { name: /Open vehicle records/ }));
     expect(onSelectVehicle).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Full vehicle' }));
     await waitFor(() => expect(onSelectVehicle).toHaveBeenLastCalledWith(vehicle, 'data'));
-    fireEvent.click(within(actions).getByRole('button', { name: /Track movement/ }));
+    fireEvent.click(actions.getByRole('button', { name: /Track movement/ }));
     expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(vehicle);
-    fireEvent.click(within(actions).getByRole('button', { name: /Open listing/ }));
+    fireEvent.click(actions.getByRole('button', { name: /Open listing/ }));
     expect(onOpenListing).toHaveBeenCalledExactlyOnceWith(vehicle);
     expect(onSelectVehicle).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole('button', { name: /Review DealerMail handoff/ }));

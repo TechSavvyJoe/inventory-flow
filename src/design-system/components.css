@@ -1,4 +1,4 @@
-.ifx-page-header { display:grid; grid-template-columns:minmax(0,1fr) auto; min-width:0; background:var(--ifx-workspace-header-background); color:var(--ifx-workspace-header-ink); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
+.ifx-page-header { display:grid; grid-template-columns:minmax(0,1fr) auto; min-width:0; background:var(--ifx-workspace-header-background); color:var(--ifx-workspace-header-ink); border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
 .ifx-page-header__row { display:flex; align-items:center; gap:var(--ifx-space-2); min-width:0; min-height:calc(var(--ifx-control-height-md) + var(--ifx-space-3)); padding:var(--ifx-space-1) var(--ifx-space-3); }
 .ifx-page-header__icon { display:grid; place-items:center; flex:none; width:var(--ifx-space-8); height:var(--ifx-space-8); border-radius:var(--ifx-radius-sm); background:var(--blue-050); color:var(--blue-600); }
 .ifx-page-header__icon svg { width:var(--ifx-icon-heading-size); height:var(--ifx-icon-heading-size); stroke-width:2; }
@@ -10,7 +10,7 @@
 .ifx-page-header__controls { padding:var(--ifx-space-1) var(--ifx-space-3); }
 .ifx-page-header__actions { flex:none; margin-left:auto; }
 .ifx-page-header__facts { display:flex; flex-wrap:wrap; grid-column:1 / -1; align-items:center; gap:var(--ifx-space-1) var(--ifx-space-3); padding:0 var(--ifx-space-3) var(--ifx-space-2); color:var(--ink-600); font-size:var(--ifx-text-sm); }
-.ifx-ledger-heading { min-width:0; color:var(--ink-900); background:var(--ifx-neutral-0); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-workspace-ledger-border); }
+.ifx-ledger-heading { min-width:0; color:var(--ink-900); background:var(--ifx-neutral-100); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
 .ifx-ledger-heading__row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; min-width:0; }
 .ifx-ledger-heading__label { display:flex; align-items:center; min-width:0; max-width:100%; padding:var(--ifx-space-2) var(--ifx-space-3); }
 .ifx-ledger-heading .ifx-ledger-heading__title { display:flex; align-items:center; gap:var(--ifx-space-2); margin:0; color:var(--ink-900); font-size:var(--ifx-text-lg); font-weight:var(--ifx-weight-semibold); line-height:var(--ifx-leading-heading); }

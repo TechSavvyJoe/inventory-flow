@@ -152,17 +152,16 @@ describe('manager-friendly inventory UI', () => {
     expect(within(rowsSelect).getAllByRole('option').map((option) => option.textContent)).toEqual([
       '10', '15', '20', '25', '50', '100',
     ])
-    // Paging counts vehicles, independently of their passive source scan.
-    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(10)
-    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-scan-row')).toHaveLength(10)
+    // Each comparison row now includes its source evidence; paging still counts vehicles.
+    const vehicleRows = () => within(screen.getByRole('table')).getAllByRole('row')
+      .filter(row => within(row).queryAllByRole('cell').length > 0)
+    expect(vehicleRows()).toHaveLength(10)
 
     fireEvent.change(rowsSelect, { target: { value: '20' } })
-    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(20)
-    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-scan-row')).toHaveLength(20)
+    expect(vehicleRows()).toHaveLength(20)
     expect(screen.getByText('Showing 1–20 of 28')).toBeInTheDocument()
     fireEvent.change(rowsSelect, { target: { value: '100' } })
-    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-row')).toHaveLength(28)
-    expect(document.querySelectorAll('.inv-desk-table tbody tr.inv-desk-scan-row')).toHaveLength(28)
+    expect(vehicleRows()).toHaveLength(28)
     expect(screen.getByText('Showing 1–28 of 28')).toBeInTheDocument()
   })
 

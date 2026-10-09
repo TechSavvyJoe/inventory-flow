@@ -286,12 +286,12 @@ describe('safe independent provider evidence', () => {
     expect(result.reasons).toEqual(expect.arrayContaining(['source_hold_after_manual_release', 'delivered_with_hold', 'provider_hold_disagreement', 'provider_disposition_mismatch']))
     expect(JSON.stringify(result.evidence)).not.toContain('Private')
     expect(vehicle).toEqual(before)
-    expect(inventoryDecision({ ...vehicle, appDisposition: { code: null } })).toMatchObject({ status: 'held', label: 'Imported hold' })
+    expect(inventoryDecision({ ...vehicle, appDisposition: { code: null } })).toMatchObject({ status: 'held', label: 'Held' })
   })
   it('preserves the legacy held observation when a supplied DealerMail provider reports no hold', () => {
     const vehicle = { vin: VIN, hold: { state: 'primary', reason: 'Private legacy hold' }, manualHold: { state: 'released' }, operationalEvidence: { records: [{ ...observation, provider: 'dealermail', holdState: 'not_observed' }] } }
     const result = inventoryDecision(vehicle)
-    expect(result).toMatchObject({ status: 'held', label: 'Imported hold', importedHold: true, reviewRequired: true, comparison: 'conflict' })
+    expect(result).toMatchObject({ status: 'held', label: 'Held', importedHold: true, reviewRequired: true, comparison: 'conflict' })
     expect(result.evidence).toEqual([
       expect.objectContaining({ provider: 'legacy-dealermail', holdState: 'held', effectiveHoldState: 'held', comparison: 'conflict' }),
       expect.objectContaining({ provider: 'dealermail', holdState: 'not_observed', effectiveHoldState: 'not_observed', comparison: 'conflict' }),

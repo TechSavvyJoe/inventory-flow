@@ -4,7 +4,7 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { WorkflowError } from './workflow.mjs'
 import { SERVICE_EVENT_COLUMNS } from './service-readiness.mjs'
-import { MANUAL_HOLD_COLUMNS } from './manual-holds.mjs'
+import { MANUAL_HOLD_COLUMNS, manualHoldApprovalSchema } from './manual-holds.mjs'
 import { DISPOSITION_EVENT_COLUMNS } from './vehicle-disposition.mjs'
 import { serviceIntakeRows } from './service-intake.mjs'
 import { VEHICLE_ISSUE_COLUMNS, VEHICLE_ISSUE_EVENT_COLUMNS } from './vehicle-issues.mjs'
@@ -283,7 +283,7 @@ export function migrate(database) {
     BEFORE DELETE ON vehicle_disposition_events BEGIN SELECT RAISE(ABORT, 'Disposition history is append-only'); END;
     CREATE TABLE IF NOT EXISTS vehicle_manual_hold_events (
       id TEXT PRIMARY KEY, vin TEXT NOT NULL, version INTEGER NOT NULL CHECK (version > 0),
-      state TEXT NOT NULL CHECK (state IN ('active', 'released')),
+      state TEXT NOT NULL CHECK (state IN ('requested', 'active', 'released', 'rejected', 'cancelled')),
       customer_label TEXT, expected_delivery_date TEXT, note TEXT,
       owner_user_id TEXT NOT NULL, updated_at TEXT NOT NULL, actor TEXT NOT NULL,
       actor_user_id TEXT NOT NULL, actor_role TEXT NOT NULL CHECK (actor_role IN ('sales', 'manager', 'group_manager')),
@@ -1165,11 +1165,14 @@ export const databaseInternals = Object.freeze({
   withTransaction,
 })
 
-export function manualHoldsEnabled() { return true }
+export function manualHoldsEnabled(database) { return Boolean(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vehicle_manual_hold_events'").get()) }
+export function manualHoldApprovalsEnabled(database) { return manualHoldApprovalSchema(database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'vehicle_manual_hold_events'").get()?.sql) }
 export function listManualHoldEvents(database) {
+  if (!manualHoldsEnabled(database)) return []
   return database.prepare('SELECT * FROM vehicle_manual_hold_events ORDER BY vin, version').all()
 }
 export function insertManualHoldEvent(database, row) {
+  if (!manualHoldApprovalsEnabled(database)) throw new WorkflowError('Manual hold approvals require migration 0017 before saving.', { status: 503, code: 'MIGRATION_REQUIRED' })
   return withTransaction(database, () => {
     const latest = database.prepare('SELECT MAX(version) AS version FROM vehicle_manual_hold_events WHERE vin = ?').get(row.vin)
     if ((latest.version ?? 0) + 1 !== row.version) throw new WorkflowError('Another employee updated the hold. Review and save again.', { status: 409, code: 'MANUAL_HOLD_VERSION_CONFLICT' })

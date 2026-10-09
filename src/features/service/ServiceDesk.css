@@ -18,7 +18,7 @@
 .service-list-panel { min-width:0; }
 .service-list-toolbar { display:flex; align-items:center; gap:20px; margin:0 0 12px; }
 .service-list-toolbar>p { flex:1; margin:0; color:var(--ink-600); }
-.service-search { display:flex; flex:0 1 330px; min-width:240px; align-items:center; gap:8px; border:1px solid var(--ifx-border-subtle); border-radius:6px; padding:0 12px; }
+.service-search { display:flex; flex:0 1 330px; min-width:240px; align-items:center; gap:8px; border:1px solid var(--ifx-border-subtle); border-radius:6px; background:var(--ifx-neutral-0); padding:0 12px; }
 .service-search input { width:100%; min-width:0; height:44px; background:transparent; border:0; color:var(--ink-900); outline-offset:0; }
 .service-search button { display:grid; flex:none; width:44px; height:44px; place-items:center; margin-right:-12px; border:0; background:transparent; color:var(--ink-600); }
 .service-result-count { color:var(--ink-600); margin:0 0 10px; }
@@ -27,7 +27,7 @@
 .service-page .service-vehicle-row { display:grid; grid-template-columns:112px minmax(180px,1fr) minmax(120px,.48fr) minmax(150px,.6fr); gap:14px; width:100%; padding:12px; text-align:left; border:0; border-radius:0; align-items:center; }
 .service-page .service-vehicle-row:hover { background:var(--ifx-neutral-50); }
 .service-page .service-vehicle-row[aria-pressed=true] { background:var(--ifx-info-surface); color:var(--ink-900); box-shadow:inset 3px 0 var(--ifx-info); }
-.service-row-actions { padding:var(--ifx-space-2); gap:var(--ifx-space-1); display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-areas:"primary primary" "vehicle records"; border-top:1px solid var(--ifx-border-subtle); }
+.service-row-actions { padding:var(--ifx-space-2); gap:var(--ifx-space-1); display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-areas:"primary vehicle records"; border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-control); background:var(--ifx-neutral-100); }
 .service-row-actions :is(a,button) { min-width:0; text-align:center; white-space:normal; }
 .service-row-actions .service-row-primary-action { grid-area:primary; }
 .service-row-actions .service-row-open-vehicle { grid-area:vehicle; }
@@ -154,6 +154,7 @@
  .service-has-selection .service-page-heading,.service-has-selection .service-tabs { display:none; }
  .service-page-heading { flex-wrap:wrap; gap:var(--ifx-space-2); }.service-has-selection .service-content { grid-template-columns:minmax(0,1fr); }
  .service-has-selection .service-list-panel { display:none; }.service-editor { position:static; max-height:none; overflow:visible; border:0; padding:0; }
+ .service-row-actions { grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-areas:"primary primary" "vehicle records"; }
  .service-tabs { gap:6px; }.service-tabs button { padding:8px 5px; }
 }
 @media(max-width:500px) {

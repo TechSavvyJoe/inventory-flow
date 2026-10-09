@@ -1,5 +1,5 @@
-.provider-evidence { border-block: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); padding-block: var(--ifx-space-2); min-width: 0; }
-.provider-evidence header { display: flex; align-items: center; justify-content: space-between; gap: var(--ifx-space-2); }
+.provider-evidence { border: var(--ifx-stroke-hairline) solid var(--ifx-border-control); padding: var(--ifx-space-2) var(--ifx-space-3); min-width: 0; background: var(--ifx-neutral-0); }
+.provider-evidence header { display: flex; align-items: center; justify-content: space-between; gap: var(--ifx-space-2); margin: calc(var(--ifx-space-2) * -1) calc(var(--ifx-space-3) * -1) var(--ifx-space-2); padding: var(--ifx-space-2) var(--ifx-space-3); border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-control); background: var(--ifx-info-surface); }
 .provider-evidence h4, .provider-evidence p { margin: 0; }
 .provider-evidence h4 { font-size: var(--ifx-text-body); font-weight: var(--ifx-weight-semibold); }
 .provider-evidence header span, .provider-evidence small, .provider-evidence p { color: var(--ifx-neutral-600); font-size: var(--ifx-text-sm); }

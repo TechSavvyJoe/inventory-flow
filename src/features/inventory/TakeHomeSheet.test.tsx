@@ -81,6 +81,23 @@ describe('take-home sheet', () => {
     expect(screen.getByText('Private customer nickname', { exact:true })).toBeVisible();
   });
 
+  it('shows the prepared page count for a comparison of four vehicles', async () => {
+    const vehicles = Array.from({ length:4 }, (_, index) => ({ ...vehicle(), id:`TESTDATAEXPORT${index}`, vin:`TESTDATAEXPORT${index}`, stockNumber:`DEMO-EXPORT-${index}` }));
+    render(<TakeHomeSheet vehicles={vehicles} onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('button', { name:'Save PDF' })).toBeEnabled());
+    const plan = createComparisonPlan(vehicles.map(takeHomeModel), { wrap:value => value.split('\n') });
+    expect(plan.pages).toHaveLength(2);
+    vi.mocked(createTakeHomePdf).mockImplementationOnce(async (_models, _title, options) => {
+      options?.comparisonObserver?.(plan);
+      return new Blob(['%PDF-1.7 two-page comparison fixture'], { type:'application/pdf' });
+    });
+    expect(screen.getByRole('option', { name:/^Vehicle comparison$/ })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name:'Format' }), { target:{ value:'comparison' } });
+    await screen.findByText('Ready · 2 pages · 4 vehicles');
+    expect(screen.getAllByRole('article', { name:/Vehicle comparison · Page/ })).toHaveLength(2);
+    expect(screen.getByRole('button', { name:'Print / Save as PDF' })).toBeEnabled();
+  });
+
   it('isolates the app when opened directly and restores its opener on dismissal', async () => {
     const root = document.createElement('div');
     root.id = 'root';

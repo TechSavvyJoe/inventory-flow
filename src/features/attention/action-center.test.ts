@@ -35,6 +35,21 @@ function data(overrides: Partial<BootstrapData> = {}): BootstrapData {
 }
 
 describe('Action center triage on the client', () => {
+  it('routes pending hold requests to manager review without a generic approval or completion shortcut', () => {
+    const pending = vehicle('TESTDATAHWELL0001', 'Howell', false)
+    pending.manualHold = { vin: pending.vin, state: 'requested', version: 1, ownerStore: 'Howell', updatedAt: null,
+      expectedDeliveryDate: null, enabled: true, approvalEnabled: true, canManage: true, canApprove: true }
+    const fixture = data({ attention: [], vehicles: [pending] })
+    const request = actionCenterItems(fixture, { store: 'Howell', role: 'manager' }).find(entry => entry.type === 'hold_request')!
+    expect(request).toMatchObject({ actionability: 'actionable', owner: 'Howell manager', allowedActions: [],
+      href: '/inventory?scope=group&vin=TESTDATAHWELL0001&tab=hold' })
+    expect(request.whyItMatters).toContain('Manager approval has not been recorded')
+    pending.manualHold.canApprove = false
+    expect(actionCenterItems(fixture, { store: 'Howell', role: 'sales' }).find(entry => entry.type === 'hold_request'))
+      .toMatchObject({ actionability: 'informational', informationalReason: 'role_scope', allowedActions: [] })
+    pending.manualHold.state = 'active'
+    expect(actionCenterItems(fixture, { store: 'Howell', role: 'manager' }).some(entry => entry.type === 'hold_request')).toBe(false)
+  })
   it('retains issue tasks for vehicles absent from the feed, with no generic completion path', () => {
     const issue: VehicleIssue = { id: 'synthetic-issue', vin: 'TESTDATAHWELL0001', stockNumber: 'SYN-1', vehicleName: 'Synthetic vehicle', homeStore: 'Howell', reportStore: 'Howell', category: 'fuel', priority: 'urgent', description: 'Fuel required before lot drive', status: 'open', version: 1, assignee: null, reportedBy: 'Synthetic sales', reportedByUserId: 'synthetic-sales', reportedAt: '2026-09-25T12:00:00Z', updatedAt: '2026-09-25T12:00:00Z', completedAt: null, completedBy: null, photoCount: 0, allowedActions: ['add_note', 'request_completion'] }
     const fixture = data({ attention: [], vehicles: [], vehicleIssues: [issue] })

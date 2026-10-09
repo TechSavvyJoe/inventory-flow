@@ -334,9 +334,52 @@ describe('Software administration',()=>{
     fireEvent.change(screen.getByRole('textbox',{name:'Find a group or dealership'}),{target:{value:'no matching group'}})
     fireEvent.change(screen.getByRole('combobox',{name:'Account state filter'}),{target:{value:'setup'}})
     fireEvent.click(within(screen.getByRole('region',{name:'Platform summary'})).getByRole('button',{name:/^Dealerships/}))
-    expect(await screen.findByRole('heading',{name:'Northside Motors'})).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Choose a dealer group to manage its dealerships.')
+    expect(screen.getByRole('button',{name:'Open Northside Motors workspace'})).toBeInTheDocument()
+    expect(screen.getByRole('textbox',{name:'Find a group or dealership'})).toHaveValue('')
+    expect(screen.getByRole('combobox',{name:'Account state filter'})).toHaveValue('all')
+    expect(screen.queryByRole('region',{name:'Northside Motors account'})).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button',{name:'Open Northside Motors workspace'}))
     expect(screen.getByRole('heading',{name:'Northside Motors'})).toHaveFocus()
     expect(screen.getByRole('button',{name:'Dealerships'})).toHaveAttribute('aria-pressed','true')
+  })
+  it.each([
+    ['Dealerships','Dealerships','manage its dealerships','synthetic-north','Northside Motors'],
+    ['Enabled employees','People & access','manage its people and access','synthetic-lake','Lakeside Group'],
+  ])('asks for a group before scoping the aggregate %s action',async(metric,subsection,prompt,chosenId,chosenName)=>{
+    const lakeside={...overview.groups[0],id:'synthetic-lake',name:'Lakeside Group',dealerships:[]}
+    const fetcher=vi.fn(async(url:string)=>url.endsWith('/members')?ok({...members,groupId:chosenId}):ok({...overview,groups:[...overview.groups,lakeside]}))
+    vi.stubGlobal('fetch',fetcher)
+    render(<PlatformAdminPage/>)
+    fireEvent.click(await screen.findByRole('button',{name:'Open Lakeside Group workspace'}))
+    fireEvent.click(screen.getByRole('button',{name:'All dealer groups'}))
+    fireEvent.change(screen.getByRole('textbox',{name:'Find a group or dealership'}),{target:{value:'Lakeside'}})
+    fireEvent.change(screen.getByRole('combobox',{name:'Publication filter'}),{target:{value:'not_connected'}})
+    fireEvent.click(within(screen.getByRole('region',{name:'Platform summary'})).getByRole('button',{name:new RegExp(`^${metric}`)}))
+    expect(screen.getByRole('status')).toHaveTextContent(`Choose a dealer group to ${prompt}.`)
+    expect(screen.getByRole('textbox',{name:'Find a group or dealership'})).toHaveValue('')
+    expect(screen.getByRole('combobox',{name:'Publication filter'})).toHaveValue('all')
+    for(const name of ['Northside Motors','Lakeside Group']) {
+      expect(screen.getByRole('button',{name:`Open ${name} workspace`})).toHaveAttribute('aria-pressed','false')
+      expect(screen.queryByRole('region',{name:`${name} account`})).not.toBeInTheDocument()
+    }
+    expect(fetcher.mock.calls.some(([url])=>url.endsWith('/members'))).toBe(false)
+    fireEvent.click(screen.getByRole('button',{name:`Open ${chosenName} workspace`}))
+    expect(screen.getByRole('heading',{name:chosenName})).toHaveFocus()
+    expect(screen.getByRole('button',{name:subsection})).toHaveAttribute('aria-pressed','true')
+    expect(screen.queryByText(/Choose a dealer group to/)).not.toBeInTheDocument()
+  })
+  it('clears the aggregate selection intent when navigating away',async()=>{
+    vi.stubGlobal('fetch',vi.fn(async()=>ok(overview)))
+    render(<PlatformAdminPage/>)
+    await screen.findByRole('heading',{name:'Platform overview'})
+    fireEvent.click(within(screen.getByRole('region',{name:'Platform summary'})).getByRole('button',{name:/^Enabled employees/}))
+    expect(screen.getByRole('status')).toHaveTextContent('Choose a dealer group to manage its people and access.')
+    fireEvent.click(within(screen.getByRole('navigation',{name:'Software administration sections'})).getByRole('button',{name:'Audit history'}))
+    fireEvent.click(within(screen.getByRole('navigation',{name:'Software administration sections'})).getByRole('button',{name:'Overview'}))
+    expect(screen.queryByText(/Choose a dealer group to/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button',{name:'Open Northside Motors workspace'}))
+    expect(screen.getByRole('button',{name:'Setup'})).toHaveAttribute('aria-pressed','true')
   })
   it('keeps summary actions usable on an empty installation',async()=>{
     vi.stubGlobal('fetch',vi.fn(async()=>ok({...overview,groups:[]})))

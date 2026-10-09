@@ -514,21 +514,24 @@ test('five-column comparison uses each row for a clear photo and high-value scan
       expect(element.scrollHeight, `${width}px ${element.selector} not vertically clipped`).toBeLessThanOrEqual(element.clientHeight + 1)
     }
     expect(dimensions.rowHeight, `${width}px row keeps scroll density`).toBeGreaterThanOrEqual(84)
-    // A held/moving vehicle needs up to 180px for real evidence and its actions.
-    // Budget the full group too, so a short primary row cannot hide a tall report strip.
-    expect(dimensions.rowHeight, `${width}px comparison row stays compact`).toBeLessThanOrEqual(180)
+    // Configuration and source evidence now share the comparison row. The
+    // existing complete-record budget still governs the entire vehicle; a
+    // separate 180px primary-row limit would measure the old split layout.
+    expect(dimensions.rowHeight, `${width}px comparison record stays compact`).toBeLessThanOrEqual(width <1320 ?300 :280)
     expect(dimensions.vehicleGroupHeight, `${width}px complete vehicle including providers`).toBeLessThanOrEqual(width <1320 ?300 :280)
     for (const name of ['Copy stock number: DEMO-H01', 'Copy mileage: 12450', 'Copy VIN: TESTDATAHWELL0001']) {
       await expect(main.getByRole('button', { name, exact: true })).toBeVisible()
     }
-    // This project is a mouse (fine pointer): row actions are compact but stay
-    // above the 24px WCAG 2.5.8 floor. Touch keeps 44px; see the touch test below.
-    const actionTargets = main.locator('td[data-column="actions"] .inv-desk-actions').locator('button, a')
+    const priceActions = main.getByRole('group', { name: /^Price actions for/ })
+    await expect(priceActions.getByRole('button', { name: 'Save DEMO-H01 to shortlist', exact: true })).toBeVisible()
+    await expect(priceActions.getByRole('button', { name: /Open listing for/ })
+      .or(priceActions.getByRole('link', { name: /Open listing for/ }))).toBeVisible()
+    const actionTargets = priceActions.or(main.getByRole('group', { name: /^Movement actions for/ })).locator('button, a')
     expect(await actionTargets.count()).toBeGreaterThan(0)
     for (const target of await actionTargets.all()) {
       await expect(target).toBeVisible()
       const box = await target.boundingBox()
-      expect(box!.height, `${width}px action target height`).toBeGreaterThanOrEqual(24)
+      expect(box!.height, `${width}px action target height`).toBeGreaterThanOrEqual(44)
       expect(box!.width, `${width}px action target width`).toBeGreaterThanOrEqual(44)
     }
     expect(dimensions.photo.width, `${width}px photo is no longer a tiny thumbnail`).toBeGreaterThanOrEqual(84)
@@ -548,6 +551,11 @@ test('five-column comparison uses each row for a clear photo and high-value scan
     await expectNoOverflow(page)
     await capture(page, testInfo, `table-width-${width}`)
   }
+  const recordsTrigger = main.getByRole('button', { name: /^Open vehicle records for/ })
+  await recordsTrigger.click()
+  await expect(page.getByRole('dialog', { name: /records$/i })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(recordsTrigger).toBeFocused()
   await main.getByRole('button', { name: /View change history/ }).click()
   await expect(page.getByRole('tab', { name: 'Activity', exact: true })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('button', { name: 'Close vehicle details' }).click()
@@ -574,7 +582,8 @@ test.describe('touch-capable desktop', () => {
     await page.getByRole('button', { name: /^All:/ }).click()
     expect(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches)).toBe(true)
     const main = page.locator('.inv-desk-table .inv-desk-row[data-stock-number="DEMO-H01"]')
-    const actionTargets = main.locator('td[data-column="actions"] .inv-desk-actions').locator('button, a')
+    const actionTargets = main.getByRole('group', { name: /^Price actions for/ })
+      .or(main.getByRole('group', { name: /^Movement actions for/ })).locator('button, a')
     expect(await actionTargets.count()).toBeGreaterThan(0)
     for (const target of await actionTargets.all()) {
       const box = await target.boundingBox()

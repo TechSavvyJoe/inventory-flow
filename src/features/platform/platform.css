@@ -1,4 +1,4 @@
-.platform-app { --platform-navigation-color: var(--ifx-product-slate); min-height: 100dvh; background: var(--ifx-neutral-0); color: var(--ifx-neutral-900); font: var(--ifx-text-body)/var(--ifx-leading-compact) var(--ifx-font-text); }
+.platform-app { --platform-navigation-color: var(--ifx-product-slate); min-height: 100dvh; background: var(--ifx-neutral-50); color: var(--ifx-neutral-900); font: var(--ifx-text-body)/var(--ifx-leading-compact) var(--ifx-font-text); }
 .platform-app button:not(:where(.ifx-button)), .platform-app input, .platform-app select { font: inherit; color: inherit; min-height: var(--ifx-control-height-md); border: var(--ifx-stroke-hairline) solid var(--ifx-border-control); border-radius: var(--ifx-radius-sm); background: var(--ifx-neutral-0); padding: var(--ifx-space-2) var(--ifx-space-3); min-width: 0; }
 .platform-app button:not(:where(.ifx-button)) { display: inline-flex; align-items: center; justify-content: center; gap: var(--ifx-space-2); cursor: pointer; font-weight: var(--ifx-weight-semibold); transition: background var(--ifx-motion-fast), transform var(--ifx-motion-instant); }
 .platform-app button:not(:where(.ifx-button)):hover { background: var(--ifx-neutral-100); border-color: var(--ifx-control-border-hover); }
@@ -65,7 +65,7 @@
 
 .platform-ledger-count { color: var(--ifx-neutral-600); font-size: var(--ifx-text-xs); padding-block: var(--ifx-space-2); }
 .platform-boundary-note { color: var(--ifx-neutral-600); font-size: var(--ifx-text-xs); margin-top: var(--ifx-space-4); padding-top: var(--ifx-space-3); border-top: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
-.platform-owner-head, .platform-audit-head, .platform-people-head, .platform-dealership-head { display: grid; gap: var(--ifx-space-3); padding: var(--ifx-space-2) var(--ifx-space-3); background:var(--ifx-neutral-0); border-block:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); color:var(--ifx-neutral-600); font-size: var(--ifx-text-xs); font-weight: var(--ifx-weight-semibold); }
+.platform-owner-head, .platform-audit-head, .platform-people-head, .platform-dealership-head { display: grid; gap: var(--ifx-space-3); padding: var(--ifx-space-2) var(--ifx-space-3); background:var(--ifx-neutral-100); border-block:var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); color:var(--ifx-neutral-600); font-size: var(--ifx-text-xs); font-weight: var(--ifx-weight-semibold); }
 .platform-owner-head, .platform-app .platform-owner-row { grid-template-columns: minmax(0,1fr) minmax(0,.35fr) auto; }
 .platform-audit-head, .platform-app .platform-audit-ledger-row { grid-template-columns: minmax(0,1.6fr) minmax(0,.65fr) minmax(0,1fr) var(--ifx-platform-audit-action-width); }
 .platform-people-head, .platform-app .platform-people-row { grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(0,.4fr) auto; }
@@ -90,7 +90,7 @@
 .platform-rail-foot { margin-top: auto; display: flex; gap: var(--ifx-space-2); font-size: var(--ifx-text-xs); }
 .platform-rail-foot small { display: block; color: var(--ifx-neutral-300); margin-top: var(--ifx-space-1); }
 .platform-canvas { margin-left: var(--nav-width); }
-.platform-header { display: flex; justify-content: space-between; align-items: center; gap: var(--ifx-space-3); min-height: var(--ifx-control-height-md); padding: var(--ifx-space-2) var(--ifx-space-4); border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
+.platform-header { display: flex; justify-content: space-between; align-items: center; gap: var(--ifx-space-3); min-height: var(--ifx-control-height-md); padding: var(--ifx-space-2) var(--ifx-space-4); border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-control); background: var(--ifx-neutral-0); }
 .platform-header > span { display: flex; align-items: center; gap: var(--ifx-space-2); font-size: var(--ifx-text-sm); }
 .platform-header > span:first-child { color: var(--ifx-neutral-600); }
 .platform-owner > span:last-child { font-weight: var(--ifx-weight-semibold); }
@@ -108,12 +108,12 @@
 .platform-summary svg { margin-left:auto; color:var(--ifx-workspace-header-ink); }
 .platform-heading .platform-summary small { color:var(--ifx-workspace-header-muted); }
 .platform-account-state { text-transform:capitalize; font-weight:var(--ifx-weight-semibold); }
-.platform-directory-panel, .platform-detail { min-width:0; }
-.platform-directory, .platform-setup-ledger, .platform-activation-ledger { border-inline:var(--ifx-stroke-hairline) solid var(--ifx-workspace-ledger-border); }
+.platform-directory-panel, .platform-detail { min-width:0; border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); border-radius:var(--ifx-radius-xs); background:var(--ifx-neutral-0); }
+.platform-directory, .platform-setup-ledger, .platform-activation-ledger { border-inline:0; }
 .platform-directory-panel > .platform-toolbar { padding-inline:var(--ifx-space-2); }
 .platform-heading .platform-heading-actions { flex-wrap:wrap; }
 .platform-directory-head, .platform-app .platform-directory-row { display: grid; grid-template-columns: minmax(0,1.8fr) minmax(var(--ifx-platform-directory-account-min-width),.6fr) minmax(var(--ifx-platform-directory-count-min-width),.75fr) minmax(var(--ifx-platform-directory-publication-min-width),1fr) minmax(0,1.3fr); gap: var(--ifx-space-3); align-items: center; padding: var(--ifx-space-3); }
-.platform-directory-head { background: var(--ifx-neutral-50); color: var(--ifx-neutral-600); font-size: var(--ifx-text-xs); font-weight: var(--ifx-weight-semibold); border-block: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
+.platform-directory-head { background: var(--ifx-neutral-100); color: var(--ifx-neutral-600); font-size: var(--ifx-text-xs); font-weight: var(--ifx-weight-semibold); border-block: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); }
 .platform-app .platform-directory-row { width: 100%; text-align: left; border: 0; border-radius: 0; border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-subtle); font-size: var(--ifx-text-sm); font-weight: var(--ifx-weight-regular); }
 .platform-directory-row > span { min-width: 0; }
 .platform-directory-row small { display: block; overflow-wrap: anywhere; }

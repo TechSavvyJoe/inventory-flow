@@ -151,7 +151,7 @@ export function TakeHomeSheet({ vehicle, vehicles, listLabel, onClose, returnFoc
       <div className="takehome-dialog" role="dialog" aria-modal="true" aria-labelledby="takehome-title" ref={dialogRef}>
         <div className="takehome-toolbar">
           <span id="takehome-title" className="takehome-toolbar__title">Take-home page · {title}</span>
-          <label className="takehome-format">Format<select value={layout} onChange={event => setLayout(event.target.value as 'detailed' | 'comparison')}><option value="detailed">Detailed vehicle sheets</option><option value="comparison">Compare on one sheet</option></select></label>
+          <label className="takehome-format">Format<select value={layout} onChange={event => setLayout(event.target.value as 'detailed' | 'comparison')}><option value="detailed">Detailed vehicle sheets</option><option value="comparison">Vehicle comparison</option></select></label>
           <span className="takehome-toolbar__actions">
             <button type="button" className="takehome-btn takehome-btn--primary" ref={printRef} disabled={layout === 'comparison' && !prepared?.comparison} onClick={() => window.print()}>
               <Printer size={16} strokeWidth={1.85} aria-hidden="true" /> Print / Save as PDF
@@ -166,7 +166,7 @@ export function TakeHomeSheet({ vehicle, vehicles, listLabel, onClose, returnFoc
               <X size={16} strokeWidth={1.85} aria-hidden="true" /> Close
             </button>
           </span>
-          {pdfError ? <span className="takehome-toolbar__status" role="alert">PDF could not be prepared: {pdfError} <button type="button" className="takehome-btn" onClick={() => setPdfAttempt(value => value + 1)}>Retry PDF</button></span> : <span className="takehome-toolbar__status" role="status">{actionStatus ?? (!pdf ? 'Preparing PDF…' : '')}</span>}
+          {pdfError ? <span className="takehome-toolbar__status" role="alert">PDF could not be prepared: {pdfError} <button type="button" className="takehome-btn" onClick={() => setPdfAttempt(value => value + 1)}>Retry PDF</button></span> : <span className="takehome-toolbar__status" role="status">{actionStatus ?? (!pdf ? 'Preparing PDF…' : prepared?.comparison ? `Ready · ${prepared.comparison.pages.length} ${prepared.comparison.pages.length === 1 ? 'page' : 'pages'} · ${models.length} ${models.length === 1 ? 'vehicle' : 'vehicles'}` : '')}</span>}
         </div>
         <div className="takehome-stage">
           {layout === 'comparison' ? prepared?.comparison ? <TakeHomeComparisonContent plan={prepared.comparison} /> : <p role="status">Preparing comparison sheet…</p> : <>

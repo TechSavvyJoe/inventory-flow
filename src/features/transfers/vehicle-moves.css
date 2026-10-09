@@ -100,13 +100,17 @@
 #root .vehicle-moves-page :is(button,input,select,summary) { font-family: inherit; }
 #root .vehicle-moves-page :is(button,input,select,summary):focus-visible { outline: 3px solid var(--ifx-info); outline-offset: 2px; }
 #root .vehicle-moves-page .transfers-page-header { margin: 0 0 var(--ifx-space-2); }
-.move-store-scope { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.move-store-scope .ifx-button { min-width: 132px; justify-content: center; }
-.move-store-scope-location { margin-left: 5px; font-weight: 400; }
-.move-store-scope p { margin: 0 0 0 8px; color: var(--ifx-neutral-700); font-size: 13px; }
+.move-store-scope { display:flex; align-items:center; gap:var(--ifx-space-1); margin:0; }
+.move-store-scope .ifx-button { min-width:0; justify-content:center; }
+.move-store-scope-location { margin-left:var(--ifx-space-1); font-weight:var(--ifx-weight-regular); }
 #root .vehicle-moves-page .transfers-layout { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(370px,1fr); grid-template-rows: auto; min-height: 0; max-height: none; height: auto; align-items: start; gap: 0; overflow: visible; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; background: var(--ifx-neutral-0); box-shadow: none; }
 #root .vehicle-moves-page .transfer-list { min-width: 0; display: block; height: auto; padding: 0; overflow: visible; background: var(--ifx-neutral-0); border: 0; border-radius: 0; }
-#root .vehicle-moves-page .transfer-list-toolbar { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; position: static; padding: 10px 12px; border-bottom: 1px solid var(--ifx-neutral-300); background: var(--ifx-neutral-0); }
+.vehicle-moves-page .transfer-list .transfer-list-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:var(--ifx-space-2); position:static; padding:var(--ifx-space-2) var(--ifx-space-3); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-neutral-300); background:var(--ifx-neutral-100); }
+.vehicle-moves-page .transfer-list-toolbar > .transfer-list-search { flex:1 1 calc(var(--ifx-space-16) * 3); min-width:0; }
+.vehicle-moves-page .transfer-list-toolbar > .transfer-list-views { flex:1 1 calc(var(--ifx-space-16) * 6); min-width:0; }
+.vehicle-moves-page .transfer-list-toolbar > .transfer-list-tools { flex:1 0 100%; }
+.vehicle-moves-page .transfers-page-header .ifx-page-header__controls { justify-content:flex-end; }
+.vehicle-moves-page .transfers-page-header .ifx-page-header__row { flex-wrap:wrap; }
 #root .vehicle-moves-page .transfer-list-search { position: relative; display: flex; align-items: center; min-height: 44px; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; }
 #root .vehicle-moves-page .transfer-list-search svg { width: 18px; height: 18px; position: absolute; left: 12px; color: var(--ifx-neutral-700); }
 #root .vehicle-moves-page .transfer-list-search input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px 10px 39px; border: 0; background: transparent; color: var(--ifx-neutral-900); font-size: 14px; }
@@ -232,7 +236,6 @@
 @media (max-width: 1000px) {
   #root .vehicle-moves-page .transfers-layout { grid-template-columns: minmax(0,1fr) minmax(340px,1fr); }
   .move-store-scope { flex-wrap: wrap; }
-  .move-store-scope p { flex-basis: 100%; margin-left: 0; }
   #root .vehicle-moves-page .transfer-list-views { gap: 8px; }
   #root .vehicle-moves-page .transfer-list-views button { font-size: 13px; }
   #root .vehicle-moves-page .transfer-list-views .transfer-list-view-count { font-size: 12px; }
@@ -265,7 +268,10 @@
   #root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) select { position: static; inset: auto; width: 100%; height: auto; opacity: 1; padding: 8px 18px 8px 8px; font-size: 14px; }
   #root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) > svg { display: none; }
   #root .vehicle-moves-page .transfer-list-count { grid-area: auto; grid-column: auto; order: 0; white-space: nowrap; }
-  #root .move-store-scope p { display: none; }
+  .vehicle-moves-page .transfers-page-header { grid-template-columns:minmax(0,1fr); }
+  .vehicle-moves-page .transfers-page-header .ifx-page-header__description { display:none; }
+  .vehicle-moves-page .transfers-page-header .ifx-page-header__controls { display:block; padding:var(--ifx-space-1) var(--ifx-space-2); }
+  .vehicle-moves-page .transfer-list .transfer-list-toolbar { display:grid; grid-template-columns:minmax(0,1fr); }
   .vehicle-moves-page .transfer-list-item { gap: 9px 12px; padding: 14px 12px; }
   .vehicle-moves-page .move-row-next { display: grid; grid-template-columns: 1fr; }
   #root .vehicle-moves-page .transfer-list-owner-row { grid-column: auto; grid-row: auto; display: flex; flex-wrap: wrap; gap: 4px 10px; }

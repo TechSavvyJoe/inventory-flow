@@ -15,7 +15,7 @@ import {
   createRepositoryContext,
   listServiceEvents,
   insertServiceEvent,
-  manualHoldsEnabled, listManualHoldEvents, insertManualHoldEvent,
+  manualHoldsEnabled, manualHoldApprovalsEnabled, listManualHoldEvents, insertManualHoldEvent,
   dispositionsEnabled,
   listDispositionEvents,
   insertDispositionEvent,
@@ -1883,6 +1883,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       dispositionEventsByVin.set(row.vin, values)
     }
     const manualHoldStorage = manualHoldsEnabled(database)
+    const manualHoldApprovalStorage = manualHoldApprovalsEnabled(database)
     const manualHoldEventsByVin = new Map()
     for (const row of listManualHoldEvents(database)) {
       const rows = manualHoldEventsByVin.get(row.vin) ?? []
@@ -1905,7 +1906,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       allTransferRows,
       serviceEventsByVin,
       serviceIntakeByVin: new Map((dataset.serviceIntake ?? []).map((row) => [row.vin, row])),
-      dispositionStorage, manualHoldStorage, manualHoldEventsByVin,
+      dispositionStorage, manualHoldStorage, manualHoldApprovalStorage, manualHoldEventsByVin,
       savedListsStorage: savedVehicleListsEnabled(database),
       dispositionEventsByVin,
       transfersByVin,
@@ -1937,7 +1938,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       vehicle.appDisposition = dispositionView(source, state.dispositionEventsByVin.get(source.vin)?.at(-1) ?? null, state.context, {
         enabled: state.dispositionStorage,
       })
-      vehicle.manualHold = manualHoldView(source, state.manualHoldEventsByVin.get(source.vin)?.at(-1), state.context, { enabled: state.manualHoldStorage })
+      vehicle.manualHold = manualHoldView(source, state.manualHoldEventsByVin.get(source.vin)?.at(-1), state.context, { enabled: state.manualHoldStorage, approvalEnabled: state.manualHoldApprovalStorage })
       vehicle.inventoryDecision = inventoryDecision(vehicle)
       vehicle.canReportIssue = vehicleIssuesEnabled(database) && canReportVehicleIssue(vehicle, state.context)
     }
@@ -2171,7 +2172,7 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const state = snapshot(contextInput)
       const source = state.sources.find(candidate => candidate.vin === normalizedVin(vinInput))
       if (!source || !vehicleFromSnapshot(state, source)) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
-      return manualHoldDetail(source, state.manualHoldEventsByVin.get(source.vin) ?? [], state.context, { enabled: state.manualHoldStorage })
+      return manualHoldDetail(source, state.manualHoldEventsByVin.get(source.vin) ?? [], state.context, { enabled: state.manualHoldStorage, approvalEnabled: state.manualHoldApprovalStorage })
     },
 
     updateManualHold(vinInput, input, contextInput = {}, idempotencyKey) {
@@ -2179,9 +2180,9 @@ export function createInventoryServiceCore({ database: databaseHandle, repositor
       const source = state.sources.find(candidate => candidate.vin === normalizedVin(vinInput))
       if (!source || !vehicleFromSnapshot(state, source)) throw new WorkflowError('Vehicle was not found.', { status: 404, code: 'VEHICLE_NOT_FOUND' })
       const rows = state.manualHoldEventsByVin.get(source.vin) ?? []
-      const result = buildManualHoldEvent(source, rows, input, state.context, { now: state.currentNow, idempotencyKey, enabled: state.manualHoldStorage })
+      const result = buildManualHoldEvent(source, rows, input, state.context, { now: state.currentNow, idempotencyKey, enabled: state.manualHoldStorage, approvalEnabled: state.manualHoldApprovalStorage })
       if (result.created) { insertManualHoldEvent(database, result.row); rows.push(result.row) }
-      return { created: result.created, record: manualHoldDetail(source, rows, state.context, { enabled: state.manualHoldStorage }) }
+      return { created: result.created, record: manualHoldDetail(source, rows, state.context, { enabled: state.manualHoldStorage, approvalEnabled: state.manualHoldApprovalStorage }) }
     },
 
     listVehicleIssues(query = {}, contextInput = {}) {

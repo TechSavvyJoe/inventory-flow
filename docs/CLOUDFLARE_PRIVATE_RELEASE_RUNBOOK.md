@@ -419,10 +419,13 @@ result set, or a live schema that has a `d1_migrations` table when `--ledger`
 was not supplied (its rows must be checked too).
 
 Schema presence cannot prove data changes. Migrations that contain `INSERT`,
-`UPDATE`, or `DELETE` (currently `0002`, `0003`, `0005`, and `0010`) are
+`UPDATE`, or `DELETE` (currently `0002`, `0003`, `0005`, `0010`, `0015`, and `0017`) are
 flagged `DATA_REVIEW_REQUIRED`; `0005` also leaves the schema identical to
 `0004`, so only data evidence can show that it ran. Review those data changes
-with read-only queries before attesting to them.
+with read-only queries before attesting to them. For `0017`, compare all legacy
+hold events before and after the rebuild, including owners, actor identities,
+versions and idempotency hashes; its five-state schema alone cannot prove that
+the copied history was preserved.
 
 The verifier can compare only against the current file text, and `0004`'s
 operation `CHECK` was widened in Git (adding `manager_dispositions_list`, in the

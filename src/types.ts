@@ -551,13 +551,15 @@ export interface AppDispositionInput {
 
 export interface ManualHold {
   vin: string
-  state: 'active' | 'released' | null
+  state: 'requested' | 'active' | 'released' | 'rejected' | 'cancelled' | null
   version: number
   expectedDeliveryDate: string | null
   updatedAt: string | null
   ownerStore: StoreName | null
   canManage: boolean
   enabled: boolean
+  approvalEnabled?: boolean
+  canApprove?: boolean
   customerLabel?: string | null
   note?: string | null
   updatedBy?: string | null
@@ -565,7 +567,7 @@ export interface ManualHold {
 }
 export interface ManualHoldDetail extends ManualHold { history: ManualHold[] }
 export interface ManualHoldInput {
-  state: 'active' | 'released'
+  state: Exclude<ManualHold['state'], null>
   expectedVersion: number
   customerLabel?: string
   expectedDeliveryDate?: string
@@ -609,7 +611,7 @@ export interface InventoryDecisionEvidence extends Omit<OperationalProviderRecor
 }
 
 export interface InventoryDecision {
-  status: AppDispositionCode | 'held' | 'unconfirmed'
+  status: AppDispositionCode | 'held' | 'hold_requested' | 'unconfirmed'
   comparison: 'agreement' | 'conflict' | 'manual_only' | 'source_only' | 'unverified'
   reasons: string[]
   manualHold: ManualHold['state']

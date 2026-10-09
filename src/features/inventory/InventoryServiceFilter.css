@@ -4,9 +4,9 @@
 .if-srp .if-srp-active-filters button { display:inline-flex; align-items:center; gap:6px; min-height:44px; border:0; border-radius:4px; padding:5px 8px; background:var(--blue-050); color:var(--blue-700); font:500 14px/1.3 var(--font-app); cursor:pointer; }
 .if-srp .if-srp-active-filters .if-srp-clear-filters { background:transparent; text-decoration:underline; }
 .if-srp .if-srp-show-results { width:100%; min-height:44px; margin-bottom:12px; color:var(--surface); background:var(--blue-600); }
-#inventory-results-workspace.if-srp { container: inventory-surface / inline-size; display: block; width: 100%; min-width: 0; margin: 0; padding: 0; background: var(--surface); color: var(--ink-900); font: 400 14px/1.4 var(--font-app); }
-#inventory-results-workspace.if-srp .inventory-experience__content { width: 100%; max-width: none; margin: 0; padding: var(--ifx-space-2) var(--ifx-space-4); background: var(--surface); }
-.if-srp .if-srp-header { margin:0; }
+#inventory-results-workspace.if-srp { container: inventory-surface / inline-size; display: block; width: 100%; min-width: 0; margin: 0; padding: 0; background: var(--ifx-neutral-50); color: var(--ink-900); font: 400 14px/1.4 var(--font-app); }
+#inventory-results-workspace.if-srp .inventory-experience__content { width: 100%; max-width: none; margin: 0; padding: var(--ifx-space-2) var(--ifx-space-4); background: var(--ifx-neutral-50); }
+.if-srp .if-srp-header { background:var(--surface); margin:0; border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
 .if-srp :is(.if-srp-scope,.if-srp-quickviews,.if-srp-service-filters,.if-srp-secondary-views) { --if-srp-seam-width:0; display:flex; flex-wrap:wrap; gap:0; min-width:0; }
 .if-srp :is(.if-srp-scope,.if-srp-quickviews,.if-srp-service-filters,.if-srp-secondary-views) > button { display:inline-flex; justify-content:center; align-items:center; gap:var(--ifx-space-1-5); min-width:var(--ifx-control-height-md); min-height:var(--ifx-control-height-md); padding:var(--ifx-space-2) var(--ifx-space-3); border:1px solid var(--border-strong); border-radius:0; color:var(--ink-700); background:var(--surface); font:var(--ifx-weight-medium) var(--ifx-text-md)/1.2 var(--font-app); white-space:nowrap; cursor:pointer; }
 .if-srp :is(.if-srp-scope,.if-srp-quickviews,.if-srp-service-filters,.if-srp-secondary-views) > button:first-child { border-radius:var(--ifx-radius-xs) 0 0 var(--ifx-radius-xs); }
@@ -19,11 +19,11 @@
 .if-srp .if-srp-scope { flex-shrink: 0; }
 .if-srp .if-srp-scope b { font: inherit; padding-left: 5px; }
 .if-srp .inventory-scope-switch__compact, .if-srp .inventory-quick-filter-label--compact { display: none; }
-.if-srp .if-srp-searchbar { display:flex; align-items:center; gap:var(--ifx-space-1); margin:0; width:100%; padding:var(--ifx-space-2); border-inline:var(--ifx-stroke-hairline) solid var(--ifx-workspace-ledger-border); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-workspace-ledger-border); background:var(--surface); }
-.if-srp .inventory-predictive-search { position: relative; z-index: 20; width: 100%; min-width: 0; }
+.if-srp .if-srp-searchbar { display:flex; align-items:center; gap:var(--ifx-space-1); margin:0; width:100%; padding:var(--ifx-space-2); border-inline:var(--ifx-stroke-hairline) solid var(--ifx-border-control); border-bottom:var(--ifx-stroke-hairline) solid var(--ifx-border-control); background:var(--surface); }
+.if-srp .inventory-predictive-search { position:relative; z-index:var(--ifx-layer-modal); width:100%; min-width: 0; }
 .if-srp .inventory-primary-search { display: flex; align-items: center; gap: 9px; width: 100%; height: 44px; min-height: 44px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--ink-600); box-shadow: none; }
-.if-srp .inventory-primary-search:focus-within { border-color: var(--blue-600); box-shadow: 0 0 0 2px var(--blue-100); }
-.if-srp .inventory-primary-search input { width: 100%; min-width: 0; margin: 0; padding: 0; height: 42px; border: 0; outline: 0; color: var(--ink-900); background: transparent; font: 400 16px/1.4 var(--font-app); }
+.if-srp .inventory-primary-search:focus-within { border-color: var(--ifx-focus-color); box-shadow: var(--ifx-focus-ring); }
+.if-srp .inventory-primary-search input { width: 100%; min-width: 0; margin: 0; padding: 0; height: 42px; min-height: var(--ifx-space-0); border: 0; outline: 0; box-shadow: none; color: var(--ink-900); background: transparent; font: 400 16px/1.4 var(--font-app); }
 .if-srp .inventory-primary-search input::placeholder { color: var(--ink-600); }
 .if-srp .inventory-primary-search > button { display: inline-flex; align-items: center; justify-content: center; width: var(--ifx-control-height-md); height: var(--ifx-control-height-md); border: 0; border-radius: 4px; color: var(--ink-600); background: transparent; }
 .if-srp .if-srp-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; margin-bottom:var(--ifx-space-1-5); }
@@ -84,7 +84,7 @@
 .if-srp .inventory-search-popover :is(p,.inventory-search-popover__footer) { margin: 0; padding: 8px; font-size: 14px; line-height: 1.4; color: var(--ink-600); }
 .if-srp .inventory-empty-results { padding: 40px 20px; text-align: center; border: 1px solid var(--border); border-radius: 6px; }
 .if-srp .inventory-other-location-match { display: flex; justify-content: space-between; gap: 12px; width: 100%; margin-top: 10px; padding: 12px; border: 1px solid var(--blue-100); border-radius: 6px; color: var(--blue-700); background: var(--blue-050); font: 400 14px/1.4 var(--font-app); }
-.if-srp :is(button,input,select,a):focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.if-srp :is(button,input,select,a):not(.inventory-primary-search input):focus-visible { outline: var(--ifx-focus-width) solid var(--ifx-focus-color); outline-offset: var(--ifx-focus-offset); }
 @container inventory-surface (max-width: 1200px) {
   .if-srp .if-srp-controls { gap: 8px 12px; }
   .if-srp .if-srp-service-filters { padding-left: 12px; }
@@ -173,6 +173,11 @@
    scope/header row, search, and one filter row; tap targets and type stay
    readable while repeated chrome is reclaimed. */
 .if-srp-heading-grid { display:grid; gap:0; margin-bottom:var(--ifx-space-1); }
+@media (min-width:881px) {
+  .if-srp-heading-grid { grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); }
+  .if-srp .if-srp-header { align-items:center; border-right:0; }
+  .if-srp .if-srp-searchbar { border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
+}
 .if-srp .if-srp-heading-grid :is(.if-srp-header, .if-srp-searchbar) { margin-bottom: 0; }
 .if-srp .service-filter-label--short { display: none; }
 
