@@ -274,8 +274,13 @@ async function openFilteredVehicle(page: Page) {
 async function openVehicleService(page: Page) {
   const workspace = page.getByRole('dialog', { name: /vehicle workspace/ })
   // Other acceptance cases may have recorded service on this synthetic VIN.
-  // Follow the real action currently offered, without manufacturing readiness.
-  await workspace.getByRole('link', { name: /^(Start service|Mark Ready|Service history)\b/ }).first().click()
+  // Ready vehicles keep their service link in the masthead; the secondary
+  // history shortcut lives under More. Follow the visible status or action.
+  const action = workspace.getByRole('link', { name: /^(Start service|Mark Ready)\b/ }).first()
+  const serviceLink = await action.isVisible() ? action : workspace.getByRole('link', { name: /^Service:/ })
+  await expect(serviceLink).toBeVisible()
+  await expect(serviceLink).toHaveAttribute('href', new RegExp(`/service\\?vin=${workflowVin}(?:&|$)`))
+  await serviceLink.click()
   await expect(page).toHaveURL(url => url.pathname === '/service' && url.searchParams.get('vin') === workflowVin)
   await expect(page.getByRole('button', { name: 'Back to vehicle', exact: true })).toBeVisible()
   await expect(page.locator('.service-current')).toBeVisible()
