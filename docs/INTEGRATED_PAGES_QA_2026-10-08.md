@@ -51,10 +51,12 @@ Playwright supplied actual browser captures; no protected dealership captures
 were added to Git. Canonical sizes are 390×844, 1024×768, 1320×820 and 1440×900;
 320px was additionally checked for the reported narrow-screen defect.
 
-- Inventory: complete H01 row 278.25px at 320/390, first record y290px, no horizontal
-  overflow or page errors. Source/action targets 44–48px. The existing strict
-  Records browser test passed with its 280px/y300 limits unchanged, including
-  switching records and restoring focus on close.
+- Inventory: with both All locations and the All quickview selected, the first
+  phone record starts at y281px at 320/390. The fresh isolated H01 row without a
+  recorded decision is 278.25px tall at both widths. A recorded decision has its
+  own full-width row below hold/service, with a 45.984px target; it adds height
+  only when that evidence exists. The strict Records browser checks retain their
+  390px 280px/y300 limits, report navigation and focus-restoration assertions.
 - Saved-list popup: opening it leaves document height/width and scroll position
   unchanged at all four canonical sizes; Escape restores its launcher focus.
 - Root composition captures: named source readiness, setup review, role-specific
@@ -82,18 +84,30 @@ Local evidence, outside Git:
 - `/tmp/inventory-flow-pages-qa/vdp-refinement/`
 - `/tmp/inventory-flow-pages-qa/extension-composition-refined/QA.md`
 - `/tmp/inventory-flow-pages-qa/approved-direction/`
+- `/tmp/inventory-flow-pages-qa/inventory-scope-header/`
+- `/tmp/inventory-flow-pages-qa/decision-layout/report.json`
+- `/tmp/inventory-flow-pages-qa/holds-moves-buttons/`
 - `/Users/joegallant/Downloads/InventoryFlow-Integrated-Pages-2026-10-08/`
 
 ## Validation and boundaries
 
-Focused type, component and workflow checks have passed. A repeated Records unit
-suite under contention timed out in one existing case; the unchanged case passed
-in isolation and its actual browser flow passed. No timeout or assertion was
-relaxed. Full final candidate validation and independent visual review are
-recorded in the pull request with their exact source and CI evidence.
+Exact candidate source validation passed 239 files and 3,718 tests, with three
+existing skips, before the final independent-review corrections. A local Records
+browser run had two timeouts and two empty-section failures. All six applicable
+Records browser cases subsequently passed in the pinned Linux CI run for
+4907cf2; that run separately caught the phone inventory-decision placement
+regression. No timeout or geometry assertion was relaxed. Final candidate checks
+and reviewed Linux references are recorded in the pull request.
 
 This is a local synthetic UI change. Live source access, real vehicle data,
 production Cloudflare Access, collection executors and deployment were not
 verified or changed by this design pass. A configured source preference or queued
 request is not a successful capture. Extension installation and physical iPhone
 behavior require their own controlled-host acceptance.
+
+Software Admin remains a control plane: source settings, scheduling preferences
+and queued requests do not activate collection. Its executor reports disconnected
+and has no claim/complete route. The separately configured capture/publication
+pipeline is not controlled by these registry settings. Self-service dealer feed
+activation therefore remains a functional SaaS launch gap, independent of this
+interface review.
