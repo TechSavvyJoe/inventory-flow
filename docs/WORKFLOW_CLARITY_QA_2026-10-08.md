@@ -86,6 +86,26 @@ Screenshots, source manifest and full/browser logs stay outside Git under
 The final focused stylesheet SHA-256 is
 `cef83638984c1835a686088f6a8b17feca9b46f81ea335976cee7731c2e39154`.
 
+## Reviewed Linux references
+
+The deliberate generator in [run 37863604298](https://github.com/TechSavvyJoe/inventory-flow/actions/runs/37863604298)
+produced the exact 40 synthetic states for source commit
+`96c29443e7affea94fe0c4c03a4637c8422de159`. Both reviewers validated
+provenance, PNG dimensions, the sorted file set and all 40 on-disk hashes. The
+primary reviewer directly inspected eight overview/hold images at all four
+viewports; an independent reviewer directly inspected the other 32 images.
+No actionable visual findings remained.
+
+The exact reviewed bundle is stored in the private CI-reference prerelease
+`ci-visual-baselines-2026-10-08-96c2944`, asset `623389539`, separately
+from product releases and not marked latest. Its SHA-256 is
+`d87becf31f393d0679dc8c52df735105ff40af71217fc60319b68989f835626a`.
+Only metadata is tracked in Git. Review receipts and images remain outside
+the checkout. The ordinary comparison on PR #74 must retrieve this exact
+private asset with its read-only CI token and pass all 40 comparisons with
+`--update-snapshots=none`; comparison thresholds remain unchanged. The
+PR checks record that subsequent acceptance separately from generation.
+
 ## Boundary
 
 This pass improves presentation and existing app-owned workflows. Provider
