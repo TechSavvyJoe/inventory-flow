@@ -246,22 +246,38 @@ describe('collector host contract', () => {
     expect(() => profileFingerprint(profile)).toThrow('ADAPTER_DEPENDENCY_MISSING')
   })
 
-  it('fingerprints relative imports and admits only the exact reviewed shared CDP helper', () => {
+  it('admits only the reviewed LF and CRLF shared CDP helper bytes and fingerprints installed bytes', () => {
     const { root, profile } = fixture()
     const capturePath = path.join(root, 'apps/inventory-ops/scripts/capture-dealermail.mjs')
     const helperPath = path.join(root, 'apps/inventory-ops/scripts/lib/cdp.mjs')
     mkdirSync(path.dirname(helperPath), { recursive: true })
     const capture = "import './lib/cdp.mjs'\nconst ORIGIN = 'https://www.dealermail.com'\n"
     const helper = readFileSync(new URL('../../scripts/lib/cdp.mjs', import.meta.url))
+    const helperCrlf = Buffer.from(helper.toString('utf8').replace(/\r?\n/g, '\r\n'))
+    expect(createHash('sha256').update(helper).digest('hex')).toBe('54d171972ef3200b0abc77e77c5404b23109d1188d67e8e5b089bd360ce56c90')
+    expect(createHash('sha256').update(helperCrlf).digest('hex')).toBe('e542c222ef3ebeb8bbe358f15ae2fe00424fddc92efe6139d1e40add58ee9005')
     writeFileSync(capturePath, capture)
     writeFileSync(helperPath, helper)
     profile.dependencyHashes.dealermailCapture = createHash('sha256').update(capture).digest('hex')
     profile.profileSha256 = profileFingerprint(profile)
 
     expect(checkCollectorDependencies(profile)).toHaveLength(3)
-    const graphBoundFingerprint = profileFingerprint(profile)
-    writeFileSync(helperPath, Buffer.concat([helper, Buffer.from('\n// synthetic graph change\n')]))
-    expect(profileFingerprint(profile)).not.toBe(graphBoundFingerprint)
+    const lfFingerprint = profileFingerprint(profile)
+    writeFileSync(helperPath, helperCrlf)
+    profile.profileSha256 = profileFingerprint(profile)
+    expect(checkCollectorDependencies(profile)).toHaveLength(3)
+    const crlfFingerprint = profileFingerprint(profile)
+    expect(crlfFingerprint).not.toBe(lfFingerprint)
+
+    writeFileSync(helperPath, Buffer.concat([helperCrlf, Buffer.from('\r\n// synthetic graph change\r\n')]))
+    profile.profileSha256 = profileFingerprint(profile)
+    expect(() => checkCollectorDependencies(profile)).toThrow('ADAPTER_DEPENDENCY_MISSING')
+    writeFileSync(helperPath, Buffer.from(helper.toString('utf8').replace(
+      'https://www.fordtechservice.dealerconnection.com/VehicleService/Details',
+      'https://www.extra-forbidden-host.pts.com/source',
+    )))
+    profile.profileSha256 = profileFingerprint(profile)
+    expect(() => checkCollectorDependencies(profile)).toThrow('ADAPTER_DEPENDENCY_MISSING')
   })
 
   it('blocks before contacting the platform or touching source tabs when the verified baseline is absent', async () => {

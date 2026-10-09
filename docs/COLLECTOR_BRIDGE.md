@@ -108,8 +108,10 @@ repository and must be reviewed and fingerprinted on the authorized host before
 enrollment. Synthetic fixtures do not establish their compatibility.
 
 The tracked shared CDP helper has one hash-pinned exception because it also
-contains a fixed PTS read-only POST allowlist used by other pipeline paths. That
-constant does not grant this collector a PTS source scope. The installed capture
+contains a fixed PTS read-only POST allowlist used by other pipeline paths. Only
+the exact tracked bytes and their generated Windows CRLF variant qualify; the
+installed byte hash remains part of the enrollment fingerprint. That constant
+does not grant this collector a PTS source scope. The installed capture
 call graph and its exact helper hashes must still be reviewed on the authorized
 host; this repository cannot verify the absent operational bundle.
 

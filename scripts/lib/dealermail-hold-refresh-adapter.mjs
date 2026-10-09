@@ -2,7 +2,6 @@ import { createHash, randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { base64Key, cloudBundleSha256, encryptBundle } from '../publish-cloud-release.mjs'
 import { collectCollectorDependencyGraph } from './collector-profile.mjs'
 
@@ -17,6 +16,11 @@ const FORBIDDEN_HOSTS = /(?:https?:\/\/|wss?:\/\/)[^\s'"`<>]*\b(?:[a-z0-9-]+\.)*
 const FORBIDDEN_CAPTURE_REFERENCE = /(?:capture[-_](?:oasis|service[-_]history|invoice|warranty|vauto|autocheck|pts|keeper)|ensureAutomationBrowser|start[-_]automation[-_]browser)/i
 const FORD_MERGE_REFERENCE = /\b(?:merge\s+ford|ford\s+merge|mergeFord|mergeFord[A-Z]|mergeOasis|mergeInvoice|mergeServiceHistory)\b/i
 const REVIEWED_CDP_ALLOWED_URL = 'https://www.fordtechservice.dealerconnection.com/VehicleService/Details'
+// Reviewed helper bytes only: LF, then the same source with Windows CRLF.
+const REVIEWED_CDP_SHA256 = new Set([
+  '54d171972ef3200b0abc77e77c5404b23109d1188d67e8e5b089bd360ce56c90',
+  'e542c222ef3ebeb8bbe358f15ae2fe00424fddc92efe6139d1e40add58ee9005',
+])
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
 const hashFile = filePath => sha256(readFileSync(filePath))
@@ -53,11 +57,10 @@ export function checkCollectorDependencies(profile) {
     const expected = profile.dependencyHashes[item.id]
     if (!/^[a-f0-9]{64}$/.test(expected ?? '') || hashFile(item.filePath) !== expected) throw new Error('ADAPTER_DEPENDENCY_MISSING')
   }
-  const reviewedCdpPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../scripts/lib/cdp.mjs')
-  const reviewedCdpHash = hashFile(reviewedCdpPath)
   for (const dependency of collectCollectorDependencyGraph(profile.workspaceRoot)) {
     const source = readFileSync(path.join(profile.workspaceRoot, dependency.path), 'utf8')
-    const reviewedCdp = dependency.path === 'apps/inventory-ops/scripts/lib/cdp.mjs' && dependency.sha256 === reviewedCdpHash
+    const reviewedCdp = dependency.path === 'apps/inventory-ops/scripts/lib/cdp.mjs'
+      && REVIEWED_CDP_SHA256.has(dependency.sha256)
     const checkedSource = reviewedCdp ? source.replaceAll(REVIEWED_CDP_ALLOWED_URL, '') : source
     if (FORBIDDEN_HOSTS.test(checkedSource) || FORBIDDEN_CAPTURE_REFERENCE.test(source) || FORD_MERGE_REFERENCE.test(source)) {
       throw new Error('ADAPTER_DEPENDENCY_MISSING')
