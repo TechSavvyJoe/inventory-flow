@@ -915,7 +915,9 @@ export function VehicleWorkspace({
               onClick={() => openAndFocusSection(section.id)} key={section.id}>{section.label}</button>)}
           </div>
         </div>
-        <div className="vdp-focus-scroll" ref={scrollRef}>
+        {/* Firefox includes scroll containers in Tab order. Explicit focus keeps
+            this region in the dialog's contained order across all browsers. */}
+        <div className="vdp-focus-scroll" ref={scrollRef} role="region" aria-label="Vehicle workspace content" tabIndex={0}>
           <VehicleDetailStatus state={detailState} onRetry={onRetryDetail} />
           <WorkspacePanel id="overview" label="Overview" active={activePage === "overview"}>
             <div className="vdp-focus-overview">
