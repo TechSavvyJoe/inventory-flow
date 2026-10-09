@@ -3,10 +3,10 @@
   "repository": "TechSavvyJoe/inventory-flow",
   "renderer": "mcr.microsoft.com/playwright:v1.62.1-noble",
   "playwrightVersion": "1.62.1",
-  "sourceCommit": "96c29443e7affea94fe0c4c03a4637c8422de159",
-  "sourceRunId": "37863604298",
-  "assetId": "623389539",
-  "sha256": "d87becf31f393d0679dc8c52df735105ff40af71217fc60319b68989f835626a",
+  "sourceCommit": "3dc955ce48de5f17f3b8b1bce9326af8a315a82b",
+  "sourceRunId": "37885632765",
+  "assetId": "623936396",
+  "sha256": "a5a69bde930e87220bf6405b7d4b3065af4e92ad8395a2e4f412aab369e614b4",
   "fileCount": 40,
-  "reviewedAt": "2026-10-09T00:20:27.590Z"
+  "reviewedAt": "2026-10-09T04:56:25.549Z"
 }
