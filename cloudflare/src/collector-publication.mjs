@@ -1,8 +1,8 @@
 import { importJWK, SignJWT } from 'jose'
 import { platformOwner, tenantDatabase } from './platform-admin.mjs'
 import { collectorIdentity } from './collector-auth.mjs'
-import { currentAttempt, attemptGuard, machineAudit } from './collector-execution.mjs'
-import { canonical, collectorFail, digest, exactFields, sha, text } from './collector-common.mjs'
+import { currentAttempt, attemptGuard, scopeGuard, machineAudit } from './collector-execution.mjs'
+import { canonical, collectorFail, digest, exactFields, executionEnabled, sha, text } from './collector-common.mjs'
 import { appReadiness, decryptEnvelope, publishRelease, readReleaseWithIdentity } from './worker.mjs'
 import { verifyPublicationTicket, assertPublicationFence } from './collector-publication-guards.mjs'
 import { validateReleaseBundle } from './release-validation.mjs'
@@ -50,7 +50,8 @@ async function verifiedReceipt(env,attempt,binding,now) {
  return safe
 }
 
-export async function publishCollector(env,claims,input,key,now=new Date()) {
+export async function publishCollector(env,claims,input,key,now=new Date(),clock=null) {
+ const started=Date.now(),currentTime=clock??(()=>new Date(now.getTime()+Date.now()-started))
  // Identity precedes body/candidate lookup. Target group is never caller input.
  const row=await collectorIdentity(env,claims)
  exactFields(input,['attemptId','fence','configSha256','envelope']);text(key);sha(input.configSha256)
@@ -67,14 +68,44 @@ export async function publishCollector(env,claims,input,key,now=new Date()) {
  // Persist the one candidate before dispatch. A timeout never dispatches again.
  const authorization=await publicationTicket(env,{...attempt,expected_bundle_sha256:input.envelope.bundleSha256},'publish',now)
  const hash=await digest({attemptId:attempt.id,bundleSha256:input.envelope.bundleSha256,configSha256:input.configSha256})
+ const priorDispatch=await env.PLATFORM_DB.prepare('SELECT request_hash FROM platform_audit WHERE actor_id=? AND request_key=?').bind(`collector:${row.id}`,`publish:${key}`).first()
+ if(priorDispatch && priorDispatch.request_hash!==hash)collectorFail('COLLECTOR_RECEIPT_CONFLICT',409)
  try{await env.PLATFORM_DB.batch([
   attemptGuard(env.PLATFORM_DB,row,scope,attempt,now,['captured']),
   env.PLATFORM_DB.prepare("UPDATE platform_collector_attempts SET stage='publishing',expected_bundle_sha256=? WHERE id=?").bind(input.envelope.bundleSha256,attempt.id),
-  machineAudit(env.PLATFORM_DB,row,attempt,'publication_started',{stage:'publishing',bundleSha256:input.envelope.bundleSha256},`publish:${key}`,hash,now.toISOString()),
+  ...(!priorDispatch?[machineAudit(env.PLATFORM_DB,row,attempt,'publication_started',{stage:'publishing',bundleSha256:input.envelope.bundleSha256},`publish:${key}`,hash,now.toISOString())]:[]),
  ])}catch{collectorFail('COLLECTOR_LEASE_STALE',409)}
  attempt.expected_bundle_sha256=input.envelope.bundleSha256;attempt.stage='publishing'
  try {
   const dispatched=await binding.publish(input.envelope,authorization)
+  // Only this positive RPC result proves that the tenant did not enter its
+  // publication path. A thrown/lost RPC reply remains readback-only forever.
+  if(dispatched?.status==='preflight_retryable') {
+   const fresh=currentTime(),date=fresh.toISOString(),db=env.PLATFORM_DB
+   const proof={attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,preflightOnly:true},proofHash=await digest(proof),proofKey=`preflight:${attempt.id}`
+   const priorProof=await db.prepare('SELECT request_hash FROM platform_audit WHERE actor_id=? AND request_key=?').bind(`collector:${row.id}`,proofKey).first()
+   if(priorProof && priorProof.request_hash!==proofHash)collectorFail('COLLECTOR_RECEIPT_CONFLICT',409)
+   const proofAudit=()=>priorProof?[]:[machineAudit(db,row,attempt,'publication_preflight_deferred',proof,proofKey,proofHash,date)]
+   try{await db.batch([
+    attemptGuard(db,row,scope,attempt,fresh,['publishing']),
+    db.prepare("UPDATE platform_collector_attempts SET stage='captured' WHERE id=? AND stage='publishing' AND expected_bundle_sha256=?").bind(attempt.id,input.envelope.bundleSha256),
+    ...proofAudit(),
+   ])}catch{
+    // The RPC positively proved that no tenant publication began. If authority
+    // or time expired during it, retire ONLY this exact attempt. A fresh claim
+    // can retry an otherwise-authorized request within the original budget.
+    // Concurrent owner cancellation/revocation remains non-runnable; only its
+    // positive proof is recorded, without rewriting the reconciled state.
+    const guard=scopeGuard(row,scope),match="a.id=? AND a.collector_id=? AND a.group_id=? AND a.fence=? AND a.expected_bundle_sha256=? AND a.stage IN ('publishing','reconciliation_required')",args=[attempt.id,row.id,attempt.group_id,attempt.fence,attempt.expected_bundle_sha256]
+    await db.batch([
+     db.prepare(`UPDATE platform_revision SET revision=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match}) THEN revision+1 ELSE NULL END WHERE id=1`).bind(...args),
+     db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN ?=1 AND ?<3 AND ${guard.sql} THEN 'queued' ELSE 'failed' END,updated_at=? WHERE id=? AND state='running' AND EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE ${match} AND a.request_id=platform_pull_requests.id)`).bind(executionEnabled(env)?1:0,attempt.fence,...guard.args,date,attempt.request_id,...args),
+     db.prepare(`UPDATE platform_collector_attempts SET stage='expired',failure_code='DURATION_EXCEEDED',completed_at=? WHERE id=? AND collector_id=? AND group_id=? AND fence=? AND expected_bundle_sha256=? AND stage='publishing'`).bind(date,...args),
+     ...proofAudit(),
+    ])
+   }
+   return {status:'preflight_retryable',attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,ready:false}
+  }
   if(dispatched?.status==='rejected' && dispatched.code==='VALIDATION_FAILED') {
    const receipt={kind:'failure',code:'VALIDATION_FAILED',at:now.toISOString()},receiptHash=await digest(receipt)
    await env.PLATFORM_DB.batch([
@@ -106,13 +137,23 @@ export async function reconcileCollector(env,claims,groupId,input,now=new Date()
 export async function publishTenantCandidate(env,envelope,authorization,testTime=null) {
  const clock=()=>testTime??new Date(),now=clock()
  const {ticket,attempt}=await verifyPublicationTicket(env,authorization,'publish',now)
+ let bundle,counts,baseline
+ // Independently prove the tenant key and verified baseline are readable before
+ // treating candidate decryption errors as definitive bad-input evidence.
+ try{baseline=await readReleaseWithIdentity(env,{fresh:true})}catch{return {status:'preflight_retryable'}}
  try {
  if(envelope?.bundleSha256!==ticket.bundleSha256 || envelope.reportDate!==ticket.reportDate)collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
- const bundle=await decryptEnvelope(envelope,env),counts=validateReleaseBundle(bundle,{degradeOptionalResources:true})
- const config=JSON.parse(attempt.config_json),baseline=await readReleaseWithIdentity(env,{fresh:true})
+ bundle=await decryptEnvelope(envelope,env)
+ counts=validateReleaseBundle(bundle,{degradeOptionalResources:true})
+ }catch(error){
+  if(error?.code==='COLLECTOR_PUBLICATION_INVALID' || ['INVALID_ENVELOPE','BODY_TOO_LARGE','INVALID_ENCRYPTED_CONTENT','INVALID_OR_INCOMPLETE_RELEASE'].includes(error?.code) || error?.message?.startsWith('Invalid cloud release:'))return {status:'rejected',code:'VALIDATION_FAILED'}
+  return {status:'preflight_retryable'}
+ }
+ try {
+ const config=JSON.parse(attempt.config_json)
  if(baseline.bundleSha256!==config.baselineBundleSha256 || baseline.release.reportDate!==ticket.reportDate || bundle.release.sourceRuns.dealerMail.sha256!==attempt.source_sha256 || counts.dealerMailRowCount!==JSON.parse(attempt.capture_counts_json).dealerMailRows)collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
  // Hold refresh may only change DealerMail evidence and its derived records.
- for(const field of ['publicSnapshot','resourceSnapshot','managerDispositionOverlay'])if(canonical(bundle.release[field]??null)!==canonical(baseline.release[field]??null))collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
+ for(const field of ['publicSnapshot','publicChangeEvents','resourceSnapshot','managerDispositionOverlay'])if(canonical(bundle.release[field]??null)!==canonical(baseline.release[field]??null))collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
  for(const [name,run] of Object.entries(bundle.release.sourceRuns))if(name!=='dealerMail' && canonical(run)!==canonical(baseline.release.sourceRuns[name]))collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
  for(const record of bundle.release.vehicles){const original=baseline.release.vehicles.find(v=>v.vin===record.vin);if((record.publicRecord||record.resourceRecord) && (!original || canonical(record.publicRecord??null)!==canonical(original.publicRecord??null) || canonical(record.resourceRecord??null)!==canonical(original.resourceRecord??null)))collectorFail('COLLECTOR_PUBLICATION_INVALID',409)}
  const storeNames={howell:'Howell',fowlerville:'Fowlerville','ford-detroit':'Ford Detroit',lincoln:'Lincoln'}
@@ -129,6 +170,6 @@ export async function readTenantPublicationReceipt(env,authorization,now=new Dat
  const current=await env.INVENTORY_DB.prepare("SELECT v.* FROM cloud_release_state s JOIN cloud_release_versions v ON v.release_id=s.value WHERE s.key='current_release_id' AND v.status='current'").first()
  if(!current || current.bundle_sha256!==receipt.bundle_sha256 || current.report_date!==receipt.report_date)return {status:'reconciliation_required',attemptId:ticket.attemptId,ready:false}
  const readiness=await appReadiness(env),counts=JSON.parse(receipt.counts_json)
- if(!readiness.ready || readiness.bundleSha256!==receipt.bundle_sha256 || readiness.reportDate!==receipt.report_date || readiness.counts.inventory!==counts.vehicleCount)return {status:'reconciliation_required',attemptId:ticket.attemptId,ready:false}
+ if(!readiness.ready || readiness.bundleSha256!==receipt.bundle_sha256 || readiness.reportDate!==receipt.report_date || readiness.counts.inventory!==counts.activeInventoryCount)return {status:'reconciliation_required',attemptId:ticket.attemptId,ready:false}
  return {status:receipt.status==='published'?'published_verified':'unchanged_verified',attemptId:ticket.attemptId,bundleSha256:receipt.bundle_sha256,reportDate:receipt.report_date,counts:readiness.counts,ready:true,verifiedAt:now.toISOString()}
 }

@@ -4,8 +4,8 @@ import { PlatformCollectors } from './PlatformCollectors'
 import type { PlatformCollector, PlatformCollectorsData, PlatformConnection, PlatformGroup, PlatformRequest } from './types'
 
 const group:PlatformGroup={id:'synthetic-group',name:'Synthetic group',status:'active',updatedAt:'',health:{status:'current',message:'Synthetic'},dealerships:Array.from({length:4},(_,i)=>({id:`dealer-${i}`,groupId:'synthetic-group',name:`Synthetic dealership ${i+1}`,storeKey:`store-${i}`,website:'',enabled:true}))}
-const connections:PlatformConnection[]=group.dealerships.map((dealer,i)=>({id:`source-${i}`,groupId:group.id,dealershipId:dealer.id,name:`Permitted holds ${i+1}`,provider:'dealermail',method:'collector',endpoint:'',credentialRef:'',enabled:true,cadence:'manual',localTime:'05:30',timezone:'America/Detroit',updatedAt:'',verification:'not_verified'}))
-const collector:PlatformCollector={id:'synthetic-host',groupId:group.id,name:'Synthetic capture computer',accessClientId:'synthetic-service',adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-profile',profileSha256:'a'.repeat(64),enabled:false,generation:1,lastSeenAt:null,dealershipIds:group.dealerships.map(dealer=>dealer.id),connectionIds:connections.map(source=>source.id),scopeLabel:'Group-wide DealerMail refresh'}
+const connections:PlatformConnection[]=group.dealerships.map((dealer,i)=>({id:`source-${i}`,groupId:group.id,dealershipId:dealer.id,name:`Permitted holds ${i+1}`,provider:'dealermail',method:'collector',endpoint:'',credentialRef:'',enabled:true,cadence:'manual',localTime:'05:30',timezone:'America/New_York',updatedAt:'',verification:'not_verified'}))
+const collector:PlatformCollector={id:'synthetic-host',groupId:group.id,name:'Synthetic capture computer',accessClientId:'synthetic-service',adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-profile',profileSha256:'a'.repeat(64),enabled:false,connected:false,generation:1,lastSeenAt:null,dealershipIds:group.dealerships.map(dealer=>dealer.id),connectionIds:connections.map(source=>source.id),scopeLabel:'Group-wide DealerMail refresh'}
 const data:PlatformCollectorsData={groupId:group.id,revision:9,executionEnabled:false,collectors:[],attempts:[]}
 afterEach(cleanup)
 async function setup(next:PlatformCollectorsData=data,post?:()=>Promise<unknown>) {
@@ -23,6 +23,18 @@ function fillEnrollment(){
   fireEvent.change(screen.getByRole('textbox',{name:'Reason for this change'}),{target:{value:'Synthetic authorized collector setup'}})
 }
 describe('Collector enrollment and independently verified outcomes',()=>{
+  it.each([
+    [{enabled:true,connected:true,lastSeenAt:'2026-10-09T12:00:00Z'},true,'Connected'],
+    [{enabled:true,connected:false,lastSeenAt:'2026-10-09T12:00:00Z'},true,'Disconnected · last contact recorded'],
+    [{enabled:true,connected:false,lastSeenAt:null},true,'Awaiting host contact'],
+    [{enabled:false,connected:false,lastSeenAt:'2026-10-09T12:00:00Z'},true,'Paused'],
+    [{enabled:true,connected:false,revokedAt:'2026-10-09T12:00:00Z'},true,'Revoked'],
+    [{enabled:true,connected:false,lastSeenAt:'2026-10-09T12:00:00Z'},false,'Execution disabled'],
+  ] as const)('renders backend freshness and authority for host %j',async(patch,executionEnabled,label)=>{
+    await setup({...data,executionEnabled,collectors:[{...collector,...patch}]})
+    expect(screen.getByText(label)).toBeInTheDocument()
+    expect(screen.queryByText('Host contacted')).not.toBeInTheDocument()
+  })
   it('requires an explicit full group source review and registers a paused profile without source access',async()=>{
     const request=await setup()
     fireEvent.click(screen.getByRole('button',{name:'Register host'}));fillEnrollment()

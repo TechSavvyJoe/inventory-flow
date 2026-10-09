@@ -20,7 +20,7 @@ const STORE_SET = Object.entries(STORE_CONFIG)
     storeKey: ({ Howell: 'howell', Fowlerville: 'fowlerville', 'Ford Detroit': 'ford-detroit', Lincoln: 'lincoln' })[storeName],
   }))
   .sort((a, b) => a.dealerMailId.localeCompare(b.dealerMailId))
-const PROFILE_FIELDS = ['adapterId', 'adapterVersion', 'groupId', 'profileId', 'source', 'stores', 'dependencyHashes']
+const PROFILE_FIELDS = ['adapterId', 'adapterVersion', 'groupId', 'profileId', 'source', 'controlPlaneOrigin', 'credentialRef', 'releaseKeyRef', 'stores', 'dependencyHashes']
 const PROFILE_KEYS = new Set(['schemaVersion', 'adapterId', 'adapterVersion', 'profileId', 'groupId', 'source', 'stores', 'controlPlaneOrigin', 'credentialRef', 'releaseKeyRef', 'workspaceRoot', 'dependencyHashes', 'profileSha256'])
 const STORE_KEYS = new Set(['dealerMailId', 'storeKey', 'dealershipId', 'connectionId'])
 const DEPENDENCY_KEYS = new Set(['dealermailCapture', 'snapshotBuilder', 'snapshotFinalizer'])
@@ -56,7 +56,7 @@ export function canonicalJson(value) {
 
 export function profileFingerprint(profile) {
   const immutable = Object.fromEntries(PROFILE_FIELDS.map(key => [key, key === 'stores'
-    ? (profile[key] ?? []).map(({ dealerMailId, storeKey, dealershipId }) => ({ dealerMailId: String(dealerMailId), storeKey, dealershipId })).sort((a, b) => a.dealerMailId.localeCompare(b.dealerMailId))
+    ? (profile[key] ?? []).map(({ dealerMailId, storeKey, dealershipId, connectionId }) => ({ dealerMailId: String(dealerMailId), storeKey, dealershipId, connectionId })).sort((a, b) => a.dealerMailId.localeCompare(b.dealerMailId))
     : profile[key]]))
   immutable.adapterCodeSha256 = adapterCodeFingerprint()
   immutable.dependencyGraph = collectCollectorDependencyGraph(profile.workspaceRoot)

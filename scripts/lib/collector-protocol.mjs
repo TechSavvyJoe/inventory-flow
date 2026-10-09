@@ -167,13 +167,13 @@ export async function submitCollectorPublication(profile, credentials, publicati
     maxResponseBytes: MAX_ENVELOPE_BYTES,
   })
   const result = response.body
-  check(result && ['published_verified', 'unchanged_verified', 'reconciliation_required'].includes(result.status), 'PUBLICATION_RESPONSE_INVALID')
+  check(result && ['published_verified', 'unchanged_verified', 'reconciliation_required', 'preflight_retryable'].includes(result.status), 'PUBLICATION_RESPONSE_INVALID')
   check(result.attemptId === publication.attemptId && result.bundleSha256 === publication.envelope.bundleSha256 && result.reportDate === publication.envelope.reportDate, 'PUBLICATION_RESPONSE_MISMATCH')
-  const responseKeys = result.status === 'reconciliation_required'
+  const responseKeys = ['reconciliation_required', 'preflight_retryable'].includes(result.status)
     ? ['status', 'attemptId', 'bundleSha256', 'reportDate', 'ready']
     : ['status', 'attemptId', 'bundleSha256', 'reportDate', 'counts', 'ready', 'verifiedAt']
   check(Object.keys(result).every(key => responseKeys.includes(key)), 'PUBLICATION_RESPONSE_INVALID')
-  if (result.status === 'reconciliation_required') check(result.ready === false, 'PUBLICATION_RESPONSE_INVALID')
+  if (['reconciliation_required', 'preflight_retryable'].includes(result.status)) check(result.ready === false, 'PUBLICATION_RESPONSE_INVALID')
   else {
     check(result.ready === true && isIso(result.verifiedAt), 'PUBLICATION_NOT_VERIFIED')
     const countNames = ['inventory', 'managerDispositions', 'transfers', 'attention']

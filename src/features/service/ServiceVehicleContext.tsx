@@ -2,6 +2,7 @@ import { ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { VehicleRecord } from '../../types'
 import { sourceDisplayText } from '../../lib/source-text'
+import { sourceDistanceText } from '../../lib/source-distance'
 import { formatDate, formatNumber } from '../inventory/inventory-utils'
 import { formatSourceDateText, oasisActionLabel } from '../inventory/vehicle-resource-catalog'
 import { resolveVehicleInService } from '../inventory/vehicle-in-service'
@@ -42,7 +43,7 @@ export function ServiceVehicleContext({ vehicle, recordsHref }: { vehicle: Vehic
     {state === 'stale_unverified' ? <p>Saved report · refresh at source</p> : state === 'unknown' ? <p>OASIS source status unverified</p> : state === 'incomplete' ? <p>Partial captured record</p> : null}
     <section className={actions.length ? 'service-source-alert' : 'service-reference-actions'} aria-label={actions.length ? 'Saved Ford service actions' : undefined}>
       <strong>{actions.length ? 'OASIS · ' : ''}{oasisActionLabel(oasis)}</strong>
-      {actions.length ? <><ul>{actions.map((action, index) => <li key={`${action.code}-${index}`}><b>{action.code}</b>{action.description ? <> · {formatSourceDateText(sourceDisplayText(action.description))}</> : null}</li>)}</ul><Link to={recordsHref}>Review service actions in Records</Link></> : null}
+      {actions.length ? <><ul>{actions.map((action, index) => <li key={`${action.code}-${index}`}><b>{action.code}</b>{action.description ? <> · {sourceDistanceText(formatSourceDateText(sourceDisplayText(action.description)))}</> : null}</li>)}</ul><Link to={recordsHref}>Review service actions in Records</Link></> : null}
     </section>
     <div className="service-reference-body">
     {(facts.length || technical.length) ? <div className="service-reference-vehicle">
@@ -50,7 +51,7 @@ export function ServiceVehicleContext({ vehicle, recordsHref }: { vehicle: Vehic
     {technical.length ? <section className="service-reference-technical"><h4>Vehicle service data</h4><dl className="service-reference-facts">{technical.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{sourceDisplayText(value)}</dd></div>)}</dl></section> : null}
     </div> : null}
     {(coverage.length || checks.length || extended.length) ? <div className="service-reference-warranty">
-    {coverage.length ? <section className="service-reference-coverage"><h4>Coverage notes</h4><ul className="service-coverage-list">{coverage.map((item, index) => <li key={index}><header><strong>{sourceDisplayText(item.type)}</strong></header>{item.description ? <p>{formatSourceDateText(sourceDisplayText(item.description))}</p> : null}</li>)}</ul></section> : null}
+    {coverage.length ? <section className="service-reference-coverage"><h4>Coverage notes</h4><ul className="service-coverage-list">{coverage.map((item, index) => <li key={index}><header><strong>{sourceDisplayText(item.type)}</strong></header>{item.description ? <p>{sourceDistanceText(formatSourceDateText(sourceDisplayText(item.description)))}</p> : null}</li>)}</ul></section> : null}
     {checks.length ? <section className="service-reference-coverage"><h4>Coverage check</h4>
       <p>Saved check; current coverage is not verified.</p>
       <dl className="service-reference-facts">
@@ -59,9 +60,9 @@ export function ServiceVehicleContext({ vehicle, recordsHref }: { vehicle: Vehic
         <div><dt>Check record</dt><dd>{vehicle.warrantyCheck?.dataState === 'current' ? 'Current saved record' : vehicle.warrantyCheck?.dataState === 'stale_unverified' ? 'Saved record · refresh at source' : vehicle.warrantyCheck?.dataState === 'incomplete' ? 'Partial captured record' : 'Freshness unverified'}</dd></div>
       </dl>
       {vehicle.warrantyCheck?.sourceLabel ? <p>{sourceDisplayText(vehicle.warrantyCheck.sourceLabel)}</p> : null}
-      <ul className="service-coverage-list">{checks.map((item, index) => <li key={index}><header><strong>{sourceDisplayText(item.type)}</strong><span>At check: {item.status}</span></header><p>{formatSourceDateText(sourceDisplayText(item.termText))}</p><dl><div><dt>Mileage remaining</dt><dd>{sourceDisplayText(item.remainingMilesText)}</dd></div><div><dt>Time remaining</dt><dd>{sourceDisplayText(item.remainingTimeText)}</dd></div></dl>{item.note ? <p>{formatSourceDateText(sourceDisplayText(item.note))}</p> : null}</li>)}</ul>
+      <ul className="service-coverage-list">{checks.map((item, index) => <li key={index}><header><strong>{sourceDisplayText(item.type)}</strong><span>At check: {item.status}</span></header><p>{sourceDistanceText(formatSourceDateText(sourceDisplayText(item.termText)))}</p><dl><div><dt>Mileage remaining</dt><dd>{sourceDistanceText(sourceDisplayText(item.remainingMilesText))}</dd></div><div><dt>Time remaining</dt><dd>{sourceDisplayText(item.remainingTimeText)}</dd></div></dl>{item.note ? <p>{sourceDistanceText(formatSourceDateText(sourceDisplayText(item.note)))}</p> : null}</li>)}</ul>
     </section> : null}
-    {extended.length ? <section className="service-reference-coverage"><h4>Captured extended coverage dates</h4><ul>{extended.map((line, index) => <li key={index}>{formatSourceDateText(sourceDisplayText(line))}</li>)}</ul></section> : null}
+    {extended.length ? <section className="service-reference-coverage"><h4>Captured extended coverage dates</h4><ul>{extended.map((line, index) => <li key={index}>{sourceDistanceText(formatSourceDateText(sourceDisplayText(line)))}</li>)}</ul></section> : null}
     </div> : null}
     </div>
   </section>

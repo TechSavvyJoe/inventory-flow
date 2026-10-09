@@ -6,10 +6,10 @@ import { claimCollector, contactCollector, heartbeatCollector, readCollectors, r
 import { saveDataControl } from '../../cloudflare/src/platform-data.mjs'
 import { handleCollectorApi, handlePlatformApi } from '../../cloudflare/src/platform-worker.mjs'
 const fixtures=[]
-const setup=async()=>{const f=await createSyntheticCollector();fixtures.push(f);return f}
+const setup=async(options)=>{const f=await createSyntheticCollector(options);fixtures.push(f);return f}
 afterEach(()=>fixtures.splice(0).forEach(f=>f.close()))
 const revision=f=>f.sqlite.prepare('SELECT revision FROM platform_revision').get().revision
-const queue=async f=>saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[0].connectionId,reason:'Synthetic refresh',expectedRevision:revision(f)},'request')
+const queue=async(f,at=now)=>saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[0].connectionId,reason:'Synthetic refresh',expectedRevision:revision(f)},'request',at)
 const heartbeat=(f,a)=>({attemptId:a.attemptId,fence:a.fence,profileSha256:f.profileSha256,adapterVersion:'1'})
 describe('Collector enrollment, scope and fenced execution',()=>{
  it('contacts separately from enabled execution and denies owner/employee machine substitution before reading a body',async()=>{
@@ -36,6 +36,20 @@ describe('Collector enrollment, scope and fenced execution',()=>{
   expect(()=>f.sqlite.prepare('UPDATE platform_collectors SET profile_sha256=? WHERE id=?').run('b'.repeat(64),f.collectorId)).toThrow()
   await expect(claimCollector(f.env,f.machine,{groupId:'synthetic-lake'},'spoof',now)).rejects.toMatchObject({code:'COLLECTOR_INPUT_INVALID'})
  })
+ it('requires the fixed New York timezone at enrollment, activation and claim',async()=>{
+  const f=await setup({enroll:false}),input={operation:'enroll',name:'Timezone test host',accessClientId:f.machine.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-holds-four-store',profileSha256:f.profileSha256,dealershipIds:f.dealers.map(d=>d.id),connectionIds:f.dealers.map(d=>d.connectionId),reason:'Synthetic timezone enrollment',expectedRevision:revision(f)}
+  f.sqlite.prepare('UPDATE platform_data_connections SET timezone=? WHERE id=?').run('America/Detroit',f.dealers[0].connectionId)
+  await expect(saveCollector(f.env,owner,'synthetic-north',input,'timezone-invalid-enroll',now)).rejects.toMatchObject({code:'COLLECTOR_SCOPE_MISMATCH'})
+  f.sqlite.prepare('UPDATE platform_data_connections SET timezone=? WHERE id=?').run('America/New_York',f.dealers[0].connectionId)
+  const enrolled=await saveCollector(f.env,owner,'synthetic-north',input,'timezone-valid-enroll',now)
+  f.sqlite.prepare('UPDATE platform_data_connections SET timezone=? WHERE id=?').run('America/Detroit',f.dealers[0].connectionId)
+  await expect(saveCollector(f.env,owner,'synthetic-north',{operation:'enable',id:enrolled.id,reason:'Synthetic timezone activation',expectedRevision:revision(f)},'timezone-invalid-enable',now)).rejects.toMatchObject({code:'COLLECTOR_SCOPE_MISMATCH'})
+  f.sqlite.prepare('UPDATE platform_data_connections SET timezone=? WHERE id=?').run('America/New_York',f.dealers[0].connectionId)
+  await saveCollector(f.env,owner,'synthetic-north',{operation:'enable',id:enrolled.id,reason:'Synthetic timezone activation',expectedRevision:revision(f)},'timezone-valid-enable',now)
+  await queue(f)
+  f.sqlite.prepare('UPDATE platform_data_connections SET timezone=? WHERE id=?').run('America/Detroit',f.dealers[0].connectionId)
+  await expect(claimCollector(f.env,f.machine,{},'timezone-invalid-claim',now)).rejects.toMatchObject({code:'COLLECTOR_SCOPE_MISMATCH'})
+ })
  it('rejects expired leases, reclaims only safe capture work with a higher fence, and binds receipt idempotency',async()=>{
   const f=await setup();const request=await queue(f),a=await claimCollector(f.env,f.machine,{},'first',now)
   const receipt={attemptId:a.attemptId,fence:a.fence,sequence:1,kind:'capture',capturedAt:now.toISOString(),sourceSha256:f.bundle.release.sourceRuns.dealerMail.sha256,counts:{dealerMailRows:8}}
@@ -44,6 +58,24 @@ describe('Collector enrollment, scope and fenced execution',()=>{
   const later=new Date(now.getTime()+130000);await expect(heartbeatCollector(f.env,f.machine,heartbeat(f,a),later)).rejects.toMatchObject({code:'COLLECTOR_LEASE_STALE'})
   const b=await claimCollector(f.env,f.machine,{},'retry',later);expect(b.fence).toBe(2);expect(b.requestId).toBe(request.id)
   await expect(heartbeatCollector(f.env,f.machine,heartbeat(f,a),later)).rejects.toMatchObject({code:'COLLECTOR_LEASE_STALE'})
+ })
+ it('does not reclaim an already queued request from a different immutable profile authority',async()=>{
+  const f=await setup(),request=await queue(f),old=await claimCollector(f.env,f.machine,{},'old-profile-claim',now)
+  const other={common_name:'second-profile.collector.access'}
+  const enrolled=await saveCollector(f.env,owner,'synthetic-north',{operation:'enroll',name:'Second synthetic profile',accessClientId:other.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-holds-four-store-next',profileSha256:'c'.repeat(64),dealershipIds:f.dealers.map(d=>d.id),connectionIds:f.dealers.map(d=>d.connectionId),reason:'Synthetic second profile',expectedRevision:revision(f)},'second-profile-enroll',now)
+  await saveCollector(f.env,owner,'synthetic-north',{operation:'enable',id:enrolled.id,reason:'Synthetic second profile activation',expectedRevision:revision(f)},'second-profile-enable',now)
+  // Model a pre-existing queued item carrying an expired attempt from the old authority.
+  f.sqlite.prepare("UPDATE platform_pull_requests SET state='queued' WHERE id=?").run(request.id)
+  expect(await claimCollector(f.env,other,{},'new-profile-claim',new Date(now.getTime()+130000))).toBeNull()
+  expect(f.sqlite.prepare('SELECT state FROM platform_pull_requests WHERE id=?').get(request.id).state).toBe('queued')
+  expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts WHERE id=?').get(old.attemptId).stage).toBe('claimed')
+ })
+ it('derives report date from America/New_York at the UTC day boundary',async()=>{
+  const f=await setup(),boundary=new Date('2026-08-30T03:30:00.000Z')
+  f.tenant.prepare("UPDATE cloud_release_versions SET report_date='2026-08-29' WHERE status='current'").run()
+  await queue(f,boundary)
+  const attempt=await claimCollector(f.env,f.machine,{},'new-york-boundary',boundary)
+  expect(attempt.reportDate).toBe('2026-08-29')
  })
  it('allows at most two automatic safe capture retries, then requires a new owner request',async()=>{
   const f=await setup();await queue(f)

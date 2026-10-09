@@ -302,7 +302,7 @@ function StoreCard({ counts, homeStore, role, rows, fullAccess, holdsVerified, c
           {moreCounts}
         </details>
       ) : moreCounts}
-      <ReturnVerification rows={rows} store={store} fullAccess={fullAccess} />
+      <ReturnVerification rows={rows} store={store} fullAccess={fullAccess && (role === 'group_manager' || store === homeStore)} />
     </>
   )
   return (

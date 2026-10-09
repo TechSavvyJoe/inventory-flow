@@ -40,6 +40,16 @@ async function harness(adminDirectory) {
 }
 
 describe('Admin Control Center projection', () => {
+  it('keeps disposition writer identity out of the audit projection', () => {
+    const writer = 'SYNTHETIC_PRIVATE_DISPOSITION_WRITER'
+    const overview = buildAdminOverview({
+      generatedAt: '2026-09-15T14:00:00.000Z',
+      dispositionEvents: [{ id: 'synthetic-disposition', vin: 'TESTDATAHWELL0001', store_id: 'Howell', disposition: 'sold_pending', actor: writer, updated_at: '2026-09-15T13:00:00.000Z' }],
+    })
+    expect(overview.audit).toEqual([expect.objectContaining({ id: 'disposition:synthetic-disposition', actor: null, scope: 'VIN TESTDATAHWELL0001 · Howell', result: 'recorded' })])
+    expect(JSON.stringify(overview.audit)).not.toContain(writer)
+  })
+
   it('returns the exact read-only contract without directory secrets or private event payloads', () => {
     const marker = 'SYNTHETIC_PRIVATE_VALUE_MUST_NOT_LEAK'
     const overview = buildAdminOverview({

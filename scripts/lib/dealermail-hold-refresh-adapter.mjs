@@ -16,10 +16,12 @@ const FORBIDDEN_HOSTS = /(?:https?:\/\/|wss?:\/\/)[^\s'"`<>]*\b(?:[a-z0-9-]+\.)*
 const FORBIDDEN_CAPTURE_REFERENCE = /(?:capture[-_](?:oasis|service[-_]history|invoice|warranty|vauto|autocheck|pts|keeper)|ensureAutomationBrowser|start[-_]automation[-_]browser)/i
 const FORD_MERGE_REFERENCE = /\b(?:merge\s+ford|ford\s+merge|mergeFord|mergeFord[A-Z]|mergeOasis|mergeInvoice|mergeServiceHistory)\b/i
 const REVIEWED_CDP_ALLOWED_URL = 'https://www.fordtechservice.dealerconnection.com/VehicleService/Details'
-// Reviewed helper bytes only: LF, then the same source with Windows CRLF.
+// Reviewed original and best-effort cleanup helper revisions, each LF/CRLF.
 const REVIEWED_CDP_SHA256 = new Set([
   '54d171972ef3200b0abc77e77c5404b23109d1188d67e8e5b089bd360ce56c90',
   'e542c222ef3ebeb8bbe358f15ae2fe00424fddc92efe6139d1e40add58ee9005',
+  'fd013e76571cbaa2197d1c071d11ba308b7f8d772b3227e9e16c6b627ba5188d',
+  '6e9d5a8f2e9c93124fb8e1e7bab6a07e4d933daf99808bb8c6d127406acd031d',
 ])
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -235,6 +237,7 @@ export function saveAttemptState(filePath, state) {
     captureReceiptPending: state.captureReceiptPending === true,
     publicationPending: state.publicationPending === true,
     reconciliationRequired: state.reconciliationRequired === true,
+    preflightRetryable: state.preflightRetryable === true,
     publicationIdempotencyKey: state.publicationIdempotencyKey,
   }
   const temporary = `${filePath}.${randomUUID()}.tmp`

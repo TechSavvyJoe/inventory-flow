@@ -308,7 +308,7 @@ function serviceAuditEntries(rows) {
   }).filter(Boolean)
 }
 
-// Actor, role, store and time only: the disposition note never reaches the audit.
+// Disposition writer names and notes belong only in disposition detail.
 function dispositionAuditEntries(rows) {
   return (rows ?? []).map((event) => {
     const vin = safeVin(event?.vin)
@@ -318,7 +318,7 @@ function dispositionAuditEntries(rows) {
       sourceId: event?.id,
       // `updated_at` is generated from the server clock.
       occurredAt: event?.updated_at,
-      actor: event?.actor,
+      actor: null,
       activity: mappedActivity(DISPOSITION_AUDIT_ACTIVITY, event?.disposition, 'Disposition recorded'),
       scope: vin ? vehicleScope(vin, store) : null,
     })

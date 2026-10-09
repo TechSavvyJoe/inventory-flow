@@ -330,12 +330,15 @@ describe('disposition ledger through the service', () => {
     }
   })
 
-  it('lists the event in the Control center audit with actor, role and store, never the note', () => {
+  it('lists the disposition action and store in the audit, keeping the writer and note in detail only', () => {
     const { service } = local()
     service.updateDisposition(UNHELD, { disposition: 'sold_pending', note: 'SYNTHETIC-PRIVATE-NOTE', expectedVersion: 0 }, fowlervilleManager, 'synthetic-audit')
     const audit = service.adminOverview(groupManager, []).audit.filter((entry) => entry.id.startsWith('disposition:'))
-    expect(audit).toEqual([expect.objectContaining({ actor: fowlervilleManager.user, activity: 'Disposition: sold pending', scope: `VIN ${UNHELD} · Fowlerville`, result: 'recorded' })])
+    // DESIGN_SPEC limits the writer to disposition detail, not Control center.
+    expect(audit).toEqual([expect.objectContaining({ actor: null, activity: 'Disposition: sold pending', scope: `VIN ${UNHELD} · Fowlerville`, result: 'recorded' })])
+    expect(JSON.stringify(audit)).not.toContain(fowlervilleManager.user)
     expect(JSON.stringify(service.adminOverview(groupManager, []))).not.toContain('SYNTHETIC-PRIVATE-NOTE')
+    expect(service.getDisposition(UNHELD, groupManager)).toMatchObject({ updatedBy: fowlervilleManager.user, note: 'SYNTHETIC-PRIVATE-NOTE' })
   })
 
   it('is never inferred: a release that drops the vehicle leaves the ledger alone, and move events never write it', () => {

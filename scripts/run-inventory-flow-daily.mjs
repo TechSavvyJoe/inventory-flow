@@ -46,6 +46,7 @@ const runtime = {
   ensureAutomationBrowser: (warnings) => ensureAutomationBrowser(warnings),
   dealerMailRetryDelayMs: 20000,
   writeCollectorBaselineFile: (filePath, content) => writeCollectorBaselineFile(filePath, content),
+  writeCollectorPromotionBackup: (filePath, content) => writeCollectorPromotionBackup(filePath, content),
 }
 
 function parseArgs(argv) {
@@ -337,6 +338,7 @@ function verifyHoldRefreshBaseline({ reportDate, receipt, manifestPath, publicPa
 
 function inspectCollectorBaseline(reportDate) {
   if (reportDate !== todayInNewYork()) throw new Error('BASELINE_REQUIRED')
+  if (retainedGlobalPublicationReconciliation()) throw new Error('RECONCILIATION_REQUIRED')
   const manifestPath = path.join(WORK_ROOT, 'run-status', `${reportDate}.json`)
   const releasePath = path.join(WORK_ROOT, 'releases', reportDate, 'inventory-flow-release.json')
   const receiptPath = path.join(WORK_ROOT, 'app-feed-status', `${reportDate}.json`)
@@ -503,7 +505,7 @@ async function runDealerMail(reportDate, browserReady, warnings, steps, { refres
       return null
     }
     try {
-      runtime.run(NODE, ['work\\build_v2_snapshot.mjs', reportDate], { label: 'DealerMail snapshot builder' })
+      runtime.run(NODE, ['build_v2_snapshot.mjs', reportDate], { cwd: WORK_ROOT, label: 'DealerMail snapshot builder' })
       runtime.run(NODE, ['work\\finalize_cloud_snapshot.mjs', reportDate], { label: 'DealerMail cloud snapshot finalizer' })
       if (!existsSync(target)) throw new Error('DealerMail finalized snapshot was not created')
     } catch (error) {
@@ -1513,6 +1515,21 @@ function writeCollectorAttemptFile(filePath, content) {
   syncCollectorDirectory(path.dirname(filePath))
 }
 
+function writeCollectorPromotionBackup(filePath, content) {
+  const directory = path.dirname(filePath)
+  const temporary = `${filePath}.tmp`
+  try { unlinkSync(temporary) } catch (error) { if (error.code !== 'ENOENT') throw error }
+  const descriptor = openSync(temporary, 'wx', 0o600)
+  try { writeFileSync(descriptor, content); fsyncSync(descriptor) }
+  finally { closeSync(descriptor) }
+  try {
+    renameSync(temporary, filePath)
+    syncCollectorDirectory(directory)
+  } finally {
+    try { unlinkSync(temporary) } catch (error) { if (error.code !== 'ENOENT') throw error }
+  }
+}
+
 function syncCollectorDirectory(directory) {
   if (process.platform === 'win32') return
   const descriptor = openSync(directory, 'r')
@@ -1535,8 +1552,8 @@ async function stageIntradayHoldRefreshCandidate({ reportDate, attemptId, baseli
     throw new Error('COLLECTOR_ATTEMPT_INVALID')
   }
   if (typeof captureDealerMail !== 'function') throw new Error('COLLECTOR_ADAPTER_INVALID')
-  const verified = inspectCollectorBaseline(reportDate)
   if (!assertInheritedPublicationLock(path.join(WORK_ROOT, 'app-feed-status', '.publication.lock'))) throw new Error(PUBLICATION_LOCKED)
+  const verified = inspectCollectorBaseline(reportDate)
   const { manifestPath, releasePath, receiptPath, publicPath, dealerPath, resourcePath, baseline, receipt } = verified
   if (!sameHash(receipt.bundleSha256, baselineBundleSha256)) throw new Error('BASELINE_REQUIRED')
   const beforeReceipt = { receipt }
@@ -1591,6 +1608,11 @@ async function stageIntradayHoldRefreshCandidate({ reportDate, attemptId, baseli
     const dealerSnapshot = readJson(dealerPath)
     const dealerRows = dealerSnapshot.completeDealerMailUsedInventory?.rows
     if (!Array.isArray(dealerRows)) throw new Error('DEALERMAIL_SNAPSHOT_INVALID')
+    const capturedAt = dealerSnapshot.extractedAtUtc
+    const nestedCapturedAt = dealerSnapshot.completeDealerMailUsedInventory?.extractedAtUtc
+    if (typeof capturedAt !== 'string' || !Number.isFinite(Date.parse(capturedAt)) ||
+        typeof nestedCapturedAt !== 'string' || !Number.isFinite(Date.parse(nestedCapturedAt)) ||
+        Date.parse(capturedAt) !== Date.parse(nestedCapturedAt)) throw new Error('DEALERMAIL_SNAPSHOT_INVALID')
     staged = true
     return {
       candidatePath,
@@ -1600,7 +1622,7 @@ async function stageIntradayHoldRefreshCandidate({ reportDate, attemptId, baseli
       sourceSha256: sha256(dealerPath).toLowerCase(),
       reportDate,
       dealerMailRows: dealerRows.length,
-      capturedAt: dealerSnapshot.extractedAt ?? dealerSnapshot.capturedAt ?? new Date().toISOString(),
+      capturedAt,
       counts: built.validation,
     }
   } finally {
@@ -1690,7 +1712,7 @@ function promoteVerifiedCollectorCandidate({ profile, claim, candidate, verifica
     verifyHoldRefreshBaseline({ reportDate, receipt: localReceipt, manifestPath: paths.manifest, publicPath: publicSnapshotPath(reportDate), dealerPath: paths.dealerMail, resourcePath: path.join(APP_ROOT, 'data', 'vin-document-enrichment.json') })
     backup = { attemptId, reportDate, bundleSha256, baselineBundleSha256: claim.baselineBundleSha256, profileSha256: profile.profileSha256,
       files: Object.fromEntries(Object.entries(paths).map(([key, filePath]) => { const content = readFileSync(filePath); return [key, { bytes: content.toString('base64'), sha256: createHash('sha256').update(content).digest('hex') }] })) }
-    writeCollectorAttemptFile(backupPath, JSON.stringify(backup))
+    runtime.writeCollectorPromotionBackup(backupPath, JSON.stringify(backup))
   }
   const backups = Object.fromEntries(Object.entries(backup.files).map(([key, value]) => {
     const content = Buffer.from(value.bytes, 'base64')

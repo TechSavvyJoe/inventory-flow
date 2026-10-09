@@ -44,6 +44,8 @@ const SAFE_CODES = new Set([
   'CREDENTIAL_STORE_MISSING', 'CREDENTIAL_STORE_UNAVAILABLE',
   'CREDENTIAL_STORE_INVALID', 'PROFILE_NOT_INSTALLED', 'PROFILE_INVALID',
   'COLLECTOR_DISCONNECTED', 'LEASE_EXPIRED',
+  'COLLECTOR_LEASE_STALE', 'REQUEST_TOO_LARGE', 'ENVELOPE_TOO_LARGE',
+  'COLLECTOR_REVOKED', 'COLLECTOR_DISABLED', 'COLLECTOR_SCOPE_MISMATCH',
 ])
 
 function parseArgs(argv) {
@@ -89,6 +91,11 @@ function receiptFailureCode(code) {
 
 function isDefiniteStaleClaim(error) {
   return error?.status === 409 && error?.message === 'COLLECTOR_LEASE_STALE'
+}
+
+function isDefinitePreflightAuthorityFailure(error) {
+  return (error?.status === 403 && ['COLLECTOR_REVOKED', 'COLLECTOR_DISABLED'].includes(error?.message)) ||
+    (error?.status === 409 && error?.message === 'COLLECTOR_SCOPE_MISMATCH')
 }
 
 function isDefinitePublicationRejection(error) {
@@ -277,6 +284,7 @@ async function runClaimedAttempt(profile, credentials, claim, {
   if (signal?.aborted) abortController.abort()
   else signal?.addEventListener('abort', onAbort, { once: true })
   const heartbeat = heartbeatLoop({ profile, credentials, claim, fetchImpl, abortController })
+  const claimStartedAt = now().getTime()
   let stage
   let publicationRequestStarted = false
   try {
@@ -317,6 +325,9 @@ async function runClaimedAttempt(profile, credentials, claim, {
         baselineBundleSha256: claim.baselineBundleSha256,
         captureDealerMail,
       })
+      if (!Number.isFinite(Date.parse(stage.capturedAt)) || Date.parse(stage.capturedAt) < claimStartedAt) {
+        throw new Error('DEALERMAIL_SNAPSHOT_INVALID')
+      }
       if (heartbeat.stopped || abortController.signal.aborted) throw new Error('LEASE_STOPPED')
       const candidate = JSON.parse(readFileSync(stage.candidatePath, 'utf8'))
       const { encryptBundle, base64Key } = await import('./publish-cloud-release.mjs')
@@ -346,6 +357,10 @@ async function runClaimedAttempt(profile, credentials, claim, {
         fetchImpl, signal: abortController.signal, onRequestStarted: () => { publicationRequestStarted = true },
       })
     } catch (firstError) {
+      // Local request validation (including the complete wrapper size check)
+      // happens before onRequestStarted. It is a definite failure, so retain
+      // and report that error instead of turning it into an unknown outcome.
+      if (!publicationRequestStarted) throw firstError
       if (abortController.signal.aborted) throw new Error('LEASE_STOPPED')
       if (isDefinitePublicationRejection(firstError)) throw firstError
       // A retry uses the same encrypted envelope, attempt/fence and idempotency
@@ -358,6 +373,10 @@ async function runClaimedAttempt(profile, credentials, claim, {
     if (result.status === 'reconciliation_required') {
       saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: true })
       return { status: 'reconciliation_required', attemptId: claim.attemptId, bundleSha256: savedEnvelope.bundleSha256 }
+    }
+    if (result.status === 'preflight_retryable') {
+      saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: false, preflightRetryable: true })
+      return { status: 'preflight_retryable', attemptId: claim.attemptId, bundleSha256: savedEnvelope.bundleSha256 }
     }
     if (result.status !== 'published_verified' && result.status !== 'unchanged_verified') throw new Error('RECONCILIATION_REQUIRED')
     const promotionRunner = await runnerLoader(profile)
@@ -381,6 +400,11 @@ async function runClaimedAttempt(profile, credentials, claim, {
     if (publicationRequestStarted && isDefinitePublicationRejection(error)) {
       cleanupVerifiedAttempt(privateAttemptArtifacts(profile.workspaceRoot, claim.attemptId))
       return { status: 'failed', attemptId: claim.attemptId, code }
+    }
+    if (!publicationRequestStarted && isDefiniteStaleClaim(error)) {
+      try { cleanupVerifiedAttempt(privateAttemptArtifacts(profile.workspaceRoot, claim.attemptId)) }
+      catch { return { status: 'reconciliation_required', attemptId: claim.attemptId, code: 'RECONCILIATION_REQUIRED' } }
+      return { status: 'retry_fresh_claim', attemptId: claim.attemptId, code: 'COLLECTOR_LEASE_STALE' }
     }
     if (claim.attemptId && claim.fence && code !== 'PUBLICATION_OUTCOME_UNKNOWN' && code !== 'RECONCILIATION_REQUIRED') {
       let savedState = null
@@ -411,6 +435,7 @@ async function runClaimedAttempt(profile, credentials, claim, {
 async function reconcilePendingPublication(profile, credentials, pending, fetchImpl, signal, { runnerLoader = loadRunner, promotion = (runner, values) => runner.internals.promoteVerifiedCollectorCandidate(values) } = {}) {
   const { artifacts, candidate, envelope } = pending
   let state = pending.state
+  let retryablePreflightProof = state.preflightRetryable === true
   if (state.attemptId !== path.basename(artifacts.statePath, '.state.json') ||
       state.profileSha256 !== profile.profileSha256 || !Number.isSafeInteger(state.fence) || state.fence < 1 ||
       !/^[a-f0-9]{64}$/.test(state.configSha256 ?? '') || !/^[A-Za-z0-9_-]{20,80}$/.test(state.publicationIdempotencyKey ?? '') ||
@@ -426,7 +451,8 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
       await postCaptureReceipt(profile, credentials, { attemptId: state.attemptId, fence: state.fence }, stage, fetchImpl, signal)
       state = saveAttemptState(artifacts.statePath, { ...state, captureReceiptPending: false, captureReceiptSent: true })
     }
-    state = saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: false })
+    retryablePreflightProof = state.preflightRetryable === true
+    state = saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: true, preflightRetryable: false })
     const result = await submitCollectorPublication(profile, credentials, {
       attemptId: state.attemptId,
       fence: state.fence,
@@ -434,6 +460,10 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
       envelope,
       idempotencyKey: state.publicationIdempotencyKey,
     }, { fetchImpl })
+    if (result.status === 'preflight_retryable') {
+      state = saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: false, preflightRetryable: true })
+      return { status: 'preflight_retryable', attemptId: state.attemptId, bundleSha256: state.bundleSha256 }
+    }
     if (result.status === 'reconciliation_required') {
       saveAttemptState(artifacts.statePath, { ...state, publicationPending: true, reconciliationRequired: true })
       return { status: 'reconciliation_required', attemptId: state.attemptId, bundleSha256: state.bundleSha256 }
@@ -457,7 +487,27 @@ async function reconcilePendingPublication(profile, credentials, pending, fetchI
     })
     cleanupVerifiedAttempt(artifacts)
     return { status: result.status, attemptId: state.attemptId, bundleSha256: state.bundleSha256, counts: result.counts }
-  } catch {
+  } catch (error) {
+    if (retryablePreflightProof && (isDefiniteStaleClaim(error) || isDefinitePreflightAuthorityFailure(error))) {
+      try {
+        cleanupVerifiedAttempt(artifacts)
+        const claimKey = getOrCreateClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256)
+        clearPendingClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256, claimKey)
+        if (isDefiniteStaleClaim(error)) return { status: 'retry_fresh_claim', attemptId: state.attemptId, code: 'COLLECTOR_LEASE_STALE' }
+        return { status: 'failed', attemptId: state.attemptId, code: error.message }
+      } catch {
+        return { status: 'reconciliation_required', attemptId: state.attemptId, code: 'RECONCILIATION_REQUIRED' }
+      }
+    }
+    if (isDefiniteStaleClaim(error) && state.publicationPending !== true && state.reconciliationRequired !== true) {
+      try {
+        cleanupVerifiedAttempt(artifacts)
+        clearPendingClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256, getOrCreateClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256))
+        return { status: 'retry_fresh_claim', attemptId: state.attemptId, code: 'COLLECTOR_LEASE_STALE' }
+      } catch {
+        return { status: 'reconciliation_required', attemptId: state.attemptId, code: 'RECONCILIATION_REQUIRED' }
+      }
+    }
     if (state.captureReceiptSent !== true) {
       try { saveAttemptState(artifacts.statePath, { ...state, captureReceiptPending: true, publicationPending: false, reconciliationRequired: false }) } catch {}
       return { status: 'capture_receipt_pending', attemptId: state.attemptId }
@@ -495,35 +545,45 @@ export async function runOnce({
   const lock = await acquireRunnerLock(profile)
   try {
     if (signal?.aborted) return { status: 'stopped' }
-    if (pending) return await reconcilePendingPublication(profile, credentials, pending, fetchImpl, signal, { runnerLoader, promotion })
+    if (pending) {
+      const outcome = await reconcilePendingPublication(profile, credentials, pending, fetchImpl, signal, { runnerLoader, promotion })
+      if (outcome.status !== 'retry_fresh_claim') return outcome
+      pending = null
+    }
     let baseline
     try { baseline = await inspectBaseline(profile, reportDate, runnerLoader) }
     catch (error) { return { status: 'blocked', code: safeCode(error) } }
-    const idempotencyKey = getOrCreateClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256)
-    let claimResponse
-    try { claimResponse = await collectorRequest(profile, credentials, '/api/collector/claim', { body: {}, idempotencyKey, fetchImpl, signal }) }
-    catch (error) {
-      if (isDefiniteStaleClaim(error)) {
-        clearPendingClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256, idempotencyKey)
-        return { status: 'blocked', code: 'LEASE_EXPIRED' }
+    for (let staleRetries = 0; staleRetries <= 2; staleRetries += 1) {
+      const idempotencyKey = getOrCreateClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256)
+      let claimResponse
+      try { claimResponse = await collectorRequest(profile, credentials, '/api/collector/claim', { body: {}, idempotencyKey, fetchImpl, signal }) }
+      catch (error) {
+        if (isDefiniteStaleClaim(error)) {
+          clearPendingClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256, idempotencyKey)
+          if (staleRetries < 2) continue
+          return { status: 'blocked', code: 'LEASE_EXPIRED' }
+        }
+        return signal?.aborted ? { status: 'stopped' } : { status: 'blocked', code: safeCode(error) }
       }
-      return signal?.aborted ? { status: 'stopped' } : { status: 'blocked', code: safeCode(error) }
-    }
-    if (claimResponse.status === 204) {
+      if (claimResponse.status === 204) {
+        clearPendingClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256, idempotencyKey)
+        return { status: 'idle' }
+      }
+      const claim = assertClaimMatchesProfile(claimResponse.body, profile, now(), contact.scopeSha256)
+      try { assertBaselineBundleMatchesClaim(claim, baseline.receipt) }
+      catch {
+        await postFailureReceipt(profile, credentials, claim, 'BASELINE_REQUIRED', fetchImpl)
+        clearPendingClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256, idempotencyKey)
+        return { status: 'blocked', code: 'BASELINE_REQUIRED' }
+      }
+      if (signal?.aborted) return { status: 'stopped' }
+      const outcome = await runClaimedAttempt(profile, credentials, claim, { fetchImpl, signal, runnerLoader, captureFactory, promotion, now })
       clearPendingClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256, idempotencyKey)
-      return { status: 'idle' }
+      if (outcome.status === 'retry_fresh_claim' && staleRetries < 2) continue
+      if (outcome.status === 'retry_fresh_claim') return { status: 'blocked', code: 'LEASE_EXPIRED' }
+      return outcome
     }
-    const claim = assertClaimMatchesProfile(claimResponse.body, profile, now(), contact.scopeSha256)
-    try { assertBaselineBundleMatchesClaim(claim, baseline.receipt) }
-    catch {
-      await postFailureReceipt(profile, credentials, claim, 'BASELINE_REQUIRED', fetchImpl)
-      clearPendingClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256, idempotencyKey)
-      return { status: 'blocked', code: 'BASELINE_REQUIRED' }
-    }
-    if (signal?.aborted) return { status: 'stopped' }
-    const outcome = await runClaimedAttempt(profile, credentials, claim, { fetchImpl, signal, runnerLoader, captureFactory, promotion, now })
-    clearPendingClaimIdempotencyKey(profile.workspaceRoot, profile.profileSha256, idempotencyKey)
-    return outcome
+    return { status: 'blocked', code: 'LEASE_EXPIRED' }
   } finally { lock.release() }
 }
 

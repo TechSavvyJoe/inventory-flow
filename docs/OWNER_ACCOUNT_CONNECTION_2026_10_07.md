@@ -11,6 +11,54 @@ attributed audit through the normal platform service. Tenant identity activation
 and deployment require the release gates below; registration alone is not a
 working connection. The retained inventory publication is dated October 1, 2026.
 
+## Historical deployed release record
+
+The following preserves the release evidence recorded in PR
+[#71](https://github.com/TechSavvyJoe/inventory-flow/pull/71). It describes the
+October 7 deployment, not the current serving versions or a new deployment.
+
+PR [#70](https://github.com/TechSavvyJoe/inventory-flow/pull/70) merged at
+`108305e2a07c631a165eb13d2fb4a085629d911e`.
+[Exact-main CI](https://github.com/TechSavvyJoe/inventory-flow/actions/runs/37669316118)
+passed test/build, end-to-end, Chromium/WebKit and strict visuals. The recorded
+paired release check passed 3,531 tests (three skipped, 228 files), typecheck,
+repository safety, design-system checks, build, Companion packaging, Cloudflare
+validation and the read-only migration-ledger check.
+
+| Target | Recorded version |
+| --- | --- |
+| Software Admin staging | `077c44a2-b14d-417d-8c30-a7f6bd56e88a` |
+| Software Admin production | `fb81437b-9334-45e6-8cfb-e7d6bbbf0aa5` |
+| App | `669625d0-c502-4c0c-9419-6008e2269ac1` |
+| Integrations | `aee172fa-13b8-488e-a66f-19a3f8363bd9` |
+
+The historical record reported 100% traffic on each version and a passed
+900-second connected monitor with no Worker exceptions, error events, 5xx
+responses or disconnected streams. It recorded verified additive tenant identity
+and immutable triggers, audited account activation with four enabled stores and
+two active employees, no configured feed connections/pulls, and disabled
+scheduling. These observations do not establish source freshness or fleet capacity.
+
+Independent integration reconciliation was recorded at `2026-10-07T19:50:23Z`
+against the independently prepared retained October 1 publication expectation.
+The temporary read-only verification grant was revoked, subsequent access returned
+403, and its local credential file was removed. An earlier grant-creation failure
+had an unknown cause; the record found no remaining grant/file from that attempt.
+
+Authenticated reciprocal navigation acceptance was recorded at
+`2026-10-07T19:52:26Z` using the actual employee role without preview: the main
+app exposed **Software Admin**, and the connected owner account exposed
+**Open dealership app**. Both guarded destinations loaded; manual controls and
+Issues/report controls were visible at all four canonical viewports. The read-only
+QA attempted no writes. Native new-window click behavior and hosted OAuth-client
+sign-in remained unverified.
+
+The historical Windows readback recorded paused publisher/source-refresh tasks
+and no running publisher. It did not claim all legacy tasks were inactive.
+Private exports, raw operation receipts, credential files and diagnostic helpers
+remain outside Git. Repeat the applicable gates before any future deployment;
+this code-merge task does not refresh or activate that retained dealership data.
+
 ## Scope and validation
 
 - App and integrations receive the same immutable tenant identity and platform

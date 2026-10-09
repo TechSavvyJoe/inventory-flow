@@ -95,18 +95,18 @@ async function lifecycleFixture() {
   const envelopes: any[] = []
   const actualFetch = async (url: URL, options: RequestInit) => {
     if (url.pathname === '/api/collector/publication') { publications += 1; envelopes.push(JSON.parse(String(options.body)).envelope) }
-    return handleCollectorApi(new Request(url, options), remote.env, remote.machine, COLLECTOR_SYNTHETIC_NOW)
+    return handleCollectorApi(new Request(url, options), remote.env, remote.machine, new Date())
   }
   const options = {
     profileName: COLLECTOR_PROFILE_NAME, profileDirectory,
     credentialReader: () => ({ accessClientId: 'synthetic', accessClientSecret: 'synthetic', releaseEncryptionKeyBase64: remote.key.toString('base64') }),
     fetchImpl: actualFetch,
     runnerLoader: async () => runner,
-    now: () => COLLECTOR_SYNTHETIC_NOW,
+    now: () => new Date(),
     captureFactory: () => async () => {
       captures += 1
       const snapshot = JSON.parse(readFileSync(dealerPath, 'utf8'))
-      snapshot.extractedAtUtc = new Date(COLLECTOR_SYNTHETIC_NOW.getTime() + captures * 1000).toISOString()
+      snapshot.extractedAtUtc = new Date(Date.now() + captures * 1000).toISOString()
       snapshot.completeDealerMailUsedInventory.extractedAtUtc = snapshot.extractedAtUtc
       writeJson(dealerPath, snapshot)
     },
@@ -166,6 +166,309 @@ describe('collector exact candidate local baseline lifecycle', () => {
     expect(f.envelopes[0]).toEqual(JSON.parse(retainedEnvelope))
     expect(f.localHash()).toBe(reconciled.bundleSha256)
     expect(f.cloudHash()).toBe(reconciled.bundleSha256)
+    expect(f.captures()).toBe(1)
+  })
+
+  it('retries a signed preflight-only publication response with the same retained candidate', async () => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    let rejected = false
+    const first = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication' && !rejected) {
+        rejected = true
+        const publication = JSON.parse(String(options.body))
+        return Response.json({
+          status: 'preflight_retryable', attemptId: publication.attemptId,
+          bundleSha256: publication.envelope.bundleSha256, reportDate: publication.envelope.reportDate,
+          ready: false,
+        })
+      }
+      return f.actualFetch(url, options)
+    } })
+    expect(first.status).toBe('preflight_retryable')
+    const pending = findPendingPublication(f.root)
+    expect(pending.state.preflightRetryable).toBe(true)
+    const retainedEnvelope = readFileSync(pending.artifacts.envelopePath, 'utf8')
+    const retried = await f.runOnce(f.options)
+    expect(retried.status).toBe('published_verified')
+    expect(f.envelopes).toHaveLength(1)
+    expect(f.envelopes[0]).toEqual(JSON.parse(retainedEnvelope))
+    expect(f.captures()).toBe(1)
+    expect(f.localHash()).toBe(retried.bundleSha256)
+  })
+
+  it('uses retained preflight proof to retire an expired undispatched retry and complete a fresh claim', async () => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    let preflight = false
+    const first = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication' && !preflight) {
+        preflight = true
+        const publication = JSON.parse(String(options.body))
+        return Response.json({
+          status: 'preflight_retryable', attemptId: publication.attemptId,
+          bundleSha256: publication.envelope.bundleSha256, reportDate: publication.envelope.reportDate,
+          ready: false,
+        })
+      }
+      return f.actualFetch(url, options)
+    } })
+    expect(first.status).toBe('preflight_retryable')
+    vi.setSystemTime(new Date(COLLECTOR_SYNTHETIC_NOW.getTime() + 121_000))
+    const recovered = await f.runOnce(f.options)
+    expect(recovered.status).toBe('published_verified')
+    expect(f.captures()).toBe(2)
+    expect(f.publications()).toBe(2)
+    expect(f.remote.tenant.prepare('SELECT COUNT(*) AS count FROM collector_publication_receipts').get().count).toBe(1)
+    expect(f.localHash()).toBe(recovered.bundleSha256)
+    expect(findPendingPublication(f.root)).toBe(null)
+  })
+
+  it.each([
+    ['COLLECTOR_REVOKED', 403],
+    ['COLLECTOR_DISABLED', 403],
+    ['COLLECTOR_SCOPE_MISMATCH', 409],
+  ])('retires a preflight candidate on the exact %s/%s authority response', async (code, status) => {
+    const f = await lifecycleFixture()
+    const baseline = f.localHash()
+    await f.queue()
+    let preflight = false
+    const first = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication' && !preflight) {
+        preflight = true
+        const publication = JSON.parse(String(options.body))
+        return Response.json({ status: 'preflight_retryable', attemptId: publication.attemptId,
+          bundleSha256: publication.envelope.bundleSha256, reportDate: publication.envelope.reportDate, ready: false })
+      }
+      return f.actualFetch(url, options)
+    } })
+    expect(first.status).toBe('preflight_retryable')
+    const failed = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication') return Response.json({ code }, { status })
+      return f.actualFetch(url, options)
+    } })
+    expect(failed).toMatchObject({ status: 'failed', code })
+    expect(findPendingPublication(f.root)).toBe(null)
+    expect(f.localHash()).toBe(baseline)
+  })
+
+  it('keeps the candidate when an authority response has an unrecognized code or status', async () => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    let preflight = false
+    await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication' && !preflight) {
+        preflight = true
+        const publication = JSON.parse(String(options.body))
+        return Response.json({ status: 'preflight_retryable', attemptId: publication.attemptId,
+          bundleSha256: publication.envelope.bundleSha256, reportDate: publication.envelope.reportDate, ready: false })
+      }
+      return f.actualFetch(url, options)
+    } })
+    const failed = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication') return Response.json({ code: 'COLLECTOR_REVOKED' }, { status: 409 })
+      return f.actualFetch(url, options)
+    } })
+    expect(failed.status).toBe('reconciliation_required')
+    const pending = findPendingPublication(f.root)
+    expect(pending.state).toMatchObject({ preflightRetryable: false, reconciliationRequired: true })
+  })
+
+  it('keeps a preflight candidate unknown after the later publication response is lost', async () => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    let preflight = false
+    await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/publication' && !preflight) {
+        preflight = true
+        const publication = JSON.parse(String(options.body))
+        return Response.json({ status: 'preflight_retryable', attemptId: publication.attemptId,
+          bundleSha256: publication.envelope.bundleSha256, reportDate: publication.envelope.reportDate, ready: false })
+      }
+      return f.actualFetch(url, options)
+    } })
+    const unknown = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      const response = await f.actualFetch(url, options)
+      if (url.pathname === '/api/collector/publication') throw new TypeError('Synthetic later publication response lost')
+      return response
+    } })
+    expect(unknown.status).toBe('reconciliation_required')
+    const pending = findPendingPublication(f.root)
+    expect(pending.state).toMatchObject({ preflightRetryable: false, reconciliationRequired: true })
+    expect(f.cloudHash()).toBe(pending.envelope.bundleSha256)
+    const recovered = await f.runOnce(f.options)
+    expect(recovered.status).toBe('published_verified')
+    expect(f.localHash()).toBe(recovered.bundleSha256)
+    expect(f.captures()).toBe(1)
+  })
+
+  it('records an oversized complete publication wrapper as a definite failure without POST or retained attempt', async () => {
+    const f = await lifecycleFixture()
+    const baseline = f.localHash()
+    await f.queue()
+    const maxBytes = 25 * 1024 * 1024
+    const runnerLoader = async () => ({
+      ...f.runner,
+      internals: {
+        ...f.runner.internals,
+        stageIntradayHoldRefreshCandidate: async args => {
+          const stage = await f.runner.internals.stageIntradayHoldRefreshCandidate(args)
+          const candidate = JSON.parse(readFileSync(stage.candidatePath, 'utf8'))
+          const envelopeShape = {
+            version: 'inventory-flow-private-release-v1', reportDate: stage.reportDate,
+            bundleSha256: 'a'.repeat(64), iv: 'x'.repeat(16), ciphertext: '',
+          }
+          const targetCiphertextBytes = Math.floor((maxBytes - 100 - Buffer.byteLength(JSON.stringify(envelopeShape))) * 0.75) - 16
+          const basePlaintextBytes = Buffer.byteLength(JSON.stringify({ ...candidate, syntheticPreflightPadding: '' }))
+          const paddingSize = Math.max(0, targetCiphertextBytes - basePlaintextBytes)
+          candidate.syntheticPreflightPadding = 'x'.repeat(paddingSize)
+          writeJson(stage.candidatePath, candidate)
+          const envelope = encryptBundle(candidate, f.remote.key)
+          stage.bundleSha256 = envelope.bundleSha256
+          const wrapperBytes = Buffer.byteLength(JSON.stringify({
+            attemptId: 'synthetic-attempt-id', fence: 1, configSha256: 'a'.repeat(64), envelope,
+          }))
+          expect(Buffer.byteLength(JSON.stringify(envelope))).toBeGreaterThan(maxBytes - 200)
+          expect(Buffer.byteLength(JSON.stringify(envelope))).toBeLessThanOrEqual(maxBytes)
+          expect(wrapperBytes).toBeGreaterThan(maxBytes)
+          return stage
+        },
+      },
+    })
+    const result = await f.runOnce({ ...f.options, runnerLoader })
+    expect(result).toMatchObject({ status: 'failed', code: 'REQUEST_TOO_LARGE' })
+    expect(f.publications()).toBe(0)
+    expect(findPendingPublication(f.root)).toBe(null)
+    expect(f.localHash()).toBe(baseline)
+  }, 30_000)
+
+  it('rejects missing, invalid or disagreeing extractedAtUtc provenance before publication', async () => {
+    const f = await lifecycleFixture()
+    const baseline = f.localHash()
+    const invalidations = [
+      snapshot => { delete snapshot.extractedAtUtc },
+      snapshot => { snapshot.extractedAtUtc = 'not-a-timestamp' },
+      snapshot => { snapshot.completeDealerMailUsedInventory.extractedAtUtc = new Date(Date.parse(snapshot.extractedAtUtc) + 1000).toISOString() },
+    ]
+    for (const invalidate of invalidations) {
+      await f.queue()
+      const result = await f.runOnce({ ...f.options, captureFactory: () => async (...args) => {
+        await f.options.captureFactory()(...args)
+        const snapshot = JSON.parse(readFileSync(f.dealerPath, 'utf8'))
+        invalidate(snapshot)
+        writeJson(f.dealerPath, snapshot)
+      } })
+      expect(result).toMatchObject({ status: 'failed', code: 'DEALERMAIL_SNAPSHOT_INVALID' })
+    }
+    expect(f.publications()).toBe(0)
+    expect(f.captures()).toBe(3)
+    expect(f.localHash()).toBe(baseline)
+  })
+
+  it('retires a successful capture whose retained same-day snapshot timestamp predates the claim', async () => {
+    const f = await lifecycleFixture()
+    const baseline = f.localHash()
+    const oldSnapshot = JSON.parse(readFileSync(f.dealerPath, 'utf8'))
+    expect(Date.parse(oldSnapshot.extractedAtUtc)).toBeLessThan(COLLECTOR_SYNTHETIC_NOW.getTime())
+    await f.queue()
+    let captures = 0
+    const result = await f.runOnce({ ...f.options, captureFactory: () => async () => { captures += 1 } })
+    expect(result).toMatchObject({ status: 'failed', code: 'DEALERMAIL_SNAPSHOT_INVALID' })
+    expect(captures).toBe(1)
+    expect(f.publications()).toBe(0)
+    expect(findPendingPublication(f.root)).toBe(null)
+    expect(f.localHash()).toBe(baseline)
+  })
+
+  it('retires a capture attempt after a definitive stale receipt and makes one fresh claim', async () => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    let claims = 0
+    let staleReceiptSent = false
+    const result = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/claim') {
+        claims += 1
+        if (claims > 1) return new Response(null, { status: 204 })
+      }
+      if (url.pathname === '/api/collector/receipts' && !staleReceiptSent) {
+        const receipt = JSON.parse(String(options.body))
+        if (receipt.kind === 'capture') {
+          staleReceiptSent = true
+          return Response.json({ code: 'COLLECTOR_LEASE_STALE' }, { status: 409 })
+        }
+      }
+      return f.actualFetch(url, options)
+    } })
+    expect(result.status).toBe('idle')
+    expect(claims).toBe(2)
+    expect(f.captures()).toBe(1)
+    expect(f.publications()).toBe(0)
+    expect(findPendingPublication(f.root)).toBe(null)
+  })
+
+  it('restarts after a dropped capture receipt, retires it when the lease expires, and completes a fresh pull', async () => {
+    const f = await lifecycleFixture()
+    await f.queue()
+    let dropped = false
+    const interrupted = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+      if (url.pathname === '/api/collector/receipts' && !dropped && JSON.parse(String(options.body)).kind === 'capture') {
+        dropped = true
+        throw new TypeError('Synthetic lost capture receipt response')
+      }
+      return f.actualFetch(url, options)
+    } })
+    expect(interrupted.status).toBe('capture_receipt_pending')
+    expect(findPendingPublication(f.root)).not.toBe(null)
+    vi.setSystemTime(new Date(COLLECTOR_SYNTHETIC_NOW.getTime() + 121_000))
+    const recovered = await f.runOnce(f.options)
+    expect(recovered, JSON.stringify(recovered)).toMatchObject({ status: 'published_verified' })
+    expect(f.captures()).toBe(2)
+    expect(f.publications()).toBe(1)
+    expect(f.localHash()).toBe(recovered.bundleSha256)
+    expect(findPendingPublication(f.root)).toBe(null)
+  })
+
+  it('recovers an interrupted temporary promotion backup before canonical writes', async () => {
+    const f = await lifecycleFixture()
+    const original = [f.dealerPath, f.manifestPath, f.releasePath, f.receiptPath].map(file => readFileSync(file))
+    await f.queue()
+    const writer = f.runner.internals.runtime.writeCollectorPromotionBackup
+    let tempPath: string | null = null
+    f.runner.internals.runtime.writeCollectorPromotionBackup = (file, _content) => {
+      tempPath = `${file}.tmp`
+      writeFileSync(tempPath, '{partial backup')
+      throw new Error('Synthetic interruption during backup write')
+    }
+    const failed = await f.runOnce(f.options)
+    f.runner.internals.runtime.writeCollectorPromotionBackup = writer
+    expect(failed.status).toBe('reconciliation_required')
+    expect(tempPath && existsSync(tempPath)).toBe(true)
+    for (const [index, file] of [f.dealerPath, f.manifestPath, f.releasePath, f.receiptPath].entries()) expect(readFileSync(file).equals(original[index])).toBe(true)
+    const recovered = await f.runOnce(f.options)
+    expect(recovered.status).toBe('published_verified')
+    expect(tempPath && existsSync(tempPath)).toBe(false)
+    expect(f.captures()).toBe(1)
+  })
+
+  it('recovers when promotion stops immediately after the backup rename', async () => {
+    const f = await lifecycleFixture()
+    const original = [f.dealerPath, f.manifestPath, f.releasePath, f.receiptPath].map(file => readFileSync(file))
+    await f.queue()
+    const writer = f.runner.internals.runtime.writeCollectorPromotionBackup
+    let backupPath: string | null = null
+    f.runner.internals.runtime.writeCollectorPromotionBackup = (file, content) => {
+      backupPath = file
+      writer(file, content)
+      throw new Error('Synthetic process stop after durable backup rename')
+    }
+    const interrupted = await f.runOnce(f.options)
+    f.runner.internals.runtime.writeCollectorPromotionBackup = writer
+    expect(interrupted.status).toBe('reconciliation_required')
+    expect(backupPath && existsSync(backupPath)).toBe(true)
+    expect(backupPath && existsSync(`${backupPath}.tmp`)).toBe(false)
+    for (const [index, file] of [f.dealerPath, f.manifestPath, f.releasePath, f.receiptPath].entries()) expect(readFileSync(file).equals(original[index])).toBe(true)
+    const recovered = await f.runOnce(f.options)
+    expect(recovered.status).toBe('published_verified')
     expect(f.captures()).toBe(1)
   })
 

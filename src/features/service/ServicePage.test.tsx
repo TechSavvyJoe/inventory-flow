@@ -29,6 +29,13 @@ beforeEach(() => {
 })
 
 describe('Service readiness workspace', () => {
+  it('opens an all-store service total across stores and preserves scope in the vehicle return link', async () => {
+    show('/service?status=serviced&scope=all')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', 'true'))
+    const vehicleLink = screen.getByRole('link', { name: 'Open vehicle for Synthetic Ford 003' })
+    expect(vehicleLink).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0003&returnTo=%2Fservice%3Fstatus%3Dserviced%26scope%3Dall')
+  })
+
   it('focuses vehicle context and keeps saved status and dates in one summary', async () => {
     mocked.get.mockResolvedValue(detail('serviced', { serviceEnteredAt: '2026-08-28', completedAt: '2026-08-30' }))
     show('/service?vin=TESTDATAHWELL0001')
@@ -164,8 +171,8 @@ describe('Service readiness workspace', () => {
     expect(row).toHaveAttribute('aria-pressed', 'false')
     expect(row.contains(actions)).toBe(false)
     expect(actions).toBe(row.nextElementSibling)
-    expect(screen.getByRole('link', { name: 'Open vehicle for Synthetic Ford 002' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0002&returnTo=%2Fservice%3Fstatus%3Dneeds_service')
-    expect(screen.getByRole('link', { name: 'Records for Synthetic Ford 002' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0002&tab=data&returnTo=%2Fservice%3Fstatus%3Dneeds_service')
+    expect(screen.getByRole('link', { name: 'Open vehicle for Synthetic Ford 002' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0002&returnTo=%2Fservice%3Fstatus%3Dneeds_service%26scope%3Dmy_store')
+    expect(screen.getByRole('link', { name: 'Records for Synthetic Ford 002' })).toHaveAttribute('href', '/inventory?scope=group&vin=TESTDATAHWELL0002&tab=data&returnTo=%2Fservice%3Fstatus%3Dneeds_service%26scope%3Dmy_store')
     expect(screen.getByRole('button', { name: 'Update service for Synthetic Ford 002' })).toBeInTheDocument()
     expect(container.querySelector('.service-vehicle-row a, .service-vehicle-row button')).toBeNull()
   })
@@ -175,7 +182,7 @@ describe('Service readiness workspace', () => {
     const link = await screen.findByRole('link', { name: `${action} for Synthetic Ford 003` })
     await waitFor(() => {
       const url = new URL(link.getAttribute('href')!, 'https://inventory.invalid')
-      expect(url.searchParams.get('returnTo')).toBe('/service?status=serviced&store=Lincoln')
+      expect(url.searchParams.get('returnTo')).toBe('/service?status=serviced&scope=all&store=Lincoln')
     })
   })
 

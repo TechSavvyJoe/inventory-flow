@@ -47,6 +47,13 @@ describe('Service vehicle reference', () => {
     expect(screen.getByText('Conditional coverage & source restrictions apply')).toBeVisible()
     expect(screen.getByText('Ends 03/14/2030')).toBeVisible()
   })
+  it('converts source kilometre distances in captured service and warranty details for display', () => {
+    show({ fordOasis: { openFieldServiceActions: [{ code: 'SYN-1', description: 'Inspect at 12,000 km' }], warrantyCoverages: [{ type: 'Powertrain', description: 'Coverage through 100,000 km' }] },
+      warrantyCheck: { dataState: 'current', mileageEntered: 12000, fordOasis: { warrantyStartDate: '', monthsInService: 0, coverages: [{ type: 'Basic', termText: '60 months/100,000 km', status: 'ACTIVE', remainingMilesText: '12,000 km', remainingTimeText: '12 months', note: 'Inspect at 8,000 km' }] } } })
+    expect(screen.getAllByText(/7,456 mi \(12,000 km in the source\)/)).toHaveLength(2)
+    expect(screen.getAllByText(/62,137 mi \(100,000 km in the source\)/)).toHaveLength(2)
+    expect(screen.getByText(/4,971 mi \(8,000 km in the source\)/)).toBeVisible()
+  })
   it('shows captured technical data and differing OASIS values without duplicate header facts', () => {
     show({ engine: 'Inventory engine', transmission: 'Matching transmission', drivetrain: 'AWD', bodyStyle: 'SUV', exteriorColor: 'Blue', fuelType: 'Gasoline',
       fordOasis: { engine: 'Different captured engine', transmission: 'Matching transmission', driveType: 'AWD', bodyStyle: 'SUV', paintColor: 'Blue', fuelType: 'Gasoline',

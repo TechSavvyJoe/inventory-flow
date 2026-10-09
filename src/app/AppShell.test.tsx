@@ -276,6 +276,15 @@ describe('AppShell account and update controls', () => {
     expect(within(utility).queryByRole('link', { name: /^Overview/ })).not.toBeInTheDocument()
   })
 
+  it.each(['/transfers', '/transfers/history', '/updates', '/admin'])('marks More current on mobile utility route %s', (route) => {
+    const context = useAppDataMock()
+    useAppDataMock.mockReturnValue({ ...context, role: 'group_manager' })
+    render(<MemoryRouter initialEntries={[route]}><AppShell><span>Utility route</span></AppShell></MemoryRouter>)
+    const mobile = screen.getByRole('navigation', { name: 'Mobile primary' })
+    expect(within(mobile).getByRole('button', { name: 'More app controls' })).toHaveAttribute('aria-current', 'page')
+    expect(within(mobile).queryByRole('link', { current: 'page' })).not.toBeInTheDocument()
+  })
+
   it('keeps a retired transport role off the Overview', () => {
     const context = useAppDataMock()
     useAppDataMock.mockReturnValue({ ...context, role: 'driver' })

@@ -254,15 +254,20 @@ export function ServicePage() {
   // this visit only; the parameter is read once and stripped.
   const [storeFilter, setStoreFilter] = useState<StoreName | null>(null)
   const storeParam = params.get('store')
+  const scopeParam = params.get('scope')
   useEffect(() => {
-    if (storeParam === null) return
+    if (storeParam === null && scopeParam === null) return
+    if (scopeParam === 'all' || scopeParam === 'my_store') {
+      setScope(scopeParam)
+      setStoreFilter(null)
+    }
     if (STORE_NAMES.includes(storeParam as StoreName)) {
       const linked = storeParam as StoreName
       setScope(linked === homeStore ? 'my_store' : 'all')
       setStoreFilter(linked === homeStore ? null : linked)
     }
-    setParams((current) => { const next = new URLSearchParams(current); next.delete('store'); return next }, { replace: true })
-  }, [storeParam]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
+    setParams((current) => { const next = new URLSearchParams(current); next.delete('store'); next.delete('scope'); return next }, { replace: true })
+  }, [storeParam, scopeParam]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
   const statusParam = params.get('status') as ServiceWorkflowStatus
   const actionParam = params.get('action') as ServiceWorkflowStatus
   const selectedVin = params.get('vin')
@@ -282,7 +287,9 @@ export function ServicePage() {
   }
   if (!data) return null
   const returnParams = new URLSearchParams(location.search)
+  returnParams.set('scope', scope)
   if (scope === 'all' && storeFilter) returnParams.set('store', storeFilter)
+  else returnParams.delete('store')
   const returnPath = currentWorkspaceReturnPath({ ...location, search: returnParams.size ? `?${returnParams.toString()}` : '' })
   return <section className={`service-page${selected ? ' service-has-selection' : ''}${selected && returnTo ? ' service-from-vehicle' : ''}`}>
     <SourceWarning meta={data.meta} />

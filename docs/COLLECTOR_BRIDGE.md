@@ -109,8 +109,9 @@ enrollment. Synthetic fixtures do not establish their compatibility.
 
 The tracked shared CDP helper has one hash-pinned exception because it also
 contains a fixed PTS read-only POST allowlist used by other pipeline paths. Only
-the exact tracked bytes and their generated Windows CRLF variant qualify; the
-installed byte hash remains part of the enrollment fingerprint. That constant
+the exact hashes of two reviewed revisions (original and best-effort duplicate-tab
+cleanup), each in LF and Windows CRLF form, qualify. The installed byte hash remains
+part of the enrollment fingerprint. That constant
 does not grant this collector a PTS source scope. The installed capture
 call graph and its exact helper hashes must still be reviewed on the authorized
 host; this repository cannot verify the absent operational bundle.
@@ -204,3 +205,12 @@ last verified release. Allow an already admitted publication to reach a known
 or unknown result, then reconcile before another attempt. Do not downgrade the
 schema, reset the operational ledger, overwrite data or alter legacy publisher
 tasks implicitly.
+
+## Current execution limits
+
+This first adapter uses `America/New_York` for its report date and accepts only
+connections configured in that timezone. It reads the complete four-store hold
+snapshot for each queued connection request. Requests are bounded and isolated,
+but simultaneous requests for several stores are not yet coalesced into one pull.
+Review cadence before enabling a real group; enrollment and a passing synthetic
+check do not establish installed source access or production activation.

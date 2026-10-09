@@ -168,6 +168,26 @@ describe('collector host contract', () => {
     await expect(submitCollectorPublication(profile, { accessClientId: 'id', accessClientSecret: 'secret' }, publication, { fetchImpl: unsafeFetch as any })).rejects.toThrow('PUBLICATION_RESPONSE_INVALID')
   })
 
+  it('rejects an oversized publication wrapper before making any POST', async () => {
+    const { profile } = fixture()
+    const maxBytes = 25 * 1024 * 1024
+    const publication: any = {
+      attemptId: 'attempt-1', fence: 1, configSha256: 'b'.repeat(64), idempotencyKey: 'idempotency-key',
+      envelope: { bundleSha256: 'a'.repeat(64), reportDate: '2026-10-09', ciphertext: '' },
+    }
+    const envelopeBytes = Buffer.byteLength(JSON.stringify(publication.envelope))
+    publication.envelope.ciphertext = 'x'.repeat(maxBytes - envelopeBytes - 1)
+    expect(Buffer.byteLength(JSON.stringify(publication.envelope))).toBeLessThanOrEqual(maxBytes)
+    const calls: any[] = []
+    let requestStarted = false
+    const fetchImpl = async (...args: any[]) => { calls.push(args); return new Response('{}') }
+    await expect(submitCollectorPublication(profile, { accessClientId: 'id', accessClientSecret: 'secret' }, publication, {
+      fetchImpl: fetchImpl as any, onRequestStarted: () => { requestStarted = true },
+    })).rejects.toThrow('REQUEST_TOO_LARGE')
+    expect(calls).toHaveLength(0)
+    expect(requestStarted).toBe(false)
+  })
+
   it('runs the host protocol through the actual collector API and signed tenant publication fixture', async () => {
     const fixture = await createSyntheticCollector()
     try {
@@ -254,8 +274,8 @@ describe('collector host contract', () => {
     const capture = "import './lib/cdp.mjs'\nconst ORIGIN = 'https://www.dealermail.com'\n"
     const helper = readFileSync(new URL('../../scripts/lib/cdp.mjs', import.meta.url))
     const helperCrlf = Buffer.from(helper.toString('utf8').replace(/\r?\n/g, '\r\n'))
-    expect(createHash('sha256').update(helper).digest('hex')).toBe('54d171972ef3200b0abc77e77c5404b23109d1188d67e8e5b089bd360ce56c90')
-    expect(createHash('sha256').update(helperCrlf).digest('hex')).toBe('e542c222ef3ebeb8bbe358f15ae2fe00424fddc92efe6139d1e40add58ee9005')
+    expect(createHash('sha256').update(helper).digest('hex')).toBe('fd013e76571cbaa2197d1c071d11ba308b7f8d772b3227e9e16c6b627ba5188d')
+    expect(createHash('sha256').update(helperCrlf).digest('hex')).toBe('6e9d5a8f2e9c93124fb8e1e7bab6a07e4d933daf99808bb8c6d127406acd031d')
     writeFileSync(capturePath, capture)
     writeFileSync(helperPath, helper)
     profile.dependencyHashes.dealermailCapture = createHash('sha256').update(capture).digest('hex')
@@ -268,6 +288,22 @@ describe('collector host contract', () => {
     expect(checkCollectorDependencies(profile)).toHaveLength(3)
     const crlfFingerprint = profileFingerprint(profile)
     expect(crlfFingerprint).not.toBe(lfFingerprint)
+
+    const priorHelper = Buffer.from(helper.toString('utf8').replace(
+      '  let list\n  try { list = await targets() } catch { return 0 }',
+      '  const list = await targets()',
+    ))
+    expect(createHash('sha256').update(priorHelper).digest('hex')).toBe('54d171972ef3200b0abc77e77c5404b23109d1188d67e8e5b089bd360ce56c90')
+    const priorHelperCrlf = Buffer.from(priorHelper.toString('utf8').replace(/\r?\n/g, '\r\n'))
+    expect(createHash('sha256').update(priorHelperCrlf).digest('hex')).toBe('e542c222ef3ebeb8bbe358f15ae2fe00424fddc92efe6139d1e40add58ee9005')
+    writeFileSync(helperPath, priorHelper)
+    profile.profileSha256 = profileFingerprint(profile)
+    expect(checkCollectorDependencies(profile)).toHaveLength(3)
+    writeFileSync(helperPath, priorHelperCrlf)
+    profile.profileSha256 = profileFingerprint(profile)
+    expect(checkCollectorDependencies(profile)).toHaveLength(3)
+    writeFileSync(helperPath, helper)
+    profile.profileSha256 = profileFingerprint(profile)
 
     writeFileSync(helperPath, Buffer.concat([helperCrlf, Buffer.from('\r\n// synthetic graph change\r\n')]))
     profile.profileSha256 = profileFingerprint(profile)
