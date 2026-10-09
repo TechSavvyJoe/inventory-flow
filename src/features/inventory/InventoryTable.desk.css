@@ -138,7 +138,7 @@
    the full VIN beside its copy control both fit, while a service status such
    as Waiting for service stays one line in Operations. */
 @container inventory-table (max-width: 1100px) {
-  .if-srp-grid .if-srp-table-wrap { --inv-col-vehicle: 33%; --inv-col-price: 14%; --inv-col-configuration: 17%; --inv-col-status: 20%; --inv-col-actions: 16%; --inv-photo-width: calc(var(--ifx-space-16) + var(--ifx-space-12)); --inv-photo-height: calc(var(--inv-photo-width) * 2 / 3); --inv-pad-inline: var(--ifx-space-2); --inv-pad-block: var(--ifx-space-1-5); }
+  .if-srp-grid .if-srp-table-wrap { --inv-col-vehicle: 33%; --inv-col-price: 14%; --inv-col-configuration: 17%; --inv-col-status: 20%; --inv-col-actions: 16%; --inv-photo-width: calc(var(--ifx-space-16) + var(--ifx-space-12)); --inv-photo-height: calc(var(--inv-photo-width) * 2 / 3); --inv-pad-inline: var(--ifx-space-2); --inv-pad-block: var(--ifx-space-1); }
 }
 /* Tablet landscape (a 1024px screen): four priority columns and a smaller
    photo. Configuration and equipment stay one tap away in the vehicle
