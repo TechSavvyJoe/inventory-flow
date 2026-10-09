@@ -3,6 +3,7 @@ import { useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useMe
 import {
   ArrowDown,
   ArrowUp,
+  CarFront,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -706,9 +707,7 @@ export function InventoryExperience({
     <section id="inventory-results-workspace" ref={captureModalBackground} data-filters-open={filtersOpen} className={`inventory-experience if-srp${selectedVehicle ? " has-workspace" : ""}`} aria-label="Inventory">
       <div className="inventory-experience__content" ref={backgroundRef}>
         <div className="if-srp-heading-grid">
-        <FlowPageHeader className="if-srp-header" title="Inventory" titleLabel={scope === "group" ? "All locations inventory" : title}>
-          <ScopeSwitch homeStore={homeStore} scope={scope} homeCount={homeVehicleCount} groupCount={groupVehicleCount} onChange={setScope} />
-        </FlowPageHeader>
+        <FlowPageHeader className="if-srp-header" title="Inventory" titleLabel={scope === "group" ? "All locations inventory" : title} icon={<CarFront />} actions={<ScopeSwitch homeStore={homeStore} scope={scope} homeCount={homeVehicleCount} groupCount={groupVehicleCount} onChange={setScope} />} />
 
         <div className="if-srp-searchbar" role="group" aria-label="Inventory search and location scope">
           <InventoryPredictiveSearch
