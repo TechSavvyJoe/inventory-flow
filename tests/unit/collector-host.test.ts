@@ -444,6 +444,65 @@ describe('collector host contract', () => {
     expect(publications).toBe(phase === 'claim' && !unknown ? 2 : 1)
   })
 
+  it.each(['missing-manifest', 'malformed-candidate', 'malformed-state', 'foreign-profile', 'wrong-bundle', 'missing-flags'])('preserves all-false attempt evidence and refuses source/publication work for %s', async mode => {
+    const { root, profile } = fixture()
+    const candidate = buildSyntheticCloudBundle()
+    const envelope = encryptBundle(candidate, Buffer.alloc(32, 42))
+    const artifacts = privateAttemptArtifacts(root, 'synthetic-all-false-invalid')
+    mkdirSync(artifacts.directory, { recursive: true })
+    writeFileSync(artifacts.candidatePath, JSON.stringify(candidate))
+    writeFileSync(artifacts.manifestPath, '{}')
+    writeFileSync(artifacts.dealerMailPath, JSON.stringify(candidate.release.dealerMailSnapshot))
+    writeFileSync(artifacts.envelopePath, JSON.stringify(envelope))
+    const state = saveAttemptState(artifacts.statePath, {
+      attemptId: 'synthetic-all-false-invalid', fence: 1, reportDate: candidate.reportDate,
+      profileSha256: profile.profileSha256, configSha256: 'b'.repeat(64),
+      baselineBundleSha256: envelope.bundleSha256, bundleSha256: envelope.bundleSha256,
+      publicationIdempotencyKey: 'synthetic-all-false-publication-key',
+    })
+    if (mode === 'missing-manifest') rmSync(artifacts.manifestPath)
+    if (mode === 'malformed-candidate') writeFileSync(artifacts.candidatePath, '{"truncated": ')
+    if (mode === 'malformed-state') writeFileSync(artifacts.statePath, '{"truncated": ')
+    if (mode === 'foreign-profile' || mode === 'wrong-bundle' || mode === 'missing-flags') {
+      if (mode === 'foreign-profile') state.profileSha256 = 'c'.repeat(64)
+      if (mode === 'wrong-bundle') state.bundleSha256 = 'd'.repeat(64)
+      if (mode === 'missing-flags') for (const key of ['captureReceiptSent', 'captureReceiptPending', 'publicationPending', 'reconciliationRequired']) delete state[key]
+      writeFileSync(artifacts.statePath, JSON.stringify(state))
+    }
+    const before = Object.fromEntries(
+      ['candidatePath', 'manifestPath', 'dealerMailPath', 'envelopePath', 'statePath']
+        .filter(key => existsSync(artifacts[key]))
+        .map(key => [key, readFileSync(artifacts[key])]),
+    )
+    const captureFactory = vi.fn(), runnerLoader = vi.fn(), promotion = vi.fn()
+    const fetchImpl = vi.fn(async url => {
+      expect(url.pathname).toBe('/api/collector/contact')
+      return Response.json({
+        collectorId: 'synthetic-host', enabled: true, executionEnabled: true, scopeSha256: 'a'.repeat(64),
+        profileSha256: profile.profileSha256, adapterVersion: COLLECTOR_ADAPTER_VERSION,
+        connected: true, checkedAt: COLLECTOR_SYNTHETIC_NOW.toISOString(),
+      })
+    })
+    const result = await runOnce({
+      profileName: COLLECTOR_PROFILE_NAME, profileDirectory: path.join(root, 'runtime/collector/profiles'),
+      captureFactory, runnerLoader, promotion, fetchImpl,
+      credentialReader: () => ({
+        accessClientId: 'synthetic', accessClientSecret: 'synthetic',
+        releaseEncryptionKeyBase64: Buffer.alloc(32, 42).toString('base64'),
+      }),
+      now: () => COLLECTOR_SYNTHETIC_NOW,
+    })
+    expect(result).toMatchObject({
+      status: ['foreign-profile', 'wrong-bundle'].includes(mode) ? 'reconciliation_required' : 'blocked',
+      code: 'RECONCILIATION_REQUIRED',
+    })
+    expect(captureFactory).not.toHaveBeenCalled()
+    expect(runnerLoader).not.toHaveBeenCalled()
+    expect(promotion).not.toHaveBeenCalled()
+    expect(fetchImpl).toHaveBeenCalledTimes(['foreign-profile', 'wrong-bundle'].includes(mode) ? 1 : 0)
+    for (const [key, bytes] of Object.entries(before)) expect(readFileSync(artifacts[key])).toEqual(bytes)
+  })
+
   it('fails closed without a matching installed dependency hash or an already-open DealerMail tab', async () => {
     const { profile } = fixture()
     expect(checkCollectorDependencies(profile)).toHaveLength(3)

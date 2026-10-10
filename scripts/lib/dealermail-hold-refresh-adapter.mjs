@@ -283,7 +283,11 @@ export function findPendingPublication(workspaceRoot) {
     const stateStat = lstatSync(artifacts.statePath)
     if (!stateStat.isFile() || stateStat.isSymbolicLink() || stateStat.size > 64 * 1024) throw new Error('RECONCILIATION_REQUIRED')
     const state = JSON.parse(readFileSync(artifacts.statePath, 'utf8'))
-    if (state.captureReceiptSent !== true && state.captureReceiptPending !== true && state.publicationPending !== true && state.reconciliationRequired !== true) continue
+    // The first durable writer state precedes captureReceiptPending. It still
+    // owns a complete candidate and must recover, even with every flag false.
+    // Missing/nonboolean flags cannot prove that same undispatched boundary.
+    const progress = ['captureReceiptSent', 'captureReceiptPending', 'publicationPending', 'reconciliationRequired']
+    if (progress.every(key => state?.[key] !== true) && !progress.every(key => state?.[key] === false)) throw new Error('RECONCILIATION_REQUIRED')
     for (const filePath of [artifacts.candidatePath, artifacts.manifestPath, artifacts.dealerMailPath, artifacts.envelopePath]) {
       const stat = lstatSync(filePath)
       if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 25 * 1024 * 1024) throw new Error('RECONCILIATION_REQUIRED')

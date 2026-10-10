@@ -2,6 +2,8 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 import fs, { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import path from 'node:path'
@@ -16,7 +18,7 @@ import { publishRelease } from '../../cloudflare/src/worker.mjs'
 import { cloudBundleSha256, encryptBundle } from '../../scripts/publish-cloud-release.mjs'
 import { receiptSourceHashes, writeReceipt } from '../../scripts/sync-cloud-release.mjs'
 import { COLLECTOR_PROFILE_NAME, installedStoreSet, profileFingerprint } from '../../scripts/lib/collector-profile.mjs'
-import { findPendingPublication, privateAttemptArtifacts } from '../../scripts/lib/dealermail-hold-refresh-adapter.mjs'
+import { findPendingPublication, privateAttemptArtifacts, getOrCreateClaimIdempotencyKey } from '../../scripts/lib/dealermail-hold-refresh-adapter.mjs'
 
 const hashFile = (filePath: string) => createHash('sha256').update(readFileSync(filePath)).digest('hex')
 const writeJson = (filePath: string, value: any) => { mkdirSync(path.dirname(filePath), { recursive: true }); writeFileSync(filePath, JSON.stringify(value, null, 2) + '\n') }
@@ -126,7 +128,144 @@ async function lifecycleFixture() {
   }
 }
 
+async function crashAfterInitialCandidateState(f) {
+  const claimKey = getOrCreateClaimIdempotencyKey(f.root, f.profile.profileSha256)
+  const response = await f.actualFetch(new URL('/api/collector/claim', f.profile.controlPlaneOrigin), {
+    method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': claimKey }, body: '{}',
+  })
+  expect(response.ok).toBe(true)
+  const claim = await response.json()
+  const artifacts = privateAttemptArtifacts(f.root, claim.attemptId)
+  const captureMarker = path.join(f.root, 'synthetic-crash-capture-count.json')
+  // Kill only the owned synthetic child after the real host fsyncs its first
+  // all-false state. No catch/finally runs, matching this durable crash boundary.
+  const source = `
+    import fs from 'node:fs';
+    import { syncBuiltinESMExports } from 'node:module';
+    const fixed = ${COLLECTOR_SYNTHETIC_NOW.getTime()}, RealDate = Date;
+    globalThis.Date = class extends RealDate {
+      constructor(...args) { super(...(args.length ? args : [fixed])); }
+      static now() { return fixed; }
+    };
+    const statePath = ${JSON.stringify(artifacts.statePath)}, sync = fs.fsyncSync, rename = fs.renameSync;
+    const crash = () => {
+      if (!fs.existsSync(statePath)) return;
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      if (['captureReceiptSent', 'captureReceiptPending', 'publicationPending', 'reconciliationRequired'].every(key => state[key] === false)) process.exit(86);
+    };
+    fs.fsyncSync = descriptor => {
+      sync(descriptor);
+      if (fs.fstatSync(descriptor).isDirectory()) crash();
+    };
+    fs.renameSync = (from, to) => {
+      rename(from, to);
+      if (process.platform === 'win32' && to === statePath) crash();
+    };
+    syncBuiltinESMExports();
+    const runner = await import(${JSON.stringify(pathToFileURL(path.resolve('scripts/run-inventory-flow-daily.mjs')).href)});
+    const { collectorHostInternals } = await import(${JSON.stringify(pathToFileURL(path.resolve('scripts/collector-host.mjs')).href)});
+    await collectorHostInternals.acquireRunnerLock(${JSON.stringify(f.profile)});
+    const outcome = await collectorHostInternals.runClaimedAttempt(${JSON.stringify(f.profile)}, ${JSON.stringify(f.options.credentialReader())}, ${JSON.stringify(claim)}, {
+      runnerLoader: async () => runner,
+      now: () => new Date(fixed),
+      fetchImpl: async () => { throw new Error('Synthetic crash must precede every receipt/publication request'); },
+      captureFactory: () => async () => {
+        fs.writeFileSync(${JSON.stringify(captureMarker)}, '1');
+        const snapshot = JSON.parse(fs.readFileSync(${JSON.stringify(f.dealerPath)}, 'utf8'));
+        snapshot.extractedAtUtc = new Date(fixed + 1000).toISOString();
+        snapshot.completeDealerMailUsedInventory.extractedAtUtc = snapshot.extractedAtUtc;
+        fs.writeFileSync(${JSON.stringify(f.dealerPath)}, JSON.stringify(snapshot));
+      },
+    });
+    process.stdout.write(JSON.stringify(outcome));
+    process.exit(88);
+  `
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', source], {
+    timeout: 15000, encoding: 'utf8',
+    env: { PATH: process.env.PATH, BOB_MAXEY_WORKSPACE_ROOT: f.root, INVENTORY_WORKSPACE_ROOT: f.root },
+  })
+  expect({ status: child.status, stderr: child.stderr, stdout: child.stdout, error: child.error?.message }).toEqual({ status: 86, stderr: '', stdout: '', error: undefined })
+  expect(readFileSync(captureMarker, 'utf8')).toBe('1')
+  const state = JSON.parse(readFileSync(artifacts.statePath, 'utf8'))
+  expect(state).toMatchObject({ captureReceiptSent: false, captureReceiptPending: false, publicationPending: false, reconciliationRequired: false })
+  for (const key of ['candidatePath', 'manifestPath', 'dealerMailPath', 'envelopePath']) expect(existsSync(artifacts[key])).toBe(true)
+  expect(existsSync(path.join(artifacts.directory, 'capture-rollback.json'))).toBe(false)
+  expect(f.remote.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('claimed')
+  expect(f.remote.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_collector_receipts').get().n).toBe(0)
+  return { claim, artifacts, state, captureMarker }
+}
+
 describe('collector exact candidate local baseline lifecycle', () => {
+  it.each(['resume', 'expired', 'lost-capture-reply', 'lost-publication-reply', 'execution-off'])('discovers the actual all-false durable host crash marker and safely handles %s without second capture', async mode => {
+    const f = await lifecycleFixture(), baseline = f.localHash()
+    await f.queue()
+    const crashed = await crashAfterInitialCandidateState(f)
+    const pending = findPendingPublication(f.root)
+    expect(pending).toMatchObject({ state: crashed.state })
+    const before = Object.fromEntries(['candidatePath', 'manifestPath', 'dealerMailPath', 'envelopePath'].map(key => [key, readFileSync(crashed.artifacts[key])]))
+    const exactEnvelope = JSON.parse(before.envelopePath.toString())
+    expect(f.localHash()).toBe(baseline)
+    expect(f.cloudHash()).toBe(baseline)
+    const sourceWork = vi.spyOn(f.runner.internals.runtime, 'run')
+    const browser = vi.spyOn(f.runner.internals.runtime, 'ensureAutomationBrowser')
+    try {
+      await expect(f.runner.internals.runDaily(f.runner.internals.parseArgs(['--date', crashed.state.reportDate, '--force-publish']))).rejects.toThrow('RECONCILIATION_REQUIRED')
+      expect(sourceWork).not.toHaveBeenCalled()
+      expect(browser).not.toHaveBeenCalled()
+    } finally {
+      sourceWork.mockRestore()
+      browser.mockRestore()
+    }
+    if (mode === 'expired') {
+      vi.setSystemTime(new Date(COLLECTOR_SYNTHETIC_NOW.getTime() + 121000))
+      const promotion = vi.fn(), runnerLoader = vi.fn(async () => f.runner)
+      const recovered = await f.collectorHostInternals.reconcilePendingPublication(
+        f.profile, f.options.credentialReader(), pending, f.actualFetch, undefined, { runnerLoader, promotion },
+      )
+      expect(recovered).toMatchObject({ status: 'retry_fresh_claim', code: 'COLLECTOR_LEASE_STALE' })
+      expect(promotion).not.toHaveBeenCalled()
+      expect(runnerLoader).not.toHaveBeenCalled()
+      expect(findPendingPublication(f.root)).toBe(null)
+      expect(existsSync(path.join(crashed.artifacts.directory, 'pending-claim.json'))).toBe(false)
+      for (const key of ['candidatePath', 'manifestPath', 'dealerMailPath', 'envelopePath', 'statePath']) expect(existsSync(crashed.artifacts[key])).toBe(false)
+      expect(f.publications()).toBe(0)
+      expect(f.remote.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_collector_receipts').get().n).toBe(0)
+      expect(f.localHash()).toBe(baseline)
+      expect(f.cloudHash()).toBe(baseline)
+    } else if (mode === 'execution-off') {
+      f.remote.env.PLATFORM_COLLECTOR_EXECUTION_ENABLED = 'false'
+      expect(await f.runOnce(f.options)).toMatchObject({ status: 'disabled' })
+      expect(await f.runOnce(f.options)).toMatchObject({ status: 'disabled' })
+      expect(readFileSync(crashed.artifacts.statePath)).toEqual(Buffer.from(JSON.stringify(crashed.state)))
+      for (const [key, bytes] of Object.entries(before)) expect(readFileSync(crashed.artifacts[key])).toEqual(bytes)
+      expect(f.publications()).toBe(0)
+      expect(f.localHash()).toBe(baseline)
+      expect(f.cloudHash()).toBe(baseline)
+    } else {
+      if (mode !== 'resume') {
+        const first = await f.runOnce({ ...f.options, fetchImpl: async (url, options) => {
+          const response = await f.actualFetch(url, options)
+          if (mode === 'lost-capture-reply' && url.pathname === '/api/collector/receipts' && JSON.parse(String(options.body)).kind === 'capture') throw new TypeError('Synthetic capture reply lost after crash recovery')
+          if (mode === 'lost-publication-reply' && url.pathname === '/api/collector/publication') throw new TypeError('Synthetic committed publication reply lost after crash recovery')
+          return response
+        } })
+        expect(first.status).toBe(mode === 'lost-capture-reply' ? 'capture_receipt_pending' : 'reconciliation_required')
+        for (const [key, bytes] of Object.entries(before)) expect(readFileSync(crashed.artifacts[key])).toEqual(bytes)
+        expect(findPendingPublication(f.root)).not.toBe(null)
+        expect(f.localHash()).toBe(baseline)
+      }
+      expect(await f.runOnce(f.options)).toMatchObject({ status: 'published_verified', bundleSha256: exactEnvelope.bundleSha256 })
+      expect(f.envelopes.every(envelope => JSON.stringify(envelope) === JSON.stringify(exactEnvelope))).toBe(true)
+      expect(f.localHash()).toBe(exactEnvelope.bundleSha256)
+      expect(f.cloudHash()).toBe(exactEnvelope.bundleSha256)
+      expect(findPendingPublication(f.root)).toBe(null)
+      expect(f.remote.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind='capture'").get().n).toBe(1)
+      expect(f.remote.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(1)
+    }
+    expect(readFileSync(crashed.captureMarker, 'utf8')).toBe('1')
+    expect(f.captures()).toBe(0)
+  })
+
   it.each([
     ['initial', 'published_verified'], ['reconcile', 'published_verified'],
     ['initial', 'rejected_verified'], ['reconcile', 'rejected_verified'],
