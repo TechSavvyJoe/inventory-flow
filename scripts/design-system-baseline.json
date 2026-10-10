@@ -235,7 +235,7 @@
       "rawColors": 6,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 148
+      "idSelectors": 144
     },
     "src/features/transfers/transfer-workspace-v4.css": {
       "smallText": 1,
@@ -270,7 +270,7 @@
       "rawColors": 0,
       "rgbHslColors": 0,
       "important": 4,
-      "idSelectors": 112
+      "idSelectors": 104
     },
     "src/features/transfers/transfers.css": {
       "smallText": 22,

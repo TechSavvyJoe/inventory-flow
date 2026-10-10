@@ -948,6 +948,9 @@ export function VehicleWorkspace({
                       {vehicle.dealerMail.loaner?.rawAlert && loanerLabel ? <small>{vehicle.dealerMail.loaner.rawAlert}</small> : null}
                       {primaryHold?.salesperson || primaryHold?.expectedDeliveryDate || holdCount > 1 ? <small className="vdp-focus-hold-context">{[primaryHold?.salesperson, primaryHold?.expectedDeliveryDate ? `Expected ${formatDate(primaryHold.expectedDeliveryDate)}` : null, holdCount > 1 ? `${holdCount - 1} backup ${holdCount === 2 ? "hold" : "holds"}` : null].filter(Boolean).join(" · ")}</small> : null}
                     </div>
+                    {vehicle.operationalEvidence && loanerLabel ? <div role="group" aria-label="DealerMail operational evidence">
+                      <small>DealerMail: {loanerLabel}</small>
+                    </div> : null}
                   </Fact>
                   <Fact label="Service" className="vdp-focus-service-fact"><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} compact /></Fact>
                   {appDisposition ? <Fact label="Disposition" className="vdp-focus-disposition-fact">{dispositionStorageMissing

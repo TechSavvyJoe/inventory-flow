@@ -99,7 +99,7 @@
 #root .vehicle-moves-page .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 #root .vehicle-moves-page :is(button,input,select,summary) { font-family: inherit; }
 #root .vehicle-moves-page :is(button,input,select,summary):focus-visible { outline: 3px solid var(--ifx-info); outline-offset: 2px; }
-.vehicle-moves-page .transfers-page-header { margin: 0 0 var(--ifx-space-2); }
+.vehicle-moves-page .transfers-page-header.ifx-page-header { margin: 0 0 var(--ifx-space-2); }
 .move-store-scope { display:flex; align-items:center; gap:var(--ifx-space-1); margin:0; }
 .move-store-scope .ifx-button { min-width:0; justify-content:center; }
 .move-store-scope-location { margin-left:var(--ifx-space-1); font-weight:var(--ifx-weight-regular); }
@@ -123,7 +123,7 @@
 .vehicle-moves-page .transfer-list-tools { display: flex; flex-wrap: wrap; gap: var(--ifx-space-2); align-items: center; }
 #root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) { display: flex; align-items: center; position: relative; grid-area: auto; order: 0; width: auto; min-width: 0; min-height: 44px; flex: 1 1 165px; border: 1px solid var(--ifx-neutral-300); border-radius: 6px; background: var(--ifx-neutral-0); }
 #root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) svg { position: absolute; left: 10px; width: 16px; height: 16px; color: var(--ifx-neutral-700); pointer-events: none; }
-#root .vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) select { position: static; width: 100%; height: auto; min-height: 44px; padding: 8px 25px 8px 33px; border: 0; opacity: 1; background: transparent; color: var(--ifx-neutral-800); font-size: 13px; }
+.vehicle-moves-page :is(.transfer-list-filter,.transfer-list-sort) select { position: static; width: 100%; height: auto; min-height: var(--ifx-control-height-md); padding: var(--ifx-transfer-filter-select-block-padding) var(--ifx-transfer-filter-select-inline-end-padding) var(--ifx-transfer-filter-select-block-padding) var(--ifx-transfer-filter-select-inline-start-padding); border: 0; opacity: 1; background: transparent; color: var(--ifx-neutral-800); font-size: var(--ifx-text-sm); }
 #root .vehicle-moves-page .transfer-list-count { font-size: 12px; line-height: 1.35; color: var(--ifx-neutral-700); }
 #root .vehicle-moves-page .transfer-list-items { display: block; padding: 0; max-height: none; overflow: visible; }
 .vehicle-moves-page .transfer-list-item { display: grid; grid-template-columns: var(--ifx-transfer-list-thumbnail-width) minmax(0,1.05fr) minmax(0,.85fr) minmax(0,1.15fr) var(--ifx-transfer-list-chevron-size); align-items: center; gap: var(--ifx-space-3); width: 100%; min-height: var(--ifx-transfer-list-row-min-height); padding: var(--ifx-space-4) var(--ifx-space-3); border: 0; border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-neutral-300); border-left: var(--ifx-stroke-emphasis) solid transparent; border-radius: 0; color: var(--ifx-neutral-900); background: var(--ifx-neutral-0); text-align: left; box-shadow: none; cursor: pointer; }
@@ -320,12 +320,12 @@
 
 @media (max-width: 700px) {
   /* Keep the primary move action above the mobile navigation on short screens. */
-  #root .vehicle-moves-page .simple-transfer-tracker { gap: 8px; padding: 10px 12px; }
+  .vehicle-moves-page .mif-transfer-feature.simple-transfer-tracker { gap: var(--ifx-space-2); padding: calc(var(--ifx-space-2) + var(--ifx-space-0-5)) var(--ifx-space-3); }
   #root .vehicle-moves-page .simple-move-heading { gap: 8px 10px; }
   #root .vehicle-moves-page .simple-move-heading h2 { font-size: 18px; }
   #root .vehicle-moves-page .simple-move-identifiers { gap: 2px 12px; }
-  #root .vehicle-moves-page .simple-move-route { padding-bottom: 8px; }
-  #root .vehicle-moves-page .simple-move-next { gap: 8px; padding: 10px; }
+  .vehicle-moves-page .mif-transfer-feature.simple-transfer-tracker .simple-move-route { padding-bottom: var(--ifx-space-2); }
+  .vehicle-moves-page .mif-transfer-feature.simple-transfer-tracker .simple-move-next { gap: var(--ifx-space-2); padding: calc(var(--ifx-space-2) + var(--ifx-space-0-5)); }
   #root .vehicle-moves-page .transfer-mobile-detail-bar { padding-block: 4px; }
 }
 

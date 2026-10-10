@@ -473,6 +473,51 @@ describe('focused vehicle workspace', () => {
     expect(within(pane).queryByText('Customer appointment')).not.toBeInTheDocument();
   });
 
+  it.each(['sales', 'manager', 'group_manager', 'coordinator', 'driver', 'porter'] as const)('preserves the safe DealerMail loaner beside each provider qualification for %s', async role => {
+    const canViewEvidence = ['sales', 'manager', 'group_manager'].includes(role);
+    for (const dataState of ['current', 'stale_unverified', 'incomplete'] as const) {
+      const unit = vehicle();
+      unit.dealerMail = { ...unit.dealerMail, canViewEvidence, canManageHold:canViewEvidence,
+        loaner:{ active:true, program:'FCTP', label:'Loaner FCTP', serviceDate:'2024-08-14',
+          ...(canViewEvidence ? { rawAlert:'Synthetic private loaner alert' } : {}) } };
+      unit.operationalEvidence = { records:[{ vin:unit.vin, provider:'demo-crm', sourceLabel:'Synthetic independent CRM', capturedAt:'2026-08-30T14:00:00Z', dataState, readOnly:true, complete:dataState !== 'incomplete', holdState:'held' }] };
+      render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()}
+        dispositionContext={{ role, homeStore:'Howell', onChanged:vi.fn() }} />);
+      const summary = screen.getByRole('region', { name:'Vehicle operational summary' });
+      const provider = within(summary).getByRole('group', { name:'Reported hold evidence' });
+      expect(provider).toHaveTextContent(dataState === 'current' ? 'Imported hold observed' : 'Hold status not verified');
+      const loaner = within(summary).getByRole('group', { name:'DealerMail operational evidence' });
+      expect(loaner).toHaveTextContent('DealerMail: Loaner FCTP · 08/14/2024');
+      expect(loaner).not.toHaveTextContent('Synthetic private loaner alert');
+      expect(summary).not.toHaveTextContent('Available');
+      if (!canViewEvidence) {
+        expect(summary).not.toHaveTextContent('Jamie Howell');
+        expect(summary).not.toHaveTextContent('Customer appointment');
+        expect(summary).not.toHaveTextContent('Synthetic private loaner alert');
+      }
+      await userEvent.click(screen.getByRole('tab', { name:'Holds & moves' }));
+      const panel = screen.getByRole('tabpanel', { name:'Holds & moves' });
+      expect(within(panel).getByRole('region', { name:'Imported inventory evidence' })).toHaveTextContent('Synthetic independent CRM');
+      if (!canViewEvidence) {
+        expect(within(panel).getByRole('heading', { name:'Hold details are restricted' })).toBeVisible();
+        expect(panel).not.toHaveTextContent('Customer appointment');
+        expect(panel).not.toHaveTextContent('Synthetic private loaner alert');
+      }
+      cleanup();
+    }
+  });
+
+  it.each([null, { active:false, program:'FCTP', label:'Loaner FCTP', serviceDate:'2024-08-14' }])('does not manufacture a DealerMail loaner from an imported hold when its loaner is %s', loaner => {
+    const unit = vehicle();
+    unit.dealerMail = { ...unit.dealerMail, loaner };
+    unit.operationalEvidence = { records:[{ vin:unit.vin, provider:'demo-crm', sourceLabel:'Synthetic independent CRM', capturedAt:'2026-08-30T14:00:00Z', dataState:'current', readOnly:true, complete:true, holdState:'held' }] };
+    render(<VehicleWorkspace vehicle={unit} homeStore={unit.location.homeStore} onClose={vi.fn()} />);
+    const summary = screen.getByRole('region', { name:'Vehicle operational summary' });
+    expect(within(summary).getByRole('group', { name:'Reported hold evidence' })).toHaveTextContent('Imported hold observed');
+    expect(within(summary).queryByRole('group', { name:'DealerMail operational evidence' })).not.toBeInTheDocument();
+    expect(summary).not.toHaveTextContent('Loaner FCTP');
+  });
+
   it('keeps a current no-hold DealerMail observation independent of another provider hold', async () => {
     const unit = vehicle();
     unit.dealerMail = { ...unit.dealerMail, hasActiveHold:false, activeRecordCount:0, canManageHold:false };

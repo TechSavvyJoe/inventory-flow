@@ -141,6 +141,9 @@
   --ifx-transfer-list-count-inline-padding: 5px;
   --ifx-transfer-list-count-compact-width: 19px;
   --ifx-transfer-list-count-compact-inline-padding: 3px;
+  --ifx-transfer-filter-select-inline-start-padding: 33px;
+  --ifx-transfer-filter-select-inline-end-padding: 25px;
+  --ifx-transfer-filter-select-block-padding: 8px;
   --ifx-transfer-filter-select-end-padding: 18px;
   --ifx-transfer-detail-leading: 1.45;
   --ifx-transfer-row-leading: 1.35;
