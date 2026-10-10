@@ -411,6 +411,7 @@ describe('focused vehicle workspace', () => {
     const controls = within(pane).getByRole('region', { name:'Hold and disposition controls' });
     expect(within(controls).getByText('Held · Reported', { selector:'strong' })).toBeVisible();
     expect(controls).toHaveTextContent('Inventory Flow: Hold released');
+    expect(within(controls).getByText('Hold released', { exact:true })).toBeVisible();
     expect(within(pane).getByText('Customer appointment')).toBeVisible();
   });
 
