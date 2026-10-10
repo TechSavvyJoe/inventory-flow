@@ -179,6 +179,27 @@ describe("inventory source-safe selectors", () => {
     ]);
   });
 
+  it("sorts uncertain provider evidence as unknown despite a current DealerMail no-hold", () => {
+    const observation = { vin: "TESTDATAHOLD00001", provider: "synthetic-crm", sourceLabel: "Synthetic CRM", capturedAt: "2026-10-10T12:00:00Z", dataState: "current" as const, readOnly: true as const, complete: true, holdState: "not_observed" as const };
+    const records = [
+      vehicle({ id: "retained", operationalEvidence: { records: [{ ...observation, dataState: "stale_unverified", holdState: "held" }] } }),
+      vehicle({ id: "incomplete", operationalEvidence: { records: [{ ...observation, complete: false }] } }),
+      vehicle({ id: "conflict", operationalEvidence: { records: [observation, { ...observation, provider: "synthetic-dms", holdState: "unknown" }] } }),
+      vehicle({ id: "no-hold", operationalEvidence: { records: [observation] } }),
+      vehicle({ id: "held", operationalEvidence: { records: [{ ...observation, holdState: "held" }] } }),
+      vehicle({ id: "dealer-mail-held", dealerMail: { dataState: "current", hasActiveHold: true } }),
+      vehicle({ id: "dealer-mail-held-with-uncertain-provider", dealerMail: { dataState: "current", hasActiveHold: true }, operationalEvidence: { records: [{ ...observation, complete: false }] } }),
+    ];
+    expect(sortVehicles(records, [{ key: "holdStatus", direction: "asc" }]).map(({ id }) => id)).toEqual([
+      "held", "dealer-mail-held", "dealer-mail-held-with-uncertain-provider", "no-hold", "retained", "incomplete", "conflict",
+    ]);
+    expect(sortVehicles(records, [{ key: "holdStatus", direction: "desc" }]).map(({ id }) => id)).toEqual([
+      "retained", "incomplete", "conflict", "no-hold", "held", "dealer-mail-held", "dealer-mail-held-with-uncertain-provider",
+    ]);
+    const manual = { vin: observation.vin, state: "active" as const, version: 1, expectedDeliveryDate: null, updatedAt: null, ownerStore: "Howell" as const, canManage: true, enabled: true };
+    expect(sortVehicles([records[3], { ...records[0], id: "manual-held", manualHold: manual }], [{ key: "holdStatus", direction: "asc" }]).map(({ id }) => id)).toEqual(["manual-held", "no-hold"]);
+  });
+
   it("sorts recent activity from the latest source-backed timestamp", () => {
     const records = [
       vehicle({ id: "older", publicListing: { dataState: "current", isListed: true, updatedAt: "2026-08-20T12:00:00-04:00" } }),

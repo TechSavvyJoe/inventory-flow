@@ -158,7 +158,8 @@ export function SalesOverview({ data, stores, homeStore, role, currentUserId, pr
     service: scopeOverview.reduce((sum, entry) => sum + entry.waitingForService, 0),
   } : null
   const fallbackHolds = data.stores.filter(entry => storeSet.has(entry.store)).reduce((sum, entry) => sum + entry.currentHolds, 0)
-  const providerOnlyHolds = data.vehicles.filter(vehicle => vehicleInScope(vehicle, storeSet) &&
+  // Match the provider-only holds drilldown; location and CRM affiliation do not own a hold.
+  const providerOnlyHolds = data.vehicles.filter(vehicle => storeSet.has(vehicle.homeStore) &&
     vehicle.operationalEvidence?.records.some(record => record.dataState === 'current' && record.complete && record.holdState === 'held') &&
     !(data.overview?.vehicleFacts[vehicle.vin]?.holdActive || ['primary', 'backup', 'multiple'].includes(vehicle.hold.state))).length
   const metrics = [

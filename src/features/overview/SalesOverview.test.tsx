@@ -5,6 +5,8 @@ import type { BootstrapData, OverviewSummary, StoreName, TransferRecord, Vehicle
 import type { ShortlistContextValue } from '../inventory/useCustomerShortlist'
 import type { InventoryVehicle } from '../inventory/types'
 import { SalesOverview } from './SalesOverview'
+import { toInventoryVehicle } from '../../app/adapters'
+import { vehicleMatchesOverviewView } from '../inventory/inventory-utils'
 
 // SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS
 const { syncedListsMock } = vi.hoisted(() => ({ syncedListsMock: vi.fn() }))
@@ -259,6 +261,42 @@ describe('SalesOverview', () => {
     // Attention lists exceptions; this count includes ordinary active holds too.
     expect(within(metrics).getByRole('link', { name: 'Hold signals: 1' })).toHaveAttribute('href', '/inventory?scope=group&store=all&view=holds')
     expect(metrics.querySelector('a[href*="view=on-lot"]')).not.toBeInTheDocument()
+  })
+
+  it('attributes provider-only holds to home ownership and keeps counted VINs in the drilldown', () => {
+    const source = data()
+    const providerVehicle = (vin: string, changes: Partial<VehicleRecord> = {}) => vehicle(vin, {
+      homeStore: 'Lincoln', sourceReportedLocation: 'Lincoln',
+      movement: { state: 'source_reported', label: 'Source-reported', currentLocation: 'Lincoln', locationConfidence: 'reported' },
+      ...changes,
+      operationalEvidence: { records: [{ vin, provider: 'synthetic-crm', sourceLabel: 'Synthetic CRM', capturedAt: '2026-10-10T12:00:00Z', dataState: 'current', readOnly: true, complete: true, holdState: 'held' }] },
+    })
+    const home = providerVehicle('TESTDATAHOLD00001', { homeStore: 'Howell', crmStore: 'Lincoln' })
+    const visitor = providerVehicle('TESTDATAHOLD00002', { movement: { state: 'arrived', label: 'Visiting', currentLocation: 'Howell', locationConfidence: 'verified' } })
+    const sourceLocated = providerVehicle('TESTDATAHOLD00003', { sourceReportedLocation: 'Howell' })
+    const crmLocated = providerVehicle('TESTDATAHOLD00004', { crmStore: 'Howell' })
+    const dealerMail = vehicle('TESTDATAHOLD00005', { homeStore: 'Lincoln', crmStore: 'Howell', hold: { state: 'primary', label: 'Primary hold', backupCount: 0 } })
+    const both = providerVehicle('TESTDATAHOLD00006', { crmStore: 'Howell', hold: dealerMail.hold })
+    home.operationalEvidence!.records.push({ ...home.operationalEvidence!.records[0], provider: 'synthetic-dms' })
+    source.vehicles = [home, visitor, sourceLocated, crmLocated, dealerMail, both]
+    source.overview = overview(source.vehicles)
+    source.overview.stores[0].holds = 2
+    source.overview.stores.push({ ...source.overview.stores[0], store: 'Lincoln', holds: 0 })
+    source.overview.vehicleFacts[dealerMail.vin].holdActive = true
+    source.overview.vehicleFacts[both.vin].holdActive = true
+    const drilldownVins = (store: StoreName | 'all') => source.vehicles
+      .filter(item => vehicleMatchesOverviewView(toInventoryVehicle(item, source), { view: 'holds', store }))
+      .map(item => item.vin)
+    const view = render(<MemoryRouter><SalesOverview data={source} stores={stores} homeStore="Howell" role="sales" currentUserId="employee-1" /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'Hold signals: 3' })).toHaveAttribute('href', '/inventory?scope=group&store=Howell&view=holds')
+    expect(drilldownVins('Howell')).toEqual([home.vin, dealerMail.vin, both.vin])
+    view.rerender(<MemoryRouter><SalesOverview data={source} stores={['Lincoln']} homeStore="Lincoln" role="sales" currentUserId="employee-1" /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'Hold signals: 3' })).toHaveAttribute('href', '/inventory?scope=group&store=Lincoln&view=holds')
+    expect(drilldownVins('Lincoln')).toEqual([visitor.vin, sourceLocated.vin, crmLocated.vin])
+    view.rerender(<MemoryRouter><SalesOverview data={source} stores={['Howell', 'Lincoln']} homeStore="Howell" role="sales" currentUserId="employee-1" /></MemoryRouter>)
+    expect(screen.getByRole('link', { name: 'Hold signals: 6' })).toHaveAttribute('href', '/inventory?scope=group&store=all&view=holds')
+    expect(drilldownVins('all')).toEqual(source.vehicles.map(item => item.vin))
+    expect(screen.getByText(/does not confirm availability/)).toBeVisible()
   })
 
   it('keeps broad inventory totals stable when selecting a different saved list', () => {

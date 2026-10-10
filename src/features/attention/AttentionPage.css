@@ -4,3 +4,9 @@
 .attention-page .workflow-service-link > svg { width:var(--ifx-space-5); height:var(--ifx-space-5); }
 .attention-page .workflow-service-link:hover { background:var(--ifx-info-surface); }
 .attention-page .workflow-notice { padding:var(--ifx-space-2) var(--ifx-space-3); border-left:var(--ifx-stroke-emphasis) solid var(--ifx-warning); background:var(--ifx-neutral-50); color:var(--ink-700); font-size:var(--ifx-text-sm); line-height:var(--ifx-leading-body); }
+.workflow-page:where(.attention-page) { width:100%; min-width:0; color:var(--ifx-neutral-900); }
+.workflow-page:where(.attention-page) :is(button:not(:where(.ifx-button)),input,select,textarea) { font:inherit; }
+.workflow-page:where(.attention-page) :is(button,select,input) { min-height:var(--ifx-control-height-md); }
+.workflow-page:where(.attention-page) button:not(:where(.ifx-button)) { cursor:pointer; padding:var(--ifx-space-1-5) var(--ifx-space-2); font-size:var(--ifx-text-sm); font-weight:var(--ifx-weight-semibold); }
+.workflow-page:where(.attention-page) button:disabled { cursor:default; opacity:var(--ifx-disabled-opacity); }
+.workflow-page:where(.attention-page) :is(button,a,input,select,textarea,summary):focus-visible { outline:var(--ifx-focus-width) solid var(--ifx-focus-color); outline-offset:var(--ifx-focus-offset); }

@@ -263,7 +263,8 @@ export function vehicleMatchesOverviewView(
     const code = vehicle.appDisposition?.code ?? "none";
     return owner === store && view === `disposition-${code.replaceAll("_", "-")}`;
   }
-  if (view === 'holds' && hasProviderHold(vehicle)) return store === 'all' || vehicle.location.homeStore.name === store;
+  // DealerMail facts retain their counted store; provider-only signals use home ownership.
+  if (view === 'holds' && !vehicle.overview?.holdActive && hasProviderHold(vehicle)) return store === 'all' || vehicle.location.homeStore.name === store;
   const facts = vehicle.overview;
   const home = vehicle.location.homeStore.name === store;
   if (!facts) return view === "on-lot" && home;
@@ -443,10 +444,14 @@ function sortValue(vehicle: InventoryVehicle, key: InventorySortKey): string | n
       return vehicle.daysListed ?? null;
     case "inventoryDate":
       return sortableDate(vehicle.inventoryDate);
-    case "holdStatus":
-      if (vehicle.manualHold?.state === "active" || providerHoldState(vehicle) === true) return 0;
+    case "holdStatus": {
+      const providerState = providerHoldState(vehicle);
+      if (vehicle.manualHold?.state === "active" || providerState === true ||
+        (vehicle.dealerMail.dataState === "current" && vehicle.dealerMail.hasActiveHold === true)) return 0;
+      if (vehicle.operationalEvidence && providerState === null) return 2;
       if (vehicle.dealerMail.dataState !== "current" || vehicle.dealerMail.hasActiveHold === null) return 2;
       return vehicle.dealerMail.hasActiveHold ? 0 : 1;
+    }
     case "websiteStatus":
       return (
         vehicle.publicListing.websiteStatus?.trim() ||
