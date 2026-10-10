@@ -100,19 +100,19 @@ export function OperationsQueue({ items, homeStore, role, reportDate, vehicles =
   const [category, setCategory] = useWorkspaceState<ActionCategory>(accessContext, 'attention.category', 'all')
   const [status, setStatus] = useWorkspaceState(accessContext, 'attention.status', 'open')
   const [query, setQuery] = useWorkspaceState(accessContext, 'attention.query', '')
-  // An Overview link (`?category=`) picks the task category once on entry.
+  // Overview navigation hints pick their category and/or scope once on entry.
   const navigate = useNavigate()
   const categoryParam = new URLSearchParams(location.search).get('category')
+  const scopeParam = new URLSearchParams(location.search).get('scope')
   useEffect(() => {
-    if (categoryParam === null) return
-    if (CATEGORIES.some(([key]) => key === categoryParam)) setCategory(categoryParam as ActionCategory)
-    const scopeParam = new URLSearchParams(location.search).get('scope')
+    if (categoryParam === null && scopeParam === null) return
+    if (categoryParam !== null && CATEGORIES.some(([key]) => key === categoryParam)) setCategory(categoryParam as ActionCategory)
     if (scopeParam === 'home' || scopeParam === 'group') setScope(scopeParam)
     const next = new URLSearchParams(location.search)
     next.delete('category')
     next.delete('scope')
     navigate({ pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : '', hash: location.hash }, { replace: true })
-  }, [categoryParam]) // eslint-disable-line react-hooks/exhaustive-deps -- applied once per link
+  }, [categoryParam, scopeParam]) // eslint-disable-line react-hooks/exhaustive-deps -- each navigation hint is applied once
   const scoped = useMemo(() => items.filter(item => scope === 'group' || belongsToActionStore(item, homeStore)), [items, scope, homeStore])
   const statusItems = scoped.filter(item => status === 'reviewed' ? item.status === 'resolved' : item.status !== 'resolved')
   const matchesSearch = (item: AttentionItem) =>

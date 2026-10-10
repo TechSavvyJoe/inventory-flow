@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AttentionItem, BootstrapData, ServiceReadinessStatus, StoreName, VehicleIssueDetail, VehicleRecord } from '../../types'
 import { clearWorkspaceMemory } from '../../lib/workspace-memory'
@@ -24,7 +24,8 @@ function data(): BootstrapData {
 }
 const howellManager = { store: 'Howell' as StoreName, role: 'manager' as const }
 beforeEach(() => { clearWorkspaceMemory(); vi.clearAllMocks(); mocked.context = { data: data(), homeStore: 'Howell', role: 'manager', currentUser: 'Synthetic Manager', addAttentionEvent: mocked.action } })
-function show(path = '/') { return render(<MemoryRouter initialEntries={[path]}><AttentionPage/></MemoryRouter>) }
+function LocationProbe() { const location = useLocation(); return <output aria-label="Current URL">{`${location.pathname}${location.search}${location.hash}`}</output> }
+function show(path = '/') { return render(<MemoryRouter initialEntries={[path]}><AttentionPage/><LocationProbe/></MemoryRouter>) }
 function tasks() { return within(screen.getByRole('list', { name: 'Attention items' })).getAllByRole('listitem') }
 
 describe('Action center page and shared navigation count', () => {
@@ -145,6 +146,23 @@ describe('Action center page and shared navigation count', () => {
     expect(screen.getByRole('button', { name: 'Lincoln' })).toHaveAttribute('aria-pressed', 'true')
     expect(tasks()).toHaveLength(2)
     expect(screen.queryByText('Synthetic Service 3')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    { savedScope: 'group', requestedScope: 'home', selectedScope: 'home' },
+    { savedScope: 'home', requestedScope: 'group', selectedScope: 'group' },
+    { savedScope: 'group', requestedScope: 'invalid', selectedScope: 'group' },
+  ] as const)('applies a scope-only link over saved $savedScope scope and consumes it safely', ({ savedScope, requestedScope, selectedScope }) => {
+    show()
+    if (savedScope === 'group') fireEvent.click(screen.getByRole('button', { name: 'All stores' }))
+    expect(screen.getByRole('button', { name: savedScope === 'home' ? 'Howell' : 'All stores' })).toHaveAttribute('aria-pressed', 'true')
+
+    cleanup()
+    show(`/attention?scope=${requestedScope}&keep=1#kept`)
+
+    expect(screen.getByRole('button', { name: 'Howell' })).toHaveAttribute('aria-pressed', String(selectedScope === 'home'))
+    expect(screen.getByRole('button', { name: 'All stores' })).toHaveAttribute('aria-pressed', String(selectedScope === 'group'))
+    expect(screen.getByLabelText('Current URL')).toHaveTextContent(/^\/attention\?keep=1#kept$/)
   })
 
   it('protects an unfinished follow-up when a filter would remove its row', () => {
