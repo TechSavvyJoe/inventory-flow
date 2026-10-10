@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSyntheticCollector, COLLECTOR_OWNER as owner, COLLECTOR_SYNTHETIC_NOW as now } from '../../fixtures/synthetic-collector.mjs'
 import { claimCollector, readCollectors, receiptCollector, saveCollector } from '../../cloudflare/src/collector-execution.mjs'
-import { publishCollector, publicationTicket, publishTenantCandidate, reconcileCollector } from '../../cloudflare/src/collector-publication.mjs'
+import { publishCollector, publicationTicket, publishTenantCandidate, readTenantPublicationReceipt, reconcileCollector } from '../../cloudflare/src/collector-publication.mjs'
 import { saveDataControl } from '../../cloudflare/src/platform-data.mjs'
 import { digest } from '../../cloudflare/src/collector-common.mjs'
 import { cloudBundleSha256, encryptBundle } from '../../scripts/publish-cloud-release.mjs'
@@ -23,6 +23,58 @@ const setup=async(prepare=async()=>{})=>{
  return f
 }
 describe('Brokered publication and independent tenant receipt',()=>{
+ it.each([45000,119000])('verifies a publication after a %ims RPC using a fresh receipt ticket and settlement time',async elapsed=>{
+  const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish
+  let current=now
+  const clock=()=>current
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(...args)=>{
+   const result=await publish(...args)
+   current=new Date(now.getTime()+elapsed)
+   return result
+  })
+  f.env.TENANT_NORTH_PUBLISHER.readReceipt=vi.fn(ticket=>readTenantPublicationReceipt(f.tenantEnv,ticket,clock()))
+  expect(await publishCollector(f.env,f.machine,f.input,'slow-publication',now,clock)).toMatchObject({status:'published_verified',bundleSha256:f.envelope.bundleSha256,ready:true,verifiedAt:current.toISOString()})
+  const settledAt=current.toISOString()
+  expect(f.sqlite.prepare('SELECT stage,completed_at,failure_code FROM platform_collector_attempts').get()).toEqual({stage:'completed',completed_at:settledAt,failure_code:null})
+  expect(f.sqlite.prepare('SELECT state,updated_at FROM platform_pull_requests').get()).toEqual({state:'completed',updated_at:settledAt})
+  expect(f.sqlite.prepare("SELECT received_at FROM platform_collector_receipts WHERE kind='publication'").get().received_at).toBe(settledAt)
+  expect(f.sqlite.prepare("SELECT created_at FROM platform_audit WHERE action='publication_verified'").get().created_at).toBe(settledAt)
+  const settledRevision=revision(f)
+  current=new Date(current.getTime()+180000)
+  expect(await publishCollector(f.env,f.machine,f.input,'slow-publication',now,clock)).toMatchObject({status:'published_verified',verifiedAt:settledAt})
+  expect(f.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
+  expect(f.env.TENANT_NORTH_PUBLISHER.readReceipt).toHaveBeenCalledTimes(2)
+  expect(revision(f)).toBe(settledRevision)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind='publication'").get().n).toBe(1)
+ })
+ it.each(['rejected','lost','malformed'])('keeps a delayed %s validation result fail closed with current settlement evidence',async mode=>{
+  const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish,later=new Date(now.getTime()+45000)
+  let current=now
+  f.input.envelope={...f.envelope,ciphertext:'invalid encrypted candidate'}
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(...args)=>{
+   const result=await publish(...args)
+   current=later
+   if(mode==='lost')throw new Error('Synthetic delayed rejection reply lost')
+   return mode==='malformed'?{...result,unrecognized:true}:result
+  })
+  f.env.TENANT_NORTH_PUBLISHER.readReceipt=ticket=>readTenantPublicationReceipt(f.tenantEnv,ticket,current)
+  const result=publishCollector(f.env,f.machine,f.input,'slow-rejection',now,()=>current)
+  if(mode==='rejected'){
+   await expect(result).rejects.toMatchObject({code:'COLLECTOR_PUBLICATION_INVALID'})
+   expect(f.sqlite.prepare('SELECT stage,completed_at,failure_code FROM platform_collector_attempts').get()).toEqual({stage:'failed',completed_at:later.toISOString(),failure_code:'VALIDATION_FAILED'})
+   expect(f.sqlite.prepare("SELECT received_at FROM platform_collector_receipts WHERE kind='failure'").get().received_at).toBe(later.toISOString())
+   expect(await publishCollector(f.env,f.machine,f.input,'slow-rejection',later)).toMatchObject({status:'rejected_verified',ready:false,verifiedAt:later.toISOString()})
+  }else{
+   expect(await result).toMatchObject({status:'reconciliation_required',ready:false})
+   expect(f.sqlite.prepare('SELECT stage,failure_code FROM platform_collector_attempts').get()).toEqual({stage:'reconciliation_required',failure_code:'COLLECTOR_PUBLICATION_UNKNOWN'})
+   expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind IN ('failure','publication')").get().n).toBe(0)
+   expect(await publishCollector(f.env,f.machine,f.input,'slow-rejection',now,()=>current)).toMatchObject({status:'reconciliation_required',ready:false})
+  }
+  expect(f.sqlite.prepare('SELECT updated_at FROM platform_pull_requests').get().updated_at).toBe(later.toISOString())
+  expect(f.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
+  expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+  expect(f.tenant.prepare("SELECT bundle_sha256 FROM cloud_release_versions WHERE status='current'").get().bundle_sha256).toBe(f.baseline.bundleSha256)
+ })
  it('replays an exact persisted validation rejection without another tenant call after its first reply is lost',async()=>{
   const f=await setup(),publish=vi.spyOn(f.env.TENANT_NORTH_PUBLISHER,'publish')
   f.input.envelope={...f.envelope,ciphertext:'invalid encrypted candidate'}
@@ -334,11 +386,18 @@ describe('Brokered publication and independent tenant receipt',()=>{
   expect(f.tenant.prepare('SELECT status FROM collector_publication_receipts').get().status).toBe('unchanged')
  })
  it('treats a timeout after acceptance as unknown, never dispatches again and reconciles only the exact candidate',async()=>{
-  const f=await setup(),real=f.env.TENANT_NORTH_PUBLISHER.publish
-  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(...args)=>{await real(...args);throw new Error('SYNTHETIC_PRIVATE_FAILURE')})
-  expect(await publishCollector(f.env,f.machine,f.input,'timeout',now)).toMatchObject({status:'reconciliation_required',ready:false})
+  const f=await setup(),real=f.env.TENANT_NORTH_PUBLISHER.publish,later=new Date(now.getTime()+45000)
+  let current=now
+  f.env.TENANT_NORTH_PUBLISHER.publish=vi.fn(async(...args)=>{await real(...args);current=later;throw new Error('SYNTHETIC_PRIVATE_FAILURE')})
+  const readReceipt=vi.fn(ticket=>readTenantPublicationReceipt(f.tenantEnv,ticket,current))
+  f.env.TENANT_NORTH_PUBLISHER.readReceipt=readReceipt
+  expect(await publishCollector(f.env,f.machine,f.input,'timeout',now,()=>current)).toMatchObject({status:'reconciliation_required',ready:false})
+  expect(readReceipt).not.toHaveBeenCalled()
   expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('reconciliation_required')
-  expect(await publishCollector(f.env,f.machine,f.input,'reconcile',new Date(now.getTime()+180000))).toMatchObject({status:'published_verified'})
+  expect(f.sqlite.prepare('SELECT updated_at FROM platform_pull_requests').get().updated_at).toBe(later.toISOString())
+  expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind=\'publication\'').get().n).toBe(0)
+  current=new Date(now.getTime()+180000)
+  expect(await publishCollector(f.env,f.machine,f.input,'reconcile',now,()=>current)).toMatchObject({status:'published_verified',verifiedAt:current.toISOString()})
   expect(f.env.TENANT_NORTH_PUBLISHER.publish).toHaveBeenCalledTimes(1)
   expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_collector_receipts WHERE kind=\'publication\'').get().n).toBe(1)
  })

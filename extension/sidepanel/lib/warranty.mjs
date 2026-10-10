@@ -35,8 +35,9 @@ export function vehicleInServiceSource(vehicle) {
   const firstDate = (...values) => values.find(value => typeof value === 'string' && value.trim())?.trim()
   const oasis = firstDate(docs.fordOasis?.warrantyStartDate, docs.warrantyCheck?.fordOasis?.warrantyStartDate)
   const estimate = firstDate(docs.autoCheck?.inServiceDate, docs.warrantyCheck?.autoCheck?.inServiceDate)
-  const raw = oasis || estimate || null
-  return { raw, source: oasis ? 'OASIS' : estimate ? 'AutoCheck estimate' : null, estimated: !oasis }
+  const carfax = firstDate(docs.warrantyCheck?.carfax?.inServiceDate)
+  const raw = oasis || estimate || carfax || null
+  return { raw, source: oasis ? 'OASIS' : estimate ? 'AutoCheck estimate' : carfax ? 'CARFAX estimate' : null, estimated: !oasis }
 }
 
 /**

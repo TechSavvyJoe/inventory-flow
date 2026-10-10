@@ -161,6 +161,10 @@
 .if-srp-grid .inventory-sort-header-group__menu .inventory-sort-header:hover { background:var(--surface-soft); }
 .if-srp-grid .inventory-sort-header-group__menu .inventory-sort-header.is-active { color:var(--blue-700); background:var(--blue-050); }
 .if-srp-grid :is(button,a):focus-visible,.if-srp-mobile-list :is(button,a):focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+/* Keep the equipment label readable when the workspace narrows. */
+@container inventory-table (max-width:1100px) {
+  .if-srp-grid .inv-desk-configuration-record .vehicle-resource-scan__fields > [data-field="group"] { grid-column:1 / -1; grid-row:6; align-self:start; }
+}
 /* Stack only when five readable columns no longer fit the available workspace. */
 @container inventory-table (max-width:1000px) {
   .if-srp-grid .inv-desk-table { display:block; }

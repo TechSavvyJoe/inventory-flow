@@ -223,9 +223,26 @@ describe('companion concept vehicle workspace', () => {
   it('qualifies an in-service date that only AutoCheck estimated', async () => {
     await boot([{ ...record(), make: 'Chevrolet', autoCheckReport: { estimatedInServiceDate: '2024-01-01' } }])
     const facts = document.querySelector('.detail-frequent-facts').textContent.replace(/\s+/g, ' ')
-    expect(facts).toContain('Warranty in-service · estimate')
+    expect(facts).toContain('Warranty in-service · AutoCheck estimate')
     expect(facts).toContain('01/01/2024')
     expect(facts).not.toContain('OASIS')
+  })
+  it('shows the CARFAX-only start in frequent facts and uses it in the interactive warranty calculator', async () => {
+    await boot([{ ...record(), make: 'Chevrolet', mileage: 22052, warrantyCheck: { dataState: 'current', mileageEntered: 22052, carfax: { inServiceDate: '2024-11-21', coverages: [] } } }])
+    const view = within(document.body)
+    const facts = view.getByRole('region', { name: 'Frequently used vehicle facts' }).textContent.replace(/\s+/g, ' ')
+    expect(facts).toContain('Warranty in-service · CARFAX estimate')
+    expect(facts).toContain('11/21/2024')
+    view.getByRole('button', { name: 'Warranty calculator' }).click()
+    const calculator = view.getByRole('heading', { name: 'Factory warranty estimate' }).closest('section')
+    expect(calculator).toHaveTextContent('CARFAX estimate')
+    expect(calculator).toHaveTextContent('11/21/2024')
+    expect(calculator).not.toHaveTextContent('Not on the report')
+    expect(calculator).not.toHaveTextContent('Needed to date the coverage')
+    const odometer = within(calculator).getByRole('spinbutton', { name: 'Odometer now' })
+    odometer.value = '40000'
+    odometer.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(view.getByRole('heading', { name: 'Factory warranty estimate' }).closest('section')).toHaveTextContent('Expired')
   })
   it('does not attribute equipment-label prices to a sticker missing its base price', async () => {
     await boot([{ ...record(), windowSticker: { pricingCurrency: 'USD' }, factoryEquipment: { basePrice: 42500 } }])

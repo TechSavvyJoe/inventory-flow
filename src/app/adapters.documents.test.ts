@@ -385,6 +385,21 @@ describe('provider report fallbacks', () => {
     expect(mapped.warrantyCheck?.carfax?.coverages[0].type).toBe('Powertrain');
     expect(mapped.warrantyCheck?.fordOasis).toBeNull();
     expect(mapped.serviceHistory?.reports[0].entries[0].services).toEqual(['Synthetic oil service']);
-    expect(mapped.authorizedSearchText).toContain('Synthetic oil service');
+    // Shared provider labels and routine work remain visible in Records but
+    // must not make a predictive search match every vehicle on the lot.
+    expect(mapped.authorizedSearchText).toContain('2026-07-12');
+    expect(mapped.authorizedSearchText).not.toContain('Synthetic oil service');
+    expect(mapped.authorizedSearchText).not.toContain('Synthetic CARFAX');
+  });
+  it('indexes provider event dates and odometers without shared labels or mechanical descriptions', () => {
+    const record = sourceVehicle();
+    record.serviceHistory = { reports: [{ vin: record.vin, provider: 'autocheck', sourceLabel: 'Experian shared inspection report', capturedAt: '2026-08-30T14:00:00Z', dataState: 'current', historyStatus: 'reported', entries: [
+      { date: '2026-07-12', odometer: 18231, services: ['Vehicle inspected'] },
+    ] }] };
+    const mapped = toInventoryVehicle(record, sourceData());
+    const index = buildInventorySearchIndex([mapped]);
+    for (const query of ['2026-07-12', '18231']) expect(rankInventorySearch(index, query)).toHaveLength(1);
+    for (const query of ['Experian', 'Vehicle inspected']) expect(rankInventorySearch(index, query)).toHaveLength(0);
+    expect(mapped.serviceHistory?.reports[0].entries[0].services).toEqual(['Vehicle inspected']);
   });
 });

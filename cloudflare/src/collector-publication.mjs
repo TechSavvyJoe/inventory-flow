@@ -76,7 +76,7 @@ export async function publishCollector(env,claims,input,key,now=new Date(),clock
  if(attempt.stage==='failed')return await verifiedRejection(env,row,attempt,key)??{status:'reconciliation_required',attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,ready:false}
  const binding=await bindingFor(env,attempt)
  if(['publishing','reconciliation_required','completed'].includes(attempt.stage)) {
-  const verified=await verifiedReceipt(env,attempt,binding,now)
+  const verified=await verifiedReceipt(env,attempt,binding,currentTime())
   return verified??{status:'reconciliation_required',attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,ready:false}
  }
  if(attempt.stage!=='captured')collectorFail('COLLECTOR_NO_CAPTURE',409)
@@ -140,10 +140,12 @@ export async function publishCollector(env,claims,input,key,now=new Date(),clock
    ])
    collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
   }
-  const verified=await verifiedReceipt(env,attempt,binding,now)
+  // Publication can outlast a ticket's 30-second lifetime. Issue readback
+  // authority only after dispatch returns, using the current settlement clock.
+  const verified=await verifiedReceipt(env,attempt,binding,currentTime())
   if(verified)return verified
  }catch(error){if(error?.code==='COLLECTOR_PUBLICATION_INVALID')throw error;/* Persist only the fixed uncertain outcome; never a provider error. */}
- await unknown(env.PLATFORM_DB,attempt.id,attempt.request_id,now.toISOString())
+ await unknown(env.PLATFORM_DB,attempt.id,attempt.request_id,currentTime().toISOString())
  return {status:'reconciliation_required',attemptId:attempt.id,bundleSha256:attempt.expected_bundle_sha256,reportDate:attempt.report_date,ready:false}
 }
 

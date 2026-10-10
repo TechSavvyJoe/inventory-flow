@@ -1301,7 +1301,7 @@ function warrantyCard(vehicle) {
       el('ul', { class: 'warr-terms' }, ...cert.terms.map((term) => el('li', { text: term }))),
       el('p', { class: 'd-caption', text: cert.note }),
     ) : null,
-    el('p', { class: 'd-caption' }, icon('calendar', { size: 12 }), ' Warranty runs from the first retail sale, not the model year. ', outlook.verify.source === 'oasis' ? 'A captured OASIS warranty start date takes priority; otherwise the date is an AutoCheck estimate. Coverage calculations remain estimates.' : 'The AutoCheck report shows the sale and registration dates and has its own remaining-warranty calculator at the bottom.'),
+    el('p', { class: 'd-caption' }, icon('calendar', { size: 12 }), ' Warranty runs from the first retail sale, not the model year. ', outlook.verify.source === 'oasis' ? 'A captured OASIS warranty start date takes priority; otherwise the date is an AutoCheck or CARFAX estimate. Coverage calculations remain estimates.' : outlook.inService.source === 'CARFAX estimate' ? 'Review the captured CARFAX dates in Records. Coverage calculations remain estimates.' : 'The AutoCheck report shows the sale and registration dates and has its own remaining-warranty calculator at the bottom.'),
     outlook.verify.url ? el('button', { type: 'button', class: 'btn btn-sm', onclick: () => openUrl(outlook.verify.url) }, icon(outlook.verify.source === 'oasis' ? 'wrench' : 'shield', { size: 13 }), outlook.verify.source === 'oasis' ? 'Open OASIS' : 'Open AutoCheck report', icon('external', { size: 12 })) : null,
   )
   return card
@@ -1347,7 +1347,7 @@ function frequentFacts(vehicle) {
   return el('section', { class: 'detail-frequent-facts', 'aria-label': 'Frequently used vehicle facts' },
     pricingFact(prices.original, false),
     pricingFact(prices.base, true),
-    fact(start.source === 'OASIS' ? 'Warranty in-service · OASIS' : start.raw ? 'Warranty in-service · estimate' : 'Warranty in-service', start.raw ? fmt.formatDate(start.raw) : '—'),
+    fact(start.source ? `Warranty in-service · ${start.source}` : 'Warranty in-service', start.raw ? fmt.formatDate(start.raw) : '—'),
   )
 }
 
