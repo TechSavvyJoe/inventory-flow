@@ -1228,4 +1228,38 @@ describe('collector exact candidate local baseline lifecycle', () => {
     expect(f.captures()).toBe(1)
     expect(existsSync(backupPath)).toBe(false)
   })
+
+  it.each([false,true])('fences a forced same-day daily run before source work while an accepted collector candidate awaits promotion (inherited lock: %s)',async inherited=>{
+    const f=await lifecycleFixture()
+    await f.queue()
+    const writer=f.runner.internals.runtime.writeCollectorBaselineFile
+    f.runner.internals.runtime.writeCollectorBaselineFile=()=>{throw new Error('Synthetic promotion interruption')}
+    const failed=await f.runOnce(f.options)
+    f.runner.internals.runtime.writeCollectorBaselineFile=writer
+    expect(failed.status).toBe('reconciliation_required')
+    const pending=findPendingPublication(f.root)
+    expect(existsSync(path.join(pending.artifacts.directory,'capture-rollback.json'))).toBe(false)
+    const files=[f.dealerPath,f.manifestPath,f.releasePath,f.receiptPath,pending.artifacts.statePath,pending.artifacts.candidatePath,pending.artifacts.envelopePath]
+    const before=files.map(file=>readFileSync(file))
+    const run=vi.spyOn(f.runner.internals.runtime,'run'),browser=vi.spyOn(f.runner.internals.runtime,'ensureAutomationBrowser')
+    const {acquirePublicationLock,releasePublicationLock}=await import('../../scripts/sync-cloud-release.mjs')
+    const previousOwner=process.env.INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID
+    const lock=inherited?acquirePublicationLock(path.join(f.root,'work/app-feed-status/.publication.lock')):null
+    if(lock)process.env.INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID=JSON.parse(lock.content).ownerId
+    try{
+      await expect(f.runner.internals.runDaily(f.runner.internals.parseArgs(['--date',f.date,'--force-publish']))).rejects.toThrow('RECONCILIATION_REQUIRED')
+      expect(run).not.toHaveBeenCalled();expect(browser).not.toHaveBeenCalled()
+      for(const [index,file] of files.entries())expect(readFileSync(file)).toEqual(before[index])
+    }finally{
+      run.mockRestore();browser.mockRestore()
+      if(previousOwner===undefined)delete process.env.INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID
+      else process.env.INVENTORY_OPS_PUBLICATION_LOCK_OWNER_ID=previousOwner
+      if(lock)releasePublicationLock(lock)
+    }
+    const recovered=await f.runOnce(f.options)
+    expect(recovered.status).toBe('published_verified')
+    expect(f.localHash()).toBe(pending.envelope.bundleSha256)
+    expect(f.captures()).toBe(1)
+    expect(findPendingPublication(f.root)).toBeNull()
+  })
 })

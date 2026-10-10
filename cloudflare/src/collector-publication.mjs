@@ -3,9 +3,8 @@ import { platformOwner, tenantDatabase } from './platform-admin.mjs'
 import { collectorIdentity } from './collector-auth.mjs'
 import { currentAttempt, attemptGuard, scopeGuard, machineAudit } from './collector-execution.mjs'
 import { canonical, collectorFail, digest, exactFields, executionEnabled, sha, text } from './collector-common.mjs'
-import { decryptEnvelope, publishRelease, readReleaseWithIdentity, releaseReadiness } from './worker.mjs'
+import { decryptEnvelope, publishRelease, readReleaseWithIdentity, releaseReadiness, validatedReleaseCounts } from './worker.mjs'
 import { verifyPublicationTicket, assertPublicationFence } from './collector-publication-guards.mjs'
-import { validateReleaseBundle } from './release-validation.mjs'
 
 function publicationBindings(env) {
  let mapping;try{mapping=JSON.parse(env.PLATFORM_COLLECTOR_PUBLICATION_BINDINGS||'{}')}catch{collectorFail('COLLECTOR_PUBLICATION_UNAVAILABLE',503)}
@@ -171,7 +170,9 @@ export async function publishTenantCandidate(env,envelope,authorization,testTime
  try {
  if(envelope?.bundleSha256!==ticket.bundleSha256 || envelope.reportDate!==ticket.reportDate)collectorFail('COLLECTOR_PUBLICATION_INVALID',409)
  bundle=await decryptEnvelope(envelope,env)
- counts=validateReleaseBundle(bundle,{degradeOptionalResources:true})
+ // Decryption validates the uploaded bytes before optional resource
+ // normalization. Reuse those counts; normalized rows are not new provenance.
+ counts=validatedReleaseCounts(bundle)
  }catch(error){
   if(error?.code==='COLLECTOR_PUBLICATION_INVALID' || ['INVALID_ENVELOPE','BODY_TOO_LARGE','INVALID_ENCRYPTED_CONTENT','INVALID_OR_INCOMPLETE_RELEASE'].includes(error?.code) || error?.message?.startsWith('Invalid cloud release:'))return {status:'rejected',code:'VALIDATION_FAILED'}
   return {status:'preflight_retryable'}
@@ -206,7 +207,7 @@ export async function readTenantPublicationReceipt(env,authorization,now=new Dat
  if(!object || !Number.isSafeInteger(object.size) || object.size<1 || object.size>25*1024*1024 || object.size!==version.object_bytes)return unknown()
  const envelope=JSON.parse(await object.text())
  if(envelope.bundleSha256!==receipt.bundle_sha256 || envelope.reportDate!==receipt.report_date)return unknown()
- const bundle=await decryptEnvelope(envelope,env),counts=validateReleaseBundle(bundle,{degradeOptionalResources:true}),metadata=JSON.parse(version.metadata_json)
+ const bundle=await decryptEnvelope(envelope,env),counts=validatedReleaseCounts(bundle),metadata=JSON.parse(version.metadata_json)
  if(bundle.reportDate!==receipt.report_date || canonical(counts)!==canonical(JSON.parse(receipt.counts_json)) || version.public_source_sha256!==bundle.release.sourceRuns.public.sha256 || version.dealermail_source_sha256!==bundle.release.sourceRuns.dealerMail.sha256 || version.public_row_count!==counts.publicRowCount || version.dealermail_row_count!==counts.dealerMailRowCount || metadata.completedAt!==bundle.release.completedAt || metadata.timezone!==bundle.release.timezone)return unknown()
  const readiness=await releaseReadiness(env,bundle.release,receipt.bundle_sha256)
  if(!readiness.ready || readiness.bundleSha256!==receipt.bundle_sha256 || readiness.reportDate!==receipt.report_date || readiness.counts.inventory!==counts.activeInventoryCount)return unknown()

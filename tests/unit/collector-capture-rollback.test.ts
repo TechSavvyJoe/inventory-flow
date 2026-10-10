@@ -137,6 +137,28 @@ function guardedCaptureHost(f, mode = 'admitted') {
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 describe('collector durable capture rollback', () => {
+  it.each(['malformed','older-state','partial-state','symlink','directory'])('fences daily source work and canonical writes for uncertain collector %s state',async kind=>{
+    const f=await fixture(),directory=path.dirname(f.journalPath)
+    mkdirSync(directory,{recursive:true})
+    const marker=path.join(directory,kind==='partial-state'?'synthetic.state.json.tmp':'synthetic.state.json')
+    if(kind==='directory')mkdirSync(marker)
+    else if(kind==='symlink')symlinkSync(path.join(directory,'missing-state'),marker)
+    else writeFileSync(marker,kind==='older-state'?JSON.stringify({captureReceiptSent:false,publicationPending:false,reconciliationRequired:false}):'{synthetic interrupted state')
+    const run=vi.spyOn(f.internals.runtime,'run'),browser=vi.spyOn(f.internals.runtime,'ensureAutomationBrowser')
+    try{
+      await expect(f.internals.runDaily(f.internals.parseArgs(['--date',f.date,'--force-publish']))).rejects.toThrow('RECONCILIATION_REQUIRED')
+      expect(run).not.toHaveBeenCalled();expect(browser).not.toHaveBeenCalled()
+      assertOriginals(f)
+    }finally{run.mockRestore();browser.mockRestore()}
+  })
+
+  it('allows proof-retired state tombstones and harmless orphan evidence without reviving pending state',async()=>{
+    const f=await fixture(),directory=path.dirname(f.journalPath)
+    mkdirSync(directory,{recursive:true})
+    for(const name of ['synthetic.state.json.settled','synthetic.release.json','synthetic.manifest.json'])writeFileSync(path.join(directory,name),'{synthetic settled cleanup orphan')
+    expect(await f.internals.runDaily(f.internals.parseArgs(['--date',f.date]))).toMatchObject({ok:true})
+    assertOriginals(f)
+  })
   it('restores normal capture after all three admitted children close and retains the new candidate', async () => {
     const f = await fixture(), child = guardedCaptureHost(f, 'normal')
     expect(child.hostStatus).toBe(0)

@@ -342,6 +342,51 @@ describe('safe independent provider evidence', () => {
     const absence = inventoryDecision({ vin: VIN, operationalEvidence: { records: [{ ...observation, provider: 'crm-two', reportedDisposition: 'not_observed' }, { ...observation, reportedDisposition: 'delivered' }] } })
     expect(absence.reasons).not.toContain('provider_disposition_mismatch')
   })
+  it.each([
+    ['active', 'held', 'manual_only'],
+    ['released', 'unconfirmed', 'manual_only'],
+    ['requested', 'hold_requested', 'source_only'],
+  ])('keeps disposition-only source evidence separate from an app %s hold', (state, status, comparison) => {
+    const vehicle = { vin: VIN, manualHold: { state }, operationalEvidence: { records: [{ ...observation, holdState: 'unknown', reportedDisposition: 'delivered' }] } }
+    const before = structuredClone(vehicle)
+    const result = inventoryDecision(vehicle)
+    expect(result).toMatchObject({ status, comparison, importedHold: null, reviewRequired: false, reasons: [] })
+    expect(result.evidence).toEqual([expect.objectContaining({ effectiveHoldState: 'unknown', reportedDisposition: 'delivered', comparison: 'source_only', reasons: [] })])
+    expect(vehicle).toEqual(before)
+  })
+  it.each([
+    ['active', 'delivered', 'conflict', ['delivered_with_hold'], 'agreement'],
+    ['released', 'delivered', 'manual_only', [], 'agreement'],
+    ['requested', 'delivered', 'source_only', [], 'agreement'],
+    ['active', 'sold_pending', 'conflict', ['provider_disposition_mismatch'], 'conflict'],
+    ['released', 'sold_pending', 'conflict', ['provider_disposition_mismatch'], 'conflict'],
+    ['requested', 'sold_pending', 'conflict', ['provider_disposition_mismatch'], 'conflict'],
+  ])('compares app %s hold independently of manager disposition %s', (state, code, comparison, reasons, providerComparison) => {
+    const result = inventoryDecision({ vin: VIN, manualHold: { state }, appDisposition: { code }, operationalEvidence: { records: [{ ...observation, holdState: 'unknown', reportedDisposition: 'delivered' }] } })
+    expect(result).toMatchObject({ status: code, comparison, importedHold: null, reasons, reviewRequired: reasons.length > 0 })
+    expect(result.evidence[0]).toMatchObject({ effectiveHoldState: 'unknown', comparison: providerComparison })
+  })
+  it.each([
+    ['active', 'held', 'held', 'agreement', []],
+    ['released', 'not_observed', 'unconfirmed', 'agreement', []],
+    ['active', 'not_observed', 'held', 'conflict', ['manual_hold_not_in_source']],
+    ['released', 'held', 'held', 'conflict', ['source_hold_after_manual_release']],
+    ['requested', 'held', 'held', 'source_only', []],
+    ['requested', 'not_observed', 'hold_requested', 'source_only', []],
+  ])('corroborates only actual current hold observations for app %s and provider %s', (state, holdState, status, comparison, reasons) => {
+    const result = inventoryDecision({ vin: VIN, manualHold: { state }, operationalEvidence: { records: [{ ...observation, holdState, reportedDisposition: 'delivered' }] } })
+    expect(result).toMatchObject({ status, comparison, reasons, reviewRequired: reasons.length > 0 })
+    expect(result.evidence[0]).toMatchObject({ effectiveHoldState: holdState, comparison })
+  })
+  it('keeps retained and incomplete disposition-only evidence unverified for every app hold state', () => {
+    for (const state of ['active', 'released', 'requested']) {
+      for (const qualification of [{ dataState: 'stale_unverified' }, { dataState: 'incomplete' }, { dataState: 'unknown' }, { complete: false }]) {
+        const result = inventoryDecision({ vin: VIN, manualHold: { state }, appDisposition: { code: 'sold_pending' }, operationalEvidence: { records: [{ ...observation, holdState: 'unknown', reportedDisposition: 'delivered', ...qualification }] } })
+        expect(result).toMatchObject({ status: 'sold_pending', comparison: state === 'requested' ? 'unverified' : 'manual_only', reviewRequired: false, reasons: [] })
+        expect(result.evidence[0]).toMatchObject({ effectiveHoldState: 'unknown', comparison: 'unverified', reasons: [] })
+      }
+    }
+  })
   it('uses current complete hold observations only and never infers a sale from a provider', () => {
     for (const overrides of [{ dataState: 'stale_unverified' }, { dataState: 'incomplete' }, { dataState: 'unknown' }, { complete: false }]) {
       const result = inventoryDecision({ vin: VIN, manualHold: { state: 'released' }, operationalEvidence: { records: [{ ...observation, ...overrides, reportedDisposition: 'delivered' }] } })

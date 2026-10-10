@@ -9,6 +9,7 @@ import { saveDataControl } from '../../cloudflare/src/platform-data.mjs'
 import { digest } from '../../cloudflare/src/collector-common.mjs'
 import { cloudBundleSha256, encryptBundle } from '../../scripts/publish-cloud-release.mjs'
 import { publishRelease } from '../../cloudflare/src/worker.mjs'
+import { resourceProvenanceSha256 } from '../../server/resource-validation.mjs'
 import { MANAGER_DISPOSITION_AUTHORITY, MANAGER_DISPOSITION_INDEPENDENCE, MANAGER_DISPOSITION_SCHEMA, canonicalManagerDispositionJson, managerDispositionSha256, sanitizeManagerDispositionDocuments } from '../../server/manager-disposition-schema.mjs'
 const fixtures=[]
 afterEach(()=>fixtures.splice(0).forEach(f=>f.close()))
@@ -49,6 +50,43 @@ const encryptMalformedSyntheticCandidate=(bundle,key)=>{
  return {version,reportDate:bundle.reportDate,bundleSha256,iv:iv.toString('base64url'),ciphertext:ciphertext.toString('base64url')}
 }
 describe('Brokered publication and independent tenant receipt',()=>{
+ it.each(['valid','bad-provenance','preflight-outage'])('handles provenance-bound status-only CARFAX coverage through publication and receipt readback: %s',async mode=>{
+  const f=await setup(async f=>{
+   const resource=f.bundle.release.vehicles.find(v=>v.resourceRecord).resourceRecord
+   resource.warrantyCheck={dataState:'current',capturedAt:now.toISOString(),sourceLabel:'Synthetic CARFAX warranty estimate',mileageEntered:1000,carfax:{coverages:[{type:'Powertrain',status:'ACTIVE'}]}}
+   const run=f.bundle.release.sourceRuns.resources
+   run.metadata.warrantyCheckCount=1
+   run.provenanceSha256=resourceProvenanceSha256(run,f.bundle.release.vehicles)
+   // Encrypt the original authenticated bytes without the publisher's local
+   // normalization so the tenant must validate the permitted status-only row.
+   f.baseline=encryptMalformedSyntheticCandidate(f.bundle,f.key)
+   const result=await publishRelease(new Request('https://synthetic.invalid/internal/releases',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(f.baseline)}),f.tenantEnv)
+   expect(result.ok).toBe(true)
+  })
+  f.candidate=structuredClone(f.bundle);f.candidate.release.completedAt=now.toISOString();f.candidate.createdAt=now.toISOString()
+  if(mode==='bad-provenance')f.candidate.release.sourceRuns.resources.provenanceSha256='0'.repeat(64)
+  f.input.envelope=encryptMalformedSyntheticCandidate(f.candidate,f.key)
+  const original=JSON.stringify(f.candidate),envelope=JSON.stringify(f.input.envelope),baselineHash=f.baseline.bundleSha256
+  if(mode==='preflight-outage'){
+   const get=f.bucket.get
+   f.bucket.get=vi.fn(async()=>{throw new Error('Synthetic baseline read outage')})
+   expect(await publishCollector(f.env,f.machine,f.input,'status-only-carfax',now)).toMatchObject({status:'preflight_retryable',ready:false})
+   expect(f.sqlite.prepare('SELECT stage FROM platform_collector_attempts').get().stage).toBe('captured')
+   f.bucket.get=get
+  }
+  if(mode==='bad-provenance'){
+   await expect(publishCollector(f.env,f.machine,f.input,'status-only-carfax',now)).rejects.toMatchObject({code:'COLLECTOR_PUBLICATION_INVALID'})
+   expect(f.tenant.prepare('SELECT COUNT(*) AS n FROM collector_publication_receipts').get().n).toBe(0)
+   expect(f.tenant.prepare("SELECT bundle_sha256 FROM cloud_release_versions WHERE status='current'").get().bundle_sha256).toBe(baselineHash)
+  }else{
+   expect(await publishCollector(f.env,f.machine,f.input,'status-only-carfax',now)).toMatchObject({status:'published_verified',ready:true,bundleSha256:f.input.envelope.bundleSha256})
+   const attempt=f.sqlite.prepare('SELECT * FROM platform_collector_attempts').get()
+   expect(await readTenantPublicationReceipt(f.tenantEnv,await publicationTicket(f.env,attempt,'read',now),now)).toMatchObject({status:'published_verified',ready:true,bundleSha256:f.input.envelope.bundleSha256})
+   expect(f.objects.get(`releases/${f.input.envelope.reportDate}/${f.input.envelope.bundleSha256}.json.enc`).body).toBe(envelope)
+  }
+  expect(JSON.stringify(f.candidate)).toBe(original)
+  expect(JSON.stringify(f.input.envelope)).toBe(envelope)
+ })
  it.each([45000,119000])('verifies a publication after a %ims RPC using a fresh receipt ticket and settlement time',async elapsed=>{
   const f=await setup(),publish=f.env.TENANT_NORTH_PUBLISHER.publish
   let current=now

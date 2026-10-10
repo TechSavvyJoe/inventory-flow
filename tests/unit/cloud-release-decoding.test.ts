@@ -2,7 +2,7 @@
 // @vitest-environment node
 import { createCipheriv, createHash, randomBytes } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { decryptEnvelope } from '../../cloudflare/src/worker.mjs'
+import { decryptEnvelope, validatedReleaseCounts } from '../../cloudflare/src/worker.mjs'
 import { datasetFromRelease } from '../../cloudflare/src/repository.mjs'
 import { buildSyntheticCloudBundle } from '../../fixtures/synthetic-cloud-bundle.mjs'
 import { resourceProvenanceSha256 } from '../../server/resource-validation.mjs'
@@ -24,6 +24,14 @@ function fixture(length=32) {
 }
 
 describe('bounded-memory release decoding',()=>{
+  it('returns only private cached counts from a validated release and refuses caller-supplied or lost caches',async()=>{
+    const bundle=buildSyntheticCloudBundle(),{env,envelope}=encryptedPayload(bundle,randomBytes(32),releaseFormat)
+    const decoded=await decryptEnvelope(envelope,env)
+    expect(validatedReleaseCounts(decoded)).toMatchObject({publicRowCount:8,dealerMailRowCount:8,activeInventoryCount:8})
+    for(const unvalidated of [bundle,structuredClone(decoded),{counts:{publicRowCount:8}},null])expect(()=>validatedReleaseCounts(unvalidated)).toThrow(expect.objectContaining({code:'INVALID_OR_INCOMPLETE_RELEASE'}))
+    const ledger=fixture()
+    expect(()=>validatedReleaseCounts(ledger.payload)).toThrow(expect.objectContaining({code:'INVALID_OR_INCOMPLETE_RELEASE'}))
+  })
   it('decrypts a full-size synthetic release without string-iterator byte expansion',async()=>{
     const {payload,env,envelope}=fixture(5_800_000)
     const result=await decryptEnvelope(envelope,env,format)

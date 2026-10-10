@@ -219,6 +219,15 @@ export async function loadAdminMembers(env) {
   return result.results
 }
 
+export function validatedReleaseCounts(bundle) {
+  // Only decryptEnvelope establishes this private cache after checking the
+  // exact plaintext hash and provenance. Resource normalization can change the
+  // decoded object afterward, so consumers must not validate that object again.
+  const counts=bundle?.[RELEASE_VALIDATION]
+  if(!counts || !Object.hasOwn(bundle,RELEASE_VALIDATION))throw new HttpError('INVALID_OR_INCOMPLETE_RELEASE')
+  return counts
+}
+
 export async function decryptEnvelope(envelope, env, format=FORMAT) {
   if(envelope?.version!==format || !/^\d{4}-\d{2}-\d{2}$/.test(envelope.reportDate??'') || !/^[a-f0-9]{64}$/.test(envelope.bundleSha256??'')) throw new HttpError('INVALID_ENVELOPE')
   if(typeof envelope.ciphertext!=='string' || envelope.ciphertext.length>MAX_UPLOAD) throw new HttpError('BODY_TOO_LARGE',413)
@@ -413,7 +422,7 @@ export async function publishRelease(request, env, bridge=null) {
   if(bridge)await bridge.check()
   const envelope=await readJson(request,MAX_UPLOAD)
   const bundle=await decryptEnvelope(envelope,env)
-  const counts=bundle[RELEASE_VALIDATION]??validateReleaseBundle(bundle,{degradeOptionalResources:true})
+  const counts=validatedReleaseCounts(bundle)
   const metadata=releaseMetadata(bundle,counts)
   releaseCompletionTime(bundle.release.completedAt)
   const existing=await env.INVENTORY_DB.prepare('SELECT * FROM cloud_release_versions WHERE bundle_sha256=? AND report_date=?').bind(envelope.bundleSha256,envelope.reportDate).first()

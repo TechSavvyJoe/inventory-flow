@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, copyFileSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, copyFileSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { loadLatestCompletedRelease, validateVinDocumentEnrichment } from '../server/importer.mjs'
@@ -2132,6 +2132,22 @@ async function runDailyUnlocked(options) {
   }
 }
 
+function assertNoPendingCollectorAttempt() {
+  const directory = path.join(WORK_ROOT, 'collector-attempts')
+  try {
+    let stat
+    try { stat = lstatSync(directory) } catch (error) { if (error.code === 'ENOENT') return; throw error }
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('RECONCILIATION_REQUIRED')
+    // Only proof-backed cleanup retires a state marker to .settled. A retained
+    // marker (including an older state or interrupted durable replacement) is
+    // uncertain regardless of its flags or contents. Leave its exact candidate
+    // and the canonical baseline untouched for the collector's recovery path.
+    if (readdirSync(directory).some(name => name.endsWith('.state.json') || (name.includes('.state.json.') && name.endsWith('.tmp')))) {
+      throw new Error('RECONCILIATION_REQUIRED')
+    }
+  } catch { throw new Error('RECONCILIATION_REQUIRED') }
+}
+
 async function runDaily(options) {
   if (options.dryRun) return runDailyUnlocked(options)
   const reportDate = options.date ?? todayInNewYork()
@@ -2144,6 +2160,7 @@ async function runDaily(options) {
     const inherited = assertInheritedPublicationLock(lockPath)
     lock = inherited ? null : acquirePublicationLock(lockPath)
     if (lock) process.env[PUBLICATION_LOCK_OWNER_ENV] = JSON.parse(lock.content).ownerId
+    assertNoPendingCollectorAttempt()
     recoverCollectorCaptureBaseline()
     return await runDailyUnlocked(options)
   } catch (error) {

@@ -186,10 +186,12 @@ export function inventoryDecision(vehicle) {
     })
   }
   const uniqueReasons = [...new Set(reasons)]
-  const providerObserved = evidence?.some(record => record.capturedAt && record.dataState === 'current' && record.complete && (record.effectiveHoldState !== 'unknown' || (record.reportedDisposition && !['unknown', 'not_observed'].includes(record.reportedDisposition)))) ?? false
+  // A source disposition is evidence of that disposition, never corroboration of an app hold.
+  const providerHoldObserved = evidence?.some(record => record.capturedAt && record.dataState === 'current' && record.complete && record.effectiveHoldState !== 'unknown') ?? false
+  const providerDispositionObserved = evidence?.some(record => record.capturedAt && record.dataState === 'current' && record.complete && record.reportedDisposition && !['unknown', 'not_observed'].includes(record.reportedDisposition)) ?? false
   const providerHeld = evidence?.some(record => record.capturedAt && record.effectiveHoldState === 'held') ?? false
-  const comparison = reasons.length ? 'conflict' : decidedManual && (observed !== null || providerObserved) ? 'agreement'
-    : decidedManual ? 'manual_only' : observed !== null || providerObserved ? 'source_only' : 'unverified'
+  const comparison = reasons.length ? 'conflict' : decidedManual && (observed !== null || providerHoldObserved) ? 'agreement'
+    : decidedManual ? 'manual_only' : observed !== null || providerHoldObserved || providerDispositionObserved ? 'source_only' : 'unverified'
   const status = code && code !== 'keep' ? code : manual === 'active' || observed === true || providerHeld ? 'held' : manual === 'requested' ? 'hold_requested' : 'unconfirmed'
   return { status, comparison, reasons: uniqueReasons, manualHold: manual, importedHold: observed,
     reviewRequired: reasons.length > 0, ...(evidence ? { evidence } : {}),
