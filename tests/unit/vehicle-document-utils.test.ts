@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   autoCheckResultTone,
   dealerMailInteractiveVehicleUrl,
+  fordInvoiceUrl,
+  fordOasisUrl,
+  fordServiceHistoryUrl,
   officialVehicleDocumentUrl,
   vautoFactoryEquipmentUrl,
 } from '../../src/features/inventory/vehicle-document-utils'
@@ -28,6 +31,21 @@ describe('vautoFactoryEquipmentUrl', () => {
     expect(vautoFactoryEquipmentUrl(valid.replace('assets.cai-media-management.com', 'evil.example'))).toBeNull()
     expect(vautoFactoryEquipmentUrl(`${valid}?next=https://evil.example`)).toBeNull()
     expect(vautoFactoryEquipmentUrl(valid.replace('.jpg', '.png'))).toBeNull()
+  })
+})
+
+describe('external Ford document URLs', () => {
+  it('keeps synthetic fixture identifiers away from live OEM sign-in and supports real VINs', () => {
+    for (const url of [fordInvoiceUrl, fordOasisUrl, fordServiceHistoryUrl]) {
+      expect(url('TESTDATASYN000001')).toBeNull()
+      expect(url(' testdatahwell0001 ')).toBeNull()
+    }
+    expect(fordOasisUrl('1FTFW1E84RKF12345')).toBe(
+      'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=1FTFW1E84RKF12345',
+    )
+    expect(fordInvoiceUrl('1FTFW1E84RKF12345')).toContain('https://fordvisions.dealerconnection.com/vinv/GetInvoice.aspx?v=1FTFW1E84RKF12345')
+    expect(fordServiceHistoryUrl('1FTFW1E84RKF12345')).toContain('https://www.fordtechservice.dealerconnection.com/VehicleService/Index?VIN=1FTFW1E84RKF12345')
+    expect(fordOasisUrl('NOT-A-VIN')).toBeNull()
   })
 })
 

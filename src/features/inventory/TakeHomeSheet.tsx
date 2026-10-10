@@ -16,7 +16,9 @@ import "./TakeHomeSheet.css";
 import { downloadTakeHomePdf, shareTakeHomePdf } from '../../../extension/sidepanel/lib/takehome-export.mjs';
 
 export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeHomeModel; now?: Date }) {
-  const documentPhotos = [...new Set(model.photos)].slice(0, 3);
+  const [failedImages, setFailedImages] = useState<Set<string>>(() => new Set());
+  const markImageFailed = (url: string) => setFailedImages(current => current.has(url) ? current : new Set([...current, url]));
+  const documentPhotos = [...new Set(model.photos)].slice(0, 3).filter(url => !failedImages.has(url));
   const heroPhoto = documentPhotos[0] ?? null;
   const supportingPhotos = documentPhotos.slice(1);
   const railHighlights = supportingPhotos.length ? [] : model.highlights.slice(0, 4);
@@ -27,8 +29,8 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
   return (
     <article className="th">
       <header className="th-head">
-        {model.logo ? (
-          <img className={`th-logo${model.logo.wide ? "" : " is-square"}`} src={model.logo.src} alt={model.logo.alt} />
+        {model.logo && !failedImages.has(model.logo.src) ? (
+          <img className={`th-logo${model.logo.wide ? "" : " is-square"}`} src={model.logo.src} alt={model.logo.alt} onError={() => markImageFailed(model.logo!.src)} />
         ) : (
           <b className="th-logo-text">{model.storeName}</b>
         )}
@@ -46,7 +48,7 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
       </section>
       <section className="th-hero">
         <div className="th-photos">
-          {heroPhoto ? <img className="th-photo" src={heroPhoto} alt={model.name} referrerPolicy="no-referrer" /> : <div className="th-photo th-photo-empty"><span>Current photos are available from the store.</span></div>}
+          {heroPhoto ? <img className="th-photo" src={heroPhoto} alt={model.name} referrerPolicy="no-referrer" onError={() => markImageFailed(heroPhoto)} /> : <div className="th-photo th-photo-empty"><span>Current photos are available from the store.</span></div>}
         </div>
         <div className="th-hero-rail">
           <dl className="th-price">
@@ -54,7 +56,7 @@ export function TakeHomeSheetContent({ model, now = new Date() }: { model: TakeH
             {model.mileage !== null ? <div><dt>Mileage</dt><dd>{formatMileage(model.mileage)}</dd></div> : null}
             <div><dt>Stock</dt><dd className="th-mono">{model.stockNumber}</dd></div>
           </dl>
-          {supportingPhotos.length ? <div className={`th-thumbs${supportingPhotos.length === 1 ? " is-single" : ""}`}>{supportingPhotos.map((photo,index) => <img key={photo} src={photo} alt={`${model.name} view ${index + 2}`} referrerPolicy="no-referrer" />)}</div> : railHighlights.length ? <div className="th-quick"><b>Standout features</b><ul>{railHighlights.map((label) => <li key={label}>{label}</li>)}</ul></div> : null}
+          {supportingPhotos.length ? <div className={`th-thumbs${supportingPhotos.length === 1 ? " is-single" : ""}`}>{supportingPhotos.map((photo,index) => <img key={photo} src={photo} alt={`${model.name} view ${index + 2}`} referrerPolicy="no-referrer" onError={() => markImageFailed(photo)} />)}</div> : railHighlights.length ? <div className="th-quick"><b>Standout features</b><ul>{railHighlights.map((label) => <li key={label}>{label}</li>)}</ul></div> : null}
         </div>
       </section>
       <dl className="th-identity">

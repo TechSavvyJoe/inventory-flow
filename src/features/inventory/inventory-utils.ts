@@ -2,6 +2,7 @@ import { hasProviderHold, providerHoldState } from './provider-evidence-utils';
 import { displayDate } from "../../lib/date-display";
 import type { TransferRecord } from "../../types";
 import { serviceWorkflowStatus } from "../../lib/service-readiness";
+import { isOverdueSla, slaState } from "../../lib/sla-label";
 import { availableWindowStickerUrl } from "./vehicle-document-utils";
 import { factoryPricing } from "../../../extension/sidepanel/lib/factory-pricing.mjs";
 import type {
@@ -346,7 +347,7 @@ export function vehicleMatchesFilters(
   );
   if (filters.movement === "active" && !hasMovement) return false;
   if (filters.movement === "none" && hasMovement) return false;
-  if (filters.movement === "overdue" && movement?.overdue !== true) return false;
+  if (filters.movement === "overdue" && !isOverdueSla(slaState(movement?.dueAt))) return false;
 
   if (filters.overviewView && !vehicleMatchesOverviewView(vehicle, filters.overviewView)) return false;
   if (filters.vins && !filters.vins.includes(vehicle.vin)) return false;

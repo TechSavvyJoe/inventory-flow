@@ -1,7 +1,9 @@
-.vehicle-quick-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); min-width:0; gap:var(--ifx-space-1) var(--ifx-space-3); color:var(--ink-700); font:var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); text-align:left; }
-.vehicle-quick-facts__item { display:grid; align-content:start; min-width:0; gap:var(--ifx-space-0-5); overflow-wrap:anywhere; }
+.vehicle-quick-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); min-width:0; gap:0; border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); background:var(--surface); color:var(--ink-700); font:var(--ifx-weight-regular) var(--ifx-text-sm)/var(--ifx-leading-compact) var(--font-app); text-align:left; }
+.vehicle-quick-facts__item { display:grid; align-content:start; min-width:0; gap:var(--ifx-space-0-5); padding:var(--ifx-space-1-5) var(--ifx-space-2); overflow-wrap:anywhere; }
 .vehicle-quick-facts__label { color:var(--ink-600); font-size:var(--ifx-text-xs); }
 .vehicle-quick-facts__value { color:var(--ink-900); }
-.vehicle-quick-facts__item--colors { grid-column:1 / -1; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--ifx-space-3); }
-.vehicle-quick-facts__color { display:grid; min-width:0; gap:var(--ifx-space-0-5); }
-.vehicle-quick-facts__item--equipment { grid-column:1 / -1; }
+.vehicle-quick-facts__item--colors { grid-column:1 / -1; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0; padding:0; border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
+.vehicle-quick-facts__color { display:grid; min-width:0; gap:var(--ifx-space-0-5); padding:var(--ifx-space-1-5) var(--ifx-space-2); }
+.vehicle-quick-facts__item:nth-child(2):not(.vehicle-quick-facts__item--colors):not(.vehicle-quick-facts__item--equipment),
+.vehicle-quick-facts__color + .vehicle-quick-facts__color { border-left:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
+.vehicle-quick-facts__item--equipment { grid-column:1 / -1; border-top:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }

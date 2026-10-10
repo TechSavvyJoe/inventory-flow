@@ -1,10 +1,10 @@
 .app-shell {
   --shell-nav-width: 80px;
   --top-height: 68px;
-  --store-accent: var(--ifx-oem-accent);
-  --store-accent-strong: var(--ifx-oem-accent-strong);
-  --store-accent-soft: var(--ifx-oem-surface);
-  --nav-context-base: #062b50;
+  --store-accent: var(--ifx-brand-blue);
+  --store-accent-strong: var(--ifx-brand-blue-strong);
+  --store-accent-soft: var(--ifx-brand-blue-tint);
+  --nav-context-base: var(--ifx-brand-blue);
   --nav-context-glow: rgb(22 111 198 / 22%);
   --blue-700: var(--store-accent-strong);
   --blue-600: var(--store-accent);
@@ -37,16 +37,15 @@
   --ifx-oem-scene-deep: #041c35;
   --ifx-oem-scene-mid: #136dc3;
   --ifx-oem-scene-glow: #8bc9ff;
-  --nav-context-base: #11263a;
   --nav-context-glow: rgb(35 115 196 / 20%);
 }
 
 .store-theme-lincoln {
-  --nav-context-base: #20272a;
   --nav-context-glow: rgb(198 207 210 / 14%);
 }
 
 .desktop-nav {
+  --ifx-focus-color: var(--ifx-neutral-0);
   position: fixed;
   z-index: 40;
   inset: 0 auto 0 0;
@@ -68,7 +67,7 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: color-mix(in srgb, var(--store-accent) 4%, transparent);
+  background: color-mix(in srgb, var(--ifx-oem-accent) 4%, transparent);
   opacity: 1;
 }
 
@@ -530,9 +529,9 @@
 }
 
 .utility-layer {
-  --store-accent: var(--ifx-oem-accent);
-  --store-accent-strong: var(--ifx-oem-accent-strong);
-  --store-accent-soft: var(--ifx-oem-surface);
+  --store-accent: var(--ifx-brand-blue);
+  --store-accent-strong: var(--ifx-brand-blue-strong);
+  --store-accent-soft: var(--ifx-brand-blue-tint);
   position: fixed;
   z-index: 100;
   inset: 0;

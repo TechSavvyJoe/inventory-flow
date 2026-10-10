@@ -71,7 +71,8 @@
     transform var(--ifx-motion-press) var(--ifx-ease-tactile),
     background-color var(--ifx-motion-fast) linear,
     border-color var(--ifx-motion-fast) linear,
-    color var(--ifx-motion-fast) linear;
+    color var(--ifx-motion-fast) linear,
+    box-shadow var(--ifx-motion-fast) linear;
 }
 
 .ifx-button > svg,
@@ -96,16 +97,16 @@
   --ifx-icon-accent: var(--ifx-neutral-0);
   border-color: var(--blue-700);
   background: var(--blue-600);
-  box-shadow: none;
+  box-shadow: var(--ifx-elevation-1);
 }
 
 .ifx-button--secondary,
 .ifx-icon-button.ifx-button--secondary {
   --ifx-icon-accent: var(--blue-600);
-  border-color: var(--ifx-neutral-200);
+  border-color: var(--ifx-border-control);
   color: var(--ifx-neutral-800);
   background: var(--ifx-neutral-0);
-  box-shadow: none;
+  box-shadow: var(--ifx-elevation-1);
 }
 
 .ifx-button--quiet,
@@ -133,6 +134,7 @@
 .ifx-button--primary:hover:not(:disabled),
 .ifx-icon-button.ifx-button--primary:hover:not(:disabled) {
   background: var(--blue-700);
+  box-shadow: var(--ifx-elevation-1);
 }
 
 .ifx-button--danger:hover:not(:disabled),
@@ -148,6 +150,13 @@
   color: var(--ifx-neutral-900);
   background: var(--ifx-neutral-50);
   box-shadow: none;
+}
+
+.ifx-button--secondary:hover:not(:disabled),
+.ifx-icon-button.ifx-button--secondary:hover:not(:disabled) {
+  border-color: var(--blue-500);
+  background: var(--blue-050);
+  box-shadow: var(--ifx-elevation-1);
 }
 
 .ifx-button:active:not(:disabled),

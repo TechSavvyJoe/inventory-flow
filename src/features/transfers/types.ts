@@ -29,6 +29,7 @@ export interface ExplicitStatus<TCode extends string = string> {
 export type RequestStatusCode =
   | 'draft'
   | 'submitted'
+  | 'arrived'
   | 'manager-reviewed'
   | 'needs-information'
   | 'approved'
@@ -148,6 +149,7 @@ export interface TransferStatusLanes {
 export interface NextAction {
   label: string;
   ownerLabel?: string;
+  ownerStore?: string;
   ownerRole?: string;
   ownerId?: string;
   dueAt?: string;

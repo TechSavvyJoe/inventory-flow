@@ -99,6 +99,16 @@ describe('public-listing code adapter', () => {
     const mapped = toInventoryVehicle(vehicle('listed'), data());
     expect(mapped.publicListing).toMatchObject({ dataState: 'current', isListed: true });
     expect(publicListingLabel(mapped)).toBe('Public listing');
+    expect(mapped.publicListing.listingUrl).toBeNull();
+    expect(toTransferVehicle(vehicle('listed'), data().meta).listingUrl).toBeUndefined();
+  });
+
+  it('retains the original listing destination for non-demo VINs', () => {
+    const liveDealershipRecord = { ...vehicle('listed'), vin: '1FTFW1E84RKF12345' };
+    const mapped = toInventoryVehicle(liveDealershipRecord, data());
+    expect(mapped.publicListing.isListed).toBe(true);
+    expect(mapped.publicListing.listingUrl).toBe(liveDealershipRecord.listingUrl);
+    expect(toTransferVehicle(liveDealershipRecord, data().meta).listingUrl).toBe(liveDealershipRecord.listingUrl);
   });
 
   it('maps stale to the last verified listing while dataState carries the staleness', () => {
@@ -154,6 +164,15 @@ describe('public-listing code adapter', () => {
     expect(mapped.dealerMail.updatedAt).toBe('2026-08-30T14:24:00-04:00');
     expect(toTransferVehicle(vehicle('listed'), refreshed.meta).currentLocation.confirmedAt)
       .toBe('2026-08-30T07:30:00-04:00');
+    expect(toTransferVehicle(vehicle('pre_listing'), refreshed.meta).currentLocation.confirmedAt)
+      .toBe('2026-08-30T14:24:00-04:00');
+  });
+
+  it('maps a direct move arrival to an arrived request state instead of manager review', () => {
+    const arrived = { ...transfer('listed'), requestStatus: 'arrived' };
+    expect(transferStatusLanes(arrived, data().meta).request).toMatchObject({
+      code: 'arrived', label: 'Arrived at requesting store', tone: 'success',
+    });
   });
 });
 

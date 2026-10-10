@@ -7,6 +7,7 @@ import { sanitizeManagerDispositionDocuments } from '../server/manager-dispositi
 import { cloudBundleSha256, cloudReleaseFrom, publishedManifestFrom } from './publish-cloud-release.mjs'
 import { validateReleaseBundle } from '../cloudflare/src/release-validation.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
+import { assertRetainedPublication, readRetainedPublication } from './publication-followup-metadata.mjs'
 import { assessOasisCapture } from './lib/oasis-parser.mjs'
 import { acquirePublicationLock, assertInheritedPublicationLock, readPublicationReconciliation, receiptSourceHashes, releasePublicationLock } from './sync-cloud-release.mjs'
 
@@ -575,6 +576,18 @@ function oasisWarning(outcome) {
   return gaps ? `Ford OASIS open actions are unconfirmed for ${gaps} vehicle(s); if published, they will show as not confirmed in the app. Review the affected vehicles in OASIS.` : null
 }
 
+function invoiceCaptureComplete({ reportDate, result, readIndex = () => readJson(path.join(WORK_ROOT, 'invoice-history', reportDate, 'index.json')) }) {
+  const report = lastJsonLine(result.output)
+  if (!result.ok || report?.sessionStatus !== 'ok' || report.failed !== 0 || report.stoppedReason !== null) return false
+  try {
+    const index = readIndex()
+    return index?.schema === 'ford-invoice-index-v1' && index.reportDate === reportDate && Array.isArray(index.results) &&
+      typeof report.fordLincolnVins === 'number' && index.results.length === report.fordLincolnVins &&
+      index.results.every(row => /^[A-HJ-NPR-Z0-9]{17}$/.test(row?.vin ?? '') && ['pdf', 'unavailable'].includes(row?.status)) &&
+      new Set(index.results.map(row => row.vin)).size === index.results.length
+  } catch { return false }
+}
+
 function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, steps) {
   if (!browserReady) {
     steps.push({ name: 'authenticated_optional_sources', status: 'skipped_browser_unavailable' })
@@ -638,7 +651,7 @@ function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, ste
     },
   ]
   for (const item of optionalRuns) {
-    const result = run(item.command, item.args, { cwd: item.cwd ?? WORKSPACE_ROOT, optional: true, label: item.name })
+    const result = runtime.run(item.command, item.args, { cwd: item.cwd ?? WORKSPACE_ROOT, optional: true, label: item.name })
     if (item.name === 'oasis') {
       const report = lastJsonLine(result.output)
       const systemic = !result.ok || item.expired?.test(result.output) || !report || typeof report.missingVinCount !== 'number'
@@ -648,7 +661,8 @@ function runOptionalAuthenticatedSources(reportDate, browserReady, warnings, ste
       steps.push({ name: 'oasis', status: systemic ? 'failed_non_blocking' : oasis.validated ? 'complete' : 'completed_with_warning', detail: safeDetail(result.output) })
       continue
     }
-    if (!result.ok || item.expired?.test(result.output)) {
+    const incomplete = item.name === 'invoices_capture' ? !invoiceCaptureComplete({ reportDate, result }) : item.expired?.test(result.output)
+    if (!result.ok || incomplete) {
       if (item.warning) {
         warnings.push(item.warning)
       }
@@ -965,7 +979,7 @@ function buildAndWriteReleaseBundle(reportDate, releasePath, manifestPath, {
   return { validation: finalValidation, sourceHashes: finalSourceHashes, bundleSha256: cloudBundleSha256(finalBundle) }
 }
 
-function publish(reportDate, forcePublish, steps, { holdRefresh = false, expectedSourceHashes = null } = {}) {
+function publish(reportDate, forcePublish, steps, { holdRefresh = false, expectedSourceHashes = null, followupsOnly = null } = {}) {
   const args = [
     '-NoProfile',
     '-NonInteractive',
@@ -980,12 +994,13 @@ function publish(reportDate, forcePublish, steps, { holdRefresh = false, expecte
   ]
   if (forcePublish) args.push('-Force')
   if (holdRefresh) args.push('-HoldRefresh')
-  const result = run(POWERSHELL, args, {
+  const result = runtime.run(POWERSHELL, args, {
     optional: true,
     label: 'Cloudflare publisher',
-    extraEnv: expectedSourceHashes
-      ? { INVENTORY_OPS_EXPECTED_SOURCE_HASHES_JSON: JSON.stringify(expectedSourceHashes) }
-      : {},
+    extraEnv: {
+      ...(expectedSourceHashes ? { INVENTORY_OPS_EXPECTED_SOURCE_HASHES_JSON: JSON.stringify(expectedSourceHashes) } : {}),
+      ...(followupsOnly ? { INVENTORY_OPS_FOLLOWUPS_ONLY_BUNDLE_SHA256: followupsOnly } : {}),
+    },
   })
   steps.push({ name: 'cloudflare_publish', status: result.ok ? 'complete' : 'failed', detail: safeDetail(result.output) })
   return result
@@ -1909,6 +1924,28 @@ function promoteVerifiedCollectorCandidate({ profile, claim, candidate, verifica
   }
 }
 
+async function retryPublicationFollowups({ reportDate, receipt, manifestPath, releasePath, steps }) {
+  const manifest = readJson(manifestPath)
+  if (manifest.complete !== true || manifest.report_date !== reportDate ||
+      !sameHash(manifest.cloudflare_publish?.bundle_sha256, receipt.bundleSha256)) throw new Error('PENDING_FOLLOWUPS_RECEIPT_MISMATCH')
+  const bundle = readRetainedPublication({ workspaceRoot: WORKSPACE_ROOT, reportDate, receipt, required: true })
+  const result = publish(reportDate, false, steps, { followupsOnly: receipt.bundleSha256 })
+  const currentReceipt = readReceiptState(path.join(WORK_ROOT, 'app-feed-status', `${reportDate}.json`)).receipt
+  if (!currentReceipt) throw new Error('VERIFIED_RECEIPT_REQUIRED')
+  assertRetainedPublication({ bundle, receipt: currentReceipt, reportDate })
+  const retainedManifest = readJson(manifestPath)
+  if (retainedManifest.cloudflare_publish?.reconciliation_required === true || retainedManifest.cloudflare_publish?.status === 'publication_outcome_unknown') {
+    throw new Error('PUBLICATION_RECONCILIATION_REQUIRED')
+  }
+  if (!result.ok) {
+    retainedManifest.cloudflare_publish = { ...retainedManifest.cloudflare_publish, status: 'published_and_verified_followups_pending', bundle_sha256: receipt.bundleSha256 }
+    writeJson(manifestPath, retainedManifest)
+  }
+  const completed = result.ok && readJson(manifestPath).cloudflare_publish?.status === 'published_and_verified'
+  const summary = summarize({ reportDate, validation: receipt.counts ?? {}, publishStatus: completed ? 'published_and_followups_complete' : 'published_followups_pending', manifestPath, releasePath, warnings: manifest.warnings ?? [] })
+  return { ok: completed, failureCode: completed ? null : 'CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED', summary, validation: receipt.counts ?? {}, manifestPath, releasePath }
+}
+
 async function runDailyUnlocked(options) {
   const reportDate = options.date ?? todayInNewYork()
   const manifestPath = path.join(WORK_ROOT, 'run-status', `${reportDate}.json`)
@@ -1953,6 +1990,16 @@ async function runDailyUnlocked(options) {
       reconciliationRequired: true,
       candidate: retainedGlobalReconciliation.candidate,
     }
+  }
+
+  // A forced/new capture cannot overtake the exact verified candidate's
+  // unfinished documents, integration projection, pointers, or archive.
+  if (existsSync(manifestPath) &&
+      readJson(manifestPath).cloudflare_publish?.status === 'published_and_verified_followups_pending') {
+    if (options.noPublish) return { ok: false, failureCode: 'PUBLISH_SKIPPED_FOLLOWUPS_PENDING', summary: `Inventory Flow ${reportDate}: publication followups remain pending; --no-publish deferred the receipt-bound retry.`, validation: {}, manifestPath, releasePath }
+    const receipt = readReceiptState(receiptPath).receipt
+    if (!verifiedReceiptIdentityIsValid(receipt, reportDate)) throw new Error('VERIFIED_RECEIPT_REQUIRED')
+    return retryPublicationFollowups({ reportDate, receipt, manifestPath, releasePath, steps })
   }
 
   if (options.refreshHolds) {
@@ -2203,6 +2250,9 @@ export const internals = {
   oasisWarning,
   reuseExistingOasisCapture,
   runtime,
+  runOptionalAuthenticatedSources,
+  retryPublicationFollowups,
+  invoiceCaptureComplete,
   runDealerMail,
   failureDetailFor,
   safeDetail,

@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from 'react';
-import { ArrowRight, ArrowUpRight, Check, ChevronDown, FileText } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Check, ChevronRight, ChevronDown, FileText } from 'lucide-react';
 import type { VehicleWorkspaceTab } from './types';
 import { checkPriority, vehicleOverviewResources, type VehicleResource, type VehicleResourceSummaryRow, type VehicleResourceVehicle } from './vehicle-resource-catalog';
 import { autoCheckResultTone } from './vehicle-document-utils';
@@ -9,6 +9,8 @@ import './VehicleResourceCards.css';
 export type { VehicleResourceVehicle } from './vehicle-resource-catalog';
 export interface VehicleResourceCardsProps {
   vehicle: VehicleResourceVehicle;
+  /** Inventory names whether a shortcut opens a source report or captured vehicle details. */
+  explicitDestination?: boolean;
   variant: 'summary' | 'preview' | 'scan' | 'signals' | 'shortcuts';
   /** A workspace has room for more source evidence than an inventory row. */
   summaryLimit?: 4 | 6;
@@ -313,7 +315,8 @@ function ResourceSnapshot({ resource, vehicle, rows, facts, synthetic, detailed 
 }
 
 /** The same captured ledger can occupy its decision column without copying source logic. */
-export function VehicleResourceScan({ resource, vehicle, onOpenSection, onSelectResource, selectedId }: {
+export function VehicleResourceScan({ resource, vehicle, onOpenSection, onSelectResource, selectedId, explicitDestination = false }: {
+  explicitDestination?: boolean;
   resource: VehicleResource; vehicle: VehicleResourceVehicle;
   onOpenSection?: (target: VehicleWorkspaceTab) => void;
   onSelectResource?: (id: string | null) => void;
@@ -330,15 +333,15 @@ export function VehicleResourceScan({ resource, vehicle, onOpenSection, onSelect
   const sourceContent = <><ResourceBrand resource={scanBrandResource}/><span className="vehicle-resource-scan__source-label">{label}</span>{onSelectResource ? <ChevronDown size={13} aria-hidden="true"/> : null}</>;
   return <div data-resource-kind={resource.id} className="vehicle-resource-scan">
     {onSelectResource && resource.hasCapturedData ? <button type="button" className="vehicle-resource-scan__source" aria-label={`Show ${label === 'Sticker' ? 'sticker' : label === 'Equipment' ? 'equipment' : label} records`} aria-expanded={selectedId === resource.id} onClick={event => { event.currentTarget.focus({preventScroll:true}); onSelectResource?.(resource.id); }}>{sourceContent}</button>
-      : resource.href ? <a className="vehicle-resource-scan__source" title={`Open ${label === 'Equipment' ? 'vAuto equipment' : label} source in a new tab`} href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`Open ${resource.id === 'vauto' ? 'vAuto equipment' : label} source in a new tab`}><ResourceBrand resource={scanBrandResource}/><span className="vehicle-resource-scan__source-label">{label}</span><ArrowUpRight size={13} aria-hidden="true"/></a>
-        : onOpenSection && resource.hasCapturedData ? <button type="button" className="vehicle-resource-scan__source" title={`View captured ${label} records`} aria-label={`View captured ${label} records`} onClick={() => onOpenSection(resource.target)}>{sourceContent}<ArrowRight size={13} aria-hidden="true"/></button>
+      : resource.href ? <a className="vehicle-resource-scan__source" title={`Open ${label === 'Equipment' ? 'vAuto equipment' : label} ${explicitDestination ? "report" : "source"} in a new tab`} href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`Open ${resource.id === 'vauto' ? 'vAuto equipment' : label} ${explicitDestination ? "report" : "source"} in a new tab`}>{!explicitDestination ? <ResourceBrand resource={scanBrandResource}/> : null}<span className="vehicle-resource-scan__source-label">{explicitDestination ? `Open ${label} report` : label}</span><ArrowUpRight size={13} aria-hidden="true"/></a>
+        : onOpenSection && resource.hasCapturedData ? <button type="button" className="vehicle-resource-scan__source" title={`View captured ${label} records${explicitDestination ? " in vehicle details" : ""}`} aria-label={`View captured ${label} records${explicitDestination ? " in vehicle details" : ""}`} onClick={() => onOpenSection(resource.target)}>{explicitDestination ? <><span className="vehicle-resource-scan__source-label">View {label}</span><ChevronRight size={13} aria-hidden="true"/></> : <>{sourceContent}<ArrowRight size={13} aria-hidden="true"/></>}</button>
           : <strong className="vehicle-resource-scan__source vehicle-resource-scan__source--static">{sourceContent}</strong>}
     <div className="vehicle-resource-scan__findings">{rows.length ? <ScanFields rows={rows} resource={resource} synthetic={syntheticPreview}/> : <p className="vehicle-resource-scan__missing">{resource.hasCapturedData ? 'Captured details in Records' : resource.id === 'vauto' && resource.href ? 'VIN equipment profile available' : 'No captured report'}</p>}</div>
     {decisionSourceNote(resource.sourceNote) ? <p className="vehicle-resource-scan__caption">{decisionSourceNote(resource.sourceNote)}</p> : null}
   </div>;
 }
 
-export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideInServiceDate = false, detailsExpanded, selectedResourceId, onSelectResource, onClose, hideSourceSelectors = false, onOpenSection, shortcutActions, hiddenShortcutFactLabels }: VehicleResourceCardsProps) {
+export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideInServiceDate = false, detailsExpanded, selectedResourceId, onSelectResource, onClose, hideSourceSelectors = false, onOpenSection, shortcutActions, hiddenShortcutFactLabels, explicitDestination = false }: VehicleResourceCardsProps) {
   const [failedPreviews, setFailedPreviews] = useState<Set<string>>(() => new Set());
   const [expandedResource, setExpandedResource] = useState<{ vin: string; id: string } | null>(null);
   const disclosureId = useId();
@@ -371,9 +374,9 @@ export function VehicleResourceCards({ vehicle, variant, summaryLimit = 4, hideI
             : sourceMsrp
               ? `${label} MSRP ${displaySourceMoney(sourceMsrp)}`
               : rows[0]?.values[0];
-        const content = <><span className="vehicle-resource-shortcut__heading"><ResourceBrand resource={resource}/><span>{label}</span>{resource.href ? <ArrowUpRight size={14} aria-hidden="true"/> : <ArrowRight size={14} aria-hidden="true"/>}</span>{combinedRail && shortcutFact ? <span className="vehicle-resource-shortcut__fact">{shortcutFact}</span> : null}</>;
-        return resource.href ? <a key={resource.id} className="vehicle-resource-shortcut" href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`Open ${label} source in a new tab`}>{content}</a>
-          : onOpenSection ? <button key={resource.id} type="button" className="vehicle-resource-shortcut" onClick={() => onOpenSection(resource.target)} aria-label={`View captured ${label} records`}>{content}</button>
+        const content = <><span className="vehicle-resource-shortcut__heading">{!explicitDestination ? <ResourceBrand resource={resource}/> : null}<span>{explicitDestination ? resource.href ? `Open ${label} report` : `View ${label}` : label}</span>{resource.href ? <ArrowUpRight size={14} aria-hidden="true"/> : <ArrowRight size={14} aria-hidden="true"/>}</span>{combinedRail && shortcutFact ? <span className="vehicle-resource-shortcut__fact">{shortcutFact}</span> : null}</>;
+        return resource.href ? <a key={resource.id} className="vehicle-resource-shortcut" href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" aria-label={`Open ${label} ${explicitDestination ? "report" : "source"} in a new tab`}>{content}</a>
+          : onOpenSection ? <button key={resource.id} type="button" className="vehicle-resource-shortcut" onClick={() => onOpenSection(resource.target)} aria-label={`View captured ${label} records${explicitDestination ? " in vehicle details" : ""}`}>{content}</button>
             : null;
       })}
       {!combinedRail && history && historyFacts.length ? <div className="vehicle-resource-shortcuts__facts" aria-label="AutoCheck captured summary">

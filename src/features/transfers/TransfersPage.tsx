@@ -355,7 +355,7 @@ function TransferDetailLoader({
       <p>{failed ? 'Full move record could not load. The summary remains available; additional history and details may be missing.' : 'Loading full move record… Summary remains available.'}</p>
       {failed ? <button type="button" onClick={() => setRetryVersion(version => version + 1)}>Retry move details</button> : null}
     </div> : null}
-    <TransferTracker transfer={detail} mode="page" onAction={onAction} vehicleLinks={vehicle ? <nav className="move-vehicle-links" aria-label="Vehicle reference">
+    <TransferTracker transfer={detail} viewerStore={homeStore} mode="page" onAction={onAction} vehicleLinks={vehicle ? <nav className="move-vehicle-links" aria-label="Vehicle reference">
     <Link to={vehicleWorkspacePath(vehicle.vin, { returnTo })}>Vehicle details</Link>
     <Link to={vehicleWorkspacePath(vehicle.vin, { tab: 'data', returnTo })}>Records</Link>
   </nav> : null} />
@@ -544,7 +544,7 @@ export function TransfersPage() {
     const record = data?.transfers.find((item) => item.id === detail.id)
     if (!record) return
     if (action === 'open-source') {
-      const listingUrl = data?.vehicles.find((vehicle) => vehicle.vin === record.vin)?.listingUrl
+      const listingUrl = detail.vehicle.listingUrl
       if (listingUrl) window.open(listingUrl, '_blank', 'noopener,noreferrer')
       return
     }

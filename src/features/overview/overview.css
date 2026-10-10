@@ -64,8 +64,8 @@
 
 .ov-work-tabs button[aria-pressed="true"] {
   background: var(--ifx-neutral-0);
-  box-shadow: inset 0 calc(var(--ifx-space-0-5) * -1) var(--ifx-oem-accent);
-  color: var(--ifx-oem-accent-strong);
+  box-shadow: inset 0 calc(var(--ifx-space-0-5) * -1) var(--blue-600);
+  color: var(--blue-700);
 }
 
 .ov-work-tabs button:hover:not([aria-pressed="true"]) { background: var(--ifx-neutral-50); }
@@ -100,6 +100,10 @@
 }
 
 .ov-work-columns span { padding: var(--ifx-space-2); }
+@media (min-width:881px) {
+  .ov-work-columns span + span,
+  .ov-work-row > div + div { border-left:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
+}
 
 .ov-work-rows {
   display: grid;
@@ -213,7 +217,7 @@
 
 .ov-scope button[aria-pressed="true"],
 .ov-chips button[aria-pressed="true"] {
-  background: var(--ifx-oem-accent);
+  background: var(--blue-600);
   color: var(--ifx-neutral-0);
 }
 
@@ -246,7 +250,7 @@
 }
 
 .ov-store-card:last-child { border-bottom: 0; }
-.ov-store-card.is-home { box-shadow: inset var(--ifx-space-0-5) 0 var(--ifx-oem-accent); }
+.ov-store-card.is-home { box-shadow: inset var(--ifx-space-0-5) 0 var(--blue-600); }
 
 .ov-store-card header {
   background: var(--ifx-neutral-50);
@@ -346,7 +350,7 @@
 }
 
 .ov-count dd a {
-  color: var(--ifx-oem-accent-strong);
+  color: var(--blue-700);
   text-decoration: underline;
   text-decoration-thickness: 1px;
 }
@@ -360,7 +364,7 @@
 /* Phone only: the secondary counts sit behind one disclosure (OVERVIEW_SPEC §3). */
 .ov-more > summary {
   align-items: center;
-  color: var(--ifx-oem-accent-strong);
+  color: var(--blue-700);
   cursor: pointer;
   display: flex;
   font-size: var(--ifx-text-sm);
@@ -463,7 +467,7 @@
 .ov-column {
   align-content: start;
   display: grid;
-  gap: var(--ifx-space-4);
+  gap: var(--ifx-space-3);
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
 }
@@ -702,7 +706,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  color: var(--ifx-oem-accent-strong);
+  color: var(--blue-700);
   cursor: pointer;
   display: flex;
   font-size: var(--ifx-text-sm);
@@ -721,7 +725,7 @@
 .ov-service-basis dt { color: var(--ifx-neutral-600); }
 .ov-service-basis dd { font-weight: var(--ifx-weight-semibold); margin: 0; }
 
-.ov-table-wrap { min-width: 0; }
+.ov-table-wrap { min-width: 0; border:var(--ifx-stroke-hairline) solid var(--ifx-border-control); }
 
 .ov-table {
   border-collapse: collapse;
@@ -731,7 +735,8 @@
 
 .ov-table th,
 .ov-table td {
-  border-bottom: 1px solid var(--ifx-border-subtle);
+  border-bottom: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
+  border-right: var(--ifx-stroke-hairline) solid var(--ifx-border-control);
   padding: 0 var(--ifx-space-2);
   text-align: right;
   vertical-align: middle;
@@ -740,13 +745,16 @@
 .ov-table th:first-child { text-align: left; }
 
 .ov-table thead th {
+  background:var(--ifx-neutral-100);
   color: var(--ifx-neutral-600);
   font-size: var(--ifx-text-xs);
   font-weight: var(--ifx-weight-semibold);
-  padding-bottom: var(--ifx-space-1);
+  padding-block: var(--ifx-space-2);
   vertical-align: bottom;
 }
 
+.ov-table :is(th,td):last-child { border-right:0; }
+.ov-table tbody tr:last-child :is(th,td) { border-bottom:0; }
 .ov-table tbody th { font-weight: var(--ifx-weight-semibold); }
 
 .ov-table td a,
@@ -760,7 +768,7 @@
   min-width: 44px;
 }
 
-.ov-table td a { color: var(--ifx-oem-accent-strong); }
+.ov-table td a { color: var(--blue-700); }
 
 /* Store plus six codes in half the page: narrow cells keep the table inside
    its section down to the two-column breakpoint. */
@@ -921,6 +929,7 @@
   .ov-row-actions { flex-direction: column; flex-wrap: nowrap; }
 
   /* The service table becomes one stacked card per store. */
+  .ov-table-wrap { border:0; }
   .ov-table thead { display: none; }
   .ov-table,
   .ov-table tbody,

@@ -63,6 +63,7 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getByRole('button', { name: 'Held: 1 vehicles' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Held: 1 vehicles' }));
     expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'All: 4 vehicles' }));
     fireEvent.click(screen.getByRole('button', { name: 'Offsite: 1 vehicles' }));
     expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'All: 4 vehicles' }));
@@ -154,8 +155,23 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getByRole('combobox', { name: 'Hold' })).toHaveValue('held');
     fireEvent.change(screen.getByRole('combobox', { name: 'Hold' }), { target: { value: 'not-held' } });
     expect(screen.getByRole('button', { name: /^Held:/ })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: /^All:/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /^All:/ })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Show 1 vehicle' })).toBeInTheDocument();
+  });
+
+  it('keeps Held counts stable while movement is added and cleared independently', () => {
+    const heldMove = (id: number) => ({ ...vehicle(id), dealerMail: { dataState: 'current' as const, hasActiveHold: true }, movement: { state: 'in_transit', requestId: `move-${id}` } });
+    render(<InventoryExperienceHarness homeStore={homeStore} vehicles={[heldMove(1), heldMove(2), { ...vehicle(3), movement: { state: 'in_transit', requestId: 'move-3' } }]} />);
+    const held = () => screen.getByRole('button', { name: /^Held:/ });
+    expect(held()).toHaveAccessibleName('Held: 2 vehicles');
+    fireEvent.click(held());
+    expect(held()).toHaveAccessibleName('Held: 2 vehicles');
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Vehicle movement' }), { target: { value: 'active' } });
+    expect(held()).toHaveAccessibleName('Held: 2 vehicles');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Vehicle movement' }), { target: { value: 'all' } });
+    expect(held()).toHaveAccessibleName('Held: 2 vehicles');
+    expect(screen.getByRole('button', { name: /^All:/ })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('keeps the Being moved chip and the Vehicle movement select as one state', () => {
@@ -170,7 +186,6 @@ describe('modern inventory scope and paging', () => {
     expect(screen.getByRole('combobox', { name: 'Vehicle movement' })).toHaveValue('active');
     fireEvent.click(screen.getByRole('button', { name: 'Show 1 vehicle' }));
     expect(screen.getByRole('button', { name: 'Filters 1' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Clear view filter: Moving' })).toBeInTheDocument();
   });
 
   it.each([

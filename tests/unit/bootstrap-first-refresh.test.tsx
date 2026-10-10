@@ -49,6 +49,55 @@ describe('first bootstrap refresh after load', () => {
     vi.useRealTimers()
   })
 
+  it('learns the server membership before sending any role/store preview and previews only after a selection', async () => {
+    window.localStorage.setItem('maxey-role', 'sales')
+    window.localStorage.setItem('maxey-home-store', 'Lincoln')
+    fetchMock.mockImplementation(async (_url, options) => {
+      const headers = new Headers(options?.headers)
+      const body = bootstrapBody('2026-09-22')
+      return Response.json({ ...body, access: {
+        ...body.access, role: headers.get('x-inventory-preview-role') || 'group_manager',
+        store: headers.get('x-inventory-preview-store') || 'Fowlerville',
+        authenticatedRole: 'group_manager', authenticatedStore: 'Fowlerville', canPreviewRoles: true, canPreviewStores: true,
+      } })
+    })
+    render(<AppDataProvider><Probe /></AppDataProvider>)
+    await waitFor(() => expect(context.role).toBe('group_manager'))
+    await waitFor(() => expect(context.homeStore).toBe('Fowlerville'))
+    expect(headerAt(0, 'x-inventory-demo-role')).toBe('sales')
+    expect(headerAt(0, 'x-inventory-demo-store')).toBe('Lincoln')
+    expect(headerAt(0, 'x-inventory-preview-role')).toBeNull()
+    expect(headerAt(0, 'x-inventory-preview-store')).toBeNull()
+    await act(async () => { await context.refresh() })
+    expect(headerAt(fetchMock.mock.calls.length - 1, 'x-inventory-preview-role')).toBeNull()
+    await act(async () => { context.setRole('sales') })
+    await waitFor(() => expect(context.loading).toBe(false))
+    expect(headerAt(fetchMock.mock.calls.length - 1, 'x-inventory-preview-role')).toBe('sales')
+    expect(headerAt(fetchMock.mock.calls.length - 1, 'x-inventory-preview-store')).toBe('Fowlerville')
+    await act(async () => { context.setHomeStore('Lincoln') })
+    await waitFor(() => expect(context.loading).toBe(false))
+    expect(headerAt(fetchMock.mock.calls.length - 1, 'x-inventory-preview-store')).toBe('Lincoln')
+  })
+
+  it('retains loaded workspace data when a mutation is denied as an authenticated operation', async () => {
+    fetchMock.mockResolvedValueOnce(okResponse('"loaded"'))
+    render(<AppDataProvider><Probe /></AppDataProvider>)
+    await waitFor(() => expect(context.data).not.toBeNull())
+    const loaded = context.data
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Only a manager can move this vehicle.', code: 'FORBIDDEN' }), {
+      status: 403, headers: { 'Content-Type': 'application/json', 'X-Inventory-Error-Scope': 'operation' },
+    }))
+    await act(async () => {
+      await expect(context.submitTransfer({ vin: 'TESTDATAHWELL0001', intent: 'direct', destinationStore: 'Lincoln', reason: 'Synthetic move', requestedBy: 'Synthetic Manager', requestingStore: 'Howell', customerAppointment: false, returnRequired: false, priority: 'normal' })).rejects.toMatchObject({ status: 403 })
+    })
+    expect(context.data).toBe(loaded)
+    expect(context.accessErrorStatus).toBeNull()
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 304 }))
+    await act(async () => { await context.refresh() })
+    expect(context.data).toBe(loaded)
+    expect(context.error).toBeNull()
+  })
+
   it('sends If-None-Match on the very first refresh and keeps the same data object on 304', async () => {
     fetchMock.mockResolvedValueOnce(okResponse('"first"'))
     render(<AppDataProvider><Probe /></AppDataProvider>)

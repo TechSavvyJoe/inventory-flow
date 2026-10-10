@@ -25,7 +25,7 @@ import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { closeDuplicateTabs, closeOwnedTab, closeUnresponsiveOriginTabs, getOriginTab, fetchInTab, sleep } from './lib/cdp.mjs'
 import { loadDatedInventoryVehicles } from './lib/inventory-worklist.mjs'
-import { assessOasisCapture, diagnoseOasisActions, parseOasisFull } from './lib/oasis-parser.mjs'
+import { assessOasisCapture, diagnoseOasisActions, parseOasisFull, validateSavedOasisRecords } from './lib/oasis-parser.mjs'
 import { resolveWorkspaceRoot } from './lib/workspace-root.mjs'
 
 const ROOT = resolveWorkspaceRoot(import.meta.url)
@@ -61,7 +61,20 @@ let out = { schema: 'bob-maxey-oasis-capture-v1', reportDate, capturedAtUtc: new
             privacyNote: 'Extended coverage is captured as category and expiration date only. No prior-owner name is ever parsed or stored.',
             vehicleCount: 0, records: [] }
 if (!refresh && existsSync(outPath)) {
-  try { const prev = JSON.parse(readFileSync(outPath, 'utf8')); if (Array.isArray(prev.records)) out.records = prev.records } catch {}
+  try {
+    const prev = JSON.parse(readFileSync(outPath, 'utf8'))
+    if (Array.isArray(prev?.records)) {
+      const validated = validateSavedOasisRecords(prev.records)
+      if (validated.skipped) {
+        process.stderr.write(`Warning: skipped ${validated.skipped} malformed saved OASIS record(s)\n`)
+      }
+      out.records = validated.records
+    } else {
+      process.stderr.write('Warning: saved OASIS data has no records array; starting with an empty capture\n')
+    }
+  } catch {
+    process.stderr.write('Warning: saved OASIS data is unreadable; starting with an empty capture\n')
+  }
 }
 const done = new Set(out.records.filter(r => r.openActionsCaptured === true ||
   r.actionResultLimit === 'canadian_service_info_warning').map(r => r.vin))
@@ -111,16 +124,28 @@ async function capturePass(vins) {
     if (Date.now() - t0 > budgetMs) { stopped = 'BUDGET_EXHAUSTED'; return }
     try {
       const r = await fetchInTab(ctx.page, OASIS_URL(vin), { timeoutMs: 45000 })
-      if (r.status === 0 || r.error) { state = 'session_expired'; stopped = 'SESSION_EXPIRED'; return }
-      if (r.status !== 200 || !r.text) { tally.ERROR++; issues.set(vin, { reason: `http_${r.status}`, excerpt: '' }); continue }
-      if (/type=["']?password/i.test(r.text) || /login\.microsoftonline\.com/i.test(r.text)) {
+      if (r.status === 0 || r.error) {
+        tally.ERROR++
+        issues.set(vin, { reason: 'network_unavailable', excerpt: '' })
+        continue
+      }
+      if (r.status === 401 || r.status === 403) { state = 'session_expired'; stopped = 'SESSION_EXPIRED'; return }
+      if (/type=["']?password/i.test(r.text) || /login\.microsoftonline\.com/i.test(r.text) ||
+          /login\.microsoftonline\.com|signin|sso/i.test(String(r.finalUrl || ''))) {
         state = 'session_expired'; stopped = 'SESSION_EXPIRED'; return
       }
-      const parsed = parseOasisFull(r.text)
+      if (r.status !== 200 || !r.text) { tally.ERROR++; issues.set(vin, { reason: `http_${r.status}`, excerpt: '' }); continue }
+      const parsed = parseOasisFull(r.text, vin)
       if (!parsed) { tally.NO_OASIS++; issues.set(vin, { reason: 'no_oasis_report', excerpt: '' }); continue }
+      const { sourceVinStatus, ...record } = parsed
+      if (sourceVinStatus !== 'matched') {
+        tally.NO_OASIS++
+        issues.set(vin, { reason: sourceVinStatus === 'mismatch' ? 'requested_vin_mismatch' : 'requested_vin_unverified', excerpt: '' })
+        continue
+      }
       state = 'ok'
       out.records = out.records.filter(previous => previous.vin !== vin)
-      out.records.push({ vin, ...parsed, capturedAt: new Date().toISOString() })
+      out.records.push({ vin, ...record, capturedAt: new Date().toISOString() })
       tally.OK++
       if (isConfirmed(vin)) issues.delete(vin)
       else issues.set(vin, diagnoseOasisActions(r.text))

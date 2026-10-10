@@ -140,6 +140,28 @@ const ready = (lastResult = 0, lastRunTime = '2026-09-25T11:55:00-04:00') => ({
 })
 
 describe('intraday hold task monitor', () => {
+  it('preserves the active alert and recovery history before the first operating slot', () => {
+    const root = workspace()
+    writeReceipts(root, { checkedAt: '2026-09-25T12:01:00Z', verifiedAt: '2026-09-25T12:00:00Z' })
+    const directory = path.join(root, 'work/hold-refresh-monitor')
+    mkdirSync(directory, { recursive: true })
+    const alertPath = path.join(directory, 'active-alert.json')
+    const retainedAlert = JSON.stringify({ code: 'intraday_hold_task_failed', createdAt: '2026-09-24T23:30:00Z' })
+    writeFileSync(alertPath, retainedAlert)
+    writeFileSync(path.join(directory, 'state.json'), JSON.stringify({
+      lastAlertFingerprint: 'retained-alert', lastRecoveryTaskFailureFingerprint: 'retained-failure',
+      lastRecoveryReceiptFingerprint: 'retained-receipt', lastRecoveryTaskRunAt: '2026-09-24T23:25:00Z',
+    }))
+    expect(run(root, {
+      now: '2026-09-25T08:30:00-04:00', initial: ready(0, '2026-09-25T08:05:00-04:00'),
+    })).toEqual({ started: 0, events: 0 })
+    expect(readFileSync(alertPath, 'utf8')).toBe(retainedAlert)
+    expect(JSON.parse(readFileSync(path.join(directory, 'state.json'), 'utf8'))).toMatchObject({
+      lastAlertFingerprint: 'retained-alert', lastRecoveryTaskFailureFingerprint: 'retained-failure',
+      lastRecoveryReceiptFingerprint: 'retained-receipt', lastRecoveryTaskRunAt: '2026-09-24T23:25:00.0000000Z',
+    })
+  })
+
   it('stays silent when the completed task and explicitly linked receipts are healthy', () => {
     const root = workspace()
     writeReceipts(root)

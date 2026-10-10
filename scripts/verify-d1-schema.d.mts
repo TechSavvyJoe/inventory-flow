@@ -41,6 +41,7 @@ export interface VerificationReport {
     recorded: string[]
     unexpected: string[]
     duplicates: string[]
+    missing: string[]
     recordedNotApplied: string[]
     anomalies: string[]
   }

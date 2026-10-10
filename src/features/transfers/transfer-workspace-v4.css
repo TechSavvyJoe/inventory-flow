@@ -4,11 +4,11 @@
   --move-border: #c9d6e1;
   --move-divider: #dbe4eb;
   --move-soft: #f5f8fa;
-  --move-selected: #edf5fb;
+  --move-selected: var(--blue-050);
   --move-text: #102a43;
   --move-muted: #52697d;
-  --move-blue: #075da7;
-  --move-blue-dark: #064777;
+  --move-blue: var(--blue-600);
+  --move-blue-dark: var(--blue-700);
   color: var(--move-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
   font-size: 14px;
@@ -647,13 +647,13 @@
 }
 
 .transfer-tracker-v4 .mif-move-progress li.is-current {
-  color: #075a9b;
+  color: var(--blue-700);
 }
 
 .transfer-tracker-v4 .mif-move-progress li.is-current > span {
-  border-color: #075da7;
+  border-color: var(--blue-600);
   color: #fff;
-  background: #075da7;
+  background: var(--blue-600);
   box-shadow: 0 0 0 4px rgb(7 93 167 / 14%);
 }
 

@@ -8,6 +8,18 @@ export interface AccessFailure {
 }
 
 const accessListeners = new Set<(failure: AccessFailure) => void>()
+const operationDenials = new WeakSet<Error>()
+const bootstrapPreviewRequests = new WeakMap<AbortSignal, boolean>()
+
+// Attach bootstrap intent to its cancellation lifetime, rather than a global
+// identity setting that could leak across providers or superseded reads.
+export function setBootstrapPreviewIntent(signal: AbortSignal, selected: boolean) { bootstrapPreviewRequests.set(signal, selected) }
+export function bootstrapPreviewIntent(signal?: AbortSignal) { return signal ? bootstrapPreviewRequests.get(signal) ?? true : true }
+
+// Only the API response classifier registers errors here. An unknown error
+// body or a caller-created object cannot opt out of workspace invalidation.
+export function markOperationDenial(error: Error) { operationDenials.add(error) }
+export function isOperationDenial(error: unknown) { return error instanceof Error && operationDenials.has(error) }
 let mutationRevision = 0
 let accessGeneration = 0
 

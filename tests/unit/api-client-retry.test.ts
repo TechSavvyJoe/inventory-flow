@@ -369,6 +369,49 @@ describe('Access sign-in and response handling', () => {
 })
 
 describe('session access and confirmed writes', () => {
+  it('keeps a marked operation refusal local to the action without reporting lost workspace access', async () => {
+    const { isOperationDenial, subscribeAccessFailures } = await import('../../src/lib/apiSession')
+    const listener = vi.fn()
+    const unsubscribe = subscribeAccessFailures(listener)
+    try {
+      const response = json({ error: 'Only a manager can move this vehicle.', code: 'FORBIDDEN' }, 403)
+      response.headers.set('X-Inventory-Error-Scope', 'operation')
+      fetchMock.mockResolvedValueOnce(response)
+      const caught = await create().catch(error => error)
+      expect(caught).toMatchObject({ status: 403, code: 'FORBIDDEN' })
+      expect(isOperationDenial(caught)).toBe(true)
+      expect(listener).not.toHaveBeenCalled()
+    } finally { unsubscribe() }
+  })
+
+  it.each([
+    { error: 'Only a manager can move this vehicle.', code: 'FORBIDDEN' },
+    { error: 'Access changed', code: 'EMPLOYEE_NOT_AUTHORIZED', errorScope: 'operation' },
+    { error: 'Unknown response', code: 'UNKNOWN', operationDenied: true },
+  ])('never trusts an unmarked 403 body to retain the workspace (%j)', async body => {
+    const { isOperationDenial, subscribeAccessFailures } = await import('../../src/lib/apiSession')
+    const listener = vi.fn()
+    const unsubscribe = subscribeAccessFailures(listener)
+    try {
+      fetchMock.mockResolvedValueOnce(json(body, 403))
+      const caught = await create().catch(error => error)
+      expect(caught).toMatchObject({ status: 403 })
+      expect(isOperationDenial(caught)).toBe(false)
+      expect(listener).toHaveBeenCalledOnce()
+    } finally { unsubscribe() }
+  })
+
+  it('does not treat a non-JSON 403 with a copied operation header as an authenticated operation denial', async () => {
+    const { subscribeAccessFailures } = await import('../../src/lib/apiSession')
+    const listener = vi.fn()
+    const unsubscribe = subscribeAccessFailures(listener)
+    try {
+      fetchMock.mockResolvedValueOnce(new Response('Access denied', { status: 403, headers: { 'Content-Type': 'text/html', 'X-Inventory-Error-Scope': 'operation' } }))
+      await expect(create()).rejects.toMatchObject({ status: 403 })
+      expect(listener).toHaveBeenCalledOnce()
+    } finally { unsubscribe() }
+  })
+
   it.each([401, 403] as const)('reports HTTP %i with request context so the workspace can purge protected records', async (status) => {
     const { subscribeAccessFailures } = await import('../../src/lib/apiSession')
     const listener = vi.fn()

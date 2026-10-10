@@ -58,6 +58,21 @@ function roleHeaders(role: string, store: string, user: string) {
   }
 }
 
+it('marks only authenticated domain-operation refusals while identity and owner changes remain fail-closed', async () => {
+  const { baseUrl } = await harness()
+  const permission = await fetch(`${baseUrl}/api/admin/overview`, { headers: roleHeaders('sales', 'Howell', 'Synthetic sales') })
+  expect(permission.status).toBe(403)
+  expect(permission.headers.get('X-Inventory-Error-Scope')).toBe('operation')
+  expect(await permission.json()).toMatchObject({ code: 'ADMIN_OVERVIEW_ACCESS_REQUIRED' })
+  const identity = await fetch(`${baseUrl}/api/admin/overview`, { headers: roleHeaders('unknown-role', 'Howell', 'Synthetic sales') })
+  expect(identity.status).toBe(403)
+  expect(identity.headers.get('X-Inventory-Error-Scope')).toBeNull()
+  const owner = await fetch(`${baseUrl}/api/saved-lists`, { headers: { ...roleHeaders('sales', 'Howell', 'Synthetic sales'), 'x-inventory-saved-list-owner': 'synthetic-wrong-owner' } })
+  expect(owner.status).toBe(403)
+  expect(owner.headers.get('X-Inventory-Error-Scope')).toBeNull()
+  expect(await owner.json()).toMatchObject({ code: 'ACCESS_CONTEXT_CHANGED' })
+})
+
 it('serves only the VIN-linked saved vAuto PDF from the local document cache', async () => {
   const pdf = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n')
   const sha256 = createHash('sha256').update(pdf).digest('hex')

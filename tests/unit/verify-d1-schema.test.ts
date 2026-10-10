@@ -442,7 +442,10 @@ describe('read-only D1 schema verifier', () => {
       ['--live', 'live.json', '--ledger', 'ledger.json', '--print-ledger-sql', '--data-reviewed', DML_FILES.join(',')],
       { 'live.json': live, 'ledger.json': ledgerJson(recorded) },
     )
-    expect(code).toBe(0)
+    // A complete schema still needs its complete supplied migration ledger.
+    // Backfill SQL remains reviewable, but incomplete tracking is not PASS.
+    expect(code).toBe(1)
+    expect(stdout).toContain('Migration names missing from the supplied ledger:')
     expect(stdout).toContain("Ledger table in live schema: present and matches Wrangler's definition.")
     expect(stdout.split(WRANGLER_D1_MIGRATIONS_TABLE_SQL)).toHaveLength(2)
     for (const file of recorded) {
@@ -450,6 +453,13 @@ describe('read-only D1 schema verifier', () => {
       expect(stdout).toContain(`-- skipped ${file}: already recorded in d1_migrations`)
     }
     for (const file of FILES.slice(4)) expect(stdout).toContain(insertFor(file))
+
+    const complete = verifyD1Schema({ liveJson: live, ledgerJson: ledgerJson(FILES) })
+    expect(complete.ok).toBe(true)
+    expect(complete.ledger.missing).toEqual([])
+    const empty = verifyD1Schema({ liveJson: live, ledgerJson: ledgerJson([]) })
+    expect(empty.ok).toBe(false)
+    expect(empty.ledger.missing).toEqual(FILES)
 
     const unexpected = verifyD1Schema({ liveJson: live, ledgerJson: ledgerJson([...recorded, '0099_synthetic_unknown.sql']), printLedgerSql: true })
     expect(unexpected.exitCode).toBe(1)

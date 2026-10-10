@@ -15,15 +15,15 @@
   "files": {
     "src/styles/shell.css": {
       "smallText": 0,
-      "rawColors": 22,
+      "rawColors": 19,
       "rgbHslColors": 19,
       "important": 2,
       "idSelectors": 0
     },
     "src/styles/base.css": {
       "smallText": 0,
-      "rawColors": 8,
-      "rgbHslColors": 6,
+      "rawColors": 7,
+      "rgbHslColors": 5,
       "important": 15,
       "idSelectors": 6
     },
@@ -239,21 +239,21 @@
     },
     "src/features/transfers/transfer-workspace-v4.css": {
       "smallText": 1,
-      "rawColors": 113,
+      "rawColors": 107,
       "rgbHslColors": 8,
       "important": 62,
       "idSelectors": 7
     },
     "src/features/transfers/transfer-workspace-v3.css": {
       "smallText": 47,
-      "rawColors": 145,
+      "rawColors": 122,
       "rgbHslColors": 9,
       "important": 29,
       "idSelectors": 0
     },
     "src/features/transfers/transfers-page.css": {
       "smallText": 3,
-      "rawColors": 36,
+      "rawColors": 30,
       "rgbHslColors": 2,
       "important": 0,
       "idSelectors": 0
@@ -274,7 +274,7 @@
     },
     "src/features/transfers/transfers.css": {
       "smallText": 22,
-      "rawColors": 68,
+      "rawColors": 57,
       "rgbHslColors": 6,
       "important": 13,
       "idSelectors": 0
@@ -288,15 +288,15 @@
     },
     "src/features/inventory/inventory-modern.css": {
       "smallText": 50,
-      "rawColors": 183,
+      "rawColors": 175,
       "rgbHslColors": 38,
       "important": 1,
       "idSelectors": 0
     },
     "src/features/inventory/inventory.css": {
       "smallText": 17,
-      "rawColors": 35,
-      "rgbHslColors": 9,
+      "rawColors": 30,
+      "rgbHslColors": 8,
       "important": 13,
       "idSelectors": 0
     },
@@ -326,7 +326,7 @@
       "rawColors": 1,
       "rgbHslColors": 0,
       "important": 1,
-      "idSelectors": 353
+      "idSelectors": 345
     },
     "src/features/inventory/WarrantyOutlook.css": {
       "smallText": 0,

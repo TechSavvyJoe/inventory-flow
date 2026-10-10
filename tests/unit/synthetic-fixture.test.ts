@@ -56,6 +56,8 @@ describe('repository-safe synthetic collaboration fixture', () => {
     const bootstrap = service.bootstrap({ role: 'manager', store: 'Howell', user: 'Synthetic Manager' })
     for (const record of release.vehicles) {
       const source = record.publicRecord
+      expect(source.listing_url).toMatch(/^https:\/\/www\.bobmaxey(?:fordhowell|fordinfowlerville|ford|lincoln)\.com\/used-Synthetic-TESTDATA/)
+      expect(source.in_stock).toBe(true)
       const detail = service.getVehicle(record.vin, { role: 'manager', store: source.store, user: 'Synthetic Manager' })
       expect(detail.autoCheckReport.lastReportedOdometer).toBe(source.mileage)
       expect(detail.autoCheckReport.estimatedInServiceDate).toBe(`${source.year}-03-14`)
@@ -72,6 +74,8 @@ describe('repository-safe synthetic collaboration fixture', () => {
       expect(inventoryVehicle.factoryEquipment).toEqual(detail.factoryEquipment)
       expect(inventoryVehicle.windowSticker).toEqual(detail.windowSticker)
       expect(inventoryVehicle.fordOasis).toEqual(detail.fordOasis)
+      expect(inventoryVehicle.publicListing).toBe('listed')
+      expect(inventoryVehicle.listingUrl).toMatch(/^https:\/\//)
       const equipment = [
         ...detail.factoryEquipment.packages.map((item) => item.name),
         ...detail.factoryEquipment.sections.flatMap((section) => section.items.map((item) => item.label)),

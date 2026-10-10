@@ -83,7 +83,7 @@ export function ScanVehicleDialog({ vehicles, onFind, onClose, returnFocusRef }:
       const media = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 } } })
       if (token !== generation.current) { media.getTracks().forEach(track => track.stop()); return }
       stream.current = media
-      const { scanVideo, readTag } = await import('./vehicle-scan-engine')
+      const { scanVideo, createTagReader } = await import('./vehicle-scan-engine')
       if (token !== generation.current || !video.current) return
       const scanner = await scanVideo(video.current, media, value => {
         if (token !== generation.current || !matchScannedVehicles(value, currentVehicles.current).length) return
@@ -92,11 +92,12 @@ export function ScanVehicleDialog({ vehicles, onFind, onClose, returnFocusRef }:
       if (token !== generation.current) { scanner.stop(); return }
       controls.current = scanner
       const controller = new AbortController(); operation.current = controller
-      scanStockVideo(video.current, readTag, result => {
+      const reader = createTagReader(controller.signal)
+      scanStockVideo(video.current, reader.readTag, result => {
         if (token !== generation.current || !matchScannedVehicles(result.text, currentVehicles.current).length) return false
         cancel(); setCamera(false); setBusy(false); recognized(result.text, result.barcode)
         return true
-      }, controller.signal, message => { if (token === generation.current) setStatus(message) })
+      }, controller.signal, message => { if (token === generation.current) setStatus(message) }, reader.stop)
       setStatus('Point at a VIN barcode or stock tag. Hold steady to read automatically.')
     } catch (error) {
       if (token !== generation.current) return

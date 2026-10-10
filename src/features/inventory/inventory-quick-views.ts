@@ -59,38 +59,46 @@ export function matchesInventoryQuickView(vehicle: InventoryVehicle, view: Quick
 }
 
 /**
- * The quick-view chips and the Filters-panel selects share one state. The
- * Held chip and the Hold select's "Held" option are the same choice, as are
- * the Being moved chip and the Movement select's "Being moved" option: the
- * chip (quick view) stores it and the select reads it back. Choices that
- * contradict the active chip clear that chip instead of silently returning
- * an empty list. Nothing here infers one status family from another.
+ * Hold and movement are independent facets. Quick views only provide
+ * convenient entry points into those facets; selecting one must not erase the
+ * other.
  */
 export interface InventoryViewState { quickView: QuickView; filters: InventoryFilters }
 
 export function filterPanelHoldValue({ quickView, filters }: InventoryViewState): InventoryFilters['dealerMail'] {
-  return quickView === 'held' ? 'held' : filters.dealerMail
+  return filters.dealerMail === 'all' && quickView === 'held' ? 'held' : filters.dealerMail
 }
 
 export function filterPanelMovementValue({ quickView, filters }: InventoryViewState): InventoryFilters['movement'] {
-  return quickView === 'moving' && filters.movement === 'all' ? 'active' : filters.movement
+  return filters.movement === 'all' && quickView === 'moving' ? 'active' : filters.movement
 }
 
 export function selectHoldFilter(state: InventoryViewState, value: InventoryFilters['dealerMail']): InventoryViewState {
-  if (value === 'held') return { quickView: 'held', filters: { ...state.filters, dealerMail: 'all' } }
-  const contradicted = state.quickView === 'held' || (state.quickView === 'no-hold' && value === 'unverified')
-  return { quickView: contradicted ? 'all' : state.quickView, filters: { ...state.filters, dealerMail: value } }
+  const quickView = state.quickView === 'held' || (state.quickView === 'no-hold' && (value === 'held' || value === 'unverified')) ? 'all' : state.quickView
+  return { quickView, filters: { ...state.filters, dealerMail: value } }
 }
 
 export function selectMovementFilter(state: InventoryViewState, value: InventoryFilters['movement']): InventoryViewState {
-  if (value === 'active') return { quickView: 'moving', filters: { ...state.filters, movement: 'all' } }
-  if (value === 'overdue') return { quickView: state.quickView, filters: { ...state.filters, movement: value } }
   return { quickView: state.quickView === 'moving' ? 'all' : state.quickView, filters: { ...state.filters, movement: value } }
 }
 
 export function selectQuickView(state: InventoryViewState, view: QuickView): InventoryViewState {
-  const { dealerMail, movement } = state.filters
-  const nextDealerMail = view === 'held' || (view === 'no-hold' && dealerMail === 'unverified') ? 'all' : dealerMail
-  const nextMovement = view === 'moving' && movement === 'none' ? 'all' : movement
-  return { quickView: view, filters: { ...state.filters, dealerMail: nextDealerMail, movement: nextMovement } }
+  if (view === 'held') {
+    const quickView = state.quickView === 'no-hold' ? 'all' : state.quickView === 'held' ? 'all' : state.quickView
+    return { quickView, filters: { ...state.filters, dealerMail: 'held' } }
+  }
+  if (view === 'moving') {
+    return { quickView: state.quickView === 'moving' ? 'all' : state.quickView, filters: { ...state.filters, movement: 'active' } }
+  }
+  if (view === 'all') return { quickView: 'all', filters: { ...state.filters, dealerMail: 'all' } }
+  if (view === 'no-hold') return { quickView: view, filters: { ...state.filters, dealerMail: 'all' } }
+  return { quickView: view, filters: state.filters }
+}
+
+export function toggleSecondaryQuickView(state: InventoryViewState, view: Extract<QuickView, 'moving' | 'new' | 'price'>): InventoryViewState {
+  if (view === 'moving') {
+    return { quickView: state.quickView === 'moving' ? 'all' : state.quickView,
+      filters: { ...state.filters, movement: state.filters.movement === 'active' ? 'all' : 'active' } }
+  }
+  return { ...state, quickView: state.quickView === view ? 'all' : view }
 }

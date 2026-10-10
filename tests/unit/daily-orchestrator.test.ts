@@ -1,10 +1,11 @@
 // @ts-nocheck -- the daily orchestrator is plain ESM.
 // @vitest-environment node
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import { createSyntheticWorkspace } from '../../fixtures/synthetic-workspace.mjs'
 import { loadLatestCompletedRelease } from '../../server/importer.mjs'
 import { cloudBundleSha256, cloudReleaseFrom } from '../../scripts/publish-cloud-release.mjs'
@@ -995,6 +996,177 @@ describe('app-first daily orchestrator helpers', () => {
 
     expect(manifest.source_counts.dealermail_used_rows).toBe(1)
     expect(manifest).not.toHaveProperty('manager_disposition_overlay')
+  })
+
+  it.each([false, true])('retries the receipt-bound pending followups before any new capture, even with force=%s', async (forcePublish) => {
+    const internals = await loadInternals()
+    const reportDate = '2026-10-08'
+    const bundle = { complete: true, reportDate, release: { reportDate, vehicles: [] } }
+    const receipt = { status: 'published_and_verified', complete: true, reportDate, verifiedAt: `${reportDate}T12:00:00Z`, bundleSha256: cloudBundleSha256(bundle), counts: { publicRowCount: 0 } }
+    const manifestPath = path.join(workspaceRoot, 'work/run-status', `${reportDate}.json`)
+    const releasePath = path.join(workspaceRoot, 'work/releases', reportDate, 'inventory-flow-release.json')
+    const receiptPath = path.join(workspaceRoot, 'work/app-feed-status', `${reportDate}.json`)
+    const manifest = { report_date: reportDate, complete: true, cloudflare_publish: { status: 'published_and_verified_followups_pending', bundle_sha256: receipt.bundleSha256 } }
+    internals.writeJson(manifestPath, manifest)
+    internals.writeJson(releasePath, bundle)
+    internals.writeJson(receiptPath, receipt)
+    const originalRun = internals.runtime.run
+    const browser = vi.spyOn(internals.runtime, 'ensureAutomationBrowser').mockResolvedValue(false)
+    const run = vi.fn((command, args, options) => {
+      expect(args).not.toContain('-Force')
+      expect(options.extraEnv.INVENTORY_OPS_FOLLOWUPS_ONLY_BUNDLE_SHA256).toBe(receipt.bundleSha256)
+      internals.writeJson(manifestPath, { ...manifest, cloudflare_publish: { ...manifest.cloudflare_publish, status: 'published_and_verified' } })
+      return { ok: true, output: 'synthetic followups completed' }
+    })
+    internals.runtime.run = run
+    try {
+      const result = await internals.runDaily({ date: reportDate, forcePublish })
+      expect(result).toMatchObject({ ok: true })
+      expect(run).toHaveBeenCalledOnce()
+      expect(browser).not.toHaveBeenCalled()
+      expect(JSON.parse(readFileSync(releasePath, 'utf8'))).toEqual(bundle)
+      expect(JSON.parse(readFileSync(receiptPath, 'utf8'))).toEqual(receipt)
+    } finally { internals.runtime.run = originalRun; browser.mockRestore(); rmSync(manifestPath); rmSync(receiptPath); rmSync(path.dirname(releasePath), { recursive: true }) }
+  })
+
+  it.each(['missing', 'malformed', 'mismatched'])('blocks pending followups with a %s receipt before forced or hold capture', async (condition) => {
+    const internals = await loadInternals()
+    const reportDate = '2026-10-05'
+    const bundle = { complete: true, reportDate, release: { reportDate, vehicles: [] } }
+    const receipt = { status: 'published_and_verified', complete: true, reportDate, verifiedAt: `${reportDate}T12:00:00Z`, bundleSha256: cloudBundleSha256(bundle) }
+    const manifestPath = path.join(workspaceRoot, 'work/run-status', `${reportDate}.json`)
+    const receiptPath = path.join(workspaceRoot, 'work/app-feed-status', `${reportDate}.json`)
+    const manifest = { complete: true, report_date: reportDate, cloudflare_publish: { status: 'published_and_verified_followups_pending', bundle_sha256: receipt.bundleSha256 } }
+    internals.writeJson(manifestPath, manifest)
+    if (condition === 'malformed') writeFileSync(receiptPath, '{')
+    else if (condition === 'mismatched') internals.writeJson(receiptPath, { ...receipt, bundleSha256: 'f'.repeat(64) })
+    const browser = vi.spyOn(internals.runtime, 'ensureAutomationBrowser').mockRejectedValue(new Error('CAPTURE_BARRIER_REACHED'))
+    const originalRun = internals.runtime.run
+    const native = vi.fn(() => { throw new Error('PUBLISH_BARRIER_REACHED') })
+    internals.runtime.run = native
+    try {
+      for (const options of [{ date: reportDate, forcePublish: true }, { date: reportDate, refreshHolds: true }]) {
+        await expect(internals.runDaily(options)).rejects.toThrow(condition === 'mismatched' ? 'PENDING_FOLLOWUPS_RECEIPT_MISMATCH' : 'VERIFIED_RECEIPT_REQUIRED')
+      }
+      expect(browser).not.toHaveBeenCalled()
+      expect(native).not.toHaveBeenCalled()
+      expect(JSON.parse(readFileSync(manifestPath, 'utf8'))).toEqual(manifest)
+    } finally { internals.runtime.run = originalRun; browser.mockRestore(); rmSync(manifestPath); rmSync(receiptPath, { force: true }) }
+  })
+
+  it.each([{}, { forcePublish: true }, { refreshHolds: true }, { forcePublish: true, refreshHolds: true }])('defers pending followups under --no-publish without capture or uploads (%j)', async (mode) => {
+    const internals = await loadInternals()
+    const reportDate = '2026-10-04'
+    const manifestPath = path.join(workspaceRoot, 'work/run-status', `${reportDate}.json`)
+    const manifest = { complete: true, report_date: reportDate, cloudflare_publish: { status: 'published_and_verified_followups_pending', bundle_sha256: 'a'.repeat(64) } }
+    internals.writeJson(manifestPath, manifest)
+    const browser = vi.spyOn(internals.runtime, 'ensureAutomationBrowser').mockRejectedValue(new Error('CAPTURE_BARRIER_REACHED'))
+    const originalRun = internals.runtime.run
+    const native = vi.fn(() => { throw new Error('PUBLISH_BARRIER_REACHED') })
+    internals.runtime.run = native
+    try {
+      expect(await internals.runDaily({ date: reportDate, noPublish: true, ...mode })).toMatchObject({ ok: false, failureCode: 'PUBLISH_SKIPPED_FOLLOWUPS_PENDING' })
+      expect(browser).not.toHaveBeenCalled()
+      expect(native).not.toHaveBeenCalled()
+      expect(JSON.parse(readFileSync(manifestPath, 'utf8'))).toEqual(manifest)
+    } finally { internals.runtime.run = originalRun; browser.mockRestore(); rmSync(manifestPath) }
+  })
+
+  it('preserves a newly unknown candidate when the followups-only child fails', async () => {
+    const internals = await loadInternals()
+    const reportDate = '2026-10-03'
+    const bundle = { complete: true, reportDate, release: { reportDate, vehicles: [] } }
+    const receipt = { status: 'published_and_verified', complete: true, reportDate, verifiedAt: `${reportDate}T12:00:00Z`, bundleSha256: cloudBundleSha256(bundle) }
+    const manifestPath = path.join(workspaceRoot, 'work/run-status', `${reportDate}.json`)
+    const releasePath = path.join(workspaceRoot, 'work/releases', reportDate, 'inventory-flow-release.json')
+    const receiptPath = path.join(workspaceRoot, 'work/app-feed-status', `${reportDate}.json`)
+    const manifest = { report_date: reportDate, complete: true, cloudflare_publish: { status: 'published_and_verified_followups_pending', bundle_sha256: receipt.bundleSha256 } }
+    const unknown = { ...manifest, cloudflare_publish: { status: 'publication_outcome_unknown', reconciliation_required: true, expected_bundle_sha256: 'f'.repeat(64) } }
+    internals.writeJson(manifestPath, manifest); internals.writeJson(releasePath, bundle); internals.writeJson(receiptPath, receipt)
+    const originalRun = internals.runtime.run
+    internals.runtime.run = vi.fn(() => { internals.writeJson(manifestPath, unknown); return { ok: false, output: 'synthetic unknown candidate' } })
+    try {
+      await expect(internals.runDaily({ date: reportDate })).rejects.toThrow('PUBLICATION_RECONCILIATION_REQUIRED')
+      expect(JSON.parse(readFileSync(manifestPath, 'utf8'))).toEqual(unknown)
+      expect(JSON.parse(readFileSync(receiptPath, 'utf8'))).toEqual(receipt)
+      expect(JSON.parse(readFileSync(releasePath, 'utf8'))).toEqual(bundle)
+    } finally { internals.runtime.run = originalRun; rmSync(manifestPath); rmSync(receiptPath); rmSync(path.dirname(releasePath), { recursive: true }) }
+  })
+
+  it('preserves pending followups and candidate bytes when the retry fails', async () => {
+    const internals = await loadInternals()
+    const reportDate = '2026-10-07'
+    const bundle = { complete: true, reportDate, release: { reportDate, vehicles: [] } }
+    const receipt = { status: 'published_and_verified', complete: true, reportDate, verifiedAt: `${reportDate}T12:00:00Z`, bundleSha256: cloudBundleSha256(bundle) }
+    const manifestPath = path.join(workspaceRoot, 'work/run-status', `${reportDate}.json`)
+    const releasePath = path.join(workspaceRoot, 'work/releases', reportDate, 'inventory-flow-release.json')
+    const receiptPath = path.join(workspaceRoot, 'work/app-feed-status', `${reportDate}.json`)
+    const manifest = { report_date: reportDate, complete: true, cloudflare_publish: { status: 'published_and_verified_followups_pending', bundle_sha256: receipt.bundleSha256 } }
+    internals.writeJson(manifestPath, manifest); internals.writeJson(releasePath, bundle); internals.writeJson(receiptPath, receipt)
+    const originalRun = internals.runtime.run
+    internals.runtime.run = vi.fn(() => ({ ok: false, output: 'synthetic invoice failure' }))
+    try {
+      expect(await internals.runDaily({ date: reportDate })).toMatchObject({ ok: false, failureCode: 'CLOUDFLARE_POST_PUBLISH_FOLLOWUPS_FAILED' })
+      expect(JSON.parse(readFileSync(manifestPath, 'utf8'))).toEqual(manifest)
+      expect(JSON.parse(readFileSync(releasePath, 'utf8'))).toEqual(bundle)
+      expect(JSON.parse(readFileSync(receiptPath, 'utf8'))).toEqual(receipt)
+    } finally { internals.runtime.run = originalRun; rmSync(manifestPath); rmSync(receiptPath); rmSync(path.dirname(releasePath), { recursive: true }) }
+  })
+
+  it('requires the final successful invoice outcome and persisted dated resolved index to clear a failure', async () => {
+    const internals = await loadInternals()
+    const reportDate = '2026-10-07'
+    const vin = '1FTFW1E84RKF12345'
+    const finalReport = { sessionStatus: 'ok', fordLincolnVins: 1, failed: 0, stoppedReason: null, failureReasons: { FETCH_ERROR: 1 }, retried: 1, recovered: 1 }
+    const resolvedIndex = { schema: 'ford-invoice-index-v1', reportDate, results: [{ vin, status: 'pdf' }] }
+    const outcome = (report, index = resolvedIndex, ok = true) => internals.invoiceCaptureComplete({ reportDate, result: { ok, output: JSON.stringify(report) }, readIndex: () => index })
+    expect(outcome(finalReport)).toBe(true)
+    expect(outcome({ ...finalReport, sessionStatus: 'incomplete', failed: 1 })).toBe(false)
+    expect(outcome({ ...finalReport, sessionStatus: 'session_expired', stoppedReason: 'SESSION_EXPIRED' })).toBe(false)
+    expect(outcome(finalReport, { ...resolvedIndex, results: [{ vin, status: 'failed', reason: 'FETCH_ERROR' }] })).toBe(false)
+    expect(outcome(finalReport, { ...resolvedIndex, reportDate: '2026-10-06' })).toBe(false)
+    expect(outcome(finalReport, { ...resolvedIndex, results: [] })).toBe(false)
+    expect(outcome(finalReport, resolvedIndex, false)).toBe(false)
+    expect(outcome({ fordLincolnVins: 1 })).toBe(false)
+    expect(internals.invoiceCaptureComplete({ reportDate, result: { ok: true, output: JSON.stringify(finalReport) }, readIndex: () => { throw new Error('MISSING_INDEX') } })).toBe(false)
+  })
+
+  it('records invoice retries as incomplete until the successful outcome is persisted', async () => {
+    const internals = await loadInternals()
+    const reportDate = '2026-10-06'
+    const vin = '1FTFW1E84RKF12345'
+    const indexPath = path.join(workspaceRoot, 'work/invoice-history', reportDate, 'index.json')
+    const finalReport = { sessionStatus: 'ok', fordLincolnVins: 1, failed: 0, stoppedReason: null, failureReasons: { FETCH_ERROR: 1 }, recovered: 1 }
+    const originalRun = internals.runtime.run
+    internals.runtime.run = vi.fn((command, args, options) => ({ ok: true, output: options.label === 'invoices_capture' ? JSON.stringify(finalReport) : '{}' }))
+    try {
+      internals.writeJson(indexPath, { schema: 'ford-invoice-index-v1', reportDate, results: [{ vin, status: 'failed', reason: 'FETCH_ERROR' }] })
+      const failedSteps = [], failedWarnings = []
+      internals.runOptionalAuthenticatedSources(reportDate, true, failedWarnings, failedSteps)
+      expect(failedSteps.find(step => step.name === 'invoices_capture').status).toBe('completed_with_warning')
+      expect(failedWarnings.join(' ')).toContain('Ford invoice capture is incomplete')
+      internals.writeJson(indexPath, { schema: 'ford-invoice-index-v1', reportDate, results: [{ vin, status: 'pdf' }] })
+      const resolvedSteps = [], resolvedWarnings = []
+      internals.runOptionalAuthenticatedSources(reportDate, true, resolvedWarnings, resolvedSteps)
+      expect(resolvedSteps.find(step => step.name === 'invoices_capture').status).toBe('complete')
+      expect(resolvedWarnings.join(' ')).not.toContain('Ford invoice capture is incomplete')
+    } finally { internals.runtime.run = originalRun; rmSync(path.dirname(indexPath), { recursive: true, force: true }) }
+  })
+
+  it('propagates a top-level source collector failure without writing a completed manifest', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'inventory-flow-source-stop-'))
+    const reportDate = '2026-10-06'
+    try {
+      for (const directory of ['work/run-status', 'outputs', 'apps/inventory-ops', 'bin']) mkdirSync(path.join(root, directory), { recursive: true })
+      const executable = path.join(root, 'bin/python')
+      writeFileSync(executable, '#!/bin/sh\n# SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS\nexit 7\n')
+      chmodSync(executable, 0o755)
+      const result = spawnSync(process.execPath, [path.resolve('scripts/run-inventory-flow-daily.mjs'), '--date', reportDate, '--skip-authenticated'], { env: { ...process.env, BOB_MAXEY_WORKSPACE_ROOT: root, USERPROFILE: root, PATH: `${path.join(root, 'bin')}:${process.env.PATH}` }, encoding: 'utf8', timeout: 10_000 })
+      expect(result.status, result.stderr).toBe(1)
+      expect(result.stderr).toContain('public inventory collector failed')
+      expect(existsSync(path.join(root, 'work/run-status', `${reportDate}.json`))).toBe(false)
+      expect(existsSync(path.join(root, 'work/app-feed-status', `${reportDate}.json`))).toBe(false)
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
   // PRODUCT-RULE TEST

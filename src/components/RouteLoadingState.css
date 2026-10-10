@@ -71,13 +71,9 @@
   height: 40px;
   flex: 0 0 40px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--ifx-oem-accent) 24%, var(--ifx-border-subtle));
+  border: 1px solid color-mix(in srgb, var(--blue-600) 24%, var(--ifx-border-subtle));
   border-radius: var(--ifx-radius-md);
-  background: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--ifx-oem-accent) 82%, white),
-    var(--ifx-oem-accent-strong)
-  );
+  background: var(--blue-600);
   box-shadow: var(--ifx-elevation-1);
 }
 
@@ -131,7 +127,7 @@
 .route-loading-state__rail {
   grid-column: 1 / -1;
   height: 8px;
-  background: color-mix(in srgb, var(--ifx-oem-accent) 20%, var(--ifx-neutral-100));
+  background: color-mix(in srgb, var(--blue-600) 20%, var(--ifx-neutral-100));
 }
 
 .route-loading-state__line { grid-column: 1 / -1; height: 13px; }

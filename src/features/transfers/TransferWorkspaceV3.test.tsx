@@ -950,6 +950,34 @@ describe('transfer workspace v3 layout', () => {
     expect(screen.queryByRole('button', { name: 'Close the move' })).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['TESTDATAHWELL0001', false],
+    ['1FTFW1E80RFA00001', true],
+  ])('opens a transfer source only when its adapted listing URL is available for VIN %s', async (vin, canOpenSource) => {
+    const data = bootstrap(1);
+    const record = data.transfers[0];
+    record.vin = vin;
+    record.allowedActions = ['confirm-return', 'open-source'];
+    const vehicle = inventoryVehicle('Howell', vin);
+    vehicle.listingUrl = 'https://www.bobmaxeyfordhowell.com/used-synthetic-reference';
+    data.vehicles = [vehicle];
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    renderPage(data, '/transfers?id=transfer-1');
+    const actions = await screen.findByRole('contentinfo', { name: 'Available move actions' });
+
+    if (canOpenSource) {
+      fireEvent.click(within(actions).getByText('More actions'));
+      const sourceAction = within(actions).queryByRole('button', { name: 'Open original record' });
+      expect(sourceAction).toBeInTheDocument();
+      fireEvent.click(sourceAction!);
+      expect(open).toHaveBeenCalledWith(vehicle.listingUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      expect(within(actions).queryByText('More actions')).not.toBeInTheDocument();
+      expect(open).not.toHaveBeenCalled();
+    }
+  });
+
   it('shows one requesting-manager check and no second-store approval in a simple request', () => {
     const vehicle = { ...detail([]).vehicle, exteriorColor: 'Synthetic blue', engine: 'Synthetic engine', drivetrain: '4WD', daysListed: 12 };
     render(<TransferRequestWorkspace workflowMode="simple" vehicle={vehicle} stores={[{ value: 'Ford Detroit', label: 'Ford Detroit' }]} requesters={[{ value: 'sales', label: 'Demo Sales' }]} managerApprovers={[{ value: 'manager', label: 'Ford Detroit manager' }]} defaultRequestingStore="Ford Detroit" defaultRequesterId="sales" defaultManagerApproverId="manager" onSubmit={vi.fn()} />);
@@ -1138,6 +1166,20 @@ describe('transfer workspace v3 layout', () => {
     expect(neededBy).toHaveAttribute('aria-describedby');
     await waitFor(() => expect(neededBy).toHaveFocus());
   });
+
+  it.each([
+    ['Howell', 'Overdue · waiting on Ford Detroit manager', 'is-none'],
+    ['Ford Detroit', 'Overdue', 'is-overdue'],
+    [undefined, 'Overdue', 'is-overdue'],
+  ])('keeps overdue ownership consistent in move details for %s', (viewerStore, label, tone) => {
+    const current = detail([])
+    render(<TransferTracker transfer={{ ...current, nextAction: {
+      ...current.nextAction, ownerStore: 'Ford Detroit', ownerLabel: 'Ford Detroit manager', sla: 'overdue',
+    } }} viewerStore={viewerStore} mode="page" />)
+    const nextStep = screen.getByRole('region', { name: 'Next step' })
+    expect(within(nextStep).getByText(label)).toBeInTheDocument()
+    expect(nextStep).toHaveClass(tone)
+  })
 
   it('keeps issue and return actions authorized, visible, and wired to their exact action kinds', () => {
     const onAction = vi.fn();

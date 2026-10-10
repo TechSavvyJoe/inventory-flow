@@ -25,11 +25,13 @@ describe('Collector enrollment, scope and fenced execution',()=>{
   expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_collector_attempts WHERE stage='claimed'").get().n).toBe(1)
   expect(f.sqlite.prepare("PRAGMA index_info('platform_collector_one_group')").all().map(column=>column.name)).toEqual(['group_id'])
   expect(f.sqlite.prepare("PRAGMA index_list('platform_collector_attempts')").all().find(index=>index.name==='platform_collector_one_group')).toMatchObject({unique:1,partial:1})
-  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_pull_requests WHERE state='queued'").get().n).toBe(1)
+  expect(f.sqlite.prepare("SELECT COUNT(*) AS n FROM platform_pull_requests WHERE state='queued'").get().n).toBe(0)
+  // Both original store requests share one capture; late work remains independent.
+  await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[2].connectionId,reason:'Synthetic late store',expectedRevision:revision(f)},'late-store',now)
   await receiptCollector(f.env,winner,{attemptId:active.attemptId,fence:active.fence,sequence:1,kind:'failure',code:'CAPTURE_FAILED'},now)
   const next=await claimCollector(f.env,loser,{},'after-terminal',now)
   expect(next).not.toBeNull();expect(next.requestId).not.toBe(active.requestId)
-  await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[2].connectionId,reason:'Synthetic parked request',expectedRevision:revision(f)},'parked-store',now)
+  await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[3].connectionId,reason:'Synthetic parked request',expectedRevision:revision(f)},'parked-store',now)
   for(const stage of ['captured','publishing','reconciliation_required']){
    f.sqlite.prepare('UPDATE platform_collector_attempts SET stage=? WHERE id=?').run(stage,next.attemptId)
    expect(await claimCollector(f.env,winner,{},`blocked-${stage}`,now)).toBeNull()

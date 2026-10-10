@@ -5,6 +5,7 @@ import {
   dealerMailInteractiveVehicleUrl,
   fordInvoiceUrl,
   fordOasisUrl,
+  fordServiceHistoryUrl,
   savedFordInvoiceUrl,
 } from './vehicle-document-utils'
 
@@ -20,16 +21,17 @@ describe('interactive DealerMail and Ford document destinations', () => {
     expect(destination).not.toContain('USED_hold_edit')
   })
 
-  it('builds exact-VIN read-only Invoice and OASIS destinations', () => {
-    const invoice = fordInvoiceUrl('testdatasyn000010')
-    const oasis = fordOasisUrl('testdatasyn000010')
-
-    expect(invoice).toContain('fordvisions.dealerconnection.com/vinv/GetInvoice.aspx')
-    expect(invoice).toContain('v=TESTDATASYN000010')
+  it('keeps synthetic VINs away from Ford sign-in destinations and supports real VINs', () => {
+    for (const url of [fordInvoiceUrl, fordOasisUrl, fordServiceHistoryUrl]) {
+      expect(url('testdatasyn000010')).toBeNull()
+      expect(url(' testdatahwell0001 ')).toBeNull()
+    }
     expect(savedFordInvoiceUrl('testdatasyn000010')).toBe('/api/vehicles/TESTDATASYN000010/invoice')
-    expect(oasis).toBe(
-      'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=TESTDATASYN000010',
+    expect(fordInvoiceUrl('1FTFW1E84RKF12345')).toContain('v=1FTFW1E84RKF12345')
+    expect(fordOasisUrl('1FTFW1E84RKF12345')).toBe(
+      'https://www.fordtechservice.dealerconnection.com/oasis/Index?vin=1FTFW1E84RKF12345',
     )
+    expect(fordServiceHistoryUrl('1FTFW1E84RKF12345')).toContain('VehicleService/Index?VIN=1FTFW1E84RKF12345')
   })
 
   it('rejects missing or invalid VINs', () => {

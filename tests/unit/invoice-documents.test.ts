@@ -1,12 +1,13 @@
+// @vitest-environment node
 // @ts-nocheck -- exercises the plain ESM daily merge helper.
-import { describe, expect, it } from 'vitest'
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { describe, expect, it, vi } from 'vitest'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { mergeInvoiceMetadata } from '../../scripts/merge-invoice-metadata.mjs'
-import { invoiceFiles, invoicePublicationEndpoint } from '../../scripts/publish-invoice-documents.mjs'
+import { invoiceFiles, invoicePublicationEndpoint, retainedInvoiceFiles, main } from '../../scripts/publish-invoice-documents.mjs'
 
 const vin = '1FTFW1E84RKF12345'
 const chevyVin = '1GNEVGKW2PJ285653'
@@ -90,6 +91,66 @@ describe('saved Ford invoice metadata', () => {
       folder: 'SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS/private-invoices',
       fileExists: () => { throw new Error('INELIGIBLE_DOCUMENT_SHOULD_NOT_BE_OPENED') },
     })).toEqual([])
+  })
+
+  it.each([null, { schema: 'ford-invoice-parsed-v1', results: [] }, { schema: 'ford-invoice-parsed-v1', results: [{ vin, status: 'failed', reason: 'FETCH_ERROR' }] }])('rejects an advertised invoice missing from the final parsed batch', (parsed) => {
+    expect(() => retainedInvoiceFiles({
+      bundle: { release: { vehicles: [{ vin, resourceRecord: { fordInvoice: { available: true, dataState: 'current', capturedAt: '2026-09-29T12:00:00Z' } } }] } },
+      parsed, enrichment: { schemaVersion: 'inventory-flow-vin-document-enrichment-v1', recordsByVin: { [vin]: { fordInvoice: { available: true, dataState: 'current', capturedAt: '2026-09-29T12:00:00Z' } } } },
+      folder: 'SYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS/invoices', fileExists: () => true,
+    })).toThrow('ADVERTISED_INVOICE_NOT_RECONCILED')
+  })
+
+  it.each(['missing', 'empty', 'valid'])('enforces the advertised release contract in the uploader when parsing is %s', async (parseState) => {
+    const root = mkdtempSync(path.join(tmpdir(), 'invoice-advertised-'))
+    const reportDate = '2026-09-29'
+    const resource = { available: true, dataState: 'current', capturedAt: `${reportDate}T12:00:00Z` }
+    const folder = path.join(root, 'work/invoice-history', reportDate)
+    const appRoot = path.join(root, 'app')
+    const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    const upload = vi.fn(async () => ({ ok: true, json: async () => ({ status: 'stored', reportDate, vin }) }))
+    try {
+      for (const dir of [folder, path.join(root, 'work/releases', reportDate), path.join(appRoot, 'data')]) mkdirSync(dir, { recursive: true })
+      writeFileSync(path.join(root, 'work/releases', reportDate, 'inventory-flow-release.json'), JSON.stringify({ complete: true, reportDate, release: { reportDate, vehicles: [{ vin, resourceRecord: { fordInvoice: resource } }] } }))
+      writeFileSync(path.join(appRoot, 'data/vin-document-enrichment.json'), JSON.stringify({ schemaVersion: 'inventory-flow-vin-document-enrichment-v1', recordsByVin: { [vin]: { fordInvoice: resource } } }))
+      if (parseState !== 'missing') writeFileSync(path.join(folder, 'parsed.json'), JSON.stringify({ schema: 'ford-invoice-parsed-v1', reportDate, results: parseState === 'valid' ? [{ vin, status: 'pdf', invoice: { vin } }] : [] }))
+      writeFileSync(path.join(folder, `${vin}.pdf`), '%PDF-1.4\nSYNTHETIC_FIXTURE_DO_NOT_USE_FOR_OPERATIONS\n%%EOF\n')
+      const promise = main(reportDate, { root, appRoot, fetchImpl: upload, environment: { INVENTORY_OPS_CLOUD_URL: 'https://inventory-ops.joegallant.me', INVENTORY_OPS_RELEASE_PUBLISHER_TOKEN: 'synthetic', CF_ACCESS_CLIENT_ID: 'synthetic', CF_ACCESS_CLIENT_SECRET: 'synthetic' } })
+      if (parseState === 'valid') {
+        await promise
+        expect(upload).toHaveBeenCalledOnce()
+        expect(JSON.parse(output.mock.calls.at(-1)[0])).toMatchObject({ invoices: 1, stored: 1 })
+      } else {
+        await expect(promise).rejects.toThrow('ADVERTISED_INVOICE_NOT_RECONCILED')
+        expect(upload).not.toHaveBeenCalled()
+        expect(output).not.toHaveBeenCalled()
+      }
+    } finally { output.mockRestore(); rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('permits a retained zero-invoice release without a parsed file', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'invoice-zero-'))
+    const reportDate = '2026-09-29'
+    const output = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      mkdirSync(path.join(root, 'work/releases', reportDate), { recursive: true })
+      writeFileSync(path.join(root, 'work/releases', reportDate, 'inventory-flow-release.json'), JSON.stringify({ complete: true, reportDate, release: { reportDate, vehicles: [] } }))
+      await main(reportDate, { root })
+      expect(JSON.parse(output.mock.calls[0][0])).toMatchObject({ invoices: 0, skipped: 'no_parsed_invoices' })
+    } finally { output.mockRestore(); rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('refuses a zero-upload success when the retained release advertises an invoice and parsing is absent', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'invoice-advertised-cli-'))
+    const reportDate = '2026-09-29'
+    try {
+      for (const dir of ['work/run-status', 'outputs', 'apps/inventory-ops', `work/releases/${reportDate}`]) mkdirSync(path.join(root, dir), { recursive: true })
+      writeFileSync(path.join(root, 'work/releases', reportDate, 'inventory-flow-release.json'), JSON.stringify({ complete: true, reportDate, release: { reportDate, vehicles: [{ vin, resourceRecord: { fordInvoice: { available: true, dataState: 'current' } } }] } }))
+      const result = spawnSync(process.execPath, [path.resolve('scripts/publish-invoice-documents.mjs'), reportDate], { env: { ...process.env, BOB_MAXEY_WORKSPACE_ROOT: root }, encoding: 'utf8', timeout: 10_000 })
+      expect(result.status, result.stdout + result.stderr).toBe(1)
+      expect(result.stderr).toContain('ADVERTISED_INVOICE_NOT_RECONCILED')
+      expect(result.stdout).toBe('')
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
   it('skips cleanly when non-blocking invoice parsing produced nothing for the day', () => {

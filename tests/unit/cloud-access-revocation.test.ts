@@ -39,6 +39,44 @@ function harness() {
   return { database, env: { PRIVATE_HOSTNAME: 'synthetic.invalid', ACCESS_ISSUER: issuer, ACCESS_AUDIENCE: audience, INVENTORY_DB: sqliteD1(database) } }
 }
 describe('session and employee revocation boundary', () => {
+  it('marks only post-auth operation refusals and leaves revoked membership, wrong host, and owner changes unmarked', async () => {
+    const { database, env } = harness()
+    const jwt = await token()
+    const operation = await worker.fetch(request(jwt, undefined, '/api/admin/overview'), env)
+    expect(operation.status).toBe(403)
+    expect(operation.headers.get('X-Inventory-Error-Scope')).toBe('operation')
+    expect(await operation.json()).toMatchObject({ code: 'ADMIN_OVERVIEW_ACCESS_REQUIRED' })
+    const wrongHost = await worker.fetch(new Request('https://other.synthetic.invalid/api/admin/overview', { headers: { 'cf-access-jwt-assertion': jwt } }), env)
+    expect(wrongHost.status).toBe(403)
+    expect(wrongHost.headers.get('X-Inventory-Error-Scope')).toBeNull()
+    const owner = await worker.fetch(request(jwt, undefined, '/api/saved-lists'), env)
+    expect(owner.status).toBe(403)
+    expect(owner.headers.get('X-Inventory-Error-Scope')).toBeNull()
+    expect(await owner.json()).toMatchObject({ code: 'ACCESS_CONTEXT_CHANGED' })
+    database.exec('UPDATE cloud_memberships SET enabled=0')
+    const revoked = await worker.fetch(request(jwt, undefined, '/api/admin/overview'), env)
+    expect(revoked.status).toBe(403)
+    expect(revoked.headers.get('X-Inventory-Error-Scope')).toBeNull()
+    expect(await revoked.json()).toMatchObject({ code: 'EMPLOYEE_NOT_AUTHORIZED' })
+  })
+
+  it('does not mark access revoked during the employee directory operation', async () => {
+    const { database, env } = harness()
+    database.exec("UPDATE cloud_memberships SET role='group_manager'")
+    const original = env.INVENTORY_DB
+    const raced = { ...env, INVENTORY_DB: {
+      ...original,
+      prepare(sql) {
+        if (sql.includes("SELECT user_id, name FROM cloud_memberships WHERE user_id=? AND enabled=1 AND role='group_manager'")) return { bind() { return this }, async first() { return null } }
+        return original.prepare(sql)
+      },
+    } }
+    const response = await worker.fetch(request(await token(), undefined, '/api/admin/members'), raced)
+    expect(response.status).toBe(403)
+    expect(response.headers.get('X-Inventory-Error-Scope')).toBeNull()
+    expect(await response.json()).toMatchObject({ code: 'ADMIN_ACCESS_CHANGED' })
+  })
+
   it.each(['iss', 'aud', 'sub', 'exp', 'iat'])('rejects a signed token missing required claim %s', async (claim) => {
     const { env } = harness()
     await expect(verifyAccess(request(await token({ [claim]: undefined })), env)).rejects.toMatchObject({ code: 'ACCESS_TOKEN_INVALID', status: 401 })

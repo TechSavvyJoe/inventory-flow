@@ -9,6 +9,7 @@ import { assertAdminOverviewAccess } from '../../server/admin-control-center.mjs
 import { readMembershipAdmin, saveMembership } from './membership-admin.mjs'
 import { serviceIntakeRows } from '../../server/service-intake.mjs'
 import { WorkflowError } from '../../server/workflow.mjs'
+import { isOperationDenial } from '../../server/api-error-scope.mjs'
 import { ISSUE_BODY_BYTES, prepareIssuePhotos } from '../../server/issue-photos.mjs'
 import { readIssuePhoto, storeIssuePhotos } from './issue-photo-storage.mjs'
 import { assertSavedListOwner, SAVED_LIST_BODY_BYTES } from '../../server/saved-vehicle-lists.mjs'
@@ -601,7 +602,15 @@ export default {
       await assertTenantEnabled(env)
       const context=await memberContext(claims,env,request)
       if(request.method==='GET' && url.pathname==='/api/health') return json(200,{ok:true,ready:Boolean(await currentRelease(env)),service:'inventory-flow-cloud',version:versionMetadata(env)})
-      if(url.pathname.startsWith('/api/')) return await appApi(request,url,env,context,claims)
+      if(url.pathname.startsWith('/api/')) {
+        try { return await appApi(request,url,env,context,claims) }
+        catch(error) {
+          if (!isOperationDenial(error)) throw error
+          const response=json(403,{error:error.message,code:error.code,requestId})
+          response.headers.set('X-Inventory-Error-Scope','operation')
+          return response
+        }
+      }
       if(!['GET','HEAD'].includes(request.method)) throw new HttpError('METHOD_NOT_ALLOWED',405)
       if(!env.ASSETS) throw new HttpError('FRONTEND_NOT_DEPLOYED',503)
       const asset=await env.ASSETS.fetch(request)

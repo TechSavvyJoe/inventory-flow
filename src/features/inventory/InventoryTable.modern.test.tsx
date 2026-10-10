@@ -90,6 +90,129 @@ function heldMovingVehicle(): InventoryVehicle {
 }
 
 describe('modern inventory result access', () => {
+  describe.each(['desktop', 'mobile'] as const)('%s inventory action geography', layout => {
+    function renderRow(vehicle: InventoryVehicle, onSelectVehicle = vi.fn(), onRequestVehicle = vi.fn()) {
+      const props = { vehicles: [vehicle], onSelectVehicle, canRequestVehicle: () => true, onRequestVehicle };
+      if (layout === 'desktop') render(<InventoryTable {...props} sorts={[]} onSortChange={vi.fn()} />);
+      else render(<InventoryMobileList {...props} />);
+      return { onSelectVehicle, onRequestVehicle };
+    }
+
+    it('copies exact stock, VIN, mileage and explicit base MSRP from identity without selecting the row', async () => {
+      const vehicle = heldMovingVehicle();
+      vehicle.windowSticker = { ...vehicle.windowSticker!, basePrice: 48750 };
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+      try {
+        const { onSelectVehicle } = renderRow(vehicle);
+        for (const [label, raw] of [['stock number', vehicle.stockNumber], ['VIN', vehicle.vin], ['mileage', '8642'], ['window sticker base MSRP', '48750']]) {
+          const copy = screen.getByRole('button', { name: `Copy ${label}: ${raw}` });
+          if (layout === 'desktop') expect(copy.closest('td')).toHaveAttribute('data-column', 'vehicle');
+          else expect(copy.closest('button.inventory-mobile-row__open')).toBeNull();
+          await userEvent.click(copy);
+          expect(writeText).toHaveBeenLastCalledWith(raw);
+        }
+        expect(writeText).toHaveBeenCalledTimes(4);
+        expect(onSelectVehicle).not.toHaveBeenCalled();
+      } finally {
+        if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard);
+        else Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+      }
+    });
+
+    it('groups Records, Request, Save and Listing in a stable order with separate destinations', () => {
+      const vehicle = heldMovingVehicle();
+      vehicle.movement = undefined;
+      const { onSelectVehicle, onRequestVehicle } = renderRow(vehicle);
+      const actions = screen.getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' });
+      const buttons = within(actions).getAllByRole('button');
+      expect(buttons).toHaveLength(3);
+      expect(buttons[0]).toHaveAccessibleName('Open vehicle records for 2024 Ford F-150 XLT');
+      expect(buttons[1]).toHaveAccessibleName('Request vehicle 2024 Ford F-150 XLT');
+      expect(buttons[2]).toHaveAccessibleName('Save H240512 to shortlist');
+      const listing = within(actions).getByRole('link', { name: 'Open listing for 2024 Ford F-150 XLT in a new tab' });
+      expect(listing).toHaveAttribute('href', vehicle.publicListing.listingUrl);
+      expect(listing).toHaveAttribute('target', '_blank');
+      expect(buttons[2].compareDocumentPosition(listing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      fireEvent.click(buttons[1]);
+      expect(onRequestVehicle).toHaveBeenCalledExactlyOnceWith(vehicle);
+      fireEvent.click(buttons[0]);
+      expect(screen.getByRole('dialog', { name: '2024 Ford F-150 XLT records' })).toBeVisible();
+      expect(onSelectVehicle).not.toHaveBeenCalled();
+    });
+
+    it('keeps an unavailable Listing control in the full action group without navigation', () => {
+      const vehicle = heldMovingVehicle();
+      vehicle.publicListing = { ...vehicle.publicListing, listingUrl: undefined };
+      const onSelectVehicle = vi.fn();
+      const onOpenListing = vi.fn();
+      const props = { vehicles: [vehicle], onSelectVehicle, onOpenListing };
+      if (layout === 'desktop') render(<InventoryTable {...props} sorts={[]} onSortChange={vi.fn()} />);
+      else render(<InventoryMobileList {...props} />);
+      const actions = screen.getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' });
+      const unavailable = within(actions).getByRole('button', { name: 'Listing unavailable for 2024 Ford F-150 XLT' });
+      expect(unavailable).toBeDisabled();
+      expect(unavailable).toHaveTextContent('Listing');
+      expect(unavailable).toHaveAttribute('title', 'No captured public listing link');
+      expect(within(actions).queryByRole('link', { name: /Open listing/ })).not.toBeInTheDocument();
+      fireEvent.click(unavailable);
+      expect(onOpenListing).not.toHaveBeenCalled();
+      expect(onSelectVehicle).not.toHaveBeenCalled();
+    });
+
+    it('keeps the same named row actions when movement permission is absent', () => {
+      const vehicle = heldMovingVehicle();
+      vehicle.movement = undefined;
+      const onSelectVehicle = vi.fn();
+      const onRequestVehicle = vi.fn();
+      const props = { vehicles: [vehicle], onSelectVehicle, canRequestVehicle: () => false, onRequestVehicle };
+      if (layout === 'desktop') render(<InventoryTable {...props} sorts={[]} onSortChange={vi.fn()} />);
+      else render(<InventoryMobileList {...props} />);
+      const actions = screen.getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' });
+      expect(within(actions).queryByRole('button', { name: /Request vehicle|Track movement/ })).not.toBeInTheDocument();
+      expect(within(actions).getByRole('button', { name: 'Save H240512 to shortlist' })).toBeVisible();
+      expect(within(actions).getByRole('link', { name: 'Open listing for 2024 Ford F-150 XLT in a new tab' })).toBeVisible();
+      fireEvent.click(within(actions).getByRole('button', { name: 'Open vehicle records for 2024 Ford F-150 XLT' }));
+      expect(screen.getByRole('dialog', { name: '2024 Ford F-150 XLT records' })).toBeVisible();
+      expect(onSelectVehicle).not.toHaveBeenCalled();
+      expect(onRequestVehicle).not.toHaveBeenCalled();
+    });
+
+    it('preserves independent tracking and explicit move actions when both apply', () => {
+      const vehicle = heldMovingVehicle();
+      const onSelectVehicle = vi.fn();
+      const onTrackMovement = vi.fn();
+      const onMoveVehicle = vi.fn();
+      const props = { vehicles: [vehicle], onSelectVehicle, onTrackMovement, onMoveVehicle, moveActionFor: () => ({ intent: 'direct' as const, label: 'Move vehicle', shortLabel: 'Move' }) };
+      if (layout === 'desktop') render(<InventoryTable {...props} sorts={[]} onSortChange={vi.fn()} />);
+      else render(<InventoryMobileList {...props} />);
+      const actions = screen.getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' });
+      fireEvent.click(within(actions).getByRole('button', { name: 'Track movement for 2024 Ford F-150 XLT' }));
+      expect(onTrackMovement).toHaveBeenCalledExactlyOnceWith(vehicle);
+      expect(onMoveVehicle).not.toHaveBeenCalled();
+      fireEvent.click(within(actions).getByRole('button', { name: 'Move vehicle 2024 Ford F-150 XLT' }));
+      expect(onMoveVehicle).toHaveBeenCalledExactlyOnceWith(vehicle, 'direct');
+      expect(onSelectVehicle).not.toHaveBeenCalled();
+    });
+
+    it('names external AutoCheck reports and captured vehicle-detail destinations explicitly', () => {
+      const vehicle = heldMovingVehicle();
+      const { onSelectVehicle } = renderRow(vehicle);
+      const external = screen.getByRole('link', { name: 'Open AutoCheck report in a new tab' });
+      expect(external).toHaveTextContent('Open AutoCheck report');
+      expect(external).toHaveAttribute('href', vehicle.autoCheckReport!.url);
+      expect(external).toHaveAttribute('target', '_blank');
+      cleanup();
+      vehicle.autoCheckReport = { ...vehicle.autoCheckReport!, url: undefined, accessMethod: 'vauto' };
+      renderRow(vehicle, onSelectVehicle);
+      const captured = screen.getByRole('button', { name: 'View captured AutoCheck records in vehicle details' });
+      expect(captured).toHaveTextContent('View AutoCheck');
+      fireEvent.click(captured);
+      expect(onSelectVehicle).toHaveBeenCalledExactlyOnceWith(vehicle, 'data');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
   describe.each(['desktop', 'mobile'] as const)('%s independent manual and imported hold facts', layout => {
     function renderManual(imported: 'active' | 'none' | 'stale', canViewEvidence = true) {
       const vehicle = heldMovingVehicle();
@@ -266,9 +389,9 @@ describe('modern inventory result access', () => {
     expect(row.querySelectorAll('.vehicle-certified-badge')).toHaveLength(1);
     expect(row.querySelector('td[data-column="price"]')).toHaveTextContent('$46,995');
     const metricsCell = row.querySelector('td[data-column="price"]') as HTMLElement;
-    expect(metricsCell).toHaveTextContent('8,642 mi');
-    expect(within(metricsCell).getByRole('button', { name: 'Copy mileage: 8642' })).toBeInTheDocument();
-    expect(vehicleCell).not.toHaveTextContent('8,642 mi');
+    expect(vehicleCell).toHaveTextContent('8,642 mi');
+    expect(within(vehicleCell).getByRole('button', { name: 'Copy mileage: 8642' })).toBeInTheDocument();
+    expect(metricsCell).not.toHaveTextContent('8,642 mi');
     expect(metricsCell).toHaveTextContent('21 days listed');
     const equipmentCell = row.querySelector('td[data-column="configuration"]') as HTMLElement;
     expect(equipmentCell).toHaveTextContent('Equipment Group 302A');
@@ -278,8 +401,7 @@ describe('modern inventory result access', () => {
     expect(equipmentCell.querySelector('button')).toHaveAttribute('title', expect.stringContaining('XLT Sport Appearance Package'));
     expect(equipmentCell.querySelector('button')).toHaveAttribute('title', expect.stringContaining('Trailer Tow Package (53A)'));
     expect(row.querySelector('.inv-desk-status__detail')).toHaveTextContent('Customer appointment');
-    expect(within(row).getByRole('group', { name: 'Price actions for 2024 Ford F-150 XLT' })).toBeInTheDocument();
-    expect(within(row).getByRole('group', { name: 'Movement actions for 2024 Ford F-150 XLT' })).toBeInTheDocument();
+    expect(within(row).getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' })).toBeInTheDocument();
     const activity = within(row).getByRole('button', { name: /View change history for 2024 Ford F-150 XLT: Price changed/i });
     expect(activity).toHaveTextContent('Price changed');
     expect(activity).toHaveAttribute('title', 'Price changed today');
@@ -324,11 +446,12 @@ describe('modern inventory result access', () => {
     expect(identity).toHaveTextContent('VIN1FTFW1E84RKF12345');
     expect(within(price).getByText('Original MSRP')).toHaveAttribute('title', 'Window sticker');
     expect(price).toHaveTextContent(/Original MSRP\s*CAD 55,600/);
-    expect(within(price).getByText('Base MSRP')).toHaveAttribute('title', 'Window sticker');
-    expect(price).toHaveTextContent(/Base MSRP\s*CAD 48,750/);
+    expect(within(identity).getByText('Base MSRP')).toHaveAttribute('title', 'Window sticker');
+    expect(identity).toHaveTextContent(/Base MSRP\s*CAD 48,750/);
+    expect(price).not.toHaveTextContent('Base MSRP');
     expect(price).not.toHaveTextContent('$52,995');
     expect(price).not.toHaveTextContent(/Listed MSRP|Under MSRP|Inventory|Captured/);
-    await userEvent.click(within(price).getByRole('button', { name: 'Copy window sticker base MSRP: 48750' }));
+    await userEvent.click(within(identity).getByRole('button', { name: 'Copy window sticker base MSRP: 48750' }));
     expect(writeText).toHaveBeenCalledWith('48750');
     expect(configuration).toHaveTextContent('18 city / 24 hwy MPG');
     expect(operations).not.toHaveTextContent(/MSRP|Listing captured|MPG/);
@@ -341,7 +464,7 @@ describe('modern inventory result access', () => {
     vehicle.windowSticker = { ...vehicle.windowSticker!, basePrice: null, pricingCurrency: 'CAD' };
     vehicle.factoryEquipment = { ...vehicle.factoryEquipment!, basePrice: 47125.5 };
     render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
-    const price = screen.getByRole('cell', { name: /vAuto base MSRP/ });
+    const price = screen.getByRole('button', { name: 'Copy vAuto base MSRP: 47125.5' }).closest('td')!;
     const base = within(price).getByText('vAuto base MSRP').parentElement!;
     expect(within(base).getByText('vAuto base MSRP')).toHaveAttribute('title', 'vAuto equipment');
     expect(base).toHaveTextContent(/vAuto base MSRP\s*47,125.5/);
@@ -366,7 +489,7 @@ describe('modern inventory result access', () => {
   it('keeps the full VIN visible in the compact mobile comparison row', () => {
     const vehicle = heldMovingVehicle();
     render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} />);
-    const facts = screen.getByLabelText('Captured vehicle specifications');
+    const facts = screen.getByRole('group', { name: 'Copy identifiers for 2024 Ford F-150 XLT' });
     expect(within(facts).getByText('VIN')).toBeVisible();
     expect(facts).toHaveTextContent(vehicle.vin);
   });
@@ -652,6 +775,26 @@ describe('modern inventory result access', () => {
     expect(screen.queryByText('Private Salesperson')).not.toBeInTheDocument();
     expect(screen.queryByText('Private Reason')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Review DealerMail handoff for stock H240513/i })).not.toBeInTheDocument();
+  });
+
+  it('puts mobile identity, copy targets and operational status before core actions, with calculator and providers afterward', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.windowSticker = { ...vehicle.windowSticker!, basePrice: 48750 };
+    render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} onTrackMovement={vi.fn()} />);
+    const card = screen.getByRole('article');
+    const identity = within(card).getByRole('button', { name: /^Open details for/ });
+    const identifiers = within(card).getByRole('group', { name: 'Copy identifiers for 2024 Ford F-150 XLT' });
+    const signals = within(card).getByLabelText('Operational vehicle signals');
+    const actions = within(card).getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' });
+    const calculator = within(card).getByLabelText('Registration calculator values');
+    const reports = within(card).getByLabelText('Vehicle report shortcuts');
+    for (const [first, next] of [[identity, identifiers], [identifiers, signals], [signals, actions], [actions, calculator], [calculator, reports]]) {
+      expect(first.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(identifiers).toHaveTextContent(vehicle.vin);
+    expect(within(identifiers).getByRole('button', { name: `Copy VIN: ${vehicle.vin}` })).toBeEnabled();
+    expect(within(actions).getByRole('button', { name: /Track movement for/ })).toBeEnabled();
+    expect(within(reports).getByRole('link', { name: 'Open AutoCheck report in a new tab' })).toHaveAttribute('href', vehicle.autoCheckReport!.url);
   });
 
   it('keeps mobile scan facts, hold, priority resources, Records and movement as sibling targets', async () => {
@@ -1053,8 +1196,7 @@ describe('modern inventory result access', () => {
     // The Operations column already carries the clickable hold signal and the
     // service link, so the action group does not duplicate them.
     expect(actions.queryByRole('button', { name: /Open hold and movement details/ })).toBeNull();
-    expect(within(screen.getByRole('group', { name: 'Price actions for 2024 Ford F-150 XLT' })).queryByRole('link', { name: /Open service status/ })).toBeNull();
-    expect(within(screen.getByRole('group', { name: 'Movement actions for 2024 Ford F-150 XLT' })).queryByRole('link', { name: /Open service status/ })).toBeNull();
+    expect(within(screen.getByRole('group', { name: 'Actions for 2024 Ford F-150 XLT' })).queryByRole('link', { name: /Open service status/ })).toBeNull();
     expect(screen.getByRole('link', { name: /Open service status for VIN/ })).toHaveAttribute('href', `/service?vin=${vehicle.vin}`);
     fireEvent.click(actions.getByRole('button', { name: /Open vehicle details/ }));
     expect(onSelectVehicle).toHaveBeenCalledExactlyOnceWith(vehicle);

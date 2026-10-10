@@ -2,7 +2,7 @@ type Reading = { text: string; barcode: boolean }
 type Reader = (canvas: HTMLCanvasElement, progress: (message: string) => void, signal: AbortSignal) => Promise<Reading>
 
 /** Read a steady tag in the guide while the separate barcode reader stays live. */
-export function scanStockVideo(video: HTMLVideoElement, read: Reader, found: (reading: Reading) => boolean, signal: AbortSignal, progress: (message: string) => void = () => {}): () => void {
+export function scanStockVideo(video: HTMLVideoElement, read: Reader, found: (reading: Reading) => boolean, signal: AbortSignal, progress: (message: string) => void = () => {}, releaseReader: () => void = () => {}): () => void {
   let stopped = false
   let timer: number | undefined
   let deadline: number | undefined
@@ -12,10 +12,12 @@ export function scanStockVideo(video: HTMLVideoElement, read: Reader, found: (re
   sample.width = 32; sample.height = 18
 
   function stop() {
+    if (stopped) return
     stopped = true
     window.clearTimeout(timer); window.clearTimeout(deadline)
     attempt?.abort()
     signal.removeEventListener('abort', stop)
+    releaseReader()
   }
   function schedule(delay: number) { if (!stopped) timer = window.setTimeout(() => { void tick() }, delay) }
   async function tick() {

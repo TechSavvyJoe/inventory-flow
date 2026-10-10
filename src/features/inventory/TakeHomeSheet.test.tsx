@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VehicleWorkspace } from './VehicleWorkspace';
 import { TakeHomeSheet, TakeHomeSheetContent, takeHomeModel } from './TakeHomeSheet';
@@ -162,6 +162,28 @@ describe('take-home sheet', () => {
     expect([...container.querySelectorAll('.th-hero img')].map((image) => image.getAttribute('src'))).toEqual(['https://example.com/vehicle-1.jpg','https://example.com/vehicle-2.jpg','https://example.com/vehicle-3.jpg']);
     expect(container.querySelectorAll('.th-chips li')).toHaveLength(3);
     expect(screen.getAllByText('Apple CarPlay')).toHaveLength(1);
+  });
+
+  it('promotes surviving photos and replaces failed photos and branding in the printable sheet', () => {
+    const model = { ...takeHomeModel(vehicle()), photos:['https://example.com/hero.jpg','https://example.com/second.jpg','https://example.com/third.jpg'] };
+    const { container } = render(<TakeHomeSheetContent model={model} />);
+    const sheet = within(container);
+    fireEvent.error(sheet.getByRole('img', { name:model.name }));
+    expect(sheet.getByRole('img', { name:model.name })).toHaveAttribute('src', model.photos[1]);
+    fireEvent.error(sheet.getByRole('img', { name:`${model.name} view 2` }));
+    expect(sheet.queryByRole('img', { name:`${model.name} view 2` })).not.toBeInTheDocument();
+    expect(sheet.getByRole('img', { name:model.name })).toHaveAttribute('src', model.photos[1]);
+    fireEvent.error(sheet.getByRole('img', { name:model.name }));
+    expect(sheet.queryByRole('img', { name:model.name })).not.toBeInTheDocument();
+    expect(sheet.getByText('Current photos are available from the store.')).toBeVisible();
+    fireEvent.error(sheet.getByRole('img', { name:model.logo!.alt }));
+    expect(sheet.queryByRole('img', { name:model.logo!.alt })).not.toBeInTheDocument();
+    expect(sheet.getAllByText(model.storeName).length).toBeGreaterThan(1);
+    // A separately opened document may retry the same URLs; failures never
+    // alter the projection or leak into another customer's print surface.
+    const reopened = within(render(<TakeHomeSheetContent model={model} />).container);
+    expect(reopened.getByRole('img', { name:model.name })).toHaveAttribute('src', model.photos[0]);
+    expect(reopened.getByRole('img', { name:model.logo!.alt })).toBeInTheDocument();
   });
 
   it('does not render an unsafe listing URL into the customer sheet', () => {

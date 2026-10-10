@@ -33,9 +33,21 @@ export function scopeGuard(row,scope) {
  return {sql:clauses.join(' AND '),args}
 }
 export const machineAudit=(db,row,attempt,action,next,key,hash,date)=>audit(db,{id:`collector:${row.id}`,name:row.name},'collector_attempts',attempt.id,action,'Registered collector execution',null,next,key,hash,date)
+// Membership is frozen in the configuration hash. Older attempts are singletons.
+export const attemptRequestIdsSql=(alias='a')=>`SELECT value FROM json_each(COALESCE(json_extract(${alias}.config_json,'$.requestIds'),json_array(${alias}.request_id)))`
+export function attemptRequestIds(attempt) {
+ let config,ids
+ try{config=JSON.parse(attempt.config_json);ids=config.requestIds===undefined?[attempt.request_id]:stringList(config.requestIds)}catch{collectorFail('COLLECTOR_LEASE_STALE',409)}
+ if(ids.length>4 || !ids.includes(attempt.request_id))collectorFail('COLLECTOR_LEASE_STALE',409)
+ return ids
+}
+export function attemptRequestsGuardSql(alias='a',states="'running'") {
+ const ids=attemptRequestIdsSql(alias),count=`json_array_length(COALESCE(json_extract(${alias}.config_json,'$.requestIds'),json_array(${alias}.request_id)))`
+ return `${count} BETWEEN 1 AND 4 AND ${alias}.request_id IN (${ids}) AND (SELECT COUNT(*) FROM platform_pull_requests m WHERE m.id IN (${ids}) AND m.group_id=${alias}.group_id AND m.connection_id IN (SELECT value FROM json_each(json_extract(${alias}.config_json,'$.connectionIds'))) AND m.state IN (${states}))=${count} AND (SELECT COUNT(DISTINCT m.connection_id) FROM platform_pull_requests m WHERE m.id IN (${ids}))=${count}`
+}
 export function attemptGuard(db,row,scope,attempt,now,stages=['claimed','captured'],{bump=true}={}) {
  const guard=scopeGuard(row,scope),date=timestamp(now)
- return db.prepare(`UPDATE platform_revision SET revision=CASE WHEN ${guard.sql} AND EXISTS(SELECT 1 FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id WHERE a.id=? AND a.collector_id=? AND a.fence=? AND a.grant_generation=? AND a.config_sha256=? AND a.stage IN (${stages.map(()=>'?').join(',')}) AND a.lease_until>? AND a.hard_deadline>? AND p.state='running') THEN ${bump?'revision+1':'revision'} ELSE NULL END WHERE id=1`).bind(...guard.args,attempt.id,row.id,attempt.fence,row.generation,attempt.config_sha256,...stages,date,date)
+ return db.prepare(`UPDATE platform_revision SET revision=CASE WHEN ${guard.sql} AND EXISTS(SELECT 1 FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id WHERE a.id=? AND a.collector_id=? AND a.fence=? AND a.grant_generation=? AND a.config_sha256=? AND a.stage IN (${stages.map(()=>'?').join(',')}) AND a.lease_until>? AND a.hard_deadline>? AND p.state='running' AND ${attemptRequestsGuardSql()}) THEN ${bump?'revision+1':'revision'} ELSE NULL END WHERE id=1`).bind(...guard.args,attempt.id,row.id,attempt.fence,row.generation,attempt.config_sha256,...stages,date,date)
 }
 
 export async function readCollectors(env,claims,groupId,now=new Date()) {
@@ -78,7 +90,7 @@ export async function saveCollector(env,claims,groupId,input,key,now=new Date())
   next={id,enabled:input.operation==='enable',revokedAt:input.operation==='revoke'?date:null,generation:previous.generation+1}
   statements.push(db.prepare('UPDATE platform_collectors SET enabled=?,generation=generation+1,revoked_at=?,updated_at=? WHERE id=? AND group_id=?').bind(Number(next.enabled),next.revokedAt,date,id,groupId))
   if(input.operation==='revoke'){
-   statements.push(db.prepare("UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE a.request_id=platform_pull_requests.id AND a.collector_id=? AND a.stage IN ('publishing','reconciliation_required')) THEN 'reconciliation_required' ELSE 'cancelled' END,updated_at=? WHERE id IN (SELECT request_id FROM platform_collector_attempts WHERE collector_id=? AND stage IN ('claimed','captured','publishing','reconciliation_required'))").bind(id,date,id))
+   statements.push(db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE platform_pull_requests.id IN (${attemptRequestIdsSql()}) AND a.collector_id=? AND a.stage IN ('publishing','reconciliation_required')) THEN 'reconciliation_required' ELSE 'cancelled' END,updated_at=? WHERE EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE platform_pull_requests.id IN (${attemptRequestIdsSql()}) AND collector_id=? AND stage IN ('claimed','captured','publishing','reconciliation_required'))`).bind(id,date,id))
    statements.push(db.prepare("UPDATE platform_collector_attempts SET stage=CASE WHEN stage IN ('publishing','reconciliation_required') THEN 'reconciliation_required' ELSE 'cancelled' END,failure_code='COLLECTOR_REVOKED' WHERE collector_id=? AND stage IN ('claimed','captured','publishing','reconciliation_required')").bind(id))
   }
  }else collectorFail('COLLECTOR_INPUT_INVALID')
@@ -106,7 +118,7 @@ export async function claimCollector(env,claims,input,key,now=new Date()) {
  // A dead host's safe capture lease can be reclaimed by another enrolled
  // host for the same profile. In-flight publication is never re-dispatched.
  await db.batch([
-  db.prepare("UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE a.request_id=platform_pull_requests.id AND a.stage='publishing' AND a.lease_until<=? AND json_extract(a.config_json,'$.profileSha256')=? AND json_extract(a.config_json,'$.adapterId')=? AND json_extract(a.config_json,'$.adapterVersion')=?) THEN 'reconciliation_required' WHEN (SELECT MAX(fence) FROM platform_collector_attempts a WHERE a.request_id=platform_pull_requests.id AND json_extract(a.config_json,'$.profileSha256')=? AND json_extract(a.config_json,'$.adapterId')=? AND json_extract(a.config_json,'$.adapterVersion')=?)>=3 THEN 'failed' ELSE 'queued' END,updated_at=? WHERE id IN (SELECT request_id FROM platform_collector_attempts WHERE group_id=? AND profile_id=? AND stage IN ('claimed','captured','publishing') AND lease_until<=? AND json_extract(config_json,'$.profileSha256')=? AND json_extract(config_json,'$.adapterId')=? AND json_extract(config_json,'$.adapterVersion')=?)").bind(date,row.profile_sha256,row.adapter_id,row.adapter_version,row.profile_sha256,row.adapter_id,row.adapter_version,date,row.group_id,row.profile_id,date,row.profile_sha256,row.adapter_id,row.adapter_version),
+  db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE platform_pull_requests.id IN (${attemptRequestIdsSql()}) AND a.stage='publishing' AND a.lease_until<=? AND json_extract(a.config_json,'$.profileSha256')=? AND json_extract(a.config_json,'$.adapterId')=? AND json_extract(a.config_json,'$.adapterVersion')=?) THEN 'reconciliation_required' WHEN (SELECT MAX(fence) FROM platform_collector_attempts a WHERE platform_pull_requests.id IN (${attemptRequestIdsSql()}) AND json_extract(a.config_json,'$.profileSha256')=? AND json_extract(a.config_json,'$.adapterId')=? AND json_extract(a.config_json,'$.adapterVersion')=?)>=3 THEN 'failed' ELSE 'queued' END,updated_at=? WHERE EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE platform_pull_requests.id IN (${attemptRequestIdsSql()}) AND group_id=? AND profile_id=? AND stage IN ('claimed','captured','publishing') AND lease_until<=? AND json_extract(config_json,'$.profileSha256')=? AND json_extract(config_json,'$.adapterId')=? AND json_extract(config_json,'$.adapterVersion')=?)`).bind(date,row.profile_sha256,row.adapter_id,row.adapter_version,row.profile_sha256,row.adapter_id,row.adapter_version,date,row.group_id,row.profile_id,date,row.profile_sha256,row.adapter_id,row.adapter_version),
   db.prepare("UPDATE platform_collector_attempts SET stage=CASE WHEN stage='publishing' THEN 'reconciliation_required' ELSE 'expired' END,failure_code='DURATION_EXCEEDED' WHERE group_id=? AND profile_id=? AND stage IN ('claimed','captured','publishing') AND lease_until<=? AND json_extract(config_json,'$.profileSha256')=? AND json_extract(config_json,'$.adapterId')=? AND json_extract(config_json,'$.adapterVersion')=?").bind(row.group_id,row.profile_id,date,row.profile_sha256,row.adapter_id,row.adapter_version),
  ])
 
@@ -114,20 +126,28 @@ export async function claimCollector(env,claims,input,key,now=new Date()) {
  const groupIdle="NOT EXISTS(SELECT 1 FROM platform_collector_attempts WHERE group_id=? AND stage IN ('claimed','captured','publishing','reconciliation_required'))"
  if(await db.prepare("SELECT id FROM platform_collector_attempts WHERE group_id=? AND stage IN ('claimed','captured','publishing','reconciliation_required') LIMIT 1").bind(row.group_id).first())return null
 
- const request=await db.prepare("SELECT p.* FROM platform_pull_requests p JOIN platform_collector_grants g ON g.connection_id=p.connection_id AND g.group_id=p.group_id WHERE g.collector_id=? AND p.state='queued' AND NOT EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE a.request_id=p.id AND (json_extract(a.config_json,'$.profileSha256') IS NOT ? OR json_extract(a.config_json,'$.adapterId') IS NOT ? OR json_extract(a.config_json,'$.adapterVersion') IS NOT ?)) ORDER BY p.created_at,p.id LIMIT 1").bind(row.id,row.profile_sha256,row.adapter_id,row.adapter_version).first()
+ const request=await db.prepare(`SELECT p.* FROM platform_pull_requests p JOIN platform_collector_grants g ON g.connection_id=p.connection_id AND g.group_id=p.group_id WHERE g.collector_id=? AND p.state='queued' AND NOT EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE p.id IN (${attemptRequestIdsSql()}) AND (json_extract(a.config_json,'$.profileSha256') IS NOT ? OR json_extract(a.config_json,'$.adapterId') IS NOT ? OR json_extract(a.config_json,'$.adapterVersion') IS NOT ? OR json_extract(a.config_json,'$.profileId') IS NOT ?)) ORDER BY CASE WHEN EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE p.id IN (${attemptRequestIdsSql()})) THEN 0 ELSE 1 END,p.created_at,p.id LIMIT 1`).bind(row.id,row.profile_sha256,row.adapter_id,row.adapter_version,row.profile_id).first()
  if(!request)return null
  const reportDate=new Intl.DateTimeFormat('en-CA',{timeZone:COLLECTOR_TIMEZONE,year:'numeric',month:'2-digit',day:'2-digit'}).format(now)
  if(!baseline || baseline.report_date!==reportDate || !/^[a-f0-9]{64}$/.test(baseline.bundle_sha256??''))collectorFail('COLLECTOR_BASELINE_REQUIRED',409)
- const config={...profileIdentity(row),...scope,targetConnectionId:request.connection_id,grantGeneration:row.generation,baselineBundleSha256:baseline.bundle_sha256},configJson=canonical(config),configSha=await digest(config)
+ // Retries retain their original membership; fresh requests may share one capture.
+ const history=await db.prepare(`SELECT a.* FROM platform_collector_attempts a WHERE ? IN (${attemptRequestIdsSql()}) ORDER BY a.fence DESC LIMIT 1`).bind(request.id).first()
+ const requests=history
+  ? (await db.prepare(`SELECT p.* FROM platform_pull_requests p WHERE p.id IN (SELECT value FROM json_each(?)) ORDER BY p.created_at,p.id`).bind(canonical(attemptRequestIds(history))).all()).results
+  : (await db.prepare(`SELECT p.* FROM platform_pull_requests p JOIN platform_collector_grants g ON g.connection_id=p.connection_id AND g.group_id=p.group_id WHERE g.collector_id=? AND p.state='queued' AND NOT EXISTS(SELECT 1 FROM platform_collector_attempts a WHERE p.id IN (${attemptRequestIdsSql()})) ORDER BY p.created_at,p.id LIMIT 4`).bind(row.id).all()).results
+ if(!requests.length || requests.some(p=>p.state!=='queued' || p.group_id!==row.group_id || !scope.connectionIds.includes(p.connection_id)) || (history && requests.length!==attemptRequestIds(history).length))return null
+ const requestIds=requests.map(p=>p.id).sort()
+ const config={...profileIdentity(row),...scope,targetConnectionId:request.connection_id,grantGeneration:row.generation,baselineBundleSha256:baseline.bundle_sha256,requestIds},configJson=canonical(config),configSha=await digest(config)
  const id=crypto.randomUUID(),lease=timestamp(new Date(now.getTime()+120000)),deadline=timestamp(new Date(now.getTime()+2700000))
- const priorFence=await db.prepare('SELECT COALESCE(MAX(fence),0) AS fence FROM platform_collector_attempts WHERE request_id=?').bind(request.id).first(),fence=priorFence.fence+1
+ const fence=(history?.fence??0)+1
  const guard=scopeGuard(row,scope)
  try{
   await db.batch([
-   db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN state='queued' AND ${guard.sql} AND ${groupIdle} THEN 'running' ELSE NULL END,updated_at=? WHERE id=?`).bind(...guard.args,row.group_id,date,request.id),
+   db.prepare(`UPDATE platform_revision SET revision=CASE WHEN ${guard.sql} AND ${groupIdle} AND (SELECT COUNT(*) FROM platform_pull_requests WHERE id IN (SELECT value FROM json_each(?)) AND state='queued' AND group_id=? AND connection_id IN (SELECT value FROM json_each(?)))=? THEN revision ELSE NULL END WHERE id=1`).bind(...guard.args,row.group_id,canonical(requestIds),row.group_id,canonical(scope.connectionIds),requestIds.length),
+   ...requests.map(p=>db.prepare(`UPDATE platform_pull_requests SET state=CASE WHEN state='queued' AND ${guard.sql} AND ${groupIdle} THEN 'running' ELSE NULL END,updated_at=? WHERE id=?`).bind(...guard.args,row.group_id,date,p.id)),
    db.prepare("INSERT INTO platform_collector_attempts VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'claimed',NULL,NULL,NULL,NULL,?,NULL,NULL)").bind(id,request.id,row.id,row.group_id,row.profile_id,row.generation,fence,key,configJson,configSha,row.scope_sha256,date,lease,deadline,reportDate),
    db.prepare('UPDATE platform_revision SET revision=revision+1 WHERE id=1'),
-   machineAudit(db,row,{id},'claimed',{requestId:request.id,fence,stage:'claimed'},`claim:${key}`,configSha,date),
+   machineAudit(db,row,{id},'claimed',{requestId:request.id,requestIds,fence,stage:'claimed'},`claim:${key}`,configSha,date),
   ])
  }catch{const retry=await db.prepare('SELECT * FROM platform_collector_attempts WHERE collector_id=? AND claim_key=?').bind(row.id,key).first();if(retry){await currentAttempt(env,claims,retry.id,retry.fence,now);return leaseProjection(retry,row)};return null}
 
@@ -144,13 +164,15 @@ export async function currentAttempt(env,claims,id,fence,now=new Date(),{publica
  const attempt=await db.prepare('SELECT a.*,p.state AS request_state FROM platform_collector_attempts a JOIN platform_pull_requests p ON p.id=a.request_id WHERE a.id=? AND a.collector_id=? AND a.group_id=?').bind(id,row.id,row.group_id).first()
  if(!attempt || attempt.fence!==fence || attempt.grant_generation!==row.generation)collectorFail('COLLECTOR_LEASE_STALE',409)
  const scope=await collectorScope(env,row,{active:true})
- const config={...profileIdentity(row),...scope,targetConnectionId:JSON.parse(attempt.config_json).targetConnectionId,grantGeneration:row.generation,baselineBundleSha256:JSON.parse(attempt.config_json).baselineBundleSha256}
+ const frozen=JSON.parse(attempt.config_json),ids=attemptRequestIds(attempt)
+ const config={...profileIdentity(row),...scope,targetConnectionId:frozen.targetConnectionId,grantGeneration:row.generation,baselineBundleSha256:frozen.baselineBundleSha256,...(frozen.requestIds===undefined?{}:{requestIds:ids})}
  if(await digest(config)!==attempt.config_sha256)collectorFail('COLLECTOR_LEASE_STALE',409)
  // A terminal validation failure is readable only through publication proof
  // replay. This option grants no capture, heartbeat or failure-write authority.
  const replay=publicationReplay && (['completed','reconciliation_required','publishing'].includes(attempt.stage) ||
   (allowRejectedPublicationReplay && attempt.stage==='failed' && attempt.failure_code==='VALIDATION_FAILED' && attempt.request_state==='failed'))
  if(!replay && (!(allowPublishing?['claimed','captured','publishing']:['claimed','captured']).includes(attempt.stage) || attempt.request_state!=='running' || Date.parse(attempt.lease_until)<=now.getTime() || Date.parse(attempt.hard_deadline)<=now.getTime()))collectorFail('COLLECTOR_LEASE_STALE',409)
+ if(!replay && !await db.prepare(`SELECT a.id FROM platform_collector_attempts a WHERE a.id=? AND ${attemptRequestsGuardSql()}`).bind(attempt.id).first())collectorFail('COLLECTOR_LEASE_STALE',409)
  return {attempt,row,scope}
 }
 
@@ -187,7 +209,7 @@ export async function receiptCollector(env,claims,input,now=new Date()) {
   db.prepare('UPDATE platform_collector_attempts SET stage=?,captured_at=?,source_sha256=?,capture_counts_json=?,failure_code=?,completed_at=? WHERE id=?').bind(stage,input.capturedAt??attempt.captured_at,input.sourceSha256??attempt.source_sha256,input.counts?canonical(input.counts):attempt.capture_counts_json,input.code??null,input.kind==='failure'?date:null,input.attemptId),
   db.prepare('INSERT INTO platform_collector_receipts VALUES(?,?,?,?,?,?)').bind(input.attemptId,input.sequence,input.kind,hash,canonical(input),date),
   machineAudit(db,row,attempt,input.kind,{stage,code:input.code??null},`receipt:${attempt.id}:${input.sequence}`,hash,date),
-  ...(input.kind==='failure'?[db.prepare("UPDATE platform_pull_requests SET state='failed',updated_at=? WHERE id=?").bind(date,attempt.request_id)]:[]),
+  ...(input.kind==='failure'?[db.prepare(`UPDATE platform_pull_requests SET state='failed',updated_at=? WHERE id IN (SELECT value FROM json_each(?)) AND group_id=?`).bind(date,canonical(attemptRequestIds(attempt)),attempt.group_id)]:[]),
  ])}catch{const replay=await db.prepare('SELECT payload_sha256 FROM platform_collector_receipts WHERE attempt_id=? AND sequence=?').bind(input.attemptId,input.sequence).first();if(replay){if(replay.payload_sha256===hash)return {saved:true,replayed:true};collectorFail('COLLECTOR_RECEIPT_CONFLICT',409)}collectorFail('COLLECTOR_LEASE_STALE',409)}
  return {saved:true,replayed:false}
 }

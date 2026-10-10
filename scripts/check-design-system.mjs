@@ -136,8 +136,8 @@ const nextGlobalStyleImports = accept
 // ---------------------------------------------------------------------------
 // 4. Per-file CSS debt: measured only on files the import graph actually
 // reaches (dead files are caught above, not double-counted here). Every
-// metric can only fall or hold; any rise fails unless --accept, which
-// rewrites the baseline to the current, higher reality for review in the diff.
+// metric can only fall or hold. --accept can record reviewed token/style debt,
+// but cannot waive the absolute bans on new !important or ID selectors.
 // ---------------------------------------------------------------------------
 function countMatches(content, pattern) {
   return Array.from(content.matchAll(pattern)).length
@@ -157,6 +157,7 @@ function measureCss(content, filePath) {
 }
 
 const METRICS = ['smallText', 'rawColors', 'rgbHslColors', 'important', 'idSelectors']
+const ABSOLUTE_METRICS = new Set(['important', 'idSelectors'])
 const measurements = {}
 const nextFiles = {}
 
@@ -169,7 +170,7 @@ for (const absolutePath of reachableCssFiles) {
   for (const metric of METRICS) {
     const actual = measurement[metric] ?? 0
     const allowed = allowance[metric] ?? 0
-    if (actual > allowed && !accept) {
+    if (actual > allowed && (!accept || ABSOLUTE_METRICS.has(metric))) {
       failures.push(`${filePath}: ${metric} increased from ${allowed} to ${actual}`)
     }
   }

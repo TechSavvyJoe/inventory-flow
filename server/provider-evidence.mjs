@@ -33,6 +33,14 @@ function serviceText(value) {
   ensure(SERVICE_MECHANICAL.some(pattern => pattern.test(result)), 'service must describe mechanical work without customer, contact, collection, or address narratives')
   return result
 }
+function projectedServiceText(value) {
+  // Stored optional narratives may predate the mechanical grammar. Keep the
+  // typed/bounded contract, but quarantine the whole unsupported string rather
+  // than extracting a recognizable fact from potentially private attribution.
+  ensure(typeof value === 'string' && value.trim().length > 0 && value.length <= 240 && !CONTROL.test(value), 'service must be bounded public text')
+  const result = value.trim()
+  return !CONTACT.test(result) && SERVICE_MECHANICAL.some(pattern => pattern.test(result)) ? result : undefined
+}
 function timestamp(value) {
   ensure(typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(`${value.slice(0, 10)}T00:00:00Z`).toISOString().slice(0, 10) === value.slice(0, 10), 'capturedAt must be a strict ISO timestamp')
   return value
@@ -64,7 +72,7 @@ export function validateOperationalEvidence(value, vin) {
     return { ...result, readOnly: true, complete: record.complete, holdState: record.holdState }
   }) }
 }
-export function validateServiceHistoryEvidence(value, vin) {
+function serviceHistoryEvidence(value, vin, description) {
   keys(value, ['reports'], 'serviceHistory')
   ensure(Array.isArray(value.reports) && value.reports.length <= 12, 'reports must be a bounded array')
   const reports = new Set()
@@ -76,17 +84,29 @@ export function validateServiceHistoryEvidence(value, vin) {
     ensure(!reports.has(identity), 'service reports must be unique'); reports.add(identity)
     ensure(['reported', 'not_reported', 'unavailable'].includes(report.historyStatus), 'historyStatus is invalid')
     ensure(Array.isArray(report.entries) && report.entries.length <= 250 && (report.historyStatus === 'reported' ? report.entries.length > 0 : report.entries.length === 0), 'service entries contradict historyStatus or exceed the limit')
-    return { ...result, historyStatus: report.historyStatus, entries: report.entries.map(entry => {
+    let quarantined = false
+    const entries = report.entries.map(entry => {
       keys(entry, ['date', 'odometer', 'odometerUnit', 'services'], 'service entry')
       ensure(typeof entry.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(entry.date) && Number.isFinite(Date.parse(`${entry.date}T00:00:00Z`)) && new Date(`${entry.date}T00:00:00Z`).toISOString().slice(0, 10) === entry.date, 'service date is invalid')
       ensure(Array.isArray(entry.services) && entry.services.length >= 1 && entry.services.length <= 12, 'services must contain 1 to 12 mechanical descriptions')
-      const out = { date: entry.date, services: entry.services.map(serviceText) }
+      const services = entry.services.map(description).filter(service => service !== undefined)
+      if (services.length !== entry.services.length) quarantined = true
+      const out = { date: entry.date, services }
       if (entry.odometer !== undefined) {
         ensure(entry.odometer === null || (Number.isSafeInteger(entry.odometer) && entry.odometer >= 0 && entry.odometer <= 20_000_000), 'odometer is invalid')
         out.odometer = entry.odometer
       }
       if (entry.odometerUnit !== undefined) { ensure(['mi', 'km'].includes(entry.odometerUnit), 'odometerUnit is invalid'); out.odometerUnit = entry.odometerUnit }
       return out
-    }) }
+    })
+    return { ...result, dataState: quarantined && result.dataState === 'current' ? 'incomplete' : result.dataState, historyStatus: report.historyStatus, entries }
   }) }
+}
+
+export function validateServiceHistoryEvidence(value, vin) {
+  return serviceHistoryEvidence(value, vin, serviceText)
+}
+
+export function projectServiceHistoryEvidence(value, vin) {
+  return serviceHistoryEvidence(value, vin, projectedServiceText)
 }

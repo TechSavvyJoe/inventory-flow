@@ -25,6 +25,7 @@ import {
   selectHoldFilter,
   selectMovementFilter,
   selectQuickView,
+  toggleSecondaryQuickView,
   type InventoryViewState,
   type QuickView,
 } from "./inventory-quick-views";
@@ -490,7 +491,10 @@ export function InventoryExperience({
     if (next.quickView !== quickView) setQuickView(next.quickView);
     if (next.filters !== filters) setFilters(next.filters);
   };
-  const chooseQuickView = (view: QuickView) => applyViewState(selectQuickView(viewState, view));
+  const chooseQuickView = (view: QuickView) => applyViewState(view === 'new' || view === 'price'
+    ? toggleSecondaryQuickView(viewState, view)
+    : selectQuickView(viewState, view));
+  const toggleSecondaryView = (view: Extract<QuickView, 'moving' | 'new' | 'price'>) => applyViewState(toggleSecondaryQuickView(viewState, view));
   const setSearchQuery = (nextQuery: string) => {
     // Filtering must move to the first result page in the same update. Leaving
     // this until an effect ran made an active later page look unchanged.
@@ -573,6 +577,10 @@ export function InventoryExperience({
   );
   const queryMatchIds = useMemo(() => new Set(searchMatches.map((match) => match.vehicle.id)), [searchMatches]);
   const hasQuery = Boolean(deferredQuery.trim());
+  const searchedVehicles = useMemo(
+    () => vehicles.filter((vehicle) => !hasQuery || queryMatchIds.has(vehicle.id)),
+    [hasQuery, queryMatchIds, vehicles],
+  );
   const baseMatches = useMemo(
     () => vehicles.filter((vehicle) =>
       vehicleMatchesFilters(vehicle, filters, { ignoreStore: true }) && (!hasQuery || queryMatchIds.has(vehicle.id)),
@@ -585,17 +593,17 @@ export function InventoryExperience({
   }, [baseMatches, locationScope, scopedStore, quickView, quickViewContext, sorts]);
 
   const quickViewCounts = useMemo(() => {
-    const scoped = baseMatches.filter((vehicle) => inventoryInLocationScope(vehicle, locationScope, scopedStore));
+    const scoped = searchedVehicles.filter((vehicle) => inventoryInLocationScope(vehicle, locationScope, scopedStore));
+    const countFor = (view: QuickView) => scoped.filter((vehicle) => {
+      const candidate = selectQuickView({ quickView, filters }, view);
+      return vehicleMatchesFilters(vehicle, candidate.filters, { ignoreStore: true }) && matchesInventoryQuickView(vehicle, candidate.quickView, quickViewContext);
+    }).length;
     return {
-      all: scoped.length,
-      "no-hold": scoped.filter((vehicle) => matchesInventoryQuickView(vehicle, "no-hold", quickViewContext)).length,
-      offsite: scoped.filter((vehicle) => matchesInventoryQuickView(vehicle, "offsite", quickViewContext)).length,
-      held: scoped.filter((vehicle) => matchesInventoryQuickView(vehicle, "held", quickViewContext)).length,
-      moving: scoped.filter((vehicle) => matchesInventoryQuickView(vehicle, "moving", quickViewContext)).length,
-      new: scoped.filter((vehicle) => matchesInventoryQuickView(vehicle, "new", quickViewContext)).length,
-      price: scoped.filter((vehicle) => matchesInventoryQuickView(vehicle, "price", quickViewContext)).length,
+      all: countFor('all'),
+      "no-hold": countFor('no-hold'), offsite: countFor('offsite'), held: countFor('held'),
+      moving: countFor('moving'), new: countFor('new'), price: countFor('price'),
     };
-  }, [baseMatches, locationScope, scopedStore, quickViewContext]);
+  }, [searchedVehicles, filters, quickView, locationScope, scopedStore, quickViewContext]);
 
   const serviceCounts = useMemo(() => {
     const counts: Record<string, number> = { all: 0, needs_service: 0, in_service: 0, serviced: 0 };
@@ -624,7 +632,7 @@ export function InventoryExperience({
   const pageVehicles = scopedVehicles.slice(pageStart, pageStart + rowsPerPage);
   // List-only filters must not discard an already open, still-authorized record.
   const selectedVehicle = selectedVehicleId ? allVehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null : null;
-  const filterCount = activeFilterCount(filters) + (["moving", "new", "price"].includes(quickView) ? 1 : 0) + (onlyShortlisted ? 1 : 0);
+  const filterCount = activeFilterCount(filters) - (filters.dealerMail === 'held' ? 1 : 0) + (["moving", "new", "price"].includes(quickView) ? 1 : 0) + (onlyShortlisted ? 1 : 0);
   const selectedServiceLabel = SERVICE_FILTERS.find(([value]) => value === filters.serviceReadiness && value !== "all")?.[1];
   const overviewViewLabel = filters.overviewView ? `${OVERVIEW_VIEW_LABELS[filters.overviewView.view]} · ${filters.overviewView.store === "all" ? "All stores" : filters.overviewView.store}` : null;
   const secondaryViewLabel = quickView === "moving" ? "Moving" : quickView === "new" ? "New today" : quickView === "price" ? "Price changed" : null;
@@ -738,7 +746,7 @@ export function InventoryExperience({
               ["held", "Held", "Held"],
               ["offsite", locationScope === "home" ? "Offsite" : "Away from home", locationScope === "home" ? "Offsite" : "Away"],
             ] as Array<[QuickView, string, string]>).map(([value, label, compactLabel]) => (
-              <button key={value} type="button" className={quickView === value ? "is-active" : undefined} aria-label={`${label}: ${quickViewCounts[value]} vehicles`} aria-pressed={quickView === value} onClick={() => chooseQuickView(value)}>
+              <button key={value} type="button" className={(value === 'held' ? filters.dealerMail === 'held' : value === 'all' ? quickView === 'all' && filters.dealerMail === 'all' : quickView === value) ? "is-active" : undefined} aria-label={`${label}: ${quickViewCounts[value]} vehicles`} aria-pressed={value === 'held' ? filters.dealerMail === 'held' : value === 'all' ? quickView === 'all' && filters.dealerMail === 'all' : quickView === value} onClick={() => chooseQuickView(value)}>
                 <span className="inventory-quick-filter-label inventory-quick-filter-label--full" aria-hidden="true">{label}</span>
                 <span className="inventory-quick-filter-label inventory-quick-filter-label--compact" aria-hidden="true">{compactLabel}</span>
                 <span className="inventory-quick-filter-count" aria-hidden="true">{quickViewCounts[value]}</span>
@@ -756,7 +764,7 @@ export function InventoryExperience({
               </button>)}
             </div>
             {filtersOpen ? <div className="if-srp-secondary-views" role="group" aria-label="More inventory views">
-              {([["moving", "Being moved"], ["new", "New today"], ["price", "Price changed"]] as Array<[QuickView, string]>).map(([value, label]) => <button key={value} type="button" aria-pressed={quickView === value} onClick={() => chooseQuickView(quickView === value ? "all" : value)}>{label} <span>{quickViewCounts[value]}</span></button>)}
+              {([["moving", "Being moved"], ["new", "New today"], ["price", "Price changed"]] as Array<[Extract<QuickView, 'moving' | 'new' | 'price'>, string]>).map(([value, label]) => <button key={value} type="button" aria-pressed={value === 'moving' ? filters.movement === 'active' : quickView === value} onClick={() => toggleSecondaryView(value)}>{label} <span>{quickViewCounts[value]}</span></button>)}
             </div> : null}
           </div>
 

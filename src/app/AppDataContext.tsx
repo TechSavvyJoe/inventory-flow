@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import { appendAttentionEvent, appendTransferEvent, createTransfer, getBootstrap } from '../lib/api'
-import { apiAccessGeneration, confirmedMutationRevision, invalidateApiAccess, subscribeAccessFailures } from '../lib/apiSession'
+import { apiAccessGeneration, confirmedMutationRevision, invalidateApiAccess, isOperationDenial, setBootstrapPreviewIntent, subscribeAccessFailures } from '../lib/apiSession'
 import { clearWorkspaceMemory } from '../lib/workspace-memory'
 import { confirmUnsavedWork } from '../lib/useUnsavedChanges'
 import { clearCustomerShortlist } from '../features/inventory/useCustomerShortlist'
@@ -78,6 +78,7 @@ function emptyBootstrap(accessContext: string): BootstrapState {
 }
 
 function accessFailureStatus(caught: unknown): 401 | 403 | null {
+  if (isOperationDenial(caught)) return null
   if (caught && typeof caught === 'object' && 'status' in caught) {
     if (caught.status === 401 || caught.status === 403) return caught.status
   }
@@ -124,6 +125,9 @@ function readRole(): UserRole {
 export function AppDataProvider({ children }: { children: ReactNode }) {
   const [homeStore, setHomeStoreState] = useState<StoreName>(readHomeStore)
   const [role, setRoleState] = useState<UserRole>(readRole)
+  // Stored UI choices are not an explicit production preview request. Learn
+  // the server-owned membership first; only a user action enables previews.
+  const previewSelectedRef = useRef(false)
   const accessContext = `${role}:${homeStore}`
   const latestAccessContextRef = useRef(accessContext)
   const requestSequenceRef = useRef(0)
@@ -189,6 +193,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     cancelRead()
     const requestId = requestSequenceRef.current
     const controller = new AbortController()
+    setBootstrapPreviewIntent(controller.signal, previewSelectedRef.current)
     lastAttemptRef.current = Date.now()
     setBootstrapState((current) => {
       const matchesContext = current.accessContext === accessContext
@@ -277,6 +282,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const setHomeStore = useCallback((store: StoreName) => {
     if (store === homeStore || !confirmUnsavedWork()) return
+    previewSelectedRef.current = true
     cancelRead()
     clearClientWorkspace()
     accessErrorRef.current = null
@@ -288,6 +294,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const setRole = useCallback((nextRole: UserRole) => {
     if (nextRole === role || !confirmUnsavedWork()) return
+    previewSelectedRef.current = true
     cancelRead()
     clearClientWorkspace()
     accessErrorRef.current = null

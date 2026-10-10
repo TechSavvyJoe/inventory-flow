@@ -683,8 +683,6 @@ export function VehicleWorkspace({
   const [takeHomeOpen, setTakeHomeOpen] = useState(false);
   const [issueReportOpen, setIssueReportOpen] = useState(false);
   const [manualHoldOpen, setManualHoldOpen] = useState(false);
-  const [moreActionsOpen, setMoreActionsOpen] = useState(false);
-  const moreActionsId = useId();
   const manualHoldOpenerRef = useRef<HTMLButtonElement>(null);
   const [dispositionOpen, setDispositionOpen] = useState(false);
   const [dispositionStatus, setDispositionStatus] = useState("");
@@ -760,6 +758,10 @@ export function VehicleWorkspace({
   const unifiedHoldLabel = appHoldOpen ? holdStateLabel(vehicle.manualHold?.state ?? null)
     : vehicle.inventoryDecision?.status === "held" || (holdCurrent && vehicle.dealerMail.hasActiveHold === true) ? "Held · Reported"
     : loanerLabel || holdLabel;
+  const reportedHoldLabel = vehicle.operationalEvidence ? importedHoldSummary(vehicle)
+    : loanerLabel || (holdCurrent && vehicle.dealerMail.hasActiveHold ? "Held" : vehicle.dealerMail.conciseState || "Hold status not verified");
+  const showReportedHoldHeadline = Boolean(vehicle.manualHold?.state) || reportedHoldLabel !== unifiedHoldLabel;
+  const hasReportedHoldContext = Boolean(vehicle.dealerMail.loaner?.rawAlert && loanerLabel || primaryHold?.salesperson || primaryHold?.expectedDeliveryDate || holdCount > 1);
   const hasMovement = Boolean(vehicle.movement?.requestId || vehicle.movement?.state);
   const nextStepStatus = movementStatus(vehicle, homeStore.name);
   const movementLabel = nextStepStatus?.overdue ? nextStepStatus.label
@@ -872,7 +874,6 @@ export function VehicleWorkspace({
   useLayoutEffect(() => {
     setActiveTarget(initialTab);
     setTakeHomeOpen(false);
-    setMoreActionsOpen(false);
     setIssueReportOpen(false);
     setDispositionOpen(false);
     setDispositionStatus("");
@@ -934,6 +935,13 @@ export function VehicleWorkspace({
           <VehicleDetailStatus state={detailState} onRetry={onRetryDetail} />
           <WorkspacePanel id="overview" label="Overview" active={activePage === "overview"}>
             <div className="vdp-focus-overview">
+                <div className="vdp-focus-gallery-column">
+                  <div className="vdp-focus-photo"><VehicleGallery vehicle={vehicle} /></div>
+                  <dl className="vdp-focus-mobile-valuation" role="group" aria-label="Vehicle mileage and age">
+                    <Fact label="Mileage">{vehicle.mileage != null ? <CopyableValue compact label="mileage" text={String(vehicle.mileage)}>{formatMileage(vehicle.mileage)}</CopyableValue> : formatMileage(vehicle.mileage)}</Fact>
+                    {vehicle.daysListed != null ? <Fact label="Days listed">{vehicle.daysListed} days</Fact> : null}
+                  </dl>
+                </div>
               <section className="vdp-focus-operations" aria-label="Vehicle operational summary">
                 <dl>
                   <Fact label="Location"><strong>{currentLocation.label}</strong>{vehicle.location.conflict ? <small>Location conflict — review needed</small> : null}</Fact>
@@ -943,11 +951,11 @@ export function VehicleWorkspace({
                       <small>Inventory Flow: {holdStateLabel(vehicle.manualHold.state)}</small>
                       {appHoldOpen && canViewHoldEvidence && (vehicle.manualHold.customerLabel || vehicle.manualHold.expectedDeliveryDate) ? <small className="vdp-focus-hold-context">{[vehicle.manualHold.customerLabel, vehicle.manualHold.expectedDeliveryDate ? `Expected ${formatDate(vehicle.manualHold.expectedDeliveryDate)}` : null].filter(Boolean).join(" · ")}</small> : null}
                     </div> : null}
-                    <div role="group" aria-label="Reported hold evidence">
-                      <small>Reported evidence: {vehicle.operationalEvidence ? importedHoldSummary(vehicle) : loanerLabel || (holdCurrent && vehicle.dealerMail.hasActiveHold ? "Held" : vehicle.dealerMail.conciseState || "Hold status not verified")}</small>
+                    {showReportedHoldHeadline || hasReportedHoldContext ? <div role="group" aria-label="Reported hold evidence">
+                      {showReportedHoldHeadline ? <small>Reported evidence: {reportedHoldLabel}</small> : null}
                       {vehicle.dealerMail.loaner?.rawAlert && loanerLabel ? <small>{vehicle.dealerMail.loaner.rawAlert}</small> : null}
                       {primaryHold?.salesperson || primaryHold?.expectedDeliveryDate || holdCount > 1 ? <small className="vdp-focus-hold-context">{[primaryHold?.salesperson, primaryHold?.expectedDeliveryDate ? `Expected ${formatDate(primaryHold.expectedDeliveryDate)}` : null, holdCount > 1 ? `${holdCount - 1} backup ${holdCount === 2 ? "hold" : "holds"}` : null].filter(Boolean).join(" · ")}</small> : null}
-                    </div>
+                    </div> : null}
                     {vehicle.operationalEvidence && loanerLabel ? <div role="group" aria-label="DealerMail operational evidence">
                       <small>DealerMail: {loanerLabel}</small>
                     </div> : null}
@@ -957,32 +965,20 @@ export function VehicleWorkspace({
                     ? <><strong>Not available</strong><small>Disposition storage is not enabled yet.</small></>
                     : <strong>{dispositionSummary(appDisposition)}</strong>}</Fact> : null}
                 </dl>
-                <div className="vdp-focus-actions">
+                <div className="vdp-focus-actions" role="group" aria-label="Vehicle operations">
                   {serviceStatus === "needs_service" ? <WorkspaceLink className={flowButtonClassName({ variant: "primary" })} to={serviceHref + "&action=in_service"} preserveOrigin><Wrench size={18} aria-hidden="true" />Start service</WorkspaceLink> : null}
-                  {serviceStatus !== "needs_service" && serviceStatus !== "serviced" ? <WorkspaceLink className={flowButtonClassName({ variant: "primary" })} to={serviceHref + "&action=serviced"} preserveOrigin><Check size={18} aria-hidden="true" />Mark Ready</WorkspaceLink> : null}
                   {movementAction}
-                  {serviceStatus === "serviced" && !canTrackMovement && !canCreateMovement ? <WorkspaceLink className={flowButtonClassName({ variant: "secondary" })} to={serviceHref} preserveOrigin>Service history</WorkspaceLink> : null}
-                  <button type="button" className={flowButtonClassName({ variant: "quiet", className: "vdp-focus-more-toggle" })} aria-expanded={moreActionsOpen} aria-controls={moreActionsId} onClick={() => setMoreActionsOpen(open => !open)}>More<ChevronDown size={16} aria-hidden="true" /></button>
-                  <div className="vdp-focus-secondary-actions" id={moreActionsId} data-open={moreActionsOpen}>
-                    <button className={flowButtonClassName({ variant: "secondary" })} type="button" onClick={() => openAndFocusSection("hold")} data-action="hold-details"><MessageSquare size={18} aria-hidden="true" />Hold status</button>
-                    {serviceStatus === "needs_service" ? <WorkspaceLink className={flowButtonClassName({ variant: "secondary" })} to={serviceHref + "&action=serviced"} preserveOrigin><Check size={18} aria-hidden="true" />Mark Ready</WorkspaceLink> : null}
-                    {serviceStatus === "serviced" && (canTrackMovement || canCreateMovement) ? <WorkspaceLink className={flowButtonClassName({ variant: "secondary" })} to={serviceHref} preserveOrigin>Service history</WorkspaceLink> : null}
-                    {dispositionContext && vehicle.manualHold?.enabled ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" ref={manualHoldOpenerRef} onClick={() => setManualHoldOpen(true)}><Tag size={18} aria-hidden="true" />{holdActionLabel(vehicle.manualHold, dispositionContext.role)}</button> : null}
-                    {dispositionAction ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" ref={dispositionOpenerRef} onClick={() => { setDispositionStatus(""); setDispositionOpen(true); }} data-action="disposition"><ClipboardCheck size={18} aria-hidden="true" />{dispositionAction}</button> : null}
-                  </div>
+                  <button className={flowButtonClassName({ variant: "secondary" })} type="button" onClick={() => openAndFocusSection("hold")} data-action="hold-details"><MessageSquare size={18} aria-hidden="true" />Hold status</button>
+                  {serviceStatus !== "serviced" ? <WorkspaceLink className={flowButtonClassName({ variant: serviceStatus === "needs_service" ? "secondary" : "primary" })} to={serviceHref + "&action=serviced"} preserveOrigin><Check size={18} aria-hidden="true" />Mark Ready</WorkspaceLink> : null}
+                  {serviceStatus === "serviced" ? <WorkspaceLink className={flowButtonClassName({ variant: "secondary" })} to={serviceHref} preserveOrigin>Service history</WorkspaceLink> : null}
+                  {dispositionContext && vehicle.manualHold?.enabled ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" ref={manualHoldOpenerRef} onClick={() => setManualHoldOpen(true)}><Tag size={18} aria-hidden="true" />{holdActionLabel(vehicle.manualHold, dispositionContext.role)}</button> : null}
+                  {dispositionAction ? <button className={flowButtonClassName({ variant: "secondary" })} type="button" ref={dispositionOpenerRef} onClick={() => { setDispositionStatus(""); setDispositionOpen(true); }} data-action="disposition"><ClipboardCheck size={18} aria-hidden="true" />{dispositionAction}</button> : null}
                 </div>
                 {dispositionStatus ? <p className="vdp-focus-next-action" role="status">{dispositionStatus}</p> : null}
                 {vehicle.inventoryDecision?.comparison === 'conflict' ? <p className="vdp-focus-next-action" role="status"><strong>Records disagree</strong> · Review Inventory Flow and reported hold / disposition evidence.</p> : null}
                 {hasMovement ? <div className="vdp-focus-next-action"><strong className={nextStepStatus?.tone === "danger" ? "vdp-focus-next-action__overdue" : undefined}>{movementLabel}</strong><p>{vehicle.movement?.nextAction || vehicle.movement?.lastEventLabel || "Review the movement details."}</p></div> : null}
               </section>
               <div className="vdp-focus-vehicle-context">
-                <div className="vdp-focus-gallery-column">
-                  <div className="vdp-focus-photo"><VehicleGallery vehicle={vehicle} /></div>
-                  <dl className="vdp-focus-mobile-valuation" role="group" aria-label="Vehicle mileage and age">
-                    <Fact label="Mileage">{vehicle.mileage != null ? <CopyableValue compact label="mileage" text={String(vehicle.mileage)}>{formatMileage(vehicle.mileage)}</CopyableValue> : formatMileage(vehicle.mileage)}</Fact>
-                    {vehicle.daysListed != null ? <Fact label="Days listed">{vehicle.daysListed} days</Fact> : null}
-                  </dl>
-                </div>
                 <div className="vdp-focus-vehicle-intelligence">
                   <section className="vdp-focus-specs" aria-label="Vehicle specifications">
                     <FlowLedgerHeading level={3} variant="plain" className="vdp-focus-ledger-heading" title={<><Gauge size={20} aria-hidden="true" />Vehicle details</>} />
@@ -1066,7 +1062,7 @@ export function VehicleWorkspace({
             <dl className="vdp-records-summary"><Fact label={baseMsrpLabel}>{factoryPrices.base.value !== null ? <CopyableValue compact label="base MSRP" text={String(factoryPrices.base.value)}>{baseMsrpDisplay}</CopyableValue> : baseMsrpDisplay}</Fact><Fact label={warrantyInServiceLabel}>{warrantyInServiceDate ? formatDate(warrantyInServiceDate) : "—"}</Fact></dl>
             <VehicleDocuments vehicle={vehicle} />
             {!vehicle.autoCheckReport && !vehicle.windowSticker && !vehicle.factoryEquipment && !vehicle.fordOasis && !vehicle.warrantyCheck && !vehicle.serviceHistory?.reports.length ? <div className="vdp-focus-empty"><h3>Vehicle records</h3><p>No vehicle records are available.</p></div> : null}
-            {openRecallCount ? <a className="vdp-focus-warning" href={oasisUrl ?? undefined} target="_blank" rel="noopener noreferrer">{oasisActionLabel(vehicle.fordOasis)} · Review OASIS</a> : null}
+            {openRecallCount && oasisUrl ? <a className="vdp-focus-warning" href={oasisUrl} target="_blank" rel="noopener noreferrer">{oasisActionLabel(vehicle.fordOasis)} · Review OASIS</a> : null}
           </WorkspacePanel>
           <WorkspacePanel id="hold" label="Holds & moves" active={activePage === "hold"}>
             <FlowLedgerHeading level={3} variant="plain" className="vdp-focus-ledger-heading" title="Holds & moves" actions={<div className="vdp-focus-actions">{movementAction}</div>} />
