@@ -69,8 +69,7 @@
   --gutter: 14px;
   --card-pad: 11px;
 
-  --fast: 100ms;
-  --action-icon-size: 18px;
+  --fast: var(--motion-fast);
   --base: var(--motion-standard);
   --slow: var(--motion-standard);
   --ease-out: var(--motion-enter);

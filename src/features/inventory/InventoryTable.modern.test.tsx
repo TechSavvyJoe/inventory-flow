@@ -1,7 +1,8 @@
 // @ts-expect-error Synthetic fixture is an intentionally untyped Node ESM module.
 import { buildSyntheticRelease } from "../../../fixtures/synthetic-release.mjs";
 import { equipmentFinderItems } from "./vehicle-equipment";
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { StrictMode } from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InventoryMobileList, InventoryTable, VehiclePhoto, vehicleOperationalStatus } from './InventoryTable';
@@ -557,6 +558,74 @@ describe('modern inventory result access', () => {
     expect(backdrop).toBeInTheDocument();
     await user.click(backdrop!);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('closes newly committed desktop Records on Escape before any animation frame and restores its launcher', () => {
+    const frame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+    try {
+      render(<InventoryTable vehicles={[heldMovingVehicle()]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+      const launcher = screen.getByRole('button', { name: /Open vehicle records/ });
+      vi.spyOn(launcher, 'getClientRects').mockReturnValue([{ width: 44, height: 44 }] as unknown as DOMRectList);
+      fireEvent.click(launcher);
+      expect(screen.getByRole('dialog', { name: /records$/i })).toBeVisible();
+
+      fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+
+      expect(screen.queryByRole('dialog', { name: /records$/i })).not.toBeInTheDocument();
+      expect(launcher).toHaveAttribute('aria-expanded', 'false');
+      expect(launcher).toHaveFocus();
+    } finally {
+      cleanup();
+      frame.mockRestore();
+    }
+  });
+
+  it('leaves inventory focus and Escape in control after leaving the nonmodal Records inspector', () => {
+    const frame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1);
+    try {
+      render(<InventoryTable vehicles={[heldMovingVehicle()]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+      fireEvent.click(screen.getByRole('button', { name: /Open vehicle records/ }));
+      const dialog = screen.getByRole('dialog', { name: /records$/i });
+      const sort = screen.getByRole('button', { name: 'More Price & age sort options' });
+      sort.focus();
+      expect(fireEvent.keyDown(sort, { key: 'Escape' })).toBe(true);
+      expect(dialog).toBeVisible();
+      expect(sort).toHaveFocus();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Close records' }));
+      expect(screen.queryByRole('dialog', { name: /records$/i })).not.toBeInTheDocument();
+      expect(sort).toHaveFocus();
+    } finally {
+      cleanup();
+      frame.mockRestore();
+    }
+  });
+
+  it('retains desktop Records keyboard ownership after StrictMode rehearses its effects', () => {
+    const callbacks: FrameRequestCallback[] = [];
+    const frame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+    try {
+      render(<StrictMode><InventoryTable vehicles={[heldMovingVehicle()]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} /></StrictMode>);
+      const launcher = screen.getByRole('button', { name: /Open vehicle records/ });
+      vi.spyOn(launcher, 'getClientRects').mockReturnValue([{ width: 44, height: 44 }] as unknown as DOMRectList);
+      fireEvent.click(launcher);
+      const close = within(screen.getByRole('dialog', { name: /records$/i })).getByRole('button', { name: 'Close records' });
+      expect(close).toHaveFocus();
+
+      act(() => callbacks.splice(0).forEach(callback => callback(0)));
+
+      expect(close).toHaveFocus();
+      // A portal descendant must not swallow the inspector's dismissal key.
+      close.addEventListener('keydown', event => event.stopPropagation(), { once: true });
+      fireEvent.keyDown(close, { key: 'Escape' });
+      expect(screen.queryByRole('dialog', { name: /records$/i })).not.toBeInTheDocument();
+      expect(launcher).toHaveFocus();
+    } finally {
+      cleanup();
+      frame.mockRestore();
+    }
   });
 
   it('keeps each row bound to its vehicle and mirrors selected state without leaking private evidence', () => {

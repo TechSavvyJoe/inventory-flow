@@ -772,6 +772,52 @@ describe('Inventory Flow API', () => {
     expect(crmOnly.attention.some((item) => item.vin === vin && item.type === 'vehicle_alert')).toBe(true)
   })
 
+  it('keeps generic CARFAX coverage out of lot search while retaining vehicle-specific facts and displayed coverage', async () => {
+    let vin = ''
+    let lotCount = 0
+    const coverage = {
+      type: 'Powertrain', termText: '5 years / 60,000 miles', termMiles: 60000,
+      remainingMilesText: '37,948 miles', remainingTimeText: '18 months', status: 'ACTIVE',
+      note: 'SYNTHETIC-COVERAGE-ONLY',
+    }
+    const { baseUrl } = await harness((release) => {
+      lotCount = release.vehicles.length
+      const target = release.vehicles.find((row) => row.publicRecord && row.resourceRecord?.factoryEquipment)
+      if (!target) throw new Error('Missing synthetic vehicle with factory equipment')
+      vin = target.vin
+      for (const vehicle of release.vehicles) {
+        vehicle.resourceRecord ??= {}
+        vehicle.resourceRecord.warrantyCheck = {
+          dataState: 'current', sourceLabel: 'Synthetic CARFAX warranty estimate', mileageEntered: vehicle.mileage,
+          carfax: { inServiceDate: '2024-03-14', coverages: [coverage] },
+        }
+      }
+      target.resourceRecord.warrantyCheck.carfax.inServiceDate = '2024-03-14'
+      target.resourceRecord.serviceHistory = {
+        reports: [{ vin, provider: 'carfax', sourceLabel: 'Synthetic CARFAX', capturedAt: '2026-08-30T09:20:00-04:00', dataState: 'current', historyStatus: 'reported', entries: [
+          { date: '2026-07-12', odometer: 21000, odometerUnit: 'mi', services: ['Synthetic transmission service verification'] },
+        ] }],
+      }
+      target.resourceRecord.factoryEquipment.packages = [{ name: 'Synthetic searchable equipment package', code: 'SYNTHETIC-EQUIPMENT-ONLY', features: [] }]
+    })
+    const headers = roleHeaders('sales', 'Howell', 'Synthetic sales')
+    for (const term of ['Powertrain', 'ACTIVE', '5 years / 60,000 miles', '37,948 miles', 'warranty check coverage']) {
+      const result = await fetch(`${baseUrl}/api/vehicles?q=${encodeURIComponent(term)}&limit=20`, { headers }).then((response) => response.json())
+      expect(result.items.length, term).toBeLessThan(lotCount)
+    }
+    const coverageNoteSearch = await fetch(`${baseUrl}/api/vehicles?q=SYNTHETIC-COVERAGE-ONLY&limit=20`, { headers }).then((response) => response.json())
+    expect(coverageNoteSearch.items).toEqual([])
+    const dateSearch = await fetch(`${baseUrl}/api/vehicles?q=2024-03-14&limit=20`, { headers }).then((response) => response.json())
+    expect(dateSearch.items.some((vehicle: { vin: string }) => vehicle.vin === vin)).toBe(true)
+    for (const term of ['Synthetic transmission service verification', 'SYNTHETIC-EQUIPMENT-ONLY']) {
+      const result = await fetch(`${baseUrl}/api/vehicles?q=${encodeURIComponent(term)}&limit=20`, { headers }).then((response) => response.json())
+      const matchingVins = result.items.map((vehicle: { vin: string }) => vehicle.vin)
+      expect(matchingVins, term).toEqual([vin])
+    }
+    const detail = await fetch(`${baseUrl}/api/vehicles/${vin}`, { headers }).then((response) => response.json())
+    expect(detail.warrantyCheck.carfax.coverages).toEqual([coverage])
+  })
+
   it('keeps a DealerMail loaner alert text from porters, drivers and coordinators while keeping the loaner badge', async () => {
     const alertText = 'LCTP loaner out 8/28 RO 55123 for synthetic customer Pat Example'
     let vin = ''

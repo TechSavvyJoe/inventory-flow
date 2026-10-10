@@ -1184,6 +1184,7 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     ...(fordOasis?.openFieldServiceActions ?? []).flatMap((action) => [action.code, action.description]),
     ...(fordOasis?.warrantyCoverages ?? []).flatMap((coverage) => [coverage.type, coverage.description]),
     ...(fordOasis?.extendedCoverageExpirations ?? []),
+    ...(serviceHistory?.reports ?? []).flatMap((report) => [report.sourceLabel, ...report.entries.flatMap((entry) => entry.services)]),
     fordOasis ? 'Ford OASIS' : null,
     fordOasis?.openFieldServiceActions?.length ? 'open recall field service action' : null,
     warrantyCheck?.dataState,
@@ -1196,17 +1197,6 @@ function vehicleView(source, transferRows, context, meta, { includePrivate = fal
     warrantyCheck?.carfax?.inServiceAgeMonths,
     warrantyCheck?.fordOasis?.warrantyStartDate,
     warrantyCheck?.fordOasis?.monthsInService,
-    ...[...(warrantyCheck?.autoCheck?.coverages ?? []), ...(warrantyCheck?.carfax?.coverages ?? []), ...(warrantyCheck?.fordOasis?.coverages ?? [])].flatMap(
-      (coverage) => [
-        coverage.type,
-        coverage.termText,
-        coverage.remainingMilesText,
-        coverage.remainingTimeText,
-        coverage.status,
-        coverage.note,
-      ],
-    ),
-    warrantyCheck ? 'warranty check coverage' : null,
   ]
   if (context.canViewPrivateEvidence) safeSearchParts.push(privateSearchText(source))
   if (context.canViewPrivateEvidence && includePrivate) {

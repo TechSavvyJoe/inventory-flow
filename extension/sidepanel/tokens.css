@@ -34,6 +34,7 @@
   --radius-control: 8px;
   --radius-panel: 10px;
   --control-target: 44px;
+  --action-icon-size: 18px;
   --motion-fast: 80ms;
   --motion-standard: 120ms;
   --motion-enter: cubic-bezier(0.16, 1, 0.3, 1);

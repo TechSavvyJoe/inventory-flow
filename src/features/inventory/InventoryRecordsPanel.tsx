@@ -102,17 +102,15 @@ export function InventoryRecordsPanel({
     if (contentRef.current) contentRef.current.scrollTop = 0;
   }, [vehicle.id, vehicle.vin]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (mobile) return;
     const panel = panelRef.current;
     if (!panel) return;
+    // The committed inspector can receive Escape before an animation frame.
+    // Establish keyboard ownership before paint rather than opening a window
+    // where the panel is visible but focus still belongs to its launcher.
+    closeRef.current?.focus({ preventScroll: true });
     let ownedFocus = panel.contains(document.activeElement);
-    const initialFocus = document.activeElement;
-    const frame = window.requestAnimationFrame(() => {
-      if (document.activeElement === initialFocus || document.activeElement === document.body) {
-        closeRef.current?.focus({ preventScroll: true });
-      }
-    });
     const trackFocus = (event: FocusEvent) => {
       ownedFocus = event.target instanceof Node && panel.contains(event.target);
     };
@@ -127,11 +125,10 @@ export function InventoryRecordsPanel({
       closeCallbackRef.current();
     };
     document.addEventListener("focusin", trackFocus);
-    document.addEventListener("keydown", handleEscape);
+    document.addEventListener("keydown", handleEscape, true);
     return () => {
-      window.cancelAnimationFrame(frame);
       document.removeEventListener("focusin", trackFocus);
-      document.removeEventListener("keydown", handleEscape);
+      document.removeEventListener("keydown", handleEscape, true);
       const active = document.activeElement;
       const shouldRestore = panel.contains(active) || (ownedFocus && (!active || active === document.body));
       if (!shouldRestore || openingWorkspaceRef.current || document.querySelector('[aria-modal="true"]')) return;
@@ -144,7 +141,11 @@ export function InventoryRecordsPanel({
         target.focus({ preventScroll: true });
       };
       restore();
-      window.requestAnimationFrame(restore);
+      // StrictMode rehearses cleanup while the same inspector is mounted.
+      // A restoration retry belongs to a removed panel, not that rehearsal.
+      window.requestAnimationFrame(() => {
+        if (!panel.isConnected) restore();
+      });
     };
   }, [mobile, returnFocusRef]);
 
