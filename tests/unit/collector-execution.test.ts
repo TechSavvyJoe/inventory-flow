@@ -15,7 +15,7 @@ const heartbeat=(f,a)=>({attemptId:a.attemptId,fence:a.fence,profileSha256:f.pro
 describe('Collector enrollment, scope and fenced execution',()=>{
  it('serializes different profiles across queued stores and retains the group reconciliation lock',async()=>{
   const f=await setup(),other={common_name:'second-group-profile.access'}
-  const enrolled=await saveCollector(f.env,owner,'synthetic-north',{operation:'enroll',name:'Second group host',accessClientId:other.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'different-profile',profileSha256:'c'.repeat(64),dealershipIds:f.dealers.map(d=>d.id),connectionIds:f.dealers.map(d=>d.connectionId),reason:'Synthetic second enrollment',expectedRevision:revision(f)},'group-enroll',now)
+  const enrolled=await saveCollector(f.env,owner,'synthetic-north',{operation:'enroll',name:'Second group host',accessClientId:other.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'different-profile',profileSha256:'c'.repeat(64),credentialRef:'CREDENTIAL_SYNTHETIC_MAIL',dealershipIds:f.dealers.map(d=>d.id),connectionIds:f.dealers.map(d=>d.connectionId),reason:'Synthetic second enrollment',expectedRevision:revision(f)},'group-enroll',now)
   await saveCollector(f.env,owner,'synthetic-north',{operation:'enable',id:enrolled.id,reason:'Synthetic second activation',expectedRevision:revision(f)},'group-enable',now)
   await queue(f)
   await saveDataControl(f.env,owner,'synthetic-north','pulls',{operation:'request',connectionId:f.dealers[1].connectionId,reason:'Synthetic second store',expectedRevision:revision(f)},'second-store',now)
@@ -78,13 +78,51 @@ describe('Collector enrollment, scope and fenced execution',()=>{
   expect(await heartbeatCollector(f.env,f.machine,heartbeat(f,a),now)).toMatchObject({continue:true})
  })
  it('rejects partial or cross-group grants and immutable profile reassignment',async()=>{
-  const f=await setup(),input={operation:'enroll',name:'Invalid host',accessClientId:'other.access',adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'other',profileSha256:'b'.repeat(64),dealershipIds:[f.dealers[0].id],connectionIds:[f.dealers[0].connectionId],reason:'Synthetic partial scope',expectedRevision:revision(f)}
+  const f=await setup(),input={operation:'enroll',name:'Invalid host',accessClientId:'other.access',adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'other',profileSha256:'b'.repeat(64),credentialRef:'CREDENTIAL_SYNTHETIC_MAIL',dealershipIds:[f.dealers[0].id],connectionIds:[f.dealers[0].connectionId],reason:'Synthetic partial scope',expectedRevision:revision(f)}
   await expect(saveCollector(f.env,owner,'synthetic-north',input,'partial',now)).rejects.toMatchObject({code:'COLLECTOR_SCOPE_MISMATCH'})
   expect(()=>f.sqlite.prepare('UPDATE platform_collectors SET profile_sha256=? WHERE id=?').run('b'.repeat(64),f.collectorId)).toThrow()
   await expect(claimCollector(f.env,f.machine,{groupId:'synthetic-lake'},'spoof',now)).rejects.toMatchObject({code:'COLLECTOR_INPUT_INVALID'})
  })
+ it.each([undefined,'','credential_lowercase','CREDENTIAL_DIFFERENT_PROFILE'])('rejects a missing, invalid or mismatched installed-profile credential reference at enrollment: %s',async credentialRef=>{
+  const f=await setup({enroll:false}),beforeRevision=revision(f),beforeSources=f.sqlite.prepare('SELECT * FROM platform_data_connections ORDER BY id').all()
+  await expect(saveCollector(f.env,owner,'synthetic-north',{operation:'enroll',name:'Credential test host',accessClientId:f.machine.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-holds-four-store',profileSha256:f.profileSha256,credentialRef,dealershipIds:f.dealers.map(d=>d.id),connectionIds:f.dealers.map(d=>d.connectionId),reason:'Synthetic profile credential review',expectedRevision:beforeRevision},'invalid-profile-reference',now)).rejects.toMatchObject({code:credentialRef==='CREDENTIAL_DIFFERENT_PROFILE'?'COLLECTOR_SCOPE_MISMATCH':'COLLECTOR_INPUT_INVALID'})
+  expect(revision(f)).toBe(beforeRevision)
+  expect(f.sqlite.prepare('SELECT * FROM platform_data_connections ORDER BY id').all()).toEqual(beforeSources)
+  for(const table of ['platform_collectors','platform_collector_grants','platform_collector_attempts','platform_audit'])expect(f.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n).toBe(0)
+ })
+ it.each([['one',''],['all',''],['one','CREDENTIAL_OTHER_PROFILE'],['all','CREDENTIAL_OTHER_PROFILE']])('rejects %s empty or mismatched source credential references without enrollment mutations',async(which,credentialRef)=>{
+  const f=await setup({enroll:false})
+  for(const dealer of which==='all'?f.dealers:[f.dealers[0]])f.sqlite.prepare('UPDATE platform_data_connections SET credential_ref=? WHERE id=?').run(credentialRef,dealer.connectionId)
+  const beforeRevision=revision(f),beforeSources=f.sqlite.prepare('SELECT * FROM platform_data_connections ORDER BY id').all()
+  await expect(saveCollector(f.env,owner,'synthetic-north',{operation:'enroll',name:'Credential test host',accessClientId:f.machine.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-holds-four-store',profileSha256:f.profileSha256,credentialRef:'CREDENTIAL_SYNTHETIC_MAIL',dealershipIds:f.dealers.map(d=>d.id),connectionIds:f.dealers.map(d=>d.connectionId),reason:'Synthetic connection credential review',expectedRevision:beforeRevision},'invalid-source-reference',now)).rejects.toMatchObject({code:'COLLECTOR_SCOPE_MISMATCH'})
+  expect(revision(f)).toBe(beforeRevision)
+  expect(f.sqlite.prepare('SELECT * FROM platform_data_connections ORDER BY id').all()).toEqual(beforeSources)
+  for(const table of ['platform_collectors','platform_collector_grants','platform_collector_attempts','platform_audit'])expect(f.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n).toBe(0)
+ })
+ it.each(['','CREDENTIAL_OTHER_PROFILE'])('rejects shared credential-reference drift before activation and preserves the paused enrollment: %s',async credentialRef=>{
+  const f=await setup(),paused=await saveCollector(f.env,owner,'synthetic-north',{operation:'enroll',name:'Paused reference host',accessClientId:'paused-reference.access',adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-paused-profile',profileSha256:'b'.repeat(64),credentialRef:'CREDENTIAL_SYNTHETIC_MAIL',dealershipIds:f.dealers.map(d=>d.id),connectionIds:f.dealers.map(d=>d.connectionId),reason:'Synthetic paused credential review',expectedRevision:revision(f)},'paused-reference-enroll',now)
+  f.sqlite.prepare('UPDATE platform_data_connections SET credential_ref=?').run(credentialRef)
+  const before=f.sqlite.prepare('SELECT * FROM platform_collectors WHERE id=?').get(paused.id),beforeRevision=revision(f),beforeAudit=f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_audit').get().n
+  await expect(saveCollector(f.env,owner,'synthetic-north',{operation:'enable',id:paused.id,reason:'Synthetic activation review',expectedRevision:beforeRevision},'invalid-reference-enable',now)).rejects.toMatchObject({code:'COLLECTOR_SCOPE_MISMATCH'})
+  expect(f.sqlite.prepare('SELECT * FROM platform_collectors WHERE id=?').get(paused.id)).toEqual(before)
+  expect(revision(f)).toBe(beforeRevision)
+  expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_audit').get().n).toBe(beforeAudit)
+  expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_collector_attempts').get().n).toBe(0)
+ })
+ it.each(['','CREDENTIAL_OTHER_PROFILE'])('rejects shared credential-reference drift before contact or lease admission: %s',async credentialRef=>{
+  const f=await setup();await queue(f)
+  f.sqlite.prepare('UPDATE platform_data_connections SET credential_ref=?').run(credentialRef)
+  const beforeRevision=revision(f),beforeHost=f.sqlite.prepare('SELECT * FROM platform_collectors').get(),beforeQueue=f.sqlite.prepare('SELECT * FROM platform_pull_requests').all(),beforeAudit=f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_audit').get().n
+  await expect(contactCollector(f.env,f.machine,{profileSha256:f.profileSha256,adapterVersion:'1'},now)).rejects.toMatchObject({code:'COLLECTOR_SCOPE_MISMATCH'})
+  for(let retry=0;retry<4;retry++)await expect(claimCollector(f.env,f.machine,{},`invalid-reference-${retry}`,new Date(now.getTime()+retry*130000))).rejects.toMatchObject({code:'COLLECTOR_SCOPE_MISMATCH'})
+  expect(f.sqlite.prepare('SELECT * FROM platform_pull_requests').all()).toEqual(beforeQueue)
+  expect(f.sqlite.prepare('SELECT * FROM platform_collectors').get()).toEqual(beforeHost)
+  expect(revision(f)).toBe(beforeRevision)
+  expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_audit').get().n).toBe(beforeAudit)
+  expect(f.sqlite.prepare('SELECT COUNT(*) AS n FROM platform_collector_attempts').get().n).toBe(0)
+ })
  it('requires the fixed New York timezone at enrollment, activation and claim',async()=>{
-  const f=await setup({enroll:false}),input={operation:'enroll',name:'Timezone test host',accessClientId:f.machine.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-holds-four-store',profileSha256:f.profileSha256,dealershipIds:f.dealers.map(d=>d.id),connectionIds:f.dealers.map(d=>d.connectionId),reason:'Synthetic timezone enrollment',expectedRevision:revision(f)}
+  const f=await setup({enroll:false}),input={operation:'enroll',name:'Timezone test host',accessClientId:f.machine.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-holds-four-store',profileSha256:f.profileSha256,credentialRef:'CREDENTIAL_SYNTHETIC_MAIL',dealershipIds:f.dealers.map(d=>d.id),connectionIds:f.dealers.map(d=>d.connectionId),reason:'Synthetic timezone enrollment',expectedRevision:revision(f)}
   f.sqlite.prepare('UPDATE platform_data_connections SET timezone=? WHERE id=?').run('America/Detroit',f.dealers[0].connectionId)
   await expect(saveCollector(f.env,owner,'synthetic-north',input,'timezone-invalid-enroll',now)).rejects.toMatchObject({code:'COLLECTOR_SCOPE_MISMATCH'})
   f.sqlite.prepare('UPDATE platform_data_connections SET timezone=? WHERE id=?').run('America/New_York',f.dealers[0].connectionId)
@@ -109,7 +147,7 @@ describe('Collector enrollment, scope and fenced execution',()=>{
  it('does not reclaim an already queued request from a different immutable profile authority',async()=>{
   const f=await setup(),request=await queue(f),old=await claimCollector(f.env,f.machine,{},'old-profile-claim',now)
   const other={common_name:'second-profile.collector.access'}
-  const enrolled=await saveCollector(f.env,owner,'synthetic-north',{operation:'enroll',name:'Second synthetic profile',accessClientId:other.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-holds-four-store-next',profileSha256:'c'.repeat(64),dealershipIds:f.dealers.map(d=>d.id),connectionIds:f.dealers.map(d=>d.connectionId),reason:'Synthetic second profile',expectedRevision:revision(f)},'second-profile-enroll',now)
+  const enrolled=await saveCollector(f.env,owner,'synthetic-north',{operation:'enroll',name:'Second synthetic profile',accessClientId:other.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-holds-four-store-next',profileSha256:'c'.repeat(64),credentialRef:'CREDENTIAL_SYNTHETIC_MAIL',dealershipIds:f.dealers.map(d=>d.id),connectionIds:f.dealers.map(d=>d.connectionId),reason:'Synthetic second profile',expectedRevision:revision(f)},'second-profile-enroll',now)
   await saveCollector(f.env,owner,'synthetic-north',{operation:'enable',id:enrolled.id,reason:'Synthetic second profile activation',expectedRevision:revision(f)},'second-profile-enable',now)
   // Model a pre-existing queued item carrying an expired attempt from the old authority.
   f.sqlite.prepare("UPDATE platform_pull_requests SET state='queued' WHERE id=?").run(request.id)
@@ -175,7 +213,7 @@ describe('Collector enrollment, scope and fenced execution',()=>{
   const f=await setup(),other=await createSyntheticCollector({groupId:'synthetic-other',enroll:false});fixtures.push(other)
   for(const table of ['platform_groups','platform_dealerships','platform_data_connections'])for(const row of other.sqlite.prepare(`SELECT * FROM ${table} WHERE ${table==='platform_groups'?'id':'group_id'}=?`).all('synthetic-other')){const values=Object.values(row);f.sqlite.prepare(`INSERT INTO ${table} VALUES(${values.map(()=>'?').join(',')})`).run(...values)}
   f.env.TENANT_OTHER_DB=other.tenantEnv.INVENTORY_DB;f.env.PLATFORM_TENANT_BINDINGS=JSON.stringify({'synthetic-north':'TENANT_NORTH_DB','synthetic-other':'TENANT_OTHER_DB'})
-  const host=await saveCollector(f.env,owner,'synthetic-other',{operation:'enroll',name:'Other registered host',accessClientId:other.machine.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-holds-four-store',profileSha256:f.profileSha256,dealershipIds:other.dealers.map(d=>d.id),connectionIds:other.dealers.map(d=>d.connectionId),reason:'Synthetic other enrollment',expectedRevision:revision(f)},'other-enroll',now)
+  const host=await saveCollector(f.env,owner,'synthetic-other',{operation:'enroll',name:'Other registered host',accessClientId:other.machine.common_name,adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-holds-four-store',profileSha256:f.profileSha256,credentialRef:'CREDENTIAL_SYNTHETIC_MAIL',dealershipIds:other.dealers.map(d=>d.id),connectionIds:other.dealers.map(d=>d.connectionId),reason:'Synthetic other enrollment',expectedRevision:revision(f)},'other-enroll',now)
   await saveCollector(f.env,owner,'synthetic-other',{operation:'enable',id:host.id,reason:'Synthetic other activation',expectedRevision:revision(f)},'other-enable',now)
   await saveDataControl(f.env,owner,'synthetic-other','pulls',{operation:'request',connectionId:other.dealers[0].connectionId,reason:'Synthetic other request',expectedRevision:revision(f)},'other-request')
   expect(await claimCollector(f.env,f.machine,{},'a-cannot-claim-b',now)).toBeNull()

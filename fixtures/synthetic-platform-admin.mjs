@@ -56,9 +56,11 @@ export function createSyntheticPlatformAdmin({groupId='synthetic-north',showcase
     const connections=[]
     for(const [i,d] of dealers.entries()){const id=`synthetic-collector-mail-${i}`;connections.push(id);sqlite.prepare('INSERT INTO platform_data_connections VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id,groupId,d.id,`DealerMail · ${d.store_key}`,'dealermail','DealerMail','not_applicable','collector','','CREDENTIAL_SYNTHETIC_MAIL',1,'manual','05:30','America/Detroit','2026-10-05T08:00:00Z','2026-10-05T08:00:00Z')}
     // Scope digest uses the same canonical shape as the runtime, computed from
-    // entirely fabricated registry values. This is a disabled enrollment.
+    // entirely fabricated registry values. This is a disabled presentation-only
+    // enrollment; its Detroit timezone intentionally does not authorize the
+    // installed New York adapter or verify any provider session.
     const canonical=v=>Array.isArray(v)?`[${v.map(canonical).join(',')}]`:v&&typeof v==='object'?`{${Object.keys(v).sort().map(k=>`${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}`:JSON.stringify(v)
-    const scope={groupId,dealerships:dealers.map(d=>({id:d.id,storeKey:d.store_key})),connectionIds:connections}
+    const scope={groupId,dealerships:dealers.map(d=>({id:d.id,storeKey:d.store_key})),connectionIds:connections,credentialRef:'CREDENTIAL_SYNTHETIC_MAIL'}
     const scopeSha=createHash('sha256').update(canonical(scope)).digest('hex')
     sqlite.prepare('INSERT INTO platform_collectors VALUES(?,?,?,?,?,?,?,?,?,0,1,NULL,?,?,?)').run('synthetic-enrolled-host',groupId,'synthetic-host.access','Synthetic dealership host','dealermail-hold-refresh','1','synthetic-four-store-profile','a'.repeat(64),scopeSha,'2026-10-05T13:59:00Z','2026-10-05T13:59:00Z','2026-10-05T14:00:00Z')
     for(const [i,d] of dealers.entries())sqlite.prepare('INSERT INTO platform_collector_grants VALUES(?,?,?,?)').run('synthetic-enrolled-host',connections[i],d.id,groupId)

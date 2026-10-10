@@ -146,6 +146,7 @@ export async function doctor({ profileName, remote = false, profileDirectory, fe
   const local = {
     command: 'doctor',
     profileId: profile.profileId,
+    credentialRef: profile.credentialRef,
     adapterId: profile.adapterId,
     adapterVersion: profile.adapterVersion,
     profileSha256: profile.profileSha256,

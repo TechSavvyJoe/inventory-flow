@@ -350,19 +350,6 @@ function importedHoldOperationalStatus(vehicle: InventoryVehicle): OperationalSt
     };
   }
 
-  if (vehicle.dealerMail.loaner?.active) {
-    const serviceDate = vehicle.dealerMail.loaner.serviceDate?.trim();
-    const loanerLabel = vehicle.dealerMail.loaner.program
-      ? `Loaner ${vehicle.dealerMail.loaner.program}`
-      : vehicle.dealerMail.loaner.label || "Loaner";
-    return {
-      label: serviceDate ? `${loanerLabel} · ${serviceDate}` : loanerLabel,
-      detail: vehicle.dealerMail.loaner.rawAlert || "Current loaner/service status from DealerMail alert",
-      tone: "move",
-      icon: CircleHelp,
-    };
-  }
-
   if (vehicle.dealerMail.hasActiveHold === true) {
     const visibleEvidence = vehicle.dealerMail.canViewEvidence === true ? vehicle.holdEvidence : undefined;
     const primary = visibleEvidence?.find((record) => record.position === "primary") ?? visibleEvidence?.[0];
@@ -392,6 +379,21 @@ function importedHoldOperationalStatus(vehicle: InventoryVehicle): OperationalSt
     detail: "Latest hold data unavailable",
     tone: "unknown",
     icon: CircleHelp,
+  };
+}
+
+function dealerMailLoanerSummary(vehicle: InventoryVehicle): { label: string; detail: string } | null {
+  const loaner = vehicle.dealerMail.loaner;
+  if (!loaner?.active) return null;
+  const serviceDate = loaner.serviceDate?.trim();
+  const label = loaner.program ? `Loaner ${loaner.program}` : loaner.label || "Loaner";
+  const current = vehicle.dealerMail.dataState === "current";
+  const visibleAlert = vehicle.dealerMail.canViewEvidence === true ? loaner.rawAlert : null;
+  return {
+    label: `${current ? "" : "Saved "}${label}${serviceDate ? ` · ${serviceDate}` : ""}`,
+    detail: current
+      ? visibleAlert || "Current DealerMail loaner/service signal"
+      : `Saved DealerMail loaner/service signal · current status unverified${visibleAlert ? ` · ${visibleAlert}` : ""}`,
   };
 }
 
@@ -595,6 +597,7 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerSt
   const canOpenDealerMail = !vehicle.operationalEvidence && !manualActive && vehicle.dealerMail.canManageHold === true && Boolean(onOpenSourceRecord);
   const importedStatus = importedHoldOperationalStatus(vehicle);
   const holdDetail = importedHoldDetail(vehicle);
+  const loaner = dealerMailLoanerSummary(vehicle);
   const manualExpected = manualActive ? compactInventoryDate(vehicle.manualHold?.expectedDeliveryDate) : null;
   // Keep manual dates with the app record and source details with DealerMail.
   // Movement, service and disposition remain independent facts.
@@ -614,6 +617,7 @@ function DeskStatusCell({ vehicle, onSelectVehicle, onOpenSourceRecord, viewerSt
         <small className="inv-desk-status__detail">{vehicle.operationalEvidence ? "Reports" : "DealerMail"}: {vehicle.operationalEvidence ? importedHoldSummary(vehicle) : importedStatus.label}</small>
         {holdDetail ? <small className="inv-desk-status__detail">{holdDetail}</small> : null}
       </div> : null}
+      {loaner ? <small className="inv-desk-status__detail" data-fact="dealer-mail-loaner">DealerMail loaner/service: {loaner.label} · {loaner.detail}</small> : null}
     </dd></div>
     {movement ? <div className="inv-desk-status__row" data-fact="move"><dt>Move</dt><dd><span className={`inv-desk-move${movement.tone === "warning" ? " is-warning" : ""}`} title={movement.detail}>{humanizeStatusLabel(movement.label)}</span></dd></div> : null}
     <div className="inv-desk-status__row" data-fact="service"><dt>Service</dt><dd><ServiceStatusLink vin={vehicle.vin} service={vehicle.serviceReadiness} detailed /></dd></div>
@@ -1041,6 +1045,7 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
   const manualExpected = manualActive ? compactInventoryDate(vehicle.manualHold?.expectedDeliveryDate) : null;
   const importedStatus = importedHoldOperationalStatus(vehicle);
   const importedDetail = manualActive ? importedHoldDetail(vehicle) : null;
+  const loaner = dealerMailLoanerSummary(vehicle);
   return (
     <article
       className={`if-srp-mobile-row if-srp-mobile-row--scan${selected ? " is-selected" : ""}`}
@@ -1097,6 +1102,7 @@ const MobileRow = memo(function MobileRow({ vehicle, selected, priority, records
           {manualActive ? <dl className="inventory-mobile-imported-hold" aria-label="Reported hold evidence"><div><dt>{vehicle.operationalEvidence ? "Reports" : "DealerMail"}</dt><dd>
             <span>{vehicle.operationalEvidence ? importedHoldSummary(vehicle) : importedStatus.label}</span>{importedDetail ? <small>{importedDetail}</small> : null}
           </dd></div></dl> : null}
+          {loaner ? <dl className="inventory-mobile-imported-hold" aria-label="DealerMail loaner and service evidence"><div><dt>Loaner/service</dt><dd><span>{loaner.label}</span><small>{loaner.detail}</small></dd></div></dl> : null}
           {vehicle.appDisposition?.code || vehicle.inventoryDecision?.comparison === 'conflict' ? <button type="button"
             className="inventory-mobile-decision" data-inventory-vehicle-trigger={vehicle.id} aria-label={`Review inventory decision for ${name}`}
             onClick={event => { event.currentTarget.focus({ preventScroll: true }); onSelectVehicle(vehicle, 'hold'); }}>

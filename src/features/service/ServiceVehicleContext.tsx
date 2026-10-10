@@ -12,6 +12,7 @@ export function ServiceVehicleContext({ vehicle, recordsHref }: { vehicle: Vehic
   const oasis = vehicle.fordOasis
   const warranty = vehicle.warrantyCheck?.fordOasis
   const inService = resolveVehicleInService(vehicle)
+  const inServiceSource = inService.source === 'oasis' ? 'OASIS' : inService.source === 'autocheck' ? 'AutoCheck estimate' : inService.source === 'carfax' ? 'CARFAX estimate' : null
   const actions = oasis?.openFieldServiceActions ?? []
   const months = oasis?.monthsInService ?? warranty?.monthsInService
   const facts = [
@@ -47,7 +48,7 @@ export function ServiceVehicleContext({ vehicle, recordsHref }: { vehicle: Vehic
     </section>
     <div className="service-reference-body">
     {(facts.length || technical.length) ? <div className="service-reference-vehicle">
-    {facts.length ? <dl className="service-reference-facts">{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}{label === 'In-service' ? <small>{inService.source === 'autocheck' ? 'AutoCheck estimate' : 'OASIS'}</small> : null}</dd></div>)}</dl> : null}
+    {facts.length ? <dl className="service-reference-facts">{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}{label === 'In-service' && inServiceSource ? <small>{inServiceSource}</small> : null}</dd></div>)}</dl> : null}
     {technical.length ? <section className="service-reference-technical"><h4>Vehicle service data</h4><dl className="service-reference-facts">{technical.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{sourceDisplayText(value)}</dd></div>)}</dl></section> : null}
     </div> : null}
     {(coverage.length || checks.length || extended.length) ? <div className="service-reference-warranty">

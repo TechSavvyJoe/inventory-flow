@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import type { VehicleRecord } from '../../types'
@@ -71,5 +71,16 @@ describe('Service vehicle reference', () => {
     expect(screen.getByText('AutoCheck estimate')).toBeVisible()
     expect(screen.getByText('04/01/2024')).toBeVisible()
     for (const text of ['Basic', '36 months', 'At check: EXPIRED', '0 miles', 'Expired', 'Captured condition']) expect(screen.getByText(text)).toBeVisible()
+  })
+  it('attributes a CARFAX-only in-service estimate to CARFAX without implying an OEM result', () => {
+    show({ warrantyCheck: { dataState: 'current', mileageEntered: 22052, carfax: { inServiceDate: '2024-03-14', coverages: [] } } })
+    const reference = screen.getByRole('region', { name: 'Service reference' })
+    const date = within(reference).getByRole('definition')
+    expect(date).toHaveTextContent('03/14/2024')
+    expect(date).toHaveTextContent('CARFAX estimate')
+    expect(date).not.toHaveTextContent('OASIS')
+    expect(within(reference).getByText('OASIS reference unavailable')).toBeVisible()
+    expect(within(reference).getByText('Service action result not captured')).toBeVisible()
+    expect(within(reference).queryByText('No open service actions listed')).not.toBeInTheDocument()
   })
 })

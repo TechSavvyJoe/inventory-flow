@@ -5,6 +5,7 @@ import { canonical, collectorFail, digest, exactFields, executionEnabled, intege
 export const COLLECTOR_FAILURE_CODES = ['BASELINE_REQUIRED','RECONCILIATION_REQUIRED','NEEDS_SIGN_IN','BROWSER_UNAVAILABLE','CAPTURE_INCOMPLETE','CAPTURE_FAILED','VALIDATION_FAILED','ADAPTER_DEPENDENCY_MISSING','PROFILE_SCOPE_MISMATCH','DISALLOWED_SOURCE','HOST_IO_FAILED','DURATION_EXCEEDED']
 const timestamp = date => date.toISOString()
 const COLLECTOR_TIMEZONE = 'America/New_York'
+const isCredentialReference = value => typeof value==='string' && /^CREDENTIAL_[A-Z][A-Z0-9_]{1,67}$/.test(value)
 const updated = async(db,sql,...args)=>(await db.batch([db.prepare(sql).bind(...args)]))[0]
 const ownerMutation = (db,actor,revision)=>db.prepare('UPDATE platform_revision SET revision=CASE WHEN revision=? AND EXISTS(SELECT 1 FROM platform_owners WHERE id=? AND enabled=1) THEN revision+1 ELSE NULL END WHERE id=1').bind(revision,actor.id)
 const audit = (db,actor,entity,id,action,reason,previous,next,key,hash,now)=>db.prepare('INSERT INTO platform_audit VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),actor.id,actor.name,entity,id,action,reason,previous?canonical(previous):null,canonical(next),key,hash,now)
@@ -15,9 +16,10 @@ export async function collectorScope(env,row,{active=false}={}) {
  const dealers=(await db.prepare('SELECT id,store_key,enabled FROM platform_dealerships WHERE group_id=? ORDER BY id').bind(row.group_id).all()).results
  const grants=(await db.prepare('SELECT c.* FROM platform_collector_grants p JOIN platform_data_connections c ON c.id=p.connection_id AND c.group_id=p.group_id AND c.dealership_id=p.dealership_id WHERE p.collector_id=? ORDER BY c.id').bind(row.id).all()).results
  // This installed adapter is explicitly the existing FOUR-store capture.
- if(dealers.length!==4 || grants.length!==4 || dealers.some(d=>!d.enabled) || new Set(grants.map(c=>c.dealership_id)).size!==4 || new Set(grants.map(c=>c.credential_ref)).size!==1 || grants.some(c=>!dealers.some(d=>d.id===c.dealership_id) || c.provider!=='dealermail' || c.method!=='collector' || c.endpoint!=='' || c.oem!=='not_applicable' || c.timezone!==COLLECTOR_TIMEZONE))collectorFail('COLLECTOR_SCOPE_MISMATCH',409)
+ if(dealers.length!==4 || grants.length!==4 || dealers.some(d=>!d.enabled) || new Set(grants.map(c=>c.dealership_id)).size!==4 || new Set(grants.map(c=>c.credential_ref)).size!==1 || grants.some(c=>!isCredentialReference(c.credential_ref)) || grants.some(c=>!dealers.some(d=>d.id===c.dealership_id) || c.provider!=='dealermail' || c.method!=='collector' || c.endpoint!=='' || c.oem!=='not_applicable' || c.timezone!==COLLECTOR_TIMEZONE))collectorFail('COLLECTOR_SCOPE_MISMATCH',409)
  if(active && (group.status!=='active' || grants.some(c=>!c.enabled)))collectorFail('COLLECTOR_DISABLED',409)
- const scope={groupId:row.group_id,dealerships:dealers.map(d=>({id:d.id,storeKey:d.store_key})),connectionIds:grants.map(c=>c.id)}
+ // Bind the reviewed enrollment reference, not just equality between current sources.
+ const scope={groupId:row.group_id,dealerships:dealers.map(d=>({id:d.id,storeKey:d.store_key})),connectionIds:grants.map(c=>c.id),credentialRef:grants[0].credential_ref}
  if(await digest(scope)!==row.scope_sha256)collectorFail('COLLECTOR_SCOPE_MISMATCH',409)
  return {...scope,connections:grants.map(c=>({id:c.id,dealershipId:c.dealership_id,provider:c.provider,vendor:c.vendor,oem:c.oem,method:c.method,endpoint:c.endpoint,credentialRef:c.credential_ref,enabled:Boolean(c.enabled),cadence:c.cadence,localTime:c.local_time,timezone:c.timezone,updatedAt:c.updated_at}))}
 }
@@ -50,22 +52,22 @@ export async function readCollectors(env,claims,groupId,now=new Date()) {
 
 export async function saveCollector(env,claims,groupId,input,key,now=new Date()) {
  const db=env.PLATFORM_DB,actor=await platformOwner(db,claims);await groupRow(db,groupId)
- exactFields(input,['operation','id','name','accessClientId','adapterId','adapterVersion','profileId','profileSha256','dealershipIds','connectionIds','reason','expectedRevision'])
+ exactFields(input,['operation','id','name','accessClientId','adapterId','adapterVersion','profileId','profileSha256','credentialRef','dealershipIds','connectionIds','reason','expectedRevision'])
  const reason=text(input.reason,500);if(reason.length<3)collectorFail('COLLECTOR_INPUT_INVALID')
  integer(input.expectedRevision);text(key);const hash=await digest({groupId,input})
  const prior=await db.prepare('SELECT request_hash,target_id FROM platform_audit WHERE actor_id=? AND request_key=?').bind(actor.id,key).first()
  if(prior){if(prior.request_hash!==hash)collectorFail('COLLECTOR_CONFLICT',409);return {saved:true,id:prior.target_id,replayed:true}}
  const date=timestamp(now);let id,previous=null,next,statements=[]
  if(input.operation==='enroll'){
-  if(input.id || input.adapterId!=='dealermail-hold-refresh' || input.adapterVersion!=='1')collectorFail('COLLECTOR_INPUT_INVALID')
+  if(input.id || input.adapterId!=='dealermail-hold-refresh' || input.adapterVersion!=='1' || !isCredentialReference(input.credentialRef))collectorFail('COLLECTOR_INPUT_INVALID')
   const dealerIds=stringList(input.dealershipIds),connectionIds=stringList(input.connectionIds)
   const dealers=(await db.prepare('SELECT id,store_key,enabled FROM platform_dealerships WHERE group_id=? ORDER BY id').bind(groupId).all()).results
   if(dealers.length!==4 || canonical(dealerIds)!==canonical(dealers.map(d=>d.id)) || dealers.some(d=>!d.enabled) || connectionIds.length!==4)collectorFail('COLLECTOR_SCOPE_MISMATCH',409)
   const connections=[]
   for(const connectionId of connectionIds){const c=await db.prepare('SELECT * FROM platform_data_connections WHERE id=? AND group_id=?').bind(connectionId,groupId).first();if(!c || c.provider!=='dealermail' || c.method!=='collector' || c.endpoint!=='' || c.oem!=='not_applicable' || !dealerIds.includes(c.dealership_id))collectorFail('COLLECTOR_SCOPE_MISMATCH',409);connections.push(c)}
-  if(new Set(connections.map(c=>c.dealership_id)).size!==4 || connections.some(c=>c.timezone!==COLLECTOR_TIMEZONE))collectorFail('COLLECTOR_SCOPE_MISMATCH',409)
+  if(new Set(connections.map(c=>c.dealership_id)).size!==4 || connections.some(c=>c.timezone!==COLLECTOR_TIMEZONE || c.credential_ref!==input.credentialRef))collectorFail('COLLECTOR_SCOPE_MISMATCH',409)
   await tenantDatabase(env,groupId)
-  id=crypto.randomUUID();const scopeSha=await digest({groupId,dealerships:dealers.map(d=>({id:d.id,storeKey:d.store_key})),connectionIds})
+  id=crypto.randomUUID();const scopeSha=await digest({groupId,dealerships:dealers.map(d=>({id:d.id,storeKey:d.store_key})),connectionIds,credentialRef:input.credentialRef})
   next={id,groupId,name:text(input.name),accessClientId:text(input.accessClientId),adapterId:input.adapterId,adapterVersion:input.adapterVersion,profileId:text(input.profileId),profileSha256:sha(input.profileSha256),scopeSha256:scopeSha,enabled:false}
   statements.push(db.prepare('INSERT INTO platform_collectors VALUES(?,?,?,?,?,?,?,?,?,0,1,NULL,?,?,NULL)').bind(id,groupId,next.accessClientId,next.name,next.adapterId,next.adapterVersion,next.profileId,next.profileSha256,scopeSha,date,date))
   for(const c of connections)statements.push(db.prepare('INSERT INTO platform_collector_grants VALUES(?,?,?,?)').bind(id,c.id,c.dealership_id,groupId))

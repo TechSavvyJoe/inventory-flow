@@ -40,9 +40,11 @@ Open **Dealer groups → selected group → Data connections → Collector hosts
    **Dealership collector**, no remote endpoint and a local credential reference.
    Enabled preference, cadence and schedule remain separate choices.
 2. Install and review the fixed local profile on the permitted Windows host.
-   Run its local profile check. Enter the service client ID, installed profile ID
-   and computed fingerprint in **Register host**. Review all four source grants
-   and give an administrative reason. Registration starts paused.
+   Run its local profile check. Enter the service client ID, installed profile ID,
+   computed fingerprint and credential reference from that profile check in
+   **Register host**. Review all four source grants
+   and give an administrative reason. Every selected connection must have the exact
+   nonempty credential reference from the installed profile. Registration starts paused.
 3. Confirm the enrolled identity's separate machine Access audience, local
    protected credentials, vendor session, dependency fingerprints and verified
    baseline. **Enable host** only after that review.
@@ -123,7 +125,12 @@ Owner administration continues to use the owner Access audience and enabled
 owner record. Machine routes require a separate collector audience and the
 enrolled JWT service `common_name`; email/owner identity cannot grant machine
 authority. Group, full dealership/source set, installed profile and grant
-generation are immutable or fenced server-side. Jobs contain no caller-selected
+generation are immutable or fenced server-side. The enrolled scope fingerprint
+also binds the reviewed profile credential reference; a changed reference is
+rejected before enabling a host or admitting a lease. Enrollments created before
+this binding must be revoked and enrolled again after review with a fresh Access
+service client identity/ID: revoked IDs remain uniquely reserved. Never rewrite
+the stored scope fingerprint or reuse a revoked identity. Jobs contain no caller-selected
 commands, filesystem paths, browser targets, tenant binding or publication URL.
 
 | Machine path | Purpose |

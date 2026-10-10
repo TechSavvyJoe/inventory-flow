@@ -82,7 +82,7 @@ async function lifecycleFixture() {
   for (const dealer of remote.dealers) remote.sqlite.prepare('UPDATE platform_data_connections SET credential_ref=? WHERE id=?').run(profile.credentialRef, dealer.connectionId)
   const enrollment = await saveCollector(remote.env, COLLECTOR_OWNER, profile.groupId, {
     operation: 'enroll', name: 'Synthetic lifecycle host', accessClientId: remote.machine.common_name,
-    adapterId: profile.adapterId, adapterVersion: profile.adapterVersion, profileId: profile.profileId, profileSha256: profile.profileSha256,
+    adapterId: profile.adapterId, adapterVersion: profile.adapterVersion, profileId: profile.profileId, profileSha256: profile.profileSha256, credentialRef: profile.credentialRef,
     dealershipIds: remote.dealers.map(dealer => dealer.id), connectionIds: remote.dealers.map(dealer => dealer.connectionId),
     reason: 'Synthetic lifecycle enrollment', expectedRevision: remote.sqlite.prepare('SELECT revision FROM platform_revision').get().revision,
   }, 'lifecycle-enroll', COLLECTOR_SYNTHETIC_NOW)

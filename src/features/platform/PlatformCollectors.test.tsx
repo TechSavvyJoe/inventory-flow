@@ -4,7 +4,7 @@ import { PlatformCollectors } from './PlatformCollectors'
 import type { PlatformCollector, PlatformCollectorsData, PlatformConnection, PlatformGroup, PlatformRequest } from './types'
 
 const group:PlatformGroup={id:'synthetic-group',name:'Synthetic group',status:'active',updatedAt:'',health:{status:'current',message:'Synthetic'},dealerships:Array.from({length:4},(_,i)=>({id:`dealer-${i}`,groupId:'synthetic-group',name:`Synthetic dealership ${i+1}`,storeKey:`store-${i}`,website:'',enabled:true}))}
-const connections:PlatformConnection[]=group.dealerships.map((dealer,i)=>({id:`source-${i}`,groupId:group.id,dealershipId:dealer.id,name:`Permitted holds ${i+1}`,provider:'dealermail',method:'collector',endpoint:'',credentialRef:'',enabled:true,cadence:'manual',localTime:'05:30',timezone:'America/New_York',updatedAt:'',verification:'not_verified'}))
+const connections:PlatformConnection[]=group.dealerships.map((dealer,i)=>({id:`source-${i}`,groupId:group.id,dealershipId:dealer.id,name:`Permitted holds ${i+1}`,provider:'dealermail',method:'collector',endpoint:'',credentialRef:'CREDENTIAL_SYNTHETIC_MAIL',enabled:true,cadence:'manual',localTime:'05:30',timezone:'America/New_York',updatedAt:'',verification:'not_verified'}))
 const collector:PlatformCollector={id:'synthetic-host',groupId:group.id,name:'Synthetic capture computer',accessClientId:'synthetic-service',adapterId:'dealermail-hold-refresh',adapterVersion:'1',profileId:'synthetic-profile',profileSha256:'a'.repeat(64),enabled:false,connected:false,generation:1,lastSeenAt:null,dealershipIds:group.dealerships.map(dealer=>dealer.id),connectionIds:connections.map(source=>source.id),scopeLabel:'Group-wide DealerMail refresh'}
 const data:PlatformCollectorsData={groupId:group.id,revision:9,executionEnabled:false,collectors:[],attempts:[]}
 afterEach(cleanup)
@@ -20,6 +20,7 @@ function fillEnrollment(){
   fireEvent.change(screen.getByRole('textbox',{name:'Access service client ID'}),{target:{value:'synthetic-client'}})
   fireEvent.change(screen.getByRole('textbox',{name:'Installed profile ID'}),{target:{value:'synthetic-profile'}})
   fireEvent.change(screen.getByRole('textbox',{name:'Installed profile fingerprint'}),{target:{value:'a'.repeat(64)}})
+  fireEvent.change(screen.getByRole('textbox',{name:'Installed profile credential reference'}),{target:{value:'CREDENTIAL_SYNTHETIC_MAIL'}})
   fireEvent.change(screen.getByRole('textbox',{name:'Reason for this change'}),{target:{value:'Synthetic authorized collector setup'}})
 }
 describe('Collector enrollment and independently verified outcomes',()=>{
@@ -46,9 +47,29 @@ describe('Collector enrollment and independently verified outcomes',()=>{
     await screen.findByRole('status')
     const post=request.mock.calls.find(call=>call[1])!
     expect(post[0]).toBe('/groups/synthetic-group/collectors')
-    expect(post[1]).toMatchObject({operation:'enroll',adapterId:'dealermail-hold-refresh',adapterVersion:'1',dealershipIds:group.dealerships.map(dealer=>dealer.id),connectionIds:connections.map(source=>source.id),expectedRevision:9})
+    expect(post[1]).toMatchObject({operation:'enroll',adapterId:'dealermail-hold-refresh',adapterVersion:'1',credentialRef:'CREDENTIAL_SYNTHETIC_MAIL',dealershipIds:group.dealerships.map(dealer=>dealer.id),connectionIds:connections.map(source=>source.id),expectedRevision:9})
     expect(post[1]).not.toHaveProperty('enabled')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+  it('requires the installed profile reference and compares every selected source before posting enrollment',async()=>{
+    const request=await setup()
+    fireEvent.click(screen.getByRole('button',{name:'Register host'}));fillEnrollment()
+    fireEvent.click(screen.getByRole('checkbox',{name:/I reviewed permission/}))
+    for(const credentialRef of ['','CREDENTIAL_OTHER_PROFILE']){
+      fireEvent.change(screen.getByRole('textbox',{name:'Installed profile credential reference'}),{target:{value:credentialRef}})
+      fireEvent.submit(screen.getByRole('form',{name:'Collector enrollment change'}))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Every selected connection must use the credential reference from the installed profile')
+      expect(request.mock.calls.filter(call=>call[1])).toHaveLength(0)
+    }
+    // A single mismatched connection must also prevent enrollment.
+    const prior=connections[3].credentialRef
+    connections[3].credentialRef='CREDENTIAL_OTHER_PROFILE'
+    try{
+      fireEvent.change(screen.getByRole('textbox',{name:'Installed profile credential reference'}),{target:{value:prior}})
+      fireEvent.submit(screen.getByRole('form',{name:'Collector enrollment change'}))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Every selected connection')
+      expect(request.mock.calls.filter(call=>call[1])).toHaveLength(0)
+    }finally{connections[3].credentialRef=prior}
   })
   it('distinguishes contact, reported capture, unknown publication and verified exact publication',async()=>{
     await setup({...data,collectors:[{...collector,enabled:true,lastSeenAt:'2026-10-09T12:00:00Z'}],attempts:[{id:'reported',requestId:'p1',collectorId:collector.id,stage:'captured',createdAt:'2026-10-09T12:00:00Z',capturedAt:'2026-10-09T12:01:00Z'},{id:'unknown',requestId:'p2',collectorId:collector.id,stage:'reconciliation_required',createdAt:'2026-10-09T12:02:00Z'},{id:'verified',requestId:'p3',collectorId:collector.id,stage:'completed',createdAt:'2026-10-09T12:03:00Z',publication:{status:'published_and_verified',bundleSha256:'b'.repeat(64)}}]})

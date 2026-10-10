@@ -865,6 +865,89 @@ describe('modern inventory result access', () => {
     expect(document.querySelector('.inv-desk-move')).not.toHaveClass('is-warning');
   });
 
+  it('keeps the DealerMail loaner alert beside provider hold evidence on desktop', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.dealerMail = {
+      ...vehicle.dealerMail,
+      hasActiveHold: false,
+      loaner: { active: true, program: 'Synthetic Service', label: 'Synthetic loaner', serviceDate: '2026-10-10', rawAlert: 'Synthetic current service alert' },
+    };
+    vehicle.operationalEvidence = { records: [{
+      vin: vehicle.vin,
+      provider: 'oem',
+      sourceLabel: 'Synthetic OEM',
+      capturedAt: '2026-10-10T12:00:00Z',
+      dataState: 'current',
+      readOnly: true,
+      complete: true,
+      holdState: 'not_observed',
+    }] };
+
+    render(<InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />);
+
+    const statusCell = screen.getByRole('cell', { name: /No hold observed in current reports/ });
+    expect(within(statusCell).getByRole('button', { name: /Open hold details/ })).toHaveTextContent('No hold observed in current reports');
+    expect(within(statusCell).getByText(/DealerMail loaner\/service:/)).toHaveTextContent('Loaner Synthetic Service · 2026-10-10');
+    expect(within(statusCell).getByText(/DealerMail loaner\/service:/)).toHaveTextContent('Synthetic current service alert');
+  });
+
+  it('keeps the DealerMail loaner signal on mobile and redacts its alert for transport roles', () => {
+    const vehicle = heldMovingVehicle();
+    vehicle.dealerMail = {
+      ...vehicle.dealerMail,
+      hasActiveHold: false,
+      canViewEvidence: false,
+      loaner: { active: true, program: 'Synthetic Service', label: 'Synthetic loaner', serviceDate: '2026-10-10', rawAlert: 'Synthetic private customer reason' },
+    };
+    vehicle.operationalEvidence = { records: [{
+      vin: vehicle.vin,
+      provider: 'oem',
+      sourceLabel: 'Synthetic OEM',
+      capturedAt: '2026-10-10T12:00:00Z',
+      dataState: 'current',
+      readOnly: true,
+      complete: true,
+      holdState: 'not_observed',
+    }] };
+
+    render(<InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} />);
+
+    const card = screen.getByRole('article');
+    expect(card).toHaveTextContent('No hold observed in current reports');
+    expect(screen.getByLabelText('DealerMail loaner and service evidence')).toHaveTextContent('Loaner Synthetic Service · 2026-10-10');
+    expect(card).toHaveTextContent('Current DealerMail loaner/service signal');
+    expect(card).not.toHaveTextContent('Synthetic private customer reason');
+  });
+
+  it.each([
+    ['desktop', 'stale', true], ['desktop', 'stale', false],
+    ['desktop', 'unavailable', true], ['desktop', 'unavailable', false],
+    ['mobile', 'stale', true], ['mobile', 'stale', false],
+    ['mobile', 'unavailable', true], ['mobile', 'unavailable', false],
+  ] as const)('qualifies retained loaner evidence on %s with %s source state and private access %s', (layout, dataState, canViewEvidence) => {
+    const vehicle = heldMovingVehicle();
+    vehicle.dealerMail = {
+      ...vehicle.dealerMail, dataState, canViewEvidence, hasActiveHold: false,
+      loaner: { active: true, program: 'Synthetic Service', label: 'Synthetic loaner', serviceDate: '2026-10-10', rawAlert: 'Synthetic private retained alert' },
+    };
+    vehicle.operationalEvidence = { records: [{
+      vin: vehicle.vin, provider: 'oem', sourceLabel: 'Synthetic OEM', capturedAt: '2026-10-10T12:00:00Z',
+      dataState: 'current', readOnly: true, complete: true, holdState: 'not_observed',
+    }] };
+    render(layout === 'desktop'
+      ? <InventoryTable vehicles={[vehicle]} sorts={[]} onSortChange={vi.fn()} onSelectVehicle={vi.fn()} />
+      : <InventoryMobileList vehicles={[vehicle]} onSelectVehicle={vi.fn()} />);
+    const signal = layout === 'desktop'
+      ? screen.getByText(/DealerMail loaner\/service:/)
+      : screen.getByLabelText('DealerMail loaner and service evidence');
+    expect(signal).toHaveTextContent('Saved Loaner Synthetic Service · 2026-10-10');
+    expect(signal).toHaveTextContent('current status unverified');
+    expect(signal).not.toHaveTextContent('Current');
+    if (canViewEvidence) expect(signal).toHaveTextContent('Synthetic private retained alert');
+    else expect(signal).not.toHaveTextContent('Synthetic private retained alert');
+    expect(screen.getAllByText('No hold observed in current reports')).toHaveLength(1);
+  });
+
   it.each([true, false])('marks a retained hold signal of %s as unverified when its source is stale', (previousHold) => {
     const vehicle = heldMovingVehicle();
     vehicle.dealerMail = { ...vehicle.dealerMail, dataState: 'stale', hasActiveHold: previousHold };

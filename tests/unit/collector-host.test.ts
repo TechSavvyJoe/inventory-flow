@@ -12,7 +12,7 @@ import { createSyntheticCollector, COLLECTOR_OWNER, COLLECTOR_SYNTHETIC_NOW } fr
 import { handleCollectorApi } from '../../cloudflare/src/platform-worker.mjs'
 import { saveDataControl } from '../../cloudflare/src/platform-data.mjs'
 import { encryptBundle } from '../../scripts/publish-cloud-release.mjs'
-import { runDaemon, runOnce, collectorHostInternals } from '../../scripts/collector-host.mjs'
+import { doctor, runDaemon, runOnce, collectorHostInternals } from '../../scripts/collector-host.mjs'
 import { profileFingerprint, validateCollectorProfile, COLLECTOR_ADAPTER_ID, COLLECTOR_ADAPTER_VERSION, COLLECTOR_PROFILE_NAME } from '../../scripts/lib/collector-profile.mjs'
 import { assertBaselineBundleMatchesClaim, assertClaimMatchesProfile, assertContactMatchesProfile, collectorRequest, submitCollectorPublication, validateReceiptPayload } from '../../scripts/lib/collector-protocol.mjs'
 import { adapterInternals, checkCollectorDependencies, findPendingPublication, getOrCreateClaimIdempotencyKey, clearPendingClaimIdempotencyKey, makeDealerMailCapture, privateAttemptArtifacts, saveAttemptState } from '../../scripts/lib/dealermail-hold-refresh-adapter.mjs'
@@ -213,6 +213,16 @@ describe('collector host contract', () => {
     })).rejects.toThrow('REQUEST_TOO_LARGE')
     expect(calls).toHaveLength(0)
     expect(requestStarted).toBe(false)
+  })
+
+  it('reports the validated local profile credential reference for reviewed enrollment without contacting a server', async () => {
+    const { root, profile } = fixture()
+    const fetchImpl = vi.fn()
+    const report = await doctor({ profileName: COLLECTOR_PROFILE_NAME, profileDirectory: path.join(root, 'runtime/collector/profiles'), fetchImpl })
+    expect(report).toMatchObject({ profileId: profile.profileId, profileSha256: profile.profileSha256, credentialRef: profile.credentialRef, remote: null })
+    expect(fetchImpl).not.toHaveBeenCalled()
+    expect(report).not.toHaveProperty('accessClientSecret')
+    expect(report).not.toHaveProperty('releaseEncryptionKeyBase64')
   })
 
   it('runs the host protocol through the actual collector API and signed tenant publication fixture', async () => {
