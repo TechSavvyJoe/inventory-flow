@@ -5,7 +5,8 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { getEventListeners } from 'node:events'
+import { EventEmitter, getEventListeners } from 'node:events'
+import { PassThrough } from 'node:stream'
 import { STORE_CONFIG } from '../../server/importer.mjs'
 import { createSyntheticCollector, COLLECTOR_OWNER, COLLECTOR_SYNTHETIC_NOW } from '../../fixtures/synthetic-collector.mjs'
 import { handleCollectorApi } from '../../cloudflare/src/platform-worker.mjs'
@@ -256,6 +257,74 @@ describe('collector host contract', () => {
     })
     await expect(capture({ reportDate: collectorHostInternals.reportDateNow() })).rejects.toThrow('DEALERMAIL_SESSION_REQUIRED')
     expect(spawned).toBe(false)
+  })
+
+  it('launches the snapshot builder from work and passes capture its fixed process budget', async () => {
+    const { root, profile } = fixture()
+    const children: Array<{ args: string[]; options: any }> = []
+    const spawnImpl = (_executable: string, args: string[], options: any) => {
+      children.push({ args, options })
+      const child: any = new EventEmitter()
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.kill = vi.fn()
+      process.nextTick(() => {
+        child.stdout.end()
+        child.stderr.end()
+        child.emit('close', 0)
+      })
+      return child
+    }
+    const capture = makeDealerMailCapture(profile, {
+      fetchImpl: async () => ({ ok: true, json: async () => [{ url: 'https://www.dealermail.com/' }] }) as any,
+      spawnImpl: spawnImpl as any,
+    })
+
+    await capture({ reportDate: '2026-10-09' })
+
+    expect(children).toHaveLength(3)
+    expect(children[0].args).toContain('900000')
+    expect(children[1].args[0]).toBe(path.join(root, 'work/build_v2_snapshot.mjs'))
+    expect(children[1].options.cwd).toBe(path.join(root, 'work'))
+  })
+
+  it('keeps a one-minute wrapper grace after the capture budget', async () => {
+    const { profile } = fixture()
+    const children: any[] = []
+    let signalChildStarted: () => void = () => undefined
+    const spawnImpl = (_executable: string, _args: string[], _options: any) => {
+      const child: any = new EventEmitter()
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      child.kill = vi.fn((signal: string) => {
+        if (signal === 'SIGKILL') child.emit('close', null)
+        return true
+      })
+      children.push(child)
+      return child
+    }
+    const capture = makeDealerMailCapture(profile, {
+      fetchImpl: async () => ({ ok: true, json: async () => [{ url: 'https://www.dealermail.com/' }] }) as any,
+      onChild: () => signalChildStarted(),
+      spawnImpl: spawnImpl as any,
+    })
+    vi.useFakeTimers()
+    try {
+      const started = new Promise<void>(resolve => { signalChildStarted = resolve })
+      const result = capture({ reportDate: '2026-10-09' }).then(() => null, error => error)
+      await started
+      expect(children).toHaveLength(1)
+
+      await vi.advanceTimersByTimeAsync(900000)
+      expect(children[0].kill).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(60000)
+      expect(children[0].kill).toHaveBeenCalledWith('SIGTERM')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(children[0].kill).toHaveBeenLastCalledWith('SIGKILL')
+      expect(await result).toMatchObject({ message:'CAPTURE_TIMEOUT' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('rejects a nested Ford fallback imported by the fixed snapshot builder', () => {

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // @ts-nocheck -- The panel is an unbundled browser module tested with a synthetic API response.
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { within } from '@testing-library/react'
 import markup from '../../extension/sidepanel/index.html?raw'
 
 const api = vi.hoisted(() => ({ bootstrap: vi.fn(), vehicle: vi.fn() }))
@@ -36,6 +37,30 @@ afterEach(() => {
   vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ''
   if (originalScrollIntoView) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView)
   else delete HTMLElement.prototype.scrollIntoView
+})
+
+it.each(['requested', 'active'])('shows the safe %s app hold and expected date separately from provider status', async (state) => {
+  const appRecord = {
+    ...record,
+    hold: { state: 'none_observed', canViewEvidence: true, canManage: true, backupCount: 0 },
+    privateEvidence: { primary: null, backups: [], comments: [], alerts: [] },
+    manualHold: { state, expectedDeliveryDate: '2026-10-12', customerLabel: 'PRIVATE_MARKER', note: 'PRIVATE_MARKER' },
+  }
+  api.bootstrap.mockResolvedValue({ ...bootstrap, vehicles: [appRecord] })
+  api.vehicle.mockResolvedValue(appRecord)
+  live.check.mockResolvedValue({ status: 'verified', stock: record.stockNumber, activeCount: 0, checkedAt: '2026-09-23T15:30:00Z' })
+  await import('../../extension/sidepanel/panel.js')
+  const panel = within(document.body)
+  const row = await panel.findByRole('option', { name: /2024 Ford F-350SD Platinum/ })
+  expect(row.textContent).toContain(state === 'requested' ? 'Hold request · Pending approval' : 'Inventory Flow reservation')
+  if (state === 'requested') expect(row.textContent).not.toContain('Inventory Flow reservation')
+  row.click()
+  ;(await panel.findByRole('tab', { name: 'Holds & moves' })).click()
+  const heading = await panel.findByRole('heading', { name: state === 'requested' ? 'Inventory Flow hold request' : 'Inventory Flow reservation' })
+  const section = heading.closest('section')
+  await vi.waitFor(() => expect(within(section).getByText('10/12/2026')).toBeTruthy())
+  expect(section.textContent).toContain(state === 'requested' ? 'This request is not an approved hold' : 'An app-owned reservation is active')
+  expect(section.textContent).not.toContain('PRIVATE_MARKER')
 })
 
 it('replaces a released truck hold and removes the stale person and reason', async () => {

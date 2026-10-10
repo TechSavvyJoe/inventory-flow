@@ -238,14 +238,16 @@ describe('official document adapter', () => {
       mileageEntered: 2052,
       mileageSource: 'listed odometer',
       autoCheck: { inServiceDate: '2024-03-14', inServiceAgeMonths: 30, coverages: [coverage] },
+      carfax: { inServiceDate: '2024-04-15', coverages: [{ ...coverage, type: 'Powertrain', termText: '5 years / 60,000 miles', termMiles: 60000 }] },
       fordOasis: { warrantyStartDate: '14-March-2024', monthsInService: 30, coverages: [coverage] },
     };
 
     const index = buildInventorySearchIndex([toInventoryVehicle(record, sourceData())]);
 
     expect(rankInventorySearch(index, '2024-03-14')).toHaveLength(1);
+    expect(rankInventorySearch(index, '2024-04-15')).toHaveLength(1);
     expect(rankInventorySearch(index, '14-March-2024')).toHaveLength(1);
-    for (const generic of ['expired', '36,000', '36000', 'Bumper-to-Bumper', 'No time left', 'listed odometer', 'warranty check coverage']) {
+    for (const generic of ['expired', '36,000', '36000', 'Bumper-to-Bumper', 'Powertrain', '60,000', '5 years', 'No time left', 'listed odometer', 'warranty check coverage']) {
       expect(rankInventorySearch(index, generic)).toEqual([]);
     }
   });

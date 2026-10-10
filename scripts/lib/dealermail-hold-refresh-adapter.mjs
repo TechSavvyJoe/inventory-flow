@@ -11,6 +11,10 @@ const CAPTURE_DEPS = Object.freeze([
   { id: 'snapshotFinalizer', relativePath: path.join('work', 'finalize_cloud_snapshot.mjs') },
 ])
 const OUTPUT_LIMIT = 256 * 1024
+const DEALERMAIL_CAPTURE_BUDGET_MS = 15 * 60_000
+// Allow the capture process one minute after its own budget to emit its
+// controlled incomplete result and close cleanly before the host terminates it.
+const DEALERMAIL_CAPTURE_TIMEOUT_MS = DEALERMAIL_CAPTURE_BUDGET_MS + 60_000
 const CHILD_ENV_NAMES = ['SystemRoot', 'SYSTEMROOT', 'WINDIR', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'TEMP', 'TMP']
 const FORBIDDEN_HOSTS = /(?:https?:\/\/|wss?:\/\/)[^\s'"`<>]*\b(?:[a-z0-9-]+\.)*(?:fmcdealer|dealerconnection|fordvisions|fordtechservice|oasis|autocheck|vauto|pts)\.(?:com|net)\b/i
 const FORBIDDEN_CAPTURE_REFERENCE = /(?:capture[-_](?:oasis|service[-_]history|invoice|warranty|vauto|autocheck|pts|keeper)|ensureAutomationBrowser|start[-_]automation[-_]browser)/i
@@ -169,8 +173,8 @@ export function makeDealerMailCapture(profile, { onChild, signal, spawnImpl = sp
   }
   return async ({ reportDate }) => {
     if (!await hasExistingDealerMailTab({ fetchImpl })) throw new Error('DEALERMAIL_SESSION_REQUIRED')
-    await runChild(process.execPath, [capture, 'run', reportDate, '--budget-ms', '900000'], { cwd: appRoot, signal, timeoutMs: 15 * 60_000, onChild, spawnImpl, profile })
-    await runChild(process.execPath, [builder, reportDate], { cwd: profile.workspaceRoot, signal, timeoutMs: 8 * 60_000, onChild, spawnImpl, profile })
+    await runChild(process.execPath, [capture, 'run', reportDate, '--budget-ms', String(DEALERMAIL_CAPTURE_BUDGET_MS)], { cwd: appRoot, signal, timeoutMs: DEALERMAIL_CAPTURE_TIMEOUT_MS, onChild, spawnImpl, profile })
+    await runChild(process.execPath, [builder, reportDate], { cwd: path.join(profile.workspaceRoot, 'work'), signal, timeoutMs: 8 * 60_000, onChild, spawnImpl, profile })
     await runChild(process.execPath, [finalizer, reportDate], { cwd: profile.workspaceRoot, signal, timeoutMs: 8 * 60_000, onChild, spawnImpl, profile })
   }
 }

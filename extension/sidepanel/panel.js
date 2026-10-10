@@ -402,6 +402,9 @@ function additionalHoldBadges(vehicle) {
   if (vehicle.manualHold?.state === 'active') badges.push(el('span', {
     class: 'pill pill-held', title: 'App-owned reservation; DealerMail status is shown separately.',
   }, icon('lock'), 'Inventory Flow reservation'))
+  if (vehicle.manualHold?.state === 'requested') badges.push(el('span', {
+    class: 'pill pill-moving', title: 'Waiting for manager approval; this request is not an approved hold.',
+  }, icon('help'), 'Hold request · Pending approval'))
   return badges
 }
 
@@ -1464,8 +1467,10 @@ function holdTab(vehicle) {
     ))),
     el('p', { class: 'd-caption', text: 'These source observations remain separate from DealerMail. Incomplete or older evidence does not establish current availability.' }),
   ]) : null
-  const manualHoldSection = vehicle.manualHold?.state === 'active' ? section('Inventory Flow reservation', [
-    el('p', { text: 'An app-owned reservation is active. It is separate from DealerMail and provider reports.' }),
+  const manualHoldSection = ['active', 'requested'].includes(vehicle.manualHold?.state) ? section(vehicle.manualHold.state === 'requested' ? 'Inventory Flow hold request' : 'Inventory Flow reservation', [
+    el('p', { text: vehicle.manualHold.state === 'requested'
+      ? 'Waiting for manager approval. This request is not an approved hold; DealerMail and provider reports remain separate.'
+      : 'An app-owned reservation is active. It is separate from DealerMail and provider reports.' }),
     vehicle.manualHold.expectedDeliveryDate ? kv([['Expected', fmt.formatDate(vehicle.manualHold.expectedDeliveryDate)]]) : null,
   ]) : null
 

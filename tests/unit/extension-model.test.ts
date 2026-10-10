@@ -55,11 +55,23 @@ describe('deal desk view model', () => {
     expect(vehicle.hold.label).toBe('No current DealerMail hold found')
     expect(vehicle.operationalEvidence).toEqual({ records: [{ ...observation, observedHoldState: 'held' }] })
     expect(vehicle.inventoryDecision).toMatchObject({ comparison: 'conflict', evidence: [{ provider: 'carfax', comparison: 'conflict', effectiveHoldState: 'held' }] })
-    expect(vehicle.manualHold).toEqual({ state: 'active' })
+    expect(vehicle.manualHold).toEqual({ state: 'active', expectedDeliveryDate: null })
     expect(JSON.stringify({ operationalEvidence: vehicle.operationalEvidence, inventoryDecision: vehicle.inventoryDecision })).not.toContain('PRIVATE_MARKER')
     expect(JSON.stringify(vehicle.manualHold)).not.toContain('PRIVATE_MARKER')
     const stale = toPanelVehicle(base({ operationalEvidence: { records: [{ ...observation, dataState: 'stale_unverified' }] } }), data(base()))
     expect(stale.operationalEvidence.records[0]).toMatchObject({ holdState: 'unknown', observedHoldState: 'held', dataState: 'stale_unverified' })
+  })
+
+  it.each(['requested', 'active', 'released', 'rejected', 'cancelled'])('preserves safe app-owned hold state %s and the expected date without private fields', (state) => {
+    const status = state === 'requested' ? 'hold_requested' : 'unconfirmed'
+    const record = base({ manualHold: { state, expectedDeliveryDate: '2026-10-12', customerLabel: 'PRIVATE_MARKER', note: 'PRIVATE_MARKER', updatedBy: 'PRIVATE_MARKER' }, inventoryDecision: { status, manualHold: state, importedHold: false, privateNote: 'PRIVATE_MARKER' } })
+    const vehicle = toPanelVehicle(record, data(record))
+    expect(vehicle.manualHold).toEqual({ state, expectedDeliveryDate: '2026-10-12' })
+    expect(JSON.stringify(vehicle.manualHold)).not.toContain('PRIVATE_MARKER')
+    expect(vehicle.inventoryDecision).toMatchObject({ status, manualHold: state, importedHold: false })
+    expect(JSON.stringify(vehicle.inventoryDecision)).not.toContain('PRIVATE_MARKER')
+    expect(vehicle.hold.hasActiveHold).toBe(false)
+    expect(vehicle.listing.isListed).toBe(true)
   })
 
   it('keeps the reserved legacy decision observation after twelve provider rows for strict no-hold filtering', () => {

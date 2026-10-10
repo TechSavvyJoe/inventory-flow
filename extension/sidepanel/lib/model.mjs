@@ -323,7 +323,7 @@ function capturedOperationalEvidence(value, vin) {
 
 function capturedInventoryDecision(value, vin) {
   if (!value || typeof value !== 'object') return null
-  const statuses = ['sold_pending', 'delivered', 'other', 'held', 'unconfirmed']
+  const statuses = ['sold_pending', 'delivered', 'other', 'wholesale', 'transfer_out', 'held', 'hold_requested', 'unconfirmed']
   const comparisons = ['agreement', 'conflict', 'manual_only', 'source_only', 'unverified']
   const dispositions = ['sold_pending', 'delivered', 'other', 'not_observed', 'unknown']
   // Inventory-decision evidence may contain the twelve bounded provider
@@ -349,7 +349,7 @@ function capturedInventoryDecision(value, vin) {
     status: statuses.includes(value.status) ? value.status : 'unconfirmed',
     comparison: comparisons.includes(value.comparison) ? value.comparison : 'unverified',
     label: text(value.label),
-    manualHold: ['active', 'released'].includes(value.manualHold) ? value.manualHold : null,
+    manualHold: ['requested', 'active', 'released', 'rejected', 'cancelled'].includes(value.manualHold) ? value.manualHold : null,
     importedHold: typeof value.importedHold === 'boolean' ? value.importedHold : null,
     reviewRequired: value.reviewRequired === true,
     evidence: records,
@@ -508,7 +508,10 @@ export function toPanelVehicle(record, bootstrap, { now = Date.now(), origin = n
       ...(savedInvoice ? { invoiceSaved: true, invoiceCapturedAt: text(record.fordInvoice.capturedAt) } : {}),
     },
     hold: holdSignal(record, dealerMailState),
-    manualHold: { state: record.manualHold?.state === 'active' ? 'active' : record.manualHold?.state === 'released' ? 'released' : null },
+    manualHold: {
+      state: ['requested', 'active', 'released', 'rejected', 'cancelled'].includes(record.manualHold?.state) ? record.manualHold.state : null,
+      expectedDeliveryDate: text(record.manualHold?.expectedDeliveryDate),
+    },
     operationalEvidence: record.operationalEvidence ? { records: capturedOperationalEvidence(record.operationalEvidence, record.vin) } : null,
     inventoryDecision: capturedInventoryDecision(record.inventoryDecision, record.vin),
     location: resolveLocation(record, transfer),

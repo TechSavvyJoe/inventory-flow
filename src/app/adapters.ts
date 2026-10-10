@@ -401,7 +401,6 @@ function officialDocumentSearchText(
     // and make predictive search return nearly every vehicle.
     warrantyCheck?.autoCheck?.inServiceDate,
     warrantyCheck?.carfax?.inServiceDate,
-    ...(warrantyCheck?.carfax?.coverages ?? []).flatMap(row => [row.type, row.termText]),
     ...(vehicle.serviceHistory?.reports ?? []).flatMap(report => [report.sourceLabel, ...report.entries.flatMap(entry => entry.services)]),
     warrantyCheck?.fordOasis?.warrantyStartDate,
     warrantyCheck?.fordOasis?.monthsInService != null ? `${warrantyCheck.fordOasis.monthsInService} months in service` : null,
